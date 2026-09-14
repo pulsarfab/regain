@@ -172,7 +172,7 @@ impl Host {
                 if let Some(s) = &self.sdk {
                     s.download(&mut bytes)?;
                 } else {
-                    for (i, pixel) in bytes.chunks_exact_mut(2).enumerate() {
+                    for (i, pixel) in bytes.as_chunks_mut::<2>().0.iter_mut().enumerate() {
                         pixel.copy_from_slice(&(i as u16).to_le_bytes());
                     }
                 }
