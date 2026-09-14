@@ -40,8 +40,8 @@ impl Defects {
         ensure!(data.len() >= length, "truncated ASID calibration");
         let mut packed = vec![0_u8; SENSOR * SENSOR / 8];
         let mut base = 0_usize;
-        for pair in data[8..length].chunks_exact(2) {
-            if pair == [0, 0] {
+        for pair in data[8..length].as_chunks::<2>().0 {
+            if pair == &[0, 0] {
                 base += 256;
                 ensure!(
                     base <= packed.len().next_multiple_of(256),

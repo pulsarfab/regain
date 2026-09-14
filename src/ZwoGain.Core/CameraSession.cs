@@ -26,6 +26,7 @@ public sealed class CameraSession : IDisposable
     }
     public IReadOnlyDictionary<int, Control> Controls { get; private set; } = new Dictionary<int, Control>();
     public string SdkVersion { get; private set; } = "unknown";
+    public string Backend { get; private set; } = "sdk";
     public string? Serial => serial;
     public string Phase { get; private set; } = "Disconnected";
     public string? LastError
@@ -101,6 +102,7 @@ public sealed class CameraSession : IDisposable
             throw new InvalidDataException("Camera geometry changed");
         Camera = camera;
         SdkVersion = result.GetProperty("sdkVersion").GetString()!;
+        Backend = result.TryGetProperty("backend", out var backend) ? backend.GetString()! : "sdk";
         Controls = result.GetProperty("controls").EnumerateArray().Select(c => new Control(c.GetProperty("type").GetInt32(), c.GetProperty("min").GetInt64(), c.GetProperty("max").GetInt64(), c.GetProperty("value").GetInt64(), c.GetProperty("writable").GetBoolean())).ToDictionary(c => c.Type);
         if (!Controls.ContainsKey(1))
             throw new NotSupportedException("Camera exposure control is unavailable");
@@ -237,7 +239,11 @@ public sealed class CameraSession : IDisposable
                     }
                     State("Starting exposure");
                     DateTime started = DateTime.UtcNow;
-                    await Call("start", exposure, token).ConfigureAwait(false);
+                    object parameters = Backend == "direct" ? new {
+                        exposure.width, exposure.height, exposure.bin, exposure.x, exposure.y,
+                        exposure.microseconds, exposure.dark, readRetries = eligibleForRetry ? Options.DirectReadRetries : 0
+                    } : exposure;
+                    await Call("start", parameters, token).ConfigureAwait(false);
                     State("Exposing");
                     var clock = Stopwatch.StartNew();
                     while (true)

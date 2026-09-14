@@ -261,7 +261,7 @@ pub fn capture(
         let mut min = u16::MAX;
         let mut max = 0;
         let mut nonzero = 0;
-        for bytes in data.chunks_exact(2) {
+        for bytes in data.as_chunks::<2>().0 {
             let pixel = u16::from_le_bytes([bytes[0], bytes[1]]);
             sum += u64::from(pixel);
             min = min.min(pixel);

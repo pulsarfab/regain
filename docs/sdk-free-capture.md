@@ -3,8 +3,9 @@
 The experimental `zwogain-direct` Rust executable now opens the installed
 `ASICAMUSB3.sys` interface, initializes the sensor, configures a capture, waits
 for a complete buffered frame, reads it, and returns RAW16 over a binary pipe.
-It does not load or call `ASICamera2.dll`. The production NINA camera still uses
-the supervised SDK host; this executable is not packaged with the plugin yet.
+It does not load or call `ASICamera2.dll`. The NINA camera uses the supervised
+SDK host by default. The packaged `zwogain-direct.exe --serve` is available
+through an explicit experimental setup option for the verified ASI676MC modes.
 
 ## Supported research configuration
 
@@ -28,9 +29,8 @@ the observed SDK bin-1 operation. The reader now loads the camera's factory
 calibration and applies the SDK-equivalent Bayer defect correction. Same-frame
 comparisons against SDK 1.41 are byte-exact for the tested bin-1 RAW16 cases;
 see [correction details and evidence](factory-defect-correction.md).
-Binning, non-default gamma, flips, other correction-map types, cooling, camera
-identity/reconnect integration and NINA backend selection remain work for a
-production direct backend. Capture selects the ASI676MC interface specifically
+Binning, non-default gamma, flips, other correction-map types and cooling remain
+unimplemented in the direct backend. Capture selects the ASI676MC interface specifically
 when other ZWO models are attached, and refuses ambiguous duplicate models.
 
 ## Acquisition and retention
@@ -87,8 +87,30 @@ interruptions, **not injected USB bus faults or naturally occurring camera
 failures**. Retention across cable removal, power loss or reconnect is not
 established. The prototype never concatenates partial attempts and fails if the
 camera no longer reports a retained frame. Exhausting read retries surfaces an
-error; fresh-exposure/process-restart recovery remains in the production SDK
-supervisor, not this research executable.
+error. In plugin mode the existing C# supervisor then handles eligible fresh
+exposure/process-restart recovery using the same selected backend. The standalone
+`--capture` command does not perform that outer recovery.
+
+## Plugin protocol and identity
+
+`--serve` speaks the same version-1 framed JSON/binary protocol as the SDK host.
+A dedicated worker opens and retains the exclusive camera handle; `start`
+queues acquisition and `status` remains responsive while the worker operates.
+`download` returns the complete, corrected frame. A single per-connection
+watchdog bounds a stuck acquisition. NINA cancellation terminates the process;
+an explicit `stop` during acquisition reports that process termination is needed.
+
+Controls represent requested configuration and are staged until the next capture,
+where the verified register sequence explicitly applies them. `get` reports that
+configuration, not a new physical register read. Bin 1, exposure limits, fixed USB
+bandwidth and unsupported telemetry are reflected in the advertised capabilities.
+The server validates settings again before issuing hardware writes.
+
+The SDK's `ASIGetSerialNumber` path at RVA `108800` uses vendor IN `C8`, value/index
+zero, length eight. The direct implementation reads and formats those same bytes,
+and a hardware comparison confirmed equality with the SDK serial. Zero serials,
+missing identities and ambiguous initial selection fail; saved identity never
+falls back to another model. This is independent of EEPROM defect-map decoding.
 
 Very small 8 × 2 capture failed in both the direct prototype (invalid envelope)
 and the SDK (exposure state 3). The research interface rejects ROIs smaller than

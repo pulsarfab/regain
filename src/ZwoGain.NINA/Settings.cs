@@ -28,6 +28,9 @@ internal static class Settings
         var panel = new StackPanel { Margin = new Thickness(16) };
         panel.Children.Add(new TextBlock { Text = "Camera and recovery settings apply on the next connection.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 12) });
         var remembered = Cameras.Load();
+        var direct = new CheckBox { Content = "Try SDK-less driver (experimental; ASI676MC only)", IsChecked = remembered?.UseDirectDriver == true, Margin = new Thickness(0, 0, 0, 8) };
+        panel.Children.Add(direct);
+        panel.Children.Add(new TextBlock { Text = "Default: supervised ZWO SDK. Experimental mode supports RAW16, bin 1, 64 × 64 or larger ROIs, exposures up to 30 seconds, gain and offset. USB limit is fixed at 40. Other camera models require the SDK.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 12) });
         panel.Children.Add(new TextBlock { Text = "Camera" });
         var picker = new ComboBox { DisplayMemberPath = nameof(CameraChoice.Label), MinWidth = 300, Margin = new Thickness(0, 2, 0, 8) };
         if (remembered is not null)
@@ -57,14 +60,15 @@ internal static class Settings
             [nameof(RecoveryOptions.MaxRetries)] = "Recovery retries after the initial attempt",
             [nameof(RecoveryOptions.MaximumRetryExposureSeconds)] = "Maximum exposure eligible for retries (seconds; 0 disables retries)",
             [nameof(RecoveryOptions.ReconnectDelaySeconds)] = "USB reconnect delay (seconds)",
-            [nameof(RecoveryOptions.CommandTimeoutSeconds)] = "SDK command timeout (seconds)",
+            [nameof(RecoveryOptions.CommandTimeoutSeconds)] = "Camera command timeout (seconds)",
             [nameof(RecoveryOptions.DownloadTimeoutSeconds)] = "Download watchdog (seconds)",
             [nameof(RecoveryOptions.ExposureGraceSeconds)] = "Exposure completion grace (seconds)",
             [nameof(RecoveryOptions.CoolingTimeoutSeconds)] = "Cooling recovery deadline (seconds)",
             [nameof(RecoveryOptions.TemperatureToleranceC)] = "Prior temperature tolerance (C)",
             [nameof(RecoveryOptions.CoolingStableSamples)] = "Consecutive cooling samples",
             [nameof(RecoveryOptions.CoolingSampleSeconds)] = "Cooling sample interval (seconds)",
-            [nameof(RecoveryOptions.ReadyFrameDownloadRetries)] = "Experimental re-downloads while SDK reports success (default 0)"
+            [nameof(RecoveryOptions.ReadyFrameDownloadRetries)] = "Experimental re-downloads while SDK reports success (default 0)",
+            [nameof(RecoveryOptions.DirectReadRetries)] = "SDK-less retained-frame read retries (default 2; 0–5)"
         };
         foreach (var property in typeof(RecoveryOptions).GetProperties())
         {
@@ -95,11 +99,13 @@ internal static class Settings
         {
             refresh.IsEnabled = false;
             picker.IsEnabled = false;
+            direct.IsEnabled = false;
+            bool useDirect = direct.IsChecked == true;
             cameraStatus.Text = "Looking for ZWO cameras...";
             try
             {
                 // Discovery only queries properties; it never opens another driver's camera.
-                var found = await Task.Run(() => CameraProvider.DiscoverAsync(discoveryCancel.Token));
+                var found = await Task.Run(() => CameraProvider.DiscoverAsync(discoveryCancel.Token, useDirect));
                 if (discoveryCancel.IsCancellationRequested) return;
                 var chosen = picker.SelectedItem as CameraChoice;
                 var choices = found.GroupBy(c => c.Name).Select(g => new CameraChoice(g.First(), g.Key + (g.Count() > 1 ? " (multiple attached; enter serial)" : ""))).ToList();
@@ -112,8 +118,10 @@ internal static class Settings
             }
             catch (OperationCanceledException) { }
             catch (Exception e) { cameraStatus.Text = "Camera discovery failed: " + e.Message; }
-            finally { refresh.IsEnabled = true; picker.IsEnabled = true; }
+            finally { refresh.IsEnabled = true; picker.IsEnabled = true; direct.IsEnabled = true; }
         }
+        direct.Checked += async (_, _) => { if (window.IsLoaded) await RefreshCameras(); };
+        direct.Unchecked += async (_, _) => { if (window.IsLoaded) await RefreshCameras(); };
         refresh.Click += async (_, _) => await RefreshCameras();
         window.Loaded += async (_, _) => await RefreshCameras();
         button.Click += (_, _) =>
@@ -125,6 +133,8 @@ internal static class Settings
                 options.Validate();
                 if (picker.SelectedItem is not CameraChoice choice)
                     throw new InvalidOperationException("Choose a camera before saving.");
+                if (direct.IsChecked == true && choice.Camera.Name != "ZWO ASI676MC")
+                    throw new InvalidOperationException("Choose ASI676MC for experimental SDK-less capture, or turn off the experimental option for this camera.");
                 string? selectedSerial = string.IsNullOrWhiteSpace(serial.Text) ? null : serial.Text.Trim().ToLowerInvariant();
                 if (selectedSerial is not null && (selectedSerial.Length != 16 || selectedSerial.Any(c => !Uri.IsHexDigit(c))))
                     throw new InvalidOperationException("The SDK serial number must contain 16 hexadecimal characters, or be left blank.");
@@ -132,7 +142,7 @@ internal static class Settings
                 string temp = FilePath + "." + Guid.NewGuid().ToString("N") + ".tmp";
                 File.WriteAllText(temp, JsonSerializer.Serialize(options, new JsonSerializerOptions { WriteIndented = true }));
                 File.Move(temp, FilePath, true);
-                Cameras.Save(new CameraSelection(choice.Camera, selectedSerial));
+                Cameras.Save(new CameraSelection(choice.Camera, selectedSerial, direct.IsChecked == true));
                 window.Close();
             }
             catch (Exception e) { status.Text = e.Message; }

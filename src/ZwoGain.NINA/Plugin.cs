@@ -41,9 +41,10 @@ public sealed class CameraProvider : IEquipmentProvider<ICamera>
     }
     internal static readonly string DirectoryPath = Path.GetDirectoryName(typeof(CameraProvider).Assembly.Location)!;
     internal static HostClient NewHost() => new(Path.Combine(DirectoryPath, "zwogain-host.exe"), Path.Combine(DirectoryPath, "ASICamera2.dll"), log: message => Logger.Debug("ZWOgain SDK: " + message));
-    internal static async Task<List<CameraDescriptor>> DiscoverAsync(CancellationToken token)
+    internal static HostClient NewDirectHost() => new(Path.Combine(DirectoryPath, "zwogain-direct.exe"), "unused", direct: true, log: message => Logger.Debug("ZWOgain direct: " + message));
+    internal static async Task<List<CameraDescriptor>> DiscoverAsync(CancellationToken token, bool direct = false)
     {
-        using var host = NewHost();
+        using var host = direct ? NewDirectHost() : NewHost();
         var reply = await host.CallAsync("list", null, TimeSpan.FromSeconds(15), token).ConfigureAwait(false);
         return reply.Result.EnumerateArray().Select(CameraDescriptor.Parse).ToList();
     }

@@ -64,6 +64,46 @@ public sealed class SelectionTests : IDisposable
     }
 
     [Fact]
+    public void BackendDefaultsToSdkAndSurvivesSaveWithoutOverwritingANewerChoice()
+    {
+        var store = Store;
+        store.Save(new(Sim));
+        Assert.False(store.Load()!.UseDirectDriver);
+        var sdk = store.Load()!;
+        store.Save(sdk with { UseDirectDriver = true });
+        store.RememberSerial(sdk, "stale-connection");
+        Assert.True(store.Load()!.UseDirectDriver);
+        Assert.Null(store.Load()!.Serial);
+        // Existing installations have no backend field in camera.json.
+        string file = Path.Combine(folder, "camera.json");
+        File.WriteAllText(file, System.Text.Json.JsonSerializer.Serialize(new { Camera = Sim, Serial = "original" }));
+        Assert.False(store.Load()!.UseDirectDriver);
+        Assert.Equal("original", store.Load()!.Serial);
+    }
+
+    [Fact]
+    public async Task DirectConnectionReplacesSavedSdkCapabilities()
+    {
+        var descriptor = Sim with { Name = "ZWO ASI676MC", Width = 3552, Height = 3552, Cooled = false };
+        Store.Save(new(descriptor, UseDirectDriver: true));
+        var camera = new ResilientCamera(Mock.Of<IExposureDataFactory>(), Store,
+            () => new HostClient(Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../target/debug/zwogain-direct.exe")),
+                "missing-sdk.dll", simulate: true, direct: true), new());
+        try {
+            Assert.True(await camera.Connect(default));
+            Assert.Equal(1, camera.MaxBinX);
+            Assert.Equal(30, camera.ExposureMax);
+            Assert.False(camera.CanSetUSBLimit);
+            Assert.False(camera.CanSetTemperature);
+            Assert.True(double.IsNaN(camera.Temperature));
+            Assert.Contains("SDK-less", camera.DriverInfo);
+            Assert.True(Store.Load()!.UseDirectDriver);
+            Assert.Equal("direct-simulator", Store.Load()!.Serial);
+        }
+        finally { camera.Disconnect(); }
+    }
+
+    [Fact]
     public void ConnectionCannotOverwriteANewerDialogSelection()
     {
         var store = Store;

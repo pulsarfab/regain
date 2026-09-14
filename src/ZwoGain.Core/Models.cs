@@ -26,11 +26,12 @@ public sealed record RecoveryOptions
     public double CoolingSampleSeconds { get; init; } = 2;
     // Experimental: SDK has no documented transfer resume contract. Never enabled implicitly.
     public int ReadyFrameDownloadRetries { get; init; } = 0;
+    public int DirectReadRetries { get; init; } = 2;
     public void Validate()
     {
         if (!double.IsFinite(MaximumRetryExposureSeconds) || MaximumRetryExposureSeconds < 0 || MaximumRetryExposureSeconds > 86400)
             throw new ArgumentOutOfRangeException(nameof(MaximumRetryExposureSeconds));
-        if (MaxRetries is < 0 or > 20 || ReadyFrameDownloadRetries is < 0 or > 5 || CoolingStableSamples is < 1 or > 60)
+        if (MaxRetries is < 0 or > 20 || ReadyFrameDownloadRetries is < 0 or > 5 || DirectReadRetries is < 0 or > 5 || CoolingStableSamples is < 1 or > 60)
             throw new ArgumentOutOfRangeException(nameof(MaxRetries));
         foreach (double v in new[] { ReconnectDelaySeconds, CommandTimeoutSeconds, DownloadTimeoutSeconds, ExposureGraceSeconds, CoolingTimeoutSeconds, TemperatureToleranceC, CoolingSampleSeconds })
             if (!double.IsFinite(v) || v <= 0 || v > 3600)

@@ -161,3 +161,22 @@ interruption, not a USB bus error. A replay mismatch fails the diagnostic.
 
 For acquisition commands, packet framing, sensor retention, P25 compatibility
 and limits, see [SDK-free capture](../../docs/sdk-free-capture.md).
+
+## Direct plugin backend
+
+The plugin packages the direct executable with an opt-in setup choice. It uses
+`--serve` and the existing SDK host protocol; camera discovery in this mode also
+avoids loading the SDK. The default selection continues to use the SDK host.
+
+```powershell
+# Hardware test through the production C# supervisor (statistics only):
+dotnet run --project src/ZwoGain.Diagnostics -- --direct --capture --frames 3 --seconds 0.1
+# Explicit host termination before download exercises reconnect and re-exposure:
+dotnet run --project src/ZwoGain.Diagnostics -- --direct --capture --kill-once --frames 3
+# Hardware-independent direct protocol and supervisor exercise:
+dotnet run --project src/ZwoGain.Diagnostics -- --direct --simulate --capture --width 64 --height 64
+```
+
+Diagnostic logs contain camera serials. Keep them local under `artifacts/` and
+publish only reviewed summaries. The simulator never opens camera hardware and
+does not provide evidence for physical sensor behavior.

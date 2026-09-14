@@ -21,7 +21,7 @@ public sealed class HostClient : IDisposable
     private long nextId;
     private int disposed;
     public int ProcessId => process.Id;
-    public HostClient(string executable, string sdk, bool simulate = false, Action<string>? log = null)
+    public HostClient(string executable, string sdk, bool simulate = false, Action<string>? log = null, bool direct = false)
     {
         var start = new ProcessStartInfo(Path.GetFullPath(executable))
         {
@@ -32,7 +32,12 @@ public sealed class HostClient : IDisposable
             RedirectStandardError = true,
             WorkingDirectory = Path.GetDirectoryName(Path.GetFullPath(executable))!
         };
-        if (simulate)
+        if (direct)
+        {
+            start.ArgumentList.Add("--serve");
+            if (simulate) start.ArgumentList.Add("--simulate");
+        }
+        else if (simulate)
             start.ArgumentList.Add("--simulate");
         else
         {

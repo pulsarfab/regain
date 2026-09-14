@@ -16,6 +16,7 @@ public sealed class ResilientCamera : BaseINPC, ICamera
     private readonly CameraSelectionStore? selectionStore;
     private readonly IExposureDataFactory images;
     private readonly Func<HostClient> hostFactory;
+    private readonly bool useConfiguredBackend;
     private readonly RecoveryOptions? recoveryOptions;
     private readonly object sync = new();
     private CameraSession? session;
@@ -28,6 +29,7 @@ public sealed class ResilientCamera : BaseINPC, ICamera
         : this(store.Load()?.Camera ?? new("Select a camera", 0, 0, false, 0, 0, 16, false, false, [1]), images, factory ?? CameraProvider.NewHost, options)
     {
         selectionStore = store;
+        useConfiguredBackend = factory is null;
     }
     internal ResilientCamera(CameraDescriptor camera, IExposureDataFactory images, Func<HostClient> hostFactory, RecoveryOptions? options)
     {
@@ -52,8 +54,8 @@ public sealed class ResilientCamera : BaseINPC, ICamera
     public string Name => descriptor.Name;
     public string DisplayName => "ZWOgain Retryable Camera";
     public string Category => "ZWOgain";
-    public string Description => "ZWO RAW16 camera with supervised SDK and automatic exposure recovery";
-    public string DriverInfo => $"ZWOgain {DriverVersion} / ASI {session?.SdkVersion}; {session?.Phase}";
+    public string Description => "ZWO RAW16 camera with automatic recovery; SDK by default, optional experimental SDK-less ASI676MC";
+    public string DriverInfo => $"ZWOgain {DriverVersion} / {session?.SdkVersion}; {session?.Phase}";
     public string DriverVersion => typeof(ResilientCamera).Assembly.GetName().Version!.ToString();
     public bool Connected
     {
@@ -87,11 +89,16 @@ public sealed class ResilientCamera : BaseINPC, ICamera
             selected = selectionStore.Load() ?? throw new InvalidOperationException("Choose a camera in the ZWOgain setup dialog first.");
             SelectCamera(selected.Camera);
         }
-        var candidate = new CameraSession(descriptor, hostFactory, recoveryOptions ?? Settings.Load(), selected?.Serial);
+        bool direct = selected?.UseDirectDriver == true;
+        if (direct && descriptor.Name != "ZWO ASI676MC")
+            throw new NotSupportedException("Experimental SDK-less capture currently supports ASI676MC only. Choose the SDK backend for this camera.");
+        var factory = useConfiguredBackend && direct ? CameraProvider.NewDirectHost : hostFactory;
+        var candidate = new CameraSession(descriptor, factory, recoveryOptions ?? Settings.Load(), selected?.Serial);
         candidate.Diagnostic += text => Logger.Info($"ZWOgain {Name}: {text}");
         try
         {
             await candidate.ConnectAsync(token).ConfigureAwait(false);
+            SelectCamera(candidate.Camera); // Backend capabilities may be narrower than saved SDK capabilities.
             // Match the native ASI driver's acquisition defaults. Preserve cooling state.
             foreach (var (control, value) in new Dictionary<int, long> { { 2, 50 }, { 3, 50 }, { 4, 50 }, { 6, 40 }, { 7, 0 }, { 9, 0 }, { 13, 0 }, { 14, 0 }, { 18, 0 }, { 20, 0 } })
                 if (candidate.Controls.TryGetValue(control, out var cap) && cap.Writable && value >= cap.Min && value <= cap.Max)
@@ -166,7 +173,7 @@ public sealed class ResilientCamera : BaseINPC, ICamera
         RaisePropertyChanged(nameof(BinX));
         RaisePropertyChanged(nameof(BinY));
     }
-    public double Temperature => session is null ? double.NaN : Val(8) / 10.0;
+    public double Temperature => session?.Controls.ContainsKey(8) != true ? double.NaN : Val(8) / 10.0;
     public double TemperatureSetPoint
     {
         get => CanSetTemperature ? Val(16) : double.NaN; set => Set(16, (long)Math.Clamp(Math.Round(value), Min(16), Max(16)));

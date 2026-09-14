@@ -5,8 +5,9 @@ using ZwoGain.Core;
 string root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
 string Option(string name, string fallback) { int i = Array.IndexOf(args, name); return i >= 0 && i + 1 < args.Length ? args[i + 1] : fallback; }
 bool simulate = args.Contains("--simulate");
+bool direct = args.Contains("--direct");
 HostClient? currentHost = null;
-HostClient Host() => currentHost = new(Option("--host", Path.Combine(root, "target/debug/zwogain-host.exe")), Option("--sdk", Path.Combine(root, "vendor/zwo/ASICamera2.dll")), simulate, Console.Error.WriteLine);
+HostClient Host() => currentHost = new(Option("--host", Path.Combine(root, direct ? "target/debug/zwogain-direct.exe" : "target/debug/zwogain-host.exe")), Option("--sdk", Path.Combine(root, "vendor/zwo/ASICamera2.dll")), simulate, Console.Error.WriteLine, direct);
 using var cancel = new CancellationTokenSource();
 Console.CancelKeyPress += (_, e) => { e.Cancel = true; cancel.Cancel(); };
 using var discovery = Host();

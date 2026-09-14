@@ -40,6 +40,34 @@ the successful attempt's timestamp and requested exposure duration, excluding
 recovery time. `ZwoGain.Diagnostics` exposes the latest phase, SDK error code,
 SDK exposure state, serial, and SDK version through `ICamera.Action`.
 
+## Experimental SDK-less option
+
+The supervised **ZWO SDK remains the default and primary backend**. In the
+camera setup dialog, enable **Try SDK-less driver (experimental; ASI676MC only)**
+to try the separate Rust driver process. Save and reconnect to apply the choice.
+The option is persisted with the selected camera; existing settings default to
+the SDK. Turn the option off and reconnect to return to the SDK. Recovery stays
+on the selected backend and never silently switches implementations.
+
+The direct backend currently supports the observed USB3 **ASI676MC** only:
+RAW16, bin 1, 64 × 64 through 3552 × 3552, even ROI origins, exposures from
+32 µs through 30 seconds, gain and offset. USB limit is fixed at 40. It uses the
+installed Windows driver without loading `ASICamera2.dll`, reads the camera's
+hardware serial and factory defect map, and applies verified defect correction.
+Temperature telemetry and other unimplemented controls are not advertised.
+The ASI2600MM Duo, its guide sensor, and 2600/6200 P25 models require the SDK.
+
+Direct read failures first attempt a complete retained-frame read again, with
+**SDK-less retained-frame read retries** configurable from 0 to 5 (default 2).
+The exposure retry-duration threshold also governs these retries. If read
+recovery fails, the existing supervisor can restart the process, reconnect and
+repeat the exposure within the configured recovery policy. Cancellation ends
+the isolated process. Retention across USB removal or power loss is unverified.
+
+See [direct acquisition details](docs/sdk-free-capture.md),
+[same-frame correction evidence](docs/factory-defect-correction.md), and the
+[procedure for bringing up another camera](docs/camera-bringup.md).
+
 ## Build, test, install
 
 Install a current Rust MSVC toolchain, Visual Studio C++ build tools, and the

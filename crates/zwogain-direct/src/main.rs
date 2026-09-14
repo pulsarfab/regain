@@ -1,10 +1,12 @@
-//! Research executable; never loaded into NINA or included in the plugin ZIP.
+//! Isolated experimental direct backend; SDK remains the plugin's default.
 #[cfg(windows)]
 mod asi676;
 #[cfg(windows)]
 mod asi676_tables;
 mod processing;
 mod protocol;
+#[cfg(windows)]
+mod server;
 mod settings;
 #[cfg(windows)]
 mod transport;
@@ -14,6 +16,9 @@ use anyhow::{Result, ensure};
 fn main() -> Result<()> {
     transport::require_sdk_absent()?;
     let args: Vec<_> = std::env::args().skip(1).collect();
+    if args == ["--serve"] || args == ["--serve", "--simulate"] {
+        return server::run(args.len() == 2);
+    }
     if args == ["--process-frame"] {
         return processing::process_stream();
     }
