@@ -47,6 +47,29 @@ stretch behavior. Capped frames cannot establish illuminated Bayer orientation.
 
 ## Additional modes and transitions
 
+### Completed Duo recovery checks
+
+- Cooling initially off, dew heater off, power 0%, sensor 29.9°C; NINA's
+  cooling target field was −10°C. Enabled a modest 27°C target through NINA.
+- A ten-second bin-4 capture with cooling enabled displayed a new frame
+  (mean 1.93). The first deliberate worker kill landed after download, so it
+  counts only as an idle-worker failure. The subsequent request reconnected
+  after five seconds, restored cooling, settled near the prior 27.5°C for
+  about 28 seconds, and displayed a new frame (mean 1.76).
+- A second worker kill occurred about one second into an active ten-second
+  exposure. NINA logged attempt 1/4 failing in `Exposing`, waited five seconds,
+  reopened the same serial, restored cooling near 26.3°C, collected the three
+  stability samples over four seconds, and repeated the exposure. A new
+  1560 × 1044 image appeared (mean 1.80), with cooler enabled and target 27°C.
+  No capture-error notification appeared for this recovered request.
+- A 31-second request logged retries disabled by the default 30-second cutoff.
+  Killing its worker during exposure produced `Attempt 1/1` and an error
+  notification; no replacement image or automatic retry occurred.
+- Canceling the next request during cooling recovery returned the snapshot
+  button promptly. The following one-second request reconnected and displayed
+  a fresh 1560 × 1044 image (mean 1.15). This verifies cancellation during
+  recovery; cancellation during a running exposure remains a separate case.
+
 All entries below are pending full completion. Record settings, visible image dimensions,
 statistics, capture/recovery outcome and any error text for each completed case.
 Keep raw logs and screenshots containing device identity local; publish sanitized

@@ -122,11 +122,12 @@ acceptance remains manual.
   before the first download caused one reconnect/re-exposure recovery; the next
   two completed with zero recoveries. This is process-failure evidence, not a
   naturally occurring USB transfer failure.
-- The package was installed into the local NINA plugin directory. NINA launched,
-  but Computer Use could not inspect its window: "foreground window did not
-  report a process id". Consequently this build's dialog and capture display
-  were not visually verified. Local persisted selection was confirmed to remain
-  on the SDK backend. No claim of a successful desktop UI test is made.
+- The package was installed into the local NINA plugin directory. Initial
+  Computer Use failures were resolved by restoring the RDP desktop and
+  refreshing the connection. SDK image-pane tests have since passed for all
+  ASI676MC and Duo main-sensor binning modes, plus Duo process recovery with
+  cooling and the default retry cutoff. The full desktop matrix remains in
+  progress; see [NINA end-to-end results](nina-end-to-end.md).
 
 See [factory-correction evidence](factory-correction-evidence.json) for seven
 same-frame byte-exact SDK comparisons and the earlier 23-frame direct capture
