@@ -126,6 +126,7 @@ internal static class Settings
             (nameof(RecoveryOptions.ReadyFrameDownloadRetries), "SDK re-download attempts (experimental; default 0)"),
             (nameof(RecoveryOptions.DirectReadRetries), "Direct frame-read retries (0-5; default 2)"));
         advanced.Children.Add(new TextBlock { Text = "SDK re-downloads require the SDK to still report a ready frame. Direct guide retries resynchronize to a new streaming frame; they do not replay a retained image. The exposure cutoff also limits transfer retries.", TextWrapping = TextWrapping.Wrap });
+        advanced.Children.Add(new TextBlock { Text = "During a capture, ZWOgain temporarily extends NINA's readiness timeout to cover recovery. It restores the previous value after download, failure, cancellation or disconnect.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 12, 0, 0) });
         var status = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 8) };
         footer.Children.Add(status);
         var actions = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };

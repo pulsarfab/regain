@@ -6,6 +6,7 @@ using NINA.Equipment.Model;
 using NINA.Equipment.Utility;
 using NINA.Image.ImageData;
 using NINA.Image.Interfaces;
+using NINA.Profile.Interfaces;
 using ZwoGain.Core;
 
 namespace ZwoGain.NINA;
@@ -18,6 +19,9 @@ public sealed class ResilientCamera : BaseINPC, ICamera
     private readonly Func<HostClient> hostFactory;
     private readonly bool useConfiguredBackend;
     private readonly RecoveryOptions? recoveryOptions;
+    private readonly IProfileService? profiles;
+    private ICameraSettings? timeoutSettings;
+    private int originalTimeout, extendedTimeout;
     private readonly object sync = new();
     private CameraSession? session;
     private CancellationTokenSource? lifetime, exposureCancel;
@@ -25,18 +29,19 @@ public sealed class ResilientCamera : BaseINPC, ICamera
     private Task? telemetry;
     private short bin = 1;
     public ResilientCamera(CameraDescriptor camera, IExposureDataFactory images) : this(camera, images, CameraProvider.NewHost, null) { }
-    internal ResilientCamera(IExposureDataFactory images, CameraSelectionStore store, Func<HostClient>? factory = null, RecoveryOptions? options = null)
-        : this(store.Load()?.Camera ?? new("Select a camera", 0, 0, false, 0, 0, 16, false, false, [1]), images, factory ?? CameraProvider.NewHost, options)
+    internal ResilientCamera(IExposureDataFactory images, CameraSelectionStore store, Func<HostClient>? factory = null, RecoveryOptions? options = null, IProfileService? profiles = null)
+        : this(store.Load()?.Camera ?? new("Select a camera", 0, 0, false, 0, 0, 16, false, false, [1]), images, factory ?? CameraProvider.NewHost, options, profiles)
     {
         selectionStore = store;
         useConfiguredBackend = factory is null;
     }
-    internal ResilientCamera(CameraDescriptor camera, IExposureDataFactory images, Func<HostClient> hostFactory, RecoveryOptions? options)
+    internal ResilientCamera(CameraDescriptor camera, IExposureDataFactory images, Func<HostClient> hostFactory, RecoveryOptions? options, IProfileService? profiles = null)
     {
         descriptor = camera;
         this.images = images;
         this.hostFactory = hostFactory;
         recoveryOptions = options;
+        this.profiles = profiles;
         SubSampleWidth = camera.Width;
         SubSampleHeight = camera.Height;
     }
@@ -138,6 +143,7 @@ public sealed class ResilientCamera : BaseINPC, ICamera
             session?.Dispose();
             session = null;
             Connected = false;
+            RestoreNinaTimeout();
         }
         RaiseAllPropertiesChanged();
     }
@@ -285,6 +291,7 @@ public sealed class ResilientCamera : BaseINPC, ICamera
             // Session stays alive until this task unwinds; no SDK work on NINA's UI thread.
             var owner = Session;
             var token = exposureCancel.Token;
+            ExtendNinaTimeout(owner, sequence.ExposureTime);
             exposure = Task.Run(() => owner.CaptureAsync(request, token), token);
         }
     }
@@ -294,7 +301,8 @@ public sealed class ResilientCamera : BaseINPC, ICamera
         lock (sync)
             pending = exposure ?? throw new InvalidOperationException("No exposure");
         using var cancel = token.Register(AbortExposure);
-        await pending.WaitAsync(token).ConfigureAwait(false);
+        try { await pending.WaitAsync(token).ConfigureAwait(false); }
+        catch { lock (sync) RestoreNinaTimeout(); throw; }
     }
     public async Task<IExposureData> DownloadExposure(CancellationToken token)
     {
@@ -302,7 +310,9 @@ public sealed class ResilientCamera : BaseINPC, ICamera
         lock (sync)
             pending = exposure ?? throw new InvalidOperationException("No exposure");
         using var cancel = token.Register(AbortExposure);
-        var frame = await pending.WaitAsync(token).ConfigureAwait(false);
+        Frame frame;
+        try { frame = await pending.WaitAsync(token).ConfigureAwait(false); }
+        finally { lock (sync) RestoreNinaTimeout(); }
         var metadata = new ImageMetaData();
         metadata.FromCamera(this);
         metadata.Image.ExposureStart = frame.StartedUtc;
@@ -321,7 +331,39 @@ public sealed class ResilientCamera : BaseINPC, ICamera
     public void AbortExposure()
     {
         lock (sync)
+        {
             exposureCancel?.Cancel();
+            RestoreNinaTimeout();
+        }
+    }
+    // NINA 3.2 imposes its own exposure-time + profile timeout around readiness.
+    // Temporarily budget for our bounded recovery before NINA starts that clock.
+    // Keep real readiness semantics and user cancellation; don't return a fake ready frame.
+    private void ExtendNinaTimeout(CameraSession owner, double seconds)
+    {
+        RestoreNinaTimeout();
+        if (profiles is null) return;
+        var options = owner.Options;
+        int retries = seconds <= options.MaximumRetryExposureSeconds ? options.MaxRetries : 0;
+        int reads = seconds <= options.MaximumRetryExposureSeconds ? options.ReadyFrameDownloadRetries : 0;
+        double attempt = seconds + options.ExposureGraceSeconds + options.CoolingTimeoutSeconds +
+            (reads + 1) * (options.DownloadTimeoutSeconds + options.ReconnectDelaySeconds) +
+            (2 * owner.Controls.Count + 10) * options.CommandTimeoutSeconds;
+        int budget = (int)Math.Min(int.MaxValue, Math.Ceiling((retries + 1) * attempt));
+        var settings = profiles.ActiveProfile.CameraSettings;
+        if (settings.Timeout >= budget) return;
+        timeoutSettings = settings;
+        originalTimeout = settings.Timeout;
+        extendedTimeout = budget;
+        settings.Timeout = budget;
+        Logger.Info($"ZWOgain temporarily extended NINA readiness timeout from {originalTimeout} to {budget} seconds for this capture");
+    }
+    private void RestoreNinaTimeout()
+    {
+        if (timeoutSettings is null) return;
+        // A concurrent user edit takes precedence over our original value.
+        if (timeoutSettings.Timeout == extendedTimeout) timeoutSettings.Timeout = originalTimeout;
+        timeoutSettings = null;
     }
     public IList<string> SupportedActions => new List<string> { "ZwoGain.Diagnostics" };
     public string Action(string actionName, string actionParameters) => actionName == "ZwoGain.Diagnostics" ? System.Text.Json.JsonSerializer.Serialize(new { phase = session?.Phase, error = session?.LastError, sdkErrorCode = session?.LastSdkErrorCode, sdkExposureState = session?.LastSdkExposureState, serial = session?.Serial, sdk = session?.SdkVersion, backend = session?.Backend, sdkFallback = session?.UsingSdkFallback }) : throw new NotSupportedException();

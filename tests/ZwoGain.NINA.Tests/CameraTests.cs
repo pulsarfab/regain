@@ -6,6 +6,7 @@ using NINA.Equipment.Interfaces.ViewModel;
 using NINA.Equipment.Model;
 using NINA.Image.ImageData;
 using NINA.Image.Interfaces;
+using NINA.Profile.Interfaces;
 using ZwoGain.Core;
 using Xunit;
 
@@ -43,6 +44,10 @@ public class CameraTests
     {
         string root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
         int starts = 0;
+        var settings = new Mock<ICameraSettings>();
+        settings.SetupProperty(s => s.Timeout, 1);
+        var profiles = new Mock<IProfileService>();
+        profiles.Setup(p => p.ActiveProfile.CameraSettings).Returns(settings.Object);
         var factory = new Mock<IExposureDataFactory>();
         factory.Setup(f => f.CreateImageArrayExposureData(It.IsAny<ushort[]>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<bool>(), It.IsAny<ImageMetaData>()))
             .Returns((ushort[] p, int w, int h, int b, bool color, ImageMetaData m) => new ImageArrayExposureData(p, w, h, b, color, m, Mock.Of<IImageDataFactory>()));
@@ -62,17 +67,21 @@ public class CameraTests
             new()
             {
                 MaxRetries = 1,
-                ReconnectDelaySeconds = .05,
+                ReconnectDelaySeconds = 1.2,
                 CoolingStableSamples = 1,
                 CoolingSampleSeconds = .01
-            });
+            }, profiles.Object);
         try
         {
             Assert.True(await camera.Connect(default));
             camera.StartExposure(new CaptureSequence { ExposureTime = .01, Gain = 123, Offset = 17, Binning = new BinningMode(2, 2) });
-            await camera.WaitUntilExposureIsReady(default);
+            Assert.True(settings.Object.Timeout > 1);
+            // Model NINA's outer readiness deadline. Recovery exceeds the original limit.
+            using var ninaDeadline = new CancellationTokenSource(TimeSpan.FromSeconds(.01 + settings.Object.Timeout));
+            await camera.WaitUntilExposureIsReady(ninaDeadline.Token);
             camera.Gain = 222; // Image metadata must represent the completed exposure, not the next one.
             var image = Assert.IsType<ImageArrayExposureData>(await camera.DownloadExposure(default));
+            Assert.Equal(1, settings.Object.Timeout);
             Assert.Equal(480, image.Width);
             Assert.Equal(320, image.Height);
             Assert.Equal(16, image.BitDepth);
@@ -84,6 +93,30 @@ public class CameraTests
             Assert.NotEqual(DateTime.MinValue, image.MetaData.Image.ExposureStart);
             Assert.True(camera.Connected);
             Assert.Equal(2, starts);
+        }
+        finally { camera.Disconnect(); }
+    }
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CancelRestoresNinaTimeoutWithoutOverwritingAUserEdit(bool userEdited)
+    {
+        string root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
+        var settings = new Mock<ICameraSettings>();
+        settings.SetupProperty(s => s.Timeout, 60);
+        var profiles = new Mock<IProfileService>();
+        profiles.Setup(p => p.ActiveProfile.CameraSettings).Returns(settings.Object);
+        var camera = new ResilientCamera(new("ZWO Simulated", 960, 640, true, 0, 3.76, 16, true, false, [1, 2, 4]),
+            Mock.Of<IExposureDataFactory>(), () => new HostClient(Path.Combine(root, "target/debug/zwogain-host.exe"), "unused", true), new(), profiles.Object);
+        try
+        {
+            Assert.True(await camera.Connect(default));
+            camera.StartExposure(new CaptureSequence { ExposureTime = 10, Binning = new BinningMode(1, 1) });
+            Assert.True(settings.Object.Timeout > 60);
+            if (userEdited) settings.Object.Timeout = 90;
+            camera.AbortExposure();
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => camera.WaitUntilExposureIsReady(default));
+            Assert.Equal(userEdited ? 90 : 60, settings.Object.Timeout);
         }
         finally { camera.Disconnect(); }
     }

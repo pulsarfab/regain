@@ -43,6 +43,12 @@ the successful attempt's timestamp and requested exposure duration, excluding
 recovery time. `ZwoGain.Diagnostics` exposes the latest phase, SDK error code,
 SDK exposure state, serial, and SDK version through `ICamera.Action`.
 
+NINA also imposes an outer readiness timeout. During a capture the plugin
+temporarily extends that profile value to cover its bounded recovery budget,
+then restores it after download, failure, cancellation or disconnect. A user
+edit to the timeout takes precedence. The plugin's command, cooling and retry
+limits remain in force throughout the wait.
+
 ## Experimental SDK-less option
 
 The supervised **ZWO SDK remains the default and primary backend**. In the

@@ -313,3 +313,28 @@ Rust tests/formatting/Clippy, release-package checks and GitHub CI. These tests
 do not validate P25/ASI6200 protocols, physical USB detach/power loss, or natural
 capture-transfer faults. Direct RAW8/video and guide retained-frame replay are
 not claimed. SDK operation remains the primary path.
+
+## Tabbed setup and loaded-cooler recovery (2026-09-14)
+
+The setup now separates Camera, Recovery, Cooling and Advanced settings. Save
+and Cancel remain outside the tabs. All four tabs were checked in the installed
+NINA theme at 650 x 650: field labels, numeric values and buttons were visible
+without scrolling at this size. The camera picker showed ASI2600MM Pro Duo main
+and ASI220MM Mini guide as separate options. Saved serial/backend choices and
+all twelve recovery fields survived a Save from the Advanced tab.
+
+A real SDK-worker failure during active cooling exposed an early-resume issue.
+Before failure the main sensor was near 3.2 C while cooling toward -10 C, with
+roughly 44% output. Reopening the SDK restored target/enable but reset its
+regulator to low output. Three early readings passed the old temperature-only
+check; the replacement image completed, then the sensor warmed to 6.8 C while
+output was still only 2%. Thermal inertia made temperature alone insufficient.
+
+Recovery now snapshots the actual cooler power along with temperature. If power
+telemetry exists, each accepted settling sample must also report at least the
+prior output minus 10 percentage points (floor zero). This is a readiness check,
+not a command to force cooler power. The configured temperature tolerance,
+consecutive samples and recovery deadline still apply. Diagnostics record both
+readings and the accepted sample count. Simulator regressions keep temperature
+exactly at its prior value while dropping power: 1% and 19% block resumption
+from a 30% baseline, while 20% permits it.

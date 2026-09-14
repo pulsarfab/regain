@@ -7,6 +7,7 @@ using NINA.Equipment.Interfaces;
 using NINA.Equipment.Interfaces.ViewModel;
 using NINA.Image.Interfaces;
 using NINA.Core.Utility;
+using NINA.Profile.Interfaces;
 using ZwoGain.Core;
 
 [assembly: ComVisible(false)]
@@ -33,11 +34,13 @@ public sealed class ZwoGainPlugin : PluginBase
 public sealed class CameraProvider : IEquipmentProvider<ICamera>
 {
     private readonly IExposureDataFactory images;
+    private readonly IProfileService profiles;
     public string Name => "ZWOgain";
     [ImportingConstructor]
-    public CameraProvider(IExposureDataFactory images)
+    public CameraProvider(IExposureDataFactory images, IProfileService profiles)
     {
         this.images = images;
+        this.profiles = profiles;
     }
     internal static readonly string DirectoryPath = Path.GetDirectoryName(typeof(CameraProvider).Assembly.Location)!;
     internal static HostClient NewHost() => new(Path.Combine(DirectoryPath, "zwogain-host.exe"), Path.Combine(DirectoryPath, "ASICamera2.dll"), log: message => Logger.Debug("ZWOgain SDK: " + message));
@@ -49,5 +52,5 @@ public sealed class CameraProvider : IEquipmentProvider<ICamera>
         return reply.Result.EnumerateArray().Select(CameraDescriptor.Parse).ToList();
     }
     // Always available so setup also works before USB attachment.
-    public IList<ICamera> GetEquipment() => [new ResilientCamera(images, Settings.Cameras)];
+    public IList<ICamera> GetEquipment() => [new ResilientCamera(images, Settings.Cameras, profiles: profiles)];
 }
