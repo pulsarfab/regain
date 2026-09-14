@@ -32,6 +32,8 @@ physical power cycle and label that run explicitly.
 
 The manual commands below are for focused follow-up experiments and existing
 model-specific comparisons. They are not prerequisites for running the kit.
+See [kit validation](camera-kit-validation.md) for tested cameras and recorded
+SDK failures.
 
 ## 1. Identify and record the experiment
 

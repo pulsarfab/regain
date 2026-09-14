@@ -1,0 +1,148 @@
+{
+  "date": "2026-09-14",
+  "conditions": "Capped cameras on Windows x64 with installed ZWO driver; no physical disconnects or power cycles during testing.",
+  "runs": [
+    {
+      "camera": "ZWO ASI2600MM Duo",
+      "profile": "quick",
+      "startedUtc": "2026-09-14T19:00:19.891204+00:00",
+      "sdkVersion": "1, 41, 0, 0",
+      "sdkSha256": "0c8778c3cce2012961b079e3c7d0d8348a8b3823939335d9e98148cb5d5dc34a",
+      "hostSha256": "2b2e37e92eb84d781a1a9fc51c3bf5e6766462b56d8db4aa7c6e433498f5473d",
+      "tracerSha256": "e7039ad81d136e38108169523e21ab95f862fa72c98d29edd329c23162aa1db7",
+      "build": {
+        "version": "0.1.0.0",
+        "commit": "f680756dc6af4dcdee75709f546e4a84beb31352",
+        "dirty": false,
+        "python": "3.12.3",
+        "dependencies": {
+          "frida": "17.18.0",
+          "pyinstaller": "6.22.0"
+        }
+      },
+      "completed": true,
+      "passed": true,
+      "attemptedCases": 21,
+      "passedCases": 21,
+      "failedCases": [],
+      "errors": [],
+      "restoredControls": 10,
+      "restorationMatched": true,
+      "bulkPayloads": 77,
+      "controlPayloads": 1012,
+      "sampleChunks": 25,
+      "sampleBytes": 11804672,
+      "evidenceSha256": "5d43e01065c628e4a0890fb87498b5913018998ba7199ab5538c4e98de36a584",
+      "fileHashesVerified": true
+    },
+    {
+      "camera": "ZWO ASI2600MM Duo",
+      "profile": "extended",
+      "startedUtc": "2026-09-14T18:54:38.834792+00:00",
+      "sdkVersion": "1, 41, 0, 0",
+      "sdkSha256": "0c8778c3cce2012961b079e3c7d0d8348a8b3823939335d9e98148cb5d5dc34a",
+      "hostSha256": "2b2e37e92eb84d781a1a9fc51c3bf5e6766462b56d8db4aa7c6e433498f5473d",
+      "tracerSha256": "e7039ad81d136e38108169523e21ab95f862fa72c98d29edd329c23162aa1db7",
+      "build": {
+        "version": "0.1.0.0",
+        "commit": "e0d52226805370965c91bb6b7ee275abfa8497eb",
+        "dirty": true,
+        "python": "3.12.3",
+        "dependencies": {
+          "frida": "17.18.0",
+          "pyinstaller": "6.22.0"
+        }
+      },
+      "completed": true,
+      "passed": true,
+      "attemptedCases": 47,
+      "passedCases": 47,
+      "failedCases": [],
+      "errors": [],
+      "restoredControls": 10,
+      "restorationMatched": true,
+      "bulkPayloads": 104,
+      "controlPayloads": 1532,
+      "sampleChunks": 52,
+      "sampleBytes": 18620608,
+      "evidenceSha256": "fd309d936fa2d55f2d1544c3f996f775302fae4e58e1c0a6da2d25dc52ea2a5b",
+      "fileHashesVerified": true
+    },
+    {
+      "camera": "ZWO ASI220MM Mini",
+      "profile": "quick",
+      "startedUtc": "2026-09-14T19:01:04.230641+00:00",
+      "sdkVersion": "1, 41, 0, 0",
+      "sdkSha256": "0c8778c3cce2012961b079e3c7d0d8348a8b3823939335d9e98148cb5d5dc34a",
+      "hostSha256": "2b2e37e92eb84d781a1a9fc51c3bf5e6766462b56d8db4aa7c6e433498f5473d",
+      "tracerSha256": "e7039ad81d136e38108169523e21ab95f862fa72c98d29edd329c23162aa1db7",
+      "build": {
+        "version": "0.1.0.0",
+        "commit": "f680756dc6af4dcdee75709f546e4a84beb31352",
+        "dirty": false,
+        "python": "3.12.3",
+        "dependencies": {
+          "frida": "17.18.0",
+          "pyinstaller": "6.22.0"
+        }
+      },
+      "completed": true,
+      "passed": false,
+      "attemptedCases": 19,
+      "passedCases": 18,
+      "failedCases": [
+        {
+          "name": "roi-64",
+          "error": "Exposure ended in SDK state 3"
+        }
+      ],
+      "errors": [],
+      "restoredControls": 5,
+      "restorationMatched": true,
+      "bulkPayloads": 22,
+      "controlPayloads": 452,
+      "sampleChunks": 17,
+      "sampleBytes": 5242880,
+      "evidenceSha256": "0adc6edfca967b8204170e216488dcc3b0a98e3f2c7cf1a52b446a8e7134c552",
+      "fileHashesVerified": true
+    },
+    {
+      "camera": "ZWO ASI676MC",
+      "profile": "quick",
+      "startedUtc": "2026-09-14T18:57:28.260935+00:00",
+      "sdkVersion": "1, 41, 0, 0",
+      "sdkSha256": "0c8778c3cce2012961b079e3c7d0d8348a8b3823939335d9e98148cb5d5dc34a",
+      "hostSha256": "2b2e37e92eb84d781a1a9fc51c3bf5e6766462b56d8db4aa7c6e433498f5473d",
+      "tracerSha256": "e7039ad81d136e38108169523e21ab95f862fa72c98d29edd329c23162aa1db7",
+      "build": {
+        "version": "0.1.0.0",
+        "commit": "e0d52226805370965c91bb6b7ee275abfa8497eb",
+        "dirty": true,
+        "python": "3.12.3",
+        "dependencies": {
+          "frida": "17.18.0",
+          "pyinstaller": "6.22.0"
+        }
+      },
+      "completed": true,
+      "passed": false,
+      "attemptedCases": 21,
+      "passedCases": 20,
+      "failedCases": [
+        {
+          "name": "roi-moved",
+          "error": "SDK ROI origin differs from request"
+        }
+      ],
+      "errors": [],
+      "restoredControls": 7,
+      "restorationMatched": true,
+      "bulkPayloads": 51,
+      "controlPayloads": 597,
+      "sampleChunks": 24,
+      "sampleBytes": 11542528,
+      "evidenceSha256": "b1b3c6a257f33095fab6df57eda9f0a506072e6c82ab3ba33be01e6c069dc369",
+      "fileHashesVerified": true
+    }
+  ]
+}
