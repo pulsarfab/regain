@@ -79,7 +79,7 @@ internal static class Settings
         panel.Children.Add(button);
         var window = new Window
         {
-            Title = "ZWOgain camera setup",
+            Title = "ZWOgain Retryable Camera Setup",
             Width = 510,
             SizeToContent = SizeToContent.Height,
             MaxHeight = SystemParameters.WorkArea.Height * .9,

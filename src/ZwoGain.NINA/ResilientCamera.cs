@@ -50,7 +50,7 @@ public sealed class ResilientCamera : BaseINPC, ICamera
     }
     public string Id => "ZwoGain";
     public string Name => descriptor.Name;
-    public string DisplayName => "ZWOgain recovery";
+    public string DisplayName => "ZWOgain Retryable Camera";
     public string Category => "ZWOgain";
     public string Description => "ZWO RAW16 camera with supervised SDK and automatic exposure recovery";
     public string DriverInfo => $"ZWOgain {DriverVersion} / ASI {session?.SdkVersion}; {session?.Phase}";

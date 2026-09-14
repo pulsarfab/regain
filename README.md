@@ -52,7 +52,7 @@ ASI SDK 1.41 x64 DLL and header are included under `vendor/zwo`.
 The build creates `artifacts/ZwoGain-0.1.0.0.zip` and its SHA-256 checksum.
 Installation copies the package to
 `%LOCALAPPDATA%\NINA\Plugins\3.0.0\ZwoGain`. Restart NINA, refresh the camera
-chooser, and select **ZWOgain recovery**. Open its setup gear, pick the camera,
+chooser, and select **ZWOgain Retryable Camera**. Open its setup gear, pick the camera,
 and save before connecting. This entry remains available with no camera attached.
 When upgrading from the earlier per-model chooser, select this new entry once.
 Disconnect the native
