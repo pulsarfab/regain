@@ -30,7 +30,7 @@ NINA's adapter rounds output width down to a multiple of 8 and height to even.
 | SDK | ASI2600MM Duo | 4 | 1560 × 1044 | Pass: visible new frame, 16-bit, mean 1.21 |
 | SDK | ASI220MM Mini | 1 | 1920 × 1080 | Pass after offset fix: mean 3196.29, offset 200 |
 | SDK | ASI220MM Mini | 2 | 960 × 540 | Pass after offset fix: mean 3182.31, offset 200 |
-| Direct | ASI676MC | 1 | 3552 × 3552 | Pending |
+| Direct | ASI676MC | 1 | 3552 × 3552 | Pass: visible new frame, 16-bit, mean 630.14 |
 
 Completed rows used one second, gain 0, offset 0, USB limit 40, with Save and
 Loop disabled. The ASI676MC produced an illuminated scene; the user's cap
@@ -91,7 +91,28 @@ and bin 2 produced 256 × 128 (mean 3205.43); disabling subsampling restored
 960 × 540 (mean 3182.75). All four were fresh one-second images with gain 0,
 16-bit output, and no capture errors.
 
-All entries below are pending full completion. Record settings, visible image dimensions,
+### Completed direct-driver checks
+
+- Installed implementation `ed3a820` produced a fresh 3552 × 3552 image at
+  one second, gain/offset 0 (mean 630.14, standard deviation 1504.94).
+  The direct worker had no ASI SDK DLL loaded. Equipment advertised bin 1,
+  32 µs–30 s, no temperature reading, and no writable USB bandwidth control.
+- Killing the direct worker about one second into a ten-second exposure logged
+  failure in `Exposing`, waited five seconds, reopened the same serial in a
+  new direct worker, and repeated the exposure. NINA displayed a fresh full
+  frame (mean 5193.16) without a capture-error notification.
+- Canceling a separate ten-second exposure after about six seconds returned
+  the capture button promptly and logged `Aborted`. The following 100 ms
+  request reconnected and displayed a fresh full frame (mean 108.22).
+- At 100 ms, the ROI (16, 32, 512, 256) displayed 512 × 256 (mean 52.04,
+  standard deviation 28.76). The minimum 64 × 64 ROI at the same origin also
+  produced a new image (mean 51.27, standard deviation 28.51).
+- Setup rejected the saved guide sensor when the experimental option was
+  enabled, with an inline instruction to choose ASI676MC or disable that
+  option. Selecting ASI676MC then connected successfully using the direct
+  backend. The Duo-main rejection still needs a separate visual check.
+
+Entries below are pending full completion unless covered above. Record settings, visible image dimensions,
 statistics, capture/recovery outcome and any error text for each completed case.
 Keep raw logs and screenshots containing device identity local; publish sanitized
 results, never camera pixels or calibration payloads without a separate request.
