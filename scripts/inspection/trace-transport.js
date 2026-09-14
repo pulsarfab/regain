@@ -16,6 +16,15 @@ function hex(p, length) {
 }
 function u32(p) { try { return p.isNull() ? null : p.readU32(); } catch (_) { return null; } }
 function collectBulk(record, input, output, length) {
+    // The camera exercise kit needs model-independent control responses and
+    // calibration, without calling version-specific SDK internal functions.
+    if (globalThis.TRACE_CONTROL_PAYLOADS && record.code === '0x220020' && record.inputLength >= 38) {
+        const offset = u32(input.add(30)), size = u32(input.add(34));
+        if (offset === 38 && size > 0 && size <= 65536 && length >= offset + size
+            && record.inputLength >= offset + size)
+            emit('control-payload', {sequence: record.sequence, bytes: size,
+                data: hex(input.add(offset), size)});
+    }
     if (globalThis.TRACE_PROCESSING && record.code === '0x220020' && record.header?.startsWith('c0c3')
         && length > 38 && length <= 2086) {
         const index = input.add(4).readU16();
@@ -86,6 +95,11 @@ attach(kernel, 'DeviceIoControl', {
         // Only the fixed transport header, never a bulk image buffer.
         this.record.header = hex(this.input, Math.min(this.record.inputLength, 38));
         emit('io-submit', this.record);
+        if (globalThis.TRACE_CONTROL_PAYLOADS && this.record.code === '0x220020'
+            && (this.input.readU8() & 0x80) === 0 && this.record.inputLength > 38
+            && this.record.inputLength <= 38 + 65536)
+            emit('control-output', {sequence: this.record.sequence,
+                data: hex(this.input.add(38), this.record.inputLength - 38)});
         if (!args[7].isNull()) pending.set(handle + ':' + args[7], {
             ...this.record, input: this.input, output: this.output, start: this.start
         });

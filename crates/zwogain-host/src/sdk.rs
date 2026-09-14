@@ -73,6 +73,8 @@ impl Sdk {
                 cameras.push(json!({"id":info.camera_id,"name":name,"width":info.max_width,"height":info.max_height,
                     "color":info.is_color_camera != 0,"bayer":info.bayer_pattern,"pixelSize":info.pixel_size,
                     "bitDepth":info.bit_depth,"cooled":info.is_cooled_camera != 0,"shutter":info.has_mechanical_shutter != 0,
+                    "usb3Host":info.is_usb3_host!=0,"usb3Camera":info.is_usb3_camera!=0,
+                    "st4":info.has_st4_port!=0,"triggerCamera":info.is_trigger_camera!=0,
                     "bins":info.supported_bins.into_iter().take_while(|&v| v>0).collect::<Vec<_>>(),
                     "formats":info.supported_video_formats.into_iter().take_while(|&v| v>=0).collect::<Vec<_>>() }));
             }
@@ -154,7 +156,9 @@ impl Sdk {
                 match self.get(caps.control_type) {
                     Ok(value) => controls.push(
                         json!({"type":caps.control_type,"min":caps.min_value,"max":caps.max_value,
-                        "default":caps.default_value,"writable":caps.is_writable!=0,"value":value}),
+                        "default":caps.default_value,"writable":caps.is_writable!=0,"value":value,
+                        "autoSupported":caps.is_auto_supported!=0,
+                        "name":String::from_utf8_lossy(&caps.name.iter().take_while(|&&v|v!=0).map(|&v|v as u8).collect::<Vec<_>>())}),
                     ),
                     // Like the native NINA driver, ignore advertised controls that cannot be queried.
                     Err(e) => eprintln!("Unavailable control {}: {e}", caps.control_type),
@@ -170,6 +174,9 @@ impl Sdk {
         }
     }
     pub fn get(&self, control: i32) -> Result<i64> {
+        Ok(self.control_state(control)?.0)
+    }
+    pub fn control_state(&self, control: i32) -> Result<(i64, bool)> {
         let (mut value, mut auto): (c_long, c_int) = (0, 0);
         unsafe {
             Self::check(
@@ -182,9 +189,12 @@ impl Sdk {
                 "get control",
             )?;
         }
-        Ok(value as i64)
+        Ok((value as i64, auto != 0))
     }
     pub fn set(&self, control: i32, value: i64) -> Result<()> {
+        self.set_control_state(control, value, false)
+    }
+    pub fn set_control_state(&self, control: i32, value: i64, auto: bool) -> Result<()> {
         let value = c_long::try_from(value)?;
         unsafe {
             Self::check(
@@ -192,7 +202,7 @@ impl Sdk {
                     self.id()?,
                     control,
                     value,
-                    0,
+                    i32::from(auto),
                 ),
                 "set control",
             )

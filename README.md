@@ -216,6 +216,16 @@ credentials. See [release and registry instructions](docs/releasing.md).
 
 ## Diagnostics and protocol research
 
+To contribute a new camera model, use the standalone
+[camera exercise kit](scripts/camera-kit/README.md). Download **ZwoGain-camera-kit**
+from a successful [CI build](https://github.com/theatrus/zwogain/actions/workflows/build.yml),
+extract both ZIP layers and run `ZwoGain-CameraKit.exe`. It needs Windows x64 and
+the ZWO driver; Python, Rust and NINA are not required. Pick a capped camera to
+record initialization, ROI/binning, timing and control sweeps, calibration reads,
+and optional matching USB/SDK pixel samples in a local evidence ZIP. Review it
+before sharing. Quick and extended sets, cooling exercises and command-line
+options are described in the kit README.
+
 Disconnect NINA and other camera applications before hardware diagnostics.
 
 ```powershell

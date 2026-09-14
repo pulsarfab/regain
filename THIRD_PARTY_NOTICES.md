@@ -21,3 +21,12 @@ NINA's assemblies and .NET runtime are supplied by the existing NINA
 installation, not bundled in this plugin. NINA is licensed under MPL-2.0;
 its public interfaces and native driver behavior were used as implementation
 references. NINA SDK packages are development-only references.
+
+The separate camera exercise kit bundles Python, Frida and a PyInstaller
+bootloader, plus their runtime dependencies. These retain their own licenses;
+their versioned license texts are included in the kit's `licenses/` directory.
+In particular, Frida's distributed Python extension declares the wxWindows
+Library Licence 3.1. Kit source scripts are included under `source/`; the native
+Frida extension remains a separate replaceable file in `runtime/`.
+The Python distribution also supplies Microsoft Visual C++ runtime DLLs;
+its bundled license file includes the applicable third-party notices.

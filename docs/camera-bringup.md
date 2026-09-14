@@ -10,15 +10,28 @@ transport plumbing, not proof that sensor registers or recovery commands match.
 | Target | Captured / understood | Still required |
 | --- | --- | --- |
 | ASI676MC, USB3, RAW16, bin 1 | Volatile initialization; ROI, gain/offset and exposure timing; buffered acquisition; frame envelope; retained-frame replay; active factory correction. Direct captures work and tested correction output matches SDK output byte-for-byte. | Physical cold-power startup, remaining SDK modes/controls, other correction-map classes, production cooling/reconnect integration. |
-| ASI2600MM Duo main sensor | Descriptors; SDK initialization/setup and transfer traces; successful 512 × 256 and 6248 × 4176 dark captures; calibration reads observed. | Decode model-specific initialization/timing/control formulas, locate its processing path, implement and validate direct capture, cooling and retention. |
-| Duo ASI220MM Mini guide sensor | Separate USB2 interface; SDK initialization/setup and transfer traces; successful 512 × 256 and 1920 × 1080 dark captures; a different frame envelope from the main sensor. | Decode sensor setup, USB2 frame handling and processing; validate direct capture and recovery independently. |
+| ASI2600MM Pro main sensor (SDK name includes Duo) | Direct RAW16 capture, bins 1–4, calibration/defect correction, gain/offset, cooling/dew and retained-frame replay. Full-frame 60- and 1,200-second captures completed in NINA. | P25/other revisions, illuminated-image validation, remaining SDK modes/controls, physical-disconnect retention. See [main/guide evidence](duo-capture.md) and [transfer recovery](transfer-recovery.md). |
+| ASI220MM Mini guide sensor | Separate USB2 interface; direct RAW16 bins 1–2, gain/offset, frame unpacking/correction and NINA captures. | Same-frame replay, exposures beyond the direct 10-second limit, illuminated-image validation and other revisions. Startup resynchronization can acquire a subsequent frame. |
 | ASI2600 / ASI6200 Pro P25 variants | Evidence of a shared driver package/interface family. | Actual model/revision descriptors and complete SDK traces; no direct acquisition validation yet. A Duo trace does not establish P25 equivalence. |
 
-The ASI676 implementation remains restricted to the observed model. A trace
+Direct implementations remain restricted to the observed models/interfaces. A trace
 records what happened for particular settings; it is not a general camera driver.
 Dark frames are sufficient to study transactions, buffer layout and same-frame
 pixel correction. They cannot validate Bayer orientation, flips or image geometry
 against a scene, or establish illuminated-image performance.
+
+## Start with the standalone kit
+
+For a new camera, use the [camera exercise kit](../scripts/camera-kit/README.md).
+CI builds a Windows executable with its SDK host and tracing dependencies. It
+generates a capability-based matrix, records controls and transport data, and
+packages the run into a local ZIP. No source checkout or Python installation is
+needed. Use the extended profile with small pixel samples for the most useful
+initial evidence, and run main and guide devices separately. Repeat after a
+physical power cycle and label that run explicitly.
+
+The manual commands below are for focused follow-up experiments and existing
+model-specific comparisons. They are not prerequisites for running the kit.
 
 ## 1. Identify and record the experiment
 

@@ -102,6 +102,37 @@ impl Host {
                     })
                 })
             }
+            "get-control-state" | "set-control-state" => {
+                ensure!(self.opened, "not open");
+                let c = i32::try_from(
+                    p["control"]
+                        .as_i64()
+                        .ok_or_else(|| anyhow::anyhow!("control missing"))?,
+                )?;
+                if method == "set-control-state" {
+                    let value = p["value"]
+                        .as_i64()
+                        .ok_or_else(|| anyhow::anyhow!("value missing"))?;
+                    let auto = p["auto"]
+                        .as_bool()
+                        .ok_or_else(|| anyhow::anyhow!("auto missing"))?;
+                    if let Some(s) = &self.sdk {
+                        s.set_control_state(c, value, auto)?;
+                    } else {
+                        self.values[c.to_string()] = json!(value);
+                        self.values[format!("auto:{c}")] = json!(auto);
+                    }
+                }
+                let (value, auto) = if let Some(s) = &self.sdk {
+                    s.control_state(c)?
+                } else {
+                    (
+                        self.values[c.to_string()].as_i64().unwrap_or(0),
+                        self.values[format!("auto:{c}")].as_bool().unwrap_or(false),
+                    )
+                };
+                json!({"value":value,"auto":auto})
+            }
             "set" => {
                 ensure!(self.opened, "not open");
                 let c = p["control"]
