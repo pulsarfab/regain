@@ -70,11 +70,17 @@ apply; fallback never authorizes repeating a longer failed exposure.
 
 The NINA direct backend supports these verified interfaces:
 
-| Camera | RAW16 bins | Verified direct exposure range | Environment |
+| Camera | RAW16 bins | Direct exposure range | Environment |
 | --- | --- | --- | --- |
 | ASI676MC USB3 | 1 | 32 µs–30 s | Gain/offset |
-| ASI2600MM Duo main USB3 | 1–4 | 32 µs–30 s | Gain/offset, temperature, cooling, dew heater |
-| ASI220MM Mini Duo guide USB2 | 1–2 | Nonzero line integration through 10 s | Gain/offset |
+| ASI2600MM Pro USB3 | 1–4 | 32 µs–2,000 s | Gain/offset, temperature, cooling, dew heater |
+| ASI220MM Mini guide USB2 | 1–2 | Nonzero line integration through 10 s | Gain/offset |
+
+The ASI2600 exposure range is independent of the retry cutoff. A 1,200-second
+direct exposure is allowed, but is not automatically repeated after failure
+with the default 30-second retry cutoff. The guide and ASI676MC retain their
+separate limits. See [NINA hardware tests](docs/nina-end-to-end.md) for tested
+durations; the 2,000-second maximum matches the SDK's advertised range.
 
 Both Duo sensors are individually selectable in setup. The direct process uses
 the installed Windows driver without loading `ASICamera2.dll`, reads hardware

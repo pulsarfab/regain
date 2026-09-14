@@ -378,3 +378,27 @@ the final dark frame. The tested code passed 46 core tests, 12 NINA contract
 tests, Rust tests/formatting/Clippy and five release-package checks. This failure
 injection validates worker restart and SDK fallback with the real cooler; it
 does not establish recovery from physical USB detach or a natural transfer fault.
+
+## ASI2600 long direct exposures (2026-09-14)
+
+The direct ASI2600 backend's old research cap of 30 seconds prevented a
+60-second request before acquisition. The camera's advertised exposure control
+and Rust validation now use the SDK's 2,000-second maximum. Integrations of at
+least one second already use host timing; the sensor frame/shutter register
+values stay fixed while the host waits. Both the capture watchdog and readiness
+deadline scale with the requested duration. The retry cutoff is unchanged.
+
+The updated release worker was installed while NINA's camera was disconnected,
+then reconnected without restarting NINA. The equipment pane reported a
+2,000-second maximum with direct mode on and SDK fallback off. A full-frame
+60-second RAW16 capture at gain 100, offset 50 and binning 1 began at
+09:49:00.96 and finished downloading at 09:50:01.73. NINA displayed a
+6248 x 4176 dark frame (mean 517.72 ADU, standard deviation 64.04 ADU).
+The camera was near room temperature with the dew heater on. Its capped dark
+frame includes hot pixels; NINA's star detection is not an optical measurement.
+
+Simulator failure tests start 60-, 120-, 1,200- and 2,000-second exposures on
+the direct backend, terminate the worker immediately, and verify that neither
+another exposure nor SDK fallback is attempted with the default retry cutoff.
+Additional checks reject requests beyond 2,000 seconds without starting the
+hardware and preserve SDK routing for unsupported ROIs.
