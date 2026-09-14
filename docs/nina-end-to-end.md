@@ -107,6 +107,19 @@ and bin 2 produced 256 × 128 (mean 3205.43); disabling subsampling restored
 - At 100 ms, the ROI (16, 32, 512, 256) displayed 512 × 256 (mean 52.04,
   standard deviation 28.76). The minimum 64 × 64 ROI at the same origin also
   produced a new image (mean 51.27, standard deviation 28.51).
+- A 32 × 64 ROI was rejected immediately with the minimum-size/alignment
+  requirements and no retry loop. The next valid request reopened the worker
+  after the configured delay and restored full-frame output.
+- Additional full-frame timing cases passed at gain/offset 0: 32 µs (mean
+  51.28), 10 ms (56.73), 0.999999 s (623.98), and 2 s (1202.65). Each produced
+  a new image in NINA; the 32 µs image was predominantly read noise as expected.
+- The 30 s maximum produced a new full frame (mean 12499.81). A 31 s request
+  failed immediately as outside camera capabilities; no new exposure or image.
+- At 100 ms, gains 179, 180 and 600 produced new full frames with matching
+  metadata (means 883.90, 840.38 and 55182.97 respectively). The illuminated
+  scene clipped heavily at gain 600. Gain 0 / offset 200 produced a new frame
+  with matching metadata (mean 15408.17). Restoring gain/offset 0 returned the
+  baseline image response (mean 108.25 versus 108.22 before control changes).
 - Setup rejected the saved guide sensor when the experimental option was
   enabled, with an inline instruction to choose ASI676MC or disable that
   option. Selecting ASI676MC then connected successfully using the direct
