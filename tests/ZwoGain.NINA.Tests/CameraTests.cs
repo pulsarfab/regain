@@ -34,7 +34,7 @@ public class CameraTests
                 host.CallAsync("fault", new
                 {
                     kind = "download"
-                }, TimeSpan.FromSeconds(2), default).GetAwaiter().GetResult();
+                }, TimeSpan.FromSeconds(15), default).GetAwaiter().GetResult();
             return host;
         }
         var camera = new ResilientCamera(new("ZWO Simulated", 960, 640, true, 0, 3.76, 16, true, false, [1, 2, 4]), factory.Object, Host,

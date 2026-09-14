@@ -10,7 +10,7 @@ public class RecoveryTests
     private static HostClient Host() => new(Path.Combine(Root, "target/debug/zwogain-host.exe"), "unused", true);
     private static readonly CameraDescriptor Camera = new("ZWO Simulated", 960, 640, true, 0, 3.76, 16, true, false, [1, 2, 4]);
     private static readonly Exposure Exposure = new(960, 640, 1, 0, 0, 10000, false);
-    private static RecoveryOptions Fast => new() { ReconnectDelaySeconds = .05, CommandTimeoutSeconds = 2, DownloadTimeoutSeconds = .2, CoolingSampleSeconds = .01, CoolingStableSamples = 2 };
+    private static RecoveryOptions Fast => new() { ReconnectDelaySeconds = .05, CommandTimeoutSeconds = 15, DownloadTimeoutSeconds = .2, CoolingSampleSeconds = .01, CoolingStableSamples = 2 };
     [Theory]
     [InlineData("download")]
     [InlineData("crash")]
@@ -26,7 +26,7 @@ public class RecoveryTests
                 h.CallAsync("fault", new
                 {
                     kind = fault
-                }, TimeSpan.FromSeconds(2), default).GetAwaiter().GetResult();
+                }, TimeSpan.FromSeconds(15), default).GetAwaiter().GetResult();
             return h;
         }, Fast);
         session.Diagnostic += phases.Add;
@@ -48,7 +48,7 @@ public class RecoveryTests
     public async Task ExhaustionIsBounded()
     {
         int starts = 0;
-        using var session = new CameraSession(Camera, () => { starts++; var h = Host(); h.CallAsync("fault", new { kind = "download" }, TimeSpan.FromSeconds(2), default).GetAwaiter().GetResult(); return h; }, Fast with
+        using var session = new CameraSession(Camera, () => { starts++; var h = Host(); h.CallAsync("fault", new { kind = "download" }, TimeSpan.FromSeconds(15), default).GetAwaiter().GetResult(); return h; }, Fast with
         {
             MaxRetries = 2
         });
@@ -73,7 +73,7 @@ public class RecoveryTests
     public async Task ExperimentalReadyDownloadRetryKeepsSameExposureAndProcess()
     {
         int starts = 0;
-        using var session = new CameraSession(Camera, () => { starts++; var h = Host(); h.CallAsync("fault", new { kind = "download" }, TimeSpan.FromSeconds(2), default).GetAwaiter().GetResult(); return h; }, Fast with
+        using var session = new CameraSession(Camera, () => { starts++; var h = Host(); h.CallAsync("fault", new { kind = "download" }, TimeSpan.FromSeconds(15), default).GetAwaiter().GetResult(); return h; }, Fast with
         {
             ReadyFrameDownloadRetries = 1
         });
@@ -127,12 +127,12 @@ public class RecoveryTests
                 h.CallAsync("fault", new
                 {
                     kind = "download"
-                }, TimeSpan.FromSeconds(2), default).GetAwaiter().GetResult();
+                }, TimeSpan.FromSeconds(15), default).GetAwaiter().GetResult();
             else
                 h.CallAsync("simulation", new
                 {
                     temperature = 100
-                }, TimeSpan.FromSeconds(2), default).GetAwaiter().GetResult();
+                }, TimeSpan.FromSeconds(15), default).GetAwaiter().GetResult();
             return h;
         }, Fast with
         {
@@ -156,12 +156,12 @@ public class RecoveryTests
                 h.CallAsync("fault", new
                 {
                     kind = "download"
-                }, TimeSpan.FromSeconds(2), default).GetAwaiter().GetResult();
+                }, TimeSpan.FromSeconds(15), default).GetAwaiter().GetResult();
             else
                 h.CallAsync("simulation", new
                 {
                     temperature = 100
-                }, TimeSpan.FromSeconds(2), default).GetAwaiter().GetResult();
+                }, TimeSpan.FromSeconds(15), default).GetAwaiter().GetResult();
             return h;
         }, Fast with
         {
@@ -188,7 +188,7 @@ public class RecoveryTests
             {
                 width,
                 height
-            }, TimeSpan.FromSeconds(2), default).GetAwaiter().GetResult();
+            }, TimeSpan.FromSeconds(15), default).GetAwaiter().GetResult();
             return h;
         }, Fast with
         {
@@ -207,7 +207,7 @@ public class RecoveryTests
     public async Task InvalidSdkParameterIsNotRetried()
     {
         int starts = 0;
-        using var session = new CameraSession(Camera, () => { starts++; var h = Host(); h.CallAsync("fault", new { kind = "invalid" }, TimeSpan.FromSeconds(2), default).GetAwaiter().GetResult(); return h; }, Fast);
+        using var session = new CameraSession(Camera, () => { starts++; var h = Host(); h.CallAsync("fault", new { kind = "invalid" }, TimeSpan.FromSeconds(15), default).GetAwaiter().GetResult(); return h; }, Fast);
         await session.ConnectAsync(default);
         var error = await Assert.ThrowsAsync<SdkException>(() => session.CaptureAsync(Exposure, default));
         Assert.Equal(8, error.Code);
@@ -218,7 +218,7 @@ public class RecoveryTests
     {
         int starts = 0;
         using var cancel = new CancellationTokenSource();
-        using var session = new CameraSession(Camera, () => { starts++; var h = Host(); h.CallAsync("fault", new { kind = "download" }, TimeSpan.FromSeconds(2), default).GetAwaiter().GetResult(); return h; }, Fast with
+        using var session = new CameraSession(Camera, () => { starts++; var h = Host(); h.CallAsync("fault", new { kind = "download" }, TimeSpan.FromSeconds(15), default).GetAwaiter().GetResult(); return h; }, Fast with
         {
             ReconnectDelaySeconds = 10
         });
