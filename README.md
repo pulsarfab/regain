@@ -29,7 +29,8 @@ the process isolation, SDK ABI, and plugin packaging patterns in
 5. Start a fresh host, re-enumerate and reconnect by the original serial number.
 6. Restore controls, verify their read-back, restore cooling target and enablement.
 7. If cooling was enabled, wait for three consecutive temperature readings within
-   2 C of the pre-error reading. When power telemetry is available, cooler output
+   2 C of the pre-error reading (or further cooled toward the restored target).
+   When power telemetry is available, cooler output
    must also recover to at least its prior level minus 10 percentage points.
    This avoids an early pass while a cold sensor starts warming after the SDK
    resets its regulator. This has a five-minute deadline per attempt.

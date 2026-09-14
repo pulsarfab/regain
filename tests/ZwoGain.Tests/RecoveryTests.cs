@@ -306,6 +306,26 @@ public class RecoveryTests
         Assert.Contains(phases, p => p.Contains($"power {restoredPower}% (prior 30%)"));
     }
     [Theory]
+    [InlineData(-20, true)]
+    [InlineData(-10, false)]
+    public async Task SettlingAcceptsFurtherCoolingTowardTargetButNotUncommandedOvercooling(int target, bool resumes)
+    {
+        int starts = 0;
+        using var session = new CameraSession(Camera, () =>
+        {
+            var h = Host();
+            if (starts++ == 0)
+                h.CallAsync("fault", new { kind = "download" }, TimeSpan.FromSeconds(15), default).GetAwaiter().GetResult();
+            else
+                h.CallAsync("simulation", new { temperature = -150 }, TimeSpan.FromSeconds(15), default).GetAwaiter().GetResult();
+            return h;
+        }, Fast with { MaxRetries = 1, CoolingTimeoutSeconds = .1 });
+        await session.ConnectAsync(default);
+        session.Set(16, target);
+        if (resumes) Assert.Equal(1, (await session.CaptureAsync(Exposure, default)).Recoveries);
+        else await Assert.ThrowsAsync<IOException>(() => session.CaptureAsync(Exposure, default));
+    }
+    [Theory]
     [InlineData(6248, 4176)]
     [InlineData(9576, 6388)]
     public async Task LargeSensorBinaryTransport(int width, int height)

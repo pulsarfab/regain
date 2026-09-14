@@ -284,7 +284,7 @@ public sealed class CameraSession : IDisposable
                         await OpenAsync(token).ConfigureAwait(false);
                         await Apply(settings, token).ConfigureAwait(false);
                         if (settings.GetValueOrDefault(17) != 0 && prior.HasValue)
-                            await Settle(prior.Value, priorPower, token).ConfigureAwait(false);
+                            await Settle(prior.Value, priorPower, settings.GetValueOrDefault(16), token).ConfigureAwait(false);
                     }
                     else
                     {
@@ -304,7 +304,7 @@ public sealed class CameraSession : IDisposable
                             Validate(exposure);
                             await Apply(settings, token).ConfigureAwait(false);
                             if (settings.GetValueOrDefault(17) != 0 && prior.HasValue)
-                                await Settle(prior.Value, priorPower, token).ConfigureAwait(false);
+                                await Settle(prior.Value, priorPower, settings.GetValueOrDefault(16), token).ConfigureAwait(false);
                         }
                     }
                     State("Starting exposure");
@@ -382,7 +382,7 @@ public sealed class CameraSession : IDisposable
         catch { KillHost(); State("Error"); throw; }
         finally { operation.Release(); }
     }
-    private async Task Settle(double prior, long? priorPower, CancellationToken token)
+    private async Task Settle(double prior, long? priorPower, double target, CancellationToken token)
     {
         State($"Restoring cooling near {prior:F1} C");
         var clock = Stopwatch.StartNew();
@@ -396,7 +396,7 @@ public sealed class CameraSession : IDisposable
             // thermal inertia lets three early readings pass before the sensor warms.
             bool outputRecovered = !priorPower.HasValue || priorPower <= 10 ||
                 (power.HasValue && power >= priorPower - 10);
-            stable = current.HasValue && Math.Abs(current.Value - prior) <= Options.TemperatureToleranceC && outputRecovered ? stable + 1 : 0;
+            stable = current.HasValue && current.Value >= Math.Min(prior, target) - Options.TemperatureToleranceC && current.Value <= prior + Options.TemperatureToleranceC && outputRecovered ? stable + 1 : 0;
             Diagnostic?.Invoke($"Cooling recovery: temperature {current:F1} C (prior {prior:F1}), power {power}% (prior {priorPower}%), stable {stable}/{Options.CoolingStableSamples}");
             if (stable >= Options.CoolingStableSamples)
                 return;
