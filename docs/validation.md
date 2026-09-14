@@ -94,12 +94,13 @@ Tested the installed NINA 3.2 application using Windows computer use:
   did not start a replacement exposure. NINA's capture and snapshot layers
   each emitted their own error notification for that propagated exception.
 
-Cooler restoration, USB cable reattachment, P25 cameras and natural SDK transfer
-failures have not yet been tested. The subsequently attached ASI2600MM Duo and
-its guide sensor completed the SDK baseline tests described in
+USB cable reattachment, P25 cameras and natural SDK transfer failures have not
+yet been tested. Later desktop acceptance verified Duo cooler restoration and
+Light/Dark/Bias sequences on both backends; see the completed
+[NINA end-to-end matrix](nina-end-to-end.md). The attached ASI2600MM Duo and
+its guide sensor also completed the SDK baseline tests described in
 [Linux research / Duo observations](linux-driver-research.md). Simulator tests
-exercise supervisory decisions, not vendor firmware behavior. Full sequencer
-acceptance remains manual.
+exercise supervisory decisions, not vendor firmware behavior.
 
 ## Experimental direct backend integration (2026-09-14)
 
@@ -124,10 +125,16 @@ acceptance remains manual.
   naturally occurring USB transfer failure.
 - The package was installed into the local NINA plugin directory. Initial
   Computer Use failures were resolved by restoring the RDP desktop and
-  refreshing the connection. SDK image-pane tests have since passed for all
-  ASI676MC and Duo main-sensor binning modes, plus Duo process recovery with
-  cooling and the default retry cutoff. The full desktop matrix remains in
-  progress; see [NINA end-to-end results](nina-end-to-end.md).
+  refreshing the connection. All 11 advertised camera/backend/bin combinations
+  subsequently passed in NINA's image pane, including the guide sensor and
+  direct ASI676MC. ROI, controls, timing, sequences, cancellation and worker
+  recovery also passed; see [NINA end-to-end results](nina-end-to-end.md).
+- Desktop testing found that the guide SDK clamps requested offsets below 200
+  to 200 despite advertising a zero minimum. Implementation `ed3a820` accepts
+  SDK offset normalization within the advertised range and preserves the applied
+  value in recovery and image metadata. Its expanded .NET suite passed all
+  29 core and 10 NINA tests; Rust remained 10 passing tests. The correction was
+  installed and verified with guide images in both binning modes and ROIs.
 
 See [factory-correction evidence](factory-correction-evidence.json) for seven
 same-frame byte-exact SDK comparisons and the earlier 23-frame direct capture
