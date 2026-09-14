@@ -220,6 +220,12 @@ version-specific observations, not vendor-supported signatures.
 
 ## Implementation plan
 
+**Update:** complete ASI676MC acquisition and retained-frame replay now work in
+the standalone Rust executable. The [SDK-free capture findings](sdk-free-capture.md)
+document the implemented configuration/streaming path, sensor standby needed
+for reliable retention, interrupted-read recovery and the P25 driver mapping.
+The stages below also describe remaining production and cross-model work.
+
 1. **Capture a reproducible fault corpus — tooling available now.** Run the
    passive/cancellation matrix on 2600 and 6200 cameras: full frame and ROI,
    bin 1/2, RAW16, short and longer exposures, USB-limit settings. Record SDK
@@ -235,10 +241,11 @@ version-specific observations, not vendor-supported signatures.
    scaling, binning and Bayer origin. Exit criterion: bit-exact agreement with
    SDK RAW16 output and convincing same-frame identity across replay, including
    the missing/failed portion, not just overlapping blocks.
-3. **Build a Rust transport against the existing signed driver — initial probe implemented.**
-   Enumeration/descriptors and a single bounded bulk read/cancel work. Next add
-   bounded queued bulk I/O and decoded completion
-   status. Own all request buffers until cancellation has actually completed.
+3. **Build a Rust transport against the existing signed driver — ASI676MC capture implemented.**
+   Enumeration, configuration, retained-frame readiness, bounded sequential bulk
+   reads, cancellation/drain, binary delivery and retained-frame retries work.
+   Next add production integration and evaluate queued I/O if throughput requires
+   it. Own all request buffers until cancellation has actually completed.
    Expose progress and typed failures to the supervisor. Keep one owner of the
    camera; do not compete with the SDK for endpoint reads. Initially use a
    narrowly supported model/configuration instead of claiming SDK parity.

@@ -7,6 +7,36 @@ pub const VERSION: u32 = 0x220000;
 pub const CONTROL: u32 = 0x220020;
 pub const BULK: u32 = 0x22004b;
 
+/// Observed ASI676MC bin-1 envelope inside the first/last two pixels.
+/// Matching sequence is an alignment check, not proof of a fresh exposure.
+pub fn frame_sequence(data: &[u8], expected: usize) -> Result<u16> {
+    ensure!(expected >= 16 && data.len() == expected, "incomplete frame");
+    ensure!(
+        data[..2] == [0x7e, 0x5a] && data[data.len() - 2..] == [0xf0, 0x3c],
+        "invalid frame boundary markers"
+    );
+    let first = u16_at(data, 2);
+    let last = u16_at(data, data.len() - 4);
+    ensure!(
+        first != 0 && first == last,
+        "frame boundary sequence mismatch"
+    );
+    Ok(first)
+}
+
+/// SDK bin-1 envelope removal: replace the first/last two pixels with pixels
+/// two rows inward, preserving their Bayer colors. Defect correction is separate.
+pub fn replace_envelope(data: &mut [u8], width: usize) -> Result<()> {
+    ensure!(
+        width >= 8 && data.len() >= width * 2 * 5 && data.len().is_multiple_of(width * 2),
+        "invalid frame geometry"
+    );
+    let last = data.len() - 4;
+    data.copy_within(width * 4..width * 4 + 4, 0);
+    data.copy_within(last - width * 4..last - width * 4 + 4, last);
+    Ok(())
+}
+
 fn u16_at(bytes: &[u8], at: usize) -> u16 {
     u16::from_le_bytes(bytes[at..at + 2].try_into().unwrap())
 }
@@ -113,6 +143,29 @@ pub fn describe(device: &[u8], config: &[u8], version: u32) -> Result<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn envelope_pixels_use_the_same_bayer_colors_two_rows_inward() {
+        let mut data: Vec<u8> = (0..128).collect();
+        let first = data[32..36].to_vec();
+        let last = data[92..96].to_vec();
+        replace_envelope(&mut data, 8).unwrap();
+        assert_eq!(&data[..4], first);
+        assert_eq!(&data[124..], last);
+        assert!(replace_envelope(&mut data[..31], 8).is_err());
+    }
+    #[test]
+    fn frame_boundaries_detect_truncation_misalignment_and_mixed_frames() {
+        let mut data = [0; 16];
+        data[..4].copy_from_slice(&[0x7e, 0x5a, 1, 0]);
+        data[12..].copy_from_slice(&[1, 0, 0xf0, 0x3c]);
+        assert_eq!(frame_sequence(&data, 16).unwrap(), 1);
+        assert!(frame_sequence(&data[..15], 16).is_err());
+        data[12] = 2;
+        assert!(frame_sequence(&data, 16).is_err());
+        data[12] = 1;
+        data[0] = 0;
+        assert!(frame_sequence(&data, 16).is_err());
+    }
     #[test]
     fn descriptor_abi_and_invalid_completions() {
         let request = descriptor_request(1, 18);

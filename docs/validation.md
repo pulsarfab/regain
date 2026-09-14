@@ -4,8 +4,9 @@ Initial development validation: 2026-09-13 (America/Los_Angeles).
 
 - Windows x64, ASI SDK 1.41, NINA.Plugin 3.2.0.9001, .NET 8 target.
 - Rust frame-bound test, formatting and Clippy with warnings denied.
-- Two additional direct-driver Rust tests validate the packed descriptor ABI,
-  error/length handling and malformed USB descriptor chains. Five Python analysis
+- Six direct-driver Rust tests validate the packed descriptor ABI,
+  error/length handling, malformed USB descriptor chains, frame boundaries,
+  sensor timing/settings and envelope pixel replacement. Five Python analysis
   tests cover incomplete transfer runs, replay separation, endian/scaling detection
   and sparse pixel differences; these run in a separate GitHub CI job.
 - 22 .NET supervisor/transport tests: download failure, native host crash,
@@ -46,6 +47,23 @@ Initial development validation: 2026-09-13 (America/Los_Angeles).
   byte-identical complete transfer runs from one exposure command. See the
   [direct-driver evidence](direct-driver-experiments.json) and
   [interpretation/limits](transport-investigation.md#follow-up-direct-rust-io-and-image-processing-2026-09-13).
+
+## SDK-free capture validation
+
+The subsequent SDK-free hardware matrix completed 24 captures, including
+32 µs–30 s, 64 × 64 through full resolution, a non-packet-aligned ROI, shifted
+ROI, gain/offset changes, and the one-second exposure-mode boundary. Five
+recovery/replay cases validated whole-frame identity or retained-prefix identity
+without another exposure, including interrupted reads at 3/12/24 MiB and half
+of a small ROI. Setting read retries to zero surfaced the deliberate interruption;
+a new process then captured/replayed successfully. The binary stream's image
+lengths and SHA-256 digests were checked in memory. No image files were saved.
+See [SDK-free findings and limits](sdk-free-capture.md) and
+[machine-readable evidence](sdk-free-capture-evidence.json).
+
+Automated coverage now includes seven Rust tests (six direct-driver ABI,
+framing, timing/settings and envelope-processing tests plus the host test),
+22 core tests, seven NINA tests and five Python analysis tests: 41 total.
 
 ## Interactive NINA integration
 

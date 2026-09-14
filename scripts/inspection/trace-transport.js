@@ -128,6 +128,21 @@ Process.attachModuleObserver({
         if (module.name.toLowerCase() !== 'asicamera2.dll') return;
         emit('sdk-module', {name: module.name});
         if (globalThis.TRACE_PROCESSING) {
+            Interceptor.attach(module.base.add(0x58284), {
+                onEnter() {
+                    const camera = this.context.rdi;
+                    emit('exposure-timing', {height:camera.add(0x80).readU32(),
+                        clock:camera.add(0xb8).readU32(), hmax:camera.add(0xc0).readU16(),
+                        minimumUs:camera.add(0xc4).readU32(), blanking:module.base.add(0x2955fc).readU32()});
+                }
+            });
+            Interceptor.attach(module.base.add(0x4126), {
+                onEnter() {
+                    emit('control-target', {target: location(this.context.rax.add(0xa8).readPointer()),
+                        gain: location(this.context.rax.add(0x28).readPointer()),
+                        exposure: location(this.context.rax.add(0x88).readPointer())});
+                }
+            });
             // Version-pinned call sites, established by disassembly of SDK 1.41 x64.
             Interceptor.attach(module.base.add(0x52b6), {
                 onEnter() { emit('retrieval-target', {target: location(this.context.rax.add(0x90).readPointer())}); }
@@ -143,11 +158,14 @@ Process.attachModuleObserver({
                 });
             }
         }
-        for (const name of ['ASIOpenCamera', 'ASIInitCamera', 'ASICloseCamera', 'ASIStartExposure',
+        for (const name of ['ASIOpenCamera', 'ASIInitCamera', 'ASICloseCamera', 'ASIStartExposure', 'ASISetControlValue', 'ASISetROIFormat', 'ASISetStartPos',
             'ASIStopExposure', 'ASIGetExpStatus', 'ASIGetDataAfterExp']) attach(module, name, {
             onEnter(args) {
                 this.start = Date.now(); this.status = name === 'ASIGetExpStatus' ? args[1] : null;
-                emit('sdk-enter', {name});
+                const parameters = name === 'ASISetControlValue' ? [args[1].toInt32(), args[2].toInt32(), args[3].toInt32()]
+                    : name === 'ASISetROIFormat' ? [args[1].toInt32(), args[2].toInt32(), args[3].toInt32(), args[4].toInt32()]
+                    : name === 'ASISetStartPos' ? [args[1].toInt32(), args[2].toInt32()] : undefined;
+                emit('sdk-enter', {name, parameters});
             },
             onLeave(result) {
                 emit('sdk-leave', {name, result: result.toInt32(), elapsedMs: Date.now() - this.start,

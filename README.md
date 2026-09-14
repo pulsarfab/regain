@@ -126,9 +126,11 @@ See [architecture](docs/architecture.md), [SDK investigation](docs/sdk-lifecycle
 and [validation](docs/validation.md). The [transport research and experiment plan](docs/transport-investigation.md)
 records direct-driver inspection, SDK-internal replay evidence, and the route
 to an independent Rust transport. The experimental `zwogain-direct` executable
-now reads descriptors and exercises bounded bulk-read cancellation against the
-installed driver without loading the SDK. Full-frame replay identity and the
-SDK's RAW16 correction stage have been observed on the ASI676MC; independent
-capture commands and image correction remain under development.
+now performs complete SDK-free ASI676MC captures with configurable ROI, exposure,
+gain and offset, binary RAW16 delivery, and retained-frame readout retries.
+Full-frame and interrupted-read replay have been tested without another exposure.
+It remains a research backend: sensor initialization is model-specific and SDK
+defect correction is not yet implemented. See [SDK-free capture](docs/sdk-free-capture.md)
+for commands, evidence, P25 transport findings and remaining limits.
 Licensed under Apache-2.0; bundled vendor
 material retains its own license, described in [third-party notices](THIRD_PARTY_NOTICES.md).

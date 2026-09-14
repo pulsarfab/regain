@@ -24,6 +24,8 @@ def main():
     parser.add_argument('--bin', type=int, default=1)
     parser.add_argument('--x', type=int, default=0, help='binned ROI origin')
     parser.add_argument('--y', type=int, default=0, help='binned ROI origin')
+    parser.add_argument('--gain', type=int, help='explicit ASI gain control for register mapping')
+    parser.add_argument('--offset', type=int, help='explicit ASI offset control for register mapping')
     parser.add_argument('--ready-delay', type=float, default=0.5)
     parser.add_argument('--deadline', type=float, default=60)
     parser.add_argument('--cancel-first-bulk', action='store_true',
@@ -181,6 +183,8 @@ def main():
                                     'allBytesIdentical': all(wire == runs[0] for wire in runs[1:]),
                                     'bytesPerRun': size})
                         for index, wire in enumerate(runs):
+                            record({'kind': 'wire-boundaries', 'run': index,
+                                    'firstDword': wire[:4].hex(), 'lastDword': wire[-4:].hex()})
                             record({'kind': 'wire-comparison', 'run': index,
                                     **compare(wire, pixels, args.width, args.height)})
                         for stage, data in processing.items():
@@ -199,6 +203,9 @@ def main():
                 raise RuntimeError('ROI exceeds attached sensor')
             opened = call('open', {'name': camera['name']})
             record({'kind': 'initial-controls', 'sdkVersion': opened['sdkVersion'], 'controls': opened['controls']})
+            for control, value in [(0, args.gain), (5, args.offset)]:
+                if value is not None:
+                    call('set', {'control': control, 'value': value})
             for _ in range(args.frames):
                 with wire_lock:
                     wire_chunks.clear()

@@ -17,6 +17,16 @@ use windows_sys::{
 
 const INTERFACE: GUID = GUID::from_u128(0xc5b27530_3592_4e87_9e99_c2bafd5e5692);
 
+pub fn require_sdk_absent() -> Result<()> {
+    let name: Vec<u16> = "ASICamera2.dll\0".encode_utf16().collect();
+    ensure!(
+        unsafe { windows_sys::Win32::System::LibraryLoader::GetModuleHandleW(name.as_ptr()) }
+            .is_null(),
+        "ASI SDK unexpectedly loaded into direct process"
+    );
+    Ok(())
+}
+
 struct DeviceSet(HDEVINFO);
 impl Drop for DeviceSet {
     fn drop(&mut self) {
@@ -112,6 +122,64 @@ struct Completion {
     cancel_requested: bool,
 }
 impl Camera {
+    pub fn vendor(&self, request: u8, value: u16, index: u16, length: u16) -> Result<Vec<u8>> {
+        let mut data = protocol::descriptor_request(0, length);
+        data[0] = if length == 0 { 0x40 } else { 0xc0 };
+        data[1] = request;
+        data[2..4].copy_from_slice(&value.to_le_bytes());
+        data[4..6].copy_from_slice(&index.to_le_bytes());
+        let done = self.request(protocol::CONTROL, &mut data, None, 5000)?;
+        ensure!(
+            done.error == 0 && !done.cancel_requested,
+            "vendor {request:02x}/{value:04x} failed: {}",
+            done.error
+        );
+        Ok(protocol::descriptor_payload(&data, done.bytes, length as usize)?.to_vec())
+    }
+
+    pub fn reset_pipe(&self) -> Result<()> {
+        for code in [0x220044, 0x22002c] {
+            let done = self.request(code, &mut [0x81], Some(&mut []), 2000)?;
+            ensure!(
+                done.error == 0 && !done.cancel_requested,
+                "pipe operation failed: {}",
+                done.error
+            );
+        }
+        let done = self.request(0x220038, &mut [0x81, 0, 0, 0x10, 0], None, 2000)?;
+        ensure!(
+            done.error == 0 && !done.cancel_requested,
+            "transfer-size configuration failed"
+        );
+        Ok(())
+    }
+
+    pub fn read_frame(&self, length: usize) -> Result<Vec<u8>> {
+        ensure!(
+            length > 0 && length <= 32 * 1024 * 1024,
+            "invalid research frame size"
+        );
+        let mut data = vec![0; length];
+        for (number, chunk) in data.chunks_mut(1024 * 1024).enumerate() {
+            let mut header = [0; protocol::HEADER];
+            header[13] = 0x81;
+            let done = self.request(protocol::BULK, &mut header, Some(chunk), 5000)?;
+            let (nt, usb) = protocol::status(&header)?;
+            ensure!(
+                done.error == 0
+                    && !done.cancel_requested
+                    && nt == 0
+                    && usb == 0
+                    && done.bytes == chunk.len(),
+                "bulk chunk {number} failed: Win32 {}, NT {nt:08x}, USB {usb:08x}, bytes {}/{}",
+                done.error,
+                done.bytes,
+                chunk.len()
+            );
+        }
+        Ok(data)
+    }
+
     pub fn open(path: &[u16]) -> Result<Self> {
         ensure!(path.last() == Some(&0), "unterminated path");
         // Request exclusive ownership. Do not fall back to sharing with the SDK.
