@@ -27,8 +27,8 @@ public sealed record RecoveryOptions
     public double TemperatureToleranceC { get; init; } = 2;
     public int CoolingStableSamples { get; init; } = 3;
     public double CoolingSampleSeconds { get; init; } = 2;
-    // Experimental: SDK has no documented transfer resume contract. Never enabled implicitly.
-    public int ReadyFrameDownloadRetries { get; init; } = 0;
+    // Retry the same download only while the SDK still reports a ready frame.
+    public int ReadyFrameDownloadRetries { get; init; } = 2;
     public int DirectReadRetries { get; init; } = 2;
     public void Validate()
     {

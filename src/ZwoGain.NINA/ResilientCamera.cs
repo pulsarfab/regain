@@ -345,7 +345,7 @@ public sealed class ResilientCamera : BaseINPC, ICamera
         if (profiles is null) return;
         var options = owner.Options;
         int retries = seconds <= options.MaximumRetryExposureSeconds ? options.MaxRetries : 0;
-        int reads = seconds <= options.MaximumRetryExposureSeconds ? options.ReadyFrameDownloadRetries : 0;
+        int reads = options.ReadyFrameDownloadRetries;
         double attempt = seconds + options.ExposureGraceSeconds + options.CoolingTimeoutSeconds +
             (reads + 1) * (options.DownloadTimeoutSeconds + options.ReconnectDelaySeconds) +
             (2 * owner.Controls.Count + 10) * options.CommandTimeoutSeconds;

@@ -93,8 +93,8 @@ enabled without allowing a replacement exposure. This is not a claim of a
 For the public SDK, `ASIGetDataAfterExp` is a whole-image retrieval call with no
 offset or continuation token. Inspected code and traces place USB acquisition
 before public ready status; a repeated public call is not a general way to
-resume camera-to-host transfer. The optional SDK public redownload experiment
-remains disabled by default. See [SDK lifecycle findings](sdk-lifecycle.md) and
+resume camera-to-host transfer. SDK public rereads default to two attempts while ready status remains set,
+independent of exposure duration. A count of zero explicitly disables them. See [SDK lifecycle findings](sdk-lifecycle.md) and
 [transport inspection](transport-investigation.md).
 
 ## Next useful experiments

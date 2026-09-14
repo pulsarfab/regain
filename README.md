@@ -24,7 +24,9 @@ the process isolation, SDK ABI, and plugin packaging patterns in
 1. Snapshot exposure duration, dark/light flag, RAW16 ROI, symmetric binning,
    gain, offset, USB limit, and supported persistent controls.
 2. Expose, poll the SDK's state, and transfer a complete binary RAW16 frame.
-3. On a recoverable failure, discard the partial frame and terminate the host.
+3. First try rereading the same frame, regardless of exposure duration, when
+   the backend still has it. If rereads fail and a full recapture is permitted,
+   discard the partial frame and terminate the host.
 4. Wait five seconds for USB detach/reattach and SDK state to propagate.
 5. Start a fresh host, re-enumerate and reconnect by the original serial number.
 6. Restore controls, verify their read-back, restore cooling target and enablement.
@@ -187,9 +189,11 @@ and terminates the worker. Diagnostic runs do not save image files.
 - Temperature is cached while the capture transaction owns the camera; cooling
   changes during long exposures are deferred. Normal telemetry/control updates
   run every two seconds when idle.
-- There is no documented partial-transfer resume API. Optional
-  `ReadyFrameDownloadRetries` is experimental, disabled by default, and retries
-  the entire download only while the SDK still reports exposure success.
+- There is no documented partial-transfer resume API. `ReadyFrameDownloadRetries`
+  defaults to 2 and retries the entire download only while the SDK still reports
+  exposure success, independent of exposure duration. The SDK does not guarantee
+  that a frame remains available after a transfer error. A saved count of zero
+  explicitly disables this path.
 - No installer signing or NINA registry publication is included in this first
   version. CI and draft-release/registry workflows are provided; see
   [releasing](docs/releasing.md). Local installation, camera contract tests, and interactive NINA 3.2

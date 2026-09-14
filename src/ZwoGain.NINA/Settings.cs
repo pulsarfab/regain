@@ -110,8 +110,8 @@ internal static class Settings
         }
         var recovery = AddTab("Recovery", "Reconnect and repeat failed exposures within these limits.");
         AddFields(recovery,
-            (nameof(RecoveryOptions.MaxRetries), "Maximum retries"),
-            (nameof(RecoveryOptions.MaximumRetryExposureSeconds), "Exposure limit (s; 0 disables retries)"),
+            (nameof(RecoveryOptions.MaxRetries), "Full recapture retries"),
+            (nameof(RecoveryOptions.MaximumRetryExposureSeconds), "Recapture exposure limit (s; 0 disables)"),
             (nameof(RecoveryOptions.ReconnectDelaySeconds), "Reconnect delay (s)"));
         var cooling = AddTab("Cooling", "Restore the setpoint; wait for the previous temperature and cooler output.");
         AddFields(cooling,
@@ -125,9 +125,9 @@ internal static class Settings
             (nameof(RecoveryOptions.CommandTimeoutSeconds), "Command timeout (s)"),
             (nameof(RecoveryOptions.DownloadTimeoutSeconds), "Download timeout (s)"),
             (nameof(RecoveryOptions.ExposureGraceSeconds), "Exposure grace period (s)"),
-            (nameof(RecoveryOptions.ReadyFrameDownloadRetries), "SDK re-download retries (experimental)"),
+            (nameof(RecoveryOptions.ReadyFrameDownloadRetries), "SDK read retries (0-5)"),
             (nameof(RecoveryOptions.DirectReadRetries), "Direct read retries (0-5)"));
-        entries[nameof(RecoveryOptions.ReadyFrameDownloadRetries)].ToolTip = "Default: 0. Requires a ready frame in the SDK. The exposure limit applies.";
+        entries[nameof(RecoveryOptions.ReadyFrameDownloadRetries)].ToolTip = "Default: 2. Requires a ready frame in the SDK. Independent of the recapture exposure limit.";
         entries[nameof(RecoveryOptions.DirectReadRetries)].ToolTip = "Default: 2. ASI2600 and ASI676 retry the same retained frame at any exposure length. Guide retries read a new frame and obey the exposure limit.";
         var status = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 8) };
         footer.Children.Add(status);

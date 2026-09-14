@@ -31,8 +31,9 @@ as a usable scientific image.
 ZWOgain records the phase and the original numeric SDK error. After a download
 error it probes exposure status before destroying the host. This distinguishes
 "still ready" from failed/idle/missing camera when the SDK can still respond.
-The optional same-frame experiment reissues the complete download only for
-state 2. It is disabled by default pending real fault validation. A failed
+The same-frame path reissues the complete download only for state 2, with two
+retries by default regardless of exposure duration. This is an attempt to
+recover an available frame, not a guarantee that the SDK retains one. A failed
 status probe or a stalled download instead causes host replacement.
 
 ## Undocumented debug exports

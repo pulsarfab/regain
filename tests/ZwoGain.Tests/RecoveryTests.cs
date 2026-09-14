@@ -86,27 +86,43 @@ public class RecoveryTests
         }
         Assert.Equal(retries ? 2 : 1, starts);
     }
-    [Fact]
-    public async Task LongExposureDoesNotUseExperimentalRedownload()
+    [Theory]
+    [InlineData(1200000000L, 1, false)]
+    [InlineData(1200000000L, 3, false)]
+    [InlineData(10000L, 3, true)]
+    public async Task RereadsPrecedeRecaptureAndIgnoreExposureLimit(long microseconds, int failures, bool recaptures)
     {
+        int starts = 0, rereads = 0;
+        HostClient? current = null;
+        var options = Fast with { ReadyFrameDownloadRetries = new RecoveryOptions().ReadyFrameDownloadRetries };
+        Assert.Equal(2, options.ReadyFrameDownloadRetries);
         using var session = new CameraSession(Camera, () =>
         {
-            var h = Host();
-            h.CallAsync("simulation", new
-            {
-                instant = true
-            }, TimeSpan.FromSeconds(15), default).GetAwaiter().GetResult();
-            h.CallAsync("fault", new
-            {
-                kind = "download"
-            }, TimeSpan.FromSeconds(15), default).GetAwaiter().GetResult();
-            return h;
-        }, Fast with
+            current = Host();
+            current.CallAsync("simulation", new { instant = true }, TimeSpan.FromSeconds(15), default).GetAwaiter().GetResult();
+            if (starts++ == 0)
+                current.CallAsync("fault", new { kind = "download" }, TimeSpan.FromSeconds(15), default).GetAwaiter().GetResult();
+            return current;
+        }, options);
+        session.Diagnostic += phase =>
         {
-            ReadyFrameDownloadRetries = 1
-        });
+            if (phase.StartsWith("Transfer failure:") && --failures > 0)
+                current!.CallAsync("fault", new { kind = "download" }, TimeSpan.FromSeconds(15), default).GetAwaiter().GetResult();
+            if (phase.StartsWith("Rereading ready frame")) rereads++;
+        };
         await session.ConnectAsync(default);
-        await Assert.ThrowsAsync<IOException>(() => session.CaptureAsync(Exposure with { microseconds = 30000001 }, default));
+        if (failures > options.ReadyFrameDownloadRetries && !recaptures)
+            await Assert.ThrowsAsync<IOException>(() => session.CaptureAsync(Exposure with { microseconds = microseconds }, default));
+        else
+        {
+            var frame = await session.CaptureAsync(Exposure with { microseconds = microseconds }, default);
+            Assert.Equal(recaptures ? 1 : 0, frame.Recoveries);
+            Assert.Equal(microseconds, frame.Exposure.microseconds);
+            Assert.Equal((ushort)321, frame.Pixels[321]);
+        }
+        Assert.Equal(recaptures ? 2 : 1, starts);
+        Assert.InRange(rereads, 1, options.ReadyFrameDownloadRetries);
+        Assert.Equal(0, failures);
     }
     [Fact]
     public void ExistingSettingsReceiveThirtySecondDefault()
@@ -119,7 +135,7 @@ public class RecoveryTests
     private static HostClient Host() => new(Path.Combine(Root, "target/debug/zwogain-host.exe"), "unused", true);
     private static readonly CameraDescriptor Camera = new("ZWO Simulated", 960, 640, true, 0, 3.76, 16, true, false, [1, 2, 4]);
     private static readonly Exposure Exposure = new(960, 640, 1, 0, 0, 10000, false);
-    private static RecoveryOptions Fast => new() { ReconnectDelaySeconds = .05, CommandTimeoutSeconds = 15, DownloadTimeoutSeconds = .2, CoolingSampleSeconds = .01, CoolingStableSamples = 2 };
+    private static RecoveryOptions Fast => new() { ReconnectDelaySeconds = .05, CommandTimeoutSeconds = 15, DownloadTimeoutSeconds = .2, CoolingSampleSeconds = .01, CoolingStableSamples = 2, ReadyFrameDownloadRetries = 0 };
     [Theory]
     [InlineData("download")]
     [InlineData("crash")]
@@ -179,7 +195,7 @@ public class RecoveryTests
         Assert.Equal(2, starts);
     }
     [Fact]
-    public async Task ExperimentalReadyDownloadRetryKeepsSameExposureAndProcess()
+    public async Task ReadyDownloadRetryKeepsSameExposureAndProcess()
     {
         int starts = 0;
         using var session = new CameraSession(Camera, () => { starts++; var h = Host(); h.CallAsync("fault", new { kind = "download" }, TimeSpan.FromSeconds(15), default).GetAwaiter().GetResult(); return h; }, Fast with

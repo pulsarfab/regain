@@ -268,11 +268,11 @@ public sealed class CameraSession : IDisposable
                 if (observed.TryGetValue(15, out var power)) priorPower = power;
             }
             Exception? last = null;
-            bool eligibleForRetry = exposure.microseconds / 1e6 <= Options.MaximumRetryExposureSeconds;
-            int retries = eligibleForRetry ? Options.MaxRetries : 0;
-            int downloadRetries = eligibleForRetry ? Options.ReadyFrameDownloadRetries : 0;
-            if (!eligibleForRetry)
-                Diagnostic?.Invoke($"Automatic retries disabled: {exposure.microseconds / 1e6:G} s exposure exceeds {Options.MaximumRetryExposureSeconds:G} s threshold");
+            bool eligibleForRecapture = exposure.microseconds / 1e6 <= Options.MaximumRetryExposureSeconds;
+            int retries = eligibleForRecapture ? Options.MaxRetries : 0;
+            int downloadRetries = Options.ReadyFrameDownloadRetries;
+            if (!eligibleForRecapture)
+                Diagnostic?.Invoke($"Full recapture disabled: {exposure.microseconds / 1e6:G} s exposure exceeds {Options.MaximumRetryExposureSeconds:G} s threshold");
             for (int attempt = 0; attempt <= retries; attempt++)
             {
                 token.ThrowIfCancellationRequested();
@@ -314,7 +314,7 @@ public sealed class CameraSession : IDisposable
                     object parameters = Backend == "direct" ? new {
                         exposure.width, exposure.height, exposure.bin, exposure.x, exposure.y,
                         exposure.microseconds, exposure.dark,
-                        readRetries = SupportsRetainedFrameReads || eligibleForRetry ? Options.DirectReadRetries : 0
+                        readRetries = SupportsRetainedFrameReads || eligibleForRecapture ? Options.DirectReadRetries : 0
                     } : exposure;
                     await Call("start", parameters, token).ConfigureAwait(false);
                     State("Exposing");
@@ -352,6 +352,7 @@ public sealed class CameraSession : IDisposable
                             Diagnostic?.Invoke($"Post-transfer SDK state: {LastSdkExposureState}");
                             if (transferRetry++ >= downloadRetries || LastSdkExposureState != 2)
                                 throw;
+                            State($"Rereading ready frame ({transferRetry}/{downloadRetries})");
                             await Task.Delay(TimeSpan.FromSeconds(Options.ReconnectDelaySeconds), token).ConfigureAwait(false);
                         }
                     }

@@ -38,9 +38,10 @@ public class CameraTests
         Assert.Contains(typeof(ICamera), typeof(ResilientCamera).GetInterfaces());
     }
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task NinaLifecycleHidesDownloadFailureAndPreservesCaptureMetadata(bool sdkClampsOffset)
+    [InlineData(false, false, .01)]
+    [InlineData(true, false, .01)]
+    [InlineData(false, true, 1200)]
+    public async Task NinaLifecycleHidesDownloadFailureAndPreservesCaptureMetadata(bool sdkClampsOffset, bool reread, double seconds)
     {
         string root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
         int starts = 0;
@@ -54,6 +55,7 @@ public class CameraTests
         HostClient Host()
         {
             var host = new HostClient(Path.Combine(root, "target/debug/zwogain-host.exe"), "unused", true);
+            if (reread) host.CallAsync("simulation", new { instant = true }, TimeSpan.FromSeconds(15), default).GetAwaiter().GetResult();
             if (sdkClampsOffset)
                 host.CallAsync("simulation", new { clampControl = 5, clampMinimum = 20 }, TimeSpan.FromSeconds(15), default).GetAwaiter().GetResult();
             if (starts++ == 0)
@@ -67,6 +69,7 @@ public class CameraTests
             new()
             {
                 MaxRetries = 1,
+                ReadyFrameDownloadRetries = reread ? 2 : 0,
                 ReconnectDelaySeconds = 1.2,
                 CoolingStableSamples = 1,
                 CoolingSampleSeconds = .01
@@ -74,10 +77,10 @@ public class CameraTests
         try
         {
             Assert.True(await camera.Connect(default));
-            camera.StartExposure(new CaptureSequence { ExposureTime = .01, Gain = 123, Offset = 17, Binning = new BinningMode(2, 2) });
+            camera.StartExposure(new CaptureSequence { ExposureTime = seconds, Gain = 123, Offset = 17, Binning = new BinningMode(2, 2) });
             Assert.True(settings.Object.Timeout > 1);
             // Model NINA's outer readiness deadline. Recovery exceeds the original limit.
-            using var ninaDeadline = new CancellationTokenSource(TimeSpan.FromSeconds(.01 + settings.Object.Timeout));
+            using var ninaDeadline = new CancellationTokenSource(TimeSpan.FromSeconds(seconds + settings.Object.Timeout));
             await camera.WaitUntilExposureIsReady(ninaDeadline.Token);
             camera.Gain = 222; // Image metadata must represent the completed exposure, not the next one.
             var image = Assert.IsType<ImageArrayExposureData>(await camera.DownloadExposure(default));
@@ -89,10 +92,10 @@ public class CameraTests
             Assert.Equal(123, image.MetaData.Camera.Gain);
             Assert.Equal(sdkClampsOffset ? 20 : 17, image.MetaData.Camera.Offset);
             Assert.Equal(2, image.MetaData.Camera.BinX);
-            Assert.Equal(.01, image.MetaData.Image.ExposureTime);
+            Assert.Equal(seconds, image.MetaData.Image.ExposureTime);
             Assert.NotEqual(DateTime.MinValue, image.MetaData.Image.ExposureStart);
             Assert.True(camera.Connected);
-            Assert.Equal(2, starts);
+            Assert.Equal(reread ? 1 : 2, starts);
         }
         finally { camera.Disconnect(); }
     }
