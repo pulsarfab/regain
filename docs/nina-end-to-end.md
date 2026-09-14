@@ -1,15 +1,17 @@
 # NINA end-to-end acceptance matrix
 
-Status: **in progress; desktop capture restored**, 2026-09-14. Resetting
-the Computer Use JavaScript connection after restoring the desktop resolved the
-initial foreground-process error. All ASI676MC and Duo main-sensor SDK binning
-modes have now produced new images in NINA's image pane. Remaining cases are
-pending, not passes inferred from command-line tests.
+Status: **attached-hardware acceptance matrix passed**, 2026-09-14. All 11
+advertised camera/backend/bin combinations produced fresh images inspected in
+NINA's image pane. ROI, timing, controls, sequence metadata, cancellation and
+worker-recovery checks below also passed. This covers SDK operation on the three
+attached sensors and experimental direct operation on ASI676MC; it does not
+establish P25 compatibility or recovery from physical USB faults.
 
 Preflight confirmed that the installed `ZwoGain.NINA.dll` matches the local
-Release build by SHA-256. GitHub CI passed for implementation `d8491b6` and
-documentation commit `c9f5df7`. SDK property enumeration, which does not open
-the cameras, confirmed the binning modes below.
+Release build by SHA-256. The guide-offset correction `ed3a820` was subsequently
+built, installed and tested in NINA; GitHub CI passed through `81c1d96`.
+SDK property enumeration, which does not open the cameras, confirmed the
+binning modes below.
 
 ## Scope and expected full-frame output
 
@@ -32,13 +34,15 @@ NINA's adapter rounds output width down to a multiple of 8 and height to even.
 | SDK | ASI220MM Mini | 2 | 960 × 540 | Pass after offset fix: mean 3182.31, offset 200 |
 | Direct | ASI676MC | 1 | 3552 × 3552 | Pass: visible new frame, 16-bit, mean 630.14 |
 
-Completed rows used one second, gain 0, offset 0, USB limit 40, with Save and
-Loop disabled. The ASI676MC produced an illuminated scene; the user's cap
-description applies to the Duo. No image pixels were saved or committed.
+Completed rows used one second, gain 0, requested offset 0, USB limit 40, with
+Save and Loop disabled. The guide SDK applied offset 200 as described below.
+The ASI676MC produced an illuminated scene; the user's cap description applies
+to the Duo. Matrix snapshots were unsaved; sequence FITS files stayed local
+outside the repository. No image pixels were committed.
 The image-pane dimensions and statistics above were read from screenshots.
 
-For each pending row, select the camera/backend in setup, save, connect, capture a
-one-second capped frame and inspect the newly displayed image. Check camera
+To repeat each row, select the camera/backend in setup, save, connect, capture a
+one-second frame and inspect the newly displayed image. Check camera
 name, backend, binning, dimensions, 16-bit output, exposure metadata and image
 statistics. Use automatic stretching to inspect dark-frame structure. A dark
 image is expected; absence of stars is not a failure. Distinguish actual zero
@@ -90,6 +94,19 @@ passed and image metadata showed offset 200. A 512 × 256 sensor ROI at (16, 32)
 and bin 2 produced 256 × 128 (mean 3205.43); disabling subsampling restored
 960 × 540 (mean 3182.75). All four were fresh one-second images with gain 0,
 16-bit output, and no capture errors.
+
+Additional guide timing checks at bin 1, gain 0, applied offset 200 and USB 40
+displayed fresh 1920 × 1080 images at 32 µs (mean 3182.45, standard deviation
+28.62) and the advertised ten-second maximum (mean 3209.76, standard deviation
+72.47). At 100 ms, ROI (16, 32, 512, 256) produced 512 × 256 (mean 3176.25,
+standard deviation 28.28). Disabling ROI restored 1920 × 1080 (mean 3178.96,
+standard deviation 26.75). No capture errors occurred.
+
+At 100 ms and full-frame bin 1, USB 100 transferred frames at gain 300 /
+offset 750 (mean 12507.50, standard deviation 217.68) and gain 600 / offset
+1500 (mean 46572.27, standard deviation 6186.46), with matching metadata.
+Restoring requested gain/offset 0 and USB 40 produced applied offset 200 and
+the original baseline (mean 3178.88 versus 3178.96, standard deviation 26.78).
 
 ### Additional SDK ASI676MC checks
 
@@ -168,6 +185,10 @@ Restoring gain/offset 0 and USB 40 returned the baseline (mean 1.53 versus
   scene clipped heavily at gain 600. Gain 0 / offset 200 produced a new frame
   with matching metadata (mean 15408.17). Restoring gain/offset 0 returned the
   baseline image response (mean 108.25 versus 108.22 before control changes).
+- A later 100 ms intermediate-offset check at gain 0 / offset 100 displayed
+  a fresh 3552 × 3552 frame (mean 7757.34, standard deviation 1840.73) with
+  matching metadata. Restoring offset 0 produced mean 107.49, standard
+  deviation 152.03, close to the earlier baseline.
 - Setup rejected the saved guide sensor when the experimental option was
   enabled, with an inline instruction to choose ASI676MC or disable that
   option. Selecting ASI676MC then connected successfully using the direct
@@ -183,8 +204,10 @@ Restoring gain/offset 0 and USB 40 returned the baseline (mean 1.53 versus
   Sequence files are kept only in a dedicated local test directory, outside
   the repository. Snapshot Save remains off.
 
-Entries below are pending full completion unless covered above. Record settings, visible image dimensions,
-statistics, capture/recovery outcome and any error text for each completed case.
+The coverage checklist below is complete for the attached hardware and exposed
+backends. Sequence and cancellation cases are per backend, not every possible
+combination of camera, controls and exposure type. The results above record
+settings, visible image dimensions, statistics and capture/recovery outcomes.
 Keep raw logs and screenshots containing device identity local; publish sanitized
 results, never camera pixels or calibration payloads without a separate request.
 
@@ -210,6 +233,17 @@ process-kill test. Physical detach/power-cycle experiments are separate cases.
 NINA end-to-end success requires an observed new image in its image pane; the
 earlier command-line and simulator results remain separately documented in
 [validation](validation.md).
+
+## Final restored state
+
+NINA was left connected to ASI676MC through the SDK, gain/offset 0 and USB 40.
+A final one-second, bin-1 full frame displayed 3552 × 3552, mean 563.85 and
+standard deviation 1405.15, with matching gain/offset metadata. The entire
+image was fitted to the image pane. Snapshot Loop, Save and subsampling were
+off. The original NINA image output directory was restored; sequence test
+files remain in its separate local `ZWOgain-e2e` subdirectory. Duo cooling and
+dew heater were off, with its original −10°C target field restored before
+disconnecting that camera.
 
 ## Issue found during visual testing
 
