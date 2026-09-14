@@ -117,6 +117,27 @@ advertised maxima, gain 600 / offset 200 (mean 58595.36, standard deviation
 5942.12; substantial expected clipping in the illuminated scene). Metadata
 matched both requested control pairs. Restoring gain/offset 0 and USB 40
 returned the baseline response (mean 94.74 versus 94.88 before changes).
+A normal 31-second SDK exposure also completed at full-frame bin 2 (mean
+11658.19, standard deviation 18150.12). The 30-second retry cutoff did not
+prevent the exposure; it only disables automatic retries for that request.
+
+### Additional SDK Duo-main checks
+
+Installed implementation `ed3a820` captured the advertised minimum 32 µs at
+full-frame bin 2, 3120 × 2088 (mean 1.19, standard deviation 1.42).
+At 100 ms, gain/offset 0 and USB 40, the ROI (16, 32, 512, 256) produced
+256 × 128 at bin 2 (mean 1.15, standard deviation 1.43) and 512 × 256 at
+bin 1 (mean 1.47, standard deviation 2.89). Disabling subsampling restored
+6248 × 4176 (mean 1.52, standard deviation 2.93). All were fresh capped-camera
+images inspected in NINA. Cooling and dew heater remained off.
+
+Full-frame 100 ms control tests also passed. Equipment default gain -25 with
+snapshot gain -1 (use the camera default) produced metadata gain -25, offset 0
+(mean 1.34, standard deviation 2.42). At USB 100, gain 350 / offset 120 yielded
+mean 1192.42, standard deviation 91.20; the advertised maxima 700 / 240 yielded
+mean 2942.65, standard deviation 3663.31. Metadata matched both control pairs.
+Restoring gain/offset 0 and USB 40 returned the baseline (mean 1.53 versus
+1.52 before changes, standard deviation 2.93). No capture errors occurred.
 
 ### Completed direct-driver checks
 
@@ -150,7 +171,8 @@ returned the baseline response (mean 94.74 versus 94.88 before changes).
 - Setup rejected the saved guide sensor when the experimental option was
   enabled, with an inline instruction to choose ASI676MC or disable that
   option. Selecting ASI676MC then connected successfully using the direct
-  backend. The Duo-main rejection still needs a separate visual check.
+  backend. The Duo-main selection was separately rejected by the same guard;
+  disabling the experimental option then connected the Duo through the SDK.
 - The legacy sequencer produced fresh direct full-frame images for Light
   (1 s, mean 629.80), Dark (1 s, mean 629.84), and Bias (1 s, mean 629.76;
   then 32 µs, mean 51.30). Each saved FITS header had the requested frame type,
