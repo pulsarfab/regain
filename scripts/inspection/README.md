@@ -1,8 +1,14 @@
 # Transport experiments
 
 These tools are separate from the installed plugin. They require Windows x64,
-Python 3.12, the built debug Rust host, and exactly one connected ASI camera.
+Python 3.12 and the built debug Rust host. Select an exact SDK camera name with
+`--camera-name` when multiple models are attached; otherwise exactly one camera
+must be connected.
 Disconnect the camera in NINA/other capture applications first.
+
+For bringing up another sensor, follow the
+[per-camera SDK capture procedure and coverage table](../../docs/camera-bringup.md).
+It distinguishes captured transactions from decoded and hardware-validated support.
 
 From the repository root:
 
@@ -69,6 +75,8 @@ uses the installed driver exclusively and never loads ASICamera2.dll:
 ```powershell
 cargo run -p zwogain-direct --locked
 cargo run -p zwogain-direct --locked -- --probe
+# Descriptor-only inventory when several cameras are attached:
+cargo run -p zwogain-direct --locked -- --probe-all
 # Explicit idle-endpoint experiment: one 16 KiB read, cancel after 100 ms, drain.
 cargo run -p zwogain-direct --locked -- --probe --cancel-read
 ```

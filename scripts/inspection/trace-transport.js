@@ -15,6 +15,11 @@ function hex(p, length) {
 }
 function u32(p) { try { return p.isNull() ? null : p.readU32(); } catch (_) { return null; } }
 function collectBulk(record, input, output, length) {
+    if (globalThis.TRACE_PROCESSING && record.code === '0x220020' && record.header?.startsWith('c0c3')
+        && length > 38 && length <= 2086) {
+        const index = input.add(4).readU16();
+        send({kind:'calibration-buffer',name:'eeprom-'+index},input.add(38).readByteArray(length-38));
+    }
     if (!globalThis.TRACE_HASH_BULK || record.code !== '0x22004b') return;
     if (u32(input.add(14)) === 0 && u32(input.add(18)) === 0
         && length > 0 && length <= record.outputLength && length <= 1048576)
@@ -152,6 +157,20 @@ Process.attachModuleObserver({
                     onEnter() {
                         if (stage === 'retrieved' && (this.context.rax.toUInt32() & 255) === 0) return;
                         const length = this.context.r12.toUInt32();
+                        if (stage === 'before-correction') {
+                            const camera = this.context.rbx;
+                            const fields = {enabled:camera.add(0x109).readU8(),step:camera.add(0x2d4).readU8()+1,
+                                depth:camera.add(0x2b0).readU8(),width:camera.add(0x540).readU32(),height:camera.add(0x544).readU32(),
+                                hpcCount:camera.add(0x440).readU32(),deadCount:camera.add(0x55c).readU32(),
+                                rowMap:!camera.add(0x500).readPointer().isNull(),columnMap:!camera.add(0x508).readPointer().isNull()};
+                            emit('correction-layout',fields);
+                            if (fields.hpcCount <= 100000 && fields.deadCount <= 100000) {
+                                for (const [name,offset,count] of [['hpc',0x448,fields.hpcCount],['dead',0x560,fields.deadCount]]) {
+                                    const table = camera.add(offset).readPointer();
+                                    if (count > 0 && !table.isNull()) send({kind:'calibration-buffer',name},table.readByteArray(count*4));
+                                }
+                            }
+                        }
                         if (length > 0 && length <= 32 * 1024 * 1024)
                             send({kind: 'processing-buffer', stage}, this.context.rsi.readByteArray(length));
                     }

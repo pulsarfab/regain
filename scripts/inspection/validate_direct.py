@@ -39,7 +39,8 @@ def capture(options):
             metadata = json.loads(exact(size))
             info = metadata['capture']
             if (metadata['sdkLoaded'] or info['sdkLoaded'] or not info['sensorFrozenBeforeRead']
-                    or info['retentionStatusBeforeArm'] != 1 or not info['transportPixelsReplaced']):
+                    or info['retentionStatusBeforeArm'] != 1 or not info['transportPixelsReplaced']
+                    or not info['defectCorrectionApplied'] or len(info['defectIndexSha256']) != 64):
                 raise RuntimeError('incorrect capture lifecycle metadata')
             expected_retries = 1 if options.get('interrupt-read-after-bytes', 0) else 0
             if info['readoutRetriesUsed'] != expected_retries:

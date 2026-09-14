@@ -3,6 +3,7 @@
 mod asi676;
 #[cfg(windows)]
 mod asi676_tables;
+mod processing;
 mod protocol;
 mod settings;
 #[cfg(windows)]
@@ -13,6 +14,9 @@ use anyhow::{Result, ensure};
 fn main() -> Result<()> {
     transport::require_sdk_absent()?;
     let args: Vec<_> = std::env::args().skip(1).collect();
+    if args == ["--process-frame"] {
+        return processing::process_stream();
+    }
     let capture = args.first().is_some_and(|a| a == "--capture");
     let mut settings = settings::Settings::default();
     let mut frames = 1_u32;
@@ -55,7 +59,11 @@ fn main() -> Result<()> {
         ensure!((1..=20).contains(&frames), "frame count must be 1..20");
     }
     ensure!(
-        args.is_empty() || args == ["--probe"] || args == ["--probe", "--cancel-read"] || capture,
+        args.is_empty()
+            || args == ["--probe"]
+            || args == ["--probe-all"]
+            || args == ["--probe", "--cancel-read"]
+            || capture,
         "Usage: zwogain-direct [--probe [--cancel-read] | --capture [--width N --height N --x N --y N --microseconds N --gain N --offset N --frames N --read-retries N --stream --replay --replay-prefix-bytes N --interrupt-read-after-bytes N]]; disconnect other camera apps first"
     );
     // Last resort for a kernel request that refuses to finish cancellation. The
@@ -70,7 +78,18 @@ fn main() -> Result<()> {
         eprintln!("Direct-driver worker deadline expired");
         std::process::exit(124);
     });
-    let paths = transport::enumerate()?;
+    let mut paths = transport::enumerate()?;
+    if args == ["--probe-all"] {
+        let mut devices = Vec::new();
+        for path in &paths {
+            devices.push(transport::Camera::open(path)?.probe()?);
+        }
+        println!(
+            "{}",
+            serde_json::json!({"sdkLoaded":false,"devices":devices})
+        );
+        return Ok(());
+    }
     if args.is_empty() {
         println!(
             "{}",
@@ -78,9 +97,16 @@ fn main() -> Result<()> {
         );
         return Ok(());
     }
+    if capture {
+        paths.retain(|path| {
+            String::from_utf16_lossy(path)
+                .to_ascii_lowercase()
+                .contains("vid_03c3&pid_676d")
+        });
+    }
     ensure!(
         paths.len() == 1,
-        "probe requires exactly one attached ZWO driver interface"
+        "operation requires exactly one matching camera interface (capture selects ASI676MC only)"
     );
     let camera = transport::Camera::open(&paths[0])?;
     let mut result = camera.probe()?;

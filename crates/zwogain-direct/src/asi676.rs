@@ -1,5 +1,5 @@
 //! Experimental ASI676MC bin-1 RAW16 acquisition. No ASI DLL calls.
-use crate::{asi676_tables, protocol, settings::Settings, transport::Camera};
+use crate::{asi676_tables, processing, protocol, settings::Settings, transport::Camera};
 use anyhow::{Result, ensure};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -59,6 +59,31 @@ fn restart_retained_read(camera: &Camera) -> Result<()> {
     Ok(())
 }
 
+fn calibration(camera: &Camera, settings: &Settings) -> Result<processing::Defects> {
+    // BE selects EEPROM access; C3 is strictly IN. Never write calibration data.
+    camera.vendor(0xbe, 0, 0, 0)?;
+    let result = (|| -> Result<processing::Defects> {
+        let mut data = camera.vendor(0xc3, 0, 0x400, 2048)?;
+        let length = processing::declared_length(&data)?;
+        while data.len() < length {
+            let offset = data.len();
+            let amount = (length - offset).min(2048).next_multiple_of(256);
+            data.extend(camera.vendor(0xc3, 0, ((0x40000 + offset) >> 8) as u16, amount as u16)?);
+        }
+        processing::Defects::decode(
+            &data,
+            settings.width as usize,
+            settings.height as usize,
+            settings.x as usize,
+            settings.y as usize,
+        )
+    })();
+    let restore = camera.vendor(0xbe, 1, 0, 0);
+    let defects = result?;
+    restore?;
+    Ok(defects)
+}
+
 pub fn capture(
     camera: &Camera,
     info: &Value,
@@ -73,6 +98,7 @@ pub fn capture(
     let start = Instant::now();
     let result = (|| -> Result<(Value, Vec<u8>)> {
         writes(camera, asi676_tables::INITIALIZE)?;
+        let defects = calibration(camera, settings)?;
         writes(camera, asi676_tables::RAW16_FULL)?;
         // Set every requested value explicitly, regardless of the preceding owner.
         word(camera, 0xb6, 0x303c, settings.x, 2)?;
@@ -230,6 +256,7 @@ pub fn capture(
             ),
         ];
         protocol::replace_envelope(&mut data, settings.width as usize)?;
+        defects.correct(&mut data)?;
         let mut sum = 0_u64;
         let mut min = u16::MAX;
         let mut max = 0;
@@ -244,7 +271,8 @@ pub fn capture(
         let metadata = json!({"sdkLoaded":false,"model":"ASI676MC","width":settings.width,"height":settings.height,
             "x":settings.x,"y":settings.y,"gain":settings.gain,"offset":settings.offset,
             "exposureMicroseconds":settings.microseconds,"hostTimed":settings.long_exposure(),
-            "bin":1,"format":"RAW16","bayer":"RGGB","defectCorrectionApplied":false,
+            "bin":1,"format":"RAW16","bayer":"RGGB","defectCorrectionApplied":true,
+            "defectCount":defects.indices.len(),"defectIndexSha256":defects.index_hash(),
             "transportPixelsReplaced":true,"wireSha256":wire_digest,"wireBoundaryWords":boundary_words,
             "sha256":format!("{:x}",Sha256::digest(&data)),"acquisitionMs":acquisition_ms,
             "boundarySequence":sequence,"replay":replay_result,

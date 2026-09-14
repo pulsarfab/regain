@@ -24,10 +24,14 @@ has not been tested; the camera was already powered during these experiments.
 
 The first/last two wire pixels contain transport words. Their magic values and
 matching sequence are checked, then replaced from two rows inward, following
-the observed SDK bin-1 operation. The returned pixels **do not yet include the
-SDK's defect correction**. Native pixel parity, calibration-table parsing,
-binning, cooling, camera identity/reconnect integration and NINA backend
-selection remain work for a production direct backend.
+the observed SDK bin-1 operation. The reader now loads the camera's factory
+calibration and applies the SDK-equivalent Bayer defect correction. Same-frame
+comparisons against SDK 1.41 are byte-exact for the tested bin-1 RAW16 cases;
+see [correction details and evidence](factory-defect-correction.md).
+Binning, non-default gamma, flips, other correction-map types, cooling, camera
+identity/reconnect integration and NINA backend selection remain work for a
+production direct backend. Capture selects the ASI676MC interface specifically
+when other ZWO models are attached, and refuses ambiguous duplicate models.
 
 ## Acquisition and retention
 

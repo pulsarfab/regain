@@ -18,6 +18,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--frames', type=int, default=1)
+    parser.add_argument('--camera-name', help='select one exact SDK camera name when multiple cameras are attached')
     parser.add_argument('--seconds', type=float, default=0.1)
     parser.add_argument('--width', type=int, default=512)
     parser.add_argument('--height', type=int, default=256)
@@ -35,7 +36,11 @@ def main():
     parser.add_argument('--compare-wire', action='store_true',
                         help='compare a complete USB pass to SDK RAW16 in memory; saves only statistics')
     parser.add_argument('--trace-processing', action='store_true', help='observe version-pinned SDK retrieval target')
+    parser.add_argument('--validate-direct-processing', action='store_true',
+                        help='compare SDK pixels with independent Rust factory correction in memory')
     args = parser.parse_args()
+    if args.validate_direct_processing and (not args.trace_processing or args.bin != 1):
+        parser.error('--validate-direct-processing requires --trace-processing and bin 1')
     if not (1 <= args.frames <= 20 and 0 < args.seconds <= 30 and 0 <= args.ready_delay <= 5
             and 0 < args.deadline <= 300 and args.width > 0 and args.height > 0
             and args.width % 8 == 0 and args.height % 2 == 0
@@ -71,6 +76,7 @@ def main():
         wire_chunks = {}
         wire_submits = []
         processing = {}
+        calibration = {}
         wire_bytes = 0
         download_seen = threading.Event()
 
@@ -116,6 +122,9 @@ def main():
                 elif message['type'] == 'send' and value.get('kind') == 'processing-buffer':
                     with wire_lock:
                         processing[value['stage']] = bytes(data)
+                elif message['type'] == 'send' and value.get('kind') == 'calibration-buffer':
+                    calibration[value['name']] = bytes(data)
+                    record({'kind':'calibration-summary','name':value['name'],'bytes':len(data),'sha256':hashlib.sha256(data).hexdigest()})
                 elif message['type'] == 'send':
                     record(value)
                     if value.get('kind') == 'io-submit' and value.get('code') == '0x22004b':
@@ -190,9 +199,34 @@ def main():
                         for stage, data in processing.items():
                             record({'kind': 'processing-comparison', 'stage': stage,
                                     **compare(data, pixels, args.width, args.height)})
+                        if args.validate_direct_processing:
+                            blocks = sorted((int(k[7:]), v) for k, v in calibration.items() if k.startswith('eeprom-'))
+                            blob = b''.join(v for _, v in blocks)
+                            if blob[:4] != b'ASID':
+                                raise RuntimeError('missing ASID calibration trace')
+                            blob = blob[:int.from_bytes(blob[4:8], 'big')]
+                            header = json.dumps({'width': args.width, 'height': args.height,
+                                                 'x': args.x, 'y': args.y, 'calibrationBytes': len(blob)}).encode()
+                            request = len(header).to_bytes(4, 'little') + header + blob + processing['retrieved']
+                            result = subprocess.run([str(ROOT / 'target/debug/zwogain-direct.exe'), '--process-frame'],
+                                                    input=request, capture_output=True, timeout=30)
+                            if result.returncode:
+                                raise RuntimeError(result.stderr.decode(errors='replace'))
+                            header_size = int.from_bytes(result.stdout[:4], 'little')
+                            metadata = json.loads(result.stdout[4:4 + header_size])
+                            corrected = result.stdout[4 + header_size:]
+                            map_matches = metadata['defectIndexSha256'] == hashlib.sha256(calibration['hpc']).hexdigest()
+                            record({'kind': 'direct-processing-validation', **metadata,
+                                    'factoryMapMatchesSdk': map_matches,
+                                    'allBytesIdentical': corrected == pixels,
+                                    **compare(corrected, pixels, args.width, args.height)})
+                            if not map_matches or corrected != pixels:
+                                raise RuntimeError('independent correction differs from SDK; see statistics')
                 return reply['result']
 
             cameras = call('list')
+            if args.camera_name:
+                cameras = [camera for camera in cameras if camera['name'] == args.camera_name]
             if len(cameras) != 1:
                 raise RuntimeError('exactly one attached ASI camera is required')
             camera = cameras[0]

@@ -12,6 +12,9 @@ Rust process; the NINA adapter keeps the capture request and recovery policy.
 An SDK error, failed download, crashed host, or hung command can become a longer
 successful capture instead of an interrupted sequence.
 
+**ZWOgain is an independent project and is not affiliated with ZWO in any way.**
+It is not endorsed, sponsored, or supported by ZWO.
+
 Initial implementation targeting **Windows x64 and NINA 3.2.0.9001**. Built from
 the process isolation, SDK ABI, and plugin packaging patterns in
 [AutoPierCam](https://github.com/theatrus/autopiercam).
