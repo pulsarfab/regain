@@ -94,7 +94,40 @@ Tested the installed NINA 3.2 application using Windows computer use:
   did not start a replacement exposure. NINA's capture and snapshot layers
   each emitted their own error notification for that propagated exception.
 
-The actual ASI2600/6200 cameras, cooler restoration, USB cable reattachment,
-and natural SDK transfer failures have not yet been tested. Simulator tests
+Cooler restoration, USB cable reattachment, P25 cameras and natural SDK transfer
+failures have not yet been tested. The subsequently attached ASI2600MM Duo and
+its guide sensor completed the SDK baseline tests described in
+[Linux research / Duo observations](linux-driver-research.md). Simulator tests
 exercise supervisory decisions, not vendor firmware behavior. Full sequencer
 acceptance remains manual.
+
+## Experimental direct backend integration (2026-09-14)
+
+- The SDK remains the default; existing camera settings without a backend field
+  load as SDK selections. The SDK-less option is persisted and only accepts the
+  verified ASI676MC. A newer setup selection cannot be overwritten by a connection
+  that started with a different backend.
+- The packaged Rust `--serve` process uses the existing binary protocol, owns the
+  camera exclusively, and reports only implemented capabilities. Adapter tests
+  verify that a saved SDK descriptor with additional binning modes is replaced
+  by the direct backend's bin-1 capabilities on connection.
+- All 50 automated tests passed locally: 10 Rust, 26 recovery/protocol, 9 NINA
+  contract/selection, and 5 Python analysis tests. Rust formatting and Clippy,
+  package/manifest validation, and all five registry-publication fixtures passed.
+- The ASI676MC's direct vendor-IN `C8` serial read matched `ASIGetSerialNumber`
+  exactly in memory. The direct process then selected and opened that identity
+  without loading the SDK. Serial bytes are not published.
+- Through the production C# supervisor, three real 3552 × 3552 RAW16 frames
+  completed with the direct backend. Deliberately killing the worker immediately
+  before the first download caused one reconnect/re-exposure recovery; the next
+  two completed with zero recoveries. This is process-failure evidence, not a
+  naturally occurring USB transfer failure.
+- The package was installed into the local NINA plugin directory. NINA launched,
+  but Computer Use could not inspect its window: "foreground window did not
+  report a process id". Consequently this build's dialog and capture display
+  were not visually verified. Local persisted selection was confirmed to remain
+  on the SDK backend. No claim of a successful desktop UI test is made.
+
+See [factory-correction evidence](factory-correction-evidence.json) for seven
+same-frame byte-exact SDK comparisons and the earlier 23-frame direct capture
+matrix. Those validate the pixel path separately from the plugin protocol tests.
