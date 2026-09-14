@@ -49,6 +49,14 @@ their ABI and log format from ZWO is a promising next step for diagnosing the
 SDK's internal USB failure stage. No export advertising resumable/chunked still
 transfer was found. Export names alone cannot establish internal capabilities.
 
+Follow-up binary inspection and real-camera transport experiments found an
+SDK-internal replay path, below the public download API. They also identified
+version-specific debug argument usage without invoking those exports. See the
+[transport investigation](transport-investigation.md) for the evidence,
+limitations, and plan for a custom transport. In particular, the inspected
+1.41 download implementation consumes the ready state after its internal
+retrieval attempt, making a repeated public call unlikely to help there.
+
 ## Useful future hardware evidence
 
 For the ASI2600/6200 series, collect the exact model, firmware/driver/SDK versions,

@@ -103,5 +103,7 @@ and terminates the worker. Diagnostic runs do not save image files.
   camera/capture/recovery checks are covered in the validation record.
 
 See [architecture](docs/architecture.md), [SDK investigation](docs/sdk-lifecycle.md)
-and [validation](docs/validation.md). Licensed under Apache-2.0; bundled vendor
+and [validation](docs/validation.md). The [transport research and experiment plan](docs/transport-investigation.md)
+records direct-driver inspection, SDK-internal replay evidence, and the route
+to an independent Rust transport. Licensed under Apache-2.0; bundled vendor
 material retains its own license, described in [third-party notices](THIRD_PARTY_NOTICES.md).

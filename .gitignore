@@ -5,3 +5,4 @@ target/
 artifacts/
 .vs/
 *.user
+**/__pycache__/

@@ -1,0 +1,430 @@
+[
+  {
+    "trace": "roi-baseline.jsonl",
+    "traceSha256": "3179cc541b2244dcd0cbf5cdf38fef3d03faf5834ed1a4b149e3b2f11a963374",
+    "events": {
+      "configuration": 1,
+      "sdk-module": 1,
+      "trace-ready": 1,
+      "command": 14,
+      "device-open": 5,
+      "io-submit": 641,
+      "io-return": 641,
+      "device-close": 5,
+      "sdk-enter": 19,
+      "io-complete": 535,
+      "camera": 1,
+      "sdk-leave": 19,
+      "frame": 1,
+      "experiment-complete": 1
+    },
+    "postDownloadStatuses": [],
+    "injectedCancellations": [],
+    "ioctlCounts": {
+      "0x220020": 598,
+      "0x220010": 5,
+      "0x22003c": 5,
+      "0x220040": 5,
+      "0x220000": 5,
+      "0x220004": 5,
+      "0x22004c": 5,
+      "0x220008": 5,
+      "0x220044": 3,
+      "0x22002c": 2,
+      "0x220038": 1,
+      "0x22004b": 2
+    },
+    "attempts": [
+      {
+        "attempt": 1,
+        "submittedBulkRequests": 2,
+        "bulkRequestSizes": {
+          "262144": 2
+        },
+        "successfulBulkRequests": 1,
+        "successfulBulkBytes": 262144,
+        "completionErrors": {
+          "win32=995 nt=0xc0000120 usb=0xc0010000": 1
+        },
+        "bulkHashesCollected": 0,
+        "distinctBulkHashes": 0,
+        "duplicateBulkHashGroups": 0,
+        "firstBulkSubmitMs": 50,
+        "lastSuccessfulBulkMs": 142,
+        "readyMs": 174,
+        "downloadMs": 674,
+        "ioSubmitsDuringDownload": 0,
+        "downloadDurationsMs": [
+          0
+        ],
+        "states": [
+          1,
+          2
+        ]
+      }
+    ]
+  },
+  {
+    "trace": "one-second-baseline.jsonl",
+    "traceSha256": "39d1f2454d7b5336eca5b99c08f863b84986168fdc7d77527c0fd63b308cc924",
+    "events": {
+      "configuration": 1,
+      "sdk-module": 1,
+      "trace-ready": 1,
+      "command": 63,
+      "device-open": 5,
+      "io-submit": 701,
+      "io-return": 701,
+      "device-close": 5,
+      "sdk-enter": 68,
+      "io-complete": 595,
+      "camera": 1,
+      "sdk-leave": 68,
+      "frame": 1,
+      "post-download-status": 1,
+      "experiment-complete": 1
+    },
+    "postDownloadStatuses": [
+      0
+    ],
+    "injectedCancellations": [],
+    "ioctlCounts": {
+      "0x220020": 610,
+      "0x220010": 5,
+      "0x22003c": 5,
+      "0x220040": 5,
+      "0x220000": 5,
+      "0x220004": 5,
+      "0x22004c": 5,
+      "0x220008": 5,
+      "0x220044": 3,
+      "0x22002c": 2,
+      "0x220038": 1,
+      "0x22004b": 50
+    },
+    "attempts": [
+      {
+        "attempt": 1,
+        "submittedBulkRequests": 50,
+        "bulkRequestSizes": {
+          "1048576": 48,
+          "67584": 2
+        },
+        "successfulBulkRequests": 25,
+        "successfulBulkBytes": 25233408,
+        "completionErrors": {
+          "win32=995 nt=0xc0000120 usb=0xc0010000": 25
+        },
+        "bulkHashesCollected": 0,
+        "distinctBulkHashes": 0,
+        "duplicateBulkHashGroups": 0,
+        "firstBulkSubmitMs": 50,
+        "lastSuccessfulBulkMs": 1157,
+        "readyMs": 1172,
+        "downloadMs": 1737,
+        "ioSubmitsDuringDownload": 0,
+        "downloadDurationsMs": [
+          10
+        ],
+        "states": [
+          0,
+          1,
+          2
+        ]
+      }
+    ]
+  },
+  {
+    "trace": "cancel-first-bulk.jsonl",
+    "traceSha256": "098a9f86655e30a5f1ff111bb53bd9bd2141e68e4a5b4fbbdcaf93504da6eb98",
+    "events": {
+      "configuration": 1,
+      "sdk-module": 1,
+      "trace-ready": 1,
+      "command": 67,
+      "device-open": 5,
+      "io-submit": 756,
+      "io-return": 756,
+      "device-close": 5,
+      "sdk-enter": 72,
+      "io-complete": 648,
+      "sdk-leave": 72,
+      "camera": 1,
+      "injected-cancel": 1,
+      "frame": 1,
+      "post-download-status": 1,
+      "experiment-complete": 1
+    },
+    "postDownloadStatuses": [
+      0
+    ],
+    "injectedCancellations": [
+      {
+        "ok": true,
+        "lastError": 0
+      }
+    ],
+    "ioctlCounts": {
+      "0x220020": 613,
+      "0x220010": 5,
+      "0x22003c": 5,
+      "0x220040": 5,
+      "0x220000": 5,
+      "0x220004": 5,
+      "0x22004c": 5,
+      "0x220008": 5,
+      "0x220044": 4,
+      "0x22002c": 3,
+      "0x220038": 1,
+      "0x22004b": 100
+    },
+    "attempts": [
+      {
+        "attempt": 1,
+        "submittedBulkRequests": 100,
+        "bulkRequestSizes": {
+          "1048576": 96,
+          "67584": 4
+        },
+        "successfulBulkRequests": 49,
+        "successfulBulkBytes": 49418240,
+        "completionErrors": {
+          "win32=995 nt=0xc0000120 usb=0xc0010000": 51
+        },
+        "bulkHashesCollected": 0,
+        "distinctBulkHashes": 0,
+        "duplicateBulkHashGroups": 0,
+        "firstBulkSubmitMs": 44,
+        "lastSuccessfulBulkMs": 1230,
+        "readyMs": 1243,
+        "downloadMs": 1801,
+        "ioSubmitsDuringDownload": 0,
+        "downloadDurationsMs": [
+          12
+        ],
+        "states": [
+          0,
+          1,
+          2
+        ]
+      }
+    ]
+  },
+  {
+    "trace": "roi-cancel.jsonl",
+    "traceSha256": "9e833d7e68f72b833be1e373895a662edefba973d6e27428cb64899d937a088c",
+    "events": {
+      "configuration": 1,
+      "sdk-module": 1,
+      "trace-ready": 1,
+      "command": 60,
+      "device-open": 5,
+      "io-submit": 658,
+      "io-return": 658,
+      "device-close": 5,
+      "sdk-enter": 64,
+      "io-complete": 549,
+      "camera": 1,
+      "sdk-leave": 64,
+      "injected-cancel": 1,
+      "exposure-failed": 1,
+      "experiment-complete": 1
+    },
+    "postDownloadStatuses": [],
+    "injectedCancellations": [
+      {
+        "ok": true,
+        "lastError": 0
+      }
+    ],
+    "ioctlCounts": {
+      "0x220020": 611,
+      "0x220010": 5,
+      "0x22003c": 5,
+      "0x220040": 5,
+      "0x220000": 5,
+      "0x220004": 5,
+      "0x22004c": 5,
+      "0x220008": 5,
+      "0x220044": 4,
+      "0x22002c": 3,
+      "0x220038": 1,
+      "0x22004b": 3,
+      "0x220030": 1
+    },
+    "attempts": [
+      {
+        "attempt": 1,
+        "submittedBulkRequests": 3,
+        "bulkRequestSizes": {
+          "262144": 3
+        },
+        "successfulBulkRequests": 0,
+        "successfulBulkBytes": 0,
+        "completionErrors": {
+          "win32=995 nt=0xc0000120 usb=0xc0010000": 3
+        },
+        "bulkHashesCollected": 0,
+        "distinctBulkHashes": 0,
+        "duplicateBulkHashGroups": 0,
+        "firstBulkSubmitMs": 50,
+        "lastSuccessfulBulkMs": null,
+        "readyMs": null,
+        "downloadMs": null,
+        "ioSubmitsDuringDownload": null,
+        "downloadDurationsMs": [],
+        "states": [
+          1,
+          3
+        ]
+      }
+    ]
+  },
+  {
+    "trace": "full-cancel-endian.jsonl",
+    "traceSha256": "648102608d9679c41ed36b9acc4cbddf9c3992d927e77d022d44d85891acb629",
+    "events": {
+      "configuration": 1,
+      "sdk-module": 1,
+      "trace-ready": 1,
+      "command": 68,
+      "device-open": 5,
+      "io-submit": 756,
+      "io-return": 756,
+      "device-close": 5,
+      "sdk-enter": 73,
+      "io-complete": 648,
+      "sdk-leave": 73,
+      "camera": 1,
+      "injected-cancel": 1,
+      "bulk-hash": 49,
+      "frame": 1,
+      "post-download-status": 1,
+      "experiment-complete": 1
+    },
+    "postDownloadStatuses": [
+      0
+    ],
+    "injectedCancellations": [
+      {
+        "ok": true,
+        "lastError": 0
+      }
+    ],
+    "ioctlCounts": {
+      "0x220020": 613,
+      "0x220010": 5,
+      "0x22003c": 5,
+      "0x220040": 5,
+      "0x220000": 5,
+      "0x220004": 5,
+      "0x22004c": 5,
+      "0x220008": 5,
+      "0x220044": 4,
+      "0x22002c": 3,
+      "0x220038": 1,
+      "0x22004b": 100
+    },
+    "attempts": [
+      {
+        "attempt": 1,
+        "submittedBulkRequests": 100,
+        "bulkRequestSizes": {
+          "1048576": 96,
+          "67584": 4
+        },
+        "successfulBulkRequests": 49,
+        "successfulBulkBytes": 49418240,
+        "completionErrors": {
+          "win32=995 nt=0xc0000120 usb=0xc0010000": 51
+        },
+        "bulkHashesCollected": 49,
+        "distinctBulkHashes": 26,
+        "duplicateBulkHashGroups": 23,
+        "firstBulkSubmitMs": 49,
+        "lastSuccessfulBulkMs": 1253,
+        "readyMs": 1261,
+        "downloadMs": 1823,
+        "ioSubmitsDuringDownload": 0,
+        "downloadDurationsMs": [
+          7
+        ],
+        "states": [
+          0,
+          1,
+          2
+        ]
+      }
+    ]
+  },
+  {
+    "trace": "final-normal.jsonl",
+    "traceSha256": "f9cb4e42c941d1f7ac47775dcf1507e59276a5c2f8f025ea392d7f99aebbbac9",
+    "events": {
+      "configuration": 1,
+      "sdk-module": 1,
+      "trace-ready": 1,
+      "command": 18,
+      "device-open": 5,
+      "io-submit": 689,
+      "io-return": 689,
+      "device-close": 5,
+      "sdk-enter": 23,
+      "io-complete": 583,
+      "camera": 1,
+      "sdk-leave": 23,
+      "frame": 1,
+      "post-download-status": 1,
+      "experiment-complete": 1
+    },
+    "postDownloadStatuses": [
+      0
+    ],
+    "injectedCancellations": [],
+    "ioctlCounts": {
+      "0x220020": 598,
+      "0x220010": 5,
+      "0x22003c": 5,
+      "0x220040": 5,
+      "0x220000": 5,
+      "0x220004": 5,
+      "0x22004c": 5,
+      "0x220008": 5,
+      "0x220044": 3,
+      "0x22002c": 2,
+      "0x220038": 1,
+      "0x22004b": 50
+    },
+    "attempts": [
+      {
+        "attempt": 1,
+        "submittedBulkRequests": 50,
+        "bulkRequestSizes": {
+          "1048576": 48,
+          "67584": 2
+        },
+        "successfulBulkRequests": 25,
+        "successfulBulkBytes": 25233408,
+        "completionErrors": {
+          "win32=995 nt=0xc0000120 usb=0xc0010000": 25
+        },
+        "bulkHashesCollected": 0,
+        "distinctBulkHashes": 0,
+        "duplicateBulkHashGroups": 0,
+        "firstBulkSubmitMs": 44,
+        "lastSuccessfulBulkMs": 202,
+        "readyMs": 229,
+        "downloadMs": 791,
+        "ioSubmitsDuringDownload": 0,
+        "downloadDurationsMs": [
+          11
+        ],
+        "states": [
+          0,
+          1,
+          2
+        ]
+      }
+    ]
+  }
+]
