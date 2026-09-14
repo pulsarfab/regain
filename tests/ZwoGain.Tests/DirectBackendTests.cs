@@ -117,7 +117,7 @@ public class DirectBackendTests
             sdkFallbackFactory: () => { fallbackStarts++; return Fallback(Duo(guide)); });
         await session.ConnectAsync(default);
         session.Set(0, 100); session.Set(5, guide ? 300 : 50);
-        var frame = await session.CaptureAsync(Exposure with { microseconds = 31000000 }, default);
+        var frame = await session.CaptureAsync(Exposure with { width = 8, microseconds = 31000000 }, default);
         Assert.Equal(0, frame.Recoveries);
         Assert.Equal(1, fallbackStarts);
         Assert.Equal(40, session.Value(6)); Assert.Equal(40, frame.Controls[6]);
@@ -153,7 +153,7 @@ public class DirectBackendTests
         using var session = new CameraSession(Duo(), Host, Fast,
             sdkFallbackFactory: () => Fallback(Duo(), "other-device"));
         await session.ConnectAsync(default);
-        await Assert.ThrowsAnyAsync<IOException>(() => session.CaptureAsync(Exposure with { microseconds = 31000000 }, default));
+        await Assert.ThrowsAnyAsync<IOException>(() => session.CaptureAsync(Exposure with { width = 8, microseconds = 31000000 }, default));
         Assert.Equal("direct-simulator", session.Serial);
     }
 
@@ -171,6 +171,41 @@ public class DirectBackendTests
             sdkFallbackFactory: () => { sdkStarts++; return Fallback(Duo()); });
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => canceled.ConnectAsync(default));
         Assert.Equal(1, sdkStarts);
+    }
+
+    [Theory]
+    [InlineData(60000000)]
+    [InlineData(120000000)]
+    public async Task LongMainExposureStartsDirectlyButFailureDoesNotRetryOrFallback(long duration)
+    {
+        HostClient? current = null;
+        int starts = 0, fallbackStarts = 0;
+        using var session = new CameraSession(Duo(), () => { starts++; return current = Host(); }, Fast,
+            sdkFallbackFactory: () => { fallbackStarts++; return Fallback(Duo()); });
+        await session.ConnectAsync(default);
+        Assert.Equal(2000000000, session.Controls[1].Max);
+        bool started = false;
+        session.Diagnostic += phase => {
+            if (phase == "Exposing") {
+                started = true;
+                Process.GetProcessById(current!.ProcessId).Kill();
+            }
+        };
+        await Assert.ThrowsAsync<IOException>(() => session.CaptureAsync(Exposure with { microseconds = duration }, default));
+        Assert.True(started);
+        Assert.Equal(1, starts);
+        Assert.Equal(0, fallbackStarts);
+        Assert.Equal("direct", session.Backend);
+    }
+
+    [Fact]
+    public async Task MainAdvertisesLongExposureRangeWithoutSdkFallback()
+    {
+        using var session = new CameraSession(Duo(), Host, Fast);
+        await session.ConnectAsync(default);
+        Assert.Equal(2000000000, session.Controls[1].Max);
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() =>
+            session.CaptureAsync(Exposure with { microseconds = 2000000001 }, default));
     }
 
 }

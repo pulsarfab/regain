@@ -5,6 +5,10 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::time::{Duration, Instant};
 
+// SDK exposure range. Integrations >= 1 s use host timing, so their duration
+// does not increase the sensor frame/shutter register values.
+pub const MAX_EXPOSURE_US: u32 = 2_000_000_000;
+
 fn writes(camera: &Camera, commands: &[(u8, u16, u16)]) -> Result<()> {
     for &(request, register, value) in commands {
         camera.vendor(request, register, value, 0)?;
@@ -66,7 +70,7 @@ pub fn validate(s: &Settings, gain: i32) -> Result<()> {
         "invalid Duo bin-1 ROI (x multiple of 16, y even)"
     );
     ensure!(
-        (32..=30_000_000).contains(&s.microseconds)
+        (32..=MAX_EXPOSURE_US).contains(&s.microseconds)
             && (-25..=700).contains(&gain)
             && s.offset <= 240
             && s.read_retries <= 5,
@@ -432,4 +436,27 @@ fn capture_native(
     let frame = result?;
     cleanup?;
     Ok(frame)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn long_exposures_keep_host_timed_sensor_registers_and_sdk_range() {
+        let mut settings = Settings {
+            width: 6248,
+            height: 4176,
+            microseconds: 1_000_000,
+            ..Settings::default()
+        };
+        let registers = timing(&settings);
+        for duration in [30_000_001, 60_000_000, 120_000_000, MAX_EXPOSURE_US] {
+            settings.microseconds = duration;
+            assert!(validate(&settings, 100).is_ok());
+            assert_eq!(timing(&settings), registers);
+        }
+        settings.microseconds = MAX_EXPOSURE_US + 1;
+        assert!(validate(&settings, 100).is_err());
+    }
 }
