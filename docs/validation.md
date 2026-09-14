@@ -4,6 +4,10 @@ Initial development validation: 2026-09-13 (America/Los_Angeles).
 
 - Windows x64, ASI SDK 1.41, NINA.Plugin 3.2.0.9001, .NET 8 target.
 - Rust frame-bound test, formatting and Clippy with warnings denied.
+- Two additional direct-driver Rust tests validate the packed descriptor ABI,
+  error/length handling and malformed USB descriptor chains. Five Python analysis
+  tests cover incomplete transfer runs, replay separation, endian/scaling detection
+  and sparse pixel differences; these run in a separate GitHub CI job.
 - 22 .NET supervisor/transport tests: download failure, native host crash,
   hung download watchdog, retry exhaustion, cancellation during exposure and
   reconnect delay, next-capture recovery, opt-in same-frame re-download,
@@ -35,6 +39,13 @@ Initial development validation: 2026-09-13 (America/Los_Angeles).
   SDK transfer error.
 - Hardware ROI run: five successful 512 × 256 RAW16 frames with bin 2 and
   binned origin (16, 8), approximately 169–209 ms per operation.
+- Direct Rust probe, no SDK: correct ASI676MC descriptors and five successful
+  idle bulk-read cancellation/drain cycles, followed by a successful SDK capture.
+  Follow-up transfer comparisons identified exact bin-1 SDK image agreement after
+  its correction stage, and two controlled cancellation experiments produced two
+  byte-identical complete transfer runs from one exposure command. See the
+  [direct-driver evidence](direct-driver-experiments.json) and
+  [interpretation/limits](transport-investigation.md#follow-up-direct-rust-io-and-image-processing-2026-09-13).
 
 ## Interactive NINA integration
 

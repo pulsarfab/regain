@@ -14,6 +14,13 @@ function hex(p, length) {
     catch (_) { return null; }
 }
 function u32(p) { try { return p.isNull() ? null : p.readU32(); } catch (_) { return null; } }
+function collectBulk(record, input, output, length) {
+    if (!globalThis.TRACE_HASH_BULK || record.code !== '0x22004b') return;
+    if (u32(input.add(14)) === 0 && u32(input.add(18)) === 0
+        && length > 0 && length <= record.outputLength && length <= 1048576)
+        send({kind: 'bulk-hash-input', sequence: record.sequence}, output.readByteArray(length));
+    else emit('bulk-payload-skipped', {sequence: record.sequence, bytes: length});
+}
 function controlReply(record) {
     // The observed register-read command returns at most four bytes here.
     // Do not collect general control payloads (e.g. identifiers or firmware).
@@ -84,6 +91,7 @@ attach(kernel, 'DeviceIoControl', {
             bytes: result.toInt32() ? u32(this.bytes) : null, elapsedMs: Date.now() - this.start,
             header: result.toInt32() ? hex(this.input, Math.min(this.record.inputLength, 38)) : null
         });
+        if (result.toInt32()) collectBulk(this.record, this.input, this.output, u32(this.bytes));
         if (globalThis.TRACE_CANCEL_FIRST_BULK && !cancelled && this.record.code === '0x22004b'
             && !result.toInt32() && error === 997 && this.record.overlapped !== '0x0') {
             cancelled = true;
@@ -111,11 +119,7 @@ attach(kernel, 'GetOverlappedResult', {
             header: hex(this.record.input, Math.min(this.record.inputLength, 38)),
             controlReply: result.toInt32() ? controlReply(this.record) : null
         });
-        if (globalThis.TRACE_HASH_BULK && result.toInt32() && this.record.code === '0x22004b') {
-            const length = u32(this.bytes);
-            if (length > 0 && length <= this.record.outputLength && length <= 1048576)
-                send({kind: 'bulk-hash-input', sequence: this.record.sequence}, this.record.output.readByteArray(length));
-        }
+        if (result.toInt32()) collectBulk(this.record, this.record.input, this.record.output, u32(this.bytes));
         if (result.toInt32() || error !== 996) pending.delete(this.key);
     }
 });
@@ -123,6 +127,22 @@ Process.attachModuleObserver({
     onAdded(module) {
         if (module.name.toLowerCase() !== 'asicamera2.dll') return;
         emit('sdk-module', {name: module.name});
+        if (globalThis.TRACE_PROCESSING) {
+            // Version-pinned call sites, established by disassembly of SDK 1.41 x64.
+            Interceptor.attach(module.base.add(0x52b6), {
+                onEnter() { emit('retrieval-target', {target: location(this.context.rax.add(0x90).readPointer())}); }
+            });
+            for (const [rva, stage] of [[0x16cbb, 'retrieved'], [0x16dbc, 'before-correction'], [0x16dc4, 'after-correction']]) {
+                Interceptor.attach(module.base.add(rva), {
+                    onEnter() {
+                        if (stage === 'retrieved' && (this.context.rax.toUInt32() & 255) === 0) return;
+                        const length = this.context.r12.toUInt32();
+                        if (length > 0 && length <= 32 * 1024 * 1024)
+                            send({kind: 'processing-buffer', stage}, this.context.rsi.readByteArray(length));
+                    }
+                });
+            }
+        }
         for (const name of ['ASIOpenCamera', 'ASIInitCamera', 'ASICloseCamera', 'ASIStartExposure',
             'ASIStopExposure', 'ASIGetExpStatus', 'ASIGetDataAfterExp']) attach(module, name, {
             onEnter(args) {

@@ -58,8 +58,15 @@ def summarize(path):
     return {'trace': path.name, 'traceSha256': hashlib.sha256(path.read_bytes()).hexdigest(),
             'events': dict(Counter(r['kind'] for r in rows)),
             'postDownloadStatuses': [r['status'] for r in rows if r['kind'] == 'post-download-status'],
-            'injectedCancellations': [{'ok': r['ok'], 'lastError': r['lastError']} for r in rows
+            'injectedCancellations': [{'ok': r['ok'], 'lastError': r['lastError'],
+                                      'completion': next(({k: c.get(k) for k in ['ok', 'lastError', 'bytes']}
+                                                          for c in rows if c['kind'] == 'io-complete'
+                                                          and c['sequence'] == r['sequence']
+                                                          and (c['ok'] or c['lastError'] != 996)), None)} for r in rows
                                       if r['kind'] == 'injected-cancel'],
+            'wireRuns': [r for r in rows if r['kind'] == 'wire-runs'],
+            'wireReplayIdentity': [r for r in rows if r['kind'] == 'wire-replay-identity'],
+            'wireComparisons': [r for r in rows if r['kind'] in ['wire-comparison', 'processing-comparison']],
             'ioctlCounts': dict(Counter(r['code'] for r in submitted.values())), 'attempts': frames}
 
 

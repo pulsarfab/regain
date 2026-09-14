@@ -1,3 +1,4 @@
 pefile==2024.8.26
 capstone==5.0.9
 frida==17.18.0
+numpy==2.4.3

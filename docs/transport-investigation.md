@@ -31,7 +31,7 @@ flowchart LR
     C --> D[ASICAMUSB3.sys]
     D --> U[Windows USB stack]
     U --> F[Camera firmware / sensor]
-    P[Independent descriptor probe] --> D
+    P[Independent Rust driver probe] --> D
 ```
 
 The independent Python probe successfully opened that interface and read
@@ -103,16 +103,98 @@ See [Microsoft's cancellation semantics](https://learn.microsoft.com/en-us/windo
   `ASI_EXP_FAILED`. It submitted three bulk requests and had no successful
   bulk completion. Thus even this camera has configuration-dependent recovery.
 
-The repeated USB block hashes do not directly match the application's RAW16
-chunk hashes, including after 16-bit byte swapping. The SDK may transform or
-rearrange the wire data; that mapping is still unresolved. No claim of a
-replacement transport's scientific image fidelity follows from these tests.
-Pixel bytes were discarded; raw traces contain only metadata and optional
-hashes. A subsequent normal full-frame capture succeeded after the ROI failure.
+The initial USB block hashes did not match the application's RAW16 chunk hashes,
+including after 16-bit byte swapping. The follow-up below explains this for
+bin-1 RAW16 on this camera: sparse SDK pixel corrections change whole-block
+hashes even though almost all individual pixels already match. Pixel bytes were
+discarded; traces contain only metadata, statistics and optional hashes.
+A subsequent normal full-frame capture succeeded after the ROI failure.
 
 These tests induce cancellation, not cable faults, endpoint stalls, partial
 USB packets or disconnects. The camera stayed powered. Natural failures and
 ASI2600/6200 hardware remain untested.
+
+## Follow-up: direct Rust I/O and image processing (2026-09-13)
+
+`crates/zwogain-direct` is now a separate research executable. It enumerates the
+installed ZWO interface using SetupAPI and opens it exclusively, with overlapped
+I/O. No ASI SDK dependency is present. It reads the driver version and standard
+USB descriptors, validating the packed header, returned lengths and both driver
+status fields. Enumeration does not print device paths or require a saved SDK trace.
+
+On the ASI676MC it independently returned VID `03c3`, PID `676d`, USB 3.0,
+configuration length 31, bulk-IN `81`, 1024-byte packets, burst 15, and driver
+version `01020200`. Five explicit `--cancel-read` runs each submitted a 16 KiB
+read to the idle endpoint, requested cancellation after 100 ms and observed
+terminal completion: Win32 995, NTSTATUS `c0000120`, USBD `c0010000`, zero bytes.
+An SDK full-frame capture succeeded afterward. This tests the transport primitive;
+the executable does **not** arm an exposure or accept a frame.
+
+Buffers, events and OVERLAPPED structures remain alive until terminal completion,
+including the cancellation path, as required by
+[Microsoft's CancelIoEx contract](https://learn.microsoft.com/en-us/windows/win32/api/ioapiset/nf-ioapiset-cancelioex).
+If cancellation has not drained after two seconds, the research worker exits
+without unwinding those buffers. A 30-second process watchdog covers an otherwise
+stuck driver call. Descriptor requests have five-second deadlines. The current
+primitive handles one request; a capture queue and supervised transport protocol
+remain to be built.
+
+### RAW16 mapping
+
+`--compare-wire` temporarily retains completed driver buffers in Python memory
+and compares individual 16-bit samples with the SDK image. No image samples are
+written. The collector now covers both immediate and pending I/O completions.
+It only compares consecutive successful request runs of exactly the requested
+frame length; a cancelled or missing request breaks the run. These are candidate
+frame runs for analysis, not accepted frames in the production driver.
+
+For 512 × 256 ROI and 3552 × 3552 full frame at bin 1, including an ROI origin of
+(16, 8), roughly 99.9% of samples match directly as little-endian words. Swapping
+or scaling does not explain the remaining samples. With the exact inspected SDK
+hash pinned, passive hooks identified this processing path:
+
+| SDK 1.41 x64 RVA | Observation |
+| --- | --- |
+| `52b6` → virtual target `16c00` | Public download dispatches to internal retrieval. |
+| `16cbb` | Internal retrieved buffer still differs sparsely from the final image. |
+| `16cc3`–`16cf9` | For the observed bin-1 RAW16 path, the first and last 32-bit words are replaced from two rows inward. |
+| `16dbc` → `1043c0` | Additional pixel processing occurs; disassembly accesses tables associated with dead-pixel code. |
+| `16dc4` | Buffer after this routine matches the returned SDK image exactly at bin 1. |
+
+The correction routine references a table at object offset `448` with count `440`,
+and additional row/table data. Initialization code logs `HPC Dead pixel:%d` for
+that table. This supports identifying a defect-correction stage; the calibration
+source, all table meanings, interpolation rules and boundary cases have **not**
+yet been reproduced independently. The 32-bit-word replacement is observed code;
+its firmware/header purpose is not established.
+
+The exact post-correction match includes all 12,616,704 pixels in a full frame.
+It validates where the SDK conversion happens, **not** an independent decoder.
+For bin 2, a 512 × 256 output required 1,048,576 driver bytes while the final image
+was 262,144 bytes. The comparison correctly rejected a direct size match; the
+subsequent software-binning stage still needs mapping.
+
+### Complete-frame replay identity
+
+In two repeat full-frame, one-second cancellation experiments, each targeted
+request completed cancelled (995). Each run issued only one public exposure
+command and produced two complete consecutive driver-data runs of 25,233,408
+bytes. **Every byte of the first run equalled the corresponding byte of the
+second run** in each experiment, followed by a successful SDK download. This
+extends the earlier partial-block evidence to complete-frame identity under
+these controlled conditions. The post-correction SDK buffer also matched exactly.
+
+This is a driver-buffer observation with timing-changing instrumentation, not a
+USB bus capture or a guarantee that any failed transfer can be replayed. The
+failure can affect a queued read after useful data has arrived. We still need
+controlled faults at different offsets, explicit frame/pass boundaries, firmware
+retention limits, and an independently validated replay command sequence.
+
+Reviewed statistics and trace hashes are in
+[direct-driver experiment evidence](direct-driver-experiments.json). Raw local
+traces remain ignored; no camera photos, calibration tables or serials are in
+the published evidence. The new executable and inspection dependencies remain
+outside the NINA plugin package.
 
 ## Public re-download and debug exports
 
@@ -146,15 +228,16 @@ version-specific observations, not vendor-supported signatures.
    Add cancellation after selected completed chunks, without fabricating
    completion results. Exit criterion: identify where replay succeeds/fails,
    whether failures are transport or firmware stalls, and their status codes.
-2. **Map replay and image formatting.** Trace the callers of the candidate
+2. **Map replay and image formatting — bin-1 processing stage located.** Trace the callers of the candidate
    `0x23`/`0x18` accesses and compare successful/failed branches. Vary one capture
    parameter at a time. Establish start, exposure-complete, readout-start,
    replay and stop semantics. Determine wire packing, row order, padding,
    scaling, binning and Bayer origin. Exit criterion: bit-exact agreement with
    SDK RAW16 output and convincing same-frame identity across replay, including
    the missing/failed portion, not just overlapping blocks.
-3. **Build a Rust transport against the existing signed driver.** Start with
-   enumeration/descriptors, then bounded queued bulk I/O and decoded completion
+3. **Build a Rust transport against the existing signed driver — initial probe implemented.**
+   Enumeration/descriptors and a single bounded bulk read/cancel work. Next add
+   bounded queued bulk I/O and decoded completion
    status. Own all request buffers until cancellation has actually completed.
    Expose progress and typed failures to the supervisor. Keep one owner of the
    camera; do not compete with the SDK for endpoint reads. Initially use a

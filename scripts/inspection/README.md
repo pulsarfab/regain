@@ -60,3 +60,54 @@ Raw traces include local device interface paths and are ignored under
 dependencies and hooks are not packaged with the plugin.
 
 See [findings and implementation plan](../../docs/transport-investigation.md).
+
+## Direct Rust driver probe
+
+Disconnect the camera from NINA and other applications first. This executable
+uses the installed driver exclusively and never loads ASICamera2.dll:
+
+```powershell
+cargo run -p zwogain-direct --locked
+cargo run -p zwogain-direct --locked -- --probe
+# Explicit idle-endpoint experiment: one 16 KiB read, cancel after 100 ms, drain.
+cargo run -p zwogain-direct --locked -- --probe --cancel-read
+```
+
+Without arguments it reports the number of interfaces, opening none. Probe mode
+requires exactly one interface. It validates standard descriptors and prints
+status metadata. The optional read discards all received bytes and never treats
+them as an image. It does not issue vendor writes, start exposures or reset pipes.
+The process has a 30-second watchdog and terminates if a cancelled request will
+not drain; this prevents returning/freeing memory still owned by the driver.
+
+## Pixel mapping and processing observation
+
+```powershell
+.reference/inspection-venv/Scripts/python.exe scripts/inspection/trace_transport.py --output artifacts/inspection/mapping.jsonl --width 3552 --height 3552 --compare-wire --trace-processing
+.reference/inspection-venv/Scripts/python.exe scripts/inspection/trace_transport.py --output artifacts/inspection/replay-mapping.jsonl --width 3552 --height 3552 --seconds 1 --compare-wire --trace-processing --cancel-first-bulk
+.reference/inspection-venv/Scripts/python.exe scripts/inspection/summarize_wire.py artifacts/inspection/mapping.jsonl artifacts/inspection/replay-mapping.jsonl --output artifacts/inspection/reviewed-mapping.json
+.reference/inspection-venv/Scripts/python.exe -m unittest discover -s scripts/inspection -p "test_*.py"
+```
+
+`--compare-wire` retains a bounded amount of pixel data in memory (up to 256 MiB
+of completed transfers per exposure; output frame at most 128 MiB), then emits
+only equality/transform statistics. Temporary arrays increase peak memory usage.
+It splits consecutive completed requests at missing/cancelled requests and never
+joins data across those gaps. Equality across complete runs provides evidence
+about replay, not an acceptance policy for camera images. `--bin`, `--x` and
+`--y` vary binning and the binned ROI origin; size mismatches are reported without
+inventing a decoder.
+
+`--trace-processing` additionally observes three internal buffer stages and the
+retrieval dispatch target. It requires `--compare-wire` and the exact SHA-256 of
+the inspected Windows x64 SDK 1.41 binary. Snapshots are capped at 32 MiB each.
+The hooks are passive, version-specific research observations, never production
+dependencies or calls to undocumented entry points. No buffers are modified.
+Neither raw transfer data nor processing snapshots are written to files.
+
+Reproduce the relevant disassembly with explicit regions (an export's first
+Windows unwind entry can cover only its prologue):
+
+```powershell
+.reference/inspection-venv/Scripts/python.exe scripts/inspection/inspect_pe.py vendor/zwo/ASICamera2.dll --region 0x51d0:0x13a --region 0x16c00:0x45e --region 0x1043c0:0x300 --output artifacts/inspection/processing-disassembly.json
+```

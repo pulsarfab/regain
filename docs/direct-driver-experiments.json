@@ -1,0 +1,840 @@
+[
+  {
+    "trace": "map-final-full.jsonl",
+    "traceSha256": "b8a66ada2977fe40ce6fb504d2d93bac8afa55a3e6f52d28967a8803afaf23c3",
+    "injectedCancellations": [],
+    "attempts": [
+      {
+        "attempt": 1,
+        "submittedBulkRequests": 50,
+        "bulkRequestSizes": {
+          "1048576": 48,
+          "67584": 2
+        },
+        "successfulBulkRequests": 25,
+        "successfulBulkBytes": 25233408,
+        "completionErrors": {
+          "win32=995 nt=0xc0000120 usb=0xc0010000": 25
+        },
+        "bulkHashesCollected": 25,
+        "distinctBulkHashes": 25,
+        "duplicateBulkHashGroups": 0,
+        "firstBulkSubmitMs": 56,
+        "lastSuccessfulBulkMs": 219,
+        "readyMs": 232,
+        "downloadMs": 796,
+        "ioSubmitsDuringDownload": 0,
+        "downloadDurationsMs": [
+          59
+        ],
+        "states": [
+          0,
+          1,
+          2
+        ]
+      }
+    ],
+    "wireRuns": [
+      {
+        "kind": "wire-runs",
+        "completeRuns": 1,
+        "rejectedRunBytes": []
+      }
+    ],
+    "wireReplayIdentity": [],
+    "parameters": {
+      "frames": 1,
+      "seconds": 0.1,
+      "width": 3552,
+      "height": 3552,
+      "bin": 1,
+      "x": 0,
+      "y": 0,
+      "ready_delay": 0.5,
+      "deadline": 60,
+      "cancel_first_bulk": false,
+      "hash_bulk": false,
+      "compare_wire": true,
+      "trace_processing": true
+    },
+    "sdkSha256": "0c8778c3cce2012961b079e3c7d0d8348a8b3823939335d9e98148cb5d5dc34a",
+    "camera": {
+      "name": "ZWO ASI676MC",
+      "width": 3552,
+      "height": 3552
+    },
+    "comparisons": [
+      {
+        "kind": "wire-comparison",
+        "run": 0,
+        "wireBytes": 25233408,
+        "frameBytes": 25233408,
+        "comparable": true,
+        "differences": {
+          "count": 12532,
+          "bounds": [
+            0,
+            0,
+            3551,
+            3551
+          ],
+          "wireLow4Zero": false,
+          "sdkChangedDown": 8066,
+          "sdkChangedUp": 4466
+        },
+        "bestMapping": {
+          "endian": "<",
+          "shift": 0,
+          "matchedPixels": 12604172,
+          "totalPixels": 12616704,
+          "exact": false
+        }
+      },
+      {
+        "kind": "processing-comparison",
+        "stage": "retrieved",
+        "wireBytes": 25233408,
+        "frameBytes": 25233408,
+        "comparable": true,
+        "differences": {
+          "count": 12532,
+          "bounds": [
+            0,
+            0,
+            3551,
+            3551
+          ],
+          "wireLow4Zero": false,
+          "sdkChangedDown": 8064,
+          "sdkChangedUp": 4468
+        },
+        "bestMapping": {
+          "endian": "<",
+          "shift": 0,
+          "matchedPixels": 12604172,
+          "totalPixels": 12616704,
+          "exact": false
+        }
+      },
+      {
+        "kind": "processing-comparison",
+        "stage": "before-correction",
+        "wireBytes": 25233408,
+        "frameBytes": 25233408,
+        "comparable": true,
+        "differences": {
+          "count": 12528,
+          "bounds": [
+            0,
+            0,
+            3551,
+            3551
+          ],
+          "wireLow4Zero": false,
+          "sdkChangedDown": 8064,
+          "sdkChangedUp": 4464
+        },
+        "bestMapping": {
+          "endian": "<",
+          "shift": 0,
+          "matchedPixels": 12604176,
+          "totalPixels": 12616704,
+          "exact": false
+        }
+      },
+      {
+        "kind": "processing-comparison",
+        "stage": "after-correction",
+        "wireBytes": 25233408,
+        "frameBytes": 25233408,
+        "comparable": true,
+        "differences": {
+          "count": 0,
+          "bounds": null,
+          "wireLow4Zero": false,
+          "sdkChangedDown": 0,
+          "sdkChangedUp": 0
+        },
+        "bestMapping": {
+          "endian": "<",
+          "shift": 0,
+          "matchedPixels": 12616704,
+          "totalPixels": 12616704,
+          "exact": true
+        }
+      }
+    ]
+  },
+  {
+    "trace": "map-cancel-full-2.jsonl",
+    "traceSha256": "d1bdf19c8f59d6576d10f26c8ba541cc7888a13b09a56c0a9434d4d08a40cd85",
+    "injectedCancellations": [
+      {
+        "ok": true,
+        "lastError": 0,
+        "completion": {
+          "ok": false,
+          "lastError": 995,
+          "bytes": null
+        }
+      }
+    ],
+    "attempts": [
+      {
+        "attempt": 1,
+        "submittedBulkRequests": 100,
+        "bulkRequestSizes": {
+          "1048576": 96,
+          "67584": 4
+        },
+        "successfulBulkRequests": 50,
+        "successfulBulkBytes": 50466816,
+        "completionErrors": {
+          "win32=995 nt=0xc0000120 usb=0xc0010000": 50
+        },
+        "bulkHashesCollected": 50,
+        "distinctBulkHashes": 27,
+        "duplicateBulkHashGroups": 23,
+        "firstBulkSubmitMs": 49,
+        "lastSuccessfulBulkMs": 1225,
+        "readyMs": 1238,
+        "downloadMs": 1800,
+        "ioSubmitsDuringDownload": 0,
+        "downloadDurationsMs": [
+          63
+        ],
+        "states": [
+          0,
+          1,
+          2
+        ]
+      }
+    ],
+    "wireRuns": [
+      {
+        "kind": "wire-runs",
+        "completeRuns": 2,
+        "rejectedRunBytes": []
+      }
+    ],
+    "wireReplayIdentity": [
+      {
+        "kind": "wire-replay-identity",
+        "completeRuns": 2,
+        "allBytesIdentical": true,
+        "bytesPerRun": 25233408
+      }
+    ],
+    "parameters": {
+      "frames": 1,
+      "seconds": 1.0,
+      "width": 3552,
+      "height": 3552,
+      "bin": 1,
+      "x": 0,
+      "y": 0,
+      "ready_delay": 0.5,
+      "deadline": 60,
+      "cancel_first_bulk": true,
+      "hash_bulk": false,
+      "compare_wire": true,
+      "trace_processing": true
+    },
+    "sdkSha256": "0c8778c3cce2012961b079e3c7d0d8348a8b3823939335d9e98148cb5d5dc34a",
+    "camera": {
+      "name": "ZWO ASI676MC",
+      "width": 3552,
+      "height": 3552
+    },
+    "comparisons": [
+      {
+        "kind": "wire-comparison",
+        "run": 0,
+        "wireBytes": 25233408,
+        "frameBytes": 25233408,
+        "comparable": true,
+        "differences": {
+          "count": 12064,
+          "bounds": [
+            0,
+            0,
+            3551,
+            3551
+          ],
+          "wireLow4Zero": false,
+          "sdkChangedDown": 10077,
+          "sdkChangedUp": 1987
+        },
+        "bestMapping": {
+          "endian": "<",
+          "shift": 0,
+          "matchedPixels": 12604640,
+          "totalPixels": 12616704,
+          "exact": false
+        }
+      },
+      {
+        "kind": "wire-comparison",
+        "run": 1,
+        "wireBytes": 25233408,
+        "frameBytes": 25233408,
+        "comparable": true,
+        "differences": {
+          "count": 12064,
+          "bounds": [
+            0,
+            0,
+            3551,
+            3551
+          ],
+          "wireLow4Zero": false,
+          "sdkChangedDown": 10077,
+          "sdkChangedUp": 1987
+        },
+        "bestMapping": {
+          "endian": "<",
+          "shift": 0,
+          "matchedPixels": 12604640,
+          "totalPixels": 12616704,
+          "exact": false
+        }
+      },
+      {
+        "kind": "processing-comparison",
+        "stage": "retrieved",
+        "wireBytes": 25233408,
+        "frameBytes": 25233408,
+        "comparable": true,
+        "differences": {
+          "count": 12064,
+          "bounds": [
+            0,
+            0,
+            3551,
+            3551
+          ],
+          "wireLow4Zero": false,
+          "sdkChangedDown": 10075,
+          "sdkChangedUp": 1989
+        },
+        "bestMapping": {
+          "endian": "<",
+          "shift": 0,
+          "matchedPixels": 12604640,
+          "totalPixels": 12616704,
+          "exact": false
+        }
+      },
+      {
+        "kind": "processing-comparison",
+        "stage": "before-correction",
+        "wireBytes": 25233408,
+        "frameBytes": 25233408,
+        "comparable": true,
+        "differences": {
+          "count": 12060,
+          "bounds": [
+            0,
+            0,
+            3551,
+            3551
+          ],
+          "wireLow4Zero": false,
+          "sdkChangedDown": 10075,
+          "sdkChangedUp": 1985
+        },
+        "bestMapping": {
+          "endian": "<",
+          "shift": 0,
+          "matchedPixels": 12604644,
+          "totalPixels": 12616704,
+          "exact": false
+        }
+      },
+      {
+        "kind": "processing-comparison",
+        "stage": "after-correction",
+        "wireBytes": 25233408,
+        "frameBytes": 25233408,
+        "comparable": true,
+        "differences": {
+          "count": 0,
+          "bounds": null,
+          "wireLow4Zero": false,
+          "sdkChangedDown": 0,
+          "sdkChangedUp": 0
+        },
+        "bestMapping": {
+          "endian": "<",
+          "shift": 0,
+          "matchedPixels": 12616704,
+          "totalPixels": 12616704,
+          "exact": true
+        }
+      }
+    ]
+  },
+  {
+    "trace": "map-cancel-full-3.jsonl",
+    "traceSha256": "744e6c9af7f255e3678a2d7d075c204c8d0c5d70612db3be82d592111edd173c",
+    "injectedCancellations": [
+      {
+        "ok": true,
+        "lastError": 0,
+        "completion": {
+          "ok": false,
+          "lastError": 995,
+          "bytes": null
+        }
+      }
+    ],
+    "attempts": [
+      {
+        "attempt": 1,
+        "submittedBulkRequests": 100,
+        "bulkRequestSizes": {
+          "1048576": 96,
+          "67584": 4
+        },
+        "successfulBulkRequests": 50,
+        "successfulBulkBytes": 50466816,
+        "completionErrors": {
+          "win32=995 nt=0xc0000120 usb=0xc0010000": 50
+        },
+        "bulkHashesCollected": 50,
+        "distinctBulkHashes": 27,
+        "duplicateBulkHashGroups": 23,
+        "firstBulkSubmitMs": 58,
+        "lastSuccessfulBulkMs": 1234,
+        "readyMs": 1248,
+        "downloadMs": 1814,
+        "ioSubmitsDuringDownload": 0,
+        "downloadDurationsMs": [
+          64
+        ],
+        "states": [
+          0,
+          1,
+          2
+        ]
+      }
+    ],
+    "wireRuns": [
+      {
+        "kind": "wire-runs",
+        "completeRuns": 2,
+        "rejectedRunBytes": []
+      }
+    ],
+    "wireReplayIdentity": [
+      {
+        "kind": "wire-replay-identity",
+        "completeRuns": 2,
+        "allBytesIdentical": true,
+        "bytesPerRun": 25233408
+      }
+    ],
+    "parameters": {
+      "frames": 1,
+      "seconds": 1.0,
+      "width": 3552,
+      "height": 3552,
+      "bin": 1,
+      "x": 0,
+      "y": 0,
+      "ready_delay": 0.5,
+      "deadline": 60,
+      "cancel_first_bulk": true,
+      "hash_bulk": false,
+      "compare_wire": true,
+      "trace_processing": true
+    },
+    "sdkSha256": "0c8778c3cce2012961b079e3c7d0d8348a8b3823939335d9e98148cb5d5dc34a",
+    "camera": {
+      "name": "ZWO ASI676MC",
+      "width": 3552,
+      "height": 3552
+    },
+    "comparisons": [
+      {
+        "kind": "wire-comparison",
+        "run": 0,
+        "wireBytes": 25233408,
+        "frameBytes": 25233408,
+        "comparable": true,
+        "differences": {
+          "count": 12067,
+          "bounds": [
+            0,
+            0,
+            3551,
+            3551
+          ],
+          "wireLow4Zero": false,
+          "sdkChangedDown": 10060,
+          "sdkChangedUp": 2007
+        },
+        "bestMapping": {
+          "endian": "<",
+          "shift": 0,
+          "matchedPixels": 12604637,
+          "totalPixels": 12616704,
+          "exact": false
+        }
+      },
+      {
+        "kind": "wire-comparison",
+        "run": 1,
+        "wireBytes": 25233408,
+        "frameBytes": 25233408,
+        "comparable": true,
+        "differences": {
+          "count": 12067,
+          "bounds": [
+            0,
+            0,
+            3551,
+            3551
+          ],
+          "wireLow4Zero": false,
+          "sdkChangedDown": 10060,
+          "sdkChangedUp": 2007
+        },
+        "bestMapping": {
+          "endian": "<",
+          "shift": 0,
+          "matchedPixels": 12604637,
+          "totalPixels": 12616704,
+          "exact": false
+        }
+      },
+      {
+        "kind": "processing-comparison",
+        "stage": "retrieved",
+        "wireBytes": 25233408,
+        "frameBytes": 25233408,
+        "comparable": true,
+        "differences": {
+          "count": 12067,
+          "bounds": [
+            0,
+            0,
+            3551,
+            3551
+          ],
+          "wireLow4Zero": false,
+          "sdkChangedDown": 10058,
+          "sdkChangedUp": 2009
+        },
+        "bestMapping": {
+          "endian": "<",
+          "shift": 0,
+          "matchedPixels": 12604637,
+          "totalPixels": 12616704,
+          "exact": false
+        }
+      },
+      {
+        "kind": "processing-comparison",
+        "stage": "before-correction",
+        "wireBytes": 25233408,
+        "frameBytes": 25233408,
+        "comparable": true,
+        "differences": {
+          "count": 12063,
+          "bounds": [
+            0,
+            0,
+            3551,
+            3551
+          ],
+          "wireLow4Zero": false,
+          "sdkChangedDown": 10058,
+          "sdkChangedUp": 2005
+        },
+        "bestMapping": {
+          "endian": "<",
+          "shift": 0,
+          "matchedPixels": 12604641,
+          "totalPixels": 12616704,
+          "exact": false
+        }
+      },
+      {
+        "kind": "processing-comparison",
+        "stage": "after-correction",
+        "wireBytes": 25233408,
+        "frameBytes": 25233408,
+        "comparable": true,
+        "differences": {
+          "count": 0,
+          "bounds": null,
+          "wireLow4Zero": false,
+          "sdkChangedDown": 0,
+          "sdkChangedUp": 0
+        },
+        "bestMapping": {
+          "endian": "<",
+          "shift": 0,
+          "matchedPixels": 12616704,
+          "totalPixels": 12616704,
+          "exact": true
+        }
+      }
+    ]
+  },
+  {
+    "trace": "map-offset-roi.jsonl",
+    "traceSha256": "32de2f6effcd688c40be4ca92bdcffa64adce79a33eb9e6d0de61e894f0b20b5",
+    "injectedCancellations": [],
+    "attempts": [
+      {
+        "attempt": 1,
+        "submittedBulkRequests": 2,
+        "bulkRequestSizes": {
+          "262144": 2
+        },
+        "successfulBulkRequests": 1,
+        "successfulBulkBytes": 262144,
+        "completionErrors": {
+          "win32=995 nt=0xc0000120 usb=0xc0010000": 1
+        },
+        "bulkHashesCollected": 1,
+        "distinctBulkHashes": 1,
+        "duplicateBulkHashGroups": 0,
+        "firstBulkSubmitMs": 36,
+        "lastSuccessfulBulkMs": 134,
+        "readyMs": 146,
+        "downloadMs": 647,
+        "ioSubmitsDuringDownload": 0,
+        "downloadDurationsMs": [
+          0
+        ],
+        "states": [
+          0,
+          1,
+          2
+        ]
+      }
+    ],
+    "wireRuns": [
+      {
+        "kind": "wire-runs",
+        "completeRuns": 1,
+        "rejectedRunBytes": []
+      }
+    ],
+    "wireReplayIdentity": [],
+    "parameters": {
+      "frames": 1,
+      "seconds": 0.1,
+      "width": 512,
+      "height": 256,
+      "bin": 1,
+      "x": 16,
+      "y": 8,
+      "ready_delay": 0.5,
+      "deadline": 60,
+      "cancel_first_bulk": false,
+      "hash_bulk": false,
+      "compare_wire": true,
+      "trace_processing": true
+    },
+    "sdkSha256": "0c8778c3cce2012961b079e3c7d0d8348a8b3823939335d9e98148cb5d5dc34a",
+    "camera": {
+      "name": "ZWO ASI676MC",
+      "width": 3552,
+      "height": 3552
+    },
+    "comparisons": [
+      {
+        "kind": "wire-comparison",
+        "run": 0,
+        "wireBytes": 262144,
+        "frameBytes": 262144,
+        "comparable": true,
+        "differences": {
+          "count": 159,
+          "bounds": [
+            0,
+            0,
+            511,
+            255
+          ],
+          "wireLow4Zero": false,
+          "sdkChangedDown": 112,
+          "sdkChangedUp": 47
+        },
+        "bestMapping": {
+          "endian": "<",
+          "shift": 0,
+          "matchedPixels": 130913,
+          "totalPixels": 131072,
+          "exact": false
+        }
+      },
+      {
+        "kind": "processing-comparison",
+        "stage": "retrieved",
+        "wireBytes": 262144,
+        "frameBytes": 262144,
+        "comparable": true,
+        "differences": {
+          "count": 159,
+          "bounds": [
+            0,
+            0,
+            511,
+            255
+          ],
+          "wireLow4Zero": false,
+          "sdkChangedDown": 110,
+          "sdkChangedUp": 49
+        },
+        "bestMapping": {
+          "endian": "<",
+          "shift": 0,
+          "matchedPixels": 130913,
+          "totalPixels": 131072,
+          "exact": false
+        }
+      },
+      {
+        "kind": "processing-comparison",
+        "stage": "before-correction",
+        "wireBytes": 262144,
+        "frameBytes": 262144,
+        "comparable": true,
+        "differences": {
+          "count": 155,
+          "bounds": [
+            3,
+            0,
+            507,
+            254
+          ],
+          "wireLow4Zero": false,
+          "sdkChangedDown": 110,
+          "sdkChangedUp": 45
+        },
+        "bestMapping": {
+          "endian": "<",
+          "shift": 0,
+          "matchedPixels": 130917,
+          "totalPixels": 131072,
+          "exact": false
+        }
+      },
+      {
+        "kind": "processing-comparison",
+        "stage": "after-correction",
+        "wireBytes": 262144,
+        "frameBytes": 262144,
+        "comparable": true,
+        "differences": {
+          "count": 0,
+          "bounds": null,
+          "wireLow4Zero": false,
+          "sdkChangedDown": 0,
+          "sdkChangedUp": 0
+        },
+        "bestMapping": {
+          "endian": "<",
+          "shift": 0,
+          "matchedPixels": 131072,
+          "totalPixels": 131072,
+          "exact": true
+        }
+      }
+    ]
+  },
+  {
+    "trace": "map-bin2-roi.jsonl",
+    "traceSha256": "c5495ea77a9e71e5f44ea5a5a51896c69591e2363c56806a19fd88d5dcb78907",
+    "injectedCancellations": [],
+    "attempts": [
+      {
+        "attempt": 1,
+        "submittedBulkRequests": 2,
+        "bulkRequestSizes": {
+          "1048576": 2
+        },
+        "successfulBulkRequests": 1,
+        "successfulBulkBytes": 1048576,
+        "completionErrors": {
+          "win32=995 nt=0xc0000120 usb=0xc0010000": 1
+        },
+        "bulkHashesCollected": 1,
+        "distinctBulkHashes": 1,
+        "duplicateBulkHashGroups": 0,
+        "firstBulkSubmitMs": 51,
+        "lastSuccessfulBulkMs": 154,
+        "readyMs": 166,
+        "downloadMs": 667,
+        "ioSubmitsDuringDownload": 0,
+        "downloadDurationsMs": [
+          2
+        ],
+        "states": [
+          0,
+          1,
+          2
+        ]
+      }
+    ],
+    "wireRuns": [
+      {
+        "kind": "wire-runs",
+        "completeRuns": 0,
+        "rejectedRunBytes": [
+          1048576
+        ]
+      }
+    ],
+    "wireReplayIdentity": [],
+    "parameters": {
+      "frames": 1,
+      "seconds": 0.1,
+      "width": 512,
+      "height": 256,
+      "bin": 2,
+      "x": 0,
+      "y": 0,
+      "ready_delay": 0.5,
+      "deadline": 60,
+      "cancel_first_bulk": false,
+      "hash_bulk": false,
+      "compare_wire": true,
+      "trace_processing": true
+    },
+    "sdkSha256": "0c8778c3cce2012961b079e3c7d0d8348a8b3823939335d9e98148cb5d5dc34a",
+    "camera": {
+      "name": "ZWO ASI676MC",
+      "width": 3552,
+      "height": 3552
+    },
+    "comparisons": [
+      {
+        "kind": "processing-comparison",
+        "stage": "retrieved",
+        "wireBytes": 1048576,
+        "frameBytes": 262144,
+        "comparable": false
+      },
+      {
+        "kind": "processing-comparison",
+        "stage": "before-correction",
+        "wireBytes": 1048576,
+        "frameBytes": 262144,
+        "comparable": false
+      },
+      {
+        "kind": "processing-comparison",
+        "stage": "after-correction",
+        "wireBytes": 1048576,
+        "frameBytes": 262144,
+        "comparable": false
+      }
+    ]
+  }
+]
