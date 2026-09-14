@@ -224,9 +224,9 @@ results, never camera pixels or calibration payloads without a separate request.
 | Cancellation | Abort a multi-second exposure on each backend; verify prompt cancellation, then successfully capture another image. |
 | SDK process recovery | Terminate only the plugin's SDK worker during a short capture; NINA should retain the request, reconnect after its delay, restore controls and display the replacement image. |
 | Direct process recovery | Terminate only the direct worker during a short capture; recover on the direct backend and display the replacement image. |
-| Retry cutoff | SDK exposure above 30 s with deliberate host termination must fail after one attempt with the default cutoff. Direct must advertise a 30 s maximum and reject longer requests. |
+| Retry cutoff | SDK exposure above 30 s with deliberate host termination must fail after one attempt with the default cutoff. Direct without fallback keeps its verified 30 s main/676 or 10 s guide maximum. With explicit fallback, a longer request switches to SDK before exposure. |
 | Duo cooling | Record initial temperature/target/enable/power. Exercise a modest target change and enabled/disabled states; capture during cooling. During a short-exposure worker failure, verify target/enable restoration and settling near the prior temperature before retry. Restore initial state. |
-| Unsupported direct cameras | Choosing Duo main or guide with the direct option must be rejected clearly. Confirm the SDK remains usable afterward. |
+| Unsupported direct cameras | Choosing an unverified model such as ASI6200MM Pro P25 with the direct option must be rejected clearly. Duo main and guide now have dedicated direct paths. Confirm the SDK remains usable afterward. |
 
 Do not infer cable-reconnect retention or natural USB-error behavior from a
 process-kill test. Physical detach/power-cycle experiments are separate cases.

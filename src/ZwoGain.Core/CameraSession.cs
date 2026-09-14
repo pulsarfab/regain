@@ -136,7 +136,7 @@ public sealed class CameraSession : IDisposable
             {
                 observed[c.Type] = c.Value;
                 // Persistent imaging/environment controls only: never replay reset, GPS, or auto controllers.
-                if (c.Writable && new[] { 0, 2, 3, 4, 5, 6, 7, 9, 13, 14, 16, 17, 18, 19, 20, 21, 22, 23 }.Contains(c.Type))
+                if ((c.Writable || c.Type == 6) && new[] { 0, 2, 3, 4, 5, 6, 7, 9, 13, 14, 16, 17, 18, 19, 20, 21, 22, 23 }.Contains(c.Type))
                     desired.TryAdd(c.Type, c.Value);
             }
         }
@@ -169,6 +169,13 @@ public sealed class CameraSession : IDisposable
         {
             if (applied.TryGetValue(c, out var previous) && previous == v)
                 continue;
+            // A direct fixed USB limit becomes writable on SDK fallback; preserve it.
+            if (Controls.TryGetValue(c, out var fixedCap) && !fixedCap.Writable)
+            {
+                if (fixedCap.Value != v) throw new IOException($"Read-only control {c} changed during restore");
+                applied[c] = v;
+                continue;
+            }
             await Call("set", new
             {
                 control = c,

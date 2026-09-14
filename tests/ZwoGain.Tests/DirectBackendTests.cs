@@ -120,6 +120,9 @@ public class DirectBackendTests
         var frame = await session.CaptureAsync(Exposure with { microseconds = 31000000 }, default);
         Assert.Equal(0, frame.Recoveries);
         Assert.Equal(1, fallbackStarts);
+        Assert.Equal(40, session.Value(6)); Assert.Equal(40, frame.Controls[6]);
+        await session.RefreshAsync(default);
+        Assert.Equal(40, session.Value(6));
         Assert.Equal("sdk", session.Backend); Assert.True(session.UsingSdkFallback);
         Assert.Equal(100, frame.Controls[0]); Assert.Equal(guide ? 300 : 50, frame.Controls[5]);
         await session.CaptureAsync(Exposure, default);
@@ -152,6 +155,22 @@ public class DirectBackendTests
         await session.ConnectAsync(default);
         await Assert.ThrowsAnyAsync<IOException>(() => session.CaptureAsync(Exposure with { microseconds = 31000000 }, default));
         Assert.Equal("direct-simulator", session.Serial);
+    }
+
+    [Fact]
+    public async Task OpenFailureUsesExplicitFallbackButCancellationNeverDoes()
+    {
+        int sdkStarts = 0;
+        using (var session = new CameraSession(Duo(), () => throw new IOException("direct open failed"), Fast,
+            sdkFallbackFactory: () => { sdkStarts++; return Fallback(Duo()); })) {
+            await session.ConnectAsync(default);
+            Assert.True(session.UsingSdkFallback); Assert.Equal("sdk", session.Backend);
+        }
+        Assert.Equal(1, sdkStarts);
+        using var canceled = new CameraSession(Duo(), () => throw new OperationCanceledException(), Fast,
+            sdkFallbackFactory: () => { sdkStarts++; return Fallback(Duo()); });
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => canceled.ConnectAsync(default));
+        Assert.Equal(1, sdkStarts);
     }
 
 }
