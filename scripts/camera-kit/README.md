@@ -148,6 +148,10 @@ creating `artifacts/ZwoGain-CameraKit-<version>-win-x64.zip`. Source scripts are
 included under `source/`, with dependency licenses under `licenses/`. The
 compiled kit does not need a Python installation or network access at runtime.
 
+CI also checks failed downloads, worker crashes, cancellation, control restoration,
+partial ZIP creation and a hung-download deadline against real simulator hosts.
+The frozen smoke test runs with Python/toolchain directories removed from PATH.
+
 ZWOgain scripts are Apache-2.0. Python, Frida, PyInstaller and the vendor SDK
 retain their own licenses; see the bundled notices. Frida's native extension
 is a separate file under `runtime/` and can be replaced when rebuilding.

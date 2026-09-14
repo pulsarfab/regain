@@ -206,11 +206,15 @@ def main(argv=None):
                         if not args.self_test and not trace.downloaded.wait(5):
                             raise HostError('SDK download completed without its trace event')
                         trace.checkpoint()
+                        usb_sequences = [s['sequence'] for s in trace.samples if sample_dir and s['exercise'] == case['name']]
+                        if sample_dir and not args.self_test and not usb_sequences:
+                            raise HostError('SDK sample has no captured USB chunks; pixel evidence is incomplete')
                         if (payload['bytes'] != case['exposure']['width'] * case['exposure']['height'] * 2
                             or metadata.get('width') != case['exposure']['width'] or metadata.get('height') != case['exposure']['height']):
                             raise HostError('Incomplete RAW16 frame')
                         result['frames'].append(dict(**payload, metadata=metadata, format='RAW16 little-endian',
                                                      appliedExposure=applied_exposure,
+                                                     usbSequences=usb_sequences,
                                                      sample=(sample_dir / 'sdk.raw16').relative_to(directory).as_posix() if sample_dir else None))
                         with trace.lock:
                             trace.sample = None
@@ -219,7 +223,7 @@ def main(argv=None):
                 except Exception as error:
                     result['error'] = str(error)
                     print(f'  Recorded failure: {error}', flush=True)
-                    if host.proc.poll() is not None or trace.error:
+                    if host.broken or host.proc.poll() is not None or trace.error:
                         raise
                     call('stop', timeout=5)
                 finally:
@@ -251,7 +255,7 @@ def main(argv=None):
                 raise HostError('Camera identity changed on reopen')
             manifest['reopen'] = 'same identity, same SDK process; no power cycle'
             manifest['completed'] = True
-        manifest['environmentAfter'] = environment()
+        manifest['environmentBeforeRestore'] = environment()
     except KeyboardInterrupt:
         aborted = True
         manifest['errors'].append('Canceled by user; remaining exercises were not run')
@@ -263,7 +267,7 @@ def main(argv=None):
         # be reopened only with the established serial; never switch cameras.
         restore_until = time.monotonic() + 45
         try:
-            if original and host and host.proc.poll() is not None and serial:
+            if original and host and (host.broken or host.proc.poll() is not None) and serial:
                 if trace:
                     collect_trace()
                     trace.close()
@@ -285,6 +289,10 @@ def main(argv=None):
                         manifest['restoration'][str(c)] = dict(expected=saved, actual=actual, matched=actual == saved)
                     except Exception as error:
                         manifest['restoration'][str(c)] = dict(expected=saved, matched=False, error=str(error))
+                manifest['environmentAfterRestore'] = {
+                    str(c): host.call('get-control-state', dict(control=c), timeout=min(5, restore_until - time.monotonic()))[0]
+                    for c in (8, 15, 16, 17, 21) if c in caps
+                }
                 host.call('close', timeout=min(5, restore_until - time.monotonic()))
             elif original:
                 manifest['errors'].append('Unable to reopen original camera for control restoration')

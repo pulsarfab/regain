@@ -21,9 +21,11 @@ class Host:
                                      creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
         self.next_id = 0
         self.expired = False
+        self.broken = False
         self.record = lambda value: None
 
     def kill(self):
+        self.broken = True
         if self.proc.poll() is None:
             self.proc.kill()
 
@@ -32,11 +34,14 @@ class Host:
         while len(data) < size:
             chunk = self.proc.stdout.read(size - len(data))
             if not chunk:
+                self.kill()
                 raise HostError('SDK host deadline expired' if self.expired else 'SDK host exited')
             data.extend(chunk)
         return data
 
     def call(self, method, params=None, timeout=20, sample=None):
+        if self.broken:
+            raise HostError('SDK host is unavailable')
         if timeout <= 0:
             raise HostError('Exercise deadline expired')
         self.next_id += 1
@@ -90,6 +95,9 @@ class Host:
             if not reply.get('ok'):
                 raise HostError(str(reply.get('error', 'SDK command failed')))
             return reply['result'], dict(bytes=size, sha256=digest.hexdigest())
+        except (OSError, ValueError, KeyError) as error:
+            self.kill()
+            raise HostError(f'Invalid or interrupted host response: {error}') from error
         finally:
             timer.cancel()
             timer.join()
@@ -97,5 +105,10 @@ class Host:
     def dispose(self):
         self.kill()
         self.proc.wait(timeout=5)
-        self.proc.stdin.close()
-        self.proc.stdout.close()
+        for stream in (self.proc.stdin, self.proc.stdout):
+            try:
+                stream.close()
+            except OSError:
+                # A killed host can leave buffered request bytes on the broken
+                # pipe. Closing it must not prevent restoration or evidence ZIPs.
+                pass

@@ -13,6 +13,7 @@ import zipfile
 
 from camera_kit import sha
 from verify_host import verify_host
+from verify_kit import verify_kit
 
 
 def main():
@@ -68,6 +69,7 @@ def main():
                  dependencies={name: importlib.metadata.version(name) for name in ('frida', 'pyinstaller')})
     (kit / 'camera-kit-build.json').write_text(json.dumps(build, indent=2) + '\n', encoding='utf-8')
     verify_host(kit / 'zwogain-host.exe', kit / 'ASICamera2.dll')
+    verify_kit(kit, work / 'failure-tests')
     # Exercise the frozen executable, embedded tracer, native DLL dependencies,
     # binary host protocol, sample writer and ZIP builder without hardware.
     isolated_env = dict(os.environ, PATH=str(Path(os.environ['SystemRoot']) / 'System32'))
