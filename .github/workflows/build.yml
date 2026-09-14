@@ -12,7 +12,7 @@ jobs:
           dotnet-version: '8.0.x'
       - uses: dtolnay/rust-toolchain@stable
         with:
-          components: rustfmt, clippy
+          components: rustfmt, clippy, rust-docs
       - run: ./scripts/test.ps1
         shell: pwsh
       - run: ./scripts/build.ps1
