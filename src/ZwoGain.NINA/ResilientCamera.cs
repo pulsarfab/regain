@@ -54,8 +54,8 @@ public sealed class ResilientCamera : BaseINPC, ICamera
     public string Name => descriptor.Name;
     public string DisplayName => "ZWOgain Retryable Camera";
     public string Category => "ZWOgain";
-    public string Description => "ZWO RAW16 camera with automatic recovery; SDK by default, optional experimental SDK-less ASI676MC";
-    public string DriverInfo => $"ZWOgain {DriverVersion} / {session?.SdkVersion}; {session?.Phase}";
+    public string Description => "ZWO RAW16 camera with automatic recovery; SDK by default, optional experimental SDK-less ASI676MC and Duo main/guide";
+    public string DriverInfo => $"ZWOgain {DriverVersion} / {session?.SdkVersion} [{session?.Backend}{(session?.UsingSdkFallback == true ? " fallback" : "")}]; {session?.Phase}";
     public string DriverVersion => typeof(ResilientCamera).Assembly.GetName().Version!.ToString();
     public bool Connected
     {
@@ -90,10 +90,10 @@ public sealed class ResilientCamera : BaseINPC, ICamera
             SelectCamera(selected.Camera);
         }
         bool direct = selected?.UseDirectDriver == true;
-        if (direct && descriptor.Name != "ZWO ASI676MC")
-            throw new NotSupportedException("Experimental SDK-less capture currently supports ASI676MC only. Choose the SDK backend for this camera.");
+        if (direct && descriptor.Name is not ("ZWO ASI676MC" or "ZWO ASI2600MM Duo" or "ZWO ASI220MM Mini"))
+            throw new NotSupportedException("Experimental SDK-less capture supports ASI676MC and Duo main/guide. Choose the SDK backend for this camera.");
         var factory = useConfiguredBackend && direct ? CameraProvider.NewDirectHost : hostFactory;
-        var candidate = new CameraSession(descriptor, factory, recoveryOptions ?? Settings.Load(), selected?.Serial);
+        var candidate = new CameraSession(descriptor, factory, recoveryOptions ?? Settings.Load(), selected?.Serial, direct && selected?.AllowSdkFallback == true ? hostFactory : null);
         candidate.Diagnostic += text => Logger.Info($"ZWOgain {Name}: {text}");
         try
         {
@@ -324,7 +324,7 @@ public sealed class ResilientCamera : BaseINPC, ICamera
             exposureCancel?.Cancel();
     }
     public IList<string> SupportedActions => new List<string> { "ZwoGain.Diagnostics" };
-    public string Action(string actionName, string actionParameters) => actionName == "ZwoGain.Diagnostics" ? System.Text.Json.JsonSerializer.Serialize(new { phase = session?.Phase, error = session?.LastError, sdkErrorCode = session?.LastSdkErrorCode, sdkExposureState = session?.LastSdkExposureState, serial = session?.Serial, sdk = session?.SdkVersion }) : throw new NotSupportedException();
+    public string Action(string actionName, string actionParameters) => actionName == "ZwoGain.Diagnostics" ? System.Text.Json.JsonSerializer.Serialize(new { phase = session?.Phase, error = session?.LastError, sdkErrorCode = session?.LastSdkErrorCode, sdkExposureState = session?.LastSdkExposureState, serial = session?.Serial, sdk = session?.SdkVersion, backend = session?.Backend, sdkFallback = session?.UsingSdkFallback }) : throw new NotSupportedException();
     public string SendCommandString(string command, bool raw = true) => throw new NotSupportedException();
     public bool SendCommandBool(string command, bool raw = true) => throw new NotSupportedException();
     public void SendCommandBlind(string command, bool raw = true) => throw new NotSupportedException();

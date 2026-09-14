@@ -3,7 +3,7 @@ using ZwoGain.Core;
 
 namespace ZwoGain.NINA;
 
-internal sealed record CameraSelection(CameraDescriptor Camera, string? Serial = null, bool UseDirectDriver = false);
+internal sealed record CameraSelection(CameraDescriptor Camera, string? Serial = null, bool UseDirectDriver = false, bool AllowSdkFallback = false);
 
 internal sealed class CameraSelectionStore(string path)
 {
@@ -34,7 +34,7 @@ internal sealed class CameraSelectionStore(string path)
         {
             var current = Load();
             // Setup may have selected a different camera while connection was in progress.
-            if (current?.Camera.Name == expected.Camera.Name && current.Serial == expected.Serial && current.UseDirectDriver == expected.UseDirectDriver)
+            if (current?.Camera.Name == expected.Camera.Name && current.Serial == expected.Serial && current.UseDirectDriver == expected.UseDirectDriver && current.AllowSdkFallback == expected.AllowSdkFallback)
                 Save(current with { Serial = serial });
         }
     }

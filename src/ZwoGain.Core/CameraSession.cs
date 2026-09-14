@@ -7,6 +7,9 @@ namespace ZwoGain.Core;
 public sealed class CameraSession : IDisposable
 {
     private readonly Func<HostClient> factory;
+    private readonly Func<HostClient>? sdkFallbackFactory;
+    private bool usingFallback;
+    public bool UsingSdkFallback => usingFallback;
     private readonly SemaphoreSlim operation = new(1);
     private readonly object sync = new();
     private readonly Dictionary<int, long> desired = new();
@@ -42,10 +45,11 @@ public sealed class CameraSession : IDisposable
         get; private set;
     }
     public event Action<string>? Diagnostic;
-    public CameraSession(CameraDescriptor camera, Func<HostClient> factory, RecoveryOptions? options = null, string? serial = null)
+    public CameraSession(CameraDescriptor camera, Func<HostClient> factory, RecoveryOptions? options = null, string? serial = null, Func<HostClient>? sdkFallbackFactory = null)
     {
         Camera = camera;
         this.factory = factory;
+        this.sdkFallbackFactory = sdkFallbackFactory;
         this.serial = serial;
         Options = options ?? new();
         Options.Validate();
@@ -64,13 +68,29 @@ public sealed class CameraSession : IDisposable
         {
             if (!hasConnected)
             {
-                await OpenAsync(token).ConfigureAwait(false);
+                try { await OpenAsync(token).ConfigureAwait(false); }
+                catch (Exception e) when (CanFallback && IsRecoverable(e))
+                {
+                    await ActivateFallback(e.Message, token).ConfigureAwait(false);
+                    await OpenAsync(token).ConfigureAwait(false);
+                }
                 hasConnected = true;
                 State("Idle");
             }
         }
         catch { KillHost(); throw; }
         finally { operation.Release(); }
+    }
+    private bool CanFallback => sdkFallbackFactory is not null && !usingFallback;
+    private static bool IsRecoverable(Exception e) => e is IOException or TimeoutException
+        && e is not InvalidDataException && e is not SdkException { Retryable: false };
+    private async Task ActivateFallback(string reason, CancellationToken token)
+    {
+        KillHost();
+        usingFallback = true;
+        Diagnostic?.Invoke($"Switching to SDK fallback for this connection: {reason}");
+        State("SDK fallback reconnect delay");
+        await Task.Delay(TimeSpan.FromSeconds(Options.ReconnectDelaySeconds), token).ConfigureAwait(false);
     }
     private async Task OpenAsync(CancellationToken token)
     {
@@ -79,7 +99,7 @@ public sealed class CameraSession : IDisposable
         lock (sync)
         {
             ObjectDisposedException.ThrowIf(disposed, this);
-            host = factory();
+            host = usingFallback ? sdkFallbackFactory!() : factory();
         }
         applied.Clear();
         Diagnostic?.Invoke($"Host process {host.ProcessId}; selected serial {serial ?? "initial selection"}");
@@ -106,6 +126,8 @@ public sealed class CameraSession : IDisposable
         Controls = result.GetProperty("controls").EnumerateArray().Select(c => new Control(c.GetProperty("type").GetInt32(), c.GetProperty("min").GetInt64(), c.GetProperty("max").GetInt64(), c.GetProperty("value").GetInt64(), c.GetProperty("writable").GetBoolean())).ToDictionary(c => c.Type);
         if (!Controls.ContainsKey(1))
             throw new NotSupportedException("Camera exposure control is unavailable");
+        if (Backend == "direct" && CanFallback && Camera.Name is "ZWO ASI2600MM Duo" or "ZWO ASI220MM Mini")
+            Controls = Controls.ToDictionary(k => k.Key, k => k.Key == 1 ? k.Value with { Max = 2_000_000_000 } : k.Value);
         if (Camera.Cooled && new[] { 8, 16, 17 }.Any(c => !Controls.ContainsKey(c)))
             throw new NotSupportedException("Cooled camera lacks readable temperature/target/enable controls required for recovery");
         lock (sync)
@@ -253,6 +275,20 @@ public sealed class CameraSession : IDisposable
                         await Apply(settings, token).ConfigureAwait(false);
                         prior = await Temperature(token).ConfigureAwait(false) ?? prior;
                     }
+                    if (Backend == "direct" && CanFallback)
+                    {
+                        try { await Call("validate", exposure, token).ConfigureAwait(false); }
+                        catch (SdkException e) when (e.Code == 8)
+                        {
+                            // No exposure has started: routing is not an exposure retry.
+                            await ActivateFallback(e.Message, token).ConfigureAwait(false);
+                            await OpenAsync(token).ConfigureAwait(false);
+                            Validate(exposure);
+                            await Apply(settings, token).ConfigureAwait(false);
+                            if (settings.GetValueOrDefault(17) != 0 && prior.HasValue)
+                                await Settle(prior.Value, token).ConfigureAwait(false);
+                        }
+                    }
                     State("Starting exposure");
                     DateTime started = DateTime.UtcNow;
                     object parameters = Backend == "direct" ? new {
@@ -305,7 +341,7 @@ public sealed class CameraSession : IDisposable
                     State("Idle");
                     return new(pixels, exposure.width, exposure.height, started, ended, attempt, exposure, settings);
                 }
-                catch (Exception e) when ((e is IOException or TimeoutException) && e is not SdkException { Retryable: false })
+                catch (Exception e) when (IsRecoverable(e))
                 {
                     if (e is SdkException sdk)
                         LastSdkErrorCode = sdk.Code;
@@ -313,6 +349,12 @@ public sealed class CameraSession : IDisposable
                     LastError = e.Message;
                     Diagnostic?.Invoke($"Attempt {attempt + 1}/{retries + 1}, phase {Phase}: {e.Message}");
                     KillHost();
+                    // Keep one shared retry budget. No automatic re-exposure above the duration limit.
+                    if (Backend == "direct" && CanFallback && attempt < retries)
+                    {
+                        usingFallback = true;
+                        Diagnostic?.Invoke($"Next permitted retry will use SDK fallback: {e.Message}");
+                    }
                 }
             }
             State("Error");
@@ -354,11 +396,21 @@ public sealed class CameraSession : IDisposable
     }
     public void Dispose()
     {
+        HostClient? closing;
         lock (sync)
         {
+            if (disposed) return;
             disposed = true;
-            host?.Dispose();
+            closing = host;
             host = null;
         }
+        if (closing is null) return;
+        // Normal disconnect lets the direct worker disable its host-regulated cooler.
+        // Abort/failure still use immediate process termination via KillHost.
+        try {
+            using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+            closing.CallAsync("close", null, TimeSpan.FromSeconds(2), deadline.Token).GetAwaiter().GetResult();
+        } catch { /* An unresponsive worker must still be terminated. */ }
+        finally { closing.Dispose(); }
     }
 }

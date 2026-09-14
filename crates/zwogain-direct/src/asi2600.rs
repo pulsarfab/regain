@@ -150,6 +150,7 @@ pub fn timing(s: &Settings) -> (u32, u32) {
 fn begin_retained_read(camera: &Camera) -> Result<()> {
     camera.reset_pipe()?;
     camera.vendor(0xbd, 0x18, 0, 0)?;
+    camera.service_environment()?;
     std::thread::sleep(Duration::from_millis(100));
     ensure!(
         camera.vendor(0xbc, 0x18, 0, 1)?[0] == 0,
@@ -228,7 +229,13 @@ fn capture_native(
     );
     let started = Instant::now();
     let result = (|| {
-        writes(camera, asi2600_tables::INITIALIZE)?;
+        for &(request, register, value) in asi2600_tables::INITIALIZE {
+            // Host cooling/dew state must survive sensor initialization between frames.
+            if camera.has_environment() && request == 0xbd && [0x19, 0x26].contains(&register) {
+                continue;
+            }
+            camera.vendor(request, register, value, 0)?;
+        }
         let defects = calibration(camera, s)?;
         writes(camera, asi2600_tables::RAW16)?;
         word(camera, 0xbd, 6, 45, 2)?;
@@ -283,6 +290,7 @@ fn capture_native(
             for _ in 0..5 {
                 let f = camera.vendor(0xbc, 0, 0, 1)?[0];
                 camera.vendor(0xbd, 0, u16::from(f | 0x10), 0)?;
+                camera.service_environment()?;
                 std::thread::sleep(Duration::from_millis(5));
                 camera.vendor(0xbd, 0, u16::from(f & !0x10), 0)?;
                 std::thread::sleep(Duration::from_millis(20));
@@ -314,6 +322,7 @@ fn capture_native(
                         _ => {}
                     }
                     let elapsed = trigger.elapsed().as_millis();
+                    camera.service_environment()?;
                     std::thread::sleep(Duration::from_millis(100));
                     iteration += 1;
                     if elapsed >= u128::from(exposure_ms - 400) {
@@ -325,8 +334,10 @@ fn capture_native(
             }
             let f = camera.vendor(0xbc, 0x19, 0, 1)?[0];
             camera.vendor(0xbd, 0x19, u16::from(f & !1), 0)?;
+            camera.service_environment()?;
             std::thread::sleep(Duration::from_millis(100));
             camera.vendor(0xb6, 0x1ee, 1, 0)?;
+            camera.service_environment()?;
             std::thread::sleep(Duration::from_millis(100));
             let f = camera.vendor(0xbc, 0xb, 0, 1)?[0];
             camera.vendor(0xbd, 0xb, u16::from(f & !0x10), 0)?;
@@ -342,6 +353,7 @@ fn capture_native(
                 armed.elapsed() < deadline,
                 "Duo retained-frame timeout: {status}"
             );
+            camera.service_environment()?;
             std::thread::sleep(Duration::from_millis(5));
         }
         // Sensor standby, deliberately without AA (which clears retained DDR).
@@ -349,6 +361,7 @@ fn capture_native(
         // standby repeatedly stalled 64x64 replay. The empirical 100ms guard
         // fixes that case. Long integrations must consume the initial pass
         // below; an extra settling delay does not substitute for that step.
+        camera.service_environment()?;
         std::thread::sleep(Duration::from_millis(100));
         writes(camera, &[(0xb6, 0x1ee, 5), (0xb6, 0, 5)])?;
         // Short integrations stream; restart from frozen DDR. Long integrations

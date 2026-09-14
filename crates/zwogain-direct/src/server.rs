@@ -1,6 +1,6 @@
-//! Version-1 plugin protocol over inherited pipes. Only the verified ASI676 path.
+//! Version-1 plugin protocol over inherited pipes. Verified ASI676 and Duo main/guide paths.
 //! A dedicated worker owns the exclusive driver handle for the entire connection.
-use crate::{asi676, settings::Settings, transport};
+use crate::{asi220, asi676, asi2600, settings::Settings, transport};
 use anyhow::{Result, bail, ensure};
 use serde_json::{Value, json};
 use std::{
@@ -10,22 +10,91 @@ use std::{
 };
 
 type Frame = (Value, Vec<u8>);
-type Work = (Settings, mpsc::SyncSender<Result<Frame>>);
-const NAME: &str = "ZWO ASI676MC";
-
-fn descriptor() -> Value {
-    json!({"id":0,"name":NAME,"width":3552,"height":3552,"color":true,"bayer":0,
-        "pixelSize":2.0,"bitDepth":12,"cooled":false,"shutter":false,"bins":[1],"formats":[2],
-        "minimumWidth":64,"minimumHeight":64,"originAlignment":2})
+enum Work {
+    Capture(Settings, i32, u32, mpsc::SyncSender<Result<Frame>>),
+    Environment(u32, Option<i64>, mpsc::SyncSender<Result<i64>>),
 }
-
-fn paths() -> Result<Vec<Vec<u16>>> {
+#[derive(Clone, Copy, Default, PartialEq)]
+enum Model {
+    #[default]
+    Asi676,
+    Duo,
+    Guide,
+}
+impl Model {
+    const ALL: [Self; 3] = [Self::Asi676, Self::Duo, Self::Guide];
+    fn name(self) -> &'static str {
+        match self {
+            Self::Asi676 => "ZWO ASI676MC",
+            Self::Duo => "ZWO ASI2600MM Duo",
+            Self::Guide => "ZWO ASI220MM Mini",
+        }
+    }
+    fn pid(self) -> u32 {
+        match self {
+            Self::Asi676 => 0x676d,
+            Self::Duo => 0x2601,
+            Self::Guide => 0x2209,
+        }
+    }
+    fn descriptor(self) -> Value {
+        let (width, height, pixel, bits, bins, alignment) = match self {
+            Self::Asi676 => (3552, 3552, 2.0, 12, vec![1], 2),
+            Self::Duo => (6248, 4176, 3.76, 16, vec![1, 2, 3, 4], 16),
+            Self::Guide => (1920, 1080, 4.0, 12, vec![1, 2], 2),
+        };
+        json!({"id":self.pid(),"name":self.name(),"width":width,"height":height,"color":self == Self::Asi676,"bayer":0,
+            "pixelSize":pixel,"bitDepth":bits,"cooled":self == Self::Duo,"shutter":false,"bins":bins,"formats":[2],
+            "minimumWidth":64,"minimumHeight":64,"originAlignment":alignment})
+    }
+    fn controls(self) -> Vec<Value> {
+        let (gain_min, gain_max, offset_min, offset_max, offset_default, exp_max) = match self {
+            Self::Asi676 => (0, 600, 0, 200, 10, 30_000_000),
+            Self::Duo => (-25, 700, 0, 240, 50, 30_000_000),
+            Self::Guide => (0, 600, 200, 1500, 200, 10_000_000),
+        };
+        let mut caps = vec![];
+        for (kind, min, max, value, writable) in [
+            (0, gain_min, gain_max, 0, true),
+            (1, 32, exp_max, 100000, true),
+            (5, offset_min, offset_max, offset_default, true),
+            (6, 40, 40, 40, false),
+        ] {
+            caps.push(json!({"type":kind,"min":min,"max":max,"value":value,"writable":writable}));
+        }
+        if self == Self::Duo {
+            for (kind, min, max, value, writable) in [
+                (8, -500, 850, 250, false),
+                (15, 0, 100, 0, false),
+                (16, -40, 30, 25, true),
+                (17, 0, 1, 0, true),
+                (21, 0, 1, 0, true),
+            ] {
+                caps.push(
+                    json!({"type":kind,"min":min,"max":max,"value":value,"writable":writable}),
+                );
+            }
+        }
+        caps
+    }
+    fn validate(self, settings: &Settings, gain: i32, bin: u32) -> Result<()> {
+        match self {
+            Self::Asi676 => {
+                ensure!(bin == 1, "ASI676MC direct capture supports bin 1 only");
+                settings.validate()
+            }
+            Self::Duo => asi2600::raw_settings(settings, gain, bin).map(|_| ()),
+            Self::Guide => asi220::raw_settings(settings, bin).map(|_| ()),
+        }
+    }
+}
+fn paths(model: Model) -> Result<Vec<Vec<u16>>> {
     Ok(transport::enumerate()?
         .into_iter()
         .filter(|path| {
             String::from_utf16_lossy(path)
                 .to_ascii_lowercase()
-                .contains("vid_03c3&pid_676d")
+                .contains(&format!("vid_03c3&pid_{:04x}", model.pid()))
         })
         .collect())
 }
@@ -42,19 +111,20 @@ fn hardware(error: anyhow::Error) -> anyhow::Error {
     HardwareFailure(format!("{error:#}")).into()
 }
 
-fn open_camera(serial: Option<&str>) -> Result<(transport::Camera, Value, String)> {
-    let paths = paths()?;
-    ensure!(!paths.is_empty(), "ASI676MC is not attached");
+fn open_camera(model: Model, serial: Option<&str>) -> Result<(transport::Camera, Value, String)> {
+    let paths = paths(model)?;
+    ensure!(!paths.is_empty(), "selected direct camera is not attached");
     ensure!(
         serial.is_some() || paths.len() == 1,
-        "multiple ASI676MC cameras require a serial number"
+        "multiple cameras of this model require a serial number"
     );
     for path in paths {
         let camera = transport::Camera::open(&path)?;
         let info = camera.probe()?;
         ensure!(
-            info["productId"] == 0x676d && info["usbVersionBcd"] == 0x300,
-            "experimental capture requires ASI676MC USB3"
+            info["productId"] == model.pid()
+                && info["usbVersionBcd"] == if model == Model::Guide { 0x200 } else { 0x300 },
+            "camera USB interface differs from the verified model"
         );
         // SDK 1.41 ASIGetSerialNumber uses vendor IN C8, value/index 0, eight bytes.
         let bytes = camera.vendor(0xc8, 0, 0, 8)?;
@@ -64,10 +134,13 @@ fn open_camera(serial: Option<&str>) -> Result<(transport::Camera, Value, String
         );
         let found: String = bytes.iter().map(|v| format!("{v:02x}")).collect();
         if serial.is_none_or(|s| s == found) {
+            if model == Model::Duo {
+                camera.enable_environment()?;
+            }
             return Ok((camera, info, found));
         }
     }
-    bail!("selected ASI676MC serial is not attached")
+    bail!("selected camera serial is not attached")
 }
 
 struct Worker {
@@ -75,14 +148,14 @@ struct Worker {
     thread: Option<std::thread::JoinHandle<()>>,
 }
 impl Worker {
-    fn open(serial: Option<String>, simulate: bool) -> Result<(Self, String)> {
+    fn open(model: Model, serial: Option<String>, simulate: bool) -> Result<(Self, String)> {
         let (sender, receiver) = mpsc::channel::<Work>();
         let (ready_tx, ready_rx) = mpsc::sync_channel(1);
         let thread = std::thread::spawn(move || {
             let device = if simulate {
                 None
             } else {
-                match open_camera(serial.as_deref()) {
+                match open_camera(model, serial.as_deref()) {
                     Ok(device) => Some(device),
                     Err(e) => {
                         let _ = ready_tx.send(Err(e));
@@ -119,27 +192,82 @@ impl Worker {
                     }
                 }
             });
-            while let Ok((settings, reply)) = receiver.recv() {
-                // A stuck kernel operation must end the process, never free live I/O buffers.
-                let timeout = Duration::from_micros(u64::from(settings.microseconds))
-                    + Duration::from_secs(45);
-                let _ = watchdog.send(Some(timeout));
-                let result = if let Some((camera, info, _)) = &device {
-                    asi676::capture(camera, info, &settings, false)
-                } else {
-                    std::thread::sleep(Duration::from_micros(u64::from(settings.microseconds)));
-                    let pixels: Vec<_> = (0..settings.width * settings.height)
-                        .flat_map(|i| (i as u16).to_le_bytes())
-                        .collect();
-                    Ok((
-                        json!({"width":settings.width,"height":settings.height,"sdkLoaded":false,
-                        "simulated":true,"readoutRetriesUsed":0}),
-                        pixels,
-                    ))
+            let mut sim_environment = std::collections::HashMap::from([
+                (8, 250_i64),
+                (15, 0),
+                (16, 25),
+                (17, 0),
+                (21, 0),
+            ]);
+            loop {
+                let work = match receiver.recv_timeout(Duration::from_millis(100)) {
+                    Ok(work) => work,
+                    Err(mpsc::RecvTimeoutError::Timeout) => {
+                        if let Some((camera, _, _)) = &device {
+                            let _ = watchdog.send(Some(Duration::from_secs(15)));
+                            if let Err(e) = camera.service_environment() {
+                                eprintln!("environment failure: {e:#}");
+                                return;
+                            }
+                            let _ = watchdog.send(None);
+                        }
+                        continue;
+                    }
+                    Err(mpsc::RecvTimeoutError::Disconnected) => {
+                        if let Some((camera, _, _)) = &device
+                            && model == Model::Duo
+                        {
+                            let _ = watchdog.send(Some(Duration::from_secs(15)));
+                            let _ = camera.environment_control(17, Some(0));
+                        }
+                        return;
+                    }
                 };
-                let _ = watchdog.send(None);
-                if reply.send(result).is_err() {
-                    return;
+                match work {
+                    Work::Environment(control, value, reply) => {
+                        let _ = watchdog.send(Some(Duration::from_secs(15)));
+                        let result = if let Some((camera, _, _)) = &device {
+                            camera.environment_control(control, value)
+                        } else {
+                            if let Some(value) = value {
+                                sim_environment.insert(control, value);
+                            }
+                            Ok(*sim_environment.get(&control).unwrap_or(&0))
+                        };
+                        let _ = watchdog.send(None);
+                        let _ = reply.send(result);
+                    }
+                    Work::Capture(settings, gain, bin, reply) => {
+                        // Never free live I/O buffers if a kernel operation becomes stuck.
+                        let timeout = Duration::from_micros(u64::from(settings.microseconds))
+                            + Duration::from_secs(45);
+                        let _ = watchdog.send(Some(timeout));
+                        let result = if let Some((camera, info, _)) = &device {
+                            match model {
+                                Model::Asi676 => asi676::capture(camera, info, &settings, false),
+                                Model::Duo => {
+                                    asi2600::capture(camera, info, &settings, gain, bin, false)
+                                }
+                                Model::Guide => asi220::capture(camera, info, &settings, bin),
+                            }
+                        } else {
+                            std::thread::sleep(Duration::from_micros(u64::from(
+                                settings.microseconds,
+                            )));
+                            let pixels: Vec<_> = (0..settings.width * settings.height)
+                                .flat_map(|i| (i as u16).to_le_bytes())
+                                .collect();
+                            Ok((
+                                json!({"width":settings.width,"height":settings.height,"bin":bin,"sdkLoaded":false,
+                                "simulated":true,"readoutRetriesUsed":0}),
+                                pixels,
+                            ))
+                        };
+                        let _ = watchdog.send(None);
+                        if reply.send(result).is_err() {
+                            return;
+                        }
+                    }
                 }
             }
         });
@@ -160,6 +288,15 @@ impl Worker {
             }
         }
     }
+    fn environment(&self, control: u32, value: Option<i64>) -> Result<i64> {
+        let (sender, receiver) = mpsc::sync_channel(1);
+        self.sender
+            .send(Work::Environment(control, value, sender))
+            .map_err(|_| anyhow::anyhow!("direct worker exited"))?;
+        receiver
+            .recv_timeout(Duration::from_secs(15))
+            .map_err(|_| anyhow::anyhow!("environment worker unavailable"))?
+    }
     fn close(mut self) {
         drop(self.sender);
         if let Some(thread) = self.thread.take() {
@@ -175,6 +312,8 @@ struct Host {
     frame: Option<Result<Frame>>,
     settings: Settings,
     simulate: bool,
+    model: Model,
+    gain: i32,
 }
 impl Host {
     fn update(&mut self) {
@@ -202,64 +341,99 @@ impl Host {
         };
         let value = match method {
             "list" => {
-                if self.simulate {
-                    json!([descriptor()])
-                } else {
-                    json!(
-                        paths()
-                            .map_err(hardware)?
-                            .iter()
-                            .map(|_| descriptor())
-                            .collect::<Vec<_>>()
-                    )
+                let mut found = Vec::new();
+                for model in Model::ALL {
+                    let count = if self.simulate {
+                        1
+                    } else {
+                        paths(model).map_err(hardware)?.len()
+                    };
+                    found.extend((0..count).map(|_| model.descriptor()));
                 }
+                json!(found)
             }
             "open" => {
                 ensure!(self.worker.is_none(), "camera is already open");
-                ensure!(
-                    params["name"] == NAME,
-                    "SDK-less capture currently supports ASI676MC only"
-                );
+                let model = Model::ALL
+                    .into_iter()
+                    .find(|m| params["name"] == m.name())
+                    .ok_or_else(|| anyhow::anyhow!("unsupported SDK-less camera model"))?;
                 let serial = params["serial"].as_str().map(str::to_owned);
-                let (worker, identity) = Worker::open(serial, self.simulate).map_err(hardware)?;
-                self.worker = Some(worker);
+                let (worker, identity) =
+                    Worker::open(model, serial, self.simulate).map_err(hardware)?;
+                self.model = model;
                 self.settings = Settings::default();
-                json!({"serial":identity,"info":descriptor(),"sdkVersion":"SDK-less experimental ASI676MC",
-                    "backend":"direct","controls":[
-                    {"type":0,"min":0,"max":600,"value":0,"writable":true},
-                    {"type":1,"min":32,"max":30000000,"value":100000,"writable":true},
-                    {"type":5,"min":0,"max":200,"value":10,"writable":true},
-                    {"type":6,"min":40,"max":40,"value":40,"writable":false}]})
+                let descriptor = model.descriptor();
+                self.settings.width = descriptor["width"].as_u64().unwrap() as u32;
+                self.settings.height = descriptor["height"].as_u64().unwrap() as u32;
+                self.settings.offset = match model {
+                    Model::Asi676 => 10,
+                    Model::Duo => 50,
+                    Model::Guide => 200,
+                };
+                self.gain = 0;
+                let mut controls = model.controls();
+                if model == Model::Duo {
+                    for cap in &mut controls {
+                        let control = cap["type"].as_u64().unwrap() as u32;
+                        if [8, 15, 16, 17, 21].contains(&control) {
+                            cap["value"] =
+                                json!(worker.environment(control, None).map_err(hardware)?);
+                        }
+                    }
+                }
+                self.worker = Some(worker);
+                json!({"serial":identity,"info":descriptor,"sdkVersion":format!("SDK-less experimental {}",model.name()),
+                    "backend":"direct","controls":controls})
             }
             "get" | "set" => {
-                ensure!(self.worker.is_some(), "camera is not open");
+                let worker = self
+                    .worker
+                    .as_ref()
+                    .ok_or_else(|| anyhow::anyhow!("camera is not open"))?;
+                ensure!(
+                    self.pending.is_none() && self.frame.is_none(),
+                    "cannot access controls during capture"
+                );
                 let control = number("control")?;
+                let caps = self.model.controls();
+                let cap = caps
+                    .iter()
+                    .find(|c| c["type"] == control)
+                    .ok_or_else(|| anyhow::anyhow!("unsupported control"))?;
                 if method == "set" {
+                    ensure!(cap["writable"] == true, "control is read-only");
+                    let value = params["value"]
+                        .as_i64()
+                        .ok_or_else(|| anyhow::anyhow!("invalid control value"))?;
                     ensure!(
-                        self.pending.is_none() && self.frame.is_none(),
-                        "cannot change controls during capture"
+                        value >= cap["min"].as_i64().unwrap()
+                            && value <= cap["max"].as_i64().unwrap(),
+                        "control outside supported range"
                     );
-                    let mut settings = self.settings.clone();
                     match control {
-                        0 => settings.gain = number("value")?,
-                        1 => settings.microseconds = number("value")?,
-                        5 => settings.offset = number("value")?,
-                        _ => bail!("control is unsupported or read-only"),
+                        0 => {
+                            self.gain = value as i32;
+                            self.settings.gain = value.max(0) as u32;
+                        }
+                        1 => self.settings.microseconds = value as u32,
+                        5 => self.settings.offset = value as u32,
+                        _ => {
+                            worker.environment(control, Some(value)).map_err(hardware)?;
+                        }
                     }
-                    settings.validate()?;
-                    self.settings = settings;
                     Value::Null
                 } else {
                     json!(match control {
-                        0 => self.settings.gain,
-                        1 => self.settings.microseconds,
-                        5 => self.settings.offset,
+                        0 => i64::from(self.gain),
+                        1 => i64::from(self.settings.microseconds),
+                        5 => i64::from(self.settings.offset),
                         6 => 40,
-                        _ => bail!("unsupported control"),
+                        _ => worker.environment(control, None).map_err(hardware)?,
                     })
                 }
             }
-            "start" => {
+            "validate" | "start" => {
                 let worker = self
                     .worker
                     .as_ref()
@@ -268,7 +442,7 @@ impl Host {
                     self.pending.is_none() && self.frame.is_none(),
                     "exposure pending"
                 );
-                ensure!(number("bin")? == 1, "SDK-less capture supports bin 1 only");
+                let bin = number("bin")?;
                 let mut settings = self.settings.clone();
                 settings.width = number("width")?;
                 settings.height = number("height")?;
@@ -278,13 +452,15 @@ impl Host {
                 if !params["readRetries"].is_null() {
                     settings.read_retries = number("readRetries")?;
                 }
-                settings.validate()?;
-                let (sender, receiver) = mpsc::sync_channel(1);
-                worker
-                    .sender
-                    .send((settings, sender))
-                    .map_err(|_| hardware(anyhow::anyhow!("direct worker exited")))?;
-                self.pending = Some(receiver);
+                self.model.validate(&settings, self.gain, bin)?;
+                if method == "start" {
+                    let (sender, receiver) = mpsc::sync_channel(1);
+                    worker
+                        .sender
+                        .send(Work::Capture(settings, self.gain, bin, sender))
+                        .map_err(|_| hardware(anyhow::anyhow!("direct worker exited")))?;
+                    self.pending = Some(receiver);
+                }
                 Value::Null
             }
             "status" => {

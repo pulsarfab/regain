@@ -11,6 +11,8 @@ mod asi2600_tables;
 mod asi676;
 #[cfg(windows)]
 mod asi676_tables;
+#[cfg(windows)]
+mod environment;
 mod processing;
 mod protocol;
 #[cfg(windows)]

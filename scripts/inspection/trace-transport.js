@@ -29,7 +29,7 @@ function collectBulk(record, input, output, length) {
 function controlReply(record) {
     // The observed register-read command returns at most four bytes here.
     // Do not collect general control payloads (e.g. identifiers or firmware).
-    if (record.code === '0x220020' && record.header?.startsWith('c0bc')
+    if (record.code === '0x220020' && (record.header?.startsWith('c0bc') || record.header?.startsWith('c0b3'))
         && record.inputLength > 38 && record.inputLength <= 42)
         return hex(record.input.add(38), record.inputLength - 38);
     return null;
@@ -133,6 +133,10 @@ Process.attachModuleObserver({
         if (module.name.toLowerCase() !== 'asicamera2.dll') return;
         emit('sdk-module', {name: module.name});
         if (globalThis.TRACE_PROCESSING) {
+            Interceptor.attach(module.base.add(0x10ec60), {onEnter(args) {
+                emit('cooler-calibration', {type:args[0].add(0x260).readU32(),
+                    values:[0x868,0x86c,0x870,0x874].map(o=>args[0].add(o).readFloat())});
+            }});
             Interceptor.attach(module.base.add(0x10bbf0), {
                 onEnter(args) {
                     if (args[1].toUInt32() === 0x1ee)
@@ -203,6 +207,7 @@ Process.attachModuleObserver({
             });
             Interceptor.attach(module.base.add(0x4126), {
                 onEnter() {
+                    emit('control-vtable', {entries:Array.from({length:33},(_,i)=>location(this.context.rax.add(i*8).readPointer()))});
                     emit('control-target', {target: location(this.context.rax.add(0xa8).readPointer()),
                         gain: location(this.context.rax.add(0x28).readPointer()),
                         exposure: location(this.context.rax.add(0x88).readPointer())});

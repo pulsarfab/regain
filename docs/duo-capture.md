@@ -105,7 +105,7 @@ and 12-bit precision, followed by software averaging. The guide advertises bins
 ## Remaining work
 
 Refine the precise main-frame completion edge, expand held-out gain/timing
-register comparisons, and add main cooling control/restoration.
+register comparisons and characterize cooler regulation across ambient conditions.
 RAW8/video, flips and hardware binning need separate validation. P25 revisions
 and physical cold-power/USB-fault behavior require separate hardware evidence.
 
@@ -138,3 +138,45 @@ the binary IPC payloads. A 64Ã—64, 32 Âµs capture also failed in the SDK;
 zero-line integrations are explicitly rejected before hardware access until
 their behavior is understood. The guide's advertised exposure limit is 10 s.
 See `scripts/inspection/validate_guide.py` and the sanitized evidence JSON.
+
+
+## NINA backend and environment controls
+
+Both sensors now use these acquisition paths through the isolated plugin host.
+The model catalogue gates exact PIDs/USB versions, verifies hardware serials,
+and exposes main bins 1–4 and guide bins 1–2. Factory corrections are identical
+to the research paths. The SDK remains the default, with a persisted opt-in
+fallback that restores serial, imaging controls, cooler target/enable and dew.
+A failed capture can switch only on a permitted retry; settings outside the
+verified direct range route before exposure. SDK fallback stays active until
+reconnect. The main and guide can therefore use longer SDK exposures without
+extending unverified direct timing ranges.
+
+Duo temperature is vendor IN `B3`, two signed little-endian bytes / 256 °C.
+FPGA `19` bit `80` disables the cooler; bit `40` enables the dew heater.
+Dew enable also writes `2A=197` (off: zero). Writes preserve unrelated bits,
+including the exposure lifecycle bit. Target temperature exists in host state;
+firmware accepts cooler output, not a temperature set point.
+
+SDK cooler dispatch `10ec60` uses the observed type-1 calibration
+`[40,255,6.01,0]`: requested power becomes current, then interpolates the
+current/DAC table at `2876e0`. DAC endpoints 255/40 correspond to 0/6.01 A;
+`10e870` converts DAC using `(272-DAC)*220/256` and writes FPGA `26`.
+Observed 0%, 1%, and 100% outputs are 14, 16, and 199. Rust uses this mapping
+with its own PI regulator, output ramp limited to two percentage points per
+second, and bounded elapsed time after stalled I/O. Invalid temperature
+feedback disables cooling and fails the worker. Idle polling, exposure waits
+and transfer chunks service the regulator on the transport owner thread.
+Sensor initialization preserves cooling/dew instead of resetting `19/26`.
+Normal close disables the host-regulated cooler; process crashes leave the last
+hardware output until recovery reconnects, as there is no established firmware
+watchdog for host loss. Abrupt power/USB fault tests remain outstanding.
+
+Hardware validation through the plugin protocol: twelve consecutive 5-second
+512×256 main captures with cooler target 25 °C and dew enabled, zero recoveries;
+temperature moved from 27.8 °C to 24.6 °C, with minimum 24.3 °C. Two guide
+960×540 bin-2 captures also succeeded. Killing the direct main worker at download
+caused one SDK retry after the 5-second reconnect delay, serial verification,
+control restoration and three cooling samples near the prior temperature.
+The following exposure stayed on the SDK with zero retries. Local logs retain
+full diagnostic details; sanitized evidence omits camera identifiers.

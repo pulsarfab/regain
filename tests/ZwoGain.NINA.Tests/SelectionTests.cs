@@ -69,10 +69,12 @@ public sealed class SelectionTests : IDisposable
         var store = Store;
         store.Save(new(Sim));
         Assert.False(store.Load()!.UseDirectDriver);
+        Assert.False(store.Load()!.AllowSdkFallback);
         var sdk = store.Load()!;
-        store.Save(sdk with { UseDirectDriver = true });
+        store.Save(sdk with { UseDirectDriver = true, AllowSdkFallback = true });
         store.RememberSerial(sdk, "stale-connection");
         Assert.True(store.Load()!.UseDirectDriver);
+        Assert.True(store.Load()!.AllowSdkFallback);
         Assert.Null(store.Load()!.Serial);
         // Existing installations have no backend field in camera.json.
         string file = Path.Combine(folder, "camera.json");

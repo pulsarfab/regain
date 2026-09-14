@@ -209,7 +209,10 @@ pub fn capture(c: &Camera, info: &Value, s: &Settings, bin: u32) -> Result<(Valu
             let frame = match c.read_frame_wait(bytes as usize, wait) {
                 Ok(frame) => frame,
                 Err(error) => {
-                    ensure!(discarded < 2, "guide stream did not synchronize: {error}");
+                    ensure!(
+                        discarded < s.read_retries.min(2),
+                        "guide stream did not synchronize: {error}"
+                    );
                     read_errors.push(error.to_string());
                     discarded += 1;
                     continue;
@@ -220,7 +223,10 @@ pub fn capture(c: &Camera, info: &Value, s: &Settings, bin: u32) -> Result<(Valu
             {
                 break frame;
             }
-            ensure!(discarded < 2, "guide frame boundaries did not synchronize");
+            ensure!(
+                discarded < s.read_retries.min(2),
+                "guide frame boundaries did not synchronize"
+            );
             discarded += 1;
         };
         stop(c)?;

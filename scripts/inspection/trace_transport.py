@@ -27,6 +27,7 @@ def main():
     parser.add_argument('--y', type=int, default=0, help='binned ROI origin')
     parser.add_argument('--gain', type=int, help='explicit ASI gain control for register mapping')
     parser.add_argument('--offset', type=int, help='explicit ASI offset control for register mapping')
+    parser.add_argument('--environment-probe', action='store_true', help='Duo only: briefly test target 20C, cooling and dew, then restore')
     parser.add_argument('--ready-delay', type=float, default=0.5)
     parser.add_argument('--deadline', type=float, default=60)
     parser.add_argument('--cancel-first-bulk', action='store_true',
@@ -246,6 +247,18 @@ def main():
                 raise RuntimeError('ROI exceeds attached sensor')
             opened = call('open', {'name': camera['name']})
             record({'kind': 'initial-controls', 'sdkVersion': opened['sdkVersion'], 'controls': opened['controls']})
+            if args.environment_probe:
+                if camera['name'] != 'ZWO ASI2600MM Duo':
+                    raise RuntimeError('environment probe requires Duo main')
+                previous = {c: call('get', {'control': c}) for c in (16,17,21)}
+                try:
+                    for c,v in [(16,20),(17,1),(21,1)]:
+                        call('set', {'control':c,'value':v})
+                    time.sleep(3)
+                    record({'kind':'environment-probe','values':{c:call('get',{'control':c}) for c in (8,15,16,17,21)}})
+                finally:
+                    for c in (21,17,16):
+                        call('set', {'control':c,'value':previous[c]})
             for control, value in [(0, args.gain), (5, args.offset)]:
                 if value is not None:
                     call('set', {'control': control, 'value': value})

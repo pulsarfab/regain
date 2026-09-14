@@ -45,28 +45,40 @@ SDK exposure state, serial, and SDK version through `ICamera.Action`.
 The supervised **ZWO SDK remains the default and primary backend**. In the
 camera setup dialog, enable **Try SDK-less driver (experimental; ASI676MC only)**
 to try the separate Rust driver process. Save and reconnect to apply the choice.
-The option is persisted with the selected camera; existing settings default to
-the SDK. Turn the option off and reconnect to return to the SDK. Recovery stays
-on the selected backend and never silently switches implementations.
+The option and **Allow SDK fallback** are persisted with the selected camera.
+Existing settings default to the SDK; fallback is opt-in. With fallback enabled,
+a direct open failure or the next permitted exposure retry can switch to the
+SDK. Unsupported direct capture settings route to the SDK before exposure.
+The selected hardware serial and controls are retained, cooling is restored,
+and the SDK stays active until disconnect. Driver info and diagnostics identify
+an active fallback. The same retry count and default 30-second retry threshold
+apply; fallback never authorizes repeating a longer failed exposure.
 
-The NINA direct backend currently supports the observed USB3 **ASI676MC** only:
-RAW16, bin 1, 64 Ã— 64 through 3552 Ã— 3552, even ROI origins, exposures from
-32 Âµs through 30 seconds, gain and offset. USB limit is fixed at 40. It uses the
-installed Windows driver without loading `ASICamera2.dll`, reads the camera's
-hardware serial and factory defect map, and applies verified defect correction.
-Temperature telemetry and other unimplemented controls are not advertised.
-Inside NINA, the ASI2600MM Duo, its guide sensor, and 2600/6200 P25 models still
-use the SDK. Separate research CLI paths now capture RAW16 from both attached
-Duo sensors without the SDK: main bins 1â€“4 with retained-frame replay, and guide
-bins 1/2 with startup stream resynchronization. See [Duo capture findings](docs/duo-capture.md)
-for hardware evidence, commands and remaining limits.
+The NINA direct backend supports these verified interfaces:
 
-Direct read failures first attempt a complete retained-frame read again, with
-**SDK-less retained-frame read retries** configurable from 0 to 5 (default 2).
-The exposure retry-duration threshold also governs these retries. If read
-recovery fails, the existing supervisor can restart the process, reconnect and
-repeat the exposure within the configured recovery policy. Cancellation ends
+| Camera | RAW16 bins | Verified direct exposure range | Environment |
+| --- | --- | --- | --- |
+| ASI676MC USB3 | 1 | 32 µs–30 s | Gain/offset |
+| ASI2600MM Duo main USB3 | 1–4 | 32 µs–30 s | Gain/offset, temperature, cooling, dew heater |
+| ASI220MM Mini Duo guide USB2 | 1–2 | Nonzero line integration through 10 s | Gain/offset |
+
+Both Duo sensors are individually selectable in setup. The direct process uses
+the installed Windows driver without loading `ASICamera2.dll`, reads hardware
+serials and factory defect maps, and applies the verified RAW16 corrections and
+software binning. ROIs require at least 64 × 64 physical pixels; main origins
+must align to 16 columns and two rows. USB limit is fixed at 40. Main cooling
+uses a Rust regulator with a bounded power ramp and the observed nonlinear
+current conversion; it runs during idle, exposure and transfer. This controller
+is experimental and differs from the SDK's regulator. Unverified models,
+including 2600/6200 P25, continue to use the SDK.
+
+ASI676/main read failures can retry the complete retained frame, configurable
+from 0 to 5 (default 2). The retry-duration threshold also governs these retries.
+The guide uses bounded startup stream resynchronization; retained guide-frame
+replay has not been established. If transfer recovery fails, the supervisor
+reconnects and repeats within the configured policy. Cancellation terminates
 the isolated process. Retention across USB removal or power loss is unverified.
+See [Duo capture findings](docs/duo-capture.md) for hardware evidence and limits.
 
 See [direct acquisition details](docs/sdk-free-capture.md),
 [same-frame correction evidence](docs/factory-defect-correction.md), and the

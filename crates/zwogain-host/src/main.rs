@@ -69,12 +69,14 @@ impl Host {
                     s.open(name, p["serial"].as_str())?
                 } else {
                     ensure!(
-                        name == "ZWO Simulated"
-                            && (p["serial"].is_null() || p["serial"] == "sim00001"),
+                        name == self.sim_info["name"]
+                            && (p["serial"].is_null()
+                                || p["serial"]
+                                    == self.values["simSerial"].as_str().unwrap_or("sim00001")),
                         "wrong simulated identity"
                     );
                     let info = self.command("list", json!({}))?.0[0].clone();
-                    json!({"serial":"sim00001","sdkVersion":"simulator","info":info,"controls":[
+                    json!({"serial":self.values["simSerial"].as_str().unwrap_or("sim00001"),"sdkVersion":"simulator","info":info,"controls":[
                         {"type":0,"min":0,"max":600,"default":100,"value":100,"writable":true},
                         {"type":1,"min":32,"max":2000000000i64,"default":10000,"value":10000,"writable":true},
                         {"type":5,"min":0,"max":100,"default":10,"value":10,"writable":true},
@@ -203,6 +205,19 @@ impl Host {
                 json!(null)
             }
             "simulation" if self.sdk.is_none() => {
+                if let Some(name) = p["name"].as_str() {
+                    self.sim_info["name"] = json!(name);
+                }
+                if let Some(serial) = p["serial"].as_str() {
+                    self.values["simSerial"] = json!(serial);
+                }
+                if p["bins"].is_array() {
+                    self.sim_info["bins"] = p["bins"].clone();
+                }
+                if let Some(cooled) = p["cooled"].as_bool() {
+                    self.sim_info["cooled"] = json!(cooled);
+                }
+
                 if let (Some(control), Some(minimum)) =
                     (p["clampControl"].as_i64(), p["clampMinimum"].as_i64())
                 {

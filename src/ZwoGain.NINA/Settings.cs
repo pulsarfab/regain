@@ -29,10 +29,15 @@ internal static class Settings
         panel.Children.Add(new TextBlock { Text = "Camera and recovery settings apply on the next connection.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 12) });
         var remembered = Cameras.Load();
         // NINA's toggle template replaces CheckBox.Content with ON/OFF text.
-        panel.Children.Add(new TextBlock { Text = "Try SDK-less driver (experimental; ASI676MC only)", TextWrapping = TextWrapping.Wrap });
+        panel.Children.Add(new TextBlock { Text = "Try SDK-less driver (experimental; ASI676MC and Duo main/guide)", TextWrapping = TextWrapping.Wrap });
         var direct = new CheckBox { IsChecked = remembered?.UseDirectDriver == true, HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 2, 0, 8) };
         panel.Children.Add(direct);
-        panel.Children.Add(new TextBlock { Text = "Default: supervised ZWO SDK. Experimental mode supports RAW16, bin 1, 64 × 64 or larger ROIs, exposures up to 30 seconds, gain and offset. USB limit is fixed at 40. Other camera models require the SDK.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 12) });
+        panel.Children.Add(new TextBlock { Text = "Default: supervised ZWO SDK. Direct RAW16 supports ASI676MC bin 1, ASI2600MM Duo bins 1-4 with cooling/dew control, and ASI220MM Mini guide bins 1-2. Verified direct limits: main/676 30 seconds; guide 10 seconds. USB limit is fixed at 40.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 12) });
+        panel.Children.Add(new TextBlock { Text = "Allow SDK fallback from the experimental driver", TextWrapping = TextWrapping.Wrap });
+        var fallback = new CheckBox { IsChecked = remembered?.AllowSdkFallback == true, IsEnabled = direct.IsChecked == true,
+            HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 2, 0, 8) };
+        panel.Children.Add(fallback);
+        panel.Children.Add(new TextBlock { Text = "Uses the same camera serial and restores controls. Unsupported capture settings switch before exposure; failures switch on the next permitted retry. The SDK remains active until disconnect. Retry duration and count limits still apply.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 12) });
         panel.Children.Add(new TextBlock { Text = "Camera" });
         var picker = new ComboBox { DisplayMemberPath = nameof(CameraChoice.Label), MinWidth = 300, Margin = new Thickness(0, 2, 0, 8) };
         if (remembered is not null)
@@ -87,7 +92,7 @@ internal static class Settings
         {
             Title = "ZWOgain Retryable Camera Setup",
             Width = 510,
-            SizeToContent = SizeToContent.Height,
+            Height = Math.Min(760, SystemParameters.WorkArea.Height * .9),
             MaxHeight = SystemParameters.WorkArea.Height * .9,
             Content = new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto },
             Owner = Application.Current?.MainWindow,
@@ -122,8 +127,8 @@ internal static class Settings
             catch (Exception e) { cameraStatus.Text = "Camera discovery failed: " + e.Message; }
             finally { refresh.IsEnabled = true; picker.IsEnabled = true; direct.IsEnabled = true; }
         }
-        direct.Checked += async (_, _) => { if (window.IsLoaded) await RefreshCameras(); };
-        direct.Unchecked += async (_, _) => { if (window.IsLoaded) await RefreshCameras(); };
+        direct.Checked += async (_, _) => { fallback.IsEnabled = true; if (window.IsLoaded) await RefreshCameras(); };
+        direct.Unchecked += async (_, _) => { fallback.IsEnabled = false; if (window.IsLoaded) await RefreshCameras(); };
         refresh.Click += async (_, _) => await RefreshCameras();
         window.Loaded += async (_, _) => await RefreshCameras();
         button.Click += (_, _) =>
@@ -135,8 +140,8 @@ internal static class Settings
                 options.Validate();
                 if (picker.SelectedItem is not CameraChoice choice)
                     throw new InvalidOperationException("Choose a camera before saving.");
-                if (direct.IsChecked == true && choice.Camera.Name != "ZWO ASI676MC")
-                    throw new InvalidOperationException("Choose ASI676MC for experimental SDK-less capture, or turn off the experimental option for this camera.");
+                if (direct.IsChecked == true && choice.Camera.Name is not ("ZWO ASI676MC" or "ZWO ASI2600MM Duo" or "ZWO ASI220MM Mini"))
+                    throw new InvalidOperationException("Choose ASI676MC, ASI2600MM Duo or ASI220MM Mini for experimental capture, or select the SDK backend.");
                 string? selectedSerial = string.IsNullOrWhiteSpace(serial.Text) ? null : serial.Text.Trim().ToLowerInvariant();
                 if (selectedSerial is not null && (selectedSerial.Length != 16 || selectedSerial.Any(c => !Uri.IsHexDigit(c))))
                     throw new InvalidOperationException("The SDK serial number must contain 16 hexadecimal characters, or be left blank.");
@@ -144,7 +149,7 @@ internal static class Settings
                 string temp = FilePath + "." + Guid.NewGuid().ToString("N") + ".tmp";
                 File.WriteAllText(temp, JsonSerializer.Serialize(options, new JsonSerializerOptions { WriteIndented = true }));
                 File.Move(temp, FilePath, true);
-                Cameras.Save(new CameraSelection(choice.Camera, selectedSerial, direct.IsChecked == true));
+                Cameras.Save(new CameraSelection(choice.Camera, selectedSerial, direct.IsChecked == true, fallback.IsChecked == true));
                 window.Close();
             }
             catch (Exception e) { status.Text = e.Message; }

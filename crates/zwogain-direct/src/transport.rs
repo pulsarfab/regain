@@ -115,13 +115,41 @@ pub fn enumerate() -> Result<Vec<Vec<u16>>> {
     }
 }
 
-pub struct Camera(Handle);
+pub struct Camera(
+    Handle,
+    std::cell::RefCell<Option<crate::environment::Environment>>,
+);
 struct Completion {
     bytes: usize,
     error: u32,
     cancel_requested: bool,
 }
 impl Camera {
+    pub fn enable_environment(&self) -> Result<()> {
+        *self.1.borrow_mut() = Some(crate::environment::Environment::open(self)?);
+        Ok(())
+    }
+    pub fn has_environment(&self) -> bool {
+        self.1.borrow().is_some()
+    }
+    pub fn service_environment(&self) -> Result<()> {
+        if let Some(environment) = self.1.borrow_mut().as_mut() {
+            environment.service(self)?;
+        }
+        Ok(())
+    }
+    pub fn environment_control(&self, control: u32, value: Option<i64>) -> Result<i64> {
+        let mut state = self.1.borrow_mut();
+        let environment = state
+            .as_mut()
+            .ok_or_else(|| anyhow::anyhow!("environment unavailable"))?;
+        if let Some(value) = value {
+            environment.set(self, control, value)?;
+        }
+        environment.service(self)?;
+        environment.get(control)
+    }
+
     pub fn vendor(&self, request: u8, value: u16, index: u16, length: u16) -> Result<Vec<u8>> {
         let mut data = protocol::descriptor_request(0, length);
         data[0] = if length == 0 { 0x40 } else { 0xc0 };
@@ -169,6 +197,7 @@ impl Camera {
         );
         let mut data = vec![0; length];
         for (number, chunk) in data.chunks_mut(1024 * 1024).enumerate() {
+            self.service_environment()?;
             let mut header = [0; protocol::HEADER];
             header[13] = 0x81;
             let timeout = if number == 0 { first_timeout_ms } else { 5000 };
@@ -208,7 +237,7 @@ impl Camera {
             "open driver exclusively: {}",
             error()
         );
-        Ok(Self(Handle(handle)))
+        Ok(Self(Handle(handle), std::cell::RefCell::new(None)))
     }
 
     fn request(
