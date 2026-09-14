@@ -28,7 +28,31 @@ Initial development validation: 2026-09-13 (America/Los_Angeles).
 - Hardware ROI run: five successful 512 × 256 RAW16 frames with bin 2 and
   binned origin (16, 8), approximately 169–209 ms per operation.
 
+## Interactive NINA integration
+
+Tested the installed NINA 3.2 application using Windows computer use:
+
+- ZwoGain appeared as its own camera-provider group and selected the ASI676MC.
+- Connection displayed 3552 × 3552 geometry, RGGB, 2 um pixels, sensor
+  temperature, gain/offset controls, and the USB limit.
+- The recovery settings dialog saved a custom 60-second cutoff and displayed
+  it on reopening; restored and verified the default 30-second cutoff afterward.
+  This exposed and fixed a cross-thread WPF theme-resource crash: NINA launches
+  device setup on a separate thread, so the dialog now marshals onto NINA's
+  application dispatcher. The dialog also uses NINA's background/foreground
+  resources and centers over the main window.
+- A one-second full-resolution RAW16 capture displayed successfully in the
+  Imaging tab, with 3552 × 3552 dimensions and 16-bit statistics.
+- Killed the SDK host during a ten-second exposure. The driver waited five
+  seconds, reopened by serial, repeated the ten-second exposure, and NINA
+  displayed the replacement image without a failure notification. Total
+  capture time was approximately 16.8 seconds before image analysis.
+- Killed the host during a 31-second exposure. The log recorded the 30-second
+  cutoff and exactly one attempt; NINA surfaced the failure immediately and
+  did not start a replacement exposure. NINA's capture and snapshot layers
+  each emitted their own error notification for that propagated exception.
+
 The actual ASI2600/6200 cameras, cooler restoration, USB cable reattachment,
 and natural SDK transfer failures have not yet been tested. Simulator tests
-exercise supervisory decisions, not vendor firmware behavior. Interactive
-NINA camera chooser/setup/sequencer acceptance remains manual.
+exercise supervisory decisions, not vendor firmware behavior. Full sequencer
+acceptance remains manual.

@@ -17,6 +17,12 @@ internal static class Settings
     }
     public static void Show()
     {
+        var dispatcher = Application.Current?.Dispatcher;
+        if (dispatcher is not null && !dispatcher.CheckAccess())
+        {
+            dispatcher.Invoke(Show);
+            return;
+        }
         var panel = new StackPanel { Margin = new Thickness(16) };
         panel.Children.Add(new TextBlock { Text = "Recovery settings apply on the next connection.", Margin = new Thickness(0, 0, 0, 12) });
         var entries = new Dictionary<string, TextBox>();
@@ -53,8 +59,11 @@ internal static class Settings
             SizeToContent = SizeToContent.Height,
             MaxHeight = SystemParameters.WorkArea.Height * .9,
             Content = new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto },
-            WindowStartupLocation = WindowStartupLocation.CenterScreen
+            Owner = Application.Current?.MainWindow,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner
         };
+        window.SetResourceReference(Window.BackgroundProperty, "BackgroundBrush");
+        window.SetResourceReference(Window.ForegroundProperty, "PrimaryBrush");
         button.Click += (_, _) =>
         {
             try

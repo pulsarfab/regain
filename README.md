@@ -99,8 +99,8 @@ and terminates the worker. Diagnostic runs do not save image files.
   `ReadyFrameDownloadRetries` is experimental, disabled by default, and retries
   the entire download only while the SDK still reports exposure success.
 - No installer signing or NINA registry publication is included in this first
-  version. Local installation and the camera contract tests are provided;
-  interactive NINA UI operation remains a manual acceptance check.
+  version. Local installation, camera contract tests, and interactive NINA 3.2
+  camera/capture/recovery checks are covered in the validation record.
 
 See [architecture](docs/architecture.md), [SDK investigation](docs/sdk-lifecycle.md)
 and [validation](docs/validation.md). Licensed under Apache-2.0; bundled vendor
