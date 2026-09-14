@@ -28,7 +28,9 @@ internal static class Settings
         var panel = new StackPanel { Margin = new Thickness(16) };
         panel.Children.Add(new TextBlock { Text = "Camera and recovery settings apply on the next connection.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 12) });
         var remembered = Cameras.Load();
-        var direct = new CheckBox { Content = "Try SDK-less driver (experimental; ASI676MC only)", IsChecked = remembered?.UseDirectDriver == true, Margin = new Thickness(0, 0, 0, 8) };
+        // NINA's toggle template replaces CheckBox.Content with ON/OFF text.
+        panel.Children.Add(new TextBlock { Text = "Try SDK-less driver (experimental; ASI676MC only)", TextWrapping = TextWrapping.Wrap });
+        var direct = new CheckBox { IsChecked = remembered?.UseDirectDriver == true, HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 2, 0, 8) };
         panel.Children.Add(direct);
         panel.Children.Add(new TextBlock { Text = "Default: supervised ZWO SDK. Experimental mode supports RAW16, bin 1, 64 × 64 or larger ROIs, exposures up to 30 seconds, gain and offset. USB limit is fixed at 40. Other camera models require the SDK.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 12) });
         panel.Children.Add(new TextBlock { Text = "Camera" });

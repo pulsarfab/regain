@@ -1,10 +1,10 @@
 # NINA end-to-end acceptance matrix
 
-Status: **pending desktop access**, 2026-09-14. These are planned UI tests, not
-passes inferred from unit tests or command-line captures. Computer Use currently
-returns `foreground window did not report a process id` when reading NINA, even
-after refreshing its window selection. No new image-pane capture has been
-observed for this matrix.
+Status: **in progress; desktop capture interrupted**, 2026-09-14. Resetting
+the Computer Use JavaScript connection after restoring the desktop resolved the
+initial foreground-process error. Three SDK captures have now been observed
+in NINA's image pane. A later monitor-capture error interrupted further testing;
+remaining cases are pending, not passes inferred from command-line tests.
 
 Preflight confirmed that the installed `ZwoGain.NINA.dll` matches the local
 Release build by SHA-256. GitHub CI passed for implementation `d8491b6` and
@@ -20,9 +20,9 @@ NINA's adapter rounds output width down to a multiple of 8 and height to even.
 
 | Backend | Camera | Bin | Expected image-pane dimensions | Result |
 | --- | --- | --- | --- | --- |
-| SDK | ASI676MC | 1 | 3552 × 3552 | Pending |
-| SDK | ASI676MC | 2 | 1776 × 1776 | Pending |
-| SDK | ASI676MC | 3 | 1184 × 1184 | Pending |
+| SDK | ASI676MC | 1 | 3552 × 3552 | Pass: visible new frame, 16-bit, mean 575.06 |
+| SDK | ASI676MC | 2 | 1776 × 1776 | Pass: visible new frame, 16-bit, mean 591.78 |
+| SDK | ASI676MC | 3 | 1184 × 1184 | Pass: visible new frame, 16-bit, mean 576.18 |
 | SDK | ASI676MC | 4 | 888 × 888 | Pending |
 | SDK | ASI2600MM Duo | 1 | 6248 × 4176 | Pending |
 | SDK | ASI2600MM Duo | 2 | 3120 × 2088 | Pending |
@@ -32,7 +32,12 @@ NINA's adapter rounds output width down to a multiple of 8 and height to even.
 | SDK | ASI220MM Mini | 2 | 960 × 540 | Pending |
 | Direct | ASI676MC | 1 | 3552 × 3552 | Pending |
 
-For each row, select the camera/backend in setup, save, connect, capture a
+Completed rows used one second, gain 0, offset 0, USB limit 40, with Save and
+Loop disabled. The ASI676MC produced an illuminated scene; the user's cap
+description applies to the Duo. No image pixels were saved or committed.
+The image-pane dimensions and statistics above were read from screenshots.
+
+For each pending row, select the camera/backend in setup, save, connect, capture a
 one-second capped frame and inspect the newly displayed image. Check camera
 name, backend, binning, dimensions, 16-bit output, exposure metadata and image
 statistics. Use automatic stretching to inspect dark-frame structure. A dark
@@ -42,7 +47,7 @@ stretch behavior. Capped frames cannot establish illuminated Bayer orientation.
 
 ## Additional modes and transitions
 
-All entries below are pending. Record settings, visible image dimensions,
+All entries below are pending full completion. Record settings, visible image dimensions,
 statistics, capture/recovery outcome and any error text for each completed case.
 Keep raw logs and screenshots containing device identity local; publish sanitized
 results, never camera pixels or calibration payloads without a separate request.
@@ -69,3 +74,15 @@ process-kill test. Physical detach/power-cycle experiments are separate cases.
 NINA end-to-end success requires an observed new image in its image pane; the
 earlier command-line and simulator results remain separately documented in
 [validation](validation.md).
+
+## Issue found during visual testing
+
+NINA's CheckBox theme rendered only ON/OFF and hid the experimental backend
+toggle's content. The setup dialog now places its descriptive label in a
+separate TextBlock. Installing and visually checking that correction requires
+closing/restarting NINA after desktop capture becomes available again.
+
+The interruption returned `IGraphicsCaptureItemInterop.CreateForMonitor failed:
+Could not capture the given monitor. (0x80070057)`. A fresh JavaScript/Computer
+Use connection did not resolve this second error. The bin-4 selection was not
+verified and no bin-4 image was counted.
