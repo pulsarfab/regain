@@ -206,20 +206,20 @@ runs automated recovery, NINA contract, Rust and research tests, builds the
 package and validates publication rules. Hardware tests run locally.
 
 The [Release workflow](.github/workflows/release.yml) stages the build, signs
-both ZWOgain DLLs and both Rust workers with Azure Trusted Signing, verifies
-signatures and then packages them. A matching version tag creates a draft
-release; ordinary pushes do not publish a release or registry entry. As of
-2026-09-14, the repository is public and has no GitHub release yet. Registry
-publication to [the NINA plugin feed](https://nina-plugins.psf-guard.com/) is a
-separate workflow requiring a published release with public assets and registry
-credentials. See [release and registry instructions](docs/releasing.md).
+both ZWOgain DLLs, both Rust workers and the camera kit executable with Azure
+Trusted Signing, verifies signatures and then packages them. A matching version
+tag creates a draft release containing the plugin and standalone kit. Ordinary
+pushes do not publish a release or registry entry. Registry publication to
+[the NINA plugin feed](https://nina-plugins.psf-guard.com/) requires a published
+release with public assets and registry write access. See
+[release and registry instructions](docs/releasing.md).
 
 ## Diagnostics and protocol research
 
 To contribute a new camera model, use the standalone
-[camera exercise kit](scripts/camera-kit/README.md). Download **ZwoGain-camera-kit**
-from a successful [CI build](https://github.com/theatrus/zwogain/actions/workflows/build.yml),
-extract both ZIP layers and run `ZwoGain-CameraKit.exe`. It needs Windows x64 and
+[camera exercise kit](scripts/camera-kit/README.md). Download the camera kit ZIP
+from [GitHub Releases](https://github.com/theatrus/zwogain/releases),
+extract it and run `ZwoGain-CameraKit.exe`. It needs Windows x64 and
 the ZWO driver; Python, Rust and NINA are not required. Pick a capped camera to
 record initialization, ROI/binning, timing and control sweeps, calibration reads,
 and optional matching USB/SDK pixel samples in a local evidence ZIP. Review it

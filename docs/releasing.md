@@ -32,9 +32,9 @@ the camera's displayed driver version use the same version.
    A manual **Release** workflow run on `main` does the same build and validation
    and uploads artifacts without creating a tag or GitHub release.
 3. Push a matching tag, such as `v0.1.0.0`. The **Release** workflow reruns all
-   checks and creates a **draft** GitHub release with four assets:
+   checks and creates a **draft** GitHub release with six assets:
    `ZwoGain-0.1.0.0.zip`, `ZwoGain-0.1.0.0.manifest.json`, `zwogain.png`,
-   and `SHA256SUMS`.
+   `SHA256SUMS`, `ZwoGain-CameraKit-0.1.0.0-win-x64.zip`, and its `.zip.sha256`.
 4. Inspect/test those artifacts, then publish the draft as a stable release.
    A rerun can refresh a draft, but refuses to overwrite published assets.
 
@@ -51,6 +51,12 @@ through OIDC in the `release` environment, and signs `ZwoGain.NINA.dll`,
 Signing. It requires valid signatures from StackFoundry LLC before packaging.
 The bundled vendor DLL is left unchanged. ZIP and manifest checksums are
 computed after signing.
+
+The same workflow prepares and tests the standalone camera kit, reuses the
+signed SDK host, signs `ZwoGain-CameraKit.exe`, verifies both signatures, and
+runs a signed-executable smoke test. It then packages the kit and computes its
+file/archive checksums. The kit ZIP belongs on GitHub Releases; only the NINA
+plugin ZIP is referenced by the plugin registry.
 
 The workflow reads `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`,
 `AZURE_SUBSCRIPTION_ID`, `SIGNING_ENDPOINT`, `SIGNING_ACCOUNT` and
@@ -97,13 +103,12 @@ fixture repository and mocked downloads. It validates a good release and
 rejects inaccessible assets, drafts, checksum corruption and version mismatch;
 it never pushes or makes HTTP requests.
 
-## Current publication prerequisites
+## Publication credentials
 
-As of 2026-09-14, ZWOgain is **public**, no GitHub release has been created, and
-`NINA_REGISTRY_TOKEN` is not configured as a repository secret. Create and
-validate a signed release, publish its assets, and configure the registry
-credential before running **Publish to NINA registry**. The publisher still
-checks anonymous access to the actual ZIP and logo; repository visibility
-alone does not prove those assets are available.
+ZWOgain is public. `NINA_REGISTRY_TOKEN` is required for the cross-repository
+GitHub workflow; it is not needed when the local publisher uses existing
+`gh` and git credentials with registry write access. In either case the
+publisher checks anonymous access to the actual ZIP and logo before writing
+the registry entry.
 
 No public release or registry entry is created by ordinary pushes to main.

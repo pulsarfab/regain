@@ -11,6 +11,7 @@ from camera_kit import save_bundle, select_camera, sha
 from client import Host, HostError
 from plan import IMAGING_CONTROLS, MAX_FRAME, make_plan
 from trace import Trace
+from build import package
 
 CAMERA = dict(name='ZWO test', width=6248, height=4176, bins=[1, 2, 3, 4], formats=[0, 2])
 CONTROLS = [dict(type=c, min=lo, max=hi, value=v, writable=True) for c, lo, hi, v in
@@ -99,6 +100,29 @@ class ProtocolTests(unittest.TestCase):
                     host.call('download')
             finally:
                 host.dispose()
+
+
+class PackagingTests(unittest.TestCase):
+    def test_package_hashes_the_finished_signed_payload(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            kit = root / 'kit'
+            kit.mkdir()
+            (root / 'artifacts').mkdir()
+            (kit / 'camera-kit-build.json').write_text(json.dumps(dict(version='0.1.0.0')))
+            for name in ('ZwoGain-CameraKit.exe', 'zwogain-host.exe', 'ASICamera2.dll', 'README.md'):
+                (kit / name).write_bytes(b'prepared payload')
+            package(kit, root, '0.1.0.0')
+            (kit / 'ZwoGain-CameraKit.exe').write_bytes(b'payload with appended signature')
+            package(kit, root, '0.1.0.0')
+            archive = root / 'artifacts/ZwoGain-CameraKit-0.1.0.0-win-x64.zip'
+            self.assertEqual(archive.with_suffix('.zip.sha256').read_text().split()[0], sha(archive))
+            with zipfile.ZipFile(archive) as zipped:
+                self.assertEqual(zipped.read('ZwoGain-CameraKit/ZwoGain-CameraKit.exe'), b'payload with appended signature')
+                sums = zipped.read('ZwoGain-CameraKit/SHA256SUMS').decode()
+                self.assertIn(sha(kit / 'ZwoGain-CameraKit.exe') + '  ZwoGain-CameraKit.exe', sums)
+            with self.assertRaises(ValueError):
+                package(kit, root, '0.2.0.0')
 
 
 class TraceTests(unittest.TestCase):

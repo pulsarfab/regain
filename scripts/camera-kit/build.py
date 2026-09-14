@@ -16,13 +16,38 @@ from verify_host import verify_host
 from verify_kit import verify_kit
 
 
+def package(kit, root, version):
+    build = json.loads((kit / 'camera-kit-build.json').read_text())
+    if build['version'] != version:
+        raise ValueError('Prepared kit version differs from source version')
+    for name in ('ZwoGain-CameraKit.exe', 'zwogain-host.exe', 'ASICamera2.dll', 'README.md'):
+        if not (kit / name).is_file():
+            raise ValueError(f'Prepared kit is missing {name}')
+    # Recompute after signing. The checksums cover the exact distributed bytes.
+    (kit / 'SHA256SUMS').write_text(''.join(f'{sha(p)}  {p.relative_to(kit).as_posix()}\n'
+                                         for p in sorted(kit.rglob('*')) if p.is_file() and p.name != 'SHA256SUMS'), encoding='utf-8')
+    archive = root / 'artifacts' / f'ZwoGain-CameraKit-{version}-win-x64.zip'
+    with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED, compresslevel=6, strict_timestamps=False) as output:
+        for p in sorted(kit.rglob('*')):
+            if p.is_file():
+                output.write(p, 'ZwoGain-CameraKit/' + p.relative_to(kit).as_posix())
+    archive.with_suffix('.zip.sha256').write_text(f'{sha(archive)}  {archive.name}\n', encoding='utf-8')
+    print(f'Camera kit: {archive}\nExtracted kit: {kit}', flush=True)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--stage', type=Path, default=Path('artifacts/stage'))
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument('--prepare-only', action='store_true', help='build/test the folder for signing before packaging')
+    mode.add_argument('--package', type=Path, help='package an existing prepared/signed kit folder')
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[2]
     stage = args.stage.resolve()
     version = ET.parse(root / 'Directory.Build.props').findtext('.//Version')
+    if args.package:
+        package(args.package.resolve(), root, version)
+        return
     work = root / 'artifacts' / ('camera-kit-build-' + uuid.uuid4().hex[:8])
     work.mkdir(parents=True)
     subprocess.run([sys.executable, '-m', 'PyInstaller', '--noconfirm', '--clean', '--onedir',
@@ -77,15 +102,13 @@ def main():
     isolated_env.pop('PYTHONPATH', None)
     subprocess.run([str(kit / 'ZwoGain-CameraKit.exe'), '--self-test', '--include-pixels',
                     '--output', str(work / 'self-test')], cwd=kit, env=isolated_env, check=True, timeout=90)
-    (kit / 'SHA256SUMS').write_text(''.join(f'{sha(p)}  {p.relative_to(kit).as_posix()}\n'
-                                         for p in sorted(kit.rglob('*')) if p.is_file() and p.name != 'SHA256SUMS'), encoding='utf-8')
-    archive = root / 'artifacts' / f'ZwoGain-CameraKit-{version}-win-x64.zip'
-    with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED, compresslevel=6, strict_timestamps=False) as output:
-        for p in sorted(kit.rglob('*')):
-            if p.is_file():
-                output.write(p, 'ZwoGain-CameraKit/' + p.relative_to(kit).as_posix())
-    archive.with_suffix('.zip.sha256').write_text(f'{sha(archive)}  {archive.name}\n', encoding='utf-8')
-    print(f'Camera kit: {archive}\nExtracted kit: {kit}', flush=True)
+    if os.environ.get('GITHUB_OUTPUT'):
+        with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
+            output.write(f'kit_path={kit}\n')
+    if args.prepare_only:
+        print(f'Prepared kit for signing: {kit}', flush=True)
+    else:
+        package(kit, root, version)
 
 
 if __name__ == '__main__':

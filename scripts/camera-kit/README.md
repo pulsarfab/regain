@@ -9,12 +9,15 @@ ZWOgain is independent and is not affiliated with ZWO.
 
 ## Run the kit
 
-1. Download the **ZwoGain-camera-kit** artifact from a successful
-   [GitHub Actions build](https://github.com/theatrus/zwogain/actions/workflows/build.yml).
-   Extract the downloaded artifact and the kit ZIP
-   inside it. Keep the entire `ZwoGain-CameraKit` folder together.
+1. Download `ZwoGain-CameraKit-<version>-win-x64.zip` from
+   [GitHub Releases](https://github.com/theatrus/zwogain/releases).
+   Extract it and keep the entire `ZwoGain-CameraKit` folder together.
+   Development builds are also available as the **ZwoGain-camera-kit** artifact
+   from [GitHub Actions](https://github.com/theatrus/zwogain/actions/workflows/build.yml);
+   those require extracting the artifact ZIP and the kit ZIP inside it.
 2. Use Windows x64 with the ZWO Windows camera driver installed. No Python,
-   Rust, .NET or NINA installation is required. These CI kit binaries are unsigned.
+   Rust, .NET or NINA installation is required. Release kit executables are
+   signed by StackFoundry LLC; ordinary CI kit binaries are unsigned.
 3. Close NINA and other camera applications. Cap the camera for dark frames;
    power cooled cameras as you normally would. Connect only one device of each
    model. A Pro Duo main and guide appear separately and need separate runs.
@@ -151,6 +154,11 @@ compiled kit does not need a Python installation or network access at runtime.
 CI also checks failed downloads, worker crashes, cancellation, control restoration,
 partial ZIP creation and a hung-download deadline against real simulator hosts.
 The frozen smoke test runs with Python/toolchain directories removed from PATH.
+
+Release builds use `build.py --prepare-only`, sign the prepared executable,
+then run `build.py --package <prepared-folder>`. Checksums are generated after
+signing. The prepared folder already contains the signed Rust host from the
+plugin staging directory.
 
 ZWOgain scripts are Apache-2.0. Python, Frida, PyInstaller and the vendor SDK
 retain their own licenses; see the bundled notices. Frida's native extension
