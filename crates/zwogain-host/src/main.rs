@@ -235,6 +235,9 @@ impl Host {
                 if let Some(t) = p["temperature"].as_i64() {
                     self.values["8"] = json!(t);
                 }
+                if let Some(power) = p["coolerPower"].as_i64() {
+                    self.values["15"] = json!(power);
+                }
                 json!(null)
             }
             _ => bail!("unknown method {method}"),

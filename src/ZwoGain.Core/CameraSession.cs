@@ -241,6 +241,13 @@ public sealed class CameraSession : IDisposable
             observed[8] = t;
         return t / 10.0;
     }
+    private async Task<long?> CoolerPower(CancellationToken token)
+    {
+        if (!Controls.ContainsKey(15)) return null;
+        long power = (await Call("get", new { control = 15 }, token).ConfigureAwait(false)).Result.GetInt64();
+        lock (sync) observed[15] = power;
+        return power;
+    }
     public async Task<Frame> CaptureAsync(Exposure exposure, CancellationToken token)
     {
         await operation.WaitAsync(token).ConfigureAwait(false);
@@ -251,10 +258,12 @@ public sealed class CameraSession : IDisposable
             Validate(exposure);
             var settings = Snapshot();
             double? prior = null;
+            long? priorPower = null;
             lock (sync)
             {
                 if (observed.TryGetValue(8, out var t))
                     prior = t / 10.0;
+                if (observed.TryGetValue(15, out var power)) priorPower = power;
             }
             Exception? last = null;
             bool eligibleForRetry = exposure.microseconds / 1e6 <= Options.MaximumRetryExposureSeconds;
@@ -275,12 +284,14 @@ public sealed class CameraSession : IDisposable
                         await OpenAsync(token).ConfigureAwait(false);
                         await Apply(settings, token).ConfigureAwait(false);
                         if (settings.GetValueOrDefault(17) != 0 && prior.HasValue)
-                            await Settle(prior.Value, token).ConfigureAwait(false);
+                            await Settle(prior.Value, priorPower, token).ConfigureAwait(false);
                     }
                     else
                     {
                         await Apply(settings, token).ConfigureAwait(false);
                         prior = await Temperature(token).ConfigureAwait(false) ?? prior;
+                        if (settings.GetValueOrDefault(17) != 0)
+                            priorPower = await CoolerPower(token).ConfigureAwait(false) ?? priorPower;
                     }
                     if (Backend == "direct" && CanFallback)
                     {
@@ -293,7 +304,7 @@ public sealed class CameraSession : IDisposable
                             Validate(exposure);
                             await Apply(settings, token).ConfigureAwait(false);
                             if (settings.GetValueOrDefault(17) != 0 && prior.HasValue)
-                                await Settle(prior.Value, token).ConfigureAwait(false);
+                                await Settle(prior.Value, priorPower, token).ConfigureAwait(false);
                         }
                     }
                     State("Starting exposure");
@@ -371,7 +382,7 @@ public sealed class CameraSession : IDisposable
         catch { KillHost(); State("Error"); throw; }
         finally { operation.Release(); }
     }
-    private async Task Settle(double prior, CancellationToken token)
+    private async Task Settle(double prior, long? priorPower, CancellationToken token)
     {
         State($"Restoring cooling near {prior:F1} C");
         var clock = Stopwatch.StartNew();
@@ -379,12 +390,19 @@ public sealed class CameraSession : IDisposable
         while (clock.Elapsed.TotalSeconds < Options.CoolingTimeoutSeconds)
         {
             double? current = await Temperature(token).ConfigureAwait(false);
-            stable = current.HasValue && Math.Abs(current.Value - prior) <= Options.TemperatureToleranceC ? stable + 1 : 0;
+            long? power = await CoolerPower(token).ConfigureAwait(false);
+            // A cold sensor initially remains near its old temperature even when the SDK
+            // restarts its regulator at 1%. Wait for output to recover as well, otherwise
+            // thermal inertia lets three early readings pass before the sensor warms.
+            bool outputRecovered = !priorPower.HasValue || priorPower <= 10 ||
+                (power.HasValue && power >= priorPower - 10);
+            stable = current.HasValue && Math.Abs(current.Value - prior) <= Options.TemperatureToleranceC && outputRecovered ? stable + 1 : 0;
+            Diagnostic?.Invoke($"Cooling recovery: temperature {current:F1} C (prior {prior:F1}), power {power}% (prior {priorPower}%), stable {stable}/{Options.CoolingStableSamples}");
             if (stable >= Options.CoolingStableSamples)
                 return;
             await Task.Delay(TimeSpan.FromSeconds(Options.CoolingSampleSeconds), token).ConfigureAwait(false);
         }
-        throw new TimeoutException("Camera did not recover its prior cooling temperature");
+        throw new TimeoutException("Camera did not recover its prior cooling temperature and output");
     }
     private void Validate(Exposure e)
     {

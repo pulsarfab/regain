@@ -29,7 +29,10 @@ the process isolation, SDK ABI, and plugin packaging patterns in
 5. Start a fresh host, re-enumerate and reconnect by the original serial number.
 6. Restore controls, verify their read-back, restore cooling target and enablement.
 7. If cooling was enabled, wait for three consecutive temperature readings within
-   2 C of the pre-error reading. This has a five-minute deadline per attempt.
+   2 C of the pre-error reading. When power telemetry is available, cooler output
+   must also recover to at least its prior level minus 10 percentage points.
+   This avoids an early pass while a cold sensor starts warming after the SDK
+   resets its regulator. This has a five-minute deadline per attempt.
 8. Repeat the original exposure. Only success, cancellation, or final exhaustion
    reaches NINA. The default is three retries after the initial attempt, only
    for exposures of **30 seconds or less**. Longer exposures run normally but
@@ -43,9 +46,13 @@ SDK exposure state, serial, and SDK version through `ICamera.Action`.
 ## Experimental SDK-less option
 
 The supervised **ZWO SDK remains the default and primary backend**. In the
-camera setup dialog, enable **Try SDK-less driver (experimental; ASI676MC and Duo main/guide)**
+camera setup dialog's **Camera** tab, enable **Use experimental SDK-less driver**
 to try the separate Rust driver process. Save and reconnect to apply the choice.
 The option and **Allow SDK fallback** are persisted with the selected camera.
+The picker labels the ASI2600MM Pro Duo main camera and ASI220MM Mini guide
+separately. **Recovery** contains retry limits and reconnect delay, **Cooling**
+contains recovery settling limits, and **Advanced** contains timeouts and frame
+read retries. Save and Cancel stay visible on every tab.
 Existing settings default to the SDK; fallback is opt-in. With fallback enabled,
 a direct open failure or the next permitted exposure retry can switch to the
 SDK. Unsupported direct capture settings route to the SDK before exposure.
