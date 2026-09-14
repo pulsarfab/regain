@@ -59,7 +59,7 @@ public sealed class ResilientCamera : BaseINPC, ICamera
     public string Name => Settings.CameraLabel(descriptor.Name);
     public string DisplayName => "ZWOgain Retryable Camera";
     public string Category => "ZWOgain";
-    public string Description => "ZWO camera with automatic capture recovery";
+    public string Description => "ZWO camera driver with automatic retries";
     public string DriverInfo => $"ZWOgain {DriverVersion} / {session?.SdkVersion} [{session?.Backend}{(session?.UsingSdkFallback == true ? " fallback" : "")}]; {session?.Phase}";
     public string DriverVersion => typeof(ResilientCamera).Assembly.GetName().Version!.ToString();
     public bool Connected

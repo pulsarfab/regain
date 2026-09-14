@@ -9,7 +9,7 @@
     <NoWarn>$(NoWarn);NU1701</NoWarn>
     <AssemblyTitle>ZWOgain</AssemblyTitle>
     <Title>ZWOgain</Title>
-    <Description>ZWO again: automatic capture recovery for ZWO cameras</Description>
+    <Description>ZWO camera driver with automatic retries</Description>
   </PropertyGroup>
   <ItemGroup>
     <Resource Include="Assets/zwogain.png" />
