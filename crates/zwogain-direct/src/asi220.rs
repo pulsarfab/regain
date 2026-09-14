@@ -60,7 +60,9 @@ pub fn raw_settings(s: &Settings, bin: u32) -> Result<Settings> {
         "unsupported guide exposure/gain/offset"
     );
     ensure!(
-        s.interrupt_read_after_bytes == 0 && s.replay_prefix_bytes == 0,
+        s.interrupt_read_after_bytes == 0
+            && s.replay_prefix_bytes == 0
+            && s.timeout_read_after_bytes == 0,
         "guide retained-read recovery has not been established"
     );
     ensure!(

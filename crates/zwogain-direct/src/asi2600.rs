@@ -77,7 +77,15 @@ pub fn validate(s: &Settings, gain: i32) -> Result<()> {
         "unsupported Duo exposure/controls"
     );
     let bytes = s.width * s.height * 2;
-    for prefix in [s.interrupt_read_after_bytes, s.replay_prefix_bytes] {
+    ensure!(
+        s.interrupt_read_after_bytes == 0 || s.timeout_read_after_bytes == 0,
+        "choose one read fault injection"
+    );
+    for prefix in [
+        s.interrupt_read_after_bytes,
+        s.replay_prefix_bytes,
+        s.timeout_read_after_bytes,
+    ] {
         ensure!(
             prefix == 0 || (prefix >= 1024 && prefix < bytes && prefix.is_multiple_of(1024)),
             "Duo interruption prefix must be packet aligned and shorter than the frame"
@@ -377,6 +385,16 @@ fn capture_native(
         let mut read_errors = Vec::new();
         let mut data = loop {
             let attempt = (|| {
+                if read_errors.is_empty() && s.timeout_read_after_bytes > 0 {
+                    prefix = camera.read_frame(s.timeout_read_after_bytes as usize)?;
+                    // Research CLI only: stop the retained-frame sender and drain
+                    // the pipe. The following real bulk read has no producer and
+                    // must expire through the normal request/cancel/drain path.
+                    camera.vendor(0xbd, 0x18, 0, 0)?;
+                    camera.reset_pipe()?;
+                    camera.read_frame(1024 * 1024)?;
+                    anyhow::bail!("stalled sender unexpectedly delivered a bulk read");
+                }
                 if read_errors.is_empty() && s.interrupt_read_after_bytes > 0 {
                     prefix = camera.read_frame(s.interrupt_read_after_bytes as usize)?;
                     anyhow::bail!("injected host interruption after {} bytes", prefix.len());
@@ -429,7 +447,8 @@ fn capture_native(
             "wireSha256":wire_hash,"sha256":format!("{:x}",Sha256::digest(&data)),"sequence":sequence,
             "factoryDefects":defects.indices.len(),"acquisitionMs":armed.elapsed().as_millis(),"elapsedMs":started.elapsed().as_millis(),
             "replay":replay_result,"sdkLoaded":false,"readRecoveries":read_errors.len(),"readErrors":read_errors,
-            "interruptedPrefixBytes":prefix.len(),"interruptedPrefixPixelsMatch":!prefix.is_empty()});
+            "interruptedPrefixBytes":prefix.len(),"interruptedPrefixPixelsMatch":!prefix.is_empty(),
+            "timeoutInjectionBytes":s.timeout_read_after_bytes});
         Ok((meta, data))
     })();
     let cleanup = stop(camera);

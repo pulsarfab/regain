@@ -37,7 +37,8 @@ the process isolation, SDK ABI, and plugin packaging patterns in
 8. Repeat the original exposure. Only success, cancellation, or final exhaustion
    reaches NINA. The default is three retries after the initial attempt, only
    for exposures of **30 seconds or less**. Longer exposures run normally but
-   report their first failure without retrying.
+   report failure without taking a replacement exposure. The direct backend
+   can first recover a transfer from the retained frame, as described below.
 
 Failed attempts and phases are recorded in NINA's log. The successful image has
 the successful attempt's timestamp and requested exposure duration, excluding
@@ -95,12 +96,15 @@ is experimental and differs from the SDK's regulator. Unverified models,
 including 2600/6200 P25, continue to use the SDK.
 
 ASI676/main read failures can retry the complete retained frame, configurable
-from 0 to 5 (default 2). The retry-duration threshold also governs these retries.
+from 0 to 5 (default 2), at any supported exposure length. These rereads do not
+start another exposure and are independent of the new-exposure retry cutoff.
 The guide uses bounded startup stream resynchronization; retained guide-frame
 replay has not been established. If transfer recovery fails, the supervisor
 reconnects and repeats within the configured policy. Cancellation terminates
 the isolated process. Retention across USB removal or power loss is unverified.
 See [Duo capture findings](docs/duo-capture.md) for hardware evidence and limits.
+See [transfer recovery and SDK gaps](docs/transfer-recovery.md) for cancellation
+and timeout tests, the recovery sequence, and work still needed.
 
 See [direct acquisition details](docs/sdk-free-capture.md),
 [same-frame correction evidence](docs/factory-defect-correction.md), and the

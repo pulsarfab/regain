@@ -7,6 +7,7 @@ const handles = new Set();
 const pending = new Map();
 let sequence = 0;
 let cancelled = false;
+let bulkNumber = 0;
 function emit(kind, fields) { send({kind, timeMs: Date.now(), thread: Process.getCurrentThreadId(), ...fields}); }
 function hex(p, length) {
     if (p.isNull() || length <= 0) return null;
@@ -79,6 +80,7 @@ attach(kernel, 'DeviceIoControl', {
             inputLength: args[3].toUInt32(), outputLength: args[5].toUInt32(),
             overlapped: args[7].toString(), caller: location(this.returnAddress)
         };
+        if (this.record.code === '0x22004b') this.record.bulkNumber = ++bulkNumber;
         this.input = args[2]; this.output = args[4]; this.bytes = args[6];
         this.start = Date.now();
         // Only the fixed transport header, never a bulk image buffer.
@@ -97,6 +99,17 @@ attach(kernel, 'DeviceIoControl', {
             header: result.toInt32() ? hex(this.input, Math.min(this.record.inputLength, 38)) : null
         });
         if (result.toInt32()) collectBulk(this.record, this.input, this.output, u32(this.bytes));
+        if (Number.isInteger(globalThis.TRACE_CANCEL_BULK_NUMBER) && this.record.code === '0x22004b'
+            && globalThis.TRACE_CANCEL_BULK_NUMBER === this.record.bulkNumber && !cancelled
+            && !result.toInt32() && error === 997 && this.record.overlapped !== '0x0') {
+            // Cancel on this submission's thread while its OVERLAPPED is still
+            // alive. A later callback could race reuse of the same stack address.
+            cancelled = true;
+            const value = cancelIo(ptr(this.record.handle), ptr(this.record.overlapped));
+            emit('injected-cancel', {sequence: this.record.sequence, bulkNumber: this.record.bulkNumber,
+                ok: !!value.value, lastError: value.lastError});
+            this.lastError = error;
+        }
         if (globalThis.TRACE_CANCEL_FIRST_BULK && !cancelled && this.record.code === '0x22004b'
             && !result.toInt32() && error === 997 && this.record.overlapped !== '0x0') {
             cancelled = true;

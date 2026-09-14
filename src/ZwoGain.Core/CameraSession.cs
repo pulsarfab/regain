@@ -30,6 +30,7 @@ public sealed class CameraSession : IDisposable
     public IReadOnlyDictionary<int, Control> Controls { get; private set; } = new Dictionary<int, Control>();
     public string SdkVersion { get; private set; } = "unknown";
     public string Backend { get; private set; } = "sdk";
+    public bool SupportsRetainedFrameReads { get; private set; }
     public string? Serial => serial;
     public string Phase { get; private set; } = "Disconnected";
     public string? LastError
@@ -123,6 +124,7 @@ public sealed class CameraSession : IDisposable
         Camera = camera;
         SdkVersion = result.GetProperty("sdkVersion").GetString()!;
         Backend = result.TryGetProperty("backend", out var backend) ? backend.GetString()! : "sdk";
+        SupportsRetainedFrameReads = Backend == "direct" && info.TryGetProperty("retainedFrameReads", out var retained) && retained.ValueKind == JsonValueKind.True;
         Controls = result.GetProperty("controls").EnumerateArray().Select(c => new Control(c.GetProperty("type").GetInt32(), c.GetProperty("min").GetInt64(), c.GetProperty("max").GetInt64(), c.GetProperty("value").GetInt64(), c.GetProperty("writable").GetBoolean())).ToDictionary(c => c.Type);
         if (!Controls.ContainsKey(1))
             throw new NotSupportedException("Camera exposure control is unavailable");
@@ -311,7 +313,8 @@ public sealed class CameraSession : IDisposable
                     DateTime started = DateTime.UtcNow;
                     object parameters = Backend == "direct" ? new {
                         exposure.width, exposure.height, exposure.bin, exposure.x, exposure.y,
-                        exposure.microseconds, exposure.dark, readRetries = eligibleForRetry ? Options.DirectReadRetries : 0
+                        exposure.microseconds, exposure.dark,
+                        readRetries = SupportsRetainedFrameReads || eligibleForRetry ? Options.DirectReadRetries : 0
                     } : exposure;
                     await Call("start", parameters, token).ConfigureAwait(false);
                     State("Exposing");
@@ -356,8 +359,13 @@ public sealed class CameraSession : IDisposable
                         throw new InvalidDataException("Unexpected capture dimensions");
                     var pixels = new ushort[reply.Pixels.Length / 2];
                     Buffer.BlockCopy(reply.Pixels, 0, pixels, 0, reply.Pixels.Length);
+                    int retainedReads = SupportsRetainedFrameReads && reply.Result.TryGetProperty("readRecoveries", out var reads)
+                        ? reads.GetInt32() : 0;
+                    if (retainedReads > 0)
+                        Diagnostic?.Invoke($"Recovered retained frame after {retainedReads} transfer retries; no new exposure");
                     State("Idle");
-                    return new(pixels, exposure.width, exposure.height, started, ended, attempt, exposure, settings);
+                    return new(pixels, exposure.width, exposure.height, started, ended, attempt, exposure, settings)
+                        { RetainedReadRecoveries = retainedReads };
                 }
                 catch (Exception e) when (IsRecoverable(e))
                 {

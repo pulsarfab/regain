@@ -210,4 +210,32 @@ public class DirectBackendTests
             session.CaptureAsync(Exposure with { microseconds = 2000000001 }, default));
     }
 
+    [Theory]
+    [InlineData(false, 2, 2, true)]
+    [InlineData(false, 2, 3, false)]
+    [InlineData(false, 0, 1, false)]
+    [InlineData(true, 2, 1, false)]
+    public async Task RetainedReadsIgnoreExposureCutoffButGuideAndNewExposuresDoNot(bool guide, int budget, int failures, bool succeeds)
+    {
+        int starts = 0, sdkStarts = 0;
+        using var session = new CameraSession(Duo(guide), () => {
+            starts++;
+            var host = Host();
+            host.CallAsync("simulate-read-failures", new { count = failures }, TimeSpan.FromSeconds(5), default).GetAwaiter().GetResult();
+            return host;
+        }, Fast with { MaximumRetryExposureSeconds = 0, DirectReadRetries = budget },
+            sdkFallbackFactory: () => { sdkStarts++; return Fallback(Duo(guide)); });
+        await session.ConnectAsync(default);
+        Assert.Equal(!guide, session.SupportsRetainedFrameReads);
+        var request = Exposure with { microseconds = guide ? 1000000 : 1200000000 };
+        if (succeeds) {
+            var frame = await session.CaptureAsync(request, default);
+            Assert.Equal(failures, frame.RetainedReadRecoveries);
+            Assert.Equal(0, frame.Recoveries);
+            Assert.Equal(request, frame.Exposure);
+        } else await Assert.ThrowsAsync<IOException>(() => session.CaptureAsync(request, default));
+        Assert.Equal(1, starts);
+        Assert.Equal(0, sdkStarts);
+    }
+
 }

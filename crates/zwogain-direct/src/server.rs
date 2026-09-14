@@ -45,7 +45,8 @@ impl Model {
         };
         json!({"id":self.pid(),"name":self.name(),"width":width,"height":height,"color":self == Self::Asi676,"bayer":0,
             "pixelSize":pixel,"bitDepth":bits,"cooled":self == Self::Duo,"shutter":false,"bins":bins,"formats":[2],
-            "minimumWidth":64,"minimumHeight":64,"originAlignment":alignment})
+            "minimumWidth":64,"minimumHeight":64,"originAlignment":alignment,
+            "retainedFrameReads":self != Self::Guide})
     }
     fn controls(self) -> Vec<Value> {
         let (gain_min, gain_max, offset_min, offset_max, offset_default, exp_max) = match self {
@@ -314,6 +315,7 @@ struct Host {
     simulate: bool,
     model: Model,
     gain: i32,
+    simulated_read_failures: Option<u32>,
 }
 impl Host {
     fn update(&mut self) {
@@ -340,6 +342,16 @@ impl Host {
             })?)?)
         };
         let value = match method {
+            "simulate-read-failures" => {
+                ensure!(
+                    self.simulate && self.pending.is_none() && self.frame.is_none(),
+                    "simulation only, while idle"
+                );
+                let failures = number("count")?;
+                ensure!(failures <= 6, "invalid simulated read failures");
+                self.simulated_read_failures = Some(failures);
+                Value::Null
+            }
             "list" => {
                 let mut found = Vec::new();
                 for model in Model::ALL {
@@ -454,6 +466,23 @@ impl Host {
                 }
                 self.model.validate(&settings, self.gain, bin)?;
                 if method == "start" {
+                    // Instant faulted readout for the supervisor's policy tests.
+                    // This branch is inaccessible without --simulate.
+                    if let Some(failures) = self.simulated_read_failures.take() {
+                        ensure!(self.simulate, "simulation only");
+                        self.frame = Some(if failures > settings.read_retries {
+                            Err(anyhow::anyhow!(
+                                "simulated read failures exhausted the transfer retry budget"
+                            ))
+                        } else {
+                            Ok((
+                                json!({"width":settings.width,"height":settings.height,"simulated":true,
+                                "readRecoveries":failures}),
+                                vec![0; (settings.width * settings.height * 2) as usize],
+                            ))
+                        });
+                        return Ok((Value::Null, Vec::new()));
+                    }
                     let (sender, receiver) = mpsc::sync_channel(1);
                     worker
                         .sender

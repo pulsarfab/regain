@@ -11,6 +11,10 @@ ZWOgain (ZWO Again) provides a process-isolated ZWO camera driver for NINA 3.2.0
   with a temporary NINA readiness-timeout extension for longer recovery.
 - Allows ASI2600MM Pro direct exposures up to 2,000 seconds. The default
   automatic retry cutoff remains 30 seconds.
+- Allows retained-frame transfer retries at any supported exposure length on
+  the direct ASI2600/ASI676 paths. Replacement exposures still obey the cutoff.
+  ASI2600 tests recovered the same pixels after canceled USB reads and a real
+  read deadline; cable removal and power loss remain unverified.
 - Adds experimental SDK-free ASI2600MM Duo main and ASI220MM Mini guide capture,
   factory correction, software binning, main cooling/dew control, and persisted
   opt-in SDK fallback with serial verification and the shared retry policy.

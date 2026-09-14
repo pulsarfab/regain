@@ -87,6 +87,7 @@ fn main() -> Result<()> {
                     replay = true;
                 }
                 "--interrupt-read-after-bytes" => settings.interrupt_read_after_bytes = value,
+                "--timeout-read-after-bytes" if duo => settings.timeout_read_after_bytes = value,
                 "--read-retries" => settings.read_retries = value,
                 _ => anyhow::bail!("unknown capture option {option}"),
             }
@@ -107,7 +108,7 @@ fn main() -> Result<()> {
             || args == ["--probe-all"]
             || args == ["--probe", "--cancel-read"]
             || capture,
-        "Usage: zwogain-direct [--probe [--cancel-read] | --capture | --capture-duo | --capture-guide] [--width N --height N --x N --y N --microseconds N --gain N --offset N --frames N --read-retries N --stream --replay --replay-prefix-bytes N --interrupt-read-after-bytes N]; Duo and guide also accept --bin N; disconnect other camera apps first"
+        "Usage: zwogain-direct [--probe [--cancel-read] | --capture | --capture-duo | --capture-guide] [--width N --height N --x N --y N --microseconds N --gain N --offset N --frames N --read-retries N --stream --replay --replay-prefix-bytes N --interrupt-read-after-bytes N]; Duo also accepts --timeout-read-after-bytes N; Duo and guide also accept --bin N; disconnect other camera apps first"
     );
     // Last resort for a kernel request that refuses to finish cancellation. The
     // worker must exit rather than free a buffer still owned by the USB driver.

@@ -128,7 +128,7 @@ internal static class Settings
             (nameof(RecoveryOptions.ReadyFrameDownloadRetries), "SDK re-download retries (experimental)"),
             (nameof(RecoveryOptions.DirectReadRetries), "Direct read retries (0-5)"));
         entries[nameof(RecoveryOptions.ReadyFrameDownloadRetries)].ToolTip = "Default: 0. Requires a ready frame in the SDK. The exposure limit applies.";
-        entries[nameof(RecoveryOptions.DirectReadRetries)].ToolTip = "Default: 2. Guide retries read a new streaming frame. The exposure limit applies.";
+        entries[nameof(RecoveryOptions.DirectReadRetries)].ToolTip = "Default: 2. ASI2600 and ASI676 retry the same retained frame at any exposure length. Guide retries read a new frame and obey the exposure limit.";
         var status = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 8) };
         footer.Children.Add(status);
         var actions = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };

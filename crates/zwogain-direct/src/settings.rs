@@ -11,6 +11,7 @@ pub struct Settings {
     pub offset: u32,
     pub replay_prefix_bytes: u32,
     pub interrupt_read_after_bytes: u32,
+    pub timeout_read_after_bytes: u32,
     pub read_retries: u32,
 }
 impl Default for Settings {
@@ -25,12 +26,17 @@ impl Default for Settings {
             offset: 10,
             replay_prefix_bytes: 0,
             interrupt_read_after_bytes: 0,
+            timeout_read_after_bytes: 0,
             read_retries: 2,
         }
     }
 }
 impl Settings {
     pub fn validate(&self) -> Result<()> {
+        ensure!(
+            self.timeout_read_after_bytes == 0,
+            "timeout injection is ASI2600-only"
+        );
         ensure!(
             self.width >= 64
                 && self.height >= 64

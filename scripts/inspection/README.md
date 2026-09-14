@@ -126,7 +126,7 @@ Windows unwind entry can cover only its prologue):
 
 ## SDK-free capture and replay
 
-Disconnect other camera applications first. Capture is restricted to the
+Disconnect other camera applications first. `--capture` selects the
 observed USB3 ASI676MC. Defaults: full sensor, 100 ms, gain 0, offset 10,
 bin 1, USB limit 40, two retained-frame read retries.
 
@@ -161,6 +161,37 @@ interruption, not a USB bus error. A replay mismatch fails the diagnostic.
 
 For acquisition commands, packet framing, sensor retention, P25 compatibility
 and limits, see [SDK-free capture](../../docs/sdk-free-capture.md).
+
+### ASI2600 USB cancellation and timeout experiments
+
+These commands spawn and trace one owned debug worker. Disconnect NINA first.
+The historical CLI name `--capture-duo` selects the ASI2600MM Pro main interface.
+The guide is a separate interface and has no established retained-frame replay.
+
+```powershell
+cargo build -p zwogain-direct --locked
+# Cancel the 13th pending bulk request, after 12 MiB of a 60-second frame:
+.reference/inspection-venv/Scripts/python.exe scripts/inspection/trace_direct.py --output artifacts/inspection/cancel-long.jsonl --cancel-bulk 13 --hash-bulk -- --capture-duo --microseconds 60000000 --gain 100 --offset 50 --replay
+# Pause the sender after 12 MiB; the next real USB read expires at 5 seconds:
+.reference/inspection-venv/Scripts/python.exe scripts/inspection/trace_direct.py --output artifacts/inspection/timeout.jsonl --hash-bulk -- --capture-duo --microseconds 2000000 --gain 100 --offset 50 --timeout-read-after-bytes 12582912 --replay
+# Repeat cancellation with --read-retries 0 to verify that failure is surfaced.
+```
+
+`--timeout-read-after-bytes` is a main-camera research option, unavailable in
+the plugin protocol. It must be packet aligned and shorter than the frame.
+The cancellation hook targets only a pending bulk request and calls `CancelIoEx`
+while its caller still owns the request storage. Inspect the terminal error:
+cancellation can race successful completion. Timeout tests must show
+`deadlineExpired true`; a deliberately abandoned prefix alone proves neither
+a USB timeout nor a bus fault.
+
+`--hash-bulk` hashes successful chunks and discards their pixels. Interior
+digests omit four bytes at each end of each chunk; the separate `--replay`
+comparison checks the entire frame except its two four-byte envelopes.
+Raw traces contain local USB device paths. Publish only sanitized findings, as
+in [transfer recovery evidence](../../docs/transfer-recovery-evidence.json).
+The tracer's successful exit means tracing finished; inspect worker stdout,
+stderr and capture metadata to determine acquisition success.
 
 ## Direct plugin backend
 

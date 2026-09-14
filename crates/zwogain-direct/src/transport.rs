@@ -209,10 +209,11 @@ impl Camera {
                     && nt == 0
                     && usb == 0
                     && done.bytes == chunk.len(),
-                "bulk chunk {number} failed: Win32 {}, NT {nt:08x}, USB {usb:08x}, bytes {}/{}",
+                "bulk chunk {number} failed: Win32 {}, NT {nt:08x}, USB {usb:08x}, bytes {}/{}, deadlineExpired {}",
                 done.error,
                 done.bytes,
-                chunk.len()
+                chunk.len(),
+                done.cancel_requested
             );
         }
         Ok(data)

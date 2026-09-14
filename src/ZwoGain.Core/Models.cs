@@ -3,7 +3,10 @@ namespace ZwoGain.Core;
 
 public sealed record Exposure(int width, int height, int bin, int x, int y, long microseconds, bool dark);
 public sealed record Frame(ushort[] Pixels, int Width, int Height, DateTime StartedUtc, DateTime EndedUtc, int Recoveries,
-    Exposure Exposure, IReadOnlyDictionary<int, long> Controls);
+    Exposure Exposure, IReadOnlyDictionary<int, long> Controls)
+{
+    public int RetainedReadRecoveries { get; init; }
+}
 public sealed record Control(int Type, long Min, long Max, long Value, bool Writable);
 public sealed record CameraDescriptor(string Name, int Width, int Height, bool Color, int Bayer, double PixelSize,
     int BitDepth, bool Cooled, bool Shutter, int[] Bins)
