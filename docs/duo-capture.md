@@ -144,7 +144,7 @@ See `scripts/inspection/validate_guide.py` and the sanitized evidence JSON.
 
 Both sensors now use these acquisition paths through the isolated plugin host.
 The model catalogue gates exact PIDs/USB versions, verifies hardware serials,
-and exposes main bins 1–4 and guide bins 1–2. Factory corrections are identical
+and exposes main bins 1â€“4 and guide bins 1â€“2. Factory corrections are identical
 to the research paths. The SDK remains the default, with a persisted opt-in
 fallback that restores serial, imaging controls, cooler target/enable and dew.
 A failed capture can switch only on a permitted retry; settings outside the
@@ -152,7 +152,7 @@ verified direct range route before exposure. SDK fallback stays active until
 reconnect. The main and guide can therefore use longer SDK exposures without
 extending unverified direct timing ranges.
 
-Duo temperature is vendor IN `B3`, two signed little-endian bytes / 256 °C.
+Duo temperature is vendor IN `B3`, two signed little-endian bytes / 256 Â°C.
 FPGA `19` bit `80` disables the cooler; bit `40` enables the dew heater.
 Dew enable also writes `2A=197` (off: zero). Writes preserve unrelated bits,
 including the exposure lifecycle bit. Target temperature exists in host state;
@@ -173,9 +173,9 @@ hardware output until recovery reconnects, as there is no established firmware
 watchdog for host loss. Abrupt power/USB fault tests remain outstanding.
 
 Hardware validation through the plugin protocol: twelve consecutive 5-second
-512×256 main captures with cooler target 25 °C and dew enabled, zero recoveries;
-temperature moved from 27.8 °C to 24.6 °C, with minimum 24.3 °C. Two guide
-960×540 bin-2 captures also succeeded. Killing the direct main worker at download
+512Ã—256 main captures with cooler target 25 Â°C and dew enabled, zero recoveries;
+temperature moved from 27.8 Â°C to 24.6 Â°C, with minimum 24.3 Â°C. Two guide
+960Ã—540 bin-2 captures also succeeded. Killing the direct main worker at download
 caused one SDK retry after the 5-second reconnect delay, serial verification,
 control restoration and three cooling samples near the prior temperature.
 The following exposure stayed on the SDK with zero retries. Local logs retain

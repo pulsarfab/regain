@@ -196,7 +196,7 @@ python scripts/inspection/validate_guide.py --output artifacts/inspection/NEW-gu
 ```
 
 The validators require NumPy and discard pixel buffers after digest/statistical
-checks. Main supports bins 1–4 and retained-read replay; guide supports bins 1/2
+checks. Main supports bins 1â€“4 and retained-read replay; guide supports bins 1/2
 and bounded startup stream resynchronization, with no proven retained replay.
 Both apply independent ASID factory correction. Guide zero-line integrations
 are rejected before hardware access. `--stream` emits framed binary metadata

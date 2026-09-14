@@ -43,7 +43,7 @@ SDK exposure state, serial, and SDK version through `ICamera.Action`.
 ## Experimental SDK-less option
 
 The supervised **ZWO SDK remains the default and primary backend**. In the
-camera setup dialog, enable **Try SDK-less driver (experimental; ASI676MC only)**
+camera setup dialog, enable **Try SDK-less driver (experimental; ASI676MC and Duo main/guide)**
 to try the separate Rust driver process. Save and reconnect to apply the choice.
 The option and **Allow SDK fallback** are persisted with the selected camera.
 Existing settings default to the SDK; fallback is opt-in. With fallback enabled,
@@ -58,14 +58,14 @@ The NINA direct backend supports these verified interfaces:
 
 | Camera | RAW16 bins | Verified direct exposure range | Environment |
 | --- | --- | --- | --- |
-| ASI676MC USB3 | 1 | 32 µs–30 s | Gain/offset |
-| ASI2600MM Duo main USB3 | 1–4 | 32 µs–30 s | Gain/offset, temperature, cooling, dew heater |
-| ASI220MM Mini Duo guide USB2 | 1–2 | Nonzero line integration through 10 s | Gain/offset |
+| ASI676MC USB3 | 1 | 32 Âµsâ€“30 s | Gain/offset |
+| ASI2600MM Duo main USB3 | 1â€“4 | 32 Âµsâ€“30 s | Gain/offset, temperature, cooling, dew heater |
+| ASI220MM Mini Duo guide USB2 | 1â€“2 | Nonzero line integration through 10 s | Gain/offset |
 
 Both Duo sensors are individually selectable in setup. The direct process uses
 the installed Windows driver without loading `ASICamera2.dll`, reads hardware
 serials and factory defect maps, and applies the verified RAW16 corrections and
-software binning. ROIs require at least 64 × 64 physical pixels; main origins
+software binning. ROIs require at least 64 Ã— 64 physical pixels; main origins
 must align to 16 columns and two rows. USB limit is fixed at 40. Main cooling
 uses a Rust regulator with a bounded power ramp and the observed nonlinear
 current conversion; it runs during idle, exposure and transfer. This controller

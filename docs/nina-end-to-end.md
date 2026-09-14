@@ -234,7 +234,7 @@ NINA end-to-end success requires an observed new image in its image pane; the
 earlier command-line and simulator results remain separately documented in
 [validation](validation.md).
 
-## Final restored state
+## Restored state after the earlier ASI676 matrix
 
 NINA was left connected to ASI676MC through the SDK, gain/offset 0 and USB 40.
 A final one-second, bin-1 full frame displayed 3552 × 3552, mean 563.85 and
@@ -256,3 +256,60 @@ The interruption returned `IGraphicsCaptureItemInterop.CreateForMonitor failed:
 Could not capture the given monitor. (0x80070057)`. A fresh JavaScript/Computer
 Use connection did not resolve this second error. Restoring the RDP desktop
 resolved it, and the bin-4 capture subsequently passed.
+
+## Duo direct backend and SDK fallback integration (2026-09-14)
+
+The updated plugin was installed in NINA 3.2.0.9001 and tested interactively
+with both capped ASI2600MM Pro Duo sensors. Each row below was verified as a
+new image in NINA's image pane; statistics are NINA's displayed values. Main
+captures used gain 100 / offset 50; guide captures used gain 100 / offset 200.
+These extend the earlier SDK/ASI676 matrix; they do not imply every sequence,
+control-extreme or cancellation case was repeated on each new direct sensor.
+
+| Sensor / backend | Exposure / bin / region | Output | Mean / SD |
+| --- | --- | --- | --- |
+| Main / direct | 1 s / 1 / full | 6248 x 4176 | 500.43 / 13.71 |
+| Main / direct | 1 s / 2 / full | 3120 x 2088 | 500.05 / 6.70 |
+| Main / direct | 1 s / 3 / full | 2080 x 1392 | 499.94 / 4.11 |
+| Main / direct | 1 s / 4 / full | 1560 x 1044 | 499.87 / 3.02 |
+| Main / direct | 1 s / 4 / physical ROI 512 x 256 at (16, 0) | 128 x 64 | 499.83 / 1.59 |
+| Main / SDK fallback before exposure | 31 s / 4 / full | 1560 x 1044 | 507.59 / 12.06 |
+| Guide / direct | 0.1 s / 1 / full | 1920 x 1080 | 3204.97 / 65.84 |
+| Guide / direct | 0.1 s / 2 / full | 960 x 540 | 3202.45 / 35.46 |
+| Guide / SDK fallback after worker failure | 5 s / 2 / full | 960 x 540 | 3197.82 / 47.34 |
+| Main / primary SDK, final verification | 0.1 s / 1 / full | 6248 x 4176 | 499.92 / 6.04 |
+
+The 31-second main request switched to SDK before starting an exposure because
+it exceeded the verified direct range. NINA logged that automatic exposure
+retries were disabled above the default 30-second cutoff; the successful SDK
+exposure was the first exposure attempt, not an exception to that cutoff.
+
+For guide recovery, only NINA's identified direct worker was terminated during
+the five-second exposure. The request stayed active, recorded one failed attempt,
+waited five seconds, opened the SDK on the same serial, restored controls, and
+displayed the replacement frame without a NINA capture error. Total elapsed time
+was about 11.7 seconds. The equipment pane showed `[sdk fallback]`, gain 100,
+offset 200 and USB limit 40. This hardware check includes the fix in `9dc40a6`
+that carries fixed direct USB bandwidth into the writable SDK control.
+
+The setup dialog was visually checked after restart: camera selection, serial,
+direct-driver choice and SDK-fallback choice persisted. Changing sensor cleared
+the previous sensor's serial, and connecting learned the new serial. The dialog
+fits the desktop and scrolls to its Save button; both experimental labels remain
+visible under NINA's theme. Main cooling/dew and both sensors' binning/ranges were
+advertised correctly. Cooling during acquisition and temperature settling after
+main-worker failure were tested separately through the plugin protocol, as
+recorded in [Duo capture](duo-capture.md) and its sanitized hardware evidence.
+
+Final state: NINA is connected to Duo main through the primary SDK, with both
+experimental switches off and its serial persisted. Gain is 100, offset 50,
+USB limit 40, snapshot duration 0.1 s and binning 1. Loop, Save, subsampling,
+cooling and dew are off. The target-temperature field remains -10 C. The final
+dark frame is fitted in the image pane. No changes were made to the image output
+directory during this matrix.
+
+The tested production revision passed 41 core tests, 10 NINA contract tests,
+Rust tests/formatting/Clippy, release-package checks and GitHub CI. These tests
+do not validate P25/ASI6200 protocols, physical USB detach/power loss, or natural
+capture-transfer faults. Direct RAW8/video and guide retained-frame replay are
+not claimed. SDK operation remains the primary path.
