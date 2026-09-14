@@ -28,8 +28,8 @@ NINA's adapter rounds output width down to a multiple of 8 and height to even.
 | SDK | ASI2600MM Duo | 2 | 3120 × 2088 | Pass: visible new frame, 16-bit, mean 1.34 |
 | SDK | ASI2600MM Duo | 3 | 2080 × 1392 | Pass: visible new frame, 16-bit, mean 1.23 |
 | SDK | ASI2600MM Duo | 4 | 1560 × 1044 | Pass: visible new frame, 16-bit, mean 1.21 |
-| SDK | ASI220MM Mini | 1 | 1920 × 1080 | Pending |
-| SDK | ASI220MM Mini | 2 | 960 × 540 | Pending |
+| SDK | ASI220MM Mini | 1 | 1920 × 1080 | Pass after offset fix: mean 3196.29, offset 200 |
+| SDK | ASI220MM Mini | 2 | 960 × 540 | Pass after offset fix: mean 3182.31, offset 200 |
 | Direct | ASI676MC | 1 | 3552 × 3552 | Pending |
 
 Completed rows used one second, gain 0, offset 0, USB limit 40, with Save and
@@ -85,7 +85,11 @@ range, logs the adjustment, and retains the applied value for recovery, NINA
 properties and frame metadata. Other control read-back mismatches still fail,
 including cooling. Tests cover offset normalization through transfer recovery,
 out-of-range read-back rejection, strict cooling restoration, and NINA metadata.
-Hardware image-pane revalidation follows installation of this correction.
+After installing `ed3a820` and restarting NINA, both full-frame binning modes
+passed and image metadata showed offset 200. A 512 × 256 sensor ROI at (16, 32)
+and bin 2 produced 256 × 128 (mean 3205.43); disabling subsampling restored
+960 × 540 (mean 3182.75). All four were fresh one-second images with gain 0,
+16-bit output, and no capture errors.
 
 All entries below are pending full completion. Record settings, visible image dimensions,
 statistics, capture/recovery outcome and any error text for each completed case.
