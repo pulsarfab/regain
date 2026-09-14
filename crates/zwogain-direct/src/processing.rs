@@ -9,7 +9,7 @@ pub const SENSOR: usize = 3552;
 /// from the SDK for comparison; independent acquisition supplies its own seed.
 pub fn unpack_guide(data: &mut [u8], gain: i32, mut seed: u32) -> Result<()> {
     ensure!(data.len().is_multiple_of(2), "odd guide wire length");
-    for pair in data.chunks_exact_mut(2) {
+    for pair in data.as_chunks_mut::<2>().0 {
         let mut value = (u16::from(pair[0]) << 4) | u16::from(pair[1] & 15);
         if gain < 100 && value > 31 {
             seed = seed.wrapping_mul(214013).wrapping_add(2531011);
