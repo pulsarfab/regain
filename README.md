@@ -21,7 +21,9 @@ the process isolation, SDK ABI, and plugin packaging patterns in
 7. If cooling was enabled, wait for three consecutive temperature readings within
    2 C of the pre-error reading. This has a five-minute deadline per attempt.
 8. Repeat the original exposure. Only success, cancellation, or final exhaustion
-   reaches NINA. The default is three retries after the initial attempt.
+   reaches NINA. The default is three retries after the initial attempt, only
+   for exposures of **30 seconds or less**. Longer exposures run normally but
+   report their first failure without retrying.
 
 Failed attempts and phases are recorded in NINA's log. The successful image has
 the successful attempt's timestamp and requested exposure duration, excluding
@@ -53,6 +55,11 @@ Defaults for white balance, USB limit, flip, hardware/mono binning, and high-spe
 mode follow the native ASI driver; cooling settings already on the camera are
 preserved. Settings changed during a capture are applied after that transaction,
 so retries continue to use the original settings.
+
+`MaximumRetryExposureSeconds` configures the inclusive duration threshold
+(default `30`; `0` disables automatic retries). It applies to both replacement
+exposures and the experimental same-frame re-download option. The comparison
+uses the requested exposure duration, not elapsed transfer or recovery time.
 
 ## Hardware diagnostics
 

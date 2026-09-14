@@ -24,6 +24,7 @@ internal static class Settings
         var labels = new Dictionary<string, string>
         {
             [nameof(RecoveryOptions.MaxRetries)] = "Recovery retries after the initial attempt",
+            [nameof(RecoveryOptions.MaximumRetryExposureSeconds)] = "Maximum exposure eligible for retries (seconds; 0 disables retries)",
             [nameof(RecoveryOptions.ReconnectDelaySeconds)] = "USB reconnect delay (seconds)",
             [nameof(RecoveryOptions.CommandTimeoutSeconds)] = "SDK command timeout (seconds)",
             [nameof(RecoveryOptions.DownloadTimeoutSeconds)] = "Download watchdog (seconds)",
@@ -36,7 +37,7 @@ internal static class Settings
         };
         foreach (var property in typeof(RecoveryOptions).GetProperties())
         {
-            panel.Children.Add(new TextBlock { Text = labels[property.Name] });
+            panel.Children.Add(new TextBlock { Text = labels[property.Name], TextWrapping = TextWrapping.Wrap });
             var field = new TextBox { Text = Convert.ToString(property.GetValue(current), System.Globalization.CultureInfo.InvariantCulture), Margin = new Thickness(0, 2, 0, 8) };
             entries[property.Name] = field;
             panel.Children.Add(field);
@@ -45,7 +46,15 @@ internal static class Settings
         panel.Children.Add(status);
         var button = new Button { Content = "Save", Padding = new Thickness(16, 6, 16, 6) };
         panel.Children.Add(button);
-        var window = new Window { Title = "ZwoGain recovery", Width = 510, SizeToContent = SizeToContent.Height, Content = panel, WindowStartupLocation = WindowStartupLocation.CenterScreen };
+        var window = new Window
+        {
+            Title = "ZwoGain recovery",
+            Width = 510,
+            SizeToContent = SizeToContent.Height,
+            MaxHeight = SystemParameters.WorkArea.Height * .9,
+            Content = new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto },
+            WindowStartupLocation = WindowStartupLocation.CenterScreen
+        };
         button.Click += (_, _) =>
         {
             try

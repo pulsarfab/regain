@@ -50,6 +50,7 @@ struct Host {
     fault: String,
     opened: bool,
     sim_info: Value,
+    sim_instant: bool,
 }
 impl Host {
     fn command(&mut self, method: &str, p: Value) -> Result<(Value, Vec<u8>)> {
@@ -133,7 +134,8 @@ impl Host {
                 } else {
                     json!(match (&self.exposure, self.started) {
                         (Some(e), Some(t))
-                            if t.elapsed() < Duration::from_micros(e.microseconds as u64) =>
+                            if !self.sim_instant
+                                && t.elapsed() < Duration::from_micros(e.microseconds as u64) =>
                             1,
                         (Some(_), _) => 2,
                         _ => 0,
@@ -200,6 +202,9 @@ impl Host {
                 json!(null)
             }
             "simulation" if self.sdk.is_none() => {
+                if let Some(instant) = p["instant"].as_bool() {
+                    self.sim_instant = instant;
+                }
                 if let Some(width) = p["width"].as_i64() {
                     self.sim_info["width"] = json!(width);
                 }
@@ -235,6 +240,7 @@ fn main() -> Result<()> {
         values: json!({}),
         fault: String::new(),
         opened: false,
+        sim_instant: false,
         sim_info: json!({"id":0,"name":"ZWO Simulated","width":960,"height":640,"color":true,"bayer":0,"pixelSize":3.76,"bitDepth":16,"cooled":true,"shutter":false,"bins":[1,2,4],"formats":[0,2]}),
     };
     let (mut input, mut output) = (std::io::stdin().lock(), std::io::stdout().lock());

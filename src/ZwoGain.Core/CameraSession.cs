@@ -209,7 +209,12 @@ public sealed class CameraSession : IDisposable
                     prior = t / 10.0;
             }
             Exception? last = null;
-            for (int attempt = 0; attempt <= Options.MaxRetries; attempt++)
+            bool eligibleForRetry = exposure.microseconds / 1e6 <= Options.MaximumRetryExposureSeconds;
+            int retries = eligibleForRetry ? Options.MaxRetries : 0;
+            int downloadRetries = eligibleForRetry ? Options.ReadyFrameDownloadRetries : 0;
+            if (!eligibleForRetry)
+                Diagnostic?.Invoke($"Automatic retries disabled: {exposure.microseconds / 1e6:G} s exposure exceeds {Options.MaximumRetryExposureSeconds:G} s threshold");
+            for (int attempt = 0; attempt <= retries; attempt++)
             {
                 token.ThrowIfCancellationRequested();
                 try
@@ -265,7 +270,7 @@ public sealed class CameraSession : IDisposable
                                 throw;
                             LastSdkExposureState = (await Call("status", null, token).ConfigureAwait(false)).Result.GetInt32();
                             Diagnostic?.Invoke($"Post-transfer SDK state: {LastSdkExposureState}");
-                            if (transferRetry++ >= Options.ReadyFrameDownloadRetries || LastSdkExposureState != 2)
+                            if (transferRetry++ >= downloadRetries || LastSdkExposureState != 2)
                                 throw;
                             await Task.Delay(TimeSpan.FromSeconds(Options.ReconnectDelaySeconds), token).ConfigureAwait(false);
                         }
@@ -283,12 +288,12 @@ public sealed class CameraSession : IDisposable
                         LastSdkErrorCode = sdk.Code;
                     last = e;
                     LastError = e.Message;
-                    Diagnostic?.Invoke($"Attempt {attempt + 1}/{Options.MaxRetries + 1}, phase {Phase}: {e.Message}");
+                    Diagnostic?.Invoke($"Attempt {attempt + 1}/{retries + 1}, phase {Phase}: {e.Message}");
                     KillHost();
                 }
             }
             State("Error");
-            throw new IOException($"Exposure failed after {Options.MaxRetries + 1} attempts. {last?.Message}", last);
+            throw new IOException($"Exposure failed after {retries + 1} attempts. {last?.Message}", last);
         }
         catch (OperationCanceledException) { KillHost(); State("Aborted"); throw; }
         catch { KillHost(); State("Error"); throw; }

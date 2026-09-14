@@ -15,6 +15,7 @@ public sealed record CameraDescriptor(string Name, int Width, int Height, bool C
 public sealed record RecoveryOptions
 {
     public int MaxRetries { get; init; } = 3;
+    public double MaximumRetryExposureSeconds { get; init; } = 30;
     public double ReconnectDelaySeconds { get; init; } = 5;
     public double CommandTimeoutSeconds { get; init; } = 15;
     public double DownloadTimeoutSeconds { get; init; } = 60;
@@ -27,6 +28,8 @@ public sealed record RecoveryOptions
     public int ReadyFrameDownloadRetries { get; init; } = 0;
     public void Validate()
     {
+        if (!double.IsFinite(MaximumRetryExposureSeconds) || MaximumRetryExposureSeconds < 0 || MaximumRetryExposureSeconds > 86400)
+            throw new ArgumentOutOfRangeException(nameof(MaximumRetryExposureSeconds));
         if (MaxRetries is < 0 or > 20 || ReadyFrameDownloadRetries is < 0 or > 5 || CoolingStableSamples is < 1 or > 60)
             throw new ArgumentOutOfRangeException(nameof(MaxRetries));
         foreach (double v in new[] { ReconnectDelaySeconds, CommandTimeoutSeconds, DownloadTimeoutSeconds, ExposureGraceSeconds, CoolingTimeoutSeconds, TemperatureToleranceC, CoolingSampleSeconds })

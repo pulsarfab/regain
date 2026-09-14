@@ -63,6 +63,12 @@ bad bounds invalidate the worker. Standard error is diagnostics only.
 The parent independently bounds each command (15 seconds), download (60
 seconds), exposure readiness (requested duration + 30 seconds), USB delay (5
 seconds), cooling settle (300 seconds), and total retry count (3 by default).
+Retries apply only when the requested exposure is no longer than
+`MaximumRetryExposureSeconds` (30 seconds by default, inclusive). Longer
+exposures are permitted but their first failure is surfaced. The same threshold
+also suppresses optional same-frame re-download attempts; elapsed download or
+recovery time does not affect eligibility. Setting the threshold to zero
+disables all automatic capture retries.
 The SDK call does not have to cooperate with cancellation. Polling is 25 ms;
 the SDK itself reports its internal capture/transfer failure as an exposure
 state in many cases, before the application calls `ASIGetDataAfterExp`.

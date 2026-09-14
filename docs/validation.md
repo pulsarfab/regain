@@ -4,11 +4,14 @@ Initial development validation: 2026-09-13 (America/Los_Angeles).
 
 - Windows x64, ASI SDK 1.41, NINA.Plugin 3.2.0.9001, .NET 8 target.
 - Rust frame-bound test, formatting and Clippy with warnings denied.
-- 15 .NET supervisor/transport tests: download failure, native host crash,
+- 22 .NET supervisor/transport tests: download failure, native host crash,
   hung download watchdog, retry exhaustion, cancellation during exposure and
   reconnect delay, next-capture recovery, opt-in same-frame re-download,
   consecutive binary frames, invalid ROI/configuration, permanent SDK errors,
   cooling enabled/off/deadline, and full-size ASI2600/ASI6200 simulated frames.
+  Retry-threshold tests cover exactly 30 seconds, one microsecond above it,
+  a configured 60-second boundary, disabling retries with zero, disabling
+  same-frame re-download for long exposures, and defaults for existing configs.
 - Two NINA contract tests: equipment export and complete ICamera
   StartExposure → WaitUntilExposureIsReady → DownloadExposure flow, hiding a
   simulated transfer failure and preserving the original image settings.

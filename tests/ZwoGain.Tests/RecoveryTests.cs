@@ -6,6 +6,79 @@ namespace ZwoGain.Tests;
 
 public class RecoveryTests
 {
+    [Theory]
+    [InlineData(30000000L, 30, true)]
+    [InlineData(30000001L, 30, false)]
+    [InlineData(60000000L, 60, true)]
+    [InlineData(60000001L, 60, false)]
+    [InlineData(10000L, 0, false)]
+    public async Task RetryDurationThresholdIsInclusiveAndConfigurable(long microseconds, double threshold, bool retries)
+    {
+        int starts = 0;
+        using var session = new CameraSession(Camera, () =>
+        {
+            var h = Host();
+            h.CallAsync("simulation", new
+            {
+                instant = true
+            }, TimeSpan.FromSeconds(15), default).GetAwaiter().GetResult();
+            if (starts++ == 0)
+                h.CallAsync("fault", new
+                {
+                    kind = "download"
+                }, TimeSpan.FromSeconds(15), default).GetAwaiter().GetResult();
+            return h;
+        }, Fast with
+        {
+            MaxRetries = 1,
+            MaximumRetryExposureSeconds = threshold
+        });
+        await session.ConnectAsync(default);
+        if (retries)
+        {
+            var frame = await session.CaptureAsync(Exposure with
+            {
+                microseconds = microseconds
+            }, default);
+            Assert.Equal(1, frame.Recoveries);
+            Assert.Equal(microseconds, frame.Exposure.microseconds);
+        }
+        else
+        {
+            var error = await Assert.ThrowsAsync<IOException>(() => session.CaptureAsync(Exposure with { microseconds = microseconds }, default));
+            Assert.Contains("after 1 attempts", error.Message);
+        }
+        Assert.Equal(retries ? 2 : 1, starts);
+    }
+    [Fact]
+    public async Task LongExposureDoesNotUseExperimentalRedownload()
+    {
+        using var session = new CameraSession(Camera, () =>
+        {
+            var h = Host();
+            h.CallAsync("simulation", new
+            {
+                instant = true
+            }, TimeSpan.FromSeconds(15), default).GetAwaiter().GetResult();
+            h.CallAsync("fault", new
+            {
+                kind = "download"
+            }, TimeSpan.FromSeconds(15), default).GetAwaiter().GetResult();
+            return h;
+        }, Fast with
+        {
+            ReadyFrameDownloadRetries = 1
+        });
+        await session.ConnectAsync(default);
+        await Assert.ThrowsAsync<IOException>(() => session.CaptureAsync(Exposure with { microseconds = 30000001 }, default));
+    }
+    [Fact]
+    public void ExistingSettingsReceiveThirtySecondDefault()
+    {
+        Assert.Equal(30, System.Text.Json.JsonSerializer.Deserialize<RecoveryOptions>("{\"MaxRetries\":2}")!.MaximumRetryExposureSeconds);
+        Assert.Throws<ArgumentOutOfRangeException>(() => (Fast with { MaximumRetryExposureSeconds = -1 }).Validate());
+        Assert.Throws<ArgumentOutOfRangeException>(() => (Fast with { MaximumRetryExposureSeconds = double.NaN }).Validate());
+    }
     private static readonly string Root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
     private static HostClient Host() => new(Path.Combine(Root, "target/debug/zwogain-host.exe"), "unused", true);
     private static readonly CameraDescriptor Camera = new("ZWO Simulated", 960, 640, true, 0, 3.76, 16, true, false, [1, 2, 4]);
