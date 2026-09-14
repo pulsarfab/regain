@@ -402,3 +402,19 @@ the direct backend, terminate the worker immediately, and verify that neither
 another exposure nor SDK fallback is attempted with the default retry cutoff.
 Additional checks reject requests beyond 2,000 seconds without starting the
 hardware and preserve SDK routing for unsupported ROIs.
+
+A subsequent 1,200-second full-frame exposure used the same direct worker with
+SDK fallback disabled. It started at 09:50:47.84, entered download at
+10:10:48.64 and returned idle at 10:10:48.67: 1,200.83 seconds total. NINA
+displayed the completed 6248 x 4176 frame at gain 100, offset 50 and binning 1
+(mean 867.71 ADU, median 845 ADU, standard deviation 424.03 ADU). There were no
+failed attempts, worker restarts or SDK fallbacks. Process-module inspection
+during and after capture confirmed that the direct worker had no
+`ASICamera2.dll` loaded. NINA's profile timeout returned to 60 seconds.
+
+This is a real twenty-minute integration on the capped camera near room
+temperature, followed by USB readout, factory correction and display through
+the plugin. The image remains in NINA's pane. It establishes 1,200-second
+operation on this unit; 2,000 seconds is range-checked and simulator-tested but
+has not yet been run for its full duration on hardware. CI passed 51 core tests,
+12 NINA tests, 16 Rust tests, formatting, Clippy and the release-package checks.

@@ -81,6 +81,8 @@ direct exposure is allowed, but is not automatically repeated after failure
 with the default 30-second retry cutoff. The guide and ASI676MC retain their
 separate limits. See [NINA hardware tests](docs/nina-end-to-end.md) for tested
 durations; the 2,000-second maximum matches the SDK's advertised range.
+Full-frame 60- and 1,200-second ASI2600 captures have completed in NINA with
+SDK fallback disabled. A full-duration 2,000-second hardware run is not yet tested.
 
 Both Duo sensors are individually selectable in setup. The direct process uses
 the installed Windows driver without loading `ASICamera2.dll`, reads hardware
