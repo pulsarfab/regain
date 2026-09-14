@@ -50,10 +50,10 @@ public sealed class ResilientCamera : BaseINPC, ICamera
     }
     public string Id => "ZwoGain";
     public string Name => descriptor.Name;
-    public string DisplayName => "ZwoGain recovery";
-    public string Category => "ZwoGain";
+    public string DisplayName => "ZWOgain recovery";
+    public string Category => "ZWOgain";
     public string Description => "ZWO RAW16 camera with supervised SDK and automatic exposure recovery";
-    public string DriverInfo => $"ZwoGain {DriverVersion} / ASI {session?.SdkVersion}; {session?.Phase}";
+    public string DriverInfo => $"ZWOgain {DriverVersion} / ASI {session?.SdkVersion}; {session?.Phase}";
     public string DriverVersion => typeof(ResilientCamera).Assembly.GetName().Version!.ToString();
     public bool Connected
     {
@@ -84,11 +84,11 @@ public sealed class ResilientCamera : BaseINPC, ICamera
         CameraSelection? selected = null;
         if (selectionStore is not null)
         {
-            selected = selectionStore.Load() ?? throw new InvalidOperationException("Choose a camera in the ZwoGain setup dialog first.");
+            selected = selectionStore.Load() ?? throw new InvalidOperationException("Choose a camera in the ZWOgain setup dialog first.");
             SelectCamera(selected.Camera);
         }
         var candidate = new CameraSession(descriptor, hostFactory, recoveryOptions ?? Settings.Load(), selected?.Serial);
-        candidate.Diagnostic += text => Logger.Info($"ZwoGain {Name}: {text}");
+        candidate.Diagnostic += text => Logger.Info($"ZWOgain {Name}: {text}");
         try
         {
             await candidate.ConnectAsync(token).ConfigureAwait(false);
@@ -119,7 +119,7 @@ public sealed class ResilientCamera : BaseINPC, ICamera
                 RaiseAllPropertiesChanged();
             }
             catch (OperationCanceledException) { return; }
-            catch (Exception e) { Logger.Warning($"ZwoGain telemetry: {e.Message}"); }
+            catch (Exception e) { Logger.Warning($"ZWOgain telemetry: {e.Message}"); }
         }
     }
     public void Disconnect()

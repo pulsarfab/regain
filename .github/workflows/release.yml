@@ -63,6 +63,6 @@ jobs:
             if (!(($existing | ConvertFrom-Json).isDraft)) { throw 'Never replace assets of a published release.' }
             gh release upload $tag @assets --repo theatrus/zwogain --clobber
           } else {
-            gh release create $tag @assets --repo theatrus/zwogain --verify-tag --draft --title "ZwoGain $env:RELEASE_VERSION" --notes-file docs/release-notes.md
+            gh release create $tag @assets --repo theatrus/zwogain --verify-tag --draft --title "ZWOgain $env:RELEASE_VERSION" --notes-file docs/release-notes.md
           }
           if ($LASTEXITCODE) { throw 'Draft release publication failed.' }

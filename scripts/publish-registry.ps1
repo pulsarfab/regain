@@ -28,7 +28,7 @@ gh release download $Tag --repo theatrus/zwogain --pattern $manifestName --dir $
 if ($LASTEXITCODE) { throw 'Release manifest download failed.' }
 $manifestPath = Join-Path $temp $manifestName
 $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
-if ($manifest.Name -cne 'ZwoGain' -or $manifest.Identifier -cne '6953efde-7f7e-48df-94d5-671986293974' -or $manifest.License -cne 'Apache-2.0') { throw 'Unexpected plugin identity or license.' }
+if ($manifest.Name -cne 'ZWOgain' -or $manifest.Identifier -cne '6953efde-7f7e-48df-94d5-671986293974' -or $manifest.License -cne 'Apache-2.0') { throw 'Unexpected plugin identity or license.' }
 $actualVersion = '{0}.{1}.{2}.{3}' -f $manifest.Version.Major, $manifest.Version.Minor, $manifest.Version.Patch, $manifest.Version.Build
 if ($actualVersion -cne $version) { throw 'Manifest does not match release version.' }
 $baseUrl = "https://github.com/theatrus/zwogain/releases/download/$Tag"
@@ -73,7 +73,7 @@ Copy-Item -LiteralPath $manifestPath -Destination $destination
 if ($Push) {
     git -C $registry add -- $relative
     if ($LASTEXITCODE) { throw 'Could not stage registry manifest.' }
-    git -C $registry commit -m "Publish ZwoGain $version"
+    git -C $registry commit -m "Publish ZWOgain $version"
     if ($LASTEXITCODE) { throw 'Could not commit registry manifest.' }
     git -C $registry push origin HEAD:main
     if ($LASTEXITCODE) { throw 'Registry push failed; resolve concurrent changes and retry.' }

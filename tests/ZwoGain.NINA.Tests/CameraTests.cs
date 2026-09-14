@@ -17,6 +17,7 @@ public class CameraTests
     public void PluginManifestUsesEmbeddedLogoAndApacheLicense()
     {
         var plugin = new ZwoGainPlugin();
+        Assert.Equal("ZWOgain", plugin.Name);
         Assert.Equal("Apache-2.0", plugin.License);
         Assert.Equal("pack://application:,,,/ZwoGain.NINA;component/Assets/zwogain.png", plugin.Descriptions.FeaturedImageURL);
         var resources = new System.Resources.ResourceManager("ZwoGain.NINA.g", typeof(ZwoGainPlugin).Assembly);

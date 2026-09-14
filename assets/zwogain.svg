@@ -1,5 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
-  <title>ZwoGain — camera capture recovery</title>
+  <title>ZWOgain — ZWO Again</title>
+  <desc>A camera and star encircled by a retry arrow, representing automatic capture recovery.</desc>
   <rect x="8" y="8" width="240" height="240" rx="48" fill="#112332"/>
   <path d="M191 76 A83 83 0 1 0 209 154" fill="none" stroke="#4ad8c3" stroke-width="13" stroke-linecap="round"/>
   <path d="M168 79 L202 91 L198 56" fill="#4ad8c3"/>

@@ -1,4 +1,4 @@
-ZwoGain provides a process-isolated ZWO camera driver for NINA 3.2.0.9001+.
+ZWOgain (ZWO Again) provides a process-isolated ZWO camera driver for NINA 3.2.0.9001+.
 
 - Runs the ASI SDK in a supervised Rust process and restores camera settings
   after recoverable failures.

@@ -8,7 +8,7 @@ contract/logo tests, package validation and registry publication fixture tests.
 It uploads the ZIP, SHA-256 file, PNG and NINA manifest. No camera is required
 on the runner; physical camera and interactive NINA checks remain local.
 
-ZwoGain code and the original logo are Apache-2.0. `LICENSE` contains the full
+ZWOgain code and the original logo are Apache-2.0. `LICENSE` contains the full
 license; Cargo and .NET metadata declare it. Packages include that license and
 third-party notices/licenses. The vendor ASI SDK retains its bundled license.
 
@@ -46,7 +46,7 @@ silently rewritten to a three-part semantic version.
 
 This first release workflow produces **unsigned** binaries. Authenticode
 signing is not configured for this repository. If added later, sign only the
-ZwoGain DLLs/EXE before packaging, preserve the vendor DLL, and compute the
+ZWOgain DLLs/EXE before packaging, preserve the vendor DLL, and compute the
 archive/manifest checksum afterward.
 
 ## Registry publication
@@ -61,7 +61,7 @@ manifests/z/ZwoGain/3.2.0.9001/manifest.json
 Pushing that repository's `main` triggers its existing deployment. This
 workflow changes only the version manifest, not the registry's landing page.
 
-Configure the ZwoGain repository secret `NINA_REGISTRY_TOKEN` with a fine-grained
+Configure the ZWOgain repository secret `NINA_REGISTRY_TOKEN` with a fine-grained
 token that has Contents read/write access to `theatrus/nina-plugins-registry`.
 The source repository's `GITHUB_TOKEN` cannot write to that other private
 repository. The publication job uses the secret only for the registry checkout
@@ -90,7 +90,7 @@ it never pushes or makes HTTP requests.
 
 ## Current publication prerequisites
 
-At implementation time ZwoGain is **private**, and `NINA_REGISTRY_TOKEN` is not
+At implementation time ZWOgain is **private**, and `NINA_REGISTRY_TOKEN` is not
 configured. Builds, CI artifacts, embedded logos and draft-release generation
 work in a private repository. NINA cannot anonymously retrieve that repository's
 GitHub release assets, so registry publication intentionally stops until the

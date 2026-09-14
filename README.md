@@ -1,11 +1,13 @@
-# ZwoGain
+# ZWOgain
 
-![ZwoGain camera recovery logo](src/ZwoGain.NINA/Assets/zwogain.png)
+![ZWOgain camera recovery logo](src/ZwoGain.NINA/Assets/zwogain.png)
 
 [![Build and test](https://github.com/theatrus/zwogain/actions/workflows/build.yml/badge.svg)](https://github.com/theatrus/zwogain/actions/workflows/build.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
-A N.I.N.A. camera plugin for ZWO ASI cameras. The ASI SDK runs in a disposable
+**ZWOgain**, as in **ZWO Again**, is a N.I.N.A. camera plugin for ZWO ASI cameras.
+The camera-and-retry-arrow logo reflects its automatic capture recovery.
+The ASI SDK runs in a disposable
 Rust process; the NINA adapter keeps the capture request and recovery policy.
 An SDK error, failed download, crashed host, or hung command can become a longer
 successful capture instead of an interrupted sequence.
@@ -50,7 +52,7 @@ ASI SDK 1.41 x64 DLL and header are included under `vendor/zwo`.
 The build creates `artifacts/ZwoGain-0.1.0.0.zip` and its SHA-256 checksum.
 Installation copies the package to
 `%LOCALAPPDATA%\NINA\Plugins\3.0.0\ZwoGain`. Restart NINA, refresh the camera
-chooser, and select **ZwoGain recovery**. Open its setup gear, pick the camera,
+chooser, and select **ZWOgain recovery**. Open its setup gear, pick the camera,
 and save before connecting. This entry remains available with no camera attached.
 When upgrading from the earlier per-model chooser, select this new entry once.
 Disconnect the native

@@ -40,8 +40,8 @@ Initial development validation: 2026-09-13 (America/Los_Angeles).
 
 Tested the installed NINA 3.2 application using Windows computer use:
 
-- ZwoGain appeared as its own camera-provider group and selected the ASI676MC.
-- The persistent **ZwoGain recovery** entry opens a camera picker in setup.
+- ZWOgain appeared as its own camera-provider group and selected the ASI676MC.
+- The persistent **ZWOgain recovery** entry opens a camera picker in setup.
   Selected the attached ASI676MC, saved, connected successfully, and reopened
   setup to verify the selected model and automatically remembered serial.
   Restarted NINA and verified both its driver selection and the setup camera /

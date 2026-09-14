@@ -1,6 +1,6 @@
 # Third-party notices
 
-ZwoGain is copyright 2026 Yann Ramin, Apache License 2.0 (see `LICENSE`).
+ZWOgain is copyright 2026 Yann Ramin, Apache License 2.0 (see `LICENSE`).
 The original camera/recovery logo in `assets/` and the embedded PNG are covered
 by the same license.
 

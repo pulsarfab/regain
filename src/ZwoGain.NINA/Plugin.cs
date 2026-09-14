@@ -19,7 +19,7 @@ using ZwoGain.Core;
 [assembly: AssemblyMetadata("ChangelogURL", "https://github.com/theatrus/zwogain/releases")]
 [assembly: AssemblyMetadata("Tags", "camera,ZWO,recovery")]
 [assembly: AssemblyMetadata("FeaturedImageURL", "pack://application:,,,/ZwoGain.NINA;component/Assets/zwogain.png")]
-[assembly: AssemblyMetadata("ShortDescription", "ZWO camera driver with automatic capture recovery")]
+[assembly: AssemblyMetadata("ShortDescription", "ZWO again: automatic capture recovery for ZWO cameras")]
 [assembly: AssemblyMetadata("LongDescription", "Runs the ASI SDK in a supervised Rust process. Recovers failed exposures and downloads, restores controls and cooling, and retries the original capture transparently.")]
 
 namespace ZwoGain.NINA;
@@ -33,14 +33,14 @@ public sealed class ZwoGainPlugin : PluginBase
 public sealed class CameraProvider : IEquipmentProvider<ICamera>
 {
     private readonly IExposureDataFactory images;
-    public string Name => "ZwoGain";
+    public string Name => "ZWOgain";
     [ImportingConstructor]
     public CameraProvider(IExposureDataFactory images)
     {
         this.images = images;
     }
     internal static readonly string DirectoryPath = Path.GetDirectoryName(typeof(CameraProvider).Assembly.Location)!;
-    internal static HostClient NewHost() => new(Path.Combine(DirectoryPath, "zwogain-host.exe"), Path.Combine(DirectoryPath, "ASICamera2.dll"), log: message => Logger.Debug("ZwoGain SDK: " + message));
+    internal static HostClient NewHost() => new(Path.Combine(DirectoryPath, "zwogain-host.exe"), Path.Combine(DirectoryPath, "ASICamera2.dll"), log: message => Logger.Debug("ZWOgain SDK: " + message));
     internal static async Task<List<CameraDescriptor>> DiscoverAsync(CancellationToken token)
     {
         using var host = NewHost();

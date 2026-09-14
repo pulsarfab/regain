@@ -28,7 +28,7 @@ camera-to-SDK transfer may surface as `ASI_EXP_FAILED` during readiness polling,
 not as a failed copy from SDK to application. Partial data cannot be returned
 as a usable scientific image.
 
-ZwoGain records the phase and the original numeric SDK error. After a download
+ZWOgain records the phase and the original numeric SDK error. After a download
 error it probes exposure status before destroying the host. This distinguishes
 "still ready" from failed/idle/missing camera when the SDK can still respond.
 The optional same-frame experiment reissues the complete download only for
