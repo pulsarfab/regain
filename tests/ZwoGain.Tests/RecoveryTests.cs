@@ -1,0 +1,230 @@
+using System.Diagnostics;
+using ZwoGain.Core;
+using Xunit;
+
+namespace ZwoGain.Tests;
+
+public class RecoveryTests
+{
+    private static readonly string Root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
+    private static HostClient Host() => new(Path.Combine(Root, "target/debug/zwogain-host.exe"), "unused", true);
+    private static readonly CameraDescriptor Camera = new("ZWO Simulated", 960, 640, true, 0, 3.76, 16, true, false, [1, 2, 4]);
+    private static readonly Exposure Exposure = new(960, 640, 1, 0, 0, 10000, false);
+    private static RecoveryOptions Fast => new() { ReconnectDelaySeconds = .05, CommandTimeoutSeconds = 2, DownloadTimeoutSeconds = .2, CoolingSampleSeconds = .01, CoolingStableSamples = 2 };
+    [Theory]
+    [InlineData("download")]
+    [InlineData("crash")]
+    [InlineData("hang")]
+    public async Task RecoversTransferFailureByReplacingHostAndRestoringControls(string fault)
+    {
+        int starts = 0;
+        var phases = new List<string>();
+        using var session = new CameraSession(Camera, () =>
+        {
+            var h = Host();
+            if (starts++ == 0)
+                h.CallAsync("fault", new
+                {
+                    kind = fault
+                }, TimeSpan.FromSeconds(2), default).GetAwaiter().GetResult();
+            return h;
+        }, Fast);
+        session.Diagnostic += phases.Add;
+        await session.ConnectAsync(default);
+        session.Set(0, 123);
+        session.Set(5, 17);
+        session.Set(16, -12);
+        session.Set(17, 1);
+        var result = await session.CaptureAsync(Exposure, default);
+        Assert.Equal(1, result.Recoveries);
+        Assert.Equal(2, starts);
+        Assert.Equal(960 * 640, result.Pixels.Length);
+        Assert.Equal((ushort)321, result.Pixels[321]);
+        Assert.Equal(123, session.Value(0));
+        Assert.Contains(phases, p => p.StartsWith("Restoring cooling"));
+        Assert.Equal("Idle", session.Phase);
+    }
+    [Fact]
+    public async Task ExhaustionIsBounded()
+    {
+        int starts = 0;
+        using var session = new CameraSession(Camera, () => { starts++; var h = Host(); h.CallAsync("fault", new { kind = "download" }, TimeSpan.FromSeconds(2), default).GetAwaiter().GetResult(); return h; }, Fast with
+        {
+            MaxRetries = 2
+        });
+        await session.ConnectAsync(default);
+        await Assert.ThrowsAsync<IOException>(() => session.CaptureAsync(Exposure, default));
+        Assert.Equal(3, starts);
+    }
+    [Fact]
+    public async Task CancellationDuringExposureDoesNotRetryAndNextCaptureWorks()
+    {
+        int starts = 0;
+        using var session = new CameraSession(Camera, () => { starts++; return Host(); }, Fast);
+        await session.ConnectAsync(default);
+        using var cancel = new CancellationTokenSource(150);
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => session.CaptureAsync(Exposure with { microseconds = 10000000 }, cancel.Token));
+        Assert.Equal(1, starts);
+        var result = await session.CaptureAsync(Exposure, default);
+        Assert.Equal(960 * 640, result.Pixels.Length);
+        Assert.Equal(2, starts);
+    }
+    [Fact]
+    public async Task ExperimentalReadyDownloadRetryKeepsSameExposureAndProcess()
+    {
+        int starts = 0;
+        using var session = new CameraSession(Camera, () => { starts++; var h = Host(); h.CallAsync("fault", new { kind = "download" }, TimeSpan.FromSeconds(2), default).GetAwaiter().GetResult(); return h; }, Fast with
+        {
+            ReadyFrameDownloadRetries = 1
+        });
+        await session.ConnectAsync(default);
+        var result = await session.CaptureAsync(Exposure, default);
+        Assert.Equal(0, result.Recoveries);
+        Assert.Equal(1, starts);
+        Assert.Equal(2, session.LastSdkExposureState);
+    }
+    [Fact]
+    public async Task InvalidRoiFailsWithoutRetry()
+    {
+        int starts = 0;
+        using var session = new CameraSession(Camera, () => { starts++; return Host(); }, Fast);
+        await session.ConnectAsync(default);
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => session.CaptureAsync(Exposure with { width = 968 }, default));
+        Assert.Equal(1, starts);
+    }
+    [Fact]
+    public async Task BinaryFramesRemainExactAcrossConsecutiveCaptures()
+    {
+        using var session = new CameraSession(Camera, Host, Fast);
+        await session.ConnectAsync(default);
+        for (int j = 0; j < 5; j++)
+        {
+            var result = await session.CaptureAsync(Exposure with
+            {
+                width = 480,
+                height = 320,
+                bin = 2
+            }, default);
+            Assert.Equal((ushort)65535, result.Pixels[65535]);
+            Assert.Equal((ushort)0, result.Pixels[65536]);
+        }
+    }
+    [Fact]
+    public void RejectsUnboundedConfiguration()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => (Fast with { MaxRetries = 100 }).Validate());
+        Assert.Throws<ArgumentOutOfRangeException>(() => (Fast with { DownloadTimeoutSeconds = double.NaN }).Validate());
+    }
+    [Fact]
+    public async Task WarmCameraDoesNotResumeBeforeCoolingDeadlineAndFailsBoundedly()
+    {
+        int starts = 0;
+        var phases = new List<string>();
+        using var session = new CameraSession(Camera, () =>
+        {
+            var h = Host();
+            if (starts++ == 0)
+                h.CallAsync("fault", new
+                {
+                    kind = "download"
+                }, TimeSpan.FromSeconds(2), default).GetAwaiter().GetResult();
+            else
+                h.CallAsync("simulation", new
+                {
+                    temperature = 100
+                }, TimeSpan.FromSeconds(2), default).GetAwaiter().GetResult();
+            return h;
+        }, Fast with
+        {
+            MaxRetries = 1,
+            CoolingTimeoutSeconds = .08
+        });
+        session.Diagnostic += phases.Add;
+        await session.ConnectAsync(default);
+        await Assert.ThrowsAsync<IOException>(() => session.CaptureAsync(Exposure, default));
+        Assert.Equal(1, phases.Count(p => p == "Starting exposure"));
+        Assert.Equal(2, starts);
+    }
+    [Fact]
+    public async Task CoolingOffSkipsThermalWait()
+    {
+        int starts = 0;
+        using var session = new CameraSession(Camera, () =>
+        {
+            var h = Host();
+            if (starts++ == 0)
+                h.CallAsync("fault", new
+                {
+                    kind = "download"
+                }, TimeSpan.FromSeconds(2), default).GetAwaiter().GetResult();
+            else
+                h.CallAsync("simulation", new
+                {
+                    temperature = 100
+                }, TimeSpan.FromSeconds(2), default).GetAwaiter().GetResult();
+            return h;
+        }, Fast with
+        {
+            MaxRetries = 1,
+            CoolingTimeoutSeconds = .08
+        });
+        await session.ConnectAsync(default);
+        session.Set(17, 0);
+        Assert.Equal(1, (await session.CaptureAsync(Exposure, default)).Recoveries);
+    }
+    [Theory]
+    [InlineData(6248, 4176)]
+    [InlineData(9576, 6388)]
+    public async Task LargeSensorBinaryTransport(int width, int height)
+    {
+        using var session = new CameraSession(Camera with
+        {
+            Width = width,
+            Height = height
+        }, () =>
+        {
+            var h = Host();
+            h.CallAsync("simulation", new
+            {
+                width,
+                height
+            }, TimeSpan.FromSeconds(2), default).GetAwaiter().GetResult();
+            return h;
+        }, Fast with
+        {
+            DownloadTimeoutSeconds = 10
+        });
+        await session.ConnectAsync(default);
+        var result = await session.CaptureAsync(Exposure with
+        {
+            width = width,
+            height = height
+        }, default);
+        Assert.Equal(width * height, result.Pixels.Length);
+        Assert.Equal(unchecked((ushort)(width * height - 1)), result.Pixels[^1]);
+    }
+    [Fact]
+    public async Task InvalidSdkParameterIsNotRetried()
+    {
+        int starts = 0;
+        using var session = new CameraSession(Camera, () => { starts++; var h = Host(); h.CallAsync("fault", new { kind = "invalid" }, TimeSpan.FromSeconds(2), default).GetAwaiter().GetResult(); return h; }, Fast);
+        await session.ConnectAsync(default);
+        var error = await Assert.ThrowsAsync<SdkException>(() => session.CaptureAsync(Exposure, default));
+        Assert.Equal(8, error.Code);
+        Assert.Equal(1, starts);
+    }
+    [Fact]
+    public async Task CancellationDuringReconnectDelayDoesNotLaunchReplacement()
+    {
+        int starts = 0;
+        using var cancel = new CancellationTokenSource();
+        using var session = new CameraSession(Camera, () => { starts++; var h = Host(); h.CallAsync("fault", new { kind = "download" }, TimeSpan.FromSeconds(2), default).GetAwaiter().GetResult(); return h; }, Fast with
+        {
+            ReconnectDelaySeconds = 10
+        });
+        session.Diagnostic += p => { if (p.StartsWith("Reconnect delay")) cancel.Cancel(); };
+        await session.ConnectAsync(default);
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => session.CaptureAsync(Exposure, cancel.Token));
+        Assert.Equal(1, starts);
+    }
+}

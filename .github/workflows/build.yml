@@ -1,0 +1,25 @@
+name: Build and test
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - run: ./scripts/test.ps1
+        shell: pwsh
+      - run: ./scripts/build.ps1
+        shell: pwsh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ZwoGain-plugin
+          path: |
+            artifacts/ZwoGain-*.zip
+            artifacts/SHA256SUMS

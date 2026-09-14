@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+ <PropertyGroup><TargetFramework>net8.0-windows7.0</TargetFramework><EnableWindowsTargeting>true</EnableWindowsTargeting><PlatformTarget>x64</PlatformTarget><NoWarn>$(NoWarn);NU1701</NoWarn><IsTestProject>true</IsTestProject><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable></PropertyGroup>
+ <ItemGroup>
+  <ProjectReference Include="../../src/ZwoGain.NINA/ZwoGain.NINA.csproj" />
+  <PackageReference Include="NINA.Plugin" Version="3.2.0.9001" PrivateAssets="all" />
+  <PackageReference Include="System.Text.Json" Version="9.0.5" />
+  <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
+  <PackageReference Include="xunit" Version="2.9.2" />
+  <PackageReference Include="Moq" Version="4.20.72" />
+  <PackageReference Include="xunit.runner.visualstudio" Version="3.0.1" PrivateAssets="all" />
+ </ItemGroup>
+</Project>

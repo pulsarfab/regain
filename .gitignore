@@ -1,0 +1,7 @@
+.reference/
+target/
+**/bin/
+**/obj/
+artifacts/
+.vs/
+*.user

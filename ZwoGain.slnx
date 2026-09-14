@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/ZwoGain.Core/ZwoGain.Core.csproj" />
+    <Project Path="src/ZwoGain.Diagnostics/ZwoGain.Diagnostics.csproj" />
+    <Project Path="src/ZwoGain.NINA/ZwoGain.NINA.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/ZwoGain.NINA.Tests/ZwoGain.NINA.Tests.csproj" />
+    <Project Path="tests/ZwoGain.Tests/ZwoGain.Tests.csproj" />
+  </Folder>
+</Solution>
