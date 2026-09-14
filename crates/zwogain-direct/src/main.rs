@@ -1,5 +1,9 @@
 //! Isolated experimental direct backend; SDK remains the plugin's default.
 #[cfg(windows)]
+mod asi2600;
+#[cfg(windows)]
+mod asi2600_tables;
+#[cfg(windows)]
 mod asi676;
 #[cfg(windows)]
 mod asi676_tables;
@@ -22,8 +26,15 @@ fn main() -> Result<()> {
     if args == ["--process-frame"] {
         return processing::process_stream();
     }
-    let capture = args.first().is_some_and(|a| a == "--capture");
+    let duo = args.first().is_some_and(|a| a == "--capture-duo");
+    let capture = duo || args.first().is_some_and(|a| a == "--capture");
     let mut settings = settings::Settings::default();
+    let mut duo_gain = 0_i32;
+    let mut duo_bin = 1_u32;
+    if duo {
+        settings.width = 6248;
+        settings.height = 4176;
+    }
     let mut frames = 1_u32;
     let mut stream = false;
     let mut replay = false;
@@ -38,11 +49,19 @@ fn main() -> Result<()> {
                 stream = true;
                 continue;
             }
+            if duo && option == "--gain" {
+                duo_gain = options
+                    .next()
+                    .ok_or_else(|| anyhow::anyhow!("missing gain"))?
+                    .parse()?;
+                continue;
+            }
             let value: u32 = options
                 .next()
                 .ok_or_else(|| anyhow::anyhow!("missing option value"))?
                 .parse()?;
             match option.as_str() {
+                "--bin" if duo => duo_bin = value,
                 "--width" => settings.width = value,
                 "--height" => settings.height = value,
                 "--x" => settings.x = value,
@@ -60,7 +79,11 @@ fn main() -> Result<()> {
                 _ => anyhow::bail!("unknown capture option {option}"),
             }
         }
-        settings.validate()?;
+        if duo {
+            asi2600::raw_settings(&settings, duo_gain, duo_bin)?;
+        } else {
+            settings.validate()?;
+        }
         ensure!((1..=20).contains(&frames), "frame count must be 1..20");
     }
     ensure!(
@@ -69,7 +92,7 @@ fn main() -> Result<()> {
             || args == ["--probe-all"]
             || args == ["--probe", "--cancel-read"]
             || capture,
-        "Usage: zwogain-direct [--probe [--cancel-read] | --capture [--width N --height N --x N --y N --microseconds N --gain N --offset N --frames N --read-retries N --stream --replay --replay-prefix-bytes N --interrupt-read-after-bytes N]]; disconnect other camera apps first"
+        "Usage: zwogain-direct [--probe [--cancel-read] | --capture | --capture-duo] [--width N --height N --x N --y N --microseconds N --gain N --offset N --frames N --read-retries N --stream --replay --replay-prefix-bytes N --interrupt-read-after-bytes N]; Duo also accepts --bin N; disconnect other camera apps first"
     );
     // Last resort for a kernel request that refuses to finish cancellation. The
     // worker must exit rather than free a buffer still owned by the USB driver.
@@ -106,12 +129,16 @@ fn main() -> Result<()> {
         paths.retain(|path| {
             String::from_utf16_lossy(path)
                 .to_ascii_lowercase()
-                .contains("vid_03c3&pid_676d")
+                .contains(if duo {
+                    "vid_03c3&pid_2601"
+                } else {
+                    "vid_03c3&pid_676d"
+                })
         });
     }
     ensure!(
         paths.len() == 1,
-        "operation requires exactly one matching camera interface (capture selects ASI676MC only)"
+        "operation requires exactly one matching camera interface (--capture selects ASI676MC; --capture-duo selects Duo main)"
     );
     let camera = transport::Camera::open(&paths[0])?;
     let mut result = camera.probe()?;
@@ -119,7 +146,11 @@ fn main() -> Result<()> {
         use std::io::Write;
         let mut output = std::io::stdout().lock();
         for frame in 0..frames {
-            let (metadata, data) = asi676::capture(&camera, &result, &settings, replay)?;
+            let (metadata, data) = if duo {
+                asi2600::capture(&camera, &result, &settings, duo_gain, duo_bin, replay)?
+            } else {
+                asi676::capture(&camera, &result, &settings, replay)?
+            };
             transport::require_sdk_absent()?;
             result["capture"] = metadata;
             result["frame"] = serde_json::json!(frame);

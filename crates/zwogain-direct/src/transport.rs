@@ -156,7 +156,7 @@ impl Camera {
 
     pub fn read_frame(&self, length: usize) -> Result<Vec<u8>> {
         ensure!(
-            length > 0 && length <= 32 * 1024 * 1024,
+            length > 0 && length <= 128 * 1024 * 1024,
             "invalid research frame size"
         );
         let mut data = vec![0; length];

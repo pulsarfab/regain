@@ -39,14 +39,14 @@ def main():
     parser.add_argument('--validate-direct-processing', action='store_true',
                         help='compare SDK pixels with independent Rust factory correction in memory')
     args = parser.parse_args()
-    if args.validate_direct_processing and (not args.trace_processing or args.bin != 1):
-        parser.error('--validate-direct-processing requires --trace-processing and bin 1')
+    if args.validate_direct_processing and not args.trace_processing:
+        parser.error('--validate-direct-processing requires --trace-processing')
     if not (1 <= args.frames <= 20 and 0 < args.seconds <= 30 and 0 <= args.ready_delay <= 5
             and 0 < args.deadline <= 300 and args.width > 0 and args.height > 0
             and args.width % 8 == 0 and args.height % 2 == 0
             and args.width * args.height * 2 <= 512 * 1024 * 1024):
         parser.error('invalid bounded capture parameters')
-    if args.bin not in [1, 2, 4] or args.x < 0 or args.y < 0:
+    if args.bin not in [1, 2, 3, 4] or args.x < 0 or args.y < 0:
         parser.error('invalid binning/ROI origin')
     if args.trace_processing and not args.compare_wire:
         parser.error('--trace-processing requires --compare-wire')
@@ -77,6 +77,7 @@ def main():
         wire_submits = []
         processing = {}
         calibration = {}
+        processing_metadata = {}
         wire_bytes = 0
         download_seen = threading.Event()
 
@@ -127,6 +128,8 @@ def main():
                     record({'kind':'calibration-summary','name':value['name'],'bytes':len(data),'sha256':hashlib.sha256(data).hexdigest()})
                 elif message['type'] == 'send':
                     record(value)
+                    if value.get('kind') == 'guide-dither-seed':
+                        processing_metadata['ditherSeed'] = value['seed']
                     if value.get('kind') == 'io-submit' and value.get('code') == '0x22004b':
                         with wire_lock:
                             wire_submits.append(value['sequence'])
@@ -185,12 +188,13 @@ def main():
                             raise RuntimeError('missing instrumentation download completion')
                         from compare_wire import compare, complete_runs
                         with wire_lock:
-                            runs, rejected = complete_runs(wire_submits, wire_chunks, size)
+                            wire_size = len(processing.get('retrieved', pixels))
+                            runs, rejected = complete_runs(wire_submits, wire_chunks, wire_size)
                         record({'kind': 'wire-runs', 'completeRuns': len(runs), 'rejectedRunBytes': rejected})
                         if len(runs) > 1:
                             record({'kind': 'wire-replay-identity', 'completeRuns': len(runs),
                                     'allBytesIdentical': all(wire == runs[0] for wire in runs[1:]),
-                                    'bytesPerRun': size})
+                                    'bytesPerRun': wire_size})
                         for index, wire in enumerate(runs):
                             record({'kind': 'wire-boundaries', 'run': index,
                                     'firstDword': wire[:4].hex(), 'lastDword': wire[-4:].hex()})
@@ -205,11 +209,13 @@ def main():
                             if blob[:4] != b'ASID':
                                 raise RuntimeError('missing ASID calibration trace')
                             blob = blob[:int.from_bytes(blob[4:8], 'big')]
-                            model = {'ZWO ASI2600MM Duo': 'asi2600mm-duo', 'ZWO ASI676MC': 'asi676mc'}.get(camera['name'])
+                            model = {'ZWO ASI2600MM Duo': 'asi2600mm-duo', 'ZWO ASI676MC': 'asi676mc',
+                                     'ZWO ASI220MM Mini': 'asi220mm-mini'}.get(camera['name'])
                             if model is None:
                                 raise RuntimeError('independent correction is not implemented for this model')
-                            header = json.dumps({'model': model, 'width': args.width, 'height': args.height,
-                                                 'x': args.x, 'y': args.y, 'calibrationBytes': len(blob)}).encode()
+                            header = json.dumps({'model': model, 'bin': args.bin, 'width': args.width, 'height': args.height,
+                                                   'x': args.x, 'y': args.y, 'gain': args.gain,
+                                                   **processing_metadata, 'calibrationBytes': len(blob)}).encode()
                             request = len(header).to_bytes(4, 'little') + header + blob + processing['retrieved']
                             result = subprocess.run([str(ROOT / 'target/debug/zwogain-direct.exe'), '--process-frame'],
                                                     input=request, capture_output=True, timeout=30)
@@ -218,7 +224,7 @@ def main():
                             header_size = int.from_bytes(result.stdout[:4], 'little')
                             metadata = json.loads(result.stdout[4:4 + header_size])
                             corrected = result.stdout[4 + header_size:]
-                            map_matches = metadata['defectIndexSha256'] == hashlib.sha256(calibration['hpc']).hexdigest()
+                            map_matches = metadata['defectIndexSha256'] == hashlib.sha256(calibration.get('hpc', b'')).hexdigest()
                             record({'kind': 'direct-processing-validation', **metadata,
                                     'factoryMapMatchesSdk': map_matches,
                                     'allBytesIdentical': corrected == pixels,
@@ -248,6 +254,7 @@ def main():
                     wire_chunks.clear()
                     wire_submits.clear()
                     processing.clear()
+                    processing_metadata.clear()
                     wire_bytes = 0
                 download_seen.clear()
                 call('start', {'width': args.width, 'height': args.height, 'bin': args.bin, 'x': args.x, 'y': args.y,

@@ -133,6 +133,9 @@ Process.attachModuleObserver({
         if (module.name.toLowerCase() !== 'asicamera2.dll') return;
         emit('sdk-module', {name: module.name});
         if (globalThis.TRACE_PROCESSING) {
+            Interceptor.attach(module.base.add(0xd26a3), {
+                onEnter() { emit('guide-dither-seed', {seed:this.context.rcx.toUInt32()}); }
+            });
             // Duo call sites verified against the same hash-pinned SDK as the
             // ASI676 hooks. Keep raw data in the bounded in-memory comparator.
             for (const [entry, retrieved, before, after, model, buffer, length] of [

@@ -51,6 +51,1021 @@
       "defectCount": 156,
       "factoryMapMatchesSdk": true,
       "allBytesIdentical": true
+    },
+    {
+      "traceSha256": "11524eb9af75f7dafa1d00298fb4ba34c1ed6fd72dd8cf3f47098a76d0a27234",
+      "parameters": {
+        "width": 512,
+        "height": 256,
+        "x": 16,
+        "y": 32,
+        "seconds": 0.1,
+        "gain": 100,
+        "offset": 50,
+        "bin": 2
+      },
+      "bytes": 262144,
+      "defectCount": 534,
+      "factoryMapMatchesSdk": true,
+      "allBytesIdentical": true
+    },
+    {
+      "traceSha256": "f8426b880aaa916e395ea7263fed4afa35d4c02b936aa18c493f88f9c68d2475",
+      "parameters": {
+        "width": 2080,
+        "height": 1392,
+        "x": 0,
+        "y": 0,
+        "seconds": 0.1,
+        "gain": 350,
+        "offset": 120,
+        "bin": 3
+      },
+      "bytes": 5790720,
+      "defectCount": 26056,
+      "factoryMapMatchesSdk": true,
+      "allBytesIdentical": true
+    },
+    {
+      "traceSha256": "3b12224bf627a4d451076819aa264d12eb8d3c273a3cecf2d38a5c38ded96789",
+      "parameters": {
+        "width": 1560,
+        "height": 1044,
+        "x": 0,
+        "y": 0,
+        "seconds": 0.1,
+        "gain": 700,
+        "offset": 240,
+        "bin": 4
+      },
+      "bytes": 3257280,
+      "defectCount": 26056,
+      "factoryMapMatchesSdk": true,
+      "allBytesIdentical": true
+    },
+    {
+      "traceSha256": "00a30f4814235bc047e4cd0dc3232f48be644cbfe20ae3b0fd82ab0cb6baa8d1",
+      "parameters": {
+        "width": 64,
+        "height": 64,
+        "x": 0,
+        "y": 0,
+        "seconds": 3.2e-05,
+        "gain": -25,
+        "offset": 0,
+        "bin": 1
+      },
+      "bytes": 8192,
+      "defectCount": 4,
+      "factoryMapMatchesSdk": true,
+      "allBytesIdentical": true
     }
+  ],
+  "guideCorrection": [
+    {
+      "traceSha256": "5f0815ddbe7d8eccdd794d46864edfdd2da9e13386d88f3e3268b2ec06f448e9",
+      "parameters": {
+        "width": 512,
+        "height": 256,
+        "x": 0,
+        "y": 0,
+        "seconds": 0.1,
+        "gain": 100,
+        "offset": 200,
+        "bin": 1
+      },
+      "bytes": 262144,
+      "defectCount": 384,
+      "factoryMapMatchesSdk": true,
+      "allBytesIdentical": true
+    },
+    {
+      "traceSha256": "3598b68f9e0a1547a21c399279cd015d26584386bd573342f6ff314d7292c0ef",
+      "parameters": {
+        "width": 1920,
+        "height": 1080,
+        "x": 0,
+        "y": 0,
+        "seconds": 0.1,
+        "gain": 0,
+        "offset": 200,
+        "bin": 1
+      },
+      "bytes": 4147200,
+      "defectCount": 4147,
+      "factoryMapMatchesSdk": true,
+      "allBytesIdentical": true
+    },
+    {
+      "traceSha256": "8ab23f503bee8d46fc760c6349ffafd5ad6d8cde9da4924475f0db57d32c6d0f",
+      "parameters": {
+        "width": 960,
+        "height": 540,
+        "x": 0,
+        "y": 0,
+        "seconds": 0.1,
+        "gain": 0,
+        "offset": 200,
+        "bin": 2
+      },
+      "bytes": 1036800,
+      "defectCount": 4147,
+      "factoryMapMatchesSdk": true,
+      "allBytesIdentical": true
+    }
+  ],
+  "mainAcquisition": {
+    "traceSha256": "41ca94c9493c58cf8878229522c37dc5e62fb9ecc6de72c35fc759ed87d44c62",
+    "cases": [
+      {
+        "case": 0,
+        "options": {
+          "width": 64,
+          "height": 64,
+          "microseconds": 32,
+          "gain": -25,
+          "offset": 0
+        },
+        "captures": [
+          {
+            "acquisitionMs": 282,
+            "bin": 1,
+            "bytes": 8192,
+            "elapsedMs": 499,
+            "factoryDefects": 4,
+            "gain": -25,
+            "height": 64,
+            "interruptedPrefixBytes": 0,
+            "interruptedPrefixPixelsMatch": false,
+            "microseconds": 32,
+            "model": "ASI2600MM Duo",
+            "offset": 0,
+            "rawHeight": 64,
+            "rawWidth": 64,
+            "readErrors": [],
+            "readRecoveries": 0,
+            "replay": null,
+            "sdkLoaded": false,
+            "sequence": 7,
+            "sha256": "251d2c44981b5cc94d57dc7db55647d5058bfab757a684a78efbb9e3b5f84b21",
+            "width": 64,
+            "wireBytes": 8192,
+            "wireSha256": "bb9f091b1947d4ada87bd1bf44210409a2be8e3620e0aa15a3964c5ab99ca664",
+            "x": 0,
+            "y": 0,
+            "statistics": {
+              "mean": 1.317138671875,
+              "median": 0.0,
+              "minimum": 0,
+              "maximum": 27,
+              "stddev": 2.2324093662288647,
+              "pixels": 4096
+            }
+          }
+        ]
+      },
+      {
+        "case": 1,
+        "options": {
+          "width": 512,
+          "height": 256,
+          "x": 16,
+          "y": 32,
+          "microseconds": 100000,
+          "gain": 99,
+          "offset": 50,
+          "replay": true
+        },
+        "captures": [
+          {
+            "acquisitionMs": 501,
+            "bin": 1,
+            "bytes": 262144,
+            "elapsedMs": 731,
+            "factoryDefects": 156,
+            "gain": 99,
+            "height": 256,
+            "interruptedPrefixBytes": 0,
+            "interruptedPrefixPixelsMatch": false,
+            "microseconds": 100000,
+            "model": "ASI2600MM Duo",
+            "offset": 50,
+            "rawHeight": 256,
+            "rawWidth": 512,
+            "readErrors": [],
+            "readRecoveries": 0,
+            "replay": {
+              "bytes": 262144,
+              "firstSequence": 2,
+              "pixelBytesIdentical": true,
+              "replaySequence": 3,
+              "wireBytesIdentical": false
+            },
+            "sdkLoaded": false,
+            "sequence": 2,
+            "sha256": "13e84bd2d9393f0d66d71bcfe6b71b6d26c77408487e6736ea709ceebd583bda",
+            "width": 512,
+            "wireBytes": 262144,
+            "wireSha256": "ec90a675f47bf5a838c06c185077a5ec844212830c0ad7b9aeb4b58e8ed0f1b9",
+            "x": 16,
+            "y": 32,
+            "statistics": {
+              "mean": 495.66856384277344,
+              "median": 496.0,
+              "minimum": 315,
+              "maximum": 738,
+              "stddev": 13.107142843912023,
+              "pixels": 131072
+            }
+          }
+        ]
+      },
+      {
+        "case": 2,
+        "options": {
+          "width": 512,
+          "height": 256,
+          "microseconds": 999999,
+          "gain": 100,
+          "offset": 50
+        },
+        "captures": [
+          {
+            "acquisitionMs": 1298,
+            "bin": 1,
+            "bytes": 262144,
+            "elapsedMs": 1552,
+            "factoryDefects": 147,
+            "gain": 100,
+            "height": 256,
+            "interruptedPrefixBytes": 0,
+            "interruptedPrefixPixelsMatch": false,
+            "microseconds": 999999,
+            "model": "ASI2600MM Duo",
+            "offset": 50,
+            "rawHeight": 256,
+            "rawWidth": 512,
+            "readErrors": [],
+            "readRecoveries": 0,
+            "replay": null,
+            "sdkLoaded": false,
+            "sequence": 1,
+            "sha256": "983eb12f2f83fa4b7330e5dd2ce1b0cf5d42aa9a0cab23960611ad049178dda7",
+            "width": 512,
+            "wireBytes": 262144,
+            "wireSha256": "ebac61cbb74cc0752ee05745b2bc2a128938c99fc10715cf3ee78a03f02af23b",
+            "x": 0,
+            "y": 0,
+            "statistics": {
+              "mean": 500.51097106933594,
+              "median": 500.0,
+              "minimum": 387,
+              "maximum": 922,
+              "stddev": 6.448467636597628,
+              "pixels": 131072
+            }
+          }
+        ]
+      },
+      {
+        "case": 3,
+        "options": {
+          "width": 512,
+          "height": 256,
+          "microseconds": 1000000,
+          "gain": 460,
+          "offset": 120
+        },
+        "captures": [
+          {
+            "acquisitionMs": 1318,
+            "bin": 1,
+            "bytes": 262144,
+            "elapsedMs": 1541,
+            "factoryDefects": 147,
+            "gain": 460,
+            "height": 256,
+            "interruptedPrefixBytes": 0,
+            "interruptedPrefixPixelsMatch": false,
+            "microseconds": 1000000,
+            "model": "ASI2600MM Duo",
+            "offset": 120,
+            "rawHeight": 256,
+            "rawWidth": 512,
+            "readErrors": [],
+            "readRecoveries": 0,
+            "replay": null,
+            "sdkLoaded": false,
+            "sequence": 1,
+            "sha256": "fb04b1427cbbbbc7022e6f4fa77a188c39b1477b01b660df0768cefc5639ac40",
+            "width": 512,
+            "wireBytes": 262144,
+            "wireSha256": "6a0e7153fbecea77f2a6e440eeb4d5decaa0f8541f532b8d03f5af20edb737d7",
+            "x": 0,
+            "y": 0,
+            "statistics": {
+              "mean": 1241.3413925170898,
+              "median": 1218.0,
+              "minimum": 0,
+              "maximum": 31640,
+              "stddev": 311.1022774258808,
+              "pixels": 131072
+            }
+          }
+        ]
+      },
+      {
+        "case": 4,
+        "options": {
+          "width": 512,
+          "height": 256,
+          "microseconds": 2000000,
+          "gain": 461,
+          "offset": 120
+        },
+        "captures": [
+          {
+            "acquisitionMs": 2320,
+            "bin": 1,
+            "bytes": 262144,
+            "elapsedMs": 2560,
+            "factoryDefects": 147,
+            "gain": 461,
+            "height": 256,
+            "interruptedPrefixBytes": 0,
+            "interruptedPrefixPixelsMatch": false,
+            "microseconds": 2000000,
+            "model": "ASI2600MM Duo",
+            "offset": 120,
+            "rawHeight": 256,
+            "rawWidth": 512,
+            "readErrors": [],
+            "readRecoveries": 0,
+            "replay": null,
+            "sdkLoaded": false,
+            "sequence": 1,
+            "sha256": "f72490a3789a4842f850752eec22a3a66d17ea6ae8e208eecfae18cea231b54f",
+            "width": 512,
+            "wireBytes": 262144,
+            "wireSha256": "6ae06284b6df472f02b2d397d4267ef3c0485dd43cc4de7af6c9ed2bd699a16a",
+            "x": 0,
+            "y": 0,
+            "statistics": {
+              "mean": 1274.3986434936523,
+              "median": 1246.0,
+              "minimum": 0,
+              "maximum": 49694,
+              "stddev": 363.1491248041212,
+              "pixels": 131072
+            }
+          }
+        ]
+      },
+      {
+        "case": 5,
+        "options": {
+          "width": 512,
+          "height": 256,
+          "microseconds": 100000,
+          "gain": 700,
+          "offset": 240
+        },
+        "captures": [
+          {
+            "acquisitionMs": 397,
+            "bin": 1,
+            "bytes": 262144,
+            "elapsedMs": 627,
+            "factoryDefects": 147,
+            "gain": 700,
+            "height": 256,
+            "interruptedPrefixBytes": 0,
+            "interruptedPrefixPixelsMatch": false,
+            "microseconds": 100000,
+            "model": "ASI2600MM Duo",
+            "offset": 240,
+            "rawHeight": 256,
+            "rawWidth": 512,
+            "readErrors": [],
+            "readRecoveries": 0,
+            "replay": null,
+            "sdkLoaded": false,
+            "sequence": 2,
+            "sha256": "8b155ae79be5a6edf98cb4f3a6578f6afe2cd5c1524640f3ac31cfd7c27a5e6b",
+            "width": 512,
+            "wireBytes": 262144,
+            "wireSha256": "101e3bfabcebafc01f184d196820924badbee4cb7d3e08ab71a645eae7f43d06",
+            "x": 0,
+            "y": 0,
+            "statistics": {
+              "mean": 2895.141082763672,
+              "median": 2160.0,
+              "minimum": 0,
+              "maximum": 65535,
+              "stddev": 3730.3790856811593,
+              "pixels": 131072
+            }
+          }
+        ]
+      },
+      {
+        "case": 6,
+        "options": {
+          "microseconds": 100000,
+          "gain": 100,
+          "offset": 50,
+          "frames": 3,
+          "replay": true
+        },
+        "captures": [
+          {
+            "acquisitionMs": 2486,
+            "bin": 1,
+            "bytes": 52183296,
+            "elapsedMs": 2909,
+            "factoryDefects": 26091,
+            "gain": 100,
+            "height": 4176,
+            "interruptedPrefixBytes": 0,
+            "interruptedPrefixPixelsMatch": false,
+            "microseconds": 100000,
+            "model": "ASI2600MM Duo",
+            "offset": 50,
+            "rawHeight": 4176,
+            "rawWidth": 6248,
+            "readErrors": [],
+            "readRecoveries": 0,
+            "replay": {
+              "bytes": 52183296,
+              "firstSequence": 1,
+              "pixelBytesIdentical": true,
+              "replaySequence": 2,
+              "wireBytesIdentical": false
+            },
+            "sdkLoaded": false,
+            "sequence": 1,
+            "sha256": "2d7eb9dc6d37543ae51328f1594a85887c427746c8fe24d16b2bad3c7b0bb80f",
+            "width": 6248,
+            "wireBytes": 52183296,
+            "wireSha256": "f7bd382bf47e75b3998cbdaa8f6f0fecc717201594dde01ea370297a85048cc6",
+            "x": 0,
+            "y": 0,
+            "statistics": {
+              "mean": 318.2857424337474,
+              "median": 496.0,
+              "minimum": 0,
+              "maximum": 8095,
+              "stddev": 239.89953804423766,
+              "pixels": 26091648
+            }
+          },
+          {
+            "acquisitionMs": 2530,
+            "bin": 1,
+            "bytes": 52183296,
+            "elapsedMs": 2956,
+            "factoryDefects": 26091,
+            "gain": 100,
+            "height": 4176,
+            "interruptedPrefixBytes": 0,
+            "interruptedPrefixPixelsMatch": false,
+            "microseconds": 100000,
+            "model": "ASI2600MM Duo",
+            "offset": 50,
+            "rawHeight": 4176,
+            "rawWidth": 6248,
+            "readErrors": [],
+            "readRecoveries": 0,
+            "replay": {
+              "bytes": 52183296,
+              "firstSequence": 1,
+              "pixelBytesIdentical": true,
+              "replaySequence": 2,
+              "wireBytesIdentical": false
+            },
+            "sdkLoaded": false,
+            "sequence": 1,
+            "sha256": "5e540100349c78f2fe7ad649dea2687c5c098527e2c66875fcbd5eeccbd3477c",
+            "width": 6248,
+            "wireBytes": 52183296,
+            "wireSha256": "3c83544fcc70afa4b1cba48efdb7c0ad91c88648b6cc26bf441616453a5605b5",
+            "x": 0,
+            "y": 0,
+            "statistics": {
+              "mean": 318.2888966998175,
+              "median": 496.0,
+              "minimum": 0,
+              "maximum": 8095,
+              "stddev": 239.90189790454247,
+              "pixels": 26091648
+            }
+          },
+          {
+            "acquisitionMs": 2520,
+            "bin": 1,
+            "bytes": 52183296,
+            "elapsedMs": 2980,
+            "factoryDefects": 26091,
+            "gain": 100,
+            "height": 4176,
+            "interruptedPrefixBytes": 0,
+            "interruptedPrefixPixelsMatch": false,
+            "microseconds": 100000,
+            "model": "ASI2600MM Duo",
+            "offset": 50,
+            "rawHeight": 4176,
+            "rawWidth": 6248,
+            "readErrors": [],
+            "readRecoveries": 0,
+            "replay": {
+              "bytes": 52183296,
+              "firstSequence": 1,
+              "pixelBytesIdentical": true,
+              "replaySequence": 2,
+              "wireBytesIdentical": false
+            },
+            "sdkLoaded": false,
+            "sequence": 1,
+            "sha256": "608f59072ff01f9499ddd38c406f4bfece5bf9f3ee99191ae13fe14af4e9e75f",
+            "width": 6248,
+            "wireBytes": 52183296,
+            "wireSha256": "34341e7b4ddab85bfbf2951e72f7471cdbfc1777984fdb0883c78fb3a518c089",
+            "x": 0,
+            "y": 0,
+            "statistics": {
+              "mean": 319.3507154856604,
+              "median": 496.0,
+              "minimum": 0,
+              "maximum": 7135,
+              "stddev": 239.59534967740075,
+              "pixels": 26091648
+            }
+          }
+        ]
+      },
+      {
+        "case": 7,
+        "options": {
+          "width": 3120,
+          "height": 2088,
+          "bin": 2,
+          "microseconds": 100000,
+          "gain": 100,
+          "offset": 50,
+          "frames": 2,
+          "replay": true
+        },
+        "captures": [
+          {
+            "acquisitionMs": 2475,
+            "bin": 2,
+            "bytes": 13029120,
+            "elapsedMs": 2954,
+            "factoryDefects": 26056,
+            "gain": 100,
+            "height": 2088,
+            "interruptedPrefixBytes": 0,
+            "interruptedPrefixPixelsMatch": false,
+            "microseconds": 100000,
+            "model": "ASI2600MM Duo",
+            "offset": 50,
+            "rawHeight": 4176,
+            "rawWidth": 6240,
+            "readErrors": [],
+            "readRecoveries": 0,
+            "replay": {
+              "bytes": 52116480,
+              "firstSequence": 1,
+              "pixelBytesIdentical": true,
+              "replaySequence": 2,
+              "wireBytesIdentical": false
+            },
+            "sdkLoaded": false,
+            "sequence": 1,
+            "sha256": "1a83a26b20742e5ded95f9cb40130530f9b2e559edb5eeb07cbc3a2967c1a7a1",
+            "width": 3120,
+            "wireBytes": 52116480,
+            "wireSha256": "85bce2072ad01d206b0e707ecd8f1137bb75c37df8d0930c907fe5e2168cde48",
+            "x": 0,
+            "y": 0,
+            "statistics": {
+              "mean": 319.39793692897143,
+              "median": 498.0,
+              "minimum": 0,
+              "maximum": 2200,
+              "stddev": 239.392931302542,
+              "pixels": 6514560
+            }
+          },
+          {
+            "acquisitionMs": 2499,
+            "bin": 2,
+            "bytes": 13029120,
+            "elapsedMs": 2932,
+            "factoryDefects": 26056,
+            "gain": 100,
+            "height": 2088,
+            "interruptedPrefixBytes": 0,
+            "interruptedPrefixPixelsMatch": false,
+            "microseconds": 100000,
+            "model": "ASI2600MM Duo",
+            "offset": 50,
+            "rawHeight": 4176,
+            "rawWidth": 6240,
+            "readErrors": [],
+            "readRecoveries": 0,
+            "replay": {
+              "bytes": 52116480,
+              "firstSequence": 1,
+              "pixelBytesIdentical": true,
+              "replaySequence": 2,
+              "wireBytesIdentical": false
+            },
+            "sdkLoaded": false,
+            "sequence": 1,
+            "sha256": "d96262dd1a499f632a17540b4e9f3b1514b90c076b8d2e58f05bfa3428918720",
+            "width": 3120,
+            "wireBytes": 52116480,
+            "wireSha256": "021a7900020ce7d3c986fd28881da1c5223553be5cf72d0e4e2fcc87638f5808",
+            "x": 0,
+            "y": 0,
+            "statistics": {
+              "mean": 323.76059350132624,
+              "median": 498.0,
+              "minimum": 0,
+              "maximum": 2217,
+              "stddev": 238.05153458304676,
+              "pixels": 6514560
+            }
+          }
+        ]
+      },
+      {
+        "case": 8,
+        "options": {
+          "width": 2080,
+          "height": 1392,
+          "bin": 3,
+          "microseconds": 100000,
+          "gain": 350,
+          "offset": 120,
+          "frames": 2,
+          "replay": true
+        },
+        "captures": [
+          {
+            "acquisitionMs": 2485,
+            "bin": 3,
+            "bytes": 5790720,
+            "elapsedMs": 2929,
+            "factoryDefects": 26056,
+            "gain": 350,
+            "height": 1392,
+            "interruptedPrefixBytes": 0,
+            "interruptedPrefixPixelsMatch": false,
+            "microseconds": 100000,
+            "model": "ASI2600MM Duo",
+            "offset": 120,
+            "rawHeight": 4176,
+            "rawWidth": 6240,
+            "readErrors": [],
+            "readRecoveries": 0,
+            "replay": {
+              "bytes": 52116480,
+              "firstSequence": 1,
+              "pixelBytesIdentical": true,
+              "replaySequence": 2,
+              "wireBytesIdentical": false
+            },
+            "sdkLoaded": false,
+            "sequence": 1,
+            "sha256": "74860dc19c2440df9df1a13f399aa7f3a117ba16ff7e48a81f791416e63f1e3f",
+            "width": 2080,
+            "wireBytes": 52116480,
+            "wireSha256": "a151d8fe7a10e9607328223a2db02894af9899256a05e502b7d9032d7ce7c19b",
+            "x": 0,
+            "y": 0,
+            "statistics": {
+              "mean": 756.5220107344164,
+              "median": 1171.0,
+              "minimum": 0,
+              "maximum": 8352,
+              "stddev": 567.0226274929396,
+              "pixels": 2895360
+            }
+          },
+          {
+            "acquisitionMs": 2487,
+            "bin": 3,
+            "bytes": 5790720,
+            "elapsedMs": 2992,
+            "factoryDefects": 26056,
+            "gain": 350,
+            "height": 1392,
+            "interruptedPrefixBytes": 0,
+            "interruptedPrefixPixelsMatch": false,
+            "microseconds": 100000,
+            "model": "ASI2600MM Duo",
+            "offset": 120,
+            "rawHeight": 4176,
+            "rawWidth": 6240,
+            "readErrors": [],
+            "readRecoveries": 0,
+            "replay": {
+              "bytes": 52116480,
+              "firstSequence": 1,
+              "pixelBytesIdentical": true,
+              "replaySequence": 2,
+              "wireBytesIdentical": false
+            },
+            "sdkLoaded": false,
+            "sequence": 1,
+            "sha256": "6b91f91cd11ab48a45e7ab93174eb13881e7a851fe189a32554523587d0c5911",
+            "width": 2080,
+            "wireBytes": 52116480,
+            "wireSha256": "31ac31508ed463e818d4b07bcedd4da368351e403fcfc011d4f07967404a1db0",
+            "x": 0,
+            "y": 0,
+            "statistics": {
+              "mean": 759.0606010996905,
+              "median": 1172.0,
+              "minimum": 0,
+              "maximum": 8338,
+              "stddev": 567.4514188441709,
+              "pixels": 2895360
+            }
+          }
+        ]
+      },
+      {
+        "case": 9,
+        "options": {
+          "width": 1560,
+          "height": 1044,
+          "bin": 4,
+          "microseconds": 100000,
+          "gain": 700,
+          "offset": 240,
+          "frames": 2,
+          "replay": true
+        },
+        "captures": [
+          {
+            "acquisitionMs": 2482,
+            "bin": 4,
+            "bytes": 3257280,
+            "elapsedMs": 2977,
+            "factoryDefects": 26056,
+            "gain": 700,
+            "height": 1044,
+            "interruptedPrefixBytes": 0,
+            "interruptedPrefixPixelsMatch": false,
+            "microseconds": 100000,
+            "model": "ASI2600MM Duo",
+            "offset": 240,
+            "rawHeight": 4176,
+            "rawWidth": 6240,
+            "readErrors": [],
+            "readRecoveries": 0,
+            "replay": {
+              "bytes": 52116480,
+              "firstSequence": 1,
+              "pixelBytesIdentical": true,
+              "replaySequence": 2,
+              "wireBytesIdentical": false
+            },
+            "sdkLoaded": false,
+            "sequence": 1,
+            "sha256": "993c8c3a3ccf43d7d6cab6e798ba39d8d5a0d435b1a154803e4dceb359bb19e9",
+            "width": 1560,
+            "wireBytes": 52116480,
+            "wireSha256": "d02293d09f343dab6ba19487938eeda284d9902a2cd0f9363c15c9f0003197db",
+            "x": 0,
+            "y": 0,
+            "statistics": {
+              "mean": 1812.6211268297475,
+              "median": 2157.0,
+              "minimum": 0,
+              "maximum": 14724,
+              "stddev": 1565.7478582443393,
+              "pixels": 1628640
+            }
+          },
+          {
+            "acquisitionMs": 2567,
+            "bin": 4,
+            "bytes": 3257280,
+            "elapsedMs": 2990,
+            "factoryDefects": 26056,
+            "gain": 700,
+            "height": 1044,
+            "interruptedPrefixBytes": 0,
+            "interruptedPrefixPixelsMatch": false,
+            "microseconds": 100000,
+            "model": "ASI2600MM Duo",
+            "offset": 240,
+            "rawHeight": 4176,
+            "rawWidth": 6240,
+            "readErrors": [],
+            "readRecoveries": 0,
+            "replay": {
+              "bytes": 52116480,
+              "firstSequence": 1,
+              "pixelBytesIdentical": true,
+              "replaySequence": 2,
+              "wireBytesIdentical": false
+            },
+            "sdkLoaded": false,
+            "sequence": 1,
+            "sha256": "e3918944fcb331e7d1ef6164a942aac8ef3691459337e615504da1784b95521f",
+            "width": 1560,
+            "wireBytes": 52116480,
+            "wireSha256": "9d1c1a9cd8fab2c6af536a6ddcfe531e4841c0d2cdc447a09a3c8867051ed166",
+            "x": 0,
+            "y": 0,
+            "statistics": {
+              "mean": 1867.0792378917379,
+              "median": 2231.0,
+              "minimum": 0,
+              "maximum": 15515,
+              "stddev": 1571.305297515028,
+              "pixels": 1628640
+            }
+          }
+        ]
+      },
+      {
+        "case": 10,
+        "options": {
+          "width": 512,
+          "height": 256,
+          "x": 16,
+          "y": 32,
+          "bin": 2,
+          "microseconds": 100000,
+          "gain": 0,
+          "offset": 0,
+          "replay": true
+        },
+        "captures": [
+          {
+            "acquisitionMs": 537,
+            "bin": 2,
+            "bytes": 262144,
+            "elapsedMs": 806,
+            "factoryDefects": 534,
+            "gain": 0,
+            "height": 256,
+            "interruptedPrefixBytes": 0,
+            "interruptedPrefixPixelsMatch": false,
+            "microseconds": 100000,
+            "model": "ASI2600MM Duo",
+            "offset": 0,
+            "rawHeight": 512,
+            "rawWidth": 1024,
+            "readErrors": [],
+            "readRecoveries": 0,
+            "replay": {
+              "bytes": 1048576,
+              "firstSequence": 1,
+              "pixelBytesIdentical": true,
+              "replaySequence": 2,
+              "wireBytesIdentical": false
+            },
+            "sdkLoaded": false,
+            "sequence": 1,
+            "sha256": "cad2ef7c94ddc9acc85624fd321d6a4782378ca9dfb8f6b8253616ef29c6a353",
+            "width": 512,
+            "wireBytes": 1048576,
+            "wireSha256": "c950868e264e17a6fc1e4835f410cc12509e7d2d434ae2a3eebb3a1b7292b9b5",
+            "x": 16,
+            "y": 32,
+            "statistics": {
+              "mean": 1.1483993530273438,
+              "median": 1.0,
+              "minimum": 0,
+              "maximum": 28,
+              "stddev": 1.4241495484043396,
+              "pixels": 131072
+            }
+          }
+        ]
+      },
+      {
+        "case": 11,
+        "options": {
+          "microseconds": 100000,
+          "gain": 100,
+          "offset": 50,
+          "replay": true,
+          "interrupt-read-after-bytes": 12582912
+        },
+        "captures": [
+          {
+            "acquisitionMs": 2574,
+            "bin": 1,
+            "bytes": 52183296,
+            "elapsedMs": 2989,
+            "factoryDefects": 26091,
+            "gain": 100,
+            "height": 4176,
+            "interruptedPrefixBytes": 12582912,
+            "interruptedPrefixPixelsMatch": true,
+            "microseconds": 100000,
+            "model": "ASI2600MM Duo",
+            "offset": 50,
+            "rawHeight": 4176,
+            "rawWidth": 6248,
+            "readErrors": [
+              "injected host interruption after 12582912 bytes"
+            ],
+            "readRecoveries": 1,
+            "replay": {
+              "bytes": 52183296,
+              "firstSequence": 2,
+              "pixelBytesIdentical": true,
+              "replaySequence": 3,
+              "wireBytesIdentical": false
+            },
+            "sdkLoaded": false,
+            "sequence": 2,
+            "sha256": "8f00c954e69e13dafeb14b0e5113c8f20a3bcb11dc3257dce2fb5ff49e7c2247",
+            "width": 6248,
+            "wireBytes": 52183296,
+            "wireSha256": "298216bee442eb74be1c97dcaa9efef0cb512e033b5ebcefda8a83c6ba027eac",
+            "x": 0,
+            "y": 0,
+            "statistics": {
+              "mean": 369.4950725611506,
+              "median": 497.0,
+              "minimum": 0,
+              "maximum": 65535,
+              "stddev": 661.6356566960021,
+              "pixels": 26091648
+            }
+          }
+        ]
+      },
+      {
+        "case": 12,
+        "options": {
+          "microseconds": 30000000,
+          "gain": 100,
+          "offset": 50,
+          "replay": true
+        },
+        "captures": [
+          {
+            "acquisitionMs": 37397,
+            "bin": 1,
+            "bytes": 52183296,
+            "elapsedMs": 37811,
+            "factoryDefects": 26091,
+            "gain": 100,
+            "height": 4176,
+            "interruptedPrefixBytes": 0,
+            "interruptedPrefixPixelsMatch": false,
+            "microseconds": 30000000,
+            "model": "ASI2600MM Duo",
+            "offset": 50,
+            "rawHeight": 4176,
+            "rawWidth": 6248,
+            "readErrors": [
+              "bulk chunk 0 failed: Win32 995, NT c0000120, USB c0010000, bytes 0/1048576"
+            ],
+            "readRecoveries": 1,
+            "replay": {
+              "bytes": 52183296,
+              "firstSequence": 1,
+              "pixelBytesIdentical": true,
+              "replaySequence": 2,
+              "wireBytesIdentical": false
+            },
+            "sdkLoaded": false,
+            "sequence": 1,
+            "sha256": "75cffe1993b8e6d221e51b78db61e2aa41757f02dfaee079abaf597702a3e5e6",
+            "width": 6248,
+            "wireBytes": 52183296,
+            "wireSha256": "308c934825bbb4bf4203839067c6828bbbe0ea21edd4209638c5cc52187fb5e1",
+            "x": 0,
+            "y": 0,
+            "statistics": {
+              "mean": 524.2972434320745,
+              "median": 523.0,
+              "minimum": 376,
+              "maximum": 65535,
+              "stddev": 58.42656097691088,
+              "pixels": 26091648
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "limitations": [
+    "SDK remains primary; Duo acquisition is research CLI only.",
+    "100ms settle guard is empirical. A 30-second full frame needed one retained-read retry both with 100ms and with readout-time+100ms settling.",
+    "No physical cable-disconnection or cold-power reset evidence.",
+    "Guide acquisition not implemented yet; guide pixel processing validated independently."
   ]
 }

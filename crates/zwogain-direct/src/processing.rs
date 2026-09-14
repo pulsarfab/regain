@@ -1,9 +1,24 @@
-//! ASI676MC and ASI2600MM Duo RAW16 factory correction, derived from SDK 1.41.
+//! ASI676MC, ASI2600MM Duo and ASI220MM Mini RAW16 processing from SDK 1.41.
 //! Calibration and image bytes stay in memory. Unsupported maps fail closed.
 use anyhow::{Result, ensure};
 use sha2::{Digest, Sha256};
 
 pub const SENSOR: usize = 3552;
+
+/// ASI220 RAW16 unpacking and SDK 1.41 low-gain dither. The seed is captured
+/// from the SDK for comparison; independent acquisition supplies its own seed.
+pub fn unpack_guide(data: &mut [u8], gain: i32, mut seed: u32) -> Result<()> {
+    ensure!(data.len().is_multiple_of(2), "odd guide wire length");
+    for pair in data.chunks_exact_mut(2) {
+        let mut value = (u16::from(pair[0]) << 4) | u16::from(pair[1] & 15);
+        if gain < 100 && value > 31 {
+            seed = seed.wrapping_mul(214013).wrapping_add(2531011);
+            value ^= ((seed >> 16) & 1) as u16;
+        }
+        pair.copy_from_slice(&(value << 4).to_le_bytes());
+    }
+    Ok(())
+}
 
 pub fn declared_length(data: &[u8]) -> Result<usize> {
     ensure!(
@@ -27,6 +42,31 @@ pub struct Defects {
     depth_mask: u16,
 }
 
+/// SDK RAW16 software binning: integer average of each square, after correction.
+pub fn bin_average(data: &[u8], width: usize, height: usize, bin: usize) -> Result<Vec<u8>> {
+    ensure!(
+        (1..=4).contains(&bin)
+            && width.is_multiple_of(bin)
+            && height.is_multiple_of(bin)
+            && data.len() == width * height * 2,
+        "invalid software bin geometry"
+    );
+    let mut result = Vec::with_capacity(data.len() / bin / bin);
+    for y in (0..height).step_by(bin) {
+        for x in (0..width).step_by(bin) {
+            let mut sum = 0_u32;
+            for dy in 0..bin {
+                for dx in 0..bin {
+                    let i = ((y + dy) * width + x + dx) * 2;
+                    sum += u16::from_le_bytes([data[i], data[i + 1]]) as u32;
+                }
+            }
+            result.extend_from_slice(&((sum / (bin * bin) as u32) as u16).to_le_bytes());
+        }
+    }
+    Ok(result)
+}
+
 impl Defects {
     pub fn decode(data: &[u8], width: usize, height: usize, x: usize, y: usize) -> Result<Self> {
         Self::decode_profile(data, (width, height, x, y), (SENSOR, SENSOR, 2, 12))
@@ -40,6 +80,16 @@ impl Defects {
         y: usize,
     ) -> Result<Self> {
         Self::decode_profile(data, (width, height, x, y), (6248, 4176, 1, 16))
+    }
+
+    pub fn decode_guide(
+        data: &[u8],
+        width: usize,
+        height: usize,
+        x: usize,
+        y: usize,
+    ) -> Result<Self> {
+        Self::decode_profile(data, (width, height, x, y), (1920, 1080, 1, 12))
     }
 
     fn decode_profile(
@@ -182,7 +232,7 @@ pub fn process_stream() -> Result<()> {
                 .ok_or_else(|| anyhow::anyhow!("missing {key}"))?,
         )?)
     };
-    let (width, height, x, y) = (
+    let (mut width, mut height, mut x, mut y) = (
         number("width")?,
         number("height")?,
         number("x")?,
@@ -192,26 +242,56 @@ pub fn process_stream() -> Result<()> {
     ensure!(length <= 0x30000, "calibration too large");
     let mut calibration = vec![0; length];
     input.read_exact(&mut calibration)?;
-    let duo = match request["model"].as_str() {
-        None | Some("asi676mc") => false,
-        Some("asi2600mm-duo") => true,
+    let model = match request["model"].as_str() {
+        None | Some("asi676mc") => "asi676mc",
+        Some("asi2600mm-duo") => "asi2600mm-duo",
+        Some("asi220mm-mini") => "asi220mm-mini",
         _ => anyhow::bail!("unsupported processing model"),
     };
-    let defects = if duo {
-        Defects::decode_duo(&calibration, width, height, x, y)?
-    } else {
-        Defects::decode(&calibration, width, height, x, y)?
+    let bin = request["bin"].as_u64().unwrap_or(1) as usize;
+    ensure!(
+        (1..=4).contains(&bin) && (model != "asi676mc" || bin == 1),
+        "unsupported processing bin"
+    );
+    width = width
+        .checked_mul(bin)
+        .ok_or_else(|| anyhow::anyhow!("width overflow"))?;
+    height = height
+        .checked_mul(bin)
+        .ok_or_else(|| anyhow::anyhow!("height overflow"))?;
+    x = x
+        .checked_mul(bin)
+        .ok_or_else(|| anyhow::anyhow!("origin overflow"))?;
+    y = y
+        .checked_mul(bin)
+        .ok_or_else(|| anyhow::anyhow!("origin overflow"))?;
+    let defects = match model {
+        "asi2600mm-duo" => Defects::decode_duo(&calibration, width, height, x, y)?,
+        "asi220mm-mini" => Defects::decode_guide(&calibration, width, height, x, y)?,
+        _ => Defects::decode(&calibration, width, height, x, y)?,
     };
     let mut data = vec![0; width * height * 2];
     input.read_exact(&mut data)?;
-    if duo {
+    if model != "asi676mc" {
         let last = data.len() - 4;
         data.copy_within(width * 2..width * 2 + 4, 0);
         data.copy_within(last - width * 2..last - width * 2 + 4, last);
     } else {
         crate::protocol::replace_envelope(&mut data, width)?;
     }
+    if model == "asi220mm-mini" {
+        let gain = i32::try_from(
+            request["gain"]
+                .as_i64()
+                .ok_or_else(|| anyhow::anyhow!("missing guide gain"))?,
+        )?;
+        let seed = u32::try_from(number("ditherSeed")?)?;
+        unpack_guide(&mut data, gain, seed)?;
+    }
     defects.correct(&mut data)?;
+    if bin > 1 {
+        data = bin_average(&data, width, height, bin)?;
+    }
     let metadata = serde_json::to_vec(&serde_json::json!({
         "defectCount":defects.indices.len(),"defectIndexSha256":defects.index_hash(),"bytes":data.len()
     }))?;
@@ -225,6 +305,28 @@ pub fn process_stream() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn software_bins_average_without_saturation_and_reject_bad_geometry() {
+        let data: Vec<u8> = [0_u16, 1, 65535, 65535, 2, 4, 65535, 65535]
+            .into_iter()
+            .flat_map(u16::to_le_bytes)
+            .collect();
+        assert_eq!(bin_average(&data, 4, 2, 2).unwrap(), [1, 0, 255, 255]);
+        assert_eq!(bin_average(&data, 4, 2, 1).unwrap(), data);
+        assert!(bin_average(&data, 4, 2, 3).is_err());
+        assert!(bin_average(&data[..6], 4, 2, 2).is_err());
+    }
+    #[test]
+    fn guide_unpack_dithers_only_eligible_samples_and_wraps_rng() {
+        let mut data = [1, 0, 1, 15, 255, 15, 0, 2];
+        unpack_guide(&mut data, 100, 0).unwrap();
+        assert_eq!(data, [0, 1, 240, 1, 240, 255, 32, 0]);
+        let mut data = [1, 0, 2, 0, 255, 15, 2, 0];
+        unpack_guide(&mut data, 0, 1).unwrap();
+        // MSVC rand seed 1: 41,18467,6334; sample 16 does not consume RNG.
+        assert_eq!(data, [0, 1, 16, 2, 224, 255, 0, 2]);
+        assert!(unpack_guide(&mut [0], 0, 0).is_err());
+    }
     #[test]
     fn asid_decodes_nibbles_blocks_and_lsb_bits() {
         let blob = [
