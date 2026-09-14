@@ -5,6 +5,10 @@ ZWOgain (ZWO Again) provides a process-isolated ZWO camera driver for NINA 3.2.0
 - Retries exposures of 30 seconds or less by default, with a configurable
   cutoff, retry count, reconnect delay and cooling recovery limits.
 - Includes an embedded camera/recovery logo for NINA's Plugin Manager.
+- Organizes setup into Camera, Recovery, Cooling and Advanced tabs, with clear
+  ASI2600MM Pro Duo main and ASI220MM Mini guide choices.
+- Waits for measured temperature and cooler output to recover before retrying,
+  with a temporary NINA readiness-timeout extension for longer recovery.
 - Adds experimental SDK-free ASI2600MM Duo main and ASI220MM Mini guide capture,
   factory correction, software binning, main cooling/dew control, and persisted
   opt-in SDK fallback with serial verification and the shared retry policy.

@@ -338,3 +338,43 @@ consecutive samples and recovery deadline still apply. Diagnostics record both
 readings and the accepted sample count. Simulator regressions keep temperature
 exactly at its prior value while dropping power: 1% and 19% block resumption
 from a 30% baseline, while 20% permits it.
+
+Temperature may also progress from its prior value toward the restored target;
+it need not remain in a symmetric band around the old temperature while cooler
+output ramps up. Simulator cases cover both valid further cooling toward a
+colder target and rejection of cooling below that target's tolerance.
+
+The longer real settling period also exposed NINA 3.2's independent readiness
+deadline: a five-second capture failed after its exposure plus the profile's
+60-second timeout even though ZWOgain was still recovering. The plugin now
+temporarily extends that deadline to accommodate its bounded recovery policy,
+then restores the original value after download, failure, cancellation or
+disconnect. It preserves a concurrent user edit. Cancellation during a real
+cooler recovery stopped the request and restored the profile value to 60 seconds.
+Contract tests cover the outer deadline, restoration and concurrent edits.
+
+The final installed build (`3fb1e30`) passed a complete loaded-cooler recovery in
+NINA on the capped ASI2600MM Pro Duo main sensor. Only the identified direct
+worker was terminated, during a five-second, full-frame RAW16 exposure at gain
+100, offset 50 and binning 1. The fresh pre-failure snapshot was -0.3 C and 74%
+cooler output, with a -10 C target. The request waited five seconds before
+reopening the same camera through the SDK and restoring its controls. It then
+waited for both thermal recovery and output of at least 64%. Three accepted
+samples at -1.9, -2.1 and -2.3 C allowed the replacement exposure to start.
+
+The original request began at 09:24:51.6; the replacement began at 09:27:58.9
+and finished downloading at 09:28:04.7, about 193 seconds total. NINA kept the
+same request active and displayed the 6248 x 4176 image without a capture error
+(mean 500.16 ADU, standard deviation 8.08 ADU). The profile timeout returned to
+60 seconds. A subsequent one-second image also displayed normally (mean 499.90,
+standard deviation 6.03), demonstrating continued capture after recovery.
+
+The main camera remains connected through the recovered SDK, with its cooler
+enabled and target -10 C. Both experimental settings are saved off for the next
+connection, and the selected main camera and serial remain persisted. Snapshot
+duration is restored to one second; gain 100, offset 50, USB limit 40 and binning
+1 remain selected. Dew, Loop, Save and subsampling are off. The image pane holds
+the final dark frame. The tested code passed 46 core tests, 12 NINA contract
+tests, Rust tests/formatting/Clippy and five release-package checks. This failure
+injection validates worker restart and SDK fallback with the real cooler; it
+does not establish recovery from physical USB detach or a natural transfer fault.
