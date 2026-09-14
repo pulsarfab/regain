@@ -1,10 +1,10 @@
 # NINA end-to-end acceptance matrix
 
-Status: **in progress; desktop capture interrupted**, 2026-09-14. Resetting
+Status: **in progress; desktop capture restored**, 2026-09-14. Resetting
 the Computer Use JavaScript connection after restoring the desktop resolved the
-initial foreground-process error. Three SDK captures have now been observed
-in NINA's image pane. A later monitor-capture error interrupted further testing;
-remaining cases are pending, not passes inferred from command-line tests.
+initial foreground-process error. All ASI676MC and Duo main-sensor SDK binning
+modes have now produced new images in NINA's image pane. Remaining cases are
+pending, not passes inferred from command-line tests.
 
 Preflight confirmed that the installed `ZwoGain.NINA.dll` matches the local
 Release build by SHA-256. GitHub CI passed for implementation `d8491b6` and
@@ -23,11 +23,11 @@ NINA's adapter rounds output width down to a multiple of 8 and height to even.
 | SDK | ASI676MC | 1 | 3552 × 3552 | Pass: visible new frame, 16-bit, mean 575.06 |
 | SDK | ASI676MC | 2 | 1776 × 1776 | Pass: visible new frame, 16-bit, mean 591.78 |
 | SDK | ASI676MC | 3 | 1184 × 1184 | Pass: visible new frame, 16-bit, mean 576.18 |
-| SDK | ASI676MC | 4 | 888 × 888 | Pending |
-| SDK | ASI2600MM Duo | 1 | 6248 × 4176 | Pending |
-| SDK | ASI2600MM Duo | 2 | 3120 × 2088 | Pending |
-| SDK | ASI2600MM Duo | 3 | 2080 × 1392 | Pending |
-| SDK | ASI2600MM Duo | 4 | 1560 × 1044 | Pending |
+| SDK | ASI676MC | 4 | 888 × 888 | Pass: visible new frame, 16-bit, mean 576.96 |
+| SDK | ASI2600MM Duo | 1 | 6248 × 4176 | Pass: visible new frame, 16-bit, mean 1.73 |
+| SDK | ASI2600MM Duo | 2 | 3120 × 2088 | Pass: visible new frame, 16-bit, mean 1.34 |
+| SDK | ASI2600MM Duo | 3 | 2080 × 1392 | Pass: visible new frame, 16-bit, mean 1.23 |
+| SDK | ASI2600MM Duo | 4 | 1560 × 1044 | Pass: visible new frame, 16-bit, mean 1.21 |
 | SDK | ASI220MM Mini | 1 | 1920 × 1080 | Pending |
 | SDK | ASI220MM Mini | 2 | 960 × 540 | Pending |
 | Direct | ASI676MC | 1 | 3552 × 3552 | Pending |
@@ -79,10 +79,10 @@ earlier command-line and simulator results remain separately documented in
 
 NINA's CheckBox theme rendered only ON/OFF and hid the experimental backend
 toggle's content. The setup dialog now places its descriptive label in a
-separate TextBlock. Installing and visually checking that correction requires
-closing/restarting NINA after desktop capture becomes available again.
+separate TextBlock. The correction was installed and visually verified after
+restarting NINA. The camera picker selected and persisted the Duo correctly.
 
 The interruption returned `IGraphicsCaptureItemInterop.CreateForMonitor failed:
 Could not capture the given monitor. (0x80070057)`. A fresh JavaScript/Computer
-Use connection did not resolve this second error. The bin-4 selection was not
-verified and no bin-4 image was counted.
+Use connection did not resolve this second error. Restoring the RDP desktop
+resolved it, and the bin-4 capture subsequently passed.
