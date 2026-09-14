@@ -1,17 +1,26 @@
 [CmdletBinding()]
-param([switch]$Install)
+# -StageOnly stops after the payload is staged; -PackageOnly picks up a staged
+# payload and archives it. Release signing lives in that gap: the NINA manifest
+# pins the archive's SHA-256, so the DLLs and the host exe must be signed before
+# Compress-Archive runs, and nothing may touch the stage afterwards. The stage is
+# a fixed path so the two halves can find each other across workflow steps.
+param([switch]$Install, [switch]$StageOnly, [switch]$PackageOnly)
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 Push-Location $repo
 try {
     $version = & (Join-Path $PSScriptRoot 'version.ps1')
+    $out = Join-Path $repo 'artifacts'
+    $stage = Join-Path $out 'stage'
+    if ($PackageOnly) {
+        if (!(Test-Path -LiteralPath $stage)) { throw 'Run build.ps1 -StageOnly first.' }
+    } else {
     cargo build --release --locked
     if ($LASTEXITCODE) { throw 'Rust build failed' }
     dotnet build src/ZwoGain.NINA -c Release
     if ($LASTEXITCODE) { throw 'Plugin build failed' }
-    $out = Join-Path $repo 'artifacts'
-    $stage = Join-Path $out ('package-' + [guid]::NewGuid().ToString('N'))
+    if (Test-Path -LiteralPath $stage) { Remove-Item -LiteralPath $stage -Recurse -Force }
     New-Item -ItemType Directory -Force $stage | Out-Null
     foreach ($file in @('ZwoGain.NINA.dll','ZwoGain.Core.dll')) {
         Copy-Item -LiteralPath (Join-Path $repo "src/ZwoGain.NINA/bin/Release/net8.0-windows7.0/$file") -Destination $stage
@@ -37,6 +46,8 @@ try {
     }
     $rustRoot = rustc --print sysroot
     Copy-Item -LiteralPath (Join-Path $rustRoot 'share/doc/rust/COPYRIGHT-library.html') -Destination (Join-Path $licenses 'Rust-Standard-Library.html')
+    if ($StageOnly) { Write-Output "Staged: $stage"; return }
+    }
     $archiveName = "ZwoGain-$version.zip"
     $archive = Join-Path $out $archiveName
     Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $archive -Force

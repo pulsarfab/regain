@@ -1,3 +1,14 @@
+# Build, sign and publish the plugin package.
+#
+# Order matters. build.ps1 splits into -StageOnly and -PackageOnly so signing
+# can happen between them: the NINA manifest pins the archive's SHA-256, so the
+# DLLs and the SDK host must be signed BEFORE Compress-Archive runs. Signing
+# after packaging would invalidate the manifest; signing only the archive is
+# not possible (a zip carries no Authenticode signature) and would leave the
+# programs users actually run unsigned.
+#
+# ASICamera2.dll is deliberately not signed: it is ZWO's vendor binary and
+# carries their signature, not ours.
 name: Release
 on:
   push:
@@ -11,17 +22,23 @@ concurrency:
 jobs:
   release:
     runs-on: windows-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
+    # Load-bearing: the Entra federated credential subject is
+    # `repo:theatrus@23114/zwogain@1369114153:environment:release`. Without
+    # this line the OIDC token carries a different subject and azure/login
+    # fails with an unhelpful audience/subject error.
+    environment: release
     permissions:
       contents: write
+      id-token: write
     defaults:
       run:
         shell: pwsh
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '8.0.x'
       - uses: dtolnay/rust-toolchain@stable
@@ -37,11 +54,48 @@ jobs:
           "value=$version" >> $env:GITHUB_OUTPUT
       - name: Test capture recovery and NINA integration contract
         run: ./scripts/test.ps1
-      - name: Build package and validate NINA manifest
-        run: ./scripts/build.ps1
+
+      # ---- 1. build and stage (unsigned) ----------------------------------
+      - name: Build and stage the package
+        run: ./scripts/build.ps1 -StageOnly
+
+      # ---- 2. sign the programs -------------------------------------------
+      - name: Authenticate to Azure (OIDC)
+        uses: azure/login@v3
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Sign the plugin and the SDK host
+        uses: azure/trusted-signing-action@v2
+        with:
+          endpoint: ${{ vars.SIGNING_ENDPOINT }}
+          trusted-signing-account-name: ${{ vars.SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.SIGNING_PROFILE }}
+          files: |
+            ${{ github.workspace }}\artifacts\stage\ZwoGain.NINA.dll
+            ${{ github.workspace }}\artifacts\stage\ZwoGain.Core.dll
+            ${{ github.workspace }}\artifacts\stage\zwogain-host.exe
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+      # Assert rather than assume: a signature that does not chain, or chains
+      # to the wrong publisher, must not reach the archive.
+      - name: Verify every signature
+        run: |
+          foreach ($f in 'ZwoGain.NINA.dll','ZwoGain.Core.dll','zwogain-host.exe') {
+            $sig = Get-AuthenticodeSignature -LiteralPath "artifacts/stage/$f"
+            if ($sig.Status -ne 'Valid') { throw "$f signature is $($sig.Status)" }
+            if ($sig.SignerCertificate.Subject -notmatch 'StackFoundry LLC') { throw "$f has unexpected signer: $($sig.SignerCertificate.Subject)" }
+            Write-Output "OK  $f  $($sig.SignerCertificate.Subject)"
+          }
+
+      # ---- 3. package the signed payload ----------------------------------
+      - name: Package and validate NINA manifest
+        run: ./scripts/build.ps1 -PackageOnly
       - name: Test registry publication checks without remote writes
         run: ./scripts/test-release.ps1
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ZwoGain-${{ steps.version.outputs.value }}
           path: |
