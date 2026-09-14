@@ -124,6 +124,15 @@ and bin 2 produced 256 × 128 (mean 3205.43); disabling subsampling restored
   enabled, with an inline instruction to choose ASI676MC or disable that
   option. Selecting ASI676MC then connected successfully using the direct
   backend. The Duo-main rejection still needs a separate visual check.
+- The legacy sequencer produced fresh direct full-frame images for Light
+  (1 s, mean 629.80), Dark (1 s, mean 629.84), and Bias (1 s, mean 629.76;
+  then 32 µs, mean 51.30). Each saved FITS header had the requested frame type,
+  duration, bin 1, gain/offset 0, RGGB pattern and 3552 × 3552 dimensions.
+  Legacy NINA preserves the entered Bias duration, so minimum-duration Bias
+  requires entering 32 µs explicitly. ASI676MC has no shutter; the illuminated
+  scene remains visible in a one-second Dark/Bias request.
+  Sequence files are kept only in a dedicated local test directory, outside
+  the repository. Snapshot Save remains off.
 
 Entries below are pending full completion unless covered above. Record settings, visible image dimensions,
 statistics, capture/recovery outcome and any error text for each completed case.
