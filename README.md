@@ -1,214 +1,245 @@
 # ZWOgain
 
-![ZWOgain camera recovery logo](src/ZwoGain.NINA/Assets/zwogain.png)
+![ZWOgain logo](src/ZwoGain.NINA/Assets/zwogain.png)
 
 [![Build and test](https://github.com/theatrus/zwogain/actions/workflows/build.yml/badge.svg)](https://github.com/theatrus/zwogain/actions/workflows/build.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
-**ZWOgain**, as in **ZWO Again**, is a N.I.N.A. camera plugin for ZWO ASI cameras.
-The camera-and-retry-arrow logo reflects its automatic capture recovery.
-The ASI SDK runs in a disposable
-Rust process; the NINA adapter keeps the capture request and recovery policy.
-An SDK error, failed download, crashed host, or hung command can become a longer
-successful capture instead of an interrupted sequence.
+**ZWOgain**, as in **ZWO Again**, is a N.I.N.A. camera plugin that recovers from
+ZWO ASI capture errors. It tries to recover the existing frame first, then
+reconnects and takes a replacement exposure when the configured policy allows.
+NINA keeps the capture request active while recovery runs.
+
+The **ZWO SDK is the default backend**, hosted in a separate Rust process that
+can be replaced after a crash or hang. An optional Rust backend captures through
+the installed Windows camera driver without loading `ASICamera2.dll`.
+
+Targets **Windows x64 and NINA 3.2.0.9001**. Based on the process isolation and
+plugin packaging structure from [AutoPierCam](https://github.com/theatrus/autopiercam).
 
 **ZWOgain is an independent project and is not affiliated with ZWO in any way.**
-It is not endorsed, sponsored, or supported by ZWO.
+It is not endorsed, sponsored, or supported by ZWO. ZWOgain code and its logo
+are Apache-2.0; bundled vendor material retains its own license. See
+[third-party notices](THIRD_PARTY_NOTICES.md).
 
-Initial implementation targeting **Windows x64 and NINA 3.2.0.9001**. Built from
-the process isolation, SDK ABI, and plugin packaging patterns in
-[AutoPierCam](https://github.com/theatrus/autopiercam).
+## Setup
 
-## Capture recovery
+Install the ZWO Windows camera driver and the plugin package while NINA is
+closed. Extract the package into `%LOCALAPPDATA%\NINA\Plugins\3.0.0\ZwoGain`,
+or use the source build instructions below.
 
-1. Snapshot exposure duration, dark/light flag, RAW16 ROI, symmetric binning,
-   gain, offset, USB limit, and supported persistent controls.
-2. Expose, poll the SDK's state, and transfer a complete binary RAW16 frame.
-3. First try rereading the same frame, regardless of exposure duration, when
-   the backend still has it. If rereads fail and a full recapture is permitted,
-   discard the partial frame and terminate the host.
-4. Wait five seconds for USB detach/reattach and SDK state to propagate.
-5. Start a fresh host, re-enumerate and reconnect by the original serial number.
-6. Restore controls, verify their read-back, restore cooling target and enablement.
-7. If cooling was enabled, wait for three consecutive temperature readings within
-   2 C of the pre-error reading (or further cooled toward the restored target).
-   When power telemetry is available, cooler output
-   must also recover to at least its prior level minus 10 percentage points.
-   This avoids an early pass while a cold sensor starts warming after the SDK
-   resets its regulator. This has a five-minute deadline per attempt.
-8. Repeat the original exposure. Only success, cancellation, or final exhaustion
-   reaches NINA. The default is three retries after the initial attempt, only
-   for exposures of **30 seconds or less**. Longer exposures run normally but
-   report failure without taking a replacement exposure. The direct backend
-   can first recover a transfer from the retained frame, as described below.
+1. Start NINA and select **ZWOgain Retryable Camera** in the camera chooser.
+2. Open its setup gear, refresh the camera list, select a camera and save.
+3. Connect. Disconnect the native ZWO camera entry and other applications using
+   that camera first.
 
-Failed attempts and phases are recorded in NINA's log. The successful image has
-the successful attempt's timestamp and requested exposure duration, excluding
-recovery time. `ZwoGain.Diagnostics` exposes the latest phase, SDK error code,
-SDK exposure state, serial, and SDK version through `ICamera.Action`.
+The setup dialog has four tabs:
 
-NINA also imposes an outer readiness timeout. During a capture the plugin
-temporarily extends that profile value to cover its bounded recovery budget,
-then restores it after download, failure, cancellation or disconnect. A user
-edit to the timeout takes precedence. The plugin's command, cooling and retry
-limits remain in force throughout the wait.
+| Tab | Settings |
+| --- | --- |
+| Camera | Camera picker, serial, experimental direct driver and SDK fallback |
+| Recovery | Full recapture count, exposure cutoff and reconnect delay |
+| Cooling | Temperature tolerance, stable readings and settling timeout |
+| Advanced | Command/download timeouts, exposure grace and read retry counts |
 
-## Experimental SDK-less option
+The main and guide choices are **ASI2600MM Pro** and **ASI220MM Mini (guide)**.
+On the tested Pro Duo unit these are separate USB devices; select each normally.
+The SDK may report the main device as `ZWO ASI2600MM Duo` in diagnostics.
 
-The supervised **ZWO SDK remains the default and primary backend**. In the
-camera setup dialog's **Camera** tab, enable **Direct USB driver (experimental)**
-to try the separate Rust driver process. Save and reconnect to apply the choice.
-The option and **Fall back to SDK** are persisted with the selected camera.
-The picker labels the ASI2600MM Pro and ASI220MM Mini guide
-separately. **Recovery** contains retry limits and reconnect delay, **Cooling**
-contains recovery settling limits, and **Advanced** contains timeouts and frame
-read retries. Save and Cancel stay visible on every tab.
-Existing settings default to the SDK; fallback is opt-in. With fallback enabled,
-a direct open failure or the next permitted exposure retry can switch to the
-SDK. Unsupported direct capture settings route to the SDK before exposure.
-The selected hardware serial and controls are retained, cooling is restored,
-and the SDK stays active until disconnect. Driver info and diagnostics identify
-an active fallback. The same retry count and default 30-second retry threshold
-apply; fallback never authorizes repeating a longer failed exposure.
+The camera choice, backend and fallback preference are saved in
+`%LOCALAPPDATA%\ZwoGain\camera.json`. A successful connection remembers the
+camera's serial. The saved choice remains visible when unplugged. Recovery
+settings are saved in `%LOCALAPPDATA%\ZwoGain\recovery.json`. Save and reconnect
+to apply setup changes.
 
-The NINA direct backend supports these verified interfaces:
+For multiple cameras of the same model, enter a serial or initially connect
+with only the intended camera of that model attached. A saved serial must
+match; the plugin does not silently select another device. Clear it when
+replacing a camera. Gain, offset, USB limit, cooling and dew control use NINA's
+usual camera controls where supported by the selected backend.
 
-| Camera | RAW16 bins | Direct exposure range | Environment |
+## Recovery policy
+
+**Rereading a frame and taking a new exposure have separate limits.**
+
+| Recovery stage | Default | Exposure cutoff applies? |
+| --- | --- | --- |
+| SDK reread of a frame still reported ready | 2 retries | No |
+| Direct ASI2600/ASI676 retained-frame reread | 2 retries | No |
+| Full reconnect, restore and recapture | 3 retries, exposures up to 30 s | Yes |
+
+Read retry counts are configurable from 0 to 5; zero explicitly disables that
+read path. Existing saved values are preserved when upgrading, including an
+older `ReadyFrameDownloadRetries` value of zero. Set **SDK read retries** to 2
+if upgrading from a configuration that disabled SDK rereads.
+
+### Reread first
+
+The SDK path retries the complete download after a retryable SDK error only
+while the SDK still reports a ready frame. Its public API has no partial-transfer
+resume contract, and many camera-to-SDK errors leave no publicly readable frame.
+A hung or crashed worker cannot serve a reread.
+
+The direct ASI2600 and ASI676 paths can restart transfer of the frame retained
+in camera memory. They drain outstanding I/O, reset the transfer path and reread
+from byte zero without starting another exposure. This is whole-frame replay;
+an arbitrary byte-offset continuation has not been established.
+
+These attempts are independent of exposure duration. For example, a failed
+transfer after a 1,200-second ASI2600 exposure can be reread even though a new
+1,200-second exposure is outside the default recapture limit.
+
+The guide camera's startup resynchronization reads a subsequent sensor frame.
+It is therefore subject to the exposure cutoff; same-frame guide replay has
+not been established. Retention across unplugging, power loss, device reset
+or worker replacement is also unproven.
+
+### Full recapture after rereads fail or are unavailable
+
+When the requested exposure is within the recapture limit, the supervisor:
+
+1. Terminates the failed worker and waits five seconds for USB and SDK state
+   changes to propagate.
+2. Starts a fresh worker and reconnects to the original camera by serial.
+3. Restores the exposure settings and persistent controls, including cooler
+   setpoint, enablement and dew heater, and verifies control read-back.
+4. If cooling was enabled, waits for three consecutive readings within 2°C of
+   the pre-error temperature, or further cooled toward the restored target.
+   Where cooler-power telemetry is available, output must also recover to at
+   least its previous value minus 10 percentage points. Settling has a default
+   five-minute deadline per attempt.
+5. Takes a new exposure with the original duration, ROI, binning and controls.
+
+The cooler's **previous setpoint is restored, but recovery waits near the
+previous measured temperature**, which need not have reached that setpoint.
+Changed controls are deferred until the capture transaction ends, so its retries
+continue using the original settings.
+
+`MaximumRetryExposureSeconds` is inclusive and compares the requested exposure
+duration, not elapsed recovery time. Its default is `30`; `0` disables full
+recapture. It does not disable rereads. If recovery cannot return a complete
+frame within the configured budgets, NINA receives the failure.
+
+Recovery phases and errors are recorded in NINA's log. The delivered image uses
+the successful exposure's start time and requested duration. `ZwoGain.Diagnostics`
+exposes phase, SDK error/state, serial and backend version through `ICamera.Action`.
+The plugin temporarily extends NINA's readiness timeout to cover recovery, then
+restores it on completion, failure, cancellation or disconnect. A user edit to
+that timeout takes precedence.
+
+## Experimental direct backend
+
+Enable **Direct USB driver (experimental)** in setup, save and reconnect. It
+uses the installed Windows driver; it does not replace the kernel driver.
+The SDK remains the default for new configurations.
+
+| Verified interface | RAW16 bins | Direct exposure range | Controls |
 | --- | --- | --- | --- |
-| ASI676MC USB3 | 1 | 32 µs–30 s | Gain/offset |
-| ASI2600MM Pro USB3 | 1–4 | 32 µs–2,000 s | Gain/offset, temperature, cooling, dew heater |
-| ASI220MM Mini guide USB2 | 1–2 | Nonzero line integration through 10 s | Gain/offset |
+| ASI676MC USB3 | 1 | 32 µs–30 s | Gain, offset |
+| ASI2600MM Pro main USB3 | 1–4 | 32 µs–2,000 s | Gain, offset, temperature, cooling, dew heater |
+| ASI220MM Mini guide USB2 | 1–2 | Valid nonzero line integration through 10 s | Gain, offset |
 
-The ASI2600 exposure range is independent of the retry cutoff. A 1,200-second
-direct exposure is allowed, but is not automatically repeated after failure
-with the default 30-second retry cutoff. The guide and ASI676MC retain their
-separate limits. See [NINA hardware tests](docs/nina-end-to-end.md) for tested
-durations; the 2,000-second maximum matches the SDK's advertised range.
-Full-frame 60- and 1,200-second ASI2600 captures have completed in NINA with
-SDK fallback disabled. A full-duration 2,000-second hardware run is not yet tested.
+The direct backend reads serials and factory calibration, applies the verified
+RAW16 defect corrections and software binning, and delivers a complete binary
+frame to NINA. ROIs require at least 64 × 64 physical pixels; ASI2600 origins
+align to 16 columns and two rows. USB bandwidth is fixed at 40 and bulk reads
+are sequential. The main camera's Rust cooling regulator runs during idle,
+exposure and transfer; it differs from the SDK regulator.
 
-Both Duo sensors are individually selectable in setup. The direct process uses
-the installed Windows driver without loading `ASICamera2.dll`, reads hardware
-serials and factory defect maps, and applies the verified RAW16 corrections and
-software binning. ROIs require at least 64 × 64 physical pixels; main origins
-must align to 16 columns and two rows. USB limit is fixed at 40. Main cooling
-uses a Rust regulator with a bounded power ramp and the observed nonlinear
-current conversion; it runs during idle, exposure and transfer. This controller
-is experimental and differs from the SDK's regulator. Unverified models,
-including 2600/6200 P25, continue to use the SDK.
+**Fall back to SDK** is a separate opt-in setting. It permits fallback after a
+direct open failure, before exposure for unsupported settings, or on a permitted
+full recapture after capture failure. Fallback verifies the same serial and
+restores controls and cooling. It remains active until disconnect. It never
+bypasses the recapture cutoff to repeat a failed long exposure.
 
-ASI676/main read failures can retry the complete retained frame, configurable
-from 0 to 5 (default 2), at any supported exposure length. These rereads do not
-start another exposure and are independent of the new-exposure retry cutoff.
-The guide uses bounded startup stream resynchronization; retained guide-frame
-replay has not been established. If transfer recovery fails, the supervisor
-reconnects and repeats within the configured policy. Cancellation terminates
-the isolated process. Retention across USB removal or power loss is unverified.
-See [Duo capture findings](docs/duo-capture.md) for hardware evidence and limits.
-See [transfer recovery and SDK gaps](docs/transfer-recovery.md) for cancellation
-and timeout tests, the recovery sequence, and work still needed.
+### Hardware validation and remaining limits
 
-See [direct acquisition details](docs/sdk-free-capture.md),
-[same-frame correction evidence](docs/factory-defect-correction.md), and the
-[procedure for bringing up another camera](docs/camera-bringup.md).
+- ASI676MC, ASI2600MM Pro main and ASI220MM Mini guide have been captured through
+  the plugin and inspected in NINA's image pane. Testing used capped cameras;
+  it does not establish illuminated-image performance.
+- Full-frame **60- and 1,200-second ASI2600 direct exposures** completed in NINA
+  with SDK fallback disabled. The advertised 2,000-second maximum has not yet
+  been tested for its full duration on hardware.
+- ASI2600 direct tests recovered retained pixels after cancellation at the first,
+  middle and last USB chunks, and after a real five-second read deadline.
+  Hardware transfer-fault testing extends to 60-second exposures. These were
+  controlled faults, not physical disconnects or naturally occurring bus errors.
+- Real cooler recovery and direct-to-SDK fallback after worker termination have
+  completed in NINA. ASI6200 and P25 initialization/recovery remain unverified;
+  use the SDK for those models. A shared driver package does not prove matching
+  camera protocols.
+- The plugin delivers RAW16 still images. Live view, asymmetric binning, trigger
+  modes, camera alias editing and the native ZWO advanced UI are not implemented.
+  Electrons/ADU is unknown. Direct format/control coverage is narrower than the
+  SDK's; see the [SDK gap comparison](docs/transfer-recovery.md).
+- NINA temperature/power telemetry is cached during capture; control changes are
+  deferred. This does not stop the direct worker's cooling regulator.
+- Abort/Stop cancels the transaction and terminates the worker. It does not return
+  a shortened exposure. The next capture reconnects and restores state.
 
-## Build, test, install
+Detailed evidence: [NINA tests](docs/nina-end-to-end.md),
+[transfer fault tests](docs/transfer-recovery.md),
+[main and guide capture/processing](docs/duo-capture.md), and
+[ASI676 factory correction](docs/factory-defect-correction.md).
 
-Install a current Rust MSVC toolchain, Visual Studio C++ build tools, and the
-.NET 8 SDK. ZWO's Windows camera driver must already be installed. The licensed
-ASI SDK 1.41 x64 DLL and header are included under `vendor/zwo`.
+## Build, test and install from source
+
+Requires .NET 8, the Rust MSVC toolchain and Visual Studio C++ build tools.
+The ASI SDK 1.41 x64 DLL and header are bundled under `vendor/zwo` with their
+license. The ZWO Windows camera driver must be installed for hardware access.
 
 ```powershell
 ./scripts/test.ps1
-./scripts/build.ps1
+# Close NINA before installing:
 ./scripts/build.ps1 -Install
+./scripts/test-release.ps1
 ```
 
-The build creates `artifacts/ZwoGain-0.1.0.0.zip` and its SHA-256 checksum.
-Installation copies the package to
-`%LOCALAPPDATA%\NINA\Plugins\3.0.0\ZwoGain`. Restart NINA, refresh the camera
-chooser, and select **ZWOgain Retryable Camera**. Open its setup gear, pick the camera,
-and save before connecting. This entry remains available with no camera attached.
-When upgrading from the earlier per-model chooser, select this new entry once.
-Disconnect the native
-ZWO driver and any other camera application first.
+Omit `-Install` to build/package only. The build produces
+`artifacts/ZwoGain-<version>.zip`, its NINA manifest, logo and `SHA256SUMS`.
+The version comes from `Directory.Build.props` and is checked against Cargo.
+Local builds are unsigned. Installation copies the staged package into NINA's
+plugin directory; restart NINA to load it.
 
-The camera setup dialog provides a camera picker, refresh button, optional SDK
-serial number, and recovery settings. The camera choice is saved in
-`%LOCALAPPDATA%\ZwoGain\camera.json`; a successful connection remembers its serial
-number automatically. The saved camera remains selected across dialog openings
-and NINA restarts, including when unplugged. Connection fails if that serial is
-missing; it never silently switches cameras. Clear the serial explicitly when
-replacing a camera with another of the same model. Selection and recovery changes
-take effect on the next connection. Recovery settings remain saved in
-`%LOCALAPPDATA%\ZwoGain\recovery.json` and loaded on the next connection. Gain,
-offset, USB limit, cooling and dew heater use NINA's usual camera controls.
-Defaults for white balance, USB limit, flip, hardware/mono binning, and high-speed
-mode follow the native ASI driver; cooling settings already on the camera are
-preserved. Settings changed during a capture are applied after that transaction,
-so retries continue to use the original settings.
+GitHub [Build and test](https://github.com/theatrus/zwogain/actions/workflows/build.yml)
+runs automated recovery, NINA contract, Rust and research tests, builds the
+package and validates publication rules. Hardware tests run locally.
 
-`MaximumRetryExposureSeconds` configures the inclusive duration threshold
-(default `30`; `0` disables automatic retries). It applies to both replacement
-exposures and the experimental same-frame re-download option. The comparison
-uses the requested exposure duration, not elapsed transfer or recovery time.
+The [Release workflow](.github/workflows/release.yml) stages the build, signs
+both ZWOgain DLLs and both Rust workers with Azure Trusted Signing, verifies
+signatures and then packages them. A matching version tag creates a draft
+release; ordinary pushes do not publish a release or registry entry. As of
+2026-09-14, the repository is public and has no GitHub release yet. Registry
+publication to [the NINA plugin feed](https://nina-plugins.psf-guard.com/) is a
+separate workflow requiring a published release with public assets and registry
+credentials. See [release and registry instructions](docs/releasing.md).
 
-## Hardware diagnostics
+## Diagnostics and protocol research
+
+Disconnect NINA and other camera applications before hardware diagnostics.
 
 ```powershell
-cargo build
+cargo build --locked
+# List SDK cameras:
 dotnet run --project src/ZwoGain.Diagnostics
-dotnet run --project src/ZwoGain.Diagnostics -- --capture --frames 20 --seconds 0.05
-dotnet run --project src/ZwoGain.Diagnostics -- --capture --bin 2 --frames 5
-# Deliberately kill the SDK host once after exposure readiness, then recover:
-dotnet run --project src/ZwoGain.Diagnostics -- --capture --kill-once --frames 3
-# Simulator requires no camera or SDK:
+# Capture using the exact name returned by discovery:
+dotnet run --project src/ZwoGain.Diagnostics -- --capture --camera "ZWO ASI676MC" --frames 20 --seconds 0.05
+# Direct main-camera capture (the SDK identity includes "Duo"):
+dotnet run --project src/ZwoGain.Diagnostics -- --direct --capture --camera "ZWO ASI2600MM Duo" --seconds 60 --frames 1
+# No camera required:
 dotnet run --project src/ZwoGain.Diagnostics -- --simulate --capture
 ```
 
-Use `--camera "ZWO ASI676MC"` when several different models are attached.
-`--width`, `--height`, `--x`, and `--y` specify a binned-pixel ROI.
-`--host` and `--sdk` select explicit executable/DLL paths. Ctrl+C cancels capture
-and terminates the worker. Diagnostic runs do not save image files.
+`--bin`, `--width`, `--height`, `--x` and `--y` select binning and a binned-pixel
+ROI. `--host` and `--sdk` override executable/DLL paths. `--sdk-fallback` enables
+fallback with `--direct`. `--kill-once` deliberately terminates the worker before
+download to exercise full recovery; it does not simulate a resumable USB error.
+Ctrl+C cancels capture. This diagnostic command reports metadata and statistics,
+not image files.
 
-## Current limits
-
-- ASI676MC hardware is tested. ASI2600/6200 frame sizes are tested through the
-  simulator; their real cooling, firmware, USB disconnect, and failure behavior
-  still need hardware validation.
-- Initial selection requires a unique model name or an explicit SDK serial number.
-  For multiple cameras of the same model, enter the serial in setup, or first
-  connect with only the intended camera of that model attached to remember it.
-  Discovery does not open cameras to read their serials. Automatic reconnection
-  requires a readable serial number; no index fallback is used.
-- The driver supports still RAW16 capture, supported symmetric bins and ROI.
-  Live view, asymmetric bins, trigger modes, camera alias editing and native
-  ZWO-specific advanced UI are not implemented. Electrons/ADU is unknown.
-- Abort/Stop cancels the entire transaction and terminates its host. It does
-  not return a truncated exposure. The next capture reconnects and restores state.
-- Temperature is cached while the capture transaction owns the camera; cooling
-  changes during long exposures are deferred. Normal telemetry/control updates
-  run every two seconds when idle.
-- There is no documented partial-transfer resume API. `ReadyFrameDownloadRetries`
-  defaults to 2 and retries the entire download only while the SDK still reports
-  exposure success, independent of exposure duration. The SDK does not guarantee
-  that a frame remains available after a transfer error. A saved count of zero
-  explicitly disables this path.
-- No installer signing or NINA registry publication is included in this first
-  version. CI and draft-release/registry workflows are provided; see
-  [releasing](docs/releasing.md). Local installation, camera contract tests, and interactive NINA 3.2
-  camera/capture/recovery checks are covered in the validation record.
-
-See [architecture](docs/architecture.md), [SDK investigation](docs/sdk-lifecycle.md)
-and [validation](docs/validation.md). The [transport research and experiment plan](docs/transport-investigation.md)
-records direct-driver inspection, SDK-internal replay evidence, and the route
-to an independent Rust transport. The experimental `zwogain-direct` executable
-now performs complete SDK-free ASI676MC captures with configurable ROI, exposure,
-gain and offset, binary RAW16 delivery, and retained-frame readout retries.
-Full-frame and interrupted-read replay have been tested without another exposure.
-It remains experimental: sensor initialization is model-specific. Independent
-factory defect correction matches SDK pixels for ASI676MC and both Duo sensors;
-the guide also requires unpacking and low-gain dithering. See [SDK-free capture](docs/sdk-free-capture.md)
-for commands, evidence, P25 transport findings and remaining limits.
-Licensed under Apache-2.0; bundled vendor
-material retains its own license, described in [third-party notices](THIRD_PARTY_NOTICES.md).
+See [inspection commands](scripts/inspection/README.md),
+[SDK lifecycle findings](docs/sdk-lifecycle.md),
+[transport investigation](docs/transport-investigation.md),
+[direct acquisition](docs/sdk-free-capture.md),
+[Linux driver research](docs/linux-driver-research.md) and
+[camera bring-up procedure](docs/camera-bringup.md).

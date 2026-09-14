@@ -44,10 +44,19 @@ layout/assembly versions and computes the checksum from the finished archive.
 NINA's own manifest schema validates the result. A four-part version is not
 silently rewritten to a three-part semantic version.
 
-This first release workflow produces **unsigned** binaries. Authenticode
-signing is not configured for this repository. If added later, sign only the
-ZWOgain DLLs/EXE before packaging, preserve the vendor DLL, and compute the
-archive/manifest checksum afterward.
+Local builds and the ordinary **Build and test** workflow produce unsigned
+binaries. The **Release** workflow stages the package, authenticates to Azure
+through OIDC in the `release` environment, and signs `ZwoGain.NINA.dll`,
+`ZwoGain.Core.dll`, `zwogain-host.exe` and `zwogain-direct.exe` with Azure Trusted
+Signing. It requires valid signatures from StackFoundry LLC before packaging.
+The bundled vendor DLL is left unchanged. ZIP and manifest checksums are
+computed after signing.
+
+The workflow reads `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`,
+`AZURE_SUBSCRIPTION_ID`, `SIGNING_ENDPOINT`, `SIGNING_ACCOUNT` and
+`SIGNING_PROFILE` from GitHub variables. These repository variables are present
+as of 2026-09-14. The Azure federated credential must match the workflow's
+`release` environment; variables alone do not verify the signing service.
 
 ## Registry publication
 
@@ -63,9 +72,9 @@ workflow changes only the version manifest, not the registry's landing page.
 
 Configure the ZWOgain repository secret `NINA_REGISTRY_TOKEN` with a fine-grained
 token that has Contents read/write access to `theatrus/nina-plugins-registry`.
-The source repository's `GITHUB_TOKEN` cannot write to that other private
-repository. The publication job uses the secret only for the registry checkout
-and push; release lookup uses the source repository token.
+The source repository's `GITHUB_TOKEN` cannot write to the other repository.
+The publication job uses the secret only for the registry checkout and push;
+release lookup uses the source repository token.
 
 Run **Publish to NINA registry** from `main`, supplying a published stable tag.
 It checks identity/version, rejects draft/prerelease/channel manifests,
@@ -90,12 +99,11 @@ it never pushes or makes HTTP requests.
 
 ## Current publication prerequisites
 
-At implementation time ZWOgain is **private**, and `NINA_REGISTRY_TOKEN` is not
-configured. Builds, CI artifacts, embedded logos and draft-release generation
-work in a private repository. NINA cannot anonymously retrieve that repository's
-GitHub release assets, so registry publication intentionally stops until the
-release assets are public. The current URL scheme assumes the source repository
-will be public before release; a separate public artifact host would require
-updating the generator and publisher together.
+As of 2026-09-14, ZWOgain is **public**, no GitHub release has been created, and
+`NINA_REGISTRY_TOKEN` is not configured as a repository secret. Create and
+validate a signed release, publish its assets, and configure the registry
+credential before running **Publish to NINA registry**. The publisher still
+checks anonymous access to the actual ZIP and logo; repository visibility
+alone does not prove those assets are available.
 
 No public release or registry entry is created by ordinary pushes to main.

@@ -32,4 +32,5 @@ or extract the ZIP into `%LOCALAPPDATA%\NINA\Plugins\3.0.0\ZwoGain` while NINA
 is closed. The ZWO Windows camera driver must already be installed.
 
 Apache-2.0; bundled third-party components retain their own licenses.
-This initial workflow produces unsigned plugin binaries.
+Local and ordinary CI builds are unsigned. The Release workflow signs the
+ZWOgain DLLs and Rust workers before packaging.
