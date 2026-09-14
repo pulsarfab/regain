@@ -91,6 +91,26 @@ and bin 2 produced 256 × 128 (mean 3205.43); disabling subsampling restored
 960 × 540 (mean 3182.75). All four were fresh one-second images with gain 0,
 16-bit output, and no capture errors.
 
+### Additional SDK ASI676MC checks
+
+With installed implementation `ed3a820`, the legacy sequencer produced a new
+32 µs Bias full frame (3552 × 3552, mean 43.01, standard deviation 21.24).
+Canceling a ten-second snapshot after 9.7 seconds logged `Aborted`, returned
+the capture button promptly, and did not replace the image. The next 100 ms
+capture reconnected and displayed a new full frame (mean 94.96).
+
+At 100 ms, gain/offset 0 and USB limit 40, the sensor ROI (16, 32, 512, 256)
+produced 512 × 256 at bin 1 (mean 43.78, standard deviation 21.40) and
+256 × 128 at bin 2 (mean 48.66, standard deviation 10.88). Disabling the ROI
+restored full-frame bin 2 output, 1776 × 1776 (mean 94.88). Each was a fresh
+image visibly inspected in NINA, without capture errors.
+
+The SDK legacy sequence also displayed fresh one-second Dark (mean 565.86,
+standard deviation 1421.46) and Light (mean 568.99, standard deviation 1418.78)
+full frames. All three SDK sequence FITS headers matched the requested type,
+duration, 3552 × 3552 dimensions, RAW16, bin 1, gain/offset 0 and RGGB pattern.
+These sequence images remain in the dedicated local test directory only.
+
 ### Completed direct-driver checks
 
 - Installed implementation `ed3a820` produced a fresh 3552 × 3552 image at
