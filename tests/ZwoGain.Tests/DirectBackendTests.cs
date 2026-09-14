@@ -176,6 +176,8 @@ public class DirectBackendTests
     [Theory]
     [InlineData(60000000)]
     [InlineData(120000000)]
+    [InlineData(1200000000)]
+    [InlineData(2000000000)]
     public async Task LongMainExposureStartsDirectlyButFailureDoesNotRetryOrFallback(long duration)
     {
         HostClient? current = null;

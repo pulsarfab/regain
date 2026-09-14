@@ -451,7 +451,13 @@ mod tests {
             ..Settings::default()
         };
         let registers = timing(&settings);
-        for duration in [30_000_001, 60_000_000, 120_000_000, MAX_EXPOSURE_US] {
+        for duration in [
+            30_000_001,
+            60_000_000,
+            120_000_000,
+            1_200_000_000,
+            MAX_EXPOSURE_US,
+        ] {
             settings.microseconds = duration;
             assert!(validate(&settings, 100).is_ok());
             assert_eq!(timing(&settings), registers);
