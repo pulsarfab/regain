@@ -111,6 +111,13 @@ full frames. All three SDK sequence FITS headers matched the requested type,
 duration, 3552 × 3552 dimensions, RAW16, bin 1, gain/offset 0 and RGGB pattern.
 These sequence images remain in the dedicated local test directory only.
 
+At 100 ms and full-frame bin 2, USB limit 100 transferred new frames with
+gain 300 / offset 100 (mean 9330.82, standard deviation 4467.40) and the
+advertised maxima, gain 600 / offset 200 (mean 58595.36, standard deviation
+5942.12; substantial expected clipping in the illuminated scene). Metadata
+matched both requested control pairs. Restoring gain/offset 0 and USB 40
+returned the baseline response (mean 94.74 versus 94.88 before changes).
+
 ### Completed direct-driver checks
 
 - Installed implementation `ed3a820` produced a fresh 3552 × 3552 image at
