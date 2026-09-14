@@ -50,10 +50,20 @@ ASI SDK 1.41 x64 DLL and header are included under `vendor/zwo`.
 The build creates `artifacts/ZwoGain-0.1.0.0.zip` and its SHA-256 checksum.
 Installation copies the package to
 `%LOCALAPPDATA%\NINA\Plugins\3.0.0\ZwoGain`. Restart NINA, refresh the camera
-chooser, and select **ZWO <model> (ZwoGain recovery)**. Disconnect the native
+chooser, and select **ZwoGain recovery**. Open its setup gear, pick the camera,
+and save before connecting. This entry remains available with no camera attached.
+When upgrading from the earlier per-model chooser, select this new entry once.
+Disconnect the native
 ZWO driver and any other camera application first.
 
-The camera setup dialog edits recovery settings. They are saved in
+The camera setup dialog provides a camera picker, refresh button, optional SDK
+serial number, and recovery settings. The camera choice is saved in
+`%LOCALAPPDATA%\ZwoGain\camera.json`; a successful connection remembers its serial
+number automatically. The saved camera remains selected across dialog openings
+and NINA restarts, including when unplugged. Connection fails if that serial is
+missing; it never silently switches cameras. Clear the serial explicitly when
+replacing a camera with another of the same model. Selection and recovery changes
+take effect on the next connection. Recovery settings remain saved in
 `%LOCALAPPDATA%\ZwoGain\recovery.json` and loaded on the next connection. Gain,
 offset, USB limit, cooling and dew heater use NINA's usual camera controls.
 Defaults for white balance, USB limit, flip, hardware/mono binning, and high-speed
@@ -89,8 +99,10 @@ and terminates the worker. Diagnostic runs do not save image files.
 - ASI676MC hardware is tested. ASI2600/6200 frame sizes are tested through the
   simulator; their real cooling, firmware, USB disconnect, and failure behavior
   still need hardware validation.
-- Initial selection requires a unique model name. Multiple attached cameras of
-  the same model are rejected rather than guessed. Automatic reconnection
+- Initial selection requires a unique model name or an explicit SDK serial number.
+  For multiple cameras of the same model, enter the serial in setup, or first
+  connect with only the intended camera of that model attached to remember it.
+  Discovery does not open cameras to read their serials. Automatic reconnection
   requires a readable serial number; no index fallback is used.
 - The driver supports still RAW16 capture, supported symmetric bins and ROI.
   Live view, asymmetric bins, trigger modes, camera alias editing and native

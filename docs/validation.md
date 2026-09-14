@@ -12,9 +12,13 @@ Initial development validation: 2026-09-13 (America/Los_Angeles).
   Retry-threshold tests cover exactly 30 seconds, one microsecond above it,
   a configured 60-second boundary, disabling retries with zero, disabling
   same-frame re-download for long exposures, and defaults for existing configs.
-- Three NINA contract tests: embedded logo/Apache manifest metadata, equipment export and complete ICamera
+- Seven NINA contract/selection tests: embedded logo/Apache manifest metadata, equipment export and complete ICamera
   StartExposure → WaitUntilExposureIsReady → DownloadExposure flow, hiding a
   simulated transfer failure and preserving the original image settings.
+  Selection tests cover persistence across new instances, learning the serial,
+  loading a newly saved camera on connection, rejecting a missing serial without
+  fallback, requiring setup before first connection, and preventing an in-flight
+  connection from overwriting a newer camera choice.
 - Release ZIP validation checks required payload/license files and matching
   .NET assembly versions; the generated registry JSON passes NINA's schema.
   Five local publication fixture checks cover a valid package, anonymous-access
@@ -37,6 +41,11 @@ Initial development validation: 2026-09-13 (America/Los_Angeles).
 Tested the installed NINA 3.2 application using Windows computer use:
 
 - ZwoGain appeared as its own camera-provider group and selected the ASI676MC.
+- The persistent **ZwoGain recovery** entry opens a camera picker in setup.
+  Selected the attached ASI676MC, saved, connected successfully, and reopened
+  setup to verify the selected model and automatically remembered serial.
+  Restarted NINA and verified both its driver selection and the setup camera /
+  serial persisted. Discovery also completed while the camera was connected.
 - Connection displayed 3552 × 3552 geometry, RGGB, 2 um pixels, sensor
   temperature, gain/offset controls, and the USB limit.
 - The recovery settings dialog saved a custom 60-second cutoff and displayed

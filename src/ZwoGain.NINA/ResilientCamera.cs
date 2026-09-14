@@ -12,7 +12,8 @@ namespace ZwoGain.NINA;
 
 public sealed class ResilientCamera : BaseINPC, ICamera
 {
-    private readonly CameraDescriptor descriptor;
+    private CameraDescriptor descriptor;
+    private readonly CameraSelectionStore? selectionStore;
     private readonly IExposureDataFactory images;
     private readonly Func<HostClient> hostFactory;
     private readonly RecoveryOptions? recoveryOptions;
@@ -23,6 +24,11 @@ public sealed class ResilientCamera : BaseINPC, ICamera
     private Task? telemetry;
     private short bin = 1;
     public ResilientCamera(CameraDescriptor camera, IExposureDataFactory images) : this(camera, images, CameraProvider.NewHost, null) { }
+    internal ResilientCamera(IExposureDataFactory images, CameraSelectionStore store, Func<HostClient>? factory = null, RecoveryOptions? options = null)
+        : this(store.Load()?.Camera ?? new("Select a camera", 0, 0, false, 0, 0, 16, false, false, [1]), images, factory ?? CameraProvider.NewHost, options)
+    {
+        selectionStore = store;
+    }
     internal ResilientCamera(CameraDescriptor camera, IExposureDataFactory images, Func<HostClient> hostFactory, RecoveryOptions? options)
     {
         descriptor = camera;
@@ -42,9 +48,9 @@ public sealed class ResilientCamera : BaseINPC, ICamera
         Session.Set(c, value);
         RaiseAllPropertiesChanged();
     }
-    public string Id => "ZwoGain_" + descriptor.Name;
+    public string Id => "ZwoGain";
     public string Name => descriptor.Name;
-    public string DisplayName => Name + " (ZwoGain recovery)";
+    public string DisplayName => "ZwoGain recovery";
     public string Category => "ZwoGain";
     public string Description => "ZWO RAW16 camera with supervised SDK and automatic exposure recovery";
     public string DriverInfo => $"ZwoGain {DriverVersion} / ASI {session?.SdkVersion}; {session?.Phase}";
@@ -54,12 +60,34 @@ public sealed class ResilientCamera : BaseINPC, ICamera
         get; private set;
     }
     public bool HasSetupDialog => true;
-    public void SetupDialog() => Settings.Show();
+    public void SetupDialog()
+    {
+        Settings.Show();
+        if (!Connected && selectionStore?.Load() is { } selected)
+            SelectCamera(selected.Camera);
+    }
+    private void SelectCamera(CameraDescriptor camera)
+    {
+        descriptor = camera;
+        bin = 1;
+        EnableSubSample = false;
+        SubSampleX = SubSampleY = 0;
+        SubSampleWidth = camera.Width;
+        SubSampleHeight = camera.Height;
+        exposure = null;
+        RaiseAllPropertiesChanged();
+    }
     public async Task<bool> Connect(CancellationToken token)
     {
         if (Connected)
             return true;
-        var candidate = new CameraSession(descriptor, hostFactory, recoveryOptions ?? Settings.Load());
+        CameraSelection? selected = null;
+        if (selectionStore is not null)
+        {
+            selected = selectionStore.Load() ?? throw new InvalidOperationException("Choose a camera in the ZwoGain setup dialog first.");
+            SelectCamera(selected.Camera);
+        }
+        var candidate = new CameraSession(descriptor, hostFactory, recoveryOptions ?? Settings.Load(), selected?.Serial);
         candidate.Diagnostic += text => Logger.Info($"ZwoGain {Name}: {text}");
         try
         {
@@ -69,6 +97,8 @@ public sealed class ResilientCamera : BaseINPC, ICamera
                 if (candidate.Controls.TryGetValue(control, out var cap) && cap.Writable && value >= cap.Min && value <= cap.Max)
                     candidate.Set(control, value);
             await candidate.RefreshAsync(token).ConfigureAwait(false);
+            if (selected is not null)
+                selectionStore!.RememberSerial(selected, candidate.Serial);
             session = candidate;
             lifetime = new();
             Connected = true;

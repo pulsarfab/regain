@@ -9,6 +9,8 @@ internal static class Settings
 {
     private static readonly string Folder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ZwoGain");
     private static readonly string FilePath = Path.Combine(Folder, "recovery.json");
+    internal static readonly CameraSelectionStore Cameras = new(Path.Combine(Folder, "camera.json"));
+    private sealed record CameraChoice(CameraDescriptor Camera, string Label);
     public static RecoveryOptions Load()
     {
         var options = File.Exists(FilePath) ? JsonSerializer.Deserialize<RecoveryOptions>(File.ReadAllText(FilePath)) ?? new() : new RecoveryOptions();
@@ -24,7 +26,30 @@ internal static class Settings
             return;
         }
         var panel = new StackPanel { Margin = new Thickness(16) };
-        panel.Children.Add(new TextBlock { Text = "Recovery settings apply on the next connection.", Margin = new Thickness(0, 0, 0, 12) });
+        panel.Children.Add(new TextBlock { Text = "Camera and recovery settings apply on the next connection.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 12) });
+        var remembered = Cameras.Load();
+        panel.Children.Add(new TextBlock { Text = "Camera" });
+        var picker = new ComboBox { DisplayMemberPath = nameof(CameraChoice.Label), MinWidth = 300, Margin = new Thickness(0, 2, 0, 8) };
+        if (remembered is not null)
+        {
+            picker.Items.Add(new CameraChoice(remembered.Camera, remembered.Camera.Name + " (saved; availability not checked)"));
+            picker.SelectedIndex = 0;
+        }
+        panel.Children.Add(picker);
+        var refresh = new Button { Content = "Refresh cameras", HorizontalAlignment = HorizontalAlignment.Left, Padding = new Thickness(8, 4, 8, 4) };
+        panel.Children.Add(refresh);
+        panel.Children.Add(new TextBlock { Text = "Serial number (optional; remembered automatically after connecting)", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 0) });
+        var serial = new TextBox { Text = remembered?.Serial ?? "", Margin = new Thickness(0, 2, 0, 8) };
+        panel.Children.Add(serial);
+        var cameraStatus = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 12) };
+        panel.Children.Add(cameraStatus);
+        string? selectedName = remembered?.Camera.Name;
+        picker.SelectionChanged += (_, _) =>
+        {
+            if (picker.SelectedItem is not CameraChoice choice || choice.Camera.Name == selectedName) return;
+            selectedName = choice.Camera.Name;
+            serial.Text = choice.Camera.Name == remembered?.Camera.Name ? remembered.Serial ?? "" : "";
+        };
         var entries = new Dictionary<string, TextBox>();
         var current = Load();
         var labels = new Dictionary<string, string>
@@ -54,7 +79,7 @@ internal static class Settings
         panel.Children.Add(button);
         var window = new Window
         {
-            Title = "ZwoGain recovery",
+            Title = "ZwoGain camera setup",
             Width = 510,
             SizeToContent = SizeToContent.Height,
             MaxHeight = SystemParameters.WorkArea.Height * .9,
@@ -64,6 +89,33 @@ internal static class Settings
         };
         window.SetResourceReference(Window.BackgroundProperty, "BackgroundBrush");
         window.SetResourceReference(Window.ForegroundProperty, "PrimaryBrush");
+        using var discoveryCancel = new CancellationTokenSource();
+        window.Closed += (_, _) => discoveryCancel.Cancel();
+        async Task RefreshCameras()
+        {
+            refresh.IsEnabled = false;
+            picker.IsEnabled = false;
+            cameraStatus.Text = "Looking for ZWO cameras...";
+            try
+            {
+                // Discovery only queries properties; it never opens another driver's camera.
+                var found = await Task.Run(() => CameraProvider.DiscoverAsync(discoveryCancel.Token));
+                if (discoveryCancel.IsCancellationRequested) return;
+                var chosen = picker.SelectedItem as CameraChoice;
+                var choices = found.GroupBy(c => c.Name).Select(g => new CameraChoice(g.First(), g.Key + (g.Count() > 1 ? " (multiple attached; enter serial)" : ""))).ToList();
+                if (chosen is not null && choices.All(c => c.Camera.Name != chosen.Camera.Name))
+                    choices.Insert(0, chosen with { Label = chosen.Camera.Name + " (not currently detected)" });
+                picker.Items.Clear();
+                foreach (var choice in choices) picker.Items.Add(choice);
+                picker.SelectedItem = choices.FirstOrDefault(c => c.Camera.Name == chosen?.Camera.Name);
+                cameraStatus.Text = found.Count == 0 ? "No cameras detected. A saved selection is retained; attach the camera and refresh." : "Choose a camera and save. For multiple cameras of the same model, enter its SDK serial number; otherwise connect each once with only that model attached.";
+            }
+            catch (OperationCanceledException) { }
+            catch (Exception e) { cameraStatus.Text = "Camera discovery failed: " + e.Message; }
+            finally { refresh.IsEnabled = true; picker.IsEnabled = true; }
+        }
+        refresh.Click += async (_, _) => await RefreshCameras();
+        window.Loaded += async (_, _) => await RefreshCameras();
         button.Click += (_, _) =>
         {
             try
@@ -71,10 +123,16 @@ internal static class Settings
                 var values = entries.ToDictionary(k => k.Key, k => double.Parse(k.Value.Text, System.Globalization.CultureInfo.InvariantCulture));
                 var options = JsonSerializer.Deserialize<RecoveryOptions>(JsonSerializer.Serialize(values))!;
                 options.Validate();
+                if (picker.SelectedItem is not CameraChoice choice)
+                    throw new InvalidOperationException("Choose a camera before saving.");
+                string? selectedSerial = string.IsNullOrWhiteSpace(serial.Text) ? null : serial.Text.Trim().ToLowerInvariant();
+                if (selectedSerial is not null && (selectedSerial.Length != 16 || selectedSerial.Any(c => !Uri.IsHexDigit(c))))
+                    throw new InvalidOperationException("The SDK serial number must contain 16 hexadecimal characters, or be left blank.");
                 Directory.CreateDirectory(Folder);
                 string temp = FilePath + "." + Guid.NewGuid().ToString("N") + ".tmp";
                 File.WriteAllText(temp, JsonSerializer.Serialize(options, new JsonSerializerOptions { WriteIndented = true }));
                 File.Move(temp, FilePath, true);
+                Cameras.Save(new CameraSelection(choice.Camera, selectedSerial));
                 window.Close();
             }
             catch (Exception e) { status.Text = e.Message; }

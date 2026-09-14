@@ -41,10 +41,11 @@ public sealed class CameraSession : IDisposable
         get; private set;
     }
     public event Action<string>? Diagnostic;
-    public CameraSession(CameraDescriptor camera, Func<HostClient> factory, RecoveryOptions? options = null)
+    public CameraSession(CameraDescriptor camera, Func<HostClient> factory, RecoveryOptions? options = null, string? serial = null)
     {
         Camera = camera;
         this.factory = factory;
+        this.serial = serial;
         Options = options ?? new();
         Options.Validate();
     }

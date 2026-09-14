@@ -1,0 +1,82 @@
+using Moq;
+using NINA.Image.Interfaces;
+using ZwoGain.Core;
+using Xunit;
+
+namespace ZwoGain.NINA.Tests;
+
+public sealed class SelectionTests : IDisposable
+{
+    private readonly string folder = Path.Combine(Path.GetTempPath(), "zwogain-selection-" + Guid.NewGuid().ToString("N"));
+    private static readonly CameraDescriptor Sim = new("ZWO Simulated", 960, 640, true, 0, 3.76, 16, true, false, [1, 2, 4]);
+    private CameraSelectionStore Store => new(Path.Combine(folder, "camera.json"));
+    private ResilientCamera Camera(CameraSelectionStore store) => new(Mock.Of<IExposureDataFactory>(), store,
+        () => new HostClient(Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../target/debug/zwogain-host.exe")), "unused", true), new());
+
+    [Fact]
+    public async Task SavedChoiceSurvivesNewInstancesAndLearnsSerial()
+    {
+        Store.Save(new(Sim));
+        var store = Store;
+        var camera = Camera(store);
+        try
+        {
+            Assert.Equal("ZwoGain", camera.Id);
+            Assert.True(await camera.Connect(default));
+            Assert.Equal("ZWO Simulated", camera.Name);
+            Assert.Equal(960, camera.CameraXSize);
+            Assert.Equal("sim00001", Store.Load()!.Serial);
+        }
+        finally { camera.Disconnect(); }
+        var reopened = Camera(Store);
+        try { Assert.True(await reopened.Connect(default)); }
+        finally { reopened.Disconnect(); }
+    }
+
+    [Fact]
+    public async Task ConnectReadsNewSelectionAndNeverFallsBackFromMissingSerial()
+    {
+        var store = Store;
+        store.Save(new(Sim with { Name = "Unavailable model", Width = 6248 }));
+        var camera = Camera(store);
+        store.Save(new(Sim)); // A dialog save after NINA created its provider object.
+        try
+        {
+            Assert.True(await camera.Connect(default));
+            Assert.Equal(960, camera.CameraXSize);
+            camera.Disconnect();
+            store.Save(new(Sim, "not-the-attached-camera"));
+            await Assert.ThrowsAnyAsync<Exception>(() => camera.Connect(default));
+            Assert.False(camera.Connected);
+            Assert.Equal("not-the-attached-camera", Store.Load()!.Serial);
+            Assert.Equal("ZwoGain", camera.Id);
+        }
+        finally { camera.Disconnect(); }
+    }
+
+    [Fact]
+    public async Task NoSelectionRequiresSetupEvenWhenCameraIsAttached()
+    {
+        var camera = Camera(Store);
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => camera.Connect(default));
+        Assert.Contains("setup dialog", error.Message);
+        Assert.True(camera.HasSetupDialog);
+    }
+
+    [Fact]
+    public void ConnectionCannotOverwriteANewerDialogSelection()
+    {
+        var store = Store;
+        var previous = new CameraSelection(Sim);
+        store.Save(previous);
+        store.Save(new(Sim with { Name = "ZWO ASI6200MM Pro" }));
+        store.RememberSerial(previous, "sim00001");
+        Assert.Equal("ZWO ASI6200MM Pro", Store.Load()!.Camera.Name);
+        Assert.Null(Store.Load()!.Serial);
+    }
+
+    public void Dispose()
+    {
+        if (Directory.Exists(folder)) Directory.Delete(folder, true);
+    }
+}

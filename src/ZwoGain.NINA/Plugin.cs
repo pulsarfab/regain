@@ -41,14 +41,12 @@ public sealed class CameraProvider : IEquipmentProvider<ICamera>
     }
     internal static readonly string DirectoryPath = Path.GetDirectoryName(typeof(CameraProvider).Assembly.Location)!;
     internal static HostClient NewHost() => new(Path.Combine(DirectoryPath, "zwogain-host.exe"), Path.Combine(DirectoryPath, "ASICamera2.dll"), log: message => Logger.Debug("ZwoGain SDK: " + message));
-    public IList<ICamera> GetEquipment()
+    internal static async Task<List<CameraDescriptor>> DiscoverAsync(CancellationToken token)
     {
-        try
-        {
-            using var host = NewHost();
-            var reply = host.CallAsync("list", null, TimeSpan.FromSeconds(15), CancellationToken.None).GetAwaiter().GetResult();
-            return reply.Result.EnumerateArray().Select(CameraDescriptor.Parse).Select(c => (ICamera)new ResilientCamera(c, images)).ToList();
-        }
-        catch (Exception e) { Logger.Error(e); return new List<ICamera>(); }
+        using var host = NewHost();
+        var reply = await host.CallAsync("list", null, TimeSpan.FromSeconds(15), token).ConfigureAwait(false);
+        return reply.Result.EnumerateArray().Select(CameraDescriptor.Parse).ToList();
     }
+    // Always available so setup also works before USB attachment.
+    public IList<ICamera> GetEquipment() => [new ResilientCamera(images, Settings.Cameras)];
 }
