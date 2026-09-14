@@ -49,13 +49,17 @@ The option is persisted with the selected camera; existing settings default to
 the SDK. Turn the option off and reconnect to return to the SDK. Recovery stays
 on the selected backend and never silently switches implementations.
 
-The direct backend currently supports the observed USB3 **ASI676MC** only:
+The NINA direct backend currently supports the observed USB3 **ASI676MC** only:
 RAW16, bin 1, 64 × 64 through 3552 × 3552, even ROI origins, exposures from
 32 µs through 30 seconds, gain and offset. USB limit is fixed at 40. It uses the
 installed Windows driver without loading `ASICamera2.dll`, reads the camera's
 hardware serial and factory defect map, and applies verified defect correction.
 Temperature telemetry and other unimplemented controls are not advertised.
-The ASI2600MM Duo, its guide sensor, and 2600/6200 P25 models require the SDK.
+Inside NINA, the ASI2600MM Duo, its guide sensor, and 2600/6200 P25 models still
+use the SDK. Separate research CLI paths now capture RAW16 from both attached
+Duo sensors without the SDK: main bins 1–4 with retained-frame replay, and guide
+bins 1/2 with startup stream resynchronization. See [Duo capture findings](docs/duo-capture.md)
+for hardware evidence, commands and remaining limits.
 
 Direct read failures first attempt a complete retained-frame read again, with
 **SDK-less retained-frame read retries** configurable from 0 to 5 (default 2).
@@ -160,8 +164,9 @@ to an independent Rust transport. The experimental `zwogain-direct` executable
 now performs complete SDK-free ASI676MC captures with configurable ROI, exposure,
 gain and offset, binary RAW16 delivery, and retained-frame readout retries.
 Full-frame and interrupted-read replay have been tested without another exposure.
-It remains a research backend: sensor initialization is model-specific and SDK
-defect correction is not yet implemented. See [SDK-free capture](docs/sdk-free-capture.md)
+It remains experimental: sensor initialization is model-specific. Independent
+factory defect correction matches SDK pixels for ASI676MC and both Duo sensors;
+the guide also requires unpacking and low-gain dithering. See [SDK-free capture](docs/sdk-free-capture.md)
 for commands, evidence, P25 transport findings and remaining limits.
 Licensed under Apache-2.0; bundled vendor
 material retains its own license, described in [third-party notices](THIRD_PARTY_NOTICES.md).
