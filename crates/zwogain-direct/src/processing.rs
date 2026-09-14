@@ -1,4 +1,4 @@
-//! ASI676MC RAW16/bin-1 factory correction, independently derived from SDK 1.41.
+//! ASI676MC and ASI2600MM Duo RAW16 factory correction, derived from SDK 1.41.
 //! Calibration and image bytes stay in memory. Unsupported maps fail closed.
 use anyhow::{Result, ensure};
 use sha2::{Digest, Sha256};
@@ -23,22 +23,44 @@ pub struct Defects {
     mask: Vec<bool>,
     width: usize,
     height: usize,
+    step: usize,
+    depth_mask: u16,
 }
 
 impl Defects {
     pub fn decode(data: &[u8], width: usize, height: usize, x: usize, y: usize) -> Result<Self> {
+        Self::decode_profile(data, (width, height, x, y), (SENSOR, SENSOR, 2, 12))
+    }
+
+    pub fn decode_duo(
+        data: &[u8],
+        width: usize,
+        height: usize,
+        x: usize,
+        y: usize,
+    ) -> Result<Self> {
+        Self::decode_profile(data, (width, height, x, y), (6248, 4176, 1, 16))
+    }
+
+    fn decode_profile(
+        data: &[u8],
+        roi: (usize, usize, usize, usize),
+        profile: (usize, usize, usize, u8),
+    ) -> Result<Self> {
+        let (width, height, x, y) = roi;
+        let (sensor_width, sensor_height, step, depth) = profile;
         ensure!(
             width >= 8
                 && height >= 4
-                && width <= SENSOR
-                && height <= SENSOR
-                && x <= SENSOR - width
-                && y <= SENSOR - height,
+                && width <= sensor_width
+                && height <= sensor_height
+                && x <= sensor_width - width
+                && y <= sensor_height - height,
             "invalid correction ROI"
         );
         let length = declared_length(data)?;
         ensure!(data.len() >= length, "truncated ASID calibration");
-        let mut packed = vec![0_u8; SENSOR * SENSOR / 8];
+        let mut packed = vec![0_u8; sensor_width * sensor_height / 8];
         let mut base = 0_usize;
         for pair in data[8..length].as_chunks::<2>().0 {
             if pair == &[0, 0] {
@@ -57,7 +79,7 @@ impl Defects {
         let mut indices = Vec::new();
         for row in 0..height {
             for column in 0..width {
-                let sensor = (y + row) * SENSOR + x + column;
+                let sensor = (y + row) * sensor_width + x + column;
                 if packed[sensor / 8] & (1 << (sensor % 8)) != 0 {
                     let index = row * width + column;
                     mask[index] = true;
@@ -76,6 +98,8 @@ impl Defects {
             mask,
             width,
             height,
+            step,
+            depth_mask: u16::MAX << (16 - depth),
         })
     }
 
@@ -93,34 +117,35 @@ impl Defects {
             "correction frame length mismatch"
         );
         let pixel = |data: &[u8], i: usize| u16::from_le_bytes([data[i * 2], data[i * 2 + 1]]);
+        let step = self.step;
         for (position, &index) in self.indices.iter().enumerate() {
             let x = index % self.width;
             let y = index / self.width;
-            let value = if x < 2 || y < 2 {
-                let right = (index + 2).min(self.mask.len() - 1);
+            let value = if x < step || y < step {
+                let right = (index + step).min(self.mask.len() - 1);
                 let source = if self.indices.get(position + 1) != Some(&right) {
                     right
-                } else if index >= 2 * self.width {
-                    index - 2 * self.width
+                } else if index >= step * self.width {
+                    index - step * self.width
                 } else {
-                    let below = index + 2 * self.width;
+                    let below = index + step * self.width;
                     if self.indices[position + 1..].binary_search(&below).is_ok() {
-                        (below + 2).min(self.mask.len() - 1)
+                        (below + step).min(self.mask.len() - 1)
                     } else {
                         below
                     }
                 };
                 pixel(data, source)
-            } else if x >= self.width - 2 || y >= self.height - 2 {
-                pixel(data, index - 2)
+            } else if x >= self.width - step || y >= self.height - step {
+                pixel(data, index - step)
             } else {
                 let mut sum = 0_u32;
                 let mut count = 0;
                 for neighbor in [
-                    index - 2 * self.width,
-                    index - 2,
-                    index + 2,
-                    index + 2 * self.width,
+                    index - step * self.width,
+                    index - step,
+                    index + step,
+                    index + step * self.width,
                 ] {
                     if !self.mask[neighbor] || neighbor <= index {
                         sum += u32::from(pixel(data, neighbor));
@@ -131,7 +156,7 @@ impl Defects {
                     .checked_div(count)
                     .map(|v| v as u16)
                     .unwrap_or_else(|| pixel(data, index - 1));
-                value & 0xfff0
+                value & self.depth_mask
             };
             data[index * 2..index * 2 + 2].copy_from_slice(&value.to_le_bytes());
         }
@@ -167,10 +192,25 @@ pub fn process_stream() -> Result<()> {
     ensure!(length <= 0x30000, "calibration too large");
     let mut calibration = vec![0; length];
     input.read_exact(&mut calibration)?;
-    let defects = Defects::decode(&calibration, width, height, x, y)?;
+    let duo = match request["model"].as_str() {
+        None | Some("asi676mc") => false,
+        Some("asi2600mm-duo") => true,
+        _ => anyhow::bail!("unsupported processing model"),
+    };
+    let defects = if duo {
+        Defects::decode_duo(&calibration, width, height, x, y)?
+    } else {
+        Defects::decode(&calibration, width, height, x, y)?
+    };
     let mut data = vec![0; width * height * 2];
     input.read_exact(&mut data)?;
-    crate::protocol::replace_envelope(&mut data, width)?;
+    if duo {
+        let last = data.len() - 4;
+        data.copy_within(width * 2..width * 2 + 4, 0);
+        data.copy_within(last - width * 2..last - width * 2 + 4, last);
+    } else {
+        crate::protocol::replace_envelope(&mut data, width)?;
+    }
     defects.correct(&mut data)?;
     let metadata = serde_json::to_vec(&serde_json::json!({
         "defectCount":defects.indices.len(),"defectIndexSha256":defects.index_hash(),"bytes":data.len()
@@ -201,6 +241,18 @@ mod tests {
         assert!(declared_length(b"ASID\0\0\0\x09").is_err());
     }
     #[test]
+    fn duo_monochrome_correction_preserves_sixteen_bit_precision() {
+        let blob = [b'A', b'S', b'I', b'D', 0, 0, 0, 10, 0, 2];
+        let defects = Defects::decode_duo(&blob, 8, 4, 0, 0).unwrap();
+        assert_eq!(defects.indices, [1]);
+        let mut data: Vec<u8> = (0..32_u16)
+            .flat_map(|v| (v * 19 + 3).to_le_bytes())
+            .collect();
+        defects.correct(&mut data).unwrap();
+        assert_eq!(u16::from_le_bytes(data[2..4].try_into().unwrap()), 41);
+        assert!(Defects::decode_duo(&blob, 6248, 4176, 16, 0).is_err());
+    }
+    #[test]
     fn correction_uses_same_color_neighbors_in_order() {
         let indices = vec![27, 29];
         let mut mask = vec![false; 64];
@@ -212,6 +264,8 @@ mod tests {
             mask,
             width: 8,
             height: 8,
+            step: 2,
+            depth_mask: 0xfff0,
         };
         let mut data: Vec<u8> = (0..64_u16).flat_map(|v| (v * 16).to_le_bytes()).collect();
         data[54..56].copy_from_slice(&65535_u16.to_le_bytes());

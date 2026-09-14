@@ -133,6 +133,56 @@ Process.attachModuleObserver({
         if (module.name.toLowerCase() !== 'asicamera2.dll') return;
         emit('sdk-module', {name: module.name});
         if (globalThis.TRACE_PROCESSING) {
+            // Duo call sites verified against the same hash-pinned SDK as the
+            // ASI676 hooks. Keep raw data in the bounded in-memory comparator.
+            for (const [entry, retrieved, before, after, model, buffer, length] of [
+                [0x14f130, 0x14f1ed, 0x14f2fa, 0x14f302, 'asi2600mm-duo', 'rsi', 'r13'],
+                [0xd2590, 0xd261c, 0xd2767, 0xd276f, 'asi220mm-mini', 'rbp', 'r12']
+            ]) {
+                const calls = new Map();
+                Interceptor.attach(module.base.add(entry), {
+                    onEnter(args) { calls.set(this.threadId, {camera:args[0], requested:args[2].toUInt32()}); },
+                    onLeave() { calls.delete(this.threadId); }
+                });
+                for (const [rva, stage] of [[retrieved, 'retrieved'], [before, 'before-correction'], [after, 'after-correction']]) {
+                    Interceptor.attach(module.base.add(rva), {
+                        onEnter() {
+                            const call = calls.get(this.threadId);
+                            if (!call) return;
+                            if (stage === 'retrieved') {
+                                if ((this.context.rax.toUInt32() & 255) === 0) return;
+                                call.buffer = this.context[buffer];
+                                call.length = this.context[length].toUInt32();
+                            }
+                            if (!call.buffer || !(call.length > 0 && call.length <= 128 * 1024 * 1024)) return;
+                            if (stage === 'before-correction') {
+                                const camera = call.camera;
+                                const fields = {model, enabled:camera.add(0x109).readU8(),step:camera.add(0x2d4).readU8()+1,
+                                    depth:camera.add(0x2b0).readU8(),width:camera.add(0x540).readU32(),height:camera.add(0x544).readU32(),
+                                    hpcCount:camera.add(0x440).readU32(),deadCount:camera.add(0x55c).readU32(),
+                                    rowMap:!camera.add(0x500).readPointer().isNull(),columnMap:!camera.add(0x508).readPointer().isNull(),
+                                    wireBytes:call.length, requestedBytes:call.requested, bin:camera.add(0x90).readU32(),
+                                    hardwareBin:camera.add(0xa7).readU8()};
+                                emit('correction-layout', fields);
+                                for (const [name,offset,count] of [['hpc',0x448,fields.hpcCount],['dead',0x560,fields.deadCount]]) {
+                                    const table = camera.add(offset).readPointer();
+                                    if (count > 0 && count <= 100000 && !table.isNull())
+                                        send({kind:'calibration-buffer',name},table.readByteArray(count*4));
+                                }
+                            }
+                            send({kind:'processing-buffer',stage},call.buffer.readByteArray(call.length));
+                        }
+                    });
+                }
+            }
+            Interceptor.attach(module.base.add(0x14e5ee), {
+                onEnter() {
+                    const camera = this.context.rdi;
+                    emit('duo-exposure-timing', {height:camera.add(0x80).readU32(), bin:camera.add(0x90).readU32(),
+                        clock:camera.add(0xb8).readU32(), hmax:camera.add(0xc0).readU16(),
+                        minimumUs:camera.add(0xc4).readU32(), blanking:module.base.add(0x284574).readU32()});
+                }
+            });
             Interceptor.attach(module.base.add(0x58284), {
                 onEnter() {
                     const camera = this.context.rdi;

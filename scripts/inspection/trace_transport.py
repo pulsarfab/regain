@@ -205,7 +205,10 @@ def main():
                             if blob[:4] != b'ASID':
                                 raise RuntimeError('missing ASID calibration trace')
                             blob = blob[:int.from_bytes(blob[4:8], 'big')]
-                            header = json.dumps({'width': args.width, 'height': args.height,
+                            model = {'ZWO ASI2600MM Duo': 'asi2600mm-duo', 'ZWO ASI676MC': 'asi676mc'}.get(camera['name'])
+                            if model is None:
+                                raise RuntimeError('independent correction is not implemented for this model')
+                            header = json.dumps({'model': model, 'width': args.width, 'height': args.height,
                                                  'x': args.x, 'y': args.y, 'calibrationBytes': len(blob)}).encode()
                             request = len(header).to_bytes(4, 'little') + header + blob + processing['retrieved']
                             result = subprocess.run([str(ROOT / 'target/debug/zwogain-direct.exe'), '--process-frame'],

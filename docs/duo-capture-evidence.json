@@ -1,0 +1,56 @@
+{
+  "sdkSha256": "0c8778c3cce2012961b079e3c7d0d8348a8b3823939335d9e98148cb5d5dc34a",
+  "mainCorrection": [
+    {
+      "traceSha256": "369d5798a366450ee2a2823e0bbe40a3a7e93a708209355098595b4374ff8b24",
+      "parameters": {
+        "width": 512,
+        "height": 256,
+        "x": 0,
+        "y": 0,
+        "seconds": 0.1,
+        "gain": 100,
+        "offset": 50,
+        "bin": 1
+      },
+      "bytes": 262144,
+      "defectCount": 147,
+      "factoryMapMatchesSdk": true,
+      "allBytesIdentical": true
+    },
+    {
+      "traceSha256": "27bda52d8609a5ec1d265ec8bfd1b5c694608a08180468e45a95498842c6a32c",
+      "parameters": {
+        "width": 6248,
+        "height": 4176,
+        "x": 0,
+        "y": 0,
+        "seconds": 0.1,
+        "gain": 100,
+        "offset": 50,
+        "bin": 1
+      },
+      "bytes": 52183296,
+      "defectCount": 26091,
+      "factoryMapMatchesSdk": true,
+      "allBytesIdentical": true
+    },
+    {
+      "traceSha256": "4b0ce1f2f5f1bd2dd54e212d44dd8e2bf271d15a0fb59a942c7570d3e7bfaf84",
+      "parameters": {
+        "width": 512,
+        "height": 256,
+        "x": 16,
+        "y": 32,
+        "seconds": 0.032,
+        "gain": 0,
+        "offset": 0,
+        "bin": 1
+      },
+      "bytes": 262144,
+      "defectCount": 156,
+      "factoryMapMatchesSdk": true,
+      "allBytesIdentical": true
+    }
+  ]
+}
