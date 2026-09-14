@@ -277,24 +277,60 @@ fn capture_native(
         camera.vendor(0xbd, 0, u16::from(flags & !0x10), 0)?;
         camera.reset_pipe()?;
         if s.microseconds >= 1_000_000 {
-            std::thread::sleep(Duration::from_millis(30));
+            // SDK 1.41 worker 14c30c..14c636: synchronize the FPGA, then
+            // gate sensor/FPGA clocks during the long integration.
+            let mut synchronized = false;
+            for _ in 0..5 {
+                let f = camera.vendor(0xbc, 0, 0, 1)?[0];
+                camera.vendor(0xbd, 0, u16::from(f | 0x10), 0)?;
+                std::thread::sleep(Duration::from_millis(5));
+                camera.vendor(0xbd, 0, u16::from(f & !0x10), 0)?;
+                std::thread::sleep(Duration::from_millis(20));
+                if camera.vendor(0xbc, 0x23, 0, 1)?[0] & 0x10 != 0 {
+                    synchronized = true;
+                    break;
+                }
+            }
+            ensure!(synchronized, "Duo long exposure synchronization failed");
             let f = camera.vendor(0xbc, 0xb, 0, 1)?[0];
             camera.vendor(0xbd, 0xb, u16::from(f | 1), 0)?;
-            let trigger = Instant::now();
-            std::thread::sleep(Duration::from_micros(u64::from(s.microseconds - 200_000)));
-            let status = camera.vendor(0xbc, 0x19, 0, 1)?[0];
-            camera.vendor(0xbd, 0x19, u16::from(status & !1), 0)?;
-            std::thread::sleep(
-                Duration::from_micros(u64::from(s.microseconds)).saturating_sub(trigger.elapsed()),
-            );
+            let exposure_ms = s.microseconds / 1000;
+            if exposure_ms > 1000 {
+                let trigger = Instant::now();
+                let mut iteration = 0;
+                loop {
+                    match iteration {
+                        6 => {
+                            camera.vendor(0xb6, 0x1ee, 5, 0)?;
+                        }
+                        8 => {
+                            let f = camera.vendor(0xbc, 0x19, 0, 1)?[0];
+                            camera.vendor(0xbd, 0x19, u16::from(f | 1), 0)?;
+                        }
+                        10 => {
+                            let f = camera.vendor(0xbc, 0xb, 0, 1)?[0];
+                            camera.vendor(0xbd, 0xb, u16::from(f | 0x10), 0)?;
+                        }
+                        _ => {}
+                    }
+                    let elapsed = trigger.elapsed().as_millis();
+                    std::thread::sleep(Duration::from_millis(100));
+                    iteration += 1;
+                    if elapsed >= u128::from(exposure_ms - 400) {
+                        break;
+                    }
+                }
+            } else {
+                std::thread::sleep(Duration::from_millis(u64::from(exposure_ms - 205)));
+            }
+            let f = camera.vendor(0xbc, 0x19, 0, 1)?[0];
+            camera.vendor(0xbd, 0x19, u16::from(f & !1), 0)?;
+            std::thread::sleep(Duration::from_millis(100));
+            camera.vendor(0xb6, 0x1ee, 1, 0)?;
+            std::thread::sleep(Duration::from_millis(100));
             let f = camera.vendor(0xbc, 0xb, 0, 1)?[0];
-            writes(
-                camera,
-                &[
-                    (0xbd, 0xb, u16::from(f | 1)),
-                    (0xbd, 0xb, u16::from(f & !1)),
-                ],
-            )?;
+            camera.vendor(0xbd, 0xb, u16::from(f & !0x10), 0)?;
+            camera.vendor(0xbd, 0xb, u16::from(f & !0x11), 0)?;
         }
         let deadline = Duration::from_micros(u64::from(s.microseconds)) + Duration::from_secs(10);
         loop {
@@ -311,13 +347,15 @@ fn capture_native(
         // Sensor standby, deliberately without AA (which clears retained DDR).
         // On this unit 23=15 can precede a safely freezable frame: immediate
         // standby repeatedly stalled 64x64 replay. The empirical 100ms guard
-        // fixes that case. A 30s full frame still requires a retained-read retry;
-        // adding a full readout period here did not resolve it.
+        // fixes that case. Long integrations must consume the initial pass
+        // below; an extra settling delay does not substitute for that step.
         std::thread::sleep(Duration::from_millis(100));
         writes(camera, &[(0xb6, 0x1ee, 5), (0xb6, 0, 5)])?;
-        // Start an explicit DDR read after the sensor has stopped. Full-frame
-        // acquisition did not reliably auto-submit data without SDK's queue.
-        begin_retained_read(camera)?;
+        // Short integrations stream; restart from frozen DDR. Long integrations
+        // already schedule one pass: triggering replay first can cancel it.
+        if s.microseconds < 1_000_000 {
+            begin_retained_read(camera)?;
+        }
         let mut prefix = Vec::new();
         let mut read_errors = Vec::new();
         let mut data = loop {

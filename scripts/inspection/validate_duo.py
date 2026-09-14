@@ -12,8 +12,8 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def capture(options):
-    command = [str(ROOT / 'target/debug/zwogain-direct.exe'), '--capture-duo', '--stream']
+def capture(options, guide=False):
+    command = [str(ROOT / 'target/debug/zwogain-direct.exe'), '--capture-guide' if guide else '--capture-duo', '--stream']
     for key, value in options.items():
         command += ['--' + key] + ([] if value is True else [str(value)])
     proc = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -40,7 +40,7 @@ def capture(options):
             info = metadata['capture']
             if metadata['sdkLoaded'] or info['sdkLoaded']:
                 raise RuntimeError('SDK loaded in direct worker')
-            width, height = options.get('width', 6248), options.get('height', 4176)
+            width, height = options.get('width', 1920 if guide else 6248), options.get('height', 1080 if guide else 4176)
             expected = width * height * 2
             if info['bytes'] != expected or expected > 128 * 1024 * 1024:
                 raise RuntimeError('wrong output size')

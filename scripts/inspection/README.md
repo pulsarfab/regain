@@ -180,3 +180,25 @@ dotnet run --project src/ZwoGain.Diagnostics -- --direct --simulate --capture --
 Diagnostic logs contain camera serials. Keep them local under `artifacts/` and
 publish only reviewed summaries. The simulator never opens camera hardware and
 does not provide evidence for physical sensor behavior.
+
+## Duo main and guide RAW16
+
+These SDK-free **research CLI** paths are separate from NINA's experimental
+ASI676 backend. Disconnect the selected sensor in other apps first.
+
+```powershell
+cargo build --locked -p zwogain-direct
+target/debug/zwogain-direct.exe --capture-duo --gain 100 --offset 50 --replay
+target/debug/zwogain-direct.exe --capture-duo --width 2080 --height 1392 --bin 3 --gain 350 --offset 120
+target/debug/zwogain-direct.exe --capture-guide --gain 100 --offset 200
+python scripts/inspection/validate_duo.py --output artifacts/inspection/NEW-main.jsonl --long
+python scripts/inspection/validate_guide.py --output artifacts/inspection/NEW-guide.jsonl
+```
+
+The validators require NumPy and discard pixel buffers after digest/statistical
+checks. Main supports bins 1–4 and retained-read replay; guide supports bins 1/2
+and bounded startup stream resynchronization, with no proven retained replay.
+Both apply independent ASID factory correction. Guide zero-line integrations
+are rejected before hardware access. `--stream` emits framed binary metadata
+and pixels; consume it with a binary reader, not a PowerShell text pipeline.
+See [Duo findings and limitations](../../docs/duo-capture.md).

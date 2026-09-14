@@ -133,6 +133,13 @@ Process.attachModuleObserver({
         if (module.name.toLowerCase() !== 'asicamera2.dll') return;
         emit('sdk-module', {name: module.name});
         if (globalThis.TRACE_PROCESSING) {
+            Interceptor.attach(module.base.add(0x10bbf0), {
+                onEnter(args) {
+                    if (args[1].toUInt32() === 0x1ee)
+                        emit('duo-sensor-gate', {value:args[2].toUInt32() & 255,
+                            stack:Thread.backtrace(this.context, Backtracer.ACCURATE).map(location).slice(0,8)});
+                }
+            });
             Interceptor.attach(module.base.add(0xd26a3), {
                 onEnter() { emit('guide-dither-seed', {seed:this.context.rcx.toUInt32()}); }
             });

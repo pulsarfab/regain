@@ -44,6 +44,12 @@ the observed setting 40: HMAX 779, clock 20 MHz, 48 blanking lines.
 Sensor gain switches conversion mode at gain 100 and adds digital stages above
 460; offset is multiplied by ten. Timing uses FPGA frame length and sensor
 `18/19` shutter length; exposures at least one second use host timing.
+The long worker at `14c30c..14c636` synchronizes FPGA `23` bit `10` by pulsing
+the stop gate, then raises `0b` bit 0. Above one second it pauses sensor `1ee`
+after six 100 ms iterations, raises `19` bit 0 at iteration eight, and raises
+`0b` bit `10` at iteration ten. Completion clears `19` bit 0, waits 100 ms,
+restores sensor `1ee=1`, waits 100 ms, and clears the two `0b` bits. This
+sequence is now implemented; the initial simpler host pulse was incomplete.
 
 The acquisition matrix covers 64×64 through 6248×4176, moved ROI, 32 µs,
 999,999 µs, 1 s, 2 s and 30 s, gains −25 through 700, offsets 0 through 240,
@@ -59,7 +65,13 @@ empirical 100 ms guard resolved the tested 64×64 case. Sensor standby uses
 `1ee=5`, `00=5`, **without AA or the FPGA full-stop bit**, which clear retained
 state on this unit. The exact firmware completion edge is not yet understood.
 
-Read/retry drains and resets endpoint 81, writes FPGA `18=0`, waits 100 ms,
+Short integrations stream: the driver explicitly reads frozen DDR after
+standby. Long integrations already schedule an initial USB pass, which must
+be consumed before asking for replay. Prematurely issuing `18=1` caused a
+repeatable first-read timeout. Selecting the correct initial read path removed
+that timeout at 1, 2, 5 and 30 seconds, with identical retained pixel replay.
+
+Retained read/retry drains and resets endpoint 81, writes FPGA `18=0`, waits 100 ms,
 checks idle and retention, then writes `18=1`. RAW16 envelopes contain `7e5a`
 and `f03c` boundary bytes and matching 16-bit counters. These counters can be
 zero and advance between retained reads; they are not a global freshness ID.
@@ -68,9 +80,9 @@ Replay comparison excludes the two envelope dwords, whose counters change.
 Full-frame replay matched every pixel. After deliberately abandoning a read
 at 12 MiB, the next read matched that prefix and a subsequent complete replay.
 This retries transfer of retained pixels without another exposure command.
-A 30-second full frame needed one automatic retained-read retry after its first
-read timed out; extending the guard by a physical readout period did not fix
-that behavior. The worker reports it explicitly. Physical USB removal,
+The final matrix contains 18 frames in 13 cases; normal captures used zero
+read retries. The deliberate interrupted read used one. Earlier failing
+experiments and the old matrix remain in evidence/history. Physical USB removal,
 power loss and persistence across reconnects have not been tested.
 
 ## Guide processing
@@ -92,8 +104,37 @@ and 12-bit precision, followed by software averaging. The guide advertises bins
 
 ## Remaining work
 
-Complete guide acquisition and its distinct USB2 lifecycle, refine main-frame
-completion and long-exposure first-read behavior, verify gain/timing register
-formulas against held-out traces, and add main cooling control/restoration.
+Refine the precise main-frame completion edge, expand held-out gain/timing
+register comparisons, and add main cooling control/restoration.
 RAW8/video, flips and hardware binning need separate validation. P25 revisions
 and physical cold-power/USB-fault behavior require separate hardware evidence.
+
+## SDK-free guide acquisition
+
+`zwogain-direct --capture-guide` implements the guide's own volatile sensor
+initialization, calibration reads, physical ROI, RAW16 format, gain, offset,
+timing, streaming transfer, unpacking/dither, factory correction and bin 1/2.
+Its reviewed 265 sensor writes match both trace transactions and the SDK's
+initialization array at `28d360`. Reproduce them with
+`scripts/inspection/extract_asi220_tables.py`.
+
+The guide selects RAW16 with vendor `AC`, and vendor `B5` carries
+`ceil(wireBytes/49152)`, split across the two setup words. The four crop limits
+use sensor `3200..3207`, output dimensions use `3208..320b`, line timing uses
+`320c/320d`, frame length uses `320e/320f`, and integration uses `3e00..3e02`.
+`AF`, `A9`, and sensor `0100=1` start capture; sensor `0100=0` and `AA` stop it.
+USB2 packets and `11aa00bb` / `bb00aa11` frame boundaries differ from the main
+sensor. No main-sensor DDR commands are sent to the guide.
+
+The worker accepts only complete, correctly bounded frames. A startup transfer
+can be partial or have old geometry, so it discards up to two unsuccessful
+passes and resynchronizes to the next streaming frame. **This is a new sensor
+frame, not retained-frame replay.** There is no proof of replay on the guide.
+
+The final guide matrix contains 12 valid frames: full resolution, moved ROI,
+bin 2, gains 0/100/349/350/400/600, offsets 200/400/1500, and exposures from
+100 ms through 10 seconds. Digests differ across repeated captures and match
+the binary IPC payloads. A 64×64, 32 µs capture also failed in the SDK;
+zero-line integrations are explicitly rejected before hardware access until
+their behavior is understood. The guide's advertised exposure limit is 10 s.
+See `scripts/inspection/validate_guide.py` and the sanitized evidence JSON.

@@ -1,5 +1,9 @@
 //! Isolated experimental direct backend; SDK remains the plugin's default.
 #[cfg(windows)]
+mod asi220;
+#[cfg(windows)]
+mod asi220_tables;
+#[cfg(windows)]
 mod asi2600;
 #[cfg(windows)]
 mod asi2600_tables;
@@ -27,13 +31,19 @@ fn main() -> Result<()> {
         return processing::process_stream();
     }
     let duo = args.first().is_some_and(|a| a == "--capture-duo");
-    let capture = duo || args.first().is_some_and(|a| a == "--capture");
+    let guide = args.first().is_some_and(|a| a == "--capture-guide");
+    let capture = duo || guide || args.first().is_some_and(|a| a == "--capture");
     let mut settings = settings::Settings::default();
     let mut duo_gain = 0_i32;
     let mut duo_bin = 1_u32;
     if duo {
         settings.width = 6248;
         settings.height = 4176;
+    }
+    if guide {
+        settings.width = 1920;
+        settings.height = 1080;
+        settings.offset = 200;
     }
     let mut frames = 1_u32;
     let mut stream = false;
@@ -61,7 +71,7 @@ fn main() -> Result<()> {
                 .ok_or_else(|| anyhow::anyhow!("missing option value"))?
                 .parse()?;
             match option.as_str() {
-                "--bin" if duo => duo_bin = value,
+                "--bin" if duo || guide => duo_bin = value,
                 "--width" => settings.width = value,
                 "--height" => settings.height = value,
                 "--x" => settings.x = value,
@@ -81,6 +91,9 @@ fn main() -> Result<()> {
         }
         if duo {
             asi2600::raw_settings(&settings, duo_gain, duo_bin)?;
+        } else if guide {
+            asi220::raw_settings(&settings, duo_bin)?;
+            ensure!(!replay, "guide retained replay is not established");
         } else {
             settings.validate()?;
         }
@@ -92,7 +105,7 @@ fn main() -> Result<()> {
             || args == ["--probe-all"]
             || args == ["--probe", "--cancel-read"]
             || capture,
-        "Usage: zwogain-direct [--probe [--cancel-read] | --capture | --capture-duo] [--width N --height N --x N --y N --microseconds N --gain N --offset N --frames N --read-retries N --stream --replay --replay-prefix-bytes N --interrupt-read-after-bytes N]; Duo also accepts --bin N; disconnect other camera apps first"
+        "Usage: zwogain-direct [--probe [--cancel-read] | --capture | --capture-duo | --capture-guide] [--width N --height N --x N --y N --microseconds N --gain N --offset N --frames N --read-retries N --stream --replay --replay-prefix-bytes N --interrupt-read-after-bytes N]; Duo and guide also accept --bin N; disconnect other camera apps first"
     );
     // Last resort for a kernel request that refuses to finish cancellation. The
     // worker must exit rather than free a buffer still owned by the USB driver.
@@ -131,6 +144,8 @@ fn main() -> Result<()> {
                 .to_ascii_lowercase()
                 .contains(if duo {
                     "vid_03c3&pid_2601"
+                } else if guide {
+                    "vid_03c3&pid_2209"
                 } else {
                     "vid_03c3&pid_676d"
                 })
@@ -138,7 +153,7 @@ fn main() -> Result<()> {
     }
     ensure!(
         paths.len() == 1,
-        "operation requires exactly one matching camera interface (--capture selects ASI676MC; --capture-duo selects Duo main)"
+        "operation requires exactly one matching camera interface (--capture selects ASI676MC; --capture-duo selects Duo main; --capture-guide selects ASI220MM Mini)"
     );
     let camera = transport::Camera::open(&paths[0])?;
     let mut result = camera.probe()?;
@@ -148,6 +163,8 @@ fn main() -> Result<()> {
         for frame in 0..frames {
             let (metadata, data) = if duo {
                 asi2600::capture(&camera, &result, &settings, duo_gain, duo_bin, replay)?
+            } else if guide {
+                asi220::capture(&camera, &result, &settings, duo_bin)?
             } else {
                 asi676::capture(&camera, &result, &settings, replay)?
             };

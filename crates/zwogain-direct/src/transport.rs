@@ -155,6 +155,14 @@ impl Camera {
     }
 
     pub fn read_frame(&self, length: usize) -> Result<Vec<u8>> {
+        self.read_frame_wait(length, 5000)
+    }
+
+    pub fn read_frame_wait(&self, length: usize, first_timeout_ms: u32) -> Result<Vec<u8>> {
+        ensure!(
+            (5000..=15000).contains(&first_timeout_ms),
+            "invalid frame wait"
+        );
         ensure!(
             length > 0 && length <= 128 * 1024 * 1024,
             "invalid research frame size"
@@ -163,7 +171,8 @@ impl Camera {
         for (number, chunk) in data.chunks_mut(1024 * 1024).enumerate() {
             let mut header = [0; protocol::HEADER];
             header[13] = 0x81;
-            let done = self.request(protocol::BULK, &mut header, Some(chunk), 5000)?;
+            let timeout = if number == 0 { first_timeout_ms } else { 5000 };
+            let done = self.request(protocol::BULK, &mut header, Some(chunk), timeout)?;
             let (nt, usb) = protocol::status(&header)?;
             ensure!(
                 done.error == 0
