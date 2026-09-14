@@ -56,10 +56,10 @@ public sealed class ResilientCamera : BaseINPC, ICamera
         RaiseAllPropertiesChanged();
     }
     public string Id => "ZwoGain";
-    public string Name => descriptor.Name;
+    public string Name => Settings.CameraLabel(descriptor.Name);
     public string DisplayName => "ZWOgain Retryable Camera";
     public string Category => "ZWOgain";
-    public string Description => "ZWO RAW16 camera with automatic recovery; SDK by default, optional experimental SDK-less ASI676MC and Duo main/guide";
+    public string Description => "ZWO camera with automatic capture recovery";
     public string DriverInfo => $"ZWOgain {DriverVersion} / {session?.SdkVersion} [{session?.Backend}{(session?.UsingSdkFallback == true ? " fallback" : "")}]; {session?.Phase}";
     public string DriverVersion => typeof(ResilientCamera).Assembly.GetName().Version!.ToString();
     public bool Connected
@@ -96,7 +96,7 @@ public sealed class ResilientCamera : BaseINPC, ICamera
         }
         bool direct = selected?.UseDirectDriver == true;
         if (direct && descriptor.Name is not ("ZWO ASI676MC" or "ZWO ASI2600MM Duo" or "ZWO ASI220MM Mini"))
-            throw new NotSupportedException("Experimental SDK-less capture supports ASI676MC and Duo main/guide. Choose the SDK backend for this camera.");
+            throw new NotSupportedException("Direct capture is unavailable for this camera. Turn off Direct USB driver to use the SDK.");
         var factory = useConfiguredBackend && direct ? CameraProvider.NewDirectHost : hostFactory;
         var candidate = new CameraSession(descriptor, factory, recoveryOptions ?? Settings.Load(), selected?.Serial, direct && selected?.AllowSdkFallback == true ? hostFactory : null);
         candidate.Diagnostic += text => Logger.Info($"ZWOgain {Name}: {text}");

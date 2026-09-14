@@ -53,10 +53,10 @@ limits remain in force throughout the wait.
 ## Experimental SDK-less option
 
 The supervised **ZWO SDK remains the default and primary backend**. In the
-camera setup dialog's **Camera** tab, enable **Use experimental SDK-less driver**
+camera setup dialog's **Camera** tab, enable **Direct USB driver (experimental)**
 to try the separate Rust driver process. Save and reconnect to apply the choice.
-The option and **Allow SDK fallback** are persisted with the selected camera.
-The picker labels the ASI2600MM Pro Duo main camera and ASI220MM Mini guide
+The option and **Fall back to SDK** are persisted with the selected camera.
+The picker labels the ASI2600MM Pro and ASI220MM Mini guide
 separately. **Recovery** contains retry limits and reconnect delay, **Cooling**
 contains recovery settling limits, and **Advanced** contains timeouts and frame
 read retries. Save and Cancel stay visible on every tab.

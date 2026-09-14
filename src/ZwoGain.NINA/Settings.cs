@@ -11,10 +11,10 @@ internal static class Settings
     private static readonly string FilePath = Path.Combine(Folder, "recovery.json");
     internal static readonly CameraSelectionStore Cameras = new(Path.Combine(Folder, "camera.json"));
     private sealed record CameraChoice(CameraDescriptor Camera, string Label);
-    private static string CameraLabel(string name) => name switch
+    internal static string CameraLabel(string name) => name switch
     {
-        "ZWO ASI2600MM Duo" => "ASI2600MM Pro Duo - main camera",
-        "ZWO ASI220MM Mini" => "ASI220MM Mini - guide camera (including Duo guide)",
+        "ZWO ASI2600MM Duo" or "ZWO ASI2600MM Pro" => "ASI2600MM Pro",
+        "ZWO ASI220MM Mini" => "ASI220MM Mini (guide)",
         _ => name
     };
 
@@ -33,7 +33,7 @@ internal static class Settings
             return;
         }
         var root = new DockPanel { Margin = new Thickness(16) };
-        var heading = new TextBlock { Text = "Choose a camera and tune automatic recovery. Changes apply on the next connection.",
+        var heading = new TextBlock { Text = "Reconnect to apply changes.",
             TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 12) };
         DockPanel.SetDock(heading, Dock.Top);
         root.Children.Add(heading);
@@ -64,8 +64,9 @@ internal static class Settings
         panel.Children.Add(picker);
         var refresh = new Button { Content = "Refresh cameras", HorizontalAlignment = HorizontalAlignment.Left, Padding = new Thickness(8, 4, 8, 4) };
         panel.Children.Add(refresh);
-        panel.Children.Add(new TextBlock { Text = "Serial number (optional; remembered automatically after connecting)", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 0) });
-        var serial = new TextBox { Text = remembered?.Serial ?? "", Margin = new Thickness(0, 2, 0, 8) };
+        panel.Children.Add(new TextBlock { Text = "Serial number (optional)", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 0) });
+        var serial = new TextBox { Text = remembered?.Serial ?? "", Margin = new Thickness(0, 2, 0, 8),
+            ToolTip = "Saved after connecting. Enter a serial to select between cameras of the same model." };
         panel.Children.Add(serial);
         var cameraStatus = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 12) };
         panel.Children.Add(cameraStatus);
@@ -77,15 +78,15 @@ internal static class Settings
             serial.Text = choice.Camera.Name == remembered?.Camera.Name ? remembered.Serial ?? "" : "";
         };
         // NINA's toggle template replaces CheckBox.Content with ON/OFF text.
-        panel.Children.Add(new TextBlock { Text = "Use experimental SDK-less driver", TextWrapping = TextWrapping.Wrap });
+        panel.Children.Add(new TextBlock { Text = "Direct USB driver (experimental)", TextWrapping = TextWrapping.Wrap });
         var direct = new CheckBox { IsChecked = remembered?.UseDirectDriver == true, HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 2, 0, 8) };
         panel.Children.Add(direct);
-        panel.Children.Add(new TextBlock { Text = "The ZWO SDK is the default. The direct option supports ASI676MC, ASI2600MM Pro Duo main and ASI220MM Mini guide. Other ASI2600MM Pro models use the SDK. See Advanced for direct capture limits.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 12) });
-        panel.Children.Add(new TextBlock { Text = "Allow SDK fallback from the experimental driver", TextWrapping = TextWrapping.Wrap });
+        panel.Children.Add(new TextBlock { Text = "Off: use the ZWO SDK.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 12) });
+        panel.Children.Add(new TextBlock { Text = "Fall back to SDK", TextWrapping = TextWrapping.Wrap });
         var fallback = new CheckBox { IsChecked = remembered?.AllowSdkFallback == true, IsEnabled = direct.IsChecked == true,
             HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 2, 0, 8) };
         panel.Children.Add(fallback);
-        panel.Children.Add(new TextBlock { Text = "Switch to the SDK when needed, keeping the same camera and settings. Failed exposures still obey the Recovery limits. The SDK then stays active until disconnect.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 12) });
+        fallback.ToolTip = "If direct capture fails or is unsupported, use the SDK until disconnect. Retry limits still apply.";
         var entries = new Dictionary<string, TextBox>();
         var current = Load();
         void AddFields(StackPanel body, params (string Property, string Label)[] fields)
@@ -107,26 +108,27 @@ internal static class Settings
                 body.Children.Add(row);
             }
         }
-        var recovery = AddTab("Recovery", "A failed short exposure becomes a longer command: reconnect, restore settings, then try the same exposure again. Exposures above the cutoff report their first failure.");
+        var recovery = AddTab("Recovery", "Reconnect and repeat failed exposures within these limits.");
         AddFields(recovery,
-            (nameof(RecoveryOptions.MaxRetries), "Retries after the initial attempt"),
-            (nameof(RecoveryOptions.MaximumRetryExposureSeconds), "Retry exposures up to (seconds; 0 disables retries)"),
-            (nameof(RecoveryOptions.ReconnectDelaySeconds), "USB reconnect delay (seconds)"));
-        var cooling = AddTab("Cooling", "Recovery restores the cooler target, then waits near the prior temperature. When power telemetry is available, output must also recover to within 10 percentage points below its prior level. This avoids resuming while a cold sensor is beginning to warm. Normal cooling controls are in NINA's Equipment panel.");
+            (nameof(RecoveryOptions.MaxRetries), "Maximum retries"),
+            (nameof(RecoveryOptions.MaximumRetryExposureSeconds), "Exposure limit (s; 0 disables retries)"),
+            (nameof(RecoveryOptions.ReconnectDelaySeconds), "Reconnect delay (s)"));
+        var cooling = AddTab("Cooling", "Restore the setpoint; wait for the previous temperature and cooler output.");
         AddFields(cooling,
-            (nameof(RecoveryOptions.TemperatureToleranceC), "Tolerance around the prior temperature (C)"),
-            (nameof(RecoveryOptions.CoolingStableSamples), "Consecutive readings within tolerance"),
-            (nameof(RecoveryOptions.CoolingSampleSeconds), "Time between readings (seconds)"),
-            (nameof(RecoveryOptions.CoolingTimeoutSeconds), "Maximum wait per recovery (seconds)"));
-        var advanced = AddTab("Advanced", "Direct RAW16: ASI676MC bin 1; ASI2600MM Pro Duo main bins 1-4 with cooling/dew; ASI220MM Mini guide bins 1-2. Verified direct exposures: main/ASI676 up to 30 s, guide up to 10 s. Direct USB bandwidth is fixed at 40.");
+            (nameof(RecoveryOptions.TemperatureToleranceC), "Temperature tolerance (°C)"),
+            (nameof(RecoveryOptions.CoolingStableSamples), "Stable readings"),
+            (nameof(RecoveryOptions.CoolingSampleSeconds), "Sample interval (s)"),
+            (nameof(RecoveryOptions.CoolingTimeoutSeconds), "Recovery timeout (s)"));
+        entries[nameof(RecoveryOptions.TemperatureToleranceC)].ToolTip = "Further cooling toward the setpoint is accepted. Cooler output must reach at least its previous value minus 10 percentage points, if reported.";
+        var advanced = AddTab("Advanced");
         AddFields(advanced,
-            (nameof(RecoveryOptions.CommandTimeoutSeconds), "Camera command timeout (seconds)"),
-            (nameof(RecoveryOptions.DownloadTimeoutSeconds), "Download watchdog (seconds)"),
-            (nameof(RecoveryOptions.ExposureGraceSeconds), "Exposure completion grace (seconds)"),
-            (nameof(RecoveryOptions.ReadyFrameDownloadRetries), "SDK re-download attempts (experimental; default 0)"),
-            (nameof(RecoveryOptions.DirectReadRetries), "Direct frame-read retries (0-5; default 2)"));
-        advanced.Children.Add(new TextBlock { Text = "SDK re-downloads require the SDK to still report a ready frame. Direct guide retries resynchronize to a new streaming frame; they do not replay a retained image. The exposure cutoff also limits transfer retries.", TextWrapping = TextWrapping.Wrap });
-        advanced.Children.Add(new TextBlock { Text = "During a capture, ZWOgain temporarily extends NINA's readiness timeout to cover recovery. It restores the previous value after download, failure, cancellation or disconnect.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 12, 0, 0) });
+            (nameof(RecoveryOptions.CommandTimeoutSeconds), "Command timeout (s)"),
+            (nameof(RecoveryOptions.DownloadTimeoutSeconds), "Download timeout (s)"),
+            (nameof(RecoveryOptions.ExposureGraceSeconds), "Exposure grace period (s)"),
+            (nameof(RecoveryOptions.ReadyFrameDownloadRetries), "SDK re-download retries (experimental)"),
+            (nameof(RecoveryOptions.DirectReadRetries), "Direct read retries (0-5)"));
+        entries[nameof(RecoveryOptions.ReadyFrameDownloadRetries)].ToolTip = "Default: 0. Requires a ready frame in the SDK. The exposure limit applies.";
+        entries[nameof(RecoveryOptions.DirectReadRetries)].ToolTip = "Default: 2. Guide retries read a new streaming frame. The exposure limit applies.";
         var status = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 8) };
         footer.Children.Add(status);
         var actions = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
@@ -137,7 +139,7 @@ internal static class Settings
         footer.Children.Add(actions);
         var window = new Window
         {
-            Title = "ZWOgain Retryable Camera Setup",
+            Title = "ZWOgain Camera Setup",
             Width = 650,
             Height = Math.Min(650, SystemParameters.WorkArea.Height * .9),
             MaxHeight = SystemParameters.WorkArea.Height * .9,
@@ -168,7 +170,7 @@ internal static class Settings
                 picker.Items.Clear();
                 foreach (var choice in choices) picker.Items.Add(choice);
                 picker.SelectedItem = choices.FirstOrDefault(c => c.Camera.Name == chosen?.Camera.Name);
-                cameraStatus.Text = found.Count == 0 ? "No cameras detected. A saved selection is retained; attach the camera and refresh." : "Choose a camera and save. For multiple cameras of the same model, enter its SDK serial number; otherwise connect each once with only that model attached.";
+                cameraStatus.Text = found.Count == 0 ? "No cameras detected. Connect a camera and refresh." : "";
             }
             catch (OperationCanceledException) { }
             catch (Exception e) { cameraStatus.Text = "Camera discovery failed: " + e.Message; }
@@ -188,7 +190,7 @@ internal static class Settings
                 if (picker.SelectedItem is not CameraChoice choice)
                     throw new InvalidOperationException("Choose a camera before saving.");
                 if (direct.IsChecked == true && choice.Camera.Name is not ("ZWO ASI676MC" or "ZWO ASI2600MM Duo" or "ZWO ASI220MM Mini"))
-                    throw new InvalidOperationException("Choose ASI676MC, ASI2600MM Pro Duo main or ASI220MM Mini guide for experimental capture, or select the SDK backend.");
+                    throw new InvalidOperationException("Direct capture is unavailable for this camera. Turn off Direct USB driver to use the SDK.");
                 string? selectedSerial = string.IsNullOrWhiteSpace(serial.Text) ? null : serial.Text.Trim().ToLowerInvariant();
                 if (selectedSerial is not null && (selectedSerial.Length != 16 || selectedSerial.Any(c => !Uri.IsHexDigit(c))))
                     throw new InvalidOperationException("The SDK serial number must contain 16 hexadecimal characters, or be left blank.");
