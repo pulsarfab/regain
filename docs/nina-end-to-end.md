@@ -69,6 +69,23 @@ stretch behavior. Capped frames cannot establish illuminated Bayer orientation.
   button promptly. The following one-second request reconnected and displayed
   a fresh 1560 × 1044 image (mean 1.15). This verifies cancellation during
   recovery; cancellation during a running exposure remains a separate case.
+- After these checks, NINA's warming operation disabled the cooler; dew heater
+  stayed off, power was 0%, and the original −10°C target field was restored.
+
+### Guide-sensor offset issue discovered in NINA
+
+The initial guide-sensor capture failed before exposure: the SDK advertised
+offset 0–1500 but read back 200 after NINA requested 0. The strict check caused
+four futile attempts. A bounded SDK probe confirmed offsets 0, 1, 50, 100 and
+199 all become 200 at gains 0, 100, 300 and 600; offsets 200, 201, 250, 500 and
+1500 read back exactly. Original controls were restored after the probe.
+
+The supervisor now accepts SDK offset normalization only within the advertised
+range, logs the adjustment, and retains the applied value for recovery, NINA
+properties and frame metadata. Other control read-back mismatches still fail,
+including cooling. Tests cover offset normalization through transfer recovery,
+out-of-range read-back rejection, strict cooling restoration, and NINA metadata.
+Hardware image-pane revalidation follows installation of this correction.
 
 All entries below are pending full completion. Record settings, visible image dimensions,
 statistics, capture/recovery outcome and any error text for each completed case.

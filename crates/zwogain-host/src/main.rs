@@ -112,7 +112,8 @@ impl Host {
                 if let Some(s) = &self.sdk {
                     s.set(c, v)?;
                 } else {
-                    self.values[c.to_string()] = json!(v);
+                    let minimum = self.values[format!("clampMinimum:{c}")].as_i64();
+                    self.values[c.to_string()] = json!(minimum.map_or(v, |m| v.max(m)));
                 }
                 json!(null)
             }
@@ -202,6 +203,11 @@ impl Host {
                 json!(null)
             }
             "simulation" if self.sdk.is_none() => {
+                if let (Some(control), Some(minimum)) =
+                    (p["clampControl"].as_i64(), p["clampMinimum"].as_i64())
+                {
+                    self.values[format!("clampMinimum:{control}")] = json!(minimum);
+                }
                 if let Some(instant) = p["instant"].as_bool() {
                     self.sim_instant = instant;
                 }

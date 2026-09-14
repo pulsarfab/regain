@@ -36,8 +36,10 @@ public class CameraTests
         Assert.Contains(typeof(CameraProvider).GetCustomAttributes(typeof(ExportAttribute), false).Cast<ExportAttribute>(), a => a.ContractType == typeof(IEquipmentProvider));
         Assert.Contains(typeof(ICamera), typeof(ResilientCamera).GetInterfaces());
     }
-    [Fact]
-    public async Task NinaLifecycleHidesDownloadFailureAndPreservesCaptureMetadata()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task NinaLifecycleHidesDownloadFailureAndPreservesCaptureMetadata(bool sdkClampsOffset)
     {
         string root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
         int starts = 0;
@@ -47,6 +49,8 @@ public class CameraTests
         HostClient Host()
         {
             var host = new HostClient(Path.Combine(root, "target/debug/zwogain-host.exe"), "unused", true);
+            if (sdkClampsOffset)
+                host.CallAsync("simulation", new { clampControl = 5, clampMinimum = 20 }, TimeSpan.FromSeconds(15), default).GetAwaiter().GetResult();
             if (starts++ == 0)
                 host.CallAsync("fault", new
                 {
@@ -74,7 +78,7 @@ public class CameraTests
             Assert.Equal(16, image.BitDepth);
             Assert.True(image.IsBayered);
             Assert.Equal(123, image.MetaData.Camera.Gain);
-            Assert.Equal(17, image.MetaData.Camera.Offset);
+            Assert.Equal(sdkClampsOffset ? 20 : 17, image.MetaData.Camera.Offset);
             Assert.Equal(2, image.MetaData.Camera.BinX);
             Assert.Equal(.01, image.MetaData.Image.ExposureTime);
             Assert.NotEqual(DateTime.MinValue, image.MetaData.Image.ExposureStart);

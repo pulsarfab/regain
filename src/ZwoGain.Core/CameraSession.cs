@@ -143,7 +143,7 @@ public sealed class CameraSession : IDisposable
     }
     private async Task Apply(Dictionary<int, long> values, CancellationToken token)
     {
-        foreach (var (c, v) in values.OrderBy(k => k.Key == 17 ? 100 : k.Key))
+        foreach (var (c, v) in values.OrderBy(k => k.Key == 17 ? 100 : k.Key).ToArray())
         {
             if (applied.TryGetValue(c, out var previous) && previous == v)
                 continue;
@@ -157,8 +157,24 @@ public sealed class CameraSession : IDisposable
                 control = c
             }, token).ConfigureAwait(false)).Result.GetInt64();
             if (actual != v)
-                throw new IOException($"Control {c} read-back {actual} differs from requested {v}");
-            applied[c] = v;
+            {
+                // Some SDK cameras clamp offset inside their advertised range (ASI220MM
+                // reports min 0 but applies at least 200). Preserve the actual pedestal
+                // in both recovery settings and this frame's metadata. Other controls,
+                // especially cooling, must still restore exactly.
+                if (Backend != "sdk" || c != 5 || !Controls.TryGetValue(c, out var cap) || actual < cap.Min || actual > cap.Max)
+                    throw new IOException($"Control {c} read-back {actual} differs from requested {v}");
+                Diagnostic?.Invoke($"SDK applied offset {actual} instead of requested {v}; retaining applied offset");
+                values[c] = actual;
+                lock (sync)
+                {
+                    observed[c] = actual;
+                    // Do not overwrite a newer UI change made during this transaction.
+                    if (desired.GetValueOrDefault(c) == v)
+                        desired[c] = actual;
+                }
+            }
+            applied[c] = actual;
         }
     }
     public async Task RefreshAsync(CancellationToken token)

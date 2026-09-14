@@ -7,6 +7,42 @@ namespace ZwoGain.Tests;
 public class RecoveryTests
 {
     [Theory]
+    [InlineData(5, 20, true)]
+    [InlineData(5, 101, false)]
+    [InlineData(16, 0, false)]
+    public async Task SdkOffsetClampingPreservesAppliedMetadataAndRecoveryButOtherMismatchesFail(int control, long minimum, bool accepted)
+    {
+        int starts = 0;
+        using var session = new CameraSession(Camera, () =>
+        {
+            var h = Host();
+            h.CallAsync("simulation", new { clampControl = control, clampMinimum = minimum }, TimeSpan.FromSeconds(15), default).GetAwaiter().GetResult();
+            if (starts++ == 0)
+                h.CallAsync("fault", new { kind = "download" }, TimeSpan.FromSeconds(15), default).GetAwaiter().GetResult();
+            return h;
+        }, Fast with { MaxRetries = 1 });
+        await session.ConnectAsync(default);
+        session.Set(5, 0);
+        if (accepted)
+        {
+            var frame = await session.CaptureAsync(Exposure, default);
+            Assert.Equal(1, frame.Recoveries);
+            Assert.Equal(20, frame.Controls[5]);
+            Assert.Equal(20, session.Value(5));
+            Assert.Equal(-10, frame.Controls[16]);
+            var next = await session.CaptureAsync(Exposure, default);
+            Assert.Equal(0, next.Recoveries);
+            Assert.Equal(20, next.Controls[5]);
+        }
+        else
+        {
+            var error = await Assert.ThrowsAsync<IOException>(() => session.CaptureAsync(Exposure, default));
+            Assert.Contains("read-back", error.Message);
+        }
+        Assert.Equal(2, starts);
+    }
+
+    [Theory]
     [InlineData(30000000L, 30, true)]
     [InlineData(30000001L, 30, false)]
     [InlineData(60000000L, 60, true)]
