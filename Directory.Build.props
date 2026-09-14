@@ -1,0 +1,12 @@
+<Project>
+  <PropertyGroup>
+    <Version>0.1.0.0</Version>
+    <AssemblyVersion>$(Version)</AssemblyVersion>
+    <FileVersion>$(Version)</FileVersion>
+    <Authors>Yann Ramin</Authors>
+    <Company>Yann Ramin</Company>
+    <Copyright>Copyright 2026 Yann Ramin</Copyright>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+    <RepositoryUrl>https://github.com/theatrus/zwogain</RepositoryUrl>
+  </PropertyGroup>
+</Project>

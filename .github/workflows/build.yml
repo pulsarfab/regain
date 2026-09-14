@@ -1,10 +1,11 @@
 name: Build and test
-on: [push, pull_request]
+on: [push, pull_request, workflow_dispatch]
 permissions:
   contents: read
 jobs:
   windows:
     runs-on: windows-latest
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
@@ -17,9 +18,14 @@ jobs:
         shell: pwsh
       - run: ./scripts/build.ps1
         shell: pwsh
+      - run: ./scripts/test-release.ps1
+        shell: pwsh
       - uses: actions/upload-artifact@v4
         with:
           name: ZwoGain-plugin
           path: |
             artifacts/ZwoGain-*.zip
+            artifacts/ZwoGain-*.manifest.json
+            artifacts/zwogain.png
             artifacts/SHA256SUMS
+          if-no-files-found: error

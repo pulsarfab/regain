@@ -47,8 +47,8 @@ public sealed class ResilientCamera : BaseINPC, ICamera
     public string DisplayName => Name + " (ZwoGain recovery)";
     public string Category => "ZwoGain";
     public string Description => "ZWO RAW16 camera with supervised SDK and automatic exposure recovery";
-    public string DriverInfo => $"ZwoGain 0.1 / ASI {session?.SdkVersion}; {session?.Phase}";
-    public string DriverVersion => "0.1.0";
+    public string DriverInfo => $"ZwoGain {DriverVersion} / ASI {session?.SdkVersion}; {session?.Phase}";
+    public string DriverVersion => typeof(ResilientCamera).Assembly.GetName().Version!.ToString();
     public bool Connected
     {
         get; private set;

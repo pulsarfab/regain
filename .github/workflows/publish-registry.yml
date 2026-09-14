@@ -1,0 +1,44 @@
+name: Publish to NINA registry
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Published stable release tag, e.g. v0.1.0.0'
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: nina-registry-publication
+  cancel-in-progress: false
+jobs:
+  publish:
+    if: github.ref == 'refs/heads/main'
+    runs-on: windows-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Check registry credential
+        env:
+          REGISTRY_TOKEN: ${{ secrets.NINA_REGISTRY_TOKEN }}
+        run: |
+          if (!$env:REGISTRY_TOKEN) { throw 'Set NINA_REGISTRY_TOKEN with contents read/write access to theatrus/nina-plugins-registry.' }
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: theatrus/nina-plugins-registry
+          ref: main
+          path: .registry
+          token: ${{ secrets.NINA_REGISTRY_TOKEN }}
+      - name: Verify public assets and update registry
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          git -C .registry config user.name 'github-actions[bot]'
+          git -C .registry config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          ./scripts/publish-registry.ps1 -Tag $env:RELEASE_TAG -RegistryPath .registry -Push

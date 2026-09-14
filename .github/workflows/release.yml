@@ -1,0 +1,68 @@
+name: Release
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  release:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy, rust-docs
+      - name: Check source and tag versions
+        id: version
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          $version = if ($env:REF_TYPE -eq 'tag') { ./scripts/version.ps1 -Tag $env:REF_NAME } else { ./scripts/version.ps1 }
+          "value=$version" >> $env:GITHUB_OUTPUT
+      - name: Test capture recovery and NINA integration contract
+        run: ./scripts/test.ps1
+      - name: Build package and validate NINA manifest
+        run: ./scripts/build.ps1
+      - name: Test registry publication checks without remote writes
+        run: ./scripts/test-release.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ZwoGain-${{ steps.version.outputs.value }}
+          path: |
+            artifacts/ZwoGain-${{ steps.version.outputs.value }}.zip
+            artifacts/ZwoGain-${{ steps.version.outputs.value }}.manifest.json
+            artifacts/zwogain.png
+            artifacts/SHA256SUMS
+          if-no-files-found: error
+      - name: Create or refresh draft release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          $tag = "v$env:RELEASE_VERSION"
+          $assets = @("artifacts/ZwoGain-$env:RELEASE_VERSION.zip", "artifacts/ZwoGain-$env:RELEASE_VERSION.manifest.json", 'artifacts/zwogain.png', 'artifacts/SHA256SUMS')
+          $existing = gh release view $tag --repo theatrus/zwogain --json isDraft 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            if (!(($existing | ConvertFrom-Json).isDraft)) { throw 'Never replace assets of a published release.' }
+            gh release upload $tag @assets --repo theatrus/zwogain --clobber
+          } else {
+            gh release create $tag @assets --repo theatrus/zwogain --verify-tag --draft --title "ZwoGain $env:RELEASE_VERSION" --notes-file docs/release-notes.md
+          }
+          if ($LASTEXITCODE) { throw 'Draft release publication failed.' }

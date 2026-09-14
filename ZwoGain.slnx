@@ -8,4 +8,7 @@
     <Project Path="tests/ZwoGain.NINA.Tests/ZwoGain.NINA.Tests.csproj" />
     <Project Path="tests/ZwoGain.Tests/ZwoGain.Tests.csproj" />
   </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/ZwoGain.Packaging/ZwoGain.Packaging.csproj" />
+  </Folder>
 </Solution>

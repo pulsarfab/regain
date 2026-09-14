@@ -1,5 +1,10 @@
 # ZwoGain
 
+![ZwoGain camera recovery logo](src/ZwoGain.NINA/Assets/zwogain.png)
+
+[![Build and test](https://github.com/theatrus/zwogain/actions/workflows/build.yml/badge.svg)](https://github.com/theatrus/zwogain/actions/workflows/build.yml)
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
+
 A N.I.N.A. camera plugin for ZWO ASI cameras. The ASI SDK runs in a disposable
 Rust process; the NINA adapter keeps the capture request and recovery policy.
 An SDK error, failed download, crashed host, or hung command can become a longer
@@ -99,7 +104,8 @@ and terminates the worker. Diagnostic runs do not save image files.
   `ReadyFrameDownloadRetries` is experimental, disabled by default, and retries
   the entire download only while the SDK still reports exposure success.
 - No installer signing or NINA registry publication is included in this first
-  version. Local installation, camera contract tests, and interactive NINA 3.2
+  version. CI and draft-release/registry workflows are provided; see
+  [releasing](docs/releasing.md). Local installation, camera contract tests, and interactive NINA 3.2
   camera/capture/recovery checks are covered in the validation record.
 
 See [architecture](docs/architecture.md), [SDK investigation](docs/sdk-lifecycle.md)

@@ -1,6 +1,8 @@
 # Third-party notices
 
 ZwoGain is copyright 2026 Yann Ramin, Apache License 2.0 (see `LICENSE`).
+The original camera/recovery logo in `assets/` and the embedded PNG are covered
+by the same license.
 
 The Rust C ABI declarations in `crates/zwogain-host/src/raw.rs` were adapted
 from [AutoPierCam](https://github.com/theatrus/autopiercam), copyright 2026 Yann

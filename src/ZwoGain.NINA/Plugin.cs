@@ -18,6 +18,7 @@ using ZwoGain.Core;
 [assembly: AssemblyMetadata("Homepage", "https://github.com/theatrus/zwogain")]
 [assembly: AssemblyMetadata("ChangelogURL", "https://github.com/theatrus/zwogain/releases")]
 [assembly: AssemblyMetadata("Tags", "camera,ZWO,recovery")]
+[assembly: AssemblyMetadata("FeaturedImageURL", "pack://application:,,,/ZwoGain.NINA;component/Assets/zwogain.png")]
 [assembly: AssemblyMetadata("ShortDescription", "ZWO camera driver with automatic capture recovery")]
 [assembly: AssemblyMetadata("LongDescription", "Runs the ASI SDK in a supervised Rust process. Recovers failed exposures and downloads, restores controls and cooling, and retries the original capture transparently.")]
 

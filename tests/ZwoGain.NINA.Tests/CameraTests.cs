@@ -14,6 +14,22 @@ namespace ZwoGain.NINA.Tests;
 public class CameraTests
 {
     [Fact]
+    public void PluginManifestUsesEmbeddedLogoAndApacheLicense()
+    {
+        var plugin = new ZwoGainPlugin();
+        Assert.Equal("Apache-2.0", plugin.License);
+        Assert.Equal("pack://application:,,,/ZwoGain.NINA;component/Assets/zwogain.png", plugin.Descriptions.FeaturedImageURL);
+        var resources = new System.Resources.ResourceManager("ZwoGain.NINA.g", typeof(ZwoGainPlugin).Assembly);
+        using var stream = resources.GetStream("assets/zwogain.png");
+        Assert.NotNull(stream);
+        Span<byte> header = stackalloc byte[24];
+        stream.ReadExactly(header);
+        Assert.Equal("89504E470D0A1A0A", Convert.ToHexString(header[..8]));
+        Assert.Equal(256, System.Buffers.Binary.BinaryPrimitives.ReadInt32BigEndian(header[16..20]));
+        Assert.Equal(256, System.Buffers.Binary.BinaryPrimitives.ReadInt32BigEndian(header[20..24]));
+        Assert.Equal(typeof(ZwoGainPlugin).Assembly.GetName().Version, typeof(CameraSession).Assembly.GetName().Version);
+    }
+    [Fact]
     public void ExportsCameraProvider()
     {
         Assert.Contains(typeof(CameraProvider).GetCustomAttributes(typeof(ExportAttribute), false).Cast<ExportAttribute>(), a => a.ContractType == typeof(IEquipmentProvider));

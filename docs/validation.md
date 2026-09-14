@@ -12,9 +12,13 @@ Initial development validation: 2026-09-13 (America/Los_Angeles).
   Retry-threshold tests cover exactly 30 seconds, one microsecond above it,
   a configured 60-second boundary, disabling retries with zero, disabling
   same-frame re-download for long exposures, and defaults for existing configs.
-- Two NINA contract tests: equipment export and complete ICamera
+- Three NINA contract tests: embedded logo/Apache manifest metadata, equipment export and complete ICamera
   StartExposure → WaitUntilExposureIsReady → DownloadExposure flow, hiding a
   simulated transfer failure and preserving the original image settings.
+- Release ZIP validation checks required payload/license files and matching
+  .NET assembly versions; the generated registry JSON passes NINA's schema.
+  Five local publication fixture checks cover a valid package, anonymous-access
+  failure, drafts, checksum mismatch and version mismatch without remote writes.
 - Attached ZWO ASI676MC: real full-resolution 3552 × 3552 RAW16 captures at
   50 ms exposure. Initial three frames completed in approximately 330–371 ms
   per entire capture/transfer command, with 12,616,704 pixels each.
