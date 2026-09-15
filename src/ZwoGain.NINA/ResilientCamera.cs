@@ -99,7 +99,7 @@ public sealed class ResilientCamera : BaseINPC, ICamera
             throw new NotSupportedException("Direct capture is unavailable for this camera. Turn off Direct USB driver to use the SDK.");
         var factory = useConfiguredBackend && direct ? CameraProvider.NewDirectHost : hostFactory;
         var candidate = new CameraSession(descriptor, factory, recoveryOptions ?? Settings.Load(), selected?.Serial, direct && selected?.AllowSdkFallback == true ? hostFactory : null);
-        candidate.Diagnostic += text => Logger.Info($"ZWOgain {Name}: {text}");
+        candidate.Diagnostic += text => CameraLog.Session(Name, text);
         try
         {
             await candidate.ConnectAsync(token).ConfigureAwait(false);

@@ -86,6 +86,20 @@ Methods: `list`, `open` (name and optional serial), `get`, `set`, `start`
 rejects both. Responses echo request IDs; mismatches, truncated payloads or
 bad bounds invalidate the worker. Standard error is diagnostics only.
 
+Worker stderr may contain `ZWOGAIN_DIAGNOSTIC ` followed by a JSON record with
+`version: 1`, `level`, `event`, `message`, and `pid`. These records never appear
+on stdout or change a command result. NINA sends retry/failure events to its
+Warning log, recovery events to Info, and routine frame delivery to Debug.
+Plain stderr, including SDK loader errors, is kept at Info. No diagnostic path
+uses NINA notifications or error dialogs. Logger failures are ignored so they
+cannot interrupt capture. Terminal capture failures still follow the normal
+error contract when recovery is exhausted.
+
+USB read failures are logged as they occur, including the retry count, cause,
+and whether recovery rereads a retained frame or advances the guide stream.
+The supervisor logs fallback decisions, replacement exposures, restored
+controls/cooling, successful recovery, and final failure without an image.
+
 ## Time bounds and recovery
 
 The parent independently bounds each command (15 seconds), download (60

@@ -61,10 +61,20 @@ public sealed class CameraSession : IDisposable
         Options = options ?? new();
         Options.Validate();
     }
+    private void Log(string message)
+    {
+        var listeners = Diagnostic;
+        if (listeners is null) return;
+        foreach (Action<string> listener in listeners.GetInvocationList())
+        {
+            try { listener(message); }
+            catch { /* A failed diagnostic subscriber must not interrupt recovery. */ }
+        }
+    }
     private void State(string phase)
     {
         Phase = phase;
-        Diagnostic?.Invoke(phase);
+        Log(phase);
     }
     private Task<Reply> Call(string method, object? p, CancellationToken token, double? timeout = null) =>
         (host ?? throw new IOException("Camera host is not connected")).CallAsync(method, p, TimeSpan.FromSeconds(timeout ?? Options.CommandTimeoutSeconds), token);
@@ -88,7 +98,7 @@ public sealed class CameraSession : IDisposable
                 State("Idle");
             }
         }
-        catch { KillHost(); throw; }
+        catch (Exception error) { Log($"Connection failed: {error.Message}"); KillHost(); throw; }
         finally { operation.Release(); }
     }
     private bool CanFallback => sdkFallbackFactory is not null && !usingFallback;
@@ -98,7 +108,7 @@ public sealed class CameraSession : IDisposable
     {
         KillHost();
         usingFallback = true;
-        Diagnostic?.Invoke($"Switching to SDK fallback for this connection: {reason}");
+        Log($"Switching to SDK fallback for this connection: {reason}");
         State("SDK fallback reconnect delay");
         await Task.Delay(TimeSpan.FromSeconds(Options.ReconnectDelaySeconds), token).ConfigureAwait(false);
     }
@@ -112,7 +122,7 @@ public sealed class CameraSession : IDisposable
             host = usingFallback ? sdkFallbackFactory!() : factory();
         }
         applied.Clear();
-        Diagnostic?.Invoke($"Host process {host.ProcessId}; selected serial {serial ?? "initial selection"}");
+        Log($"Host process {host.ProcessId}; selected serial {serial ?? "initial selection"}");
         State("Opening");
         var result = (await Call("open", new
         {
@@ -134,6 +144,7 @@ public sealed class CameraSession : IDisposable
         SdkVersion = result.GetProperty("sdkVersion").GetString()!;
         Backend = result.TryGetProperty("backend", out var backend) ? backend.GetString()! : "sdk";
         SupportsRetainedFrameReads = Backend == "direct" && info.TryGetProperty("retainedFrameReads", out var retained) && retained.ValueKind == JsonValueKind.True;
+        Log($"Camera opened using {Backend}{(usingFallback ? " fallback" : "")}; SDK/driver {SdkVersion}");
         Controls = result.GetProperty("controls").EnumerateArray().Select(c => new Control(c.GetProperty("type").GetInt32(), c.GetProperty("min").GetInt64(), c.GetProperty("max").GetInt64(), c.GetProperty("value").GetInt64(), c.GetProperty("writable").GetBoolean())).ToDictionary(c => c.Type);
         if (!Controls.ContainsKey(1))
             throw new NotSupportedException("Camera exposure control is unavailable");
@@ -204,7 +215,7 @@ public sealed class CameraSession : IDisposable
                 // especially cooling, must still restore exactly.
                 if (Backend != "sdk" || c != 5 || !Controls.TryGetValue(c, out var cap) || actual < cap.Min || actual > cap.Max)
                     throw new IOException($"Control {c} read-back {actual} differs from requested {v}");
-                Diagnostic?.Invoke($"SDK applied offset {actual} instead of requested {v}; retaining applied offset");
+                Log($"SDK applied offset {actual} instead of requested {v}; retaining applied offset");
                 values[c] = actual;
                 lock (sync)
                 {
@@ -253,6 +264,7 @@ public sealed class CameraSession : IDisposable
         await Apply(Snapshot(), token).ConfigureAwait(false);
         requiresReconnect = false;
         ControlConnectionAvailable = true;
+        Log($"Camera controls restored using {Backend}; no replacement exposure taken");
         State("Idle");
     }
     private void ScheduleControlRecovery()
@@ -278,6 +290,7 @@ public sealed class CameraSession : IDisposable
                     if (acquired) KillHost();
                     if (!shutdown.IsCancellationRequested) {
                         LastError = error.Message;
+                        Log($"Camera control recovery failed: {error.Message}");
                         State("Camera controls unavailable");
                     }
                 }
@@ -328,7 +341,7 @@ public sealed class CameraSession : IDisposable
             int retries = eligibleForRecapture ? Options.MaxRetries : 0;
             int downloadRetries = Options.ReadyFrameDownloadRetries;
             if (!eligibleForRecapture)
-                Diagnostic?.Invoke($"Full recapture disabled: {exposure.microseconds / 1e6:G} s exposure exceeds {Options.MaximumRetryExposureSeconds:G} s threshold");
+                Log($"Full recapture disabled: {exposure.microseconds / 1e6:G} s exposure exceeds {Options.MaximumRetryExposureSeconds:G} s threshold");
             for (int attempt = 0; attempt <= retries; attempt++)
             {
                 token.ThrowIfCancellationRequested();
@@ -408,11 +421,11 @@ public sealed class CameraSession : IDisposable
                         {
                             LastError = e.Message;
                             LastSdkErrorCode = e.Code;
-                            Diagnostic?.Invoke($"Transfer failure: {e.Message}");
+                            Log($"Transfer failure: {e.Message}");
                             if (!e.Retryable)
                                 throw;
                             LastSdkExposureState = (await Call("status", null, token).ConfigureAwait(false)).Result.GetInt32();
-                            Diagnostic?.Invoke($"Post-transfer SDK state: {LastSdkExposureState}");
+                            Log($"Post-transfer SDK state: {LastSdkExposureState}");
                             if (transferRetry++ >= downloadRetries || LastSdkExposureState != 2)
                                 throw;
                             State($"Rereading ready frame ({transferRetry}/{downloadRetries})");
@@ -426,12 +439,14 @@ public sealed class CameraSession : IDisposable
                     int retainedReads = SupportsRetainedFrameReads && reply.Result.TryGetProperty("readRecoveries", out var reads)
                         ? reads.GetInt32() : 0;
                     if (retainedReads > 0)
-                        Diagnostic?.Invoke($"Recovered retained frame after {retainedReads} transfer retries; no new exposure");
+                        Log($"Recovered retained frame after {retainedReads} transfer retries; no new exposure");
                     if (reply.Result.TryGetProperty("cleanupError", out var cleanup)) {
                         LastError = cleanup.GetString();
-                        Diagnostic?.Invoke($"Frame preserved; reconnect required after cleanup failure: {LastError}");
+                        Log($"Frame preserved; reconnect required after cleanup failure: {LastError}");
                         KillHost();
                     }
+                    if (attempt > 0 || transferRetry > 0)
+                        Log($"Capture recovered using {Backend}: {attempt} replacement exposures, {transferRetry} ready-frame download retries; returning {exposure.width}x{exposure.height} image");
                     State("Idle");
                     return new(pixels, exposure.width, exposure.height, started, ended, attempt, exposure, settings)
                         { RetainedReadRecoveries = retainedReads };
@@ -442,13 +457,15 @@ public sealed class CameraSession : IDisposable
                         LastSdkErrorCode = sdk.Code;
                     last = e;
                     LastError = e.Message;
-                    Diagnostic?.Invoke($"Attempt {attempt + 1}/{retries + 1}, phase {Phase}: {e.Message}");
+                    Log($"Attempt {attempt + 1}/{retries + 1} failed using {Backend}, phase {Phase}: {e.Message}");
+                    if (attempt < retries)
+                        Log($"Scheduling replacement exposure {attempt + 1}/{retries}: {exposure.microseconds / 1e6:G} s, {exposure.width}x{exposure.height}, bin {exposure.bin}; reconnect delay {Options.ReconnectDelaySeconds:G} s");
                     KillHost();
                     // Keep one shared retry budget. No automatic re-exposure above the duration limit.
                     if (Backend == "direct" && CanFallback && attempt < retries)
                     {
                         usingFallback = true;
-                        Diagnostic?.Invoke($"Next permitted retry will use SDK fallback: {e.Message}");
+                        Log($"Next permitted retry will use SDK fallback: {e.Message}");
                     }
                 }
             }
@@ -456,7 +473,7 @@ public sealed class CameraSession : IDisposable
             throw new IOException($"Exposure failed after {retries + 1} attempts. {last?.Message}", last);
         }
         catch (OperationCanceledException) { KillHost(); State("Aborted"); throw; }
-        catch { KillHost(); State("Error"); throw; }
+        catch (Exception error) { Log($"Capture failed; no image returned: {error.Message}"); KillHost(); State("Error"); throw; }
         finally { operation.Release(); ScheduleControlRecovery(); }
     }
     public double ReadyTimeoutSeconds(double seconds) => seconds + Options.ExposureGraceSeconds +
@@ -482,9 +499,11 @@ public sealed class CameraSession : IDisposable
             bool atStableTarget = setpointHold.Observe(current, power, clock.Elapsed.TotalSeconds);
             bool nearPrior = current.HasValue && current.Value >= Math.Min(prior, target) - Options.TemperatureToleranceC && current.Value <= prior + Options.TemperatureToleranceC;
             stable = (nearPrior && outputRecovered) || atStableTarget ? stable + 1 : 0;
-            Diagnostic?.Invoke($"Cooling recovery: temperature {current:F1} C (prior {prior:F1}), power {power}% (prior {priorPower}%), stable {stable}/{Options.CoolingStableSamples}, setpoint held {setpointHold.HeldSeconds:F1}s");
-            if (stable >= Options.CoolingStableSamples)
+            Log($"Cooling recovery: temperature {current:F1} C (prior {prior:F1}), power {power}% (prior {priorPower}%), stable {stable}/{Options.CoolingStableSamples}, setpoint held {setpointHold.HeldSeconds:F1}s");
+            if (stable >= Options.CoolingStableSamples) {
+                Log($"Cooling recovered at {current:F1} C and {power}% power; restored setpoint {target:F1} C");
                 return;
+            }
             await Task.Delay(TimeSpan.FromSeconds(Options.CoolingSampleSeconds), token).ConfigureAwait(false);
         }
         throw new TimeoutException("Camera did not recover its prior cooling temperature and output");
@@ -546,7 +565,7 @@ public sealed class CameraSession : IDisposable
                 cleanup.CallAsync("close", null, timeout, deadline.Token).GetAwaiter().GetResult();
             } catch (Exception error) {
                 LastError = error.Message;
-                Diagnostic?.Invoke($"Could not disable cooling on disconnect: {error.Message}");
+                Log($"Could not disable cooling on disconnect: {error.Message}");
             }
         }
     }

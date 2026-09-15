@@ -202,6 +202,13 @@ pub fn capture(
             match read {
                 Ok(data) => break data,
                 Err(error) => {
+                    crate::diagnostics::read_failure(
+                        "ASI676MC",
+                        &error,
+                        read_errors.len(),
+                        settings.read_retries,
+                        true,
+                    );
                     if read_errors.len() >= settings.read_retries as usize {
                         return Err(error);
                     }

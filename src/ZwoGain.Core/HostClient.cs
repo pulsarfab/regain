@@ -50,7 +50,11 @@ public sealed class HostClient : IDisposable
             job = ProcessJob.Attach(process);
         }
         catch { process.Kill(true); process.Dispose(); throw; }
-        process.ErrorDataReceived += (_, e) => { if (e.Data is not null) log?.Invoke(e.Data); };
+        process.ErrorDataReceived += (_, e) => {
+            // An exception on this asynchronous callback could otherwise take down NINA.
+            try { if (e.Data is not null) log?.Invoke(e.Data); }
+            catch { /* Diagnostics must not change command/capture results. */ }
+        };
         process.BeginErrorReadLine();
     }
     public async Task<Reply> CallAsync(string method, object? args, TimeSpan timeout, CancellationToken token)

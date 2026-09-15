@@ -8,6 +8,7 @@ mod asi6200_tables;
 mod asi676;
 mod asi676_tables;
 mod completion;
+mod diagnostics;
 mod environment;
 mod processing;
 mod protocol;

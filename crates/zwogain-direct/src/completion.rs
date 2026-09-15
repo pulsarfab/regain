@@ -2,6 +2,20 @@
 use anyhow::Result;
 use serde_json::Value;
 pub fn finish(result: Result<(Value, Vec<u8>)>, cleanup: Result<()>) -> Result<(Value, Vec<u8>)> {
+    if let Err(error) = &cleanup {
+        crate::diagnostics::log(
+            "warning",
+            "capture.cleanup_failed",
+            format_args!(
+                "{error:#}; {}",
+                if result.is_ok() {
+                    "completed frame preserved"
+                } else {
+                    "capture also failed"
+                }
+            ),
+        );
+    }
     let (mut metadata, pixels) = result?;
     // Normalize legacy ASI676 metadata at the common completion boundary.
     if metadata.get("readRecoveries").is_none()
@@ -11,6 +25,17 @@ pub fn finish(result: Result<(Value, Vec<u8>)>, cleanup: Result<()>) -> Result<(
     }
     if let Err(error) = cleanup {
         metadata["cleanupError"] = Value::String(format!("{error:#}"));
+    }
+    let reads = metadata["readRecoveries"].as_u64().unwrap_or(0);
+    let discarded = metadata["discardedStartupFrames"].as_u64().unwrap_or(0);
+    if reads > 0 || discarded > 0 {
+        crate::diagnostics::log(
+            "info",
+            "capture.recovered",
+            format_args!(
+                "Frame ready after {reads} same-frame read retries and {discarded} discarded guide-stream frames"
+            ),
+        );
     }
     Ok((metadata, pixels))
 }

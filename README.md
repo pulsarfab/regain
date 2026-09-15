@@ -62,6 +62,10 @@ without taking another exposure. A stop/reset error after a successful download
 keeps the image and reconnects before the next capture. If recovery fails, NINA
 receives the error. Details go in NINA's log.
 
+NINA's normal log includes retry reasons, backend fallback, cooler recovery,
+and successful recovery. Recovered failures do not show error dialogs or fail
+the capture. Routine frame messages use Debug level.
+
 ## Supported cameras
 
 The **SDK is the default**. To try capture without it, enable **Direct USB driver

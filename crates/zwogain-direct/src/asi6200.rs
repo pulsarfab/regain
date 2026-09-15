@@ -445,6 +445,13 @@ fn capture_native(
             match attempt {
                 Ok(data) => break data,
                 Err(error) => {
+                    crate::diagnostics::read_failure(
+                        "ASI6200MM Pro",
+                        &error,
+                        read_errors.len(),
+                        s.read_retries,
+                        true,
+                    );
                     if read_errors.len() >= s.read_retries as usize {
                         return Err(error);
                     }

@@ -332,7 +332,15 @@ fn main() -> Result<()> {
                 b,
             ),
             Err(e) => {
-                eprintln!("{e:#}");
+                // Log-only feedback travels on stderr, separately from command status.
+                let _ = writeln!(
+                    std::io::stderr().lock(),
+                    "ZWOGAIN_DIAGNOSTIC {}",
+                    json!({
+                        "version":1,"level":"warning","event":"command.failed","pid":std::process::id(),
+                        "message":format!("{} request {}: {e:#}", req["method"], req["id"])
+                    })
+                );
                 let sdk_error = e.downcast_ref::<sdk::SdkError>();
                 (
                     json!({"version":1,"id":req["id"],"ok":false,"error":format!("{e:#}"),"sdkCode":sdk_error.map(|s|s.code),"sdkOperation":sdk_error.map(|s|&s.operation),"binaryLength":0}),

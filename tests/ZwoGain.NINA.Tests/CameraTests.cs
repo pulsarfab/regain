@@ -70,6 +70,7 @@ public class CameraTests
     {
         string root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
         int starts = 0;
+        var loggedFailure = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
         var settings = new Mock<ICameraSettings>();
         settings.SetupProperty(s => s.Timeout, 1);
         var profiles = new Mock<IProfileService>();
@@ -79,7 +80,8 @@ public class CameraTests
             .Returns((ushort[] p, int w, int h, int b, bool color, ImageMetaData m) => new ImageArrayExposureData(p, w, h, b, color, m, Mock.Of<IImageDataFactory>()));
         HostClient Host()
         {
-            var host = new HostClient(Path.Combine(root, "target/debug/zwogain-host.exe"), "unused", true);
+            var host = new HostClient(Path.Combine(root, "target/debug/zwogain-host.exe"), "unused", true, log: line =>
+                CameraLog.Forward(CameraLog.Parse("SDK", line), _ => { }, text => loggedFailure.TrySetResult(text), _ => { }));
             if (reread) host.CallAsync("simulation", new { instant = true }, TimeSpan.FromSeconds(15), default).GetAwaiter().GetResult();
             if (sdkClampsOffset)
                 host.CallAsync("simulation", new { clampControl = 5, clampMinimum = 20 }, TimeSpan.FromSeconds(15), default).GetAwaiter().GetResult();
@@ -121,6 +123,9 @@ public class CameraTests
             Assert.NotEqual(DateTime.MinValue, image.MetaData.Image.ExposureStart);
             Assert.True(camera.Connected);
             Assert.Equal(reread ? 1 : 2, starts);
+            var diagnostic = await loggedFailure.Task.WaitAsync(TimeSpan.FromSeconds(3));
+            Assert.Contains("[command.failed]", diagnostic);
+            Assert.Contains("ASI error 11", diagnostic);
         }
         finally { camera.Disconnect(); }
     }

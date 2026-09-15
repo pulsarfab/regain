@@ -173,7 +173,11 @@ fn find_accessible<I: IntoIterator, T>(
             Ok(Some(found)) => return Ok(found),
             Ok(None) => {}
             Err(error) => {
-                eprintln!("Skipping unavailable camera candidate: {error:#}");
+                crate::diagnostics::log(
+                    "warning",
+                    "camera.unavailable",
+                    format_args!("Skipping camera candidate: {error:#}"),
+                );
                 last_error = Some(error);
             }
         }
@@ -275,7 +279,11 @@ impl Worker {
                         if let Some((camera, _, _)) = &device {
                             let _ = watchdog.send(Some(Duration::from_secs(15)));
                             if let Err(e) = camera.service_environment() {
-                                eprintln!("environment failure: {e:#}");
+                                crate::diagnostics::log(
+                                    "warning",
+                                    "environment.failed",
+                                    format_args!("{e:#}"),
+                                );
                                 return;
                             }
                             let _ = watchdog.send(None);
@@ -581,6 +589,22 @@ impl Host {
                     // This branch is inaccessible without --simulate.
                     if let Some(failures) = self.simulated_read_failures.take() {
                         ensure!(self.simulate, "simulation only");
+                        for used in 0..failures.min(settings.read_retries + 1) {
+                            crate::diagnostics::read_failure(
+                                self.model.name(),
+                                "simulated USB read failure",
+                                used as usize,
+                                settings.read_retries,
+                                self.model != Model::Guide,
+                            );
+                        }
+                        if failures > 0 && failures <= settings.read_retries {
+                            crate::diagnostics::log(
+                                "info",
+                                "capture.recovered",
+                                format_args!("Simulated frame ready after {failures} read retries"),
+                            );
+                        }
                         self.frame = Some(if failures > settings.read_retries {
                             Err(anyhow::anyhow!(
                                 "simulated read failures exhausted the transfer retry budget"
@@ -683,26 +707,38 @@ pub fn run(simulate: bool) -> Result<()> {
         let request: Value = serde_json::from_slice(&bytes)?;
         ensure!(request["version"] == 1, "unsupported protocol");
         let began = Instant::now();
-        let (reply, pixels) =
-            match host.command(request["method"].as_str().unwrap_or(""), &request["params"]) {
-                Ok((result, pixels)) => (
-                    json!({"version":1,"id":request["id"],"ok":true,
+        let (reply, pixels) = match host
+            .command(request["method"].as_str().unwrap_or(""), &request["params"])
+        {
+            Ok((result, pixels)) => (
+                json!({"version":1,"id":request["id"],"ok":true,
                 "result":result,"binaryLength":pixels.len()}),
-                    pixels,
-                ),
-                Err(error) => (
+                pixels,
+            ),
+            Err(error) => {
+                crate::diagnostics::log(
+                    "warning",
+                    "command.failed",
+                    format_args!("{} request {}: {error:#}", request["method"], request["id"]),
+                );
+                (
                     json!({"version":1,"id":request["id"],"ok":false,"error":format!("{error:#}"),
                 "sdkCode":if error.is::<HardwareFailure>() { None } else {Some(8)},
                 "sdkOperation":"direct","binaryLength":0}),
                     Vec::new(),
-                ),
-            };
+                )
+            }
+        };
         transport::require_sdk_absent()?;
         if request["method"] == "download" {
-            eprintln!(
-                "ZWOgain direct frame delivered: {} bytes (IPC preparation {} ms)",
-                pixels.len(),
-                began.elapsed().as_millis()
+            crate::diagnostics::log(
+                "debug",
+                "frame.delivered",
+                format_args!(
+                    "{} bytes (IPC preparation {} ms)",
+                    pixels.len(),
+                    began.elapsed().as_millis()
+                ),
             );
         }
         let json = serde_json::to_vec(&reply)?;

@@ -136,13 +136,18 @@ public class DirectBackendTests
     public async Task UnsupportedDirectExposureRoutesBeforeStartingEvenWithRetriesDisabled(bool guide)
     {
         int fallbackStarts = 0;
+        var messages = new System.Collections.Concurrent.ConcurrentQueue<string>();
         using var session = new CameraSession(Duo(guide), Host, Fast with { MaxRetries = 0 },
             sdkFallbackFactory: () => { fallbackStarts++; return Fallback(Duo(guide)); });
+        session.Diagnostic += messages.Enqueue;
         await session.ConnectAsync(default);
         session.Set(0, 100); session.Set(5, guide ? 300 : 50);
         var frame = await session.CaptureAsync(Exposure with { width = 8, microseconds = 31000000 }, default);
         Assert.Equal(0, frame.Recoveries);
         Assert.Equal(1, fallbackStarts);
+        Assert.Contains(messages, text => text.Contains("Switching to SDK fallback"));
+        Assert.Contains(messages, text => text.Contains("Camera opened using sdk fallback"));
+        Assert.DoesNotContain(messages, text => text.StartsWith("Capture failed"));
         Assert.Equal(40, session.Value(6)); Assert.Equal(40, frame.Controls[6]);
         await session.RefreshAsync(default);
         Assert.Equal(40, session.Value(6));

@@ -211,6 +211,13 @@ pub fn capture(c: &Camera, info: &Value, s: &Settings, bin: u32) -> Result<(Valu
             let frame = match c.read_frame_wait(bytes as usize, wait) {
                 Ok(frame) => frame,
                 Err(error) => {
+                    crate::diagnostics::read_failure(
+                        "ASI220MM Mini",
+                        &error,
+                        discarded as usize,
+                        s.read_retries.min(2),
+                        false,
+                    );
                     ensure!(
                         discarded < s.read_retries.min(2),
                         "guide stream did not synchronize: {error}"
@@ -225,6 +232,13 @@ pub fn capture(c: &Camera, info: &Value, s: &Settings, bin: u32) -> Result<(Valu
             {
                 break frame;
             }
+            crate::diagnostics::read_failure(
+                "ASI220MM Mini",
+                "invalid frame boundaries",
+                discarded as usize,
+                s.read_retries.min(2),
+                false,
+            );
             ensure!(
                 discarded < s.read_retries.min(2),
                 "guide frame boundaries did not synchronize"
