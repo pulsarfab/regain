@@ -112,7 +112,9 @@ A subsequent normal full-frame capture succeeded after the ROI failure.
 
 These tests induce cancellation, not cable faults, endpoint stalls, partial
 USB packets or disconnects. The camera stayed powered. Natural failures and
-ASI2600/6200 hardware remain untested.
+ASI2600/6200 hardware were untested at this stage. Subsequent model-specific
+work is recorded in [ASI2600 capture](duo-capture.md),
+[ASI6200 P25 capture](asi6200-p25.md) and [transfer recovery](transfer-recovery.md).
 
 ## Follow-up: direct Rust I/O and image processing (2026-09-13)
 

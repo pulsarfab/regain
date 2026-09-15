@@ -1,5 +1,10 @@
 # SDK-free ASI676MC capture
 
+This page records the ASI676MC bring-up. The direct backend also supports the
+separately tested [ASI2600 main/guide](duo-capture.md) and
+[ASI6200MM Pro P25](asi6200-p25.md) interfaces; their initialization and
+capabilities differ from the ASI676 configuration below.
+
 The experimental `zwogain-direct` Rust executable now opens the installed
 `ASICAMUSB3.sys` interface, initializes the sensor, configures a capture, waits
 for a complete buffered frame, reads it, and returns RAW16 over a binary pipe.
@@ -124,13 +129,15 @@ service, driver binary and interface GUID as the ASI676MC:
 `{c5b27530-3592-4e87-9e99-c2bafd5e5692}`. It does not label separate P25 entries.
 This supports reusing the Windows transport for the P25 cameras using that
 package; it does not establish identical sensor initialization or firmware
-commands. Their actual descriptors and protocol traces still require hardware.
+commands. The attached ASI6200MM Pro P25 (`620b`) has since supplied its own
+descriptor, SDK trace, acquisition, processing and recovery evidence, recorded
+in the [ASI6200 results](asi6200-p25.md).
 
 ZWO's [ASI6200 product page](https://us.zwoastro.com/products/asi6200) explicitly
 lists P25 models with USB 3.0 and 512 MB DDR3. The official
 [driver distribution](https://www.zwoastro.com/software/camera-driver/) uses a
-shared camera-driver package. The direct backend deliberately refuses those
-cameras until their model-specific acquisition and cooling are validated.
+shared camera-driver package. Other untested interfaces still require their own
+acquisition and cooling validation before they can enter the direct allowlist.
 
 See [reproduction commands](../scripts/inspection/README.md#sdk-free-capture-and-replay)
 and [hardware evidence](sdk-free-capture-evidence.json).

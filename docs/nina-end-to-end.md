@@ -1,6 +1,10 @@
 # NINA end-to-end acceptance matrix
 
-Status: **attached-hardware acceptance matrix passed**, 2026-09-14. All 11
+This document records successive hardware validation runs. The initial matrix
+below and later ASI2600 sections predate ASI6200 support; see the final ASI6200
+section and [model-specific evidence](asi6200-p25.md) for the new P25 tests.
+
+Initial status: **attached-hardware acceptance matrix passed**, 2026-09-14. All 11
 advertised camera/backend/bin combinations produced fresh images inspected in
 NINA's image pane. ROI, timing, controls, sequence metadata, cancellation and
 worker-recovery checks below also passed. This covers SDK operation on the three
@@ -224,9 +228,9 @@ results, never camera pixels or calibration payloads without a separate request.
 | Cancellation | Abort a multi-second exposure on each backend; verify prompt cancellation, then successfully capture another image. |
 | SDK process recovery | Terminate only the plugin's SDK worker during a short capture; NINA should retain the request, reconnect after its delay, restore controls and display the replacement image. |
 | Direct process recovery | Terminate only the direct worker during a short capture; recover on the direct backend and display the replacement image. |
-| Retry cutoff | SDK exposure above 30 s with deliberate host termination must fail after one attempt with the default cutoff. Direct without fallback keeps its verified 30 s main/676 or 10 s guide maximum. With explicit fallback, a longer request switches to SDK before exposure. |
+| Retry cutoff | SDK exposure above 30 s with deliberate host termination must fail after one attempt with the default cutoff. Direct ASI2600/6200 accept up to 2,000 s; retained reads remain permitted, while full recapture still obeys the cutoff. ASI676 and guide retain their 30 s and 10 s direct limits. |
 | Duo cooling | Record initial temperature/target/enable/power. Exercise a modest target change and enabled/disabled states; capture during cooling. During a short-exposure worker failure, verify target/enable restoration and settling near the prior temperature before retry. Restore initial state. |
-| Unsupported direct cameras | Choosing an unverified model such as ASI6200MM Pro P25 with the direct option must be rejected clearly. Duo main and guide now have dedicated direct paths. Confirm the SDK remains usable afterward. |
+| Unsupported direct cameras | Models/interfaces outside the explicit direct allowlist must be rejected clearly. The tested ASI6200MM Pro P25 now has its own path. Confirm the SDK remains usable after an unsupported direct selection. |
 
 Do not infer cable-reconnect retention or natural USB-error behavior from a
 process-kill test. Physical detach/power-cycle experiments are separate cases.

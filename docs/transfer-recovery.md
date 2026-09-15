@@ -5,7 +5,7 @@ the installed ZWO Windows kernel driver without loading `ASICamera2.dll`.
 
 ## What can be recovered
 
-The ASI2600MM Pro main camera can replay a complete frame held in camera DDR
+The tested ASI2600MM Pro and ASI6200MM Pro P25 can replay a complete frame held in camera DDR
 after a canceled or timed-out USB read. This avoids another exposure. It is a
 restart from byte zero, not an offset-based continuation. No camera command
 for seeking to an arbitrary frame offset has been established.
@@ -27,7 +27,7 @@ Our transport waits for terminal completion and terminates the isolated worker
 if cancellation will not drain, rather than freeing driver-owned storage.
 See [Microsoft's cancellation contract](https://learn.microsoft.com/en-us/windows/win32/fileio/cancelioex-func).
 
-The ASI2600 and ASI676 direct descriptors advertise retained-frame capability.
+The ASI2600, ASI6200 and ASI676 direct descriptors advertise retained-frame capability.
 Their configurable read retry count (default 2, maximum 5) applies at every
 supported exposure length, including a 1,200-second ASI2600 exposure. The
 supervisor records successful retained-read recovery separately from exposure
@@ -78,13 +78,22 @@ enabled without allowing a replacement exposure. This is not a claim of a
 
 ## Remaining differences from the SDK
 
+The separate [ASI6200MM Pro P25 matrix](asi6200-p25.md) also recovered a
+60-second, 9576 × 6388 frame after `CancelIoEx` on bulk request 13. Its first
+retained restart timed out; the second restart succeeded within the default
+two-read retry budget. A subsequent replay had identical interior pixels.
+Three interrupted replay tests independently exercised the additional timeout.
+This unit requires a minimum 128 KiB physical readout for reliable retained
+replay; the backend pads smaller ROIs and crops after factory correction.
+
 | Area | Current direct implementation | Gap |
 | --- | --- | --- |
-| Camera coverage | Verified ASI676MC USB3, ASI2600MM Pro main USB3, ASI220MM Mini guide USB2 | Other models, 6200 and P25 need their own initialization, format and recovery evidence; a shared driver package is insufficient |
+| Camera coverage | Verified ASI676MC USB3, ASI2600MM Pro main USB3, ASI6200MM Pro P25 USB3 (`620b`), ASI220MM Mini guide USB2 | Other models/revisions need their own initialization, format and recovery evidence; a shared driver package is insufficient |
 | Single-frame imaging | RAW16, ROI, gain/offset, factory correction; main bins 1–4 and long integrations | SDK format/control coverage is broader; unverified correction-map classes and modes must not be assumed equivalent |
 | Additional SDK modes | NINA path delivers RAW16 still frames | RAW8/RGB, live video, automatic controls, white balance/gamma, flip, external triggering and ST4 are not implemented/surfaced by the direct path; availability in the SDK varies by model |
 | Transfer throughput | Sequential 1 MiB bulk requests, fixed USB limit 40 | SDK traces show queued overlapped transfers. Queue depth and bandwidth tuning need measurements and cancellation tests |
 | Cooling | Temperature, target, enablement, power and dew control; bounded Rust PI regulator | It is not the SDK regulator and needs more environmental and hardware validation |
+| ASI6200 auxiliary controls | Fan speed and power-LED brightness, 0–255, with readback and restoration | Momentary USB hub reset is not exposed or replayed automatically |
 | Acquisition lifecycle | Observed readiness registers, retained state, framing checks and a 100 ms settling guard | The guard is empirical. Broader status decoding and explicit exposing/readout/replay progress would improve diagnostics |
 | Error reporting | Win32, NT, USB status, chunk number and deadline flag in diagnostics | Errors are still strings, not structured transport categories exposed through the host protocol |
 | Time bounds | Per-request deadlines, supervisor readiness grace, worker watchdog | No dedicated configurable whole-transfer/replay deadline. Outer limits can terminate before every configured retry is used |

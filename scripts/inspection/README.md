@@ -214,8 +214,8 @@ does not provide evidence for physical sensor behavior.
 
 ## Duo main and guide RAW16
 
-These SDK-free **research CLI** paths are separate from NINA's experimental
-ASI676 backend. Disconnect the selected sensor in other apps first.
+These SDK-free research commands exercise the same acquisition code used by
+NINA's experimental backend. Disconnect the selected sensor in other apps first.
 
 ```powershell
 cargo build --locked -p zwogain-direct
@@ -233,3 +233,33 @@ Both apply independent ASID factory correction. Guide zero-line integrations
 are rejected before hardware access. `--stream` emits framed binary metadata
 and pixels; consume it with a binary reader, not a PowerShell text pipeline.
 See [Duo findings and limitations](../../docs/duo-capture.md).
+
+## ASI6200MM Pro P25
+
+The tested mono P25 reports `ZWO ASI6200MM Pro` and USB PID `620b`. Its acquisition
+and initialization are model-specific; do not substitute ASI2600 tables. The
+production plugin and diagnostic commands share the same RAW16 acquisition,
+factory correction, binning and retained-frame reader. Disconnect NINA before
+running hardware commands and use a new output filename for every trace.
+
+```powershell
+cargo build --locked -p zwogain-direct
+# Full frame plus verification that retained replay preserves interior pixels:
+target/debug/zwogain-direct.exe --capture-6200 --gain 100 --offset 50 --replay
+# Bins, gain transitions, offsets, timing boundaries, ROIs and read faults:
+.reference/inspection-venv/Scripts/python.exe scripts/inspection/validate_asi6200.py --output artifacts/inspection/NEW-6200-matrix.jsonl
+# Append a real twenty-minute full-frame integration to that matrix:
+.reference/inspection-venv/Scripts/python.exe scripts/inspection/validate_asi6200.py --output artifacts/inspection/NEW-6200-long.jsonl --long 1200
+# Cancel the thirteenth bulk request of a 60-second exposure:
+.reference/inspection-venv/Scripts/python.exe scripts/inspection/trace_direct.py --output artifacts/inspection/NEW-6200-cancel.jsonl --cancel-bulk 13 --hash-bulk -- --capture-6200 --microseconds 60000000 --gain 100 --offset 50 --replay
+# Compare SDK output with independent Rust processing of the same full USB frame:
+.reference/inspection-venv/Scripts/python.exe scripts/inspection/trace_transport.py --camera-name 'ZWO ASI6200MM Pro' --width 9576 --height 6388 --seconds 0.1 --gain 100 --offset 50 --compare-wire --trace-processing --validate-direct-processing --output artifacts/inspection/NEW-6200-processing.jsonl
+```
+
+The first restart after a partial transfer can time out; default read retries
+cover that additional restart. Small sensor ROIs are padded to a physical readout
+of at least 128 KiB, corrected and cropped before binning. The matrix checks
+output dimensions and digests, complete replay identity and interrupted-prefix
+agreement. It fails on any mismatch and saves statistics rather than pixels.
+These commands do not constitute physical unplug or cold-power testing.
+See [ASI6200 protocol and hardware results](../../docs/asi6200-p25.md).

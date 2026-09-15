@@ -1,4 +1,4 @@
-//! Version-1 plugin protocol over inherited pipes. Verified ASI676 and Duo main/guide paths.
+//! Version-1 plugin protocol over inherited pipes for the verified camera interfaces.
 //! A dedicated worker owns the exclusive driver handle for the entire connection.
 use crate::{asi220, asi676, asi2600, asi6200, settings::Settings, transport};
 use anyhow::{Result, bail, ensure};

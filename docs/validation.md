@@ -94,8 +94,9 @@ Tested the installed NINA 3.2 application using Windows computer use:
   did not start a replacement exposure. NINA's capture and snapshot layers
   each emitted their own error notification for that propagated exception.
 
-USB cable reattachment, P25 cameras and natural SDK transfer failures have not
-yet been tested. Later desktop acceptance verified Duo cooler restoration and
+USB cable reattachment and natural SDK transfer failures have not yet been
+tested. The later [ASI6200MM Pro P25 run](asi6200-p25.md) covers that specific
+2025 mono interface. Later desktop acceptance verified Duo cooler restoration and
 Light/Dark/Bias sequences on both backends; see the completed
 [NINA end-to-end matrix](nina-end-to-end.md). The attached ASI2600MM Duo and
 its guide sensor also completed the SDK baseline tests described in

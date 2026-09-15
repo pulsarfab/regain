@@ -40,11 +40,14 @@ The setup dialog has four tabs:
 | Camera | Camera picker, serial, experimental direct driver and SDK fallback |
 | Recovery | Full recapture count, exposure cutoff and reconnect delay |
 | Cooling | Temperature tolerance, stable readings and settling timeout |
-| Advanced | Command/download timeouts, exposure grace and read retry counts |
+| Advanced | Command/download timeouts, exposure grace, read retry counts, optional fan/LED values |
 
 The main and guide choices are **ASI2600MM Pro** and **ASI220MM Mini (guide)**.
 On the tested Pro Duo unit these are separate USB devices; select each normally.
 The SDK may report the main device as `ZWO ASI2600MM Duo` in diagnostics.
+The tested 2025 ASI6200MM Pro appears as **ASI6200MM Pro**, without a P25 suffix.
+Its optional fan speed and power-LED brightness accept 0–255 in Advanced;
+blank fields preserve the camera's current values. Both are restored on recovery.
 
 The camera choice, backend and fallback preference are saved in
 `%LOCALAPPDATA%\ZwoGain\camera.json`. A successful connection remembers the
@@ -65,7 +68,7 @@ usual camera controls where supported by the selected backend.
 | Recovery stage | Default | Exposure cutoff applies? |
 | --- | --- | --- |
 | SDK reread of a frame still reported ready | 2 retries | No |
-| Direct ASI2600/ASI676 retained-frame reread | 2 retries | No |
+| Direct ASI2600/ASI6200/ASI676 retained-frame reread | 2 retries | No |
 | Full reconnect, restore and recapture | 3 retries, exposures up to 30 s | Yes |
 
 Read retry counts are configurable from 0 to 5; zero explicitly disables that
@@ -80,7 +83,7 @@ while the SDK still reports a ready frame. Its public API has no partial-transfe
 resume contract, and many camera-to-SDK errors leave no publicly readable frame.
 A hung or crashed worker cannot serve a reread.
 
-The direct ASI2600 and ASI676 paths can restart transfer of the frame retained
+The direct ASI2600, ASI6200 and ASI676 paths can restart transfer of the frame retained
 in camera memory. They drain outstanding I/O, reset the transfer path and reread
 from byte zero without starting another exposure. This is whole-frame replay;
 an arbitrary byte-offset continuation has not been established.

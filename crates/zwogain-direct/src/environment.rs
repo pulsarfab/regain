@@ -133,12 +133,13 @@ impl Environment {
             }
             22 | 23 if self.auxiliary.is_some() => {
                 ensure!((0..=255).contains(&value), "fan/LED value must be 0..255");
-                camera.vendor(
-                    0xbd,
-                    if control == 22 { 0xfa } else { 0xfb },
-                    value as u16,
-                    0,
-                )?;
+                let register = if control == 22 { 0xfa } else { 0xfb };
+                camera.vendor(0xbd, register, value as u16, 0)?;
+                let actual = i64::from(camera.vendor(0xbc, register, 0, 1)?[0]);
+                ensure!(
+                    actual == value,
+                    "fan/LED register {register:#x}: wrote {value}, read {actual}"
+                );
                 let values = self.auxiliary.as_mut().unwrap();
                 if control == 22 {
                     values.0 = value;
