@@ -23,6 +23,13 @@ Rust dependencies retain their original licenses. The build script packages
 their license/copyright texts and the Rust standard-library copyright bundle
 under `licenses/`. Cargo.lock records exact versions.
 
+The Windows COM package includes ASCOM DeviceInterfaces, Alpaca Components,
+Common Components, and Exception Library (ASCOM Initiative), plus Microsoft
+.NET support libraries. These packages declare the MIT license. Their copyright
+notices, license texts, package metadata, and supplied third-party notices are
+included under `licenses/dotnet/`. The .NET Framework itself is not bundled.
+The Rust Alpaca server does not use these .NET libraries.
+
 NINA's assemblies and .NET runtime are supplied by the existing NINA
 installation, not bundled in this plugin. NINA is licensed under MPL-2.0;
 its public interfaces and native driver behavior were used as implementation

@@ -21,8 +21,11 @@ public sealed class HostClient : IDisposable
     private long nextId;
     private int disposed;
     public int ProcessId => process.Id;
-    public HostClient(string executable, string sdk, bool simulate = false, Action<string>? log = null, bool direct = false)
+    public bool Supervised { get; }
+    public bool IsAlive => disposed == 0 && !process.HasExited;
+    public HostClient(string executable, string sdk, bool simulate = false, Action<string>? log = null, bool direct = false, bool supervised = false)
     {
+        Supervised = supervised;
         var start = new ProcessStartInfo(Path.GetFullPath(executable))
         {
             UseShellExecute = false,
@@ -32,7 +35,16 @@ public sealed class HostClient : IDisposable
             RedirectStandardError = true,
             WorkingDirectory = Path.GetDirectoryName(Path.GetFullPath(executable))!
         };
-        if (direct)
+        if (supervised)
+        {
+            start.ArgumentList.Add("--stdio");
+            start.ArgumentList.Add("--backend");
+            start.ArgumentList.Add(direct ? "direct" : "sdk");
+            start.ArgumentList.Add("--sdk");
+            start.ArgumentList.Add(Path.GetFullPath(sdk));
+            if (simulate) start.ArgumentList.Add("--simulate");
+        }
+        else if (direct)
         {
             start.ArgumentList.Add("--serve");
             if (simulate) start.ArgumentList.Add("--simulate");

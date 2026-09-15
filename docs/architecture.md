@@ -1,25 +1,33 @@
 # Architecture and protocol
 
 ```text
-NINA ICamera adapter / equipment provider
-             |
-CameraSession supervisor (.NET, no vendor DLL)
-             |
-private inherited stdin/stdout pipes
-             |
-zwogain-host.exe (Rust, one SDK-owning thread)
-             |
-ASICamera2.dll -> ZWO Windows driver -> camera
+NINA adapter -- private pipe ----+
+                                |
+Alpaca client -- HTTP -----------+--> zwogain-alpaca / zwogain-core (Rust)
+                                |           |
+Windows COM slots -- HTTP ------+     private worker pipes
+                                            |
+                               zwogain-host or zwogain-direct
+                                            |
+                                     SDK / native USB
 ```
 
-The supervisor must survive SDK faults. Placing it in the plugin keeps the
-camera DLL outside NINA while letting NINA cancellation interrupt even a hung
-native call. Every host is placed in an unnamed Windows job with kill-on-close;
-NINA exit/crash closes the job and kills orphaned workers. A killed SDK host
-cannot corrupt the supervisor's saved settings or return an old frame after
-reconnection. Discovery uses a separate short-lived process and does not open
-devices. One connected session owns one host and serializes capture and idle
-telemetry/control transactions.
+`zwogain-core` owns the recovery policy and remembered controls. The NINA pipe
+adapter and standalone Alpaca server use that same controller. Each camera has
+its own worker, so a failed SDK process can be replaced without losing its
+settings. The old .NET recovery implementation remains for low-level diagnostics
+and regression fixtures; production NINA sessions use the Rust controller.
+
+Every Windows worker is placed in a job with kill-on-close. NINA also owns its
+Rust supervisor through a job. Cancellation can terminate a hung worker without
+terminating its supervisor. One session serializes capture and idle telemetry.
+Discovery uses a separate process and does not open devices.
+
+Alpaca serves ICameraV4, management, discovery, and setup over a loopback listener
+by default. Each camera slot has a stable UUID and device number. Captures run
+asynchronously, and ImageBytes streams unsigned RAW16 in ASCOM X/Y order. The
+Windows .NET Framework COM executable exposes four official ICameraV4 interfaces
+and forwards to Alpaca; it contains no camera recovery logic.
 
 The Rust host never accepts network connections. Its inherited anonymous pipe
 handles are private to the parent/child pair. DLL loading uses an explicit
@@ -33,7 +41,7 @@ camera and control structures against a fixture built from the vendor C header.
 ## Portable Rust transport
 
 The Rust workers also run on Linux and macOS, with the same pipe protocol.
-The NINA adapter and Windows job-object supervisor remain Windows-specific.
+Only the NINA/COM adapters and Windows job objects are Windows-specific.
 Linux/macOS camera operation still needs hardware testing.
 
 `transport.rs` owns shared frame reads and environment controls. Its Windows
@@ -50,6 +58,10 @@ image processing, and cooling logic are shared. See
 [portable build and hardware testing](portable-rust.md).
 
 ## Wire version 1
+
+The worker protocol below is distinct from the supervisor's `--stdio` adapter.
+The supervisor adds recovery options to `open`, returns a status object with
+phase/backend details, and attaches final capture metadata to `download`.
 
 Each request is a 4-byte little-endian JSON length followed by UTF-8 JSON:
 

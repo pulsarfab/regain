@@ -30,8 +30,10 @@ jobs:
           fi
       - run: cargo fmt --check
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
-      - run: cargo test --workspace --locked
       - run: cargo build --workspace --release --locked
+      - run: cargo test --workspace --locked
+        env:
+          ZWOGAIN_TEST_WORKERS: ${{ github.workspace }}/target/release
       - name: Load and enumerate with the real ZWO SDK
         run: python scripts/stage-sdk.py target/release --check
       - name: Check worker protocol and native SDK ABI
@@ -78,12 +80,21 @@ jobs:
           components: rustfmt, clippy, rust-docs
       - run: ./scripts/test.ps1
         shell: pwsh
+      - run: ./scripts/test-ascom-registration.ps1
+        shell: pwsh
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
       - run: python scripts/test-rust.py
       - run: ./scripts/build.ps1
         shell: pwsh
+      - run: ./scripts/build-ascom.ps1
+        shell: pwsh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ZwoGain-ASCOM
+          path: artifacts/ZwoGain-ASCOM-*
+          if-no-files-found: error
       - run: ./scripts/test-release.ps1
         shell: pwsh
       - run: python -m pip install -r scripts/camera-kit/requirements.txt
@@ -102,6 +113,7 @@ jobs:
           path: |
             artifacts/ZwoGain-*.zip
             !artifacts/ZwoGain-CameraKit-*.zip
+            !artifacts/ZwoGain-ASCOM-*.zip
             artifacts/ZwoGain-*.manifest.json
             artifacts/zwogain.png
             artifacts/SHA256SUMS

@@ -18,13 +18,20 @@ host = next(line.removeprefix("host: ") for line in output("rustc", "-vV").split
             if line.startswith("host: "))
 metadata = json.loads(output("cargo", "metadata", "--locked", "--format-version", "1",
                              "--filter-platform", host))
-resolved = {node["id"] for node in metadata["resolve"]["nodes"]}
+nodes = {node["id"]: node for node in metadata["resolve"]["nodes"]}
+resolved = set()
+pending = list(metadata["workspace_members"])
+while pending:
+    node = pending.pop()
+    if node not in resolved:
+        resolved.add(node)
+        pending.extend(dependency["pkg"] for dependency in nodes[node]["deps"])
 archive = root / f"zwogain-rust-{host}.tar.gz"
 with tempfile.TemporaryDirectory(prefix="zwogain-package-") as temporary:
     stage = Path(temporary) / "zwogain-rust"
     licenses = stage / "licenses"
     licenses.mkdir(parents=True)
-    for name in ["zwogain-direct", "zwogain-host"]:
+    for name in ["zwogain-direct", "zwogain-host", "zwogain-alpaca"]:
         shutil.copy2(root / "target" / "release" / name, stage / name)
     subprocess.run([sys.executable, str(root / "scripts/stage-sdk.py"), str(stage),
                     "--target", host, "--check"], check=True)
@@ -32,6 +39,7 @@ with tempfile.TemporaryDirectory(prefix="zwogain-package-") as temporary:
         shutil.copy2(root / name, stage / name)
     shutil.copy2(root / "docs/portable-rust.md", stage / "README.md")
     shutil.copy2(root / "docs/architecture.md", stage / "architecture.md")
+    shutil.copy2(root / "docs/ascom.md", stage / "ascom.md")
     for package in metadata["packages"]:
         if package["id"] not in resolved or package["source"] is None:
             continue

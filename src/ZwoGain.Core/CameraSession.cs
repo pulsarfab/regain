@@ -9,6 +9,7 @@ public sealed class CameraSession : IDisposable
     private readonly Func<HostClient> factory;
     private readonly Func<HostClient>? sdkFallbackFactory;
     private bool usingFallback;
+    private bool supervised;
     public bool UsingSdkFallback => usingFallback;
     private readonly SemaphoreSlim operation = new(1);
     private readonly object sync = new();
@@ -120,6 +121,7 @@ public sealed class CameraSession : IDisposable
         {
             ObjectDisposedException.ThrowIf(disposed, this);
             host = usingFallback ? sdkFallbackFactory!() : factory();
+            supervised = host.Supervised;
         }
         applied.Clear();
         Log($"Host process {host.ProcessId}; selected serial {serial ?? "initial selection"}");
@@ -127,7 +129,10 @@ public sealed class CameraSession : IDisposable
         var result = (await Call("open", new
         {
             name = Camera.Name,
-            serial
+            serial,
+            recovery = JsonSerializer.SerializeToElement(Options, new JsonSerializerOptions(JsonSerializerDefaults.Web)),
+            allowSdkFallback = sdkFallbackFactory is not null,
+            recoveryState = new { temperature = recoveryTemperature, power = recoveryPower, settle = requiresCoolingSettle }
         }, token).ConfigureAwait(false)).Result;
         var identity = result.GetProperty("serial");
         string? found = identity.ValueKind == JsonValueKind.String ? identity.GetString() : null;
@@ -143,6 +148,7 @@ public sealed class CameraSession : IDisposable
         Camera = camera;
         SdkVersion = result.GetProperty("sdkVersion").GetString()!;
         Backend = result.TryGetProperty("backend", out var backend) ? backend.GetString()! : "sdk";
+        if (supervised) usingFallback = result.TryGetProperty("sdkFallback", out var fallback) && fallback.GetBoolean();
         SupportsRetainedFrameReads = Backend == "direct" && info.TryGetProperty("retainedFrameReads", out var retained) && retained.ValueKind == JsonValueKind.True;
         Log($"Camera opened using {Backend}{(usingFallback ? " fallback" : "")}; SDK/driver {SdkVersion}");
         Controls = result.GetProperty("controls").EnumerateArray().Select(c => new Control(c.GetProperty("type").GetInt32(), c.GetProperty("min").GetInt64(), c.GetProperty("max").GetInt64(), c.GetProperty("value").GetInt64(), c.GetProperty("writable").GetBoolean())).ToDictionary(c => c.Type);
@@ -324,6 +330,8 @@ public sealed class CameraSession : IDisposable
         {
             if (!hasConnected)
                 throw new InvalidOperationException("Connect first");
+            if (supervised)
+                return await CaptureSupervised(exposure, token).ConfigureAwait(false);
             Validate(exposure);
             var settings = Snapshot();
             double? prior = null;
@@ -472,9 +480,79 @@ public sealed class CameraSession : IDisposable
             State("Error");
             throw new IOException($"Exposure failed after {retries + 1} attempts. {last?.Message}", last);
         }
-        catch (OperationCanceledException) { KillHost(); State("Aborted"); throw; }
-        catch (Exception error) { Log($"Capture failed; no image returned: {error.Message}"); KillHost(); State("Error"); throw; }
+        catch (OperationCanceledException) { if (!supervised || host?.IsAlive != true) KillHost(); State("Aborted"); throw; }
+        catch (Exception error) { Log($"Capture failed; no image returned: {error.Message}"); if (!supervised || host?.IsAlive != true) KillHost(); State("Error"); throw; }
         finally { operation.Release(); ScheduleControlRecovery(); }
+    }
+    private async Task<Frame> CaptureSupervised(Exposure exposure, CancellationToken token)
+    {
+        // Production frontends share Rust recovery. The original transaction above
+        // remains available for raw-worker diagnostics and its regression fixtures.
+        Validate(exposure);
+        if (host is null || requiresReconnect) await RestoreControlConnection(token).ConfigureAwait(false);
+        var requested = Snapshot();
+        await Apply(requested, token).ConfigureAwait(false);
+        try
+        {
+            await Call("start", exposure, token).ConfigureAwait(false);
+            int replacements = exposure.microseconds / 1e6 <= Options.MaximumRetryExposureSeconds ? Options.MaxRetries : 0;
+            double budget = (replacements + 1) * (ReadyTimeoutSeconds(exposure.microseconds / 1e6) + Options.CoolingTimeoutSeconds +
+                (Options.ReadyFrameDownloadRetries + 1) * (Options.DownloadTimeoutSeconds + Options.ReconnectDelaySeconds) +
+                (2 * Controls.Count + 10) * Options.CommandTimeoutSeconds);
+            var clock = Stopwatch.StartNew();
+            while (true)
+            {
+                var status = (await Call("status", null, token).ConfigureAwait(false)).Result;
+                Backend = status.GetProperty("backend").GetString()!;
+                usingFallback = status.GetProperty("sdkFallback").GetBoolean();
+                string phase = status.GetProperty("phase").GetString() ?? "Exposing";
+                if (phase != Phase) State(phase);
+                int state = status.GetProperty("state").GetInt32();
+                if (state == 2) {
+                    var snapshot = status.GetProperty("snapshot");
+                    Controls = snapshot.GetProperty("controls").EnumerateObject().Select(p => p.Value).Select(c =>
+                        new Control(c.GetProperty("type").GetInt32(), c.GetProperty("min").GetInt64(), c.GetProperty("max").GetInt64(), c.GetProperty("value").GetInt64(), c.GetProperty("writable").GetBoolean())).ToDictionary(c => c.Type);
+                    SdkVersion = snapshot.GetProperty("sdkVersion").GetString()!;
+                    ControlConnectionAvailable = snapshot.GetProperty("controlConnectionAvailable").GetBoolean();
+                    LastError = snapshot.GetProperty("error").GetString();
+                    LastSdkExposureState = snapshot.GetProperty("sdkExposureState").ValueKind == JsonValueKind.Number ? snapshot.GetProperty("sdkExposureState").GetInt32() : null;
+                    LastSdkErrorCode = snapshot.GetProperty("sdkErrorCode").ValueKind == JsonValueKind.Number ? snapshot.GetProperty("sdkErrorCode").GetInt32() : null;
+                    SupportsRetainedFrameReads = Backend == "direct" && snapshot.GetProperty("info").TryGetProperty("retainedFrameReads", out var retained) && retained.ValueKind == JsonValueKind.True;
+                    break;
+                }
+                if (state != 1) throw new IOException(status.GetProperty("error").GetString() ?? "Exposure ended without an image");
+                if (clock.Elapsed.TotalSeconds > budget) throw new TimeoutException("Camera recovery deadline exceeded");
+                await Task.Delay(25, token).ConfigureAwait(false);
+            }
+            var reply = await Call("download", null, token, Options.DownloadTimeoutSeconds).ConfigureAwait(false);
+            if (reply.Result.GetProperty("width").GetInt32() != exposure.width || reply.Result.GetProperty("height").GetInt32() != exposure.height ||
+                reply.Pixels.Length != checked(exposure.width * exposure.height * 2)) throw new InvalidDataException("Unexpected capture dimensions");
+            var pixels = new ushort[reply.Pixels.Length / 2];
+            Buffer.BlockCopy(reply.Pixels, 0, pixels, 0, reply.Pixels.Length);
+            var controls = reply.Result.GetProperty("controls").EnumerateObject().ToDictionary(p => int.Parse(p.Name), p => p.Value.GetInt64());
+            lock (sync) {
+                foreach (var (key, value) in controls) {
+                    observed[key] = value;
+                    if (requested.TryGetValue(key, out var old) && desired.GetValueOrDefault(key) == old) {
+                        desired[key] = value;
+                        applied[key] = value;
+                    }
+                }
+            }
+            requiresReconnect = requiresCoolingSettle = false;
+            State("Idle");
+            return new(pixels, exposure.width, exposure.height, reply.Result.GetProperty("startedUtc").GetDateTimeOffset().UtcDateTime,
+                reply.Result.GetProperty("endedUtc").GetDateTimeOffset().UtcDateTime, reply.Result.GetProperty("recoveries").GetInt32(), exposure, controls)
+                { RetainedReadRecoveries = reply.Result.TryGetProperty("readRecoveries", out var reads) ? reads.GetInt32() : 0 };
+        }
+        catch
+        {
+            // Abort cooperatively so Rust can restore camera controls. Killing the
+            // supervisor is reserved for an unresponsive or broken pipe.
+            try { await Call("abort", null, CancellationToken.None).ConfigureAwait(false); }
+            catch { KillHost(); }
+            throw;
+        }
     }
     public double ReadyTimeoutSeconds(double seconds) => seconds + Options.ExposureGraceSeconds +
         (Backend == "direct" ? (1 + (SupportsRetainedFrameReads || seconds <= Options.MaximumRetryExposureSeconds

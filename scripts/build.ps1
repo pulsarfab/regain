@@ -27,6 +27,7 @@ try {
     }
     Copy-Item -LiteralPath (Join-Path $repo 'target/release/zwogain-host.exe') -Destination $stage
     Copy-Item -LiteralPath (Join-Path $repo 'target/release/zwogain-direct.exe') -Destination $stage
+    Copy-Item -LiteralPath (Join-Path $repo 'target/release/zwogain-alpaca.exe') -Destination $stage
     Copy-Item -LiteralPath (Join-Path $repo 'vendor/zwo/ASICamera2.dll') -Destination $stage
     Copy-Item -LiteralPath (Join-Path $repo 'src/ZwoGain.NINA/Assets/zwogain.png') -Destination $stage
     foreach ($file in @('LICENSE','README.md','THIRD_PARTY_NOTICES.md')) { Copy-Item -LiteralPath (Join-Path $repo $file) -Destination $stage }
@@ -34,10 +35,20 @@ try {
     $licenses = Join-Path $stage 'licenses'
     New-Item -ItemType Directory -Force $licenses | Out-Null
     Copy-Item -LiteralPath (Join-Path $repo 'vendor/zwo/LICENSE.txt') -Destination (Join-Path $licenses 'ZWO-ASI-SDK.txt')
-    $metadata = cargo metadata --locked --format-version 1 | ConvertFrom-Json
+    $target = (rustc -vV | Select-String '^host: ').ToString().Substring(6)
+    $metadata = cargo metadata --locked --format-version 1 --filter-platform $target | ConvertFrom-Json
     if ($LASTEXITCODE) { throw 'Cargo metadata failed' }
+    $nodes = @{}
+    foreach ($node in $metadata.resolve.nodes) { $nodes[$node.id] = $node }
+    $resolved = [Collections.Generic.HashSet[string]]::new()
+    $pending = [Collections.Generic.Stack[string]]::new()
+    foreach ($member in $metadata.workspace_members) { $pending.Push($member) }
+    while ($pending.Count) {
+        $id = $pending.Pop()
+        if ($resolved.Add($id)) { foreach ($dependency in $nodes[$id].deps) { $pending.Push($dependency.pkg) } }
+    }
     foreach ($package in $metadata.packages) {
-        if ($null -eq $package.source) { continue }
+        if ($null -eq $package.source -or !$resolved.Contains($package.id)) { continue }
         $dir = Split-Path $package.manifest_path
         $texts = @(Get-ChildItem -LiteralPath $dir -File | Where-Object { $_.Name -match '^(LICENSE|COPYING|NOTICE|COPYRIGHT)' })
         if ($texts.Count -eq 0) { throw "Missing license text: $($package.name)" }

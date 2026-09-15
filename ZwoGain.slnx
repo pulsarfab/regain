@@ -1,5 +1,6 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/ZwoGain.ASCOM/ZwoGain.ASCOM.csproj" />
     <Project Path="src/ZwoGain.Core/ZwoGain.Core.csproj" />
     <Project Path="src/ZwoGain.Diagnostics/ZwoGain.Diagnostics.csproj" />
     <Project Path="src/ZwoGain.NINA/ZwoGain.NINA.csproj" />

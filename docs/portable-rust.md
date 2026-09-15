@@ -17,8 +17,10 @@ Windows keeps its existing driver; no WinUSB driver replacement is needed.
 The transport claims the camera interface exclusively. It does not detach kernel
 drivers or change the USB configuration. Camera setup, defect correction,
 retained-frame rereads, and cooling code are shared across the three systems.
-Full reconnect/re-exposure recovery is still managed by the .NET supervisor;
-the Rust workers alone do not reproduce that complete plugin lifecycle.
+The `zwogain-core` Rust crate manages reconnects, cooler restoration, and
+replacement exposures. Run `zwogain-alpaca` for this complete lifecycle and a
+browser setup page; see [ASCOM instructions](ascom.md). The low-level worker
+CLIs below remain useful for camera research and individual captures.
 
 ## Build and test without a camera
 
@@ -27,7 +29,7 @@ macOS; a C compiler and linker on Linux). From the repository root:
 
 ```sh
 cargo build --workspace --release --locked
-cargo test --workspace --locked
+ZWOGAIN_TEST_WORKERS="$PWD/target/release" cargo test --workspace --locked
 python3 scripts/test-rust.py --bin-dir target/release
 ```
 
@@ -36,7 +38,7 @@ all supported direct camera/bin combinations, cooler controls, failed rereads,
 and preservation of images after cleanup errors.
 
 GitHub's **Build and test** workflow also builds and tests Linux and macOS on
-x86-64 and ARM64. Its `zwogain-rust-*` artifacts contain both workers, the matching
+x86-64 and ARM64. Its `zwogain-rust-*` artifacts contain the Alpaca server, both workers, the matching
 ASI SDK 1.41 library, licenses, build details, and SHA-256 checksums. Extract the
 archive and use `./zwogain-rust/zwogain-direct` in place of
 `./target/release/zwogain-direct` below. These test builds are unsigned and are

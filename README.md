@@ -5,11 +5,17 @@
 [![Build and test](https://github.com/theatrus/zwogain/actions/workflows/build.yml/badge.svg)](https://github.com/theatrus/zwogain/actions/workflows/build.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
-**ZWOgain**, as in **ZWO Again**, is a ZWO ASI camera plugin for NINA. It retries
-failed downloads and short exposures while NINA waits for the image.
+**ZWOgain**, as in **ZWO Again**, is a ZWO ASI camera driver for NINA and ASCOM.
+It retries failed downloads and short exposures while the app waits for an image.
 
 The ZWO SDK runs in a separate Rust process, so a camera crash or hang does not
 take down NINA. An optional direct driver can capture without the SDK.
+
+The standalone **Rust Alpaca server** runs on Windows, Linux, and macOS without
+.NET. It shares recovery with the NINA plugin. Add a saved slot for each camera;
+the Windows ASCOM COM frontend provides four fixed slots. See
+[ASCOM setup and current limitations](docs/ascom.md). These frontends are new in
+the source tree and CI packages; they are not in the v0.2.0.0 release.
 
 **ZWOgain is independent and is not affiliated with or supported by ZWO.**
 The code and logo use the Apache-2.0 license. Bundled software has its own

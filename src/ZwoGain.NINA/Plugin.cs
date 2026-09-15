@@ -43,8 +43,8 @@ public sealed class CameraProvider : IEquipmentProvider<ICamera>
         this.profiles = profiles;
     }
     internal static readonly string DirectoryPath = Path.GetDirectoryName(typeof(CameraProvider).Assembly.Location)!;
-    internal static HostClient NewHost() => new(Path.Combine(DirectoryPath, "zwogain-host.exe"), Path.Combine(DirectoryPath, "ASICamera2.dll"), log: message => CameraLog.Worker("SDK", message));
-    internal static HostClient NewDirectHost() => new(Path.Combine(DirectoryPath, "zwogain-direct.exe"), "unused", direct: true, log: message => CameraLog.Worker("direct", message));
+    internal static HostClient NewHost() => new(Path.Combine(DirectoryPath, "zwogain-alpaca.exe"), Path.Combine(DirectoryPath, "ASICamera2.dll"), supervised: true, log: message => CameraLog.Worker("SDK", message));
+    internal static HostClient NewDirectHost() => new(Path.Combine(DirectoryPath, "zwogain-alpaca.exe"), Path.Combine(DirectoryPath, "ASICamera2.dll"), direct: true, supervised: true, log: message => CameraLog.Worker("direct", message));
     internal static async Task<List<CameraDescriptor>> DiscoverAsync(CancellationToken token, bool direct = false)
     {
         using var host = direct ? NewDirectHost() : NewHost();
