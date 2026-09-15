@@ -62,7 +62,7 @@ without taking another exposure. A stop/reset error after a successful download
 keeps the image and reconnects before the next capture. If recovery fails, NINA
 receives the error. Details go in NINA's log.
 
-## Optional direct driver
+## Supported cameras
 
 The **SDK is the default**. To try capture without it, enable **Direct USB driver
 (experimental)** in setup. The direct driver still needs the installed ZWO
@@ -71,9 +71,12 @@ Windows driver.
 | Tested camera interface | Binning | Maximum direct exposure |
 | --- | --- | --- |
 | ASI676MC USB3 | 1 | 30 seconds |
-| ASI2600MM Pro main USB3 | 1–4 | 2,000 seconds |
+| ASI2600MM Pro (non-P25) main USB3 | 1–4 | 2,000 seconds |
 | ASI6200MM Pro P25 USB3 | 1–4 | 2,000 seconds |
 | ASI220MM Mini guide USB2 | 1–2 | 10 seconds |
+
+**Coming soon:** direct support for **ASI2600MM Pro P25** and **ASI6200MM Pro
+(non-P25)**. Other cameras can use SDK mode if supported by the bundled ZWO SDK.
 
 Direct capture includes RAW16 images, factory defect correction, gain and
 offset. The ASI2600 and ASI6200 also support cooling and the dew heater. The

@@ -1,6 +1,10 @@
 ZWOgain 0.2.0.0 adds ASI6200MM Pro P25 support and fixes camera recovery.
 The SDK remains the default; direct capture is optional.
 
+Current direct cameras: **ASI676MC**, **ASI2600MM Pro (non-P25)**,
+**ASI6200MM Pro P25**, and **ASI220MM Mini guide camera**.
+**Coming soon:** **ASI2600MM Pro P25** and **ASI6200MM Pro (non-P25)** direct support.
+
 - Adds direct ASI6200 P25 capture, defect correction, bins 1–4, cooling, dew heater, fan, and LED controls.
 - Fixes incomplete ASI6200 readout by waiting for all sensor rows before freezing the frame.
 - Restores idle camera controls after an abort or failed capture, without starting another exposure.
