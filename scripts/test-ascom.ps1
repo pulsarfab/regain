@@ -3,6 +3,10 @@ $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 Push-Location $repo
 $backend = $null
 $privateKeys = @()
+$registryHive = [Microsoft.Win32.RegistryHive]::CurrentUser
+# COM can ignore per-user registrations in elevated/UAC-disabled clients.
+$principal = [Security.Principal.WindowsPrincipal]::new([Security.Principal.WindowsIdentity]::GetCurrent())
+if ($principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { $registryHive = [Microsoft.Win32.RegistryHive]::LocalMachine }
 $previousSettings = $env:ZWOGAIN_ASCOM_SETTINGS
 $previousIds = $env:ZWOGAIN_ASCOM_TEST_CLSIDS
 try {
@@ -36,13 +40,13 @@ try {
     }
     $env:ZWOGAIN_ASCOM_SETTINGS = Join-Path $testDir 'server.json'
     @{ Address = '127.0.0.1'; Port = $port; StartLocalServer = $false } | ConvertTo-Json | Set-Content -LiteralPath $env:ZWOGAIN_ASCOM_SETTINGS
-    # Private per-user CLSIDs exercise the actual COM DLL loader without touching
-    # installed camera entries or requiring administrator rights.
+    # Private CLSIDs exercise the actual COM DLL loader without touching installed
+    # camera entries. Ordinary local tests do not need administrator rights.
     $env:ZWOGAIN_ASCOM_TEST_CLSIDS = ((1..4 | ForEach-Object { [Guid]::NewGuid().ToString() }) -join ',')
     $assemblyPath = Join-Path $repo 'src/ZwoGain.ASCOM/bin/Release/net48/ZwoGain.ASCOM.dll'
     $assemblyName = [Reflection.AssemblyName]::GetAssemblyName($assemblyPath).FullName
     foreach ($view in [Microsoft.Win32.RegistryView]::Registry32,[Microsoft.Win32.RegistryView]::Registry64) {
-        $root = [Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::CurrentUser, $view)
+        $root = [Microsoft.Win32.RegistryKey]::OpenBaseKey($registryHive, $view)
         try {
             for ($i = 0; $i -lt 4; $i++) {
                 $keyPath = 'Software\Classes\CLSID\{' + $env:ZWOGAIN_ASCOM_TEST_CLSIDS.Split(',')[$i] + '}'
@@ -68,7 +72,7 @@ try {
     }
 } finally {
     foreach ($entry in $privateKeys) {
-        $root = [Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::CurrentUser, $entry.View)
+        $root = [Microsoft.Win32.RegistryKey]::OpenBaseKey($registryHive, $entry.View)
         try { $root.DeleteSubKeyTree($entry.Path, $false) } finally { $root.Dispose() }
     }
     if ($null -ne $backend) { if (!$backend.HasExited) { $backend.Kill(); $backend.WaitForExit() }; $backend.Dispose() }
