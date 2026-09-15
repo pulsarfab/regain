@@ -35,6 +35,22 @@ try {
     if (Test-Path (Join-Path $destination 'ZwoGain.ASCOM.dll')) { throw 'Prerequisite failure installed files' }
     New-Item $platformKey -Force | Out-Null
     Set-ItemProperty $platformKey -Name PlatformVersion -Value '7.1'
+    # Make registration fail after files are copied. Setup must report failure
+    # and roll back, rather than show a successful but unusable installation.
+    $failureStage = Join-Path $testDir 'failure-stage'
+    Copy-Item -LiteralPath (Join-Path $repo 'artifacts/ascom-stage') -Destination $failureStage -Recurse
+    $fixtureSource = Join-Path $testDir 'RegistrationFailure.cs'
+    'class Program { static int Main(string[] args) { return args.Length > 0 && args[0] == "/checkinuse" ? 0 : 17; } }' | Set-Content -LiteralPath $fixtureSource
+    & "$env:WINDIR/Microsoft.NET/Framework64/v4.0.30319/csc.exe" /nologo /target:winexe ("/out:" + (Join-Path $failureStage 'ZwoGain.ASCOM.Register.exe')) $fixtureSource
+    if ($LASTEXITCODE) { throw 'Registration failure fixture compilation failed' }
+    $failureOutput = Join-Path $testDir 'failure-output'
+    & (Join-Path $repo 'artifacts/tools/inno/ISCC.exe') /Qp "/DAppVersion=$version" "/DStage=$failureStage" "/DOutput=$failureOutput" (Join-Path $repo 'installer/ascom.iss')
+    if ($LASTEXITCODE) { throw 'Failure installer compilation failed' }
+    $realInstaller = $installer
+    $installer = Join-Path $failureOutput ([IO.Path]::GetFileName($realInstaller))
+    Run-Setup 'registration-failure' $false
+    if ((Test-Path $uninstallKey) -or (Test-Path (Join-Path $destination 'ZwoGain.ASCOM.dll'))) { throw 'Failed registration did not roll back installation' }
+    $installer = $realInstaller
     Run-Setup 'install'
     $registered = Get-ItemPropertyValue 'HKLM:\SOFTWARE\Classes\CLSID\{D1DB6F94-5CC0-4752-A758-F849098874A1}\InprocServer32' -Name CodeBase
     if (([Uri]$registered).LocalPath -ne (Join-Path $destination 'ZwoGain.ASCOM.dll')) { throw 'Wrong installed registration path' }
