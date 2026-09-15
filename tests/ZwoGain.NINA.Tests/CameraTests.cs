@@ -14,6 +14,31 @@ namespace ZwoGain.NINA.Tests;
 
 public class CameraTests
 {
+    [Theory]
+    [InlineData(1)] [InlineData(2)] [InlineData(3)] [InlineData(4)]
+    public async Task DirectRoiUsesAlignedRectangleInNinaAndImageMetadata(short bin)
+    {
+        string root=Path.GetFullPath(Path.Combine(AppContext.BaseDirectory,"../../../../../"));
+        var images=new Mock<IExposureDataFactory>();
+        images.Setup(f=>f.CreateImageArrayExposureData(It.IsAny<ushort[]>(),It.IsAny<int>(),It.IsAny<int>(),It.IsAny<int>(),It.IsAny<bool>(),It.IsAny<ImageMetaData>()))
+            .Returns((ushort[] p,int w,int h,int depth,bool color,ImageMetaData m)=>new ImageArrayExposureData(p,w,h,depth,color,m,Mock.Of<IImageDataFactory>()));
+        var camera=new ResilientCamera(new("ZWO ASI6200MM Pro",9576,6388,false,0,3.76,16,true,false,[1,2,3,4]),
+            images.Object,()=>new HostClient(Path.Combine(root,"target/debug/zwogain-direct.exe"),"unused",simulate:true,direct:true),new(){MaxRetries=0});
+        try {
+            await camera.Connect(default);
+            camera.EnableSubSample=true;
+            camera.SubSampleX=17; camera.SubSampleY=3;
+            camera.SubSampleWidth=camera.SubSampleHeight=64;
+            camera.StartExposure(new CaptureSequence{ExposureTime=.01,Binning=new BinningMode(bin,bin)});
+            await camera.WaitUntilExposureIsReady(default);
+            var frame=Assert.IsType<ImageArrayExposureData>(await camera.DownloadExposure(default));
+            Assert.Equal(0,camera.SubSampleX%16); Assert.Equal(0,camera.SubSampleY%2);
+            Assert.Equal(camera.SubSampleWidth,frame.Width*bin);
+            Assert.Equal(camera.SubSampleHeight,frame.Height*bin);
+            Assert.Equal(camera.SubSampleX/bin%2,frame.MetaData.Camera.BayerOffsetX);
+            Assert.Equal(bin,frame.MetaData.Camera.BinX);
+        } finally {camera.Disconnect();}
+    }
     [Fact]
     public void PluginManifestUsesEmbeddedLogoAndApacheLicense()
     {

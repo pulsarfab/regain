@@ -9,6 +9,8 @@ try {
     if ($LASTEXITCODE) { throw 'Rust tests failed' }
     cargo build --locked
     if ($LASTEXITCODE) { throw 'Test host build failed' }
+    rustc --crate-type cdylib tests/fixtures/selection_sdk.rs -o target/debug/selection_sdk.dll
+    if ($LASTEXITCODE) { throw 'SDK selection fixture build failed' }
     dotnet test tests/ZwoGain.Tests -c Release
     if ($LASTEXITCODE) { throw 'Recovery tests failed' }
     dotnet test tests/ZwoGain.NINA.Tests -c Release

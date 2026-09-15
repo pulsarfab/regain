@@ -94,13 +94,22 @@ impl Sdk {
             serial.is_some() || candidates.len() == 1,
             "camera name missing or ambiguous; serial required"
         );
+        let mut last_error = None;
         for info in candidates {
             let id = info["id"].as_i64().unwrap() as i32;
-            unsafe {
+            let opened = unsafe {
                 Self::check(
                     self.symbol::<raw::OpenCamera>(b"ASIOpenCamera\0")?(id),
                     "open",
-                )?;
+                )
+            };
+            if let Err(error) = opened {
+                if serial.is_none() {
+                    return Err(error);
+                }
+                eprintln!("Skipping unavailable camera {id}: {error:#}");
+                last_error = Some(error);
+                continue;
             }
             self.id = Some(id);
             let result = self.initialize();
@@ -112,9 +121,18 @@ impl Sdk {
                 Ok(_) => self.close()?,
                 Err(e) => {
                     let _ = self.close();
-                    return Err(e);
+                    if serial.is_none() {
+                        return Err(e);
+                    }
+                    eprintln!("Skipping unidentified camera {id}: {e:#}");
+                    last_error = Some(e);
                 }
             }
+        }
+        if let Some(error) = last_error {
+            return Err(
+                error.context("selected serial could not be found among accessible cameras")
+            );
         }
         bail!("selected camera serial is not present")
     }

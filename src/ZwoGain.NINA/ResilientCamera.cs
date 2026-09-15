@@ -185,7 +185,7 @@ public sealed class ResilientCamera : BaseINPC, ICamera
         RaisePropertyChanged(nameof(BinX));
         RaisePropertyChanged(nameof(BinY));
     }
-    public double Temperature => session?.Controls.ContainsKey(8) != true ? double.NaN : Val(8) / 10.0;
+    public double Temperature => session?.ControlConnectionAvailable != true || !session.Controls.ContainsKey(8) ? double.NaN : Val(8) / 10.0;
     public double TemperatureSetPoint
     {
         get => CanSetTemperature ? Val(16) : double.NaN; set => Set(16, (long)Math.Clamp(Math.Round(value), Min(16), Max(16)));
@@ -195,7 +195,7 @@ public sealed class ResilientCamera : BaseINPC, ICamera
     {
         get => Val(17) != 0; set => Set(17, value ? 1 : 0);
     }
-    public double CoolerPower => Val(15);
+    public double CoolerPower => session?.ControlConnectionAvailable == true ? Val(15) : double.NaN;
     public bool HasDewHeater => Has(21);
     public bool DewHeaterOn
     {
@@ -250,7 +250,7 @@ public sealed class ResilientCamera : BaseINPC, ICamera
     public void UpdateSubSampleArea()
     {
     }
-    public CameraStates CameraState => !Connected ? CameraStates.NoState : exposure?.IsFaulted == true ? CameraStates.Error : exposure is { IsCompleted: false } ? (session?.Phase == "Downloading" ? CameraStates.Download : CameraStates.Exposing) : CameraStates.Idle;
+    public CameraStates CameraState => !Connected ? CameraStates.NoState : exposure is { IsCompleted: false } ? (session?.Phase == "Downloading" ? CameraStates.Download : CameraStates.Exposing) : exposure?.IsFaulted == true || session?.ControlConnectionAvailable != true ? CameraStates.Error : CameraStates.Idle;
     public IList<string> ReadoutModes => new List<string> { "RAW16" };
     public short ReadoutMode
     {
@@ -289,9 +289,12 @@ public sealed class ResilientCamera : BaseINPC, ICamera
             if (sequence.Offset >= 0 && CanSetOffset)
                 Offset = sequence.Offset;
             int width = (EnableSubSample ? SubSampleWidth : CameraXSize) / bin, height = (EnableSubSample ? SubSampleHeight : CameraYSize) / bin;
-            width -= width % 8;
-            height -= height % 2;
-            var request = new Exposure(width, height, bin, EnableSubSample ? SubSampleX / bin : 0, EnableSubSample ? SubSampleY / bin : 0, checked((long)Math.Round(sequence.ExposureTime * 1e6)), sequence.IsDarkSequence());
+            var request = Session.Camera.NormalizeRoi(new Exposure(width, height, bin, EnableSubSample ? SubSampleX / bin : 0, EnableSubSample ? SubSampleY / bin : 0, checked((long)Math.Round(sequence.ExposureTime * 1e6)), sequence.IsDarkSequence()));
+            if (EnableSubSample) {
+                SubSampleX = request.x * bin; SubSampleY = request.y * bin;
+                SubSampleWidth = request.width * bin; SubSampleHeight = request.height * bin;
+                RaiseAllPropertiesChanged();
+            }
             exposureCancel?.Dispose();
             exposureCancel = CancellationTokenSource.CreateLinkedTokenSource(lifetime?.Token ?? CancellationToken.None);
             // Session stays alive until this task unwinds; no SDK work on NINA's UI thread.
@@ -352,7 +355,7 @@ public sealed class ResilientCamera : BaseINPC, ICamera
         var options = owner.Options;
         int retries = seconds <= options.MaximumRetryExposureSeconds ? options.MaxRetries : 0;
         int reads = options.ReadyFrameDownloadRetries;
-        double attempt = seconds + options.ExposureGraceSeconds + options.CoolingTimeoutSeconds +
+        double attempt = owner.ReadyTimeoutSeconds(seconds) + options.CoolingTimeoutSeconds +
             (reads + 1) * (options.DownloadTimeoutSeconds + options.ReconnectDelaySeconds) +
             (2 * owner.Controls.Count + 10) * options.CommandTimeoutSeconds;
         int budget = (int)Math.Min(int.MaxValue, Math.Ceiling((retries + 1) * attempt));

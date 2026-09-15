@@ -57,10 +57,12 @@ public class DirectBackendTests
     {
         int starts = 0;
         using var session = new CameraSession(Camera, () => { starts++; return Host(); }, Fast);
+        var phases = new System.Collections.Concurrent.ConcurrentQueue<string>();
+        session.Diagnostic += phases.Enqueue;
         await session.ConnectAsync(default);
         using var cancel = new CancellationTokenSource(100);
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => session.CaptureAsync(Exposure with { microseconds = 2000000 }, cancel.Token));
-        Assert.Equal("Aborted", session.Phase);
+        Assert.Contains("Aborted", phases);
         var frame = await session.CaptureAsync(Exposure, default);
         Assert.Equal(2, starts);
         Assert.Equal(4096, frame.Pixels.Length);

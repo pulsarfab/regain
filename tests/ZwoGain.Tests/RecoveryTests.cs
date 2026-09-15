@@ -143,7 +143,7 @@ public class RecoveryTests
     public async Task RecoversTransferFailureByReplacingHostAndRestoringControls(string fault)
     {
         int starts = 0;
-        var phases = new List<string>();
+        var phases = new System.Collections.Concurrent.ConcurrentQueue<string>();
         using var session = new CameraSession(Camera, () =>
         {
             var h = Host();
@@ -154,7 +154,7 @@ public class RecoveryTests
                 }, TimeSpan.FromSeconds(15), default).GetAwaiter().GetResult();
             return h;
         }, Fast);
-        session.Diagnostic += phases.Add;
+        session.Diagnostic += phases.Enqueue;
         await session.ConnectAsync(default);
         session.Set(0, 123);
         session.Set(5, 17);
@@ -244,7 +244,7 @@ public class RecoveryTests
     public async Task WarmCameraDoesNotResumeBeforeCoolingDeadlineAndFailsBoundedly()
     {
         int starts = 0;
-        var phases = new List<string>();
+        var phases = new System.Collections.Concurrent.ConcurrentQueue<string>();
         using var session = new CameraSession(Camera, () =>
         {
             var h = Host();
@@ -264,7 +264,7 @@ public class RecoveryTests
             MaxRetries = 1,
             CoolingTimeoutSeconds = .08
         });
-        session.Diagnostic += phases.Add;
+        session.Diagnostic += phases.Enqueue;
         await session.ConnectAsync(default);
         await Assert.ThrowsAsync<IOException>(() => session.CaptureAsync(Exposure, default));
         Assert.Equal(1, phases.Count(p => p == "Starting exposure"));
@@ -304,7 +304,7 @@ public class RecoveryTests
     public async Task ColdSensorAtPriorTemperatureMustAlsoRecoverCoolerOutput(int restoredPower, bool resumes)
     {
         int starts = 0;
-        var phases = new List<string>();
+        var phases = new System.Collections.Concurrent.ConcurrentQueue<string>();
         using var session = new CameraSession(Camera, () =>
         {
             var h = Host();
@@ -314,7 +314,7 @@ public class RecoveryTests
                 h.CallAsync("simulation", new { coolerPower = restoredPower }, TimeSpan.FromSeconds(15), default).GetAwaiter().GetResult();
             return h;
         }, Fast with { MaxRetries = 1, CoolingTimeoutSeconds = .1 });
-        session.Diagnostic += phases.Add;
+        session.Diagnostic += phases.Enqueue;
         await session.ConnectAsync(default);
         if (resumes) Assert.Equal(1, (await session.CaptureAsync(Exposure, default)).Recoveries);
         else await Assert.ThrowsAsync<IOException>(() => session.CaptureAsync(Exposure, default));

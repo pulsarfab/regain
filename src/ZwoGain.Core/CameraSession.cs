@@ -19,6 +19,12 @@ public sealed class CameraSession : IDisposable
     private string? serial;
     private bool hasConnected;
     private bool disposed;
+    private readonly CancellationTokenSource shutdown = new();
+    private Task controlRecovery = Task.CompletedTask;
+    private bool requiresReconnect, requiresCoolingSettle;
+    private double? recoveryTemperature;
+    private long? recoveryPower;
+    public bool ControlConnectionAvailable { get; private set; }
     public CameraDescriptor Camera
     {
         get; private set;
@@ -67,7 +73,9 @@ public sealed class CameraSession : IDisposable
         await operation.WaitAsync(token).ConfigureAwait(false);
         try
         {
-            if (!hasConnected)
+            if (hasConnected && (host is null || requiresReconnect))
+                await RestoreControlConnection(token).ConfigureAwait(false);
+            else if (!hasConnected)
             {
                 try { await OpenAsync(token).ConfigureAwait(false); }
                 catch (Exception e) when (CanFallback && IsRecoverable(e))
@@ -76,6 +84,7 @@ public sealed class CameraSession : IDisposable
                     await OpenAsync(token).ConfigureAwait(false);
                 }
                 hasConnected = true;
+                ControlConnectionAvailable = true;
                 State("Idle");
             }
         }
@@ -214,8 +223,10 @@ public sealed class CameraSession : IDisposable
             return;
         try
         {
-            if (!hasConnected || host is null)
+            if (!hasConnected || disposed)
                 return;
+            if (host is null || requiresReconnect)
+                await RestoreControlConnection(token).ConfigureAwait(false);
             await Apply(Snapshot(), token).ConfigureAwait(false);
             foreach (int c in new[] { 8, 15 })
                 if (Controls.ContainsKey(c))
@@ -230,6 +241,47 @@ public sealed class CameraSession : IDisposable
         }
         catch { KillHost(); throw; }
         finally { operation.Release(); }
+    }
+    // Re-establish control without taking a new exposure or consuming its retry budget.
+    // Thermal settling remains required before the next capture.
+    private async Task RestoreControlConnection(CancellationToken token)
+    {
+        State("Restoring camera controls");
+        KillHost();
+        await Task.Delay(TimeSpan.FromSeconds(Options.ReconnectDelaySeconds), token).ConfigureAwait(false);
+        await OpenAsync(token).ConfigureAwait(false);
+        await Apply(Snapshot(), token).ConfigureAwait(false);
+        requiresReconnect = false;
+        ControlConnectionAvailable = true;
+        State("Idle");
+    }
+    private void ScheduleControlRecovery()
+    {
+        lock (sync)
+        {
+            if (disposed || !hasConnected || !requiresReconnect || !controlRecovery.IsCompleted) return;
+            controlRecovery = Task.Run(async () => {
+                // One bounded attempt now; normal telemetry may try again later.
+                using var deadline = CancellationTokenSource.CreateLinkedTokenSource(shutdown.Token);
+                deadline.CancelAfter(TimeSpan.FromSeconds(Options.ReconnectDelaySeconds +
+                    (2 * Controls.Count + 4) * Options.CommandTimeoutSeconds));
+                bool acquired = false;
+                try {
+                    await operation.WaitAsync(deadline.Token).ConfigureAwait(false);
+                    acquired = true;
+                    if (!disposed && requiresReconnect)
+                        await RestoreControlConnection(deadline.Token).ConfigureAwait(false);
+                }
+                catch (Exception error) {
+                    if (acquired) KillHost();
+                    if (!shutdown.IsCancellationRequested) {
+                        LastError = error.Message;
+                        State("Camera controls unavailable");
+                    }
+                }
+                finally { if (acquired) operation.Release(); }
+            });
+        }
     }
     private async Task<double?> Temperature(CancellationToken token)
     {
@@ -266,6 +318,8 @@ public sealed class CameraSession : IDisposable
                 if (observed.TryGetValue(8, out var t))
                     prior = t / 10.0;
                 if (observed.TryGetValue(15, out var power)) priorPower = power;
+                prior = recoveryTemperature ?? prior;
+                priorPower = recoveryPower ?? priorPower;
             }
             Exception? last = null;
             bool eligibleForRecapture = exposure.microseconds / 1e6 <= Options.MaximumRetryExposureSeconds;
@@ -278,7 +332,7 @@ public sealed class CameraSession : IDisposable
                 token.ThrowIfCancellationRequested();
                 try
                 {
-                    if (attempt > 0 || host is null)
+                    if (attempt > 0 || host is null || requiresReconnect)
                     {
                         State($"Reconnect delay (attempt {attempt + 1})");
                         KillHost();
@@ -291,6 +345,8 @@ public sealed class CameraSession : IDisposable
                     else
                     {
                         await Apply(settings, token).ConfigureAwait(false);
+                        if (requiresCoolingSettle && settings.GetValueOrDefault(17) != 0 && prior.HasValue)
+                            await Settle(prior.Value, priorPower, settings.GetValueOrDefault(16), token).ConfigureAwait(false);
                         prior = await Temperature(token).ConfigureAwait(false) ?? prior;
                         if (settings.GetValueOrDefault(17) != 0)
                             priorPower = await CoolerPower(token).ConfigureAwait(false) ?? priorPower;
@@ -309,12 +365,17 @@ public sealed class CameraSession : IDisposable
                                 await Settle(prior.Value, priorPower, settings.GetValueOrDefault(16), token).ConfigureAwait(false);
                         }
                     }
+                    requiresReconnect = requiresCoolingSettle = false;
+                    recoveryTemperature = null;
+                    recoveryPower = null;
+                    ControlConnectionAvailable = true;
                     State("Starting exposure");
                     DateTime started = DateTime.UtcNow;
                     object parameters = Backend == "direct" ? new {
                         exposure.width, exposure.height, exposure.bin, exposure.x, exposure.y,
                         exposure.microseconds, exposure.dark,
-                        readRetries = SupportsRetainedFrameReads || eligibleForRecapture ? Options.DirectReadRetries : 0
+                        readRetries = SupportsRetainedFrameReads || eligibleForRecapture ? Options.DirectReadRetries : 0,
+                        captureTimeoutSeconds = ReadyTimeoutSeconds(exposure.microseconds / 1e6) + Options.CommandTimeoutSeconds
                     } : exposure;
                     await Call("start", parameters, token).ConfigureAwait(false);
                     State("Exposing");
@@ -326,7 +387,7 @@ public sealed class CameraSession : IDisposable
                             break;
                         if (LastSdkExposureState != 1)
                             throw new SdkException($"Exposure ended in SDK state {LastSdkExposureState}");
-                        if (clock.Elapsed.TotalSeconds > exposure.microseconds / 1e6 + Options.ExposureGraceSeconds)
+                        if (clock.Elapsed.TotalSeconds > ReadyTimeoutSeconds(exposure.microseconds / 1e6))
                             throw new TimeoutException("Exposure readiness deadline exceeded");
                         await Task.Delay(25, token).ConfigureAwait(false);
                     }
@@ -364,6 +425,11 @@ public sealed class CameraSession : IDisposable
                         ? reads.GetInt32() : 0;
                     if (retainedReads > 0)
                         Diagnostic?.Invoke($"Recovered retained frame after {retainedReads} transfer retries; no new exposure");
+                    if (reply.Result.TryGetProperty("cleanupError", out var cleanup)) {
+                        LastError = cleanup.GetString();
+                        Diagnostic?.Invoke($"Frame preserved; reconnect required after cleanup failure: {LastError}");
+                        KillHost();
+                    }
                     State("Idle");
                     return new(pixels, exposure.width, exposure.height, started, ended, attempt, exposure, settings)
                         { RetainedReadRecoveries = retainedReads };
@@ -389,8 +455,11 @@ public sealed class CameraSession : IDisposable
         }
         catch (OperationCanceledException) { KillHost(); State("Aborted"); throw; }
         catch { KillHost(); State("Error"); throw; }
-        finally { operation.Release(); }
+        finally { operation.Release(); ScheduleControlRecovery(); }
     }
+    public double ReadyTimeoutSeconds(double seconds) => seconds + Options.ExposureGraceSeconds +
+        (Backend == "direct" ? (1 + (SupportsRetainedFrameReads || seconds <= Options.MaximumRetryExposureSeconds
+            ? Options.DirectReadRetries : 0)) * Options.DownloadTimeoutSeconds : 0);
     private async Task Settle(double prior, long? priorPower, double target, CancellationToken token)
     {
         State($"Restoring cooling near {prior:F1} C");
@@ -429,6 +498,13 @@ public sealed class CameraSession : IDisposable
     {
         lock (sync)
         {
+            if (hasConnected && !requiresCoolingSettle) {
+                recoveryTemperature = observed.TryGetValue(8, out var t) ? t / 10.0 : null;
+                recoveryPower = observed.TryGetValue(15, out var p) ? p : null;
+                requiresCoolingSettle = true;
+            }
+            requiresReconnect = hasConnected;
+            ControlConnectionAvailable = false;
             host?.Dispose();
             host = null;
         }
@@ -440,16 +516,35 @@ public sealed class CameraSession : IDisposable
         {
             if (disposed) return;
             disposed = true;
+            shutdown.Cancel();
             closing = host;
             host = null;
         }
-        if (closing is null) return;
-        // Normal disconnect lets the direct worker disable its host-regulated cooler.
-        // Abort/failure still use immediate process termination via KillHost.
-        try {
-            using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(2));
-            closing.CallAsync("close", null, TimeSpan.FromSeconds(2), deadline.Token).GetAwaiter().GetResult();
-        } catch { /* An unresponsive worker must still be terminated. */ }
-        finally { closing.Dispose(); }
+        bool closed = false;
+        if (closing is not null) {
+            try {
+                using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+                closing.CallAsync("close", null, TimeSpan.FromSeconds(2), deadline.Token).GetAwaiter().GetResult();
+                closed = true;
+            } catch { /* Terminate active or unresponsive acquisition before cleanup. */ }
+            finally { closing.Dispose(); }
+        }
+        // Disconnect immediately after Abort must not cancel the only path capable
+        // of switching off a direct camera's last PWM output. Reopen for cleanup only.
+        if (!closed && hasConnected && Backend == "direct" && Camera.Cooled && serial is not null) {
+            try {
+                using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(
+                    Options.ReconnectDelaySeconds + 3 * Options.CommandTimeoutSeconds));
+                Task.Delay(TimeSpan.FromSeconds(Options.ReconnectDelaySeconds), deadline.Token).GetAwaiter().GetResult();
+                using var cleanup = factory();
+                var timeout = TimeSpan.FromSeconds(Options.CommandTimeoutSeconds);
+                cleanup.CallAsync("open", new { name = Camera.Name, serial }, timeout, deadline.Token).GetAwaiter().GetResult();
+                cleanup.CallAsync("set", new { control = 17, value = 0 }, timeout, deadline.Token).GetAwaiter().GetResult();
+                cleanup.CallAsync("close", null, timeout, deadline.Token).GetAwaiter().GetResult();
+            } catch (Exception error) {
+                LastError = error.Message;
+                Diagnostic?.Invoke($"Could not disable cooling on disconnect: {error.Message}");
+            }
+        }
     }
 }

@@ -256,9 +256,7 @@ pub fn capture(c: &Camera, info: &Value, s: &Settings, bin: u32) -> Result<(Valu
         Ok((meta, data))
     })();
     let cleanup = stop(c);
-    let result = result?;
-    cleanup?;
-    Ok(result)
+    crate::completion::finish(result, cleanup)
 }
 
 #[cfg(test)]

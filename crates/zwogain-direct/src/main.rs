@@ -15,6 +15,7 @@ mod asi6200_tables;
 mod asi676;
 #[cfg(windows)]
 mod asi676_tables;
+mod completion;
 #[cfg(windows)]
 mod environment;
 mod processing;
@@ -200,6 +201,11 @@ fn main() -> Result<()> {
                 writeln!(output, "{}", serde_json::to_string(&result)?)?;
             }
             output.flush()?;
+            ensure!(
+                result["capture"].get("cleanupError").is_none(),
+                "frame delivered, but camera must reconnect after cleanup failure: {}",
+                result["capture"]["cleanupError"]
+            );
         }
         return Ok(());
     }

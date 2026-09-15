@@ -452,9 +452,7 @@ fn capture_native(
         Ok((meta, data))
     })();
     let cleanup = stop(camera);
-    let frame = result?;
-    cleanup?;
-    Ok(frame)
+    crate::completion::finish(result, cleanup)
 }
 
 #[cfg(test)]

@@ -287,7 +287,5 @@ pub fn capture(
         Ok((metadata, data))
     })();
     let cleanup = stop(camera);
-    let result = result?;
-    cleanup?;
-    Ok(result)
+    crate::completion::finish(result, cleanup)
 }

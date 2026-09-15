@@ -11,7 +11,15 @@ use std::{
 
 type Frame = (Value, Vec<u8>);
 enum Work {
-    Capture(Settings, i32, u32, mpsc::SyncSender<Result<Frame>>),
+    Capture(
+        Settings,
+        i32,
+        u32,
+        Duration,
+        Duration,
+        bool,
+        mpsc::SyncSender<Result<Frame>>,
+    ),
     Environment(u32, Option<i64>, mpsc::SyncSender<Result<i64>>),
 }
 #[derive(Clone, Copy, Default, PartialEq)]
@@ -133,7 +141,7 @@ fn open_camera(model: Model, serial: Option<&str>) -> Result<(transport::Camera,
         serial.is_some() || paths.len() == 1,
         "multiple cameras of this model require a serial number"
     );
-    for path in paths {
+    let (camera, info, found) = find_accessible(paths, |path| {
         let camera = transport::Camera::open(&path)?;
         let info = camera.probe()?;
         ensure!(
@@ -149,13 +157,61 @@ fn open_camera(model: Model, serial: Option<&str>) -> Result<(transport::Camera,
         );
         let found: String = bytes.iter().map(|v| format!("{v:02x}")).collect();
         if serial.is_none_or(|s| s == found) {
-            if model.cooled() {
-                camera.enable_environment(model == Model::Asi6200)?;
+            return Ok(Some((camera, info, found)));
+        }
+        Ok(None)
+    })?;
+    if model.cooled() {
+        camera.enable_environment(model == Model::Asi6200)?;
+    }
+    Ok((camera, info, found))
+}
+
+fn find_accessible<I: IntoIterator, T>(
+    candidates: I,
+    mut inspect: impl FnMut(I::Item) -> Result<Option<T>>,
+) -> Result<T> {
+    let mut last_error = None;
+    for candidate in candidates {
+        match inspect(candidate) {
+            Ok(Some(found)) => return Ok(found),
+            Ok(None) => {}
+            Err(error) => {
+                eprintln!("Skipping unavailable camera candidate: {error:#}");
+                last_error = Some(error);
             }
-            return Ok((camera, info, found));
         }
     }
+    if let Some(error) = last_error {
+        return Err(error.context("selected serial could not be found among accessible cameras"));
+    }
     bail!("selected camera serial is not attached")
+}
+
+#[cfg(test)]
+mod selection_tests {
+    use super::*;
+    #[test]
+    fn skips_busy_and_nonmatching_devices_but_never_substitutes_them() {
+        let mut visited = vec![];
+        let found = find_accessible([0, 1, 2], |id| {
+            visited.push(id);
+            match id {
+                0 => bail!("busy"),
+                1 => Ok(None),
+                _ => Ok(Some(id)),
+            }
+        })
+        .unwrap();
+        assert_eq!(found, 2);
+        assert_eq!(visited, [0, 1, 2]);
+        assert!(
+            find_accessible([0, 1], |id| -> Result<Option<i32>> {
+                if id == 0 { bail!("busy") } else { Ok(None) }
+            })
+            .is_err()
+        );
+    }
 }
 
 struct Worker {
@@ -254,10 +310,16 @@ impl Worker {
                         let _ = watchdog.send(None);
                         let _ = reply.send(result);
                     }
-                    Work::Capture(settings, gain, bin, reply) => {
+                    Work::Capture(
+                        settings,
+                        gain,
+                        bin,
+                        timeout,
+                        simulated_delay,
+                        simulated_cleanup,
+                        reply,
+                    ) => {
                         // Never free live I/O buffers if a kernel operation becomes stuck.
-                        let timeout = Duration::from_micros(u64::from(settings.microseconds))
-                            + Duration::from_secs(45);
                         let _ = watchdog.send(Some(timeout));
                         let result = if let Some((camera, info, _)) = &device {
                             match model {
@@ -274,14 +336,23 @@ impl Worker {
                             std::thread::sleep(Duration::from_micros(u64::from(
                                 settings.microseconds,
                             )));
+                            std::thread::sleep(simulated_delay);
                             let pixels: Vec<_> = (0..settings.width * settings.height)
                                 .flat_map(|i| (i as u16).to_le_bytes())
                                 .collect();
                             Ok((
                                 json!({"width":settings.width,"height":settings.height,"bin":bin,"sdkLoaded":false,
-                                "simulated":true,"readoutRetriesUsed":0}),
+                                "simulated":true,"readRecoveries":0}),
                                 pixels,
                             ))
+                        };
+                        let result = if simulate && simulated_cleanup {
+                            crate::completion::finish(
+                                result,
+                                Err(anyhow::anyhow!("simulated cleanup failure")),
+                            )
+                        } else {
+                            result
                         };
                         let _ = watchdog.send(None);
                         if reply.send(result).is_err() {
@@ -335,6 +406,9 @@ struct Host {
     model: Model,
     gain: i32,
     simulated_read_failures: Option<u32>,
+    reconnect_required: bool,
+    simulated_delay: Duration,
+    simulated_cleanup: bool,
 }
 impl Host {
     fn update(&mut self) {
@@ -361,6 +435,17 @@ impl Host {
             })?)?)
         };
         let value = match method {
+            "simulation" => {
+                ensure!(
+                    self.simulate && self.pending.is_none() && self.frame.is_none(),
+                    "simulation only, while idle"
+                );
+                let delay = params["readDelayMs"].as_u64().unwrap_or(0);
+                ensure!(delay <= 5000, "invalid simulated read delay");
+                self.simulated_delay = Duration::from_millis(delay);
+                self.simulated_cleanup = params["cleanupFailure"].as_bool().unwrap_or(false);
+                Value::Null
+            }
             "simulate-read-failures" => {
                 ensure!(
                     self.simulate && self.pending.is_none() && self.frame.is_none(),
@@ -415,6 +500,7 @@ impl Host {
                     }
                 }
                 self.worker = Some(worker);
+                self.reconnect_required = false;
                 json!({"serial":identity,"info":descriptor,"sdkVersion":format!("SDK-less experimental {}",model.name()),
                     "backend":"direct","controls":controls})
             }
@@ -471,8 +557,8 @@ impl Host {
                     .as_ref()
                     .ok_or_else(|| anyhow::anyhow!("camera is not open"))?;
                 ensure!(
-                    self.pending.is_none() && self.frame.is_none(),
-                    "exposure pending"
+                    self.pending.is_none() && self.frame.is_none() && !self.reconnect_required,
+                    "exposure pending or reconnect required after cleanup failure"
                 );
                 let bin = number("bin")?;
                 let mut settings = self.settings.clone();
@@ -486,6 +572,15 @@ impl Host {
                 }
                 self.model.validate(&settings, self.gain, bin)?;
                 if method == "start" {
+                    let seconds = params["captureTimeoutSeconds"].as_f64().unwrap_or(
+                        f64::from(settings.microseconds) / 1e6
+                            + 45.0
+                            + 60.0 * f64::from(settings.read_retries + 1),
+                    );
+                    ensure!(
+                        seconds.is_finite() && (0.001..=86400.0).contains(&seconds),
+                        "invalid capture deadline"
+                    );
                     // Instant faulted readout for the supervisor's policy tests.
                     // This branch is inaccessible without --simulate.
                     if let Some(failures) = self.simulated_read_failures.take() {
@@ -506,7 +601,15 @@ impl Host {
                     let (sender, receiver) = mpsc::sync_channel(1);
                     worker
                         .sender
-                        .send(Work::Capture(settings, self.gain, bin, sender))
+                        .send(Work::Capture(
+                            settings,
+                            self.gain,
+                            bin,
+                            Duration::from_secs_f64(seconds),
+                            self.simulated_delay,
+                            self.simulated_cleanup,
+                            sender,
+                        ))
                         .map_err(|_| hardware(anyhow::anyhow!("direct worker exited")))?;
                     self.pending = Some(receiver);
                 }
@@ -532,6 +635,7 @@ impl Host {
                     .ok_or_else(|| anyhow::anyhow!("no completed frame"))?
                     .map_err(hardware)?;
                 pixels = frame.1;
+                self.reconnect_required = frame.0.get("cleanupError").is_some();
                 frame.0
             }
             "stop" | "close" => {

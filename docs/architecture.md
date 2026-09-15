@@ -52,6 +52,13 @@ used. This trades a few bulk memory copies for simpler frame ownership than
 shared memory, and accommodates the ASI6200's 122,342,976-byte frame (exact size
 is computed from dimensions, never a fixed camera-specific allocation).
 
+Direct responses additionally report `readRecoveries`. A successfully validated
+frame may include `cleanupError` if stopping/resetting the camera afterward
+failed. The frame remains usable; the direct server rejects another `start`
+until the connection is reopened. Environment controls remain available while
+the supervisor replaces the worker. Research CLI runs emit the valid frame and
+then stop on this condition.
+
 Methods: `list`, `open` (name and optional serial), `get`, `set`, `start`
 (width, height, bin, x, y, microseconds, dark), `status`, `download`, `stop`,
 `close`. `fault` and `simulation` exist only with `--simulate`; a real SDK host
@@ -61,14 +68,19 @@ bad bounds invalidate the worker. Standard error is diagnostics only.
 ## Time bounds and recovery
 
 The parent independently bounds each command (15 seconds), download (60
-seconds), exposure readiness (requested duration + 30 seconds), USB delay (5
+seconds), SDK exposure readiness (requested duration + 30 seconds), USB delay (5
 seconds), cooling settle (300 seconds), and total retry count (3 by default).
 Retries apply only when the requested exposure is no longer than
 `MaximumRetryExposureSeconds` (30 seconds by default, inclusive). Longer
-exposures are permitted but their first failure is surfaced. The same threshold
-also suppresses optional same-frame re-download attempts; elapsed download or
-recovery time does not affect eligibility. Setting the threshold to zero
-disables all automatic capture retries.
+exposures are permitted. Ready-frame rereads are independent of this cutoff;
+setting it to zero disables replacement exposures. Direct guide stream
+resynchronization is subject to the cutoff because it reads a subsequent frame.
+
+Direct readiness includes USB readout and processing, so its budget is exposure
+duration + exposure grace + `(readRetries + 1) * DownloadTimeoutSeconds`.
+The parent sends `captureTimeoutSeconds` with one additional command-timeout
+margin for the worker watchdog. NINA's outer timeout includes the same allowance.
+The supervisor still separately bounds the final image transfer over IPC.
 The SDK call does not have to cooperate with cancellation. Polling is 25 ms;
 the SDK itself reports its internal capture/transfer failure as an exposure
 state in many cases, before the application calls `ASIGetDataAfterExp`.
@@ -84,5 +96,12 @@ original temperature reference is retained across all attempts.
 Permanent SDK size/format/parameter errors are surfaced immediately; camera
 removal, closed/invalid ID, timeout, failed state and generic SDK errors use
 the bounded recovery path. Cancellation never spends retry budget or starts a
-new host on its own. At retry exhaustion the final exception includes the
-last failure and attempt count. No failed/partial frame reaches NINA.
+replacement exposure. After cancellation or exhaustion, the supervisor makes a
+bounded background attempt to reconnect and restore controls, without an
+exposure. Idle telemetry can retry a failed control connection later. The
+original thermal reference survives this idle reconnect and gates the next
+capture. Unavailable control connections expose an error state and unknown
+temperature/power rather than stale telemetry. Disconnect also attempts cooler
+shutdown by serial when the direct worker has already died. At retry exhaustion
+the final capture exception includes the last failure and attempt count.
+No failed/partial frame reaches NINA.

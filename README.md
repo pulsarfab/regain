@@ -150,7 +150,9 @@ The SDK remains the default for new configurations.
 The direct backend reads serials and factory calibration, applies the verified
 RAW16 defect corrections and software binning, and delivers a complete binary
 frame to NINA. ROIs require at least 64 × 64 physical pixels; ASI2600/6200 origins
-align to 16 columns and two rows. USB bandwidth is fixed at 40 and bulk reads
+align to 16 columns and two rows. The NINA adapter adjusts selected rectangles
+to these constraints, including the minimum size at the selected binning, and
+reports the adjusted rectangle. USB bandwidth is fixed at 40 and bulk reads
 are sequential. The main camera's Rust cooling regulator runs during idle,
 exposure and transfer; it differs from the SDK regulator.
 
@@ -187,7 +189,14 @@ v0.1.0.0 package predates that support; build and install from source to test it
 - NINA temperature/power telemetry is cached during capture; control changes are
   deferred. This does not stop the direct worker's cooling regulator.
 - Abort/Stop cancels the transaction and terminates the worker. It does not return
-  a shortened exposure. The next capture reconnects and restores state.
+  a shortened exposure. The supervisor then reconnects to restore idle controls
+  and cooling without taking an exposure. The next capture still waits for the
+  prior cooling conditions. Disconnect makes a bounded attempt to disable direct
+  cooling even if the acquisition worker has already exited.
+- Direct capture readiness includes the exposure grace period and a download
+  allowance for each permitted read attempt. The worker watchdog uses that same
+  budget, with one command timeout as a margin. A post-download stop/reset error
+  preserves the validated image and requires reconnection before another capture.
 
 Detailed evidence: [NINA tests](docs/nina-end-to-end.md),
 [transfer fault tests](docs/transfer-recovery.md),
