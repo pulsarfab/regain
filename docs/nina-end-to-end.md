@@ -2,7 +2,7 @@
 
 This document records successive hardware validation runs. The initial matrix
 below and later ASI2600 sections predate ASI6200 support; see the final ASI6200
-section and [model-specific evidence](asi6200-p25.md) for the new P25 tests.
+sections and [model-specific evidence](asi6200-p25.md) for the P25 tests.
 
 Initial status: **attached-hardware acceptance matrix passed**, 2026-09-14. All 11
 advertised camera/backend/bin combinations produced fresh images inspected in
@@ -540,7 +540,7 @@ minimum 535 and maximum 65535 ADU (147 pixels). The whole image was visible
 without the stale lower region found before the readout correction. Temperature
 refreshed to 19.9°C at 1% output against the unchanged 20°C setpoint.
 
-NINA holds its last temperature/power reading during an individual capture.
+At this revision, NINA held its last temperature/power reading during an individual capture.
 A passive observation of the owned direct worker during this exposure recorded
 44 successful temperature reads at 20°C and 44 cooler register writes over
 45 seconds. It issued no extra camera commands. The worker had no camera SDK
@@ -554,3 +554,83 @@ and fallback disabled, fan 255 and LED 255. Reconnecting confirmed primary SDK
 mode, gain 100, offset 50 and USB bandwidth 40. The capture inputs were restored
 to 0.1 seconds, bin 1, full frame, Loop off and Save off. The completed
 1,200-second direct image remains visible in the image pane.
+
+## Shared Rust recovery validation — 2026-09-15
+
+The Rust supervisor was tested through NINA 3.2.0.9001 with the capped
+ASI6200MM Pro P25. The installed Release files were checked against the build
+by SHA-256. Gain was 100, offset 50, USB bandwidth 40, fan and LED 255;
+Save was off. These are new tests of the shared recovery path, separate from
+the earlier 1,200-second tests above.
+
+Testing found a cooling-status bug: temperature and power stayed frozen during
+an exposure, causing NINA to report that cooling had stalled even though the
+camera was cooling. Commit `385b6e1` fixes this by forwarding live readings
+through the Rust supervisor. Native mode uses the cooler controller's cached
+readings, without adding USB commands during image transfer. The fix was built,
+installed and tested again. Both SDK and native 120-second captures completed
+with changing temperature/power readings and no cooling error.
+
+Every image below was inspected in NINA's image pane. The short SDK matrix ran
+before the telemetry fix; the native matrix and both corrected long captures
+ran with `385b6e1` installed. Native mode had SDK fallback disabled.
+
+| Backend | Exposure / bin / region | Output | Mean / SD (ADU) |
+| --- | --- | --- | --- |
+| SDK | 0.1 s / 1 / full | 9576 × 6388 | 502.95 / 5.94 |
+| SDK | 0.1 s / 2 / full | 4784 × 3194 | 502.58 / 3.00 |
+| SDK | 0.1 s / 3 / full | 3192 × 2128 | 502.50 / 2.02 |
+| SDK | 0.1 s / 4 / full | 2392 × 1596 | 502.49 / 1.55 |
+| SDK | 0.1 s / 4 / physical ROI 256 × 256 | 64 × 64 | 502.71 / 1.40 |
+| SDK, telemetry fixed | 120 s / 1 / full | 9576 × 6388 | 531.35 / 74.23 |
+| Native | 120 s / 1 / full | 9576 × 6388 | 526.08 / 68.33 |
+| Native | 0.1 s / 2 / full | 4784 × 3194 | 502.48 / 2.76 |
+| Native | 0.1 s / 3 / full | 3192 × 2128 | 502.41 / 1.85 |
+| Native, final loop image | 0.1 s / 4 / full | 2392 × 1596 | 502.39 / 1.42 |
+| Native | 0.1 s / 4 / physical ROI 256 × 256 | 64 × 64 | 502.63 / 1.39 |
+
+Short-exposure loops completed in both backends and stopped after the active
+frame when Loop was disabled. Abort returned the capture button and preserved
+the preceding image. The next native 120-second capture reopened the worker,
+restored cooling and completed. Module inspection confirmed that the native
+worker had no `ASICamera2.dll` loaded.
+
+### Worker failure with the real cooler
+
+The owned camera worker was deliberately terminated during each 30-second
+capture. The Rust supervisor and NINA stayed running. Recovery restored the
+20°C setpoint, waited for three acceptable readings near the prior thermal
+state, then repeated the exposure. NINA received an image without a user retry.
+
+| Backend | Failure / reopen / cooling ready / image returned (local time) | Prior → accepted temperature and power | Image mean / SD |
+| --- | --- | --- | --- |
+| SDK | 16:12:06 / 16:12:12 / 16:12:16 / 16:12:47 | 20.6°C, 0% → 20.7°C, 0% | 509.49 / 41.24 |
+| Native, fallback off | 16:15:19 / 16:15:24 / 16:15:28 / 16:16:00 | 22.3°C, 9% → 20.7°C, 10% | 509.20 / 40.87 |
+
+Both returned full-resolution 9576 × 6388 images after one replacement exposure.
+The five-second reconnect delay and recovery messages appeared in NINA's log.
+An additional SDK worker termination while idle also recovered the controls
+without an error dialog; it was not counted as a failed exposure test.
+
+With SDK fallback enabled, terminating the native worker at 16:27:04 during a
+30-second bin-4 exposure caused the next attempt to use the SDK. It reopened at
+16:27:10 after the configured delay, restored the 20°C target, and accepted
+19.8, 19.8 and 20.0°C at 0% output against the prior 20.5°C / 6% state.
+The replacement image returned at 16:27:46: 2392 × 1596 pixels, mean 508.62,
+SD 10.16. NINA displayed the image, reported SDK fallback in its driver info,
+and logged the backend change and recovery without a failed capture dialog.
+
+These faults were process terminations, not physical USB removal or power loss.
+They exercise reopening and replacement captures; they do not establish that a
+real interrupted USB transfer can resume. Ready-frame rereads remain covered by
+automated fault tests. The local suite passed 36 Rust tests, 81 core .NET tests,
+27 NINA tests and all four simulated COM slots in both client architectures.
+GitHub CI passed for this fix on Windows, Linux x64/ARM64 and macOS Intel/ARM64:
+[run 35034938155](https://github.com/theatrus/zwogain/actions/runs/35034938155).
+
+After testing, cooling and dew heating were off. Setup retained the P25 camera
+and serial, with direct mode and fallback disabled. Reconnecting confirmed
+primary SDK mode, gain 100, offset 50 and USB bandwidth 40. Capture inputs were
+restored to 0.1 seconds, bin 1, full frame, Loop off and Save off. The recovered
+fallback image was left visible. This NINA run covered the P25 camera; other
+models and Linux/macOS hardware were not retested here.
