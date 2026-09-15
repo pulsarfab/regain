@@ -267,7 +267,9 @@ public sealed class CameraSession : IDisposable
                     (2 * Controls.Count + 4) * Options.CommandTimeoutSeconds));
                 bool acquired = false;
                 try {
-                    await operation.WaitAsync(deadline.Token).ConfigureAwait(false);
+                    // A foreground capture or telemetry transaction handles its own
+                    // reconnect. Never queue a stale recovery behind a long exposure.
+                    if (!await operation.WaitAsync(0, deadline.Token).ConfigureAwait(false)) return;
                     acquired = true;
                     if (!disposed && requiresReconnect)
                         await RestoreControlConnection(deadline.Token).ConfigureAwait(false);
@@ -516,6 +518,7 @@ public sealed class CameraSession : IDisposable
         {
             if (disposed) return;
             disposed = true;
+            ControlConnectionAvailable = false;
             shutdown.Cancel();
             closing = host;
             host = null;
