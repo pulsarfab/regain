@@ -30,6 +30,7 @@ internal static class Program
                     var type = Cameras[slot];
                     var factory = new ClassFactory(type); factories.Add(factory); Guid id = testIds?[slot] ?? type.GUID;
                     Marshal.ThrowExceptionForHR(CoRegisterClassObject(ref id, factory, 4, 5, out uint cookie)); cookies.Add(cookie);
+                    WriteLog("Registered factory " + id);
                 }
                 Marshal.ThrowExceptionForHR(CoResumeClassObjects());
                 WriteLog("Class factories ready");
@@ -104,19 +105,19 @@ internal static class Program
     }
     [DllImport("ole32.dll")] private static extern int CoInitializeEx(IntPtr reserved, uint mode);
     [DllImport("ole32.dll")] private static extern void CoUninitialize();
-    [DllImport("ole32.dll")] private static extern int CoRegisterClassObject(ref Guid clsid, [MarshalAs(UnmanagedType.Interface)] IClassFactory factory, uint context, uint flags, out uint cookie);
+    [DllImport("ole32.dll")] private static extern int CoRegisterClassObject(ref Guid clsid, [MarshalAs(UnmanagedType.IUnknown)] object factory, uint context, uint flags, out uint cookie);
     [DllImport("ole32.dll")] private static extern int CoRevokeClassObject(uint cookie);
     [DllImport("ole32.dll")] private static extern int CoResumeClassObjects();
 }
 
 [ComImport, Guid("00000001-0000-0000-C000-000000000046"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-internal interface IClassFactory
+public interface IClassFactory
 {
     [PreserveSig] int CreateInstance(IntPtr outer, ref Guid iid, out IntPtr result);
     [PreserveSig] int LockServer([MarshalAs(UnmanagedType.Bool)] bool value);
 }
 [ComVisible(true), ClassInterface(ClassInterfaceType.None)]
-internal sealed class ClassFactory(Type type) : IClassFactory
+public sealed class ClassFactory(Type type) : IClassFactory
 {
     public int CreateInstance(IntPtr outer, ref Guid iid, out IntPtr result)
     {

@@ -141,10 +141,10 @@ Those checks used explicitly launched, isolated class factories.
 With the P25 cooler running, killing its worker during a five-second exposure
 caused one replacement exposure and restored the 10°C target:
 
-| Mode | Prior temperature / output | At completed recovery | Elapsed |
+| Mode | Prior temperature / output | At cooling recovery | Time until image |
 | --- | --- | --- | --- |
-| SDK | 26.0°C / 15% | 25.6°C / 6% | 34.3 seconds |
-| Direct | 24.8°C / 17% | 23.5°C / 25% | 15.1 seconds |
+| SDK | 25.6°C / 15% | 25.6°C / 6% | 34.3 seconds |
+| Direct | 24.6°C / 19% | 23.5°C / 25% | 15.1 seconds |
 
 Both returned an image before reaching the target, as intended. The prior
 setpoint and enable setting were restored after testing. This tests worker
