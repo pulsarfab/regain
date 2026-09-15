@@ -6,9 +6,10 @@ the NINA plugin. The SDK is the default; direct USB and SDK fallback are options
 for each camera.
 
 These frontends are available in the source tree and CI artifacts. They have
-passed simulated capture tests, including 32-bit and 64-bit COM clients. Real
-camera tests through ASCOM and a full ASCOM ConformU run are still needed.
-Linux and macOS camera transfers also still need hardware testing.
+passed simulated capture tests, including 32-bit and 64-bit COM clients, and
+real Windows Alpaca captures listed below. A full ASCOM ConformU run and real
+camera tests through COM are still needed. Linux and macOS USB transfers also
+still need hardware testing.
 
 ZWOgain is independent software and is not affiliated with or supported by ZWO.
 
@@ -122,3 +123,27 @@ cooler changes apply afterward. Disconnect every client before editing setup.
 The tests cover shared Rust recovery, HTTP camera operations, persisted slots,
 image ordering, setup request validation, and SDK/direct simulated captures
 through all four COM slots from both client architectures. No camera is needed.
+
+## Windows hardware checks — 2026-09-15
+
+The standalone Rust server returned 256 × 256 ImageBytes captures at 0.05 seconds:
+
+| Camera | SDK bins | Direct bins |
+| --- | --- | --- |
+| ASI6200MM Pro P25, capped | 1–4 | 1–4 |
+| ASI676MC | 1–4 | 1 |
+
+Abort passed in each mode. These are small-ROI checks, not full-frame ASCOM
+validation. The P25 dark-frame means were about 503 ADU in both modes.
+
+With the P25 cooler running, killing its worker during a five-second exposure
+caused one replacement exposure and restored the 10°C target:
+
+| Mode | Prior temperature / output | At completed recovery | Elapsed |
+| --- | --- | --- | --- |
+| SDK | 26.0°C / 15% | 25.6°C / 6% | 34.3 seconds |
+| Direct | 24.8°C / 17% | 23.5°C / 25% | 15.1 seconds |
+
+Both returned an image before reaching the target, as intended. The prior
+setpoint and enable setting were restored after testing. This tests worker
+failure, not USB removal or loss of camera power.
