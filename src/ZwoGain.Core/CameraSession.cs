@@ -491,10 +491,14 @@ public sealed class CameraSession : IDisposable
         Validate(exposure);
         if (host is null || requiresReconnect) await RestoreControlConnection(token).ConfigureAwait(false);
         var requested = Snapshot();
-        await Apply(requested, token).ConfigureAwait(false);
         try
         {
-            await Call("start", exposure, token).ConfigureAwait(false);
+            token.ThrowIfCancellationRequested();
+            // Drain each bounded supervisor reply before sending abort. Cancelling
+            // a pipe read mid-message would force HostClient to kill the supervisor.
+            await Apply(requested, CancellationToken.None).ConfigureAwait(false);
+            token.ThrowIfCancellationRequested();
+            await Call("start", exposure, CancellationToken.None).ConfigureAwait(false);
             int replacements = exposure.microseconds / 1e6 <= Options.MaximumRetryExposureSeconds ? Options.MaxRetries : 0;
             double budget = (replacements + 1) * (ReadyTimeoutSeconds(exposure.microseconds / 1e6) + Options.CoolingTimeoutSeconds +
                 (Options.ReadyFrameDownloadRetries + 1) * (Options.DownloadTimeoutSeconds + Options.ReconnectDelaySeconds) +
@@ -502,7 +506,8 @@ public sealed class CameraSession : IDisposable
             var clock = Stopwatch.StartNew();
             while (true)
             {
-                var status = (await Call("status", null, token).ConfigureAwait(false)).Result;
+                var status = (await Call("status", null, CancellationToken.None).ConfigureAwait(false)).Result;
+                token.ThrowIfCancellationRequested();
                 Backend = status.GetProperty("backend").GetString()!;
                 usingFallback = status.GetProperty("sdkFallback").GetBoolean();
                 string phase = status.GetProperty("phase").GetString() ?? "Exposing";
@@ -524,7 +529,8 @@ public sealed class CameraSession : IDisposable
                 if (clock.Elapsed.TotalSeconds > budget) throw new TimeoutException("Camera recovery deadline exceeded");
                 await Task.Delay(25, token).ConfigureAwait(false);
             }
-            var reply = await Call("download", null, token, Options.DownloadTimeoutSeconds).ConfigureAwait(false);
+            var reply = await Call("download", null, CancellationToken.None, Options.DownloadTimeoutSeconds).ConfigureAwait(false);
+            token.ThrowIfCancellationRequested();
             if (reply.Result.GetProperty("width").GetInt32() != exposure.width || reply.Result.GetProperty("height").GetInt32() != exposure.height ||
                 reply.Pixels.Length != checked(exposure.width * exposure.height * 2)) throw new InvalidDataException("Unexpected capture dimensions");
             var pixels = new ushort[reply.Pixels.Length / 2];

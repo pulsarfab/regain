@@ -49,6 +49,23 @@ impl Supervisor {
         let mut pixels: Arc<[u8]> = Arc::from([]);
         let token = CancellationToken::new();
         let value = match method {
+            "simulate-read-failures" => {
+                ensure!(self.runtime.simulate, "Fault injection requires --simulate");
+                let count = p["count"]
+                    .as_u64()
+                    .filter(|n| *n <= 100)
+                    .ok_or_else(|| invalid("Invalid fault count"))?;
+                let mut engine = self
+                    .engine
+                    .try_lock()
+                    .map_err(|_| invalid("Camera is busy"))?;
+                engine
+                    .as_mut()
+                    .ok_or_else(|| invalid("Camera not open"))?
+                    .simulate_read_failures(count as u32, &token)
+                    .await?;
+                Value::Null
+            }
             "list" => {
                 self.runtime
                     .list(self.direct, self.log.clone(), &token)

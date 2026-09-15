@@ -20,11 +20,13 @@ public class RustSupervisorTests
         using var session = new CameraSession(Camera, () => host = new(Worker, "unused", simulate: true, direct: true, supervised: true, log: log.Enqueue), Fast);
         await session.ConnectAsync(default);
         int child = (await host!.CallAsync("diagnostics", null, TimeSpan.FromSeconds(3), default)).Result.GetProperty("processId").GetInt32();
-        bool killed = false;
-        session.Diagnostic += phase => { if (phase == "Exposing" && !killed) { killed = true; Process.GetProcessById(child).Kill(); } };
+        // Fail all retained reads on this worker. Faults end with the worker,
+        // so the replacement succeeds without depending on polling timing.
+        await host.CallAsync("simulate-read-failures", new { count = 3 }, TimeSpan.FromSeconds(15), default);
         session.Set(0, 200); session.Set(5, 20);
         var frame = await session.CaptureAsync(Request, default);
-        Assert.True(killed);
+        int replacement = (await host.CallAsync("diagnostics", null, TimeSpan.FromSeconds(15), default)).Result.GetProperty("processId").GetInt32();
+        Assert.NotEqual(child, replacement);
         Assert.Equal(1, frame.Recoveries);
         Assert.Equal(4096, frame.Pixels.Length);
         Assert.Equal(200, frame.Controls[0]);
@@ -50,11 +52,8 @@ public class RustSupervisorTests
         HostClient? host = null;
         using var session = new CameraSession(Camera, () => host = new(Worker, "unused", simulate: true, direct: true, supervised: true), Fast with { MaximumRetryExposureSeconds = .1, MaxRetries = 3 });
         await session.ConnectAsync(default);
-        int child = (await host!.CallAsync("diagnostics", null, TimeSpan.FromSeconds(3), default)).Result.GetProperty("processId").GetInt32();
-        int starts = 0;
-        session.Diagnostic += phase => { if (phase == "Exposing" && Interlocked.Increment(ref starts) == 1) Process.GetProcessById(child).Kill(); };
+        await host!.CallAsync("simulate-read-failures", new { count = 3 }, TimeSpan.FromSeconds(15), default);
         await Assert.ThrowsAsync<IOException>(() => session.CaptureAsync(Request, default));
-        Assert.Equal(1, starts);
         Assert.True(host.IsAlive);
     }
 }

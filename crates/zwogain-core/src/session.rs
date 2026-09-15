@@ -65,6 +65,24 @@ impl Session {
     pub fn snapshot(&self) -> Status {
         self.status.lock().unwrap().clone()
     }
+    pub async fn simulate_read_failures(
+        &mut self,
+        count: u32,
+        token: &CancellationToken,
+    ) -> Result<()> {
+        ensure!(
+            self.runtime.simulate && self.direct,
+            "Read fault injection requires a simulated direct camera"
+        );
+        self.call(
+            "simulate-read-failures",
+            json!({"count":count}),
+            None,
+            token,
+        )
+        .await?;
+        Ok(())
+    }
     pub fn seed_recovery(&mut self, temperature: Option<f64>, power: Option<i64>) {
         self.recovery_temperature = temperature.filter(|t| t.is_finite());
         self.recovery_power = power;
