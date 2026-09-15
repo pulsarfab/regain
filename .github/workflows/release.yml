@@ -80,7 +80,8 @@ jobs:
             ${{ github.workspace }}\artifacts\stage\zwogain-host.exe
             ${{ github.workspace }}\artifacts\stage\zwogain-direct.exe
             ${{ github.workspace }}\artifacts\stage\zwogain-alpaca.exe
-            ${{ github.workspace }}\artifacts\ascom-stage\ZwoGain.ASCOM.exe
+            ${{ github.workspace }}\artifacts\ascom-stage\ZwoGain.ASCOM.dll
+            ${{ github.workspace }}\artifacts\ascom-stage\ZwoGain.ASCOM.Register.exe
           file-digest: SHA256
           timestamp-rfc3161: http://timestamp.acs.microsoft.com
           timestamp-digest: SHA256
@@ -94,8 +95,10 @@ jobs:
             if ($sig.SignerCertificate.Subject -notmatch 'StackFoundry LLC') { throw "$f has unexpected signer: $($sig.SignerCertificate.Subject)" }
             Write-Output "OK  $f  $($sig.SignerCertificate.Subject)"
           }
-          $sig = Get-AuthenticodeSignature -LiteralPath artifacts/ascom-stage/ZwoGain.ASCOM.exe
-          if ($sig.Status -ne 'Valid' -or $sig.SignerCertificate.Subject -notmatch 'StackFoundry LLC') { throw 'Invalid ASCOM frontend signature' }
+          foreach ($f in 'ZwoGain.ASCOM.dll','ZwoGain.ASCOM.Register.exe') {
+            $sig = Get-AuthenticodeSignature -LiteralPath "artifacts/ascom-stage/$f"
+            if ($sig.Status -ne 'Valid' -or $sig.SignerCertificate.Subject -notmatch 'StackFoundry LLC') { throw "Invalid ASCOM signature: $f" }
+          }
 
       # ---- 3. package the signed payload ----------------------------------
       - name: Package and validate NINA manifest

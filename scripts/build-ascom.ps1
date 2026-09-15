@@ -10,12 +10,12 @@ Push-Location $repo
 try {
     if (!(Test-Path -LiteralPath (Join-Path $plugin 'zwogain-alpaca.exe'))) { throw 'Run scripts/build.ps1 -StageOnly first.' }
     if (!$PackageOnly) {
-        dotnet build src/ZwoGain.ASCOM -c Release
+        dotnet build src/ZwoGain.ASCOM.Register -c Release
         if ($LASTEXITCODE) { throw 'ASCOM build failed' }
         # Both paths are fixed children of this repository's artifacts directory.
         if (Test-Path -LiteralPath $stage) { Remove-Item -LiteralPath $stage -Recurse -Force }
         New-Item -ItemType Directory -Path $stage | Out-Null
-        Get-ChildItem -LiteralPath (Join-Path $repo 'src/ZwoGain.ASCOM/bin/Release/net48') -File | Where-Object { $_.Extension -in '.dll','.exe','.config' } | Copy-Item -Destination $stage
+        Get-ChildItem -LiteralPath (Join-Path $repo 'src/ZwoGain.ASCOM.Register/bin/Release/net48') -File | Where-Object { $_.Extension -in '.dll','.exe','.config' } | Copy-Item -Destination $stage
         foreach ($file in 'ASICamera2.dll','LICENSE','THIRD_PARTY_NOTICES.md') { Copy-Item -LiteralPath (Join-Path $plugin $file) -Destination $stage }
         Copy-Item -LiteralPath (Join-Path $plugin 'licenses') -Destination $stage -Recurse
         Copy-Item -LiteralPath (Join-Path $repo 'docs/ascom.md') -Destination (Join-Path $stage 'README.md')

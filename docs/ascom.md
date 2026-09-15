@@ -62,8 +62,8 @@ driver. Extract the complete ASCOM package to a permanent folder. From an
 administrator PowerShell in that folder, register it:
 
 ```powershell
-$p = Start-Process .\ZwoGain.ASCOM.exe -ArgumentList /regserver -Wait -PassThru
-if ($p.ExitCode) { throw 'Registration failed; check the ASCOM server log' }
+$p = Start-Process .\ZwoGain.ASCOM.Register.exe -ArgumentList /regserver -Wait -PassThru
+if ($p.ExitCode) { throw 'Registration failed; check the ASCOM registration log' }
 ```
 
 The Chooser entries are **ZWOgain Retryable Camera 1** through **4**, mapped to
@@ -72,15 +72,13 @@ opens that slot's camera settings. It creates the four slots if needed.
 Automatic local Rust server startup is enabled by default. You may instead
 connect to an already running server, including one on Linux or macOS.
 
-The COM executable is a local server shared by 32-bit and 64-bit apps. It exits
-after clients release their camera objects; the Rust Alpaca service stays up.
-Registering the Chooser entries needs administrator access. Machine registration
-and automatic COM activation need checking on a clean ASCOM installation;
-local tests launch the COM server explicitly.
+The COM DLL runs inside the 32-bit or 64-bit client. Camera access and recovery
+stay in the Rust service and its workers. Closing a client leaves the Rust
+service running. Registering the Chooser entries needs administrator access.
 
 To remove the entries, run the same command with `/unregserver` before removing
 the folder. Server settings are in `%LOCALAPPDATA%\ZwoGain\ASCOM\server.json`;
-`ZWOGAIN_ASCOM_SETTINGS` can select another file for a manually launched server.
+`ZWOGAIN_ASCOM_SETTINGS` can select another file for a client process.
 
 ## Capture behavior
 
@@ -136,7 +134,8 @@ Abort passed in each mode. These are small-ROI checks, not full-frame ASCOM
 validation. The P25 dark-frame means were about 503 ADU in both modes.
 All four COM mappings also returned real 64 × 64 images and passed abort from
 both 32-bit and 64-bit clients: P25 SDK, ASI676 SDK, ASI676 direct, and P25 direct.
-Those checks used explicitly launched, isolated class factories.
+The initial checks used isolated class factories; the DLL loader is also covered
+by the simulated tests using temporary per-user registrations.
 
 With the P25 cooler running, killing its worker during a five-second exposure
 caused one replacement exposure and restored the 10°C target:

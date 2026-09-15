@@ -5,16 +5,18 @@ using ASCOM.Alpaca.Clients;
 using ASCOM.Common.Alpaca;
 using ASCOM.DeviceInterface;
 
+[assembly: ComVisible(false)]
 namespace ZwoGain.Ascom;
 
 [ComVisible(false)]
-public abstract partial class CameraBase : ICameraV4
+public abstract partial class CameraBase : ICameraV4, IDisposable
 {
+    static CameraBase() => Dependencies.Install();
     private readonly int slot;
     private AlpacaCamera? client;
     private bool disposed;
     private readonly object sync = new();
-    protected CameraBase(int slot) { this.slot = slot; Interlocked.Increment(ref Program.Objects); }
+    protected CameraBase(int slot) { this.slot = slot; }
     protected AlpacaCamera Client
     {
         get
@@ -82,7 +84,7 @@ public abstract partial class CameraBase : ICameraV4
         AlpacaCamera? closing;
         lock (sync) { if (disposed) return; disposed = true; closing = client; client = null; }
         try { if (closing is not null) { try { closing.Connected = false; } finally { closing.Dispose(); } } }
-        finally { Interlocked.Decrement(ref Program.Objects); GC.SuppressFinalize(this); }
+        finally { GC.SuppressFinalize(this); }
     }
     ~CameraBase() { Task.Run(() => { try { Dispose(); } catch { } }); }
 }

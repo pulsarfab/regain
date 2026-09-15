@@ -30,5 +30,8 @@ try {
     if ($camera.CameraState -ne 0 -or $camera.ImageReady) { throw 'Abort did not return idle' }
     Write-Output ("{0}-bit COM slot {1}: capture, ImageBytes and abort passed" -f ([IntPtr]::Size * 8), $Slot)
 } finally {
-    try { $camera.Connected = $false } finally { [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($camera) }
+    try { $camera.Connected = $false } finally {
+        if ([Runtime.InteropServices.Marshal]::IsComObject($camera)) { [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($camera) }
+        else { $camera.Dispose() } # CLR unwraps an in-process managed COM object.
+    }
 }

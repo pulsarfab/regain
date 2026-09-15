@@ -51,7 +51,7 @@ silently rewritten to a three-part semantic version.
 Local builds and the ordinary **Build and test** workflow produce unsigned
 binaries. The **Release** workflow stages the package, authenticates to Azure
 through OIDC in the `release` environment, and signs `ZwoGain.NINA.dll`,
-`ZwoGain.Core.dll`, `ZwoGain.ASCOM.exe`, `zwogain-alpaca.exe`, `zwogain-host.exe`
+`ZwoGain.Core.dll`, `ZwoGain.ASCOM.dll`, `ZwoGain.ASCOM.Register.exe`, `zwogain-alpaca.exe`, `zwogain-host.exe`
 and `zwogain-direct.exe` with Azure Trusted
 Signing. It requires valid signatures from StackFoundry LLC before packaging.
 The bundled vendor DLL is left unchanged. ZIP and manifest checksums are

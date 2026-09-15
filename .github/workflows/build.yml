@@ -12,7 +12,7 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
-      - run: dotnet build src/ZwoGain.ASCOM -c Release
+      - run: dotnet build src/ZwoGain.ASCOM.Register -c Release
       - run: ./scripts/test-ascom-registration.ps1
         shell: pwsh
   rust-portable:

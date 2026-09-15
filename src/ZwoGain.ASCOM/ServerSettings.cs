@@ -31,9 +31,10 @@ public sealed class ServerSettings
             if (!acquired) throw new TimeoutException("Timed out waiting for the local camera server");
             if (Probe()) return;
             if (!StartLocalServer) throw new IOException("The configured Alpaca server is unavailable");
-            string executable = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "zwogain-alpaca.exe");
+            string directory = System.IO.Path.GetDirectoryName(typeof(ServerSettings).Assembly.Location)!;
+            string executable = System.IO.Path.Combine(directory, "zwogain-alpaca.exe");
             if (!File.Exists(executable)) throw new FileNotFoundException("Install the Rust Alpaca server beside the ASCOM frontend", executable);
-            Process.Start(new ProcessStartInfo(executable, "--port " + Port) { UseShellExecute = false, CreateNoWindow = true, WindowStyle = ProcessWindowStyle.Hidden, WorkingDirectory = AppDomain.CurrentDomain.BaseDirectory })?.Dispose();
+            Process.Start(new ProcessStartInfo(executable, "--port " + Port) { UseShellExecute = false, CreateNoWindow = true, WindowStyle = ProcessWindowStyle.Hidden, WorkingDirectory = directory })?.Dispose();
             var clock = Stopwatch.StartNew();
             while (clock.Elapsed.TotalSeconds < 15) { if (Probe()) return; Thread.Sleep(100); }
             throw new IOException("ZWOgain did not start. Check its log or select a different port.");

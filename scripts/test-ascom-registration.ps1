@@ -1,6 +1,6 @@
 # Run only on a disposable CI Windows machine with administrator rights.
 $ErrorActionPreference = 'Stop'
-$exe = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../src/ZwoGain.ASCOM/bin/Release/net48/ZwoGain.ASCOM.exe'))
+$exe = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../src/ZwoGain.ASCOM.Register/bin/Release/net48/ZwoGain.ASCOM.Register.exe'))
 if (!$env:CI) { throw 'This machine-registration check is for disposable CI runners only.' }
 Write-Output ("Activation client session {0}; user {1}" -f [Diagnostics.Process]::GetCurrentProcess().SessionId, [Security.Principal.WindowsIdentity]::GetCurrent().Name)
 try {
@@ -13,9 +13,7 @@ try {
         }
     }
 } finally {
-    Get-Content -LiteralPath (Join-Path $env:LOCALAPPDATA 'ZwoGain/ASCOM/server.log') -Tail 30 -ErrorAction SilentlyContinue
-    Get-WinEvent -FilterHashtable @{ LogName = 'System'; ProviderName = 'Microsoft-Windows-DistributedCOM'; StartTime = (Get-Date).AddMinutes(-5) } -ErrorAction SilentlyContinue | Format-List TimeCreated,Id,Message
+    Get-Content -LiteralPath (Join-Path $env:LOCALAPPDATA 'ZwoGain/ASCOM/registration.log') -Tail 30 -ErrorAction SilentlyContinue
     $registration = Start-Process -FilePath $exe -ArgumentList '/unregserver' -WindowStyle Hidden -Wait -PassThru
-    Get-Process ZwoGain.ASCOM -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $exe } | Stop-Process
     if ($registration.ExitCode) { throw 'Unregistration failed' }
 }
