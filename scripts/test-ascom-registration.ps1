@@ -2,6 +2,7 @@
 $ErrorActionPreference = 'Stop'
 $exe = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../src/ZwoGain.ASCOM/bin/Release/net48/ZwoGain.ASCOM.exe'))
 if (!$env:CI) { throw 'This machine-registration check is for disposable CI runners only.' }
+Write-Output ("Activation client session {0}; user {1}" -f [Diagnostics.Process]::GetCurrentProcess().SessionId, [Security.Principal.WindowsIdentity]::GetCurrent().Name)
 try {
     $registration = Start-Process -FilePath $exe -ArgumentList '/regserver' -WindowStyle Hidden -Wait -PassThru
     if ($registration.ExitCode) { throw 'Machine registration failed' }
