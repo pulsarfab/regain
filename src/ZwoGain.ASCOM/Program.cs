@@ -20,6 +20,7 @@ internal static class Program
             WriteLog("Starting class factories; process " + System.Diagnostics.Process.GetCurrentProcess().Id);
             int hr = CoInitializeEx(IntPtr.Zero, 2); if (hr < 0) Marshal.ThrowExceptionForHR(hr);
             var factories = new List<ClassFactory>(); var cookies = new List<uint>();
+            var registration = new RegistrationServices(); var managedCookies = new List<int>();
             try
             {
                 // Private test factories avoid attaching tests to installed camera slots.
@@ -28,8 +29,14 @@ internal static class Program
                 for (int slot = 0; slot < Cameras.Length; slot++)
                 {
                     var type = Cameras[slot];
-                    var factory = new ClassFactory(type); factories.Add(factory); Guid id = testIds?[slot] ?? type.GUID;
-                    Marshal.ThrowExceptionForHR(CoRegisterClassObject(ref id, factory, 4, 5, out uint cookie)); cookies.Add(cookie);
+                    Guid id = testIds?[slot] ?? type.GUID;
+                    if (testIds is null)
+                        managedCookies.Add(registration.RegisterTypeForComClients(type, RegistrationClassContext.LocalServer,
+                            RegistrationConnectionType.MultipleUse | RegistrationConnectionType.Suspended));
+                    else {
+                        var factory = new ClassFactory(type); factories.Add(factory);
+                        Marshal.ThrowExceptionForHR(CoRegisterClassObject(ref id, factory, 4, 5, out uint cookie)); cookies.Add(cookie);
+                    }
                     WriteLog("Registered factory " + id);
                 }
                 Marshal.ThrowExceptionForHR(CoResumeClassObjects());
@@ -39,7 +46,11 @@ internal static class Program
                 idle.Tick += (_, _) => { GC.Collect(); GC.WaitForPendingFinalizers(); if (Volatile.Read(ref Objects) == 0 && Volatile.Read(ref Locks) == 0) Application.ExitThread(); };
                 idle.Start(); Application.Run(); GC.KeepAlive(factories);
             }
-            finally { foreach (uint cookie in cookies) CoRevokeClassObject(cookie); CoUninitialize(); }
+            finally {
+                foreach (int cookie in managedCookies) registration.UnregisterTypeForComClients(cookie);
+                foreach (uint cookie in cookies) CoRevokeClassObject(cookie);
+                CoUninitialize();
+            }
             return 0;
         }
         catch (Exception error)
