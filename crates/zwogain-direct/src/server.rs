@@ -217,6 +217,7 @@ mod selection_tests {
 struct Worker {
     sender: mpsc::Sender<Work>,
     thread: Option<std::thread::JoinHandle<()>>,
+    telemetry: transport::Telemetry,
 }
 impl Worker {
     fn open(model: Model, serial: Option<String>, simulate: bool) -> Result<(Self, String)> {
@@ -242,7 +243,11 @@ impl Worker {
                 let _ = ready_tx.send(Err(anyhow::anyhow!("camera identity differs")));
                 return;
             }
-            if ready_tx.send(Ok(identity)).is_err() {
+            let telemetry = device
+                .as_ref()
+                .map(|d| d.0.telemetry())
+                .unwrap_or_else(|| std::sync::Arc::new(std::sync::Mutex::new(Some([250, 0]))));
+            if ready_tx.send(Ok((identity, telemetry))).is_err() {
                 return;
             }
             let (watchdog, deadlines) = mpsc::channel::<Option<Duration>>();
@@ -370,10 +375,11 @@ impl Worker {
             .recv()
             .map_err(|_| anyhow::anyhow!("direct worker exited during open"))?
         {
-            Ok(identity) => Ok((
+            Ok((identity, telemetry)) => Ok((
                 Self {
                     sender,
                     thread: Some(thread),
+                    telemetry,
                 },
                 identity,
             )),
@@ -513,11 +519,25 @@ impl Host {
                     .worker
                     .as_ref()
                     .ok_or_else(|| anyhow::anyhow!("camera is not open"))?;
+                let control = number("control")?;
+                if method == "get"
+                    && matches!(control, 8 | 15)
+                    && self.model.cooled()
+                    && (self.pending.is_some() || self.frame.is_some())
+                {
+                    // The capture thread already samples these values while servicing
+                    // the cooler. Never queue USB work behind a long capture.
+                    let sample = worker
+                        .telemetry
+                        .lock()
+                        .unwrap()
+                        .ok_or_else(|| anyhow::anyhow!("environment unavailable"))?;
+                    return Ok((json!(sample[if control == 8 { 0 } else { 1 }]), pixels));
+                }
                 ensure!(
                     self.pending.is_none() && self.frame.is_none(),
                     "cannot access controls during capture"
                 );
-                let control = number("control")?;
                 let caps = self.model.controls();
                 let cap = caps
                     .iter()

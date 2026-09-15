@@ -581,6 +581,7 @@ impl Session {
         self.call("start", params, None, token).await?;
         self.phase("Exposing");
         let clock = Instant::now();
+        let mut environment_sample = Instant::now();
         loop {
             let state = self
                 .call("status", Value::Null, None, token)
@@ -597,6 +598,10 @@ impl Session {
                 clock.elapsed().as_secs_f64() <= self.ready_timeout(seconds),
                 "Exposure readiness timed out"
             );
+            if environment_sample.elapsed() >= Duration::from_secs(2) {
+                self.read_environment(token).await?;
+                environment_sample = Instant::now();
+            }
             self.delay(0.025, token).await?;
         }
         self.phase("Downloading");
@@ -853,6 +858,61 @@ mod tests {
         assert!(!hold.observe(Some(-9.7), Some(20), -10., 2., 2., 32.));
         assert!(!hold.observe(Some(-10.), Some(20), -10., 2., 2., 100.));
         assert!(!hold.observe(Some(-10.), Some(0), -10., 2., 2., 102.));
+    }
+    #[tokio::test]
+    async fn environment_refreshes_before_sdk_and_direct_exposures_finish() {
+        for direct in [false, true] {
+            let token = CancellationToken::new();
+            let mut sel = selection(direct);
+            if direct {
+                sel.name = "ZWO ASI6200MM Pro".into();
+            }
+            let mut rt = runtime();
+            rt.sdk_simulation = Some(json!({"instant":false}));
+            let mut s = Session::new(sel, rt, log()).unwrap();
+            s.connect(&token).await.unwrap();
+            let shared = s.status.clone();
+            let capture = async {
+                s.capture(
+                    Exposure {
+                        microseconds: 6_000_000,
+                        ..exposure()
+                    },
+                    &token,
+                )
+                .await
+            };
+            let observe = async {
+                let deadline = Instant::now() + Duration::from_secs(5);
+                while shared.lock().unwrap().phase != "Exposing" {
+                    assert!(Instant::now() < deadline);
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+                // Make stale frontend values distinguishable from worker telemetry.
+                {
+                    let mut state = shared.lock().unwrap();
+                    state.values.insert(8, 999);
+                    state.values.insert(15, 99);
+                }
+                loop {
+                    let state = shared.lock().unwrap().clone();
+                    if state.values[&8] != 999 {
+                        assert_eq!(state.phase, "Exposing");
+                        assert_eq!(state.values[&8], if direct { 250 } else { -100 });
+                        assert_eq!(state.values[&15], if direct { 0 } else { 30 });
+                        break;
+                    }
+                    assert!(
+                        Instant::now() < deadline,
+                        "Telemetry stayed stale during capture"
+                    );
+                    tokio::time::sleep(Duration::from_millis(20)).await;
+                }
+            };
+            let (frame, ()) = tokio::join!(capture, observe);
+            assert_eq!(frame.unwrap().pixels.len(), 8192);
+            s.close().await;
+        }
     }
     #[tokio::test]
     async fn sdk_ready_frame_read_retry_does_not_replace_exposure() {

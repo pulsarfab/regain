@@ -200,7 +200,7 @@ impl Supervisor {
                     .ok_or_else(|| invalid("Camera not open"))?
                     .lock()
                     .unwrap();
-                json!({"state":if c.busy{1}else if c.error.is_some(){3}else if c.frame.is_some(){2}else{0},"phase":state.phase,"error":c.error,"backend":state.backend,"sdkFallback":state.sdk_fallback,"snapshot":if c.busy {None} else {Some(&*state)}})
+                json!({"state":if c.busy{1}else if c.error.is_some(){3}else if c.frame.is_some(){2}else{0},"phase":state.phase,"error":c.error,"backend":state.backend,"sdkFallback":state.sdk_fallback,"environment":{"8":state.values.get(&8),"15":state.values.get(&15)},"controlConnectionAvailable":state.control_connection_available,"snapshot":if c.busy {None} else {Some(&*state)}})
             }
             "download" => {
                 let c = self.capture.lock().unwrap();

@@ -106,8 +106,9 @@ compatible ROI. ZWOgain does not pad images with invented edge pixels.
 
 StopExposure, asymmetric binning, pulse guiding, fast readout, live view, and
 trigger modes are not implemented. Capability properties report this. Abort
-discards the incomplete image. Temperature is cached during capture; pending
-cooler changes apply afterward. Disconnect every client before editing setup.
+discards the incomplete image. Temperature and cooler power update during
+exposures; pending cooler changes apply afterward. Disconnect every client
+before editing setup.
 
 ## Build and test
 

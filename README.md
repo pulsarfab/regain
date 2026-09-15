@@ -100,8 +100,8 @@ recapture limit allows it.
 Testing used capped cameras and dark frames. Full 1,200-second ASI2600 and
 ASI6200 captures passed in NINA; the full 2,000-second limit has not been tested.
 USB retry tests used controlled faults, not cable removal or power loss.
-Live view and trigger modes are not supported. Temperature and power readings
-are cached during capture, and control changes wait until it ends; the direct
+Live view and trigger modes are not supported. Temperature and cooler power
+update during exposures. Control changes wait until capture ends; the direct
 cooler controller keeps running.
 
 See [NINA tests](docs/nina-end-to-end.md), [ASI6200 P25 results](docs/asi6200-p25.md),

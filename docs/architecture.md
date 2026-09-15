@@ -23,10 +23,16 @@ Rust supervisor through a job. Cancellation can terminate a hung worker without
 terminating its supervisor. One session serializes capture and idle telemetry.
 Discovery uses a separate process and does not open devices.
 
+During exposure, the session refreshes temperature and cooler power every two
+seconds. SDK workers read those controls directly. Native workers return a
+shared copy of the readings already collected by their cooler controller, so
+status requests never queue USB work behind a long capture. NINA receives these
+readings in its capture-status replies; Alpaca reads the same shared state.
+
 Alpaca serves ICameraV4, management, discovery, and setup over a loopback listener
 by default. Each camera slot has a stable UUID and device number. Captures run
 asynchronously, and ImageBytes streams unsigned RAW16 in ASCOM X/Y order. The
-Windows .NET Framework COM executable exposes four official ICameraV4 interfaces
+Windows .NET Framework COM driver exposes four official ICameraV4 interfaces
 and forwards to Alpaca; it contains no camera recovery logic.
 
 The Rust host never accepts network connections. Its inherited anonymous pipe

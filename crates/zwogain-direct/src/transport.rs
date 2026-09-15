@@ -15,19 +15,33 @@ compile_error!("ZWOgain supports Windows, Linux, and macOS");
 
 pub use platform::{DeviceInfo, enumerate, require_sdk_absent};
 
+pub type Telemetry = std::sync::Arc<std::sync::Mutex<Option<[i64; 2]>>>;
+
 pub struct Camera(
     platform::Device,
     std::cell::RefCell<Option<crate::environment::Environment>>,
+    Telemetry,
 );
 impl Camera {
     pub fn open(info: &DeviceInfo) -> Result<Self> {
         Ok(Self(
             platform::Device::open(info)?,
             std::cell::RefCell::new(None),
+            Telemetry::default(),
         ))
     }
     pub fn enable_environment(&self, auxiliary: bool) -> Result<()> {
         *self.1.borrow_mut() = Some(crate::environment::Environment::open(self, auxiliary)?);
+        self.publish_environment()?;
+        Ok(())
+    }
+    pub fn telemetry(&self) -> Telemetry {
+        self.2.clone()
+    }
+    fn publish_environment(&self) -> Result<()> {
+        if let Some(environment) = self.1.borrow().as_ref() {
+            *self.2.lock().unwrap() = Some([environment.get(8)?, environment.get(15)?]);
+        }
         Ok(())
     }
     pub fn has_environment(&self) -> bool {
@@ -37,6 +51,7 @@ impl Camera {
         if let Some(environment) = self.1.borrow_mut().as_mut() {
             environment.service(self)?;
         }
+        self.publish_environment()?;
         Ok(())
     }
     pub fn environment_control(&self, control: u32, value: Option<i64>) -> Result<i64> {
@@ -48,7 +63,10 @@ impl Camera {
             environment.set(self, control, value)?;
         }
         environment.service(self)?;
-        environment.get(control)
+        let result = environment.get(control);
+        drop(state);
+        self.publish_environment()?;
+        result
     }
 
     pub fn vendor(&self, request: u8, value: u16, index: u16, length: u16) -> Result<Vec<u8>> {

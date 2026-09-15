@@ -510,6 +510,14 @@ public sealed class CameraSession : IDisposable
                 token.ThrowIfCancellationRequested();
                 Backend = status.GetProperty("backend").GetString()!;
                 usingFallback = status.GetProperty("sdkFallback").GetBoolean();
+                if (status.TryGetProperty("environment", out var environment)) {
+                    lock (sync) {
+                        foreach (int control in new[] { 8, 15 })
+                            if (environment.TryGetProperty(control.ToString(), out var value) && value.ValueKind == JsonValueKind.Number && value.TryGetInt64(out long reading))
+                                observed[control] = reading;
+                    }
+                    ControlConnectionAvailable = status.GetProperty("controlConnectionAvailable").GetBoolean();
+                }
                 string phase = status.GetProperty("phase").GetString() ?? "Exposing";
                 if (phase != Phase) State(phase);
                 int state = status.GetProperty("state").GetInt32();
