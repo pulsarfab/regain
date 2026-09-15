@@ -418,15 +418,12 @@ impl Session {
     }
     pub async fn capture(&mut self, e: Exposure, token: &CancellationToken) -> Result<Frame> {
         let state = self.snapshot();
-        let mut info = state.info.clone();
-        // The SDK may support an ROI the direct backend does not; validate before routing below.
-        if self.direct && self.selection.sdk_fallback {
-            info["minimumWidth"] = json!(8);
-            info["minimumHeight"] = json!(2);
-            info["originAlignment"] = json!(1);
-            info["originAlignmentY"] = json!(1);
-        }
-        validate_exposure(&info, &state.controls, &e)?;
+        validate_capture(
+            &state.info,
+            &state.controls,
+            &e,
+            self.direct && self.selection.sdk_fallback,
+        )?;
         let options = self.selection.recovery.clone();
         let seconds = e.microseconds as f64 / 1e6;
         let retries = if seconds <= options.maximum_retry_exposure_seconds {

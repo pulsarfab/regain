@@ -553,7 +553,9 @@ mod tests {
         assert_eq!(&data[8..12], &u32::MAX.to_le_bytes());
         assert_eq!(&data[20..28], &[2, 0, 0, 0, 8, 0, 0, 0]);
         let values: Vec<u16> = data[44..]
-            .chunks_exact(2)
+            .as_chunks::<2>()
+            .0
+            .iter()
             .map(|v| u16::from_le_bytes([v[0], v[1]]))
             .collect();
         assert_eq!(values, [1, 4, 2, 50000, 65535, 6]);
@@ -564,8 +566,13 @@ mod tests {
     }
     #[tokio::test]
     async fn sdk_and_direct_camera_contract_over_http() {
-        for direct in [false, true] {
-            let runtime = runtime();
+        for (direct, fallback) in [(false, false), (true, false), (true, true)] {
+            let mut runtime = runtime();
+            if fallback {
+                runtime.sdk_simulation = Some(
+                    json!({"name":"ZWO ASI676MC","width":3552,"height":3552,"bins":[1],"serial":"direct-simulator","cooled":false,"instant":true}),
+                );
+            }
             let log = Log::new(None);
             let cameras = runtime
                 .list(direct, log.diagnostic(None), &CancellationToken::new())
@@ -578,6 +585,12 @@ mod tests {
                     Profile {
                         camera: Some(cameras[0].clone()),
                         direct,
+                        sdk_fallback: fallback,
+                        recovery: zwogain_core::RecoveryOptions {
+                            max_retries: 0,
+                            reconnect_delay_seconds: 0.01,
+                            ..Default::default()
+                        },
                         ..Profile::default()
                     },
                 )
@@ -609,8 +622,8 @@ mod tests {
             .await;
             assert_eq!(value["ErrorNumber"], 0, "{value}");
             for (member, parameters) in [
-                ("numx", "NumX=64"),
-                ("numy", "NumY=64"),
+                ("numx", if fallback { "NumX=8" } else { "NumX=64" }),
+                ("numy", if fallback { "NumY=2" } else { "NumY=64" }),
                 ("gain", "Gain=100"),
                 ("startexposure", "Duration=0.01&Light=false"),
             ] {
@@ -636,8 +649,17 @@ mod tests {
             }
             let (_, image) =
                 request(&router, "GET", "/api/v1/camera/0/imagearray?ClientID=7", "").await;
-            assert_eq!(image["Value"].as_array().unwrap().len(), 64);
-            assert_eq!(image["Value"][0].as_array().unwrap().len(), 64);
+            assert_eq!(
+                image["Value"].as_array().unwrap().len(),
+                if fallback { 8 } else { 64 }
+            );
+            assert_eq!(
+                image["Value"][0].as_array().unwrap().len(),
+                if fallback { 2 } else { 64 }
+            );
+            if fallback {
+                assert_eq!(server.device(0).unwrap().snapshot().unwrap().backend, "sdk");
+            }
             let (_, value) = request(
                 &router,
                 "PUT",

@@ -54,7 +54,8 @@ public class CameraLogTests
                 }, _ => { });
                 if (brokenLogger) throw new IOException("log file unavailable");
             });
-            host.CallAsync("simulate-read-failures", new { count = 2 }, TimeSpan.FromSeconds(3), default).GetAwaiter().GetResult();
+            // A cold worker launch can take several seconds on shared CI machines.
+            host.CallAsync("simulate-read-failures", new { count = 2 }, TimeSpan.FromSeconds(15), default).GetAwaiter().GetResult();
             return host;
         }
         using var session = new CameraSession(new("ZWO ASI676MC", 3552, 3552, true, 0, 2, 12, false, false, [1]), Factory,

@@ -550,7 +550,12 @@ impl Device {
                     microseconds: ((seconds * 1e6).round() as u64).max(cap.min as u64),
                     dark: !light,
                 };
-                zwogain_core::validate_exposure(&status.info, &status.controls, &e)?;
+                zwogain_core::validate_capture(
+                    &status.info,
+                    &status.controls,
+                    &e,
+                    status.backend == "direct" && self.profiles.get(self.slot)?.sdk_fallback,
+                )?;
                 s.frame = None;
                 s.error = None;
                 s.busy = true;

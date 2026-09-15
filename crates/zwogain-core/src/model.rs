@@ -198,3 +198,23 @@ pub fn validate_exposure(
         Failure::Invalid("Exposure or ROI is outside camera capabilities (width multiple of 8, height multiple of 2; see camera alignment)".into()));
     Ok(())
 }
+
+/// Validate against the SDK's ROI rules when fallback is explicitly permitted.
+/// The worker's validate command decides whether it must switch before exposing.
+pub fn validate_capture(
+    info: &Value,
+    controls: &BTreeMap<i32, Control>,
+    e: &Exposure,
+    sdk_fallback: bool,
+) -> Result<()> {
+    if !sdk_fallback {
+        return validate_exposure(info, controls, e);
+    }
+    let mut info = info.clone();
+    info["minimumWidth"] = serde_json::json!(8);
+    info["minimumHeight"] = serde_json::json!(2);
+    info["originAlignment"] = serde_json::json!(1);
+    info["originAlignmentX"] = serde_json::json!(1);
+    info["originAlignmentY"] = serde_json::json!(1);
+    validate_exposure(&info, controls, e)
+}

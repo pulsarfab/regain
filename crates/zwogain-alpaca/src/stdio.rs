@@ -24,6 +24,7 @@ struct Supervisor {
     task: Option<tokio::task::JoinHandle<()>>,
     runtime: Runtime,
     direct: bool,
+    sdk_fallback: bool,
     log: Diagnostic,
 }
 impl Supervisor {
@@ -63,6 +64,7 @@ impl Supervisor {
             )?,
             "open" => {
                 ensure!(self.status.is_none(), "Camera already open");
+                self.sdk_fallback = p["allowSdkFallback"] == true;
                 let selection = Selection {
                     name: p["name"].as_str().unwrap_or("").into(),
                     serial: p["serial"].as_str().map(str::to_owned),
@@ -137,7 +139,12 @@ impl Supervisor {
                         .ok_or_else(|| invalid("Camera not open"))?
                         .lock()
                         .unwrap();
-                    zwogain_core::validate_exposure(&status.info, &status.controls, &exposure)?;
+                    zwogain_core::validate_capture(
+                        &status.info,
+                        &status.controls,
+                        &exposure,
+                        status.backend == "direct" && self.sdk_fallback,
+                    )?;
                 }
                 let cancel = {
                     let mut c = self.capture.lock().unwrap();
@@ -212,6 +219,7 @@ pub async fn run(runtime: Runtime, direct: bool, log: Diagnostic) -> Result<()> 
         task: None,
         runtime,
         direct,
+        sdk_fallback: false,
         log,
     };
     let engine = supervisor.engine.clone();

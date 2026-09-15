@@ -124,11 +124,8 @@ async fn main() -> Result<()> {
     };
     let listener = tokio::net::TcpListener::bind((address, port)).await?;
     println!("ZWOgain Alpaca listening on http://{address}:{port}/setup");
-    let shutdown = async {
-        let _ = tokio::signal::ctrl_c().await;
-    };
     let result = axum::serve(listener, server.router())
-        .with_graceful_shutdown(shutdown)
+        .with_graceful_shutdown(shutdown_signal())
         .await;
     stop.cancel();
     let _ = poll.await;
@@ -138,4 +135,17 @@ async fn main() -> Result<()> {
     server.shutdown().await;
     result?;
     Ok(())
+}
+
+async fn shutdown_signal() {
+    #[cfg(unix)]
+    {
+        if let Ok(mut terminate) =
+            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+        {
+            tokio::select! { _ = tokio::signal::ctrl_c() => {}, _ = terminate.recv() => {} }
+            return;
+        }
+    }
+    let _ = tokio::signal::ctrl_c().await;
 }
