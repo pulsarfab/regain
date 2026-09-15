@@ -36,13 +36,15 @@ all supported direct camera/bin combinations, cooler controls, failed rereads,
 and preservation of images after cleanup errors.
 
 GitHub's **Build and test** workflow also builds and tests Linux and macOS on
-x86-64 and ARM64. Its `zwogain-rust-*` artifacts contain both workers, without
-the vendor SDK, plus licenses, build details, and SHA-256 checksums. Extract the
+x86-64 and ARM64. Its `zwogain-rust-*` artifacts contain both workers, the matching
+ASI SDK 1.41 library, licenses, build details, and SHA-256 checksums. Extract the
 archive and use `./zwogain-rust/zwogain-direct` in place of
 `./target/release/zwogain-direct` below. These test builds are unsigned and are
 not macOS-notarized.
 CI checks the SDK host against a small library built from the bundled C header,
-including native `long` sizes and structure layouts.
+including native `long` sizes and structure layouts. It also loads the real
+vendor SDK and enumerates cameras, then tests capture and settings restoration
+with a fake camera library. CI has no physical cameras.
 
 The Linux packages are built and tested on Ubuntu 24.04. Older distributions
 may need a local source build: for example, the prebuilt x86-64 worker cannot
@@ -109,8 +111,54 @@ capture logs, and pixel samples with the results.
 
 ## SDK host
 
-Use the vendor SDK built for the same OS and CPU as the worker. The repository
-currently bundles only the Windows DLL. Put the native library beside the host:
+The native packages include the SDK. On Debian/Ubuntu, install its runtime
+dependency with `sudo apt install libusb-1.0-0`. macOS packages include libusb;
+Homebrew is only needed when building the package yourself. The direct driver
+does not use libusb.
+
+For large SDK frames on Linux, ZWO recommends a 200 MiB USB transfer-memory
+limit. Check `cat /sys/module/usbcore/parameters/usbfs_memory_mb`; if needed,
+`echo 200 | sudo tee /sys/module/usbcore/parameters/usbfs_memory_mb` changes it
+until reboot. This is a system-wide setting; our scripts do not change it.
+
+From an extracted package, these commands work without NINA or Python:
+
+```sh
+./zwogain-rust/zwogain-host --list
+./zwogain-rust/zwogain-host --inspect --camera "ZWO ASI6200MM Pro"
+./zwogain-rust/zwogain-host --capture --camera "ZWO ASI6200MM Pro" \
+  --width 256 --height 256 --microseconds 100000 --frames 3 \
+  --gain 100 --offset 50 --output sdk-darks
+```
+
+The output directory must be new. Each image has a `.raw` file containing
+little-endian RAW16 pixels and a `.json` file with geometry and capture settings.
+Dark capture is the default; use `--light` for light frames. Use `--serial` when
+two cameras share a name. `--help` lists all options.
+
+`--inspect` and `--capture` accept `--set CONTROL=VALUE`. For example, add
+`--set 16=-10 --set 17=1 --hold-seconds 60` to set the cooler to -10 C and wait
+60 seconds before inspecting or capturing. A fixed hold does not guarantee the
+camera has reached its target. The worker restores settings changed with
+`--set`, `--gain`, or `--offset`, including their prior automatic mode, before
+closing. Restoration errors are reported. A hung SDK or forced process exit
+can prevent restoration; the CLI watchdog reports this when it terminates.
+
+Failed downloads get up to two same-frame retries while the SDK reports the
+frame ready (`--read-retries` changes the count). This CLI does not automatically
+reconnect or take replacement exposures. The NINA supervisor provides that
+full recovery lifecycle.
+
+For a source build, install `libusb-1.0-0` on Debian/Ubuntu or run
+`brew install libusb` on macOS, then stage the SDK beside the release workers:
+
+```sh
+cargo build --workspace --release --locked
+python3 scripts/stage-sdk.py target/release --check
+./target/release/zwogain-host --list
+```
+
+The repository contains these platform libraries:
 
 | System | Library name |
 | --- | --- |
@@ -118,7 +166,7 @@ currently bundles only the Windows DLL. Put the native library beside the host:
 | Linux | `libASICamera2.so` |
 | macOS | `libASICamera2.dylib` |
 
-Or launch `zwogain-host --sdk /absolute/path/to/library`. SDK dependencies and
-Linux device permissions must also be installed. Both workers use the same
+Use `--sdk /absolute/path/to/library` to override the bundled library. Linux
+device permissions must also be installed. Both workers use the same
 version-1 JSON and binary protocol over stdin/stdout on every platform; see
 [architecture](architecture.md).

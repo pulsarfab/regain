@@ -13,6 +13,12 @@ The ZWO ASI SDK DLL and header are copyright 2015 ZWO Company and distributed
 under the MIT-style license in `vendor/zwo/LICENSE.txt`, included in packages
 as `licenses/ZWO-ASI-SDK.txt`. ZWO's camera device driver is not included.
 
+Native worker packages include ASI SDK 1.41 for their OS and architecture;
+source hashes and licenses are in `vendor/zwo/native/`. macOS packages also
+include libusb under LGPL-2.1-or-later, with its license and the source URL for
+the packaged version in `libusb-source.json`. It remains a separate, replaceable
+dynamic library. Linux packages use the system libusb installation.
+
 Rust dependencies retain their original licenses. The build script packages
 their license/copyright texts and the Rust standard-library copyright bundle
 under `licenses/`. Cargo.lock records exact versions.

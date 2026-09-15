@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tarfile
 import tempfile
 
@@ -25,6 +26,8 @@ with tempfile.TemporaryDirectory(prefix="zwogain-package-") as temporary:
     licenses.mkdir(parents=True)
     for name in ["zwogain-direct", "zwogain-host"]:
         shutil.copy2(root / "target" / "release" / name, stage / name)
+    subprocess.run([sys.executable, str(root / "scripts/stage-sdk.py"), str(stage),
+                    "--target", host, "--check"], check=True)
     for name in ["LICENSE", "THIRD_PARTY_NOTICES.md", "Cargo.lock"]:
         shutil.copy2(root / name, stage / name)
     shutil.copy2(root / "docs/portable-rust.md", stage / "README.md")

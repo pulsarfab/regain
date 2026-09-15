@@ -131,6 +131,34 @@ def sdk_fixture(binary_dir, library):
         assert worker.call("get", dict(control=0))[0] == 1 << 40
         worker.call("close")
     print("Passed: native SDK loading and C header ABI fixture")
+    standalone(binary_dir, library)
+
+
+def standalone(binary_dir, library=None):
+    suffix = ".exe" if sys.platform == "win32" else ""
+    command = [str(binary_dir / ("zwogain-host" + suffix))]
+    command += ["--sdk", str(library.resolve())] if library else ["--simulate"]
+    listing = json.loads(subprocess.check_output(command + ["--list"], text=True, timeout=10))
+    assert len(listing["cameras"]) == 1
+    with tempfile.TemporaryDirectory(prefix="zwogain-cli-test-") as temporary:
+        destination = Path(temporary) / "frames"
+        capture = command + ["--capture", "--width", "128", "--height", "128", "--frames", "2",
+                             "--microseconds", "1000", "--gain", "123", "--output", str(destination)]
+        done = subprocess.run(capture, capture_output=True, text=True, timeout=20, check=True)
+        assert len(done.stdout.splitlines()) == 2
+        expected = b"".join(struct.pack("<H", n) for n in range(128 * 128))
+        for index in [1, 2]:
+            assert (destination / f"frame-{index:04}.raw").read_bytes() == expected
+            metadata = json.loads((destination / f"frame-{index:04}.json").read_text())
+            assert metadata["exposure"]["dark"] is True and metadata["readRetriesUsed"] == 0
+        # Do not overwrite an existing output directory or its images.
+        assert subprocess.run(capture, capture_output=True, timeout=10).returncode != 0
+        assert (destination / "frame-0001.raw").read_bytes() == expected
+        if library:
+            sets = [line for line in done.stderr.splitlines() if line.startswith("fixture set 0=")]
+            assert sets == ["fixture set 0=123", "fixture set 0=100"], sets
+    print("Passed: standalone SDK capture, RAW16 output, and settings restoration" if library
+          else "Passed: standalone simulated camera commands")
 
 
 if __name__ == "__main__":
@@ -139,5 +167,6 @@ if __name__ == "__main__":
     parser.add_argument("--sdk-fixture", type=Path)
     args = parser.parse_args()
     simulated(args.bin_dir.resolve())
+    standalone(args.bin_dir.resolve())
     if args.sdk_fixture:
         sdk_fixture(args.bin_dir.resolve(), args.sdk_fixture)

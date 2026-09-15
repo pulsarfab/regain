@@ -31,6 +31,17 @@ impl std::fmt::Display for SdkError {
 }
 impl std::error::Error for SdkError {}
 impl Sdk {
+    pub fn version(&self) -> Result<String> {
+        // SAFETY: SDK returns a library-owned NUL-terminated version string.
+        unsafe {
+            let version = self.symbol::<raw::GetSdkVersion>(b"ASIGetSDKVersion\0")?();
+            Ok(if version.is_null() {
+                "unknown".into()
+            } else {
+                CStr::from_ptr(version).to_string_lossy().into_owned()
+            })
+        }
+    }
     pub fn load(path: &Path) -> Result<Self> {
         ensure!(path.is_absolute(), "SDK path must be absolute");
         // SAFETY: application-controlled library, ABI declarations from bundled header.

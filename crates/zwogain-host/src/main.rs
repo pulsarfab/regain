@@ -1,3 +1,4 @@
+mod cli;
 #[allow(dead_code)]
 mod raw;
 mod sdk;
@@ -278,6 +279,14 @@ impl Host {
 }
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().collect();
+    if args.iter().any(|arg| arg == "--help") {
+        cli::help();
+        return Ok(());
+    }
+    let command = cli::Options::parse(&args[1..])?;
+    if let Some(options) = &command {
+        options.arm_watchdog();
+    }
     let sdk = if args.iter().any(|v| v == "--simulate") {
         None
     } else {
@@ -298,6 +307,9 @@ fn main() -> Result<()> {
         sim_instant: false,
         sim_info: json!({"id":0,"name":"ZWO Simulated","width":960,"height":640,"color":true,"bayer":0,"pixelSize":3.76,"bitDepth":16,"cooled":true,"shutter":false,"bins":[1,2,4],"formats":[0,2]}),
     };
+    if let Some(options) = command {
+        return cli::run(&mut host, options);
+    }
     let (mut input, mut output) = (std::io::stdin().lock(), std::io::stdout().lock());
     loop {
         let mut header = [0u8; 4];

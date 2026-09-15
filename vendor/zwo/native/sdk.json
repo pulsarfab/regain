@@ -1,0 +1,31 @@
+{
+  "version": "1.41",
+  "archive": "ASI_linux_mac_SDK_V1.41.tar.bz2",
+  "archiveSha256": "488f5df7476494faa41ecbc1c6399f13cb5f7495a2e34814c098094261ee6f03",
+  "libraries": {
+    "x86_64-unknown-linux-gnu": {
+      "file": "x86_64-unknown-linux-gnu/libASICamera2.so",
+      "source": "ASI_linux_mac_SDK_V1.41/lib/x64/libASICamera2.so.1.41",
+      "sha256": "d1de4a5ab85c8cafbddfad9c593bbba515890d3adf20c1ca44dafcf15f2775ce",
+      "bytes": 4141487
+    },
+    "aarch64-unknown-linux-gnu": {
+      "file": "aarch64-unknown-linux-gnu/libASICamera2.so",
+      "source": "ASI_linux_mac_SDK_V1.41/lib/armv8/libASICamera2.so.1.41",
+      "sha256": "3ecf511979ed571131e7d7f4a467112aba21940b4dc91d63bd109b9683bf67c4",
+      "bytes": 4042678
+    },
+    "x86_64-apple-darwin": {
+      "file": "x86_64-apple-darwin/libASICamera2.dylib",
+      "source": "ASI_linux_mac_SDK_V1.41/lib/mac/libASICamera2.dylib.1.41",
+      "sha256": "4c83b50b4b1ac7f2253c36b7889ddcbd28eaccb63e2ee9cdaea1c1f35f5cc716",
+      "bytes": 6598544
+    },
+    "aarch64-apple-darwin": {
+      "file": "aarch64-apple-darwin/libASICamera2.dylib",
+      "source": "ASI_linux_mac_SDK_V1.41/lib/mac_arm64/libASICamera2.dylib.1.41",
+      "sha256": "8b2b947da1fd625cb686ac100427bc8b5d4c96c971d09799602e3197d5c38338",
+      "bytes": 3042272
+    }
+  }
+}

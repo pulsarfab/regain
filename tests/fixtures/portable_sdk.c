@@ -1,8 +1,11 @@
 /* Test the Rust FFI against the actual C header on each Unix ABI. No USB I/O. */
 #include "../../vendor/zwo/ASICamera2.h"
 #include <string.h>
+#include <stdio.h>
 
 static long gain = 100;
+static int width = 128, height = 128, bin = 1, x = 0, y = 0, exposing = 0;
+static long exposure = 1000;
 int ASIGetNumOfConnectedCameras(void) { return 1; }
 ASI_ERROR_CODE ASIGetCameraProperty(ASI_CAMERA_INFO *info, int index) {
     (void)index;
@@ -42,15 +45,39 @@ ASI_ERROR_CODE ASIGetControlCaps(int id, int index, ASI_CONTROL_CAPS *caps) {
     return ASIOpenCamera(id);
 }
 ASI_ERROR_CODE ASIGetControlValue(int id, ASI_CONTROL_TYPE control, long *value, ASI_BOOL *automatic) {
-    (void)control;
-    *value = gain;
+    *value = control == ASI_EXPOSURE ? exposure : gain;
     *automatic = ASI_FALSE;
     return ASIOpenCamera(id);
 }
 ASI_ERROR_CODE ASISetControlValue(int id, ASI_CONTROL_TYPE control, long value, ASI_BOOL automatic) {
-    (void)control;
     (void)automatic;
-    gain = value;
+    if (control == ASI_EXPOSURE) exposure = value;
+    else gain = value;
+    fprintf(stderr, "fixture set %d=%ld\n", (int)control, value);
     return ASIOpenCamera(id);
 }
 char *ASIGetSDKVersion(void) { return "C ABI fixture"; }
+ASI_ERROR_CODE ASIDisableDarkSubtract(int id) { return ASIOpenCamera(id); }
+ASI_ERROR_CODE ASISetROIFormat(int id, int w, int h, int b, ASI_IMG_TYPE format) {
+    (void)format;
+    width = w; height = h; bin = b;
+    return ASIOpenCamera(id);
+}
+ASI_ERROR_CODE ASIGetROIFormat(int id, int *w, int *h, int *b, ASI_IMG_TYPE *format) {
+    *w = width; *h = height; *b = bin; *format = ASI_IMG_RAW16;
+    return ASIOpenCamera(id);
+}
+ASI_ERROR_CODE ASISetStartPos(int id, int nx, int ny) { x = nx; y = ny; return ASIOpenCamera(id); }
+ASI_ERROR_CODE ASIGetStartPos(int id, int *nx, int *ny) { *nx = x; *ny = y; return ASIOpenCamera(id); }
+ASI_ERROR_CODE ASIStartExposure(int id, ASI_BOOL dark) { (void)dark; exposing = 1; return ASIOpenCamera(id); }
+ASI_ERROR_CODE ASIGetExpStatus(int id, ASI_EXPOSURE_STATUS *status) {
+    *status = exposing ? ASI_EXP_SUCCESS : ASI_EXP_IDLE;
+    return ASIOpenCamera(id);
+}
+ASI_ERROR_CODE ASIGetDataAfterExp(int id, unsigned char *data, long size) {
+    if (size != (long)width * height * 2) return ASI_ERROR_BUFFER_TOO_SMALL;
+    for (long i = 0; i < size / 2; ++i) { data[2*i] = i & 255; data[2*i+1] = (i >> 8) & 255; }
+    exposing = 0;
+    return ASIOpenCamera(id);
+}
+ASI_ERROR_CODE ASIStopExposure(int id) { exposing = 0; return ASIOpenCamera(id); }

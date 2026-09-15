@@ -112,6 +112,8 @@ before sharing. See the [kit instructions](scripts/camera-kit/README.md).
 
 The Rust workers also build on Linux and macOS using native USB access. Camera
 testing on those systems is still needed; see [build and test instructions](docs/portable-rust.md).
+Native CI packages include SDK 1.41 and standalone camera commands for listing
+cameras, inspecting controls, and saving RAW16 captures.
 The NINA plugin requires Windows.
 
 Requires .NET 8, the Rust MSVC toolchain, and Visual Studio C++ build tools.

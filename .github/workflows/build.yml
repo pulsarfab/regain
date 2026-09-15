@@ -19,10 +19,21 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Install SDK runtime dependencies
+        shell: bash
+        run: |
+          if [[ "$RUNNER_OS" == "macOS" ]]; then
+            brew install libusb
+          else
+            sudo apt-get update
+            sudo apt-get install -y libusb-1.0-0
+          fi
       - run: cargo fmt --check
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - run: cargo test --workspace --locked
       - run: cargo build --workspace --release --locked
+      - name: Load and enumerate with the real ZWO SDK
+        run: python scripts/stage-sdk.py target/release --check
       - name: Check worker protocol and native SDK ABI
         shell: bash
         run: |
