@@ -3,6 +3,18 @@ on: [push, pull_request, workflow_dispatch]
 permissions:
   contents: read
 jobs:
+  ascom-registration:
+    name: Windows COM activation
+    runs-on: windows-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - run: dotnet build src/ZwoGain.ASCOM -c Release
+      - run: ./scripts/test-ascom-registration.ps1
+        shell: pwsh
   rust-portable:
     name: Rust (${{ matrix.os }})
     strategy:
@@ -81,8 +93,6 @@ jobs:
         with:
           components: rustfmt, clippy, rust-docs
       - run: ./scripts/test.ps1
-        shell: pwsh
-      - run: ./scripts/test-ascom-registration.ps1
         shell: pwsh
       - uses: actions/setup-python@v5
         with:
