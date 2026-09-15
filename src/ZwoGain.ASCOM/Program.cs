@@ -17,7 +17,9 @@ internal static class Program
         {
             if (args.Any(a => a.Equals("/regserver", StringComparison.OrdinalIgnoreCase))) { Register(false, args.Contains("--user")); return 0; }
             if (args.Any(a => a.Equals("/unregserver", StringComparison.OrdinalIgnoreCase))) { Register(true, args.Contains("--user")); return 0; }
-            WriteLog("Starting class factories; process " + System.Diagnostics.Process.GetCurrentProcess().Id);
+            WriteLog("Starting class factories; process " + System.Diagnostics.Process.GetCurrentProcess().Id
+                + "; bits " + (IntPtr.Size * 8) + "; session " + System.Diagnostics.Process.GetCurrentProcess().SessionId
+                + "; user " + System.Security.Principal.WindowsIdentity.GetCurrent().Name + "; arguments " + string.Join(" ", args));
             int hr = CoInitializeEx(IntPtr.Zero, 2); if (hr < 0) Marshal.ThrowExceptionForHR(hr);
             var factories = new List<ClassFactory>(); var cookies = new List<uint>();
             var registration = new RegistrationServices(); var managedCookies = new List<int>();

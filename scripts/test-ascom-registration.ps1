@@ -13,6 +13,7 @@ try {
     }
 } finally {
     Get-Content -LiteralPath (Join-Path $env:LOCALAPPDATA 'ZwoGain/ASCOM/server.log') -Tail 30 -ErrorAction SilentlyContinue
+    Get-WinEvent -FilterHashtable @{ LogName = 'System'; ProviderName = 'Microsoft-Windows-DistributedCOM'; StartTime = (Get-Date).AddMinutes(-5) } -ErrorAction SilentlyContinue | Format-List TimeCreated,Id,Message
     $registration = Start-Process -FilePath $exe -ArgumentList '/unregserver' -WindowStyle Hidden -Wait -PassThru
     Get-Process ZwoGain.ASCOM -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $exe } | Stop-Process
     if ($registration.ExitCode) { throw 'Unregistration failed' }
