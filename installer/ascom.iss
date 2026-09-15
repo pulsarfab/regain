@@ -41,7 +41,10 @@ SignedUninstaller=yes
 #endif
 
 [Files]
-Source: "{#Stage}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#Stage}\*"; DestDir: "{app}"; Excludes: "ZwoGain.ASCOM.Register.exe"; Flags: ignoreversion recursesubdirs createallsubdirs
+; Register inside the installation transaction, after all dependencies exist.
+; Unlike ssPostInstall, a failure here aborts setup and rolls back its files.
+Source: "{#Stage}\ZwoGain.ASCOM.Register.exe"; DestDir: "{app}"; Flags: ignoreversion; AfterInstall: InstallDriver
 ; A separate helper checks the old files without loading the installed COM DLL.
 Source: "{#Stage}\*.dll"; DestDir: "{tmp}\preflight"; Flags: dontcopy
 Source: "{#Stage}\ZwoGain.ASCOM.Register.exe*"; DestDir: "{tmp}\preflight"; Flags: dontcopy
@@ -118,9 +121,9 @@ begin
     RaiseException('ASCOM registration failed. See %LOCALAPPDATA%\ZwoGain\ASCOM\registration.log.');
 end;
 
-procedure CurStepChanged(CurStep: TSetupStep);
+procedure InstallDriver;
 begin
-  if CurStep = ssPostInstall then RegisterDriver('/regserver');
+  RegisterDriver('/regserver');
 end;
 
 function InitializeUninstall: Boolean;
