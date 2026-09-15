@@ -1,7 +1,10 @@
 # Run only on a disposable CI Windows machine with administrator rights.
 $ErrorActionPreference = 'Stop'
-$exe = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../src/ZwoGain.ASCOM.Register/bin/Release/net48/ZwoGain.ASCOM.Register.exe'))
 if (!$env:CI) { throw 'This machine-registration check is for disposable CI runners only.' }
+$stage = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../artifacts/ASCOM registration'))
+New-Item -ItemType Directory -Path $stage -Force | Out-Null
+Get-ChildItem -LiteralPath (Join-Path $PSScriptRoot '../src/ZwoGain.ASCOM.Register/bin/Release/net48') -File | Copy-Item -Destination $stage -Force
+$exe = Join-Path $stage 'ZwoGain.ASCOM.Register.exe'
 Write-Output ("Activation client session {0}; user {1}" -f [Diagnostics.Process]::GetCurrentProcess().SessionId, [Security.Principal.WindowsIdentity]::GetCurrent().Name)
 try {
     $registration = Start-Process -FilePath $exe -ArgumentList '/regserver' -WindowStyle Hidden -Wait -PassThru

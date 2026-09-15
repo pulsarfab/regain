@@ -134,8 +134,9 @@ Abort passed in each mode. These are small-ROI checks, not full-frame ASCOM
 validation. The P25 dark-frame means were about 503 ADU in both modes.
 All four COM mappings also returned real 64 × 64 images and passed abort from
 both 32-bit and 64-bit clients: P25 SDK, ASI676 SDK, ASI676 direct, and P25 direct.
-The initial checks used isolated class factories; the DLL loader is also covered
-by the simulated tests using temporary per-user registrations.
+These captures also passed through the COM DLL with temporary per-user
+registrations. Clean Windows CI checks installation, activation from both client
+architectures, and unregistration, including a directory with spaces in its name.
 
 With the P25 cooler running, killing its worker during a five-second exposure
 caused one replacement exposure and restored the 10°C target:

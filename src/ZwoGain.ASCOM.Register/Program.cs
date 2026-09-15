@@ -14,13 +14,13 @@ internal static class Program
                 using var camera = new Camera1(); camera.SetupDialog(); return 0;
             }
             string assembly = typeof(Camera1).Assembly.Location;
-            string codebase = new Uri(assembly).AbsoluteUri;
             foreach (var view in new[] { RegistryView.Registry32, RegistryView.Registry64 }) {
                 using var root = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, view);
                 // Uninstall only this copy; an older directory must not remove a newer install.
                 if (remove) for (int slot = 1; slot <= 4; slot++) {
                     using var existing = root.OpenSubKey(@"Software\Classes\CLSID\{D1DB6F94-5CC0-4752-A758-F849098874A" + slot + @"}\InprocServer32");
-                    if (existing is not null && !string.Equals(existing.GetValue("CodeBase") as string, codebase, StringComparison.OrdinalIgnoreCase))
+                    if (existing is not null && (!Uri.TryCreate(existing.GetValue("CodeBase") as string, UriKind.Absolute, out var installed) ||
+                        !installed.IsFile || !string.Equals(Path.GetFullPath(installed.LocalPath), assembly, StringComparison.OrdinalIgnoreCase)))
                         throw new InvalidOperationException("Unregister from the currently installed ZWOgain directory.");
                 }
                 string framework = view == RegistryView.Registry32 ? "Framework" : "Framework64";
