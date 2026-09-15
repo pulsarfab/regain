@@ -9,6 +9,13 @@ internal static class Program
     {
         string logDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ZwoGain", "ASCOM");
         try {
+            if (args.Length == 2 && args[0].Equals("/checkinuse", StringComparison.OrdinalIgnoreCase)) {
+                var running = InUseCheck.Find(args[1]);
+                if (running.Length == 0) return 0;
+                Directory.CreateDirectory(logDir);
+                File.AppendAllText(Path.Combine(logDir, "registration.log"), "Close before setup: " + string.Join(", ", running) + Environment.NewLine);
+                return 2;
+            }
             bool remove = args.Any(a => a.Equals("/unregserver", StringComparison.OrdinalIgnoreCase));
             if (!remove && !args.Any(a => a.Equals("/regserver", StringComparison.OrdinalIgnoreCase))) {
                 using var camera = new Camera1(); camera.SetupDialog(); return 0;

@@ -58,7 +58,23 @@ and is also visible on the setup page. Keep the settings file when upgrading.
 ## Windows COM frontend
 
 Requires Windows x64, .NET Framework 4.8, the ASCOM Platform, and the ZWO Windows
-driver. Extract the complete ASCOM package to a permanent folder. From an
+driver for a locally connected camera.
+
+Run `ZwoGain-ASCOM-<version>-win-x64-setup.exe` from the CI artifacts or a release
+that includes it. Setup requests administrator access, checks .NET and ASCOM
+Platform, and installs all four camera entries for 32-bit and 64-bit clients.
+The ZWO USB driver is installed separately; remote Alpaca connections do not
+need it. Use **ZWOgain ASCOM → Camera setup** in the Start menu to configure the
+server and cameras.
+
+Run a newer installer to upgrade in place. Close camera applications and stop
+the ZWOgain Alpaca server first: setup refuses to replace files while they are
+in use. It does not stop an exposure automatically. Remove the package through
+Windows **Installed apps**. Upgrades and uninstall keep camera settings and
+logs in `%LOCALAPPDATA%\ZwoGain`. No service or firewall rule is installed.
+Release installers and uninstallers are signed; ordinary CI builds are unsigned.
+
+For a portable/manual install, extract the complete ASCOM ZIP to a permanent folder. From an
 administrator PowerShell in that folder, register it:
 
 ```powershell
@@ -79,6 +95,22 @@ service running. Registering the Chooser entries needs administrator access.
 To remove the entries, run the same command with `/unregserver` before removing
 the folder. Server settings are in `%LOCALAPPDATA%\ZwoGain\ASCOM\server.json`;
 `ZWOGAIN_ASCOM_SETTINGS` can select another file for a client process.
+
+### Build the Windows installer
+
+After `scripts/build.ps1` and `scripts/build-ascom.ps1`, run
+`scripts/install-inno.ps1` once to install the pinned Inno Setup compiler under
+`artifacts/tools`, then run `scripts/build-ascom-installer.ps1`. An existing
+Inno Setup installation can be selected with `-Compiler <path-to-ISCC.exe>`.
+The output is an EXE and SHA-256 file in `artifacts`.
+
+CI runs `scripts/test-ascom-installer.ps1` on a disposable administrator runner.
+It checks the missing-platform gate, installation, all four COM slots in both
+client architectures, capture and abort, busy-file guards, upgrades, downgrade
+and directory-change rejection, uninstall and settings preservation. The ASCOM
+Platform registry version is a fixture; the captures use the installed Rust
+server in simulation mode. Never run this test on a workstation with installed
+camera registrations.
 
 ## Capture behavior
 
