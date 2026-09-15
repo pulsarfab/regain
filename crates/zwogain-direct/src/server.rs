@@ -647,7 +647,16 @@ impl Host {
                 if method == "close"
                     && let Some(worker) = self.worker.take()
                 {
+                    // Report failed cooler shutdown to the supervisor so its bounded
+                    // reconnect-for-cleanup path can run. Channel teardown is still
+                    // unconditional, even if the explicit off command fails.
+                    let cooling = if self.model.cooled() {
+                        worker.environment(17, Some(0)).map(|_| ())
+                    } else {
+                        Ok(())
+                    };
                     worker.close();
+                    cooling.map_err(hardware)?;
                 }
                 Value::Null
             }
