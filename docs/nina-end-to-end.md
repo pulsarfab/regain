@@ -531,3 +531,26 @@ fan 255, LED 255 and a 20°C cooler target were used for the following images:
 Each image was inspected in NINA's pane. The loop stopped after its active
 capture without cancellation or worker replacement. Temperature and cooler
 output continued updating throughout the loop and bin/ROI changes.
+
+The corrected worker also completed a fresh 1,200-second full-frame exposure
+with fallback disabled. It entered Exposing at 20:36:00.3592, Downloading at
+20:56:02.7064 and Idle at 20:56:02.8121: 1,202.45 seconds for acquisition and
+delivery. NINA displayed 9576 × 6388 pixels, mean 761.21, SD 418.90, median 736,
+minimum 535 and maximum 65535 ADU (147 pixels). The whole image was visible
+without the stale lower region found before the readout correction. Temperature
+refreshed to 19.9°C at 1% output against the unchanged 20°C setpoint.
+
+NINA holds its last temperature/power reading during an individual capture.
+A passive observation of the owned direct worker during this exposure recorded
+44 successful temperature reads at 20°C and 44 cooler register writes over
+45 seconds. It issued no extra camera commands. The worker had no camera SDK
+module loaded, both during that observation and after capture. The capture log
+contained one request, with full recapture explicitly disabled by the 30-second
+cutoff, and no retry or fallback.
+
+After validation, NINA's warm-up control disabled cooling and the dew heater
+was turned off. Setup retained ASI6200MM Pro and its serial, with direct mode
+and fallback disabled, fan 255 and LED 255. Reconnecting confirmed primary SDK
+mode, gain 100, offset 50 and USB bandwidth 40. The capture inputs were restored
+to 0.1 seconds, bin 1, full frame, Loop off and Save off. The completed
+1,200-second direct image remains visible in the image pane.

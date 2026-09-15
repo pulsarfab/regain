@@ -948,6 +948,32 @@
         "height": 16,
         "meanAdu": 502.54,
         "standardDeviationAdu": 1.37
+      },
+      {
+        "backend": "direct",
+        "exposureSeconds": 1200,
+        "bin": 1,
+        "region": "full",
+        "width": 9576,
+        "height": 6388,
+        "meanAdu": 761.21,
+        "standardDeviationAdu": 418.9,
+        "medianAdu": 736,
+        "minimumAdu": 535,
+        "maximumAdu": 65535,
+        "saturatedPixels": 147,
+        "startedLocal": "20:36:00.3592",
+        "downloadingLocal": "20:56:02.7064",
+        "completedLocal": "20:56:02.8121",
+        "acquisitionAndDeliverySeconds": 1202.4529,
+        "finalTemperatureC": 19.9,
+        "targetC": 20,
+        "finalCoolerPowerPercent": 1,
+        "captureRequests": 1,
+        "replacementExposures": 0,
+        "sdkFallback": false,
+        "sdkModuleLoaded": false,
+        "imagePaneInspected": true
       }
     ],
     "directSdkModuleLoaded": false,
@@ -1023,6 +1049,25 @@
       ],
       "sdkLoaded": false,
       "uiTelemetryCachedDuringCapture": true
+    },
+    "finalState": {
+      "backend": "sdk",
+      "cameraSelectionPersisted": true,
+      "directEnabled": false,
+      "fallbackEnabled": false,
+      "coolerEnabled": false,
+      "dewHeaterEnabled": false,
+      "fan": 255,
+      "led": 255,
+      "gain": 100,
+      "offset": 50,
+      "usbBandwidth": 40,
+      "captureSeconds": 0.1,
+      "bin": 1,
+      "subsampleEnabled": false,
+      "loopEnabled": false,
+      "saveEnabled": false,
+      "longDirectImageStillDisplayed": true
     }
   }
 }
