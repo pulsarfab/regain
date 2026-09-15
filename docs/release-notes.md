@@ -1,52 +1,31 @@
-ZWOgain (ZWO Again) provides a process-isolated ZWO camera driver for NINA 3.2.0.9001+.
-This first release includes the NINA plugin and a standalone Windows camera
-exercise kit for contributing new camera models.
+ZWOgain 0.2.0.0 adds ASI6200MM Pro P25 support and fixes camera recovery.
+The SDK remains the default; direct capture is optional.
 
-- Runs the ASI SDK in a supervised Rust process and restores camera settings
-  after recoverable failures.
-- Retries exposures of 30 seconds or less by default, with a configurable
-  cutoff, retry count, reconnect delay and cooling recovery limits.
-- Includes an embedded camera/recovery logo for NINA's Plugin Manager.
-- Organizes setup into Camera, Recovery, Cooling and Advanced tabs, with clear
-  ASI2600MM Pro and ASI220MM Mini guide choices.
-- Waits for measured temperature and cooler output to recover before retrying,
-  with a temporary NINA readiness-timeout extension for longer recovery.
-- Allows ASI2600MM Pro direct exposures up to 2,000 seconds. The default
-  automatic retry cutoff remains 30 seconds.
-- Tries ready-frame SDK downloads twice by default regardless of exposure
-  duration. The exposure cutoff governs full recapture, including reconnect
-  and cooling restoration, rather than rereads.
-- Allows retained-frame transfer retries at any supported exposure length on
-  the direct ASI2600/ASI676 paths. Replacement exposures still obey the cutoff.
-  ASI2600 tests recovered the same pixels after canceled USB reads and a real
-  read deadline; cable removal and power loss remain unverified.
-- Adds experimental SDK-free ASI2600MM Pro main and ASI220MM Mini guide capture,
-  factory correction, software binning, main cooling/dew control, and persisted
-  opt-in SDK fallback with serial verification and the shared retry policy.
+- Adds direct ASI6200 P25 capture, defect correction, bins 1–4, cooling, dew heater, fan, and LED controls.
+- Fixes incomplete ASI6200 readout by waiting for all sensor rows before freezing the frame.
+- Restores idle camera controls after an abort or failed capture, without starting another exposure.
+- Keeps completed images when a later stop/reset fails.
+- Gives direct downloads and retries their full timeout budget.
+- Finds the selected camera by serial even when another camera of that model is busy.
+- Adjusts NINA image areas to the direct driver's size and alignment rules.
+- Fixes ASI676 read-retry counts and shortens the README.
 
-Validated with ASI676MC and both ASI2600MM Pro Duo sensors, simulator fault injection,
-and interactive NINA captures. Duo cooling and SDK fallback after worker termination
-were hardware-tested. ASI6200/P25 and natural USB transfer failures need separate validation. Public same-frame re-download is
-conditional on SDK ready status, with two read retries by default.
+The default limit for taking a replacement exposure is still **30 seconds**.
+Same-frame rereads have a separate limit and can recover longer exposures.
 
-**NINA plugin:** download `ZwoGain-0.1.0.0.zip`, or add
-`https://nina-plugins.psf-guard.com/` as a NINA plugin source and install ZWOgain.
-For manual installation, extract the plugin ZIP into
-`%LOCALAPPDATA%\NINA\Plugins\3.0.0\ZwoGain` while NINA is closed.
-The ZWO Windows camera driver must already be installed. Select **ZWOgain
-Retryable Camera** and choose your camera in its setup dialog. The SDK backend
-is the default; the direct backend and SDK fallback are opt-in.
+ASI6200 P25 testing includes dark frames in SDK and direct modes, transfer faults,
+cooler recovery, and a full 1,200-second direct exposure in NINA. The latest
+recovery fixes passed automated fault and NINA interface tests; they have not
+yet been retested on the physical camera. The 2,000-second maximum and recovery
+after cable removal or power loss remain untested.
 
-**Camera exercise kit:** download `ZwoGain-CameraKit-0.1.0.0-win-x64.zip`, extract
-the entire folder, and run `ZwoGain-CameraKit.exe` with other camera applications
-disconnected. Requires Windows x64 and the ZWO driver; no Python, Rust or NINA
-installation. The picker runs quick or extended RAW16 exercises and produces
-a local ZIP of settings, SDK/USB transactions, calibration and optional pixel
-samples. Nothing uploads automatically. Review the bundle before sharing.
-See the [kit instructions](https://github.com/theatrus/zwogain/blob/v0.1.0.0/scripts/camera-kit/README.md)
-and [hardware results](https://github.com/theatrus/zwogain/blob/v0.1.0.0/docs/camera-kit-validation.md).
+**Install:** add `https://nina-plugins.psf-guard.com/` as a NINA plugin source and
+update ZWOgain, then restart NINA. For manual installation, close NINA and
+extract `ZwoGain-0.2.0.0.zip` into `%LOCALAPPDATA%\NINA\Plugins\3.0.0\ZwoGain`.
+Requires Windows x64, NINA 3.2.0.9001 or later, and the ZWO Windows camera driver.
 
-Apache-2.0; bundled third-party components retain their own licenses.
-Release plugin DLLs, Rust workers and the kit executable are signed by
-StackFoundry LLC. Checksums cover the final signed packages. Local and ordinary
-CI builds are unsigned. ZWOgain is independent and is not affiliated with ZWO.
+The release also includes `ZwoGain-CameraKit-0.2.0.0-win-x64.zip`. Extract the
+whole ZIP and run `ZwoGain-CameraKit.exe` to collect data for a new camera model.
+
+ZWOgain binaries are signed by StackFoundry LLC. The project is Apache-2.0 and
+is not affiliated with or supported by ZWO. Bundled software retains its own licenses.
