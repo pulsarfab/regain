@@ -7,9 +7,8 @@ for each camera.
 
 These frontends are available in the source tree and CI artifacts. They have
 passed simulated capture tests, including 32-bit and 64-bit COM clients, and
-real Windows Alpaca captures listed below. A full ASCOM ConformU run and real
-camera tests through COM are still needed. Linux and macOS USB transfers also
-still need hardware testing.
+real Windows Alpaca and COM captures listed below. A full ASCOM ConformU run
+is still needed. Linux and macOS USB transfers also need hardware testing.
 
 ZWOgain is independent software and is not affiliated with or supported by ZWO.
 
@@ -135,6 +134,9 @@ The standalone Rust server returned 256 × 256 ImageBytes captures at 0.05 secon
 
 Abort passed in each mode. These are small-ROI checks, not full-frame ASCOM
 validation. The P25 dark-frame means were about 503 ADU in both modes.
+All four COM mappings also returned real 64 × 64 images and passed abort from
+both 32-bit and 64-bit clients: P25 SDK, ASI676 SDK, ASI676 direct, and P25 direct.
+Those checks used explicitly launched, isolated class factories.
 
 With the P25 cooler running, killing its worker during a five-second exposure
 caused one replacement exposure and restored the 10°C target:
