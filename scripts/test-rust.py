@@ -1,6 +1,7 @@
 """Exercise the Rust workers over real pipes, without a camera or vendor SDK."""
 import argparse
 import json
+import os
 from pathlib import Path
 import struct
 import subprocess
@@ -157,6 +158,19 @@ def standalone(binary_dir, library=None):
         if library:
             sets = [line for line in done.stderr.splitlines() if line.startswith("fixture set 0=")]
             assert sets == ["fixture set 0=123", "fixture set 0=100"], sets
+            for failures in [2, 3]:
+                retry_directory = Path(temporary) / f"retry-{failures}"
+                retried = subprocess.run(capture[:-1] + [str(retry_directory)],
+                    env={**os.environ, "ZWOGAIN_FIXTURE_FAIL_DOWNLOADS": str(failures)},
+                    capture_output=True, text=True, timeout=20)
+                assert (retried.returncode == 0) == (failures == 2), retried.stderr
+                assert "fixture set 0=100" in retried.stderr, "gain not restored after failed download"
+                if failures == 2:
+                    metadata = json.loads((retry_directory / "frame-0001.json").read_text())
+                    assert metadata["readRetriesUsed"] == 2
+                    assert (retry_directory / "frame-0001.raw").read_bytes() == expected
+                else:
+                    assert not list(retry_directory.glob("*.raw")), "accepted a failed frame"
     print("Passed: standalone SDK capture, RAW16 output, and settings restoration" if library
           else "Passed: standalone simulated camera commands")
 

@@ -2,10 +2,12 @@
 #include "../../vendor/zwo/ASICamera2.h"
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 static long gain = 100;
 static int width = 128, height = 128, bin = 1, x = 0, y = 0, exposing = 0;
 static long exposure = 1000;
+static int downloads = 0;
 int ASIGetNumOfConnectedCameras(void) { return 1; }
 ASI_ERROR_CODE ASIGetCameraProperty(ASI_CAMERA_INFO *info, int index) {
     (void)index;
@@ -75,6 +77,8 @@ ASI_ERROR_CODE ASIGetExpStatus(int id, ASI_EXPOSURE_STATUS *status) {
     return ASIOpenCamera(id);
 }
 ASI_ERROR_CODE ASIGetDataAfterExp(int id, unsigned char *data, long size) {
+    const char *failures = getenv("ZWOGAIN_FIXTURE_FAIL_DOWNLOADS");
+    if (failures && downloads++ < atoi(failures)) return ASI_ERROR_TIMEOUT;
     if (size != (long)width * height * 2) return ASI_ERROR_BUFFER_TOO_SMALL;
     for (long i = 0; i < size / 2; ++i) { data[2*i] = i & 255; data[2*i+1] = (i >> 8) & 255; }
     exposing = 0;

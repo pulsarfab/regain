@@ -31,6 +31,7 @@ with tempfile.TemporaryDirectory(prefix="zwogain-package-") as temporary:
     for name in ["LICENSE", "THIRD_PARTY_NOTICES.md", "Cargo.lock"]:
         shutil.copy2(root / name, stage / name)
     shutil.copy2(root / "docs/portable-rust.md", stage / "README.md")
+    shutil.copy2(root / "docs/architecture.md", stage / "architecture.md")
     for package in metadata["packages"]:
         if package["id"] not in resolved or package["source"] is None:
             continue
