@@ -110,6 +110,10 @@ before sharing. See the [kit instructions](scripts/camera-kit/README.md).
 
 ## Build from source
 
+The Rust workers also build on Linux and macOS using native USB access. Camera
+testing on those systems is still needed; see [build and test instructions](docs/portable-rust.md).
+The NINA plugin requires Windows.
+
 Requires .NET 8, the Rust MSVC toolchain, and Visual Studio C++ build tools.
 The ASI SDK DLL and header are included.
 

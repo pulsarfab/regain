@@ -1,4 +1,4 @@
-//! ASI6200MM Pro P25 acquisition over the installed Cypress driver.
+//! ASI6200MM Pro P25 acquisition over the platform USB transport.
 use crate::{asi6200_tables, processing, settings::Settings, transport::Camera};
 use anyhow::{Result, ensure};
 use serde_json::{Value, json};

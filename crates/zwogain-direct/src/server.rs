@@ -111,14 +111,10 @@ impl Model {
         }
     }
 }
-fn paths(model: Model) -> Result<Vec<Vec<u16>>> {
+fn paths(model: Model) -> Result<Vec<transport::DeviceInfo>> {
     Ok(transport::enumerate()?
         .into_iter()
-        .filter(|path| {
-            String::from_utf16_lossy(path)
-                .to_ascii_lowercase()
-                .contains(&format!("vid_03c3&pid_{:04x}", model.pid()))
-        })
+        .filter(|path| path.matches(0x03c3, model.pid() as u16))
         .collect())
 }
 

@@ -8,6 +8,13 @@ use std::{
     path::Path,
 };
 
+#[cfg(windows)]
+pub const LIBRARY_NAME: &str = "ASICamera2.dll";
+#[cfg(target_os = "linux")]
+pub const LIBRARY_NAME: &str = "libASICamera2.so";
+#[cfg(target_os = "macos")]
+pub const LIBRARY_NAME: &str = "libASICamera2.dylib";
+
 pub struct Sdk {
     lib: Library,
     id: Option<i32>,
@@ -207,6 +214,8 @@ impl Sdk {
                 "get control",
             )?;
         }
+        // C long is 32-bit on Windows and 64-bit on 64-bit Unix.
+        #[allow(clippy::unnecessary_cast)]
         Ok((value as i64, auto != 0))
     }
     pub fn set(&self, control: i32, value: i64) -> Result<()> {

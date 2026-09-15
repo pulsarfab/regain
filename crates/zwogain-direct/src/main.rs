@@ -1,33 +1,21 @@
 //! Isolated experimental direct backend; SDK remains the plugin's default.
-#[cfg(windows)]
 mod asi220;
-#[cfg(windows)]
 mod asi220_tables;
-#[cfg(windows)]
 mod asi2600;
-#[cfg(windows)]
 mod asi2600_tables;
-#[cfg(windows)]
 mod asi6200;
-#[cfg(windows)]
 mod asi6200_tables;
-#[cfg(windows)]
 mod asi676;
-#[cfg(windows)]
 mod asi676_tables;
 mod completion;
-#[cfg(windows)]
 mod environment;
 mod processing;
 mod protocol;
-#[cfg(windows)]
 mod server;
 mod settings;
-#[cfg(windows)]
 mod transport;
 use anyhow::{Result, ensure};
 
-#[cfg(windows)]
 fn main() -> Result<()> {
     transport::require_sdk_absent()?;
     let args: Vec<_> = std::env::args().skip(1).collect();
@@ -156,19 +144,16 @@ fn main() -> Result<()> {
         return Ok(());
     }
     if capture {
-        paths.retain(|path| {
-            String::from_utf16_lossy(path)
-                .to_ascii_lowercase()
-                .contains(if asi6200 {
-                    "vid_03c3&pid_620b"
-                } else if duo {
-                    "vid_03c3&pid_2601"
-                } else if guide {
-                    "vid_03c3&pid_2209"
-                } else {
-                    "vid_03c3&pid_676d"
-                })
-        });
+        let pid = if asi6200 {
+            0x620b
+        } else if duo {
+            0x2601
+        } else if guide {
+            0x2209
+        } else {
+            0x676d
+        };
+        paths.retain(|path| path.matches(0x03c3, pid));
     }
     ensure!(
         paths.len() == 1,
@@ -222,9 +207,4 @@ fn main() -> Result<()> {
     }
     println!("{}", serde_json::to_string_pretty(&result)?);
     Ok(())
-}
-
-#[cfg(not(windows))]
-fn main() -> Result<()> {
-    anyhow::bail!("The direct-driver research executable requires Windows");
 }

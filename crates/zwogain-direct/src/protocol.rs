@@ -1,10 +1,14 @@
-//! Observed Cypress packed SINGLE_TRANSFER ABI. No native struct alignment.
+//! Shared USB descriptors and frame envelopes; Windows-only Cypress transfer ABI.
 use anyhow::{Result, ensure};
 use serde_json::{Value, json};
 
+#[cfg(windows)]
 pub const HEADER: usize = 38;
+#[cfg(windows)]
 pub const VERSION: u32 = 0x220000;
+#[cfg(windows)]
 pub const CONTROL: u32 = 0x220020;
+#[cfg(windows)]
 pub const BULK: u32 = 0x22004b;
 
 /// Observed ASI676MC bin-1 envelope inside the first/last two pixels.
@@ -40,10 +44,12 @@ pub fn replace_envelope(data: &mut [u8], width: usize) -> Result<()> {
 fn u16_at(bytes: &[u8], at: usize) -> u16 {
     u16::from_le_bytes(bytes[at..at + 2].try_into().unwrap())
 }
+#[cfg(windows)]
 fn u32_at(bytes: &[u8], at: usize) -> u32 {
     u32::from_le_bytes(bytes[at..at + 4].try_into().unwrap())
 }
 
+#[cfg(windows)]
 pub fn descriptor_request(kind: u8, length: u16) -> Vec<u8> {
     let mut data = vec![0; HEADER + length as usize];
     data[0] = 0x80; // Standard device-to-host GET_DESCRIPTOR only.
@@ -56,11 +62,13 @@ pub fn descriptor_request(kind: u8, length: u16) -> Vec<u8> {
     data
 }
 
+#[cfg(windows)]
 pub fn status(data: &[u8]) -> Result<(u32, u32)> {
     ensure!(data.len() >= HEADER, "truncated transfer header");
     Ok((u32_at(data, 14), u32_at(data, 18)))
 }
 
+#[cfg(windows)]
 pub fn descriptor_payload(data: &[u8], count: usize, expected: usize) -> Result<&[u8]> {
     let (nt, usb) = status(data)?;
     ensure!(
@@ -167,6 +175,7 @@ mod tests {
         assert!(frame_sequence(&data, 16).is_err());
     }
     #[test]
+    #[cfg(windows)]
     fn descriptor_abi_and_invalid_completions() {
         let request = descriptor_request(1, 18);
         assert_eq!(&request[..8], &[0x80, 6, 0, 1, 0, 0, 18, 0]);

@@ -1,4 +1,4 @@
-//! Research-only ASI2600MM Duo acquisition over the installed Cypress driver.
+//! ASI2600MM acquisition over the platform USB transport.
 use crate::{asi2600_tables, processing, settings::Settings, transport::Camera};
 use anyhow::{Result, ensure};
 use serde_json::{Value, json};

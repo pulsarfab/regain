@@ -285,7 +285,7 @@ fn main() -> Result<()> {
             .windows(2)
             .find(|v| v[0] == "--sdk")
             .map(|v| std::path::PathBuf::from(&v[1]))
-            .unwrap_or(std::env::current_exe()?.with_file_name("ASICamera2.dll"));
+            .unwrap_or(std::env::current_exe()?.with_file_name(sdk::LIBRARY_NAME));
         Some(sdk::Sdk::load(&path)?)
     };
     let mut host = Host {

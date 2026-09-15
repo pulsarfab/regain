@@ -3,6 +3,45 @@ on: [push, pull_request, workflow_dispatch]
 permissions:
   contents: read
 jobs:
+  rust-portable:
+    name: Rust (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, ubuntu-24.04-arm, macos-15, macos-15-intel]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: cargo fmt --check
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - run: cargo test --workspace --locked
+      - run: cargo build --workspace --release --locked
+      - name: Check worker protocol and native SDK ABI
+        shell: bash
+        run: |
+          if [[ "$RUNNER_OS" == "macOS" ]]; then
+            library=target/libportable_sdk.dylib
+            cc -Wall -Wextra -Werror -dynamiclib tests/fixtures/portable_sdk.c -o "$library"
+          else
+            library=target/libportable_sdk.so
+            cc -Wall -Wextra -Werror -shared -fPIC tests/fixtures/portable_sdk.c -o "$library"
+          fi
+          python scripts/test-rust.py --bin-dir target/release --sdk-fixture "$library"
+      - name: Package workers for hardware testing
+        shell: bash
+        run: tar -czf "zwogain-rust-${{ matrix.os }}.tar.gz" -C target/release zwogain-host zwogain-direct
+      - uses: actions/upload-artifact@v4
+        with:
+          name: zwogain-rust-${{ matrix.os }}
+          path: zwogain-rust-*.tar.gz
+          if-no-files-found: error
   research-tests:
     runs-on: windows-latest
     timeout-minutes: 10
@@ -27,6 +66,10 @@ jobs:
           components: rustfmt, clippy, rust-docs
       - run: ./scripts/test.ps1
         shell: pwsh
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python scripts/test-rust.py
       - run: ./scripts/build.ps1
         shell: pwsh
       - run: ./scripts/test-release.ps1
