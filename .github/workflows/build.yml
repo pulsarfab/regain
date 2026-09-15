@@ -34,6 +34,8 @@ jobs:
       - run: cargo test --workspace --locked
         env:
           ZWOGAIN_TEST_WORKERS: ${{ github.workspace }}/target/release
+      - name: Exercise standalone Alpaca server
+        run: python scripts/test-alpaca.py --bin-dir target/release
       - name: Load and enumerate with the real ZWO SDK
         run: python scripts/stage-sdk.py target/release --check
       - name: Check worker protocol and native SDK ABI
@@ -86,6 +88,7 @@ jobs:
         with:
           python-version: '3.12'
       - run: python scripts/test-rust.py
+      - run: python scripts/test-alpaca.py
       - run: ./scripts/build.ps1
         shell: pwsh
       - run: ./scripts/build-ascom.ps1

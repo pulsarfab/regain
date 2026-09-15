@@ -7,6 +7,9 @@ dispatch. It runs Rust formatting/lints/tests, the .NET recovery tests, NINA
 contract/logo tests, package validation and registry publication fixture tests.
 It uploads the ZIP, SHA-256 file, PNG and NINA manifest. No camera is required
 on the runner; physical camera and interactive NINA checks remain local.
+It also tests all four COM slots from 32-bit and 64-bit clients, checks machine
+registration on the disposable Windows runner, and uploads a separate ASCOM
+package. Linux and macOS artifacts include the Rust Alpaca server and workers.
 
 ZWOgain code and the original logo are Apache-2.0. `LICENSE` contains the full
 license; Cargo and .NET metadata declare it. Packages include that license and
@@ -32,9 +35,10 @@ the camera's displayed driver version use the same version.
    A manual **Release** workflow run on `main` does the same build and validation
    and uploads artifacts without creating a tag or GitHub release.
 3. Push a matching tag, such as `v0.1.0.0`. The **Release** workflow reruns all
-   checks and creates a **draft** GitHub release with six assets:
+   checks and creates a **draft** GitHub release with eight assets:
    `ZwoGain-0.1.0.0.zip`, `ZwoGain-0.1.0.0.manifest.json`, `zwogain.png`,
-   `SHA256SUMS`, `ZwoGain-CameraKit-0.1.0.0-win-x64.zip`, and its `.zip.sha256`.
+   `SHA256SUMS`, `ZwoGain-CameraKit-0.1.0.0-win-x64.zip`, its `.zip.sha256`,
+   `ZwoGain-ASCOM-0.1.0.0-win-x64.zip`, and its `.zip.sha256`.
 4. Inspect/test those artifacts, then publish the draft as a stable release.
    A rerun can refresh a draft, but refuses to overwrite published assets.
 
@@ -47,7 +51,8 @@ silently rewritten to a three-part semantic version.
 Local builds and the ordinary **Build and test** workflow produce unsigned
 binaries. The **Release** workflow stages the package, authenticates to Azure
 through OIDC in the `release` environment, and signs `ZwoGain.NINA.dll`,
-`ZwoGain.Core.dll`, `zwogain-host.exe` and `zwogain-direct.exe` with Azure Trusted
+`ZwoGain.Core.dll`, `ZwoGain.ASCOM.exe`, `zwogain-alpaca.exe`, `zwogain-host.exe`
+and `zwogain-direct.exe` with Azure Trusted
 Signing. It requires valid signatures from StackFoundry LLC before packaging.
 The bundled vendor DLL is left unchanged. ZIP and manifest checksums are
 computed after signing.

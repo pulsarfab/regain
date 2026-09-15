@@ -20,9 +20,13 @@ internal static class Program
             var factories = new List<ClassFactory>(); var cookies = new List<uint>();
             try
             {
-                foreach (var type in Cameras)
+                // Private test factories avoid attaching tests to installed camera slots.
+                var testIds = Environment.GetEnvironmentVariable("ZWOGAIN_ASCOM_TEST_CLSIDS")?.Split(',').Select(Guid.Parse).ToArray();
+                if (testIds is not null && testIds.Length != Cameras.Length) throw new ArgumentException("Expected four test class IDs");
+                for (int slot = 0; slot < Cameras.Length; slot++)
                 {
-                    var factory = new ClassFactory(type); factories.Add(factory); Guid id = type.GUID;
+                    var type = Cameras[slot];
+                    var factory = new ClassFactory(type); factories.Add(factory); Guid id = testIds?[slot] ?? type.GUID;
                     Marshal.ThrowExceptionForHR(CoRegisterClassObject(ref id, factory, 4, 1, out uint cookie)); cookies.Add(cookie);
                 }
                 // COM release makes wrappers collectible; quit when all clients have gone.

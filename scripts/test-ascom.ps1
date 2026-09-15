@@ -4,6 +4,7 @@ Push-Location $repo
 $backend = $null
 $frontend = $null
 $previousSettings = $env:ZWOGAIN_ASCOM_SETTINGS
+$previousIds = $env:ZWOGAIN_ASCOM_TEST_CLSIDS
 try {
     dotnet build src/ZwoGain.ASCOM -c Release
     if ($LASTEXITCODE) { throw 'ASCOM build failed' }
@@ -36,6 +37,7 @@ try {
     $env:ZWOGAIN_ASCOM_SETTINGS = Join-Path $testDir 'server.json'
     @{ Address = '127.0.0.1'; Port = $port; StartLocalServer = $false } | ConvertTo-Json | Set-Content -LiteralPath $env:ZWOGAIN_ASCOM_SETTINGS
     # Start a private class factory, without changing installed COM registrations.
+    $env:ZWOGAIN_ASCOM_TEST_CLSIDS = ((1..4 | ForEach-Object { [Guid]::NewGuid().ToString() }) -join ',')
     $frontend = Start-Process -FilePath (Join-Path $repo 'src/ZwoGain.ASCOM/bin/Release/net48/ZwoGain.ASCOM.exe') -ArgumentList '/embedding' -WindowStyle Hidden -PassThru
     Start-Sleep -Milliseconds 500
     foreach ($architecture in 'System32', 'SysWOW64') {
@@ -47,5 +49,6 @@ try {
 } finally {
     foreach ($child in $frontend, $backend) { if ($null -ne $child -and !$child.HasExited) { $child.Kill(); $child.WaitForExit() }; if ($null -ne $child) { $child.Dispose() } }
     $env:ZWOGAIN_ASCOM_SETTINGS = $previousSettings
+    $env:ZWOGAIN_ASCOM_TEST_CLSIDS = $previousIds
     Pop-Location
 }
