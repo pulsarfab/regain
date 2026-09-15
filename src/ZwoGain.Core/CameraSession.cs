@@ -396,6 +396,7 @@ public sealed class CameraSession : IDisposable
         State($"Restoring cooling near {prior:F1} C");
         var clock = Stopwatch.StartNew();
         int stable = 0;
+        var setpointHold = new CoolingSetpointHold(target, Options.TemperatureToleranceC, Options.CoolingSampleSeconds);
         while (clock.Elapsed.TotalSeconds < Options.CoolingTimeoutSeconds)
         {
             double? current = await Temperature(token).ConfigureAwait(false);
@@ -405,8 +406,12 @@ public sealed class CameraSession : IDisposable
             // thermal inertia lets three early readings pass before the sensor warms.
             bool outputRecovered = !priorPower.HasValue || priorPower <= 10 ||
                 (power.HasValue && power >= priorPower - 10);
-            stable = current.HasValue && current.Value >= Math.Min(prior, target) - Options.TemperatureToleranceC && current.Value <= prior + Options.TemperatureToleranceC && outputRecovered ? stable + 1 : 0;
-            Diagnostic?.Invoke($"Cooling recovery: temperature {current:F1} C (prior {prior:F1}), power {power}% (prior {priorPower}%), stable {stable}/{Options.CoolingStableSamples}");
+            // Remembered output can be transient cooldown demand. Once the restored
+            // target is held for 30 seconds, a lower steady output is legitimate.
+            bool atStableTarget = setpointHold.Observe(current, power, clock.Elapsed.TotalSeconds);
+            bool nearPrior = current.HasValue && current.Value >= Math.Min(prior, target) - Options.TemperatureToleranceC && current.Value <= prior + Options.TemperatureToleranceC;
+            stable = (nearPrior && outputRecovered) || atStableTarget ? stable + 1 : 0;
+            Diagnostic?.Invoke($"Cooling recovery: temperature {current:F1} C (prior {prior:F1}), power {power}% (prior {priorPower}%), stable {stable}/{Options.CoolingStableSamples}, setpoint held {setpointHold.HeldSeconds:F1}s");
             if (stable >= Options.CoolingStableSamples)
                 return;
             await Task.Delay(TimeSpan.FromSeconds(Options.CoolingSampleSeconds), token).ConfigureAwait(false);

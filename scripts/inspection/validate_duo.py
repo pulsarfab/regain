@@ -12,8 +12,8 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def capture(options, guide=False, asi6200=False):
-    command = [str(ROOT / 'target/debug/zwogain-direct.exe'), '--capture-6200' if asi6200 else '--capture-guide' if guide else '--capture-duo', '--stream']
+def capture(options, guide=False, asi6200=False, worker=None):
+    command = [str(worker or ROOT / 'target/debug/zwogain-direct.exe'), '--capture-6200' if asi6200 else '--capture-guide' if guide else '--capture-duo', '--stream']
     for key, value in options.items():
         command += ['--' + key] + ([] if value is True else [str(value)])
     proc = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -57,6 +57,13 @@ def capture(options, guide=False, asi6200=False):
             info['statistics'] = {'mean': float(pixels.mean()), 'median': float(np.median(pixels)),
                                   'minimum': int(pixels.min()), 'maximum': int(pixels.max()),
                                   'stddev': float(pixels.std()), 'pixels': len(pixels)}
+            # A valid envelope and digest can still describe partially stale
+            # sensor memory. Retain vertical profiles for control transitions.
+            rows = pixels.reshape(height, width)
+            info['statistics']['rowBandMedians'] = [float(np.median(band))
+                                                    for band in np.array_split(rows, min(16, height))]
+            info['statistics']['rowBandMeans'] = [float(band.mean())
+                                                  for band in np.array_split(rows, min(16, height))]
             # Deliberately omit USB device identity and paths from this result.
             results.append(info)
         if proc.stdout.read(1) or proc.wait(timeout=5) != 0:

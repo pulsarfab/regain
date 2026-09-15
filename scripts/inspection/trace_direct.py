@@ -15,6 +15,7 @@ def main():
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--cancel-bulk', type=int, help='cancel one pending bulk submission (1-based)')
     parser.add_argument('--hash-bulk', action='store_true', help='record hashes of successful USB chunks, never pixels')
+    parser.add_argument('--worker', type=Path, default=ROOT / 'target/debug/zwogain-direct.exe', help='exact built or installed worker to trace')
     parser.add_argument('options', nargs=argparse.REMAINDER)
     args = parser.parse_args()
     options = args.options[1:] if args.options[:1] == ['--'] else args.options
@@ -37,7 +38,8 @@ def main():
                 output.write(json.dumps(value) + '\n')
                 output.flush()
 
-        pid = device.spawn([str(ROOT / 'target/debug/zwogain-direct.exe'), *options], stdio='pipe')
+        record({'kind': 'worker-build', 'sha256': hashlib.sha256(args.worker.read_bytes()).hexdigest()})
+        pid = device.spawn([str(args.worker.resolve()), *options], stdio='pipe')
         session = device.attach(pid)
         session.on('detached', lambda *unused: done.set())
         received = 0

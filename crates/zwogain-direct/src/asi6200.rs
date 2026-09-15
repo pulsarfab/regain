@@ -34,16 +34,14 @@ fn word(camera: &Camera, request: u8, register: u16, value: u32, bytes: u16) -> 
 }
 fn stop(camera: &Camera) -> Result<()> {
     let flags = camera.vendor(0xbc, 0, 0, 1)?[0];
-    writes(
-        camera,
-        &[
-            (0xbd, 0, u16::from(flags | 0x10)),
-            (0xb6, 0x19e, 5),
-            (0xb6, 0, 5),
-            (0xaa, 0, 0),
-        ],
-    )?;
+    camera.vendor(0xbd, 0, u16::from(flags | 0x10), 0)?;
+    freeze(camera)?;
+    camera.vendor(0xaa, 0, 0, 0)?;
     camera.reset_pipe()
+}
+fn freeze(camera: &Camera) -> Result<()> {
+    // BD00 bit 10 and AA discard the retained frame on this P25 firmware.
+    writes(camera, &[(0xb6, 0x19e, 5), (0xb6, 0, 5)])
 }
 fn frame_sequence(data: &[u8]) -> Result<u16> {
     ensure!(
@@ -406,15 +404,19 @@ fn capture_native(
             camera.service_environment()?;
             std::thread::sleep(Duration::from_millis(5));
         }
-        // Sensor standby, deliberately without AA (which clears retained DDR).
-        // Allow readout to settle before standby. Small readouts are padded
-        // separately above. Long integrations must consume the initial pass;
-        // an extra settling delay does not substitute for that step.
-        camera.service_environment()?;
-        std::thread::sleep(Duration::from_millis(100));
-        writes(camera, &[(0xb6, 0x19e, 5), (0xb6, 0, 5)])?;
-        // Short integrations stream; restart from frozen DDR. Long integrations
-        // already schedule one pass: triggering replay first can cancel it.
+        // BC23=15 announces readout, not completion of all sensor rows.
+        // Allow the complete programmed frame (HMAX 880 / 20 MHz per row),
+        // plus a settling margin, before stopping the sensor. The ready bit
+        // alone can freeze partially refreshed DDR with a valid envelope.
+        let readout = Duration::from_micros(u64::from(frame) * 44 + 100000);
+        let settling = Instant::now();
+        while settling.elapsed() < readout {
+            camera.service_environment()?;
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        freeze(camera)?;
+        // Short mode streams while DDR fills; discard the queued USB pass and
+        // read frozen DDR. Long mode schedules one pass, which must be consumed.
         if s.microseconds < 1_000_000 {
             begin_retained_read(camera)?;
         }
@@ -500,6 +502,7 @@ fn capture_native(
             "bin":1,"gain":gain,"offset":s.offset,"microseconds":s.microseconds,"bytes":data.len(),
             "wireSha256":wire_hash,"sha256":format!("{:x}",Sha256::digest(&data)),"sequence":sequence,
             "factoryDefects":defects.indices.len(),"acquisitionMs":armed.elapsed().as_millis(),"elapsedMs":started.elapsed().as_millis(),
+            "readoutGuardUs":readout.as_micros(),
             "replay":replay_result,"sdkLoaded":false,"readRecoveries":read_errors.len(),"readErrors":read_errors,
             "interruptedPrefixBytes":prefix.len(),"interruptedPrefixPixelsMatch":!prefix.is_empty(),
             "timeoutInjectionBytes":s.timeout_read_after_bytes});

@@ -422,3 +422,57 @@ the plugin. The image remains in NINA's pane. It establishes 1,200-second
 operation on this unit; 2,000 seconds is range-checked and simulator-tested but
 has not yet been run for its full duration on hardware. CI passed 51 core tests,
 12 NINA tests, 16 Rust tests, formatting, Clippy and the release-package checks.
+
+## ASI6200MM Pro P25 (2026-09-14)
+
+The owner identified the attached mono ASI6200 as the 2025/P25 model. Its SDK
+name is `ZWO ASI6200MM Pro`, USB PID `620b`. It was capped throughout testing.
+The installed plugin and worker hashes were checked against the Release build
+before connecting in NINA 3.2.0.9001. Direct captures used SDK fallback disabled.
+The Equipment pane reported monochrome 9576 × 6388, 3.76 µm pixels, bins up to
+4 × 4, 32 µs–2,000 s exposures, gain 0–700 and offset 0–200. It showed `[direct]`
+in Driver info and omitted a writable USB limit in this mode.
+
+Each completed row below delivered a 16-bit image inspected in NINA's
+image pane. Gain was 100, offset 50, with Loop and Save disabled. These initial
+constant-control tests preceded the readout-guard correction described below;
+they establish delivery but alone cannot exclude partially stale sensor rows.
+
+| Backend | Exposure / bin / region | Output | Mean / SD |
+| --- | --- | --- | --- |
+| Direct | 0.1 s / 1 / full | 9576 × 6388 | 502.89 / 5.76 |
+| Direct | 0.1 s / 2 / full | 4784 × 3194 | 502.53 / 3.25 |
+| Direct | 0.1 s / 3 / full | 3192 × 2128 | 502.45 / 1.95 |
+| Direct | 0.1 s / 4 / full | 2392 × 1596 | 502.44 / 1.65 |
+| Direct | 0.1 s / 4 / physical ROI 64 × 64 at (0, 0) | 16 × 16 | 502.54 / 1.42 |
+| Direct | 1,200 s / 1 / full | 9576 × 6388 | 970.18 / 582.00 |
+| Updated direct worker, auxiliary register checks | 0.1 s / 1 / full | 9576 × 6388 | 502.89 / 5.77 |
+
+NINA's Cancel stopped an active 1,200-second direct exposure after about
+7.5 seconds and returned the capture button without replacing the displayed
+image. The next request waited five seconds before reopening the same camera.
+It restored the 25°C setpoint, dew heater and auxiliary settings, and accepted
+three cooling samples at 25.6, 25.7 and 25.8°C before starting the new exposure.
+The original temperature had been 25.1°C with 1% cooler output. This exercises
+cancellation and reconnect through NINA; separate loaded-cooler supervisor
+tests cover direct recovery, primary SDK recovery and SDK fallback as recorded
+in [ASI6200 hardware evidence](asi6200-p25.md).
+
+The resumed 1,200-second exposure started at 19:07:00.435, entered download at
+19:27:02.488 and returned idle at 19:27:02.605: 1,202.17 seconds for acquisition
+and delivery. No failed attempt, replacement exposure or fallback occurred.
+Module inspection during the exposure confirmed the worker did not load
+`ASICamera2.dll`. The full-resolution image had median 936 ADU; 151 warm-camera
+hot pixels reached 65535. After capture, telemetry refreshed to 24.9°C and 1%
+cooler output with the 25°C setpoint unchanged.
+
+After disconnecting, the direct worker was updated to include hardware fan/LED
+write verification (SHA-256
+`6fa8e371a24dfdbca4e2df47ae5c7256dc1f64254ab17a2e1a6282c6480766df`).
+The camera selection, fan 200 and LED 128 were still present in setup. The next
+direct connection and full-frame capture passed with these register checks active.
+
+Changing the full-frame controls to gain 700, offset 200 subsequently exposed
+partially stale DDR: only the upper part reflected the new settings. Earlier
+small-ROI and constant-control tests had not detected this. See the corrected
+readout guard and full-frame transition regression in [the model notes](asi6200-p25.md).

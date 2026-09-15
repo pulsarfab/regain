@@ -248,6 +248,8 @@ cargo build --locked -p zwogain-direct
 target/debug/zwogain-direct.exe --capture-6200 --gain 100 --offset 50 --replay
 # Bins, gain transitions, offsets, timing boundaries, ROIs and read faults:
 .reference/inspection-venv/Scripts/python.exe scripts/inspection/validate_asi6200.py --output artifacts/inspection/NEW-6200-matrix.jsonl
+# Full-sensor control transitions with vertical-band checks for stale DDR rows:
+.reference/inspection-venv/Scripts/python.exe scripts/inspection/validate_asi6200.py --output artifacts/inspection/NEW-6200-controls.jsonl --full-controls
 # Append a real twenty-minute full-frame integration to that matrix:
 .reference/inspection-venv/Scripts/python.exe scripts/inspection/validate_asi6200.py --output artifacts/inspection/NEW-6200-long.jsonl --long 1200
 # Cancel the thirteenth bulk request of a 60-second exposure:

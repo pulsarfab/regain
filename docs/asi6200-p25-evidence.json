@@ -112,10 +112,13 @@
         1,
         1
       ]
-    }
+    },
+    "historicalCaveat": "Initial constant-control images preceded the readout correction; valid framing and replay identity alone cannot exclude stale sensor rows."
   },
   "hardwareTransferFault": {
     "exposureSeconds": 60,
+    "exposureStartCommands": 1,
+    "sdkLoaded": false,
     "width": 9576,
     "height": 6388,
     "cancelBulkRequest": 13,
@@ -124,6 +127,42 @@
     "acquisitionMs": 71208,
     "totalMs": 72039,
     "subsequentReplayInteriorIdentical": true
+  },
+  "additionalHardwareTransferFaults": [
+    {
+      "exposureSeconds": 2,
+      "cancelBulkRequest": 1,
+      "exposureStartCommands": 1,
+      "sameFrameReadRecoveries": 2,
+      "elapsedMs": 14012,
+      "subsequentReplayInteriorIdentical": true
+    },
+    {
+      "exposureSeconds": 2,
+      "cancelBulkRequest": 117,
+      "exposureStartCommands": 1,
+      "sameFrameReadRecoveries": 1,
+      "elapsedMs": 9548,
+      "subsequentReplayInteriorIdentical": true
+    }
+  ],
+  "ninaLongExposure": {
+    "backend": "direct",
+    "sdkFallbackEnabled": false,
+    "exposureSeconds": 1200,
+    "elapsedSeconds": 1202.1701,
+    "width": 9576,
+    "height": 6388,
+    "gain": 100,
+    "offset": 50,
+    "mean": 970.18,
+    "standardDeviation": 582.0,
+    "median": 936,
+    "sensorTemperatureC": 24.9,
+    "coolerTargetC": 25,
+    "imagePaneInspected": true,
+    "failedAttempts": 0,
+    "sdkDllLoaded": false
   },
   "supervisorRecovery": [
     {
@@ -222,5 +261,533 @@
     "Controlled process and I/O faults are not physical unplug, power loss or naturally occurring USB errors.",
     "2000 seconds is advertised and range-tested; hardware maximum-duration testing is separate.",
     "RAW8/video, external triggering, ST4 and USB hub reset are not direct plugin features."
-  ]
+  ],
+  "readoutCorrection": {
+    "cause": "BC23=15 can precede completion of sensor rows; fixed 100 ms standby guard froze partial DDR.",
+    "implementation": "Wait a programmed frame interval at HMAX 880 / 20 MHz plus 100 ms before standby; preserve DDR and read again.",
+    "limitation": "Time-based guard; definitive firmware completion indicator and illuminated timing verification remain open.",
+    "physicalReadoutGuardMatrix": {
+      "workerSha256": "32bb7510db3e462e62900be22337ebbf596310f1bac26bd3b59fcff63777b281",
+      "cases": 66,
+      "frames": 68,
+      "allReplaysIdentical": true,
+      "fullControlBands": [
+        {
+          "case": 38,
+          "options": {
+            "width": 9576,
+            "height": 6388,
+            "microseconds": 32,
+            "gain": 100,
+            "offset": 200,
+            "replay": true
+          },
+          "bandMedianMinimum": 2003.0,
+          "bandMedianMaximum": 2003.0
+        },
+        {
+          "case": 39,
+          "options": {
+            "width": 9576,
+            "height": 6388,
+            "microseconds": 32,
+            "gain": 100,
+            "offset": 50,
+            "replay": true
+          },
+          "bandMedianMinimum": 503.0,
+          "bandMedianMaximum": 503.0
+        },
+        {
+          "case": 40,
+          "options": {
+            "width": 9576,
+            "height": 6388,
+            "microseconds": 100000,
+            "gain": 100,
+            "offset": 200,
+            "replay": true
+          },
+          "bandMedianMinimum": 2003.0,
+          "bandMedianMaximum": 2003.0
+        },
+        {
+          "case": 41,
+          "options": {
+            "width": 9576,
+            "height": 6388,
+            "microseconds": 100000,
+            "gain": 100,
+            "offset": 50,
+            "replay": true
+          },
+          "bandMedianMinimum": 503.0,
+          "bandMedianMaximum": 503.0
+        },
+        {
+          "case": 42,
+          "options": {
+            "width": 9576,
+            "height": 6388,
+            "microseconds": 999999,
+            "gain": 100,
+            "offset": 200,
+            "replay": true
+          },
+          "bandMedianMinimum": 2004.0,
+          "bandMedianMaximum": 2004.0
+        },
+        {
+          "case": 43,
+          "options": {
+            "width": 9576,
+            "height": 6388,
+            "microseconds": 999999,
+            "gain": 100,
+            "offset": 50,
+            "replay": true
+          },
+          "bandMedianMinimum": 504.0,
+          "bandMedianMaximum": 504.0
+        },
+        {
+          "case": 44,
+          "options": {
+            "width": 9576,
+            "height": 6388,
+            "microseconds": 1000000,
+            "gain": 100,
+            "offset": 200,
+            "replay": true
+          },
+          "bandMedianMinimum": 2004.0,
+          "bandMedianMaximum": 2004.0
+        },
+        {
+          "case": 45,
+          "options": {
+            "width": 9576,
+            "height": 6388,
+            "microseconds": 1000000,
+            "gain": 100,
+            "offset": 50,
+            "replay": true
+          },
+          "bandMedianMinimum": 504.0,
+          "bandMedianMaximum": 504.0
+        },
+        {
+          "case": 46,
+          "options": {
+            "width": 9576,
+            "height": 6388,
+            "microseconds": 2000000,
+            "gain": 100,
+            "offset": 200,
+            "replay": true
+          },
+          "bandMedianMinimum": 2005.0,
+          "bandMedianMaximum": 2005.0
+        },
+        {
+          "case": 47,
+          "options": {
+            "width": 9576,
+            "height": 6388,
+            "microseconds": 2000000,
+            "gain": 100,
+            "offset": 50,
+            "replay": true
+          },
+          "bandMedianMinimum": 505.0,
+          "bandMedianMaximum": 505.0
+        },
+        {
+          "case": 48,
+          "options": {
+            "width": 9576,
+            "height": 6388,
+            "microseconds": 100000,
+            "gain": 0,
+            "offset": 200,
+            "replay": true
+          },
+          "bandMedianMinimum": 2003.0,
+          "bandMedianMaximum": 2003.0
+        },
+        {
+          "case": 49,
+          "options": {
+            "width": 9576,
+            "height": 6388,
+            "microseconds": 100000,
+            "gain": 60,
+            "offset": 200,
+            "replay": true
+          },
+          "bandMedianMinimum": 2002.0,
+          "bandMedianMaximum": 2002.0
+        },
+        {
+          "case": 50,
+          "options": {
+            "width": 9576,
+            "height": 6388,
+            "microseconds": 100000,
+            "gain": 61,
+            "offset": 200,
+            "replay": true
+          },
+          "bandMedianMinimum": 2000.0,
+          "bandMedianMaximum": 2001.0
+        },
+        {
+          "case": 51,
+          "options": {
+            "width": 9576,
+            "height": 6388,
+            "microseconds": 100000,
+            "gain": 62,
+            "offset": 200,
+            "replay": true
+          },
+          "bandMedianMinimum": 2000.0,
+          "bandMedianMaximum": 2001.0
+        },
+        {
+          "case": 52,
+          "options": {
+            "width": 9576,
+            "height": 6388,
+            "microseconds": 100000,
+            "gain": 99,
+            "offset": 200,
+            "replay": true
+          },
+          "bandMedianMinimum": 2000.0,
+          "bandMedianMaximum": 2001.0
+        },
+        {
+          "case": 53,
+          "options": {
+            "width": 9576,
+            "height": 6388,
+            "microseconds": 100000,
+            "gain": 100,
+            "offset": 200,
+            "replay": true
+          },
+          "bandMedianMinimum": 2003.0,
+          "bandMedianMaximum": 2003.0
+        },
+        {
+          "case": 54,
+          "options": {
+            "width": 9576,
+            "height": 6388,
+            "microseconds": 100000,
+            "gain": 101,
+            "offset": 200,
+            "replay": true
+          },
+          "bandMedianMinimum": 2003.0,
+          "bandMedianMaximum": 2003.0
+        },
+        {
+          "case": 55,
+          "options": {
+            "width": 9576,
+            "height": 6388,
+            "microseconds": 100000,
+            "gain": 159,
+            "offset": 200,
+            "replay": true
+          },
+          "bandMedianMinimum": 2002.0,
+          "bandMedianMaximum": 2002.0
+        },
+        {
+          "case": 56,
+          "options": {
+            "width": 9576,
+            "height": 6388,
+            "microseconds": 100000,
+            "gain": 160,
+            "offset": 200,
+            "replay": true
+          },
+          "bandMedianMinimum": 2002.0,
+          "bandMedianMaximum": 2002.0
+        },
+        {
+          "case": 57,
+          "options": {
+            "width": 9576,
+            "height": 6388,
+            "microseconds": 100000,
+            "gain": 161,
+            "offset": 200,
+            "replay": true
+          },
+          "bandMedianMinimum": 2001.0,
+          "bandMedianMaximum": 2001.0
+        },
+        {
+          "case": 58,
+          "options": {
+            "width": 9576,
+            "height": 6388,
+            "microseconds": 100000,
+            "gain": 279,
+            "offset": 200,
+            "replay": true
+          },
+          "bandMedianMinimum": 2003.0,
+          "bandMedianMaximum": 2004.0
+        },
+        {
+          "case": 59,
+          "options": {
+            "width": 9576,
+            "height": 6388,
+            "microseconds": 100000,
+            "gain": 280,
+            "offset": 200,
+            "replay": true
+          },
+          "bandMedianMinimum": 2004.0,
+          "bandMedianMaximum": 2004.0
+        },
+        {
+          "case": 60,
+          "options": {
+            "width": 9576,
+            "height": 6388,
+            "microseconds": 100000,
+            "gain": 281,
+            "offset": 200,
+            "replay": true
+          },
+          "bandMedianMinimum": 2004.0,
+          "bandMedianMaximum": 2004.0
+        },
+        {
+          "case": 61,
+          "options": {
+            "width": 9576,
+            "height": 6388,
+            "microseconds": 100000,
+            "gain": 460,
+            "offset": 200,
+            "replay": true
+          },
+          "bandMedianMinimum": 2076.0,
+          "bandMedianMaximum": 2078.0
+        },
+        {
+          "case": 62,
+          "options": {
+            "width": 9576,
+            "height": 6388,
+            "microseconds": 100000,
+            "gain": 461,
+            "offset": 200,
+            "replay": true
+          },
+          "bandMedianMinimum": 2050.0,
+          "bandMedianMaximum": 2054.0
+        },
+        {
+          "case": 63,
+          "options": {
+            "width": 9576,
+            "height": 6388,
+            "microseconds": 100000,
+            "gain": 520,
+            "offset": 200,
+            "replay": true
+          },
+          "bandMedianMinimum": 2152.0,
+          "bandMedianMaximum": 2158.0
+        },
+        {
+          "case": 64,
+          "options": {
+            "width": 9576,
+            "height": 6388,
+            "microseconds": 100000,
+            "gain": 521,
+            "offset": 200,
+            "replay": true
+          },
+          "bandMedianMinimum": 2100.0,
+          "bandMedianMaximum": 2108.0
+        },
+        {
+          "case": 65,
+          "options": {
+            "width": 9576,
+            "height": 6388,
+            "microseconds": 100000,
+            "gain": 700,
+            "offset": 200,
+            "replay": true
+          },
+          "bandMedianMinimum": 3232.0,
+          "bandMedianMaximum": 3264.0
+        }
+      ]
+    },
+    "programmedFrameGuardReleaseChecks": [
+      {
+        "workerSha256": "1ec914a849fcdee75aa5e2e11619ba3505d6ac9b1c10a9b555c57b6996fdab9d",
+        "options": {
+          "width": 512,
+          "height": 256,
+          "microseconds": 32,
+          "gain": 100,
+          "offset": 50,
+          "replay": true
+        },
+        "readoutGuardUs": 113552,
+        "readRecoveries": 0,
+        "replayIdentical": true,
+        "bandMedianMinimum": 503.0,
+        "bandMedianMaximum": 503.0
+      },
+      {
+        "workerSha256": "1ec914a849fcdee75aa5e2e11619ba3505d6ac9b1c10a9b555c57b6996fdab9d",
+        "options": {
+          "width": 512,
+          "height": 256,
+          "microseconds": 100000,
+          "gain": 100,
+          "offset": 50,
+          "replay": true
+        },
+        "readoutGuardUs": 200848,
+        "readRecoveries": 0,
+        "replayIdentical": true,
+        "bandMedianMinimum": 503.0,
+        "bandMedianMaximum": 503.0
+      },
+      {
+        "workerSha256": "1ec914a849fcdee75aa5e2e11619ba3505d6ac9b1c10a9b555c57b6996fdab9d",
+        "options": {
+          "width": 512,
+          "height": 256,
+          "microseconds": 999999,
+          "gain": 100,
+          "offset": 50,
+          "replay": true
+        },
+        "readoutGuardUs": 1100868,
+        "readRecoveries": 0,
+        "replayIdentical": true,
+        "bandMedianMinimum": 504.0,
+        "bandMedianMaximum": 505.0
+      },
+      {
+        "workerSha256": "1ec914a849fcdee75aa5e2e11619ba3505d6ac9b1c10a9b555c57b6996fdab9d",
+        "options": {
+          "width": 512,
+          "height": 256,
+          "microseconds": 1000000,
+          "gain": 100,
+          "offset": 50,
+          "replay": true
+        },
+        "readoutGuardUs": 124420,
+        "readRecoveries": 0,
+        "replayIdentical": true,
+        "bandMedianMinimum": 504.0,
+        "bandMedianMaximum": 504.0
+      },
+      {
+        "workerSha256": "1ec914a849fcdee75aa5e2e11619ba3505d6ac9b1c10a9b555c57b6996fdab9d",
+        "options": {
+          "microseconds": 999999,
+          "gain": 100,
+          "offset": 200,
+          "replay": true
+        },
+        "readoutGuardUs": 1100868,
+        "readRecoveries": 0,
+        "replayIdentical": true,
+        "bandMedianMinimum": 2004.0,
+        "bandMedianMaximum": 2004.0
+      },
+      {
+        "workerSha256": "1ec914a849fcdee75aa5e2e11619ba3505d6ac9b1c10a9b555c57b6996fdab9d",
+        "options": {
+          "microseconds": 999999,
+          "gain": 100,
+          "offset": 50,
+          "replay": true
+        },
+        "readoutGuardUs": 1100868,
+        "readRecoveries": 0,
+        "replayIdentical": true,
+        "bandMedianMinimum": 504.0,
+        "bandMedianMaximum": 504.0
+      },
+      {
+        "workerSha256": "1ec914a849fcdee75aa5e2e11619ba3505d6ac9b1c10a9b555c57b6996fdab9d",
+        "options": {
+          "microseconds": 2000000,
+          "gain": 100,
+          "offset": 200,
+          "replay": true
+        },
+        "readoutGuardUs": 394228,
+        "readRecoveries": 0,
+        "replayIdentical": true,
+        "bandMedianMinimum": 2005.0,
+        "bandMedianMaximum": 2006.0
+      }
+    ],
+    "releaseTransferFaults": [
+      {
+        "workerSha256": "1ec914a849fcdee75aa5e2e11619ba3505d6ac9b1c10a9b555c57b6996fdab9d",
+        "cancelBulkRequest": 1,
+        "exposureSeconds": 2.0,
+        "exposureStarts": 1,
+        "readRecoveries": 2,
+        "readErrors": [
+          "bulk chunk 0 failed: Win32 995, NT c0000120, USB c0010000, bytes 0/1048576, deadlineExpired false",
+          "bulk chunk 0 failed: Win32 995, NT c0000120, USB c0010000, bytes 0/1048576, deadlineExpired true"
+        ],
+        "elapsedMs": 10417,
+        "replayPixelsIdentical": true,
+        "sdkLoaded": false
+      },
+      {
+        "workerSha256": "1ec914a849fcdee75aa5e2e11619ba3505d6ac9b1c10a9b555c57b6996fdab9d",
+        "cancelBulkRequest": 117,
+        "exposureSeconds": 2.0,
+        "exposureStarts": 1,
+        "readRecoveries": 1,
+        "readErrors": [
+          "bulk chunk 116 failed: Win32 995, NT c0000120, USB c0010000, bytes 0/708160, deadlineExpired false"
+        ],
+        "elapsedMs": 6100,
+        "replayPixelsIdentical": true,
+        "sdkLoaded": false
+      },
+      {
+        "workerSha256": "1ec914a849fcdee75aa5e2e11619ba3505d6ac9b1c10a9b555c57b6996fdab9d",
+        "cancelBulkRequest": 13,
+        "exposureSeconds": 60.0,
+        "exposureStarts": 1,
+        "readRecoveries": 2,
+        "readErrors": [
+          "bulk chunk 12 failed: Win32 995, NT c0000120, USB c0010000, bytes 0/1048576, deadlineExpired false",
+          "bulk chunk 0 failed: Win32 995, NT c0000120, USB c0010000, bytes 0/1048576, deadlineExpired true"
+        ],
+        "elapsedMs": 68559,
+        "replayPixelsIdentical": true,
+        "sdkLoaded": false
+      }
+    ]
+  }
 }

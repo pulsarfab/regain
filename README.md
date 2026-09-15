@@ -109,8 +109,11 @@ When the requested exposure is within the recapture limit, the supervisor:
 4. If cooling was enabled, waits for three consecutive readings within 2°C of
    the pre-error temperature, or further cooled toward the restored target.
    Where cooler-power telemetry is available, output must also recover to at
-   least its previous value minus 10 percentage points. Settling has a default
-   five-minute deadline per attempt.
+   least its previous value minus 10 percentage points. Alternatively, sustained
+   regulation within 1°C of the restored setpoint for 30 seconds permits lower
+   output: cooldown demand can exceed the power needed to hold temperature.
+   A stricter configured temperature tolerance still applies. Settling has a
+   default five-minute deadline per attempt.
 5. Takes a new exposure with the original duration, ROI, binning and controls.
 
 The cooler's **previous setpoint is restored, but recovery waits near the
@@ -158,10 +161,13 @@ bypasses the recapture cutoff to repeat a failed long exposure.
 
 ### Hardware validation and remaining limits
 
-- ASI676MC, ASI2600MM Pro main and ASI220MM Mini guide have been captured through
+ASI6200MM Pro P25 direct support is in the current source build. The published
+v0.1.0.0 package predates that support; build and install from source to test it.
+
+- ASI676MC, ASI2600MM Pro main, ASI6200MM Pro P25 and ASI220MM Mini guide have been captured through
   the plugin and inspected in NINA's image pane. Testing used capped cameras;
   it does not establish illuminated-image performance.
-- Full-frame **60- and 1,200-second ASI2600 direct exposures** completed in NINA
+- Full-frame **1,200-second ASI2600 and ASI6200 direct exposures** completed in NINA
   with SDK fallback disabled. The advertised 2,000-second maximum has not yet
   been tested for its full duration on hardware.
 - ASI2600 direct tests recovered retained pixels after cancellation at the first,
