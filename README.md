@@ -116,8 +116,9 @@ When the requested exposure is within the recapture limit, the supervisor:
    default five-minute deadline per attempt.
 5. Takes a new exposure with the original duration, ROI, binning and controls.
 
-The cooler's **previous setpoint is restored, but recovery waits near the
-previous measured temperature**, which need not have reached that setpoint.
+The cooler's **previous setpoint is restored**. Recovery normally waits near
+the previous measured temperature, which need not have reached that setpoint;
+sustained regulation at the restored target is also accepted.
 Changed controls are deferred until the capture transaction ends, so its retries
 continue using the original settings.
 

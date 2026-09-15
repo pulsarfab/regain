@@ -476,3 +476,58 @@ Changing the full-frame controls to gain 700, offset 200 subsequently exposed
 partially stale DDR: only the upper part reflected the new settings. Earlier
 small-ROI and constant-control tests had not detected this. See the corrected
 readout guard and full-frame transition regression in [the model notes](asi6200-p25.md).
+
+### Readout correction and cooler fallback
+
+The corrected installed Release worker has SHA-256
+`1ec914a849fcdee75aa5e2e11619ba3505d6ac9b1c10a9b555c57b6996fdab9d`.
+The new full-frame gain 700 / offset 200 capture updated every visible row;
+the earlier stale lower region was absent. Subsequent SDK images were also
+inspected in NINA's pane, with Loop and Save disabled:
+
+| Backend | Exposure / bin / region | Output | Mean / SD |
+| --- | --- | --- | --- |
+| Corrected direct, gain 700 / offset 200 | 0.1 s / 1 / full | 9576 × 6388 | 3740.19 / 3736.64 |
+| SDK fallback, gain 100 / offset 50 | 10 s / 1 / full | 9576 × 6388 | 505.13 / 31.43 |
+| SDK fallback | 0.1 s / 2 / full | 4784 × 3194 | 502.48 / 2.76 |
+| SDK fallback | 0.1 s / 3 / full | 3192 × 2128 | 502.41 / 1.86 |
+| SDK fallback | 0.1 s / 4 / full | 2392 × 1596 | 502.39 / 1.42 |
+| SDK fallback | 0.1 s / 4 / physical ROI 64 × 64 | 16 × 16 | 502.79 / 1.52 |
+
+For the fallback row, the direct worker was deliberately terminated at
+20:08:25.941 during a 10-second request. NINA remained in the capture transaction.
+The replacement SDK worker reopened after five seconds and restored target 20°C,
+gain 100, offset 50, dew on, fan 200 and LED 128. The pre-error sensor had
+overshot to 17.5°C with 39% cooler output. Recovery rejected the initial 17°C
+readings at zero output, then waited for the SDK to regulate the restored target.
+After 30 seconds inside the target band, readings of 20.5°C at 13%, 14%, 14%
+passed the three-sample gate at 20:10:38.322. The single replacement exposure
+completed at 20:10:49.770; no user retry was needed. This exercises the sustained-
+setpoint alternative with real hardware, not just the pure-time regression tests.
+
+With direct and fallback both disabled, primary SDK cancellation returned the
+capture button and preserved the previous image. The following 60-second request
+reopened the camera after five seconds and restored the 20°C target. Recovery
+accepted 23.2, 23.2 and 23.1°C at 6% output against the prior 24.3°C / 16% state;
+it did not need to reach the target. The exposure ran from 20:22:16.666 to
+20:23:17.637, delivering 9576 × 6388 pixels, mean 520.09 and SD 54.91 ADU.
+USB bandwidth was 70; fan and LED had been restored to 255. A subsequent primary
+SDK loop delivered 24 full frames at 0.1 seconds without recovery, then ended
+naturally when Loop was disabled. Its last image had mean 502.85 and SD 5.47 ADU.
+
+The same installed direct worker was then selected with SDK fallback disabled.
+Module inspection found no `ASICamera2.dll` in the worker. Gain 100, offset 50,
+fan 255, LED 255 and a 20°C cooler target were used for the following images:
+
+| Corrected direct capture | Output | Mean / SD |
+| --- | --- | --- |
+| 0.1 s / 1 / full | 9576 × 6388 | 502.87 / 5.51 |
+| 0.1 s / 1 / full, final image of six-frame loop | 9576 × 6388 | 502.85 / 5.46 |
+| 0.1 s / 2 / full | 4784 × 3194 | 502.48 / 2.76 |
+| 0.1 s / 3 / full | 3192 × 2128 | 502.40 / 1.85 |
+| 0.1 s / 4 / full | 2392 × 1596 | 502.39 / 1.41 |
+| 0.1 s / 4 / physical ROI 64 × 64 | 16 × 16 | 502.54 / 1.37 |
+
+Each image was inspected in NINA's pane. The loop stopped after its active
+capture without cancellation or worker replacement. Temperature and cooler
+output continued updating throughout the loop and bin/ROI changes.

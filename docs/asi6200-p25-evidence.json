@@ -789,5 +789,240 @@
         "sdkLoaded": false
       }
     ]
+  },
+  "ninaAcceptance": {
+    "version": "3.2.0.9001",
+    "date": "2026-09-14",
+    "directWorkerSha256": "1ec914a849fcdee75aa5e2e11619ba3505d6ac9b1c10a9b555c57b6996fdab9d",
+    "coreDllSha256": "e29d82b8214cd1ee8c65807ad0dd4b9475e15079d51493591cc80fed9039d981",
+    "ninaDllSha256": "8115bfae07909e549bcea9af1305c5300e7ac7f63672e316f6699e196c7f3534",
+    "imagePaneInspected": true,
+    "defaultGain": 100,
+    "defaultOffset": 50,
+    "images": [
+      {
+        "backend": "direct",
+        "exposureSeconds": 0.1,
+        "bin": 1,
+        "region": "full",
+        "width": 9576,
+        "height": 6388,
+        "meanAdu": 3740.19,
+        "standardDeviationAdu": 3736.64,
+        "gain": 700,
+        "offset": 200,
+        "wholeFrameControlTransition": true
+      },
+      {
+        "backend": "sdk fallback",
+        "exposureSeconds": 10,
+        "bin": 1,
+        "region": "full",
+        "width": 9576,
+        "height": 6388,
+        "meanAdu": 505.13,
+        "standardDeviationAdu": 31.43
+      },
+      {
+        "backend": "sdk fallback",
+        "exposureSeconds": 0.1,
+        "bin": 2,
+        "region": "full",
+        "width": 4784,
+        "height": 3194,
+        "meanAdu": 502.48,
+        "standardDeviationAdu": 2.76
+      },
+      {
+        "backend": "sdk fallback",
+        "exposureSeconds": 0.1,
+        "bin": 3,
+        "region": "full",
+        "width": 3192,
+        "height": 2128,
+        "meanAdu": 502.41,
+        "standardDeviationAdu": 1.86
+      },
+      {
+        "backend": "sdk fallback",
+        "exposureSeconds": 0.1,
+        "bin": 4,
+        "region": "full",
+        "width": 2392,
+        "height": 1596,
+        "meanAdu": 502.39,
+        "standardDeviationAdu": 1.42
+      },
+      {
+        "backend": "sdk fallback",
+        "exposureSeconds": 0.1,
+        "bin": 4,
+        "region": "physical 64x64 at 0,0",
+        "width": 16,
+        "height": 16,
+        "meanAdu": 502.79,
+        "standardDeviationAdu": 1.52
+      },
+      {
+        "backend": "sdk",
+        "exposureSeconds": 60,
+        "bin": 1,
+        "region": "full",
+        "width": 9576,
+        "height": 6388,
+        "meanAdu": 520.09,
+        "standardDeviationAdu": 54.91,
+        "usbBandwidth": 70,
+        "afterCancellation": true,
+        "acquisitionAndDeliverySeconds": 60.9701
+      },
+      {
+        "backend": "sdk",
+        "exposureSeconds": 0.1,
+        "bin": 1,
+        "region": "full",
+        "width": 9576,
+        "height": 6388,
+        "meanAdu": 502.85,
+        "standardDeviationAdu": 5.47,
+        "loopFrames": 24,
+        "usbBandwidth": 70
+      },
+      {
+        "backend": "direct",
+        "exposureSeconds": 0.1,
+        "bin": 1,
+        "region": "full",
+        "width": 9576,
+        "height": 6388,
+        "meanAdu": 502.87,
+        "standardDeviationAdu": 5.51
+      },
+      {
+        "backend": "direct",
+        "exposureSeconds": 0.1,
+        "bin": 1,
+        "region": "full",
+        "width": 9576,
+        "height": 6388,
+        "meanAdu": 502.85,
+        "standardDeviationAdu": 5.46,
+        "loopFrames": 6
+      },
+      {
+        "backend": "direct",
+        "exposureSeconds": 0.1,
+        "bin": 2,
+        "region": "full",
+        "width": 4784,
+        "height": 3194,
+        "meanAdu": 502.48,
+        "standardDeviationAdu": 2.76
+      },
+      {
+        "backend": "direct",
+        "exposureSeconds": 0.1,
+        "bin": 3,
+        "region": "full",
+        "width": 3192,
+        "height": 2128,
+        "meanAdu": 502.4,
+        "standardDeviationAdu": 1.85
+      },
+      {
+        "backend": "direct",
+        "exposureSeconds": 0.1,
+        "bin": 4,
+        "region": "full",
+        "width": 2392,
+        "height": 1596,
+        "meanAdu": 502.39,
+        "standardDeviationAdu": 1.41
+      },
+      {
+        "backend": "direct",
+        "exposureSeconds": 0.1,
+        "bin": 4,
+        "region": "physical 64x64 at 0,0",
+        "width": 16,
+        "height": 16,
+        "meanAdu": 502.54,
+        "standardDeviationAdu": 1.37
+      }
+    ],
+    "directSdkModuleLoaded": false,
+    "directFallbackEnabled": false,
+    "loopStop": "Disabled Loop; current capture completed without cancellation or restart",
+    "realCoolerFallback": {
+      "fault": "Owned direct worker terminated during 10-second capture request",
+      "requestStartLocal": "20:08:15.7292",
+      "workerTerminatedLocal": "20:08:25.941",
+      "sdkReopenedLocal": "20:08:30.993",
+      "restoredTargetC": 20,
+      "priorTemperatureC": 17.5,
+      "priorCoolerPowerPercent": 39,
+      "initialZeroOutputRejected": true,
+      "gate": "Sustained restored-setpoint regulation",
+      "acceptedTemperatureC": [
+        20.5,
+        20.5,
+        20.5
+      ],
+      "acceptedPowerPercent": [
+        13,
+        14,
+        14
+      ],
+      "acceptedHeldSeconds": [
+        30.1,
+        32.1,
+        34.1
+      ],
+      "gatePassedLocal": "20:10:38.3226",
+      "completedLocal": "20:10:49.7701",
+      "replacementExposures": 1,
+      "userRetryRequired": false,
+      "controlsRestored": {
+        "gain": 100,
+        "offset": 50,
+        "dewHeater": 1,
+        "fan": 200,
+        "led": 128
+      }
+    },
+    "primarySdkAfterCancellation": {
+      "restoredTargetC": 20,
+      "priorTemperatureC": 24.3,
+      "priorCoolerPowerPercent": 16,
+      "gate": "Prior temperature and cooler output",
+      "acceptedTemperatureC": [
+        23.2,
+        23.2,
+        23.1
+      ],
+      "acceptedPowerPercent": [
+        6,
+        6,
+        6
+      ],
+      "setpointHoldSeconds": 0,
+      "exposureSeconds": 60,
+      "completed": true
+    },
+    "longExposureCoolerObservation": {
+      "method": "Passive observation of existing DeviceIoControl completions in the owned direct worker; no added camera commands",
+      "requestedExposureSeconds": 1200,
+      "firstSampleUtcMs": 1789443588252,
+      "lastSampleUtcMs": 1789443631489,
+      "temperatureReads": 44,
+      "minimumTemperatureC": 20,
+      "maximumTemperatureC": 20,
+      "coolerOutputWrites": 44,
+      "outputRegisterValues": [
+        16
+      ],
+      "sdkLoaded": false,
+      "uiTelemetryCachedDuringCapture": true
+    }
   }
 }
