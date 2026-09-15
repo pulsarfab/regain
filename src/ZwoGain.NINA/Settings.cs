@@ -15,6 +15,7 @@ internal static class Settings
     {
         "ZWO ASI2600MM Duo" or "ZWO ASI2600MM Pro" => "ASI2600MM Pro",
         "ZWO ASI220MM Mini" => "ASI220MM Mini (guide)",
+        "ZWO ASI6200MM Pro" => "ASI6200MM Pro",
         _ => name
     };
 
@@ -121,6 +122,22 @@ internal static class Settings
             (nameof(RecoveryOptions.CoolingTimeoutSeconds), "Recovery timeout (s)"));
         entries[nameof(RecoveryOptions.TemperatureToleranceC)].ToolTip = "Further cooling toward the setpoint is accepted. Cooler output must reach at least its previous value minus 10 percentage points, if reported.";
         var advanced = AddTab("Advanced");
+        TextBox OptionalCameraControl(string label, int? value) {
+            advanced.Children.Add(new TextBlock {Text=label, Margin=new Thickness(0,0,0,2)});
+            var field = new TextBox {Text=value?.ToString() ?? "", MinHeight=28, Margin=new Thickness(0,0,0,10),
+                ToolTip="0–255. Leave blank to use the camera's current value. Applied when connecting."};
+            System.Windows.Automation.AutomationProperties.SetName(field,label);
+            advanced.Children.Add(field);
+            return field;
+        }
+        var fanSpeed = OptionalCameraControl("Fan speed (ASI6200 P25)",remembered?.FanSpeed);
+        var ledBrightness = OptionalCameraControl("Power LED brightness (ASI6200 P25)",remembered?.PowerLedBrightness);
+        void UpdateAuxiliaryControls() {
+            bool supported = (picker.SelectedItem as CameraChoice)?.Camera.Name == "ZWO ASI6200MM Pro";
+            fanSpeed.IsEnabled = ledBrightness.IsEnabled = supported;
+        }
+        picker.SelectionChanged += (_,_) => UpdateAuxiliaryControls();
+        UpdateAuxiliaryControls();
         AddFields(advanced,
             (nameof(RecoveryOptions.CommandTimeoutSeconds), "Command timeout (s)"),
             (nameof(RecoveryOptions.DownloadTimeoutSeconds), "Download timeout (s)"),
@@ -128,7 +145,7 @@ internal static class Settings
             (nameof(RecoveryOptions.ReadyFrameDownloadRetries), "SDK read retries (0-5)"),
             (nameof(RecoveryOptions.DirectReadRetries), "Direct read retries (0-5)"));
         entries[nameof(RecoveryOptions.ReadyFrameDownloadRetries)].ToolTip = "Default: 2. Requires a ready frame in the SDK. Independent of the recapture exposure limit.";
-        entries[nameof(RecoveryOptions.DirectReadRetries)].ToolTip = "Default: 2. ASI2600 and ASI676 retry the same retained frame at any exposure length. Guide retries read a new frame and obey the exposure limit.";
+        entries[nameof(RecoveryOptions.DirectReadRetries)].ToolTip = "Default: 2. ASI2600, ASI6200 and ASI676 retry the same retained frame at any exposure length. Guide retries read a new frame and obey the exposure limit.";
         var status = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 8) };
         footer.Children.Add(status);
         var actions = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
@@ -189,16 +206,24 @@ internal static class Settings
                 options.Validate();
                 if (picker.SelectedItem is not CameraChoice choice)
                     throw new InvalidOperationException("Choose a camera before saving.");
-                if (direct.IsChecked == true && choice.Camera.Name is not ("ZWO ASI676MC" or "ZWO ASI2600MM Duo" or "ZWO ASI220MM Mini"))
+                if (direct.IsChecked == true && choice.Camera.Name is not ("ZWO ASI676MC" or "ZWO ASI2600MM Duo" or "ZWO ASI220MM Mini" or "ZWO ASI6200MM Pro"))
                     throw new InvalidOperationException("Direct capture is unavailable for this camera. Turn off Direct USB driver to use the SDK.");
                 string? selectedSerial = string.IsNullOrWhiteSpace(serial.Text) ? null : serial.Text.Trim().ToLowerInvariant();
                 if (selectedSerial is not null && (selectedSerial.Length != 16 || selectedSerial.Any(c => !Uri.IsHexDigit(c))))
                     throw new InvalidOperationException("The SDK serial number must contain 16 hexadecimal characters, or be left blank.");
+                static int? OptionalByte(TextBox field) {
+                    if (!field.IsEnabled || string.IsNullOrWhiteSpace(field.Text)) return null;
+                    if (!int.TryParse(field.Text,out int value) || value is <0 or >255)
+                        throw new InvalidOperationException("Fan speed and LED brightness must be 0–255, or blank.");
+                    return value;
+                }
+                int? fan = OptionalByte(fanSpeed), led = OptionalByte(ledBrightness);
                 Directory.CreateDirectory(Folder);
                 string temp = FilePath + "." + Guid.NewGuid().ToString("N") + ".tmp";
                 File.WriteAllText(temp, JsonSerializer.Serialize(options, new JsonSerializerOptions { WriteIndented = true }));
                 File.Move(temp, FilePath, true);
-                Cameras.Save(new CameraSelection(choice.Camera, selectedSerial, direct.IsChecked == true, fallback.IsChecked == true));
+                Cameras.Save(new CameraSelection(choice.Camera, selectedSerial, direct.IsChecked == true, fallback.IsChecked == true,
+                    fan,led));
                 window.Close();
             }
             catch (Exception e) { status.Text = e.Message; }

@@ -109,6 +109,27 @@ public class DirectBackendTests
         return h;
     }
     [Theory]
+    [InlineData(1)] [InlineData(2)] [InlineData(3)] [InlineData(4)]
+    public async Task Asi6200AdvertisesLongExposuresCoolingAndRetainedReads(int bin)
+    {
+        var camera = new CameraDescriptor("ZWO ASI6200MM Pro", 9576,6388,false,0,3.76,16,true,false,[1,2,3,4]);
+        using var session = new CameraSession(camera, Host, Fast, sdkFallbackFactory: () => Fallback(camera));
+        await session.ConnectAsync(default);
+        Assert.Equal(2_000_000_000, session.Controls[1].Max);
+        Assert.True(session.SupportsRetainedFrameReads);
+        Assert.Equal(0, session.Controls[0].Min); Assert.Equal(700, session.Controls[0].Max);
+        Assert.Equal(200, session.Controls[5].Max);
+        session.Set(0,280); session.Set(5,50); session.Set(16,20); session.Set(17,1); session.Set(21,1);
+        var frame = await session.CaptureAsync(Exposure with {bin=bin}, default);
+        Assert.Equal(4096, frame.Pixels.Length);
+        Assert.Equal(280,frame.Controls[0]); Assert.Equal(20,session.Value(16));
+        Assert.Equal("direct",session.Backend);
+        // Unsupported small physical ROI switches backend before exposing.
+        await session.CaptureAsync(Exposure with {width=8},default);
+        Assert.Equal("sdk",session.Backend); Assert.True(session.UsingSdkFallback);
+        Assert.Equal(280,session.Value(0)); Assert.Equal(1,session.Value(21));
+    }
+    [Theory]
     [InlineData(false)] [InlineData(true)]
     public async Task UnsupportedDirectExposureRoutesBeforeStartingEvenWithRetriesDisabled(bool guide)
     {

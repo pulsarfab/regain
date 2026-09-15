@@ -27,7 +27,10 @@ def main():
     parser.add_argument('--y', type=int, default=0, help='binned ROI origin')
     parser.add_argument('--gain', type=int, help='explicit ASI gain control for register mapping')
     parser.add_argument('--offset', type=int, help='explicit ASI offset control for register mapping')
+    parser.add_argument('--bandwidth', type=int, help='explicit USB bandwidth control')
+    parser.add_argument('--probe-6200-gains', action='store_true', help='trace ASI6200 conversion/digital gain boundaries')
     parser.add_argument('--environment-probe', action='store_true', help='Duo only: briefly test target 20C, cooling and dew, then restore')
+    parser.add_argument('--environment-seconds', type=int, default=3, help='environment probe duration, 3..120 seconds')
     parser.add_argument('--ready-delay', type=float, default=0.5)
     parser.add_argument('--deadline', type=float, default=60)
     parser.add_argument('--cancel-first-bulk', action='store_true',
@@ -42,6 +45,8 @@ def main():
     args = parser.parse_args()
     if args.validate_direct_processing and not args.trace_processing:
         parser.error('--validate-direct-processing requires --trace-processing')
+    if not 3 <= args.environment_seconds <= 120:
+        parser.error('environment duration must be 3..120 seconds')
     if not (1 <= args.frames <= 20 and 0 < args.seconds <= 30 and 0 <= args.ready_delay <= 5
             and 0 < args.deadline <= 300 and args.width > 0 and args.height > 0
             and args.width % 8 == 0 and args.height % 2 == 0
@@ -211,6 +216,7 @@ def main():
                                 raise RuntimeError('missing ASID calibration trace')
                             blob = blob[:int.from_bytes(blob[4:8], 'big')]
                             model = {'ZWO ASI2600MM Duo': 'asi2600mm-duo', 'ZWO ASI676MC': 'asi676mc',
+                                     'ZWO ASI6200MM Pro': 'asi6200mm-pro',
                                      'ZWO ASI220MM Mini': 'asi220mm-mini'}.get(camera['name'])
                             if model is None:
                                 raise RuntimeError('independent correction is not implemented for this model')
@@ -247,19 +253,33 @@ def main():
                 raise RuntimeError('ROI exceeds attached sensor')
             opened = call('open', {'name': camera['name']})
             record({'kind': 'initial-controls', 'sdkVersion': opened['sdkVersion'], 'controls': opened['controls']})
+            if args.probe_6200_gains:
+                if camera['name'] != 'ZWO ASI6200MM Pro':
+                    raise RuntimeError('gain probe requires ASI6200MM Pro')
+                old_gain = call('get', {'control':0})
+                try:
+                    for gain in [0,60,61,62,99,100,101,159,160,161,279,280,281,460,461,520,521,700]:
+                        call('set', {'control':0,'value':gain})
+                finally:
+                    call('set', {'control':0,'value':old_gain})
             if args.environment_probe:
-                if camera['name'] != 'ZWO ASI2600MM Duo':
-                    raise RuntimeError('environment probe requires Duo main')
-                previous = {c: call('get', {'control': c}) for c in (16,17,21)}
+                if camera['name'] not in ('ZWO ASI2600MM Duo', 'ZWO ASI6200MM Pro'):
+                    raise RuntimeError('environment probe requires a supported cooled camera')
+                env_controls = (16,17,21,22,23) if camera['name'] == 'ZWO ASI6200MM Pro' else (16,17,21)
+                previous = {c: call('get', {'control': c}) for c in env_controls}
                 try:
                     for c,v in [(16,20),(17,1),(21,1)]:
                         call('set', {'control':c,'value':v})
-                    time.sleep(3)
-                    record({'kind':'environment-probe','values':{c:call('get',{'control':c}) for c in (8,15,16,17,21)}})
+                    if 22 in env_controls:
+                        for c,v in [(22,200),(23,128)]:
+                            call('set', {'control':c,'value':v})
+                    for _ in range(args.environment_seconds):
+                        time.sleep(1)
+                        record({'kind':'environment-probe','values':{c:call('get',{'control':c}) for c in (8,15,*env_controls)}})
                 finally:
-                    for c in (21,17,16):
+                    for c in reversed(env_controls):
                         call('set', {'control':c,'value':previous[c]})
-            for control, value in [(0, args.gain), (5, args.offset)]:
+            for control, value in [(0, args.gain), (5, args.offset), (6, args.bandwidth)]:
                 if value is not None:
                     call('set', {'control': control, 'value': value})
             for _ in range(args.frames):

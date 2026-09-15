@@ -3,7 +3,8 @@ using ZwoGain.Core;
 
 namespace ZwoGain.NINA;
 
-internal sealed record CameraSelection(CameraDescriptor Camera, string? Serial = null, bool UseDirectDriver = false, bool AllowSdkFallback = false);
+internal sealed record CameraSelection(CameraDescriptor Camera, string? Serial = null, bool UseDirectDriver = false,
+    bool AllowSdkFallback = false, int? FanSpeed = null, int? PowerLedBrightness = null);
 
 internal sealed class CameraSelectionStore(string path)
 {

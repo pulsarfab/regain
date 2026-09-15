@@ -137,11 +137,12 @@ The SDK remains the default for new configurations.
 | --- | --- | --- | --- |
 | ASI676MC USB3 | 1 | 32 µs–30 s | Gain, offset |
 | ASI2600MM Pro main USB3 | 1–4 | 32 µs–2,000 s | Gain, offset, temperature, cooling, dew heater |
+| ASI6200MM Pro P25 USB3 (`620b`) | 1–4 | 32 µs–2,000 s | Gain, offset, temperature, cooling, dew heater, fan, LED |
 | ASI220MM Mini guide USB2 | 1–2 | Valid nonzero line integration through 10 s | Gain, offset |
 
 The direct backend reads serials and factory calibration, applies the verified
 RAW16 defect corrections and software binning, and delivers a complete binary
-frame to NINA. ROIs require at least 64 × 64 physical pixels; ASI2600 origins
+frame to NINA. ROIs require at least 64 × 64 physical pixels; ASI2600/6200 origins
 align to 16 columns and two rows. USB bandwidth is fixed at 40 and bulk reads
 are sequential. The main camera's Rust cooling regulator runs during idle,
 exposure and transfer; it differs from the SDK regulator.
@@ -165,9 +166,10 @@ bypasses the recapture cutoff to repeat a failed long exposure.
   Hardware transfer-fault testing extends to 60-second exposures. These were
   controlled faults, not physical disconnects or naturally occurring bus errors.
 - Real cooler recovery and direct-to-SDK fallback after worker termination have
-  completed in NINA. ASI6200 and P25 initialization/recovery remain unverified;
-  use the SDK for those models. A shared driver package does not prove matching
-  camera protocols.
+  completed in NINA for ASI2600. ASI6200MM Pro P25 now has a model-specific
+  direct path, SDK processing comparisons and real transfer-fault tests;
+  see the [ASI6200 test coverage](docs/asi6200-p25.md) for its validation status.
+  A shared driver package does not prove matching camera protocols.
 - The plugin delivers RAW16 still images. Live view, asymmetric binning, trigger
   modes, camera alias editing and the native ZWO advanced UI are not implemented.
   Electrons/ADU is unknown. Direct format/control coverage is narrower than the

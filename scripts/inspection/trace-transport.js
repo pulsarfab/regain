@@ -178,7 +178,8 @@ Process.attachModuleObserver({
             // ASI676 hooks. Keep raw data in the bounded in-memory comparator.
             for (const [entry, retrieved, before, after, model, buffer, length] of [
                 [0x14f130, 0x14f1ed, 0x14f2fa, 0x14f302, 'asi2600mm-duo', 'rsi', 'r13'],
-                [0xd2590, 0xd261c, 0xd2767, 0xd276f, 'asi220mm-mini', 'rbp', 'r12']
+                [0xd2590, 0xd261c, 0xd2767, 0xd276f, 'asi220mm-mini', 'rbp', 'r12'],
+                [0x1f02c0, 0x1f0382, 0x1f0487, 0x1f048f, 'asi6200mm-pro', 'rsi', 'r14']
             ]) {
                 const calls = new Map();
                 Interceptor.attach(module.base.add(entry), {
@@ -216,6 +217,15 @@ Process.attachModuleObserver({
                     });
                 }
             }
+            Interceptor.attach(module.base.add(0x1ef7c7), {
+                onEnter() {
+                    const camera = this.context.rdi;
+                    emit('asi6200-exposure-timing', {height:camera.add(0x80).readU32(), bin:camera.add(0x90).readU32(),
+                        clock:camera.add(0xb8).readU32(), hmax:camera.add(0xc0).readU16(),
+                        minimumUs:camera.add(0xc4).readU32(), blanking:module.base.add(0x278be8).readU32(),
+                        baseHmax:module.base.add(0x27975c).readU32()});
+                }
+            });
             Interceptor.attach(module.base.add(0x14e5ee), {
                 onEnter() {
                     const camera = this.context.rdi;

@@ -95,7 +95,7 @@ public sealed class ResilientCamera : BaseINPC, ICamera
             SelectCamera(selected.Camera);
         }
         bool direct = selected?.UseDirectDriver == true;
-        if (direct && descriptor.Name is not ("ZWO ASI676MC" or "ZWO ASI2600MM Duo" or "ZWO ASI220MM Mini"))
+        if (direct && descriptor.Name is not ("ZWO ASI676MC" or "ZWO ASI2600MM Duo" or "ZWO ASI220MM Mini" or "ZWO ASI6200MM Pro"))
             throw new NotSupportedException("Direct capture is unavailable for this camera. Turn off Direct USB driver to use the SDK.");
         var factory = useConfiguredBackend && direct ? CameraProvider.NewDirectHost : hostFactory;
         var candidate = new CameraSession(descriptor, factory, recoveryOptions ?? Settings.Load(), selected?.Serial, direct && selected?.AllowSdkFallback == true ? hostFactory : null);
@@ -103,6 +103,12 @@ public sealed class ResilientCamera : BaseINPC, ICamera
         try
         {
             await candidate.ConnectAsync(token).ConfigureAwait(false);
+            foreach (var (control,value) in new[] {(22,selected?.FanSpeed),(23,selected?.PowerLedBrightness)}) {
+                if (value is null) continue;
+                if (!candidate.Controls.TryGetValue(control,out var cap) || !cap.Writable || value < cap.Min || value > cap.Max)
+                    throw new NotSupportedException("The selected camera does not support the saved fan or LED setting.");
+                candidate.Set(control,value.Value);
+            }
             SelectCamera(candidate.Camera); // Backend capabilities may be narrower than saved SDK capabilities.
             // Match the native ASI driver's acquisition defaults. Preserve cooling state.
             foreach (var (control, value) in new Dictionary<int, long> { { 2, 50 }, { 3, 50 }, { 4, 50 }, { 6, 40 }, { 7, 0 }, { 9, 0 }, { 13, 0 }, { 14, 0 }, { 18, 0 }, { 20, 0 } })

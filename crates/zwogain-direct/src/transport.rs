@@ -125,8 +125,8 @@ struct Completion {
     cancel_requested: bool,
 }
 impl Camera {
-    pub fn enable_environment(&self) -> Result<()> {
-        *self.1.borrow_mut() = Some(crate::environment::Environment::open(self)?);
+    pub fn enable_environment(&self, auxiliary: bool) -> Result<()> {
+        *self.1.borrow_mut() = Some(crate::environment::Environment::open(self, auxiliary)?);
         Ok(())
     }
     pub fn has_environment(&self) -> bool {

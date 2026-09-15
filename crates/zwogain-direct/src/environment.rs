@@ -1,5 +1,5 @@
-//! ASI2600MM Duo environment controls, serviced on the transport owner thread.
-//! Register mapping and current calibration verified against SDK 1.41/PID 2601.
+//! ASI2600/6200 environment controls, serviced on the transport owner thread.
+//! Register mapping/current calibration observed with SDK 1.41, PIDs 2601/620b.
 //! The regulator is our own bounded PI controller, not the SDK's PID algorithm.
 use crate::transport::Camera;
 use anyhow::{Result, ensure};
@@ -43,6 +43,7 @@ pub struct Environment {
     pub power: f64,
     integral: f64,
     tick: Instant,
+    auxiliary: Option<(i64, i64)>,
 }
 
 fn flags(camera: &Camera, mask: u8, enabled: bool) -> Result<()> {
@@ -57,7 +58,7 @@ fn flags(camera: &Camera, mask: u8, enabled: bool) -> Result<()> {
 }
 
 impl Environment {
-    pub fn open(camera: &Camera) -> Result<Self> {
+    pub fn open(camera: &Camera, auxiliary: bool) -> Result<Self> {
         let bits = camera.vendor(0xbc, 0x19, 0, 1)?[0];
         let register = camera.vendor(0xbc, 0x26, 0, 1)?[0];
         let temperature = Self::read_temperature(camera)?;
@@ -77,6 +78,14 @@ impl Environment {
             power,
             integral: power,
             tick: Instant::now(),
+            auxiliary: if auxiliary {
+                Some((
+                    i64::from(camera.vendor(0xbc, 0xfa, 0, 1)?[0]),
+                    i64::from(camera.vendor(0xbc, 0xfb, 0, 1)?[0]),
+                ))
+            } else {
+                None
+            },
         })
     }
     fn read_temperature(camera: &Camera) -> Result<f64> {
@@ -84,7 +93,7 @@ impl Environment {
         let temperature = f64::from(i16::from_le_bytes(bytes.try_into().unwrap())) / 256.0;
         ensure!(
             (-50.0..=85.0).contains(&temperature),
-            "invalid Duo temperature {temperature}"
+            "invalid camera temperature {temperature}"
         );
         Ok(temperature)
     }
@@ -95,6 +104,8 @@ impl Environment {
             16 => self.target,
             17 => i64::from(self.enabled),
             21 => i64::from(self.dew),
+            22 if self.auxiliary.is_some() => self.auxiliary.unwrap().0,
+            23 if self.auxiliary.is_some() => self.auxiliary.unwrap().1,
             _ => anyhow::bail!("unsupported environment control"),
         })
     }
@@ -119,6 +130,21 @@ impl Environment {
                 camera.vendor(0xbd, 0x2a, if value == 0 { 0 } else { 197 }, 0)?;
                 flags(camera, 0x40, value != 0)?;
                 self.dew = value != 0;
+            }
+            22 | 23 if self.auxiliary.is_some() => {
+                ensure!((0..=255).contains(&value), "fan/LED value must be 0..255");
+                camera.vendor(
+                    0xbd,
+                    if control == 22 { 0xfa } else { 0xfb },
+                    value as u16,
+                    0,
+                )?;
+                let values = self.auxiliary.as_mut().unwrap();
+                if control == 22 {
+                    values.0 = value;
+                } else {
+                    values.1 = value;
+                }
             }
             _ => anyhow::bail!("environment control is read-only or unsupported"),
         }

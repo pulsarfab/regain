@@ -92,6 +92,16 @@ impl Defects {
         Self::decode_profile(data, (width, height, x, y), (1920, 1080, 1, 12))
     }
 
+    pub fn decode_6200(
+        data: &[u8],
+        width: usize,
+        height: usize,
+        x: usize,
+        y: usize,
+    ) -> Result<Self> {
+        Self::decode_profile(data, (width, height, x, y), (9576, 6388, 1, 16))
+    }
+
     fn decode_profile(
         data: &[u8],
         roi: (usize, usize, usize, usize),
@@ -246,6 +256,7 @@ pub fn process_stream() -> Result<()> {
         None | Some("asi676mc") => "asi676mc",
         Some("asi2600mm-duo") => "asi2600mm-duo",
         Some("asi220mm-mini") => "asi220mm-mini",
+        Some("asi6200mm-pro") => "asi6200mm-pro",
         _ => anyhow::bail!("unsupported processing model"),
     };
     let bin = request["bin"].as_u64().unwrap_or(1) as usize;
@@ -268,6 +279,7 @@ pub fn process_stream() -> Result<()> {
     let defects = match model {
         "asi2600mm-duo" => Defects::decode_duo(&calibration, width, height, x, y)?,
         "asi220mm-mini" => Defects::decode_guide(&calibration, width, height, x, y)?,
+        "asi6200mm-pro" => Defects::decode_6200(&calibration, width, height, x, y)?,
         _ => Defects::decode(&calibration, width, height, x, y)?,
     };
     let mut data = vec![0; width * height * 2];

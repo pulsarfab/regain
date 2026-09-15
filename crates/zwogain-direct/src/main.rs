@@ -8,6 +8,10 @@ mod asi2600;
 #[cfg(windows)]
 mod asi2600_tables;
 #[cfg(windows)]
+mod asi6200;
+#[cfg(windows)]
+mod asi6200_tables;
+#[cfg(windows)]
 mod asi676;
 #[cfg(windows)]
 mod asi676_tables;
@@ -32,15 +36,20 @@ fn main() -> Result<()> {
     if args == ["--process-frame"] {
         return processing::process_stream();
     }
+    let asi6200 = args.first().is_some_and(|a| a == "--capture-6200");
     let duo = args.first().is_some_and(|a| a == "--capture-duo");
     let guide = args.first().is_some_and(|a| a == "--capture-guide");
-    let capture = duo || guide || args.first().is_some_and(|a| a == "--capture");
+    let capture = asi6200 || duo || guide || args.first().is_some_and(|a| a == "--capture");
     let mut settings = settings::Settings::default();
     let mut duo_gain = 0_i32;
     let mut duo_bin = 1_u32;
     if duo {
         settings.width = 6248;
         settings.height = 4176;
+    }
+    if asi6200 {
+        settings.width = 9576;
+        settings.height = 6388;
     }
     if guide {
         settings.width = 1920;
@@ -61,7 +70,7 @@ fn main() -> Result<()> {
                 stream = true;
                 continue;
             }
-            if duo && option == "--gain" {
+            if (duo || asi6200) && option == "--gain" {
                 duo_gain = options
                     .next()
                     .ok_or_else(|| anyhow::anyhow!("missing gain"))?
@@ -73,7 +82,7 @@ fn main() -> Result<()> {
                 .ok_or_else(|| anyhow::anyhow!("missing option value"))?
                 .parse()?;
             match option.as_str() {
-                "--bin" if duo || guide => duo_bin = value,
+                "--bin" if duo || guide || asi6200 => duo_bin = value,
                 "--width" => settings.width = value,
                 "--height" => settings.height = value,
                 "--x" => settings.x = value,
@@ -87,12 +96,16 @@ fn main() -> Result<()> {
                     replay = true;
                 }
                 "--interrupt-read-after-bytes" => settings.interrupt_read_after_bytes = value,
-                "--timeout-read-after-bytes" if duo => settings.timeout_read_after_bytes = value,
+                "--timeout-read-after-bytes" if duo || asi6200 => {
+                    settings.timeout_read_after_bytes = value
+                }
                 "--read-retries" => settings.read_retries = value,
                 _ => anyhow::bail!("unknown capture option {option}"),
             }
         }
-        if duo {
+        if asi6200 {
+            asi6200::raw_settings(&settings, duo_gain, duo_bin)?;
+        } else if duo {
             asi2600::raw_settings(&settings, duo_gain, duo_bin)?;
         } else if guide {
             asi220::raw_settings(&settings, duo_bin)?;
@@ -108,7 +121,7 @@ fn main() -> Result<()> {
             || args == ["--probe-all"]
             || args == ["--probe", "--cancel-read"]
             || capture,
-        "Usage: zwogain-direct [--probe [--cancel-read] | --capture | --capture-duo | --capture-guide] [--width N --height N --x N --y N --microseconds N --gain N --offset N --frames N --read-retries N --stream --replay --replay-prefix-bytes N --interrupt-read-after-bytes N]; Duo also accepts --timeout-read-after-bytes N; Duo and guide also accept --bin N; disconnect other camera apps first"
+        "Usage: zwogain-direct [--probe [--cancel-read] | --capture | --capture-duo | --capture-6200 | --capture-guide] [--width N --height N --x N --y N --microseconds N --gain N --offset N --frames N --read-retries N --stream --replay --replay-prefix-bytes N --interrupt-read-after-bytes N]; Duo also accepts --timeout-read-after-bytes N; Duo and guide also accept --bin N; disconnect other camera apps first"
     );
     // Last resort for a kernel request that refuses to finish cancellation. The
     // worker must exit rather than free a buffer still owned by the USB driver.
@@ -145,7 +158,9 @@ fn main() -> Result<()> {
         paths.retain(|path| {
             String::from_utf16_lossy(path)
                 .to_ascii_lowercase()
-                .contains(if duo {
+                .contains(if asi6200 {
+                    "vid_03c3&pid_620b"
+                } else if duo {
                     "vid_03c3&pid_2601"
                 } else if guide {
                     "vid_03c3&pid_2209"
@@ -164,7 +179,9 @@ fn main() -> Result<()> {
         use std::io::Write;
         let mut output = std::io::stdout().lock();
         for frame in 0..frames {
-            let (metadata, data) = if duo {
+            let (metadata, data) = if asi6200 {
+                asi6200::capture(&camera, &result, &settings, duo_gain, duo_bin, replay)?
+            } else if duo {
                 asi2600::capture(&camera, &result, &settings, duo_gain, duo_bin, replay)?
             } else if guide {
                 asi220::capture(&camera, &result, &settings, duo_bin)?

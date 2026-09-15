@@ -117,6 +117,26 @@ public sealed class SelectionTests : IDisposable
         Assert.Null(Store.Load()!.Serial);
     }
 
+    [Fact]
+    public async Task Asi6200SelectionAppliesAndPersistsFanAndLedOptions()
+    {
+        var descriptor = new CameraDescriptor("ZWO ASI6200MM Pro",9576,6388,false,0,3.76,16,true,false,[1,2,3,4]);
+        Store.Save(new(descriptor,UseDirectDriver:true,FanSpeed:200,PowerLedBrightness:128));
+        HostClient? host = null;
+        var camera = new ResilientCamera(Mock.Of<IExposureDataFactory>(),Store,
+            () => host = new HostClient(Path.GetFullPath(Path.Combine(AppContext.BaseDirectory,"../../../../../target/debug/zwogain-direct.exe")),
+                "missing-sdk.dll",simulate:true,direct:true),new());
+        try {
+            Assert.True(await camera.Connect(default));
+            Assert.Equal(4,camera.MaxBinX); Assert.Equal(2000,camera.ExposureMax);
+            Assert.True(camera.CanSetTemperature); Assert.True(camera.HasDewHeater);
+            Assert.Equal(200,(await host!.CallAsync("get",new {control=22},TimeSpan.FromSeconds(5),default)).Result.GetInt32());
+            Assert.Equal(128,(await host.CallAsync("get",new {control=23},TimeSpan.FromSeconds(5),default)).Result.GetInt32());
+            Assert.Equal(200,Store.Load()!.FanSpeed); Assert.Equal(128,Store.Load()!.PowerLedBrightness);
+        }
+        finally {camera.Disconnect();}
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(folder)) Directory.Delete(folder, true);

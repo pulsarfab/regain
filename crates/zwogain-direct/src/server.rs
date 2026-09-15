@@ -1,6 +1,6 @@
 //! Version-1 plugin protocol over inherited pipes. Verified ASI676 and Duo main/guide paths.
 //! A dedicated worker owns the exclusive driver handle for the entire connection.
-use crate::{asi220, asi676, asi2600, settings::Settings, transport};
+use crate::{asi220, asi676, asi2600, asi6200, settings::Settings, transport};
 use anyhow::{Result, bail, ensure};
 use serde_json::{Value, json};
 use std::{
@@ -20,14 +20,19 @@ enum Model {
     Asi676,
     Duo,
     Guide,
+    Asi6200,
 }
 impl Model {
-    const ALL: [Self; 3] = [Self::Asi676, Self::Duo, Self::Guide];
+    const ALL: [Self; 4] = [Self::Asi676, Self::Duo, Self::Guide, Self::Asi6200];
+    fn cooled(self) -> bool {
+        matches!(self, Self::Duo | Self::Asi6200)
+    }
     fn name(self) -> &'static str {
         match self {
             Self::Asi676 => "ZWO ASI676MC",
             Self::Duo => "ZWO ASI2600MM Duo",
             Self::Guide => "ZWO ASI220MM Mini",
+            Self::Asi6200 => "ZWO ASI6200MM Pro",
         }
     }
     fn pid(self) -> u32 {
@@ -35,6 +40,7 @@ impl Model {
             Self::Asi676 => 0x676d,
             Self::Duo => 0x2601,
             Self::Guide => 0x2209,
+            Self::Asi6200 => 0x620b,
         }
     }
     fn descriptor(self) -> Value {
@@ -42,9 +48,10 @@ impl Model {
             Self::Asi676 => (3552, 3552, 2.0, 12, vec![1], 2),
             Self::Duo => (6248, 4176, 3.76, 16, vec![1, 2, 3, 4], 16),
             Self::Guide => (1920, 1080, 4.0, 12, vec![1, 2], 2),
+            Self::Asi6200 => (9576, 6388, 3.76, 16, vec![1, 2, 3, 4], 16),
         };
         json!({"id":self.pid(),"name":self.name(),"width":width,"height":height,"color":self == Self::Asi676,"bayer":0,
-            "pixelSize":pixel,"bitDepth":bits,"cooled":self == Self::Duo,"shutter":false,"bins":bins,"formats":[2],
+            "pixelSize":pixel,"bitDepth":bits,"cooled":self.cooled(),"shutter":false,"bins":bins,"formats":[2],
             "minimumWidth":64,"minimumHeight":64,"originAlignment":alignment,
             "retainedFrameReads":self != Self::Guide})
     }
@@ -53,6 +60,7 @@ impl Model {
             Self::Asi676 => (0, 600, 0, 200, 10, 30_000_000),
             Self::Duo => (-25, 700, 0, 240, 50, asi2600::MAX_EXPOSURE_US as i32),
             Self::Guide => (0, 600, 200, 1500, 200, 10_000_000),
+            Self::Asi6200 => (0, 700, 0, 200, 50, asi6200::MAX_EXPOSURE_US as i32),
         };
         let mut caps = vec![];
         for (kind, min, max, value, writable) in [
@@ -63,7 +71,7 @@ impl Model {
         ] {
             caps.push(json!({"type":kind,"min":min,"max":max,"value":value,"writable":writable}));
         }
-        if self == Self::Duo {
+        if self.cooled() {
             for (kind, min, max, value, writable) in [
                 (8, -500, 850, 250, false),
                 (15, 0, 100, 0, false),
@@ -76,6 +84,11 @@ impl Model {
                 );
             }
         }
+        if self == Self::Asi6200 {
+            for kind in [22, 23] {
+                caps.push(json!({"type":kind,"min":0,"max":255,"value":255,"writable":true}));
+            }
+        }
         caps
     }
     fn validate(self, settings: &Settings, gain: i32, bin: u32) -> Result<()> {
@@ -86,6 +99,7 @@ impl Model {
             }
             Self::Duo => asi2600::raw_settings(settings, gain, bin).map(|_| ()),
             Self::Guide => asi220::raw_settings(settings, bin).map(|_| ()),
+            Self::Asi6200 => asi6200::raw_settings(settings, gain, bin).map(|_| ()),
         }
     }
 }
@@ -135,8 +149,8 @@ fn open_camera(model: Model, serial: Option<&str>) -> Result<(transport::Camera,
         );
         let found: String = bytes.iter().map(|v| format!("{v:02x}")).collect();
         if serial.is_none_or(|s| s == found) {
-            if model == Model::Duo {
-                camera.enable_environment()?;
+            if model.cooled() {
+                camera.enable_environment(model == Model::Asi6200)?;
             }
             return Ok((camera, info, found));
         }
@@ -199,6 +213,8 @@ impl Worker {
                 (16, 25),
                 (17, 0),
                 (21, 0),
+                (22, 255),
+                (23, 255),
             ]);
             loop {
                 let work = match receiver.recv_timeout(Duration::from_millis(100)) {
@@ -216,7 +232,7 @@ impl Worker {
                     }
                     Err(mpsc::RecvTimeoutError::Disconnected) => {
                         if let Some((camera, _, _)) = &device
-                            && model == Model::Duo
+                            && model.cooled()
                         {
                             let _ = watchdog.send(Some(Duration::from_secs(15)));
                             let _ = camera.environment_control(17, Some(0));
@@ -250,6 +266,9 @@ impl Worker {
                                     asi2600::capture(camera, info, &settings, gain, bin, false)
                                 }
                                 Model::Guide => asi220::capture(camera, info, &settings, bin),
+                                Model::Asi6200 => {
+                                    asi6200::capture(camera, info, &settings, gain, bin, false)
+                                }
                             }
                         } else {
                             std::thread::sleep(Duration::from_micros(u64::from(
@@ -382,13 +401,14 @@ impl Host {
                     Model::Asi676 => 10,
                     Model::Duo => 50,
                     Model::Guide => 200,
+                    Model::Asi6200 => 50,
                 };
                 self.gain = 0;
                 let mut controls = model.controls();
-                if model == Model::Duo {
+                if model.cooled() {
                     for cap in &mut controls {
                         let control = cap["type"].as_u64().unwrap() as u32;
-                        if [8, 15, 16, 17, 21].contains(&control) {
+                        if [8, 15, 16, 17, 21, 22, 23].contains(&control) {
                             cap["value"] =
                                 json!(worker.environment(control, None).map_err(hardware)?);
                         }
