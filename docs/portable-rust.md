@@ -37,7 +37,10 @@ and preservation of images after cleanup errors.
 
 GitHub's **Build and test** workflow also builds and tests Linux and macOS on
 x86-64 and ARM64. Its `zwogain-rust-*` artifacts contain both workers, without
-the vendor SDK. These test builds are unsigned and are not macOS-notarized.
+the vendor SDK, plus licenses, build details, and SHA-256 checksums. Extract the
+archive and use `./zwogain-rust/zwogain-direct` in place of
+`./target/release/zwogain-direct` below. These test builds are unsigned and are
+not macOS-notarized.
 CI checks the SDK host against a small library built from the bundled C header,
 including native `long` sizes and structure layouts.
 

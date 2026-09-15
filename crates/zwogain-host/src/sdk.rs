@@ -68,12 +68,13 @@ impl Sdk {
                     "property",
                 )?;
                 // Enumeration deliberately does not open cameras owned by another driver.
+                // C char can be signed or unsigned; preserve the original bytes.
                 let name = String::from_utf8_lossy(
                     &info
                         .name
                         .iter()
                         .take_while(|&&v| v != 0)
-                        .map(|&v| v as u8)
+                        .map(|&v| v.to_ne_bytes()[0])
                         .collect::<Vec<_>>(),
                 )
                 .into_owned();
@@ -183,7 +184,7 @@ impl Sdk {
                         json!({"type":caps.control_type,"min":caps.min_value,"max":caps.max_value,
                         "default":caps.default_value,"writable":caps.is_writable!=0,"value":value,
                         "autoSupported":caps.is_auto_supported!=0,
-                        "name":String::from_utf8_lossy(&caps.name.iter().take_while(|&&v|v!=0).map(|&v|v as u8).collect::<Vec<_>>())}),
+                        "name":String::from_utf8_lossy(&caps.name.iter().take_while(|&&v|v!=0).map(|&v|v.to_ne_bytes()[0]).collect::<Vec<_>>())}),
                     ),
                     // Like the native NINA driver, ignore advertised controls that cannot be queried.
                     Err(e) => eprintln!("Unavailable control {}: {e}", caps.control_type),

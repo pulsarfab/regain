@@ -127,6 +127,8 @@ def sdk_fixture(binary_dir, library):
         assert result["controls"][0]["min"] == -123
         worker.call("set", dict(control=0, value=-42))
         assert worker.call("get", dict(control=0))[0] == -42
+        worker.call("set", dict(control=0, value=1 << 40))
+        assert worker.call("get", dict(control=0))[0] == 1 << 40
         worker.call("close")
     print("Passed: native SDK loading and C header ABI fixture")
 

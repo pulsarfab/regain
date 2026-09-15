@@ -26,7 +26,28 @@ handles are private to the parent/child pair. DLL loading uses an explicit
 absolute path beside the plugin. SDK C enums are represented as integers and
 all buffer geometry is checked, including reading ROI/format/origin back from
 the SDK before exposure. The vendor header's `long` matches Windows' 32-bit
-`c_long`, even in an x64 process.
+`c_long`, even in an x64 process. On 64-bit Linux and macOS, `c_long` is 64-bit;
+the same FFI declarations follow the native C ABI. Each platform's CI checks
+camera and control structures against a fixture built from the vendor C header.
+
+## Portable Rust transport
+
+The Rust workers also run on Linux and macOS, with the same pipe protocol.
+The NINA adapter and Windows job-object supervisor remain Windows-specific.
+Linux/macOS camera operation still needs hardware testing.
+
+`transport.rs` owns shared frame reads and environment controls. Its Windows
+module contains SetupAPI enumeration, ZWO/Cypress IOCTLs, and overlapped I/O.
+Only Windows builds depend on `windows-sys`. The native module uses `nusb`
+with Linux usbfs or macOS IOKit, exclusive interface claims, vendor control
+requests, and bulk-IN transfers. It never loads the camera SDK.
+
+Each bulk transfer must finish or drain cancellation before its buffer can be
+released. An undrained cancellation terminates the worker. A short or failed
+chunk invalidates the whole read; existing camera-specific retained-frame
+recovery decides whether to reread from byte zero. Camera timing, calibration,
+image processing, and cooling logic are shared. See
+[portable build and hardware testing](portable-rust.md).
 
 ## Wire version 1
 
