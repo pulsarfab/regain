@@ -44,6 +44,10 @@ not macOS-notarized.
 CI checks the SDK host against a small library built from the bundled C header,
 including native `long` sizes and structure layouts.
 
+The Linux packages are built and tested on Ubuntu 24.04. Older distributions
+may need a local source build: for example, the prebuilt x86-64 worker cannot
+run on Debian with glibc 2.28. macOS packages are built and tested on macOS 15.
+
 ## Linux permissions
 
 The user running the direct worker needs read/write access to the camera's
