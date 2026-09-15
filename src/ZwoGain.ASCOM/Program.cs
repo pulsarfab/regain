@@ -66,7 +66,7 @@ internal static class Program
                 // Match the ASCOM local-server template: elevated and ordinary
                 // clients must activate the same interactive camera server.
                 if (!user) app.SetValue("RunAs", "Interactive User");
-                app.SetValue("PreferredServerBitness", 2, RegistryValueKind.DWord);
+                app.SetValue("PreferredServerBitness", 3, RegistryValueKind.DWord);
                 using var name = root.CreateSubKey(@"Software\Classes\AppID\ZwoGain.ASCOM.exe");
                 name.SetValue("AppID", AppId);
             }
