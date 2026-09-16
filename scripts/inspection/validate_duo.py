@@ -53,6 +53,10 @@ def capture(options, guide=False, asi6200=False, worker=None, asi2600_p25=False)
             if options.get('interrupt-read-after-bytes'):
                 if not info['interruptedPrefixPixelsMatch'] or not info['readRecoveries']:
                     raise RuntimeError('injected read recovery failed')
+            if options.get('timeout-read-after-bytes'):
+                if (info.get('timeoutInjectionBytes') != options['timeout-read-after-bytes']
+                        or not info['interruptedPrefixPixelsMatch'] or not info['readRecoveries']):
+                    raise RuntimeError('real USB timeout did not recover the interrupted frame')
             pixels = np.frombuffer(data, dtype='<u2')
             info['statistics'] = {'mean': float(pixels.mean()), 'median': float(np.median(pixels)),
                                   'minimum': int(pixels.min()), 'maximum': int(pixels.max()),
@@ -60,6 +64,8 @@ def capture(options, guide=False, asi6200=False, worker=None, asi2600_p25=False)
             # A valid envelope and digest can still describe partially stale
             # sensor memory. Retain vertical profiles for control transitions.
             rows = pixels.reshape(height, width)
+            row_medians = np.median(rows, axis=1)
+            info['statistics']['rowMedianRange'] = [float(row_medians.min()), float(row_medians.max())]
             info['statistics']['rowBandMedians'] = [float(np.median(band))
                                                     for band in np.array_split(rows, min(16, height))]
             info['statistics']['rowBandMeans'] = [float(band.mean())

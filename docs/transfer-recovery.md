@@ -86,15 +86,22 @@ Three interrupted replay tests independently exercised the additional timeout.
 This unit requires a minimum 128 KiB physical readout for reliable retained
 replay; the backend pads smaller ROIs and crops after factory correction.
 
+The [ASI2600MM Pro P25](asi2600-p25.md), PID `260e`, also passed interrupted
+full-frame reads and a real bulk timeout. The 12 MiB interruption took two
+read retries; the forced timeout took one. Interrupted replay required one
+additional restart. Recovered pixels matched without repeating the exposure.
+This revision also needs the larger physical readout for small requested ROIs
+and a complete sensor readout interval before freezing DDR.
+
 | Area | Current direct implementation | Gap |
 | --- | --- | --- |
-| Camera coverage | Verified ASI676MC USB3, ASI2600MM Pro main USB3, ASI6200MM Pro P25 USB3 (`620b`), ASI220MM Mini guide USB2 | Other models/revisions need their own initialization, format and recovery evidence; a shared driver package is insufficient |
+| Camera coverage | Verified ASI676MC USB3, ASI2600MM Pro main USB3 (`2601` and P25 `260e`), ASI6200MM Pro P25 USB3 (`620b`), ASI220MM Mini guide USB2 | Other models/revisions need their own initialization, format and recovery evidence; a shared driver package is insufficient |
 | Single-frame imaging | RAW16, ROI, gain/offset, factory correction; main bins 1–4 and long integrations | SDK format/control coverage is broader; unverified correction-map classes and modes must not be assumed equivalent |
 | Additional SDK modes | NINA path delivers RAW16 still frames | RAW8/RGB, live video, automatic controls, white balance/gamma, flip, external triggering and ST4 are not implemented/surfaced by the direct path; availability in the SDK varies by model |
 | Transfer throughput | Sequential 1 MiB bulk requests, fixed USB limit 40 | SDK traces show queued overlapped transfers. Queue depth and bandwidth tuning need measurements and cancellation tests |
 | Cooling | Temperature, target, enablement, power and dew control; bounded Rust PI regulator | It is not the SDK regulator and needs more environmental and hardware validation |
 | ASI6200 auxiliary controls | Fan speed and power-LED brightness, 0–255, with readback and restoration | Momentary USB hub reset is not exposed or replayed automatically |
-| Acquisition lifecycle | Observed readiness registers, retained state and framing checks; ASI6200 additionally waits a full programmed sensor frame plus 100 ms before standby | These guards are time based. ASI6200 full-frame control transitions caught stale rows that valid framing and repeated dark frames did not. A definitive firmware completion indicator remains open |
+| Acquisition lifecycle | Observed readiness registers, retained state and framing checks; P25 cameras additionally wait a full programmed sensor frame plus 100 ms before standby | These guards are time based. Full-frame control transitions caught stale rows that valid framing and repeated dark frames did not. A definitive firmware completion indicator remains open |
 | Error reporting | Win32, NT, USB status, chunk number and deadline flag in diagnostics | Errors are still strings, not structured transport categories exposed through the host protocol |
 | Time bounds | Per-request deadlines, supervisor readiness grace, worker watchdog | No dedicated configurable whole-transfer/replay deadline. Outer limits can terminate before every configured retry is used |
 | Disconnect recovery | Reconnect, restore controls/cooling, and take a replacement exposure when policy allows | Retained pixels surviving device reset, removal, power loss or worker replacement are unproven |

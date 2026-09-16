@@ -265,3 +265,20 @@ output dimensions and digests, complete replay identity and interrupted-prefix
 agreement. It fails on any mismatch and saves statistics rather than pixels.
 These commands do not constitute physical unplug or cold-power testing.
 See [ASI6200 protocol and hardware results](../../docs/asi6200-p25.md).
+
+## ASI2600MM Pro P25
+
+The 2025 mono camera reports `ZWO ASI2600MM Pro`, PID `260e`. Use
+`--capture-2600-p25` for direct captures. Its register timing and initialization
+differ from the non-P25 camera; the original `--capture-duo` command remains
+restricted to PID `2601`.
+
+```powershell
+target/release/zwogain-direct.exe --capture-2600-p25 --gain 100 --offset 50 --replay
+python scripts/inspection/validate_asi2600_p25.py --worker target/release/zwogain-direct.exe --output artifacts/inspection/NEW-2600-p25.jsonl
+python scripts/inspection/trace_direct.py --output artifacts/inspection/NEW-2600-p25-cancel.jsonl --cancel-bulk 13 -- --capture-2600-p25 --microseconds 60000000 --gain 100 --offset 50 --replay
+```
+
+The matrix covers full-frame freshness, small/moved/edge regions, bins 1–4,
+gain boundaries, exposure timing and interrupted reads. Add `--long 1200` for
+a twenty-minute exposure. See [P25 results](../../docs/asi2600-p25.md).

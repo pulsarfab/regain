@@ -11,6 +11,7 @@ def main():
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--long', type=int, default=0, help='additional full-frame exposure, 0..2000 seconds')
     parser.add_argument('--worker', type=Path)
+    parser.add_argument('--full-rows-only', action='store_true', help='only the ten full-frame offset/timing transitions')
     args = parser.parse_args()
     if not 0 <= args.long <= 2000:
         parser.error('long duration must be 0..2000 seconds')
@@ -32,6 +33,8 @@ def main():
         cases.append(dict(base, microseconds=us))
     for fault in ['interrupt-read-after-bytes', 'timeout-read-after-bytes', 'replay-prefix-bytes']:
         cases.append(dict(base, width=6248, height=4176, **{fault: 12 * 1024 * 1024}))
+    if args.full_rows_only:
+        cases = cases[:10]
     if args.long:
         cases.append(dict(base, width=6248, height=4176, microseconds=args.long * 1000000))
     with args.output.open('x', encoding='utf-8') as output:
@@ -41,8 +44,8 @@ def main():
             results = capture(options, worker=worker, asi2600_p25=True)
             valid = True
             if options['width'] == 6248 and options['gain'] == 100 and options['microseconds'] <= 2000000:
-                valid = all(abs(band - options['offset'] * 10) <= 15
-                            for result in results for band in result['statistics']['rowBandMedians'])
+                valid = all(abs(value - options['offset'] * 10) <= 15
+                            for result in results for value in result['statistics']['rowMedianRange'])
             output.write(json.dumps(dict(case=i, workerSha256=digest, options=options,
                                          captures=results, freshRows=valid)) + '\n')
             output.flush()
