@@ -59,7 +59,13 @@ try {
         if ((Test-Path $uninstallKey) -or (Test-Path (Join-Path $destination 'ZwoGain.ASCOM.dll'))) { throw 'Failed registration did not roll back installation' }
     } finally {
         if (Test-Path $blockedPath) {
-            Set-Acl $blockedPath $originalAcl
+            # Set-Acl reopens with write-value access, which this fixture denies.
+            $root = [Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::LocalMachine, [Microsoft.Win32.RegistryView]::Registry64)
+            try {
+                $key = $root.OpenSubKey('SOFTWARE\Classes\CLSID\{D1DB6F94-5CC0-4752-A758-F849098874A1}', [Microsoft.Win32.RegistryKeyPermissionCheck]::ReadWriteSubTree, [Security.AccessControl.RegistryRights]::ChangePermissions)
+                try { [Microsoft.Win32.RegistryAclExtensions]::SetAccessControl($key, $originalAcl) }
+                finally { $key.Dispose() }
+            } finally { $root.Dispose() }
             Remove-Item -LiteralPath $blockedPath -Force
         }
     }
