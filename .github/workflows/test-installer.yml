@@ -1,0 +1,30 @@
+name: Test existing ASCOM installer
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: 'Release workflow run containing an installer for the current source version'
+        required: true
+        type: string
+permissions:
+  contents: read
+  actions: read
+jobs:
+  installer:
+    runs-on: windows-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v4
+        with:
+          name: ZwoGain-ASCOM-installer
+          path: artifacts
+          run-id: ${{ inputs.run_id }}
+          github-token: ${{ github.token }}
+      - run: ./scripts/test-ascom-installer.ps1
+        shell: pwsh
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: ASCOM-installer-test-logs
+          path: artifacts/installer-test/*.log
