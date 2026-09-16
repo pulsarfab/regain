@@ -115,8 +115,20 @@ jobs:
         run: |
           Install-Module ArtifactSigning -RequiredVersion 0.1.8 -Scope CurrentUser -Force -Repository PSGallery
           ./scripts/build-ascom-installer.ps1 -Signed
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ZwoGain-ASCOM-installer
+          path: |
+            artifacts/ZwoGain-ASCOM-*-setup.exe
+            artifacts/ZwoGain-ASCOM-*-setup.exe.sha256
+          if-no-files-found: error
       - name: Test signed ASCOM installation and removal
         run: ./scripts/test-ascom-installer.ps1
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: ASCOM-installer-test-logs
+          path: artifacts/installer-test/*.log
       - name: Test registry publication checks without remote writes
         run: ./scripts/test-release.ps1
       - uses: actions/setup-python@v5

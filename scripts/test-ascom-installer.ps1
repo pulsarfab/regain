@@ -65,8 +65,8 @@ try {
                 $key = $root.OpenSubKey('SOFTWARE\Classes\CLSID\{D1DB6F94-5CC0-4752-A758-F849098874A1}', [Microsoft.Win32.RegistryKeyPermissionCheck]::ReadWriteSubTree, [Security.AccessControl.RegistryRights]::ChangePermissions)
                 try { [Microsoft.Win32.RegistryAclExtensions]::SetAccessControl($key, $originalAcl) }
                 finally { $key.Dispose() }
+                $root.DeleteSubKeyTree('SOFTWARE\Classes\CLSID\{D1DB6F94-5CC0-4752-A758-F849098874A1}', $false)
             } finally { $root.Dispose() }
-            Remove-Item -LiteralPath $blockedPath -Force
         }
     }
     Assert-NoCameraEntries
