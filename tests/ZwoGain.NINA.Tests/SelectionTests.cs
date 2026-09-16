@@ -117,10 +117,12 @@ public sealed class SelectionTests : IDisposable
         Assert.Null(Store.Load()!.Serial);
     }
 
-    [Fact]
-    public async Task Asi6200SelectionAppliesAndPersistsFanAndLedOptions()
+    [Theory]
+    [InlineData("ZWO ASI6200MM Pro",9576,6388)]
+    [InlineData("ZWO ASI2600MM Pro",6248,4176)]
+    public async Task P25SelectionAppliesAndPersistsFanAndLedOptions(string name, int width, int height)
     {
-        var descriptor = new CameraDescriptor("ZWO ASI6200MM Pro",9576,6388,false,0,3.76,16,true,false,[1,2,3,4]);
+        var descriptor = new CameraDescriptor(name,width,height,false,0,3.76,16,true,false,[1,2,3,4]);
         Store.Save(new(descriptor,UseDirectDriver:true,FanSpeed:200,PowerLedBrightness:128));
         HostClient? host = null;
         var camera = new ResilientCamera(Mock.Of<IExposureDataFactory>(),Store,

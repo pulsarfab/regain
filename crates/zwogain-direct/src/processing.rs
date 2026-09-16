@@ -254,7 +254,7 @@ pub fn process_stream() -> Result<()> {
     input.read_exact(&mut calibration)?;
     let model = match request["model"].as_str() {
         None | Some("asi676mc") => "asi676mc",
-        Some("asi2600mm-duo") => "asi2600mm-duo",
+        Some("asi2600mm-duo" | "asi2600mm-pro-p25") => "asi2600mm-duo",
         Some("asi220mm-mini") => "asi220mm-mini",
         Some("asi6200mm-pro") => "asi6200mm-pro",
         _ => anyhow::bail!("unsupported processing model"),

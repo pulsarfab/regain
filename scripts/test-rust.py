@@ -88,7 +88,7 @@ def simulated(binary_dir):
     count = 0
     with Worker([str(binary_dir / ("zwogain-direct" + suffix)), "--serve", "--simulate"]) as worker:
         cameras = worker.call("list")[0]
-        assert len(cameras) == 4
+        assert len(cameras) == 5
         for camera in cameras:
             worker.call("open", dict(name=camera["name"]))
             if camera["cooled"]:

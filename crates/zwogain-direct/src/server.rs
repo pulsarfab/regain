@@ -29,11 +29,18 @@ enum Model {
     Duo,
     Guide,
     Asi6200,
+    Asi2600P25,
 }
 impl Model {
-    const ALL: [Self; 4] = [Self::Asi676, Self::Duo, Self::Guide, Self::Asi6200];
+    const ALL: [Self; 5] = [
+        Self::Asi676,
+        Self::Duo,
+        Self::Guide,
+        Self::Asi6200,
+        Self::Asi2600P25,
+    ];
     fn cooled(self) -> bool {
-        matches!(self, Self::Duo | Self::Asi6200)
+        matches!(self, Self::Duo | Self::Asi6200 | Self::Asi2600P25)
     }
     fn name(self) -> &'static str {
         match self {
@@ -41,6 +48,7 @@ impl Model {
             Self::Duo => "ZWO ASI2600MM Duo",
             Self::Guide => "ZWO ASI220MM Mini",
             Self::Asi6200 => "ZWO ASI6200MM Pro",
+            Self::Asi2600P25 => "ZWO ASI2600MM Pro",
         }
     }
     fn pid(self) -> u32 {
@@ -49,12 +57,13 @@ impl Model {
             Self::Duo => 0x2601,
             Self::Guide => 0x2209,
             Self::Asi6200 => 0x620b,
+            Self::Asi2600P25 => 0x260e,
         }
     }
     fn descriptor(self) -> Value {
         let (width, height, pixel, bits, bins, alignment) = match self {
             Self::Asi676 => (3552, 3552, 2.0, 12, vec![1], 2),
-            Self::Duo => (6248, 4176, 3.76, 16, vec![1, 2, 3, 4], 16),
+            Self::Duo | Self::Asi2600P25 => (6248, 4176, 3.76, 16, vec![1, 2, 3, 4], 16),
             Self::Guide => (1920, 1080, 4.0, 12, vec![1, 2], 2),
             Self::Asi6200 => (9576, 6388, 3.76, 16, vec![1, 2, 3, 4], 16),
         };
@@ -67,6 +76,7 @@ impl Model {
         let (gain_min, gain_max, offset_min, offset_max, offset_default, exp_max) = match self {
             Self::Asi676 => (0, 600, 0, 200, 10, 30_000_000),
             Self::Duo => (-25, 700, 0, 240, 50, asi2600::MAX_EXPOSURE_US as i32),
+            Self::Asi2600P25 => (-25, 700, 0, 240, 1, asi2600::MAX_EXPOSURE_US as i32),
             Self::Guide => (0, 600, 200, 1500, 200, 10_000_000),
             Self::Asi6200 => (0, 700, 0, 200, 50, asi6200::MAX_EXPOSURE_US as i32),
         };
@@ -92,7 +102,7 @@ impl Model {
                 );
             }
         }
-        if self == Self::Asi6200 {
+        if matches!(self, Self::Asi6200 | Self::Asi2600P25) {
             for kind in [22, 23] {
                 caps.push(json!({"type":kind,"min":0,"max":255,"value":255,"writable":true}));
             }
@@ -105,7 +115,7 @@ impl Model {
                 ensure!(bin == 1, "ASI676MC direct capture supports bin 1 only");
                 settings.validate()
             }
-            Self::Duo => asi2600::raw_settings(settings, gain, bin).map(|_| ()),
+            Self::Duo | Self::Asi2600P25 => asi2600::raw_settings(settings, gain, bin).map(|_| ()),
             Self::Guide => asi220::raw_settings(settings, bin).map(|_| ()),
             Self::Asi6200 => asi6200::raw_settings(settings, gain, bin).map(|_| ()),
         }
@@ -158,7 +168,7 @@ fn open_camera(model: Model, serial: Option<&str>) -> Result<(transport::Camera,
         Ok(None)
     })?;
     if model.cooled() {
-        camera.enable_environment(model == Model::Asi6200)?;
+        camera.enable_environment(matches!(model, Model::Asi6200 | Model::Asi2600P25))?;
     }
     Ok((camera, info, found))
 }
@@ -333,7 +343,7 @@ impl Worker {
                         let result = if let Some((camera, info, _)) = &device {
                             match model {
                                 Model::Asi676 => asi676::capture(camera, info, &settings, false),
-                                Model::Duo => {
+                                Model::Duo | Model::Asi2600P25 => {
                                     asi2600::capture(camera, info, &settings, gain, bin, false)
                                 }
                                 Model::Guide => asi220::capture(camera, info, &settings, bin),
@@ -497,6 +507,7 @@ impl Host {
                     Model::Duo => 50,
                     Model::Guide => 200,
                     Model::Asi6200 => 50,
+                    Model::Asi2600P25 => 1,
                 };
                 self.gain = 0;
                 let mut controls = model.controls();

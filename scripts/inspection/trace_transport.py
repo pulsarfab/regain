@@ -217,6 +217,7 @@ def main():
                             blob = blob[:int.from_bytes(blob[4:8], 'big')]
                             model = {'ZWO ASI2600MM Duo': 'asi2600mm-duo', 'ZWO ASI676MC': 'asi676mc',
                                      'ZWO ASI6200MM Pro': 'asi6200mm-pro',
+                                     'ZWO ASI2600MM Pro': 'asi2600mm-pro-p25',
                                      'ZWO ASI220MM Mini': 'asi220mm-mini'}.get(camera['name'])
                             if model is None:
                                 raise RuntimeError('independent correction is not implemented for this model')

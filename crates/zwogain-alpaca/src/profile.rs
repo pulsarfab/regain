@@ -82,6 +82,7 @@ impl Profile {
                         Some(
                             "ZWO ASI676MC"
                                 | "ZWO ASI2600MM Duo"
+                                | "ZWO ASI2600MM Pro"
                                 | "ZWO ASI220MM Mini"
                                 | "ZWO ASI6200MM Pro"
                         )

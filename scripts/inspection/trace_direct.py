@@ -19,8 +19,8 @@ def main():
     parser.add_argument('options', nargs=argparse.REMAINDER)
     args = parser.parse_args()
     options = args.options[1:] if args.options[:1] == ['--'] else args.options
-    if not options or options[0] not in ('--capture-duo', '--capture-6200') or '--stream' in options:
-        parser.error('requires metadata-only --capture-duo or --capture-6200 command')
+    if not options or options[0] not in ('--capture-duo', '--capture-2600-p25', '--capture-6200') or '--stream' in options:
+        parser.error('requires metadata-only --capture-duo, --capture-2600-p25 or --capture-6200 command')
     if args.cancel_bulk is not None and args.cancel_bulk < 1:
         parser.error('--cancel-bulk must be positive')
     duration = int(options[options.index('--microseconds') + 1]) / 1e6 if '--microseconds' in options else .1

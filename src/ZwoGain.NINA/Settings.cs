@@ -130,10 +130,10 @@ internal static class Settings
             advanced.Children.Add(field);
             return field;
         }
-        var fanSpeed = OptionalCameraControl("Fan speed (ASI6200 P25)",remembered?.FanSpeed);
-        var ledBrightness = OptionalCameraControl("Power LED brightness (ASI6200 P25)",remembered?.PowerLedBrightness);
+        var fanSpeed = OptionalCameraControl("Fan speed",remembered?.FanSpeed);
+        var ledBrightness = OptionalCameraControl("Power LED brightness",remembered?.PowerLedBrightness);
         void UpdateAuxiliaryControls() {
-            bool supported = (picker.SelectedItem as CameraChoice)?.Camera.Name == "ZWO ASI6200MM Pro";
+            bool supported = (picker.SelectedItem as CameraChoice)?.Camera.Name is "ZWO ASI6200MM Pro" or "ZWO ASI2600MM Pro";
             fanSpeed.IsEnabled = ledBrightness.IsEnabled = supported;
         }
         picker.SelectionChanged += (_,_) => UpdateAuxiliaryControls();
@@ -206,7 +206,7 @@ internal static class Settings
                 options.Validate();
                 if (picker.SelectedItem is not CameraChoice choice)
                     throw new InvalidOperationException("Choose a camera before saving.");
-                if (direct.IsChecked == true && choice.Camera.Name is not ("ZWO ASI676MC" or "ZWO ASI2600MM Duo" or "ZWO ASI220MM Mini" or "ZWO ASI6200MM Pro"))
+                if (direct.IsChecked == true && choice.Camera.Name is not ("ZWO ASI676MC" or "ZWO ASI2600MM Duo" or "ZWO ASI2600MM Pro" or "ZWO ASI220MM Mini" or "ZWO ASI6200MM Pro"))
                     throw new InvalidOperationException("Direct capture is unavailable for this camera. Turn off Direct USB driver to use the SDK.");
                 string? selectedSerial = string.IsNullOrWhiteSpace(serial.Text) ? null : serial.Text.Trim().ToLowerInvariant();
                 if (selectedSerial is not null && (selectedSerial.Length != 16 || selectedSerial.Any(c => !Uri.IsHexDigit(c))))

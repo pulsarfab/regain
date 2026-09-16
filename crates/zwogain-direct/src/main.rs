@@ -2,6 +2,7 @@
 mod asi220;
 mod asi220_tables;
 mod asi2600;
+mod asi2600_p25_tables;
 mod asi2600_tables;
 mod asi6200;
 mod asi6200_tables;
@@ -27,7 +28,8 @@ fn main() -> Result<()> {
         return processing::process_stream();
     }
     let asi6200 = args.first().is_some_and(|a| a == "--capture-6200");
-    let duo = args.first().is_some_and(|a| a == "--capture-duo");
+    let p25 = args.first().is_some_and(|a| a == "--capture-2600-p25");
+    let duo = p25 || args.first().is_some_and(|a| a == "--capture-duo");
     let guide = args.first().is_some_and(|a| a == "--capture-guide");
     let capture = asi6200 || duo || guide || args.first().is_some_and(|a| a == "--capture");
     let mut settings = settings::Settings::default();
@@ -111,7 +113,7 @@ fn main() -> Result<()> {
             || args == ["--probe-all"]
             || args == ["--probe", "--cancel-read"]
             || capture,
-        "Usage: zwogain-direct [--probe [--cancel-read] | --capture | --capture-duo | --capture-6200 | --capture-guide] [--width N --height N --x N --y N --microseconds N --gain N --offset N --frames N --read-retries N --stream --replay --replay-prefix-bytes N --interrupt-read-after-bytes N]; ASI2600/6200 also accept --timeout-read-after-bytes N; ASI2600/6200 and guide also accept --bin N; disconnect other camera apps first"
+        "Usage: zwogain-direct [--probe [--cancel-read] | --capture | --capture-duo | --capture-2600-p25 | --capture-6200 | --capture-guide] [--width N --height N --x N --y N --microseconds N --gain N --offset N --frames N --read-retries N --stream --replay --replay-prefix-bytes N --interrupt-read-after-bytes N]; ASI2600/6200 also accept --timeout-read-after-bytes N; ASI2600/6200 and guide also accept --bin N; disconnect other camera apps first"
     );
     // Last resort for a kernel request that refuses to finish cancellation. The
     // worker must exit rather than free a buffer still owned by the USB driver.
@@ -147,6 +149,8 @@ fn main() -> Result<()> {
     if capture {
         let pid = if asi6200 {
             0x620b
+        } else if p25 {
+            0x260e
         } else if duo {
             0x2601
         } else if guide {
@@ -158,7 +162,7 @@ fn main() -> Result<()> {
     }
     ensure!(
         paths.len() == 1,
-        "operation requires exactly one matching camera interface (--capture selects ASI676MC; --capture-duo selects Duo main; --capture-guide selects ASI220MM Mini)"
+        "operation requires exactly one matching camera interface (--capture selects ASI676MC; --capture-duo selects non-P25 ASI2600 main; --capture-2600-p25 selects ASI2600 P25; --capture-guide selects ASI220MM Mini)"
     );
     let camera = transport::Camera::open(&paths[0])?;
     let mut result = camera.probe()?;

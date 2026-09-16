@@ -82,15 +82,17 @@ Windows driver.
 | --- | --- | --- |
 | ASI676MC USB3 | 1 | 30 seconds |
 | ASI2600MM Pro (non-P25) main USB3 | 1–4 | 2,000 seconds |
+| ASI2600MM Pro P25 USB3 | 1–4 | 2,000 seconds |
 | ASI6200MM Pro P25 USB3 | 1–4 | 2,000 seconds |
 | ASI220MM Mini guide USB2 | 1–2 | 10 seconds |
 
-**Coming soon:** direct support for **ASI2600MM Pro P25** and **ASI6200MM Pro
-(non-P25)**. Other cameras can use SDK mode if supported by the bundled ZWO SDK.
+**Coming soon:** direct support for **ASI6200MM Pro (non-P25)**. Other cameras can
+use SDK mode if supported by the bundled ZWO SDK. ASI2600 P25 support is new in
+the source tree; it is not in the v0.2.0.0 release.
 
 Direct capture includes RAW16 images, factory defect correction, gain and
 offset. The ASI2600 and ASI6200 also support cooling and the dew heater. The
-ASI6200 has optional fan and LED settings. Selected image areas are adjusted
+P25 models have optional fan and LED settings. Selected image areas are adjusted
 to the camera's size and alignment rules.
 
 **Fall back to SDK** is a separate option. It uses the same camera and stays
@@ -104,7 +106,8 @@ Live view and trigger modes are not supported. Temperature and cooler power
 update during exposures. Control changes wait until capture ends; the direct
 cooler controller keeps running.
 
-See [NINA tests](docs/nina-end-to-end.md), [ASI6200 P25 results](docs/asi6200-p25.md),
+See [NINA tests](docs/nina-end-to-end.md), [ASI2600 P25 results](docs/asi2600-p25.md),
+[ASI6200 P25 results](docs/asi6200-p25.md),
 and [transfer recovery and SDK differences](docs/transfer-recovery.md).
 
 ## Help add a camera

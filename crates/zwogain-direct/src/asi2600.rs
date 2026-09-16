@@ -1,5 +1,7 @@
 //! ASI2600MM acquisition over the platform USB transport.
-use crate::{asi2600_tables, processing, settings::Settings, transport::Camera};
+use crate::{
+    asi2600_p25_tables, asi2600_tables, processing, settings::Settings, transport::Camera,
+};
 use anyhow::{Result, ensure};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -8,6 +10,20 @@ use std::time::{Duration, Instant};
 // SDK exposure range. Integrations >= 1 s use host timing, so their duration
 // does not increase the sensor frame/shutter register values.
 pub const MAX_EXPOSURE_US: u32 = 2_000_000_000;
+
+#[derive(Clone, Copy, PartialEq)]
+enum Revision {
+    Original,
+    P25,
+}
+impl Revision {
+    fn hmax(self) -> u32 {
+        match self {
+            Self::Original => 779,
+            Self::P25 => 790,
+        }
+    }
+}
 
 fn writes(camera: &Camera, commands: &[(u8, u16, u16)]) -> Result<()> {
     for &(request, register, value) in commands {
@@ -138,8 +154,8 @@ pub fn gain_registers(gain: i32) -> (u16, u32, u16, u16) {
         (digital * 16) as u16,
     )
 }
-pub fn timing(s: &Settings) -> (u32, u32) {
-    let line = 779.0_f32 * 1000.0 / 20000.0;
+fn timing(s: &Settings, revision: Revision) -> (u32, u32) {
+    let line = revision.hmax() as f32 * 1000.0 / 20000.0;
     let minimum = ((s.height + 48) as f32 * line) as u32;
     let exposure = if s.microseconds >= 1_000_000 {
         minimum + 5000
@@ -159,11 +175,17 @@ pub fn timing(s: &Settings) -> (u32, u32) {
     };
     (frame.min(0xffffff), (shutter.min(0x1fffe) / 2).max(1))
 }
-fn begin_retained_read(camera: &Camera) -> Result<()> {
-    camera.reset_pipe()?;
+fn begin_retained_read(camera: &Camera, revision: Revision) -> Result<()> {
+    if revision == Revision::Original {
+        camera.reset_pipe()?;
+    }
     camera.vendor(0xbd, 0x18, 0, 0)?;
     camera.service_environment()?;
     std::thread::sleep(Duration::from_millis(100));
+    if revision == Revision::P25 {
+        // P25 DDR sender must stop before draining the previous transfer.
+        camera.reset_pipe()?;
+    }
     ensure!(
         camera.vendor(0xbc, 0x18, 0, 1)?[0] == 0,
         "Duo replay engine did not return idle"
@@ -210,14 +232,25 @@ pub fn capture(
     replay: bool,
 ) -> Result<(Value, Vec<u8>)> {
     let raw = raw_settings(s, gain, bin)?;
-    let (mut meta, mut data) = capture_native(camera, info, &raw, gain, replay)?;
+    let sensor = sensor_settings(&raw, info["productId"] == 0x260e);
+    let (mut meta, mut data) = capture_native(camera, info, &sensor, gain, replay)?;
+    if sensor.width != raw.width || sensor.height != raw.height {
+        let mut cropped = Vec::with_capacity(raw.width as usize * raw.height as usize * 2);
+        for row in 0..raw.height {
+            let start = ((row + raw.y - sensor.y) * sensor.width + raw.x - sensor.x) as usize * 2;
+            cropped.extend_from_slice(&data[start..start + raw.width as usize * 2]);
+        }
+        data = cropped;
+    }
     if bin > 1 {
         data =
             processing::bin_average(&data, raw.width as usize, raw.height as usize, bin as usize)?;
     }
-    meta["wireBytes"] = json!(raw.width * raw.height * 2);
-    meta["rawWidth"] = json!(raw.width);
-    meta["rawHeight"] = json!(raw.height);
+    meta["wireBytes"] = json!(sensor.width * sensor.height * 2);
+    meta["rawWidth"] = json!(sensor.width);
+    meta["rawHeight"] = json!(sensor.height);
+    meta["rawX"] = json!(sensor.x);
+    meta["rawY"] = json!(sensor.y);
     meta["width"] = json!(s.width);
     meta["height"] = json!(s.height);
     meta["bin"] = json!(bin);
@@ -227,6 +260,18 @@ pub fn capture(
     meta["sha256"] = json!(format!("{:x}", Sha256::digest(&data)));
     Ok((meta, data))
 }
+fn sensor_settings(raw: &Settings, p25: bool) -> Settings {
+    let mut sensor = raw.clone();
+    // P25 64x64 DDR reads stall; 512x128 replay succeeds. Expand small
+    // requests to at least 128 KiB, correct in sensor coordinates, then crop.
+    if p25 && sensor.width * sensor.height < 65536 {
+        sensor.width = sensor.width.max(512);
+        sensor.height = sensor.height.max(128);
+        sensor.x = sensor.x.min((6248 - sensor.width) / 16 * 16);
+        sensor.y = sensor.y.min(4176 - sensor.height);
+    }
+    sensor
+}
 fn capture_native(
     camera: &Camera,
     info: &Value,
@@ -235,13 +280,22 @@ fn capture_native(
     replay: bool,
 ) -> Result<(Value, Vec<u8>)> {
     validate(s, gain)?;
+    let revision = match info["productId"].as_u64() {
+        Some(0x2601) => Revision::Original,
+        Some(0x260e) => Revision::P25,
+        _ => anyhow::bail!("ASI2600 capture requires observed PID 2601 or 260e"),
+    };
     ensure!(
-        info["productId"] == 0x2601 && info["usbVersionBcd"] == 0x300,
-        "Duo research capture requires observed PID 2601 USB3"
+        info["usbVersionBcd"] == 0x300,
+        "ASI2600 capture requires USB3"
     );
     let started = Instant::now();
     let result = (|| {
-        for &(request, register, value) in asi2600_tables::INITIALIZE {
+        let initialize = match revision {
+            Revision::Original => asi2600_tables::INITIALIZE,
+            Revision::P25 => asi2600_p25_tables::INITIALIZE,
+        };
+        for &(request, register, value) in initialize {
             // Host cooling/dew state must survive sensor initialization between frames.
             if camera.has_environment() && request == 0xbd && [0x19, 0x26].contains(&register) {
                 continue;
@@ -261,9 +315,15 @@ fn capture_native(
         word(camera, 0xb6, 0x1dd, s.width + 24, 2)?;
         word(camera, 0xbd, 8, s.height, 2)?;
         word(camera, 0xbd, 4, s.width, 2)?;
-        // Traced bandwidth 40: HMAX 779 and FPGA auxiliary divisor 3.
-        word(camera, 0xbd, 0x13, 779, 2)?;
-        word(camera, 0xbd, 0x24, 3, 2)?;
+        // SDK bandwidth 40: original HMAX/divisor 779/3; P25 790/400.
+        word(camera, 0xbd, 0x13, revision.hmax(), 2)?;
+        word(
+            camera,
+            0xbd,
+            0x24,
+            if revision == Revision::P25 { 400 } else { 3 },
+            2,
+        )?;
         let (mode, analog, hcg, digital) = gain_registers(gain);
         camera.vendor(0xb6, 0x67f, mode, 0)?;
         word(camera, 0xb6, 0x30, analog, 2)?;
@@ -271,7 +331,7 @@ fn capture_native(
         writes(camera, &[(0xb6, 0x2f, hcg), (0xb6, 0x40, digital)])?;
         word(camera, 0xb6, 0x42, s.offset * 10, 2)?;
         word(camera, 0xb6, 0x44, s.offset * 10, 2)?;
-        let (frame, shutter) = timing(s);
+        let (frame, shutter) = timing(s, revision);
         word(camera, 0xbd, 0x10, frame, 3)?;
         word(camera, 0xb6, 0x18, shutter, 2)?;
         let flags = camera.vendor(0xbc, 0, 0, 1)?[0];
@@ -373,13 +433,24 @@ fn capture_native(
         // standby repeatedly stalled 64x64 replay. The empirical 100ms guard
         // fixes that case. Long integrations must consume the initial pass
         // below; an extra settling delay does not substitute for that step.
-        camera.service_environment()?;
-        std::thread::sleep(Duration::from_millis(100));
+        let settling = if revision == Revision::P25 {
+            // BC23=15 starts readout; it does not mean every DDR row is fresh.
+            // P25 full-frame offset transitions require one programmed sensor
+            // frame interval before standby, plus the observed settling guard.
+            Duration::from_micros(u64::from(frame) * u64::from(revision.hmax()) / 20 + 100_000)
+        } else {
+            Duration::from_millis(100)
+        };
+        let settle_started = Instant::now();
+        while settle_started.elapsed() < settling {
+            camera.service_environment()?;
+            std::thread::sleep(Duration::from_millis(10));
+        }
         writes(camera, &[(0xb6, 0x1ee, 5), (0xb6, 0, 5)])?;
         // Short integrations stream; restart from frozen DDR. Long integrations
         // already schedule one pass: triggering replay first can cancel it.
         if s.microseconds < 1_000_000 {
-            begin_retained_read(camera)?;
+            begin_retained_read(camera, revision)?;
         }
         let mut prefix = Vec::new();
         let mut read_errors = Vec::new();
@@ -417,7 +488,7 @@ fn capture_native(
                         return Err(error);
                     }
                     read_errors.push(error.to_string());
-                    begin_retained_read(camera)?;
+                    begin_retained_read(camera, revision)?;
                 }
             }
         };
@@ -428,19 +499,36 @@ fn capture_native(
         let sequence = frame_sequence(&data)?;
         let wire_hash = format!("{:x}", Sha256::digest(&data));
         let replay_result = if replay {
-            begin_retained_read(camera)?;
+            begin_retained_read(camera, revision)?;
             if s.replay_prefix_bytes > 0 {
-                camera.read_frame(s.replay_prefix_bytes as usize)?;
-                begin_retained_read(camera)?;
+                let prefix = camera.read_frame(s.replay_prefix_bytes as usize)?;
+                ensure!(
+                    prefix[4..] == data[4..prefix.len()],
+                    "ASI2600 replay prefix changed"
+                );
+                begin_retained_read(camera, revision)?;
             }
-            let second = camera.read_frame(data.len())?;
+            let mut errors = Vec::new();
+            let second = loop {
+                match camera.read_frame(data.len()).and_then(|frame| {
+                    frame_sequence(&frame)?;
+                    Ok(frame)
+                }) {
+                    Ok(frame) => break frame,
+                    Err(error) if errors.len() < s.read_retries as usize => {
+                        errors.push(error.to_string());
+                        begin_retained_read(camera, revision)?;
+                    }
+                    Err(error) => return Err(error),
+                }
+            };
             let replay_sequence = frame_sequence(&second)?;
             ensure!(
                 second[4..second.len() - 4] == data[4..data.len() - 4],
                 "Duo retained pixels differ from original"
             );
             json!({"pixelBytesIdentical":true,"wireBytesIdentical":second==data,"bytes":data.len(),
-                "firstSequence":sequence,"replaySequence":replay_sequence})
+                "firstSequence":sequence,"replaySequence":replay_sequence,"readErrors":errors})
         } else {
             Value::Null
         };
@@ -449,7 +537,7 @@ fn capture_native(
         data.copy_within(row..row + 4, 0);
         data.copy_within(last - row..last - row + 4, last);
         defects.correct(&mut data)?;
-        let meta = json!({"model":"ASI2600MM Duo","width":s.width,"height":s.height,"x":s.x,"y":s.y,
+        let meta = json!({"model":if revision == Revision::P25 { "ASI2600MM Pro P25" } else { "ASI2600MM Pro" },"width":s.width,"height":s.height,"x":s.x,"y":s.y,
             "bin":1,"gain":gain,"offset":s.offset,"microseconds":s.microseconds,"bytes":data.len(),
             "wireSha256":wire_hash,"sha256":format!("{:x}",Sha256::digest(&data)),"sequence":sequence,
             "factoryDefects":defects.indices.len(),"acquisitionMs":armed.elapsed().as_millis(),"elapsedMs":started.elapsed().as_millis(),
@@ -467,6 +555,72 @@ mod tests {
     use super::*;
 
     #[test]
+    fn p25_registers_match_sdk_141_camera_kit_observations() {
+        // ASI2600 P25 kit e0a00a37..., not values derived from this implementation.
+        for (height, microseconds, expected) in [
+            (4176, 100_000, (4224, 846)),
+            (256, 32, (304, 151)),
+            (256, 100, (304, 150)),
+            (256, 1_000, (304, 139)),
+            (256, 10_000, (304, 25)),
+            (256, 100_000, (2532, 1)),
+            (256, 490_000, (12406, 1)),
+            (256, 999_000, (25292, 1)),
+            (256, 1_000_000, (431, 1)),
+            (256, 1_001_000, (431, 1)),
+            (256, 60_000_000, (431, 1)),
+        ] {
+            let s = Settings {
+                height,
+                microseconds,
+                ..Settings::default()
+            };
+            assert_eq!(timing(&s, Revision::P25), expected);
+        }
+        for (gain, expected) in [
+            (-25, (17, 0, 0, 0)),
+            (99, (0, 2785, 0, 0)),
+            (100, (0, 0, 1, 0)),
+            (101, (0, 46, 1, 0)),
+            (180, (0, 2464, 1, 0)),
+            (350, (0, 3864, 1, 0)),
+            (700, (0, 4030, 1, 64)),
+        ] {
+            assert_eq!(gain_registers(gain), expected);
+        }
+    }
+
+    #[test]
+    fn p25_small_transfers_cover_requested_roi_at_sensor_edges() {
+        for (width, height) in [(64, 64), (64, 128), (512, 64), (6248, 64)] {
+            for edge in [false, true] {
+                let raw = Settings {
+                    width,
+                    height,
+                    x: if edge {
+                        (6248 - width) / 16 * 16
+                    } else {
+                        16.min((6248 - width) / 16 * 16)
+                    },
+                    y: if edge { 4176 - height } else { 2 },
+                    ..Settings::default()
+                };
+                let sensor = sensor_settings(&raw, true);
+                validate(&sensor, 100).unwrap();
+                assert!(sensor.width * sensor.height * 2 >= 131072);
+                assert!(sensor.x <= raw.x && sensor.y <= raw.y);
+                assert!(sensor.x + sensor.width >= raw.x + raw.width);
+                assert!(sensor.y + sensor.height >= raw.y + raw.height);
+                let original = sensor_settings(&raw, false);
+                assert_eq!(
+                    (original.width, original.height, original.x, original.y),
+                    (raw.width, raw.height, raw.x, raw.y)
+                );
+            }
+        }
+    }
+
+    #[test]
     fn long_exposures_keep_host_timed_sensor_registers_and_sdk_range() {
         let mut settings = Settings {
             width: 6248,
@@ -474,7 +628,7 @@ mod tests {
             microseconds: 1_000_000,
             ..Settings::default()
         };
-        let registers = timing(&settings);
+        let registers = timing(&settings, Revision::Original);
         for duration in [
             30_000_001,
             60_000_000,
@@ -484,7 +638,7 @@ mod tests {
         ] {
             settings.microseconds = duration;
             assert!(validate(&settings, 100).is_ok());
-            assert_eq!(timing(&settings), registers);
+            assert_eq!(timing(&settings, Revision::Original), registers);
         }
         settings.microseconds = MAX_EXPOSURE_US + 1;
         assert!(validate(&settings, 100).is_err());

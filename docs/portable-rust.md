@@ -84,6 +84,7 @@ Choose the capture switch for the attached device:
 | Camera | Switch |
 | --- | --- |
 | ASI6200MM Pro P25 | `--capture-6200` |
+| ASI2600MM Pro P25 | `--capture-2600-p25` |
 | ASI2600MM Pro, non-P25 | `--capture-duo` (legacy command name) |
 | ASI676MC | `--capture` |
 | ASI220MM Mini guide | `--capture-guide` |
