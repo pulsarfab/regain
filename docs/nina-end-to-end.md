@@ -1,8 +1,9 @@
 # NINA end-to-end acceptance matrix
 
 This document records successive hardware validation runs. The initial matrix
-below and later ASI2600 sections predate ASI6200 support; see the final ASI6200
-sections and [model-specific evidence](asi6200-p25.md) for the P25 tests.
+below and later ASI2600 sections predate ASI6200 support. See the later sections
+and model-specific evidence for [ASI6200 P25](asi6200-p25.md) and
+[ASI2600 P25](asi2600-p25.md).
 
 Initial status: **attached-hardware acceptance matrix passed**, 2026-09-14. All 11
 advertised camera/backend/bin combinations produced fresh images inspected in
@@ -634,3 +635,39 @@ primary SDK mode, gain 100, offset 50 and USB bandwidth 40. Capture inputs were
 restored to 0.1 seconds, bin 1, full frame, Loop off and Save off. The recovered
 fallback image was left visible. This NINA run covered the P25 camera; other
 models and Linux/macOS hardware were not retested here.
+
+## ASI2600MM Pro P25 — 2026-09-15
+
+The new `03c3:260e` interface passed SDK-less capture in NINA 3.2.0.9001.
+The installed Release worker SHA-256 was
+`488ef94359a839102081a5f443d2b85b91c45fa995c91fdc26a67cc629ea6850`.
+No SDK DLL was loaded in the direct worker. All images below were inspected
+in NINA's image pane at gain 100, offset 50, with cooler and dew heater off.
+
+| Backend | Exposure | Bin | Output | Mean / SD (ADU) |
+| --- | --- | --- | --- | --- |
+| Direct | 0.1 s | 1 | 6248 × 4176 | 500.49 / 5.77 |
+| Direct | 1200 s | 1 | 6248 × 4176 | 1016.06 / 616.95 |
+| Direct | 0.1 s | 2 | 3120 × 2088 | 500.09 / 2.89 |
+| Direct | 0.1 s | 3 | 2080 × 1392 | 500.02 / 1.95 |
+| Direct, loop | 0.1 s | 4 | 1560 × 1044 | 500.01 / 1.48 |
+| Direct, 256 × 256 sensor region | 0.1 s | 4 | 64 × 64 | 499.94 / 1.43 |
+| Direct, after cancellation | 10 s | 4 | 1560 × 1044 | 504.07 / 7.54 |
+| Direct, after worker failure | 10 s | 4 | 1560 × 1044 | 504.08 / 7.54 |
+| SDK | 0.1 s | 1 | 6248 × 4176 | 500.50 / 5.76 |
+
+The 1200-second exposure completed without retry or fallback. Temperature
+updates continued throughout, reaching 28.6 °C. Killing the worker during a
+10-second exposure triggered a five-second reconnect delay and one replacement
+exposure. NINA logged `capture.retry` and `capture.recovered`, then displayed
+the image without a failed-capture dialog. Cancelling another 10-second
+exposure returned control and allowed the next capture to finish.
+
+The camera choice and serial persisted across setup and reconnect. Testing
+ended in SDK mode, with direct and fallback off, 0.1-second exposure, bin 1,
+full frame, Loop and Save off. Cooler and dew heater remained off.
+
+The SDK kit and Alpaca also covered bins 1–4; NINA SDK mode was checked at bin 1
+in this run. The full 2000-second limit, physical cable/power faults, cooling
+recovery, auxiliary controls and Linux/macOS hardware remain untested on this
+unit. See [protocol findings and sanitized evidence](asi2600-p25.md).

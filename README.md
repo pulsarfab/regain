@@ -92,15 +92,16 @@ the source tree; it is not in the v0.2.0.0 release.
 
 Direct capture includes RAW16 images, factory defect correction, gain and
 offset. The ASI2600 and ASI6200 also support cooling and the dew heater. The
-P25 models have optional fan and LED settings. Selected image areas are adjusted
+P25 models have optional fan and LED settings. Cooler, dew, fan and LED hardware
+checks on the newly added ASI2600 P25 are still pending. Selected image areas are adjusted
 to the camera's size and alignment rules.
 
 **Fall back to SDK** is a separate option. It uses the same camera and stays
 active until disconnect. It cannot repeat a failed long exposure unless your
 recapture limit allows it.
 
-Testing used capped cameras and dark frames. Full 1,200-second ASI2600 and
-ASI6200 captures passed in NINA; the full 2,000-second limit has not been tested.
+Testing used dark frames. Full 1,200-second ASI2600 (original and P25) and
+ASI6200 P25 captures passed in NINA; the full 2,000-second limit has not been tested.
 USB retry tests used controlled faults, not cable removal or power loss.
 Live view and trigger modes are not supported. Temperature and cooler power
 update during exposures. Control changes wait until capture ends; the direct
