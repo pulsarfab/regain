@@ -17,6 +17,14 @@ def capture(options, guide=False, asi6200=False, worker=None, asi2600_p25=False)
     for key, value in options.items():
         command += ['--' + key] + ([] if value is True else [str(value)])
     proc = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    # Lifecycle diagnostics can exceed the Windows pipe buffer before stdout.
+    # Drain concurrently so logging never stalls a hardware capture.
+    errors = bytearray()
+    def drain_errors():
+        for part in iter(lambda: proc.stderr.read(4096), b''):
+            errors.extend(part)
+    stderr_thread = threading.Thread(target=drain_errors, daemon=True)
+    stderr_thread.start()
     watchdog = threading.Timer((options.get('microseconds', 100000) / 1e6 + 35)
                                * options.get('frames', 1) + 10, proc.kill)
     watchdog.start()
@@ -26,7 +34,9 @@ def capture(options, guide=False, asi6200=False, worker=None, asi2600_p25=False)
         while len(data) < length:
             part = proc.stdout.read(length - len(data))
             if not part:
-                raise RuntimeError('truncated direct stream: ' + proc.stderr.read().decode(errors='replace'))
+                proc.wait(timeout=5)
+                stderr_thread.join(timeout=5)
+                raise RuntimeError('truncated direct stream: ' + errors.decode(errors='replace'))
             data.extend(part)
         return data
 
@@ -80,6 +90,7 @@ def capture(options, guide=False, asi6200=False, worker=None, asi2600_p25=False)
         if proc.poll() is None:
             proc.kill()
         proc.wait(timeout=5)
+        stderr_thread.join(timeout=5)
         watchdog.cancel()
         watchdog.join()
     return results

@@ -15,6 +15,7 @@ mod processing;
 mod protocol;
 mod server;
 mod settings;
+mod transfer;
 mod transport;
 use anyhow::{Result, ensure};
 
@@ -28,7 +29,10 @@ fn main() -> Result<()> {
         return processing::process_stream();
     }
     let asi6200 = args.first().is_some_and(|a| a == "--capture-6200");
-    let p25 = args.first().is_some_and(|a| a == "--capture-2600-p25");
+    let verify_retained = args
+        .first()
+        .is_some_and(|a| a == "--verify-retained-2600-p25");
+    let p25 = verify_retained || args.first().is_some_and(|a| a == "--capture-2600-p25");
     let duo = p25 || args.first().is_some_and(|a| a == "--capture-duo");
     let guide = args.first().is_some_and(|a| a == "--capture-guide");
     let capture = asi6200 || duo || guide || args.first().is_some_and(|a| a == "--capture");
@@ -51,15 +55,38 @@ fn main() -> Result<()> {
     let mut frames = 1_u32;
     let mut stream = false;
     let mut replay = false;
+    let mut expected_wire_hash = None;
     if capture {
         let mut options = args[1..].iter();
         while let Some(option) = options.next() {
+            if option == "--keep-retained" && p25 && !verify_retained {
+                settings.keep_retained = true;
+                continue;
+            }
+            if option == "--expected-wire-sha256" && verify_retained {
+                let hash = options
+                    .next()
+                    .ok_or_else(|| anyhow::anyhow!("missing expected hash"))?;
+                ensure!(
+                    hash.len() == 64 && hash.bytes().all(|b| b.is_ascii_hexdigit()),
+                    "invalid expected hash"
+                );
+                expected_wire_hash = Some(hash.to_ascii_lowercase());
+                continue;
+            }
             if option == "--replay" {
                 replay = true;
                 continue;
             }
             if option == "--stream" {
                 stream = true;
+                continue;
+            }
+            if option == "--transfer-timeout-seconds" {
+                settings.transfer_timeout_seconds = options
+                    .next()
+                    .ok_or_else(|| anyhow::anyhow!("missing transfer timeout"))?
+                    .parse()?;
                 continue;
             }
             if (duo || asi6200) && option == "--gain" {
@@ -92,6 +119,8 @@ fn main() -> Result<()> {
                     settings.timeout_read_after_bytes = value
                 }
                 "--read-retries" => settings.read_retries = value,
+                "--reopen-after-bytes" if duo => settings.reopen_after_bytes = value,
+                "--reopen-delay-ms" if duo => settings.reopen_delay_ms = value,
                 _ => anyhow::bail!("unknown capture option {option}"),
             }
         }
@@ -106,6 +135,28 @@ fn main() -> Result<()> {
             settings.validate()?;
         }
         ensure!((1..=20).contains(&frames), "frame count must be 1..20");
+        ensure!(
+            !settings.keep_retained || frames == 1,
+            "keep-retained requires one frame"
+        );
+        ensure!(
+            !verify_retained
+                || (expected_wire_hash.is_some()
+                    && !stream
+                    && !replay
+                    && frames == 1
+                    && duo_bin == 1
+                    && settings.reopen_after_bytes == 0
+                    && settings.interrupt_read_after_bytes == 0
+                    && settings.timeout_read_after_bytes == 0),
+            "retained verification requires expected interior hash, raw dimensions, one frame, metadata-only output, and no capture fault flags"
+        );
+        ensure!(
+            settings.transfer_timeout_seconds.is_finite()
+                && settings.transfer_timeout_seconds > 0.0
+                && settings.transfer_timeout_seconds <= 3600.0,
+            "invalid transfer deadline"
+        );
     }
     ensure!(
         args.is_empty()
@@ -113,12 +164,19 @@ fn main() -> Result<()> {
             || args == ["--probe-all"]
             || args == ["--probe", "--cancel-read"]
             || capture,
-        "Usage: zwogain-direct [--probe [--cancel-read] | --capture | --capture-duo | --capture-2600-p25 | --capture-6200 | --capture-guide] [--width N --height N --x N --y N --microseconds N --gain N --offset N --frames N --read-retries N --stream --replay --replay-prefix-bytes N --interrupt-read-after-bytes N]; ASI2600/6200 also accept --timeout-read-after-bytes N; ASI2600/6200 and guide also accept --bin N; disconnect other camera apps first"
+        "Usage: zwogain-direct [--probe [--cancel-read] | --capture | --capture-duo | --capture-2600-p25 | --capture-6200 | --capture-guide] [--width N --height N --x N --y N --microseconds N --gain N --offset N --frames N --read-retries N --transfer-timeout-seconds N --stream --replay --replay-prefix-bytes N --interrupt-read-after-bytes N]; ASI2600/6200 also accept --timeout-read-after-bytes N; ASI2600 also accepts --reopen-after-bytes N --reopen-delay-ms N; P25 research: --keep-retained, then --verify-retained-2600-p25 --expected-wire-sha256 HASH with raw width/height; ASI2600/6200 and guide also accept --bin N; disconnect other camera apps first"
     );
     // Last resort for a kernel request that refuses to finish cancellation. The
     // worker must exit rather than free a buffer still owned by the USB driver.
     let deadline_seconds = if capture {
-        (u64::from(settings.microseconds) / 1_000_000 + 15) * u64::from(frames) + 15
+        (u64::from(settings.microseconds) / 1_000_000
+            + 45
+            + (settings.transfer_timeout_seconds.ceil() as u64 + 15)
+                * u64::from(settings.read_retries + 1)
+                * if replay { 2 } else { 1 }
+            + u64::from(settings.reopen_delay_ms) / 1000)
+            * u64::from(frames)
+            + 15
     } else {
         30
     };
@@ -165,7 +223,18 @@ fn main() -> Result<()> {
         "operation requires exactly one matching camera interface (--capture selects ASI676MC; --capture-duo selects non-P25 ASI2600 main; --capture-2600-p25 selects ASI2600 P25; --capture-guide selects ASI220MM Mini)"
     );
     let camera = transport::Camera::open(&paths[0])?;
+    camera.transfer_timeout(settings.transfer_timeout_seconds)?;
     let mut result = camera.probe()?;
+    if verify_retained {
+        result["retainedVerification"] = asi2600::verify_retained(
+            &camera,
+            &result,
+            &settings,
+            expected_wire_hash.as_deref().expect("validated hash"),
+        )?;
+        println!("{result}");
+        return Ok(());
+    }
     if capture {
         use std::io::Write;
         let mut output = std::io::stdout().lock();

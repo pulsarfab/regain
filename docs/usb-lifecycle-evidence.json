@@ -1,0 +1,694 @@
+{
+  "camera": "ASI2600MM Pro P25",
+  "workerSha256": "d6092cdeebf3aad785eb1b58ed97617e8cb286ae46e8bb9f4eebaae424699ea6",
+  "cases": [
+    {
+      "microseconds": 100000,
+      "prefixBytes": 1024,
+      "reopenDelayMs": 0,
+      "captures": [
+        {
+          "acquisitionMs": 7206,
+          "bin": 1,
+          "bytes": 52183296,
+          "elapsedMs": 7494,
+          "factoryDefects": 26091,
+          "gain": 100,
+          "height": 4176,
+          "interruptedPrefixBytes": 1024,
+          "interruptedPrefixPixelsMatch": true,
+          "microseconds": 100000,
+          "model": "ASI2600MM Pro P25",
+          "offset": 50,
+          "rawHeight": 4176,
+          "rawWidth": 6248,
+          "rawX": 0,
+          "rawY": 0,
+          "readErrors": [
+            "research USB handle reopened after 1024 bytes",
+            "USB transfer failed: {\"category\":\"timeout\",\"chunk\":0,\"completedBytes\":0,\"deadlineExpired\":true,\"expectedBytes\":1048576,\"frameBytes\":52183296,\"ntStatus\":3221225760,\"phase\":\"downloading\",\"receivedBytes\":0,\"terminalCompletionObserved\":true,\"usbStatus\":3221291008,\"win32Error\":995}"
+          ],
+          "readRecoveries": 2,
+          "reopenInjectionBytes": 1024,
+          "replay": {
+            "bytes": 52183296,
+            "firstSequence": 2,
+            "pixelBytesIdentical": true,
+            "readErrors": [],
+            "replaySequence": 3,
+            "wireBytesIdentical": false
+          },
+          "sdkLoaded": false,
+          "sequence": 2,
+          "sha256": "c7f22e7d6574a0a1d75dc3043cacb8f1b3d248715e2ef25ba2d3448762dfdbc8",
+          "timeoutInjectionBytes": 0,
+          "width": 6248,
+          "wireBytes": 52183296,
+          "wireInteriorSha256": "b5c2aed5c58dc10fb34902a01933d68301c471b63254530a5bce7af6af7d2b8f",
+          "wireSha256": "26e9f002e57081e4cda51be0567923962e6503bbf3bd923c8e1b18be5437ee84",
+          "x": 0,
+          "y": 0
+        }
+      ],
+      "verifications": [],
+      "exposureStarts": 1,
+      "handleOpens": 2,
+      "processExit": null,
+      "sensorWritesAfterReopenBeforeRead": 0,
+      "reopened": {
+        "after": 21,
+        "before": 21,
+        "delayMs": 0,
+        "prefixBytes": 1024
+      },
+      "failures": [
+        {
+          "category": "timeout",
+          "chunk": 0,
+          "completedBytes": 0,
+          "deadlineExpired": true,
+          "expectedBytes": 1048576,
+          "frameBytes": 52183296,
+          "ntStatus": 3221225760,
+          "phase": "downloading",
+          "receivedBytes": 0,
+          "terminalCompletionObserved": true,
+          "usbStatus": 3221291008,
+          "win32Error": 995
+        }
+      ],
+      "phases": [
+        "initializing",
+        "exposing",
+        "sensor_readout",
+        "retained",
+        "restarting_retained",
+        "retained",
+        "downloading",
+        "transfer_complete",
+        "reopening_retained",
+        "restarting_retained",
+        "retained",
+        "downloading",
+        "transfer_failed",
+        "restarting_retained",
+        "retained",
+        "downloading",
+        "transfer_complete",
+        "validating",
+        "restarting_retained",
+        "retained",
+        "downloading",
+        "transfer_complete"
+      ],
+      "exposureStartsAfterReopen": 0
+    },
+    {
+      "microseconds": 100000,
+      "prefixBytes": 12582912,
+      "reopenDelayMs": 1000,
+      "captures": [
+        {
+          "acquisitionMs": 8282,
+          "bin": 1,
+          "bytes": 52183296,
+          "elapsedMs": 8567,
+          "factoryDefects": 26091,
+          "gain": 100,
+          "height": 4176,
+          "interruptedPrefixBytes": 12582912,
+          "interruptedPrefixPixelsMatch": true,
+          "microseconds": 100000,
+          "model": "ASI2600MM Pro P25",
+          "offset": 50,
+          "rawHeight": 4176,
+          "rawWidth": 6248,
+          "rawX": 0,
+          "rawY": 0,
+          "readErrors": [
+            "research USB handle reopened after 12582912 bytes",
+            "USB transfer failed: {\"category\":\"timeout\",\"chunk\":0,\"completedBytes\":0,\"deadlineExpired\":true,\"expectedBytes\":1048576,\"frameBytes\":52183296,\"ntStatus\":3221225760,\"phase\":\"downloading\",\"receivedBytes\":0,\"terminalCompletionObserved\":true,\"usbStatus\":3221291008,\"win32Error\":995}"
+          ],
+          "readRecoveries": 2,
+          "reopenInjectionBytes": 12582912,
+          "replay": {
+            "bytes": 52183296,
+            "firstSequence": 2,
+            "pixelBytesIdentical": true,
+            "readErrors": [],
+            "replaySequence": 3,
+            "wireBytesIdentical": false
+          },
+          "sdkLoaded": false,
+          "sequence": 2,
+          "sha256": "fafd42d325d11605df44ea58e60051db603336f1d0888d74e5f3e5350a0c5222",
+          "timeoutInjectionBytes": 0,
+          "width": 6248,
+          "wireBytes": 52183296,
+          "wireInteriorSha256": "2711a0cf30414cba02fd4808b6ca9ba27b40621320e10024ad5c71e3912df7ec",
+          "wireSha256": "685efc7bc8ff316e4ceadbc22fc96341f65d69957814c563d7b0d2edfb6ae036",
+          "x": 0,
+          "y": 0
+        }
+      ],
+      "verifications": [],
+      "exposureStarts": 1,
+      "handleOpens": 2,
+      "processExit": null,
+      "sensorWritesAfterReopenBeforeRead": 0,
+      "reopened": {
+        "after": 21,
+        "before": 21,
+        "delayMs": 1000,
+        "prefixBytes": 12582912
+      },
+      "failures": [
+        {
+          "category": "timeout",
+          "chunk": 0,
+          "completedBytes": 0,
+          "deadlineExpired": true,
+          "expectedBytes": 1048576,
+          "frameBytes": 52183296,
+          "ntStatus": 3221225760,
+          "phase": "downloading",
+          "receivedBytes": 0,
+          "terminalCompletionObserved": true,
+          "usbStatus": 3221291008,
+          "win32Error": 995
+        }
+      ],
+      "phases": [
+        "initializing",
+        "exposing",
+        "sensor_readout",
+        "retained",
+        "restarting_retained",
+        "retained",
+        "downloading",
+        "transfer_complete",
+        "reopening_retained",
+        "restarting_retained",
+        "retained",
+        "downloading",
+        "transfer_failed",
+        "restarting_retained",
+        "retained",
+        "downloading",
+        "transfer_complete",
+        "validating",
+        "restarting_retained",
+        "retained",
+        "downloading",
+        "transfer_complete"
+      ],
+      "exposureStartsAfterReopen": 0
+    },
+    {
+      "microseconds": 100000,
+      "prefixBytes": 51380224,
+      "reopenDelayMs": 5000,
+      "captures": [
+        {
+          "acquisitionMs": 7419,
+          "bin": 1,
+          "bytes": 52183296,
+          "elapsedMs": 7705,
+          "factoryDefects": 26091,
+          "gain": 100,
+          "height": 4176,
+          "interruptedPrefixBytes": 51380224,
+          "interruptedPrefixPixelsMatch": true,
+          "microseconds": 100000,
+          "model": "ASI2600MM Pro P25",
+          "offset": 50,
+          "rawHeight": 4176,
+          "rawWidth": 6248,
+          "rawX": 0,
+          "rawY": 0,
+          "readErrors": [
+            "research USB handle reopened after 51380224 bytes"
+          ],
+          "readRecoveries": 1,
+          "reopenInjectionBytes": 51380224,
+          "replay": {
+            "bytes": 52183296,
+            "firstSequence": 2,
+            "pixelBytesIdentical": true,
+            "readErrors": [],
+            "replaySequence": 3,
+            "wireBytesIdentical": false
+          },
+          "sdkLoaded": false,
+          "sequence": 2,
+          "sha256": "b697c71a3435084986fcd2af991febb709a7a580661517e8f849dda603d35b05",
+          "timeoutInjectionBytes": 0,
+          "width": 6248,
+          "wireBytes": 52183296,
+          "wireInteriorSha256": "0aba043cd444a4a2aa67ba8af8c0ce8632a1804154bf1a04ef3e939ba27fc28d",
+          "wireSha256": "0f47d5ac89bbe6f167a54ff2dc4a6d6e6026c3918504304125c935736839f8a5",
+          "x": 0,
+          "y": 0
+        }
+      ],
+      "verifications": [],
+      "exposureStarts": 1,
+      "handleOpens": 2,
+      "processExit": null,
+      "sensorWritesAfterReopenBeforeRead": 0,
+      "reopened": {
+        "after": 21,
+        "before": 21,
+        "delayMs": 5000,
+        "prefixBytes": 51380224
+      },
+      "failures": [],
+      "phases": [
+        "initializing",
+        "exposing",
+        "sensor_readout",
+        "retained",
+        "restarting_retained",
+        "retained",
+        "downloading",
+        "transfer_complete",
+        "reopening_retained",
+        "restarting_retained",
+        "retained",
+        "downloading",
+        "transfer_complete",
+        "validating",
+        "restarting_retained",
+        "retained",
+        "downloading",
+        "transfer_complete"
+      ],
+      "exposureStartsAfterReopen": 0
+    },
+    {
+      "microseconds": 2000000,
+      "prefixBytes": 12582912,
+      "reopenDelayMs": 1000,
+      "captures": [
+        {
+          "acquisitionMs": 9621,
+          "bin": 1,
+          "bytes": 52183296,
+          "elapsedMs": 9911,
+          "factoryDefects": 26091,
+          "gain": 100,
+          "height": 4176,
+          "interruptedPrefixBytes": 12582912,
+          "interruptedPrefixPixelsMatch": true,
+          "microseconds": 2000000,
+          "model": "ASI2600MM Pro P25",
+          "offset": 50,
+          "rawHeight": 4176,
+          "rawWidth": 6248,
+          "rawX": 0,
+          "rawY": 0,
+          "readErrors": [
+            "research USB handle reopened after 12582912 bytes",
+            "USB transfer failed: {\"category\":\"timeout\",\"chunk\":0,\"completedBytes\":0,\"deadlineExpired\":true,\"expectedBytes\":1048576,\"frameBytes\":52183296,\"ntStatus\":3221225760,\"phase\":\"downloading\",\"receivedBytes\":0,\"terminalCompletionObserved\":true,\"usbStatus\":3221291008,\"win32Error\":995}"
+          ],
+          "readRecoveries": 2,
+          "reopenInjectionBytes": 12582912,
+          "replay": {
+            "bytes": 52183296,
+            "firstSequence": 1,
+            "pixelBytesIdentical": true,
+            "readErrors": [],
+            "replaySequence": 2,
+            "wireBytesIdentical": false
+          },
+          "sdkLoaded": false,
+          "sequence": 1,
+          "sha256": "7c8bc778cf8ca85e35b3a290e2964c77a2f419447a57784f7d5d8676133a6a04",
+          "timeoutInjectionBytes": 0,
+          "width": 6248,
+          "wireBytes": 52183296,
+          "wireInteriorSha256": "d9e62b0aa9ed98b46533cd4001a2fe53b38e41fc7fd17b9600751783e75a8a78",
+          "wireSha256": "bed9ca1bac63098cf621fe27a509c90e4831a6e293ae7a132a986533f4a6b5c5",
+          "x": 0,
+          "y": 0
+        }
+      ],
+      "verifications": [],
+      "exposureStarts": 1,
+      "handleOpens": 2,
+      "processExit": null,
+      "sensorWritesAfterReopenBeforeRead": 0,
+      "reopened": {
+        "after": 21,
+        "before": 21,
+        "delayMs": 1000,
+        "prefixBytes": 12582912
+      },
+      "failures": [
+        {
+          "category": "timeout",
+          "chunk": 0,
+          "completedBytes": 0,
+          "deadlineExpired": true,
+          "expectedBytes": 1048576,
+          "frameBytes": 52183296,
+          "ntStatus": 3221225760,
+          "phase": "downloading",
+          "receivedBytes": 0,
+          "terminalCompletionObserved": true,
+          "usbStatus": 3221291008,
+          "win32Error": 995
+        }
+      ],
+      "phases": [
+        "initializing",
+        "exposing",
+        "sensor_readout",
+        "retained",
+        "downloading",
+        "transfer_complete",
+        "reopening_retained",
+        "restarting_retained",
+        "retained",
+        "downloading",
+        "transfer_failed",
+        "restarting_retained",
+        "retained",
+        "downloading",
+        "transfer_complete",
+        "validating",
+        "restarting_retained",
+        "retained",
+        "downloading",
+        "transfer_complete"
+      ],
+      "exposureStartsAfterReopen": 0
+    },
+    {
+      "microseconds": 60000000,
+      "prefixBytes": 12582912,
+      "reopenDelayMs": 5000,
+      "captures": [
+        {
+          "acquisitionMs": 71673,
+          "bin": 1,
+          "bytes": 52183296,
+          "elapsedMs": 71957,
+          "factoryDefects": 26091,
+          "gain": 100,
+          "height": 4176,
+          "interruptedPrefixBytes": 12582912,
+          "interruptedPrefixPixelsMatch": true,
+          "microseconds": 60000000,
+          "model": "ASI2600MM Pro P25",
+          "offset": 50,
+          "rawHeight": 4176,
+          "rawWidth": 6248,
+          "rawX": 0,
+          "rawY": 0,
+          "readErrors": [
+            "research USB handle reopened after 12582912 bytes",
+            "USB transfer failed: {\"category\":\"timeout\",\"chunk\":0,\"completedBytes\":0,\"deadlineExpired\":true,\"expectedBytes\":1048576,\"frameBytes\":52183296,\"ntStatus\":3221225760,\"phase\":\"downloading\",\"receivedBytes\":0,\"terminalCompletionObserved\":true,\"usbStatus\":3221291008,\"win32Error\":995}"
+          ],
+          "readRecoveries": 2,
+          "reopenInjectionBytes": 12582912,
+          "replay": {
+            "bytes": 52183296,
+            "firstSequence": 1,
+            "pixelBytesIdentical": true,
+            "readErrors": [],
+            "replaySequence": 2,
+            "wireBytesIdentical": false
+          },
+          "sdkLoaded": false,
+          "sequence": 1,
+          "sha256": "4a87c2ede978995587916728ce82aa3ae6ccbb53adfa8c27d24de34e3bf4bb3f",
+          "timeoutInjectionBytes": 0,
+          "width": 6248,
+          "wireBytes": 52183296,
+          "wireInteriorSha256": "4e700bb0279f533d0bdec0d1c1b88d708a81659310a65e35d8b52daea7f35cf7",
+          "wireSha256": "2513ce67d0f4bdb202df46b259d90f07d17a6fa145cf6374970d4b4b7afed491",
+          "x": 0,
+          "y": 0
+        }
+      ],
+      "verifications": [],
+      "exposureStarts": 1,
+      "handleOpens": 2,
+      "processExit": null,
+      "sensorWritesAfterReopenBeforeRead": 0,
+      "reopened": {
+        "after": 21,
+        "before": 21,
+        "delayMs": 5000,
+        "prefixBytes": 12582912
+      },
+      "failures": [
+        {
+          "category": "timeout",
+          "chunk": 0,
+          "completedBytes": 0,
+          "deadlineExpired": true,
+          "expectedBytes": 1048576,
+          "frameBytes": 52183296,
+          "ntStatus": 3221225760,
+          "phase": "downloading",
+          "receivedBytes": 0,
+          "terminalCompletionObserved": true,
+          "usbStatus": 3221291008,
+          "win32Error": 995
+        }
+      ],
+      "phases": [
+        "initializing",
+        "exposing",
+        "sensor_readout",
+        "retained",
+        "downloading",
+        "transfer_complete",
+        "reopening_retained",
+        "restarting_retained",
+        "retained",
+        "downloading",
+        "transfer_failed",
+        "restarting_retained",
+        "retained",
+        "downloading",
+        "transfer_complete",
+        "validating",
+        "restarting_retained",
+        "retained",
+        "downloading",
+        "transfer_complete"
+      ],
+      "exposureStartsAfterReopen": 0
+    }
+  ],
+  "workerReplacement": [
+    {
+      "abruptReaderExit": false,
+      "original": {
+        "captures": [
+          {
+            "acquisitionMs": 2866,
+            "bin": 1,
+            "bytes": 52183296,
+            "elapsedMs": 3151,
+            "factoryDefects": 26091,
+            "gain": 100,
+            "height": 4176,
+            "interruptedPrefixBytes": 0,
+            "interruptedPrefixPixelsMatch": false,
+            "microseconds": 2000000,
+            "model": "ASI2600MM Pro P25",
+            "offset": 50,
+            "rawHeight": 4176,
+            "rawWidth": 6248,
+            "rawX": 0,
+            "rawY": 0,
+            "readErrors": [],
+            "readRecoveries": 0,
+            "reopenInjectionBytes": 0,
+            "replay": null,
+            "sdkLoaded": false,
+            "sequence": 0,
+            "sha256": "3f27ee25134f728e5aa6f8fed3e3050805045a531a73f435be2da3454655b1cc",
+            "timeoutInjectionBytes": 0,
+            "width": 6248,
+            "wireBytes": 52183296,
+            "wireInteriorSha256": "ec9406b4e10c8da1f268ac284d9ab688bb90b419f119bf69bbaf4d8bd8fddde9",
+            "wireSha256": "0a9d19ed7ea4a75dbee55b5e942fda8c7ec29b13ed92f5ec7b636af05d5e8d75",
+            "x": 0,
+            "y": 0
+          }
+        ],
+        "verifications": [],
+        "exposureStarts": 1,
+        "handleOpens": 1,
+        "processExit": null,
+        "sensorWritesAfterReopenBeforeRead": 0,
+        "reopened": null,
+        "failures": [],
+        "phases": [
+          "initializing",
+          "exposing",
+          "sensor_readout",
+          "retained",
+          "downloading",
+          "transfer_complete",
+          "validating"
+        ],
+        "exposureStartsAfterReopen": null
+      },
+      "interrupted": null,
+      "recovered": {
+        "captures": [],
+        "verifications": [
+          {
+            "bytes": 52183296,
+            "elapsedMs": 471,
+            "pixelBytesIdentical": true,
+            "readErrors": [],
+            "sdkLoaded": false,
+            "wireInteriorSha256": "ec9406b4e10c8da1f268ac284d9ab688bb90b419f119bf69bbaf4d8bd8fddde9"
+          }
+        ],
+        "exposureStarts": 0,
+        "handleOpens": 1,
+        "processExit": null,
+        "sensorWritesAfterReopenBeforeRead": 0,
+        "reopened": null,
+        "failures": [],
+        "phases": [
+          "restarting_retained",
+          "retained",
+          "downloading",
+          "transfer_complete"
+        ],
+        "exposureStartsAfterReopen": null
+      }
+    },
+    {
+      "abruptReaderExit": true,
+      "original": {
+        "captures": [
+          {
+            "acquisitionMs": 2875,
+            "bin": 1,
+            "bytes": 52183296,
+            "elapsedMs": 3159,
+            "factoryDefects": 26091,
+            "gain": 100,
+            "height": 4176,
+            "interruptedPrefixBytes": 0,
+            "interruptedPrefixPixelsMatch": false,
+            "microseconds": 2000000,
+            "model": "ASI2600MM Pro P25",
+            "offset": 50,
+            "rawHeight": 4176,
+            "rawWidth": 6248,
+            "rawX": 0,
+            "rawY": 0,
+            "readErrors": [],
+            "readRecoveries": 0,
+            "reopenInjectionBytes": 0,
+            "replay": null,
+            "sdkLoaded": false,
+            "sequence": 0,
+            "sha256": "bd6beb8459cf20aaa84bacbc124cf23c0be5ad19427bd52dc0a8e1b5814d285e",
+            "timeoutInjectionBytes": 0,
+            "width": 6248,
+            "wireBytes": 52183296,
+            "wireInteriorSha256": "0ea0db2c739f6594c2f2b3298d7000b0e88a0bb5a8b8bcb869dbdb1bf0ff876f",
+            "wireSha256": "e8ae4bb754828b680f0e3608c78dfcc1f1fdceb3da8d503eac4776ef36727a98",
+            "x": 0,
+            "y": 0
+          }
+        ],
+        "verifications": [],
+        "exposureStarts": 1,
+        "handleOpens": 1,
+        "processExit": null,
+        "sensorWritesAfterReopenBeforeRead": 0,
+        "reopened": null,
+        "failures": [],
+        "phases": [
+          "initializing",
+          "exposing",
+          "sensor_readout",
+          "retained",
+          "downloading",
+          "transfer_complete",
+          "validating"
+        ],
+        "exposureStartsAfterReopen": null
+      },
+      "interrupted": {
+        "captures": [],
+        "verifications": [],
+        "exposureStarts": 0,
+        "handleOpens": 1,
+        "processExit": {
+          "bulkNumber": 12,
+          "bytes": 1048576
+        },
+        "sensorWritesAfterReopenBeforeRead": 0,
+        "reopened": null,
+        "failures": [],
+        "phases": [
+          "restarting_retained",
+          "retained",
+          "downloading"
+        ],
+        "exposureStartsAfterReopen": null
+      },
+      "recovered": {
+        "captures": [],
+        "verifications": [
+          {
+            "bytes": 52183296,
+            "elapsedMs": 5592,
+            "pixelBytesIdentical": true,
+            "readErrors": [
+              "USB transfer failed: {\"category\":\"timeout\",\"chunk\":0,\"completedBytes\":0,\"deadlineExpired\":true,\"expectedBytes\":1048576,\"frameBytes\":52183296,\"ntStatus\":3221225760,\"phase\":\"downloading\",\"receivedBytes\":0,\"terminalCompletionObserved\":true,\"usbStatus\":3221291008,\"win32Error\":995}"
+            ],
+            "sdkLoaded": false,
+            "wireInteriorSha256": "0ea0db2c739f6594c2f2b3298d7000b0e88a0bb5a8b8bcb869dbdb1bf0ff876f"
+          }
+        ],
+        "exposureStarts": 0,
+        "handleOpens": 1,
+        "processExit": null,
+        "sensorWritesAfterReopenBeforeRead": 0,
+        "reopened": null,
+        "failures": [
+          {
+            "category": "timeout",
+            "chunk": 0,
+            "completedBytes": 0,
+            "deadlineExpired": true,
+            "expectedBytes": 1048576,
+            "frameBytes": 52183296,
+            "ntStatus": 3221225760,
+            "phase": "downloading",
+            "receivedBytes": 0,
+            "terminalCompletionObserved": true,
+            "usbStatus": 3221291008,
+            "win32Error": 995
+          }
+        ],
+        "phases": [
+          "restarting_retained",
+          "retained",
+          "downloading",
+          "transfer_failed",
+          "restarting_retained",
+          "retained",
+          "downloading",
+          "transfer_complete"
+        ],
+        "exposureStartsAfterReopen": null
+      }
+    }
+  ]
+}

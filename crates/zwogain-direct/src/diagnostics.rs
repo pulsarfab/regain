@@ -5,6 +5,15 @@ pub fn log(level: &str, event: &str, message: impl Display) {
     write(&mut std::io::stderr().lock(), level, event, message);
 }
 
+pub fn details(level: &str, event: &str, message: impl Display, details: serde_json::Value) {
+    let _ = writeln!(
+        std::io::stderr().lock(),
+        "ZWOGAIN_DIAGNOSTIC {}",
+        serde_json::json!({"version":1,"level":level,"event":event,
+        "message":message.to_string(),"pid":std::process::id(),"details":details})
+    );
+}
+
 fn write(out: &mut impl Write, level: &str, event: &str, message: impl Display) {
     // Diagnostics are best effort, including a closed or failed stderr pipe.
     let _ = writeln!(

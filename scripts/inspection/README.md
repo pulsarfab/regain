@@ -301,3 +301,12 @@ commands. It does not measure fan RPM, LED brightness or window temperature.
 The test restores starting controls before disconnecting; direct disconnect
 turns off cooling. Keep raw server logs and profiles local because they contain
 the camera serial. A failed test still attempts restoration and disconnect.
+
+## USB handle and worker lifecycle
+
+`validate_usb_lifecycle.py --output artifacts/NEW-usb-lifecycle` exercises the
+ASI2600 P25 without the SDK. It reopens the handle at several download offsets,
+then checks retention across normal worker exit and a reader terminated after
+12 MiB. Each recovered frame must match earlier pixels, and traces must show
+no extra exposure. It needs Windows, Frida, and a capped camera released by other
+apps. See [commands and limits](../../docs/usb-lifecycle.md).

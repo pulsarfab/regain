@@ -577,6 +577,7 @@ impl Session {
             });
             params["captureTimeoutSeconds"] =
                 json!(self.ready_timeout(seconds) + options.command_timeout_seconds);
+            params["transferTimeoutSeconds"] = json!(options.download_timeout_seconds);
         }
         self.call("start", params, None, token).await?;
         self.phase("Exposing");

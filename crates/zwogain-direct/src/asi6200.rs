@@ -159,6 +159,7 @@ pub fn timing(s: &Settings) -> (u32, u32) {
     (frame.min(0xffffff), (shutter.min(0x1fffe) / 2).max(3))
 }
 fn begin_retained_read(camera: &Camera) -> Result<()> {
+    camera.phase("restarting_retained");
     camera.vendor(0xbd, 0x18, 0, 0)?;
     camera.service_environment()?;
     std::thread::sleep(Duration::from_millis(100));
@@ -175,6 +176,7 @@ fn begin_retained_read(camera: &Camera) -> Result<()> {
         "ASI6200 retained frame was lost: {retained:#x}"
     );
     camera.vendor(0xbd, 0x18, 1, 0)?;
+    camera.phase("retained");
     Ok(())
 }
 
@@ -265,6 +267,7 @@ fn capture_native(
         "ASI6200 research capture requires observed PID 620b USB3"
     );
     let started = Instant::now();
+    camera.phase("initializing");
     let result = (|| {
         for &(request, register, value) in asi6200_tables::INITIALIZE {
             // Host cooling/dew state must survive sensor initialization between frames.
@@ -325,6 +328,7 @@ fn capture_native(
         let old = camera.vendor(0xbc, 0x23, 0, 1)?[0];
         ensure!(old == 1, "ASI6200 old frame did not clear: {old}");
         let armed = Instant::now();
+        camera.phase("exposing");
         writes(camera, &[(0xa9, 0, 0), (0xb6, 0x19e, 1), (0xb6, 0, 5)])?;
         std::thread::sleep(Duration::from_millis(50));
         camera.vendor(0xb6, 0, 4, 0)?;
@@ -409,12 +413,14 @@ fn capture_native(
         // plus a settling margin, before stopping the sensor. The ready bit
         // alone can freeze partially refreshed DDR with a valid envelope.
         let readout = Duration::from_micros(u64::from(frame) * 44 + 100000);
+        camera.phase("sensor_readout");
         let settling = Instant::now();
         while settling.elapsed() < readout {
             camera.service_environment()?;
             std::thread::sleep(Duration::from_millis(10));
         }
         freeze(camera)?;
+        camera.phase("retained");
         // Short mode streams while DDR fills; discard the queued USB pass and
         // read frozen DDR. Long mode schedules one pass, which must be consumed.
         if s.microseconds < 1_000_000 {
@@ -465,6 +471,7 @@ fn capture_native(
             "ASI6200 recovered pixels do not match interrupted prefix"
         );
         let sequence = frame_sequence(&data)?;
+        camera.phase("validating");
         let wire_hash = format!("{:x}", Sha256::digest(&data));
         let replay_result = if replay {
             begin_retained_read(camera)?;

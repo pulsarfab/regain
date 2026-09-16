@@ -58,6 +58,12 @@ direct ASI2600, ASI6200, and ASI676 drivers can reread a frame held in camera
 memory. They start the transfer again from byte zero. The guide camera cannot
 reread the same frame.
 
+Each direct download attempt uses the configured download timeout (60 seconds
+by default). Logs include the failed chunk, completed bytes, and USB status.
+Experimental [USB lifecycle tests](docs/usb-lifecycle.md) also recover retained
+frames after handle reopen and worker replacement on the ASI2600 P25; these
+extra recovery paths are not yet enabled in the plugin.
+
 On reconnect, ZWOgain restores the camera settings and cooler setpoint. Before
 another exposure, it waits for cooling to return near the temperature measured
 before the error. It also checks cooler output; holding the restored setpoint

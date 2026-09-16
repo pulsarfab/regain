@@ -55,6 +55,7 @@ pub fn raw_settings(s: &Settings, bin: u32) -> Result<Settings> {
     );
     ensure!(
         (32..=10_000_000).contains(&s.microseconds)
+            && s.read_retries <= 5
             && s.gain <= 600
             && (200..=1500).contains(&s.offset),
         "unsupported guide exposure/gain/offset"

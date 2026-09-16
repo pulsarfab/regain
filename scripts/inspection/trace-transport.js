@@ -16,6 +16,17 @@ function hex(p, length) {
 }
 function u32(p) { try { return p.isNull() ? null : p.readU32(); } catch (_) { return null; } }
 function collectBulk(record, input, output, length) {
+    if (Number.isInteger(globalThis.TRACE_EXIT_AFTER_BULK)
+        && record.code === '0x22004b' && record.bulkNumber === globalThis.TRACE_EXIT_AFTER_BULK
+        && u32(input.add(14)) === 0 && u32(input.add(18)) === 0 && length > 0) {
+        // Explicit fault injection into the owned research worker only. No Rust
+        // cleanup/destructors run, and the camera is not reset or reconfigured.
+        emit('injected-process-exit', {bulkNumber:record.bulkNumber, bytes:length});
+        // Wait until the local tracer has persisted this evidence before exit.
+        recv('exit-recorded', function () {}).wait();
+        const terminate = new NativeFunction(kernel.getExportByName('TerminateProcess'), 'int', ['pointer', 'uint32']);
+        terminate(ptr(-1), 86);
+    }
     // The camera exercise kit needs model-independent control responses and
     // calibration, without calling version-specific SDK internal functions.
     if (globalThis.TRACE_CONTROL_PAYLOADS && record.code === '0x220020' && record.inputLength >= 38) {

@@ -94,6 +94,17 @@ pub fn validate(s: &Settings, gain: i32) -> Result<()> {
     );
     let bytes = s.width * s.height * 2;
     ensure!(
+        s.reopen_delay_ms <= 10000,
+        "reopen delay must be at most 10000 ms"
+    );
+    ensure!(
+        s.reopen_after_bytes == 0
+            || (s.interrupt_read_after_bytes == 0
+                && s.timeout_read_after_bytes == 0
+                && s.read_retries > 0),
+        "reopen experiment requires read retries and no other injected fault"
+    );
+    ensure!(
         s.interrupt_read_after_bytes == 0 || s.timeout_read_after_bytes == 0,
         "choose one read fault injection"
     );
@@ -101,6 +112,7 @@ pub fn validate(s: &Settings, gain: i32) -> Result<()> {
         s.interrupt_read_after_bytes,
         s.replay_prefix_bytes,
         s.timeout_read_after_bytes,
+        s.reopen_after_bytes,
     ] {
         ensure!(
             prefix == 0 || (prefix >= 1024 && prefix < bytes && prefix.is_multiple_of(1024)),
@@ -176,6 +188,7 @@ fn timing(s: &Settings, revision: Revision) -> (u32, u32) {
     (frame.min(0xffffff), (shutter.min(0x1fffe) / 2).max(1))
 }
 fn begin_retained_read(camera: &Camera, revision: Revision) -> Result<()> {
+    camera.phase("restarting_retained");
     if revision == Revision::Original {
         camera.reset_pipe()?;
     }
@@ -196,6 +209,7 @@ fn begin_retained_read(camera: &Camera, revision: Revision) -> Result<()> {
         "Duo retained frame was lost: {retained:#x}"
     );
     camera.vendor(0xbd, 0x18, 1, 0)?;
+    camera.phase("retained");
     Ok(())
 }
 
@@ -290,6 +304,7 @@ fn capture_native(
         "ASI2600 capture requires USB3"
     );
     let started = Instant::now();
+    camera.phase("initializing");
     let result = (|| {
         let initialize = match revision {
             Revision::Original => asi2600_tables::INITIALIZE,
@@ -349,6 +364,7 @@ fn capture_native(
         let old = camera.vendor(0xbc, 0x23, 0, 1)?[0];
         ensure!(old == 1, "Duo old frame did not clear: {old}");
         let armed = Instant::now();
+        camera.phase("exposing");
         writes(camera, &[(0xa9, 0, 0), (0xb6, 0x1ee, 1), (0xb6, 0, 5)])?;
         std::thread::sleep(Duration::from_millis(50));
         camera.vendor(0xb6, 0, 4, 0)?;
@@ -429,6 +445,7 @@ fn capture_native(
             std::thread::sleep(Duration::from_millis(5));
         }
         // Sensor standby, deliberately without AA (which clears retained DDR).
+        camera.phase("sensor_readout");
         // On this unit 23=15 can precede a safely freezable frame: immediate
         // standby repeatedly stalled 64x64 replay. The empirical 100ms guard
         // fixes that case. Long integrations must consume the initial pass
@@ -447,6 +464,7 @@ fn capture_native(
             std::thread::sleep(Duration::from_millis(10));
         }
         writes(camera, &[(0xb6, 0x1ee, 5), (0xb6, 0, 5)])?;
+        camera.phase("retained");
         // Short integrations stream; restart from frozen DDR. Long integrations
         // already schedule one pass: triggering replay first can cancel it.
         if s.microseconds < 1_000_000 {
@@ -456,6 +474,23 @@ fn capture_native(
         let mut read_errors = Vec::new();
         let mut data = loop {
             let attempt = (|| {
+                if read_errors.is_empty() && s.reopen_after_bytes > 0 {
+                    prefix = camera.read_frame(s.reopen_after_bytes as usize)?;
+                    // Leave the sender and sensor untouched: measure handle-close
+                    // effects before the normal retained-sender restart sequence.
+                    let before = camera.vendor(0xbc, 0x23, 0, 1)?[0];
+                    camera.reopen_retained(Duration::from_millis(u64::from(s.reopen_delay_ms)))?;
+                    let after = camera.vendor(0xbc, 0x23, 0, 1)?[0];
+                    crate::diagnostics::details(
+                        "info",
+                        "research.reopened",
+                        format_args!(
+                            "USB handle reopened without initialization; retained status {before:#x} -> {after:#x}"
+                        ),
+                        json!({"before":before,"after":after,"prefixBytes":prefix.len(),"delayMs":s.reopen_delay_ms}),
+                    );
+                    anyhow::bail!("research USB handle reopened after {} bytes", prefix.len());
+                }
                 if read_errors.is_empty() && s.timeout_read_after_bytes > 0 {
                     prefix = camera.read_frame(s.timeout_read_after_bytes as usize)?;
                     // Research CLI only: stop the retained-frame sender and drain
@@ -497,7 +532,9 @@ fn capture_native(
             "Duo recovered pixels do not match interrupted prefix"
         );
         let sequence = frame_sequence(&data)?;
+        camera.phase("validating");
         let wire_hash = format!("{:x}", Sha256::digest(&data));
+        let wire_interior_hash = format!("{:x}", Sha256::digest(&data[4..data.len() - 4]));
         let replay_result = if replay {
             begin_retained_read(camera, revision)?;
             if s.replay_prefix_bytes > 0 {
@@ -539,15 +576,72 @@ fn capture_native(
         defects.correct(&mut data)?;
         let meta = json!({"model":if revision == Revision::P25 { "ASI2600MM Pro P25" } else { "ASI2600MM Pro" },"width":s.width,"height":s.height,"x":s.x,"y":s.y,
             "bin":1,"gain":gain,"offset":s.offset,"microseconds":s.microseconds,"bytes":data.len(),
-            "wireSha256":wire_hash,"sha256":format!("{:x}",Sha256::digest(&data)),"sequence":sequence,
+            "wireSha256":wire_hash,"wireInteriorSha256":wire_interior_hash,
+            "sha256":format!("{:x}",Sha256::digest(&data)),"sequence":sequence,
             "factoryDefects":defects.indices.len(),"acquisitionMs":armed.elapsed().as_millis(),"elapsedMs":started.elapsed().as_millis(),
             "replay":replay_result,"sdkLoaded":false,"readRecoveries":read_errors.len(),"readErrors":read_errors,
             "interruptedPrefixBytes":prefix.len(),"interruptedPrefixPixelsMatch":!prefix.is_empty(),
-            "timeoutInjectionBytes":s.timeout_read_after_bytes});
+            "timeoutInjectionBytes":s.timeout_read_after_bytes,"reopenInjectionBytes":s.reopen_after_bytes});
         Ok((meta, data))
     })();
-    let cleanup = stop(camera);
+    let cleanup = if s.keep_retained && result.is_ok() {
+        crate::diagnostics::log(
+            "info",
+            "research.retained_on_exit",
+            "Leaving validated frame in camera DDR for a separate verification worker",
+        );
+        Ok(())
+    } else {
+        stop(camera)
+    };
     crate::completion::finish(result, cleanup)
+}
+
+/// Research-only proof of retention across process exit. Never delivers an
+/// image to a frontend and never initializes the sensor or starts an exposure.
+pub fn verify_retained(
+    camera: &Camera,
+    info: &Value,
+    s: &Settings,
+    expected: &str,
+) -> Result<Value> {
+    ensure!(
+        info["productId"] == 0x260e && info["usbVersionBcd"] == 0x300,
+        "retained verification is restricted to ASI2600 P25 USB3"
+    );
+    validate(s, 0)?;
+    let started = Instant::now();
+    let result = (|| {
+        let mut errors = Vec::new();
+        let data = loop {
+            begin_retained_read(camera, Revision::P25)?;
+            match camera
+                .read_frame(s.width as usize * s.height as usize * 2)
+                .and_then(|data| {
+                    frame_sequence(&data)?;
+                    Ok(data)
+                }) {
+                Ok(data) => break data,
+                Err(error) if errors.len() < s.read_retries as usize => {
+                    errors.push(format!("{error:#}"))
+                }
+                Err(error) => return Err(error),
+            }
+        };
+        let actual = format!("{:x}", Sha256::digest(&data[4..data.len() - 4]));
+        ensure!(
+            actual == expected,
+            "retained frame hash differs from the previous worker's frame"
+        );
+        Ok(
+            json!({"pixelBytesIdentical":true,"wireInteriorSha256":actual,"bytes":data.len(),
+            "readErrors":errors,"elapsedMs":started.elapsed().as_millis(),"sdkLoaded":false}),
+        )
+    })();
+    let cleanup = stop(camera);
+    let result = result?;
+    cleanup?;
+    Ok(result)
 }
 
 #[cfg(test)]

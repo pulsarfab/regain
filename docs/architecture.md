@@ -98,6 +98,11 @@ until the connection is reopened. Environment controls remain available while
 the supervisor replaces the worker. Research CLI runs emit the valid frame and
 then stop on this condition.
 
+Direct USB errors may also carry `transportFailure`, with category, chunk,
+completed bytes, frame bytes, deadline flag, and available OS status. The same
+object is included in the `details` field of `transfer.failed` diagnostics.
+Optional fields preserve compatibility with version-1 clients.
+
 Methods: `list`, `open` (name and optional serial), `get`, `set`, `start`
 (width, height, bin, x, y, microseconds, dark), `status`, `download`, `stop`,
 `close`. `fault` and `simulation` exist only with `--simulate`; a real SDK host
@@ -134,6 +139,10 @@ duration + exposure grace + `(readRetries + 1) * DownloadTimeoutSeconds`.
 The parent sends `captureTimeoutSeconds` with one additional command-timeout
 margin for the worker watchdog. NINA's outer timeout includes the same allowance.
 The supervisor still separately bounds the final image transfer over IPC.
+The direct worker also receives `transferTimeoutSeconds` (default 60), set to
+`DownloadTimeoutSeconds`. This bounds each complete USB read attempt; each replay
+gets a fresh budget. The five-second chunk deadline is capped by the remaining
+whole-read budget. Cancellation drain and control calls retain their own bounds.
 The SDK call does not have to cooperate with cancellation. Polling is 25 ms;
 the SDK itself reports its internal capture/transfer failure as an exposure
 state in many cases, before the application calls `ASIGetDataAfterExp`.

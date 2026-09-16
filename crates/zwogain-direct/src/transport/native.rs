@@ -8,6 +8,7 @@ use nusb::{
 use serde_json::{Value, json};
 use std::{cell::RefCell, ffi::CStr, time::Duration};
 
+#[derive(Clone)]
 pub struct DeviceInfo(nusb::DeviceInfo);
 impl DeviceInfo {
     pub fn matches(&self, vendor: u16, product: u16) -> bool {
@@ -206,15 +207,30 @@ fn request_size(length: usize, packet: usize) -> Result<usize> {
 }
 
 fn validate_completion(done: &Completion, expired: bool, expected: usize) -> Result<()> {
-    ensure!(
-        !expired
-            && done.status.is_ok()
-            && done.actual_len == expected
-            && done.buffer.len() == expected,
-        "bulk failed: {:?}, bytes {}/{expected}, deadlineExpired {expired}",
-        done.status,
-        done.actual_len
-    );
+    if !(!expired
+        && done.status.is_ok()
+        && done.actual_len == expected
+        && done.buffer.len() == expected)
+    {
+        use nusb::transfer::TransferError;
+        let category = if expired {
+            "timeout"
+        } else {
+            match done.status {
+                Err(TransferError::Cancelled) => "cancelled",
+                Err(TransferError::Disconnected) => "disconnected",
+                Err(TransferError::Stall) => "stall",
+                Err(_) => "io",
+                Ok(()) if done.actual_len < expected => "short_read",
+                Ok(()) => "overflow",
+            }
+        };
+        let mut failure =
+            crate::transfer::Failure::new(category, expected, done.actual_len, expired);
+        failure.0["nativeStatus"] = json!(format!("{:?}", done.status));
+        failure.0["terminalCompletionObserved"] = json!(true);
+        return Err(failure.into());
+    }
     Ok(())
 }
 

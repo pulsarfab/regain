@@ -13,6 +13,11 @@ pub struct Settings {
     pub interrupt_read_after_bytes: u32,
     pub timeout_read_after_bytes: u32,
     pub read_retries: u32,
+    pub transfer_timeout_seconds: f64,
+    /// CLI experiment only; never enabled by the server protocol.
+    pub reopen_after_bytes: u32,
+    pub reopen_delay_ms: u32,
+    pub keep_retained: bool,
 }
 impl Default for Settings {
     fn default() -> Self {
@@ -28,6 +33,10 @@ impl Default for Settings {
             interrupt_read_after_bytes: 0,
             timeout_read_after_bytes: 0,
             read_retries: 2,
+            transfer_timeout_seconds: 60.0,
+            reopen_after_bytes: 0,
+            reopen_delay_ms: 1000,
+            keep_retained: false,
         }
     }
 }

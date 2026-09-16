@@ -1,6 +1,11 @@
 //! Shared camera operations. Only the USB transport depends on the OS.
+use crate::transfer::{Budget, Failure};
 use anyhow::{Context, Result, ensure};
 use serde_json::Value;
+use std::{
+    cell::{Cell, RefCell},
+    time::Duration,
+};
 
 #[cfg(windows)]
 mod windows;
@@ -17,45 +22,52 @@ pub use platform::{DeviceInfo, enumerate, require_sdk_absent};
 
 pub type Telemetry = std::sync::Arc<std::sync::Mutex<Option<[i64; 2]>>>;
 
-pub struct Camera(
-    platform::Device,
-    std::cell::RefCell<Option<crate::environment::Environment>>,
-    Telemetry,
-);
+pub struct Camera {
+    device: RefCell<Option<platform::Device>>,
+    environment: RefCell<Option<crate::environment::Environment>>,
+    telemetry: Telemetry,
+    identity: DeviceInfo,
+    transfer_timeout: Cell<Duration>,
+    phase: Cell<&'static str>,
+}
 impl Camera {
     pub fn open(info: &DeviceInfo) -> Result<Self> {
-        Ok(Self(
-            platform::Device::open(info)?,
-            std::cell::RefCell::new(None),
-            Telemetry::default(),
-        ))
+        Ok(Self {
+            device: RefCell::new(Some(platform::Device::open(info)?)),
+            environment: RefCell::new(None),
+            telemetry: Telemetry::default(),
+            identity: info.clone(),
+            transfer_timeout: Cell::new(Duration::from_secs(60)),
+            phase: Cell::new("idle"),
+        })
     }
     pub fn enable_environment(&self, auxiliary: bool) -> Result<()> {
-        *self.1.borrow_mut() = Some(crate::environment::Environment::open(self, auxiliary)?);
+        *self.environment.borrow_mut() =
+            Some(crate::environment::Environment::open(self, auxiliary)?);
         self.publish_environment()?;
         Ok(())
     }
     pub fn telemetry(&self) -> Telemetry {
-        self.2.clone()
+        self.telemetry.clone()
     }
     fn publish_environment(&self) -> Result<()> {
-        if let Some(environment) = self.1.borrow().as_ref() {
-            *self.2.lock().unwrap() = Some([environment.get(8)?, environment.get(15)?]);
+        if let Some(environment) = self.environment.borrow().as_ref() {
+            *self.telemetry.lock().unwrap() = Some([environment.get(8)?, environment.get(15)?]);
         }
         Ok(())
     }
     pub fn has_environment(&self) -> bool {
-        self.1.borrow().is_some()
+        self.environment.borrow().is_some()
     }
     pub fn service_environment(&self) -> Result<()> {
-        if let Some(environment) = self.1.borrow_mut().as_mut() {
+        if let Some(environment) = self.environment.borrow_mut().as_mut() {
             environment.service(self)?;
         }
         self.publish_environment()?;
         Ok(())
     }
     pub fn environment_control(&self, control: u32, value: Option<i64>) -> Result<i64> {
-        let mut state = self.1.borrow_mut();
+        let mut state = self.environment.borrow_mut();
         let environment = state
             .as_mut()
             .ok_or_else(|| anyhow::anyhow!("environment unavailable"))?;
@@ -70,16 +82,69 @@ impl Camera {
     }
 
     pub fn vendor(&self, request: u8, value: u16, index: u16, length: u16) -> Result<Vec<u8>> {
-        self.0.vendor(request, value, index, length)
+        self.device
+            .borrow()
+            .as_ref()
+            .context("USB handle is closed")?
+            .vendor(request, value, index, length)
     }
     pub fn reset_pipe(&self) -> Result<()> {
-        self.0.reset_pipe()
+        self.device
+            .borrow()
+            .as_ref()
+            .context("USB handle is closed")?
+            .reset_pipe()
     }
     pub fn probe(&self) -> Result<Value> {
-        self.0.probe()
+        self.device
+            .borrow()
+            .as_ref()
+            .context("USB handle is closed")?
+            .probe()
     }
     pub fn cancel_read(&self) -> Result<Value> {
-        self.0.cancel_read()
+        self.device
+            .borrow()
+            .as_ref()
+            .context("USB handle is closed")?
+            .cancel_read()
+    }
+    pub fn transfer_timeout(&self, seconds: f64) -> Result<()> {
+        ensure!(
+            seconds.is_finite() && seconds > 0.0 && seconds <= 3600.0,
+            "invalid transfer deadline"
+        );
+        self.transfer_timeout.set(Duration::from_secs_f64(seconds));
+        Ok(())
+    }
+    pub fn phase(&self, phase: &'static str) {
+        let previous = self.phase.replace(phase);
+        crate::diagnostics::details(
+            "debug",
+            "capture.phase",
+            format_args!("{previous} -> {phase}"),
+            serde_json::json!({"previous":previous,"phase":phase}),
+        );
+    }
+    /// Research only: same enumerated device, no sensor/FPGA initialization.
+    /// Every request is synchronous here and has drained before it returns.
+    pub fn reopen_retained(&self, delay: Duration) -> Result<()> {
+        let serial = self.vendor(0xc8, 0, 0, 8)?;
+        ensure!(
+            serial.iter().any(|&b| b != 0),
+            "retained reopen requires camera identity"
+        );
+        self.phase("reopening_retained");
+        drop(self.device.borrow_mut().take());
+        std::thread::sleep(delay);
+        *self.device.borrow_mut() = Some(platform::Device::open(&self.identity)?);
+        let observed = self.vendor(0xc8, 0, 0, 8);
+        if !observed.as_ref().is_ok_and(|value| value == &serial) {
+            drop(self.device.borrow_mut().take());
+            observed?;
+            anyhow::bail!("camera identity changed during retained reopen");
+        }
+        Ok(())
     }
     pub fn read_frame(&self, length: usize) -> Result<Vec<u8>> {
         self.read_frame_wait(length, 5000)
@@ -94,12 +159,47 @@ impl Camera {
             "invalid frame size"
         );
         let mut data = vec![0; length];
+        let budget = Budget::new(self.transfer_timeout.get());
+        self.phase("downloading");
         for (number, chunk) in data.chunks_mut(1024 * 1024).enumerate() {
             self.service_environment()?;
-            self.0
-                .read_chunk(chunk, if number == 0 { first_timeout_ms } else { 5000 })
-                .with_context(|| format!("bulk chunk {number}"))?;
+            let requested_timeout = if number == 0 { first_timeout_ms } else { 5000 };
+            let result = match budget.timeout_ms(requested_timeout) {
+                Some(timeout) => self
+                    .device
+                    .borrow()
+                    .as_ref()
+                    .context("USB handle is closed")?
+                    .read_chunk(chunk, timeout),
+                None => Err(Failure::new("budget_exhausted", chunk.len(), 0, true).into()),
+            };
+            let result = result.and_then(|_| {
+                if budget.timeout_ms(1).is_none() {
+                    Err(Failure::new("budget_exhausted", chunk.len(), chunk.len(), true).into())
+                } else {
+                    Ok(())
+                }
+            });
+            if let Err(error) = result {
+                let mut failure = Failure::details(&error);
+                if failure.is_null() {
+                    failure = serde_json::json!({"category":"io","cause":format!("{error:#}")});
+                }
+                failure["phase"] = serde_json::json!(self.phase.get());
+                failure["chunk"] = serde_json::json!(number);
+                failure["completedBytes"] = serde_json::json!(number * 1024 * 1024);
+                failure["frameBytes"] = serde_json::json!(length);
+                crate::diagnostics::details(
+                    "warning",
+                    "transfer.failed",
+                    format_args!("USB read failed: {failure}"),
+                    failure.clone(),
+                );
+                self.phase("transfer_failed");
+                return Err(Failure(failure).into());
+            }
         }
+        self.phase("transfer_complete");
         Ok(data)
     }
 }

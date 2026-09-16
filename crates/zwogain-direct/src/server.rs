@@ -137,7 +137,7 @@ impl std::fmt::Display for HardwareFailure {
 }
 impl std::error::Error for HardwareFailure {}
 fn hardware(error: anyhow::Error) -> anyhow::Error {
-    HardwareFailure(format!("{error:#}")).into()
+    error.context(HardwareFailure("direct camera operation failed".into()))
 }
 
 fn open_camera(model: Model, serial: Option<&str>) -> Result<(transport::Camera, Value, String)> {
@@ -201,6 +201,40 @@ fn find_accessible<I: IntoIterator, T>(
 #[cfg(test)]
 mod selection_tests {
     use super::*;
+    #[test]
+    fn hardware_classification_preserves_transport_details() {
+        let error = hardware(crate::transfer::Failure::new("timeout", 1024, 0, true).into());
+        assert!(error.is::<HardwareFailure>());
+        assert_eq!(
+            crate::transfer::Failure::details(&error)["category"],
+            "timeout"
+        );
+    }
+    #[test]
+    fn status_and_download_keep_the_original_transport_failure() {
+        let mut host = Host {
+            simulate: true,
+            ..Host::default()
+        };
+        host.command("open", &json!({"name":"ZWO ASI2600MM Pro"}))
+            .unwrap();
+        host.frame = Some(Err(crate::transfer::Failure::new(
+            "short_read",
+            1048576,
+            512,
+            false,
+        )
+        .into()));
+        for method in ["status", "download"] {
+            let error = host.command(method, &Value::Null).unwrap_err();
+            assert!(error.is::<HardwareFailure>());
+            assert_eq!(
+                crate::transfer::Failure::details(&error)["receivedBytes"],
+                512
+            );
+        }
+        host.command("close", &Value::Null).unwrap();
+    }
     #[test]
     fn skips_busy_and_nonmatching_devices_but_never_substitutes_them() {
         let mut visited = vec![];
@@ -341,6 +375,10 @@ impl Worker {
                         // Never free live I/O buffers if a kernel operation becomes stuck.
                         let _ = watchdog.send(Some(timeout));
                         let result = if let Some((camera, info, _)) = &device {
+                            // Validated on the command thread, before capture starts.
+                            camera
+                                .transfer_timeout(settings.transfer_timeout_seconds)
+                                .expect("validated transfer timeout");
                             match model {
                                 Model::Asi676 => asi676::capture(camera, info, &settings, false),
                                 Model::Duo | Model::Asi2600P25 => {
@@ -373,6 +411,13 @@ impl Worker {
                         } else {
                             result
                         };
+                        if let Some((camera, _, _)) = &device {
+                            camera.phase(if result.is_ok() {
+                                "image_ready"
+                            } else {
+                                "failed"
+                            });
+                        }
                         let _ = watchdog.send(None);
                         if reply.send(result).is_err() {
                             return;
@@ -605,12 +650,25 @@ impl Host {
                 if !params["readRetries"].is_null() {
                     settings.read_retries = number("readRetries")?;
                 }
+                if !params["transferTimeoutSeconds"].is_null() {
+                    settings.transfer_timeout_seconds =
+                        params["transferTimeoutSeconds"]
+                            .as_f64()
+                            .ok_or_else(|| anyhow::anyhow!("invalid transfer deadline"))?;
+                }
+                ensure!(
+                    settings.transfer_timeout_seconds.is_finite()
+                        && settings.transfer_timeout_seconds > 0.0
+                        && settings.transfer_timeout_seconds <= 3600.0,
+                    "invalid transfer deadline"
+                );
                 self.model.validate(&settings, self.gain, bin)?;
                 if method == "start" {
                     let seconds = params["captureTimeoutSeconds"].as_f64().unwrap_or(
                         f64::from(settings.microseconds) / 1e6
                             + 45.0
-                            + 60.0 * f64::from(settings.read_retries + 1),
+                            + settings.transfer_timeout_seconds
+                                * f64::from(settings.read_retries + 1),
                     );
                     ensure!(
                         seconds.is_finite() && (0.001..=86400.0).contains(&seconds),
@@ -669,6 +727,11 @@ impl Host {
             "status" => {
                 ensure!(self.worker.is_some(), "camera is not open");
                 if let Some(Err(error)) = &self.frame {
+                    if let Some(failure) = error.downcast_ref::<crate::transfer::Failure>() {
+                        return Err(hardware(
+                            anyhow::Error::new(failure.clone()).context(format!("{error:#}")),
+                        ));
+                    }
                     return Err(hardware(anyhow::anyhow!("{error:#}")));
                 }
                 json!(if self.pending.is_some() {
@@ -755,7 +818,7 @@ pub fn run(simulate: bool) -> Result<()> {
                 (
                     json!({"version":1,"id":request["id"],"ok":false,"error":format!("{error:#}"),
                 "sdkCode":if error.is::<HardwareFailure>() { None } else {Some(8)},
-                "sdkOperation":"direct","binaryLength":0}),
+                "sdkOperation":"direct","transportFailure":crate::transfer::Failure::details(&error),"binaryLength":0}),
                     Vec::new(),
                 )
             }

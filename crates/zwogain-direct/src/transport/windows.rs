@@ -115,6 +115,7 @@ pub fn enumerate() -> Result<Vec<DeviceInfo>> {
     }
 }
 
+#[derive(Clone)]
 pub struct DeviceInfo(Vec<u16>);
 impl DeviceInfo {
     pub fn matches(&self, vendor: u16, product: u16) -> bool {
@@ -165,20 +166,54 @@ impl Device {
     pub fn read_chunk(&self, chunk: &mut [u8], timeout: u32) -> Result<()> {
         let mut header = [0; protocol::HEADER];
         header[13] = 0x81;
-        let done = self.request(protocol::BULK, &mut header, Some(chunk), timeout)?;
+        let done = self
+            .request(protocol::BULK, &mut header, Some(chunk), timeout)
+            .map_err(|error| {
+                let code = error
+                    .downcast_ref::<std::io::Error>()
+                    .and_then(|e| e.raw_os_error());
+                let category = if code == Some(ERROR_DEVICE_NOT_CONNECTED as i32) {
+                    "disconnected"
+                } else {
+                    "io"
+                };
+                let mut failure = crate::transfer::Failure::new(category, chunk.len(), 0, false);
+                failure.0["win32Error"] = json!(code);
+                failure.0["cause"] = json!(format!("{error:#}"));
+                anyhow::Error::new(failure)
+            })?;
         let (nt, usb) = protocol::status(&header)?;
-        ensure!(
-            done.error == 0
-                && !done.cancel_requested
-                && nt == 0
-                && usb == 0
-                && done.bytes == chunk.len(),
-            "bulk failed: Win32 {}, NT {nt:08x}, USB {usb:08x}, bytes {}/{}, deadlineExpired {}",
-            done.error,
-            done.bytes,
-            chunk.len(),
-            done.cancel_requested
-        );
+        if !(done.error == 0
+            && !done.cancel_requested
+            && nt == 0
+            && usb == 0
+            && done.bytes == chunk.len())
+        {
+            let category = if done.cancel_requested {
+                "timeout"
+            } else if done.error == ERROR_OPERATION_ABORTED {
+                "cancelled"
+            } else if done.error == ERROR_DEVICE_NOT_CONNECTED {
+                "disconnected"
+            } else if done.error != 0 || nt != 0 || usb != 0 {
+                "io"
+            } else if done.bytes < chunk.len() {
+                "short_read"
+            } else {
+                "overflow"
+            };
+            let mut failure = crate::transfer::Failure::new(
+                category,
+                chunk.len(),
+                done.bytes,
+                done.cancel_requested,
+            );
+            failure.0["win32Error"] = json!(done.error);
+            failure.0["ntStatus"] = json!(nt);
+            failure.0["usbStatus"] = json!(usb);
+            failure.0["terminalCompletionObserved"] = json!(true);
+            return Err(failure.into());
+        }
         Ok(())
     }
 

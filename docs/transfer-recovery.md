@@ -1,6 +1,6 @@
 # Transfer recovery and SDK gaps
 
-Status: 2026-09-14. The SDK remains the default backend. The direct driver uses
+Status: 2026-09-15. The SDK remains the default backend. The direct driver uses
 the installed ZWO Windows kernel driver without loading `ASICamera2.dll`.
 
 ## What can be recovered
@@ -102,9 +102,9 @@ and a complete sensor readout interval before freezing DDR.
 | Cooling | Temperature, target, enablement, power and dew control; bounded Rust PI regulator | It is not the SDK regulator and needs more environmental and hardware validation |
 | ASI6200 auxiliary controls | Fan speed and power-LED brightness, 0–255, with readback and restoration | Momentary USB hub reset is not exposed or replayed automatically |
 | Acquisition lifecycle | Observed readiness registers, retained state and framing checks; P25 cameras additionally wait a full programmed sensor frame plus 100 ms before standby | These guards are time based. Full-frame control transitions caught stale rows that valid framing and repeated dark frames did not. A definitive firmware completion indicator remains open |
-| Error reporting | Win32, NT, USB status, chunk number and deadline flag in diagnostics | Errors are still strings, not structured transport categories exposed through the host protocol |
-| Time bounds | Per-request deadlines, supervisor readiness grace, worker watchdog | No dedicated configurable whole-transfer/replay deadline. Outer limits can terminate before every configured retry is used |
-| Disconnect recovery | Reconnect, restore controls/cooling, and take a replacement exposure when policy allows | Retained pixels surviving device reset, removal, power loss or worker replacement are unproven |
+| Error reporting | Structured category, progress, Windows/NT/USB or native status, and deadline flag in diagnostics and terminal protocol errors | Control/initialization failures still use ordinary error context |
+| Time bounds | Configurable whole-read deadline for every transfer/replay attempt, per-request deadlines, supervisor readiness grace, worker watchdog | Cancellation drain and an in-progress control request can extend observed failure time; outer bounds still apply |
+| Disconnect recovery | Reconnect, restore controls/cooling, and take a replacement exposure when policy allows; P25 research tests retain pixels across handle reopen and process replacement | Production cross-worker adoption, USB reset/removal, and power loss are not established |
 
 For the public SDK, `ASIGetDataAfterExp` is a whole-image retrieval call with no
 offset or continuation token. Inspected code and traces place USB acquisition
@@ -115,9 +115,12 @@ independent of exposure duration. A count of zero explicitly disables them. See 
 
 ## Next useful experiments
 
-1. Record structured transport failures and phase transitions, including bytes
-   successfully received and whether retention was still reported. Do not
-   stitch uncertain partial data into an image.
+See [USB lifecycle work](usb-lifecycle.md) for the reopen/process-exit tests and
+their reproduction script. They preserve camera DDR by avoiding initialization
+and normal cleanup; production frontends do not yet use these research commands.
+
+1. Extend structured failures to control requests and record retention evidence
+   alongside transfer progress. Do not stitch uncertain partial data into an image.
 2. Test endpoint stalls, delayed completions and short reads separately from
    canceled requests. Establish whether each leaves replay usable. Then test
    close/reopen and USB re-enumeration without normal sensor initialization,
