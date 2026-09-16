@@ -282,3 +282,22 @@ python scripts/inspection/trace_direct.py --output artifacts/inspection/NEW-2600
 The matrix covers full-frame freshness, small/moved/edge regions, bins 1–4,
 gain boundaries, exposure timing and interrupted reads. Add `--long 1200` for
 a twenty-minute exposure. See [P25 results](../../docs/asi2600-p25.md).
+
+## Cooler and auxiliary recovery
+
+Disconnect other camera apps first. This Windows test needs Frida and a powered
+camera with cooler, dew, fan and LED controls. It starts a private Alpaca server,
+changes those controls, then kills its camera worker during an exposure in SDK,
+direct and direct-with-fallback modes. It checks the recovered frame, restored
+settings and cooling log. The target stays below the interrupted temperature.
+
+```powershell
+python scripts/inspection/validate_environment.py --camera-name 'ZWO ASI2600MM Pro' --output artifacts/NEW-2600-p25-thermal
+```
+
+The output directory must be new. `results.json` contains statistics and frame
+digests. A passive USB trace verifies fan/LED writes and readbacks, plus dew
+commands. It does not measure fan RPM, LED brightness or window temperature.
+The test restores starting controls before disconnecting; direct disconnect
+turns off cooling. Keep raw server logs and profiles local because they contain
+the camera serial. A failed test still attempts restoration and disconnect.

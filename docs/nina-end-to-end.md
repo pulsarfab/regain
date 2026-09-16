@@ -668,6 +668,26 @@ ended in SDK mode, with direct and fallback off, 0.1-second exposure, bin 1,
 full frame, Loop and Save off. Cooler and dew heater remained off.
 
 The SDK kit and Alpaca also covered bins 1–4; NINA SDK mode was checked at bin 1
-in this run. The full 2000-second limit, physical cable/power faults, cooling
-recovery, auxiliary controls and Linux/macOS hardware remain untested on this
-unit. See [protocol findings and sanitized evidence](asi2600-p25.md).
+in this run. The full 2000-second limit, physical cable/power faults and
+Linux/macOS hardware remain untested on this unit. See
+[protocol findings and sanitized evidence](asi2600-p25.md).
+
+### Follow-up: cooled recovery and auxiliary controls
+
+SDK, direct and direct-to-SDK fallback cooler recovery passed through Alpaca.
+USB traces confirmed dew commands and fan/LED values at 0, 128 and 255; the
+settings survived worker replacement. See the
+[thermal evidence](asi2600-p25-thermal-evidence.json).
+
+NINA then ran native mode at a 10 °C target with dew enabled. Terminating the
+worker during a ten-second, bin-1 exposure triggered one replacement. The log
+recorded a prior 18 °C / 59% cooler state. Recovery restored the target and dew,
+waited for cooling, and resumed at 9.5 °C / 41% using the 30-second target-hold
+rule. The 6248 × 4176 frame was returned 146.9 seconds after failure and inspected
+in the image pane: mean 500.77, SD 21.75 ADU. Retry, cooling progress and recovery
+were logged, with no failed-capture dialog. The lower-power target-hold rule
+prevents a wait for output the cooler no longer needs.
+
+NINA's warming command then brought the sensor back near 20 °C and switched
+cooling off. Dew was turned off, and the 0.1-second/bin-1/full-frame inputs and
+20 °C cooling target input were restored.

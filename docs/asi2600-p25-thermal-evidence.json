@@ -1,0 +1,1110 @@
+{
+  "camera": "ZWO ASI2600MM Pro",
+  "builds": {
+    "zwogain-alpaca.exe": "35c615db70687f41089e97d32a14975a01d60b652818a9d0f1c51adc4405a6f8",
+    "zwogain-direct.exe": "488ef94359a839102081a5f443d2b85b91c45fa995c91fdc26a67cc629ea6850",
+    "zwogain-host.exe": "5ad02cbed60dd514758cdfa1d8b0494baa2cc9156d16a30939aa7c8b26d19d16"
+  },
+  "modes": [
+    {
+      "mode": "sdk",
+      "auxiliary": [
+        {
+          "control": 22,
+          "value": 0,
+          "usbVerified": true
+        },
+        {
+          "control": 22,
+          "value": 128,
+          "usbVerified": true
+        },
+        {
+          "control": 22,
+          "value": 255,
+          "usbVerified": true
+        },
+        {
+          "control": 23,
+          "value": 0,
+          "usbVerified": true
+        },
+        {
+          "control": 23,
+          "value": 128,
+          "usbVerified": true
+        },
+        {
+          "control": 23,
+          "value": 255,
+          "usbVerified": true
+        },
+        {
+          "control": 21,
+          "value": 1,
+          "usbVerified": true
+        },
+        {
+          "control": 21,
+          "value": 0,
+          "usbVerified": true
+        },
+        {
+          "control": 21,
+          "value": 1,
+          "usbVerified": true
+        }
+      ],
+      "samples": [
+        {
+          "temperatureC": 30.0,
+          "powerPercent": 0
+        },
+        {
+          "temperatureC": 30.0,
+          "powerPercent": 0
+        },
+        {
+          "temperatureC": 30.0,
+          "powerPercent": 0
+        },
+        {
+          "temperatureC": 30.0,
+          "powerPercent": 0
+        },
+        {
+          "temperatureC": 30.0,
+          "powerPercent": 0
+        },
+        {
+          "temperatureC": 29.8,
+          "powerPercent": 0
+        },
+        {
+          "temperatureC": 29.3,
+          "powerPercent": 1
+        },
+        {
+          "temperatureC": 28.9,
+          "powerPercent": 1
+        },
+        {
+          "temperatureC": 28.9,
+          "powerPercent": 1
+        },
+        {
+          "temperatureC": 28.5,
+          "powerPercent": 5
+        },
+        {
+          "temperatureC": 28.1,
+          "powerPercent": 5
+        },
+        {
+          "temperatureC": 28.1,
+          "powerPercent": 5
+        },
+        {
+          "temperatureC": 27.8,
+          "powerPercent": 6
+        },
+        {
+          "temperatureC": 27.4,
+          "powerPercent": 6
+        },
+        {
+          "temperatureC": 27.1,
+          "powerPercent": 7
+        },
+        {
+          "temperatureC": 27.1,
+          "powerPercent": 7
+        },
+        {
+          "temperatureC": 26.7,
+          "powerPercent": 7
+        },
+        {
+          "temperatureC": 26.4,
+          "powerPercent": 10
+        },
+        {
+          "temperatureC": 26.4,
+          "powerPercent": 10
+        },
+        {
+          "temperatureC": 26.1,
+          "powerPercent": 10
+        },
+        {
+          "temperatureC": 25.8,
+          "powerPercent": 11
+        },
+        {
+          "temperatureC": 25.8,
+          "powerPercent": 11
+        },
+        {
+          "temperatureC": 25.5,
+          "powerPercent": 11
+        },
+        {
+          "temperatureC": 25.2,
+          "powerPercent": 12
+        },
+        {
+          "temperatureC": 24.9,
+          "powerPercent": 12
+        },
+        {
+          "temperatureC": 24.9,
+          "powerPercent": 12
+        },
+        {
+          "temperatureC": 24.6,
+          "powerPercent": 12
+        },
+        {
+          "temperatureC": 24.4,
+          "powerPercent": 12
+        },
+        {
+          "temperatureC": 24.4,
+          "powerPercent": 13
+        },
+        {
+          "temperatureC": 24.1,
+          "powerPercent": 13
+        },
+        {
+          "temperatureC": 24.0,
+          "powerPercent": 13
+        },
+        {
+          "temperatureC": 23.7,
+          "powerPercent": 14
+        },
+        {
+          "temperatureC": 23.7,
+          "powerPercent": 14
+        },
+        {
+          "temperatureC": 23.5,
+          "powerPercent": 14
+        },
+        {
+          "temperatureC": 23.2,
+          "powerPercent": 15
+        }
+      ],
+      "baselineTemperatureC": 29.9,
+      "priorTemperatureC": 23.2,
+      "priorPowerPercent": 15,
+      "targetC": 19,
+      "recoverySeconds": 45.26600000000326,
+      "finalTemperatureC": 22.8,
+      "finalPowerPercent": 6,
+      "restoredSetpointC": 19,
+      "recoveredBackend": "sdk",
+      "restoredControls": {
+        "16": 19,
+        "17": 1,
+        "21": 1,
+        "22": 255,
+        "23": 128
+      },
+      "frameSha256": "04fec84e1e07ab84824f340f19f4cbe113c72e6363a7bbd59612b96764061b90",
+      "events": [
+        {
+          "event": "capture.failed",
+          "message": "Attempt 1/4: unexpected end of file"
+        },
+        {
+          "event": "capture.retry",
+          "message": "Scheduling replacement exposure 1/3: 5 s, 256x256, bin 1; reconnect delay 5 s"
+        },
+        {
+          "event": "cooling.wait",
+          "message": "Temperature Some(22.6) C (prior 23.2), power Some(0)% (prior Some(15)%), stable 0/3"
+        },
+        {
+          "event": "cooling.wait",
+          "message": "Temperature Some(22.6) C (prior 23.2), power Some(0)% (prior Some(15)%), stable 0/3"
+        },
+        {
+          "event": "cooling.wait",
+          "message": "Temperature Some(22.8) C (prior 23.2), power Some(0)% (prior Some(15)%), stable 0/3"
+        },
+        {
+          "event": "cooling.wait",
+          "message": "Temperature Some(23.3) C (prior 23.2), power Some(0)% (prior Some(15)%), stable 0/3"
+        },
+        {
+          "event": "cooling.wait",
+          "message": "Temperature Some(23.3) C (prior 23.2), power Some(0)% (prior Some(15)%), stable 0/3"
+        },
+        {
+          "event": "cooling.wait",
+          "message": "Temperature Some(23.5) C (prior 23.2), power Some(0)% (prior Some(15)%), stable 0/3"
+        },
+        {
+          "event": "cooling.wait",
+          "message": "Temperature Some(23.5) C (prior 23.2), power Some(2)% (prior Some(15)%), stable 0/3"
+        },
+        {
+          "event": "cooling.wait",
+          "message": "Temperature Some(23.5) C (prior 23.2), power Some(2)% (prior Some(15)%), stable 0/3"
+        },
+        {
+          "event": "cooling.wait",
+          "message": "Temperature Some(23.4) C (prior 23.2), power Some(2)% (prior Some(15)%), stable 0/3"
+        },
+        {
+          "event": "cooling.wait",
+          "message": "Temperature Some(23.3) C (prior 23.2), power Some(3)% (prior Some(15)%), stable 0/3"
+        },
+        {
+          "event": "cooling.wait",
+          "message": "Temperature Some(23.3) C (prior 23.2), power Some(3)% (prior Some(15)%), stable 0/3"
+        },
+        {
+          "event": "cooling.wait",
+          "message": "Temperature Some(23.3) C (prior 23.2), power Some(3)% (prior Some(15)%), stable 0/3"
+        },
+        {
+          "event": "cooling.wait",
+          "message": "Temperature Some(23.2) C (prior 23.2), power Some(4)% (prior Some(15)%), stable 0/3"
+        },
+        {
+          "event": "cooling.wait",
+          "message": "Temperature Some(23.1) C (prior 23.2), power Some(4)% (prior Some(15)%), stable 0/3"
+        },
+        {
+          "event": "cooling.wait",
+          "message": "Temperature Some(23.1) C (prior 23.2), power Some(4)% (prior Some(15)%), stable 0/3"
+        },
+        {
+          "event": "cooling.wait",
+          "message": "Temperature Some(23.0) C (prior 23.2), power Some(5)% (prior Some(15)%), stable 1/3"
+        },
+        {
+          "event": "cooling.wait",
+          "message": "Temperature Some(23.0) C (prior 23.2), power Some(5)% (prior Some(15)%), stable 2/3"
+        },
+        {
+          "event": "cooling.wait",
+          "message": "Temperature Some(22.8) C (prior 23.2), power Some(5)% (prior Some(15)%), stable 3/3"
+        },
+        {
+          "event": "cooling.recovered",
+          "message": "Cooling recovered at Some(22.8) C; restored setpoint 19 C"
+        },
+        {
+          "event": "capture.recovered",
+          "message": "Returning 256x256 image after 1 replacement exposures and 0 SDK read retries"
+        }
+      ],
+      "restoredStartingControls": {
+        "16": 30,
+        "17": 0,
+        "21": 0,
+        "22": 255,
+        "23": 255
+      }
+    },
+    {
+      "mode": "direct",
+      "auxiliary": [
+        {
+          "control": 22,
+          "value": 0,
+          "usbVerified": true
+        },
+        {
+          "control": 22,
+          "value": 128,
+          "usbVerified": true
+        },
+        {
+          "control": 22,
+          "value": 255,
+          "usbVerified": true
+        },
+        {
+          "control": 23,
+          "value": 0,
+          "usbVerified": true
+        },
+        {
+          "control": 23,
+          "value": 128,
+          "usbVerified": true
+        },
+        {
+          "control": 23,
+          "value": 255,
+          "usbVerified": true
+        },
+        {
+          "control": 21,
+          "value": 1,
+          "usbVerified": true
+        },
+        {
+          "control": 21,
+          "value": 0,
+          "usbVerified": true
+        },
+        {
+          "control": 21,
+          "value": 1,
+          "usbVerified": true
+        }
+      ],
+      "samples": [
+        {
+          "temperatureC": 25.1,
+          "powerPercent": 0
+        },
+        {
+          "temperatureC": 25.2,
+          "powerPercent": 4
+        },
+        {
+          "temperatureC": 25.1,
+          "powerPercent": 8
+        },
+        {
+          "temperatureC": 24.8,
+          "powerPercent": 13
+        },
+        {
+          "temperatureC": 24.5,
+          "powerPercent": 17
+        },
+        {
+          "temperatureC": 24.3,
+          "powerPercent": 19
+        },
+        {
+          "temperatureC": 24.0,
+          "powerPercent": 23
+        }
+      ],
+      "baselineTemperatureC": 25.0,
+      "priorTemperatureC": 24.0,
+      "priorPowerPercent": 23,
+      "targetC": 15,
+      "recoverySeconds": 14.578000000001339,
+      "finalTemperatureC": 22.0,
+      "finalPowerPercent": 40,
+      "restoredSetpointC": 15,
+      "recoveredBackend": "direct",
+      "restoredControls": {
+        "16": 15,
+        "17": 1,
+        "21": 1,
+        "22": 255,
+        "23": 128
+      },
+      "frameSha256": "519bef1df2af735910ffae51bc22c881aec7d1b380f73232d23a65b14af0c70d",
+      "events": [
+        {
+          "event": "capture.failed",
+          "message": "Attempt 1/4: The pipe is being closed. (os error 232)"
+        },
+        {
+          "event": "capture.retry",
+          "message": "Scheduling replacement exposure 1/3: 5 s, 256x256, bin 1; reconnect delay 5 s"
+        },
+        {
+          "event": "cooling.wait",
+          "message": "Temperature Some(23.0) C (prior 24), power Some(25)% (prior Some(23)%), stable 1/3"
+        },
+        {
+          "event": "cooling.wait",
+          "message": "Temperature Some(22.9) C (prior 24), power Some(27)% (prior Some(23)%), stable 2/3"
+        },
+        {
+          "event": "cooling.wait",
+          "message": "Temperature Some(22.6) C (prior 24), power Some(31)% (prior Some(23)%), stable 3/3"
+        },
+        {
+          "event": "cooling.recovered",
+          "message": "Cooling recovered at Some(22.6) C; restored setpoint 15 C"
+        },
+        {
+          "event": "capture.recovered",
+          "message": "Returning 256x256 image after 1 replacement exposures and 0 SDK read retries"
+        }
+      ],
+      "restoredStartingControls": {
+        "16": 23,
+        "17": 0,
+        "21": 0,
+        "22": 255,
+        "23": 255
+      }
+    },
+    {
+      "mode": "direct-fallback",
+      "auxiliary": [
+        {
+          "control": 22,
+          "value": 0,
+          "usbVerified": true
+        },
+        {
+          "control": 22,
+          "value": 128,
+          "usbVerified": true
+        },
+        {
+          "control": 22,
+          "value": 255,
+          "usbVerified": true
+        },
+        {
+          "control": 23,
+          "value": 0,
+          "usbVerified": true
+        },
+        {
+          "control": 23,
+          "value": 128,
+          "usbVerified": true
+        },
+        {
+          "control": 23,
+          "value": 255,
+          "usbVerified": true
+        },
+        {
+          "control": 21,
+          "value": 1,
+          "usbVerified": true
+        },
+        {
+          "control": 21,
+          "value": 0,
+          "usbVerified": true
+        },
+        {
+          "control": 21,
+          "value": 1,
+          "usbVerified": true
+        }
+      ],
+      "samples": [
+        {
+          "temperatureC": 24.2,
+          "powerPercent": 0
+        },
+        {
+          "temperatureC": 24.3,
+          "powerPercent": 4
+        },
+        {
+          "temperatureC": 24.3,
+          "powerPercent": 9
+        },
+        {
+          "temperatureC": 24.1,
+          "powerPercent": 13
+        },
+        {
+          "temperatureC": 23.8,
+          "powerPercent": 17
+        },
+        {
+          "temperatureC": 23.5,
+          "powerPercent": 21
+        },
+        {
+          "temperatureC": 23.1,
+          "powerPercent": 25
+        },
+        {
+          "temperatureC": 22.7,
+          "powerPercent": 29
+        }
+      ],
+      "baselineTemperatureC": 24.0,
+      "priorTemperatureC": 22.7,
+      "priorPowerPercent": 29,
+      "targetC": 14,
+      "recoverySeconds": 89.3440000000046,
+      "finalTemperatureC": 18.7,
+      "finalPowerPercent": 19,
+      "restoredSetpointC": 14,
+      "recoveredBackend": "sdk",
+      "restoredControls": {
+        "16": 14,
+        "17": 1,
+        "21": 1,
+        "22": 255,
+        "23": 128
+      },
+      "frameSha256": "69e374c20af6927a9842756930bae68c85d8a3831373bc01df9c6b345562a579",
+      "events": [
+        {
+          "event": "capture.failed",
+          "message": "Attempt 1/4: The pipe is being closed. (os error 232)"
+        },
+        {
+          "event": "backend.fallback",
+          "message": "Next permitted exposure retry will use SDK fallback"
+        },
+        {
+          "event": "capture.retry",
+          "message": "Scheduling replacement exposure 1/3: 5 s, 256x256, bin 1; reconnect delay 5 s"
+        },
+        {
+          "event": "cooling.wait",
+          "message": "Temperature Some(22.8) C (prior 22.7), power Some(0)% (prior Some(29)%), stable 0/3"
+        },
+        {
+          "event": "cooling.wait",
+          "message": "Temperature Some(22.9) C (prior 22.7), power Some(0)% (prior Some(29)%), stable 0/3"
+        },
+        {
+          "event": "cooling.wait",
+          "message": "Temperature Some(23.0) C (prior 22.7), power Some(0)% (prior Some(29)%), stable 0/3"
+        },
+        {
+          "event": "cooling.wait",
+          "message": "Temperature Some(23.0) C (prior 22.7), power Some(1)% (prior Some(29)%), stable 0/3"
+        },
+        {
+          "event": "cooling.wait",
+          "message": "Temperature Some(23.0) C (prior 22.7), power Some(1)% (prior Some(29)%), stable 0/3"
+        },
+        {
+          "event": "cooling.wait",
+          "message": "Temperature Some(22.8) C (prior 22.7), power Some(1)% (prior Some(29)%), stable 0/3"
+        },
+        {
+          "event": "cooling.wait",
+          "message": "Temperature Some(22.7) C (prior 22.7), power Some(3)% (prior Some(29)%), stable 0/3"
+        },
+        {
+          "event": "cooling.wait",
+          "message": "Temperature Some(22.7) C (prior 22.7), power Some(3)% (prior Some(29)%), stable 0/3"
+        },
+        {
+          "event": "cooling.wait",
+          "message": "Temperature Some(22.6) C (prior 22.7), power Some(3)% (prior Some(29)%), stable 0/3"
+        },
+        {
+          "event": "cooling.wait",
+          "message": "Temperature Some(22.5) C (prior 22.7), power Some(7)% (prior Some(29)%), stable 0/3"
+        },
+        {
+          "event": "cooling.wait",
+          "message": "Temperature Some(22.4) C (prior 22.7), power Some(7)% (prior Some(29)%), stable 0/3"
+        },
+        {
+          "event": "cooling.wait",
+          "message": "Temperature Some(22.4) C (prior 22.7), power Some(7)% (prior Some(29)%), stable 0/3"
+        },
+        {
+          "event": "cooling.wait",
+          "message": "Temperature Some(22.2) C (prior 22.7), power Some(8)% (prior Some(29)%), stable 0/3"
+        },
+        {
+          "event": "cooling.wait",
+          "message": "Temperature Some(22.1) C (prior 22.7), power Some(8)% (prior Some(29)%), stable 0/3"
+        },
+        {
+          "event": "cooling.wait",
+          "message": "Temperature Some(22.1) C (prior 22.7), power Some(8)% (prior Some(29)%), stable 0/3"
+        },
+        {
+          "event": "cooling.wait",
+          "message": "Temperature Some(21.9) C (prior 22.7), power Some(9)% (prior Some(29)%), stable 0/3"
+        },
+        {
+          "event": "cooling.wait",
+          "message": "Temperature Some(21.8) C (prior 22.7), power Some(9)% (prior Some(29)%), stable 0/3"
+        },
+        {
+          "event": "cooling.wait",
+          "message": "Temperature Some(21.6) C (prior 22.7), power Some(11)% (prior Some(29)%), stable 0/3"
+        },
+        {
+          "event": "cooling.wait",
+          "message": "Temperature Some(21.6) C (prior 22.7), power Some(11)% (prior Some(29)%), stable 0/3"
+        },
+        {
+          "event": "cooling.wait",
+          "message": "Temperature Some(21.4) C (prior 22.7), power Some(11)% (prior Some(29)%), stable 0/3"
+        },
+        {
+          "event": "cooling.wait",
+          "message": "Temperature Some(21.3) C (prior 22.7), power Some(12)% (prior Some(29)%), stable 0/3"
+        },
+        {
+          "event": "cooling.wait",
+          "message": "Temperature Some(21.3) C (prior 22.7), power Some(12)% (prior Some(29)%), stable 0/3"
+        },
+        {
+          "event": "cooling.wait",
+          "message": "Temperature Some(21.1) C (prior 22.7), power Some(12)% (prior Some(29)%), stable 0/3"
+        },
+        {
+          "event": "cooling.wait",
+          "message": "Temperature Some(20.9) C (prior 22.7), power Some(14)% (prior Some(29)%), stable 0/3"
+        },
+        {
+          "event": "cooling.wait",
+          "message": "Temperature Some(20.7) C (prior 22.7), power Some(14)% (prior Some(29)%), stable 0/3"
+        },
+        {
+          "event": "cooling.wait",
+          "message": "Temperature Some(20.7) C (prior 22.7), power Some(14)% (prior Some(29)%), stable 0/3"
+        },
+        {
+          "event": "cooling.wait",
+          "message": "Temperature Some(20.6) C (prior 22.7), power Some(15)% (prior Some(29)%), stable 0/3"
+        },
+        {
+          "event": "cooling.wait",
+          "message": "Temperature Some(20.4) C (prior 22.7), power Some(15)% (prior Some(29)%), stable 0/3"
+        },
+        {
+          "event": "cooling.wait",
+          "message": "Temperature Some(20.4) C (prior 22.7), power Some(15)% (prior Some(29)%), stable 0/3"
+        },
+        {
+          "event": "cooling.wait",
+          "message": "Temperature Some(20.2) C (prior 22.7), power Some(16)% (prior Some(29)%), stable 0/3"
+        },
+        {
+          "event": "cooling.wait",
+          "message": "Temperature Some(20.0) C (prior 22.7), power Some(16)% (prior Some(29)%), stable 0/3"
+        },
+        {
+          "event": "cooling.wait",
+          "message": "Temperature Some(19.8) C (prior 22.7), power Some(17)% (prior Some(29)%), stable 0/3"
+        },
+        {
+          "event": "cooling.wait",
+          "message": "Temperature Some(19.8) C (prior 22.7), power Some(17)% (prior Some(29)%), stable 0/3"
+        },
+        {
+          "event": "cooling.wait",
+          "message": "Temperature Some(19.7) C (prior 22.7), power Some(17)% (prior Some(29)%), stable 0/3"
+        },
+        {
+          "event": "cooling.wait",
+          "message": "Temperature Some(19.5) C (prior 22.7), power Some(18)% (prior Some(29)%), stable 0/3"
+        },
+        {
+          "event": "cooling.wait",
+          "message": "Temperature Some(19.5) C (prior 22.7), power Some(18)% (prior Some(29)%), stable 0/3"
+        },
+        {
+          "event": "cooling.wait",
+          "message": "Temperature Some(19.4) C (prior 22.7), power Some(18)% (prior Some(29)%), stable 0/3"
+        },
+        {
+          "event": "cooling.wait",
+          "message": "Temperature Some(19.2) C (prior 22.7), power Some(19)% (prior Some(29)%), stable 1/3"
+        },
+        {
+          "event": "cooling.wait",
+          "message": "Temperature Some(19.0) C (prior 22.7), power Some(19)% (prior Some(29)%), stable 2/3"
+        },
+        {
+          "event": "cooling.wait",
+          "message": "Temperature Some(19.0) C (prior 22.7), power Some(19)% (prior Some(29)%), stable 3/3"
+        },
+        {
+          "event": "cooling.recovered",
+          "message": "Cooling recovered at Some(19.0) C; restored setpoint 14 C"
+        },
+        {
+          "event": "capture.recovered",
+          "message": "Returning 256x256 image after 1 replacement exposures and 0 SDK read retries"
+        }
+      ],
+      "restoredStartingControls": {
+        "16": 22,
+        "17": 0,
+        "21": 0,
+        "22": 255,
+        "23": 255
+      }
+    }
+  ],
+  "date": "2026-09-15",
+  "usbTraceSha256": "b4e7dd9ccaf42f43c0ba1aa4ccefbc8d13cd8d3803378b7aace60a4c9d9af4a4",
+  "completedUsbRequests": 444,
+  "usbTransportErrors": 0,
+  "usbRegisterChecks": {
+    "sdk": {
+      "fanReadbacks": [
+        0,
+        128,
+        255
+      ],
+      "ledReadbacks": [
+        0,
+        128,
+        255
+      ],
+      "dewFlagReadbacks": [
+        false,
+        true
+      ],
+      "dewDacWrites": [
+        0,
+        197
+      ]
+    },
+    "direct": {
+      "fanReadbacks": [
+        0,
+        128,
+        255
+      ],
+      "ledReadbacks": [
+        0,
+        128,
+        255
+      ],
+      "dewFlagReadbacks": [
+        false,
+        true
+      ],
+      "dewDacWrites": [
+        0,
+        197
+      ]
+    },
+    "direct-fallback": {
+      "fanReadbacks": [
+        0,
+        128,
+        255
+      ],
+      "ledReadbacks": [
+        0,
+        128,
+        255
+      ],
+      "dewFlagReadbacks": [
+        false,
+        true
+      ],
+      "dewDacWrites": [
+        0,
+        197
+      ]
+    }
+  },
+  "nina": {
+    "version": "3.2.0.9001",
+    "backend": "direct",
+    "sdkFallback": false,
+    "targetC": 10,
+    "priorTemperatureC": 18,
+    "priorPowerPercent": 59,
+    "recoveredTemperatureC": 9.5,
+    "recoveredPowerPercent": 41,
+    "recoverySeconds": 146.8977,
+    "recoveryRule": "30 seconds within 1 C of target with positive cooler output, then three accepted samples",
+    "dewRestored": true,
+    "exposureSeconds": 10,
+    "width": 6248,
+    "height": 4176,
+    "bin": 1,
+    "meanAdu": 500.77,
+    "stddevAdu": 21.75,
+    "imagePaneInspected": true,
+    "events": [
+      {
+        "time": "2026-09-15T19:10:02.1567",
+        "message": "capture.failed]: Attempt 1/4: The pipe is being closed. (os error 232)"
+      },
+      {
+        "time": "2026-09-15T19:10:02.1569",
+        "message": "capture.retry]: Scheduling replacement exposure 1/3: 10 s, 6248x4176, bin 1; reconnect delay 5 s"
+      },
+      {
+        "time": "2026-09-15T19:10:07.2328",
+        "message": "cooling.wait]: Temperature Some(18.8) C (prior 18), power Some(0)% (prior Some(59)%), stable 0/3"
+      },
+      {
+        "time": "2026-09-15T19:10:09.2383",
+        "message": "cooling.wait]: Temperature Some(19.0) C (prior 18), power Some(2)% (prior Some(59)%), stable 0/3"
+      },
+      {
+        "time": "2026-09-15T19:10:11.2513",
+        "message": "cooling.wait]: Temperature Some(19.5) C (prior 18), power Some(6)% (prior Some(59)%), stable 0/3"
+      },
+      {
+        "time": "2026-09-15T19:10:13.2576",
+        "message": "cooling.wait]: Temperature Some(19.6) C (prior 18), power Some(11)% (prior Some(59)%), stable 0/3"
+      },
+      {
+        "time": "2026-09-15T19:10:15.2683",
+        "message": "cooling.wait]: Temperature Some(19.6) C (prior 18), power Some(15)% (prior Some(59)%), stable 0/3"
+      },
+      {
+        "time": "2026-09-15T19:10:17.2779",
+        "message": "cooling.wait]: Temperature Some(19.6) C (prior 18), power Some(19)% (prior Some(59)%), stable 0/3"
+      },
+      {
+        "time": "2026-09-15T19:10:19.2858",
+        "message": "cooling.wait]: Temperature Some(19.6) C (prior 18), power Some(23)% (prior Some(59)%), stable 0/3"
+      },
+      {
+        "time": "2026-09-15T19:10:21.2999",
+        "message": "cooling.wait]: Temperature Some(19.5) C (prior 18), power Some(28)% (prior Some(59)%), stable 0/3"
+      },
+      {
+        "time": "2026-09-15T19:10:23.3116",
+        "message": "cooling.wait]: Temperature Some(19.2) C (prior 18), power Some(31)% (prior Some(59)%), stable 0/3"
+      },
+      {
+        "time": "2026-09-15T19:10:25.3159",
+        "message": "cooling.wait]: Temperature Some(19.0) C (prior 18), power Some(32)% (prior Some(59)%), stable 0/3"
+      },
+      {
+        "time": "2026-09-15T19:10:27.3281",
+        "message": "cooling.wait]: Temperature Some(18.8) C (prior 18), power Some(32)% (prior Some(59)%), stable 0/3"
+      },
+      {
+        "time": "2026-09-15T19:10:29.3441",
+        "message": "cooling.wait]: Temperature Some(18.5) C (prior 18), power Some(33)% (prior Some(59)%), stable 0/3"
+      },
+      {
+        "time": "2026-09-15T19:10:31.3528",
+        "message": "cooling.wait]: Temperature Some(18.2) C (prior 18), power Some(34)% (prior Some(59)%), stable 0/3"
+      },
+      {
+        "time": "2026-09-15T19:10:33.3693",
+        "message": "cooling.wait]: Temperature Some(18.0) C (prior 18), power Some(35)% (prior Some(59)%), stable 0/3"
+      },
+      {
+        "time": "2026-09-15T19:10:35.3732",
+        "message": "cooling.wait]: Temperature Some(17.6) C (prior 18), power Some(35)% (prior Some(59)%), stable 0/3"
+      },
+      {
+        "time": "2026-09-15T19:10:37.3780",
+        "message": "cooling.wait]: Temperature Some(17.4) C (prior 18), power Some(36)% (prior Some(59)%), stable 0/3"
+      },
+      {
+        "time": "2026-09-15T19:10:39.3913",
+        "message": "cooling.wait]: Temperature Some(17.1) C (prior 18), power Some(37)% (prior Some(59)%), stable 0/3"
+      },
+      {
+        "time": "2026-09-15T19:10:41.3982",
+        "message": "cooling.wait]: Temperature Some(16.8) C (prior 18), power Some(37)% (prior Some(59)%), stable 0/3"
+      },
+      {
+        "time": "2026-09-15T19:10:43.4053",
+        "message": "cooling.wait]: Temperature Some(16.6) C (prior 18), power Some(38)% (prior Some(59)%), stable 0/3"
+      },
+      {
+        "time": "2026-09-15T19:10:45.4202",
+        "message": "cooling.wait]: Temperature Some(16.3) C (prior 18), power Some(38)% (prior Some(59)%), stable 0/3"
+      },
+      {
+        "time": "2026-09-15T19:10:47.4284",
+        "message": "cooling.wait]: Temperature Some(16.1) C (prior 18), power Some(39)% (prior Some(59)%), stable 0/3"
+      },
+      {
+        "time": "2026-09-15T19:10:49.4300",
+        "message": "cooling.wait]: Temperature Some(15.9) C (prior 18), power Some(39)% (prior Some(59)%), stable 0/3"
+      },
+      {
+        "time": "2026-09-15T19:10:51.4391",
+        "message": "cooling.wait]: Temperature Some(15.6) C (prior 18), power Some(40)% (prior Some(59)%), stable 0/3"
+      },
+      {
+        "time": "2026-09-15T19:10:53.4408",
+        "message": "cooling.wait]: Temperature Some(15.4) C (prior 18), power Some(40)% (prior Some(59)%), stable 0/3"
+      },
+      {
+        "time": "2026-09-15T19:10:55.4446",
+        "message": "cooling.wait]: Temperature Some(15.1) C (prior 18), power Some(41)% (prior Some(59)%), stable 0/3"
+      },
+      {
+        "time": "2026-09-15T19:10:57.4554",
+        "message": "cooling.wait]: Temperature Some(15.0) C (prior 18), power Some(41)% (prior Some(59)%), stable 0/3"
+      },
+      {
+        "time": "2026-09-15T19:10:59.4710",
+        "message": "cooling.wait]: Temperature Some(14.7) C (prior 18), power Some(41)% (prior Some(59)%), stable 0/3"
+      },
+      {
+        "time": "2026-09-15T19:11:01.4785",
+        "message": "cooling.wait]: Temperature Some(14.5) C (prior 18), power Some(42)% (prior Some(59)%), stable 0/3"
+      },
+      {
+        "time": "2026-09-15T19:11:03.4941",
+        "message": "cooling.wait]: Temperature Some(14.3) C (prior 18), power Some(42)% (prior Some(59)%), stable 0/3"
+      },
+      {
+        "time": "2026-09-15T19:11:05.5031",
+        "message": "cooling.wait]: Temperature Some(14.0) C (prior 18), power Some(42)% (prior Some(59)%), stable 0/3"
+      },
+      {
+        "time": "2026-09-15T19:11:07.5183",
+        "message": "cooling.wait]: Temperature Some(13.9) C (prior 18), power Some(42)% (prior Some(59)%), stable 0/3"
+      },
+      {
+        "time": "2026-09-15T19:11:09.5204",
+        "message": "cooling.wait]: Temperature Some(13.7) C (prior 18), power Some(43)% (prior Some(59)%), stable 0/3"
+      },
+      {
+        "time": "2026-09-15T19:11:11.5290",
+        "message": "cooling.wait]: Temperature Some(13.5) C (prior 18), power Some(43)% (prior Some(59)%), stable 0/3"
+      },
+      {
+        "time": "2026-09-15T19:11:13.5416",
+        "message": "cooling.wait]: Temperature Some(13.3) C (prior 18), power Some(43)% (prior Some(59)%), stable 0/3"
+      },
+      {
+        "time": "2026-09-15T19:11:15.5433",
+        "message": "cooling.wait]: Temperature Some(13.1) C (prior 18), power Some(43)% (prior Some(59)%), stable 0/3"
+      },
+      {
+        "time": "2026-09-15T19:11:17.5520",
+        "message": "cooling.wait]: Temperature Some(12.9) C (prior 18), power Some(43)% (prior Some(59)%), stable 0/3"
+      },
+      {
+        "time": "2026-09-15T19:11:19.5656",
+        "message": "cooling.wait]: Temperature Some(12.7) C (prior 18), power Some(43)% (prior Some(59)%), stable 0/3"
+      },
+      {
+        "time": "2026-09-15T19:11:21.5783",
+        "message": "cooling.wait]: Temperature Some(12.6) C (prior 18), power Some(43)% (prior Some(59)%), stable 0/3"
+      },
+      {
+        "time": "2026-09-15T19:11:23.5880",
+        "message": "cooling.wait]: Temperature Some(12.4) C (prior 18), power Some(44)% (prior Some(59)%), stable 0/3"
+      },
+      {
+        "time": "2026-09-15T19:11:25.6008",
+        "message": "cooling.wait]: Temperature Some(12.3) C (prior 18), power Some(43)% (prior Some(59)%), stable 0/3"
+      },
+      {
+        "time": "2026-09-15T19:11:27.6069",
+        "message": "cooling.wait]: Temperature Some(12.1) C (prior 18), power Some(44)% (prior Some(59)%), stable 0/3"
+      },
+      {
+        "time": "2026-09-15T19:11:29.6144",
+        "message": "cooling.wait]: Temperature Some(12.0) C (prior 18), power Some(44)% (prior Some(59)%), stable 0/3"
+      },
+      {
+        "time": "2026-09-15T19:11:31.6174",
+        "message": "cooling.wait]: Temperature Some(11.8) C (prior 18), power Some(44)% (prior Some(59)%), stable 0/3"
+      },
+      {
+        "time": "2026-09-15T19:11:33.6283",
+        "message": "cooling.wait]: Temperature Some(11.6) C (prior 18), power Some(44)% (prior Some(59)%), stable 0/3"
+      },
+      {
+        "time": "2026-09-15T19:11:35.6417",
+        "message": "cooling.wait]: Temperature Some(11.5) C (prior 18), power Some(44)% (prior Some(59)%), stable 0/3"
+      },
+      {
+        "time": "2026-09-15T19:11:37.6507",
+        "message": "cooling.wait]: Temperature Some(11.4) C (prior 18), power Some(44)% (prior Some(59)%), stable 0/3"
+      },
+      {
+        "time": "2026-09-15T19:11:39.6576",
+        "message": "cooling.wait]: Temperature Some(11.3) C (prior 18), power Some(44)% (prior Some(59)%), stable 0/3"
+      },
+      {
+        "time": "2026-09-15T19:11:41.6694",
+        "message": "cooling.wait]: Temperature Some(11.1) C (prior 18), power Some(43)% (prior Some(59)%), stable 0/3"
+      },
+      {
+        "time": "2026-09-15T19:11:43.6797",
+        "message": "cooling.wait]: Temperature Some(11.0) C (prior 18), power Some(43)% (prior Some(59)%), stable 0/3"
+      },
+      {
+        "time": "2026-09-15T19:11:45.6876",
+        "message": "cooling.wait]: Temperature Some(10.9) C (prior 18), power Some(43)% (prior Some(59)%), stable 0/3"
+      },
+      {
+        "time": "2026-09-15T19:11:47.7024",
+        "message": "cooling.wait]: Temperature Some(10.8) C (prior 18), power Some(43)% (prior Some(59)%), stable 0/3"
+      },
+      {
+        "time": "2026-09-15T19:11:49.7057",
+        "message": "cooling.wait]: Temperature Some(10.6) C (prior 18), power Some(43)% (prior Some(59)%), stable 0/3"
+      },
+      {
+        "time": "2026-09-15T19:11:51.7176",
+        "message": "cooling.wait]: Temperature Some(10.6) C (prior 18), power Some(43)% (prior Some(59)%), stable 0/3"
+      },
+      {
+        "time": "2026-09-15T19:11:53.7302",
+        "message": "cooling.wait]: Temperature Some(10.5) C (prior 18), power Some(43)% (prior Some(59)%), stable 0/3"
+      },
+      {
+        "time": "2026-09-15T19:11:55.7401",
+        "message": "cooling.wait]: Temperature Some(10.4) C (prior 18), power Some(43)% (prior Some(59)%), stable 0/3"
+      },
+      {
+        "time": "2026-09-15T19:11:57.7479",
+        "message": "cooling.wait]: Temperature Some(10.3) C (prior 18), power Some(43)% (prior Some(59)%), stable 0/3"
+      },
+      {
+        "time": "2026-09-15T19:11:59.7561",
+        "message": "cooling.wait]: Temperature Some(10.1) C (prior 18), power Some(42)% (prior Some(59)%), stable 0/3"
+      },
+      {
+        "time": "2026-09-15T19:12:01.7662",
+        "message": "cooling.wait]: Temperature Some(10.1) C (prior 18), power Some(42)% (prior Some(59)%), stable 0/3"
+      },
+      {
+        "time": "2026-09-15T19:12:03.7808",
+        "message": "cooling.wait]: Temperature Some(10.0) C (prior 18), power Some(42)% (prior Some(59)%), stable 0/3"
+      },
+      {
+        "time": "2026-09-15T19:12:05.7834",
+        "message": "cooling.wait]: Temperature Some(10.0) C (prior 18), power Some(42)% (prior Some(59)%), stable 0/3"
+      },
+      {
+        "time": "2026-09-15T19:12:07.7962",
+        "message": "cooling.wait]: Temperature Some(9.9) C (prior 18), power Some(42)% (prior Some(59)%), stable 0/3"
+      },
+      {
+        "time": "2026-09-15T19:12:09.8074",
+        "message": "cooling.wait]: Temperature Some(9.8) C (prior 18), power Some(42)% (prior Some(59)%), stable 0/3"
+      },
+      {
+        "time": "2026-09-15T19:12:11.8209",
+        "message": "cooling.wait]: Temperature Some(9.7) C (prior 18), power Some(41)% (prior Some(59)%), stable 0/3"
+      },
+      {
+        "time": "2026-09-15T19:12:13.8339",
+        "message": "cooling.wait]: Temperature Some(9.6) C (prior 18), power Some(41)% (prior Some(59)%), stable 1/3"
+      },
+      {
+        "time": "2026-09-15T19:12:15.8460",
+        "message": "cooling.wait]: Temperature Some(9.6) C (prior 18), power Some(41)% (prior Some(59)%), stable 2/3"
+      },
+      {
+        "time": "2026-09-15T19:12:17.8610",
+        "message": "cooling.wait]: Temperature Some(9.5) C (prior 18), power Some(41)% (prior Some(59)%), stable 3/3"
+      },
+      {
+        "time": "2026-09-15T19:12:17.8610",
+        "message": "cooling.recovered]: Cooling recovered at Some(9.5) C; restored setpoint 10 C"
+      },
+      {
+        "time": "2026-09-15T19:12:29.0544",
+        "message": "capture.recovered]: Returning 6248x4176 image after 1 replacement exposures and 0 SDK read retries"
+      }
+    ],
+    "warmingAndCoolerOffPassed": true,
+    "dewOffAfterTest": true
+  }
+}

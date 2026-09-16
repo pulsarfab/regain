@@ -92,9 +92,9 @@ the source tree; it is not in the v0.2.0.0 release.
 
 Direct capture includes RAW16 images, factory defect correction, gain and
 offset. The ASI2600 and ASI6200 also support cooling and the dew heater. The
-P25 models have optional fan and LED settings. Cooler, dew, fan and LED hardware
-checks on the newly added ASI2600 P25 are still pending. Selected image areas are adjusted
-to the camera's size and alignment rules.
+P25 models have optional fan and LED settings. ASI2600 P25 cooler recovery and
+auxiliary register checks passed in SDK, direct and SDK-fallback modes.
+Selected image areas are adjusted to the camera's size and alignment rules.
 
 **Fall back to SDK** is a separate option. It uses the same camera and stays
 active until disconnect. It cannot repeat a failed long exposure unless your

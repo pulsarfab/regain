@@ -29,7 +29,7 @@ def main():
     parser.add_argument('--offset', type=int, help='explicit ASI offset control for register mapping')
     parser.add_argument('--bandwidth', type=int, help='explicit USB bandwidth control')
     parser.add_argument('--probe-6200-gains', action='store_true', help='trace ASI6200 conversion/digital gain boundaries')
-    parser.add_argument('--environment-probe', action='store_true', help='Duo only: briefly test target 20C, cooling and dew, then restore')
+    parser.add_argument('--environment-probe', action='store_true', help='supported cooled cameras: briefly test target 20C and auxiliary controls, then restore')
     parser.add_argument('--environment-seconds', type=int, default=3, help='environment probe duration, 3..120 seconds')
     parser.add_argument('--ready-delay', type=float, default=0.5)
     parser.add_argument('--deadline', type=float, default=60)
@@ -264,9 +264,10 @@ def main():
                 finally:
                     call('set', {'control':0,'value':old_gain})
             if args.environment_probe:
-                if camera['name'] not in ('ZWO ASI2600MM Duo', 'ZWO ASI6200MM Pro'):
+                if camera['name'] not in ('ZWO ASI2600MM Duo', 'ZWO ASI2600MM Pro', 'ZWO ASI6200MM Pro'):
                     raise RuntimeError('environment probe requires a supported cooled camera')
-                env_controls = (16,17,21,22,23) if camera['name'] == 'ZWO ASI6200MM Pro' else (16,17,21)
+                available = {c['type'] for c in opened['controls'] if c['writable']}
+                env_controls = tuple(c for c in (16,17,21,22,23) if c in available)
                 previous = {c: call('get', {'control': c}) for c in env_controls}
                 try:
                     for c,v in [(16,20),(17,1),(21,1)]:
