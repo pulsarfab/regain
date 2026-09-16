@@ -23,7 +23,8 @@ public class ReviewRegressionTests
             new(){MaxRetries=0,ReconnectDelaySeconds=.05});
         await session.ConnectAsync(default);
         session.Set(16,0); session.Set(17,1); await session.RefreshAsync(default);
-        using var cancel=new CancellationTokenSource(150);
+        using var cancel=new CancellationTokenSource();
+        session.Diagnostic+=phase=>{if(phase=="Exposing") cancel.Cancel();};
         await Assert.ThrowsAnyAsync<OperationCanceledException>(()=>session.CaptureAsync(Request with {microseconds=2000000},cancel.Token));
         session.Set(17,0);
         await Until(()=>Volatile.Read(ref starts)==2 && session.ControlConnectionAvailable);
@@ -57,7 +58,8 @@ public class ReviewRegressionTests
         },new(){MaxRetries=0,ReconnectDelaySeconds=.2});
         await session.ConnectAsync(default);
         session.Set(17,1); await session.RefreshAsync(default);
-        using var cancel=new CancellationTokenSource(100);
+        using var cancel=new CancellationTokenSource();
+        session.Diagnostic+=phase=>{if(phase=="Exposing") cancel.Cancel();};
         await Assert.ThrowsAnyAsync<OperationCanceledException>(()=>session.CaptureAsync(Request with{microseconds=2000000},cancel.Token));
         session.Dispose();
         Assert.Equal(2,pids.Count);
@@ -80,7 +82,8 @@ public class ReviewRegressionTests
         },new(){MaxRetries=0,ReconnectDelaySeconds=.05,CoolingTimeoutSeconds=.08,CoolingSampleSeconds=.01,CoolingStableSamples=1});
         session.Diagnostic+=phase=>{if(phase=="Starting exposure") Interlocked.Increment(ref exposures);};
         await session.ConnectAsync(default);
-        using var cancel=new CancellationTokenSource(100);
+        using var cancel=new CancellationTokenSource();
+        session.Diagnostic+=phase=>{if(phase=="Exposing") cancel.Cancel();};
         await Assert.ThrowsAnyAsync<OperationCanceledException>(()=>session.CaptureAsync(Request with{microseconds=2000000},cancel.Token));
         await Until(()=>Volatile.Read(ref starts)==2 && session.ControlConnectionAvailable);
         await Assert.ThrowsAsync<IOException>(()=>session.CaptureAsync(Request,default));

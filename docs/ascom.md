@@ -105,9 +105,10 @@ Inno Setup installation can be selected with `-Compiler <path-to-ISCC.exe>`.
 The output is an EXE and SHA-256 file in `artifacts`.
 
 CI runs `scripts/test-ascom-installer.ps1` on a disposable administrator runner.
-It checks the missing-platform gate, installation, all four COM slots in both
-client architectures, capture and abort, busy-file guards, upgrades, downgrade
-and directory-change rejection, uninstall and settings preservation. The ASCOM
+It checks the missing-platform gate, rollback after a denied registry write,
+installation, all four COM slots in both client architectures, capture and abort,
+busy-file guards, repair, downgrade and directory-change rejection, uninstall
+and settings preservation. The ASCOM
 Platform registry version is a fixture; the captures use the installed Rust
 server in simulation mode. Never run this test on a workstation with installed
 camera registrations.
