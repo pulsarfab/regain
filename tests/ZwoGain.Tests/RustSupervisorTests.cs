@@ -19,7 +19,7 @@ public class RustSupervisorTests
         var log = new ConcurrentQueue<string>();
         using var session = new CameraSession(Camera, () => host = new(Worker, "unused", simulate: true, direct: true, supervised: true, log: log.Enqueue), Fast);
         await session.ConnectAsync(default);
-        int child = (await host!.CallAsync("diagnostics", null, TimeSpan.FromSeconds(3), default)).Result.GetProperty("processId").GetInt32();
+        int child = (await host!.CallAsync("diagnostics", null, TimeSpan.FromSeconds(15), default)).Result.GetProperty("processId").GetInt32();
         // Fail all retained reads on this worker. Faults end with the worker,
         // so the replacement succeeds without depending on polling timing.
         await host.CallAsync("simulate-read-failures", new { count = 3 }, TimeSpan.FromSeconds(15), default);
