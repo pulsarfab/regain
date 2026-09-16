@@ -11,6 +11,13 @@ use std::{cell::RefCell, ffi::CStr, time::Duration};
 #[derive(Clone)]
 pub struct DeviceInfo(nusb::DeviceInfo);
 impl DeviceInfo {
+    pub fn same_interface(&self, other: &Self) -> bool {
+        self.0.vendor_id() == other.0.vendor_id()
+            && self.0.product_id() == other.0.product_id()
+            && self.0.bus_id() == other.0.bus_id()
+            && self.0.port_chain() == other.0.port_chain()
+            && !self.0.port_chain().is_empty()
+    }
     pub fn matches(&self, vendor: u16, product: u16) -> bool {
         self.0.vendor_id() == vendor && self.0.product_id() == product
     }

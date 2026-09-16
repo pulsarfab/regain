@@ -1,0 +1,186 @@
+{
+  "camera": "ASI2600MM Pro P25",
+  "workerSha256": "011c92cb149ff5ae353afeaca30ea186170428ca542a8345deeaea1899ff1081",
+  "cases": [
+    {
+      "operation": "reset-port",
+      "before": [
+        {
+          "camera": "ZWO ASI2600MM Pro Camera",
+          "arrival": "2026-09-16T05:52:07.9909090Z",
+          "status": "OK"
+        },
+        {
+          "camera": "ZWO ASI676MC Camera",
+          "arrival": "2026-09-15T08:32:29.0070920Z",
+          "status": "OK"
+        }
+      ],
+      "after": [
+        {
+          "camera": "ZWO ASI2600MM Pro Camera",
+          "arrival": "2026-09-16T05:52:07.9909090Z",
+          "status": "OK"
+        },
+        {
+          "camera": "ZWO ASI676MC Camera",
+          "arrival": "2026-09-15T08:32:29.0070920Z",
+          "status": "OK"
+        }
+      ],
+      "reset": {
+        "afterRetainedStatus": 21,
+        "beforeRetainedStatus": 21,
+        "device": {
+          "configurationBytes": 31,
+          "driverVersionRaw": "0x01020200",
+          "endpoints": [
+            {
+              "address": 129,
+              "alternate": 0,
+              "attributes": 2,
+              "interface": 0,
+              "maxBurst": 15,
+              "maxPacketSize": 1024
+            }
+          ],
+          "productId": 9742,
+          "sdkLoaded": false,
+          "usbVersionBcd": 768,
+          "vendorId": 963
+        },
+        "elapsedMs": 3044,
+        "identityVerified": true,
+        "operation": "reset-port"
+      },
+      "retainedReadSucceeded": false,
+      "retainedReadAttempts": 3,
+      "retainedReadFailure": "timeout before first chunk",
+      "freshFrame": {
+        "acquisitionMs": 1523,
+        "bin": 1,
+        "bytes": 52183296,
+        "elapsedMs": 1776,
+        "factoryDefects": 26091,
+        "gain": 100,
+        "handleReopens": 0,
+        "height": 4176,
+        "interruptedPrefixBytes": 0,
+        "interruptedPrefixPixelsMatch": false,
+        "microseconds": 100000,
+        "model": "ASI2600MM Pro P25",
+        "offset": 100,
+        "rawHeight": 4176,
+        "rawWidth": 6248,
+        "rawX": 0,
+        "rawY": 0,
+        "readErrors": [],
+        "readRecoveries": 0,
+        "reopenInjectionBytes": 0,
+        "replay": null,
+        "retainedPixelsVerified": false,
+        "sdkLoaded": false,
+        "sequence": 1,
+        "sha256": "ef90f52aab65a5ebf42d6e5f4e080b9e4dc177dc3c8c0cddd09ee1d3be1f7dd3",
+        "timeoutInjectionBytes": 0,
+        "verifiedRetainedBytes": 0,
+        "width": 6248,
+        "wireBytes": 52183296,
+        "wireInteriorSha256": "de9b4af4a7c54f7f339cbeecf7873ede158190d99810e8edac88173b7f7cc4fd",
+        "wireSha256": "a18a57056d950ddf2121b59276a23eb10209c9a5da1a62a593315bf3d3eeed7e",
+        "x": 0,
+        "y": 0
+      }
+    },
+    {
+      "operation": "cycle-port",
+      "before": [
+        {
+          "camera": "ZWO ASI2600MM Pro Camera",
+          "arrival": "2026-09-16T05:52:07.9909090Z",
+          "status": "OK"
+        },
+        {
+          "camera": "ZWO ASI676MC Camera",
+          "arrival": "2026-09-15T08:32:29.0070920Z",
+          "status": "OK"
+        }
+      ],
+      "after": [
+        {
+          "camera": "ZWO ASI2600MM Pro Camera",
+          "arrival": "2026-09-16T05:54:32.3892420Z",
+          "status": "OK"
+        },
+        {
+          "camera": "ZWO ASI676MC Camera",
+          "arrival": "2026-09-15T08:32:29.0070920Z",
+          "status": "OK"
+        }
+      ],
+      "reset": {
+        "afterRetainedStatus": 21,
+        "beforeRetainedStatus": 21,
+        "device": {
+          "configurationBytes": 31,
+          "driverVersionRaw": "0x01020200",
+          "endpoints": [
+            {
+              "address": 129,
+              "alternate": 0,
+              "attributes": 2,
+              "interface": 0,
+              "maxBurst": 15,
+              "maxPacketSize": 1024
+            }
+          ],
+          "productId": 9742,
+          "sdkLoaded": false,
+          "usbVersionBcd": 768,
+          "vendorId": 963
+        },
+        "elapsedMs": 3001,
+        "identityVerified": true,
+        "operation": "cycle-port"
+      },
+      "retainedReadSucceeded": false,
+      "retainedReadAttempts": 3,
+      "retainedReadFailure": "timeout before first chunk",
+      "freshFrame": {
+        "acquisitionMs": 1518,
+        "bin": 1,
+        "bytes": 52183296,
+        "elapsedMs": 1755,
+        "factoryDefects": 26091,
+        "gain": 100,
+        "handleReopens": 0,
+        "height": 4176,
+        "interruptedPrefixBytes": 0,
+        "interruptedPrefixPixelsMatch": false,
+        "microseconds": 100000,
+        "model": "ASI2600MM Pro P25",
+        "offset": 100,
+        "rawHeight": 4176,
+        "rawWidth": 6248,
+        "rawX": 0,
+        "rawY": 0,
+        "readErrors": [],
+        "readRecoveries": 0,
+        "reopenInjectionBytes": 0,
+        "replay": null,
+        "retainedPixelsVerified": false,
+        "sdkLoaded": false,
+        "sequence": 1,
+        "sha256": "652d350c5f3db7c5f217a4f7aafd9673d198a8dc46e457705eeb4a685753d2fa",
+        "timeoutInjectionBytes": 0,
+        "verifiedRetainedBytes": 0,
+        "width": 6248,
+        "wireBytes": 52183296,
+        "wireInteriorSha256": "d440bb78e24f2e27f0ebddfcea0f04cb73b76f229d3e1b6e0b7a9fb398d2a6f0",
+        "wireSha256": "5a6c9f7a23e3a89df34c8d748fb7141d0b24d94d56abd5b0db7337947c7ae626",
+        "x": 0,
+        "y": 0
+      }
+    }
+  ]
+}

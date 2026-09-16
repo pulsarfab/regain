@@ -118,6 +118,9 @@ pub fn enumerate() -> Result<Vec<DeviceInfo>> {
 #[derive(Clone)]
 pub struct DeviceInfo(Vec<u16>);
 impl DeviceInfo {
+    pub fn same_interface(&self, other: &Self) -> bool {
+        String::from_utf16_lossy(&self.0).eq_ignore_ascii_case(&String::from_utf16_lossy(&other.0))
+    }
     pub fn matches(&self, vendor: u16, product: u16) -> bool {
         String::from_utf16_lossy(&self.0)
             .to_ascii_lowercase()
@@ -131,6 +134,22 @@ struct Completion {
     cancel_requested: bool,
 }
 impl Device {
+    /// Cypress documented port operations, scoped to this device's upstream
+    /// port. CLI research only; never part of automatic capture recovery.
+    pub fn port_operation(&self, cycle: bool) -> Result<()> {
+        let done = self.request(
+            if cycle { 0x220028 } else { 0x220030 },
+            &mut [],
+            Some(&mut []),
+            5000,
+        )?;
+        ensure!(
+            done.error == 0 && !done.cancel_requested,
+            "USB port operation failed: {}",
+            done.error
+        );
+        Ok(())
+    }
     pub fn vendor(&self, request: u8, value: u16, index: u16, length: u16) -> Result<Vec<u8>> {
         let mut data = protocol::descriptor_request(0, length);
         data[0] = if length == 0 { 0x40 } else { 0xc0 };
@@ -261,9 +280,17 @@ impl Device {
             let ok = DeviceIoControl(
                 self.0.0,
                 code,
-                input.as_mut_ptr().cast(),
+                if input.is_empty() {
+                    null_mut()
+                } else {
+                    input.as_mut_ptr().cast()
+                },
                 input.len() as u32,
-                out_ptr.cast(),
+                if out_size == 0 {
+                    null_mut()
+                } else {
+                    out_ptr.cast()
+                },
                 out_size as u32,
                 &mut bytes,
                 &mut overlap,

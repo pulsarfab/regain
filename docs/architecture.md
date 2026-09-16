@@ -63,6 +63,13 @@ recovery decides whether to reread from byte zero. Camera timing, calibration,
 image processing, and cooling logic are shared. See
 [portable build and hardware testing](portable-rust.md).
 
+The Windows ASI2600 P25 path may reopen the handle after two failed reads when
+completed pixel chunks provide continuity evidence. It verifies the original
+interface and serial, restores environment controls, and checks chunk hashes on
+reread. This consumes the existing retry budget; it never starts another exposure.
+Calibration and frame context stay in the same worker. Cross-worker adoption and
+automatic OS device resets are not implemented. See [USB lifecycle](usb-lifecycle.md).
+
 ## Wire version 1
 
 The worker protocol below is distinct from the supervisor's `--stdio` adapter.

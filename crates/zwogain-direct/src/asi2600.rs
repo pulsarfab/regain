@@ -304,6 +304,16 @@ fn capture_native(
         "ASI2600 capture requires USB3"
     );
     let started = Instant::now();
+    // Cache identity while the handle is healthy. A failed USB read may make
+    // even the serial query impossible until the handle has been replaced.
+    let recovery_serial = if cfg!(windows) && revision == Revision::P25 {
+        camera
+            .vendor(0xc8, 0, 0, 8)
+            .ok()
+            .filter(|s| s.len() == 8 && s.iter().any(|&b| b != 0))
+    } else {
+        None
+    };
     camera.phase("initializing");
     let result = (|| {
         let initialize = match revision {
@@ -472,8 +482,28 @@ fn capture_native(
         }
         let mut prefix = Vec::new();
         let mut read_errors = Vec::new();
+        let mut continuity = crate::transfer::Continuity::default();
+        let mut handle_reopens = 0;
         let mut data = loop {
             let attempt = (|| {
+                if !read_errors.is_empty() {
+                    // Try the sender/pipe first. Only escalate within the user's
+                    // existing read retry budget, with evidence from this frame.
+                    if read_errors.len() >= 2
+                        && handle_reopens == 0
+                        && continuity.has_pixels()
+                        && let Some(serial) = &recovery_serial
+                    {
+                        handle_reopens += 1;
+                        crate::diagnostics::log(
+                            "warning",
+                            "transfer.reopening",
+                            "Reopening the camera handle before rereading the retained frame",
+                        );
+                        camera.reopen_same_camera(serial, Duration::from_secs(3))?;
+                    }
+                    begin_retained_read(camera, revision)?;
+                }
                 if read_errors.is_empty() && s.reopen_after_bytes > 0 {
                     prefix = camera.read_frame(s.reopen_after_bytes as usize)?;
                     // Leave the sender and sensor untouched: measure handle-close
@@ -505,7 +535,11 @@ fn capture_native(
                     prefix = camera.read_frame(s.interrupt_read_after_bytes as usize)?;
                     anyhow::bail!("injected host interruption after {} bytes", prefix.len());
                 }
-                let data = camera.read_frame(s.width as usize * s.height as usize * 2)?;
+                let data = camera.read_frame_checked(
+                    s.width as usize * s.height as usize * 2,
+                    5000,
+                    &mut continuity,
+                )?;
                 frame_sequence(&data)?;
                 Ok(data)
             })();
@@ -519,11 +553,12 @@ fn capture_native(
                         s.read_retries,
                         true,
                     );
-                    if read_errors.len() >= s.read_retries as usize {
+                    if read_errors.len() >= s.read_retries as usize
+                        || error.is::<crate::transfer::ChangedFrame>()
+                    {
                         return Err(error);
                     }
                     read_errors.push(error.to_string());
-                    begin_retained_read(camera, revision)?;
                 }
             }
         };
@@ -582,6 +617,10 @@ fn capture_native(
             "replay":replay_result,"sdkLoaded":false,"readRecoveries":read_errors.len(),"readErrors":read_errors,
             "interruptedPrefixBytes":prefix.len(),"interruptedPrefixPixelsMatch":!prefix.is_empty(),
             "timeoutInjectionBytes":s.timeout_read_after_bytes,"reopenInjectionBytes":s.reopen_after_bytes});
+        let mut meta = meta;
+        meta["handleReopens"] = json!(handle_reopens);
+        meta["retainedPixelsVerified"] = json!(continuity.verified_bytes() > 0);
+        meta["verifiedRetainedBytes"] = json!(continuity.verified_bytes());
         Ok((meta, data))
     })();
     let cleanup = if s.keep_retained && result.is_ok() {

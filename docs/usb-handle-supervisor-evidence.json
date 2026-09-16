@@ -1,0 +1,91 @@
+{
+  "camera": "ASI2600MM Pro P25",
+  "builds": {
+    "zwogain-alpaca.exe": "13efd6f62bd840f547bb9770322ac193aed72eca28431b74a63479492bd6f55f",
+    "zwogain-direct.exe": "6edcb8e687c68613c9e866873cc3091f1beb2d4bef0441618a15789393b85631"
+  },
+  "cases": [
+    {
+      "seconds": 60,
+      "readRetries": 2,
+      "success": true,
+      "exposureStarts": 1,
+      "workersStarted": 1,
+      "sdkFallback": false,
+      "recoveryLogForwarded": true,
+      "frame": {
+        "acquisitionMs": 64186,
+        "backend": "direct",
+        "bin": 1,
+        "bytes": 52183296,
+        "controls": {
+          "0": 100,
+          "16": 30,
+          "17": 0,
+          "21": 0,
+          "22": 255,
+          "23": 255,
+          "5": 50,
+          "6": 40
+        },
+        "downloadRetries": 0,
+        "elapsedMs": 64473,
+        "endedUtc": "2026-09-16T05:49:30.555351400Z",
+        "exposure": {
+          "bin": 1,
+          "dark": true,
+          "height": 4176,
+          "microseconds": 60000000,
+          "width": 6248,
+          "x": 0,
+          "y": 0
+        },
+        "factoryDefects": 26091,
+        "gain": 100,
+        "handleReopens": 1,
+        "height": 4176,
+        "interruptedPrefixBytes": 0,
+        "interruptedPrefixPixelsMatch": false,
+        "microseconds": 60000000,
+        "model": "ASI2600MM Pro P25",
+        "offset": 50,
+        "rawHeight": 4176,
+        "rawWidth": 6248,
+        "rawX": 0,
+        "rawY": 0,
+        "readErrors": [
+          "USB transfer failed: {\"category\":\"cancelled\",\"chunk\":11,\"completedBytes\":11534336,\"deadlineExpired\":false,\"expectedBytes\":1048576,\"frameBytes\":52183296,\"ntStatus\":3221225760,\"phase\":\"downloading\",\"receivedBytes\":0,\"terminalCompletionObserved\":true,\"usbStatus\":3221291008,\"win32Error\":995}",
+          "USB transfer failed: {\"category\":\"cancelled\",\"chunk\":0,\"completedBytes\":0,\"deadlineExpired\":false,\"expectedBytes\":1048576,\"frameBytes\":52183296,\"ntStatus\":3221225760,\"phase\":\"downloading\",\"receivedBytes\":0,\"terminalCompletionObserved\":true,\"usbStatus\":3221291008,\"win32Error\":995}"
+        ],
+        "readRecoveries": 2,
+        "recoveries": 0,
+        "reopenInjectionBytes": 0,
+        "replay": null,
+        "retainedPixelsVerified": true,
+        "sdkFallback": false,
+        "sdkLoaded": false,
+        "sequence": 1,
+        "sha256": "916cb53b3fb40adf0fedb54ca6089fe10e328204fb516a56198dc140e72e16d3",
+        "startedUtc": "2026-09-16T05:48:25.986105600Z",
+        "timeoutInjectionBytes": 0,
+        "verifiedRetainedBytes": 11534332,
+        "width": 6248,
+        "wireBytes": 52183296,
+        "wireInteriorSha256": "3bb7e58c38fe25e30c1d5e295fb5db72e4908a131bdfb6fd71c15a1595901472",
+        "wireSha256": "8bf67cb314b82943f340ca566055f4afc2943c6b50a3189c77ca5bceea987b3e",
+        "x": 0,
+        "y": 0
+      }
+    },
+    {
+      "seconds": 31,
+      "readRetries": 1,
+      "success": false,
+      "exposureStarts": 1,
+      "workersStarted": 1,
+      "sdkFallback": false,
+      "recoveryLogForwarded": false,
+      "frame": null
+    }
+  ]
+}

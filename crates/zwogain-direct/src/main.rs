@@ -19,9 +19,59 @@ mod transfer;
 mod transport;
 use anyhow::{Result, ensure};
 
+#[cfg(windows)]
+fn research_port_operation(cycle: bool) -> Result<()> {
+    use std::time::{Duration, Instant};
+    std::thread::spawn(|| {
+        std::thread::sleep(Duration::from_secs(30));
+        std::process::exit(124);
+    });
+    let paths: Vec<_> = transport::enumerate()?
+        .into_iter()
+        .filter(|p| p.matches(0x03c3, 0x260e))
+        .collect();
+    ensure!(
+        paths.len() == 1,
+        "port experiment requires exactly one ASI2600 P25"
+    );
+    let camera = transport::Camera::open(&paths[0])?;
+    let info = camera.probe()?;
+    ensure!(
+        info["productId"] == 0x260e
+            && info["usbVersionBcd"] == 0x300
+            && info["driverVersionRaw"] == "0x01020200",
+        "port experiment requires the inspected P25 USB3 driver"
+    );
+    ensure!(
+        camera.vendor(0xbc, 0x19, 0, 1)?[0] & 0x80 != 0,
+        "disable cooling before this port experiment"
+    );
+    let serial = camera.vendor(0xc8, 0, 0, 8)?;
+    ensure!(
+        serial.iter().any(|&b| b != 0),
+        "camera identity unavailable"
+    );
+    let before = camera.vendor(0xbc, 0x23, 0, 1)?[0];
+    let started = Instant::now();
+    camera.research_port_operation(cycle)?;
+    camera.reopen_same_camera(&serial, Duration::from_secs(3))?;
+    let after = camera.vendor(0xbc, 0x23, 0, 1)?[0];
+    println!(
+        "{}",
+        serde_json::json!({"operation":if cycle {"cycle-port"} else {"reset-port"},
+        "beforeRetainedStatus":before,"afterRetainedStatus":after,"identityVerified":true,
+        "elapsedMs":started.elapsed().as_millis(),"device":camera.probe()?})
+    );
+    Ok(())
+}
+
 fn main() -> Result<()> {
     transport::require_sdk_absent()?;
     let args: Vec<_> = std::env::args().skip(1).collect();
+    #[cfg(windows)]
+    if args == ["--reset-port-2600-p25"] || args == ["--cycle-port-2600-p25"] {
+        return research_port_operation(args[0].starts_with("--cycle"));
+    }
     if args == ["--serve"] || args == ["--serve", "--simulate"] {
         return server::run(args.len() == 2);
     }

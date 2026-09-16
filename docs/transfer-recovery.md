@@ -104,7 +104,7 @@ and a complete sensor readout interval before freezing DDR.
 | Acquisition lifecycle | Observed readiness registers, retained state and framing checks; P25 cameras additionally wait a full programmed sensor frame plus 100 ms before standby | These guards are time based. Full-frame control transitions caught stale rows that valid framing and repeated dark frames did not. A definitive firmware completion indicator remains open |
 | Error reporting | Structured category, progress, Windows/NT/USB or native status, and deadline flag in diagnostics and terminal protocol errors | Control/initialization failures still use ordinary error context |
 | Time bounds | Configurable whole-read deadline for every transfer/replay attempt, per-request deadlines, supervisor readiness grace, worker watchdog | Cancellation drain and an in-progress control request can extend observed failure time; outer bounds still apply |
-| Disconnect recovery | Reconnect, restore controls/cooling, and take a replacement exposure when policy allows; P25 research tests retain pixels across handle reopen and process replacement | Production cross-worker adoption, USB reset/removal, and power loss are not established |
+| Disconnect recovery | Windows ASI2600 P25 can reopen the handle within the read budget and verify prior pixel chunks; full reconnect restores controls/cooling and takes a replacement exposure when policy allows | Diagnostic port reset/cycle works but retained reads then time out; cross-worker adoption, physical removal, and power loss remain open |
 
 For the public SDK, `ASIGetDataAfterExp` is a whole-image retrieval call with no
 offset or continuation token. Inspected code and traces place USB acquisition
@@ -116,15 +116,16 @@ independent of exposure duration. A count of zero explicitly disables them. See 
 ## Next useful experiments
 
 See [USB lifecycle work](usb-lifecycle.md) for the reopen/process-exit tests and
-their reproduction script. They preserve camera DDR by avoiding initialization
-and normal cleanup; production frontends do not yet use these research commands.
+their reproduction scripts. Production ASI2600 P25 handle recovery now preserves
+DDR and validates chunk hashes in the same worker. Cross-process verification
+still requires the separate research commands.
 
 1. Extend structured failures to control requests and record retention evidence
    alongside transfer progress. Do not stitch uncertain partial data into an image.
 2. Test endpoint stalls, delayed completions and short reads separately from
    canceled requests. Establish whether each leaves replay usable. Then test
-   close/reopen and USB re-enumeration without normal sensor initialization,
-   which currently clears retained state during cleanup.
+   OS device restart and USB re-enumeration without normal sensor initialization,
+   which clears retained state during cleanup.
 3. Compare SDK and direct behavior under the same fault and USB topology.
    Preserve the first failure details before a full reset changes camera state.
 4. Prototype a small overlapped read queue only after its ownership, drain and

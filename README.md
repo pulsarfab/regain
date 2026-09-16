@@ -60,9 +60,12 @@ reread the same frame.
 
 Each direct download attempt uses the configured download timeout (60 seconds
 by default). Logs include the failed chunk, completed bytes, and USB status.
-Experimental [USB lifecycle tests](docs/usb-lifecycle.md) also recover retained
-frames after handle reopen and worker replacement on the ASI2600 P25; these
-extra recovery paths are not yet enabled in the plugin.
+On Windows, the direct ASI2600 P25 driver can also reopen its USB handle within
+that retry budget. It checks the camera identity and previously downloaded pixels
+before returning the recovered frame. [USB lifecycle tests](docs/usb-lifecycle.md)
+cover this path; recovery across worker replacement is still experimental.
+Windows diagnostic commands can reset or cycle the attached ASI2600 P25's USB
+port. Tests required a new exposure afterward, so automatic retries do not use them.
 
 On reconnect, ZWOgain restores the camera settings and cooler setpoint. Before
 another exposure, it waits for cooling to return near the temperature measured

@@ -95,6 +95,14 @@ impl Camera {
             .context("USB handle is closed")?
             .reset_pipe()
     }
+    #[cfg(windows)]
+    pub fn research_port_operation(&self, cycle: bool) -> Result<()> {
+        self.device
+            .borrow()
+            .as_ref()
+            .context("USB handle is closed")?
+            .port_operation(cycle)
+    }
     pub fn probe(&self) -> Result<Value> {
         self.device
             .borrow()
@@ -130,26 +138,59 @@ impl Camera {
     /// Every request is synchronous here and has drained before it returns.
     pub fn reopen_retained(&self, delay: Duration) -> Result<()> {
         let serial = self.vendor(0xc8, 0, 0, 8)?;
+        self.reopen_same_camera(&serial, delay)
+    }
+    /// All requests have completed or drained before reaching this boundary.
+    /// Re-enumerate the original interface, then verify the pre-exposure serial
+    /// before allowing any register write. Never pick another enumeration index.
+    pub fn reopen_same_camera(&self, serial: &[u8], delay: Duration) -> Result<()> {
         ensure!(
-            serial.iter().any(|&b| b != 0),
+            serial.len() == 8 && serial.iter().any(|&b| b != 0),
             "retained reopen requires camera identity"
         );
         self.phase("reopening_retained");
         drop(self.device.borrow_mut().take());
         std::thread::sleep(delay);
-        *self.device.borrow_mut() = Some(platform::Device::open(&self.identity)?);
+        let mut candidates = enumerate()?
+            .into_iter()
+            .filter(|info| info.same_interface(&self.identity));
+        let current = candidates
+            .next()
+            .context("original camera interface has not returned")?;
+        ensure!(candidates.next().is_none(), "ambiguous camera interface");
+        *self.device.borrow_mut() = Some(platform::Device::open(&current)?);
         let observed = self.vendor(0xc8, 0, 0, 8);
-        if !observed.as_ref().is_ok_and(|value| value == &serial) {
+        if !observed.as_ref().is_ok_and(|value| value == serial) {
             drop(self.device.borrow_mut().take());
             observed?;
             anyhow::bail!("camera identity changed during retained reopen");
         }
+        if let Some(environment) = self.environment.borrow_mut().as_mut() {
+            environment.restore(self)?;
+        }
+        self.publish_environment()?;
         Ok(())
     }
     pub fn read_frame(&self, length: usize) -> Result<Vec<u8>> {
         self.read_frame_wait(length, 5000)
     }
     pub fn read_frame_wait(&self, length: usize, first_timeout_ms: u32) -> Result<Vec<u8>> {
+        self.read_frame_inner(length, first_timeout_ms, None)
+    }
+    pub fn read_frame_checked(
+        &self,
+        length: usize,
+        first_timeout_ms: u32,
+        continuity: &mut crate::transfer::Continuity,
+    ) -> Result<Vec<u8>> {
+        self.read_frame_inner(length, first_timeout_ms, Some(continuity))
+    }
+    fn read_frame_inner(
+        &self,
+        length: usize,
+        first_timeout_ms: u32,
+        mut continuity: Option<&mut crate::transfer::Continuity>,
+    ) -> Result<Vec<u8>> {
         ensure!(
             (5000..=15000).contains(&first_timeout_ms),
             "invalid frame wait"
@@ -197,6 +238,9 @@ impl Camera {
                 );
                 self.phase("transfer_failed");
                 return Err(Failure(failure).into());
+            }
+            if let Some(proof) = continuity.as_mut() {
+                proof.observe(number, number * 1024 * 1024, length, chunk)?;
             }
         }
         self.phase("transfer_complete");

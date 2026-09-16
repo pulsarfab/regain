@@ -310,3 +310,14 @@ then checks retention across normal worker exit and a reader terminated after
 12 MiB. Each recovered frame must match earlier pixels, and traces must show
 no extra exposure. It needs Windows, Frida, and a capped camera released by other
 apps. See [commands and limits](../../docs/usb-lifecycle.md).
+
+`validate_handle_recovery.py` injects two real USB cancellations to exercise the
+production handle-reopen path, including a 60-second exposure and exhausted retry
+budgets. `validate_handle_environment.py` checks it with the real cooler and aux
+controls, then verifies a subsequent capture. Both accept a new `--output` directory.
+`restart-camera.ps1` is a separate, administrator-only Windows device restart tool;
+it requires one exact ZWO camera instance ID and never restarts its parent hub.
+`validate_handle_supervisor.py` checks long-frame recovery and the recapture cutoff
+through the NINA private-pipe adapter. `validate_port_lifecycle.py` tests the
+camera driver's unprivileged reset/cycle commands, retained-read failure afterward,
+and fresh full-frame capture. Port operations remain CLI-only diagnostics.

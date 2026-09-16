@@ -1,5 +1,5 @@
 // Research only: observe the SDK in an owned diagnostic host, never NINA.
-// Passive by default. An explicit experiment may cancel ONE pending bulk read.
+// Passive by default. An explicit experiment may cancel selected pending reads.
 // Never rewrite API arguments/results. Optional bulk hashing passes bytes to the
 // local Python tracer only; it records digests and discards those bytes.
 'use strict';
@@ -7,6 +7,7 @@ const handles = new Set();
 const pending = new Map();
 let sequence = 0;
 let cancelled = false;
+const cancelledNumbers = new Set();
 let bulkNumber = 0;
 function emit(kind, fields) { send({kind, timeMs: Date.now(), thread: Process.getCurrentThreadId(), ...fields}); }
 function hex(p, length) {
@@ -124,12 +125,15 @@ attach(kernel, 'DeviceIoControl', {
             header: result.toInt32() ? hex(this.input, Math.min(this.record.inputLength, 38)) : null
         });
         if (result.toInt32()) collectBulk(this.record, this.input, this.output, u32(this.bytes));
-        if (Number.isInteger(globalThis.TRACE_CANCEL_BULK_NUMBER) && this.record.code === '0x22004b'
-            && globalThis.TRACE_CANCEL_BULK_NUMBER === this.record.bulkNumber && !cancelled
+        if (this.record.code === '0x22004b'
+            && (globalThis.TRACE_CANCEL_BULK_NUMBER === this.record.bulkNumber
+                || (globalThis.TRACE_CANCEL_BULK_NUMBERS || []).includes(this.record.bulkNumber))
+            && !cancelledNumbers.has(this.record.bulkNumber)
             && !result.toInt32() && error === 997 && this.record.overlapped !== '0x0') {
             // Cancel on this submission's thread while its OVERLAPPED is still
             // alive. A later callback could race reuse of the same stack address.
             cancelled = true;
+            cancelledNumbers.add(this.record.bulkNumber);
             const value = cancelIo(ptr(this.record.handle), ptr(this.record.overlapped));
             emit('injected-cancel', {sequence: this.record.sequence, bulkNumber: this.record.bulkNumber,
                 ok: !!value.value, lastError: value.lastError});

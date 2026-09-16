@@ -58,6 +58,36 @@ fn flags(camera: &Camera, mask: u8, enabled: bool) -> Result<()> {
 }
 
 impl Environment {
+    /// Restore actuator state after a handle reconnect without replacing the
+    /// saved setpoint, regulator history, or the frame retained in DDR.
+    pub fn restore(&mut self, camera: &Camera) -> Result<()> {
+        camera.vendor(
+            0xbd,
+            0x26,
+            power_register(if self.enabled { self.power } else { 0.0 }),
+            0,
+        )?;
+        flags(camera, 0x80, !self.enabled)?;
+        camera.vendor(0xbd, 0x2a, if self.dew { 197 } else { 0 }, 0)?;
+        flags(camera, 0x40, self.dew)?;
+        if let Some((fan, led)) = self.auxiliary {
+            self.set(camera, 22, fan)?;
+            self.set(camera, 23, led)?;
+        }
+        let expected_flags = (u8::from(!self.enabled) * 0x80) | (u8::from(self.dew) * 0x40);
+        ensure!(
+            camera.vendor(0xbc, 0x19, 0, 1)?[0] & 0xc0 == expected_flags,
+            "cooler/dew state did not restore"
+        );
+        ensure!(
+            u16::from(camera.vendor(0xbc, 0x26, 0, 1)?[0])
+                == power_register(if self.enabled { self.power } else { 0.0 }),
+            "cooler output did not restore"
+        );
+        self.temperature = Self::read_temperature(camera)?;
+        self.tick = Instant::now();
+        Ok(())
+    }
     pub fn open(camera: &Camera, auxiliary: bool) -> Result<Self> {
         let bits = camera.vendor(0xbc, 0x19, 0, 1)?[0];
         let register = camera.vendor(0xbc, 0x26, 0, 1)?[0];

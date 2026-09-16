@@ -38,6 +38,7 @@ public sealed class CameraSession : IDisposable
     public string SdkVersion { get; private set; } = "unknown";
     public string Backend { get; private set; } = "sdk";
     public bool SupportsRetainedFrameReads { get; private set; }
+    private double readRetryOverheadSeconds;
     public string? Serial => serial;
     public string Phase { get; private set; } = "Disconnected";
     public string? LastError
@@ -150,6 +151,8 @@ public sealed class CameraSession : IDisposable
         Backend = result.TryGetProperty("backend", out var backend) ? backend.GetString()! : "sdk";
         if (supervised) usingFallback = result.TryGetProperty("sdkFallback", out var fallback) && fallback.GetBoolean();
         SupportsRetainedFrameReads = Backend == "direct" && info.TryGetProperty("retainedFrameReads", out var retained) && retained.ValueKind == JsonValueKind.True;
+        readRetryOverheadSeconds = info.TryGetProperty("readRetryOverheadSeconds", out var overhead) && overhead.TryGetDouble(out var overheadSeconds) && double.IsFinite(overheadSeconds)
+            ? Math.Clamp(overheadSeconds, 0, 15) : 0;
         Log($"Camera opened using {Backend}{(usingFallback ? " fallback" : "")}; SDK/driver {SdkVersion}");
         Controls = result.GetProperty("controls").EnumerateArray().Select(c => new Control(c.GetProperty("type").GetInt32(), c.GetProperty("min").GetInt64(), c.GetProperty("max").GetInt64(), c.GetProperty("value").GetInt64(), c.GetProperty("writable").GetBoolean())).ToDictionary(c => c.Type);
         if (!Controls.ContainsKey(1))
@@ -571,7 +574,7 @@ public sealed class CameraSession : IDisposable
     }
     public double ReadyTimeoutSeconds(double seconds) => seconds + Options.ExposureGraceSeconds +
         (Backend == "direct" ? (1 + (SupportsRetainedFrameReads || seconds <= Options.MaximumRetryExposureSeconds
-            ? Options.DirectReadRetries : 0)) * Options.DownloadTimeoutSeconds : 0);
+            ? Options.DirectReadRetries : 0)) * Options.DownloadTimeoutSeconds + Options.DirectReadRetries * readRetryOverheadSeconds : 0);
     private async Task Settle(double prior, long? priorPower, double target, CancellationToken token)
     {
         State($"Restoring cooling near {prior:F1} C");

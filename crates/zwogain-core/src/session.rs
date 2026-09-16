@@ -427,6 +427,11 @@ impl Session {
                     0
                 }) as f64
                     * o.download_timeout_seconds
+                    + o.direct_read_retries as f64
+                        * self.snapshot().info["readRetryOverheadSeconds"]
+                            .as_f64()
+                            .unwrap_or(0.)
+                            .clamp(0., 15.)
             } else {
                 0.
             }
@@ -666,7 +671,8 @@ impl Session {
         metadata["sdkFallback"] = json!(self.selection.direct && !self.direct);
         metadata["downloadRetries"] = json!(reads);
         if attempt > 0 || reads > 0 || metadata["readRecoveries"].as_u64().unwrap_or(0) > 0 {
-            self.emit("info","capture.recovered",format!("Returning {}x{} image after {attempt} replacement exposures and {reads} SDK read retries",e.width,e.height));
+            self.emit("info","capture.recovered",format!("Returning {}x{} image after {attempt} replacement exposures, {reads} SDK read retries, {} retained-frame retries and {} handle reopens",e.width,e.height,
+                metadata["readRecoveries"].as_u64().unwrap_or(0), metadata["handleReopens"].as_u64().unwrap_or(0)));
         }
         Ok(Frame {
             exposure: e.clone(),

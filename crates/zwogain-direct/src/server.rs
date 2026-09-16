@@ -70,7 +70,8 @@ impl Model {
         json!({"id":self.pid(),"name":self.name(),"width":width,"height":height,"color":self == Self::Asi676,"bayer":0,
             "pixelSize":pixel,"bitDepth":bits,"cooled":self.cooled(),"shutter":false,"bins":bins,"formats":[2],
             "minimumWidth":64,"minimumHeight":64,"originAlignment":alignment,
-            "retainedFrameReads":self != Self::Guide})
+            "retainedFrameReads":self != Self::Guide,
+            "readRetryOverheadSeconds":if cfg!(windows) && self == Self::Asi2600P25 {15} else {0}})
     }
     fn controls(self) -> Vec<Value> {
         let (gain_min, gain_max, offset_min, offset_max, offset_default, exp_max) = match self {
@@ -667,7 +668,7 @@ impl Host {
                     let seconds = params["captureTimeoutSeconds"].as_f64().unwrap_or(
                         f64::from(settings.microseconds) / 1e6
                             + 45.0
-                            + settings.transfer_timeout_seconds
+                            + (settings.transfer_timeout_seconds + 15.0)
                                 * f64::from(settings.read_retries + 1),
                     );
                     ensure!(
