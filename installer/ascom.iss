@@ -117,10 +117,7 @@ var
 begin
   Path := ExpandConstant('{app}\ZwoGain.ASCOM.dll');
   StringChangeEx(Path, '\', '/', True);
-  StringChangeEx(Path, '%', '%25', True);
-  StringChangeEx(Path, ' ', '%20', True);
-  StringChangeEx(Path, '#', '%23', True);
-  StringChangeEx(Path, '?', '%3F', True);
+  { Match RegAsm: the CLR COM loader expects literal spaces in CodeBase. }
   Result := 'file:///' + Path;
 end;
 
