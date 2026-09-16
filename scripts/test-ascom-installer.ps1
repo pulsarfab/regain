@@ -9,9 +9,20 @@ $destination = Join-Path $testDir 'Installed ASCOM'
 $uninstallKey = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{6C6E7298-5281-4CB4-92F0-0C3702B8BFAA}_is1'
 $platformKey = 'HKLM:\SOFTWARE\WOW6432Node\ASCOM'
 if (Test-Path $uninstallKey) { throw 'An installation already exists' }
-foreach ($view in 'SOFTWARE','SOFTWARE\WOW6432Node') {
-    if (Test-Path "HKLM:\$view\Classes\CLSID\{D1DB6F94-5CC0-4752-A758-F849098874A1}") { throw 'A COM registration already exists' }
+function Assert-NoCameraEntries {
+    foreach ($view in [Microsoft.Win32.RegistryView]::Registry32,[Microsoft.Win32.RegistryView]::Registry64) {
+        $root = [Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::LocalMachine, $view)
+        try {
+            for ($slot = 1; $slot -le 4; $slot++) {
+                foreach ($path in "Software\Classes\CLSID\{D1DB6F94-5CC0-4752-A758-F849098874A$slot}","Software\ASCOM\Camera Drivers\ASCOM.ZWOgain.Camera$slot") {
+                    $key = $root.OpenSubKey($path)
+                    if ($key) { $key.Dispose(); throw "Camera entry exists in $view : $path" }
+                }
+            }
+        } finally { $root.Dispose() }
+    }
 }
+Assert-NoCameraEntries
 $platformBefore = Get-ItemPropertyValue $platformKey -Name PlatformVersion -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Path $testDir -Force | Out-Null
 $oldSettings = $env:ZWOGAIN_ASCOM_SETTINGS
@@ -35,22 +46,24 @@ try {
     if (Test-Path (Join-Path $destination 'ZwoGain.ASCOM.dll')) { throw 'Prerequisite failure installed files' }
     New-Item $platformKey -Force | Out-Null
     Set-ItemProperty $platformKey -Name PlatformVersion -Value '7.1'
-    # Make registration fail after files are copied. Setup must report failure
-    # and roll back, rather than show a successful but unusable installation.
-    $failureStage = Join-Path $testDir 'failure-stage'
-    Copy-Item -LiteralPath (Join-Path $repo 'artifacts/ascom-stage') -Destination $failureStage -Recurse
-    $fixtureSource = Join-Path $testDir 'RegistrationFailure.cs'
-    'class Program { static int Main(string[] args) { return args.Length > 0 && args[0] == "/checkinuse" ? 0 : 17; } }' | Set-Content -LiteralPath $fixtureSource
-    & "$env:WINDIR/Microsoft.NET/Framework64/v4.0.30319/csc.exe" /nologo /target:winexe ("/out:" + (Join-Path $failureStage 'ZwoGain.ASCOM.Register.exe')) $fixtureSource
-    if ($LASTEXITCODE) { throw 'Registration failure fixture compilation failed' }
-    $failureOutput = Join-Path $testDir 'failure-output'
-    & (Join-Path $repo 'artifacts/tools/inno/ISCC.exe') /Qp "/DAppVersion=$version" "/DStage=$failureStage" "/DOutput=$failureOutput" (Join-Path $repo 'installer/ascom.iss')
-    if ($LASTEXITCODE) { throw 'Failure installer compilation failed' }
-    $realInstaller = $installer
-    $installer = Join-Path $failureOutput ([IO.Path]::GetFileName($realInstaller))
-    Run-Setup 'registration-failure' $false
-    if ((Test-Path $uninstallKey) -or (Test-Path (Join-Path $destination 'ZwoGain.ASCOM.dll'))) { throw 'Failed registration did not roll back installation' }
-    $installer = $realInstaller
+    # Deny one real registry write to exercise Inno's transactional rollback.
+    $blockedPath = 'HKLM:\SOFTWARE\Classes\CLSID\{D1DB6F94-5CC0-4752-A758-F849098874A1}'
+    New-Item -Path $blockedPath -Force | Out-Null
+    $originalAcl = Get-Acl $blockedPath
+    $deniedAcl = Get-Acl $blockedPath
+    $rule = [Security.AccessControl.RegistryAccessRule]::new([Security.Principal.WindowsIdentity]::GetCurrent().User, [Security.AccessControl.RegistryRights]::SetValue, [Security.AccessControl.AccessControlType]::Deny)
+    $deniedAcl.AddAccessRule($rule)
+    try {
+        Set-Acl $blockedPath $deniedAcl
+        Run-Setup 'registration-failure' $false
+        if ((Test-Path $uninstallKey) -or (Test-Path (Join-Path $destination 'ZwoGain.ASCOM.dll'))) { throw 'Failed registration did not roll back installation' }
+    } finally {
+        if (Test-Path $blockedPath) {
+            Set-Acl $blockedPath $originalAcl
+            Remove-Item -LiteralPath $blockedPath -Force
+        }
+    }
+    Assert-NoCameraEntries
     Run-Setup 'install'
     $registered = Get-ItemPropertyValue 'HKLM:\SOFTWARE\Classes\CLSID\{D1DB6F94-5CC0-4752-A758-F849098874A1}\InprocServer32' -Name CodeBase
     if (([Uri]$registered).LocalPath -ne (Join-Path $destination 'ZwoGain.ASCOM.dll')) { throw 'Wrong installed registration path' }
@@ -102,11 +115,7 @@ try {
     }
     Run-Uninstall 'uninstall'
     if ((Test-Path $uninstallKey) -or (Test-Path (Join-Path $destination 'ZwoGain.ASCOM.dll'))) { throw 'Uninstall left application files or entry' }
-    foreach ($view in 'SOFTWARE','SOFTWARE\WOW6432Node') {
-        for ($slot = 1; $slot -le 4; $slot++) {
-            if ((Test-Path "HKLM:\$view\Classes\CLSID\{D1DB6F94-5CC0-4752-A758-F849098874A$slot}") -or (Test-Path "HKLM:\$view\ASCOM\Camera Drivers\ASCOM.ZWOgain.Camera$slot")) { throw 'Uninstall left a camera entry' }
-        }
-    }
+    Assert-NoCameraEntries
     if ((Get-FileHash $env:ZWOGAIN_ASCOM_SETTINGS).Hash -ne $settingsHash -or (Get-FileHash $profiles).Hash -ne $profilesHash) { throw 'Setup changed user settings' }
     Write-Output 'Installer: prerequisites, 8 COM captures, busy guards, upgrade, downgrade guard, uninstall and settings preservation passed.'
 } finally {

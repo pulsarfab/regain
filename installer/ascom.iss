@@ -41,13 +41,13 @@ SignedUninstaller=yes
 #endif
 
 [Files]
-Source: "{#Stage}\*"; DestDir: "{app}"; Excludes: "ZwoGain.ASCOM.Register.exe"; Flags: ignoreversion recursesubdirs createallsubdirs
-; Register inside the installation transaction, after all dependencies exist.
-; Unlike ssPostInstall, a failure here aborts setup and rolls back its files.
-Source: "{#Stage}\ZwoGain.ASCOM.Register.exe"; DestDir: "{app}"; Flags: ignoreversion; AfterInstall: InstallDriver
+Source: "{#Stage}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 ; A separate helper checks the old files without loading the installed COM DLL.
 Source: "{#Stage}\*.dll"; DestDir: "{tmp}\preflight"; Flags: dontcopy
 Source: "{#Stage}\ZwoGain.ASCOM.Register.exe*"; DestDir: "{tmp}\preflight"; Flags: dontcopy
+
+[Registry]
+#include RegistryEntries
 
 [Icons]
 Name: "{group}\Camera setup"; Filename: "{app}\ZwoGain.ASCOM.Register.exe"
@@ -111,31 +111,35 @@ begin
   Result := CheckInUse(ExpandConstant('{tmp}\preflight\ZwoGain.ASCOM.Register.exe'), ExpandConstant('{app}'));
 end;
 
-procedure RegisterDriver(Arguments: String);
+function CameraCodeBase(Param: String): String;
 var
-  ExitCode: Integer;
+  Path: String;
 begin
-  if not Exec(ExpandConstant('{app}\ZwoGain.ASCOM.Register.exe'), Arguments, '', SW_HIDE, ewWaitUntilTerminated, ExitCode) then
-    RaiseException('Could not start ASCOM registration.');
-  if ExitCode <> 0 then
-    RaiseException('ASCOM registration failed. See %LOCALAPPDATA%\ZwoGain\ASCOM\registration.log.');
-end;
-
-procedure InstallDriver;
-begin
-  RegisterDriver('/regserver');
+  Path := ExpandConstant('{app}\ZwoGain.ASCOM.dll');
+  StringChangeEx(Path, '\', '/', True);
+  StringChangeEx(Path, '%', '%25', True);
+  StringChangeEx(Path, ' ', '%20', True);
+  StringChangeEx(Path, '#', '%23', True);
+  StringChangeEx(Path, '?', '%3F', True);
+  Result := 'file:///' + Path;
 end;
 
 function InitializeUninstall: Boolean;
 var
-  Problem: String;
+  Problem, CodeBase, Key: String;
+  Slot, View: Integer;
+  Root: Integer;
 begin
   Problem := CheckInUse(ExpandConstant('{app}\ZwoGain.ASCOM.Register.exe'), ExpandConstant('{app}'));
+  for View := 0 to 1 do begin
+    if View = 0 then Root := HKLM32 else Root := HKLM64;
+    for Slot := 1 to 4 do begin
+      Key := 'Software\Classes\CLSID\{D1DB6F94-5CC0-4752-A758-F849098874A' + IntToStr(Slot) + '}\InprocServer32';
+      if RegQueryStringValue(Root, Key, 'CodeBase', CodeBase) then
+        if CompareText(CodeBase, CameraCodeBase('')) <> 0 then
+          Problem := 'Another ZWOgain copy now owns the camera registration. Restore registration to this installation before uninstalling it.';
+    end;
+  end;
   Result := Problem = '';
   if not Result then SuppressibleMsgBox(Problem, mbError, MB_OK, IDOK);
-end;
-
-procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
-begin
-  if CurUninstallStep = usUninstall then RegisterDriver('/unregserver');
 end;
