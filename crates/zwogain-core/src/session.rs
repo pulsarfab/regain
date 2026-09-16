@@ -896,7 +896,9 @@ mod tests {
                 }
                 loop {
                     let state = shared.lock().unwrap().clone();
-                    if state.values[&8] != 999 {
+                    // The two worker reads update status separately. Wait for
+                    // both before checking their values, including on slow CI.
+                    if state.values[&8] != 999 && state.values[&15] != 99 {
                         assert_eq!(state.phase, "Exposing");
                         assert_eq!(state.values[&8], if direct { 250 } else { -100 });
                         assert_eq!(state.values[&15], if direct { 0 } else { 30 });
