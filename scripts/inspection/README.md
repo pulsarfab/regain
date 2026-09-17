@@ -234,10 +234,11 @@ are rejected before hardware access. `--stream` emits framed binary metadata
 and pixels; consume it with a binary reader, not a PowerShell text pipeline.
 See [Duo findings and limitations](../../docs/duo-capture.md).
 
-## ASI6200MM Pro P25
+## ASI6200MM Pro (original and P25)
 
-The tested mono P25 reports `ZWO ASI6200MM Pro` and USB PID `620b`. Its acquisition
-and initialization are model-specific; do not substitute ASI2600 tables. The
+Both tested editions report `ZWO ASI6200MM Pro` and USB PID `620b`. The driver
+reads `BC:1c` to select original (3) or P25 (5) timing; unknown revisions require
+SDK mode. Do not substitute ASI2600 tables. The
 production plugin and diagnostic commands share the same RAW16 acquisition,
 factory correction, binning and retained-frame reader. Disconnect NINA before
 running hardware commands and use a new output filename for every trace.
@@ -264,7 +265,25 @@ of at least 128 KiB, corrected and cropped before binning. The matrix checks
 output dimensions and digests, complete replay identity and interrupted-prefix
 agreement. It fails on any mismatch and saves statistics rather than pixels.
 These commands do not constitute physical unplug or cold-power testing.
-See [ASI6200 protocol and hardware results](../../docs/asi6200-p25.md).
+See [P25 results](../../docs/asi6200-p25.md) and
+[original ASI6200 workup](../../docs/asi6200-original.md).
+
+`validate_6200_kit.py KIT-DIRECTORY --worker WORKER --output NEW.json` checks
+saved normal RAW16 Camera Kit samples against the independent Rust processor.
+It extracts that camera's calibration from the same trace, verifies sample
+hashes, and compares every output byte. It opens no camera. Flip, hardware-bin
+and high-speed cases are excluded because they are not native still-image modes.
+
+`validate_6200_cancellation.py --worker WORKER --output NEW-DIRECTORY` cancels
+the first and last USB read, checks terminal cancellation, compares known
+pixels and requires a single exposure start. The directory contains private
+traces plus a sanitized `results.json`.
+
+`validate_handle_supervisor.py --camera-name 'ZWO ASI6200MM Pro' --output NEW-DIRECTORY`
+tests a recovered 60-second exposure and a failed 31-second exposure through
+the same private-pipe supervisor used by NINA. SDK fallback is enabled, but
+neither test may take another exposure. On the 6200 this exercises sender/pipe
+retries; USB handle reopening remains an ASI2600 P25 feature.
 
 ## ASI2600MM Pro P25
 
@@ -286,7 +305,8 @@ a twenty-minute exposure. See [P25 results](../../docs/asi2600-p25.md).
 ## Cooler and auxiliary recovery
 
 Disconnect other camera apps first. This Windows test needs Frida and a powered
-camera with cooler, dew, fan and LED controls. It starts a private Alpaca server,
+camera with cooler and dew controls; fan and LED are tested when available.
+It starts a private Alpaca server,
 changes those controls, then kills its camera worker during an exposure in SDK,
 direct and direct-with-fallback modes. It checks the recovered frame, restored
 settings and cooling log. The target stays below the interrupted temperature.

@@ -92,7 +92,7 @@ Windows driver.
 | ASI676MC USB3 | 1 | 30 seconds |
 | ASI2600MM Pro (non-P25) main USB3 | 1–4 | 2,000 seconds |
 | ASI2600MM Pro P25 USB3 | 1–4 | 2,000 seconds |
-| ASI6200MM Pro (non-P25) USB3 | 1�4 | 2,000 seconds |
+| ASI6200MM Pro (non-P25) USB3 | 1–4 | 2,000 seconds |
 | ASI6200MM Pro P25 USB3 | 1–4 | 2,000 seconds |
 | ASI220MM Mini guide USB2 | 1–2 | 10 seconds |
 
@@ -103,8 +103,9 @@ hardware revision to select timing and controls.
 
 Direct capture includes RAW16 images, factory defect correction, gain and
 offset. The ASI2600 and ASI6200 also support cooling and the dew heater. The
-P25 models have optional fan and LED settings. ASI2600 P25 cooler recovery and
-auxiliary register checks passed in SDK, direct and SDK-fallback modes.
+P25 models have optional fan and LED settings. ASI2600 P25 and original ASI6200
+cooler recovery passed in SDK, direct and SDK-fallback modes. Auxiliary controls
+were checked against each camera's capabilities.
 Selected image areas are adjusted to the camera's size and alignment rules.
 
 **Fall back to SDK** is a separate option. It uses the same camera and stays

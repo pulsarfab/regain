@@ -1,4 +1,4 @@
-"""Exercise the real P25 worker's transfer deadline and error protocol without the SDK."""
+"""Exercise the real camera worker's transfer deadline and error protocol without the SDK."""
 import argparse
 import hashlib
 import json
@@ -41,14 +41,16 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--worker', type=Path, default=ROOT / 'target/release/zwogain-direct.exe')
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--camera-name', choices=['ZWO ASI2600MM Pro', 'ZWO ASI6200MM Pro'], default='ZWO ASI2600MM Pro')
     args = parser.parse_args()
+    width, height = (9576, 6388) if args.camera_name == 'ZWO ASI6200MM Pro' else (6248, 4176)
     with args.output.open('x', encoding='utf-8') as output:
         with ProtocolWorker([str(args.worker), '--serve']) as worker:
-            worker.call('open', dict(name='ZWO ASI2600MM Pro'))
+            worker.call('open', dict(name=args.camera_name))
             try:
                 worker.call('set', dict(control=0, value=100))
                 worker.call('set', dict(control=5, value=50))
-                exposure = dict(width=6248, height=4176, x=0, y=0, bin=1,
+                exposure = dict(width=width, height=height, x=0, y=0, bin=1,
                                 microseconds=100000, dark=True, readRetries=0)
                 rejected, pixels = worker.raw('start', dict(exposure, transferTimeoutSeconds=-1))
                 assert not rejected['ok'] and rejected['sdkCode'] == 8 and not pixels, rejected
@@ -57,14 +59,14 @@ def main():
                 assert not failed['ok'] and failed['sdkCode'] is None, failed
                 detail = failed['transportFailure']
                 assert detail['deadlineExpired'] and detail['category'] in ['timeout', 'budget_exhausted'], failed
-                assert detail['frameBytes'] == 52183296, failed
+                assert detail['frameBytes'] == width * height * 2, failed
                 download, pixels = worker.raw('download')
                 assert not download['ok'] and download['transportFailure'] == detail and not pixels, download
                 # A fresh, explicitly requested exposure still works after cleanup.
                 worker.call('start', dict(exposure, transferTimeoutSeconds=60))
                 assert worker.wait_capture()['ok']
                 metadata, pixels = worker.call('download')
-                assert len(pixels) == 52183296 and not metadata['sdkLoaded']
+                assert len(pixels) == width * height * 2 and not metadata['sdkLoaded']
                 assert hashlib.sha256(pixels).hexdigest() == metadata['sha256']
                 output.write(json.dumps(dict(workerSha256=hashlib.sha256(args.worker.read_bytes()).hexdigest(),
                     invalidTimeoutRejected=True, failure=detail, errorDownloadBytes=0,

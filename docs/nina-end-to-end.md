@@ -691,3 +691,32 @@ prevents a wait for output the cooler no longer needs.
 NINA's warming command then brought the sensor back near 20 °C and switched
 cooling off. Dew was turned off, and the 0.1-second/bin-1/full-frame inputs and
 20 °C cooling target input were restored.
+
+## ASI6200MM Pro (non-P25) — 2026-09-17
+
+The owner-identified original ASI6200MM Pro uses the same USB ID as P25,
+`03c3:620b`, but reports revision 3 rather than 5. NINA 3.2.0.9001 was tested
+with the updated plugin and Release direct worker SHA-256
+`e9635ffe710f545fb7af7d9069b0a9a9faaf0f444aa0e8da322fc17e7dbf8377`.
+The native worker had no ASI SDK module loaded; SDK fallback was disabled.
+The camera was capped. Images below were inspected in NINA's image pane,
+at gain 100 and offset 50.
+
+| Backend | Exposure | Bin | Output | Mean / SD (ADU) |
+| --- | --- | --- | --- | --- |
+| SDK | 0.1 s | 1 | 9576 × 6388 | 500.85 / 10.37 |
+| SDK | 0.1 s | 2 | 4784 × 3194 | 500.46 / 5.30 |
+| SDK | 0.1 s | 3 | 3192 × 2128 | 500.39 / 3.61 |
+| SDK | 0.1 s | 4 | 2392 × 1596 | 500.38 / 2.74 |
+| SDK, 256 × 256 sensor region | 0.1 s | 4 | 64 × 64 | 500.59 / 2.21 |
+| SDK, after abort | 0.1 s | 4 | 2392 × 1596 | 500.39 / 2.80 |
+| Direct | 0.1 s | 1 | 9576 × 6388 | 500.85 / 11.38 |
+| Direct | 0.1 s | 2 | 4784 × 3194 | 500.48 / 5.75 |
+| Direct | 0.1 s | 3 | 3192 × 2128 | 500.41 / 3.78 |
+| Direct | 0.1 s | 4 | 2392 × 1596 | 500.38 / 2.89 |
+
+The short frames above used no cooling or dew heating. Cancelling a 60-second
+SDK exposure returned control promptly; the next capture displayed normally.
+The camera choice and serial persisted when switching between SDK and direct.
+Saved P25 fan and LED overrides were cleared for this camera, which exposes
+neither control.
