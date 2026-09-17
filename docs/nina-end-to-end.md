@@ -714,9 +714,27 @@ at gain 100 and offset 50.
 | Direct | 0.1 s | 2 | 4784 × 3194 | 500.48 / 5.75 |
 | Direct | 0.1 s | 3 | 3192 × 2128 | 500.41 / 3.78 |
 | Direct | 0.1 s | 4 | 2392 × 1596 | 500.38 / 2.89 |
+| Direct, cooled | 1200 s | 1 | 9576 × 6388 | 669.80 / 700.55 |
+| Direct, 256 × 256 sensor region, after abort | 0.1 s | 4 | 64 × 64 | 500.52 / 1.72 |
+| SDK, restored after native testing | 0.1 s | 1 | 9576 × 6388 | 500.84 / 9.76 |
 
-The short frames above used no cooling or dew heating. Cancelling a 60-second
+The initial short-frame matrix used no cooling or dew heating. Cancelling a 60-second
 SDK exposure returned control promptly; the next capture displayed normally.
 The camera choice and serial persisted when switching between SDK and direct.
 Saved P25 fan and LED overrides were cleared for this camera, which exposes
 neither control.
+
+The 1200-second exposure began at 14:38:22 local time and completed without
+retry or fallback. The image appeared in NINA's image pane with the expected
+full dimensions. Temperature updates continued throughout; after cooling from
+about 26°C, the sensor held near the 20°C target.
+
+Cancelling a separate 60-second native exposure returned control promptly.
+The log showed a five-second delay before reopening the camera. The next ROI
+capture waited for three cooling samples (19.8, 19.9 and 20.0°C at 1% power),
+then logged `cooling.recovered` and delivered the image. The 20°C setpoint was
+restored, and the abort did not cause a replacement exposure.
+
+After testing, SDK mode was restored and a final full-frame image passed.
+NINA was left connected with that image visible, cooling and dew heating off,
+and the capture inputs at 0.1 seconds, bin 1, full frame, with loop and save off.

@@ -8234,6 +8234,120 @@
         "mean": 500.38,
         "sd": 2.89,
         "imagePaneInspected": true
+      },
+      {
+        "mode": "direct",
+        "seconds": 1200,
+        "bin": 1,
+        "width": 9576,
+        "height": 6388,
+        "mean": 669.8,
+        "sd": 700.55,
+        "median": 638,
+        "min": 463,
+        "max": 65535,
+        "imagePaneInspected": true,
+        "coolerEnabled": true,
+        "setpointC": 20,
+        "retries": 0,
+        "sdkFallback": false
+      },
+      {
+        "mode": "direct-roi-after-abort",
+        "seconds": 0.1,
+        "bin": 4,
+        "width": 64,
+        "height": 64,
+        "mean": 500.52,
+        "sd": 1.72,
+        "imagePaneInspected": true,
+        "coolerEnabled": true,
+        "setpointC": 20
+      },
+      {
+        "mode": "sdk-restored",
+        "seconds": 0.1,
+        "bin": 1,
+        "width": 9576,
+        "height": 6388,
+        "mean": 500.84,
+        "sd": 9.76,
+        "imagePaneInspected": true,
+        "coolerEnabled": false,
+        "dewEnabled": false
+      }
+    ],
+    "abortRecovery": {
+      "abortedSeconds": 60,
+      "reconnectDelaySeconds": 5,
+      "setpointC": 20,
+      "priorTemperatureC": 20,
+      "priorPowerPercent": 1,
+      "acceptedTemperaturesC": [
+        19.8,
+        19.9,
+        20
+      ],
+      "acceptedPowerPercent": [
+        1,
+        1,
+        1
+      ],
+      "coolingRecoveredLog": true,
+      "replacementExposureAfterAbort": false,
+      "explicitNextCapturePassed": true
+    },
+    "longExposureTelemetry": [
+      {
+        "elapsedSeconds": 0,
+        "temperatureC": 25.8,
+        "powerPercent": 26
+      },
+      {
+        "elapsedSeconds": 61,
+        "temperatureC": 18.9,
+        "powerPercent": 21
+      },
+      {
+        "elapsedSeconds": 198,
+        "temperatureC": 19.1,
+        "powerPercent": 1
+      },
+      {
+        "elapsedSeconds": 359,
+        "temperatureC": 19.8,
+        "powerPercent": 0
+      },
+      {
+        "elapsedSeconds": 502,
+        "temperatureC": 20.1,
+        "powerPercent": 1
+      },
+      {
+        "elapsedSeconds": 637,
+        "temperatureC": 19.8,
+        "powerPercent": 1
+      },
+      {
+        "elapsedSeconds": 841,
+        "temperatureC": 19.9,
+        "powerPercent": 1
+      },
+      {
+        "elapsedSeconds": 990,
+        "temperatureC": 19.9,
+        "powerPercent": 1
+      },
+      {
+        "elapsedSeconds": 1123,
+        "temperatureC": 19.9,
+        "powerPercent": 1
+      },
+      {
+        "elapsedSeconds": null,
+        "phase": "after_download",
+        "temperatureC": 19.8,
+        "powerPercent": 1
       }
     ]
   },

@@ -112,8 +112,8 @@ Selected image areas are adjusted to the camera's size and alignment rules.
 active until disconnect. It cannot repeat a failed long exposure unless your
 recapture limit allows it.
 
-Testing used dark frames. Full 1,200-second ASI2600 (original and P25) and
-ASI6200 P25 captures passed in NINA; the full 2,000-second limit has not been tested.
+Testing used dark frames. Full 1,200-second captures passed in NINA on the
+ASI2600 and ASI6200, both original and P25. The 2,000-second limit has not been tested.
 USB retry tests used controlled faults, not cable removal or power loss.
 Live view and trigger modes are not supported. Temperature and cooler power
 update during exposures. Control changes wait until capture ends; the direct

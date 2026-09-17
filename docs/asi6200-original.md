@@ -59,6 +59,9 @@ The native matrix passed 66 cases (68 frames): full-frame repeats, bins 1–4,
 small/moved/edge ROIs, gain boundaries, offset limits and 32 µs–60 s exposures.
 Full-frame control transitions passed vertical-band checks for stale rows.
 Interrupted reads and a real USB timeout recovered identical retained pixels.
+NINA then displayed SDK and native frames at every bin, plus small ROIs.
+A full-resolution 1,200-second native exposure passed with cooling enabled,
+without retry or SDK fallback. SDK and native abort/follow-up captures passed.
 
 Cancelling the first or last bulk request with Windows `CancelIoEx` produced
 terminal error 995, then a valid frame without another exposure. The last-chunk
@@ -89,7 +92,7 @@ required by the default 30-second recapture limit. A retained frame is not a
 guarantee that every sequence of USB errors can be recovered within that budget.
 
 A separate 60-second exposure recovered from one cancelled transfer through
-NINA's shared supervisor. It used both read retries (the first restart timed
+the shared Rust supervisor in the standalone harness. It used both read retries (the first restart timed
 out), delivered the full frame and logged recovery. There was one exposure
 start, one worker and no SDK fallback. With only one read retry, a 31-second
 exposure with two cancellations failed with no image or replacement exposure.
@@ -110,3 +113,8 @@ These dark-frame tests do not establish illuminated geometry, photometric
 performance, physical unplug retention or cold-power startup. Automatic USB
 handle reopening remains restricted to the tested ASI2600 P25 path; the 6200
 uses retained sender/pipe retries and bounded reconnect/recapture.
+
+CI passed on Windows, Linux x64/ARM64 and macOS Intel/ARM64 for the
+[implementation](https://github.com/theatrus/zwogain/actions/runs/35275160595)
+and [validation scripts](https://github.com/theatrus/zwogain/actions/runs/35278238482).
+Camera hardware testing was on Windows only.
