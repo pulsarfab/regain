@@ -137,7 +137,8 @@ def main():
             request('/setup/api/cameras/0', profile)
             camera('connected', {'Connected': 'true'})
             initial = diagnostics()['values']
-            previous = {int(k): initial[k] for k in ('16', '17', '21', '22', '23')}
+            previous = {int(k): initial[k] for k in ('16', '17', '21', '22', '23') if k in initial}
+            assert all(k in previous for k in (16, 17, 21)), 'requires cooler and dew controls'
             row = {'mode': mode, 'auxiliary': [], 'samples': []}
             results['modes'].append(row)
             try:
@@ -146,6 +147,8 @@ def main():
                 time.sleep(3)
                 # Restore full fan before enabling the cooler.
                 for kind, values in ((22, (0, 128, 255)), (23, (0, 128, 255)), (21, (1, 0, 1))):
+                    if kind not in previous:
+                        continue
                     for value in values:
                         start = len(records)
                         control(kind, value)
@@ -153,7 +156,8 @@ def main():
                                  f'{mode} control {kind}={value} did not reach hardware')
                         row['auxiliary'].append({'control': kind, 'value': value, 'usbVerified': True})
                 # Use non-default auxiliary values to test restoration too.
-                control(23, 128)
+                if 23 in previous:
+                    control(23, 128)
                 baseline = camera('ccdtemperature')
                 target = max(10, min(20, math.floor(baseline - 10)))
                 control(16, target)
@@ -194,7 +198,8 @@ def main():
                 assert after['processId'] != before['processId']
                 assert after['backend'] == ('sdk' if fallback or not direct else 'direct')
                 for kind, value in {16: target, 17: 1, 21: 1, 22: 255, 23: 128}.items():
-                    assert after['values'][str(kind)] == value, (kind, after['values'])
+                    if kind in previous:
+                        assert after['values'][str(kind)] == value, (kind, after['values'])
                 events = []
                 for line in (args.output / 'server.log').read_bytes()[log_start:].decode().splitlines():
                     if line.startswith('ZWOGAIN_DIAGNOSTIC '):
@@ -220,7 +225,8 @@ def main():
                     control(17, 0)
                     time.sleep(3)
                     for kind in (16, 21, 22, 23, 17):
-                        control(kind, previous[kind])
+                        if kind in previous:
+                            control(kind, previous[kind])
                     time.sleep(4)
                     row['restoredStartingControls'] = {str(k): diagnostics()['values'][str(k)] for k in previous}
                 finally:

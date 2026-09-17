@@ -73,7 +73,7 @@ impl Model {
             "retainedFrameReads":self != Self::Guide,
             "readRetryOverheadSeconds":if cfg!(windows) && self == Self::Asi2600P25 {15} else {0}})
     }
-    fn controls(self) -> Vec<Value> {
+    fn controls(self, auxiliary: bool) -> Vec<Value> {
         let (gain_min, gain_max, offset_min, offset_max, offset_default, exp_max) = match self {
             Self::Asi676 => (0, 600, 0, 200, 10, 30_000_000),
             Self::Duo => (-25, 700, 0, 240, 50, asi2600::MAX_EXPOSURE_US as i32),
@@ -103,7 +103,7 @@ impl Model {
                 );
             }
         }
-        if matches!(self, Self::Asi6200 | Self::Asi2600P25) {
+        if auxiliary {
             for kind in [22, 23] {
                 caps.push(json!({"type":kind,"min":0,"max":255,"value":255,"writable":true}));
             }
@@ -148,7 +148,7 @@ fn open_camera(model: Model, serial: Option<&str>) -> Result<(transport::Camera,
         serial.is_some() || paths.len() == 1,
         "multiple cameras of this model require a serial number"
     );
-    let (camera, info, found) = find_accessible(paths, |path| {
+    let (camera, mut info, found) = find_accessible(paths, |path| {
         let camera = transport::Camera::open(&path)?;
         let info = camera.probe()?;
         ensure!(
@@ -168,8 +168,14 @@ fn open_camera(model: Model, serial: Option<&str>) -> Result<(transport::Camera,
         }
         Ok(None)
     })?;
+    let auxiliary = match model {
+        Model::Asi6200 => asi6200::Revision::detect(&camera)? == asi6200::Revision::P25,
+        Model::Asi2600P25 => true,
+        _ => false,
+    };
+    info["auxiliaryControls"] = json!(auxiliary);
     if model.cooled() {
-        camera.enable_environment(matches!(model, Model::Asi6200 | Model::Asi2600P25))?;
+        camera.enable_environment(auxiliary)?;
     }
     Ok((camera, info, found))
 }
@@ -202,6 +208,28 @@ fn find_accessible<I: IntoIterator, T>(
 #[cfg(test)]
 mod selection_tests {
     use super::*;
+    #[test]
+    fn original_6200_does_not_advertise_or_accept_p25_auxiliary_controls() {
+        let caps = Model::Asi6200.controls(false);
+        assert!(caps.iter().all(|c| c["type"] != 22 && c["type"] != 23));
+        let mut host = Host {
+            simulate: true,
+            ..Host::default()
+        };
+        host.command("open", &json!({"name":"ZWO ASI6200MM Pro"}))
+            .unwrap();
+        host.worker.as_mut().unwrap().auxiliary = false;
+        for control in [22, 23] {
+            for method in ["get", "set"] {
+                let error = host
+                    .command(method, &json!({"control":control,"value":128}))
+                    .unwrap_err();
+                assert_eq!(error.to_string(), "unsupported control");
+                assert!(!error.is::<HardwareFailure>());
+            }
+        }
+        host.command("close", &Value::Null).unwrap();
+    }
     #[test]
     fn hardware_classification_preserves_transport_details() {
         let error = hardware(crate::transfer::Failure::new("timeout", 1024, 0, true).into());
@@ -263,6 +291,7 @@ struct Worker {
     sender: mpsc::Sender<Work>,
     thread: Option<std::thread::JoinHandle<()>>,
     telemetry: transport::Telemetry,
+    auxiliary: bool,
 }
 impl Worker {
     fn open(model: Model, serial: Option<String>, simulate: bool) -> Result<(Self, String)> {
@@ -292,7 +321,11 @@ impl Worker {
                 .as_ref()
                 .map(|d| d.0.telemetry())
                 .unwrap_or_else(|| std::sync::Arc::new(std::sync::Mutex::new(Some([250, 0]))));
-            if ready_tx.send(Ok((identity, telemetry))).is_err() {
+            let auxiliary = device
+                .as_ref()
+                .map(|d| d.1["auxiliaryControls"] == true)
+                .unwrap_or(matches!(model, Model::Asi6200 | Model::Asi2600P25));
+            if ready_tx.send(Ok((identity, telemetry, auxiliary))).is_err() {
                 return;
             }
             let (watchdog, deadlines) = mpsc::channel::<Option<Duration>>();
@@ -431,11 +464,12 @@ impl Worker {
             .recv()
             .map_err(|_| anyhow::anyhow!("direct worker exited during open"))?
         {
-            Ok((identity, telemetry)) => Ok((
+            Ok((identity, telemetry, auxiliary)) => Ok((
                 Self {
                     sender,
                     thread: Some(thread),
                     telemetry,
+                    auxiliary,
                 },
                 identity,
             )),
@@ -556,7 +590,7 @@ impl Host {
                     Model::Asi2600P25 => 1,
                 };
                 self.gain = 0;
-                let mut controls = model.controls();
+                let mut controls = model.controls(worker.auxiliary);
                 if model.cooled() {
                     for cap in &mut controls {
                         let control = cap["type"].as_u64().unwrap() as u32;
@@ -595,7 +629,7 @@ impl Host {
                     self.pending.is_none() && self.frame.is_none(),
                     "cannot access controls during capture"
                 );
-                let caps = self.model.controls();
+                let caps = self.model.controls(worker.auxiliary);
                 let cap = caps
                     .iter()
                     .find(|c| c["type"] == control)

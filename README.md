@@ -41,7 +41,7 @@ model, enter the serial or connect the intended camera on its own once. Clear
 the saved serial when replacing a camera. Save and reconnect after setup changes.
 
 The ASI2600MM Pro main camera and ASI220MM Mini guide camera are separate USB
-devices. The ASI6200 P25 appears as **ASI6200MM Pro** in the picker.
+devices. Both ASI6200 editions appear as **ASI6200MM Pro** in the picker.
 
 ## How retries work
 
@@ -92,12 +92,14 @@ Windows driver.
 | ASI676MC USB3 | 1 | 30 seconds |
 | ASI2600MM Pro (non-P25) main USB3 | 1–4 | 2,000 seconds |
 | ASI2600MM Pro P25 USB3 | 1–4 | 2,000 seconds |
+| ASI6200MM Pro (non-P25) USB3 | 1�4 | 2,000 seconds |
 | ASI6200MM Pro P25 USB3 | 1–4 | 2,000 seconds |
 | ASI220MM Mini guide USB2 | 1–2 | 10 seconds |
 
-**Coming soon:** direct support for **ASI6200MM Pro (non-P25)**. Other cameras can
-use SDK mode if supported by the bundled ZWO SDK. ASI2600 P25 support is new in
-the source tree; it is not in the v0.2.0.0 release.
+Other cameras can use SDK mode if supported by the bundled ZWO SDK. ASI2600
+P25 and non-P25 ASI6200 support are new in the source tree; they are not in the
+v0.2.0.0 release. The ASI6200 editions share a USB ID; the driver reads the
+hardware revision to select timing and controls.
 
 Direct capture includes RAW16 images, factory defect correction, gain and
 offset. The ASI2600 and ASI6200 also support cooling and the dew heater. The
@@ -118,6 +120,7 @@ cooler controller keeps running.
 
 See [NINA tests](docs/nina-end-to-end.md), [ASI2600 P25 results](docs/asi2600-p25.md),
 [ASI6200 P25 results](docs/asi6200-p25.md),
+[non-P25 ASI6200 results](docs/asi6200-original.md),
 and [transfer recovery and SDK differences](docs/transfer-recovery.md).
 
 ## Help add a camera

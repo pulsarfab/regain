@@ -1,4 +1,4 @@
-"""ASI6200MM Pro P25 direct RAW16 dark-frame matrix; save statistics, never pixels."""
+"""ASI6200MM Pro original/P25 direct RAW16 matrix; save statistics, never pixels."""
 import argparse
 import hashlib
 import json

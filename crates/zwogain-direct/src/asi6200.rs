@@ -1,4 +1,4 @@
-//! ASI6200MM Pro P25 acquisition over the platform USB transport.
+//! ASI6200MM Pro original and P25 acquisition over the platform USB transport.
 use crate::{asi6200_tables, processing, settings::Settings, transport::Camera};
 use anyhow::{Result, ensure};
 use serde_json::{Value, json};
@@ -8,6 +8,32 @@ use std::time::{Duration, Instant};
 // SDK exposure range. Integrations >= 1 s use host timing, so their duration
 // does not increase the sensor frame/shutter register values.
 pub const MAX_EXPOSURE_US: u32 = 2_000_000_000;
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Revision {
+    Original,
+    P25,
+}
+impl Revision {
+    pub fn from_register(value: u8) -> Result<Self> {
+        // SDK 1.41 selects the faster sensor timing with BC:1c == 5.
+        // Only these two register values have been tested on hardware.
+        match value {
+            3 => Ok(Self::Original),
+            5 => Ok(Self::P25),
+            _ => anyhow::bail!("unverified ASI6200 hardware revision {value:#x}; use SDK mode"),
+        }
+    }
+    pub fn detect(camera: &Camera) -> Result<Self> {
+        Self::from_register(camera.vendor(0xbc, 0x1c, 0, 1)?[0])
+    }
+    fn hmax(self) -> u32 {
+        match self {
+            Self::Original => 1515,
+            Self::P25 => 880,
+        }
+    }
+}
 
 fn writes(camera: &Camera, commands: &[(u8, u16, u16)]) -> Result<()> {
     for &(request, register, value) in commands {
@@ -137,8 +163,8 @@ pub fn gain_registers(gain: i32) -> (u32, u16, u16, u16) {
     };
     (analog, mode, readout, (digital * 16) as u16)
 }
-pub fn timing(s: &Settings) -> (u32, u32) {
-    let line = 880.0_f32 * 1000.0 / 20000.0;
+pub fn timing(s: &Settings, revision: Revision) -> (u32, u32) {
+    let line = revision.hmax() as f32 * 1000.0 / 20000.0;
     let minimum = ((s.height + 52) as f32 * line) as u32;
     let exposure = if s.microseconds >= 1_000_000 {
         minimum + 10000
@@ -267,6 +293,7 @@ fn capture_native(
         "ASI6200 research capture requires observed PID 620b USB3"
     );
     let started = Instant::now();
+    let revision = Revision::detect(camera)?;
     camera.phase("initializing");
     let result = (|| {
         for &(request, register, value) in asi6200_tables::INITIALIZE {
@@ -274,6 +301,13 @@ fn capture_native(
             if camera.has_environment() && request == 0xbd && [0x19, 0x26].contains(&register) {
                 continue;
             }
+            // The remaining differences in the observed initialization are
+            // saved gain/offset/exposure values, explicitly set below.
+            let value = match (request, register) {
+                (0xbd, 0x13) => (revision.hmax() & 255) as u16,
+                (0xbd, 0x14) => (revision.hmax() >> 8) as u16,
+                _ => value,
+            };
             camera.vendor(request, register, value, 0)?;
         }
         let defects = calibration(camera, s)?;
@@ -289,8 +323,8 @@ fn capture_native(
         word(camera, 0xb6, 0x18c, s.width + 24, 2)?;
         word(camera, 0xbd, 8, s.height, 2)?;
         word(camera, 0xbd, 4, s.width, 2)?;
-        // P25 DDR readout: observed HMAX 880 and FPGA divisor 400.
-        word(camera, 0xbd, 0x13, 880, 2)?;
+        // Both revisions use divisor 400 at USB bandwidth 40.
+        word(camera, 0xbd, 0x13, revision.hmax(), 2)?;
         word(camera, 0xbd, 0x24, 400, 2)?;
         let (analog, mode, readout, digital) = gain_registers(gain);
         writes(
@@ -310,7 +344,7 @@ fn capture_native(
         camera.vendor(0xb6, 0x3e, digital, 0)?;
         word(camera, 0xb6, 0x40, s.offset * 10, 2)?;
         word(camera, 0xb6, 0x42, s.offset * 10, 2)?;
-        let (frame, shutter) = timing(s);
+        let (frame, shutter) = timing(s, revision);
         word(camera, 0xbd, 0x10, frame, 3)?;
         word(camera, 0xb6, 0x16, shutter, 2)?;
         let flags = camera.vendor(0xbc, 0, 0, 1)?[0];
@@ -409,10 +443,12 @@ fn capture_native(
             std::thread::sleep(Duration::from_millis(5));
         }
         // BC23=15 announces readout, not completion of all sensor rows.
-        // Allow the complete programmed frame (HMAX 880 / 20 MHz per row),
+        // Allow the complete programmed frame (HMAX / 20 MHz per row),
         // plus a settling margin, before stopping the sensor. The ready bit
         // alone can freeze partially refreshed DDR with a valid envelope.
-        let readout = Duration::from_micros(u64::from(frame) * 44 + 100000);
+        let readout = Duration::from_micros(
+            (u64::from(frame) * u64::from(revision.hmax())).div_ceil(20) + 100000,
+        );
         camera.phase("sensor_readout");
         let settling = Instant::now();
         while settling.elapsed() < readout {
@@ -516,7 +552,8 @@ fn capture_native(
             "bin":1,"gain":gain,"offset":s.offset,"microseconds":s.microseconds,"bytes":data.len(),
             "wireSha256":wire_hash,"sha256":format!("{:x}",Sha256::digest(&data)),"sequence":sequence,
             "factoryDefects":defects.indices.len(),"acquisitionMs":armed.elapsed().as_millis(),"elapsedMs":started.elapsed().as_millis(),
-            "readoutGuardUs":readout.as_micros(),
+            "readoutGuardUs":readout.as_micros(),"sensorHmax":revision.hmax(),
+            "hardwareRevision":if revision == Revision::P25 {5} else {3},
             "replay":replay_result,"sdkLoaded":false,"readRecoveries":read_errors.len(),"readErrors":read_errors,
             "interruptedPrefixBytes":prefix.len(),"interruptedPrefixPixelsMatch":!prefix.is_empty(),
             "timeoutInjectionBytes":s.timeout_read_after_bytes});
@@ -529,6 +566,34 @@ fn capture_native(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn original_timing_matches_independent_sdk_trace() {
+        // Non-P25 Camera Kit 20260917T205753Z: BC1c=3, HMAX=1515.
+        for (height, microseconds, expected) in [
+            (6388, 100000, (6440, 2558)),
+            (256, 32, (308, 152)),
+            (256, 100, (308, 152)),
+            (256, 1000, (308, 146)),
+            (256, 10000, (308, 86)),
+            (256, 490000, (6488, 10)),
+            (256, 999000, (13208, 10)),
+            (256, 1000000, (460, 10)),
+            (256, 60000000, (460, 10)),
+        ] {
+            let settings = Settings {
+                height,
+                microseconds,
+                ..Settings::default()
+            };
+            assert_eq!(timing(&settings, Revision::Original), expected);
+        }
+        assert_eq!(Revision::from_register(3).unwrap(), Revision::Original);
+        assert_eq!(Revision::from_register(5).unwrap(), Revision::P25);
+        for unknown in [0, 1, 2, 4, 6, 255] {
+            assert!(Revision::from_register(unknown).is_err());
+        }
+    }
 
     #[test]
     fn small_edge_rois_remain_inside_padded_sensor_readout() {
@@ -560,12 +625,15 @@ mod tests {
             microseconds: 100000,
             ..Settings::default()
         };
-        assert_eq!(timing(&settings), (0x8f4, 10));
+        assert_eq!(timing(&settings, Revision::P25), (0x8f4, 10));
         assert_eq!(
-            timing(&Settings {
-                microseconds: 2_000_000,
-                ..settings
-            }),
+            timing(
+                &Settings {
+                    microseconds: 2_000_000,
+                    ..settings
+                },
+                Revision::P25
+            ),
             (555, 10)
         );
     }
@@ -609,7 +677,7 @@ mod tests {
             microseconds: 1_000_000,
             ..Settings::default()
         };
-        let registers = timing(&settings);
+        let registers = timing(&settings, Revision::P25);
         for duration in [
             30_000_001,
             60_000_000,
@@ -619,7 +687,7 @@ mod tests {
         ] {
             settings.microseconds = duration;
             assert!(validate(&settings, 100).is_ok());
-            assert_eq!(timing(&settings), registers);
+            assert_eq!(timing(&settings, Revision::P25), registers);
         }
         settings.microseconds = MAX_EXPOSURE_US + 1;
         assert!(validate(&settings, 100).is_err());

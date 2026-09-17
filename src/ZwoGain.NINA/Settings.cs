@@ -122,6 +122,8 @@ internal static class Settings
             (nameof(RecoveryOptions.CoolingTimeoutSeconds), "Recovery timeout (s)"));
         entries[nameof(RecoveryOptions.TemperatureToleranceC)].ToolTip = "Further cooling toward the setpoint is accepted. Cooler output must reach at least its previous value minus 10 percentage points, if reported.";
         var advanced = AddTab("Advanced");
+        advanced.Children.Add(new TextBlock { Text = "Fan and LED settings require a P25 camera.",
+            TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 10) });
         TextBox OptionalCameraControl(string label, int? value) {
             advanced.Children.Add(new TextBlock {Text=label, Margin=new Thickness(0,0,0,2)});
             var field = new TextBox {Text=value?.ToString() ?? "", MinHeight=28, Margin=new Thickness(0,0,0,10),
