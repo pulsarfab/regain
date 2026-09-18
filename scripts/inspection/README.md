@@ -1,5 +1,10 @@
 # Transport experiments
 
+For the CAA rotator, use [the separate HID workup](../../docs/caa.md).
+`caa_sdk_probe.py` traces the SDK, `validate_caa.py` exercises the native
+driver's error handling, and `extract_caa_temperature.py` reproduces its NTC
+table. These do not access the cameras.
+
 These tools are separate from the installed plugin. They require Windows x64,
 Python 3.12 and the built debug Rust host. Select an exact SDK camera name with
 `--camera-name` when multiple models are attached; otherwise exactly one camera

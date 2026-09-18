@@ -120,9 +120,11 @@ impl<T: Transport> Caa<T> {
     }
 
     fn write(&mut self, r: &[u8]) -> Result<()> {
-        self.io.set_output(r)?;
+        let result = self.io.set_output(r);
+        // Even a failed call may have reached the device. Preserve settling
+        // time before the caller tries to reconcile that uncertain write.
         thread::sleep(Duration::from_millis(200));
-        Ok(())
+        result
     }
 
     pub fn settings(&mut self) -> Result<Settings> {
@@ -149,6 +151,11 @@ impl<T: Transport> Caa<T> {
         let mechanical = u32::from_be_bytes(r[6..10].try_into().unwrap()) as f64 / 10000.0;
         angle(mechanical)?;
         let adc = u16::from_be_bytes([r[11], r[12]]);
+        let limit = u16::from_be_bytes([r[13], r[14]]);
+        ensure!(
+            (1..=360).contains(&limit),
+            "invalid CAA rotation limit {limit}"
+        );
         Ok(Status {
             state: r[4],
             moving: r[4] != 0,
@@ -157,7 +164,7 @@ impl<T: Transport> Caa<T> {
             logical_degrees: (self.sign() * mechanical + self.offset).rem_euclid(360.0),
             temperature_adc: adc,
             temperature_c: temperature::from_adc(adc),
-            limit_degrees: u16::from_be_bytes([r[13], r[14]]),
+            limit_degrees: limit,
             error: r[15],
         })
     }
@@ -311,7 +318,9 @@ impl<T: Transport> Caa<T> {
     pub fn wait_for(&mut self, target: f64, timeout: Duration) -> Result<Status> {
         angle(target)?;
         ensure!(!timeout.is_zero(), "wait timeout must be positive");
-        let deadline = Instant::now() + timeout;
+        let deadline = Instant::now()
+            .checked_add(timeout)
+            .ok_or_else(|| anyhow::anyhow!("wait timeout is too large"))?;
         let result = (|| {
             loop {
                 let s = self.status()?;

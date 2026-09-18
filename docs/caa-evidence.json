@@ -1,0 +1,329 @@
+{
+  "date": "2026-09-17",
+  "model": "CAA-M54",
+  "firmware": [
+    1,
+    1,
+    1
+  ],
+  "vid": "03c3",
+  "pid": "1f20",
+  "platform": "Windows x64",
+  "nativeExerciseCommit": "47c87a2a7aeceedf06cb2611a6e94f18afa0e4e2",
+  "sdkSha256": "413d629adfd81150962211d2241aec2a99420ba2d65c0161f7700da32d534152",
+  "sdkExercise": {
+    "snapshots": [
+      {
+        "kind": "snapshot",
+        "Degree": 152.0,
+        "MaxDegree": 360.0,
+        "Temp": null,
+        "TempError": 7,
+        "Beep": true,
+        "Reverse": false,
+        "moving": false,
+        "handControl": false
+      },
+      {
+        "kind": "snapshot",
+        "Degree": 152.0,
+        "MaxDegree": 360.0,
+        "Temp": null,
+        "TempError": 7,
+        "Beep": false,
+        "Reverse": false,
+        "moving": false,
+        "handControl": false
+      },
+      {
+        "kind": "snapshot",
+        "Degree": 152.0,
+        "MaxDegree": 360.0,
+        "Temp": null,
+        "TempError": 7,
+        "Beep": true,
+        "Reverse": true,
+        "moving": false,
+        "handControl": false
+      },
+      {
+        "kind": "snapshot",
+        "Degree": 152.0,
+        "MaxDegree": 360.0,
+        "Temp": null,
+        "TempError": 7,
+        "Beep": true,
+        "Reverse": false,
+        "moving": false,
+        "handControl": false
+      }
+    ],
+    "inputReportLengths": [
+      16
+    ],
+    "outputReportLengths": [
+      16
+    ],
+    "allHidCallsSucceeded": true,
+    "mechanicalMoveRequests": [
+      [
+        3,
+        126,
+        90,
+        3,
+        1,
+        0,
+        0,
+        23,
+        127,
+        160,
+        0,
+        0,
+        0,
+        0,
+        1,
+        104
+      ],
+      [
+        3,
+        126,
+        90,
+        3,
+        1,
+        0,
+        0,
+        23,
+        49,
+        128,
+        0,
+        0,
+        0,
+        0,
+        1,
+        104
+      ],
+      [
+        3,
+        126,
+        90,
+        3,
+        1,
+        0,
+        0,
+        23,
+        49,
+        128,
+        0,
+        0,
+        0,
+        0,
+        1,
+        104
+      ]
+    ]
+  },
+  "nativeExercise": [
+    {
+      "event": "initial",
+      "identity": {
+        "alias": "",
+        "firmware": [
+          1,
+          1,
+          1
+        ],
+        "model": "CAA-M54"
+      },
+      "settings": {
+        "beep": true,
+        "reverse": false
+      },
+      "status": {
+        "direction": 0,
+        "error": 0,
+        "limit_degrees": 360,
+        "logical_degrees": 152.0,
+        "mechanical_degrees": 152.0,
+        "moving": false,
+        "state": 0,
+        "temperature_adc": 0,
+        "temperature_c": null
+      }
+    },
+    {
+      "event": "mechanical",
+      "status": {
+        "direction": 0,
+        "error": 0,
+        "limit_degrees": 360,
+        "logical_degrees": 153.99,
+        "mechanical_degrees": 153.99,
+        "moving": false,
+        "state": 0,
+        "temperature_adc": 0,
+        "temperature_c": null
+      }
+    },
+    {
+      "event": "relative",
+      "status": {
+        "direction": 0,
+        "error": 0,
+        "limit_degrees": 360,
+        "logical_degrees": 124.45,
+        "mechanical_degrees": 154.99,
+        "moving": false,
+        "state": 0,
+        "temperature_adc": 0,
+        "temperature_c": null
+      }
+    },
+    {
+      "event": "logical",
+      "status": {
+        "direction": 0,
+        "error": 0,
+        "limit_degrees": 360,
+        "logical_degrees": 123.45,
+        "mechanical_degrees": 153.99,
+        "moving": false,
+        "state": 0,
+        "temperature_adc": 0,
+        "temperature_c": null
+      }
+    },
+    {
+      "event": "reversed-relative",
+      "status": {
+        "direction": 0,
+        "error": 0,
+        "limit_degrees": 360,
+        "logical_degrees": 122.96000000000001,
+        "mechanical_degrees": 154.48,
+        "moving": false,
+        "state": 0,
+        "temperature_adc": 0,
+        "temperature_c": null
+      }
+    },
+    {
+      "event": "settings-roundtrip",
+      "settings": {
+        "beep": true,
+        "reverse": false
+      }
+    },
+    {
+      "event": "limit-roundtrip",
+      "limit": 360
+    },
+    {
+      "during": {
+        "direction": 0,
+        "error": 0,
+        "limit_degrees": 360,
+        "logical_degrees": 123.36990000000003,
+        "mechanical_degrees": 154.8899,
+        "moving": true,
+        "state": 1,
+        "temperature_adc": 0,
+        "temperature_c": null
+      },
+      "event": "stopped",
+      "status": {
+        "direction": 0,
+        "error": 0,
+        "limit_degrees": 360,
+        "logical_degrees": 123.80000000000001,
+        "mechanical_degrees": 155.32,
+        "moving": false,
+        "state": 0,
+        "temperature_adc": 0,
+        "temperature_c": null
+      }
+    },
+    {
+      "errors": [],
+      "event": "restoration"
+    },
+    {
+      "event": "complete",
+      "settings": {
+        "beep": true,
+        "reverse": false
+      },
+      "status": {
+        "direction": 0,
+        "error": 0,
+        "limit_degrees": 360,
+        "logical_degrees": 152.0,
+        "mechanical_degrees": 152.0,
+        "moving": false,
+        "state": 0,
+        "temperature_adc": 0,
+        "temperature_c": null
+      }
+    }
+  ],
+  "nativeFaultValidation": {
+    "workerSha256": "b3ce173a19096a4fc3fd7c86d9e08ce2258907dc7b8628de371cc4823a18a38c",
+    "sdkLoaded": false,
+    "exclusiveSecondOpenRejected": true,
+    "faultMethod": "Force failed HID API return after a successful device transaction; no physical USB disconnect",
+    "faults": [
+      {
+        "api": "HidD_GetInputReport",
+        "actualSuccess": true
+      },
+      {
+        "api": "HidD_SetOutputReport",
+        "actualSuccess": true
+      }
+    ],
+    "result": {
+      "kind": "complete",
+      "motionCommandsBeforeRestoration": 1,
+      "final": {
+        "direction": 0,
+        "error": 0,
+        "limit_degrees": 360,
+        "logical_degrees": 152.0,
+        "mechanical_degrees": 152.0,
+        "moving": false,
+        "state": 0,
+        "temperature_adc": 0,
+        "temperature_c": null
+      }
+    },
+    "aliasRoundtrip": {
+      "temporary": "ZGTEST",
+      "restored": true
+    }
+  },
+  "finalSdkCrosscheck": {
+    "kind": "snapshot",
+    "Degree": 152.0,
+    "MaxDegree": 360.0,
+    "Temp": null,
+    "TempError": 7,
+    "Beep": true,
+    "Reverse": false,
+    "moving": false,
+    "handControl": false
+  },
+  "localEvidenceDigests": {
+    "caa-sdk-exercise.jsonl": "52d937e3629d3e568a6e3b8e93953f7712592a4a082e186895163d50941f8fb6",
+    "caa-native-release-exercise.jsonl": "523729cb2c2962567b2612064a57fba45a368203e2bcf542e41d1117ed3ebdf0",
+    "caa-native-final-validation.jsonl": "faac5fa431895d5084a2057cdf410bb99422a40d89be1913edb363868a42a47f",
+    "caa-sdk-final-crosscheck.jsonl": "8d603b95ff6a43f1804389f5455bd080cd77801dc3bcb0fe2d5d6a2381470d6d"
+  },
+  "notValidated": [
+    "Linux/macOS hardware",
+    "physical USB disconnect or power cycle",
+    "hand controller",
+    "real temperature probe",
+    "full-turn travel",
+    "physical stall",
+    "NINA/ASCOM/Alpaca rotator frontend"
+  ]
+}

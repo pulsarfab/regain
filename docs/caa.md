@@ -162,6 +162,9 @@ Passed on real hardware:
 - A forced failed movement-write return after hardware accepted the command:
   exactly one motion command, position reached, no automatic replay.
 - Native process module inspection: no CAA/ASI SDK loaded.
+- A second native process was refused while the first held the device.
+
+See [sanitized results and local trace hashes](caa-evidence.json).
 
 Both SDK and native report an unavailable temperature sensor (ADC 0; SDK
 error 7). Temperature conversion has synthetic regression tests, but a real

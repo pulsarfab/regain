@@ -77,6 +77,9 @@ def main():
             # Startup handshake also confirms we are attaching to the worker
             # after it has acquired the CAA's exclusive HID handle.
             request('settings')
+            second=subprocess.run([str(args.worker.resolve()),'status'],capture_output=True,text=True,timeout=5)
+            assert second.returncode!=0 and 'exclusively' in second.stderr
+            record({'kind':'exclusive-open','secondOpenRejected':True})
             session=frida.attach(proc.pid)
             script=session.create_script(HOOK)
             ready=threading.Event()

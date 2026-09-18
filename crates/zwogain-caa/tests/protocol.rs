@@ -105,6 +105,26 @@ fn malformed_short_stale_and_out_of_range_replies_fail() {
 }
 
 #[test]
+fn corrupt_limits_and_unrepresentable_deadline_are_rejected() {
+    for limit in [0_u16, 361, u16::MAX] {
+        let mut r = status(1_520_000, 0, 0);
+        r[13..15].copy_from_slice(&limit.to_be_bytes());
+        let mut f = fake(vec![r]);
+        assert!(
+            Caa::connect(&mut f)
+                .unwrap()
+                .move_mechanical(154.0)
+                .is_err()
+        );
+        assert!(f.writes.iter().all(|r| r[3] == 2));
+    }
+    let mut f = fake(vec![]);
+    let mut c = Caa::connect(&mut f).unwrap();
+    assert!(c.wait_for(152.0, Duration::MAX).is_err());
+    assert_eq!(f.writes.len(), 1);
+}
+
+#[test]
 fn moving_fault_or_limit_refuses_motion() {
     for reply in [status(1_520_000, 1, 0), status(1_520_000, 0, 2), {
         let mut r = status(1_520_000, 0, 0);
