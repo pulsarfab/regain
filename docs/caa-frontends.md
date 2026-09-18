@@ -17,8 +17,15 @@ Chooser entry, or **ZWOgain ASCOM → CAA rotator setup** in the Start menu.
 1. On **Device**, refresh the list, choose the CAA, and save the selection.
 2. Connect in the main application. To test within setup, use its connection
    button. A connection opened only for setup is closed when the dialog closes.
-3. Use **Motion** for ordinary moves and Halt. **Settings** controls beep,
-   reverse and the device alias.
+3. Use **Motion** for ordinary moves and sky-angle sync. **Settings** controls
+   beep, reverse and the device alias. Halt is always available in the NINA
+   dialog footer while connected.
+
+NINA uses its native theme, fonts and controls, like the camera setup. The
+**Reference** tab holds mechanical zero, reference assignment and travel limit.
+The Windows ASCOM setup uses the standalone dialog. When the native NINA
+driver is already connected, its setup shares that connection; disconnect
+through NINA's equipment pane.
 
 The CAA uses Windows' HID driver; it does not need the ZWO camera driver.
 Only one controller may hold it at a time. The NINA and ASCOM frontends cannot

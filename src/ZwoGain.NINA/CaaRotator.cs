@@ -46,9 +46,9 @@ public sealed class CaaRotator : BaseINPC, IRotator, IDisposable
     }
     public void Disconnect() { try { session.Disconnect(); } finally { RaiseAllPropertiesChanged(); } }
     public void SetupDialog() {
-        if (Connected) CaaSetupForm.ShowModal(session);
+        if (Connected) CaaSettings.Show(session, ownedByNina: true);
         else {
-            using (var setup = NewSession()) CaaSetupForm.ShowModal(setup);
+            using (var setup = NewSession()) CaaSettings.Show(setup, ownedByNina: false);
             session.Dispose(); session = NewSession();
         }
         RaiseAllPropertiesChanged();

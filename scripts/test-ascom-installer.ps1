@@ -19,6 +19,11 @@ function Assert-NoCameraEntries {
                     if ($key) { $key.Dispose(); throw "Camera entry exists in $view : $path" }
                 }
             }
+            foreach ($path in 'Software\Classes\CLSID\{A918164B-49DD-4FF5-BEE6-A4AB93B97F12}',
+                'Software\Classes\ASCOM.ZWOgain.Rotator','Software\ASCOM\Rotator Drivers\ASCOM.ZWOgain.Rotator') {
+                $key = $root.OpenSubKey($path)
+                if ($key) { $key.Dispose(); throw "Rotator entry exists in $view : $path" }
+            }
         } finally { $root.Dispose() }
     }
 }
@@ -78,6 +83,17 @@ try {
     Run-Setup 'install'
     $registered = Get-ItemPropertyValue 'HKLM:\SOFTWARE\Classes\CLSID\{D1DB6F94-5CC0-4752-A758-F849098874A1}\InprocServer32' -Name CodeBase
     if (([Uri]$registered).LocalPath -ne (Join-Path $destination 'ZwoGain.ASCOM.dll')) { throw 'Wrong installed registration path' }
+    foreach ($view in [Microsoft.Win32.RegistryView]::Registry32,[Microsoft.Win32.RegistryView]::Registry64) {
+        $root = [Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::LocalMachine, $view)
+        try {
+            $key = $root.OpenSubKey('Software\Classes\CLSID\{A918164B-49DD-4FF5-BEE6-A4AB93B97F12}\InprocServer32')
+            if (!$key) { throw "Installed rotator CLSID missing in $view" }
+            try { if (([Uri]$key.GetValue('CodeBase')).LocalPath -ne (Join-Path $destination 'ZwoGain.ASCOM.dll')) { throw 'Wrong rotator registration path' } } finally { $key.Dispose() }
+            $key = $root.OpenSubKey('Software\ASCOM\Rotator Drivers\ASCOM.ZWOgain.Rotator')
+            if (!$key) { throw "Rotator Chooser entry missing in $view" }
+            $key.Dispose()
+        } finally { $root.Dispose() }
+    }
     $listener = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, 0)
     $listener.Start(); $port = $listener.LocalEndpoint.Port; $listener.Stop()
     $url = "http://127.0.0.1:$port"
@@ -101,6 +117,8 @@ try {
     }
     @{ Address = '127.0.0.1'; Port = $port; StartLocalServer = $false } | ConvertTo-Json | Set-Content -LiteralPath $env:ZWOGAIN_ASCOM_SETTINGS
     foreach ($architecture in 'System32','SysWOW64') {
+        & "$env:WINDIR/$architecture/WindowsPowerShell/v1.0/powershell.exe" -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'test-caa-ascom-client.ps1')
+        if ($LASTEXITCODE) { throw 'Installed rotator COM activation failed' }
         for ($slot = 0; $slot -lt 4; $slot++) {
             & "$env:WINDIR/$architecture/WindowsPowerShell/v1.0/powershell.exe" -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'test-ascom-client.ps1') -Slot $slot
             if ($LASTEXITCODE) { throw 'Installed COM capture failed' }
@@ -119,6 +137,8 @@ try {
     Run-Setup 'downgrade' $false
     Set-ItemProperty $uninstallKey -Name DisplayVersion -Value $version
     foreach ($architecture in 'System32','SysWOW64') {
+        & "$env:WINDIR/$architecture/WindowsPowerShell/v1.0/powershell.exe" -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'test-caa-ascom-client.ps1')
+        if ($LASTEXITCODE) { throw 'Upgraded rotator COM activation failed' }
         for ($slot = 0; $slot -lt 4; $slot++) {
             & "$env:WINDIR/$architecture/WindowsPowerShell/v1.0/powershell.exe" -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'test-ascom-client.ps1') -Slot $slot -MetadataOnly
             if ($LASTEXITCODE) { throw 'Upgraded COM activation failed' }

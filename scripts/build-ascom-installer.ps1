@@ -8,18 +8,23 @@ if (!$Compiler) {
 }
 if (!$Compiler) { throw 'Install Inno Setup 6.7 or later, or pass -Compiler with the ISCC.exe path.' }
 $stage = Join-Path $repo 'artifacts/ascom-stage'
-foreach ($file in 'ZwoGain.ASCOM.Register.exe','ZwoGain.ASCOM.dll','zwogain-alpaca.exe','zwogain-host.exe','zwogain-direct.exe','ASICamera2.dll','LICENSE') {
+foreach ($file in 'ZwoGain.ASCOM.Register.exe','ZwoGain.ASCOM.dll','ZwoGain.Rotator.dll','zwogain-caa.exe','zwogain-alpaca.exe','zwogain-host.exe','zwogain-direct.exe','ASICamera2.dll','LICENSE') {
     if (!(Test-Path -LiteralPath (Join-Path $stage $file))) { throw "Missing $file. Run scripts/build-ascom.ps1 first." }
 }
 $assembly = [Reflection.AssemblyName]::GetAssemblyName((Join-Path $stage 'ZwoGain.ASCOM.dll'))
 $registry = [Collections.Generic.List[string]]::new()
 # These are the CLR activation entries emitted by RegAsm /regfile, plus the
 # Chooser entries. Inno owns them so registry failures roll back with the files.
+$devices = @(1..4 | ForEach-Object {
+    @{ Class = "ZwoGain.Ascom.Camera$_"; ProgId = "ASCOM.ZWOgain.Camera$_";
+       Clsid = "{{D1DB6F94-5CC0-4752-A758-F849098874A$_}"; Type = 'Camera'; Name = "ZWOgain Retryable Camera $_" }
+}) + @(@{ Class = 'ZwoGain.Ascom.CaaRotator'; ProgId = 'ASCOM.ZWOgain.Rotator';
+    Clsid = '{{A918164B-49DD-4FF5-BEE6-A4AB93B97F12}'; Type = 'Rotator'; Name = 'ZWOgain CAA Rotator' })
 foreach ($root in 'HKLM32','HKLM64') {
-    for ($slot = 1; $slot -le 4; $slot++) {
-        $class = "ZwoGain.Ascom.Camera$slot"
-        $progId = "ASCOM.ZWOgain.Camera$slot"
-        $clsid = "{{D1DB6F94-5CC0-4752-A758-F849098874A$slot}"
+    foreach ($device in $devices) {
+        $class = $device.Class
+        $progId = $device.ProgId
+        $clsid = $device.Clsid
         $key = "Software\Classes\CLSID\$clsid"
         $rows = @(
             @("Software\Classes\$progId", '', $class, 'uninsdeletekey'),
@@ -36,7 +41,7 @@ foreach ($root in 'HKLM32','HKLM64') {
             @("$key\InprocServer32\$($assembly.Version)", 'Assembly', $assembly.FullName, ''),
             @("$key\InprocServer32\$($assembly.Version)", 'RuntimeVersion', 'v4.0.30319', ''),
             @("$key\InprocServer32\$($assembly.Version)", 'CodeBase', '{code:CameraCodeBase}', ''),
-            @("Software\ASCOM\Camera Drivers\$progId", '', "ZWOgain Retryable Camera $slot", 'uninsdeletekey')
+            @("Software\ASCOM\$($device.Type) Drivers\$progId", '', $device.Name, 'uninsdeletekey')
         )
         foreach ($row in $rows) {
             $registry.Add(('Root: {0}; Subkey: "{1}"; ValueType: string; ValueName: "{2}"; ValueData: "{3}"; Flags: {4}' -f $root, $row[0], $row[1], $row[2], $row[3]))
