@@ -16,6 +16,20 @@ public class CaaTests
         ((IDisposable)device).Dispose();
     }
     [Fact]
+    public void ConnectReloadsSelectionSavedByAnotherSetupInstance()
+    {
+        string folder = Path.Combine(Path.GetTempPath(), "ZwoGain-Caa-" + Guid.NewGuid().ToString("N"));
+        string path = Path.Combine(folder, "profile.json");
+        try {
+            using var client = new CaaSession(Path.Combine(folder, "missing-worker.exe"), path);
+            using (var setup = new CaaSession("not-used", path)) setup.Select("0123456789abcdef");
+            // Reaches process startup using the saved choice instead of rejecting the stale empty profile.
+            Assert.Throws<System.ComponentModel.Win32Exception>(client.Connect);
+            Assert.Equal("0123456789abcdef", client.Profile.Serial);
+            Assert.False(client.Connected);
+        } finally { if (File.Exists(path)) File.Delete(path); }
+    }
+    [Fact]
     public void SelectionSurvivesNewSessionAndChangingDeviceClearsOffset()
     {
         string path = Path.Combine(Path.GetTempPath(), "ZwoGain-Caa-" + Guid.NewGuid().ToString("N"), "profile.json");

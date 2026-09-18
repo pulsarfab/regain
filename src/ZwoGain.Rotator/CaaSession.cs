@@ -46,8 +46,9 @@ public sealed class CaaSession : IDisposable
     {
         this.executable = executable;
         ProfilePath = profilePath;
-        Profile = File.Exists(profilePath) ? JsonSerializer.Deserialize<CaaProfile>(File.ReadAllText(profilePath)) ?? new() : new();
+        Profile = ReadProfile();
     }
+    private CaaProfile ReadProfile() => File.Exists(ProfilePath) ? JsonSerializer.Deserialize<CaaProfile>(File.ReadAllText(ProfilePath)) ?? new() : new();
     public static string SettingsPath(string slot) => Environment.GetEnvironmentVariable("ZWOGAIN_ROTATOR_SETTINGS") ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ZwoGain", "Rotators", slot + ".json");
     private Process Start(string arguments)
     {
@@ -109,7 +110,17 @@ public sealed class CaaSession : IDisposable
     {
         lock (gate) {
             if (Connected) return;
-            if (Profile.Serial.Length != 16 || Profile.Serial.Any(c => !Uri.IsHexDigit(c))) throw new InvalidOperationException("Choose a CAA in setup first");
+            // Setup may have been opened by a separate ASCOM instance since this one was created.
+            Profile = ReadProfile();
+            Diagnostic("Connecting CAA; settings: " + ProfilePath + "; worker: " + executable);
+            if (string.IsNullOrEmpty(Profile.Serial)) {
+                var choices = Discover();
+                if (choices.Count == 0) throw new InvalidOperationException("No available CAA found. Check USB and close other rotator controllers.");
+                if (choices.Count != 1) throw new InvalidOperationException("More than one CAA found. Choose a rotator in ASCOM setup.");
+                Select(choices[0].Serial);
+                Diagnostic("Saved the only available CAA as the selected rotator");
+            }
+            if (Profile.Serial.Length != 16 || Profile.Serial.Any(c => !Uri.IsHexDigit(c))) throw new InvalidOperationException("The saved CAA selection is invalid. Choose a rotator in setup.");
             worker?.Dispose(); worker = Start("serve --serial " + Profile.Serial);
             input = new StreamWriter(worker.StandardInput.BaseStream, new System.Text.UTF8Encoding(false)) { AutoFlush = true };
             try {

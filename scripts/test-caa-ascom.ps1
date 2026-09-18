@@ -1,4 +1,4 @@
-param([switch]$Hardware)
+param([switch]$Hardware, [switch]$FreshProfile)
 $ErrorActionPreference = 'Stop'
 $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $privateKeys = @()
@@ -18,7 +18,7 @@ try {
     if ($Hardware) {
         $devices = @(& $env:ZWOGAIN_CAA_WORKER list-details | ConvertFrom-Json)
         if ($LASTEXITCODE -or $devices.Count -ne 1 -or !$devices[0].identity) { throw 'Exactly one available CAA required' }
-        @{ Serial = $devices[0].identity.serial; LogicalOffset = 0; Synced = $false } | ConvertTo-Json | Set-Content -LiteralPath $env:ZWOGAIN_ROTATOR_SETTINGS
+        if (!$FreshProfile) { @{ Serial = $devices[0].identity.serial; LogicalOffset = 0; Synced = $false } | ConvertTo-Json | Set-Content -LiteralPath $env:ZWOGAIN_ROTATOR_SETTINGS }
     }
     $env:ZWOGAIN_CAA_TEST_CLSID = [Guid]::NewGuid().ToString()
     $assemblyPath = Join-Path $repo 'src/ZwoGain.ASCOM/bin/Release/net48/ZwoGain.ASCOM.dll'
@@ -38,10 +38,15 @@ try {
         } finally { $root.Dispose() }
     }
     foreach ($architecture in 'System32','SysWOW64') {
+        if ($FreshProfile) { $env:ZWOGAIN_ROTATOR_SETTINGS = Join-Path $testDir ($architecture + '-fresh.json') }
         $arguments = @('-NoProfile','-ExecutionPolicy','Bypass','-File',(Join-Path $PSScriptRoot 'test-caa-ascom-client.ps1'))
         if ($Hardware) { $arguments += '-Hardware' }
         & "$env:WINDIR/$architecture/WindowsPowerShell/v1.0/powershell.exe" @arguments
         if ($LASTEXITCODE) { throw "CAA COM $architecture failed" }
+        if ($Hardware -and $FreshProfile) {
+            $saved = Get-Content -LiteralPath $env:ZWOGAIN_ROTATOR_SETTINGS -Raw | ConvertFrom-Json
+            if ($saved.Serial -ne $devices[0].identity.serial) { throw 'First connection did not persist the selected CAA' }
+        }
     }
 } finally {
     foreach ($entry in $privateKeys) {

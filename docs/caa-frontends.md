@@ -14,7 +14,8 @@ In NINA, update the plugin, restart NINA, open Equipment → Rotator and select
 **ZWOgain CAA Rotator**. Open its setup gear. In ASCOM, use the same-named
 Chooser entry, or **ZWOgain ASCOM → CAA rotator setup** in the Start menu.
 
-1. On **Device**, refresh the list, choose the CAA, and save the selection.
+1. On **Device**, choose the CAA. ASCOM setup scans on opening and saves the
+   selection automatically. Native NINA setup has a **Save selection** button.
 2. Connect in the main application. To test within setup, use its connection
    button. A connection opened only for setup is closed when the dialog closes.
 3. Use **Motion** for ordinary moves and sky-angle sync. **Settings** controls
@@ -26,6 +27,11 @@ NINA uses its native theme, fonts and controls, like the camera setup. The
 The Windows ASCOM setup uses the standalone dialog. When the native NINA
 driver is already connected, its setup shares that connection; disconnect
 through NINA's equipment pane.
+
+With no saved selection, connecting automatically selects and saves the only
+available CAA. If more than one is available, choose in setup first. A saved
+CAA that is absent or busy is never replaced with another device. Setup and
+Connect no longer require a separate Save step in ASCOM.
 
 The CAA uses Windows' HID driver; it does not need the ZWO camera driver.
 Only one controller may hold it at a time. The NINA and ASCOM frontends cannot
@@ -156,6 +162,14 @@ The themed native NINA setup was also checked on that device: all five tabs,
 connection, relative and mechanical moves, and mechanical zero/reference
 commands. Resetting mechanical zero preserved the 152° sky angle; restoring
 the reference returned both readings to 152°. Closing setup released the CAA.
+
+A subsequent first-run check exposed a gap in those tests: the ASCOM dialog
+showed a device but Connect used only a separately saved selection. The
+dialog now saves automatically, and Connect handles one available CAA with
+no prior settings. Both COM architectures were retested with separate empty
+profiles using `scripts/test-caa-ascom.ps1 -Hardware -FreshProfile`. Both
+connected, saved their choice, and passed the hardware checks. Tests also
+cover a client created before another setup instance saves its selection.
 
 To repeat the COM checks with one available CAA, run
 `scripts/test-caa-ascom.ps1 -Hardware` for the development build. To test the
