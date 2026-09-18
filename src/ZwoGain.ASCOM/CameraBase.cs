@@ -1,8 +1,5 @@
 using System.Collections;
-using System.Diagnostics;
 using System.Runtime.InteropServices;
-using ASCOM.Alpaca.Clients;
-using ASCOM.Common.Alpaca;
 using ASCOM.DeviceInterface;
 
 [assembly: ComVisible(false)]
@@ -13,79 +10,37 @@ public abstract partial class CameraBase : ICameraV4, IDisposable
 {
     static CameraBase() => Dependencies.Install();
     private readonly int slot;
-    private AlpacaCamera? client;
+    private LocalCamera? client;
     private bool disposed;
     private readonly object sync = new();
     protected CameraBase(int slot) { this.slot = slot; }
-    protected AlpacaCamera Client
-    {
-        get
-        {
-            lock (sync)
-            {
-                if (disposed) throw new ObjectDisposedException(nameof(CameraBase));
-                if (client is null)
-                {
-                    var settings = ServerSettings.Load();
-                    settings.EnsureServer();
-                    client = new AlpacaCamera(new AlpacaConfiguration {
-                        ServiceType = ServiceType.Http, IpAddressString = settings.Address, PortNumber = settings.Port,
-                        RemoteDeviceNumber = slot, ClientNumber = unchecked((uint)Guid.NewGuid().GetHashCode()),
-                        EstablishConnectionTimeout = 10, StandardDeviceResponseTimeout = 120, LongDeviceResponseTimeout = 120,
-                        ImageArrayTransferType = ImageArrayTransferType.ImageBytes, NumberOfRetries = 0
-                    });
-                }
-                return client;
-            }
-        }
-    }
+    private LocalCamera Client { get { lock (sync) { if (disposed) throw new ObjectDisposedException(nameof(CameraBase)); return client ??= new LocalCamera(slot); } } }
     public string Name => $"ZWOgain Retryable Camera {slot + 1}";
     public string Description => "ZWO camera driver with automatic retries";
-    public string DriverInfo => "ZWOgain ASCOM frontend for the Rust Alpaca server";
+    public string DriverInfo => "ZWOgain native Rust camera driver";
     public string DriverVersion => typeof(CameraBase).Assembly.GetName().Version.ToString();
     public short InterfaceVersion => 4;
     public ArrayList SupportedActions => new() { "ZwoGain.Diagnostics", "ZwoGain.Controls", "ZwoGain.SetControl" };
-    public bool Connected { get => client?.Connected ?? false; set { if (value) Client.Connected = true; else if (client is not null) client.Connected = false; } }
-    public void Connect() => Client.Connect();
-    public void Disconnect() { if (client is not null) client.Disconnect(); }
-    public void SetupDialog()
-    {
-        Exception? failure = null;
-        var thread = new Thread(() => {
-            try
-            {
-                var settings = ServerSettings.Load();
-                using var dialog = new SetupForm(settings, slot);
-                if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
-                {
-                    lock (sync)
-                    {
-                        if (client?.Connected == true) throw new ASCOM.InvalidOperationException("Disconnect before changing the server address");
-                        settings.Save(); client?.Dispose(); client = null;
-                    }
-                }
-            }
-            catch (Exception e) { failure = e; }
-        });
-        thread.SetApartmentState(ApartmentState.STA); thread.Start(); thread.Join();
-        if (failure is not null) throw new ASCOM.DriverException(failure.Message, failure);
+    public bool Connected { get => client?.Get<bool>("connected") ?? false; set { if (value) Client.Put("connected", true); else if (client is not null) { try { client.Put("connected", false); } finally { lock (sync) { client.Dispose(); client = null; } } } } }
+    public void Connect() => Client.Put("connect");
+    public void Disconnect() { if (client is not null) client.Put("disconnect"); }
+    public void SetupDialog() => CameraSetupWindow.Show(Client, slot);
+    public IStateValueCollection DeviceState => new StateValueCollection(Client.Request("get", "devicestate").EnumerateArray().Select(v => new StateValue(v.GetProperty("Name").GetString(), v.GetProperty("Value").ValueKind == System.Text.Json.JsonValueKind.True || v.GetProperty("Value").ValueKind == System.Text.Json.JsonValueKind.False ? (object)v.GetProperty("Value").GetBoolean() : v.GetProperty("Value").GetInt32())).ToList());
+    public string Action(string ActionName, string ActionParameters) {
+        if (!SupportedActions.Cast<string>().Any(a => a.Equals(ActionName, StringComparison.OrdinalIgnoreCase))) throw new ASCOM.ActionNotImplementedException(ActionName);
+        return Client.Request("put", "action", new { Action = ActionName, Parameters = ActionParameters }).GetString()!;
     }
-    public IStateValueCollection DeviceState => new StateValueCollection(Client.DeviceState.Select(v => new StateValue(v.Name, v.Value)).ToList());
-    public string Action(string ActionName, string ActionParameters) => Client.Action(ActionName, ActionParameters);
-    public void CommandBlind(string Command, bool Raw) => Client.CommandBlind(Command, Raw);
-    public bool CommandBool(string Command, bool Raw) => Client.CommandBool(Command, Raw);
-    public string CommandString(string Command, bool Raw) => Client.CommandString(Command, Raw);
-    public void AbortExposure() => Client.AbortExposure();
-    public void StopExposure() => Client.StopExposure();
-    public void StartExposure(double Duration, bool Light) => Client.StartExposure(Duration, Light);
-    public void PulseGuide(GuideDirections Direction, int Duration) => Client.PulseGuide((ASCOM.Common.DeviceInterfaces.GuideDirection)Direction, Duration);
-    public void Dispose()
-    {
-        AlpacaCamera? closing;
-        lock (sync) { if (disposed) return; disposed = true; closing = client; client = null; }
-        try { if (closing is not null) { try { closing.Connected = false; } finally { closing.Dispose(); } } }
-        finally { GC.SuppressFinalize(this); }
+    public void CommandBlind(string Command, bool Raw) => throw new ASCOM.MethodNotImplementedException(nameof(CommandBlind));
+    public bool CommandBool(string Command, bool Raw) => throw new ASCOM.MethodNotImplementedException(nameof(CommandBool));
+    public string CommandString(string Command, bool Raw) => throw new ASCOM.MethodNotImplementedException(nameof(CommandString));
+    public void AbortExposure() => Client.Put("abortexposure");
+    public void StopExposure() => throw new ASCOM.MethodNotImplementedException(nameof(StopExposure));
+    public void StartExposure(double Duration, bool Light) {
+        if (double.IsNaN(Duration) || double.IsInfinity(Duration)) throw new ASCOM.InvalidValueException("Duration must be finite");
+        Client.Request("put", "startexposure", new { Duration, Light });
     }
+    public void PulseGuide(GuideDirections Direction, int Duration) => throw new ASCOM.MethodNotImplementedException(nameof(PulseGuide));
+    public void Dispose() { lock (sync) { if (disposed) return; disposed = true; client?.Dispose(); client = null; } GC.SuppressFinalize(this); }
     ~CameraBase() { Task.Run(() => { try { Dispose(); } catch { } }); }
 }
 

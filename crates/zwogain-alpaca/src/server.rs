@@ -30,6 +30,8 @@ use zwogain_core::{CancellationToken, Diagnostic, Failure, Frame, Runtime};
 pub struct Server {
     pub profiles: Arc<Profiles>,
     pub runtime: Runtime,
+    pub rotator: crate::rotator::Rotator,
+    pub accessories: [crate::accessory::Accessory; 2],
     pub log: Arc<Log>,
     devices: Mutex<HashMap<usize, Arc<Device>>>,
     transaction: AtomicU32,
@@ -98,7 +100,21 @@ impl Log {
 }
 impl Server {
     pub fn new(profiles: Arc<Profiles>, runtime: Runtime, log: Arc<Log>) -> Arc<Self> {
+        let rotator = crate::rotator::Rotator::new(
+            profiles.rotator_path(),
+            runtime.directory.clone(),
+            runtime.simulate,
+        );
         Arc::new(Self {
+            accessories: ["efw", "eaf"].map(|kind| {
+                crate::accessory::Accessory::new(
+                    kind,
+                    profiles.accessory_path(kind),
+                    runtime.directory.clone(),
+                    runtime.simulate,
+                )
+            }),
+            rotator,
             profiles,
             runtime,
             log,
@@ -133,6 +149,10 @@ impl Server {
             .wrapping_add(1)
     }
     pub async fn shutdown(&self) {
+        self.rotator.shutdown().await;
+        for accessory in &self.accessories {
+            accessory.shutdown().await;
+        }
         for device in self.devices() {
             device.shutdown().await;
         }
@@ -199,6 +219,55 @@ impl Server {
             .route("/setup/api/slots", post(add_slot))
             .route("/setup/api/cameras/{slot}", post(configure))
             .route("/setup/api/discover", post(discover))
+            .route(
+                "/api/v1/rotator/{slot}/{member}",
+                get(rotator_get).put(rotator_put),
+            )
+            .route(
+                "/setup/v1/rotator/0/setup",
+                get(|| async { axum::response::Html(include_str!("../web/rotator.html")) }),
+            )
+            .route(
+                "/rotator.js",
+                get(|| async {
+                    (
+                        [("Content-Type", "application/javascript")],
+                        include_str!("../web/rotator.js"),
+                    )
+                }),
+            )
+            .route(
+                "/setup/api/rotator",
+                get(rotator_setup).post(rotator_select),
+            )
+            .route("/setup/api/rotator/discover", post(rotator_discover))
+            .route(
+                "/api/v1/{accessory}/{slot}/{member}",
+                get(accessory_get).put(accessory_put),
+            )
+            .route("/setup/v1/filterwheel/0/setup", get(accessory_page))
+            .route("/setup/v1/focuser/0/setup", get(accessory_page))
+            .route(
+                "/accessory.js",
+                get(|| async {
+                    (
+                        [("Content-Type", "application/javascript")],
+                        include_str!("../web/accessory.js"),
+                    )
+                }),
+            )
+            .route(
+                "/setup/api/accessory/{kind}",
+                get(accessory_setup).post(accessory_configure),
+            )
+            .route(
+                "/setup/api/accessory/{kind}/discover",
+                post(accessory_discover),
+            )
+            .route(
+                "/setup/api/accessory/{kind}/settings",
+                post(accessory_settings),
+            )
             .layer(DefaultBodyLimit::max(65536))
             .with_state(self.clone())
     }
@@ -206,7 +275,7 @@ impl Server {
 fn envelope(value: Value, client: u32, server: u32) -> Value {
     json!({"Value":value,"ClientTransactionID":client,"ServerTransactionID":server,"ErrorNumber":0,"ErrorMessage":""})
 }
-fn error_code(e: &anyhow::Error) -> i32 {
+pub(crate) fn error_code(e: &anyhow::Error) -> i32 {
     if let Some(e) = e.downcast_ref::<Error>() {
         e.0
     } else if matches!(e.downcast_ref::<Failure>(), Some(Failure::Invalid(_)))
@@ -235,8 +304,28 @@ async fn management(
     let id = Params::parse(q.as_deref().unwrap_or(""))
         .and_then(|p| p.optional_id("ClientTransactionID"))
         .unwrap_or(0);
-    let value=match member.as_str(){"description"=>json!({"ServerName":"ZWOgain","Manufacturer":"Yann Ramin","ManufacturerVersion":env!("CARGO_PKG_VERSION"),"Location":"Camera server"}),
-        "configureddevices"=>json!(s.profiles.all().into_iter().enumerate().filter(|(_,p)|p.camera.is_some()).map(|(slot,p)|json!({"DeviceName":p.label,"DeviceType":"Camera","DeviceNumber":slot,"UniqueID":p.unique_id})).collect::<Vec<_>>()),_=>return StatusCode::NOT_FOUND.into_response()};
+    let value = match member.as_str() {
+        "description" => {
+            json!({"ServerName":"ZWOgain","Manufacturer":"Yann Ramin","ManufacturerVersion":env!("CARGO_PKG_VERSION"),"Location":"Camera and rotator server"})
+        }
+        "configureddevices" => {
+            let mut devices = s.profiles.all().into_iter().enumerate().filter(|(_,p)|p.camera.is_some()).map(|(slot,p)|json!({"DeviceName":p.label,"DeviceType":"Camera","DeviceNumber":slot,"UniqueID":p.unique_id})).collect::<Vec<_>>();
+            match s.rotator.configured().await {
+                Ok(Some(r)) => devices.push(r),
+                Ok(None) => (),
+                Err(e) => return Json(failure(e, id, s.next())).into_response(),
+            };
+            for accessory in &s.accessories {
+                match accessory.configured().await {
+                    Ok(Some(d)) => devices.push(d),
+                    Ok(None) => (),
+                    Err(e) => return Json(failure(e, id, s.next())).into_response(),
+                }
+            }
+            json!(devices)
+        }
+        _ => return StatusCode::NOT_FOUND.into_response(),
+    };
     Json(envelope(value, id, s.next())).into_response()
 }
 async fn camera_get(
@@ -482,6 +571,201 @@ async fn discover(
             .await,
     )
 }
+async fn rotator_get(
+    State(s): State<Arc<Server>>,
+    Path((slot, member)): Path<(usize, String)>,
+    RawQuery(q): RawQuery,
+) -> Response {
+    rotator_request(
+        s,
+        slot,
+        member,
+        false,
+        Params::parse(q.as_deref().unwrap_or("")),
+    )
+    .await
+}
+async fn rotator_put(
+    State(s): State<Arc<Server>>,
+    Path((slot, member)): Path<(usize, String)>,
+    headers: HeaderMap,
+    body: String,
+) -> Response {
+    if !headers
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|v| v.starts_with("application/x-www-form-urlencoded"))
+    {
+        return StatusCode::BAD_REQUEST.into_response();
+    }
+    rotator_request(s, slot, member, true, Params::parse(&body)).await
+}
+async fn rotator_request(
+    s: Arc<Server>,
+    slot: usize,
+    member: String,
+    put: bool,
+    params: Result<Params>,
+) -> Response {
+    if slot != 0 || member != member.to_lowercase() {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    let mut id = 0;
+    let result = async {
+        let p = params?;
+        id = p.optional_id("ClientTransactionID")?;
+        s.rotator.request(&member, put, &p).await
+    }
+    .await;
+    Json(match result {
+        Ok(v) => envelope(v, id, s.next()),
+        Err(e) => failure(e, id, s.next()),
+    })
+    .into_response()
+}
+async fn rotator_setup(State(s): State<Arc<Server>>) -> Response {
+    setup_result(s.rotator.setup().await)
+}
+async fn rotator_select(
+    State(s): State<Arc<Server>>,
+    headers: HeaderMap,
+    Json(value): Json<Value>,
+) -> Response {
+    if !setup_allowed(&headers) {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    let serial = match &value["serial"] {
+        Value::Null => None,
+        Value::String(s) => Some(s.clone()),
+        _ => return setup_result(Err(error(0x401, "Invalid serial"))),
+    };
+    setup_result(s.rotator.select(serial).await)
+}
+async fn rotator_discover(State(s): State<Arc<Server>>, headers: HeaderMap) -> Response {
+    if !setup_allowed(&headers) {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    setup_result(s.rotator.discover().await)
+}
+
+fn accessory_index(kind: &str) -> Option<usize> {
+    match kind {
+        "efw" | "filterwheel" => Some(0),
+        "eaf" | "focuser" => Some(1),
+        _ => None,
+    }
+}
+async fn accessory_page() -> axum::response::Html<&'static str> {
+    axum::response::Html(include_str!("../web/accessory.html"))
+}
+async fn accessory_get(
+    State(s): State<Arc<Server>>,
+    Path((kind, slot, member)): Path<(String, usize, String)>,
+    RawQuery(q): RawQuery,
+) -> Response {
+    accessory_request(
+        s,
+        kind,
+        slot,
+        member,
+        false,
+        Params::parse(q.as_deref().unwrap_or("")),
+    )
+    .await
+}
+async fn accessory_put(
+    State(s): State<Arc<Server>>,
+    Path((kind, slot, member)): Path<(String, usize, String)>,
+    headers: HeaderMap,
+    body: String,
+) -> Response {
+    if !headers
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|v| v.starts_with("application/x-www-form-urlencoded"))
+    {
+        return StatusCode::BAD_REQUEST.into_response();
+    }
+    accessory_request(s, kind, slot, member, true, Params::parse(&body)).await
+}
+async fn accessory_request(
+    s: Arc<Server>,
+    kind: String,
+    slot: usize,
+    member: String,
+    put: bool,
+    params: Result<Params>,
+) -> Response {
+    let Some(index) = accessory_index(&kind) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    if slot != 0
+        || member != member.to_lowercase()
+        || !["filterwheel", "focuser"].contains(&kind.as_str())
+    {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    let mut id = 0;
+    let result = async {
+        let p = params?;
+        id = p.optional_id("ClientTransactionID")?;
+        s.accessories[index].request(&member, put, &p).await
+    }
+    .await;
+    Json(match result {
+        Ok(v) => envelope(v, id, s.next()),
+        Err(e) => failure(e, id, s.next()),
+    })
+    .into_response()
+}
+async fn accessory_setup(State(s): State<Arc<Server>>, Path(kind): Path<String>) -> Response {
+    let Some(i) = accessory_index(&kind) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    setup_result(s.accessories[i].setup().await)
+}
+async fn accessory_configure(
+    State(s): State<Arc<Server>>,
+    Path(kind): Path<String>,
+    headers: HeaderMap,
+    Json(value): Json<Value>,
+) -> Response {
+    if !setup_allowed(&headers) {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    let Some(i) = accessory_index(&kind) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    setup_result(s.accessories[i].configure(value).await)
+}
+async fn accessory_discover(
+    State(s): State<Arc<Server>>,
+    Path(kind): Path<String>,
+    headers: HeaderMap,
+) -> Response {
+    if !setup_allowed(&headers) {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    let Some(i) = accessory_index(&kind) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    setup_result(s.accessories[i].discover().await)
+}
+async fn accessory_settings(
+    State(s): State<Arc<Server>>,
+    Path(kind): Path<String>,
+    headers: HeaderMap,
+    Json(value): Json<Value>,
+) -> Response {
+    if !setup_allowed(&headers) {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    let Some(i) = accessory_index(&kind) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    setup_result(s.accessories[i].settings(value).await)
+}
+
 pub async fn discovery(address: Ipv4Addr, port: u16, token: CancellationToken) -> Result<()> {
     let socket = UdpSocket::bind(SocketAddr::from((address, 32227))).await?;
     let reply = serde_json::to_vec(&json!({"AlpacaPort":port}))?;

@@ -15,7 +15,7 @@ if (Path.GetFileName(archivePath) != archiveName) throw new InvalidDataException
 if (plugin.License != "Apache-2.0") throw new InvalidDataException("Plugin license must be Apache-2.0");
 using (var archive = ZipFile.OpenRead(archivePath))
 {
-    string[] required = ["ZwoGain.NINA.dll", "ZwoGain.Core.dll", "ZwoGain.Rotator.dll", "zwogain-caa.exe", "caa.md", "zwogain-host.exe", "zwogain-direct.exe", "zwogain-alpaca.exe", "ASICamera2.dll",
+    string[] required = ["ZwoGain.NINA.dll", "ZwoGain.Core.dll", "ZwoGain.Rotator.dll", "zwogain-caa.exe", "zwogain-accessories.exe", "caa.md", "zwogain-host.exe", "zwogain-direct.exe", "zwogain-camera.exe", "zwogain-alpaca.exe", "ASICamera2.dll",
         "LICENSE", "THIRD_PARTY_NOTICES.md", "zwogain.png", "licenses/ZWO-ASI-SDK.txt", "licenses/Rust-Standard-Library.html"];
     foreach (string name in required)
         if (archive.GetEntry(name) is not { Length: > 0 }) throw new InvalidDataException($"Package missing {name}");

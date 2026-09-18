@@ -3,6 +3,7 @@ name = "zwogain-alpaca"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+default-run = "zwogain-alpaca"
 
 [dependencies]
 zwogain-core = { path = "../zwogain-core" }
@@ -21,3 +22,7 @@ tempfile = "3"
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }
 http-body-util = "0.1"
+
+[[bin]]
+name = "zwogain-camera"
+path = "src/camera_main.rs"

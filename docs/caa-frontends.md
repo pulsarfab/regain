@@ -37,7 +37,9 @@ Connect no longer require a separate Save step in ASCOM.
 The CAA uses Windows' HID driver; it does not need the ZWO camera driver.
 Only one controller may hold it at a time. The NINA and ASCOM frontends cannot
 connect to the same CAA simultaneously. The ASCOM rotator is local USB through
-the Rust worker; the Alpaca server currently serves cameras only.
+the Rust worker; the standalone Alpaca server also offers a separate CAA network frontend.
+Choose **CAA rotator setup** on its setup page to select the device; see
+[Alpaca setup](ascom.md#caa-over-alpaca).
 
 ## Origin and travel limit
 

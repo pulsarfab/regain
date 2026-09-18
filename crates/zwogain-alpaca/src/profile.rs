@@ -132,8 +132,27 @@ impl Profiles {
         profiles.write(&profiles.values.lock().unwrap())?;
         Ok(profiles)
     }
+    pub fn rotator_path(&self) -> Option<PathBuf> {
+        self.path.as_ref().map(|p| p.with_extension("rotator.json"))
+    }
+    pub fn accessory_path(&self, kind: &str) -> Option<PathBuf> {
+        self.path
+            .as_ref()
+            .map(|p| p.with_extension(format!("{kind}.json")))
+    }
     pub fn all(&self) -> Vec<Profile> {
         self.values.lock().unwrap().clone()
+    }
+    pub fn reload(&self) -> Result<()> {
+        if let Some(path) = &self.path {
+            let values: Vec<Profile> = serde_json::from_slice(&std::fs::read(path)?)?;
+            ensure!(!values.is_empty(), "No camera slots in settings");
+            for p in &values {
+                p.validate()?;
+            }
+            *self.values.lock().unwrap() = values;
+        }
+        Ok(())
     }
     pub fn get(&self, slot: usize) -> Result<Profile> {
         self.values

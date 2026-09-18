@@ -7,39 +7,20 @@ $registryHive = [Microsoft.Win32.RegistryHive]::CurrentUser
 # COM can ignore per-user registrations in elevated/UAC-disabled clients.
 $principal = [Security.Principal.WindowsPrincipal]::new([Security.Principal.WindowsIdentity]::GetCurrent())
 if ($principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { $registryHive = [Microsoft.Win32.RegistryHive]::LocalMachine }
-$previousSettings = $env:ZWOGAIN_ASCOM_SETTINGS
+$previousSettings = $env:ZWOGAIN_ASCOM_PROFILES
+$previousSimulation = $env:ZWOGAIN_ASCOM_SIMULATE
+$previousWorker = $env:ZWOGAIN_CAMERA_WORKER
 $previousIds = $env:ZWOGAIN_ASCOM_TEST_CLSIDS
 try {
     dotnet build src/ZwoGain.ASCOM -c Release
     if ($LASTEXITCODE) { throw 'ASCOM build failed' }
     $testDir = Join-Path $repo ('artifacts/ascom-test-' + [Guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Path $testDir | Out-Null
-    $listener = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, 0)
-    $listener.Start()
-    $port = $listener.LocalEndpoint.Port
-    $listener.Stop()
-    $url = "http://127.0.0.1:$port"
-    $backend = Start-Process -FilePath (Join-Path $repo 'target/debug/zwogain-alpaca.exe') -ArgumentList '--simulate','--no-discovery','--port',"$port",'--profiles',('"' + (Join-Path $testDir 'cameras.json') + '"') -WindowStyle Hidden -PassThru -RedirectStandardError (Join-Path $testDir 'rust.log')
-    $deadline = [DateTime]::UtcNow.AddSeconds(15)
-    do {
-        try { $state = Invoke-RestMethod "$url/setup/api/state"; break } catch {
-            if ($backend.HasExited -or [DateTime]::UtcNow -gt $deadline) { throw }
-            Start-Sleep -Milliseconds 100
-        }
-    } while ($true)
-    for ($i = $state.cameras.Count; $i -lt 4; $i++) { Invoke-RestMethod "$url/setup/api/slots" -Method Post -ContentType 'application/json' -Body '{}' | Out-Null }
-    $sdk = (Invoke-RestMethod "$url/setup/api/discover" -Method Post -ContentType 'application/json' -Body '{"direct":false}')
-    $direct = (Invoke-RestMethod "$url/setup/api/discover" -Method Post -ContentType 'application/json' -Body '{"direct":true}')
-    $state = Invoke-RestMethod "$url/setup/api/state"
-    for ($i = 0; $i -lt 4; $i++) {
-        $p = $state.cameras[$i].profile
-        $p.camera = if ($i -eq 0) { $sdk[0] } else { $direct[$i] }
-        $p.direct = $i -ne 0
-        $p.recovery.reconnectDelaySeconds = 0.05
-        Invoke-RestMethod "$url/setup/api/cameras/$i" -Method Post -ContentType 'application/json' -Body ($p | ConvertTo-Json -Depth 20) | Out-Null
-    }
-    $env:ZWOGAIN_ASCOM_SETTINGS = Join-Path $testDir 'server.json'
-    @{ Address = '127.0.0.1'; Port = $port; StartLocalServer = $false } | ConvertTo-Json | Set-Content -LiteralPath $env:ZWOGAIN_ASCOM_SETTINGS
+    $env:ZWOGAIN_ASCOM_PROFILES = $testDir
+    $env:ZWOGAIN_ASCOM_SIMULATE = '1'
+    $env:ZWOGAIN_CAMERA_WORKER = Join-Path $repo 'target/debug/zwogain-camera.exe'
+    python scripts/test-native-camera.py --prepare $testDir
+    if ($LASTEXITCODE) { throw 'Native camera profile preparation failed' }
     # Private CLSIDs exercise the actual COM DLL loader without touching installed
     # camera entries. Ordinary local tests do not need administrator rights.
     $env:ZWOGAIN_ASCOM_TEST_CLSIDS = ((1..4 | ForEach-Object { [Guid]::NewGuid().ToString() }) -join ',')
@@ -76,7 +57,9 @@ try {
         try { $root.DeleteSubKeyTree($entry.Path, $false) } finally { $root.Dispose() }
     }
     if ($null -ne $backend) { if (!$backend.HasExited) { $backend.Kill(); $backend.WaitForExit() }; $backend.Dispose() }
-    $env:ZWOGAIN_ASCOM_SETTINGS = $previousSettings
+    $env:ZWOGAIN_ASCOM_PROFILES = $previousSettings
+    $env:ZWOGAIN_ASCOM_SIMULATE = $previousSimulation
+    $env:ZWOGAIN_CAMERA_WORKER = $previousWorker
     $env:ZWOGAIN_ASCOM_TEST_CLSIDS = $previousIds
     Pop-Location
 }

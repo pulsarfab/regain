@@ -1,5 +1,5 @@
 use super::DeviceInfo;
-use crate::{PRODUCT_ID, Transport, VENDOR_ID};
+use crate::Transport;
 use anyhow::{Result, ensure};
 use std::{
     ffi::{c_char, c_void},
@@ -69,7 +69,7 @@ fn number(device: Ref, name: &std::ffi::CStr) -> Result<i64> {
     }
 }
 
-fn devices() -> Result<Vec<(DeviceInfo, Owned)>> {
+fn devices(vendor_id: u16, product_id: u16) -> Result<Vec<(DeviceInfo, Owned)>> {
     // SAFETY: manager and set are retained for enumeration; selected devices
     // are retained separately before their containing set is released.
     unsafe {
@@ -86,15 +86,15 @@ fn devices() -> Result<Vec<(DeviceInfo, Owned)>> {
         CFSetGetValues(set.0, handles.as_mut_ptr());
         let mut result = Vec::new();
         for device in handles {
-            if number(device, c"VendorID").ok() != Some(i64::from(VENDOR_ID))
-                || number(device, c"ProductID").ok() != Some(i64::from(PRODUCT_ID))
+            if number(device, c"VendorID").ok() != Some(i64::from(vendor_id))
+                || number(device, c"ProductID").ok() != Some(i64::from(product_id))
             {
                 continue;
             }
             let mut id = 0;
             ensure!(
                 IORegistryEntryGetRegistryEntryID(IOHIDDeviceGetService(device), &mut id) == 0,
-                "read CAA registry identity"
+                "read HID registry identity"
             );
             result.push((
                 DeviceInfo {
@@ -107,8 +107,11 @@ fn devices() -> Result<Vec<(DeviceInfo, Owned)>> {
         Ok(result)
     }
 }
-pub fn enumerate() -> Result<Vec<DeviceInfo>> {
-    Ok(devices()?.into_iter().map(|(info, _)| info).collect())
+pub fn enumerate(vendor_id: u16, product_id: u16) -> Result<Vec<DeviceInfo>> {
+    Ok(devices(vendor_id, product_id)?
+        .into_iter()
+        .map(|(info, _)| info)
+        .collect())
 }
 
 pub struct Device {
@@ -124,21 +127,21 @@ impl Drop for Device {
     }
 }
 impl Device {
-    pub fn open(info: &DeviceInfo) -> Result<Self> {
-        let (_, handle) = devices()?
+    pub fn open(info: &DeviceInfo, vendor_id: u16, product_id: u16) -> Result<Self> {
+        let (_, handle) = devices(vendor_id, product_id)?
             .into_iter()
             .find(|(d, _)| d.path == info.path)
-            .ok_or_else(|| anyhow::anyhow!("CAA removed"))?;
+            .ok_or_else(|| anyhow::anyhow!("HID removed"))?;
         let input_length = number(handle.0, c"MaxInputReportSize")? as usize;
         let output_length = number(handle.0, c"MaxOutputReportSize")? as usize;
         ensure!(
             (16..=128).contains(&input_length) && (16..=128).contains(&output_length),
-            "unexpected CAA HID sizes {input_length}/{output_length}"
+            "unexpected HID HID sizes {input_length}/{output_length}"
         );
-        // Seize only the specifically selected CAA, never other HID devices.
+        // Seize only the specifically selected HID, never other HID devices.
         ensure!(
             unsafe { IOHIDDeviceOpen(handle.0, 1) } == 0,
-            "open CAA exclusively"
+            "open HID exclusively"
         );
         Ok(Self {
             handle,
@@ -151,13 +154,13 @@ impl Transport for Device {
     fn set_output(&mut self, report: &[u8]) -> Result<()> {
         ensure!(
             report.len() <= self.output_length && report.first() == Some(&3),
-            "invalid CAA output report"
+            "invalid HID output report"
         );
         let mut b = vec![0; self.output_length];
         b[..report.len()].copy_from_slice(report);
         let code =
             unsafe { IOHIDDeviceSetReport(self.handle.0, 1, 3, b.as_ptr(), b.len() as isize) };
-        ensure!(code == 0, "CAA output report IOReturn {code:#x}");
+        ensure!(code == 0, "HID output report IOReturn {code:#x}");
         Ok(())
     }
     fn get_input(&mut self) -> Result<Vec<u8>> {
@@ -165,10 +168,10 @@ impl Transport for Device {
         b[0] = 1;
         let mut count = b.len() as isize;
         let code = unsafe { IOHIDDeviceGetReport(self.handle.0, 0, 1, b.as_mut_ptr(), &mut count) };
-        ensure!(code == 0, "CAA input report IOReturn {code:#x}");
+        ensure!(code == 0, "HID input report IOReturn {code:#x}");
         ensure!(
             (0..=b.len() as isize).contains(&count),
-            "invalid CAA report size"
+            "invalid HID report size"
         );
         b.truncate(count as usize);
         Ok(b)

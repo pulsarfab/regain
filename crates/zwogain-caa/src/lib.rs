@@ -12,6 +12,7 @@ use std::{
 };
 
 pub mod controller;
+pub mod simulation;
 mod temperature;
 pub mod transport;
 
@@ -20,11 +21,7 @@ pub const PRODUCT_ID: u16 = 0x1f20;
 /// Largest firmware limit exercised on CAA-M54 1.1.1.
 pub const MAX_MECHANICAL_DEGREES: u16 = 361;
 
-/// Reports include the report ID at byte zero, on every platform.
-pub trait Transport {
-    fn set_output(&mut self, report: &[u8]) -> Result<()>;
-    fn get_input(&mut self) -> Result<Vec<u8>>;
-}
+pub use zwogain_hid::Transport;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Status {

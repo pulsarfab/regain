@@ -48,6 +48,12 @@ jobs:
           ZWOGAIN_TEST_WORKERS: ${{ github.workspace }}/target/release
       - name: Exercise standalone Alpaca server
         run: python scripts/test-alpaca.py --bin-dir target/release
+      - name: Exercise native camera pipe
+        run: python scripts/test-native-camera.py --bin-dir target/release
+      - name: Exercise Alpaca CAA rotator
+        run: python scripts/test-alpaca-rotator.py --bin-dir target/release
+      - name: Exercise Alpaca EFW and EAF
+        run: python scripts/test-alpaca-accessories.py --bin-dir target/release
       - name: Load and enumerate with the real ZWO SDK
         run: python scripts/stage-sdk.py target/release --check
       - name: Check worker protocol and native SDK ABI

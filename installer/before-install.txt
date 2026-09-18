@@ -1,9 +1,9 @@
-ZWOgain ASCOM installs four camera entries, the Rust Alpaca server, and the SDK and direct USB workers.
+ZWOgain ASCOM installs four native camera entries, a CAA rotator, an EFW filter wheel, an EAF focuser, and their local Rust workers. A standalone Alpaca server is also included.
 
-For cameras connected to this PC, install the ZWO Windows camera driver from https://www.zwoastro.com/software/ first. It is not needed when connecting to an Alpaca server on another computer.
+For cameras connected to this PC, install the ZWO Windows camera driver from https://www.zwoastro.com/software/ first. CAA, EFW and EAF use the built-in Windows HID driver.
 
-Close camera applications and stop this installation's ZWOgain Alpaca server before upgrading or uninstalling. Setup will not interrupt a running capture.
+Close applications using these devices and stop this installation's ZWOgain Alpaca server before upgrading or uninstalling. Setup will not interrupt a running capture.
 
-Camera settings are kept when upgrading or uninstalling. No Windows service or firewall rule is added. The COM driver starts the local server when needed.
+Device settings are kept when upgrading or uninstalling. No Windows service or firewall rule is added. Native COM drivers launch local USB workers and do not require an Alpaca server.
 
 ZWOgain is independent software, not affiliated with or supported by ZWO.

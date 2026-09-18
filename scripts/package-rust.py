@@ -36,7 +36,7 @@ with tempfile.TemporaryDirectory(prefix="zwogain-package-") as temporary:
     stage = Path(temporary) / prefix
     licenses = stage / "licenses"
     licenses.mkdir(parents=True)
-    for name in ['zwogain-caa'] if caa_only else ["zwogain-direct", "zwogain-host", "zwogain-alpaca", "zwogain-caa"]:
+    for name in ['zwogain-caa'] if caa_only else ["zwogain-direct", "zwogain-host", "zwogain-alpaca", "zwogain-camera", "zwogain-caa", "zwogain-accessories"]:
         binary = name + ('.exe' if 'windows' in host else '')
         shutil.copy2(root / "target" / "release" / binary, stage / binary)
     if not caa_only:
@@ -50,6 +50,8 @@ with tempfile.TemporaryDirectory(prefix="zwogain-package-") as temporary:
     if not caa_only:
         shutil.copy2(root / "docs/architecture.md", stage / "architecture.md")
         shutil.copy2(root / "docs/ascom.md", stage / "ascom.md")
+        shutil.copy2(root / "docs/accessories.md", stage / "accessories.md")
+        shutil.copy2(root / "docs/accessory-evidence.json", stage / "accessory-evidence.json")
     for package in metadata["packages"]:
         if package["id"] not in resolved or package["source"] is None:
             continue

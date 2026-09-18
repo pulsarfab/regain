@@ -346,3 +346,13 @@ it requires one exact ZWO camera instance ID and never restarts its parent hub.
 through the NINA private-pipe adapter. `validate_port_lifecycle.py` tests the
 camera driver's unprivileged reset/cycle commands, retained-read failure afterward,
 and fresh full-frame capture. Port operations remain CLI-only diagnostics.
+
+## EFW and EAF
+
+`accessory_sdk_probe.py` traces owned EFW/EAF SDK processes; see the complete
+[accessory tracing playbook](../../docs/accessories.md#usb-tracing-playbook) and
+[reviewed evidence](../../docs/accessory-evidence.json). The default uses read-only
+SDK APIs; EAFClose itself emits a stop report. `--exercise` enables movement.
+For the EFW, `--calibrate --exercise` traces one calibration, verifies idle and
+the detected slot count, then checks all positions and restores the starting
+slot. See the [hardware calibration result](../../docs/accessories.md#efw-calibration-trace).

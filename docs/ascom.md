@@ -1,7 +1,7 @@
 # ASCOM cameras
 
 ZWOgain has a Rust Alpaca server for Windows, Linux, and macOS, plus a Windows
-COM frontend with four camera entries. Both use the same Rust recovery code as
+native COM driver with four camera entries. Both use the same Rust recovery code as
 the NINA plugin. The SDK is the default; direct USB and SDK fallback are options
 for each camera.
 
@@ -64,9 +64,11 @@ driver for a locally connected camera.
 Run `ZwoGain-ASCOM-<version>-win-x64-setup.exe` from the release.
 Setup requests administrator access, checks .NET and ASCOM
 Platform, and installs all four camera entries for 32-bit and 64-bit clients.
-The ZWO USB driver is installed separately; remote Alpaca connections do not
-need it. Use **ZWOgain ASCOM → Camera setup** in the Start menu to configure the
-server and cameras.
+The ZWO USB driver is installed separately. Use **ZWOgain ASCOM → Camera setup**
+in the Start menu, or the ASCOM Chooser setup button, to select a local camera.
+The WPF dialog shares the CAA setup theme, uses the host theme in NINA, and saves
+settings automatically. Device, Recovery, Cooler, Timeouts and Controls tabs
+configure the camera directly. A setup-only connection closes with the dialog.
 
 Run a newer installer to upgrade in place. Close camera applications and stop
 the ZWOgain Alpaca server first: setup refuses to replace files while they are
@@ -83,19 +85,24 @@ $p = Start-Process .\ZwoGain.ASCOM.Register.exe -ArgumentList /regserver -Wait -
 if ($p.ExitCode) { throw 'Registration failed; check the ASCOM registration log' }
 ```
 
-The Chooser entries are **ZWOgain Retryable Camera 1** through **4**, mapped to
-Alpaca devices 0 through 3. Their setup dialog selects the server address and
-opens that slot's camera settings. It creates the four slots if needed.
-Automatic local Rust server startup is enabled by default. You may instead
-connect to an already running server, including one on Linux or macOS.
+The Chooser entries are **ZWOgain Retryable Camera 1** through **4**. Each owns
+its local `zwogain-camera` Rust supervisor over a private pipe, just as the CAA
+ASCOM driver owns its HID worker. No HTTP server, IP address, port, browser, or
+Alpaca client library is involved. Closing the ASCOM object closes the private
+worker; a Windows job also cleans it up if the client crashes.
 
-The COM DLL runs inside the 32-bit or 64-bit client. Camera access and recovery
-stay in the Rust service and its workers. Closing a client leaves the Rust
-service running. Registering the Chooser entries needs administrator access.
+Choose a camera in setup. With exactly one available camera and no saved choice,
+Connect selects it automatically. The serial is saved on connection; use distinct
+serials for identical models. Close other controllers before connecting.
 
-To remove the entries, run the same command with `/unregserver` before removing
-the folder. Server settings are in `%LOCALAPPDATA%\ZwoGain\ASCOM\server.json`;
-`ZWOGAIN_ASCOM_SETTINGS` can select another file for a client process.
+Native settings are separate from Alpaca: `%LOCALAPPDATA%\ZwoGain\ASCOM\camera-1.json`
+through `camera-4.json`. `ZWOGAIN_ASCOM_PROFILES` can select another directory.
+Existing `server.json` settings are no longer used; select each local camera
+once in the new setup dialog. Alpaca profiles remain available for network use.
+For remote cameras, use the ASCOM Platform's Alpaca Chooser/discovery support.
+
+To remove the native entries, run the registration command with `/unregserver`
+before removing a portable install's folder.
 
 ### Build the Windows installer
 
@@ -110,8 +117,8 @@ It checks the missing-platform gate, rollback after a denied registry write,
 installation, all four COM slots in both client architectures, capture and abort,
 busy-file guards, repair, downgrade and directory-change rejection, uninstall
 and settings preservation. The ASCOM
-Platform registry version is a fixture; the captures use the installed Rust
-server in simulation mode. Never run this test on a workstation with installed
+Platform registry version is a fixture; the captures use the installed private Rust
+worker in simulation mode. Never run this test on a workstation with installed
 camera registrations.
 
 ## Capture behavior
@@ -185,10 +192,35 @@ Both returned an image before reaching the target, as intended. The prior
 setpoint and enable setting were restored after testing. This tests worker
 failure, not USB removal or loss of camera power.
 
-## CAA rotator
+## CAA over Alpaca
+
+The standalone `zwogain-alpaca` server also serves **ZWOgain CAA Rotator** as
+`/api/v1/rotator/0`, implementing IRotatorV3. Open **CAA rotator setup** from the
+server setup page, find the CAA, and select its serial. Only a configured rotator
+appears in Alpaca discovery. Its UUID remains stable when the selected device
+changes. The setup page provides connection, halt, mechanical movement, sync,
+and reverse; the additional reference and multi-turn controls use the same
+`ZwoGain.CAA.*` actions documented in [CAA setup](caa-frontends.md).
+
+Keep `zwogain-caa` beside the server. The server owns that same SDK-free HID
+worker, preserving its motion limits, deadlines and no-retry behavior. The CAA
+profile and logical offset are stored beside `--profiles`, replacing the file
+extension with `.rotator.json`. Alpaca, native ASCOM and NINA profiles are
+independent. Disconnect the native frontend before connecting through Alpaca.
+`--simulate` uses a simulated CAA without opening USB.
+
+## Native CAA rotator
 
 The installer also registers one **ZWOgain CAA Rotator** entry, implementing
 `IRotatorV3` for 32-bit and 64-bit clients. It selects the CAA by saved serial
 and uses the local Rust HID worker directly. It does not use the camera Alpaca
 server. Setup exposes origin zeroing, reference assignment, the tested 361°
 limit, and explicit segmented multi-turn travel. See [CAA setup and actions](caa-frontends.md).
+
+## EFW and EAF
+
+The same installer registers `ASCOM.ZWOgain.FilterWheel` (IFilterWheelV2) and
+`ASCOM.ZWOgain.Focuser` (IFocuserV3). They launch `zwogain-accessories.exe` directly
+and share the CAA setup theme. The Start menu includes both setup dialogs.
+See [accessory setup and USB validation](accessories.md) for serial selection,
+filter metadata, motor settings, protocol traces, and supported hardware.

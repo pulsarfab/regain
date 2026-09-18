@@ -4,7 +4,7 @@
 It uses USB HID directly, with no ZWO SDK, hidapi C library or libusb dependency.
 It is independent of the camera driver. The NINA plugin and Windows ASCOM driver
 use this worker; see [frontend setup and actions](caa-frontends.md). Alpaca rotator
-support is not implemented. ZWOgain is not affiliated with ZWO.
+support uses the same worker. ZWOgain is not affiliated with ZWO.
 
 ## Run
 

@@ -28,7 +28,9 @@ try {
     Copy-Item -LiteralPath (Join-Path $repo 'target/release/zwogain-host.exe') -Destination $stage
     Copy-Item -LiteralPath (Join-Path $repo 'target/release/zwogain-direct.exe') -Destination $stage
     Copy-Item -LiteralPath (Join-Path $repo 'target/release/zwogain-alpaca.exe') -Destination $stage
+    Copy-Item -LiteralPath (Join-Path $repo 'target/release/zwogain-camera.exe') -Destination $stage
     Copy-Item -LiteralPath (Join-Path $repo 'target/release/zwogain-caa.exe') -Destination $stage
+    Copy-Item -LiteralPath (Join-Path $repo 'target/release/zwogain-accessories.exe') -Destination $stage
     Copy-Item -LiteralPath (Join-Path $repo 'docs/caa.md') -Destination $stage
     Copy-Item -LiteralPath (Join-Path $repo 'docs/caa-frontends.md') -Destination $stage
     Copy-Item -LiteralPath (Join-Path $repo 'vendor/zwo/ASICamera2.dll') -Destination $stage

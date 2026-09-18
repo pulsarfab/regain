@@ -23,12 +23,22 @@ try {
         Start-Sleep -Milliseconds 20
     }
     $pixels = $camera.ImageArray
-    if ($pixels.Rank -ne 2 -or $pixels.GetLength(0) -ne 64 -or $pixels.GetLength(1) -ne 64) { throw 'Wrong ImageBytes dimensions' }
+    if ($pixels.Rank -ne 2 -or $pixels.GetLength(0) -ne 64 -or $pixels.GetLength(1) -ne 64) { throw 'Wrong native image dimensions' }
     if ($camera.LastExposureStartTime -notmatch '^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d$') { throw 'Invalid exposure timestamp' }
+    $variant = $camera.ImageArrayVariant
+    if ($variant.GetLength(0) -ne 64 -or $variant[3,5] -ne $pixels[3,5]) { throw 'Variant image mismatch' }
+    if ($camera.DriverInfo -match 'Alpaca') { throw 'COM still uses the Alpaca bridge' }
     $camera.StartExposure(2.0, $false)
     $camera.AbortExposure()
     if ($camera.CameraState -ne 0 -or $camera.ImageReady) { throw 'Abort did not return idle' }
-    Write-Output ("{0}-bit COM slot {1}: capture, ImageBytes and abort passed" -f ([IntPtr]::Size * 8), $Slot)
+    $camera.Disconnect()
+    $deadline = [DateTime]::UtcNow.AddSeconds(20)
+    while ($camera.Connecting) { if ([DateTime]::UtcNow -gt $deadline) { throw 'Disconnect timed out' }; Start-Sleep -Milliseconds 20 }
+    if ($camera.Connected) { throw 'Still connected' }
+    $camera.Connect()
+    while ($camera.Connecting) { if ([DateTime]::UtcNow -gt $deadline) { throw 'Connect timed out' }; Start-Sleep -Milliseconds 20 }
+    if (!$camera.Connected) { throw 'Not connected' }
+    Write-Output ("{0}-bit COM slot {1}: native capture, variant image, async connection and abort passed" -f ([IntPtr]::Size * 8), $Slot)
 } finally {
     try { $camera.Connected = $false } finally {
         if ([Runtime.InteropServices.Marshal]::IsComObject($camera)) { [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($camera) }

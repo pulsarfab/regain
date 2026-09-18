@@ -1,5 +1,5 @@
 use super::DeviceInfo;
-use crate::{PRODUCT_ID, Transport, VENDOR_ID};
+use crate::Transport;
 use anyhow::{Context, Result, ensure};
 use std::{
     mem::size_of,
@@ -31,7 +31,7 @@ impl Drop for DeviceSet {
     }
 }
 
-pub fn enumerate() -> Result<Vec<DeviceInfo>> {
+pub fn enumerate(vendor_id: u16, product_id: u16) -> Result<Vec<DeviceInfo>> {
     // SAFETY: all SetupAPI storage has native alignment and checked byte lengths.
     unsafe {
         let mut guid: GUID = std::mem::zeroed();
@@ -99,7 +99,7 @@ pub fn enumerate() -> Result<Vec<DeviceInfo>> {
             let path = String::from_utf16_lossy(&text[..end]);
             if path
                 .to_ascii_lowercase()
-                .contains(&format!("vid_{VENDOR_ID:04x}&pid_{PRODUCT_ID:04x}"))
+                .contains(&format!("vid_{vendor_id:04x}&pid_{product_id:04x}"))
             {
                 result.push(DeviceInfo { path });
             }
@@ -114,7 +114,7 @@ pub struct Device {
     output_length: usize,
 }
 impl Device {
-    pub fn open(info: &DeviceInfo) -> Result<Self> {
+    pub fn open(info: &DeviceInfo, vendor_id: u16, product_id: u16) -> Result<Self> {
         ensure!(!info.path.contains('\0'), "invalid HID path");
         let path: Vec<u16> = info.path.encode_utf16().chain([0]).collect();
         // Exclusive access prevents another SDK connection consuming our replies.
@@ -131,7 +131,7 @@ impl Device {
         };
         ensure!(
             raw != INVALID_HANDLE_VALUE,
-            "open CAA exclusively: {}",
+            "open HID exclusively: {}",
             std::io::Error::last_os_error()
         );
         let handle = Handle(raw);
@@ -145,8 +145,8 @@ impl Device {
                 "read HID identity"
             );
             ensure!(
-                attrs.VendorID == VENDOR_ID && attrs.ProductID == PRODUCT_ID,
-                "not a ZWO CAA"
+                attrs.VendorID == vendor_id && attrs.ProductID == product_id,
+                "not a ZWO HID"
             );
             let mut preparsed = 0;
             ensure!(
@@ -161,7 +161,7 @@ impl Device {
             let output_length = caps.OutputReportByteLength as usize;
             ensure!(
                 (16..=128).contains(&input_length) && (16..=128).contains(&output_length),
-                "unexpected CAA report lengths {input_length}/{output_length}"
+                "unexpected HID report lengths {input_length}/{output_length}"
             );
             Ok(Self {
                 handle,
@@ -175,7 +175,7 @@ impl Transport for Device {
     fn set_output(&mut self, report: &[u8]) -> Result<()> {
         ensure!(
             report.len() <= self.output_length && report.first() == Some(&3),
-            "invalid CAA output report"
+            "invalid HID output report"
         );
         let mut buffer = vec![0; self.output_length];
         buffer[..report.len()].copy_from_slice(report);
@@ -184,7 +184,7 @@ impl Transport for Device {
             unsafe {
                 HidD_SetOutputReport(self.handle.0, buffer.as_ptr().cast(), buffer.len() as u32)
             },
-            "CAA output report: {}",
+            "HID output report: {}",
             std::io::Error::last_os_error()
         );
         Ok(())
@@ -201,7 +201,7 @@ impl Transport for Device {
                     buffer.len() as u32,
                 )
             },
-            "CAA input report: {}",
+            "HID input report: {}",
             std::io::Error::last_os_error()
         );
         Ok(buffer)

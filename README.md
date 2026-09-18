@@ -5,26 +5,52 @@
 [![Build and test](https://github.com/theatrus/zwogain/actions/workflows/build.yml/badge.svg)](https://github.com/theatrus/zwogain/actions/workflows/build.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
-**ZWOgain**, as in **ZWO Again**, provides ZWO ASI camera and CAA rotator drivers for NINA and ASCOM.
+**ZWOgain**, as in **ZWO Again**, provides ZWO ASI camera, CAA rotator, EFW filter-wheel, and EAF focuser drivers for NINA and ASCOM.
 It retries failed downloads and short exposures while the app waits for an image.
 
 The ZWO SDK runs in a separate Rust process, so a camera crash or hang does not
 take down NINA. An optional direct driver can capture without the SDK.
 
-The standalone **Rust Alpaca server** runs on Windows, Linux, and macOS without
-.NET. It shares recovery with the NINA plugin. Add a saved slot for each camera;
-the Windows ASCOM COM frontend provides four fixed slots. See
-[ASCOM setup and current limitations](docs/ascom.md). The Windows ASCOM installer
-is included in release 0.3.0.0; Linux and macOS packages are available from CI.
+Choose the frontend for your application:
+
+| Frontend | Runs on | Setup | Devices |
+| --- | --- | --- | --- |
+| Native NINA plugin | Windows x64 | NINA equipment setup gear | Cameras, CAA, EFW and EAF |
+| Native Windows ASCOM | Windows x64; 32-bit and 64-bit clients | ASCOM Chooser or Start menu | Four camera entries, CAA, EFW and EAF |
+| Standalone Alpaca server | Windows, Linux, macOS | Browser setup page | Camera slots plus CAA, EFW and EAF |
+
+The native Windows ASCOM drivers use private local Rust workers and matching
+camera and accessory setup dialogs. They do not need an Alpaca server. Alpaca provides
+network access and shares the same camera recovery and native accessory code.
+
+[Screenshots](#screenshots) · [Install in NINA](#install-in-nina) · [Windows ASCOM setup](#windows-ascom-setup) ·
+[Alpaca setup](#alpaca-setup) · [CAA controls](#caa-rotator) ·
+[EFW and EAF](#efw-filter-wheel-and-eaf-focuser) · [Settings and logs](#settings-and-logs)
 
 **ZWOgain is independent and is not affiliated with or supported by ZWO.**
 The code and logo use the Apache-2.0 license. Bundled software has its own
 licenses; see [third-party notices](THIRD_PARTY_NOTICES.md).
 
-## Install
+## Screenshots
 
-Requires **Windows x64**, **NINA 3.2.0.9001 or later**, and the **ZWO Windows
-camera driver**.
+Native ASCOM/NINA setup dialogs and the Alpaca browser interface. These views
+use simulated devices; click an image to see it at full size. Native images
+are renders of the actual WPF controls in the standalone ASCOM theme. NINA
+uses the host application's theme.
+
+| Native EFW calibration | Native EAF settings |
+| --- | --- |
+| [![Native EFW Motion tab with Calibrate wheel button](docs/images/native-efw-calibration.png)](docs/images/native-efw-calibration.png) | [![Native EAF settings for beep, reverse, backlash and travel limit](docs/images/native-eaf.png)](docs/images/native-eaf.png) |
+| **Alpaca camera setup** | **Alpaca CAA rotator setup** |
+| [![Alpaca camera selection and backend settings](docs/images/alpaca-camera.png)](docs/images/alpaca-camera.png) | [![Alpaca CAA position and motion controls](docs/images/alpaca-rotator.png)](docs/images/alpaca-rotator.png) |
+
+More screenshots accompany [EFW/EAF setup](#efw-filter-wheel-and-eaf-focuser)
+and [camera recovery settings](#how-retries-work) below.
+
+## Install in NINA
+
+Requires **Windows x64** and **NINA 3.2.0.9001 or later**. Cameras also need the
+**ZWO Windows camera driver**. CAA, EFW, and EAF use Windows' built-in HID driver.
 
 1. Add `https://nina-plugins.psf-guard.com/` as a plugin source in NINA and install
    **ZWOgain**. Restart NINA.
@@ -43,6 +69,258 @@ the saved serial when replacing a camera. Save and reconnect after setup changes
 The ASI2600MM Pro main camera and ASI220MM Mini guide camera are separate USB
 devices. Both ASI6200 editions appear as **ASI6200MM Pro** in the picker.
 
+## Windows ASCOM setup
+
+Use this for cameras, CAA, EFW or EAF connected directly to a Windows computer. Requires
+**Windows 10 or later, x64**, **.NET Framework 4.8**, and the **ASCOM Platform**.
+Cameras also require the separately installed **ZWO Windows camera driver**,
+including in Direct USB mode. CAA, EFW, and EAF use Windows' HID driver and need no ZWO accessory SDK.
+
+1. Download `ZwoGain-ASCOM-<version>-win-x64-setup.exe` from
+   [Releases](https://github.com/theatrus/zwogain/releases/latest), or build the
+   installer from the current source using the commands below.
+2. Close device-control applications and any running ZWOgain Alpaca server.
+   Run the installer as administrator. It registers the drivers for both
+   32-bit and 64-bit clients.
+3. In your application's ASCOM Chooser, select **ZWOgain Retryable Camera 1**
+   through **4**, or **ZWOgain CAA Rotator**, **ZWOgain EFW Filter Wheel**, or **ZWOgain EAF Focuser**, and open **Setup**.
+4. Choose the physical device on **Device**. The selection saves automatically.
+   Close setup, then connect in your application.
+
+The Start menu also contains **ZWOgain ASCOM → Camera setup** (Camera 1) and
+**CAA rotator setup**, **EFW filter wheel setup**, and **EAF focuser setup**. Configure Camera 2–4 through their own Chooser entries.
+The dialogs use the host application's theme in NINA and a light theme in
+standalone ASCOM clients.
+
+### Camera setup
+
+| Tab | What it configures |
+| --- | --- |
+| Device | Camera, serial number, SDK or Direct USB, optional SDK fallback |
+| Recovery | Download retries, replacement exposure count and duration limit, reconnect delay |
+| Cooler | Cooling recovery limits and optional cooler defaults on connection |
+| Timeouts | Command, download and exposure grace periods |
+| Controls | Optional gain, offset, USB limit, dew heater, fan and LED defaults |
+
+The **SDK is the default**. Direct USB is experimental and available only for
+supported models. Leave optional control defaults blank to retain the camera's
+settings. Disconnect before changing setup. A connection opened with setup's
+**Connect** button closes with the dialog; an application-owned connection is
+managed in the application's equipment pane.
+
+With no saved selection, Connect can choose the only available device of its type.
+With multiple devices, select one first. The serial is saved; use distinct
+serials for cameras of the same model. A saved device that is missing or busy
+is not silently replaced with another device.
+
+The camera interface supports RAW16 images, symmetric binning, ROI, gain,
+offset, cooling and abort. ROI width must be a multiple of 8 and height a
+multiple of 2 in binned pixels; Direct USB has additional model-specific
+minimum sizes and alignment rules. StopExposure, asymmetric binning, pulse
+guiding and fast readout are not implemented. Alpaca supports both ImageBytes
+and JSON ImageArray downloads.
+
+**Upgrading from the camera Alpaca bridge:** the native camera driver described
+here is a current-source change. If an older package shows an Alpaca address
+and port in camera setup, update to a build containing the native driver.
+Select each local camera once in the new dialog. The old `server.json` is no
+longer used; existing Alpaca profiles remain available for network use.
+For a remote device, use the ASCOM Platform's Alpaca discovery/Chooser support.
+
+### CAA setup
+
+The CAA dialog has **Device**, **Motion**, **Settings**, **Reference** and
+**Multi-turn** tabs. Choose the serial on Device; Motion provides ordinary
+moves and sky-angle sync. Settings controls beep, reverse and alias. Reference
+contains mechanical zero, reference assignment and the travel limit. See
+[CAA controls and travel limits](#caa-rotator) before using reference or multi-turn
+operations. Only one frontend may own a physical CAA at a time.
+
+### Updates, uninstall and portable registration
+
+Run a newer installer to upgrade in place. Setup refuses to replace files that
+are in use and does not stop an active exposure. Uninstall through Windows
+**Installed apps**. Upgrades and uninstall preserve settings and logs under
+`%LOCALAPPDATA%\ZwoGain`. No service or firewall rule is installed automatically.
+
+For a portable install, extract the **complete** ASCOM ZIP to a permanent folder
+and run this in an administrator PowerShell from that folder:
+
+```powershell
+$p = Start-Process .\ZwoGain.ASCOM.Register.exe -ArgumentList /regserver -Wait -PassThru
+if ($p.ExitCode) { throw 'Registration failed; check the ASCOM registration log' }
+```
+
+Use `/unregserver` instead of `/regserver` before deleting a portable install.
+Keep the assemblies, workers and SDK library together. See
+[ASCOM details and validation](docs/ascom.md) for diagnostics and test results.
+The new native-camera transport and CAA Alpaca frontend have passed simulation
+tests; hardware validation of these changes and a full ASCOM ConformU run remain
+outstanding.
+
+## Alpaca setup
+
+The standalone server exposes cameras, CAA rotators, EFW filter wheels, and EAF focusers to Alpaca clients.
+It runs without .NET and does not require Windows COM registration.
+The CAA network frontend is a current-source addition; use a build containing it.
+
+On Windows, extract `ZwoGain-ASCOM-<version>-win-x64.zip` and run from that folder:
+
+```powershell
+.\zwogain-alpaca.exe --port 11111
+```
+
+On Linux or macOS, extract the matching `zwogain-rust-*` build artifact and run:
+
+```sh
+./zwogain-alpaca --port 11111
+```
+
+Keep the server, camera workers, `zwogain-caa` and SDK library together. The
+computer hosting the server needs the appropriate USB drivers or permissions;
+remote clients do not. See [Linux/macOS runtime requirements](docs/portable-rust.md).
+
+### Select cameras
+
+1. Open [http://127.0.0.1:11111/setup](http://127.0.0.1:11111/setup) on the server computer.
+2. Select a camera slot. Choose **ZWO SDK** or **Direct USB (experimental)**,
+   click **Find cameras**, and choose the camera.
+3. Set its serial if needed, configure recovery/cooling defaults, and click
+   **Save settings**. Add slots for additional cameras. Main and guide cameras
+   are separate USB devices.
+4. Discover the server in your Alpaca client, or enter its address and HTTP port.
+   Windows ASCOM clients can use the Platform's Alpaca discovery/Chooser support.
+
+Only configured devices appear in discovery. Camera device numbers and UUIDs
+remain stable when changing a slot's physical camera. Disconnect all clients
+before editing that device's setup or scanning USB.
+
+![Alpaca camera setup showing camera slots, backend selection and device discovery](docs/images/alpaca-camera.png)
+
+*Actual browser screenshot using simulation. This example selects Direct USB;
+SDK mode is the default. Screenshots describe the current source build.*
+
+### Select the CAA rotator
+
+1. Follow **CAA rotator setup →** from the camera setup page, or open
+   [the rotator setup page](http://127.0.0.1:11111/setup/v1/rotator/0/setup).
+2. Click **Find rotators** and choose the CAA serial. Selection saves automatically.
+3. Select **ZWOgain CAA Rotator**, device **0**, in your Alpaca client. The server
+   exposes the standard `IRotatorV3` operations at `/api/v1/rotator/0`.
+
+The browser's **Connect for setup** button provides a temporary test connection,
+with mechanical movement, sky-angle sync, reverse and **Halt**. Use **Disconnect
+setup** when finished. Additional origin, reference, limit, beep, alias and
+explicit multi-turn operations are available through the
+[`ZwoGain.CAA.*` actions](docs/caa-frontends.md#ascom-actions).
+Disconnect NINA/native ASCOM before connecting the same CAA through Alpaca.
+
+![Alpaca CAA setup showing selected rotator, live position, motion and reverse controls](docs/images/alpaca-rotator.png)
+
+*Actual browser screenshot connected to the simulated CAA; no physical rotator moved.*
+
+### Connect across a LAN
+
+The default listener accepts local connections only. To use a trusted LAN,
+substitute the server computer's IPv4 address:
+
+```sh
+./zwogain-alpaca --listen 192.168.1.10 --port 11111
+```
+
+On Windows, use `.\zwogain-alpaca.exe` with the same arguments. Open
+`http://192.168.1.10:11111/setup` from another computer. Allow the chosen HTTP TCP
+port and **UDP 32227** through the host firewall if needed. Discovery reports
+the HTTP port; clients can also connect by address if discovery is unavailable.
+The server has no authentication: keep it on a trusted network and do not expose
+it to the public internet.
+
+| Option | Purpose |
+| --- | --- |
+| `--listen ADDRESS` | Bind to an IPv4 address; default `127.0.0.1` |
+| `--port PORT` | HTTP port; default `11111` |
+| `--no-discovery` | Disable UDP discovery |
+| `--profiles PATH` | Choose the saved camera settings file |
+| `--workers DIRECTORY` | Locate camera workers, the CAA worker and default SDK library |
+| `--sdk PATH` | Override the camera SDK DLL, SO or dylib |
+| `--simulate` | Try cameras and CAA without accessing USB |
+
+Keep the server running while clients are connected. For unattended startup,
+configure your own systemd, launchd or Windows startup task; none is installed
+by ZWOgain. Use an absolute `--profiles` path and give that account USB access.
+
+## EFW filter wheel and EAF focuser
+
+The plugin adds **ZWOgain EFW Filter Wheel** and **ZWOgain EAF Focuser** to
+NINA's equipment lists. The Windows ASCOM installer includes matching native
+Chooser entries and CAA-styled setup dialogs. All three frontends use the
+SDK-free Rust USB worker directly; native ASCOM needs no Alpaca server.
+These are current-source additions; use a package built from this revision.
+
+1. Open the device's setup gear or ASCOM **Setup**, refresh USB devices, and
+   select its serial. Close other controllers using that device.
+2. Connect for setup. EFW **Filters** configures slot names, focus offsets, and
+   unidirectional moves; **Motion** uses display slots 1–N.
+3. EAF **Motion** provides absolute step moves and Halt. **Settings** controls
+   beep, reverse, hardware backlash, and maximum travel. Check mechanical
+   clearance before moving and use zero hardware backlash if NINA handles it.
+4. Close setup and connect through your imaging application. NINA keeps its
+   existing per-filter exposure/autofocus settings. Temperature compensation
+   remains the imaging application's responsibility.
+
+Native setup views below are renders of the real WPF controls with simulated
+devices, using the same standalone theme as the CAA driver.
+
+![Native EFW filter settings](docs/images/native-efw.png)
+
+![Native EAF motor settings](docs/images/native-eaf.png)
+
+For Alpaca, open **EFW filter wheel setup** or **EAF focuser setup** from the
+server page. Their endpoints are `/api/v1/filterwheel/0/` and
+`/api/v1/focuser/0/`; each appears in discovery after serial selection.
+
+![EFW filter wheel Alpaca setup in simulation](docs/images/alpaca-efw.png)
+
+![EAF focuser Alpaca setup in simulation](docs/images/alpaca-eaf.png)
+
+Hardware validation covers a seven-position EFW-S-0 (firmware 3.6.2) and an
+EAFN (3.8.1), including native Rust, Alpaca, and 32-bit/64-bit ASCOM movement
+and restoration. Older EAF firmware, EAF Pro/Bluetooth, and dual-disc wheels
+are not supported. Interactive NINA autofocus and ConformU remain untested.
+Use **Motion → Calibrate wheel** in native ASCOM/NINA setup, or **Calibrate wheel**
+on the Alpaca page. Calibration detects the slots, shows live progress, and
+finishes at slot 1; names and focus offsets are preserved. The attached EFW
+passed SDK and native calibration in about 49 seconds, followed by full slot sweeps.
+The same operation is available through the [`ZwoGain.Calibrate` action](docs/accessories.md#native-calibration-controls-and-api).
+
+![Native EFW calibration controls](docs/images/native-efw-calibration.png)
+
+See the [USB tracing playbook, protocol, setup and validation details](docs/accessories.md).
+
+## Settings and logs
+
+Selections and settings are independent between NINA, native ASCOM and Alpaca.
+Keep these files when upgrading:
+
+| Frontend | Settings location |
+| --- | --- |
+| Windows ASCOM cameras | `%LOCALAPPDATA%\ZwoGain\ASCOM\camera-1.json` through `camera-4.json` |
+| Windows ASCOM CAA | `%LOCALAPPDATA%\ZwoGain\Rotators\ascom.json` |
+| NINA CAA | `%LOCALAPPDATA%\ZwoGain\Rotators\nina.json` |
+| Native NINA/ASCOM EFW and EAF | `%LOCALAPPDATA%\ZwoGain\Accessories\{efw,eaf}-{nina,ascom}.json` |
+| Alpaca on Windows | `%LOCALAPPDATA%\ZwoGain\Alpaca\cameras.json` |
+| Alpaca on Linux/macOS | `$XDG_CONFIG_HOME/ZwoGain/Alpaca/cameras.json`, or `$HOME/.config/ZwoGain/Alpaca/cameras.json` |
+| Alpaca CAA | Beside the camera settings file, with extension `.rotator.json` (normally `cameras.rotator.json`) |
+| Alpaca EFW and EAF | Beside the camera settings file: `cameras.efw.json` and `cameras.eaf.json` |
+
+EFW/EAF native logs are `efw.log` and `eaf.log` in their Accessories directory.
+Native camera logs are under `%LOCALAPPDATA%\ZwoGain\ASCOM\logs`; CAA frontend
+logs are in `%LOCALAPPDATA%\ZwoGain\Rotators\rotator.log`. Alpaca camera logs
+are in the `logs` directory beside its settings file and on the browser's **Log**
+tab. Native registration errors are in `%LOCALAPPDATA%\ZwoGain\ASCOM\registration.log`.
+`ZWOGAIN_ASCOM_PROFILES` overrides the native camera settings directory;
+Alpaca's `--profiles` flag selects its settings file.
+
 ## How retries work
 
 | Action | Default |
@@ -52,6 +330,14 @@ devices. Both ASI6200 editions appear as **ASI6200MM Pro** in the picker.
 | Wait before reconnecting | 5 seconds |
 
 These limits are configurable. A zero count disables that type of retry.
+
+The camera recovery engine is shared by NINA, native ASCOM and Alpaca. In ASCOM,
+use the **Recovery**, **Cooler** and **Timeouts** tabs; in Alpaca, use **Recovery**
+and **Cooler**, then **Save settings**.
+
+![Alpaca Recovery tab showing retry counts, duration threshold and timeouts](docs/images/alpaca-recovery.png)
+
+*Alpaca recovery settings in simulation, showing the shared default retry policy.*
 
 The SDK can retry a download only while it still reports a ready frame. The
 direct ASI2600, ASI6200, and ASI676 drivers can reread a frame held in camera
@@ -126,9 +412,9 @@ and [transfer recovery and SDK differences](docs/transfer-recovery.md).
 
 ## CAA rotator
 
-Select **ZWOgain CAA Rotator** in NINA or the Windows ASCOM Chooser, then choose
-the device in setup. The choice saves automatically. Both use the same SDK-free
-Rust USB HID worker.
+Select **ZWOgain CAA Rotator** in NINA, the Windows ASCOM Chooser, or an Alpaca
+client after [configuring the server](#select-the-caa-rotator). The choice saves
+automatically. All three use the same SDK-free Rust USB HID worker.
 
 Setup includes motion, stop, logical sync, reverse, beep, alias, travel limits,
 and **Set current position to mechanical 0°**. An explicit multi-turn control
@@ -160,7 +446,8 @@ Native CI packages include SDK 1.41 and standalone camera commands for listing
 cameras, inspecting controls, and saving RAW16 captures.
 The NINA plugin requires Windows.
 
-Requires .NET 8, the Rust MSVC toolchain, and Visual Studio C++ build tools.
+Windows source builds require .NET 8, the Rust MSVC toolchain, and Visual Studio
+C++ build tools.
 The ASI SDK DLL and header are included.
 
 ```powershell
@@ -169,8 +456,21 @@ The ASI SDK DLL and header are included.
 ./scripts/build.ps1 -Install
 ```
 
-Omit `-Install` to build a ZIP only. Local builds are unsigned. Release binaries
-are signed by StackFoundry LLC.
+To build the Windows ASCOM package and installer:
+
+```powershell
+./scripts/build.ps1 -StageOnly
+./scripts/build-ascom.ps1
+./scripts/install-inno.ps1  # Once: install the pinned Inno Setup compiler
+./scripts/build-ascom-installer.ps1
+```
+
+Packages, the setup EXE and their checksums are written to `artifacts`.
+On Linux/macOS, `cargo build --release --locked` builds the standalone server
+and workers; see [portable builds](docs/portable-rust.md).
+
+Omit `-Install` from the NINA build command to build a ZIP only. Local builds are
+unsigned. Release binaries are signed by StackFoundry LLC.
 
 More details: [architecture](docs/architecture.md),
 [camera bring-up](docs/camera-bringup.md), [inspection tools](scripts/inspection/README.md),

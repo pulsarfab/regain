@@ -131,7 +131,9 @@ fn exercise(caa: &mut Caa<Device>) -> Result<()> {
 }
 
 fn main() -> Result<()> {
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    let mut args: Vec<String> = std::env::args().skip(1).collect();
+    let simulate = args.iter().any(|a| a == "--simulate");
+    args.retain(|a| a != "--simulate");
     let Some(command) = args.first().map(String::as_str) else {
         bail!(
             "usage: zwogain-caa list|list-details|status|serve|exercise [--path HID-PATH | --serial SERIAL]"
@@ -154,6 +156,23 @@ fn main() -> Result<()> {
         args.len() == 1 || (args.len() == 3 && matches!(args[1].as_str(), "--path" | "--serial")),
         "expected optional --path HID-PATH or --serial SERIAL"
     );
+    if simulate {
+        let mut caa = Caa::connect(zwogain_caa::simulation::Sim::default())?;
+        return match command {
+            "list-details" => {
+                emit(json!([{"identity":caa.identity()?}]));
+                Ok(())
+            }
+            "serve" => {
+                ensure!(
+                    args.len() == 1 || (args[1] == "--serial" && args[2] == caa.identity()?.serial),
+                    "simulated CAA not found"
+                );
+                serve(caa)
+            }
+            _ => anyhow::bail!("Simulation supports list-details and serve"),
+        };
+    }
     let devices = transport::enumerate()?;
     if command == "list" {
         emit(serde_json::to_value(devices)?);
@@ -207,42 +226,45 @@ fn main() -> Result<()> {
         ),
         "exercise" => exercise(&mut caa)?,
         "serve" => {
-            let mut controller = Controller::new(caa)?;
-            let (tx, rx) = std::sync::mpsc::sync_channel(16);
-            std::thread::spawn(move || {
-                for line in io::stdin().lock().lines() {
-                    if tx.send(line).is_err() {
-                        break;
-                    }
-                }
-            });
-            loop {
-                match rx.recv_timeout(Duration::from_millis(100)) {
-                    Ok(line) => {
-                        let result = (|| -> Result<Value> {
-                            // .NET Framework's Process.StandardInput can emit a
-                            // UTF-8 BOM when its StreamWriter is first accessed.
-                            let line = line?;
-                            controller.request(&serde_json::from_str(
-                                line.trim_start_matches('\u{feff}'),
-                            )?)
-                        })();
-                        emit(match result {
-                            Ok(value) => json!({"ok":true,"result":value}),
-                            Err(error) => json!({"ok":false,"error":format!("{error:#}")}),
-                        });
-                        io::stdout().flush()?;
-                    }
-                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => controller.tick(),
-                    Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
-                        // Never leave a segmented operation running after its owner exits.
-                        controller.halt()?;
-                        break;
-                    }
-                }
-            }
+            serve(caa)?;
         }
         _ => unreachable!(),
+    }
+    Ok(())
+}
+
+fn serve<T: zwogain_caa::Transport>(caa: Caa<T>) -> Result<()> {
+    let mut controller = Controller::new(caa)?;
+    let (tx, rx) = std::sync::mpsc::sync_channel(16);
+    std::thread::spawn(move || {
+        for line in io::stdin().lock().lines() {
+            if tx.send(line).is_err() {
+                break;
+            }
+        }
+    });
+    loop {
+        match rx.recv_timeout(Duration::from_millis(100)) {
+            Ok(line) => {
+                let result = (|| -> Result<Value> {
+                    // .NET Framework's Process.StandardInput can emit a
+                    // UTF-8 BOM when its StreamWriter is first accessed.
+                    let line = line?;
+                    controller.request(&serde_json::from_str(line.trim_start_matches('\u{feff}'))?)
+                })();
+                emit(match result {
+                    Ok(value) => json!({"ok":true,"result":value}),
+                    Err(error) => json!({"ok":false,"error":format!("{error:#}")}),
+                });
+                io::stdout().flush()?;
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => controller.tick(),
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                // Never leave a segmented operation running after its owner exits.
+                controller.halt()?;
+                break;
+            }
+        }
     }
     Ok(())
 }

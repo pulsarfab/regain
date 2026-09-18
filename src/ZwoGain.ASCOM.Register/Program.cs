@@ -20,6 +20,12 @@ internal static class Program
             if (args.Any(a => a.Equals("/rotator", StringComparison.OrdinalIgnoreCase))) {
                 using var rotator = new CaaRotator(); rotator.SetupDialog(); return 0;
             }
+            if (args.Any(a => a.Equals("/filterwheel", StringComparison.OrdinalIgnoreCase))) {
+                using var wheel = new EfwFilterWheel(); wheel.SetupDialog(); return 0;
+            }
+            if (args.Any(a => a.Equals("/focuser", StringComparison.OrdinalIgnoreCase))) {
+                using var focuser = new EafFocuser(); focuser.SetupDialog(); return 0;
+            }
             if (!remove && !args.Any(a => a.Equals("/regserver", StringComparison.OrdinalIgnoreCase))) {
                 using var camera = new Camera1(); camera.SetupDialog(); return 0;
             }
@@ -40,6 +46,12 @@ internal static class Program
                         throw new InvalidOperationException("Unregister the rotator from its currently installed directory.");
                 }
                 string framework = view == RegistryView.Registry32 ? "Framework" : "Framework64";
+                if (remove) foreach (string clsid in new[] { "EA2040E1-E936-4BDF-87F7-B58CA3E418AB", "295C08F8-EDE9-43C5-9D55-627A063D74CA" }) {
+                    using var existing = root.OpenSubKey(@"Software\Classes\CLSID\{" + clsid + @"}\InprocServer32");
+                    if (existing is not null && (!Uri.TryCreate(existing.GetValue("CodeBase") as string, UriKind.Absolute, out var installed) ||
+                        !installed.IsFile || !string.Equals(Path.GetFullPath(installed.LocalPath), assembly, StringComparison.OrdinalIgnoreCase)))
+                        throw new InvalidOperationException("Unregister accessories from their currently installed directory.");
+                }
                 string regasm = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "Microsoft.NET", framework, "v4.0.30319", "RegAsm.exe");
                 using var child = Process.Start(new ProcessStartInfo(regasm, "\"" + assembly + "\" /nologo " + (remove ? "/unregister" : "/codebase")) {
                     UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true
@@ -57,6 +69,11 @@ internal static class Program
                 string rotatorKey = @"Software\ASCOM\Rotator Drivers\ASCOM.ZWOgain.Rotator";
                 if (remove) root.DeleteSubKeyTree(rotatorKey, false);
                 else { using var chooser = root.CreateSubKey(rotatorKey); chooser.SetValue(null, "ZWOgain CAA Rotator"); }
+                foreach (var device in new[] { (Type: "FilterWheel", Name: "ZWOgain EFW Filter Wheel"), (Type: "Focuser", Name: "ZWOgain EAF Focuser") }) {
+                    string key = @"Software\ASCOM\" + device.Type + @" Drivers\ASCOM.ZWOgain." + device.Type;
+                    if (remove) root.DeleteSubKeyTree(key, false);
+                    else { using var chooser = root.CreateSubKey(key); chooser.SetValue(null, device.Name); }
+                }
             }
             return 0;
         } catch (Exception error) {

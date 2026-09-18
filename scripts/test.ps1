@@ -15,6 +15,13 @@ try {
     if ($LASTEXITCODE) { throw 'Recovery tests failed' }
     dotnet test tests/ZwoGain.NINA.Tests -c Release
     if ($LASTEXITCODE) { throw 'NINA contract tests failed' }
+    python scripts/test-native-camera.py
+    if ($LASTEXITCODE) { throw 'Native camera IPC tests failed' }
+    python scripts/test-alpaca-rotator.py
+    if ($LASTEXITCODE) { throw 'Alpaca rotator tests failed' }
+    python scripts/test-alpaca-accessories.py
+    if ($LASTEXITCODE) { throw 'Alpaca accessory tests failed' }
+    & (Join-Path $PSScriptRoot 'test-accessory-ascom.ps1')
     & (Join-Path $PSScriptRoot 'test-ascom.ps1')
     & (Join-Path $PSScriptRoot 'test-caa-ascom.ps1')
 } finally { Pop-Location }

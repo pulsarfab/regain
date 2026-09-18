@@ -999,6 +999,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "29666d0abbfad1e3dc4dcf6144730dd3a3ab225bbbdac83319345b1b44ccfc1b"
 
 [[package]]
+name = "zwogain-accessories"
+version = "0.3.0"
+dependencies = [
+ "anyhow",
+ "serde",
+ "serde_json",
+ "zwogain-hid",
+]
+
+[[package]]
 name = "zwogain-alpaca"
 version = "0.3.0"
 dependencies = [
@@ -1023,10 +1033,9 @@ name = "zwogain-caa"
 version = "0.3.0"
 dependencies = [
  "anyhow",
- "libc",
  "serde",
  "serde_json",
- "windows-sys",
+ "zwogain-hid",
 ]
 
 [[package]]
@@ -1051,6 +1060,17 @@ dependencies = [
  "nusb",
  "serde_json",
  "sha2",
+ "windows-sys",
+]
+
+[[package]]
+name = "zwogain-hid"
+version = "0.3.0"
+dependencies = [
+ "anyhow",
+ "libc",
+ "serde",
+ "serde_json",
  "windows-sys",
 ]
 

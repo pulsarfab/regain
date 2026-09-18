@@ -8,7 +8,7 @@ if (!$Compiler) {
 }
 if (!$Compiler) { throw 'Install Inno Setup 6.7 or later, or pass -Compiler with the ISCC.exe path.' }
 $stage = Join-Path $repo 'artifacts/ascom-stage'
-foreach ($file in 'ZwoGain.ASCOM.Register.exe','ZwoGain.ASCOM.dll','ZwoGain.Rotator.dll','zwogain-caa.exe','zwogain-alpaca.exe','zwogain-host.exe','zwogain-direct.exe','ASICamera2.dll','LICENSE') {
+foreach ($file in 'ZwoGain.ASCOM.Register.exe','ZwoGain.ASCOM.dll','ZwoGain.Rotator.dll','zwogain-caa.exe','zwogain-accessories.exe','zwogain-camera.exe','zwogain-alpaca.exe','zwogain-host.exe','zwogain-direct.exe','ASICamera2.dll','LICENSE') {
     if (!(Test-Path -LiteralPath (Join-Path $stage $file))) { throw "Missing $file. Run scripts/build-ascom.ps1 first." }
 }
 $assembly = [Reflection.AssemblyName]::GetAssemblyName((Join-Path $stage 'ZwoGain.ASCOM.dll'))
@@ -19,7 +19,9 @@ $devices = @(1..4 | ForEach-Object {
     @{ Class = "ZwoGain.Ascom.Camera$_"; ProgId = "ASCOM.ZWOgain.Camera$_";
        Clsid = "{{D1DB6F94-5CC0-4752-A758-F849098874A$_}"; Type = 'Camera'; Name = "ZWOgain Retryable Camera $_" }
 }) + @(@{ Class = 'ZwoGain.Ascom.CaaRotator'; ProgId = 'ASCOM.ZWOgain.Rotator';
-    Clsid = '{{A918164B-49DD-4FF5-BEE6-A4AB93B97F12}'; Type = 'Rotator'; Name = 'ZWOgain CAA Rotator' })
+    Clsid = '{{A918164B-49DD-4FF5-BEE6-A4AB93B97F12}'; Type = 'Rotator'; Name = 'ZWOgain CAA Rotator' },
+    @{ Class = 'ZwoGain.Ascom.EfwFilterWheel'; ProgId = 'ASCOM.ZWOgain.FilterWheel'; Clsid = '{{EA2040E1-E936-4BDF-87F7-B58CA3E418AB}'; Type = 'FilterWheel'; Name = 'ZWOgain EFW Filter Wheel' },
+    @{ Class = 'ZwoGain.Ascom.EafFocuser'; ProgId = 'ASCOM.ZWOgain.Focuser'; Clsid = '{{295C08F8-EDE9-43C5-9D55-627A063D74CA}'; Type = 'Focuser'; Name = 'ZWOgain EAF Focuser' })
 foreach ($root in 'HKLM32','HKLM64') {
     foreach ($device in $devices) {
         $class = $device.Class

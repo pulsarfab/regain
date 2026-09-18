@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/zwogain-host", "crates/zwogain-direct", "crates/zwogain-core", "crates/zwogain-alpaca", "crates/zwogain-caa"]
+members = ["crates/zwogain-host", "crates/zwogain-direct", "crates/zwogain-core", "crates/zwogain-alpaca", "crates/zwogain-caa", "crates/zwogain-hid", "crates/zwogain-accessories"]
 resolver = "3"
 
 [workspace.package]

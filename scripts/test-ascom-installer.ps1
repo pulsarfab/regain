@@ -20,7 +20,10 @@ function Assert-NoCameraEntries {
                 }
             }
             foreach ($path in 'Software\Classes\CLSID\{A918164B-49DD-4FF5-BEE6-A4AB93B97F12}',
-                'Software\Classes\ASCOM.ZWOgain.Rotator','Software\ASCOM\Rotator Drivers\ASCOM.ZWOgain.Rotator') {
+                'Software\Classes\ASCOM.ZWOgain.Rotator','Software\ASCOM\Rotator Drivers\ASCOM.ZWOgain.Rotator',
+                'Software\Classes\CLSID\{EA2040E1-E936-4BDF-87F7-B58CA3E418AB}', 'Software\Classes\CLSID\{295C08F8-EDE9-43C5-9D55-627A063D74CA}',
+                'Software\Classes\ASCOM.ZWOgain.FilterWheel','Software\ASCOM\FilterWheel Drivers\ASCOM.ZWOgain.FilterWheel',
+                'Software\Classes\ASCOM.ZWOgain.Focuser','Software\ASCOM\Focuser Drivers\ASCOM.ZWOgain.Focuser') {
                 $key = $root.OpenSubKey($path)
                 if ($key) { $key.Dispose(); throw "Rotator entry exists in $view : $path" }
             }
@@ -30,10 +33,18 @@ function Assert-NoCameraEntries {
 Assert-NoCameraEntries
 $platformBefore = Get-ItemPropertyValue $platformKey -Name PlatformVersion -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Path $testDir -Force | Out-Null
-$oldSettings = $env:ZWOGAIN_ASCOM_SETTINGS
+$oldSettings = $env:ZWOGAIN_ASCOM_PROFILES
+$oldSimulation = $env:ZWOGAIN_ASCOM_SIMULATE
 $oldIds = $env:ZWOGAIN_ASCOM_TEST_CLSIDS
+$oldAccessorySimulation = $env:ZWOGAIN_ACCESSORY_SIMULATE
+$oldAccessorySettings = $env:ZWOGAIN_ACCESSORY_SETTINGS
+$oldAccessoryIds = $env:ZWOGAIN_ACCESSORY_TEST_CLSID
+$env:ZWOGAIN_ACCESSORY_SIMULATE = '1'
+$env:ZWOGAIN_ACCESSORY_SETTINGS = $testDir
+$env:ZWOGAIN_ACCESSORY_TEST_CLSID = $null
 $env:ZWOGAIN_ASCOM_TEST_CLSIDS = $null
-$env:ZWOGAIN_ASCOM_SETTINGS = Join-Path $testDir 'server.json'
+$env:ZWOGAIN_ASCOM_PROFILES = $testDir
+$env:ZWOGAIN_ASCOM_SIMULATE = '1'
 $backend = $null
 function Run-Setup([string]$Label, [bool]$Success = $true, [string]$Directory = $destination) {
     $p = Start-Process -FilePath $installer -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',('/DIR="' + $Directory + '"'),('/LOG="' + (Join-Path $testDir "$Label.log") + '"') -WindowStyle Hidden -Wait -PassThru
@@ -107,16 +118,13 @@ try {
         }
     } while ($true)
     for ($i = $state.cameras.Count; $i -lt 4; $i++) { Invoke-RestMethod "$url/setup/api/slots" -Method Post -ContentType 'application/json' -Body '{}' | Out-Null }
-    $cameras = Invoke-RestMethod "$url/setup/api/discover" -Method Post -ContentType 'application/json' -Body '{"direct":false}'
-    $state = Invoke-RestMethod "$url/setup/api/state"
-    for ($i = 0; $i -lt 4; $i++) {
-        $profile = $state.cameras[$i].profile
-        $profile.camera = $cameras[0]
-        $profile.direct = $false
-        Invoke-RestMethod "$url/setup/api/cameras/$i" -Method Post -ContentType 'application/json' -Body ($profile | ConvertTo-Json -Depth 20) | Out-Null
-    }
-    @{ Address = '127.0.0.1'; Port = $port; StartLocalServer = $false } | ConvertTo-Json | Set-Content -LiteralPath $env:ZWOGAIN_ASCOM_SETTINGS
+    python (Join-Path $PSScriptRoot 'test-native-camera.py') --bin-dir $destination --prepare $testDir
+    if ($LASTEXITCODE) { throw 'Installed native profile preparation failed' }
     foreach ($architecture in 'System32','SysWOW64') {
+        foreach ($deviceClass in 'EfwFilterWheel','EafFocuser') {
+            & "$env:WINDIR/$architecture/WindowsPowerShell/v1.0/powershell.exe" -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'test-accessory-ascom-client.ps1') -DeviceClass $deviceClass
+            if ($LASTEXITCODE) { throw 'Installed accessory COM test failed' }
+        }
         & "$env:WINDIR/$architecture/WindowsPowerShell/v1.0/powershell.exe" -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'test-caa-ascom-client.ps1')
         if ($LASTEXITCODE) { throw 'Installed rotator COM activation failed' }
         for ($slot = 0; $slot -lt 4; $slot++) {
@@ -124,7 +132,7 @@ try {
             if ($LASTEXITCODE) { throw 'Installed COM capture failed' }
         }
     }
-    $settingsHash = (Get-FileHash $env:ZWOGAIN_ASCOM_SETTINGS).Hash
+    $settingsHash = (Get-FileHash (Join-Path $testDir 'camera-1.json')).Hash
     $profilesHash = (Get-FileHash $profiles).Hash
     Run-Setup 'busy-upgrade' $false
     Run-Uninstall 'busy-uninstall' $false
@@ -137,6 +145,10 @@ try {
     Run-Setup 'downgrade' $false
     Set-ItemProperty $uninstallKey -Name DisplayVersion -Value $version
     foreach ($architecture in 'System32','SysWOW64') {
+        foreach ($deviceClass in 'EfwFilterWheel','EafFocuser') {
+            & "$env:WINDIR/$architecture/WindowsPowerShell/v1.0/powershell.exe" -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'test-accessory-ascom-client.ps1') -DeviceClass $deviceClass
+            if ($LASTEXITCODE) { throw 'Installed accessory COM test failed' }
+        }
         & "$env:WINDIR/$architecture/WindowsPowerShell/v1.0/powershell.exe" -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'test-caa-ascom-client.ps1')
         if ($LASTEXITCODE) { throw 'Upgraded rotator COM activation failed' }
         for ($slot = 0; $slot -lt 4; $slot++) {
@@ -147,12 +159,16 @@ try {
     Run-Uninstall 'uninstall'
     if ((Test-Path $uninstallKey) -or (Test-Path (Join-Path $destination 'ZwoGain.ASCOM.dll'))) { throw 'Uninstall left application files or entry' }
     Assert-NoCameraEntries
-    if ((Get-FileHash $env:ZWOGAIN_ASCOM_SETTINGS).Hash -ne $settingsHash -or (Get-FileHash $profiles).Hash -ne $profilesHash) { throw 'Setup changed user settings' }
+    if ((Get-FileHash (Join-Path $testDir 'camera-1.json')).Hash -ne $settingsHash -or (Get-FileHash $profiles).Hash -ne $profilesHash) { throw 'Setup changed user settings' }
     Write-Output 'Installer: prerequisites, 8 COM captures, busy guards, upgrade, downgrade guard, uninstall and settings preservation passed.'
 } finally {
     if ($backend -and !$backend.HasExited) { $backend.Kill(); $backend.WaitForExit() }
     if ($platformBefore) { Set-ItemProperty $platformKey -Name PlatformVersion -Value $platformBefore }
     else { Remove-ItemProperty $platformKey -Name PlatformVersion -ErrorAction SilentlyContinue }
-    $env:ZWOGAIN_ASCOM_SETTINGS = $oldSettings
+    $env:ZWOGAIN_ASCOM_PROFILES = $oldSettings
+    $env:ZWOGAIN_ASCOM_SIMULATE = $oldSimulation
     $env:ZWOGAIN_ASCOM_TEST_CLSIDS = $oldIds
+    $env:ZWOGAIN_ACCESSORY_SIMULATE = $oldAccessorySimulation
+    $env:ZWOGAIN_ACCESSORY_SETTINGS = $oldAccessorySettings
+    $env:ZWOGAIN_ACCESSORY_TEST_CLSID = $oldAccessoryIds
 }

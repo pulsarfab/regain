@@ -10,6 +10,10 @@ try {
     $registration = Start-Process -FilePath $exe -ArgumentList '/regserver' -WindowStyle Hidden -Wait -PassThru
     if ($registration.ExitCode) { throw 'Machine registration failed' }
     foreach ($architecture in 'System32','SysWOW64') {
+        foreach ($deviceClass in 'EfwFilterWheel','EafFocuser') {
+            & "$env:WINDIR/$architecture/WindowsPowerShell/v1.0/powershell.exe" -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'test-accessory-ascom-client.ps1') -DeviceClass $deviceClass -MetadataOnly
+            if ($LASTEXITCODE) { throw 'Registered accessory COM activation failed' }
+        }
         for ($slot = 0; $slot -lt 4; $slot++) {
             & "$env:WINDIR/$architecture/WindowsPowerShell/v1.0/powershell.exe" -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'test-ascom-client.ps1') -Slot $slot -MetadataOnly
             if ($LASTEXITCODE) { throw 'Registered COM activation failed' }

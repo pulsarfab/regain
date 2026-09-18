@@ -1,0 +1,166 @@
+{
+  "date": "2026-09-18",
+  "method": "Owned SDK child processes traced at imported HID control-report APIs; serials omitted. SDK and native tests performed sequentially.",
+  "devices": {
+    "efw": {
+      "sdkSha256": "be05a25d5d25149876e7bcce680b4520e36091b8b60b23ab6a3149c1765f99aa",
+      "sdkVersion": "1, 8, 4",
+      "rawTraceSha256": "85f1e038d6e214b1e01f57280b5552a3f4b6e54cae5eb06f0f178524e4f9a976",
+      "firmware": [
+        3,
+        6,
+        2
+      ],
+      "initial": {
+        "Position": 0,
+        "Direction": false,
+        "HWErrorCode": 0
+      },
+      "restored": {
+        "position": 0,
+        "settings": {
+          "SetDirection": false
+        }
+      },
+      "writePackets": [
+        "03 7e 5a 01 02 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00",
+        "03 7e 5a 01 02 02 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00",
+        "03 7e 5a 01 02 03 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00",
+        "03 7e 5a 01 02 04 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00",
+        "03 7e 5a 01 02 05 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00",
+        "03 7e 5a 01 02 06 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00",
+        "03 7e 5a 01 02 07 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00"
+      ],
+      "calibration": {
+        "method": "EFWCalibrate via SDK 1.8.4 x64, owned process HID trace; --calibrate --exercise",
+        "rawTraceSha256": "0714704832a06b94427cc9b6721924c2d96deaac8b9d4865eeb37cd12e58a735",
+        "initial": {
+          "Position": 0,
+          "Direction": false,
+          "HWErrorCode": 0
+        },
+        "writeCount": 1,
+        "writePacket": "03 7e 5a 01 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00",
+        "statusReportsByStateAndDetectedCount": [
+          "01 7e 5a 01 01 00 01 01 01 07 00 00 00 00 07 00",
+          "01 7e 5a 01 00 00 01 01 01 01 00 00 00 00 03 00",
+          "01 7e 5a 01 00 00 01 01 01 02 00 00 00 00 03 00",
+          "01 7e 5a 01 00 00 01 01 01 03 00 00 00 00 03 00",
+          "01 7e 5a 01 00 00 01 01 01 04 00 00 00 00 03 00",
+          "01 7e 5a 01 00 00 01 01 01 05 00 00 00 00 03 00",
+          "01 7e 5a 01 00 00 01 01 01 06 00 00 00 00 03 00",
+          "01 7e 5a 01 00 00 01 01 01 07 00 00 00 00 04 00"
+        ],
+        "hidFailures": 0,
+        "completion": {
+          "elapsedSeconds": 48.766,
+          "position": 0,
+          "slots": 7,
+          "hardwareError": 0
+        },
+        "restored": {
+          "position": 0,
+          "direction": false,
+          "slots": 7
+        },
+        "postCalibrationSdkSlotsVerifiedZeroBased": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ],
+        "postCalibrationNativeValidation": "Independent SDK-free Rust worker swept all seven slots and restored zero-based 0, with no fault.",
+        "scope": "SDK and SDK-free native calibration exposed through Rust, NINA, native ASCOM and Alpaca.",
+        "nativeHardwareValidation": [
+          {
+            "frontend": "Rust worker",
+            "elapsedSeconds": 48.64,
+            "slots": 7,
+            "finalPosition": 0,
+            "subsequentSlotSweep": "passed"
+          },
+          {
+            "frontend": "64-bit ASCOM COM",
+            "elapsedSeconds": 48.624,
+            "slots": 7,
+            "finalPosition": 0,
+            "subsequentMovement": "passed"
+          },
+          {
+            "frontend": "32-bit ASCOM COM",
+            "elapsedSeconds": 48.541,
+            "slots": 7,
+            "finalPosition": 0,
+            "subsequentMovement": "passed"
+          },
+          {
+            "frontend": "Alpaca",
+            "elapsedSeconds": 48.625,
+            "slots": 7,
+            "finalPosition": 0,
+            "subsequentSlotSweep": "passed",
+            "metadataPreserved": true
+          }
+        ],
+        "simulatedValidation": [
+          "NINA provider action, busy position, duplicate rejection and preserved filter profile",
+          "WPF setup button: idle to calibrating to idle",
+          "Alpaca browser setup button: progress and disabled movement controls",
+          "Alpaca API: multi-client progress, duplicate rejection and preserved names/offsets",
+          "Packaged release workers: Alpaca calibration and device contracts"
+        ]
+      }
+    },
+    "eaf": {
+      "sdkSha256": "9272a27ead2887bdd555326af797b6c88e5f034aa3b6c34fad57d6ac9904c00e",
+      "sdkVersion": "1, 8, 1, 0",
+      "rawTraceSha256": "0ce688055ef77cd4606041f9552bf3063cc1c0ac0971c512520550560ecb5adc",
+      "firmware": [
+        3,
+        8,
+        1
+      ],
+      "initial": {
+        "Position": 39829,
+        "MaxStep": 60000,
+        "Backlash": 0,
+        "Reverse": false,
+        "Beep": true,
+        "Temp": 28.5,
+        "moving": false,
+        "handControl": false,
+        "model": "EAFN"
+      },
+      "restored": {
+        "position": 39829,
+        "settings": {
+          "SetBeep": true,
+          "SetReverse": false,
+          "SetBacklash": 0,
+          "SetMaxStep": 60000
+        }
+      },
+      "writePackets": [
+        "03 7e 5a 03 01 00 00 00 9b c7 00 00 00 01 ea 60",
+        "03 7e 5a 03 01 00 00 00 9b 95 00 00 00 01 ea 60",
+        "03 7e 5a 03 00 00 00 00 9b 95 00 00 00 01 ea 60",
+        "03 7e 5a 03 00 00 00 00 9b 95 00 00 00 00 ea 60",
+        "03 7e 5a 03 00 00 00 00 9b 95 00 00 00 02 ea 60",
+        "03 7e 5a 03 00 01 00 00 9b 95 00 00 00 02 ea 60",
+        "03 7e 5a 03 00 01 00 00 9b 95 02 00 00 02 ea 60",
+        "03 7e 5a 03 00 01 00 00 9b 95 00 00 00 03 ea 60",
+        "03 7e 5a 03 00 01 00 00 9b 95 00 00 00 01 ea 60",
+        "03 7e 5a 03 00 00 00 00 9b 95 02 00 00 01 ea 60"
+      ]
+    }
+  },
+  "nativeValidation": [
+    "Rust worker: all EFW slots and EAF 50-step round trip, restored",
+    "ASCOM: 32-bit and 64-bit real COM clients, short moves, restored",
+    "Alpaca: configured discovery, multi-client connections, moves, settings, restored",
+    "Active EAF halt: confirmed idle at 39839 while targeting 39879 from 39829; returned to 39829. One stop write, bounded confirmation."
+  ]
+}
