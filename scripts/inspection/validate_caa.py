@@ -91,6 +91,7 @@ def main():
             assert ready.wait(5),'HID hooks unavailable'
             initial=request('status'); settings=request('settings'); identity=request('identity')
             assert not initial['moving'] and initial['error']==0
+            assert len(identity['alias'])<=8 and all(32<=ord(c)<=126 for c in identity['alias']), 'cannot round-trip this alias safely'
             request('alias',text='ZGTEST')
             assert request('identity')['alias']=='ZGTEST'
             request('alias',text=identity['alias'])

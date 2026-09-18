@@ -166,6 +166,12 @@ Passed on real hardware:
 
 See [sanitized results and local trace hashes](caa-evidence.json).
 
+Local validation passed 15 CAA regression tests, the full Rust workspace tests,
+Clippy, a source-only Cargo package build and standalone ZIP checks. The
+[initial CI run](https://github.com/theatrus/zwogain/actions/runs/35300657756)
+passed builds/tests on Linux x64/ARM64 and macOS Intel/ARM64. Windows hardware
+results above use the local build; the full Windows packaging job is separate.
+
 Both SDK and native report an unavailable temperature sensor (ADC 0; SDK
 error 7). Temperature conversion has synthetic regression tests, but a real
 probe is not validated. Hand-controller behavior, physical stall, cable

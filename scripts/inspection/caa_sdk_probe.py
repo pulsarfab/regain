@@ -27,7 +27,7 @@ def child(sdk_path, exercise):
         emit({'kind': 'sdk-call', 'name': name})
         code = getattr(sdk, name)(*args)
         emit({'kind': 'sdk-result', 'name': name, 'code': code})
-        if code != 0 and name != 'CAAGetTemp':
+        if code != 0 and not (name == 'CAAGetTemp' and code in (7, 8)):
             raise RuntimeError(f'{name}: {code}')
         return code
 
@@ -141,8 +141,10 @@ def main():
     args.output.parent.mkdir(parents=True,exist_ok=True)
     with args.output.open('x',encoding='utf-8') as log:
         lock=threading.Lock()
+        observations=[]
         def record(value):
             with lock:
+                observations.append(value)
                 log.write(json.dumps({'time':time.time(),**value})+'\n'); log.flush()
         record({'kind':'configuration','sdkSha256':hashlib.sha256(args.sdk.read_bytes()).hexdigest(),'exercise':args.exercise})
         # A Windows venv python.exe may be a redirector process. Attach to the
@@ -173,6 +175,11 @@ def main():
             errors=proc.stderr.read()
             record({'kind':'process-exit','code':code,'stderr':errors})
             if code: raise RuntimeError(errors)
+            with lock:
+                if any(v.get('kind') in ('trace-error','cleanup-error') for v in observations):
+                    raise RuntimeError('CAA tracing or state restoration failed; inspect the log')
+                if not any(v.get('kind')=='hid' for v in observations):
+                    raise RuntimeError('no CAA HID reports captured')
         finally:
             timer.cancel()
             if proc.poll() is None: proc.kill(); proc.wait()
