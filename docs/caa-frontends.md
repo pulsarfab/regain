@@ -14,19 +14,20 @@ In NINA, update the plugin, restart NINA, open Equipment → Rotator and select
 **ZWOgain CAA Rotator**. Open its setup gear. In ASCOM, use the same-named
 Chooser entry, or **ZWOgain ASCOM → CAA rotator setup** in the Start menu.
 
-1. On **Device**, choose the CAA. ASCOM setup scans on opening and saves the
-   selection automatically. Native NINA setup has a **Save selection** button.
+1. On **Device**, choose the CAA. Setup scans on opening and saves the
+   selection automatically.
 2. Connect in the main application. To test within setup, use its connection
    button. A connection opened only for setup is closed when the dialog closes.
 3. Use **Motion** for ordinary moves and sky-angle sync. **Settings** controls
    beep, reverse and the device alias. Halt is always available in the NINA
    dialog footer while connected.
 
-NINA uses its native theme, fonts and controls, like the camera setup. The
+Both frontends share a WPF setup dialog. In NINA it uses the application's
+theme, fonts and controls, like the camera setup. Other ASCOM clients get a
+standalone light theme. The
 **Reference** tab holds mechanical zero, reference assignment and travel limit.
-The Windows ASCOM setup uses the standalone dialog. When the native NINA
-driver is already connected, its setup shares that connection; disconnect
-through NINA's equipment pane.
+When the driver is already connected, setup shares that connection; disconnect
+through the application's equipment pane.
 
 With no saved selection, connecting automatically selects and saves the only
 available CAA. If more than one is available, choose in setup first. A saved
