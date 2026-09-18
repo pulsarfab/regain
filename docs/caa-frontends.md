@@ -172,6 +172,15 @@ profiles using `scripts/test-caa-ascom.ps1 -Hardware -FreshProfile`. Both
 connected, saved their choice, and passed the hardware checks. Tests also
 cover a client created before another setup instance saves its selection.
 
+The replacement WPF dialog was then checked inside NINA 3.2 with the
+installed ASCOM driver. All five tabs displayed correctly at the desktop's
+200% scaling. Setup connected, moved 152° → 153° → 152°, reset mechanical
+zero while keeping the sky angle, and restored the reference. After setup
+closed, NINA's ASCOM Connect button succeeded and reported 152°. The final
+installed driver also passed the hardware checks from separate empty
+profiles in both 32-bit and 64-bit clients, saving the selected device.
+The CAA was left disconnected at 152° with its 360° limit restored.
+
 To repeat the COM checks with one available CAA, run
 `scripts/test-caa-ascom.ps1 -Hardware` for the development build. To test the
 actual installed driver, first select the device in ASCOM setup, disconnect
