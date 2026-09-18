@@ -104,7 +104,10 @@ fn main() -> Result<()> {
         match rx.recv_timeout(Duration::from_millis(100)) {
             Ok(line) => {
                 let response = (|| -> Result<Value> {
-                    let request: Value = serde_json::from_str(&line?)?;
+                    // .NET Framework may emit a UTF-8 preamble when opening
+                    // redirected stdin, even if the caller then uses BaseStream.
+                    let request: Value =
+                        serde_json::from_str(line?.trim_start_matches('\u{feff}'))?;
                     let command = request["command"].as_str().context("missing command")?;
                     match command {
                         "identity" => Ok(json!(device.identity)),

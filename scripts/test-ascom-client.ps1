@@ -1,5 +1,7 @@
 param([int]$Slot, [switch]$MetadataOnly)
 $ErrorActionPreference = 'Stop'
+# Exercise .NET Framework's redirected-stdin UTF-8 preamble, as on Windows CI.
+[Console]::InputEncoding = [Text.UTF8Encoding]::new($true)
 $id = [Guid](('D1DB6F94-5CC0-4752-A758-F849098874A{0}' -f ($Slot + 1)))
 if ($env:ZWOGAIN_ASCOM_TEST_CLSIDS) { $id = [Guid]($env:ZWOGAIN_ASCOM_TEST_CLSIDS.Split(',')[$Slot]) }
 $deadline = [DateTime]::UtcNow.AddSeconds(20)

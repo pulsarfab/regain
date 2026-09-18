@@ -1,5 +1,8 @@
 param([string]$DeviceClass, [switch]$Hardware, [switch]$MetadataOnly, [switch]$Calibrate)
 $ErrorActionPreference = 'Stop'
+# Match UTF-8 Windows CI hosts: .NET Framework's redirected stdin writer
+# emits this encoding's preamble before the driver's own UTF-8 writer.
+[Console]::InputEncoding = [Text.UTF8Encoding]::new($true)
 $id = if ($env:ZWOGAIN_ACCESSORY_TEST_CLSID) { [Guid]$env:ZWOGAIN_ACCESSORY_TEST_CLSID } elseif ($DeviceClass -eq 'EfwFilterWheel') { [Guid]'EA2040E1-E936-4BDF-87F7-B58CA3E418AB' } else { [Guid]'295C08F8-EDE9-43C5-9D55-627A063D74CA' }
 $device = [Activator]::CreateInstance([Type]::GetTypeFromCLSID($id))
 try {
