@@ -51,6 +51,7 @@ Source: "{#Stage}\ZwoGain.ASCOM.Register.exe*"; DestDir: "{tmp}\preflight"; Flag
 
 [Icons]
 Name: "{group}\Camera setup"; Filename: "{app}\ZwoGain.ASCOM.Register.exe"
+Name: "{group}\CAA rotator setup"; Filename: "{app}\ZwoGain.ASCOM.Register.exe"; Parameters: "/rotator"
 Name: "{group}\Documentation"; Filename: "https://github.com/theatrus/zwogain/blob/main/docs/ascom.md"
 
 [Code]
@@ -136,6 +137,10 @@ begin
         if CompareText(CodeBase, CameraCodeBase('')) <> 0 then
           Problem := 'Another ZWOgain copy now owns the camera registration. Restore registration to this installation before uninstalling it.';
     end;
+    Key := 'Software\Classes\CLSID\{A918164B-49DD-4FF5-BEE6-A4AB93B97F12}\InprocServer32';
+    if RegQueryStringValue(Root, Key, 'CodeBase', CodeBase) then
+      if CompareText(CodeBase, CameraCodeBase('')) <> 0 then
+        Problem := 'Another ZWOgain copy now owns the rotator registration. Restore registration to this installation before uninstalling it.';
   end;
   Result := Problem = '';
   if not Result then SuppressibleMsgBox(Problem, mbError, MB_OK, IDOK);

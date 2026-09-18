@@ -9,6 +9,7 @@ internal static class Dependencies
     // RequestingAssembly, so those requests are limited to the bundled packages.
     private static readonly HashSet<string> Packages = new(StringComparer.Ordinal) {
         "ASCOM.Alpaca", "ASCOM.Common", "ASCOM.DeviceInterfaces", "ASCOM.Exceptions",
+        "ZwoGain.Rotator",
         "Microsoft.Bcl.AsyncInterfaces", "System.Buffers", "System.IO.Pipelines", "System.Memory",
         "System.Numerics.Vectors", "System.Runtime.CompilerServices.Unsafe", "System.Text.Encodings.Web",
         "System.Text.Json", "System.Threading.Tasks.Extensions"

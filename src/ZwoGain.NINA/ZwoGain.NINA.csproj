@@ -15,6 +15,7 @@
     <Resource Include="Assets/zwogain.png" />
     <InternalsVisibleTo Include="ZwoGain.NINA.Tests" />
     <ProjectReference Include="../ZwoGain.Core/ZwoGain.Core.csproj" />
+    <ProjectReference Include="../ZwoGain.Rotator/ZwoGain.Rotator.csproj" />
     <PackageReference Include="NINA.Plugin" Version="3.2.0.9001" PrivateAssets="all" />
   </ItemGroup>
 </Project>

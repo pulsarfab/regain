@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFrameworks>net8.0-windows7.0;net48</TargetFrameworks>
+    <UseWindowsForms>true</UseWindowsForms>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(TargetFramework)' != 'net48'"><PackageReference Include="System.Text.Json" Version="9.0.5" /></ItemGroup>
+  <ItemGroup Condition="'$(TargetFramework)' == 'net48'"><PackageReference Include="System.Text.Json" Version="10.0.8" /></ItemGroup>
+</Project>

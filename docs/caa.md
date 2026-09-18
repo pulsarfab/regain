@@ -2,8 +2,9 @@
 
 `zwogain-caa` is a Rust library and command-line driver for the ZWO CAA rotator.
 It uses USB HID directly, with no ZWO SDK, hidapi C library or libusb dependency.
-It is independent of the camera driver. There is no NINA/ASCOM/Alpaca rotator
-frontend yet. ZWOgain is not affiliated with ZWO.
+It is independent of the camera driver. The NINA plugin and Windows ASCOM driver
+use this worker; see [frontend setup and actions](caa-frontends.md). Alpaca rotator
+support is not implemented. ZWOgain is not affiliated with ZWO.
 
 ## Run
 
@@ -20,7 +21,8 @@ target/release/zwogain-caa.exe exercise
 ```
 
 On Linux/macOS omit `.exe`. If several CAAs are attached, use `--path` with a
-path returned by `list`. `status` reads identity, settings and position.
+path returned by `list`. `status` reads identity, settings and position. `list-details` adds model, firmware
+and serial; `--serial SERIAL` selects a stable identity across USB reattachment.
 `exercise` tests motion, logical sync, reverse, beep, limit and stop, then
 returns to the initial mechanical position and restores settings. Do not run
 another rotator controller at the same time.
@@ -132,8 +134,8 @@ Important SDK differences:
   this DLL. A decorated symbol at the same address as `CAACurDegree` uses a
   float argument, contrary to the header's pointer declaration. It is unused.
 - SDK close sends stop/configuration writes. Rust close simply releases the
-  handle. Firmware update, mechanical-reference reset and undocumented speed
-  controls are deliberately outside this driver's API.
+  handle. Firmware update and undocumented speed controls remain outside this driver's API.
+  Explicit mechanical-reference writes are available separately from sync.
 - Temperature uses the SDK's NTC resistance table and interpolation. Invalid
   or out-of-table ADC readings return `None`; no cached substitute is returned.
 
@@ -167,9 +169,9 @@ Validated on the CAA-M54, firmware 1.1.1:
 
 The SDK rejects mechanical targets below zero or above 360 with error 10,
 even though the USB protocol can exceed that range. The production Rust API
-keeps its 0–360 checks, including validation of returned position and limit;
-restore a limit of 360 or less before using it. The extended-limit experiments
-are inspection-only. See [reference-test results](caa-reference-evidence.json).
+supports the validated 0–361 mechanical range and 1–361 limit. Logical angles
+stay within one turn. Every move is checked against the device limit before
+USB submission. See [reference-test results](caa-reference-evidence.json).
 Changing the mechanical reference also changes the origin for travel limits.
 Normal connection, recovery and logical sync must not reset it automatically.
 
@@ -177,8 +179,7 @@ The reference and motion tests restored the original reported position (152)
 and limit (360). Displacement was tracked from device reports; there was no
 independent angle measurement. Power-loss retention remains untested: its
 temporary marker was restored before the multi-turn test, with no confirmed
-power cycle. The
-SDK cannot tell us whether firmware stores position in flash, EEPROM, or
+power cycle. The SDK cannot tell us whether firmware stores position in flash, EEPROM, or
 another mechanism, nor whether it uses an encoder.
 
 The Windows-only `scripts/inspection/validate_caa_reference.py` records raw
@@ -256,3 +257,21 @@ needs the SDK in `CAA_Windows_SDK_V1.5.9/` (ignored), or an explicit `--sdk`.
 It pins the inspected DLL hash before attaching version-specific hooks.
 The second uses only the compiled native worker and Frida. Its two faults
 alter HID call results after real transfers; they are not physical USB faults.
+
+## Frontend worker protocol
+
+NINA and the Windows ASCOM driver use `serve --serial SERIAL`. Commands and
+replies are newline-delimited JSON. The worker ticks motion independently of
+requests, so clients do not have to poll to advance a segmented move. EOF halts
+motion and cancels queued segments; closing a bare library handle still just
+releases it. No motion command is retried.
+
+New commands: `reference` with `degrees` (0–360), `reset-origin` with no fields,
+and `rotate-unwrapped` with physical `degrees` (-450..450, nonzero). `limit`
+accepts 1–361. `status` includes `logical_offset`, `target_degrees`, and
+`motion_error` alongside the device fields. `stop` discards pending segments
+before advancing anything and acknowledges stored motion errors. Logical sync
+never calls the mechanical-reference command.
+
+See [frontend setup and ASCOM actions](caa-frontends.md) for persistence,
+coordinate conventions, limits, and failure handling.

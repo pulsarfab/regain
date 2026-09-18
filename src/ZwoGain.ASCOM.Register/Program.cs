@@ -17,6 +17,9 @@ internal static class Program
                 return 2;
             }
             bool remove = args.Any(a => a.Equals("/unregserver", StringComparison.OrdinalIgnoreCase));
+            if (args.Any(a => a.Equals("/rotator", StringComparison.OrdinalIgnoreCase))) {
+                using var rotator = new CaaRotator(); rotator.SetupDialog(); return 0;
+            }
             if (!remove && !args.Any(a => a.Equals("/regserver", StringComparison.OrdinalIgnoreCase))) {
                 using var camera = new Camera1(); camera.SetupDialog(); return 0;
             }
@@ -29,6 +32,12 @@ internal static class Program
                     if (existing is not null && (!Uri.TryCreate(existing.GetValue("CodeBase") as string, UriKind.Absolute, out var installed) ||
                         !installed.IsFile || !string.Equals(Path.GetFullPath(installed.LocalPath), assembly, StringComparison.OrdinalIgnoreCase)))
                         throw new InvalidOperationException("Unregister from the currently installed ZWOgain directory.");
+                }
+                if (remove) {
+                    using var existing = root.OpenSubKey(@"Software\Classes\CLSID\{A918164B-49DD-4FF5-BEE6-A4AB93B97F12}\InprocServer32");
+                    if (existing is not null && (!Uri.TryCreate(existing.GetValue("CodeBase") as string, UriKind.Absolute, out var installed) ||
+                        !installed.IsFile || !string.Equals(Path.GetFullPath(installed.LocalPath), assembly, StringComparison.OrdinalIgnoreCase)))
+                        throw new InvalidOperationException("Unregister the rotator from its currently installed directory.");
                 }
                 string framework = view == RegistryView.Registry32 ? "Framework" : "Framework64";
                 string regasm = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "Microsoft.NET", framework, "v4.0.30319", "RegAsm.exe");
@@ -45,6 +54,9 @@ internal static class Program
                     if (remove) root.DeleteSubKeyTree(key, false);
                     else { using var chooser = root.CreateSubKey(key); chooser.SetValue(null, "ZWOgain Retryable Camera " + slot); }
                 }
+                string rotatorKey = @"Software\ASCOM\Rotator Drivers\ASCOM.ZWOgain.Rotator";
+                if (remove) root.DeleteSubKeyTree(rotatorKey, false);
+                else { using var chooser = root.CreateSubKey(rotatorKey); chooser.SetValue(null, "ZWOgain CAA Rotator"); }
             }
             return 0;
         } catch (Exception error) {

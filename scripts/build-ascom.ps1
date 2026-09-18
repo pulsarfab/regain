@@ -16,7 +16,7 @@ try {
         if (Test-Path -LiteralPath $stage) { Remove-Item -LiteralPath $stage -Recurse -Force }
         New-Item -ItemType Directory -Path $stage | Out-Null
         Get-ChildItem -LiteralPath (Join-Path $repo 'src/ZwoGain.ASCOM.Register/bin/Release/net48') -File | Where-Object { $_.Extension -in '.dll','.exe','.config' } | Copy-Item -Destination $stage
-        foreach ($file in 'ASICamera2.dll','LICENSE','THIRD_PARTY_NOTICES.md') { Copy-Item -LiteralPath (Join-Path $plugin $file) -Destination $stage }
+        foreach ($file in 'ASICamera2.dll','LICENSE','THIRD_PARTY_NOTICES.md','caa.md','caa-frontends.md') { Copy-Item -LiteralPath (Join-Path $plugin $file) -Destination $stage }
         Copy-Item -LiteralPath (Join-Path $plugin 'licenses') -Destination $stage -Recurse
         Copy-Item -LiteralPath (Join-Path $repo 'docs/ascom.md') -Destination (Join-Path $stage 'README.md')
         $assets = Get-Content src/ZwoGain.ASCOM/obj/project.assets.json -Raw | ConvertFrom-Json -AsHashtable
@@ -42,6 +42,7 @@ THE SOFTWARE.
         foreach ($entry in $assets.targets.Values[0].GetEnumerator()) {
             if (!$entry.Value.ContainsKey('runtime')) { continue }
             $lib = $assets.libraries[$entry.Key]
+            if ($lib.type -eq 'project') { continue }
             $dir = Join-Path @($assets.packageFolders.Keys)[0] $lib.path
             $specFile = Get-ChildItem -LiteralPath $dir -Filter '*.nuspec' | Select-Object -First 1
             $spec = [xml](Get-Content -LiteralPath $specFile.FullName -Raw)
@@ -54,7 +55,7 @@ THE SOFTWARE.
         }
     }
     # On releases these are copied after signing the shared Rust payload.
-    foreach ($file in 'zwogain-alpaca.exe','zwogain-host.exe','zwogain-direct.exe') { Copy-Item -LiteralPath (Join-Path $plugin $file) -Destination $stage -Force }
+    foreach ($file in 'zwogain-alpaca.exe','zwogain-host.exe','zwogain-direct.exe','zwogain-caa.exe') { Copy-Item -LiteralPath (Join-Path $plugin $file) -Destination $stage -Force }
     if ($StageOnly) { Write-Output "Staged: $stage"; return }
     $archive = Join-Path $repo "artifacts/ZwoGain-ASCOM-$version-win-x64.zip"
     Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $archive -Force

@@ -15,7 +15,7 @@ if (Path.GetFileName(archivePath) != archiveName) throw new InvalidDataException
 if (plugin.License != "Apache-2.0") throw new InvalidDataException("Plugin license must be Apache-2.0");
 using (var archive = ZipFile.OpenRead(archivePath))
 {
-    string[] required = ["ZwoGain.NINA.dll", "ZwoGain.Core.dll", "zwogain-host.exe", "zwogain-direct.exe", "zwogain-alpaca.exe", "ASICamera2.dll",
+    string[] required = ["ZwoGain.NINA.dll", "ZwoGain.Core.dll", "ZwoGain.Rotator.dll", "zwogain-caa.exe", "caa.md", "zwogain-host.exe", "zwogain-direct.exe", "zwogain-alpaca.exe", "ASICamera2.dll",
         "LICENSE", "THIRD_PARTY_NOTICES.md", "zwogain.png", "licenses/ZWO-ASI-SDK.txt", "licenses/Rust-Standard-Library.html"];
     foreach (string name in required)
         if (archive.GetEntry(name) is not { Length: > 0 }) throw new InvalidDataException($"Package missing {name}");
@@ -29,7 +29,7 @@ using (var archive = ZipFile.OpenRead(archivePath))
     using var license = new StreamReader(archive.GetEntry("LICENSE")!.Open());
     if (!(await license.ReadToEndAsync()).Contains("Apache License")) throw new InvalidDataException("Missing Apache license text");
     // Check the assemblies inside the ZIP against the versions we actually built.
-    foreach (string name in new[] { "ZwoGain.NINA.dll", "ZwoGain.Core.dll" })
+    foreach (string name in new[] { "ZwoGain.NINA.dll", "ZwoGain.Core.dll", "ZwoGain.Rotator.dll" })
     {
         using var stream = archive.GetEntry(name)!.Open();
         using var copy = new MemoryStream();

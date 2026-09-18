@@ -78,7 +78,7 @@ fn recorded_status_and_move_encoding() {
 fn invalid_input_never_reaches_usb() {
     let mut f = fake(vec![]);
     let mut c = Caa::connect(&mut f).unwrap();
-    for value in [-1.0, 361.0, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+    for value in [-1.0, 362.0, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
         assert!(c.move_mechanical(value).is_err());
         assert!(c.move_to(value).is_err());
         assert!(c.sync(value).is_err());
@@ -87,7 +87,7 @@ fn invalid_input_never_reaches_usb() {
         assert!(c.move_relative(value).is_err());
     }
     assert!(c.set_limit(0).is_err());
-    assert!(c.set_limit(361).is_err());
+    assert!(c.set_limit(362).is_err());
     assert_eq!(f.writes.len(), 1);
 }
 
@@ -97,7 +97,7 @@ fn malformed_short_stale_and_out_of_range_replies_fail() {
         vec![0; 3],
         vec![0; 16],
         settings(false),
-        status(3_600_001, 0, 0),
+        status(3_610_001, 0, 0),
     ] {
         let mut f = fake(vec![reply]);
         assert!(Caa::connect(&mut f).unwrap().status().is_err());
@@ -106,7 +106,7 @@ fn malformed_short_stale_and_out_of_range_replies_fail() {
 
 #[test]
 fn corrupt_limits_and_unrepresentable_deadline_are_rejected() {
-    for limit in [0_u16, 361, u16::MAX] {
+    for limit in [0_u16, 362, u16::MAX] {
         let mut r = status(1_520_000, 0, 0);
         r[13..15].copy_from_slice(&limit.to_be_bytes());
         let mut f = fake(vec![r]);

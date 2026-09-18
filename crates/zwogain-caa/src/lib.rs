@@ -11,11 +11,14 @@ use std::{
     time::{Duration, Instant},
 };
 
+pub mod controller;
 mod temperature;
 pub mod transport;
 
 pub const VENDOR_ID: u16 = 0x03c3;
 pub const PRODUCT_ID: u16 = 0x1f20;
+/// Largest firmware limit exercised on CAA-M54 1.1.1.
+pub const MAX_MECHANICAL_DEGREES: u16 = 361;
 
 /// Reports include the report ID at byte zero, on every platform.
 pub trait Transport {
@@ -30,6 +33,7 @@ pub struct Status {
     pub direction: u8,
     pub mechanical_degrees: f64,
     pub logical_degrees: f64,
+    pub logical_offset: f64,
     pub temperature_adc: u16,
     pub temperature_c: Option<f64>,
     pub limit_degrees: u16,
@@ -56,6 +60,7 @@ pub struct Caa<T: Transport> {
     offset: f64,
     reverse: bool,
     pending_reverse: Option<(f64, f64)>,
+    pending_reference: Option<f64>,
 }
 
 fn header(command: u8) -> [u8; 16] {
@@ -82,6 +87,14 @@ fn angle(value: f64) -> Result<()> {
     Ok(())
 }
 
+fn mechanical_angle(value: f64) -> Result<()> {
+    ensure!(
+        value.is_finite() && (0.0..=f64::from(MAX_MECHANICAL_DEGREES)).contains(&value),
+        "mechanical angle must be finite and between 0 and 361 degrees"
+    );
+    Ok(())
+}
+
 fn wrap_mechanical(value: f64) -> f64 {
     let wrapped = value.rem_euclid(360.0);
     // Mechanical 360 is a distinct cable-limit endpoint from zero. Match the
@@ -101,6 +114,7 @@ impl<T: Transport> Caa<T> {
             offset: 0.0,
             reverse: false,
             pending_reverse: None,
+            pending_reference: None,
         };
         caa.reverse = caa.settings()?.reverse;
         Ok(caa)
@@ -149,11 +163,14 @@ impl<T: Transport> Caa<T> {
         }
         let r = self.query(3)?;
         let mechanical = u32::from_be_bytes(r[6..10].try_into().unwrap()) as f64 / 10000.0;
-        angle(mechanical)?;
+        mechanical_angle(mechanical)?;
+        if let Some(logical) = self.pending_reference.take() {
+            self.offset = logical - self.sign() * mechanical;
+        }
         let adc = u16::from_be_bytes([r[11], r[12]]);
         let limit = u16::from_be_bytes([r[13], r[14]]);
         ensure!(
-            (1..=360).contains(&limit),
+            (1..=MAX_MECHANICAL_DEGREES).contains(&limit),
             "invalid CAA rotation limit {limit}"
         );
         Ok(Status {
@@ -162,6 +179,7 @@ impl<T: Transport> Caa<T> {
             direction: r[5],
             mechanical_degrees: mechanical,
             logical_degrees: (self.sign() * mechanical + self.offset).rem_euclid(360.0),
+            logical_offset: self.offset,
             temperature_adc: adc,
             temperature_c: temperature::from_adc(adc),
             limit_degrees: limit,
@@ -197,7 +215,7 @@ impl<T: Transport> Caa<T> {
     }
 
     pub fn move_mechanical(&mut self, degrees: f64) -> Result<()> {
-        angle(degrees)?;
+        mechanical_angle(degrees)?;
         let s = self.idle()?;
         ensure!(
             degrees <= f64::from(s.limit_degrees),
@@ -240,6 +258,35 @@ impl<T: Transport> Caa<T> {
         angle(degrees)?;
         let s = self.idle()?;
         self.offset = degrees - self.sign() * s.mechanical_degrees;
+        Ok(())
+    }
+
+    /// Explicitly re-label the current mechanical position; never called by
+    /// connect or sync. Preserve the sky coordinate while moving its reference.
+    /// A failed write remains uncertain: do not replay it or use the old offset.
+    pub fn set_mechanical_reference(&mut self, degrees: f64) -> Result<()> {
+        angle(degrees)?;
+        let s = self.idle()?;
+        ensure!(
+            degrees <= f64::from(s.limit_degrees),
+            "reference exceeds rotation limit"
+        );
+        let mut r = header(3);
+        r[5] = s.direction;
+        r[6..10].copy_from_slice(&((degrees * 10000.0).round() as u32).to_be_bytes());
+        r[10] = 1;
+        r[14..16].copy_from_slice(&s.limit_degrees.to_be_bytes());
+        self.pending_reference = Some(s.logical_degrees);
+        let write = self.write(&r);
+        // Read actual position even after an uncertain write. If reconciliation
+        // fails, the controller faults the connection until an explicit sync.
+        let after = self.status()?;
+        self.offset = s.logical_degrees - self.sign() * after.mechanical_degrees;
+        write?;
+        ensure!(
+            !after.moving && after.error == 0 && (after.mechanical_degrees - degrees).abs() <= 0.03,
+            "CAA did not accept mechanical reference"
+        );
         Ok(())
     }
 
@@ -292,8 +339,8 @@ impl<T: Transport> Caa<T> {
 
     pub fn set_limit(&mut self, degrees: u16) -> Result<()> {
         ensure!(
-            (1..=360).contains(&degrees),
-            "limit must be 1..360 whole degrees"
+            (1..=MAX_MECHANICAL_DEGREES).contains(&degrees),
+            "limit must be 1..361 whole degrees"
         );
         let s = self.idle()?;
         ensure!(

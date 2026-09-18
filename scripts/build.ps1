@@ -22,12 +22,15 @@ try {
     if ($LASTEXITCODE) { throw 'Plugin build failed' }
     if (Test-Path -LiteralPath $stage) { Remove-Item -LiteralPath $stage -Recurse -Force }
     New-Item -ItemType Directory -Force $stage | Out-Null
-    foreach ($file in @('ZwoGain.NINA.dll','ZwoGain.Core.dll')) {
+    foreach ($file in @('ZwoGain.NINA.dll','ZwoGain.Core.dll','ZwoGain.Rotator.dll')) {
         Copy-Item -LiteralPath (Join-Path $repo "src/ZwoGain.NINA/bin/Release/net8.0-windows7.0/$file") -Destination $stage
     }
     Copy-Item -LiteralPath (Join-Path $repo 'target/release/zwogain-host.exe') -Destination $stage
     Copy-Item -LiteralPath (Join-Path $repo 'target/release/zwogain-direct.exe') -Destination $stage
     Copy-Item -LiteralPath (Join-Path $repo 'target/release/zwogain-alpaca.exe') -Destination $stage
+    Copy-Item -LiteralPath (Join-Path $repo 'target/release/zwogain-caa.exe') -Destination $stage
+    Copy-Item -LiteralPath (Join-Path $repo 'docs/caa.md') -Destination $stage
+    Copy-Item -LiteralPath (Join-Path $repo 'docs/caa-frontends.md') -Destination $stage
     Copy-Item -LiteralPath (Join-Path $repo 'vendor/zwo/ASICamera2.dll') -Destination $stage
     Copy-Item -LiteralPath (Join-Path $repo 'src/ZwoGain.NINA/Assets/zwogain.png') -Destination $stage
     foreach ($file in @('LICENSE','README.md','THIRD_PARTY_NOTICES.md')) { Copy-Item -LiteralPath (Join-Path $repo $file) -Destination $stage }
@@ -35,6 +38,7 @@ try {
     $licenses = Join-Path $stage 'licenses'
     New-Item -ItemType Directory -Force $licenses | Out-Null
     Copy-Item -LiteralPath (Join-Path $repo 'vendor/zwo/LICENSE.txt') -Destination (Join-Path $licenses 'ZWO-ASI-SDK.txt')
+    Copy-Item -LiteralPath (Join-Path $repo 'crates/zwogain-caa/LICENSE-ZWO') -Destination (Join-Path $licenses 'ZWO-CAA-NTC.txt')
     $target = (rustc -vV | Select-String '^host: ').ToString().Substring(6)
     $metadata = cargo metadata --locked --format-version 1 --filter-platform $target | ConvertFrom-Json
     if ($LASTEXITCODE) { throw 'Cargo metadata failed' }

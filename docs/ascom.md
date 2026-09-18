@@ -183,3 +183,11 @@ caused one replacement exposure and restored the 10°C target:
 Both returned an image before reaching the target, as intended. The prior
 setpoint and enable setting were restored after testing. This tests worker
 failure, not USB removal or loss of camera power.
+
+## CAA rotator
+
+The installer also registers one **ZWOgain CAA Rotator** entry, implementing
+`IRotatorV3` for 32-bit and 64-bit clients. It selects the CAA by saved serial
+and uses the local Rust HID worker directly. It does not use the camera Alpaca
+server. Setup exposes origin zeroing, reference assignment, the tested 361°
+limit, and explicit segmented multi-turn travel. See [CAA setup and actions](caa-frontends.md).

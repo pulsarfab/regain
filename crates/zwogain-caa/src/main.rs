@@ -5,47 +5,14 @@ use std::{
     time::Duration,
 };
 use zwogain_caa::{
-    Caa, Transport,
+    Caa,
+    controller::Controller,
     transport::{self, Device},
 };
 
 fn emit(value: Value) {
     println!("{value}");
 }
-fn number(request: &Value, key: &str) -> Result<f64> {
-    request[key]
-        .as_f64()
-        .with_context(|| format!("{key} must be a number"))
-}
-fn boolean(request: &Value) -> Result<bool> {
-    request["enabled"]
-        .as_bool()
-        .context("enabled must be a boolean")
-}
-fn request<T: Transport>(caa: &mut Caa<T>, value: &Value) -> Result<Value> {
-    match value["command"].as_str().context("command required")? {
-        "status" => return Ok(serde_json::to_value(caa.status()?)?),
-        "settings" => return Ok(serde_json::to_value(caa.settings()?)?),
-        "identity" => return Ok(serde_json::to_value(caa.identity()?)?),
-        "move-mechanical" => caa.move_mechanical(number(value, "degrees")?)?,
-        "move-to" => caa.move_to(number(value, "degrees")?)?,
-        "move-relative" => caa.move_relative(number(value, "degrees")?)?,
-        "sync" => caa.sync(number(value, "degrees")?)?,
-        "stop" => caa.stop()?,
-        "beep" => caa.set_beep(boolean(value)?)?,
-        "reverse" => caa.set_reverse(boolean(value)?)?,
-        "alias" => caa.set_alias(value["text"].as_str().context("text must be a string")?)?,
-        "limit" => caa.set_limit(
-            value["degrees"]
-                .as_u64()
-                .and_then(|n| u16::try_from(n).ok())
-                .context("degrees must be a whole number 1..360")?,
-        )?,
-        other => bail!("unknown command {other}"),
-    }
-    Ok(json!({"accepted":true}))
-}
-
 fn exercise(caa: &mut Caa<Device>) -> Result<()> {
     let initial = caa.status()?;
     let settings = caa.settings()?;
@@ -166,57 +133,113 @@ fn exercise(caa: &mut Caa<Device>) -> Result<()> {
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let Some(command) = args.first().map(String::as_str) else {
-        bail!("usage: zwogain-caa list|status|serve|exercise [--path HID-PATH]");
+        bail!(
+            "usage: zwogain-caa list|list-details|status|serve|exercise [--path HID-PATH | --serial SERIAL]"
+        );
     };
     if command == "--help" {
         println!(
-            "zwogain-caa list|status|serve|exercise [--path HID-PATH]\nNo SDK required. Exercise moves at most eight degrees from the initial position and restores settings.\nServe accepts one JSON command per line; EOF releases the connection without moving hardware."
+            "zwogain-caa list|list-details|status|serve|exercise [--path HID-PATH | --serial SERIAL]\nNo SDK required. Exercise moves at most eight degrees from the initial position and restores settings.\nServe accepts one JSON command per line; EOF cancels queued moves and stops the motor."
         );
         return Ok(());
     }
     ensure!(
-        matches!(command, "list" | "status" | "serve" | "exercise"),
+        matches!(
+            command,
+            "list" | "list-details" | "status" | "serve" | "exercise"
+        ),
         "unknown command {command}"
     );
     ensure!(
-        args.len() == 1 || (args.len() == 3 && args[1] == "--path"),
-        "expected optional --path HID-PATH"
+        args.len() == 1 || (args.len() == 3 && matches!(args[1].as_str(), "--path" | "--serial")),
+        "expected optional --path HID-PATH or --serial SERIAL"
     );
     let devices = transport::enumerate()?;
     if command == "list" {
         emit(serde_json::to_value(devices)?);
         return Ok(());
     }
-    let selected = if args.len() == 3 {
-        devices
-            .iter()
-            .find(|d| d.path == args[2])
-            .context("selected CAA not found")?
-    } else {
+    if command == "list-details" {
+        let mut choices = Vec::new();
+        for info in &devices {
+            let result = (|| -> Result<_> { Caa::connect(Device::open(info)?)?.identity() })();
+            choices.push(match result {
+                Ok(identity) => json!({"path":info.path,"identity":identity}),
+                Err(e) => json!({"path":info.path,"error":format!("{e:#}")}),
+            });
+        }
+        emit(json!(choices));
+        return Ok(());
+    }
+    let mut caa = if args.len() == 3 && args[1] == "--serial" {
+        let mut matches = Vec::new();
+        for info in &devices {
+            if let Ok(mut candidate) = Device::open(info).and_then(Caa::connect)
+                && candidate.identity()?.serial.eq_ignore_ascii_case(&args[2])
+            {
+                matches.push(candidate);
+            }
+        }
         ensure!(
-            devices.len() == 1,
-            "found {} CAA devices; select one using --path",
-            devices.len()
+            matches.len() == 1,
+            "selected CAA serial unavailable or ambiguous; close other controllers"
         );
-        &devices[0]
+        matches.pop().unwrap()
+    } else {
+        let selected = if args.len() == 3 {
+            devices
+                .iter()
+                .find(|d| d.path == args[2])
+                .context("selected CAA not found")?
+        } else {
+            ensure!(
+                devices.len() == 1,
+                "found {} CAA devices; select one using --serial",
+                devices.len()
+            );
+            &devices[0]
+        };
+        Caa::connect(Device::open(selected)?)?
     };
-    let mut caa = Caa::connect(Device::open(selected)?)?;
     match command {
         "status" => emit(
             json!({"identity":caa.identity()?,"settings":caa.settings()?,"status":caa.status()?}),
         ),
         "exercise" => exercise(&mut caa)?,
         "serve" => {
-            for line in io::stdin().lock().lines() {
-                let result = (|| -> Result<Value> {
-                    let value: Value = serde_json::from_str(&line?)?;
-                    request(&mut caa, &value)
-                })();
-                emit(match result {
-                    Ok(value) => json!({"ok":true,"result":value}),
-                    Err(error) => json!({"ok":false,"error":format!("{error:#}")}),
-                });
-                io::stdout().flush()?;
+            let mut controller = Controller::new(caa)?;
+            let (tx, rx) = std::sync::mpsc::sync_channel(16);
+            std::thread::spawn(move || {
+                for line in io::stdin().lock().lines() {
+                    if tx.send(line).is_err() {
+                        break;
+                    }
+                }
+            });
+            loop {
+                match rx.recv_timeout(Duration::from_millis(100)) {
+                    Ok(line) => {
+                        let result = (|| -> Result<Value> {
+                            // .NET Framework's Process.StandardInput can emit a
+                            // UTF-8 BOM when its StreamWriter is first accessed.
+                            let line = line?;
+                            controller.request(&serde_json::from_str(
+                                line.trim_start_matches('\u{feff}'),
+                            )?)
+                        })();
+                        emit(match result {
+                            Ok(value) => json!({"ok":true,"result":value}),
+                            Err(error) => json!({"ok":false,"error":format!("{error:#}")}),
+                        });
+                        io::stdout().flush()?;
+                    }
+                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => controller.tick(),
+                    Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                        // Never leave a segmented operation running after its owner exits.
+                        controller.halt()?;
+                        break;
+                    }
+                }
             }
         }
         _ => unreachable!(),

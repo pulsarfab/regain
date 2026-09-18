@@ -16,4 +16,5 @@ try {
     dotnet test tests/ZwoGain.NINA.Tests -c Release
     if ($LASTEXITCODE) { throw 'NINA contract tests failed' }
     & (Join-Path $PSScriptRoot 'test-ascom.ps1')
+    & (Join-Path $PSScriptRoot 'test-caa-ascom.ps1')
 } finally { Pop-Location }

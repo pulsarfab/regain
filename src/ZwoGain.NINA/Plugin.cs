@@ -18,10 +18,10 @@ using ZwoGain.Core;
 [assembly: AssemblyMetadata("Repository", "https://github.com/theatrus/zwogain")]
 [assembly: AssemblyMetadata("Homepage", "https://github.com/theatrus/zwogain")]
 [assembly: AssemblyMetadata("ChangelogURL", "https://github.com/theatrus/zwogain/releases")]
-[assembly: AssemblyMetadata("Tags", "camera,ZWO,recovery")]
+[assembly: AssemblyMetadata("Tags", "camera,rotator,ZWO,recovery")]
 [assembly: AssemblyMetadata("FeaturedImageURL", "pack://application:,,,/ZwoGain.NINA;component/Assets/zwogain.png")]
-[assembly: AssemblyMetadata("ShortDescription", "ZWO camera driver with automatic retries")]
-[assembly: AssemblyMetadata("LongDescription", "Retries failed captures and restores camera settings after reconnecting.")]
+[assembly: AssemblyMetadata("ShortDescription", "ZWO camera and CAA rotator drivers")]
+[assembly: AssemblyMetadata("LongDescription", "Retries failed camera captures. Controls the CAA rotator without the ZWO SDK.")]
 
 namespace ZwoGain.NINA;
 

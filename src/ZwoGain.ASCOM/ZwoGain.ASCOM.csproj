@@ -13,6 +13,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="System.Net.Http" />
+    <ProjectReference Include="../ZwoGain.Rotator/ZwoGain.Rotator.csproj" />
     <PackageReference Include="ASCOM.DeviceInterfaces" Version="7.1.2" />
     <PackageReference Include="ASCOM.Alpaca.Components" Version="4.0.0" />
   </ItemGroup>

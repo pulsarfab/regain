@@ -5,7 +5,7 @@
 [![Build and test](https://github.com/theatrus/zwogain/actions/workflows/build.yml/badge.svg)](https://github.com/theatrus/zwogain/actions/workflows/build.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
-**ZWOgain**, as in **ZWO Again**, is a ZWO ASI camera driver for NINA and ASCOM.
+**ZWOgain**, as in **ZWO Again**, provides ZWO ASI camera and CAA rotator drivers for NINA and ASCOM.
 It retries failed downloads and short exposures while the app waits for an image.
 
 The ZWO SDK runs in a separate Rust process, so a camera crash or hang does not
@@ -126,12 +126,19 @@ and [transfer recovery and SDK differences](docs/transfer-recovery.md).
 
 ## CAA rotator
 
-The separate `zwogain-caa` Rust driver controls the ZWO CAA over USB HID,
-without the ZWO SDK. It supports position, motion, stop, logical sync, reverse,
-beep, rotation limits and device aliases. A CAA-M54 passed Windows hardware
-tests. Linux and macOS use native HID APIs but still need hardware testing.
-This is a library and command-line tool; rotator support is not yet connected
-to the NINA plugin or Alpaca server. See [CAA protocol and usage](docs/caa.md).
+Select **ZWOgain CAA Rotator** in NINA or the Windows ASCOM Chooser, then choose
+and save the device in setup. Both use the same SDK-free Rust USB HID worker.
+
+Setup includes motion, stop, logical sync, reverse, beep, alias, travel limits,
+and **Set current position to mechanical 0°**. An explicit multi-turn control
+uses 90° segments with reference resets; 450° forward and return were tested.
+Normal positioning keeps the firmware travel limit. Reference resets bypass
+cumulative cable-wrap protection and are never automatic during normal moves.
+
+A CAA-M54 with firmware 1.1.1 passed Windows hardware tests. Linux/macOS HID
+backends compile but still need hardware testing. These frontends are new in
+the source tree, not in v0.2.0.0. See [setup and ASCOM actions](docs/caa-frontends.md)
+and [CAA protocol and hardware results](docs/caa.md).
 
 ## Help add a camera
 

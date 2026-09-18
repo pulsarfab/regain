@@ -14,6 +14,8 @@ try {
             & "$env:WINDIR/$architecture/WindowsPowerShell/v1.0/powershell.exe" -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'test-ascom-client.ps1') -Slot $slot -MetadataOnly
             if ($LASTEXITCODE) { throw 'Registered COM activation failed' }
         }
+        & "$env:WINDIR/$architecture/WindowsPowerShell/v1.0/powershell.exe" -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'test-caa-ascom-client.ps1')
+        if ($LASTEXITCODE) { throw 'Registered CAA COM activation failed' }
     }
 } finally {
     Get-Content -LiteralPath (Join-Path $env:LOCALAPPDATA 'ZwoGain/ASCOM/registration.log') -Tail 30 -ErrorAction SilentlyContinue

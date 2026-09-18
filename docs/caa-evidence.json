@@ -323,7 +323,55 @@
     "hand controller",
     "real temperature probe",
     "physical stall",
-    "NINA/ASCOM/Alpaca rotator frontend"
+    "Alpaca rotator frontend"
   ],
-  "referenceAndMultiTurnFollowup": "See caa-reference-evidence.json: reference reset, 361-degree limit, and 450-degree travel using repeated zero resets."
+  "referenceAndMultiTurnFollowup": "See caa-reference-evidence.json: reference reset, 361-degree limit, and 450-degree travel using repeated zero resets.",
+  "frontendFollowup": {
+    "date": "2026-09-17",
+    "device": "CAA-M54 firmware 1.1.1",
+    "nina": [
+      "Single provider entry",
+      "Device selection persisted across NINA restart",
+      "Connect at 152 degrees",
+      "Mechanical move to 153 degrees and return to 152",
+      "Explicit origin reset to zero preserves logical 153 degrees",
+      "Restore mechanical reference without motion",
+      "Disconnect releases worker"
+    ],
+    "ascom": {
+      "architectures": [
+        "x64",
+        "x86"
+      ],
+      "checks": [
+        "COM activation and IRotatorV3 metadata",
+        "Connect, sync, origin reset, reference restoration",
+        "One-degree mechanical move and return",
+        "Extended 361-degree limit and restore"
+      ]
+    },
+    "productionWorker": {
+      "physicalTravelCommands": [
+        450,
+        -450
+      ],
+      "finalMechanical": 152,
+      "finalLogical": 152,
+      "finalLimit": 360,
+      "finalError": 0,
+      "finalMoving": false,
+      "measurement": "Device reports, no independent angular measurement"
+    },
+    "localEvidenceDigests": {
+      "caa-production-worker-450-02.jsonl": "ca14a4f43a3df41695dcb4023ae4caca5231f84bea43f13fb810f2e4c12121f6"
+    },
+    "automatedChecks": [
+      "22 Rust CAA tests",
+      "Full Rust workspace tests and Clippy",
+      "81 core .NET tests",
+      "30 NINA contract tests",
+      "x86/x64 camera COM regression checks",
+      "NINA ZIP manifest and ASCOM installer builds"
+    ]
+  }
 }

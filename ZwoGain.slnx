@@ -5,6 +5,7 @@
     <Project Path="src/ZwoGain.Core/ZwoGain.Core.csproj" />
     <Project Path="src/ZwoGain.Diagnostics/ZwoGain.Diagnostics.csproj" />
     <Project Path="src/ZwoGain.NINA/ZwoGain.NINA.csproj" />
+    <Project Path="src/ZwoGain.Rotator/ZwoGain.Rotator.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/ZwoGain.NINA.Tests/ZwoGain.NINA.Tests.csproj" />
