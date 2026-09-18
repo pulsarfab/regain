@@ -144,8 +144,30 @@ reference restoration, motion and 361° limit checks. The production worker
 completed +450° and -450° segmented travel and restored the 152° reference.
 These checks use device position reports, without an independent angle sensor.
 
+On September 17, 2026, the rebuilt installer was installed on Windows and
+registered the CAA in both COM registry views. NINA 3.2 discovered its ASCOM
+entry, saved the device selection, connected, moved 152° → 153° → 152°, and
+disconnected. Its worker ran from the installed Program Files directory.
+The installed driver then passed the hardware checks below in both 32-bit
+and 64-bit Windows PowerShell, including sync, origin reset, reference restore,
+motion and the 361° limit. The tests restored the 152° position and 360° limit.
+
+The themed native NINA setup was also checked on that device: all five tabs,
+connection, relative and mechanical moves, and mechanical zero/reference
+commands. Resetting mechanical zero preserved the 152° sky angle; restoring
+the reference returned both readings to 152°. Closing setup released the CAA.
+
 To repeat the COM checks with one available CAA, run
-`scripts/test-caa-ascom.ps1 -Hardware`. For segmented travel, with clearance
+`scripts/test-caa-ascom.ps1 -Hardware` for the development build. To test the
+actual installed driver, first select the device in ASCOM setup, disconnect
+other controllers, and run these commands from the repository:
+
+```powershell
+& "$env:WINDIR/System32/WindowsPowerShell/v1.0/powershell.exe" -NoProfile -ExecutionPolicy Bypass -File scripts/test-caa-ascom-client.ps1 -Hardware
+& "$env:WINDIR/SysWOW64/WindowsPowerShell/v1.0/powershell.exe" -NoProfile -ExecutionPolicy Bypass -File scripts/test-caa-ascom-client.ps1 -Hardware
+```
+
+For segmented travel, with clearance
 and cable slack for 450° forward and return:
 
 ```powershell
