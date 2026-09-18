@@ -13,6 +13,11 @@ The ZWO ASI SDK DLL and header are copyright 2015 ZWO Company and distributed
 under the MIT-style license in `vendor/zwo/LICENSE.txt`, included in packages
 as `licenses/ZWO-ASI-SDK.txt`. ZWO's camera device driver is not included.
 
+The native CAA driver's NTC resistance table comes from CAA SDK 1.5.9,
+copyright 2015 ZWO Company, under the MIT-style license in
+`crates/zwogain-caa/LICENSE-ZWO`. Its standalone packages include that license.
+The CAA driver contains no SDK binary and calls the operating system's HID API.
+
 Native worker packages include ASI SDK 1.41 for their OS and architecture;
 source hashes and licenses are in `vendor/zwo/native/`. macOS packages also
 include libusb under LGPL-2.1-or-later, with its license and the source URL for

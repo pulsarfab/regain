@@ -1019,6 +1019,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "zwogain-caa"
+version = "0.2.0"
+dependencies = [
+ "anyhow",
+ "libc",
+ "serde",
+ "serde_json",
+ "windows-sys",
+]
+
+[[package]]
 name = "zwogain-core"
 version = "0.2.0"
 dependencies = [

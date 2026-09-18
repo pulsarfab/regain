@@ -63,6 +63,17 @@ jobs:
           python scripts/test-rust.py --bin-dir target/release --sdk-fixture "$library"
       - name: Package workers for hardware testing
         run: python scripts/package-rust.py
+      - name: Package standalone native CAA driver
+        run: cargo run -p zwogain-caa --release --locked -- list
+      - name: Archive standalone native CAA driver
+        run: python scripts/package-rust.py --caa-only
+      - uses: actions/upload-artifact@v4
+        with:
+          name: zwogain-caa-${{ matrix.os }}
+          path: |
+            zwogain-caa-*.zip
+            zwogain-caa-*.zip.sha256
+          if-no-files-found: error
       - uses: actions/upload-artifact@v4
         with:
           name: zwogain-rust-${{ matrix.os }}
@@ -101,6 +112,17 @@ jobs:
       - run: python scripts/test-alpaca.py
       - run: ./scripts/build.ps1
         shell: pwsh
+      - name: Package standalone native CAA driver
+        run: cargo run -p zwogain-caa --release --locked -- list
+      - name: Archive standalone native CAA driver
+        run: python scripts/package-rust.py --caa-only
+      - uses: actions/upload-artifact@v4
+        with:
+          name: zwogain-caa-windows
+          path: |
+            zwogain-caa-*.zip
+            zwogain-caa-*.zip.sha256
+          if-no-files-found: error
       - run: ./scripts/build-ascom.ps1
         shell: pwsh
       - run: ./scripts/install-inno.ps1

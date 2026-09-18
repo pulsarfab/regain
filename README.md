@@ -124,6 +124,15 @@ See [NINA tests](docs/nina-end-to-end.md), [ASI2600 P25 results](docs/asi2600-p2
 [non-P25 ASI6200 results](docs/asi6200-original.md),
 and [transfer recovery and SDK differences](docs/transfer-recovery.md).
 
+## CAA rotator
+
+The separate `zwogain-caa` Rust driver controls the ZWO CAA over USB HID,
+without the ZWO SDK. It supports position, motion, stop, logical sync, reverse,
+beep, rotation limits and device aliases. A CAA-M54 passed Windows hardware
+tests. Linux and macOS use native HID APIs but still need hardware testing.
+This is a library and command-line tool; rotator support is not yet connected
+to the NINA plugin or Alpaca server. See [CAA protocol and usage](docs/caa.md).
+
 ## Help add a camera
 
 Download the **Camera Kit** ZIP from

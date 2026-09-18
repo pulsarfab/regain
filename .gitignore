@@ -7,3 +7,5 @@ artifacts/
 *.user
 **/__pycache__/
 .registry/
+CAA_Windows_SDK_*/
+zwogain-caa-*.zip*
