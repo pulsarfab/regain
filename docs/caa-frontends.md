@@ -5,7 +5,7 @@ There is one **ZWOgain CAA Rotator** entry in NINA and one in the Windows ASCOM
 Chooser. Select the physical device in setup; its serial is saved. A device
 that is missing or busy is not replaced with another CAA automatically.
 
-These frontends are new in the source tree. They are not in release v0.2.0.0.
+These frontends are included in release v0.3.0.0.
 ZWOgain is independent and is not affiliated with or supported by ZWO.
 
 ## Setup

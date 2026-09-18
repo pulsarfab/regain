@@ -14,8 +14,8 @@ take down NINA. An optional direct driver can capture without the SDK.
 The standalone **Rust Alpaca server** runs on Windows, Linux, and macOS without
 .NET. It shares recovery with the NINA plugin. Add a saved slot for each camera;
 the Windows ASCOM COM frontend provides four fixed slots. See
-[ASCOM setup and current limitations](docs/ascom.md). These frontends are new in
-the source tree and CI packages; they are not in the v0.2.0.0 release.
+[ASCOM setup and current limitations](docs/ascom.md). The Windows ASCOM installer
+is included in release 0.3.0.0; Linux and macOS packages are available from CI.
 
 **ZWOgain is independent and is not affiliated with or supported by ZWO.**
 The code and logo use the Apache-2.0 license. Bundled software has its own
@@ -97,8 +97,8 @@ Windows driver.
 | ASI220MM Mini guide USB2 | 1–2 | 10 seconds |
 
 Other cameras can use SDK mode if supported by the bundled ZWO SDK. ASI2600
-P25 and non-P25 ASI6200 support are new in the source tree; they are not in the
-v0.2.0.0 release. The ASI6200 editions share a USB ID; the driver reads the
+P25 and non-P25 ASI6200 support are included in release 0.3.0.0.
+The ASI6200 editions share a USB ID; the driver reads the
 hardware revision to select timing and controls.
 
 Direct capture includes RAW16 images, factory defect correction, gain and
@@ -127,7 +127,8 @@ and [transfer recovery and SDK differences](docs/transfer-recovery.md).
 ## CAA rotator
 
 Select **ZWOgain CAA Rotator** in NINA or the Windows ASCOM Chooser, then choose
-and save the device in setup. Both use the same SDK-free Rust USB HID worker.
+the device in setup. The choice saves automatically. Both use the same SDK-free
+Rust USB HID worker.
 
 Setup includes motion, stop, logical sync, reverse, beep, alias, travel limits,
 and **Set current position to mechanical 0°**. An explicit multi-turn control
@@ -136,8 +137,8 @@ Normal positioning keeps the firmware travel limit. Reference resets bypass
 cumulative cable-wrap protection and are never automatic during normal moves.
 
 A CAA-M54 with firmware 1.1.1 passed Windows hardware tests. Linux/macOS HID
-backends compile but still need hardware testing. These frontends are new in
-the source tree, not in v0.2.0.0. See [setup and ASCOM actions](docs/caa-frontends.md)
+backends compile but still need hardware testing. The NINA and ASCOM frontends
+are included in release 0.3.0.0. See [setup and ASCOM actions](docs/caa-frontends.md)
 and [CAA protocol and hardware results](docs/caa.md).
 
 ## Help add a camera

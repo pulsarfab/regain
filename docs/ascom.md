@@ -5,7 +5,8 @@ COM frontend with four camera entries. Both use the same Rust recovery code as
 the NINA plugin. The SDK is the default; direct USB and SDK fallback are options
 for each camera.
 
-These frontends are available in the source tree and CI artifacts. They have
+The Windows frontends are included in release 0.3.0.0. Linux and macOS builds
+are available as CI artifacts. They have
 passed simulated capture tests, including 32-bit and 64-bit COM clients, and
 real Windows Alpaca and COM captures listed below. A full ASCOM ConformU run
 is still needed. Linux and macOS USB transfers also need hardware testing.
@@ -14,7 +15,7 @@ ZWOgain is independent software and is not affiliated with or supported by ZWO.
 
 ## Run Alpaca
 
-On Windows, extract the `ZwoGain-ASCOM-...-win-x64.zip` CI artifact. On Linux or
+On Windows, extract the `ZwoGain-ASCOM-...-win-x64.zip` release asset. On Linux or
 macOS, extract the matching `zwogain-rust-*` artifact. Keep the server, workers,
 and SDK library together. The server and workers need no .NET installation.
 
@@ -60,8 +61,8 @@ and is also visible on the setup page. Keep the settings file when upgrading.
 Requires Windows x64, .NET Framework 4.8, the ASCOM Platform, and the ZWO Windows
 driver for a locally connected camera.
 
-Run `ZwoGain-ASCOM-<version>-win-x64-setup.exe` from the CI artifacts or a release
-that includes it. Setup requests administrator access, checks .NET and ASCOM
+Run `ZwoGain-ASCOM-<version>-win-x64-setup.exe` from the release.
+Setup requests administrator access, checks .NET and ASCOM
 Platform, and installs all four camera entries for 32-bit and 64-bit clients.
 The ZWO USB driver is installed separately; remote Alpaca connections do not
 need it. Use **ZWOgain ASCOM → Camera setup** in the Start menu to configure the

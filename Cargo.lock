@@ -1000,7 +1000,7 @@ checksum = "29666d0abbfad1e3dc4dcf6144730dd3a3ab225bbbdac83319345b1b44ccfc1b"
 
 [[package]]
 name = "zwogain-alpaca"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -1020,7 +1020,7 @@ dependencies = [
 
 [[package]]
 name = "zwogain-caa"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "libc",
@@ -1031,7 +1031,7 @@ dependencies = [
 
 [[package]]
 name = "zwogain-core"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -1044,7 +1044,7 @@ dependencies = [
 
 [[package]]
 name = "zwogain-direct"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "libc",
@@ -1056,7 +1056,7 @@ dependencies = [
 
 [[package]]
 name = "zwogain-host"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "libloading",

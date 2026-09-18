@@ -34,11 +34,12 @@ the camera's displayed driver version use the same version.
 2. Run `scripts/test.ps1`, `scripts/build.ps1`, and `scripts/test-release.ps1`.
    A manual **Release** workflow run on `main` does the same build and validation
    and uploads artifacts without creating a tag or GitHub release.
-3. Push a matching tag, such as `v0.1.0.0`. The **Release** workflow reruns all
-   checks and creates a **draft** GitHub release with eight assets:
-   `ZwoGain-0.1.0.0.zip`, `ZwoGain-0.1.0.0.manifest.json`, `zwogain.png`,
-   `SHA256SUMS`, `ZwoGain-CameraKit-0.1.0.0-win-x64.zip`, its `.zip.sha256`,
-   `ZwoGain-ASCOM-0.1.0.0-win-x64.zip`, and its `.zip.sha256`.
+3. Push a matching tag, such as `v0.3.0.0`. The **Release** workflow reruns all
+   checks and creates a **draft** GitHub release with ten assets:
+   `ZwoGain-0.3.0.0.zip`, `ZwoGain-0.3.0.0.manifest.json`, `zwogain.png`,
+   `SHA256SUMS`, `ZwoGain-CameraKit-0.3.0.0-win-x64.zip`, its `.zip.sha256`,
+   `ZwoGain-ASCOM-0.3.0.0-win-x64.zip`, its `.zip.sha256`,
+   `ZwoGain-ASCOM-0.3.0.0-win-x64-setup.exe`, and its `.exe.sha256`.
 4. Inspect/test those artifacts, then publish the draft as a stable release.
    A rerun can refresh a draft, but refuses to overwrite published assets.
 
@@ -51,11 +52,15 @@ silently rewritten to a three-part semantic version.
 Local builds and the ordinary **Build and test** workflow produce unsigned
 binaries. The **Release** workflow stages the package, authenticates to Azure
 through OIDC in the `release` environment, and signs `ZwoGain.NINA.dll`,
-`ZwoGain.Core.dll`, `ZwoGain.ASCOM.dll`, `ZwoGain.ASCOM.Register.exe`, `zwogain-alpaca.exe`, `zwogain-host.exe`
-and `zwogain-direct.exe` with Azure Trusted
+`ZwoGain.Core.dll`, `ZwoGain.Rotator.dll`, `ZwoGain.ASCOM.dll`,
+`ZwoGain.ASCOM.Register.exe`, `zwogain-caa.exe`, `zwogain-alpaca.exe`,
+`zwogain-host.exe`, and `zwogain-direct.exe` with Azure Trusted
 Signing. It requires valid signatures from StackFoundry LLC before packaging.
 The bundled vendor DLL is left unchanged. ZIP and manifest checksums are
 computed after signing.
+
+The ASCOM installer and uninstaller are signed too. CI tests installation,
+COM registration, rollback, and removal before creating the draft release.
 
 The same workflow prepares and tests the standalone camera kit, reuses the
 signed SDK host, signs `ZwoGain-CameraKit.exe`, verifies both signatures, and
