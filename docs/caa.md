@@ -152,8 +152,14 @@ Validated on the CAA-M54, firmware 1.1.1:
   bytes. Reference units are big-endian, 10,000 per degree.
 - A raw 361-degree limit was accepted. Starting from a temporarily assigned
   360-degree reference, a target of 361 reached 360.99 degrees with no fault.
-  This validates crossing the numeric 360 boundary with a short move; it does
-  not validate a complete physical revolution or unlimited turns.
+  This first test crossed the numeric 360 boundary with a short move.
+- A separate test completed five successive 90-degree forward moves, resetting
+  mechanical zero before each: 450 degrees of cumulative reported travel with
+  the limit left at 360. Five reverse moves unwound that travel. Every leg
+  reached its target with no fault. The final reported displacement was zero,
+  and the original 152-degree reference, 360-degree limit and settings were
+  restored. Zero resets therefore bypass the cumulative one-turn restriction.
+  This does not establish unlimited operation or independently measured accuracy.
 - With the limit still at 360, requesting 361 started moving **backward** from
   360. The probe stopped it at 359.15. This is consistent with wrapping the
   target, but we did not let it finish to establish its destination. Firmware
@@ -169,7 +175,9 @@ Normal connection, recovery and logical sync must not reset it automatically.
 
 The reference and motion tests restored the original reported position (152)
 and limit (360). Displacement was tracked from device reports; there was no
-independent angle measurement. A physical power-loss test is pending. The
+independent angle measurement. Power-loss retention remains untested: its
+temporary marker was restored before the multi-turn test, with no confirmed
+power cycle. The
 SDK cannot tell us whether firmware stores position in flash, EEPROM, or
 another mechanism, nor whether it uses an encoder.
 
@@ -186,6 +194,14 @@ five seconds without turning the rotator, then run `finish-power`. Each phase
 requires a new `--output` JSONL path. The shared `--state` file saves the
 original reference and device fingerprint before setting the temporary marker.
 The final phase checks identity, reports retention and restores the reference.
+
+`scripts/inspection/validate_caa_multiturn.py --output artifacts/NEW-caa-turns.jsonl`
+is a separate, larger-travel experiment: five forward 90-degree moves with a
+zero reset before each, followed by five reverse moves. It requires clearance
+and cable slack for 450 degrees of travel. Each leg checks position, direction,
+faults and a 30-second deadline. It stops on failure and records the remaining
+reported displacement rather than automatically unwinding from an uncertain
+state. On success it restores the original reference and checks settings.
 
 ## Workup, 2026-09-17
 
@@ -225,7 +241,7 @@ results above use the local build; the full Windows packaging job is separate.
 Both SDK and native report an unavailable temperature sensor (ADC 0; SDK
 error 7). Temperature conversion has synthetic regression tests, but a real
 probe is not validated. Hand-controller behavior, physical stall, cable
-removal, power cycling, full-turn travel, and Linux/macOS hardware remain
+removal, power cycling, and Linux/macOS hardware remain
 untested. Serial numbers and raw traces stay in local ignored artifacts.
 
 Reproduce the traced Windows workup:

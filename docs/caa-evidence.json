@@ -322,8 +322,8 @@
     "physical USB disconnect or power cycle",
     "hand controller",
     "real temperature probe",
-    "full-turn travel",
     "physical stall",
     "NINA/ASCOM/Alpaca rotator frontend"
-  ]
+  ],
+  "referenceAndMultiTurnFollowup": "See caa-reference-evidence.json: reference reset, 361-degree limit, and 450-degree travel using repeated zero resets."
 }

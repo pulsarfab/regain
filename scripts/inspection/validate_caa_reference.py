@@ -264,6 +264,7 @@ def main():
             else:
                 value = json.loads(args.state.read_text(encoding='utf-8'))
                 assert not value.get('completed'), 'power test already finished; use a new state file'
+                assert not value.get('cancelled'), 'power test was cancelled; use a new state file'
                 assert value['fingerprint'] == fingerprint, 'different CAA; leave its reference unchanged'
                 record(kind='after-physical-power-cycle', observed=initial, expected=value['marker'],
                        retained=abs(initial['degrees'] - value['marker']) < .03)

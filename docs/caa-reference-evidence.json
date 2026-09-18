@@ -3,7 +3,7 @@
   "firmware": "1.1.1",
   "platform": "Windows x64",
   "date": "2026-09-17",
-  "method": "Raw HID reference reassignment places the counter near 360; actual motor moves stay within a few degrees. Position and displacement come from device reports, without independent angle measurement.",
+  "method": "Raw HID reference updates and motion reports. Initial boundary tests use small moves near an assigned 360-degree reference; the follow-up performs five actual 90-degree moves and unwinds them. Displacement comes from device reports, without independent angle measurement.",
   "results": {
     "referenceAssignment": {
       "traceSha256": "5cca8822a40020be09cdba9df2006d6a2a5ee49e8956cee91109b1655a314b10",
@@ -343,18 +343,168 @@
           "phase": "boundary"
         }
       ]
+    },
+    "multiTurn": {
+      "traceSha256": "21ab7ad1a4c3930a032e1b68c32e19f55b75820a45faec5e15c23fc6799be1b8",
+      "elapsedSeconds": 127.621,
+      "method": "Five forward 0-to-90 moves, reset reference to zero before each. Then five return moves from assigned reference 90 to zero. Firmware limit stayed 360. No SDK used. Displacement from device reports; no independent angle sensor.",
+      "observations": [
+        {
+          "kind": "power-test-cancelled",
+          "restored": {
+            "state": 0,
+            "direction": 0,
+            "degrees": 152.0,
+            "limit": 360,
+            "error": 0
+          }
+        },
+        {
+          "kind": "initial",
+          "status": {
+            "state": 0,
+            "direction": 0,
+            "degrees": 152.0,
+            "limit": 360,
+            "error": 0
+          },
+          "beep": true,
+          "reverse": false
+        },
+        {
+          "kind": "leg-complete",
+          "direction": "forward",
+          "index": 1,
+          "start": 0.0,
+          "target": 90,
+          "reached": 90.0,
+          "displacement": 90.0
+        },
+        {
+          "kind": "leg-complete",
+          "direction": "forward",
+          "index": 2,
+          "start": 0.0,
+          "target": 90,
+          "reached": 90.0,
+          "displacement": 90.0
+        },
+        {
+          "kind": "leg-complete",
+          "direction": "forward",
+          "index": 3,
+          "start": 0.0,
+          "target": 90,
+          "reached": 90.0,
+          "displacement": 90.0
+        },
+        {
+          "kind": "leg-complete",
+          "direction": "forward",
+          "index": 4,
+          "start": 0.0,
+          "target": 90,
+          "reached": 90.0,
+          "displacement": 90.0
+        },
+        {
+          "kind": "leg-complete",
+          "direction": "forward",
+          "index": 5,
+          "start": 0.0,
+          "target": 90,
+          "reached": 90.0,
+          "displacement": 90.0
+        },
+        {
+          "kind": "past-one-revolution",
+          "degrees": 450.0,
+          "resets": 5
+        },
+        {
+          "kind": "leg-complete",
+          "direction": "return",
+          "index": 1,
+          "start": 90.0,
+          "target": 0,
+          "reached": 0.0,
+          "displacement": -90.0
+        },
+        {
+          "kind": "leg-complete",
+          "direction": "return",
+          "index": 2,
+          "start": 90.0,
+          "target": 0,
+          "reached": 0.0,
+          "displacement": -90.0
+        },
+        {
+          "kind": "leg-complete",
+          "direction": "return",
+          "index": 3,
+          "start": 90.0,
+          "target": 0,
+          "reached": 0.0,
+          "displacement": -90.0
+        },
+        {
+          "kind": "leg-complete",
+          "direction": "return",
+          "index": 4,
+          "start": 90.0,
+          "target": 0,
+          "reached": 0.0,
+          "displacement": -90.0
+        },
+        {
+          "kind": "leg-complete",
+          "direction": "return",
+          "index": 5,
+          "start": 90.0,
+          "target": 0,
+          "reached": 0.0,
+          "displacement": -90.0
+        },
+        {
+          "kind": "complete",
+          "forwardDegrees": 450.0,
+          "netReportedDegrees": 0.0,
+          "final": {
+            "state": 0,
+            "direction": 0,
+            "degrees": 152.0,
+            "limit": 360,
+            "error": 0
+          },
+          "settingsRestored": true
+        }
+      ],
+      "sdkCrosscheck": {
+        "kind": "snapshot",
+        "Degree": 152.0,
+        "MaxDegree": 360.0,
+        "Temp": null,
+        "TempError": 7,
+        "Beep": true,
+        "Reverse": false,
+        "moving": false,
+        "handControl": false
+      },
+      "sdkCrosscheckTraceSha256": "4ef830ab3f847063c0deb6db6f2c113910d00c8a050e695165812a4e6f0b7684"
     }
   },
   "powerLoss": {
-    "status": "pending physical power cycle",
-    "temporaryReferenceDegrees": 153.25
+    "status": "not tested; marker restored before multi-turn workup",
+    "originalReferenceRestored": 152.0,
+    "physicalPowerCycleConfirmed": false
   },
   "notEstablished": [
-    "physical full-turn travel",
     "maximum accepted firmware limit",
     "unlimited rotation",
     "encoder presence",
-    "flash versus EEPROM or other internal storage"
+    "flash versus EEPROM or other internal storage",
+    "independently measured multi-turn angular accuracy"
   ],
   "earlierAttempts": [
     "Initial boundary deadline of one second was too short; stop issued, subsequent native read confirmed 152 degrees and limit 360.",
