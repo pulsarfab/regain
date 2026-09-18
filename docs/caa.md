@@ -137,6 +137,56 @@ Important SDK differences:
 - Temperature uses the SDK's NTC resistance table and interpolation. Invalid
   or out-of-table ADC readings return `None`; no cached substitute is returned.
 
+## Mechanical reference and travel limits
+
+Validated on the CAA-M54, firmware 1.1.1:
+
+- The device owns the mechanical position. Setting its reference from 152 to
+  153 degrees survived closing and reopening the native HID handle.
+- SDK `CAACurDegree(id, 0)` really resets that reference: the native driver
+  read zero after the SDK closed. It is different from ordinary logical sync.
+- The raw reference-update report accepts nonzero positions too. We restored
+  152 degrees without requesting motor movement. Use command `03`, action
+  `00`, reference units at bytes 6–9, update selector `01` at byte 10, and the
+  current limit at bytes 14–15. Preserve direction at byte 5 and zero reserved
+  bytes. Reference units are big-endian, 10,000 per degree.
+- A raw 361-degree limit was accepted. Starting from a temporarily assigned
+  360-degree reference, a target of 361 reached 360.99 degrees with no fault.
+  This validates crossing the numeric 360 boundary with a short move; it does
+  not validate a complete physical revolution or unlimited turns.
+- With the limit still at 360, requesting 361 started moving **backward** from
+  360. The probe stopped it at 359.15. This is consistent with wrapping the
+  target, but we did not let it finish to establish its destination. Firmware
+  did not return an error. Do not rely on it to reject an out-of-range move.
+
+The SDK rejects mechanical targets below zero or above 360 with error 10,
+even though the USB protocol can exceed that range. The production Rust API
+keeps its 0–360 checks, including validation of returned position and limit;
+restore a limit of 360 or less before using it. The extended-limit experiments
+are inspection-only. See [reference-test results](caa-reference-evidence.json).
+Changing the mechanical reference also changes the origin for travel limits.
+Normal connection, recovery and logical sync must not reset it automatically.
+
+The reference and motion tests restored the original reported position (152)
+and limit (360). Displacement was tracked from device reports; there was no
+independent angle measurement. A physical power-loss test is pending. The
+SDK cannot tell us whether firmware stores position in flash, EEPROM, or
+another mechanism, nor whether it uses an encoder.
+
+The Windows-only `scripts/inspection/validate_caa_reference.py` records raw
+reports and checks model, firmware and report lengths. Its `assign`,
+`sdk-zero` and `boundary` phases exercise the cases above. Motion has a
+five-second polling deadline, stops on opposite travel or excessive reported
+displacement, and attempts reference/limit/position restoration. OS HID calls
+themselves are synchronous. Provide clearance for eight degrees; only one
+CAA may be connected. The `sdk-zero` phase requires the hash-pinned DLL.
+
+For a physical power test, run `prepare-power`, remove USB power for at least
+five seconds without turning the rotator, then run `finish-power`. Each phase
+requires a new `--output` JSONL path. The shared `--state` file saves the
+original reference and device fingerprint before setting the temporary marker.
+The final phase checks identity, reports retention and restores the reference.
+
 ## Workup, 2026-09-17
 
 Inspected Windows CAA SDK 1.5.9 x64, SHA-256

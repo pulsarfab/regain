@@ -1,0 +1,363 @@
+{
+  "device": "CAA-M54",
+  "firmware": "1.1.1",
+  "platform": "Windows x64",
+  "date": "2026-09-17",
+  "method": "Raw HID reference reassignment places the counter near 360; actual motor moves stay within a few degrees. Position and displacement come from device reports, without independent angle measurement.",
+  "results": {
+    "referenceAssignment": {
+      "traceSha256": "5cca8822a40020be09cdba9df2006d6a2a5ee49e8956cee91109b1655a314b10",
+      "observations": [
+        {
+          "kind": "initial",
+          "phase": "assign",
+          "status": {
+            "state": 0,
+            "direction": 0,
+            "degrees": 152.0,
+            "limit": 360,
+            "error": 0
+          }
+        },
+        {
+          "kind": "status",
+          "label": "after-reference-write",
+          "state": 0,
+          "direction": 0,
+          "degrees": 153.0,
+          "limit": 360,
+          "error": 0
+        },
+        {
+          "kind": "status",
+          "label": "reopened",
+          "state": 0,
+          "direction": 0,
+          "degrees": 153.0,
+          "limit": 360,
+          "error": 0
+        },
+        {
+          "kind": "status",
+          "label": "after-reference-write",
+          "state": 0,
+          "direction": 0,
+          "degrees": 152.0,
+          "limit": 360,
+          "error": 0
+        },
+        {
+          "kind": "complete",
+          "phase": "assign"
+        }
+      ]
+    },
+    "sdkZero": {
+      "traceSha256": "1c853ace947399ed70b0cbdc9b8ec9001b06fccd0c23317992ec36186aa98ad9",
+      "observations": [
+        {
+          "kind": "initial",
+          "phase": "sdk-zero",
+          "status": {
+            "state": 0,
+            "direction": 0,
+            "degrees": 152.0,
+            "limit": 360,
+            "error": 0
+          }
+        },
+        {
+          "kind": "sdk-range-check",
+          "target": -1.0,
+          "code": 10
+        },
+        {
+          "kind": "sdk-range-check",
+          "target": 361.0,
+          "code": 10
+        },
+        {
+          "kind": "sdk-zero",
+          "code": 0
+        },
+        {
+          "kind": "sdk-angle-after-zero",
+          "degrees": 0.0
+        },
+        {
+          "kind": "status",
+          "label": "native-after-sdk-close",
+          "state": 0,
+          "direction": 0,
+          "degrees": 0.0,
+          "limit": 360,
+          "error": 0
+        },
+        {
+          "kind": "status",
+          "label": "after-reference-write",
+          "state": 0,
+          "direction": 0,
+          "degrees": 152.0,
+          "limit": 360,
+          "error": 0
+        },
+        {
+          "kind": "complete",
+          "phase": "sdk-zero"
+        }
+      ]
+    },
+    "boundary": {
+      "traceSha256": "d5e31374b919cc4c2bc0129a4e6b1e0a32daca2936b3659b690619adaee994a7",
+      "observations": [
+        {
+          "kind": "initial",
+          "phase": "boundary",
+          "status": {
+            "state": 0,
+            "direction": 0,
+            "degrees": 152.0,
+            "limit": 360,
+            "error": 0
+          }
+        },
+        {
+          "kind": "status",
+          "label": "after-reference-write",
+          "state": 0,
+          "direction": 0,
+          "degrees": 359.0,
+          "limit": 360,
+          "error": 0
+        },
+        {
+          "kind": "status",
+          "label": "after-limit-write",
+          "state": 0,
+          "direction": 0,
+          "degrees": 359.0,
+          "limit": 360,
+          "error": 0
+        },
+        {
+          "kind": "limit-observation",
+          "requested": 360,
+          "reported": 360
+        },
+        {
+          "kind": "motion-result",
+          "target": 360,
+          "before": {
+            "state": 0,
+            "direction": 0,
+            "degrees": 359.0,
+            "limit": 360,
+            "error": 0
+          },
+          "after": {
+            "state": 0,
+            "direction": 0,
+            "degrees": 360.0,
+            "limit": 360,
+            "error": 0
+          }
+        },
+        {
+          "kind": "status",
+          "label": "after-limit-write",
+          "state": 0,
+          "direction": 0,
+          "degrees": 360.0,
+          "limit": 360,
+          "error": 0
+        },
+        {
+          "kind": "limit-observation",
+          "requested": 360,
+          "reported": 360
+        },
+        {
+          "kind": "opposite-motion-stopped",
+          "target": 361,
+          "before": {
+            "state": 0,
+            "direction": 0,
+            "degrees": 360.0,
+            "limit": 360,
+            "error": 0
+          },
+          "after": {
+            "state": 0,
+            "direction": 0,
+            "degrees": 359.15,
+            "limit": 360,
+            "error": 0
+          }
+        },
+        {
+          "kind": "status",
+          "label": "after-reference-write",
+          "state": 0,
+          "direction": 0,
+          "degrees": 360.0,
+          "limit": 360,
+          "error": 0
+        },
+        {
+          "kind": "status",
+          "label": "after-limit-write",
+          "state": 0,
+          "direction": 0,
+          "degrees": 360.0,
+          "limit": 361,
+          "error": 0
+        },
+        {
+          "kind": "limit-observation",
+          "requested": 361,
+          "reported": 361
+        },
+        {
+          "kind": "motion-result",
+          "target": 361,
+          "before": {
+            "state": 0,
+            "direction": 0,
+            "degrees": 360.0,
+            "limit": 361,
+            "error": 0
+          },
+          "after": {
+            "state": 0,
+            "direction": 0,
+            "degrees": 360.99,
+            "limit": 361,
+            "error": 0
+          }
+        },
+        {
+          "kind": "status",
+          "label": "after-reference-write",
+          "state": 0,
+          "direction": 0,
+          "degrees": 0.0,
+          "limit": 361,
+          "error": 0
+        },
+        {
+          "kind": "motion-result",
+          "target": 1,
+          "before": {
+            "state": 0,
+            "direction": 0,
+            "degrees": 0.0,
+            "limit": 361,
+            "error": 0
+          },
+          "after": {
+            "state": 0,
+            "direction": 0,
+            "degrees": 0.99,
+            "limit": 361,
+            "error": 0
+          }
+        },
+        {
+          "kind": "move-after-zero-reset",
+          "status": {
+            "state": 0,
+            "direction": 0,
+            "degrees": 0.99,
+            "limit": 361,
+            "error": 0
+          },
+          "physicalDelta": 2.1299999999999866
+        },
+        {
+          "kind": "status",
+          "label": "after-reference-write",
+          "state": 0,
+          "direction": 0,
+          "degrees": 154.13,
+          "limit": 361,
+          "error": 0
+        },
+        {
+          "kind": "status",
+          "label": "after-limit-write",
+          "state": 0,
+          "direction": 0,
+          "degrees": 154.13,
+          "limit": 360,
+          "error": 0
+        },
+        {
+          "kind": "motion-result",
+          "target": 152.13,
+          "before": {
+            "state": 0,
+            "direction": 0,
+            "degrees": 154.13,
+            "limit": 360,
+            "error": 0
+          },
+          "after": {
+            "state": 0,
+            "direction": 0,
+            "degrees": 152.12,
+            "limit": 360,
+            "error": 0
+          }
+        },
+        {
+          "kind": "motion-result",
+          "target": 152.0,
+          "before": {
+            "state": 0,
+            "direction": 0,
+            "degrees": 152.12,
+            "limit": 360,
+            "error": 0
+          },
+          "after": {
+            "state": 0,
+            "direction": 0,
+            "degrees": 152.0,
+            "limit": 360,
+            "error": 0
+          }
+        },
+        {
+          "kind": "restored",
+          "status": {
+            "state": 0,
+            "direction": 0,
+            "degrees": 152.0,
+            "limit": 360,
+            "error": 0
+          }
+        },
+        {
+          "kind": "complete",
+          "phase": "boundary"
+        }
+      ]
+    }
+  },
+  "powerLoss": {
+    "status": "pending physical power cycle",
+    "temporaryReferenceDegrees": 153.25
+  },
+  "notEstablished": [
+    "physical full-turn travel",
+    "maximum accepted firmware limit",
+    "unlimited rotation",
+    "encoder presence",
+    "flash versus EEPROM or other internal storage"
+  ],
+  "earlierAttempts": [
+    "Initial boundary deadline of one second was too short; stop issued, subsequent native read confirmed 152 degrees and limit 360.",
+    "A second attempt stopped reverse travel toward decreasing angles when a raw target of 361 was sent under limit 360. Reference and reported position restored to 152. Final probe stops as soon as reverse travel is observed."
+  ]
+}
