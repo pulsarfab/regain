@@ -54,7 +54,8 @@ binaries. The **Release** workflow stages the package, authenticates to Azure
 through OIDC in the `release` environment, and signs `ZwoGain.NINA.dll`,
 `ZwoGain.Core.dll`, `ZwoGain.Rotator.dll`, `ZwoGain.ASCOM.dll`,
 `ZwoGain.ASCOM.Register.exe`, `zwogain-caa.exe`, `zwogain-alpaca.exe`,
-`zwogain-host.exe`, and `zwogain-direct.exe` with Azure Trusted
+`zwogain-accessories.exe`, `zwogain-camera.exe`, `zwogain-host.exe`, and
+`zwogain-direct.exe` with Azure Trusted
 Signing. It requires valid signatures from StackFoundry LLC before packaging.
 The bundled vendor DLL is left unchanged. ZIP and manifest checksums are
 computed after signing.

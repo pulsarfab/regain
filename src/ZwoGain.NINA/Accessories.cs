@@ -32,7 +32,7 @@ public abstract class AccessoryDevice : BaseINPC, IDevice, IDisposable
     public string Category => "ZWOgain";
     public string Description => Name + " over USB HID";
     public string DriverInfo => "ZWOgain native Rust USB driver";
-    public string DriverVersion => "0.3.0";
+    public string DriverVersion => typeof(AccessoryDevice).Assembly.GetName().Version!.ToString();
     public bool HasSetupDialog => true;
     public bool Connected => Session.Connected;
     public virtual async Task<bool> Connect(CancellationToken token)

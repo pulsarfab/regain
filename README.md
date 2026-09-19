@@ -121,7 +121,7 @@ guiding and fast readout are not implemented. Alpaca supports both ImageBytes
 and JSON ImageArray downloads.
 
 **Upgrading from the camera Alpaca bridge:** the native camera driver described
-here is a current-source change. If an older package shows an Alpaca address
+here is included in release 0.3.1.0. If an older package shows an Alpaca address
 and port in camera setup, update to a build containing the native driver.
 Select each local camera once in the new dialog. The old `server.json` is no
 longer used; existing Alpaca profiles remain available for network use.
@@ -162,7 +162,7 @@ outstanding.
 
 The standalone server exposes cameras, CAA rotators, EFW filter wheels, and EAF focusers to Alpaca clients.
 It runs without .NET and does not require Windows COM registration.
-The CAA network frontend is a current-source addition; use a build containing it.
+CAA, EFW, and EAF network support is included in release 0.3.1.0.
 
 On Windows, extract `ZwoGain-ASCOM-<version>-win-x64.zip` and run from that folder:
 
@@ -255,7 +255,7 @@ The plugin adds **ZWOgain EFW Filter Wheel** and **ZWOgain EAF Focuser** to
 NINA's equipment lists. The Windows ASCOM installer includes matching native
 Chooser entries and CAA-styled setup dialogs. All three frontends use the
 SDK-free Rust USB worker directly; native ASCOM needs no Alpaca server.
-These are current-source additions; use a package built from this revision.
+EFW and EAF support is included in release 0.3.1.0.
 
 1. Open the device's setup gear or ASCOM **Setup**, refresh USB devices, and
    select its serial. Close other controllers using that device.

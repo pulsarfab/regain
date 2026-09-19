@@ -27,7 +27,7 @@ public abstract class AccessoryBase : IDisposable
     public bool Connected { get => session?.Connected == true; set { if (value) Session.Connect(); else session?.Disconnect(); } }
     public string Description => Name + " over native USB HID";
     public string DriverInfo => "ZWOgain SDK-free Rust USB driver";
-    public string DriverVersion => "0.3";
+    public string DriverVersion => typeof(AccessoryBase).Assembly.GetName().Version.ToString();
     public ArrayList SupportedActions => Kind == "efw" ? new() { "ZwoGain.Status", "ZwoGain.Identity", "ZwoGain.Calibrate" } : new() { "ZwoGain.Status", "ZwoGain.Identity" };
     public string Action(string ActionName, string ActionParameters) => ActionName.ToLowerInvariant() switch {
         "zwogain.status" => Read(d => d.Request(new { command = "status" }).GetRawText()),

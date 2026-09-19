@@ -269,7 +269,7 @@ impl Accessory {
             match member {
                 "name" | "description" => return Ok(json!(self.name())),
                 "driverinfo" => return Ok(json!("ZWOgain SDK-free native USB driver")),
-                "driverversion" => return Ok(json!("0.3")),
+                "driverversion" => return Ok(json!(env!("CARGO_PKG_VERSION"))),
                 "interfaceversion" => return Ok(json!(if self.kind == "efw" { 2 } else { 3 })),
                 "supportedactions" => {
                     return Ok(if self.kind == "efw" {
