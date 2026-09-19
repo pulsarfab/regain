@@ -1,4 +1,5 @@
-param([string]$DeviceClass, [switch]$Hardware, [switch]$MetadataOnly, [switch]$Calibrate)
+param([string]$DeviceClass, [switch]$Hardware, [switch]$MetadataOnly, [switch]$Calibrate,
+    [ValidateRange(0,10000)][int]$CalibrationPollDelayMs = 0)
 $ErrorActionPreference = 'Stop'
 # Match UTF-8 Windows CI hosts: .NET Framework's redirected stdin writer
 # emits this encoding's preamble before the driver's own UTF-8 writer.
@@ -17,13 +18,23 @@ try {
         if ($device.InterfaceVersion -ne 2 -or $device.Names.Count -ne 7 -or $device.FocusOffsets.Count -ne 7) { throw 'Invalid filter wheel metadata' }
         if ($device.SupportedActions -notcontains 'ZwoGain.Calibrate') { throw 'Calibration action missing' }
         if ($Calibrate -or !$Hardware) {
+            # Start away from the calibration endpoint so a no-op cannot pass.
+            $device.Position = [int16]1
+            $deadline = [DateTime]::UtcNow.AddSeconds(30)
+            while ($device.Position -eq -1) { if ([DateTime]::UtcNow -gt $deadline) { throw 'Pre-calibration move timed out' }; Start-Sleep -Milliseconds 100 }
+            if ($device.Position -ne 1) { throw 'Pre-calibration position mismatch' }
             $started = [DateTime]::UtcNow
             [void]$device.Action('ZwoGain.Calibrate', '')
+            if ($CalibrationPollDelayMs) { Start-Sleep -Milliseconds $CalibrationPollDelayMs }
             $status = $device.Action('ZwoGain.Status', '') | ConvertFrom-Json
-            if (!$status.calibrating -or $status.slots -ne 7 -or $device.Position -ne -1) { throw 'Calibration did not report progress' }
-            $rejected = $false
-            try { [void]$device.Action('ZwoGain.Calibrate', '') } catch { $rejected = $true }
-            if (!$rejected) { throw 'Repeated calibration was accepted' }
+            if ($status.fault -or $status.error -or $status.slots -ne 7) { throw 'Invalid calibration status' }
+            # A busy CI runner can miss the entire two-second simulation.
+            # Check one coherent snapshot, not Position from a later instant.
+            # Duplicate rejection is covered by worker and Alpaca tests; issuing
+            # another action here could legitimately start a second calibration.
+            if ($status.calibrating) {
+                if (!$status.moving -or $status.position -ne -1) { throw 'Invalid calibration progress' }
+            } elseif ($status.moving -or $status.position -ne 0) { throw 'Invalid completed calibration' }
             while ($device.Position -eq -1) {
                 if (([DateTime]::UtcNow - $started).TotalSeconds -gt 95) { throw 'Calibration timed out' }
                 Start-Sleep -Milliseconds 100

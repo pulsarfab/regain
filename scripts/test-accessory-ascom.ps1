@@ -1,4 +1,5 @@
-param([switch]$Hardware, [switch]$Calibrate)
+param([switch]$Hardware, [switch]$Calibrate,
+    [ValidateRange(0,10000)][int]$CalibrationPollDelayMs = 0)
 $ErrorActionPreference = 'Stop'
 $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $privateKeys = @()
@@ -39,6 +40,7 @@ try {
         $arguments = @('-NoProfile','-ExecutionPolicy','Bypass','-File',(Join-Path $PSScriptRoot 'test-accessory-ascom-client.ps1'),'-DeviceClass',$deviceClass)
         if ($Hardware) { $arguments += '-Hardware' }
         if ($Calibrate) { $arguments += '-Calibrate' }
+        if ($CalibrationPollDelayMs) { $arguments += @('-CalibrationPollDelayMs', $CalibrationPollDelayMs) }
         & "$env:WINDIR/$architecture/WindowsPowerShell/v1.0/powershell.exe" @arguments
         if ($LASTEXITCODE) { throw "ACCESSORY COM $architecture failed" }
     }
