@@ -9,7 +9,7 @@
     <NoWarn>$(NoWarn);NU1701</NoWarn>
     <AssemblyTitle>ZWOgain</AssemblyTitle>
     <Title>ZWOgain</Title>
-    <Description>ZWO camera, CAA, EFW and EAF drivers</Description>
+    <Description>ZWO camera/accessory and Pegasus FocusCube3 drivers</Description>
   </PropertyGroup>
   <ItemGroup>
     <Resource Include="Assets/zwogain.png" />

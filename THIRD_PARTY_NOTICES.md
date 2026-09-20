@@ -28,12 +28,14 @@ Rust dependencies retain their original licenses. The build script packages
 their license/copyright texts and the Rust standard-library copyright bundle
 under `licenses/`. Cargo.lock records exact versions.
 
-The OFP2 driver uses the unmodified `serialport` Rust crate under MPL-2.0.
+The OFP2 and FocusCube3 drivers use the unmodified `serialport` Rust crate under MPL-2.0.
 Its corresponding source is available from
 [crates.io](https://crates.io/crates/serialport/4.10.1) and
 [the upstream repository](https://github.com/serialport/serialport-rs).
 The Deep Sky Dad ASCOM driver was inspected to determine serial commands;
-no vendor driver code, binary, or firmware is included in the OFP2 crate.
+no vendor driver code, binary, or firmware is included in either serial crate.
+FocusCube3 was implemented from Pegasus's protocol reference, local driver
+inspection, and serial traces; Pegasus binaries are not redistributed.
 
 The Windows COM package includes ASCOM DeviceInterfaces, Alpaca Components,
 Common Components, and Exception Library (ASCOM Initiative), plus Microsoft

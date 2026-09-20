@@ -9,6 +9,7 @@ namespace ZwoGain.NINA.Tests;
 public sealed class AccessoryTests : IDisposable
 {
     private readonly string directory = Path.Combine(Path.GetTempPath(), "ZwoGain-accessory-test-" + Guid.NewGuid().ToString("N"));
+    private readonly string? oldFc3 = Environment.GetEnvironmentVariable("ZWOGAIN_FC3_WORKER");
     private readonly string? oldWorker = Environment.GetEnvironmentVariable("ZWOGAIN_ACCESSORY_WORKER");
     private readonly string? oldProfiles = Environment.GetEnvironmentVariable("ZWOGAIN_ACCESSORY_SETTINGS");
     private readonly string? oldSimulate = Environment.GetEnvironmentVariable("ZWOGAIN_ACCESSORY_SIMULATE");
@@ -19,6 +20,7 @@ public sealed class AccessoryTests : IDisposable
         var worker = Path.Combine(root!.FullName, "target", "debug", "zwogain-accessories.exe");
         Assert.True(File.Exists(worker), "Build the Rust workspace before integration tests");
         Environment.SetEnvironmentVariable("ZWOGAIN_ACCESSORY_WORKER", worker);
+        Environment.SetEnvironmentVariable("ZWOGAIN_FC3_WORKER", Path.Combine(root.FullName,"target","debug","zwogain-fc3.exe"));
         Environment.SetEnvironmentVariable("ZWOGAIN_ACCESSORY_SETTINGS", directory);
         Environment.SetEnvironmentVariable("ZWOGAIN_ACCESSORY_SIMULATE", "1");
     }
@@ -69,9 +71,34 @@ public sealed class AccessoryTests : IDisposable
         wheel.Position = 0; wheel.Disconnect(); Assert.False(wheel.Connected);
         });
     }
+    [Fact]
+    public async Task FocusCubeMovesCancelsAndPreservesItsOwnProfile()
+    {
+        var hardwareSerial=Environment.GetEnvironmentVariable("ZWOGAIN_TEST_FC3_SERIAL");
+        if(!string.IsNullOrEmpty(hardwareSerial)) {
+            Environment.SetEnvironmentVariable("ZWOGAIN_ACCESSORY_SIMULATE", null);
+            Directory.CreateDirectory(directory);
+            File.WriteAllText(Path.Combine(directory,"fc3-nina.json"),System.Text.Json.JsonSerializer.Serialize(new {Serial=hardwareSerial}));
+        }
+        using var focuser = new FocusCubeFocuser();
+        Assert.True(await focuser.Connect(CancellationToken.None));
+        Assert.Equal("ZwoGain.FC3", focuser.Id); Assert.Equal(1000000, focuser.MaxStep);
+        int start=focuser.Position;
+        try {
+        await focuser.Move(start+20,CancellationToken.None,0);
+        Assert.Equal(start+20,focuser.Position);
+        using var cancellation=new CancellationTokenSource(100);
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(()=>focuser.Move(start,cancellation.Token,0));
+        Assert.False(focuser.IsMoving);
+        await focuser.Move(start,CancellationToken.None,0);
+        } finally { focuser.Halt(); await focuser.Move(start,CancellationToken.None,0); }
+        focuser.Disconnect(); Assert.False(focuser.Connected);
+        Assert.Contains(hardwareSerial ?? "00:00:00:00:00:03",File.ReadAllText(Path.Combine(directory,"fc3-nina.json")));
+    }
     public void Dispose()
     {
         Environment.SetEnvironmentVariable("ZWOGAIN_ACCESSORY_WORKER", oldWorker);
+        Environment.SetEnvironmentVariable("ZWOGAIN_FC3_WORKER", oldFc3);
         Environment.SetEnvironmentVariable("ZWOGAIN_ACCESSORY_SETTINGS", oldProfiles);
         Environment.SetEnvironmentVariable("ZWOGAIN_ACCESSORY_SIMULATE", oldSimulate);
         // Only this test's uniquely named temporary directory is removed.

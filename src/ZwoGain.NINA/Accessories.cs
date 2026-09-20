@@ -9,6 +9,12 @@ using ZwoGain.Rotator;
 namespace ZwoGain.NINA;
 
 [Export(typeof(IEquipmentProvider))]
+public sealed class FocusCubeProvider : IEquipmentProvider<IFocuser>
+{
+    public string Name => "ZWOgain";
+    public IList<IFocuser> GetEquipment() => [new FocusCubeFocuser()];
+}
+[Export(typeof(IEquipmentProvider))]
 public sealed class EafProvider : IEquipmentProvider<IFocuser>
 {
     public string Name => "ZWOgain";
@@ -25,12 +31,12 @@ public sealed class EfwProvider : IEquipmentProvider<IFilterWheel>
 public abstract class AccessoryDevice : BaseINPC, IDevice, IDisposable
 {
     protected readonly AccessorySession Session;
-    protected AccessoryDevice(string kind) => Session = new(Environment.GetEnvironmentVariable("ZWOGAIN_ACCESSORY_WORKER") ?? Path.Combine(CameraProvider.DirectoryPath, "zwogain-accessories.exe"), kind, AccessorySession.SettingsPath(kind, "nina"));
+    protected AccessoryDevice(string kind) => Session = new(Environment.GetEnvironmentVariable(kind == "fc3" ? "ZWOGAIN_FC3_WORKER" : "ZWOGAIN_ACCESSORY_WORKER") ?? Path.Combine(CameraProvider.DirectoryPath, kind == "fc3" ? "zwogain-fc3.exe" : "zwogain-accessories.exe"), kind, AccessorySession.SettingsPath(kind, "nina"));
     public string Id => "ZwoGain." + Session.Kind.ToUpperInvariant();
-    public string Name => Session.Kind == "efw" ? "ZWOgain EFW Filter Wheel" : "ZWOgain EAF Focuser";
+    public string Name => Session.Kind == "efw" ? "ZWOgain EFW Filter Wheel" : Session.Kind == "fc3" ? "ZWOgain Pegasus FocusCube3" : "ZWOgain EAF Focuser";
     public string DisplayName => Name;
     public string Category => "ZWOgain";
-    public string Description => Name + " over USB HID";
+    public string Description => Name + (Session.Kind == "fc3" ? " over USB serial" : " over USB HID");
     public string DriverInfo => "ZWOgain native Rust USB driver";
     public string DriverVersion => typeof(AccessoryDevice).Assembly.GetName().Version!.ToString();
     public bool HasSetupDialog => true;
@@ -56,7 +62,9 @@ public abstract class AccessoryDevice : BaseINPC, IDevice, IDisposable
     public void SendCommandBlind(string command, bool raw = true) => throw new NotSupportedException();
     public void Dispose() => Session.Dispose();
 }
-public sealed class EafFocuser() : AccessoryDevice("eaf"), IFocuser
+public sealed class EafFocuser() : NativeFocuser("eaf");
+public sealed class FocusCubeFocuser() : NativeFocuser("fc3");
+public abstract class NativeFocuser(string kind) : AccessoryDevice(kind), IFocuser
 {
     public bool IsMoving => Session.Status().Moving;
     public int Position => Session.Status().Position;

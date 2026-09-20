@@ -52,10 +52,11 @@ impl Accessory {
         Self {
             kind,
             path,
-            executable: directory.join(if cfg!(windows) {
-                "zwogain-accessories.exe"
-            } else {
-                "zwogain-accessories"
+            executable: directory.join(match (kind, cfg!(windows)) {
+                ("fc3", true) => "zwogain-fc3.exe",
+                ("fc3", false) => "zwogain-fc3",
+                (_, true) => "zwogain-accessories.exe",
+                _ => "zwogain-accessories",
             }),
             simulate,
             state: Mutex::new(State {
@@ -69,6 +70,8 @@ impl Accessory {
     fn name(&self) -> &'static str {
         if self.kind == "efw" {
             "ZWOgain EFW Filter Wheel"
+        } else if self.kind == "fc3" {
+            "ZWOgain Pegasus FocusCube3"
         } else {
             "ZWOgain EAF Focuser"
         }
@@ -84,16 +87,21 @@ impl Accessory {
                 uuid::Uuid::parse_str(&s.profile.unique_id).is_ok(),
                 "invalid accessory UUID"
             );
-            Self::validate(&s.profile)?;
+            self.validate(&s.profile)?;
             s.loaded = true;
         }
         Ok(())
     }
-    fn validate(p: &Profile) -> Result<()> {
+    fn validate(&self, p: &Profile) -> Result<()> {
         ensure!(
-            p.serial
-                .as_ref()
-                .is_none_or(|s| s.len() == 16 && s.bytes().all(|b| b.is_ascii_hexdigit())),
+            p.serial.as_ref().is_none_or(|s| if self.kind == "fc3" {
+                s.len() == 17
+                    && s.split(':').count() == 6
+                    && s.split(':')
+                        .all(|v| v.len() == 2 && v.bytes().all(|b| b.is_ascii_hexdigit()))
+            } else {
+                s.len() == 16 && s.bytes().all(|b| b.is_ascii_hexdigit())
+            }),
             error(0x401, "Select a device by serial")
         );
         ensure!(
@@ -123,7 +131,10 @@ impl Accessory {
     }
     fn command(&self, action: &str) -> Command {
         let mut c = Command::new(&self.executable);
-        c.arg(self.kind).arg(action);
+        if self.kind != "fc3" {
+            c.arg(self.kind);
+        }
+        c.arg(action);
         if self.simulate {
             c.arg("--simulate");
         }
@@ -154,7 +165,7 @@ impl Accessory {
         );
         let mut profile: Profile = serde_json::from_value(value)?;
         profile.unique_id = s.profile.unique_id.clone();
-        Self::validate(&profile)?;
+        self.validate(&profile)?;
         let old = s.profile.clone();
         s.profile = profile;
         if let Err(e) = self.save(&s) {
@@ -180,7 +191,7 @@ impl Accessory {
     pub async fn configured(&self) -> Result<Option<Value>> {
         let mut s = self.state.lock().await;
         self.load(&mut s)?;
-        Ok(s.profile.serial.as_ref().map(|_|json!({"DeviceName":self.name(),"DeviceType":if self.kind=="efw"{"FilterWheel"}else{"Focuser"},"DeviceNumber":0,"UniqueID":s.profile.unique_id})))
+        Ok(s.profile.serial.as_ref().map(|_|json!({"DeviceName":self.name(),"DeviceType":if self.kind=="efw"{"FilterWheel"}else{"Focuser"},"DeviceNumber":if self.kind=="fc3"{1}else{0},"UniqueID":s.profile.unique_id})))
     }
     async fn connect(&self, s: &mut State, client: u32, on: bool) -> Result<()> {
         if !on {
@@ -249,7 +260,7 @@ impl Accessory {
             s.clients.clear();
         }
         let client = p.optional_id("ClientID")?;
-        if member == "connected" || (self.kind == "eaf" && member == "link") {
+        if member == "connected" || (self.kind != "efw" && member == "link") {
             if put {
                 self.connect(
                     &mut s,
@@ -308,7 +319,7 @@ impl Accessory {
                 _ => (),
             }
         }
-        if !put && self.kind == "eaf" {
+        if !put && self.kind != "efw" {
             match member {
                 "absolute" => return Ok(json!(true)),
                 "tempcomp" | "tempcompavailable" => return Ok(json!(false)),
@@ -333,9 +344,9 @@ impl Accessory {
                 } else {
                     status["position"].clone()
                 }),
-                "ismoving" if self.kind == "eaf" => Ok(status["moving"].clone()),
-                "maxstep" | "maxincrement" if self.kind == "eaf" => Ok(status["max_step"].clone()),
-                "temperature" if self.kind == "eaf" => {
+                "ismoving" if self.kind != "efw" => Ok(status["moving"].clone()),
+                "maxstep" | "maxincrement" if self.kind != "efw" => Ok(status["max_step"].clone()),
+                "temperature" if self.kind != "efw" => {
                     if status["temperature_c"].is_null() {
                         Err(unsupported(member))
                     } else {
@@ -345,7 +356,7 @@ impl Accessory {
                 _ => Err(unsupported(member)),
             };
         }
-        if (member == "position" && self.kind == "efw") || (member == "move" && self.kind == "eaf")
+        if (member == "position" && self.kind == "efw") || (member == "move" && self.kind != "efw")
         {
             let position = p.integer("Position")?;
             let status = s
@@ -373,7 +384,7 @@ impl Accessory {
                 .await?;
             return Ok(Value::Null);
         }
-        if member == "halt" && self.kind == "eaf" {
+        if member == "halt" && self.kind != "efw" {
             s.worker
                 .as_mut()
                 .unwrap()
@@ -386,7 +397,7 @@ impl Accessory {
     pub async fn settings(&self, value: Value) -> Result<Value> {
         let mut s = self.state.lock().await;
         ensure!(
-            self.kind == "eaf",
+            self.kind != "efw",
             error(0x400, "EFW settings belong to its profile")
         );
         let mut request = value;
@@ -394,8 +405,11 @@ impl Accessory {
             .as_object_mut()
             .ok_or_else(|| error(0x401, "Expected settings object"))?;
         ensure!(
-            obj.keys()
-                .all(|k| ["beep", "reverse", "backlash", "max_step"].contains(&k.as_str())),
+            obj.keys().all(|k| if self.kind == "fc3" {
+                ["speed", "reverse", "backlash"].contains(&k.as_str())
+            } else {
+                ["beep", "reverse", "backlash", "max_step"].contains(&k.as_str())
+            }),
             error(0x401, "Unknown setting")
         );
         obj.insert("command".into(), json!("settings"));

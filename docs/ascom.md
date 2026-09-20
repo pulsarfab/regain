@@ -232,3 +232,16 @@ Rust serial worker requires no vendor ASCOM driver. Open the **OFP2 flat panel
 setup** link on the Alpaca setup page; [OFP2 instructions](ofp2.md) cover USB
 selection, external power, brightness, motion, protocol, and hardware tests.
 Windows ASCOM/NINA clients can connect through the Platform’s Alpaca support.
+
+## Pegasus Astro FocusCube3
+
+Choose **ZWOgain Pegasus FocusCube3** (`ASCOM.ZWOgain.FocusCube3.Focuser`).
+Unlike the in-process camera and ZWO accessory COM classes, this focuser uses
+`ZwoGain.FocusCube.ASCOM.exe` as a shared COM local server. Separate 32-bit and
+64-bit clients share one Rust serial worker; the final disconnect releases it.
+The FocusCube3 Start menu setup uses this server too. Close Unity's device
+connection before using it. The native NINA provider and Alpaca still require
+their own exclusive port ownership; broader sharing is deferred.
+
+See [FocusCube3 setup and protocol](focuscube3.md) and its physical-device
+screenshots. The serial worker is `zwogain-fc3.exe`, not an Alpaca bridge.

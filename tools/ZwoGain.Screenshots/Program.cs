@@ -17,9 +17,10 @@ internal static class Program
         string output = Path.Combine(root, "docs", "images"); Directory.CreateDirectory(output);
         string profiles = Path.Combine(root, "artifacts", "native-screenshots", Guid.NewGuid().ToString("N"));
         RenderOptions.ProcessRenderMode = System.Windows.Interop.RenderMode.SoftwareOnly;
-        Environment.SetEnvironmentVariable("ZWOGAIN_ACCESSORY_SIMULATE", "1");
-        foreach (string kind in new[] { "efw", "eaf" }) {
-            using var session = new AccessorySession(Path.Combine(root, "target", "debug", "zwogain-accessories.exe"), kind, Path.Combine(profiles, kind + ".json"));
+        bool fc3=args.Contains("--fc3");
+        Environment.SetEnvironmentVariable("ZWOGAIN_ACCESSORY_SIMULATE", fc3 ? null : "1");
+        foreach (string kind in (fc3 ? new[] {"fc3"} : new[] { "efw", "eaf" })) {
+            using var session = new AccessorySession(Path.Combine(root, "target", "debug", (fc3 ? "zwogain-fc3.exe" : "zwogain-accessories.exe")), kind, Path.Combine(profiles, kind + ".json"));
             session.Connect();
             var window = new AccessorySetupWindow(session);
             // Run the same refresh used by the live dialog, without opening a desktop window.

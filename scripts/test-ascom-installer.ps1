@@ -23,7 +23,9 @@ function Assert-NoCameraEntries {
                 'Software\Classes\ASCOM.ZWOgain.Rotator','Software\ASCOM\Rotator Drivers\ASCOM.ZWOgain.Rotator',
                 'Software\Classes\CLSID\{EA2040E1-E936-4BDF-87F7-B58CA3E418AB}', 'Software\Classes\CLSID\{295C08F8-EDE9-43C5-9D55-627A063D74CA}',
                 'Software\Classes\ASCOM.ZWOgain.FilterWheel','Software\ASCOM\FilterWheel Drivers\ASCOM.ZWOgain.FilterWheel',
-                'Software\Classes\ASCOM.ZWOgain.Focuser','Software\ASCOM\Focuser Drivers\ASCOM.ZWOgain.Focuser') {
+                'Software\Classes\ASCOM.ZWOgain.Focuser','Software\ASCOM\Focuser Drivers\ASCOM.ZWOgain.Focuser',
+                'Software\Classes\CLSID\{69AB224B-14D2-46A2-A744-0C60593A28B3}',
+                'Software\Classes\ASCOM.ZWOgain.FocusCube3.Focuser','Software\ASCOM\Focuser Drivers\ASCOM.ZWOgain.FocusCube3.Focuser') {
                 $key = $root.OpenSubKey($path)
                 if ($key) { $key.Dispose(); throw "Rotator entry exists in $view : $path" }
             }
@@ -100,6 +102,9 @@ try {
             $key = $root.OpenSubKey('Software\Classes\CLSID\{A918164B-49DD-4FF5-BEE6-A4AB93B97F12}\InprocServer32')
             if (!$key) { throw "Installed rotator CLSID missing in $view" }
             try { if (([Uri]$key.GetValue('CodeBase')).LocalPath -ne (Join-Path $destination 'ZwoGain.ASCOM.dll')) { throw 'Wrong rotator registration path' } } finally { $key.Dispose() }
+            $fc3 = $root.OpenSubKey('Software\Classes\CLSID\{69AB224B-14D2-46A2-A744-0C60593A28B3}\LocalServer32')
+            if (!$fc3) { throw 'FocusCube3 LocalServer32 registration missing' }
+            try { if ($fc3.GetValue('') -ne ('"' + (Join-Path $destination 'ZwoGain.FocusCube.ASCOM.exe') + '" /Embedding')) { throw 'Wrong FocusCube3 local server path' } } finally { $fc3.Dispose() }
             $key = $root.OpenSubKey('Software\ASCOM\Rotator Drivers\ASCOM.ZWOgain.Rotator')
             if (!$key) { throw "Rotator Chooser entry missing in $view" }
             $key.Dispose()

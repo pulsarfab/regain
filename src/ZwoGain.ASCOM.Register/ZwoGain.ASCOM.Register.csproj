@@ -11,4 +11,9 @@
   <ItemGroup>
     <ProjectReference Include="../ZwoGain.ASCOM/ZwoGain.ASCOM.csproj" />
   </ItemGroup>
+  <ItemGroup><ProjectReference Include="../ZwoGain.FocusCube.ASCOM/ZwoGain.FocusCube.ASCOM.csproj" ReferenceOutputAssembly="false" /></ItemGroup>
+  <Target Name="CopyFocusCubeServer" AfterTargets="Build">
+    <ItemGroup><FocusCubeFiles Include="../ZwoGain.FocusCube.ASCOM/bin/$(Configuration)/net48/ZwoGain.FocusCube.ASCOM.exe*" /></ItemGroup>
+    <Copy SourceFiles="@(FocusCubeFiles)" DestinationFolder="$(OutDir)" />
+  </Target>
 </Project>

@@ -19,6 +19,7 @@ public sealed class AccessorySetupWindow : Window
     private readonly CheckBox beep = new() { Content = "Beep when movement starts" };
     private readonly CheckBox reverse = new() { Content = "Reverse motor direction" };
     private readonly TextBox backlash = new() { Width = 160 };
+    private readonly TextBox speed = new() { Width = 160 };
     private readonly TextBox limit = new() { Width = 160 };
     private readonly StackPanel filters = new();
     private readonly List<(TextBox Name, TextBox Offset)> filterRows = [];
@@ -26,16 +27,16 @@ public sealed class AccessorySetupWindow : Window
     private bool busy;
     private bool initialized;
 
-    public static void Show(AccessorySession session)
+    public static void Show(AccessorySession session, Func<bool>? hasOtherClients = null)
     {
-        var window = new AccessorySetupWindow(session);
+        var window = new AccessorySetupWindow(session, hasOtherClients);
         if (Application.Current?.MainWindow is Window owner && owner != window) window.Owner = owner;
         window.ShowDialog();
     }
-    public AccessorySetupWindow(AccessorySession session)
+    public AccessorySetupWindow(AccessorySession session, Func<bool>? hasOtherClients = null)
     {
         this.session = session; externallyOwned = session.Connected;
-        Title = "ZWOgain " + session.Kind.ToUpperInvariant() + " Setup";
+        Title = "ZWOgain " + (session.Kind == "fc3" ? "FocusCube3" : session.Kind.ToUpperInvariant()) + " Setup";
         Width = 730; Height = 650; MinWidth = 620; MinHeight = 540;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
         SetupTheme.Apply(this);
@@ -48,9 +49,9 @@ public sealed class AccessorySetupWindow : Window
         checkStyle.Setters.Add(new Setter(FrameworkElement.MarginProperty, new Thickness(0, 4, 0, 8)));
         Resources[typeof(CheckBox)] = checkStyle;
         var root = new DockPanel { Margin = new Thickness(24) }; Content = root;
-        var heading = new TextBlock { Text = session.Kind == "efw" ? "Electronic Filter Wheel" : "Electronic Automatic Focuser", FontSize = 25, Margin = new Thickness(0, 0, 0, 8) };
+        var heading = new TextBlock { Text = session.Kind == "efw" ? "Electronic Filter Wheel" : session.Kind == "fc3" ? "Pegasus Astro FocusCube3" : "Electronic Automatic Focuser", FontSize = 25, Margin = new Thickness(0, 0, 0, 8) };
         DockPanel.SetDock(heading, Dock.Top); root.Children.Add(heading);
-        var subheading = new TextBlock { Text = "ZWOgain  •  Native USB HID" + (Environment.GetEnvironmentVariable("ZWOGAIN_ACCESSORY_SIMULATE") == "1" ? "  •  Simulation" : ""), Margin = new Thickness(0, 0, 0, 20) };
+        var subheading = new TextBlock { Text = (session.Kind == "fc3" ? "ZWOgain  •  Native USB serial" : "ZWOgain  •  Native USB HID") + (Environment.GetEnvironmentVariable("ZWOGAIN_ACCESSORY_SIMULATE") == "1" ? "  •  Simulation" : ""), Margin = new Thickness(0, 0, 0, 20) };
         DockPanel.SetDock(subheading, Dock.Top); root.Children.Add(subheading);
         var footer = new StackPanel(); DockPanel.SetDock(footer, Dock.Bottom); root.Children.Add(footer);
         footer.Children.Add(message);
@@ -59,9 +60,9 @@ public sealed class AccessorySetupWindow : Window
         var device = Page(tabs, "Device");
         device.Children.Add(Label("Choose a USB device")); device.Children.Add(devices);
         device.Children.Add(Row(Button("Refresh", Discover), Button("Connect", () => {
-            if (devices.SelectedItem is CaaChoice choice) session.Select(choice.Serial);
+            if (!session.Connected && devices.SelectedItem is CaaChoice choice) session.Select(choice.Serial);
             session.Connect(); initialized = false; RefreshStatus();
-        }), Button("Disconnect", () => { if (externallyOwned) throw new InvalidOperationException("Disconnect through the connected application"); session.Disconnect(); summary.Text = "Disconnected"; })));
+        }), Button("Disconnect", () => { if (externallyOwned || hasOtherClients?.Invoke() == true) throw new InvalidOperationException("Disconnect through the connected application"); session.Disconnect(); summary.Text = "Disconnected"; })));
         if (externallyOwned) {
             devices.Items.Add(new CaaChoice { Serial = session.Profile.Serial, Label = session.Kind.ToUpperInvariant() + " — " + session.Profile.Serial });
             devices.SelectedIndex = 0; devices.IsEnabled = false;
@@ -75,13 +76,14 @@ public sealed class AccessorySetupWindow : Window
         moveButton = Button("Move", () => { session.Move(Parse(target) - (session.Kind == "efw" ? 1 : 0)); RefreshStatus(); });
         moveButton.IsEnabled = false; motion.Children.Add(moveButton);
         motion.Children.Add(motionStatus);
-        if (session.Kind == "eaf") {
+        if (session.Kind != "efw") {
             motion.Children.Add(Button("Halt", session.Halt));
-            motion.Children.Add(new TextBlock { Text = "Check mechanical clearance before moving. The saved travel limit is enforced by the driver. Focus step size in microns depends on the attached focuser.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 20, 0, 0) });
-            var settings = Page(tabs, "Settings"); settings.Children.Add(beep); settings.Children.Add(reverse);
-            settings.Children.Add(Label("Hardware backlash (0–255 steps)")); settings.Children.Add(backlash);
-            settings.Children.Add(Label("Maximum travel (steps)")); settings.Children.Add(limit);
-            settings.Children.Add(Button("Apply settings", () => session.Request(new { command = "settings", beep = beep.IsChecked == true, reverse = reverse.IsChecked == true, backlash = Parse(backlash), max_step = Parse(limit) })));
+            motion.Children.Add(new TextBlock { Text = "Check mechanical clearance before moving. The driver travel limit is enforced before a move. Focus step size in microns depends on the attached focuser.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 20, 0, 0) });
+            var settings = Page(tabs, "Settings"); if (session.Kind == "eaf") settings.Children.Add(beep); settings.Children.Add(reverse);
+            settings.Children.Add(Label(session.Kind == "fc3" ? "Hardware backlash (0–1000 steps)" : "Hardware backlash (0–255 steps)")); settings.Children.Add(backlash);
+            if (session.Kind == "fc3") { settings.Children.Add(Label("Motor speed (even values, 2–400)")); settings.Children.Add(speed); settings.Children.Add(Label("Driver travel range: 0–1,000,000 steps")); }
+            else { settings.Children.Add(Label("Maximum travel (steps)")); settings.Children.Add(limit); }
+            settings.Children.Add(Button("Apply settings", () => { if (session.Kind == "fc3") session.Request(new { command = "settings", speed = Parse(speed), backlash = Parse(backlash), reverse = reverse.IsChecked == true }); else session.Request(new { command = "settings", beep = beep.IsChecked == true, reverse = reverse.IsChecked == true, backlash = Parse(backlash), max_step = Parse(limit) }); initialized = false; RefreshStatus(); }));
             settings.Children.Add(new TextBlock { Text = "Set hardware backlash to zero if NINA handles backlash compensation. Temperature compensation is controlled by the imaging application.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 20, 0, 0) });
         } else {
             motion.Children.Add(Label("Wheel calibration"));
@@ -102,7 +104,7 @@ public sealed class AccessorySetupWindow : Window
         }
         Loaded += (_, _) => { if (session.Connected) Run(RefreshStatus); else Run(Discover); timer.Start(); };
         timer.Tick += (_, _) => { if (!busy && session.Connected) Run(RefreshStatus, quiet: true); else if (!session.Connected) { moveButton.IsEnabled = false; if (calibrateButton is not null) calibrateButton.IsEnabled = false; motionStatus.Text = "Disconnected"; } };
-        Closed += (_, _) => { timer.Stop(); if (!externallyOwned) session.Disconnect(); };
+        Closed += (_, _) => { timer.Stop(); if (!externallyOwned && hasOtherClients?.Invoke() != true) session.Disconnect(); };
     }
     private void Discover() { devices.ItemsSource = session.Discover(); devices.SelectedItem = devices.Items.Cast<CaaChoice>().FirstOrDefault(v => v.Serial == session.Profile.Serial) ?? devices.Items.Cast<CaaChoice>().FirstOrDefault(); }
     private void RefreshStatus()
@@ -115,7 +117,7 @@ public sealed class AccessorySetupWindow : Window
         if (calibrateButton is not null) calibrateButton.IsEnabled = !s.Moving;
         if (!initialized) {
             target.Text = (s.Position + (session.Kind == "efw" ? 1 : 0)).ToString(CultureInfo.InvariantCulture);
-            beep.IsChecked = s.Beep; reverse.IsChecked = s.Reverse; backlash.Text = s.Backlash.ToString(); limit.Text = s.MaxStep.ToString();
+            speed.Text = s.Speed.ToString(); beep.IsChecked = s.Beep; reverse.IsChecked = s.Reverse; backlash.Text = s.Backlash.ToString(); limit.Text = s.MaxStep.ToString();
             filters.Children.Clear(); filterRows.Clear();
             if (s.Slots > 0) filters.Children.Add(Row(new TextBlock { Width = 65 }, new TextBlock { Text = "Filter name", Width = 268, Margin = new Thickness(0, 0, 0, 8) }, new TextBlock { Text = "Focus offset", Width = 110 }));
             for (int i = 0; i < s.Slots; i++) {

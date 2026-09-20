@@ -8,7 +8,7 @@ if (!$Compiler) {
 }
 if (!$Compiler) { throw 'Install Inno Setup 6.7 or later, or pass -Compiler with the ISCC.exe path.' }
 $stage = Join-Path $repo 'artifacts/ascom-stage'
-foreach ($file in 'ZwoGain.ASCOM.Register.exe','ZwoGain.ASCOM.dll','ZwoGain.Rotator.dll','zwogain-caa.exe','zwogain-accessories.exe','zwogain-camera.exe','zwogain-alpaca.exe','zwogain-host.exe','zwogain-direct.exe','ASICamera2.dll','LICENSE') {
+foreach ($file in 'ZwoGain.ASCOM.Register.exe','ZwoGain.FocusCube.ASCOM.exe','ZwoGain.ASCOM.dll','ZwoGain.Rotator.dll','zwogain-caa.exe','zwogain-accessories.exe','zwogain-fc3.exe','zwogain-camera.exe','zwogain-alpaca.exe','zwogain-host.exe','zwogain-direct.exe','ASICamera2.dll','LICENSE') {
     if (!(Test-Path -LiteralPath (Join-Path $stage $file))) { throw "Missing $file. Run scripts/build-ascom.ps1 first." }
 }
 $assembly = [Reflection.AssemblyName]::GetAssemblyName((Join-Path $stage 'ZwoGain.ASCOM.dll'))
@@ -49,6 +49,18 @@ foreach ($root in 'HKLM32','HKLM64') {
             $registry.Add(('Root: {0}; Subkey: "{1}"; ValueType: string; ValueName: "{2}"; ValueData: "{3}"; Flags: {4}' -f $root, $row[0], $row[1], $row[2], $row[3]))
         }
         $registry.Add(('Root: {0}; Subkey: "{1}\Implemented Categories\{{{{62C8FE65-4EBB-45E7-B440-6E39B2CDBF29}}"; ValueType: none' -f $root, $key))
+    }
+    # FocusCube3 is a real COM local server, not a RegAsm in-process class.
+    $fc3 = 'Software\Classes\CLSID\{{69AB224B-14D2-46A2-A744-0C60593A28B3}'
+    foreach ($row in @(
+        @($fc3, 'ZWOgain Pegasus FocusCube3', 'uninsdeletekey'),
+        @("$fc3\LocalServer32", '"{app}\ZwoGain.FocusCube.ASCOM.exe" /Embedding', ''),
+        @("$fc3\ProgID", 'ASCOM.ZWOgain.FocusCube3.Focuser', ''),
+        @('Software\Classes\ASCOM.ZWOgain.FocusCube3.Focuser', 'ZWOgain Pegasus FocusCube3', 'uninsdeletekey'),
+        @('Software\Classes\ASCOM.ZWOgain.FocusCube3.Focuser\CLSID', '{{69AB224B-14D2-46A2-A744-0C60593A28B3}', ''),
+        @('Software\ASCOM\Focuser Drivers\ASCOM.ZWOgain.FocusCube3.Focuser', 'ZWOgain Pegasus FocusCube3', 'uninsdeletekey')
+    )) {
+        $registry.Add(('Root: {0}; Subkey: "{1}"; ValueType: string; ValueName: ""; ValueData: "{2}"; Flags: {3}' -f $root, $row[0], $row[1].Replace('"','""'), $row[2]))
     }
 }
 $registryFile = Join-Path $repo 'artifacts/ascom-installer-registry.iss'

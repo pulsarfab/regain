@@ -20,6 +20,7 @@ public sealed class AccessoryStatus
     [JsonPropertyName("detected_slots")] public int? DetectedSlots { get; set; }
     [JsonPropertyName("slots")] public int Slots { get; set; }
     [JsonPropertyName("max_step")] public int MaxStep { get; set; }
+    [JsonPropertyName("speed")] public int Speed { get; set; }
     [JsonPropertyName("backlash")] public int Backlash { get; set; }
     [JsonPropertyName("beep")] public bool Beep { get; set; }
     [JsonPropertyName("reverse")] public bool Reverse { get; set; }
@@ -42,7 +43,7 @@ public sealed class AccessorySession : IDisposable
     public bool Connected { get { lock (gate) return worker is { HasExited: false }; } }
     public AccessorySession(string executable, string kind, string profilePath)
     {
-        if (kind is not ("efw" or "eaf")) throw new ArgumentException("Unknown accessory");
+        if (kind is not ("efw" or "eaf" or "fc3")) throw new ArgumentException("Unknown accessory");
         this.executable = executable; Kind = kind; ProfilePath = profilePath; Profile = ReadProfile();
     }
     public static string SettingsPath(string kind, string frontend) => Path.Combine(
@@ -62,7 +63,7 @@ public sealed class AccessorySession : IDisposable
     private Process Start(string arguments)
     {
         if (Environment.GetEnvironmentVariable("ZWOGAIN_ACCESSORY_SIMULATE") == "1") arguments += " --simulate";
-        var process = new Process { StartInfo = new(executable, Kind + " " + arguments) {
+        var process = new Process { StartInfo = new(executable, (Kind == "fc3" ? "" : Kind + " ") + arguments) {
             UseShellExecute = false, CreateNoWindow = true, WindowStyle = ProcessWindowStyle.Hidden,
             RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true,
             WorkingDirectory = Path.GetDirectoryName(executable)!, StandardOutputEncoding = new System.Text.UTF8Encoding(false) } };
@@ -103,9 +104,9 @@ public sealed class AccessorySession : IDisposable
             Save();
         }
     }
-    private static void ValidateSerial(string serial)
+    private void ValidateSerial(string serial)
     {
-        if (serial.Length != 16 || serial.Any(c => !Uri.IsHexDigit(c))) throw new ArgumentException("Select a device by its serial number");
+        if (Kind == "fc3" ? !System.Text.RegularExpressions.Regex.IsMatch(serial, @"\A[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5}\z") : (serial.Length != 16 || serial.Any(c => !Uri.IsHexDigit(c)))) throw new ArgumentException("Select a device by its serial number");
     }
     public void Connect()
     {

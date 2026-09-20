@@ -1226,6 +1226,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "zwogain-fc3"
+version = "0.3.1"
+dependencies = [
+ "anyhow",
+ "serde",
+ "serde_json",
+ "serialport",
+]
+
+[[package]]
 name = "zwogain-hid"
 version = "0.3.1"
 dependencies = [

@@ -23,6 +23,9 @@ try {
     if ($LASTEXITCODE) { throw 'Alpaca accessory tests failed' }
     python scripts/test-ofp2.py
     if ($LASTEXITCODE) { throw 'OFP2 serial and Alpaca tests failed' }
+    python scripts/test-fc3.py
+    if ($LASTEXITCODE) { throw 'FocusCube3 tests failed' }
+    & (Join-Path $PSScriptRoot 'test-fc3-ascom.ps1')
     & (Join-Path $PSScriptRoot 'test-accessory-ascom.ps1')
     & (Join-Path $PSScriptRoot 'test-ascom.ps1')
     & (Join-Path $PSScriptRoot 'test-caa-ascom.ps1')

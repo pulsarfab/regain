@@ -53,6 +53,7 @@ Source: "{#Stage}\ZwoGain.ASCOM.Register.exe*"; DestDir: "{tmp}\preflight"; Flag
 Name: "{group}\Camera setup"; Filename: "{app}\ZwoGain.ASCOM.Register.exe"
 Name: "{group}\CAA rotator setup"; Filename: "{app}\ZwoGain.ASCOM.Register.exe"; Parameters: "/rotator"
 Name: "{group}\EFW filter wheel setup"; Filename: "{app}\ZwoGain.ASCOM.Register.exe"; Parameters: "/filterwheel"
+Name: "{group}\FocusCube3 setup"; Filename: "{app}\ZwoGain.FocusCube.ASCOM.exe"; Parameters: "/setup"
 Name: "{group}\EAF focuser setup"; Filename: "{app}\ZwoGain.ASCOM.Register.exe"; Parameters: "/focuser"
 Name: "{group}\Documentation"; Filename: "https://github.com/theatrus/zwogain/blob/main/docs/ascom.md"
 

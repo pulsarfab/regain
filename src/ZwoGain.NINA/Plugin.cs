@@ -18,10 +18,10 @@ using ZwoGain.Core;
 [assembly: AssemblyMetadata("Repository", "https://github.com/theatrus/zwogain")]
 [assembly: AssemblyMetadata("Homepage", "https://github.com/theatrus/zwogain")]
 [assembly: AssemblyMetadata("ChangelogURL", "https://github.com/theatrus/zwogain/releases")]
-[assembly: AssemblyMetadata("Tags", "camera,rotator,filterwheel,focuser,ZWO,recovery")]
+[assembly: AssemblyMetadata("Tags", "camera,rotator,filterwheel,focuser,ZWO,Pegasus,FocusCube3,recovery")]
 [assembly: AssemblyMetadata("FeaturedImageURL", "pack://application:,,,/ZwoGain.NINA;component/Assets/zwogain.png")]
-[assembly: AssemblyMetadata("ShortDescription", "ZWO camera, CAA, EFW and EAF drivers")]
-[assembly: AssemblyMetadata("LongDescription", "Retries failed camera captures. Controls CAA rotators, EFW filter wheels and EAF focusers without the ZWO accessory SDK, with wheel calibration and native setup dialogs.")]
+[assembly: AssemblyMetadata("ShortDescription", "ZWO camera/accessory and Pegasus FocusCube3 drivers")]
+[assembly: AssemblyMetadata("LongDescription", "Retries failed camera captures. Controls CAA rotators, EFW filter wheels, EAF and Pegasus FocusCube3 focusers with native Rust drivers, wheel calibration and matching setup dialogs.")]
 
 namespace ZwoGain.NINA;
 

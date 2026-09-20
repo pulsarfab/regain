@@ -31,7 +31,7 @@ pub struct Server {
     pub profiles: Arc<Profiles>,
     pub runtime: Runtime,
     pub rotator: crate::rotator::Rotator,
-    pub accessories: [crate::accessory::Accessory; 2],
+    pub accessories: [crate::accessory::Accessory; 3],
     pub flatpanel: crate::flatpanel::FlatPanel,
     pub log: Arc<Log>,
     devices: Mutex<HashMap<usize, Arc<Device>>>,
@@ -112,7 +112,7 @@ impl Server {
                 runtime.directory.clone(),
                 runtime.simulate,
             ),
-            accessories: ["efw", "eaf"].map(|kind| {
+            accessories: ["efw", "eaf", "fc3"].map(|kind| {
                 crate::accessory::Accessory::new(
                     kind,
                     profiles.accessory_path(kind),
@@ -254,6 +254,7 @@ impl Server {
             )
             .route("/setup/v1/filterwheel/0/setup", get(accessory_page))
             .route("/setup/v1/focuser/0/setup", get(accessory_page))
+            .route("/setup/v1/focuser/1/setup", get(accessory_page))
             .route(
                 "/setup/v1/covercalibrator/0/setup",
                 get(|| async { axum::response::Html(include_str!("../web/flatpanel.html")) }),
@@ -682,6 +683,7 @@ fn accessory_index(kind: &str) -> Option<usize> {
     match kind {
         "efw" | "filterwheel" => Some(0),
         "eaf" | "focuser" => Some(1),
+        "fc3" => Some(2),
         _ => None,
     }
 }
@@ -726,7 +728,7 @@ async fn accessory_request(
     put: bool,
     params: Result<Params>,
 ) -> Response {
-    if slot != 0
+    if !(slot == 0 || (slot == 1 && kind == "focuser"))
         || member != member.to_lowercase()
         || !["filterwheel", "focuser", "covercalibrator"].contains(&kind.as_str())
     {
@@ -739,9 +741,13 @@ async fn accessory_request(
         if kind == "covercalibrator" {
             s.flatpanel.request(&member, put, &p).await
         } else {
-            s.accessories[accessory_index(&kind).unwrap()]
-                .request(&member, put, &p)
-                .await
+            s.accessories[if kind == "focuser" && slot == 1 {
+                2
+            } else {
+                accessory_index(&kind).unwrap()
+            }]
+            .request(&member, put, &p)
+            .await
         }
     }
     .await;

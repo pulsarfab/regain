@@ -5,7 +5,7 @@
 [![Build and test](https://github.com/theatrus/zwogain/actions/workflows/build.yml/badge.svg)](https://github.com/theatrus/zwogain/actions/workflows/build.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
-**ZWOgain**, as in **ZWO Again**, provides ZWO ASI camera, CAA rotator, EFW filter-wheel, and EAF focuser drivers for NINA and ASCOM.
+**ZWOgain**, as in **ZWO Again**, provides ZWO ASI camera, CAA rotator, EFW filter-wheel, EAF focuser, and Pegasus Astro FocusCube3 drivers for NINA and ASCOM.
 It retries failed downloads and short exposures while the app waits for an image.
 
 The ZWO SDK runs in a separate Rust process, so a camera crash or hang does not
@@ -15,17 +15,18 @@ Choose the frontend for your application:
 
 | Frontend | Runs on | Setup | Devices |
 | --- | --- | --- | --- |
-| Native NINA plugin | Windows x64 | NINA equipment setup gear | Cameras, CAA, EFW and EAF |
-| Native Windows ASCOM | Windows x64; 32-bit and 64-bit clients | ASCOM Chooser or Start menu | Four camera entries, CAA, EFW and EAF |
-| Standalone Alpaca server | Windows, Linux, macOS | Browser setup page | Camera slots plus CAA, EFW, EAF and OFP2 |
+| Native NINA plugin | Windows x64 | NINA equipment setup gear | Cameras, CAA, EFW, EAF and FocusCube3 |
+| Native Windows ASCOM | Windows x64; 32-bit and 64-bit clients | ASCOM Chooser or Start menu | Four camera entries, CAA, EFW, EAF and FocusCube3 |
+| Standalone Alpaca server | Windows, Linux, macOS | Browser setup page | Camera slots plus CAA, EFW, EAF, FocusCube3 and OFP2 |
 
-The native Windows ASCOM drivers use private local Rust workers and matching
+The native Windows ASCOM drivers use local Rust workers and matching
 camera and accessory setup dialogs. They do not need an Alpaca server. Alpaca provides
 network access and shares the same camera recovery and native accessory code.
+FocusCube3 ASCOM clients share one local COM server and one exclusive serial connection.
 
 [Screenshots](#screenshots) · [Install in NINA](#install-in-nina) · [Windows ASCOM setup](#windows-ascom-setup) ·
 [Alpaca setup](#alpaca-setup) · [CAA controls](#caa-rotator) ·
-[EFW and EAF](#efw-filter-wheel-and-eaf-focuser) · [OFP2 flat panel](#ofp2-flat-panel) · [Settings and logs](#settings-and-logs)
+[EFW and EAF](#efw-filter-wheel-and-eaf-focuser) · [OFP2 flat panel](#ofp2-flat-panel) · [FocusCube3](#pegasus-astro-focuscube3) · [Settings and logs](#settings-and-logs)
 
 **ZWOgain is independent and is not affiliated with or supported by ZWO.**
 The code and logo use the Apache-2.0 license. Bundled software has its own
@@ -34,7 +35,7 @@ licenses; see [third-party notices](THIRD_PARTY_NOTICES.md).
 ## Screenshots
 
 Native ASCOM/NINA setup dialogs and the Alpaca browser interface. These views
-use simulated devices; click an image to see it at full size. Native images
+use simulated devices in this table; the OFP2 and FocusCube3 sections below show physical hardware. Click an image to see it at full size. Native images
 are renders of the actual WPF controls in the standalone ASCOM theme. NINA
 uses the host application's theme.
 
@@ -71,7 +72,7 @@ devices. Both ASI6200 editions appear as **ASI6200MM Pro** in the picker.
 
 ## Windows ASCOM setup
 
-Use this for cameras, CAA, EFW or EAF connected directly to a Windows computer. Requires
+Use this for cameras, CAA, EFW, EAF or FocusCube3 connected directly to a Windows computer. Requires
 **Windows 10 or later, x64**, **.NET Framework 4.8**, and the **ASCOM Platform**.
 Cameras also require the separately installed **ZWO Windows camera driver**,
 including in Direct USB mode. CAA, EFW, and EAF use Windows' HID driver and need no ZWO accessory SDK.
@@ -298,6 +299,37 @@ The same operation is available through the [`ZwoGain.Calibrate` action](docs/ac
 ![Native EFW calibration controls](docs/images/native-efw-calibration.png)
 
 See the [USB tracing playbook, protocol, setup and validation details](docs/accessories.md).
+
+## Pegasus Astro FocusCube3
+
+Current source includes a new **pure Rust USB serial crate**, `zwogain-fc3`,
+a native NINA focuser provider, a styled native ASCOM driver, and **Alpaca
+Focuser device 1**. Release 0.3.1.0 predates this support.
+
+On Windows use the built-in USB Serial Device driver. Close the device's
+connection in Pegasus Unity; its background server may hold the COM port
+when the window closes. Select **ZWOgain Pegasus FocusCube3** in NINA or the
+ASCOM Focuser Chooser. The ASCOM Start menu shortcut opens the same setup UI.
+For Alpaca, open `http://127.0.0.1:11111/setup/v1/focuser/1/setup`, find/select
+the USB serial, and connect for setup. EAF remains Focuser device 0.
+
+| Native ASCOM/NINA setup | Alpaca setup |
+| --- | --- |
+| ![Physical FocusCube3 native settings](docs/images/native-fc3.png) | ![Physical FocusCube3 Alpaca setup](docs/images/alpaca-fc3.png) |
+
+Both screenshots show the **physical FocusCube3, firmware 1.8.2**. Controls
+include absolute movement, halt, temperature, direction, backlash, and speed.
+The verified firmware rounds odd speeds down, so speed uses even values
+2–400. The driver waits for deceleration after halt.
+
+**Separate 32-bit and 64-bit ASCOM clients share one local server and serial
+worker.** Disconnecting one client leaves the others connected. The native
+NINA provider, Alpaca, and Unity still need exclusive ownership relative to
+one another. A common background service for sharing between those frontends
+is deferred; NINA can use the ASCOM driver when ASCOM sharing is needed.
+
+See [FocusCube3 setup, protocol, trace evidence, hardware tests, and sharing
+notes](docs/focuscube3.md) for the full playbook.
 
 ## OFP2 flat panel
 

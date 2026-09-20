@@ -1,0 +1,109 @@
+{
+  "hardware": true,
+  "identity": {
+    "firmware": "1.8.2",
+    "model": "Pegasus Astro FocusCube3",
+    "simulation": false
+  },
+  "worker": {
+    "initial": {
+      "backlash": 0,
+      "error": 0,
+      "fault": null,
+      "max_step": 1000000,
+      "moving": false,
+      "position": 1250,
+      "reverse": false,
+      "speed": 400,
+      "temperature_c": 27.7
+    },
+    "halted": {
+      "backlash": 0,
+      "error": 0,
+      "fault": null,
+      "max_step": 1000000,
+      "moving": false,
+      "position": 1253,
+      "reverse": true,
+      "speed": 50,
+      "temperature_c": 27.7
+    },
+    "restored": {
+      "backlash": 0,
+      "error": 0,
+      "fault": null,
+      "max_step": 1000000,
+      "moving": false,
+      "position": 1250,
+      "reverse": false,
+      "speed": 400,
+      "temperature_c": 27.7
+    }
+  },
+  "alpaca": {
+    "initial": {
+      "backlash": 0,
+      "error": 0,
+      "fault": null,
+      "max_step": 1000000,
+      "moving": false,
+      "position": 1250,
+      "reverse": false,
+      "speed": 400,
+      "temperature_c": 27.7
+    },
+    "halted": {
+      "backlash": 0,
+      "error": 0,
+      "fault": null,
+      "max_step": 1000000,
+      "moving": false,
+      "position": 1253,
+      "reverse": true,
+      "speed": 50,
+      "temperature_c": 27.7
+    },
+    "restored": {
+      "backlash": 0,
+      "error": 0,
+      "fault": null,
+      "max_step": 1000000,
+      "moving": false,
+      "position": 1250,
+      "reverse": false,
+      "speed": 400,
+      "temperature_c": 27.7
+    }
+  },
+  "tested_at": "2026-09-20",
+  "usb": {
+    "vid": "303a",
+    "pid": "9000",
+    "transport": "CDC serial, 115200 8N1, DTR on, no flow control"
+  },
+  "vendor_driver": {
+    "file": "Peg.Engine.dll",
+    "sha256": "75a3232e12dfb401f424d80680c10428c0db02985e29d4d9313de0b224fbcbec"
+  },
+  "trace_level": "application-level serial requests/replies; device identity suffix redacted",
+  "ascom": {
+    "clients": [
+      "64-bit Windows PowerShell",
+      "32-bit Windows PowerShell"
+    ],
+    "shared_server_count": 1,
+    "shared_worker_count": 1,
+    "second_client_survives_first_disconnect": true,
+    "move_out_and_back_steps": 20
+  },
+  "nina": {
+    "native_provider_hardware_move_steps": 20,
+    "cancellation_waits_for_idle": true,
+    "position_restored": true
+  },
+  "observations": [
+    "Firmware 1.8.2 returns bare scalar replies",
+    "FH acknowledgement precedes idle; poll deceleration",
+    "Odd speeds round down to even; SP:1 reports 0; driver permits only even 2..400"
+  ]
+}
