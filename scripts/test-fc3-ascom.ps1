@@ -53,6 +53,15 @@ try {
     # Exercise actual SCM launch as well as an explicitly started fixture. This
     # path intentionally does not need a worker or inherit simulation variables.
     if ($hive -eq [Microsoft.Win32.RegistryHive]::LocalMachine) {
+    foreach ($view in [Microsoft.Win32.RegistryView]::Registry32,[Microsoft.Win32.RegistryView]::Registry64) {
+        $root=[Microsoft.Win32.RegistryKey]::OpenBaseKey($hive,$view)
+        try {
+            $appPath='Software\Classes\AppID\{'+$id+'}'
+            $keys += @{View=$view;Path=$appPath}
+            $key=$root.CreateSubKey($appPath);$key.SetValue('RunAs','Interactive User');$key.Dispose()
+            $key=$root.OpenSubKey(('Software\Classes\CLSID\{'+$id+'}'),$true);$key.SetValue('AppID','{'+$id+'}');$key.Dispose()
+        } finally {$root.Dispose()}
+    }
     foreach ($architecture in 'System32','SysWOW64') {
         & "$env:WINDIR/$architecture/WindowsPowerShell/v1.0/powershell.exe" -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'test-fc3-ascom-client.ps1') -Id $id -MetadataOnly
         if ($LASTEXITCODE) { throw 'Cold COM activation failed' }

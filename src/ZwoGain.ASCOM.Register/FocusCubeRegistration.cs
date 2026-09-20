@@ -10,6 +10,8 @@ internal static class FocusCubeRegistration
         string command = "\"" + server + "\" /Embedding";
         string clsid = @"Software\Classes\CLSID\" + Clsid;
         string progid = @"Software\Classes\" + ProgId;
+        string appid = @"Software\Classes\AppID\" + Clsid;
+        string appExe = @"Software\Classes\AppID\ZwoGain.FocusCube.ASCOM.exe";
         string chooser = @"Software\ASCOM\Focuser Drivers\" + ProgId;
         if(remove) {
             using var installed=root.OpenSubKey(clsid+@"\LocalServer32");
@@ -17,9 +19,14 @@ internal static class FocusCubeRegistration
                 throw new InvalidOperationException("Unregister FocusCube3 from its currently installed directory.");
             if(installed is null) return;
             root.DeleteSubKeyTree(clsid,false); root.DeleteSubKeyTree(progid,false); root.DeleteSubKeyTree(chooser,false);
+            root.DeleteSubKeyTree(appid,false); root.DeleteSubKeyTree(appExe,false);
         } else {
             if(!File.Exists(server)) throw new FileNotFoundException("FocusCube3 shared server is missing",server);
-            using(var key=root.CreateSubKey(clsid)) key.SetValue(null,"ZWOgain Pegasus FocusCube3");
+            // Match the ASCOM LocalServer template: a single interactive identity
+            // also shares the server between elevated and ordinary clients.
+            using(var key=root.CreateSubKey(appid)) { key.SetValue(null,"ZWOgain FocusCube3 shared server"); key.SetValue("RunAs","Interactive User"); }
+            using(var key=root.CreateSubKey(appExe)) key.SetValue("AppID",Clsid);
+            using(var key=root.CreateSubKey(clsid)) { key.SetValue(null,"ZWOgain Pegasus FocusCube3"); key.SetValue("AppID",Clsid); }
             using(var key=root.CreateSubKey(clsid+@"\LocalServer32")) key.SetValue(null,command);
             using(var key=root.CreateSubKey(clsid+@"\ProgID")) key.SetValue(null,ProgId);
             using(var key=root.CreateSubKey(progid+@"\CLSID")) key.SetValue(null,Clsid);

@@ -4,6 +4,7 @@
     <Project Path="src/ZwoGain.ASCOM/ZwoGain.ASCOM.csproj" />
     <Project Path="src/ZwoGain.Core/ZwoGain.Core.csproj" />
     <Project Path="src/ZwoGain.Diagnostics/ZwoGain.Diagnostics.csproj" />
+    <Project Path="src/ZwoGain.FocusCube.ASCOM/ZwoGain.FocusCube.ASCOM.csproj" />
     <Project Path="src/ZwoGain.NINA/ZwoGain.NINA.csproj" />
     <Project Path="src/ZwoGain.Rotator/ZwoGain.Rotator.csproj" />
   </Folder>

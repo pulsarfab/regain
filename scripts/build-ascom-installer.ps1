@@ -53,6 +53,13 @@ foreach ($root in 'HKLM32','HKLM64') {
     # FocusCube3 is a real COM local server, not a RegAsm in-process class.
     $fc3 = 'Software\Classes\CLSID\{{69AB224B-14D2-46A2-A744-0C60593A28B3}'
     foreach ($row in @(
+        @('Software\Classes\AppID\{{69AB224B-14D2-46A2-A744-0C60593A28B3}', 'RunAs', 'Interactive User', 'uninsdeletekey'),
+        @('Software\Classes\AppID\ZwoGain.FocusCube.ASCOM.exe', 'AppID', '{{69AB224B-14D2-46A2-A744-0C60593A28B3}', 'uninsdeletekey'),
+        @($fc3, 'AppID', '{{69AB224B-14D2-46A2-A744-0C60593A28B3}', '')
+    )) {
+        $registry.Add(('Root: {0}; Subkey: "{1}"; ValueType: string; ValueName: "{2}"; ValueData: "{3}"; Flags: {4}' -f $root, $row[0], $row[1], $row[2], $row[3]))
+    }
+    foreach ($row in @(
         @($fc3, 'ZWOgain Pegasus FocusCube3', 'uninsdeletekey'),
         @("$fc3\LocalServer32", '"{app}\ZwoGain.FocusCube.ASCOM.exe" /Embedding', ''),
         @("$fc3\ProgID", 'ASCOM.ZWOgain.FocusCube3.Focuser', ''),

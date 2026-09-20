@@ -25,7 +25,8 @@ function Assert-NoCameraEntries {
                 'Software\Classes\ASCOM.ZWOgain.FilterWheel','Software\ASCOM\FilterWheel Drivers\ASCOM.ZWOgain.FilterWheel',
                 'Software\Classes\ASCOM.ZWOgain.Focuser','Software\ASCOM\Focuser Drivers\ASCOM.ZWOgain.Focuser',
                 'Software\Classes\CLSID\{69AB224B-14D2-46A2-A744-0C60593A28B3}',
-                'Software\Classes\ASCOM.ZWOgain.FocusCube3.Focuser','Software\ASCOM\Focuser Drivers\ASCOM.ZWOgain.FocusCube3.Focuser') {
+                'Software\Classes\ASCOM.ZWOgain.FocusCube3.Focuser','Software\ASCOM\Focuser Drivers\ASCOM.ZWOgain.FocusCube3.Focuser',
+                'Software\Classes\AppID\{69AB224B-14D2-46A2-A744-0C60593A28B3}','Software\Classes\AppID\ZwoGain.FocusCube.ASCOM.exe') {
                 $key = $root.OpenSubKey($path)
                 if ($key) { $key.Dispose(); throw "Rotator entry exists in $view : $path" }
             }

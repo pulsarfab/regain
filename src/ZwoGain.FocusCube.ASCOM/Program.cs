@@ -28,6 +28,15 @@ internal static class Program {
     private static readonly List<WeakReference> Objects=[];
     internal static int Locks;
     internal static void Track(Driver driver) { lock(Objects) Objects.Add(new WeakReference(driver)); }
+    private static void Log(string message) {
+        try {
+            var dir=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"ZwoGain","ASCOM");
+            Directory.CreateDirectory(dir);
+            var path=Path.Combine(dir,"focuscube3.log");
+            if(File.Exists(path) && new FileInfo(path).Length>2_000_000) File.WriteAllText(path,"");
+            File.AppendAllText(path,DateTimeOffset.Now.ToString("O")+" "+message+Environment.NewLine);
+        } catch { }
+    }
     [STAThread] private static int Main(string[] args) {
         uint cookie=0;
         try {
@@ -41,10 +50,12 @@ internal static class Program {
             // Private CLSID only for isolated test fixtures; production activation uses the fixed CLSID.
             int test=Array.IndexOf(args,"/test-clsid");
             if(test>=0) clsid=Guid.Parse(args[test+1]);
+            Log($"Starting COM server {clsid}; PID {System.Diagnostics.Process.GetCurrentProcess().Id}; session {System.Diagnostics.Process.GetCurrentProcess().SessionId}");
             var app=new Application { ShutdownMode=ShutdownMode.OnExplicitShutdown };
             var factory=new Factory();
             Marshal.ThrowExceptionForHR(CoRegisterClassObject(ref clsid,factory,4,5,out cookie));
             Marshal.ThrowExceptionForHR(CoResumeClassObjects());
+            Log("Class factory registered and resumed");
             var idle=DateTime.UtcNow;
             var timer=new DispatcherTimer { Interval=TimeSpan.FromSeconds(5) };
             timer.Tick+=(_,_)=>{
@@ -57,8 +68,7 @@ internal static class Program {
             };
             timer.Start(); app.Run(); timer.Stop(); GC.KeepAlive(factory); return 0;
         } catch(Exception e) {
-            var dir=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"ZwoGain","ASCOM");
-            Directory.CreateDirectory(dir); File.AppendAllText(Path.Combine(dir,"focuscube3.log"),e+Environment.NewLine); return 1;
+            Log(e.ToString()); return 1;
         } finally { if(cookie!=0) CoRevokeClassObject(cookie); SharedDevice.Session.Dispose(); }
     }
 }

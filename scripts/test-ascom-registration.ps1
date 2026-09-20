@@ -24,6 +24,8 @@ try {
         if ($LASTEXITCODE) { throw 'Registered CAA COM activation failed' }
     }
 } finally {
+    Get-Content -LiteralPath (Join-Path $env:LOCALAPPDATA 'ZwoGain/ASCOM/focuscube3.log') -Tail 30 -ErrorAction SilentlyContinue
+    Get-CimInstance Win32_Process -Filter "Name='ZwoGain.FocusCube.ASCOM.exe'" | Select-Object ProcessId,SessionId,CommandLine
     Get-Content -LiteralPath (Join-Path $env:LOCALAPPDATA 'ZwoGain/ASCOM/registration.log') -Tail 30 -ErrorAction SilentlyContinue
     $registration = Start-Process -FilePath $exe -ArgumentList '/unregserver' -WindowStyle Hidden -Wait -PassThru
     if ($registration.ExitCode) { throw 'Unregistration failed' }
