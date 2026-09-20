@@ -54,6 +54,8 @@ jobs:
         run: python scripts/test-alpaca-rotator.py --bin-dir target/release
       - name: Exercise Alpaca EFW and EAF
         run: python scripts/test-alpaca-accessories.py --bin-dir target/release
+      - name: Exercise native OFP2 and Alpaca CoverCalibrator
+        run: python scripts/test-ofp2.py --bin-dir target/release
       - name: Load and enumerate with the real ZWO SDK
         run: python scripts/stage-sdk.py target/release --check
       - name: Check worker protocol and native SDK ABI

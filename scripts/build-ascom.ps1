@@ -20,6 +20,8 @@ try {
         Copy-Item -LiteralPath (Join-Path $plugin 'licenses') -Destination $stage -Recurse
         Copy-Item -LiteralPath (Join-Path $repo 'docs/ascom.md') -Destination (Join-Path $stage 'README.md')
         Copy-Item -LiteralPath (Join-Path $repo 'docs/accessories.md') -Destination $stage
+        Copy-Item -LiteralPath (Join-Path $repo 'docs/ofp2.md') -Destination $stage
+        Copy-Item -LiteralPath (Join-Path $repo 'docs/ofp2-evidence.json') -Destination $stage
         Copy-Item -LiteralPath (Join-Path $repo 'docs/accessory-evidence.json') -Destination $stage
         Copy-Item -LiteralPath (Join-Path $repo 'docs/images') -Destination $stage -Recurse
         $assets = Get-Content src/ZwoGain.ASCOM/obj/project.assets.json -Raw | ConvertFrom-Json -AsHashtable
@@ -58,7 +60,7 @@ THE SOFTWARE.
         }
     }
     # On releases these are copied after signing the shared Rust payload.
-    foreach ($file in 'zwogain-camera.exe','zwogain-alpaca.exe','zwogain-host.exe','zwogain-direct.exe','zwogain-caa.exe','zwogain-accessories.exe') { Copy-Item -LiteralPath (Join-Path $plugin $file) -Destination $stage -Force }
+    foreach ($file in 'zwogain-camera.exe','zwogain-alpaca.exe','zwogain-host.exe','zwogain-direct.exe','zwogain-caa.exe','zwogain-accessories.exe','zwogain-ofp2.exe') { Copy-Item -LiteralPath (Join-Path $plugin $file) -Destination $stage -Force }
     if ($StageOnly) { Write-Output "Staged: $stage"; return }
     $archive = Join-Path $repo "artifacts/ZwoGain-ASCOM-$version-win-x64.zip"
     Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $archive -Force

@@ -17,7 +17,7 @@ Choose the frontend for your application:
 | --- | --- | --- | --- |
 | Native NINA plugin | Windows x64 | NINA equipment setup gear | Cameras, CAA, EFW and EAF |
 | Native Windows ASCOM | Windows x64; 32-bit and 64-bit clients | ASCOM Chooser or Start menu | Four camera entries, CAA, EFW and EAF |
-| Standalone Alpaca server | Windows, Linux, macOS | Browser setup page | Camera slots plus CAA, EFW and EAF |
+| Standalone Alpaca server | Windows, Linux, macOS | Browser setup page | Camera slots plus CAA, EFW, EAF and OFP2 |
 
 The native Windows ASCOM drivers use private local Rust workers and matching
 camera and accessory setup dialogs. They do not need an Alpaca server. Alpaca provides
@@ -25,7 +25,7 @@ network access and shares the same camera recovery and native accessory code.
 
 [Screenshots](#screenshots) · [Install in NINA](#install-in-nina) · [Windows ASCOM setup](#windows-ascom-setup) ·
 [Alpaca setup](#alpaca-setup) · [CAA controls](#caa-rotator) ·
-[EFW and EAF](#efw-filter-wheel-and-eaf-focuser) · [Settings and logs](#settings-and-logs)
+[EFW and EAF](#efw-filter-wheel-and-eaf-focuser) · [OFP2 flat panel](#ofp2-flat-panel) · [Settings and logs](#settings-and-logs)
 
 **ZWOgain is independent and is not affiliated with or supported by ZWO.**
 The code and logo use the Apache-2.0 license. Bundled software has its own
@@ -160,9 +160,10 @@ outstanding.
 
 ## Alpaca setup
 
-The standalone server exposes cameras, CAA rotators, EFW filter wheels, and EAF focusers to Alpaca clients.
+The standalone server exposes cameras, CAA rotators, EFW filter wheels, EAF focusers, and Deep Sky Dad OFP2 flat panels to Alpaca clients.
 It runs without .NET and does not require Windows COM registration.
 CAA, EFW, and EAF network support is included in release 0.3.1.0.
+OFP2 support is in current source and requires a newer build.
 
 On Windows, extract `ZwoGain-ASCOM-<version>-win-x64.zip` and run from that folder:
 
@@ -176,7 +177,8 @@ On Linux or macOS, extract the matching `zwogain-rust-*` build artifact and run:
 ./zwogain-alpaca --port 11111
 ```
 
-Keep the server, camera workers, `zwogain-caa` and SDK library together. The
+Keep the server, camera workers, `zwogain-caa`, `zwogain-accessories`,
+`zwogain-ofp2` and SDK library together. The
 computer hosting the server needs the appropriate USB drivers or permissions;
 remote clients do not. See [Linux/macOS runtime requirements](docs/portable-rust.md).
 
@@ -296,6 +298,33 @@ The same operation is available through the [`ZwoGain.Calibrate` action](docs/ac
 ![Native EFW calibration controls](docs/images/native-efw-calibration.png)
 
 See the [USB tracing playbook, protocol, setup and validation details](docs/accessories.md).
+
+## OFP2 flat panel
+
+Deep Sky Dad **OFP2** is supported by a pure Rust USB serial crate and the
+Alpaca server as **CoverCalibrator 0**. No vendor ASCOM driver or SDK is needed.
+This is current-source support; release 0.3.1.0 does not contain it.
+
+1. Connect USB and external power. Disconnect the vendor ASCOM driver and
+   close any application holding the panel's serial port.
+2. Build `cargo build --workspace --release --locked`, then start
+   `.\target\release\zwogain-alpaca.exe --port 11111` on Windows.
+3. Open `http://127.0.0.1:11111/setup/v1/covercalibrator/0/setup`.
+   **Find panels**, select the OFP2, and **Connect for setup**.
+4. Use Open, Close, Halt, and brightness 0–4096. Disconnect setup when done,
+   then select the panel through your application's Alpaca discovery support.
+
+Windows uses its built-in USB serial driver. Linux needs serial-port access;
+macOS uses its USB modem port. Selection follows the USB serial if the port
+name changes. Existing heater settings and endpoint calibration are preserved.
+
+[![Alpaca OFP2 setup connected to the real panel, cover closed and brightness 128](docs/images/alpaca-ofp2.png)](docs/images/alpaca-ofp2.png)
+
+This screenshot uses the **physical OFP2**, firmware 1.0.14.2. The Rust worker
+and Alpaca server both passed real opening, closing, halt/resume and lighting
+tests. The panel was restored to closed with its light off. Read the
+[protocol, Rust API, setup, and test notes](docs/ofp2.md) and
+[hardware evidence](docs/ofp2-evidence.json).
 
 ## Settings and logs
 

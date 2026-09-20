@@ -80,6 +80,7 @@ jobs:
             ${{ github.workspace }}\artifacts\stage\ZwoGain.Rotator.dll
             ${{ github.workspace }}\artifacts\stage\zwogain-caa.exe
             ${{ github.workspace }}\artifacts\stage\zwogain-accessories.exe
+            ${{ github.workspace }}\artifacts\stage\zwogain-ofp2.exe
             ${{ github.workspace }}\artifacts\stage\zwogain-host.exe
             ${{ github.workspace }}\artifacts\stage\zwogain-direct.exe
             ${{ github.workspace }}\artifacts\stage\zwogain-alpaca.exe
@@ -94,7 +95,7 @@ jobs:
       # to the wrong publisher, must not reach the archive.
       - name: Verify every signature
         run: |
-          foreach ($f in 'ZwoGain.NINA.dll','ZwoGain.Core.dll','ZwoGain.Rotator.dll','zwogain-caa.exe','zwogain-accessories.exe','zwogain-host.exe','zwogain-direct.exe','zwogain-camera.exe','zwogain-alpaca.exe') {
+          foreach ($f in 'ZwoGain.NINA.dll','ZwoGain.Core.dll','ZwoGain.Rotator.dll','zwogain-caa.exe','zwogain-accessories.exe','zwogain-ofp2.exe','zwogain-host.exe','zwogain-direct.exe','zwogain-camera.exe','zwogain-alpaca.exe') {
             $sig = Get-AuthenticodeSignature -LiteralPath "artifacts/stage/$f"
             if ($sig.Status -ne 'Valid') { throw "$f signature is $($sig.Status)" }
             if ($sig.SignerCertificate.Subject -notmatch 'StackFoundry LLC') { throw "$f has unexpected signer: $($sig.SignerCertificate.Subject)" }

@@ -36,7 +36,7 @@ internal static class InUseCheck
     // Query only: never shut down camera clients or a capture in progress.
     public static string[] Find(string directory)
     {
-        var files = new[] { "ZwoGain.ASCOM.dll", "ZwoGain.Rotator.dll", "zwogain-caa.exe", "zwogain-accessories.exe", "zwogain-camera.exe", "zwogain-alpaca.exe", "zwogain-host.exe", "zwogain-direct.exe" }
+        var files = new[] { "ZwoGain.ASCOM.dll", "ZwoGain.Rotator.dll", "zwogain-caa.exe", "zwogain-accessories.exe", "zwogain-ofp2.exe", "zwogain-camera.exe", "zwogain-alpaca.exe", "zwogain-host.exe", "zwogain-direct.exe" }
             .Select(name => Path.Combine(Path.GetFullPath(directory), name)).Where(File.Exists).ToArray();
         if (files.Length == 0) return Array.Empty<string>();
         int error = RmStartSession(out uint session, 0, new StringBuilder(33));

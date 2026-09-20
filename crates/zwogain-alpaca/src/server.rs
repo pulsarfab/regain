@@ -32,6 +32,7 @@ pub struct Server {
     pub runtime: Runtime,
     pub rotator: crate::rotator::Rotator,
     pub accessories: [crate::accessory::Accessory; 2],
+    pub flatpanel: crate::flatpanel::FlatPanel,
     pub log: Arc<Log>,
     devices: Mutex<HashMap<usize, Arc<Device>>>,
     transaction: AtomicU32,
@@ -106,6 +107,11 @@ impl Server {
             runtime.simulate,
         );
         Arc::new(Self {
+            flatpanel: crate::flatpanel::FlatPanel::new(
+                profiles.accessory_path("ofp2"),
+                runtime.directory.clone(),
+                runtime.simulate,
+            ),
             accessories: ["efw", "eaf"].map(|kind| {
                 crate::accessory::Accessory::new(
                     kind,
@@ -149,6 +155,7 @@ impl Server {
             .wrapping_add(1)
     }
     pub async fn shutdown(&self) {
+        self.flatpanel.shutdown().await;
         self.rotator.shutdown().await;
         for accessory in &self.accessories {
             accessory.shutdown().await;
@@ -248,6 +255,24 @@ impl Server {
             .route("/setup/v1/filterwheel/0/setup", get(accessory_page))
             .route("/setup/v1/focuser/0/setup", get(accessory_page))
             .route(
+                "/setup/v1/covercalibrator/0/setup",
+                get(|| async { axum::response::Html(include_str!("../web/flatpanel.html")) }),
+            )
+            .route(
+                "/flatpanel.js",
+                get(|| async {
+                    (
+                        [("Content-Type", "application/javascript")],
+                        include_str!("../web/flatpanel.js"),
+                    )
+                }),
+            )
+            .route(
+                "/setup/api/flatpanel",
+                get(flatpanel_setup).post(flatpanel_configure),
+            )
+            .route("/setup/api/flatpanel/discover", post(flatpanel_discover))
+            .route(
                 "/accessory.js",
                 get(|| async {
                     (
@@ -321,6 +346,11 @@ async fn management(
                     Ok(None) => (),
                     Err(e) => return Json(failure(e, id, s.next())).into_response(),
                 }
+            }
+            match s.flatpanel.configured().await {
+                Ok(Some(d)) => devices.push(d),
+                Ok(None) => (),
+                Err(e) => return Json(failure(e, id, s.next())).into_response(),
             }
             json!(devices)
         }
@@ -696,12 +726,9 @@ async fn accessory_request(
     put: bool,
     params: Result<Params>,
 ) -> Response {
-    let Some(index) = accessory_index(&kind) else {
-        return StatusCode::NOT_FOUND.into_response();
-    };
     if slot != 0
         || member != member.to_lowercase()
-        || !["filterwheel", "focuser"].contains(&kind.as_str())
+        || !["filterwheel", "focuser", "covercalibrator"].contains(&kind.as_str())
     {
         return StatusCode::NOT_FOUND.into_response();
     }
@@ -709,7 +736,13 @@ async fn accessory_request(
     let result = async {
         let p = params?;
         id = p.optional_id("ClientTransactionID")?;
-        s.accessories[index].request(&member, put, &p).await
+        if kind == "covercalibrator" {
+            s.flatpanel.request(&member, put, &p).await
+        } else {
+            s.accessories[accessory_index(&kind).unwrap()]
+                .request(&member, put, &p)
+                .await
+        }
     }
     .await;
     Json(match result {
@@ -723,6 +756,25 @@ async fn accessory_setup(State(s): State<Arc<Server>>, Path(kind): Path<String>)
         return StatusCode::NOT_FOUND.into_response();
     };
     setup_result(s.accessories[i].setup().await)
+}
+async fn flatpanel_setup(State(s): State<Arc<Server>>) -> Response {
+    setup_result(s.flatpanel.setup().await)
+}
+async fn flatpanel_configure(
+    State(s): State<Arc<Server>>,
+    headers: HeaderMap,
+    Json(value): Json<Value>,
+) -> Response {
+    if !setup_allowed(&headers) {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    setup_result(s.flatpanel.configure(value).await)
+}
+async fn flatpanel_discover(State(s): State<Arc<Server>>, headers: HeaderMap) -> Response {
+    if !setup_allowed(&headers) {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    setup_result(s.flatpanel.discover().await)
 }
 async fn accessory_configure(
     State(s): State<Arc<Server>>,

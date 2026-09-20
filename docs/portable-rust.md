@@ -173,3 +173,12 @@ Use `--sdk /absolute/path/to/library` to override the bundled library. Linux
 device permissions must also be installed. Both workers use the same
 version-1 JSON and binary protocol over stdin/stdout on every platform; see
 [architecture](architecture.md).
+
+## OFP2 flat panel
+
+The `zwogain-ofp2` Rust crate uses native USB serial for Deep Sky Dad OFP2.
+Keep its worker beside the Alpaca server and configure CoverCalibrator 0 on
+the browser setup page. No ASCOM driver, SDK or libudev is required. Linux
+needs access to the `/dev/ttyACM*` port; macOS uses `/dev/cu.usbmodem*`.
+See [OFP2 setup and protocol](ofp2.md). `python3 scripts/test-ofp2.py` exercises
+the explicit simulator; physical testing so far is Windows only.

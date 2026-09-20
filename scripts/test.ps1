@@ -21,6 +21,8 @@ try {
     if ($LASTEXITCODE) { throw 'Alpaca rotator tests failed' }
     python scripts/test-alpaca-accessories.py
     if ($LASTEXITCODE) { throw 'Alpaca accessory tests failed' }
+    python scripts/test-ofp2.py
+    if ($LASTEXITCODE) { throw 'OFP2 serial and Alpaca tests failed' }
     & (Join-Path $PSScriptRoot 'test-accessory-ascom.ps1')
     & (Join-Path $PSScriptRoot 'test-ascom.ps1')
     & (Join-Path $PSScriptRoot 'test-caa-ascom.ps1')

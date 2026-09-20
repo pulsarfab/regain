@@ -356,3 +356,11 @@ SDK APIs; EAFClose itself emits a stop report. `--exercise` enables movement.
 For the EFW, `--calibrate --exercise` traces one calibration, verifies idle and
 the detected slot count, then checks all positions and restores the starting
 slot. See the [hardware calibration result](../../docs/accessories.md#efw-calibration-trace).
+
+## OFP2 serial protocol
+
+`ofp2_probe.ps1 -Port COM5` reads identity, cover and brightness over USB CDC
+using commands recovered from the installed Deep Sky Dad FP 1.0.3.6 assembly.
+Add `-Exercise -MotionDetails` to illuminate, move, halt, resume and restore
+the panel. External power and clear motion space are required. JSONL records
+are serial transactions, not USB bus traces. See [protocol and evidence](../../docs/ofp2.md).

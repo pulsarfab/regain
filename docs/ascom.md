@@ -47,9 +47,9 @@ Useful flags:
 | Flag | Purpose |
 | --- | --- |
 | `--profiles PATH` | Camera settings file |
-| `--workers PATH` | Directory containing the two worker executables |
+| `--workers PATH` | Directory containing the Rust worker executables |
 | `--sdk PATH` | SDK DLL, SO, or dylib |
-| `--simulate` | Use fake cameras without accessing USB |
+| `--simulate` | Use simulated devices without accessing USB |
 
 Default settings are `%LOCALAPPDATA%\ZwoGain\Alpaca\cameras.json` on Windows
 and `$XDG_CONFIG_HOME/ZwoGain/Alpaca/cameras.json` on Unix, falling back to
@@ -224,3 +224,11 @@ The same installer registers `ASCOM.ZWOgain.FilterWheel` (IFilterWheelV2) and
 and share the CAA setup theme. The Start menu includes both setup dialogs.
 See [accessory setup and USB validation](accessories.md) for serial selection,
 filter metadata, motor settings, protocol traces, and supported hardware.
+
+## OFP2 Alpaca flat panel
+
+Current source also exposes Deep Sky Dad OFP2 as CoverCalibrator 0. Its native
+Rust serial worker requires no vendor ASCOM driver. Open the **OFP2 flat panel
+setup** link on the Alpaca setup page; [OFP2 instructions](ofp2.md) cover USB
+selection, external power, brightness, motion, protocol, and hardware tests.
+Windows ASCOM/NINA clients can connect through the Platform’s Alpaca support.

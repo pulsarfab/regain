@@ -1,0 +1,259 @@
+{
+  "hardware": true,
+  "identity": {
+    "firmware": "Board=DeepSkyDad.FP2, Version=1.0.14.2",
+    "model": "Deep Sky Dad OFP2",
+    "product": 3,
+    "simulation": false
+  },
+  "native": {
+    "initial": {
+      "brightness": 0,
+      "calibrator_on": false,
+      "cover": "closed",
+      "light_on": false,
+      "max_brightness": 4096,
+      "position_degrees": 270
+    },
+    "halted": {
+      "brightness": 0,
+      "calibrator_on": false,
+      "cover": "unknown",
+      "light_on": false,
+      "max_brightness": 4096,
+      "position_degrees": 268
+    },
+    "restored": {
+      "brightness": 0,
+      "calibrator_on": false,
+      "cover": "closed",
+      "light_on": false,
+      "max_brightness": 4096,
+      "position_degrees": 270
+    }
+  },
+  "alpaca": {
+    "initial": {
+      "brightness": 0,
+      "calibrator_on": false,
+      "cover": "closed",
+      "light_on": false,
+      "max_brightness": 4096,
+      "position_degrees": 270
+    },
+    "halted": {
+      "brightness": 0,
+      "calibrator_on": false,
+      "cover": "unknown",
+      "light_on": false,
+      "max_brightness": 4096,
+      "position_degrees": 246
+    },
+    "restored": {
+      "brightness": 0,
+      "calibrator_on": false,
+      "cover": "closed",
+      "light_on": false,
+      "max_brightness": 4096,
+      "position_degrees": 270
+    }
+  },
+  "date_utc": "2026-09-20",
+  "platform": "Windows x64",
+  "usb": {
+    "vid": "2e8a",
+    "pid": "000a",
+    "serial": "REDACTED"
+  },
+  "installed_driver": {
+    "file_version": "1.0.3.6",
+    "assembly_version": "1.0.3.22767",
+    "sha256": "a260a84d77d0262cbd16355b85dc55fd0f6a1e366572f53f01088c9ba22951a3"
+  },
+  "trace_level": "ASCII serial transactions, not USB bus packets",
+  "serial_trace_sha256": "8c2671865d0cd7c93cd2b0a3f60698a8f93289ea14114fdc9822ab10b42c1179",
+  "serial_trace_excerpt": [
+    {
+      "time": "2026-09-20T06:30:38.2322974Z",
+      "rx": "(Board=DeepSkyDad.FP2, Version=1.0.14.2)",
+      "tx": "[GFRM]"
+    },
+    {
+      "time": "2026-09-20T06:30:38.3246588Z",
+      "rx": "(3)",
+      "tx": "[GPRD]"
+    },
+    {
+      "time": "2026-09-20T06:30:38.3913430Z",
+      "rx": "(0)",
+      "tx": "[GOPS]"
+    },
+    {
+      "time": "2026-09-20T06:30:38.4832122Z",
+      "rx": "(0)",
+      "tx": "[GLBR]"
+    },
+    {
+      "time": "2026-09-20T06:30:38.5590931Z",
+      "rx": "(0)",
+      "tx": "[GLON]"
+    },
+    {
+      "time": "2026-09-20T06:30:38.6215600Z",
+      "rx": "(0)",
+      "tx": "[GMOV]"
+    },
+    {
+      "time": "2026-09-20T06:30:38.6840789Z",
+      "rx": "(270)",
+      "tx": "[GPOS]"
+    },
+    {
+      "time": "2026-09-20T06:30:38.7493220Z",
+      "rx": "(OK)",
+      "tx": "[SLBR128]"
+    },
+    {
+      "time": "2026-09-20T06:30:38.8095324Z",
+      "rx": "(OK)",
+      "tx": "[SLON1]"
+    },
+    {
+      "time": "2026-09-20T06:30:38.8716011Z",
+      "rx": "(128)",
+      "tx": "[GLBR]"
+    },
+    {
+      "time": "2026-09-20T06:30:38.9335921Z",
+      "rx": "(1)",
+      "tx": "[GLON]"
+    },
+    {
+      "time": "2026-09-20T06:30:38.9977278Z",
+      "rx": "(OK)",
+      "tx": "[SLBR0]"
+    },
+    {
+      "time": "2026-09-20T06:30:39.0609022Z",
+      "rx": "(OK)",
+      "tx": "[SLON0]"
+    },
+    {
+      "time": "2026-09-20T06:30:39.1214235Z",
+      "rx": "(0)",
+      "tx": "[GLON]"
+    },
+    {
+      "time": "2026-09-20T06:30:39.1840762Z",
+      "rx": "(OK)",
+      "tx": "[STRG0]"
+    },
+    {
+      "time": "2026-09-20T06:30:39.3504210Z",
+      "rx": "(OK)",
+      "tx": "[SMOV]"
+    },
+    {
+      "time": "2026-09-20T06:30:40.1611897Z",
+      "rx": "(2)",
+      "tx": "[GOPS]"
+    },
+    {
+      "time": "2026-09-20T06:30:40.2626238Z",
+      "rx": "(OK)",
+      "tx": "[STOP]"
+    },
+    {
+      "time": "2026-09-20T06:30:41.8426034Z",
+      "rx": "(1)",
+      "tx": "[GOPS]"
+    },
+    {
+      "time": "2026-09-20T06:30:41.9051114Z",
+      "rx": "(0)",
+      "tx": "[GMOV]"
+    },
+    {
+      "time": "2026-09-20T06:30:41.9825904Z",
+      "rx": "(232)",
+      "tx": "[GPOS]"
+    },
+    {
+      "time": "2026-09-20T06:30:42.0537910Z",
+      "rx": "(OK)",
+      "tx": "[STRG0]"
+    },
+    {
+      "time": "2026-09-20T06:30:42.2236406Z",
+      "rx": "(OK)",
+      "tx": "[SMOV]"
+    },
+    {
+      "time": "2026-09-20T06:30:42.2942227Z",
+      "rx": "(2)",
+      "tx": "[GOPS]"
+    }
+  ],
+  "interruption": "Initial attempt lost USB during a user cable move; user reattached it before successful tests.",
+  "release_build_validation": {
+    "hardware": true,
+    "identity": {
+      "firmware": "Board=DeepSkyDad.FP2, Version=1.0.14.2",
+      "model": "Deep Sky Dad OFP2",
+      "product": 3,
+      "simulation": false
+    },
+    "native": {
+      "initial": {
+        "brightness": 0,
+        "calibrator_on": false,
+        "cover": "closed",
+        "light_on": false,
+        "max_brightness": 4096,
+        "position_degrees": 270
+      },
+      "halted": {
+        "brightness": 0,
+        "calibrator_on": false,
+        "cover": "unknown",
+        "light_on": false,
+        "max_brightness": 4096,
+        "position_degrees": 268
+      },
+      "restored": {
+        "brightness": 0,
+        "calibrator_on": false,
+        "cover": "closed",
+        "light_on": false,
+        "max_brightness": 4096,
+        "position_degrees": 270
+      }
+    },
+    "alpaca": {
+      "initial": {
+        "brightness": 0,
+        "calibrator_on": false,
+        "cover": "closed",
+        "light_on": false,
+        "max_brightness": 4096,
+        "position_degrees": 270
+      },
+      "halted": {
+        "brightness": 0,
+        "calibrator_on": false,
+        "cover": "unknown",
+        "light_on": false,
+        "max_brightness": 4096,
+        "position_degrees": 243
+      },
+      "restored": {
+        "brightness": 0,
+        "calibrator_on": false,
+        "cover": "closed",
+        "light_on": false,
+        "max_brightness": 4096,
+        "position_degrees": 270
+      }
+    }
+  }
+}
