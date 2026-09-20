@@ -64,10 +64,10 @@ def main():
     sim = [] if a.hardware else ['--simulate']
     directory = Path(a.bin_dir).resolve()
     def binary(name): return str(directory / (name + ('.exe' if os.name == 'nt' else '')))
-    devices = json.loads(subprocess.check_output([binary('zwogain-fc3'), 'list-details', *sim], timeout=30))
+    devices = json.loads(subprocess.check_output([binary('regain-fc3'), 'list-details', *sim], timeout=30))
     assert sum(d['identity']['serial'].lower() == serial.lower() for d in devices) == 1, devices
     report = {'hardware': a.hardware}
-    worker = helpers.Worker(binary('zwogain-fc3'), serial, sim)
+    worker = helpers.Worker(binary('regain-fc3'), serial, sim)
     try:
         identity = worker.call('identity')
         report['identity'] = {k: v for k, v in identity.items() if k not in ('serial','port')}
@@ -78,7 +78,7 @@ def main():
     with tempfile.TemporaryDirectory(prefix='fc3-alpaca-') as tmp:
         with socket.socket() as sock:
             sock.bind(('127.0.0.1', 0)); port = sock.getsockname()[1]
-        server = subprocess.Popen([binary('zwogain-alpaca'), '--port', str(port), '--workers', str(directory), '--profiles', str(Path(tmp)/'profiles.json'), '--no-discovery', *sim], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        server = subprocess.Popen([binary('regain-alpaca'), '--port', str(port), '--workers', str(directory), '--profiles', str(Path(tmp)/'profiles.json'), '--no-discovery', *sim], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         base = f'http://127.0.0.1:{port}'
         def web(path, data=None, method=None):
             encoded = None if data is None else json.dumps(data).encode()
@@ -101,11 +101,12 @@ def main():
             configured=web('/management/v1/configureddevices')['Value']
             assert any(d['DeviceType']=='Focuser' and d['DeviceNumber']==1 for d in configured), configured
             api('connected',{'Connected':True}); api('connected',{'Connected':True},701)
+            assert json.loads(api('action',{'Action':'ZwoGain.Identity','Parameters':''}))['model'] == 'Pegasus Astro FocusCube3'
             api('connected',{'Connected':False})
             assert api('connected',client=701)
             api('connected',{'Connected':True})
             def call(command, **values):
-                if command=='status': return json.loads(api('action',{'Action':'ZwoGain.Status','Parameters':''}))
+                if command=='status': return json.loads(api('action',{'Action':'Regain.Status','Parameters':''}))
                 if command=='settings': return web('/setup/api/accessory/fc3/settings',values)
                 return api(command, {'Position': values['position']} if command=='move' else {})
             report['alpaca']=exercise(call)

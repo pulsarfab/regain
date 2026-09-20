@@ -8,4 +8,5 @@ artifacts/
 **/__pycache__/
 .registry/
 CAA_Windows_SDK_*/
+regain-caa-*.zip*
 zwogain-caa-*.zip*

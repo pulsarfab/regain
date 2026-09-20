@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="260" viewBox="0 0 960 260">
+  <title>PulsarFab regain — Regain control of your equipment.</title>
+  <rect width="960" height="260" rx="24" fill="#101b2b"/>
+  <g transform="translate(24 24) scale(.414)">
+    <rect x="16" y="16" width="480" height="480" rx="112" fill="#1d3049"/>
+    <path d="M349 137 A150 150 0 1 0 394 315" fill="none" stroke="#ffb653" stroke-width="24" stroke-linecap="round"/>
+    <path d="M326 143 L393 168 L383 96 Z" fill="#ffb653"/>
+    <path d="M256 139 L276 236 L349 256 L276 276 L256 373 L236 276 L163 256 L236 236 Z" fill="#f1f6ff"/>
+    <circle cx="256" cy="256" r="10" fill="#ffb653"/>
+  </g>
+  <g font-family="Segoe UI, Inter, sans-serif">
+    <text x="270" y="72" fill="#ffb653" font-size="22" font-weight="600" letter-spacing="4">PULSARFAB</text>
+    <text x="265" y="156" fill="#f1f6ff" font-size="84" font-weight="600" letter-spacing="-3">regain</text>
+    <text x="270" y="207" fill="#b6c6dc" font-size="25">Regain control of your equipment.</text>
+  </g>
+</svg>

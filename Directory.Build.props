@@ -4,9 +4,10 @@
     <AssemblyVersion>$(Version)</AssemblyVersion>
     <FileVersion>$(Version)</FileVersion>
     <Authors>Yann Ramin</Authors>
-    <Company>Yann Ramin</Company>
+    <Company>PulsarFab</Company>
     <Copyright>Copyright 2026 Yann Ramin</Copyright>
     <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
-    <RepositoryUrl>https://github.com/theatrus/zwogain</RepositoryUrl>
+    <RepositoryUrl>https://github.com/pulsarfab/regain</RepositoryUrl>
+    <ApplicationIcon>$(MSBuildThisFileDirectory)assets/regain.ico</ApplicationIcon>
   </PropertyGroup>
 </Project>

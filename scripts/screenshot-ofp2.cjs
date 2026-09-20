@@ -25,7 +25,7 @@ const fs = require('node:fs/promises');
     await page.getByText('Connected for setup · USB serial',{exact:true}).waitFor();
     await page.locator('#identity').filter({hasText:'Board=DeepSkyDad.FP2'}).waitFor();
     // Read the same production UI session; do not create a competing controller.
-    initial = await page.evaluate(async()=>JSON.parse(await alpaca('action',{Action:'ZwoGain.Status',Parameters:''})));
+    initial = await page.evaluate(async()=>JSON.parse(await alpaca('action',{Action:'Regain.Status',Parameters:''})));
     if (initial.cover === 'moving') throw Error('Panel is moving');
     await page.locator('#brightness').fill('4097');
     await page.locator('#on').click();

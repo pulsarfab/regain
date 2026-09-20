@@ -29,7 +29,7 @@ def main():
     results = []
     for index, (seconds, reads, expect_success) in enumerate([(60, 2, True), (31, 1, False)]):
         events, children, errors = [], [], []
-        command = [str(args.workers / 'zwogain-alpaca.exe'), '--stdio', '--backend', 'direct',
+        command = [str(args.workers / 'regain-alpaca.exe'), '--stdio', '--backend', 'direct',
                    '--workers', str(args.workers.resolve())]
         with ProtocolWorker(command) as worker:
             worker.timer.cancel()
@@ -42,7 +42,7 @@ def main():
                 if child.parent_pid != worker.process.pid:
                     return
                 try:
-                    if Path(child.path).name.lower() != 'zwogain-direct.exe':
+                    if Path(child.path).name.lower() != 'regain-direct.exe':
                         raise RuntimeError(f'unexpected worker {Path(child.path).name}')
                     attached = device.attach(child.pid)
                     cancellations = [12] if is_6200 and expect_success else [12, 13]
@@ -118,7 +118,7 @@ def main():
                 parent.detach()
                 (args.output / f'private-{index}.jsonl').write_text(''.join(json.dumps(e)+'\n' for e in events))
         (args.output / 'results.json').write_text(json.dumps(dict(camera=args.camera_name,
-            builds={n:hashlib.sha256((args.workers/n).read_bytes()).hexdigest() for n in ('zwogain-alpaca.exe', 'zwogain-direct.exe')},
+            builds={n:hashlib.sha256((args.workers/n).read_bytes()).hexdigest() for n in ('regain-alpaca.exe', 'regain-direct.exe')},
             cases=results), indent=2)+'\n')
         print(f'{seconds}s: expected success={expect_success}, one exposure, no SDK fallback', flush=True)
 

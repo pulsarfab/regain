@@ -92,7 +92,7 @@ Disconnect other camera apps and leave the camera capped. On Windows, use the
 inspection Python environment with Frida:
 
 ```powershell
-cargo build -p zwogain-direct --release --locked
+cargo build -p regain-direct --release --locked
 .reference/inspection-venv/Scripts/python.exe scripts/inspection/validate_usb_lifecycle.py --output artifacts/usb-lifecycle-new
 .reference/inspection-venv/Scripts/python.exe scripts/inspection/validate_handle_recovery.py --output artifacts/handle-recovery-new
 .reference/inspection-venv/Scripts/python.exe scripts/inspection/validate_handle_environment.py --output artifacts/handle-environment-new
@@ -115,9 +115,9 @@ a fresh full frame with the normal timeout.
 Individual research commands:
 
 ```powershell
-target/release/zwogain-direct.exe --capture-2600-p25 --gain 100 --offset 50 --reopen-after-bytes 12582912 --reopen-delay-ms 1000 --replay
-target/release/zwogain-direct.exe --capture-2600-p25 --keep-retained
-target/release/zwogain-direct.exe --verify-retained-2600-p25 --expected-wire-sha256 HASH
+target/release/regain-direct.exe --capture-2600-p25 --gain 100 --offset 50 --reopen-after-bytes 12582912 --reopen-delay-ms 1000 --replay
+target/release/regain-direct.exe --capture-2600-p25 --keep-retained
+target/release/regain-direct.exe --verify-retained-2600-p25 --expected-wire-sha256 HASH
 ```
 
 Use `wireInteriorSha256` from the preceding capture for `HASH`. For a cropped or
@@ -142,8 +142,8 @@ The installed Cypress-based driver offers two camera-scoped operations that
 worked without elevation on this system:
 
 ```powershell
-target/release/zwogain-direct.exe --reset-port-2600-p25
-target/release/zwogain-direct.exe --cycle-port-2600-p25
+target/release/regain-direct.exe --reset-port-2600-p25
+target/release/regain-direct.exe --cycle-port-2600-p25
 ```
 
 These CLI-only experiments require exactly one ASI2600 P25 on USB3, driver

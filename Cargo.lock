@@ -1161,17 +1161,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "29666d0abbfad1e3dc4dcf6144730dd3a3ab225bbbdac83319345b1b44ccfc1b"
 
 [[package]]
-name = "zwogain-accessories"
+name = "regain-accessories"
 version = "0.3.1"
 dependencies = [
  "anyhow",
  "serde",
  "serde_json",
- "zwogain-hid",
+ "regain-hid",
 ]
 
 [[package]]
-name = "zwogain-alpaca"
+name = "regain-alpaca"
 version = "0.3.1"
 dependencies = [
  "anyhow",
@@ -1187,21 +1187,21 @@ dependencies = [
  "tokio-util",
  "tower",
  "uuid",
- "zwogain-core",
+ "regain-core",
 ]
 
 [[package]]
-name = "zwogain-caa"
+name = "regain-caa"
 version = "0.3.1"
 dependencies = [
  "anyhow",
  "serde",
  "serde_json",
- "zwogain-hid",
+ "regain-hid",
 ]
 
 [[package]]
-name = "zwogain-core"
+name = "regain-core"
 version = "0.3.1"
 dependencies = [
  "anyhow",
@@ -1214,7 +1214,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "zwogain-direct"
+name = "regain-direct"
 version = "0.3.1"
 dependencies = [
  "anyhow",
@@ -1226,7 +1226,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "zwogain-fc3"
+name = "regain-fc3"
 version = "0.3.1"
 dependencies = [
  "anyhow",
@@ -1236,7 +1236,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "zwogain-hid"
+name = "regain-hid"
 version = "0.3.1"
 dependencies = [
  "anyhow",
@@ -1247,7 +1247,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "zwogain-host"
+name = "regain-host"
 version = "0.3.1"
 dependencies = [
  "anyhow",
@@ -1257,7 +1257,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "zwogain-ofp2"
+name = "regain-ofp2"
 version = "0.3.1"
 dependencies = [
  "anyhow",

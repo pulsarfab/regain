@@ -4,7 +4,7 @@ $ErrorActionPreference = 'Stop'
 # Match UTF-8 Windows CI hosts: .NET Framework's redirected stdin writer
 # emits this encoding's preamble before the driver's own UTF-8 writer.
 [Console]::InputEncoding = [Text.UTF8Encoding]::new($true)
-$id = if ($env:ZWOGAIN_ACCESSORY_TEST_CLSID) { [Guid]$env:ZWOGAIN_ACCESSORY_TEST_CLSID } elseif ($DeviceClass -eq 'EfwFilterWheel') { [Guid]'EA2040E1-E936-4BDF-87F7-B58CA3E418AB' } else { [Guid]'295C08F8-EDE9-43C5-9D55-627A063D74CA' }
+$id = if ($env:REGAIN_ACCESSORY_TEST_CLSID) { [Guid]$env:REGAIN_ACCESSORY_TEST_CLSID } elseif ($DeviceClass -eq 'EfwFilterWheel') { [Guid]'EA2040E1-E936-4BDF-87F7-B58CA3E418AB' } else { [Guid]'295C08F8-EDE9-43C5-9D55-627A063D74CA' }
 $device = [Activator]::CreateInstance([Type]::GetTypeFromCLSID($id))
 try {
     if ($MetadataOnly) {
@@ -16,7 +16,7 @@ try {
     $initial = $device.Position
     if ($DeviceClass -eq 'EfwFilterWheel') {
         if ($device.InterfaceVersion -ne 2 -or $device.Names.Count -ne 7 -or $device.FocusOffsets.Count -ne 7) { throw 'Invalid filter wheel metadata' }
-        if ($device.SupportedActions -notcontains 'ZwoGain.Calibrate') { throw 'Calibration action missing' }
+        if ($device.SupportedActions -notcontains 'Regain.Calibrate') { throw 'Calibration action missing' }
         if ($Calibrate -or !$Hardware) {
             # Start away from the calibration endpoint so a no-op cannot pass.
             $device.Position = [int16]1
@@ -24,9 +24,9 @@ try {
             while ($device.Position -eq -1) { if ([DateTime]::UtcNow -gt $deadline) { throw 'Pre-calibration move timed out' }; Start-Sleep -Milliseconds 100 }
             if ($device.Position -ne 1) { throw 'Pre-calibration position mismatch' }
             $started = [DateTime]::UtcNow
-            [void]$device.Action('ZwoGain.Calibrate', '')
+            [void]$device.Action('Regain.Calibrate', '')
             if ($CalibrationPollDelayMs) { Start-Sleep -Milliseconds $CalibrationPollDelayMs }
-            $status = $device.Action('ZwoGain.Status', '') | ConvertFrom-Json
+            $status = $device.Action('Regain.Status', '') | ConvertFrom-Json
             if ($status.fault -or $status.error -or $status.slots -ne 7) { throw 'Invalid calibration status' }
             # A busy CI runner can miss the entire two-second simulation.
             # Check one coherent snapshot, not Position from a later instant.
@@ -49,7 +49,7 @@ try {
         $device.Position = [int16]$initial
         while ($device.Position -eq -1) { if ([DateTime]::UtcNow -gt $deadline) { throw 'Wheel return timed out' }; Start-Sleep -Milliseconds 100 }
     } else {
-        if ($device.SupportedActions -contains 'ZwoGain.Calibrate') { throw 'Focuser advertised EFW calibration' }
+        if ($device.SupportedActions -contains 'Regain.Calibrate') { throw 'Focuser advertised EFW calibration' }
         if ($device.InterfaceVersion -ne 3 -or !$device.Absolute -or $device.TempCompAvailable) { throw 'Invalid focuser metadata' }
         $target = if ($initial + 20 -le $device.MaxStep) { $initial + 20 } else { $initial - 20 }
         $device.Move($target)
@@ -61,7 +61,7 @@ try {
         $device.Halt()
     }
     if ($device.Position -ne $initial) { throw 'Position was not restored' }
-    $identity = $device.Action('ZwoGain.Identity', '') | ConvertFrom-Json
+    $identity = $device.Action('Regain.Identity', '') | ConvertFrom-Json
     if (!$identity.serial) { throw 'Missing identity' }
     Write-Output ("{0}-bit COM {1}: connected, moved, restored and read identity ({2})" -f ([IntPtr]::Size * 8), $DeviceClass, $(if ($Hardware) { 'USB hardware' } else { 'simulation' }))
 } finally {

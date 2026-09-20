@@ -1,9 +1,0 @@
-<Project Sdk="Microsoft.NET.Sdk">
- <PropertyGroup><TargetFramework>net8.0</TargetFramework><IsTestProject>true</IsTestProject><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable></PropertyGroup>
- <ItemGroup>
-  <ProjectReference Include="../../src/ZwoGain.Core/ZwoGain.Core.csproj" />
-  <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
-  <PackageReference Include="xunit" Version="2.9.2" />
-  <PackageReference Include="xunit.runner.visualstudio" Version="3.0.1" PrivateAssets="all" />
- </ItemGroup>
-</Project>

@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/zwogain-host", "crates/zwogain-direct", "crates/zwogain-core", "crates/zwogain-alpaca", "crates/zwogain-caa", "crates/zwogain-hid", "crates/zwogain-accessories", "crates/zwogain-ofp2", "crates/zwogain-fc3"]
+members = ["crates/regain-host", "crates/regain-direct", "crates/regain-core", "crates/regain-alpaca", "crates/regain-caa", "crates/regain-hid", "crates/regain-accessories", "crates/regain-ofp2", "crates/regain-fc3"]
 resolver = "3"
 
 [workspace.package]
@@ -7,4 +7,4 @@ version = "0.3.1"
 edition = "2024"
 license = "Apache-2.0"
 authors = ["Yann Ramin"]
-repository = "https://github.com/theatrus/zwogain"
+repository = "https://github.com/pulsarfab/regain"

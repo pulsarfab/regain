@@ -4,19 +4,19 @@ $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $id = [Guid]::NewGuid().ToString()
 $directory = Join-Path $repo ('artifacts/fc3-com-' + $id)
 New-Item -ItemType Directory -Path $directory | Out-Null
-$executable = Join-Path $repo 'src/ZwoGain.FocusCube.ASCOM/bin/Release/net48/ZwoGain.FocusCube.ASCOM.exe'
+$executable = Join-Path $repo 'src/Regain.FocusCube.ASCOM/bin/Release/net48/Regain.FocusCube.ASCOM.exe'
 $old = @{}
-foreach ($name in 'ZWOGAIN_ACCESSORY_SIMULATE','ZWOGAIN_ACCESSORY_SETTINGS','ZWOGAIN_FC3_WORKER') { $old[$name] = [Environment]::GetEnvironmentVariable($name) }
+foreach ($name in 'REGAIN_ACCESSORY_SIMULATE','REGAIN_ACCESSORY_SETTINGS','REGAIN_FC3_WORKER') { $old[$name] = [Environment]::GetEnvironmentVariable($name) }
 $keys = @(); $children = @(); $server = $null
 $hive = [Microsoft.Win32.RegistryHive]::CurrentUser
 $principal = [Security.Principal.WindowsPrincipal]::new([Security.Principal.WindowsIdentity]::GetCurrent())
 if ($principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { $hive = [Microsoft.Win32.RegistryHive]::LocalMachine }
 try {
-    dotnet build (Join-Path $repo 'src/ZwoGain.FocusCube.ASCOM') -c Release -v quiet
+    dotnet build (Join-Path $repo 'src/Regain.FocusCube.ASCOM') -c Release -v quiet
     if ($LASTEXITCODE) { throw 'FocusCube3 ASCOM build failed' }
-    $env:ZWOGAIN_ACCESSORY_SIMULATE = if ($Hardware) { '' } else { '1' }
-    $env:ZWOGAIN_ACCESSORY_SETTINGS = $directory
-    $env:ZWOGAIN_FC3_WORKER = Join-Path $repo 'target/debug/zwogain-fc3.exe'
+    $env:REGAIN_ACCESSORY_SIMULATE = if ($Hardware) { '' } else { '1' }
+    $env:REGAIN_ACCESSORY_SETTINGS = $directory
+    $env:REGAIN_FC3_WORKER = Join-Path $repo 'target/debug/regain-fc3.exe'
     if ($Hardware) {
         if (!$Serial) { throw 'Hardware test requires explicit USB serial' }
         @{Serial=$Serial} | ConvertTo-Json | Set-Content (Join-Path $directory 'fc3-ascom.json') -Encoding UTF8
@@ -46,7 +46,7 @@ try {
     Get-Content (Join-Path $directory '*.out')
     if (!(Test-Path (Join-Path $directory 'second-finished'))) { throw 'Shared connection test incomplete' }
     # Both clients have closed; the worker must be gone before the server idles out.
-    $workers = Get-CimInstance Win32_Process -Filter "Name='zwogain-fc3.exe'" | Where-Object ParentProcessId -eq $server.Id
+    $workers = Get-CimInstance Win32_Process -Filter "Name='regain-fc3.exe'" | Where-Object ParentProcessId -eq $server.Id
     if ($workers) { throw 'Last ASCOM disconnect leaked its worker' }
     $server.Kill(); $server.WaitForExit()
     # Exercise actual SCM launch as well as an explicitly started fixture. This
@@ -71,7 +71,7 @@ try {
     foreach ($child in $children) { if (!$child.HasExited) { $child.Kill() }; $child.Dispose() }
     if ($server) { if (!$server.HasExited) { $server.Kill() }; $server.Dispose() }
     # Only the server launched with this randomly generated fixture CLSID.
-    Get-CimInstance Win32_Process -Filter "Name='ZwoGain.FocusCube.ASCOM.exe'" | Where-Object { $_.CommandLine -like "*/test-clsid $id*" } | ForEach-Object { Stop-Process -Id $_.ProcessId -ErrorAction SilentlyContinue }
+    Get-CimInstance Win32_Process -Filter "Name='Regain.FocusCube.ASCOM.exe'" | Where-Object { $_.CommandLine -like "*/test-clsid $id*" } | ForEach-Object { Stop-Process -Id $_.ProcessId -ErrorAction SilentlyContinue }
     foreach ($entry in $keys) {
         $root=[Microsoft.Win32.RegistryKey]::OpenBaseKey($hive,$entry.View)
         try { $root.DeleteSubKeyTree($entry.Path,$false) } finally { $root.Dispose() }

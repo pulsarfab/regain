@@ -1,0 +1,10 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>PulsarFab regain · CAA rotator</title><link rel="icon" href="/regain.png"><link rel="stylesheet" href="/style.css"><script src="/rotator.js" defer></script></head>
+<body><header><img src="/regain.png" alt="PulsarFab regain"><div><h1><span class="brand-maker">PulsarFab</span> regain</h1><p>ASCOM Alpaca · CAA rotator</p></div><span id="simulation" hidden>Simulation</span></header>
+<main><aside><h2>CAA rotator</h2><p>Device 0 · USB HID</p><a href="/setup">Camera setup →</a><p class="hint">Only one application or server can own a physical CAA at a time.</p><p><a href="/setup/v1/covercalibrator/0/setup">OFP2 flat panel setup →</a></p><p><a href="/setup/v1/focuser/1/setup">FocusCube3 setup →</a></p></aside>
+<section class="workspace"><div class="title"><div><h2>CAA rotator</h2><p id="connection">Loading…</p></div></div>
+<div class="panel"><h3>Device</h3><label>Rotator<select id="device"><option value="">No rotator selected</option></select></label><button id="scan">Find rotators</button><p class="hint">Selection saves automatically. A missing or busy saved device is never replaced by another CAA.</p>
+<button id="connect">Connect for setup</button><button id="halt">Halt</button><p id="position"></p>
+<h3>Motion</h3><label>Angle (°)<input id="angle" type="number" value="0" min="0" max="359.99" step="0.01"></label><button id="move">Move mechanical</button><button id="sync">Sync sky angle</button>
+<h3>Settings</h3><label class="check"><input id="reverse" type="checkbox">Reverse sky direction</label><button id="apply">Apply reverse</button><p class="hint">Mechanical moves retain their physical direction. Sync changes sky coordinates without changing mechanical zero.</p>
+<p id="status" role="status" aria-live="polite"></p></div></section></main><footer>PulsarFab regain is independent software and is not affiliated with or endorsed by ZWO. · Apache 2.0</footer></body></html>

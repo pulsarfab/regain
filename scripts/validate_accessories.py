@@ -6,7 +6,7 @@ import subprocess
 import time
 
 p = argparse.ArgumentParser(description=__doc__)
-p.add_argument('--worker', type=Path, default=Path('target/debug/zwogain-accessories.exe'))
+p.add_argument('--worker', type=Path, default=Path('target/debug/regain-accessories.exe'))
 p.add_argument('--hardware', action='store_true')
 p.add_argument('--exercise', action='store_true')
 p.add_argument('--calibrate', action='store_true', help='also calibrate the EFW; runs automatically in simulation')

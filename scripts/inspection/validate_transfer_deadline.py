@@ -39,7 +39,7 @@ class ProtocolWorker(Worker):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--worker', type=Path, default=ROOT / 'target/release/zwogain-direct.exe')
+    parser.add_argument('--worker', type=Path, default=ROOT / 'target/release/regain-direct.exe')
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--camera-name', choices=['ZWO ASI2600MM Pro', 'ZWO ASI6200MM Pro'], default='ZWO ASI2600MM Pro')
     args = parser.parse_args()

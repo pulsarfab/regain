@@ -1,12 +1,22 @@
-# ZWOgain
+# PulsarFab regain
 
-![ZWOgain logo](src/ZwoGain.NINA/Assets/zwogain.png)
+![PulsarFab regain — Regain control of your equipment.](assets/regain-wordmark.svg)
 
-[![Build and test](https://github.com/theatrus/zwogain/actions/workflows/build.yml/badge.svg)](https://github.com/theatrus/zwogain/actions/workflows/build.yml)
+[![Build and test](https://github.com/pulsarfab/regain/actions/workflows/build.yml/badge.svg)](https://github.com/pulsarfab/regain/actions/workflows/build.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
-**ZWOgain**, as in **ZWO Again**, provides ZWO ASI camera, CAA rotator, EFW filter-wheel, EAF focuser, and Pegasus Astro FocusCube3 drivers for NINA and ASCOM.
-It retries failed downloads and short exposures while the app waits for an image.
+**Regain control of your equipment.**
+
+PulsarFab regain connects your astronomy equipment to NINA, native Windows ASCOM,
+and Alpaca. Control cameras, rotators, filter wheels, focusers, and flat panels
+through a shared set of Rust drivers and matching setup tools.
+Camera recovery retries failed downloads and short exposures while your imaging
+application waits for the result.
+
+Formerly **ZWOgain**. This rebrand is in current source; published 0.3.1.0
+downloads still use the previous name. Build the packages below to try regain.
+See [upgrading and brand assets](docs/branding.md) for preserved identities,
+profile migration, and the new command names.
 
 The ZWO SDK runs in a separate Rust process, so a camera crash or hang does not
 take down NINA. An optional direct driver can capture without the SDK.
@@ -28,7 +38,7 @@ FocusCube3 ASCOM clients share one local COM server and one exclusive serial con
 [Alpaca setup](#alpaca-setup) · [CAA controls](#caa-rotator) ·
 [EFW and EAF](#efw-filter-wheel-and-eaf-focuser) · [OFP2 flat panel](#ofp2-flat-panel) · [FocusCube3](#pegasus-astro-focuscube3) · [Settings and logs](#settings-and-logs)
 
-**ZWOgain is independent and is not affiliated with or supported by ZWO.**
+**PulsarFab regain is independent and is not affiliated with or supported by ZWO.**
 The code and logo use the Apache-2.0 license. Bundled software has its own
 licenses; see [third-party notices](THIRD_PARTY_NOTICES.md).
 
@@ -54,14 +64,18 @@ Requires **Windows x64** and **NINA 3.2.0.9001 or later**. Cameras also need the
 **ZWO Windows camera driver**. CAA, EFW, and EAF use Windows' built-in HID driver.
 
 1. Add `https://nina-plugins.psf-guard.com/` as a plugin source in NINA and install
-   **ZWOgain**. Restart NINA.
-2. Select **ZWOgain Retryable Camera** in the camera chooser.
+   **PulsarFab regain**. Restart NINA.
+2. Select **PulsarFab regain Retryable Camera** in the camera chooser.
 3. Open the setup gear, refresh the list, pick your camera, and save.
 4. Disconnect other apps using that camera, then connect in NINA.
 
 For manual installation, close NINA and extract the plugin ZIP from
-[Releases](https://github.com/theatrus/zwogain/releases/latest) into
-`%LOCALAPPDATA%\NINA\Plugins\3.0.0\ZwoGain`.
+[Releases](https://github.com/pulsarfab/regain/releases/latest) into
+`%LOCALAPPDATA%\NINA\Plugins\3.0.0\Regain`.
+
+For a manual upgrade from ZWOgain, remove its old plugin folder while NINA is
+closed before extracting the new package. Do not load both plugin DLLs.
+Saved equipment profiles are outside the plugin folder and migrate automatically.
 
 The camera choice and serial are saved. If you have two cameras of the same
 model, enter the serial or connect the intended camera on its own once. Clear
@@ -77,18 +91,18 @@ Use this for cameras, CAA, EFW, EAF or FocusCube3 connected directly to a Window
 Cameras also require the separately installed **ZWO Windows camera driver**,
 including in Direct USB mode. CAA, EFW, and EAF use Windows' HID driver and need no ZWO accessory SDK.
 
-1. Download `ZwoGain-ASCOM-<version>-win-x64-setup.exe` from
-   [Releases](https://github.com/theatrus/zwogain/releases/latest), or build the
+1. Download `Regain-ASCOM-<version>-win-x64-setup.exe` from
+   [Releases](https://github.com/pulsarfab/regain/releases/latest), or build the
    installer from the current source using the commands below.
-2. Close device-control applications and any running ZWOgain Alpaca server.
+2. Close device-control applications and any running PulsarFab regain Alpaca server.
    Run the installer as administrator. It registers the drivers for both
    32-bit and 64-bit clients.
-3. In your application's ASCOM Chooser, select **ZWOgain Retryable Camera 1**
-   through **4**, or **ZWOgain CAA Rotator**, **ZWOgain EFW Filter Wheel**, or **ZWOgain EAF Focuser**, and open **Setup**.
+3. In your application's ASCOM Chooser, select **PulsarFab regain Retryable Camera 1**
+   through **4**, or **PulsarFab regain CAA Rotator**, **PulsarFab regain EFW Filter Wheel**, or **PulsarFab regain EAF Focuser**, and open **Setup**.
 4. Choose the physical device on **Device**. The selection saves automatically.
    Close setup, then connect in your application.
 
-The Start menu also contains **ZWOgain ASCOM → Camera setup** (Camera 1) and
+The Start menu also contains **PulsarFab regain ASCOM → Camera setup** (Camera 1) and
 **CAA rotator setup**, **EFW filter wheel setup**, and **EAF focuser setup**. Configure Camera 2–4 through their own Chooser entries.
 The dialogs use the host application's theme in NINA and a light theme in
 standalone ASCOM clients.
@@ -142,13 +156,13 @@ operations. Only one frontend may own a physical CAA at a time.
 Run a newer installer to upgrade in place. Setup refuses to replace files that
 are in use and does not stop an active exposure. Uninstall through Windows
 **Installed apps**. Upgrades and uninstall preserve settings and logs under
-`%LOCALAPPDATA%\ZwoGain`. No service or firewall rule is installed automatically.
+`%LOCALAPPDATA%\Regain`. No service or firewall rule is installed automatically.
 
 For a portable install, extract the **complete** ASCOM ZIP to a permanent folder
 and run this in an administrator PowerShell from that folder:
 
 ```powershell
-$p = Start-Process .\ZwoGain.ASCOM.Register.exe -ArgumentList /regserver -Wait -PassThru
+$p = Start-Process .\Regain.ASCOM.Register.exe -ArgumentList /regserver -Wait -PassThru
 if ($p.ExitCode) { throw 'Registration failed; check the ASCOM registration log' }
 ```
 
@@ -166,20 +180,20 @@ It runs without .NET and does not require Windows COM registration.
 CAA, EFW, and EAF network support is included in release 0.3.1.0.
 OFP2 support is in current source and requires a newer build.
 
-On Windows, extract `ZwoGain-ASCOM-<version>-win-x64.zip` and run from that folder:
+On Windows, extract `Regain-ASCOM-<version>-win-x64.zip` and run from that folder:
 
 ```powershell
-.\zwogain-alpaca.exe --port 11111
+.\regain-alpaca.exe --port 11111
 ```
 
-On Linux or macOS, extract the matching `zwogain-rust-*` build artifact and run:
+On Linux or macOS, extract the matching `regain-rust-*` build artifact and run:
 
 ```sh
-./zwogain-alpaca --port 11111
+./regain-alpaca --port 11111
 ```
 
-Keep the server, camera workers, `zwogain-caa`, `zwogain-accessories`,
-`zwogain-ofp2` and SDK library together. The
+Keep the server, camera workers, `regain-caa`, `regain-accessories`,
+`regain-ofp2` and SDK library together. The
 computer hosting the server needs the appropriate USB drivers or permissions;
 remote clients do not. See [Linux/macOS runtime requirements](docs/portable-rust.md).
 
@@ -208,14 +222,14 @@ SDK mode is the default. Screenshots describe the current source build.*
 1. Follow **CAA rotator setup →** from the camera setup page, or open
    [the rotator setup page](http://127.0.0.1:11111/setup/v1/rotator/0/setup).
 2. Click **Find rotators** and choose the CAA serial. Selection saves automatically.
-3. Select **ZWOgain CAA Rotator**, device **0**, in your Alpaca client. The server
+3. Select **PulsarFab regain CAA Rotator**, device **0**, in your Alpaca client. The server
    exposes the standard `IRotatorV3` operations at `/api/v1/rotator/0`.
 
 The browser's **Connect for setup** button provides a temporary test connection,
 with mechanical movement, sky-angle sync, reverse and **Halt**. Use **Disconnect
 setup** when finished. Additional origin, reference, limit, beep, alias and
 explicit multi-turn operations are available through the
-[`ZwoGain.CAA.*` actions](docs/caa-frontends.md#ascom-actions).
+[`Regain.CAA.*` actions](docs/caa-frontends.md#ascom-actions).
 Disconnect NINA/native ASCOM before connecting the same CAA through Alpaca.
 
 ![Alpaca CAA setup showing selected rotator, live position, motion and reverse controls](docs/images/alpaca-rotator.png)
@@ -228,10 +242,10 @@ The default listener accepts local connections only. To use a trusted LAN,
 substitute the server computer's IPv4 address:
 
 ```sh
-./zwogain-alpaca --listen 192.168.1.10 --port 11111
+./regain-alpaca --listen 192.168.1.10 --port 11111
 ```
 
-On Windows, use `.\zwogain-alpaca.exe` with the same arguments. Open
+On Windows, use `.\regain-alpaca.exe` with the same arguments. Open
 `http://192.168.1.10:11111/setup` from another computer. Allow the chosen HTTP TCP
 port and **UDP 32227** through the host firewall if needed. Discovery reports
 the HTTP port; clients can also connect by address if discovery is unavailable.
@@ -250,11 +264,11 @@ it to the public internet.
 
 Keep the server running while clients are connected. For unattended startup,
 configure your own systemd, launchd or Windows startup task; none is installed
-by ZWOgain. Use an absolute `--profiles` path and give that account USB access.
+by PulsarFab regain. Use an absolute `--profiles` path and give that account USB access.
 
 ## EFW filter wheel and EAF focuser
 
-The plugin adds **ZWOgain EFW Filter Wheel** and **ZWOgain EAF Focuser** to
+The plugin adds **PulsarFab regain EFW Filter Wheel** and **PulsarFab regain EAF Focuser** to
 NINA's equipment lists. The Windows ASCOM installer includes matching native
 Chooser entries and CAA-styled setup dialogs. All three frontends use the
 SDK-free Rust USB worker directly; native ASCOM needs no Alpaca server.
@@ -294,7 +308,7 @@ Use **Motion → Calibrate wheel** in native ASCOM/NINA setup, or **Calibrate wh
 on the Alpaca page. Calibration detects the slots, shows live progress, and
 finishes at slot 1; names and focus offsets are preserved. The attached EFW
 passed SDK and native calibration in about 49 seconds, followed by full slot sweeps.
-The same operation is available through the [`ZwoGain.Calibrate` action](docs/accessories.md#native-calibration-controls-and-api).
+The same operation is available through the [`Regain.Calibrate` action](docs/accessories.md#native-calibration-controls-and-api).
 
 ![Native EFW calibration controls](docs/images/native-efw-calibration.png)
 
@@ -302,13 +316,13 @@ See the [USB tracing playbook, protocol, setup and validation details](docs/acce
 
 ## Pegasus Astro FocusCube3
 
-Current source includes a new **pure Rust USB serial crate**, `zwogain-fc3`,
+Current source includes a new **pure Rust USB serial crate**, `regain-fc3`,
 a native NINA focuser provider, a styled native ASCOM driver, and **Alpaca
 Focuser device 1**. Release 0.3.1.0 predates this support.
 
 On Windows use the built-in USB Serial Device driver. Close the device's
 connection in Pegasus Unity; its background server may hold the COM port
-when the window closes. Select **ZWOgain Pegasus FocusCube3** in NINA or the
+when the window closes. Select **PulsarFab regain Pegasus FocusCube3** in NINA or the
 ASCOM Focuser Chooser. The ASCOM Start menu shortcut opens the same setup UI.
 For Alpaca, open `http://127.0.0.1:11111/setup/v1/focuser/1/setup`, find/select
 the USB serial, and connect for setup. EAF remains Focuser device 0.
@@ -340,7 +354,7 @@ This is current-source support; release 0.3.1.0 does not contain it.
 1. Connect USB and external power. Disconnect the vendor ASCOM driver and
    close any application holding the panel's serial port.
 2. Build `cargo build --workspace --release --locked`, then start
-   `.\target\release\zwogain-alpaca.exe --port 11111` on Windows.
+   `.\target\release\regain-alpaca.exe --port 11111` on Windows.
 3. Open `http://127.0.0.1:11111/setup/v1/covercalibrator/0/setup`.
    **Find panels**, select the OFP2, and **Connect for setup**.
 4. Use Open, Close, Halt, and brightness 0–4096. Disconnect setup when done,
@@ -352,7 +366,8 @@ name changes. Existing heater settings and endpoint calibration are preserved.
 
 [![Alpaca OFP2 setup connected to the real panel, cover closed and brightness 128](docs/images/alpaca-ofp2.png)](docs/images/alpaca-ofp2.png)
 
-This screenshot uses the **physical OFP2**, firmware 1.0.14.2. The Rust worker
+This historical screenshot uses the **physical OFP2**, firmware 1.0.14.2,
+and was captured before the PulsarFab regain rebrand. The Rust worker
 and Alpaca server both passed real opening, closing, halt/resume and lighting
 tests. The panel was restored to closed with its light off. Read the
 [protocol, Rust API, setup, and test notes](docs/ofp2.md) and
@@ -365,21 +380,21 @@ Keep these files when upgrading:
 
 | Frontend | Settings location |
 | --- | --- |
-| Windows ASCOM cameras | `%LOCALAPPDATA%\ZwoGain\ASCOM\camera-1.json` through `camera-4.json` |
-| Windows ASCOM CAA | `%LOCALAPPDATA%\ZwoGain\Rotators\ascom.json` |
-| NINA CAA | `%LOCALAPPDATA%\ZwoGain\Rotators\nina.json` |
-| Native NINA/ASCOM EFW and EAF | `%LOCALAPPDATA%\ZwoGain\Accessories\{efw,eaf}-{nina,ascom}.json` |
-| Alpaca on Windows | `%LOCALAPPDATA%\ZwoGain\Alpaca\cameras.json` |
-| Alpaca on Linux/macOS | `$XDG_CONFIG_HOME/ZwoGain/Alpaca/cameras.json`, or `$HOME/.config/ZwoGain/Alpaca/cameras.json` |
+| Windows ASCOM cameras | `%LOCALAPPDATA%\Regain\ASCOM\camera-1.json` through `camera-4.json` |
+| Windows ASCOM CAA | `%LOCALAPPDATA%\Regain\Rotators\ascom.json` |
+| NINA CAA | `%LOCALAPPDATA%\Regain\Rotators\nina.json` |
+| Native NINA/ASCOM EFW and EAF | `%LOCALAPPDATA%\Regain\Accessories\{efw,eaf}-{nina,ascom}.json` |
+| Alpaca on Windows | `%LOCALAPPDATA%\Regain\Alpaca\cameras.json` |
+| Alpaca on Linux/macOS | `$XDG_CONFIG_HOME/Regain/Alpaca/cameras.json`, or `$HOME/.config/Regain/Alpaca/cameras.json` |
 | Alpaca CAA | Beside the camera settings file, with extension `.rotator.json` (normally `cameras.rotator.json`) |
 | Alpaca EFW and EAF | Beside the camera settings file: `cameras.efw.json` and `cameras.eaf.json` |
 
 EFW/EAF native logs are `efw.log` and `eaf.log` in their Accessories directory.
-Native camera logs are under `%LOCALAPPDATA%\ZwoGain\ASCOM\logs`; CAA frontend
-logs are in `%LOCALAPPDATA%\ZwoGain\Rotators\rotator.log`. Alpaca camera logs
+Native camera logs are under `%LOCALAPPDATA%\Regain\ASCOM\logs`; CAA frontend
+logs are in `%LOCALAPPDATA%\Regain\Rotators\rotator.log`. Alpaca camera logs
 are in the `logs` directory beside its settings file and on the browser's **Log**
-tab. Native registration errors are in `%LOCALAPPDATA%\ZwoGain\ASCOM\registration.log`.
-`ZWOGAIN_ASCOM_PROFILES` overrides the native camera settings directory;
+tab. Native registration errors are in `%LOCALAPPDATA%\Regain\ASCOM\registration.log`.
+`REGAIN_ASCOM_PROFILES` overrides the native camera settings directory;
 Alpaca's `--profiles` flag selects its settings file.
 
 ## How retries work
@@ -414,12 +429,12 @@ cover this path; recovery across worker replacement is still experimental.
 Windows diagnostic commands can reset or cycle the attached ASI2600 P25's USB
 port. Tests required a new exposure afterward, so automatic retries do not use them.
 
-On reconnect, ZWOgain restores the camera settings and cooler setpoint. Before
+On reconnect, PulsarFab regain restores the camera settings and cooler setpoint. Before
 another exposure, it waits for cooling to return near the temperature measured
 before the error. It also checks cooler output; holding the restored setpoint
 for 30 seconds is accepted. It need not finish cooling to the setpoint first.
 
-Abort stops the capture. ZWOgain then reconnects to restore controls and cooling
+Abort stops the capture. PulsarFab regain then reconnects to restore controls and cooling
 without taking another exposure. A stop/reset error after a successful download
 keeps the image and reconnects before the next capture. If recovery fails, NINA
 receives the error. Details go in NINA's log.
@@ -473,7 +488,7 @@ and [transfer recovery and SDK differences](docs/transfer-recovery.md).
 
 ## CAA rotator
 
-Select **ZWOgain CAA Rotator** in NINA, the Windows ASCOM Chooser, or an Alpaca
+Select **PulsarFab regain CAA Rotator** in NINA, the Windows ASCOM Chooser, or an Alpaca
 client after [configuring the server](#select-the-caa-rotator). The choice saves
 automatically. All three use the same SDK-free Rust USB HID worker.
 
@@ -491,8 +506,8 @@ and [CAA protocol and hardware results](docs/caa.md).
 ## Help add a camera
 
 Download the **Camera Kit** ZIP from
-[Releases](https://github.com/theatrus/zwogain/releases/latest), extract it, and
-run `ZwoGain-CameraKit.exe`. Close other camera apps and cap the camera first.
+[Releases](https://github.com/pulsarfab/regain/releases/latest), extract it, and
+run `Regain-CameraKit.exe`. Close other camera apps and cap the camera first.
 No Python or compiler is needed.
 
 The kit tests camera settings and records the SDK's USB traffic in a local ZIP.

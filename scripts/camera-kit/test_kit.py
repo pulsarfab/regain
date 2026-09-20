@@ -110,17 +110,17 @@ class PackagingTests(unittest.TestCase):
             kit.mkdir()
             (root / 'artifacts').mkdir()
             (kit / 'camera-kit-build.json').write_text(json.dumps(dict(version='0.1.0.0')))
-            for name in ('ZwoGain-CameraKit.exe', 'zwogain-host.exe', 'ASICamera2.dll', 'README.md'):
+            for name in ('Regain-CameraKit.exe', 'regain-host.exe', 'ASICamera2.dll', 'README.md'):
                 (kit / name).write_bytes(b'prepared payload')
             package(kit, root, '0.1.0.0')
-            (kit / 'ZwoGain-CameraKit.exe').write_bytes(b'payload with appended signature')
+            (kit / 'Regain-CameraKit.exe').write_bytes(b'payload with appended signature')
             package(kit, root, '0.1.0.0')
-            archive = root / 'artifacts/ZwoGain-CameraKit-0.1.0.0-win-x64.zip'
+            archive = root / 'artifacts/Regain-CameraKit-0.1.0.0-win-x64.zip'
             self.assertEqual(archive.with_suffix('.zip.sha256').read_text().split()[0], sha(archive))
             with zipfile.ZipFile(archive) as zipped:
-                self.assertEqual(zipped.read('ZwoGain-CameraKit/ZwoGain-CameraKit.exe'), b'payload with appended signature')
-                sums = zipped.read('ZwoGain-CameraKit/SHA256SUMS').decode()
-                self.assertIn(sha(kit / 'ZwoGain-CameraKit.exe') + '  ZwoGain-CameraKit.exe', sums)
+                self.assertEqual(zipped.read('Regain-CameraKit/Regain-CameraKit.exe'), b'payload with appended signature')
+                sums = zipped.read('Regain-CameraKit/SHA256SUMS').decode()
+                self.assertIn(sha(kit / 'Regain-CameraKit.exe') + '  Regain-CameraKit.exe', sums)
             with self.assertRaises(ValueError):
                 package(kit, root, '0.2.0.0')
 

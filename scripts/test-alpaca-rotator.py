@@ -16,7 +16,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--bin-dir', default='target/debug')
     args = parser.parse_args()
-    binary = Path(args.bin_dir).resolve() / ('zwogain-alpaca.exe' if os.name == 'nt' else 'zwogain-alpaca')
+    binary = Path(args.bin_dir).resolve() / ('regain-alpaca.exe' if os.name == 'nt' else 'regain-alpaca')
     with socket.socket() as listener:
         listener.bind(('127.0.0.1', 0))
         port = listener.getsockname()[1]
@@ -43,7 +43,7 @@ def main():
         assert result['ErrorNumber'] == error and result['ClientTransactionID'] == 27, result
         return result.get('Value')
 
-    with tempfile.TemporaryDirectory(prefix='zwogain-rotator-') as directory:
+    with tempfile.TemporaryDirectory(prefix='regain-rotator-') as directory:
         profile_path = Path(directory) / 'cameras.json'
         with open(Path(directory) / 'server.log', 'w+b') as log:
             process = subprocess.Popen([str(binary), '--simulate', '--no-discovery', '--port', str(port), '--profiles', str(profile_path)], stdout=log, stderr=log,
@@ -95,9 +95,9 @@ def main():
                     rotator('movemechanical', {'Position': invalid}, error=0x401)
                 rotator('action', {'Action': 'bad', 'Parameters': ''}, error=0x40C)
                 actions = rotator('supportedactions')
-                assert 'ZwoGain.CAA.ResetOrigin' in actions
+                assert 'Regain.CAA.ResetOrigin' in actions
                 def action(name, values=None):
-                    return json.loads(rotator('action', {'Action': 'ZwoGain.CAA.' + name, 'Parameters': '' if values is None else json.dumps(values)}))
+                    return json.loads(rotator('action', {'Action': 'Regain.CAA.' + name, 'Parameters': '' if values is None else json.dumps(values)}))
                 before = rotator('position')
                 action('ResetOrigin')
                 assert rotator('mechanicalposition') == 0 and abs(rotator('position') - before) < .01

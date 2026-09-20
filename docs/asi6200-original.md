@@ -104,8 +104,8 @@ output path for each run. Raw traces and calibration stay local under `artifacts
 
 ```powershell
 .reference/inspection-venv/Scripts/python.exe scripts/camera-kit/camera_kit.py --camera 'ZWO ASI6200MM Pro' --profile extended --include-pixels --exercise-cooling --deadline 1200 --output artifacts/NEW-6200-sdk
-.reference/inspection-venv/Scripts/python.exe scripts/inspection/validate_6200_kit.py artifacts/NEW-6200-sdk/RUN-DIRECTORY --worker target/release/zwogain-direct.exe --output artifacts/NEW-6200-parity.json
-.reference/inspection-venv/Scripts/python.exe scripts/inspection/validate_asi6200.py --worker target/release/zwogain-direct.exe --full-controls --output artifacts/NEW-6200-direct.jsonl
+.reference/inspection-venv/Scripts/python.exe scripts/inspection/validate_6200_kit.py artifacts/NEW-6200-sdk/RUN-DIRECTORY --worker target/release/regain-direct.exe --output artifacts/NEW-6200-parity.json
+.reference/inspection-venv/Scripts/python.exe scripts/inspection/validate_asi6200.py --worker target/release/regain-direct.exe --full-controls --output artifacts/NEW-6200-direct.jsonl
 .reference/inspection-venv/Scripts/python.exe scripts/inspection/validate_environment.py --camera-name 'ZWO ASI6200MM Pro' --output artifacts/NEW-6200-cooling
 ```
 
@@ -115,6 +115,6 @@ handle reopening remains restricted to the tested ASI2600 P25 path; the 6200
 uses retained sender/pipe retries and bounded reconnect/recapture.
 
 CI passed on Windows, Linux x64/ARM64 and macOS Intel/ARM64 for the
-[implementation](https://github.com/theatrus/zwogain/actions/runs/35275160595)
-and [validation scripts](https://github.com/theatrus/zwogain/actions/runs/35278238482).
+[implementation](https://github.com/pulsarfab/regain/actions/runs/35275160595)
+and [validation scripts](https://github.com/pulsarfab/regain/actions/runs/35278238482).
 Camera hardware testing was on Windows only.

@@ -15,7 +15,7 @@ def main():
     args = parser.parse_args()
     if not 0 <= args.long <= 2000:
         parser.error('long duration must be 0..2000 seconds')
-    worker = args.worker or ROOT / 'target/debug/zwogain-direct.exe'
+    worker = args.worker or ROOT / 'target/debug/regain-direct.exe'
     digest = hashlib.sha256(worker.read_bytes()).hexdigest()
     base = dict(width=512, height=256, microseconds=100000, gain=100, offset=50, replay=True)
     cases = []

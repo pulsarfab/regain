@@ -59,10 +59,10 @@ def main():
         return value.get('Value')
 
     def diagnostics():
-        return json.loads(camera('action', {'Action': 'ZwoGain.Diagnostics', 'Parameters': ''}))
+        return json.loads(camera('action', {'Action': 'Regain.Diagnostics', 'Parameters': ''}))
 
     def control(kind, value):
-        camera('action', {'Action': 'ZwoGain.SetControl',
+        camera('action', {'Action': 'Regain.SetControl',
                           'Parameters': json.dumps({'control': kind, 'value': value})})
 
     def wait_for(predicate, seconds, description):
@@ -76,13 +76,13 @@ def main():
             time.sleep(.2)
 
     results = {'camera': args.camera_name, 'builds': {}, 'modes': []}
-    for name in ('zwogain-alpaca.exe', 'zwogain-direct.exe', 'zwogain-host.exe'):
+    for name in ('regain-alpaca.exe', 'regain-direct.exe', 'regain-host.exe'):
         results['builds'][name] = hashlib.sha256((args.worker_directory / name).read_bytes()).hexdigest()
     records = []
     lock = threading.Lock()
     trace_file = (args.output / 'environment-usb.jsonl').open('w')
     server_log = (args.output / 'server.log').open('wb')
-    process = subprocess.Popen([str((args.worker_directory / 'zwogain-alpaca.exe').resolve()),
+    process = subprocess.Popen([str((args.worker_directory / 'regain-alpaca.exe').resolve()),
                                 '--port', str(port), '--profiles', str((args.output / 'profiles.json').resolve()),
                                 '--sdk', str(args.sdk.resolve()), '--no-discovery'],
                                stdout=server_log, stderr=server_log, creationflags=subprocess.CREATE_NO_WINDOW)
@@ -202,7 +202,7 @@ def main():
                         assert after['values'][str(kind)] == value, (kind, after['values'])
                 events = []
                 for line in (args.output / 'server.log').read_bytes()[log_start:].decode().splitlines():
-                    if line.startswith('ZWOGAIN_DIAGNOSTIC '):
+                    if line.startswith('REGAIN_DIAGNOSTIC '):
                         event = json.loads(line.split(' ', 1)[1])
                         if event['event'].startswith(('cooling.', 'capture.', 'backend.')):
                             events.append({'event': event['event'], 'message': event['message']})

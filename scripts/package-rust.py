@@ -24,19 +24,19 @@ metadata = json.loads(output("cargo", "metadata", "--locked", "--format-version"
                              "--filter-platform", host))
 nodes = {node["id"]: node for node in metadata["resolve"]["nodes"]}
 resolved = set()
-pending = [p['id'] for p in metadata['packages'] if p['name'] == 'zwogain-caa'] if caa_only else list(metadata["workspace_members"])
+pending = [p['id'] for p in metadata['packages'] if p['name'] == 'regain-caa'] if caa_only else list(metadata["workspace_members"])
 while pending:
     node = pending.pop()
     if node not in resolved:
         resolved.add(node)
         pending.extend(dependency["pkg"] for dependency in nodes[node]["deps"])
-prefix = 'zwogain-caa' if caa_only else 'zwogain-rust'
+prefix = 'regain-caa' if caa_only else 'regain-rust'
 archive = root / (f'{prefix}-{host}.zip' if caa_only else f'{prefix}-{host}.tar.gz')
-with tempfile.TemporaryDirectory(prefix="zwogain-package-") as temporary:
+with tempfile.TemporaryDirectory(prefix="regain-package-") as temporary:
     stage = Path(temporary) / prefix
     licenses = stage / "licenses"
     licenses.mkdir(parents=True)
-    for name in ['zwogain-caa'] if caa_only else ["zwogain-direct", "zwogain-host", "zwogain-alpaca", "zwogain-camera", "zwogain-caa", "zwogain-accessories", "zwogain-ofp2", "zwogain-fc3"]:
+    for name in ['regain-caa'] if caa_only else ["regain-direct", "regain-host", "regain-alpaca", "regain-camera", "regain-caa", "regain-accessories", "regain-ofp2", "regain-fc3"]:
         binary = name + ('.exe' if 'windows' in host else '')
         shutil.copy2(root / "target" / "release" / binary, stage / binary)
     if not caa_only:
@@ -46,7 +46,7 @@ with tempfile.TemporaryDirectory(prefix="zwogain-package-") as temporary:
         shutil.copy2(root / name, stage / name)
     shutil.copy2(root / ("docs/caa.md" if caa_only else "docs/portable-rust.md"), stage / "README.md")
     shutil.copy2(root / "docs/caa.md", stage / "caa.md")
-    shutil.copy2(root / "crates/zwogain-caa/LICENSE-ZWO", licenses / "ZWO-CAA-table.txt")
+    shutil.copy2(root / "crates/regain-caa/LICENSE-ZWO", licenses / "ZWO-CAA-table.txt")
     if not caa_only:
         shutil.copy2(root / "docs/architecture.md", stage / "architecture.md")
         shutil.copy2(root / "docs/ascom.md", stage / "ascom.md")

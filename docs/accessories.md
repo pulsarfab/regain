@@ -1,6 +1,6 @@
 # Native EFW and EAF drivers
 
-ZWOgain's EFW filter-wheel and EAF focuser support uses the `zwogain-accessories`
+PulsarFab regain's EFW filter-wheel and EAF focuser support uses the `regain-accessories`
 Rust library and worker. Windows ASCOM, the native NINA providers, and Alpaca
 all use this worker. Neither ZWO accessory SDK nor an Alpaca bridge is needed
 for local Windows operation.
@@ -27,8 +27,8 @@ calibration or reference reset happens automatically during connection.
 
 ## Windows and NINA setup
 
-Build/install the normal ZWOgain package. The NINA plugin adds **ZWOgain EFW
-Filter Wheel** and **ZWOgain EAF Focuser** to their respective equipment lists.
+Build/install the normal PulsarFab regain package. The NINA plugin adds **PulsarFab regain EFW
+Filter Wheel** and **PulsarFab regain EAF Focuser** to their respective equipment lists.
 The ASCOM installer registers `ASCOM.ZWOgain.FilterWheel` (IFilterWheelV2) and
 `ASCOM.ZWOgain.Focuser` (IFocuserV3) for both 32-bit and 64-bit clients.
 
@@ -63,20 +63,20 @@ Only one controller owns a physical USB device. Do not connect native NINA,
 native ASCOM, the vendor driver, and Alpaca to the same device simultaneously.
 Multiple Alpaca clients can share the server-owned connection by ClientID.
 
-Profiles are stored in `%LOCALAPPDATA%\ZwoGain\Accessories\`:
+Profiles are stored in `%LOCALAPPDATA%\Regain\Accessories\`:
 `efw-nina.json`, `eaf-nina.json`, `efw-ascom.json`, and `eaf-ascom.json`.
 Diagnostic logs are `efw.log` and `eaf.log` in that directory. Device settings
 such as EAF reverse/backlash live in the device; filter names/offsets and
 unidirectional preference live in the frontend's profile.
 
-For development, `ZWOGAIN_ACCESSORY_WORKER` overrides the native frontend worker path,
-`ZWOGAIN_ACCESSORY_SETTINGS` overrides the profile directory, and
-`ZWOGAIN_ACCESSORY_SIMULATE=1` explicitly enables simulated native sessions.
+For development, `REGAIN_ACCESSORY_WORKER` overrides the native frontend worker path,
+`REGAIN_ACCESSORY_SETTINGS` overrides the profile directory, and
+`REGAIN_ACCESSORY_SIMULATE=1` explicitly enables simulated native sessions.
 Simulation is never an automatic hardware fallback.
 
 ## Alpaca setup
 
-Start `zwogain-alpaca` as described in the main README. On its setup page choose
+Start `regain-alpaca` as described in the main README. On its setup page choose
 **EFW filter wheel setup** or **EAF focuser setup**, discover devices, select the
 serial, and connect for setup. Disconnect the setup client after editing.
 
@@ -88,8 +88,8 @@ serial, and connect for setup. Disconnect the setup client after editing.
 Each type exposes device number 0 and appears in management discovery after
 selection. With `--profiles cameras.json`, accessory profiles are
 `cameras.efw.json` and `cameras.eaf.json`. UUIDs remain stable when profiles are
-edited. Both expose read-only `ZwoGain.Status` and `ZwoGain.Identity` actions.
-The EFW also exposes `ZwoGain.Calibrate` and a **Calibrate wheel** button.
+edited. Both expose read-only `Regain.Status` and `Regain.Identity` actions.
+The EFW also exposes `Regain.Calibrate` and a **Calibrate wheel** button.
 The EAF web page supports the same hardware settings as the WPF dialog.
 
 ![EFW Alpaca setup with simulated seven-slot wheel](images/alpaca-efw.png)
@@ -186,13 +186,13 @@ The CAA-style native dialog displays live calibration progress:
 
 ![Native EFW calibration controls in simulation](images/native-efw-calibration.png)
 
-All three frontends advertise `ZwoGain.Calibrate` in `SupportedActions`. Call
-`Action("ZwoGain.Calibrate", "")` in native ASCOM/NINA, or PUT to
-`/api/v1/filterwheel/0/action` with `Action=ZwoGain.Calibrate`, empty `Parameters`,
+All three frontends advertise `Regain.Calibrate` in `SupportedActions`. Call
+`Action("Regain.Calibrate", "")` in native ASCOM/NINA, or PUT to
+`/api/v1/filterwheel/0/action` with `Action=Regain.Calibrate`, empty `Parameters`,
 and the connected `ClientID` for Alpaca. The action returns the string `null`
 after accepting the command. It does not wait for physical completion.
 
-Poll `ZwoGain.Status`: `calibrating` is true while active, `detected_slots` is
+Poll `Regain.Status`: `calibrating` is true while active, `detected_slots` is
 the provisional count, and `slots` retains the original count. `Position`
 returns −1 throughout calibration. Completion requires observed movement
 followed by idle, the original slot count, no hardware error, and slot 1.
@@ -236,14 +236,14 @@ The observed move from 39,829 to 39,879 is
 
 ## Native implementation and validation
 
-`zwogain-hid` shares the CAA's native Windows HID, Linux hidraw, and macOS
+`regain-hid` shares the CAA's native Windows HID, Linux hidraw, and macOS
 IOKit transports. Windows and macOS request exclusive device access; Linux
 uses an advisory lock, so other non-cooperating drivers must still be closed.
 On Linux grant the current user access to HID devices with product IDs 1f01
 and 1f10 using a local udev rule, then replug them. No Zadig/libusb replacement
 driver is required for these HID accessories.
 
-`zwogain-accessories` validates packets, serial selection, slot/step ranges,
+`regain-accessories` validates packets, serial selection, slot/step ranges,
 and settings readback. The worker accepts one JSON request per line and returns
 `{"ok":true,"result":...}` or `{"ok":false,"error":"..."}`. Commands are
 `identity`, `status`, `move`, `calibrate` (EFW), `halt` (EAF), and `settings` (EAF). It polls active

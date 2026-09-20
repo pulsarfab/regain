@@ -118,7 +118,7 @@ work is recorded in [ASI2600 capture](duo-capture.md),
 
 ## Follow-up: direct Rust I/O and image processing (2026-09-13)
 
-`crates/zwogain-direct` is now a separate research executable. It enumerates the
+`crates/regain-direct` is now a separate research executable. It enumerates the
 installed ZWO interface using SetupAPI and opens it exclusively, with overlapped
 I/O. No ASI SDK dependency is present. It reads the driver version and standard
 USB descriptors, validating the packed header, returned lengths and both driver

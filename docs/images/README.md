@@ -1,8 +1,9 @@
 # README screenshots
 
 The `alpaca-*.png` files are actual browser captures of the local Alpaca server built from
-this repository. All devices are simulated; no physical camera or accessory is
-used. The Simulation label remains visible in every image.
+this repository. The camera, CAA, EFW, and EAF examples below use simulation and
+retain the Simulation label. The FocusCube3 images use physical hardware.
+The OFP2 image records the earlier physical-panel validation.
 
 - `alpaca-camera.png`: camera slots, backend selection and discovery.
 - `alpaca-recovery.png`: shared recovery defaults and timeout controls.
@@ -15,7 +16,7 @@ with a disposable settings file (the screenshot script changes its configuration
 
 ```powershell
 cargo build --release --locked
-.\target\release\zwogain-alpaca.exe --simulate --no-discovery --port 11237 --profiles "$PWD\artifacts\readme-screenshots\cameras.json"
+.\target\release\regain-alpaca.exe --simulate --no-discovery --port 11237 --profiles "$PWD\artifacts\readme-screenshots\cameras.json"
 ```
 
 In another terminal with Node.js, Playwright and Google Chrome available:
@@ -38,7 +39,7 @@ browser images or recreated mockups.
 Regenerate on Windows after `cargo build`:
 
 ```powershell
-dotnet run --project tools/ZwoGain.Screenshots
+dotnet run --project tools/Regain.Screenshots
 ```
 
 The helper detaches the actual dialog content and renders it with WPF
@@ -46,3 +47,8 @@ The helper detaches the actual dialog content and renders it with WPF
 unavailable in this session. Camera and CAA native captures remain outstanding.
 Both screenshot helpers also exercise the simulated calibration button and
 check that progress returns to idle before disconnecting.
+
+`native-fc3.png` and `alpaca-fc3.png` were refreshed for PulsarFab regain with
+the physical FocusCube3 on firmware 1.8.2. Use `--fc3` with the native renderer
+and `scripts/screenshot-fc3.cjs` with a separate, non-simulated server.
+Both are read-only captures; no motor movement is needed.

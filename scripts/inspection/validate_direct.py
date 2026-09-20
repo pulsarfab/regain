@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def capture(options):
-    command = [str(ROOT / 'target/debug/zwogain-direct.exe'), '--capture', '--stream']
+    command = [str(ROOT / 'target/debug/regain-direct.exe'), '--capture', '--stream']
     for key, value in options.items():
         if value is True:
             command += ['--' + key]

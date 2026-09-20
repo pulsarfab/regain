@@ -1,4 +1,4 @@
-"""ZWOgain camera exercise kit. Collect locally; never upload or replay USB writes."""
+"""PulsarFab regain camera exercise kit. Collect locally; never upload or replay USB writes."""
 import argparse
 from datetime import datetime, timezone
 import hashlib
@@ -19,12 +19,12 @@ from trace import Trace
 def paths():
     if getattr(sys, 'frozen', False):
         base = Path(sys.executable).parent
-        return base, base / 'zwogain-host.exe', base / 'ASICamera2.dll', Path(__file__).with_name('trace-transport.js')
+        return base, base / 'regain-host.exe', base / 'ASICamera2.dll', Path(__file__).with_name('trace-transport.js')
     portable = Path(__file__).resolve().parent.parent
-    if (portable / 'zwogain-host.exe').is_file():
-        return portable, portable / 'zwogain-host.exe', portable / 'ASICamera2.dll', Path(__file__).with_name('trace-transport.js')
+    if (portable / 'regain-host.exe').is_file():
+        return portable, portable / 'regain-host.exe', portable / 'ASICamera2.dll', Path(__file__).with_name('trace-transport.js')
     root = Path(__file__).resolve().parents[2]
-    return root, root / 'target/debug/zwogain-host.exe', root / 'vendor/zwo/ASICamera2.dll', root / 'scripts/inspection/trace-transport.js'
+    return root, root / 'target/debug/regain-host.exe', root / 'vendor/zwo/ASICamera2.dll', root / 'scripts/inspection/trace-transport.js'
 
 
 def sha(path):
@@ -104,7 +104,7 @@ def main(argv=None):
     name = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ') + '-' + uuid.uuid4().hex[:8]
     directory = args.output.resolve() / name
     directory.mkdir(parents=True, exist_ok=False)
-    manifest = dict(schemaVersion=1, kit='ZWOgain camera exercise kit', startedUtc=datetime.now(timezone.utc).isoformat(),
+    manifest = dict(schemaVersion=1, kit='PulsarFab regain camera exercise kit', startedUtc=datetime.now(timezone.utc).isoformat(),
                     platform=platform.platform(), python=platform.python_version(), simulated=args.self_test,
                     sdkSha256=sha(sdk), hostSha256=sha(executable), tracerSha256=sha(source),
                     profile=args.profile, powerHistory=args.power_history, notes=args.notes,

@@ -19,8 +19,8 @@ def summarize(path):
     stderr = ''.join(e['text'] for e in events if e['kind'] == 'worker-output' and e['fd'] == 2)
     replies = [json.loads(line) for line in stdout.splitlines() if line.strip()]
     captures = [r['capture'] for r in replies if 'capture' in r]
-    diagnostics = [json.loads(line.removeprefix('ZWOGAIN_DIAGNOSTIC '))
-                   for line in stderr.splitlines() if line.startswith('ZWOGAIN_DIAGNOSTIC ')]
+    diagnostics = [json.loads(line.removeprefix('REGAIN_DIAGNOSTIC '))
+                   for line in stderr.splitlines() if line.startswith('REGAIN_DIAGNOSTIC ')]
     submits = [e for e in events if e['kind'] == 'io-submit']
     starts = [e for e in submits if (e.get('header') or '').startswith('40a9')]
     opens = [e for e in events if e['kind'] == 'device-open']
@@ -48,7 +48,7 @@ def summarize(path):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, required=True, help='new directory')
-    parser.add_argument('--worker', type=Path, default=ROOT / 'target/release/zwogain-direct.exe')
+    parser.add_argument('--worker', type=Path, default=ROOT / 'target/release/regain-direct.exe')
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=False)
     digest = hashlib.sha256(args.worker.read_bytes()).hexdigest()

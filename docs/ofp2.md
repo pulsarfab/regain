@@ -1,6 +1,6 @@
 # Deep Sky Dad OFP2 flat panel
 
-`zwogain-ofp2` is a native Rust library and serial worker for the **OFP2**
+`regain-ofp2` is a native Rust library and serial worker for the **OFP2**
 (FP2 board, product type 3). It talks directly to USB CDC serial. The vendor's
 ASCOM driver, control panel, SDK, and .NET are not required at runtime.
 The existing Rust Alpaca server exposes it as **CoverCalibrator device 0**.
@@ -11,18 +11,18 @@ This support is in current source; release 0.3.1.0 predates it.
 1. Connect USB and the panel's external power supply. Close any vendor control
    panel and disconnect other applications using its serial port.
 2. Build `cargo build --workspace --release --locked`, or use a package that
-   includes `zwogain-ofp2` beside `zwogain-alpaca`.
-3. Start `target/release/zwogain-alpaca --port 11111` (add `.exe` on Windows).
+   includes `regain-ofp2` beside `regain-alpaca`.
+3. Start `target/release/regain-alpaca --port 11111` (add `.exe` on Windows).
 4. Open `http://127.0.0.1:11111/setup/v1/covercalibrator/0/setup`, click
    **Find panels**, select the OFP2, and **Connect for setup**.
 5. Test cover and lighting controls, then disconnect setup. Select the
-   **Deep Sky Dad OFP2 · ZWOgain** CoverCalibrator in your Alpaca client.
+   **Deep Sky Dad OFP2 · PulsarFab regain** CoverCalibrator in your Alpaca client.
    NINA and Windows ASCOM applications can use the ASCOM Platform's Alpaca
    discovery/Chooser support for their flat-panel connection.
 
 ![Real OFP2 connected to the Alpaca setup page](images/alpaca-ofp2.png)
 
-The screenshot shows the attached physical OFP2 on Windows, firmware 1.0.14.2,
+This historical, pre-rebrand screenshot shows the physical OFP2 on Windows, firmware 1.0.14.2,
 with the cover closed and brightness 128. It is not a simulator screenshot.
 
 The profile is saved beside `cameras.json` as `cameras.ofp2.json`. Selection is
@@ -42,7 +42,7 @@ the board identity and product type before sending any actuation command.
 ## Rust library and worker
 
 ```rust,no_run
-use zwogain_ofp2::{Panel, serial::Serial};
+use regain_ofp2::{Panel, serial::Serial};
 
 let mut panel = Panel::new(Serial::open("COM5")?)?;
 println!("{:?}", panel.identity());
@@ -62,9 +62,9 @@ during motion. They must keep the transport alive until the operation finishes
 or explicitly halt. The CLI worker performs this polling automatically.
 
 ```powershell
-.\target\release\zwogain-ofp2.exe list-details
-.\target\release\zwogain-ofp2.exe status --serial YOUR_USB_SERIAL
-.\target\release\zwogain-ofp2.exe serve --serial YOUR_USB_SERIAL
+.\target\release\regain-ofp2.exe list-details
+.\target\release\regain-ofp2.exe status --serial YOUR_USB_SERIAL
+.\target\release\regain-ofp2.exe serve --serial YOUR_USB_SERIAL
 ```
 
 `serve` accepts newline-delimited JSON and writes exactly one response per
@@ -151,7 +151,7 @@ an Alpaca error number/message. Brightness is zero when off. Motion is
 asynchronous and polled using CoverState. Standard V2 asynchronous connection
 and DeviceState members are not advertised.
 
-`Action("ZwoGain.Status", "")` and `Action("ZwoGain.Identity", "")` return
+`Action("Regain.Status", "")` and `Action("Regain.Identity", "")` return
 JSON encoded in the required ASCOM **string** result. Arbitrary serial commands
 are not exposed. See the [ASCOM interface specification](https://ascom-standards.org/newdocs/covercalibrator.html)
 for the standard member semantics.
@@ -167,7 +167,7 @@ ConformU run remain untested; CI exercises the protocol simulator on each OS.
 
 ```powershell
 # No physical device needed:
-cargo test -p zwogain-ofp2 --locked
+cargo test -p regain-ofp2 --locked
 python scripts/test-ofp2.py
 
 # Moves and illuminates the explicitly selected real device, then restores it:

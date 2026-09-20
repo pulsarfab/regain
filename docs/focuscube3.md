@@ -1,6 +1,6 @@
 # Pegasus Astro FocusCube3
 
-`zwogain-fc3` is an independent Rust library and worker that speaks directly to
+`regain-fc3` is an independent Rust library and worker that speaks directly to
 the FocusCube3 USB serial port. It requires neither Pegasus Unity nor an ASCOM
 driver. Native NINA, native Windows ASCOM, and Alpaca use this same crate.
 This support is in current source; release 0.3.1.0 predates it.
@@ -12,19 +12,19 @@ background `Peg.Server.exe` can retain the port after its window closes.
 Windows uses the built-in USB Serial Device driver; do not install WinUSB/Zadig.
 Selection uses the USB serial number, not the current COM number.
 
-* **Native NINA:** install the ZWOgain plugin, choose **ZWOgain Pegasus
+* **Native NINA:** install the PulsarFab regain plugin, choose **PulsarFab regain Pegasus
   FocusCube3** in the focuser list, and open the setup gear. Refresh, select the
   device, connect, and check its position and settings. The worker must be
   beside the plugin DLLs. Requires NINA 3.2.0.9001 or later on Windows x64.
-* **Native ASCOM:** install the ZWOgain ASCOM installer (Windows x64, .NET
-  Framework 4.8, ASCOM Platform). Choose **ZWOgain Pegasus FocusCube3** in the
+* **Native ASCOM:** install the PulsarFab regain ASCOM installer (Windows x64, .NET
+  Framework 4.8, ASCOM Platform). Choose **PulsarFab regain Pegasus FocusCube3** in the
   Focuser Chooser. Its ProgID is `ASCOM.ZWOgain.FocusCube3.Focuser`. The Start
   menu's **FocusCube3 setup** opens the same styled dialog through the shared
   server. Both 32-bit and 64-bit clients are supported. Alpaca is not required.
-* **Alpaca:** start `zwogain-alpaca --port 11111` and open
+* **Alpaca:** start `regain-alpaca --port 11111` and open
   `http://127.0.0.1:11111/setup/v1/focuser/1/setup`. Find/select the device,
   connect for setup, then disconnect setup before closing the page. Select
-  **ZWOgain Pegasus FocusCube3**, Focuser device **1**, in the client. EAF
+  **PulsarFab regain Pegasus FocusCube3**, Focuser device **1**, in the client. EAF
   remains Focuser device 0. Only a configured FC3 appears in management discovery.
 
 The native setup dialog uses the same WPF theme as the CAA/EAF drivers, and
@@ -43,7 +43,7 @@ move until a valid speed is set. Direction reversal and backlash are hardware
 settings. Microns per step and temperature compensation are left to the host
 application; an absent/out-of-range temperature probe reports unavailable.
 
-Native profiles live in `%LOCALAPPDATA%\ZwoGain\Accessories\fc3-nina.json`
+Native profiles live in `%LOCALAPPDATA%\Regain\Accessories\fc3-nina.json`
 and `fc3-ascom.json`. Alpaca stores `cameras.fc3.json` beside `cameras.json`
 (or the equivalent name beside `--profiles`). The saved Alpaca UUID survives
 profile edits.
@@ -55,7 +55,7 @@ connect directly at the same time. A busy/missing device fails connection;
 the driver does not silently switch devices or fall back to a simulator.
 
 **ASCOM clients share one out-of-process COM server**,
-`ZwoGain.FocusCube.ASCOM.exe`, and one serial worker. Each COM object owns its
+`Regain.FocusCube.ASCOM.exe`, and one serial worker. Each COM object owns its
 own connection lease. Disconnecting one client leaves the others connected;
 the last disconnect releases the port. Setup retains the connection while its
 dialog is open. COM releases from exited clients are collected by the server;
@@ -118,7 +118,7 @@ JSON stdin is bounded to 4 KiB per request and accepts the .NET Framework BOM.
 
 ```powershell
 cargo build --workspace --locked
-cargo test -p zwogain-fc3
+cargo test -p regain-fc3
 python scripts/test-fc3.py
 ./scripts/test-fc3-ascom.ps1
 
@@ -133,7 +133,7 @@ steps, return, halt during travel, change settings, and restore the original
 position/settings. The COM test runs simultaneous 64-bit and 32-bit client
 processes, asserts one server/worker, disconnects the first client, and moves
 20 steps out/back with the second. Native NINA tests cover move completion and
-cancellation, with optional `ZWOGAIN_TEST_FC3_SERIAL` for hardware validation.
+cancellation, with optional `REGAIN_TEST_FC3_SERIAL` for hardware validation.
 See [recorded evidence](focuscube3-evidence.json) and
 [serial trace](focuscube3-serial.jsonl). The identity suffix is redacted in the
 public trace. Firmware defaults were restored: position 1,250, speed 400,

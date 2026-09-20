@@ -1,19 +1,19 @@
-# ZWOgain camera exercise kit
+# PulsarFab regain camera exercise kit
 
 This kit records the SDK and USB behavior of a ZWO camera so we can implement
 and validate an SDK-less backend for that model. It uses the official SDK in
 its own Rust process. It never attaches to NINA, replays captured USB writes,
 installs a driver, changes firmware or uploads files.
 
-ZWOgain is independent and is not affiliated with ZWO.
+PulsarFab regain is independent and is not affiliated with ZWO.
 
 ## Run the kit
 
-1. Download `ZwoGain-CameraKit-<version>-win-x64.zip` from
-   [GitHub Releases](https://github.com/theatrus/zwogain/releases).
-   Extract it and keep the entire `ZwoGain-CameraKit` folder together.
-   Development builds are also available as the **ZwoGain-camera-kit** artifact
-   from [GitHub Actions](https://github.com/theatrus/zwogain/actions/workflows/build.yml);
+1. Download `Regain-CameraKit-<version>-win-x64.zip` from
+   [GitHub Releases](https://github.com/pulsarfab/regain/releases).
+   Extract it and keep the entire `Regain-CameraKit` folder together.
+   Development builds are also available as the **Regain-camera-kit** artifact
+   from [GitHub Actions](https://github.com/pulsarfab/regain/actions/workflows/build.yml);
    those require extracting the artifact ZIP and the kit ZIP inside it.
 2. Use Windows x64 with the ZWO Windows camera driver installed. No Python,
    Rust, .NET or NINA installation is required. Release kit executables are
@@ -21,10 +21,10 @@ ZWOgain is independent and is not affiliated with ZWO.
 3. Close NINA and other camera applications. Cap the camera for dark frames;
    power cooled cameras as you normally would. Connect only one device of each
    model. A Pro Duo main and guide appear separately and need separate runs.
-4. Double-click `ZwoGain-CameraKit.exe`. Select the camera and enter its edition,
+4. Double-click `Regain-CameraKit.exe`. Select the camera and enter its edition,
    USB connection (direct/hub, USB2/3), external power and cap/light conditions.
    The quick set is the default. Choose whether to include small image samples.
-5. Review the result and share the generated ZIP with the ZWOgain maintainer.
+5. Review the result and share the generated ZIP with the PulsarFab regain maintainer.
    Nothing is sent automatically. Results go into a new timestamped directory
    under `camera-evidence` in the working directory, or your `--output` folder.
 
@@ -65,13 +65,13 @@ it does not validate thermal equilibrium or cooler recovery performance.
 Run these in PowerShell from the extracted kit folder:
 
 ```powershell
-.\ZwoGain-CameraKit.exe --list
-.\ZwoGain-CameraKit.exe --camera "ZWO ASI2600MM Duo" --include-pixels --notes "Pro Duo; capped; USB3 direct; 12V connected"
-.\ZwoGain-CameraKit.exe --camera "ZWO ASI220MM Mini" --profile extended --include-pixels
-.\ZwoGain-CameraKit.exe --camera "EXACT NAME FROM LIST" --plan-only
-.\ZwoGain-CameraKit.exe --camera "EXACT NAME FROM LIST" --profile extended --deadline 1200 --power-history cold-power-start
-.\ZwoGain-CameraKit.exe --camera "EXACT NAME FROM LIST" --exercise-cooling
-.\ZwoGain-CameraKit.exe --self-test --include-pixels
+.\Regain-CameraKit.exe --list
+.\Regain-CameraKit.exe --camera "ZWO ASI2600MM Duo" --include-pixels --notes "Pro Duo; capped; USB3 direct; 12V connected"
+.\Regain-CameraKit.exe --camera "ZWO ASI220MM Mini" --profile extended --include-pixels
+.\Regain-CameraKit.exe --camera "EXACT NAME FROM LIST" --plan-only
+.\Regain-CameraKit.exe --camera "EXACT NAME FROM LIST" --profile extended --deadline 1200 --power-history cold-power-start
+.\Regain-CameraKit.exe --camera "EXACT NAME FROM LIST" --exercise-cooling
+.\Regain-CameraKit.exe --self-test --include-pixels
 ```
 
 For a new P25 camera, use its exact SDK name and describe the edition in notes.
@@ -147,7 +147,7 @@ python scripts/camera-kit/build.py
 
 The folder distribution bundles Python, Frida, the SDK and the Rust host using
 PyInstaller. The build runs the frozen executable against the simulator before
-creating `artifacts/ZwoGain-CameraKit-<version>-win-x64.zip`. Source scripts are
+creating `artifacts/Regain-CameraKit-<version>-win-x64.zip`. Source scripts are
 included under `source/`, with dependency licenses under `licenses/`. The
 compiled kit does not need a Python installation or network access at runtime.
 
@@ -160,6 +160,6 @@ then run `build.py --package <prepared-folder>`. Checksums are generated after
 signing. The prepared folder already contains the signed Rust host from the
 plugin staging directory.
 
-ZWOgain scripts are Apache-2.0. Python, Frida, PyInstaller and the vendor SDK
+PulsarFab regain scripts are Apache-2.0. Python, Frida, PyInstaller and the vendor SDK
 retain their own licenses; see the bundled notices. Frida's native extension
 is a separate file under `runtime/` and can be replaced when rebuilding.

@@ -28,7 +28,7 @@ def arrival():
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--worker', type=Path, default=ROOT / 'target/release/zwogain-direct.exe')
+    parser.add_argument('--worker', type=Path, default=ROOT / 'target/release/regain-direct.exe')
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=False)

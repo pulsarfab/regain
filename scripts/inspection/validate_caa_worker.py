@@ -15,7 +15,7 @@ import time
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--worker', type=Path, default=Path('target/release/zwogain-caa.exe'))
+    parser.add_argument('--worker', type=Path, default=Path('target/release/regain-caa.exe'))
     parser.add_argument('--travel', type=float, default=180)
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()

@@ -18,31 +18,32 @@ try {
     } else {
     cargo build --release --locked
     if ($LASTEXITCODE) { throw 'Rust build failed' }
-    dotnet build src/ZwoGain.NINA -c Release
+    dotnet build src/Regain.NINA -c Release
     if ($LASTEXITCODE) { throw 'Plugin build failed' }
     if (Test-Path -LiteralPath $stage) { Remove-Item -LiteralPath $stage -Recurse -Force }
     New-Item -ItemType Directory -Force $stage | Out-Null
-    foreach ($file in @('ZwoGain.NINA.dll','ZwoGain.Core.dll','ZwoGain.Rotator.dll')) {
-        Copy-Item -LiteralPath (Join-Path $repo "src/ZwoGain.NINA/bin/Release/net8.0-windows7.0/$file") -Destination $stage
+    foreach ($file in @('Regain.NINA.dll','Regain.Core.dll','Regain.Rotator.dll')) {
+        Copy-Item -LiteralPath (Join-Path $repo "src/Regain.NINA/bin/Release/net8.0-windows7.0/$file") -Destination $stage
     }
-    Copy-Item -LiteralPath (Join-Path $repo 'target/release/zwogain-host.exe') -Destination $stage
-    Copy-Item -LiteralPath (Join-Path $repo 'target/release/zwogain-direct.exe') -Destination $stage
-    Copy-Item -LiteralPath (Join-Path $repo 'target/release/zwogain-alpaca.exe') -Destination $stage
-    Copy-Item -LiteralPath (Join-Path $repo 'target/release/zwogain-camera.exe') -Destination $stage
-    Copy-Item -LiteralPath (Join-Path $repo 'target/release/zwogain-caa.exe') -Destination $stage
-    Copy-Item -LiteralPath (Join-Path $repo 'target/release/zwogain-ofp2.exe') -Destination $stage
-    Copy-Item -LiteralPath (Join-Path $repo 'target/release/zwogain-fc3.exe') -Destination $stage
-    Copy-Item -LiteralPath (Join-Path $repo 'target/release/zwogain-accessories.exe') -Destination $stage
+    Copy-Item -LiteralPath (Join-Path $repo 'target/release/regain-host.exe') -Destination $stage
+    Copy-Item -LiteralPath (Join-Path $repo 'target/release/regain-direct.exe') -Destination $stage
+    Copy-Item -LiteralPath (Join-Path $repo 'target/release/regain-alpaca.exe') -Destination $stage
+    Copy-Item -LiteralPath (Join-Path $repo 'target/release/regain-camera.exe') -Destination $stage
+    Copy-Item -LiteralPath (Join-Path $repo 'target/release/regain-caa.exe') -Destination $stage
+    Copy-Item -LiteralPath (Join-Path $repo 'target/release/regain-ofp2.exe') -Destination $stage
+    Copy-Item -LiteralPath (Join-Path $repo 'target/release/regain-fc3.exe') -Destination $stage
+    Copy-Item -LiteralPath (Join-Path $repo 'target/release/regain-accessories.exe') -Destination $stage
     Copy-Item -LiteralPath (Join-Path $repo 'docs/caa.md') -Destination $stage
     Copy-Item -LiteralPath (Join-Path $repo 'docs/caa-frontends.md') -Destination $stage
     Copy-Item -LiteralPath (Join-Path $repo 'vendor/zwo/ASICamera2.dll') -Destination $stage
-    Copy-Item -LiteralPath (Join-Path $repo 'src/ZwoGain.NINA/Assets/zwogain.png') -Destination $stage
+    Copy-Item -LiteralPath (Join-Path $repo 'src/Regain.NINA/Assets/regain.png') -Destination $stage
     foreach ($file in @('LICENSE','README.md','THIRD_PARTY_NOTICES.md')) { Copy-Item -LiteralPath (Join-Path $repo $file) -Destination $stage }
     Copy-Item -LiteralPath (Join-Path $repo 'docs') -Destination $stage -Recurse
+    Copy-Item -LiteralPath (Join-Path $repo 'assets') -Destination $stage -Recurse
     $licenses = Join-Path $stage 'licenses'
     New-Item -ItemType Directory -Force $licenses | Out-Null
     Copy-Item -LiteralPath (Join-Path $repo 'vendor/zwo/LICENSE.txt') -Destination (Join-Path $licenses 'ZWO-ASI-SDK.txt')
-    Copy-Item -LiteralPath (Join-Path $repo 'crates/zwogain-caa/LICENSE-ZWO') -Destination (Join-Path $licenses 'ZWO-CAA-NTC.txt')
+    Copy-Item -LiteralPath (Join-Path $repo 'crates/regain-caa/LICENSE-ZWO') -Destination (Join-Path $licenses 'ZWO-CAA-NTC.txt')
     $target = (rustc -vV | Select-String '^host: ').ToString().Substring(6)
     $metadata = cargo metadata --locked --format-version 1 --filter-platform $target | ConvertFrom-Json
     if ($LASTEXITCODE) { throw 'Cargo metadata failed' }
@@ -68,16 +69,16 @@ try {
     Copy-Item -LiteralPath (Join-Path $rustRoot 'share/doc/rust/COPYRIGHT-library.html') -Destination (Join-Path $licenses 'Rust-Standard-Library.html')
     if ($StageOnly) { Write-Output "Staged: $stage"; return }
     }
-    $archiveName = "ZwoGain-$version.zip"
+    $archiveName = "Regain-$version.zip"
     $archive = Join-Path $out $archiveName
     Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $archive -Force
     $checksum = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash
     "$checksum  $archiveName" | Set-Content -LiteralPath (Join-Path $out 'SHA256SUMS')
-    Copy-Item -LiteralPath (Join-Path $stage 'zwogain.png') -Destination $out
-    dotnet run --project tools/ZwoGain.Packaging -c Release -- $archive (Join-Path $out "ZwoGain-$version.manifest.json")
+    Copy-Item -LiteralPath (Join-Path $stage 'regain.png') -Destination $out
+    dotnet run --project tools/Regain.Packaging -c Release -- $archive (Join-Path $out "Regain-$version.manifest.json")
     if ($LASTEXITCODE) { throw 'Package or NINA manifest validation failed' }
     if ($Install) {
-        $destination = Join-Path $env:LOCALAPPDATA 'NINA/Plugins/3.0.0/ZwoGain'
+        $destination = Join-Path $env:LOCALAPPDATA 'NINA/Plugins/3.0.0/Regain'
         New-Item -ItemType Directory -Force $destination | Out-Null
         Get-ChildItem -LiteralPath $stage | Copy-Item -Destination $destination -Recurse -Force
         Write-Output "Installed to $destination. Restart NINA to load it."

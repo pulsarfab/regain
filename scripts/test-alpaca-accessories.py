@@ -33,9 +33,9 @@ def api(device,member,values=None,client=1,error=0):
     value=request(path+('?' + urllib.parse.urlencode(p) if values is None else ''),None if values is None else p,'GET' if values is None else 'PUT')
     assert value['ErrorNumber']==error and value['ClientTransactionID']==42,value
     return value.get('Value')
-with tempfile.TemporaryDirectory(prefix='zwogain-accessories-') as directory:
+with tempfile.TemporaryDirectory(prefix='regain-accessories-') as directory:
     profiles=Path(directory)/'cameras.json'
-    binary=Path(args.bin_dir).resolve()/('zwogain-alpaca.exe' if os.name=='nt' else 'zwogain-alpaca')
+    binary=Path(args.bin_dir).resolve()/('regain-alpaca.exe' if os.name=='nt' else 'regain-alpaca')
     with (Path(directory)/'log.txt').open('w+b') as log:
         process=subprocess.Popen([str(binary),*([] if args.hardware else ['--simulate']),'--no-discovery','--port',str(port),'--profiles',str(profiles)],stdout=log,stderr=log)
         try:
@@ -48,7 +48,7 @@ with tempfile.TemporaryDirectory(prefix='zwogain-accessories-') as directory:
             for kind,device,version in [('efw','filterwheel',2),('eaf','focuser',3)]:
                 setup='/setup/api/accessory/'+kind
                 assert api(device,'interfaceversion')==version
-                assert ('ZwoGain.Calibrate' in api(device,'supportedactions')) == (kind=='efw')
+                assert ('Regain.Calibrate' in api(device,'supportedactions')) == (kind=='efw')
                 api(device,'position',error=0x407)
                 choices=request(setup+'/discover',{})
                 profile=request(setup)['profile'];profile['serial']=choices[0]['identity']['serial']
@@ -59,19 +59,19 @@ with tempfile.TemporaryDirectory(prefix='zwogain-accessories-') as directory:
                 assert api(device,'connected',client=2)
                 api(device,'position',error=0x407)
                 api(device,'connected',{'Connected':True})
-                original=json.loads(api(device,'action',{'Action':'ZwoGain.Status','Parameters':''}))
+                original=json.loads(api(device,'action',{'Action':'Regain.Status','Parameters':''}))
                 if kind=='efw':
                     assert len(api(device,'names'))==7 and api(device,'focusoffsets')==[0]*7
                     if args.calibrate or not args.hardware:
                         names=api(device,'names'); offsets=api(device,'focusoffsets')
                         started=time.monotonic()
-                        assert api(device,'action',{'Action':'ZwoGain.Calibrate','Parameters':''})=='null'
-                        active=json.loads(api(device,'action',{'Action':'ZwoGain.Status','Parameters':''}))
+                        assert api(device,'action',{'Action':'Regain.Calibrate','Parameters':''})=='null'
+                        active=json.loads(api(device,'action',{'Action':'Regain.Status','Parameters':''}))
                         assert active['calibrating'] and active['slots']==7 and api(device,'position')==-1,active
-                        api(device,'action',{'Action':'ZwoGain.Calibrate','Parameters':''},error=0x500)
+                        api(device,'action',{'Action':'Regain.Calibrate','Parameters':''},error=0x500)
                         api(device,'position',{'Position':1},error=0x500)
                         while True:
-                            status=json.loads(api(device,'action',{'Action':'ZwoGain.Status','Parameters':''},client=2))
+                            status=json.loads(api(device,'action',{'Action':'Regain.Status','Parameters':''},client=2))
                             assert status['slots']==7 and not status['fault'] and not status['error'],status
                             if not status['calibrating']: break
                             assert time.monotonic()-started<95
@@ -93,7 +93,7 @@ with tempfile.TemporaryDirectory(prefix='zwogain-accessories-') as directory:
                         assert time.monotonic()<deadline
                         time.sleep(.1)
                 else:
-                    api(device,'action',{'Action':'ZwoGain.Calibrate','Parameters':''},error=0x40c)
+                    api(device,'action',{'Action':'Regain.Calibrate','Parameters':''},error=0x40c)
                     assert api(device,'absolute') and not api(device,'tempcompavailable')
                     assert api(device,'maxstep')==60000
                     assert -50<api(device,'temperature')<100
@@ -112,7 +112,7 @@ with tempfile.TemporaryDirectory(prefix='zwogain-accessories-') as directory:
                     api(device,'move',{'Position':-1},error=0x401)
                     api(device,'stepsize',error=0x400)
                     request(setup+'/settings',{'beep':False,'backlash':5})
-                    status=json.loads(api(device,'action',{'Action':'ZwoGain.Status','Parameters':''}))
+                    status=json.loads(api(device,'action',{'Action':'Regain.Status','Parameters':''}))
                     assert not status['beep'] and status['backlash']==5
                     request(setup+'/settings',{'beep':original['beep'],'backlash':original['backlash']})
                 api(device,'action',{'Action':'bad','Parameters':''},error=0x40c)

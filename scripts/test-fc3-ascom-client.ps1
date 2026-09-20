@@ -11,18 +11,18 @@ $device = $null
 try {
     $type = if ($Id) { [type]::GetTypeFromCLSID([Guid]$Id) } else { [type]::GetTypeFromProgID("ASCOM.ZWOgain.FocusCube3.Focuser") }
     $device = [Activator]::CreateInstance($type)
-    if ($MetadataOnly) { if ($device.Name -ne "ZWOgain Pegasus FocusCube3" -or $device.InterfaceVersion -ne 3) { throw "Invalid metadata" }; $device.Dispose(); return }
+    if ($MetadataOnly) { if ($device.Name -ne "PulsarFab regain Pegasus FocusCube3" -or $device.InterfaceVersion -ne 3) { throw "Invalid metadata" }; $device.Dispose(); return }
     if ($device.Connected) { throw 'A new COM client inherited another connection' }
     $device.Connected = $true
     if (!$device.Absolute -or $device.MaxStep -ne 1000000) { throw 'Bad IFocuser properties' }
-    $identity = $device.Action('ZwoGain.Identity','') | ConvertFrom-Json
+    $identity = $device.Action('Regain.Identity','') | ConvertFrom-Json
     if ($identity.model -ne 'Pegasus Astro FocusCube3') { throw 'Wrong identity' }
-    $device.Action('ZwoGain.Status','') | Set-Content (Join-Path $Directory "$Role-connected")
+    $device.Action('Regain.Status','') | Set-Content (Join-Path $Directory "$Role-connected")
     if ($Role -eq 'first') {
         Wait-Signal 'second-connected'
-        $servers = @(Get-CimInstance Win32_Process -Filter "Name='ZwoGain.FocusCube.ASCOM.exe'" | Where-Object { $_.CommandLine -like "*$Id*" })
+        $servers = @(Get-CimInstance Win32_Process -Filter "Name='Regain.FocusCube.ASCOM.exe'" | Where-Object { $_.CommandLine -like "*$Id*" })
         if ($servers.Count -ne 1) { throw 'Expected one shared COM server' }
-        $workers = @(Get-CimInstance Win32_Process -Filter "Name='zwogain-fc3.exe'" | Where-Object ParentProcessId -eq $servers[0].ProcessId)
+        $workers = @(Get-CimInstance Win32_Process -Filter "Name='regain-fc3.exe'" | Where-Object ParentProcessId -eq $servers[0].ProcessId)
         if ($workers.Count -ne 1) { throw 'Two ASCOM clients must share exactly one worker' }
         $device.Connected = $false
         if ($device.Connected) { throw 'Disconnect failed' }

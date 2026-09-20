@@ -1,20 +1,20 @@
 # Architecture and protocol
 
 ```text
-NINA adapter -- private pipe --> zwogain-alpaca --stdio --+
+NINA adapter -- private pipe --> regain-alpaca --stdio --+
                                                         |
-Windows COM -- private pipe --> zwogain-camera -----------+--> zwogain-core
+Windows COM -- private pipe --> regain-camera -----------+--> regain-core
                                                         |        |
-Alpaca client -- HTTP ---------> zwogain-alpaca -----------+   worker pipes
+Alpaca client -- HTTP ---------> regain-alpaca -----------+   worker pipes
                                      |                           |
-                                     |              zwogain-host / zwogain-direct
+                                     |              regain-host / regain-direct
                                      |                        SDK / USB
                                      |
-CAA NINA / native COM -- pipe --+-----+--> zwogain-caa --> USB HID
+CAA NINA / native COM -- pipe --+-----+--> regain-caa --> USB HID
 ```
 
 
-`zwogain-core` owns the recovery policy and remembered controls. The NINA pipe
+`regain-core` owns the recovery policy and remembered controls. The NINA pipe
 adapter and standalone Alpaca server use that same controller. Each camera has
 its own worker, so a failed SDK process can be replaced without losing its
 settings. The old .NET recovery implementation remains for low-level diagnostics
@@ -35,7 +35,7 @@ Alpaca serves ICameraV4, IRotatorV3, management, discovery, and setup over a loo
 by default. Each camera slot has a stable UUID and device number. Captures run
 asynchronously, and ImageBytes streams unsigned RAW16 in ASCOM X/Y order. The
 Windows .NET Framework COM driver exposes four official ICameraV4 interfaces
-and calls `zwogain-camera` over a private binary pipe; it contains no camera
+and calls `regain-camera` over a private binary pipe; it contains no camera
 recovery logic and never connects to an HTTP server. Camera and CAA native setup
 share WPF theme resources. The network CAA frontend owns the same HID worker
 as native ASCOM, with per-client connections and a separate persisted serial
@@ -122,7 +122,7 @@ Methods: `list`, `open` (name and optional serial), `get`, `set`, `start`
 rejects both. Responses echo request IDs; mismatches, truncated payloads or
 bad bounds invalidate the worker. Standard error is diagnostics only.
 
-Worker stderr may contain `ZWOGAIN_DIAGNOSTIC ` followed by a JSON record with
+Worker stderr may contain `REGAIN_DIAGNOSTIC ` followed by a JSON record with
 `version: 1`, `level`, `event`, `message`, and `pid`. These records never appear
 on stdout or change a command result. NINA sends retry/failure events to its
 Warning log, recovery events to Info, and routine frame delivery to Debug.
@@ -183,8 +183,8 @@ No failed/partial frame reaches NINA.
 
 ## Native USB accessories
 
-`zwogain-hid` owns the Windows HID, Linux hidraw, and macOS IOKit control-report
-transports. CAA and the new `zwogain-accessories` crate share this layer. EFW/EAF
+`regain-hid` owns the Windows HID, Linux hidraw, and macOS IOKit control-report
+transports. CAA and the new `regain-accessories` crate share this layer. EFW/EAF
 protocol parsing and motion bounds live in Rust; `AccessorySession` in the shared
 Windows UI assembly provides serialized local IPC for NINA and native ASCOM.
 The Alpaca accessory coordinator launches the same worker and tracks ClientIDs.

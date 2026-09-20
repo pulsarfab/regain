@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <title>PulsarFab regain</title>
+  <desc>A bright pulsar inside an amber return arrow. Regain control of your equipment.</desc>
+  <defs><linearGradient id="night" x2="1" y2="1"><stop stop-color="#1d3049"/><stop offset="1" stop-color="#09111f"/></linearGradient></defs>
+  <rect x="16" y="16" width="480" height="480" rx="112" fill="url(#night)"/>
+  <path d="M349 137 A150 150 0 1 0 394 315" fill="none" stroke="#ffb653" stroke-width="24" stroke-linecap="round"/>
+  <path d="M326 143 L393 168 L383 96 Z" fill="#ffb653"/>
+  <path d="M256 139 L276 236 L349 256 L276 276 L256 373 L236 276 L163 256 L236 236 Z" fill="#f1f6ff"/>
+  <circle cx="256" cy="256" r="10" fill="#ffb653"/>
+</svg>

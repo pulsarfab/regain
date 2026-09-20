@@ -1,6 +1,6 @@
 # ASCOM cameras
 
-ZWOgain has a Rust Alpaca server for Windows, Linux, and macOS, plus a Windows
+PulsarFab regain has a Rust Alpaca server for Windows, Linux, and macOS, plus a Windows
 native COM driver with four camera entries. Both use the same Rust recovery code as
 the NINA plugin. The SDK is the default; direct USB and SDK fallback are options
 for each camera.
@@ -11,19 +11,19 @@ passed simulated capture tests, including 32-bit and 64-bit COM clients, and
 real Windows Alpaca and COM captures listed below. A full ASCOM ConformU run
 is still needed. Linux and macOS USB transfers also need hardware testing.
 
-ZWOgain is independent software and is not affiliated with or supported by ZWO.
+PulsarFab regain is independent software and is not affiliated with or supported by ZWO.
 
 ## Run Alpaca
 
-On Windows, extract the `ZwoGain-ASCOM-...-win-x64.zip` release asset. On Linux or
-macOS, extract the matching `zwogain-rust-*` artifact. Keep the server, workers,
+On Windows, extract the `Regain-ASCOM-...-win-x64.zip` release asset. On Linux or
+macOS, extract the matching `regain-rust-*` artifact. Keep the server, workers,
 and SDK library together. The server and workers need no .NET installation.
 
 ```sh
-./zwogain-alpaca --port 11111
+./regain-alpaca --port 11111
 ```
 
-On Windows use `.\zwogain-alpaca.exe --port 11111`. Open
+On Windows use `.\regain-alpaca.exe --port 11111`. Open
 `http://127.0.0.1:11111/setup`, find the cameras, select one, and save. Add slots
 for additional cameras. Main and guide cameras are separate USB devices.
 Use distinct serial numbers when connecting multiple cameras of the same model.
@@ -51,9 +51,9 @@ Useful flags:
 | `--sdk PATH` | SDK DLL, SO, or dylib |
 | `--simulate` | Use simulated devices without accessing USB |
 
-Default settings are `%LOCALAPPDATA%\ZwoGain\Alpaca\cameras.json` on Windows
-and `$XDG_CONFIG_HOME/ZwoGain/Alpaca/cameras.json` on Unix, falling back to
-`$HOME/.config/ZwoGain/Alpaca/cameras.json`. The log lives beside the settings
+Default settings are `%LOCALAPPDATA%\Regain\Alpaca\cameras.json` on Windows
+and `$XDG_CONFIG_HOME/Regain/Alpaca/cameras.json` on Unix, falling back to
+`$HOME/.config/Regain/Alpaca/cameras.json`. The log lives beside the settings
 and is also visible on the setup page. Keep the settings file when upgrading.
 
 ## Windows COM frontend
@@ -61,32 +61,32 @@ and is also visible on the setup page. Keep the settings file when upgrading.
 Requires Windows x64, .NET Framework 4.8, the ASCOM Platform, and the ZWO Windows
 driver for a locally connected camera.
 
-Run `ZwoGain-ASCOM-<version>-win-x64-setup.exe` from the release.
+Run `Regain-ASCOM-<version>-win-x64-setup.exe` from the release.
 Setup requests administrator access, checks .NET and ASCOM
 Platform, and installs all four camera entries for 32-bit and 64-bit clients.
-The ZWO USB driver is installed separately. Use **ZWOgain ASCOM → Camera setup**
+The ZWO USB driver is installed separately. Use **PulsarFab regain ASCOM → Camera setup**
 in the Start menu, or the ASCOM Chooser setup button, to select a local camera.
 The WPF dialog shares the CAA setup theme, uses the host theme in NINA, and saves
 settings automatically. Device, Recovery, Cooler, Timeouts and Controls tabs
 configure the camera directly. A setup-only connection closes with the dialog.
 
 Run a newer installer to upgrade in place. Close camera applications and stop
-the ZWOgain Alpaca server first: setup refuses to replace files while they are
+the PulsarFab regain Alpaca server first: setup refuses to replace files while they are
 in use. It does not stop an exposure automatically. Remove the package through
 Windows **Installed apps**. Upgrades and uninstall keep camera settings and
-logs in `%LOCALAPPDATA%\ZwoGain`. No service or firewall rule is installed.
+logs in `%LOCALAPPDATA%\Regain`. No service or firewall rule is installed.
 Release installers and uninstallers are signed; ordinary CI builds are unsigned.
 
 For a portable/manual install, extract the complete ASCOM ZIP to a permanent folder. From an
 administrator PowerShell in that folder, register it:
 
 ```powershell
-$p = Start-Process .\ZwoGain.ASCOM.Register.exe -ArgumentList /regserver -Wait -PassThru
+$p = Start-Process .\Regain.ASCOM.Register.exe -ArgumentList /regserver -Wait -PassThru
 if ($p.ExitCode) { throw 'Registration failed; check the ASCOM registration log' }
 ```
 
-The Chooser entries are **ZWOgain Retryable Camera 1** through **4**. Each owns
-its local `zwogain-camera` Rust supervisor over a private pipe, just as the CAA
+The Chooser entries are **PulsarFab regain Retryable Camera 1** through **4**. Each owns
+its local `regain-camera` Rust supervisor over a private pipe, just as the CAA
 ASCOM driver owns its HID worker. No HTTP server, IP address, port, browser, or
 Alpaca client library is involved. Closing the ASCOM object closes the private
 worker; a Windows job also cleans it up if the client crashes.
@@ -95,8 +95,8 @@ Choose a camera in setup. With exactly one available camera and no saved choice,
 Connect selects it automatically. The serial is saved on connection; use distinct
 serials for identical models. Close other controllers before connecting.
 
-Native settings are separate from Alpaca: `%LOCALAPPDATA%\ZwoGain\ASCOM\camera-1.json`
-through `camera-4.json`. `ZWOGAIN_ASCOM_PROFILES` can select another directory.
+Native settings are separate from Alpaca: `%LOCALAPPDATA%\Regain\ASCOM\camera-1.json`
+through `camera-4.json`. `REGAIN_ASCOM_PROFILES` can select another directory.
 Existing `server.json` settings are no longer used; select each local camera
 once in the new setup dialog. Alpaca profiles remain available for network use.
 For remote cameras, use the ASCOM Platform's Alpaca Chooser/discovery support.
@@ -136,14 +136,14 @@ a cooler-output check. Configure these limits on the Recovery and Cooler tabs.
 Supported operations include RAW16 images, symmetric binning, ROI, gain,
 offset, exposure limits, cooling, and abort. ImageBytes avoids JSON pixel arrays;
 JSON ImageArray is also supported. Extra controls and diagnostics are available
-through `ZwoGain.Controls`, `ZwoGain.SetControl`, and `ZwoGain.Diagnostics` actions.
+through `Regain.Controls`, `Regain.SetControl`, and `Regain.Diagnostics` actions.
 
 ROI width must be a multiple of 8 and height a multiple of 2 in binned pixels.
 The direct driver also has camera-specific minimum sizes and origin alignment,
 shown in setup. An incompatible ROI is rejected at StartExposure. Some full
 binned sensor sizes are not aligned: for example, use NumX 4784 rather than 4788
 for ASI6200 bin 2. Apps that always request the unaligned full width need a
-compatible ROI. ZWOgain does not pad images with invented edge pixels.
+compatible ROI. PulsarFab regain does not pad images with invented edge pixels.
 
 StopExposure, asymmetric binning, pulse guiding, fast readout, live view, and
 trigger modes are not implemented. Capability properties report this. Abort
@@ -194,15 +194,15 @@ failure, not USB removal or loss of camera power.
 
 ## CAA over Alpaca
 
-The standalone `zwogain-alpaca` server also serves **ZWOgain CAA Rotator** as
+The standalone `regain-alpaca` server also serves **PulsarFab regain CAA Rotator** as
 `/api/v1/rotator/0`, implementing IRotatorV3. Open **CAA rotator setup** from the
 server setup page, find the CAA, and select its serial. Only a configured rotator
 appears in Alpaca discovery. Its UUID remains stable when the selected device
 changes. The setup page provides connection, halt, mechanical movement, sync,
 and reverse; the additional reference and multi-turn controls use the same
-`ZwoGain.CAA.*` actions documented in [CAA setup](caa-frontends.md).
+`Regain.CAA.*` actions documented in [CAA setup](caa-frontends.md).
 
-Keep `zwogain-caa` beside the server. The server owns that same SDK-free HID
+Keep `regain-caa` beside the server. The server owns that same SDK-free HID
 worker, preserving its motion limits, deadlines and no-retry behavior. The CAA
 profile and logical offset are stored beside `--profiles`, replacing the file
 extension with `.rotator.json`. Alpaca, native ASCOM and NINA profiles are
@@ -211,7 +211,7 @@ independent. Disconnect the native frontend before connecting through Alpaca.
 
 ## Native CAA rotator
 
-The installer also registers one **ZWOgain CAA Rotator** entry, implementing
+The installer also registers one **PulsarFab regain CAA Rotator** entry, implementing
 `IRotatorV3` for 32-bit and 64-bit clients. It selects the CAA by saved serial
 and uses the local Rust HID worker directly. It does not use the camera Alpaca
 server. Setup exposes origin zeroing, reference assignment, the tested 361°
@@ -220,7 +220,7 @@ limit, and explicit segmented multi-turn travel. See [CAA setup and actions](caa
 ## EFW and EAF
 
 The same installer registers `ASCOM.ZWOgain.FilterWheel` (IFilterWheelV2) and
-`ASCOM.ZWOgain.Focuser` (IFocuserV3). They launch `zwogain-accessories.exe` directly
+`ASCOM.ZWOgain.Focuser` (IFocuserV3). They launch `regain-accessories.exe` directly
 and share the CAA setup theme. The Start menu includes both setup dialogs.
 See [accessory setup and USB validation](accessories.md) for serial selection,
 filter metadata, motor settings, protocol traces, and supported hardware.
@@ -235,13 +235,13 @@ Windows ASCOM/NINA clients can connect through the Platform’s Alpaca support.
 
 ## Pegasus Astro FocusCube3
 
-Choose **ZWOgain Pegasus FocusCube3** (`ASCOM.ZWOgain.FocusCube3.Focuser`).
+Choose **PulsarFab regain Pegasus FocusCube3** (`ASCOM.ZWOgain.FocusCube3.Focuser`).
 Unlike the in-process camera and ZWO accessory COM classes, this focuser uses
-`ZwoGain.FocusCube.ASCOM.exe` as a shared COM local server. Separate 32-bit and
+`Regain.FocusCube.ASCOM.exe` as a shared COM local server. Separate 32-bit and
 64-bit clients share one Rust serial worker; the final disconnect releases it.
 The FocusCube3 Start menu setup uses this server too. Close Unity's device
 connection before using it. The native NINA provider and Alpaca still require
 their own exclusive port ownership; broader sharing is deferred.
 
 See [FocusCube3 setup and protocol](focuscube3.md) and its physical-device
-screenshots. The serial worker is `zwogain-fc3.exe`, not an Alpaca bridge.
+screenshots. The serial worker is `regain-fc3.exe`, not an Alpaca bridge.

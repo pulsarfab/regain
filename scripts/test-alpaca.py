@@ -17,7 +17,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--bin-dir", default="target/debug")
     args = parser.parse_args()
-    executable = Path(args.bin_dir).resolve() / ("zwogain-alpaca.exe" if os.name == "nt" else "zwogain-alpaca")
+    executable = Path(args.bin_dir).resolve() / ("regain-alpaca.exe" if os.name == "nt" else "regain-alpaca")
     with socket.socket() as listener:
         listener.bind(("127.0.0.1", 0))
         port = listener.getsockname()[1]
@@ -42,7 +42,7 @@ def main():
         assert result["ErrorNumber"] == 0, result
         return result.get("Value")
 
-    with tempfile.TemporaryDirectory(prefix="zwogain-http-") as directory:
+    with tempfile.TemporaryDirectory(prefix="regain-http-") as directory:
         with open(Path(directory) / "server.log", "w+b") as log:
             process = subprocess.Popen([str(executable), "--simulate", "--no-discovery", "--port", str(port),
                                         "--profiles", str(Path(directory) / "cameras.json")], stdout=log, stderr=log,
@@ -86,7 +86,7 @@ def main():
                     camera("connected", {"Connected": "false", "ClientID": 1})
                 if os.name != "nt":
                     camera("connected", {"Connected": "true", "ClientID": 1})
-                    worker = json.loads(camera("action", {"Action": "ZwoGain.Diagnostics", "Parameters": "", "ClientID": 1}))["processId"]
+                    worker = json.loads(camera("action", {"Action": "Regain.Diagnostics", "Parameters": "", "ClientID": 1}))["processId"]
                     camera("startexposure", {"Duration": 2, "Light": "false", "ClientID": 1})
                     process.terminate()  # SIGTERM must abort capture and close its camera worker.
                     assert process.wait(timeout=30) == 0, "Unclean SIGTERM shutdown"

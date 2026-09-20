@@ -1,0 +1,28 @@
+[package]
+name = "regain-alpaca"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+default-run = "regain-alpaca"
+
+[dependencies]
+regain-core = { path = "../regain-core" }
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+axum = "0.8"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal", "io-std"] }
+tokio-util = { version = "0.7", features = ["rt"] }
+uuid = { version = "1", features = ["v4"] }
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+serde_urlencoded = "0.7"
+futures-util = "0.3"
+tempfile = "3"
+
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"
+
+[[bin]]
+name = "regain-camera"
+path = "src/camera_main.rs"

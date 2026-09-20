@@ -3,8 +3,8 @@ $ErrorActionPreference = 'Stop'
 if (!$env:CI) { throw 'This machine-registration check is for disposable CI runners only.' }
 $stage = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../artifacts/ASCOM registration'))
 New-Item -ItemType Directory -Path $stage -Force | Out-Null
-Get-ChildItem -LiteralPath (Join-Path $PSScriptRoot '../src/ZwoGain.ASCOM.Register/bin/Release/net48') -File | Copy-Item -Destination $stage -Force
-$exe = Join-Path $stage 'ZwoGain.ASCOM.Register.exe'
+Get-ChildItem -LiteralPath (Join-Path $PSScriptRoot '../src/Regain.ASCOM.Register/bin/Release/net48') -File | Copy-Item -Destination $stage -Force
+$exe = Join-Path $stage 'Regain.ASCOM.Register.exe'
 Write-Output ("Activation client session {0}; user {1}" -f [Diagnostics.Process]::GetCurrentProcess().SessionId, [Security.Principal.WindowsIdentity]::GetCurrent().Name)
 try {
     $registration = Start-Process -FilePath $exe -ArgumentList '/regserver' -WindowStyle Hidden -Wait -PassThru
@@ -25,9 +25,9 @@ try {
     }
 } finally {
     Get-WinEvent -FilterHashtable @{LogName='System';ProviderName='Microsoft-Windows-DistributedCOM';StartTime=(Get-Date).AddMinutes(-5)} -ErrorAction SilentlyContinue | Select-Object -First 4 TimeCreated,Id,Message | Format-List
-    Get-Content -LiteralPath (Join-Path $env:LOCALAPPDATA 'ZwoGain/ASCOM/focuscube3.log') -Tail 30 -ErrorAction SilentlyContinue
-    Get-CimInstance Win32_Process -Filter "Name='ZwoGain.FocusCube.ASCOM.exe'" | Select-Object ProcessId,SessionId,CommandLine
-    Get-Content -LiteralPath (Join-Path $env:LOCALAPPDATA 'ZwoGain/ASCOM/registration.log') -Tail 30 -ErrorAction SilentlyContinue
+    Get-Content -LiteralPath (Join-Path $env:LOCALAPPDATA 'Regain/ASCOM/focuscube3.log') -Tail 30 -ErrorAction SilentlyContinue
+    Get-CimInstance Win32_Process -Filter "Name='Regain.FocusCube.ASCOM.exe'" | Select-Object ProcessId,SessionId,CommandLine
+    Get-Content -LiteralPath (Join-Path $env:LOCALAPPDATA 'Regain/ASCOM/registration.log') -Tail 30 -ErrorAction SilentlyContinue
     $registration = Start-Process -FilePath $exe -ArgumentList '/unregserver' -WindowStyle Hidden -Wait -PassThru
     if ($registration.ExitCode) { throw 'Unregistration failed' }
 }

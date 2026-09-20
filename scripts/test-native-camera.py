@@ -91,10 +91,10 @@ if __name__ == '__main__':
     parser.add_argument('--bin-dir', default='target/debug')
     parser.add_argument('--prepare', type=Path)
     args = parser.parse_args()
-    binary = Path(args.bin_dir).resolve() / ('zwogain-camera.exe' if os.name == 'nt' else 'zwogain-camera')
+    binary = Path(args.bin_dir).resolve() / ('regain-camera.exe' if os.name == 'nt' else 'regain-camera')
     if args.prepare:
         args.prepare.mkdir(parents=True, exist_ok=True)
         exercise(binary, args.prepare.resolve(), True)
     else:
-        with tempfile.TemporaryDirectory(prefix='zwogain-native-') as directory:
+        with tempfile.TemporaryDirectory(prefix='regain-native-') as directory:
             exercise(binary, Path(directory))

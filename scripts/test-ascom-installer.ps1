@@ -3,7 +3,7 @@ $ErrorActionPreference = 'Stop'
 if (!$env:CI -or !([Security.Principal.WindowsPrincipal]::new([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw 'Run on a disposable, elevated CI runner.' }
 $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $version = & (Join-Path $PSScriptRoot 'version.ps1')
-$installer = Join-Path $repo "artifacts/ZwoGain-ASCOM-$version-win-x64-setup.exe"
+$installer = Join-Path $repo "artifacts/Regain-ASCOM-$version-win-x64-setup.exe"
 $testDir = Join-Path $repo 'artifacts/installer-test'
 $destination = Join-Path $testDir 'Installed ASCOM'
 $uninstallKey = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{6C6E7298-5281-4CB4-92F0-0C3702B8BFAA}_is1'
@@ -26,7 +26,7 @@ function Assert-NoCameraEntries {
                 'Software\Classes\ASCOM.ZWOgain.Focuser','Software\ASCOM\Focuser Drivers\ASCOM.ZWOgain.Focuser',
                 'Software\Classes\CLSID\{69AB224B-14D2-46A2-A744-0C60593A28B3}',
                 'Software\Classes\ASCOM.ZWOgain.FocusCube3.Focuser','Software\ASCOM\Focuser Drivers\ASCOM.ZWOgain.FocusCube3.Focuser',
-                'Software\Classes\AppID\{69AB224B-14D2-46A2-A744-0C60593A28B3}','Software\Classes\AppID\ZwoGain.FocusCube.ASCOM.exe') {
+                'Software\Classes\AppID\{69AB224B-14D2-46A2-A744-0C60593A28B3}','Software\Classes\AppID\Regain.FocusCube.ASCOM.exe') {
                 $key = $root.OpenSubKey($path)
                 if ($key) { $key.Dispose(); throw "Rotator entry exists in $view : $path" }
             }
@@ -36,18 +36,18 @@ function Assert-NoCameraEntries {
 Assert-NoCameraEntries
 $platformBefore = Get-ItemPropertyValue $platformKey -Name PlatformVersion -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Path $testDir -Force | Out-Null
-$oldSettings = $env:ZWOGAIN_ASCOM_PROFILES
-$oldSimulation = $env:ZWOGAIN_ASCOM_SIMULATE
-$oldIds = $env:ZWOGAIN_ASCOM_TEST_CLSIDS
-$oldAccessorySimulation = $env:ZWOGAIN_ACCESSORY_SIMULATE
-$oldAccessorySettings = $env:ZWOGAIN_ACCESSORY_SETTINGS
-$oldAccessoryIds = $env:ZWOGAIN_ACCESSORY_TEST_CLSID
-$env:ZWOGAIN_ACCESSORY_SIMULATE = '1'
-$env:ZWOGAIN_ACCESSORY_SETTINGS = $testDir
-$env:ZWOGAIN_ACCESSORY_TEST_CLSID = $null
-$env:ZWOGAIN_ASCOM_TEST_CLSIDS = $null
-$env:ZWOGAIN_ASCOM_PROFILES = $testDir
-$env:ZWOGAIN_ASCOM_SIMULATE = '1'
+$oldSettings = $env:REGAIN_ASCOM_PROFILES
+$oldSimulation = $env:REGAIN_ASCOM_SIMULATE
+$oldIds = $env:REGAIN_ASCOM_TEST_CLSIDS
+$oldAccessorySimulation = $env:REGAIN_ACCESSORY_SIMULATE
+$oldAccessorySettings = $env:REGAIN_ACCESSORY_SETTINGS
+$oldAccessoryIds = $env:REGAIN_ACCESSORY_TEST_CLSID
+$env:REGAIN_ACCESSORY_SIMULATE = '1'
+$env:REGAIN_ACCESSORY_SETTINGS = $testDir
+$env:REGAIN_ACCESSORY_TEST_CLSID = $null
+$env:REGAIN_ASCOM_TEST_CLSIDS = $null
+$env:REGAIN_ASCOM_PROFILES = $testDir
+$env:REGAIN_ASCOM_SIMULATE = '1'
 $backend = $null
 function Run-Setup([string]$Label, [bool]$Success = $true, [string]$Directory = $destination) {
     $p = Start-Process -FilePath $installer -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',('/DIR="' + $Directory + '"'),('/LOG="' + (Join-Path $testDir "$Label.log") + '"') -WindowStyle Hidden -Wait -PassThru
@@ -64,9 +64,9 @@ function Assert-FocusCubeActivation {
         if ($LASTEXITCODE) { throw 'Installed FocusCube3 COM activation failed' }
     }
     # Verify idle shutdown and release the installed executable before maintenance.
-    $serverPath = Join-Path $destination 'ZwoGain.FocusCube.ASCOM.exe'
+    $serverPath = Join-Path $destination 'Regain.FocusCube.ASCOM.exe'
     $deadline = [DateTime]::UtcNow.AddSeconds(45)
-    while (Get-CimInstance Win32_Process -Filter "Name='ZwoGain.FocusCube.ASCOM.exe'" | Where-Object ExecutablePath -eq $serverPath) {
+    while (Get-CimInstance Win32_Process -Filter "Name='Regain.FocusCube.ASCOM.exe'" | Where-Object ExecutablePath -eq $serverPath) {
         if ([DateTime]::UtcNow -gt $deadline) { throw 'Installed FocusCube3 server did not exit after releasing its clients' }
         Start-Sleep -Milliseconds 500
     }
@@ -77,7 +77,7 @@ try {
     # version is a fixture so the production prerequisite gate is exercised.
     Remove-ItemProperty $platformKey -Name PlatformVersion -ErrorAction SilentlyContinue
     Run-Setup 'missing-platform' $false
-    if (Test-Path (Join-Path $destination 'ZwoGain.ASCOM.dll')) { throw 'Prerequisite failure installed files' }
+    if (Test-Path (Join-Path $destination 'Regain.ASCOM.dll')) { throw 'Prerequisite failure installed files' }
     New-Item $platformKey -Force | Out-Null
     Set-ItemProperty $platformKey -Name PlatformVersion -Value '7.1'
     # Deny one real registry write to exercise Inno's transactional rollback.
@@ -90,7 +90,7 @@ try {
     try {
         Set-Acl $blockedPath $deniedAcl
         Run-Setup 'registration-failure' $false
-        if ((Test-Path $uninstallKey) -or (Test-Path (Join-Path $destination 'ZwoGain.ASCOM.dll'))) { throw 'Failed registration did not roll back installation' }
+        if ((Test-Path $uninstallKey) -or (Test-Path (Join-Path $destination 'Regain.ASCOM.dll'))) { throw 'Failed registration did not roll back installation' }
     } finally {
         if (Test-Path $blockedPath) {
             # Set-Acl reopens with write-value access, which this fixture denies.
@@ -112,16 +112,16 @@ try {
     Run-Setup 'install'
     Assert-FocusCubeActivation
     $registered = Get-ItemPropertyValue 'HKLM:\SOFTWARE\Classes\CLSID\{D1DB6F94-5CC0-4752-A758-F849098874A1}\InprocServer32' -Name CodeBase
-    if (([Uri]$registered).LocalPath -ne (Join-Path $destination 'ZwoGain.ASCOM.dll')) { throw 'Wrong installed registration path' }
+    if (([Uri]$registered).LocalPath -ne (Join-Path $destination 'Regain.ASCOM.dll')) { throw 'Wrong installed registration path' }
     foreach ($view in [Microsoft.Win32.RegistryView]::Registry32,[Microsoft.Win32.RegistryView]::Registry64) {
         $root = [Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::LocalMachine, $view)
         try {
             $key = $root.OpenSubKey('Software\Classes\CLSID\{A918164B-49DD-4FF5-BEE6-A4AB93B97F12}\InprocServer32')
             if (!$key) { throw "Installed rotator CLSID missing in $view" }
-            try { if (([Uri]$key.GetValue('CodeBase')).LocalPath -ne (Join-Path $destination 'ZwoGain.ASCOM.dll')) { throw 'Wrong rotator registration path' } } finally { $key.Dispose() }
+            try { if (([Uri]$key.GetValue('CodeBase')).LocalPath -ne (Join-Path $destination 'Regain.ASCOM.dll')) { throw 'Wrong rotator registration path' } } finally { $key.Dispose() }
             $fc3 = $root.OpenSubKey('Software\Classes\CLSID\{69AB224B-14D2-46A2-A744-0C60593A28B3}\LocalServer32')
             if (!$fc3) { throw 'FocusCube3 LocalServer32 registration missing' }
-            try { if ($fc3.GetValue('') -ne ('"' + (Join-Path $destination 'ZwoGain.FocusCube.ASCOM.exe') + '" /Embedding')) { throw 'Wrong FocusCube3 local server path' } } finally { $fc3.Dispose() }
+            try { if ($fc3.GetValue('') -ne ('"' + (Join-Path $destination 'Regain.FocusCube.ASCOM.exe') + '" /Embedding')) { throw 'Wrong FocusCube3 local server path' } } finally { $fc3.Dispose() }
             $key = $root.OpenSubKey('Software\ASCOM\Rotator Drivers\ASCOM.ZWOgain.Rotator')
             if (!$key) { throw "Rotator Chooser entry missing in $view" }
             $key.Dispose()
@@ -131,6 +131,8 @@ try {
     $listener.Start(); $port = $listener.LocalEndpoint.Port; $listener.Stop()
     $url = "http://127.0.0.1:$port"
     $profiles = Join-Path $testDir 'cameras.json'
+    # A previous product binary must also block an upgrade while it owns devices.
+    Copy-Item (Join-Path $destination 'regain-alpaca.exe') (Join-Path $destination 'zwogain-alpaca.exe')
     $backend = Start-Process -FilePath (Join-Path $destination 'zwogain-alpaca.exe') -ArgumentList '--simulate','--no-discovery','--port',"$port",'--profiles',('"' + $profiles + '"') -WindowStyle Hidden -PassThru -RedirectStandardError (Join-Path $testDir 'server.log')
     $deadline = [DateTime]::UtcNow.AddSeconds(20)
     do {
@@ -162,6 +164,7 @@ try {
     $backend.Kill(); $backend.WaitForExit(); $backend.Dispose(); $backend = $null
     Start-Sleep -Seconds 2
     Run-Setup 'upgrade'
+    if (Test-Path (Join-Path $destination 'zwogain-alpaca.exe')) { throw 'Upgrade left the obsolete worker executable' }
     Assert-FocusCubeActivation
     Run-Setup 'moved-upgrade' $false (Join-Path $testDir 'Other directory')
     Set-ItemProperty $uninstallKey -Name DisplayVersion -Value '99.0.0.0'
@@ -180,7 +183,7 @@ try {
         }
     }
     Run-Uninstall 'uninstall'
-    if ((Test-Path $uninstallKey) -or (Test-Path (Join-Path $destination 'ZwoGain.ASCOM.dll'))) { throw 'Uninstall left application files or entry' }
+    if ((Test-Path $uninstallKey) -or (Test-Path (Join-Path $destination 'Regain.ASCOM.dll'))) { throw 'Uninstall left application files or entry' }
     Assert-NoCameraEntries
     if ((Get-FileHash (Join-Path $testDir 'camera-1.json')).Hash -ne $settingsHash -or (Get-FileHash $profiles).Hash -ne $profilesHash) { throw 'Setup changed user settings' }
     Write-Output 'Installer: prerequisites, 8 COM captures, busy guards, upgrade, downgrade guard, uninstall and settings preservation passed.'
@@ -188,10 +191,10 @@ try {
     if ($backend -and !$backend.HasExited) { $backend.Kill(); $backend.WaitForExit() }
     if ($platformBefore) { Set-ItemProperty $platformKey -Name PlatformVersion -Value $platformBefore }
     else { Remove-ItemProperty $platformKey -Name PlatformVersion -ErrorAction SilentlyContinue }
-    $env:ZWOGAIN_ASCOM_PROFILES = $oldSettings
-    $env:ZWOGAIN_ASCOM_SIMULATE = $oldSimulation
-    $env:ZWOGAIN_ASCOM_TEST_CLSIDS = $oldIds
-    $env:ZWOGAIN_ACCESSORY_SIMULATE = $oldAccessorySimulation
-    $env:ZWOGAIN_ACCESSORY_SETTINGS = $oldAccessorySettings
-    $env:ZWOGAIN_ACCESSORY_TEST_CLSID = $oldAccessoryIds
+    $env:REGAIN_ASCOM_PROFILES = $oldSettings
+    $env:REGAIN_ASCOM_SIMULATE = $oldSimulation
+    $env:REGAIN_ASCOM_TEST_CLSIDS = $oldIds
+    $env:REGAIN_ACCESSORY_SIMULATE = $oldAccessorySimulation
+    $env:REGAIN_ACCESSORY_SETTINGS = $oldAccessorySettings
+    $env:REGAIN_ACCESSORY_TEST_CLSID = $oldAccessoryIds
 }

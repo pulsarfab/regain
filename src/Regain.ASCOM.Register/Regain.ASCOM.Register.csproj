@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <OutputType>WinExe</OutputType>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Prefer32Bit>false</Prefer32Bit>
+    <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Regain.ASCOM/Regain.ASCOM.csproj" />
+  </ItemGroup>
+  <ItemGroup><ProjectReference Include="../Regain.FocusCube.ASCOM/Regain.FocusCube.ASCOM.csproj" ReferenceOutputAssembly="false" /></ItemGroup>
+  <Target Name="CopyFocusCubeServer" AfterTargets="Build">
+    <ItemGroup><FocusCubeFiles Include="../Regain.FocusCube.ASCOM/bin/$(Configuration)/net48/Regain.FocusCube.ASCOM.exe*" /></ItemGroup>
+    <Copy SourceFiles="@(FocusCubeFiles)" DestinationFolder="$(OutDir)" />
+  </Target>
+</Project>

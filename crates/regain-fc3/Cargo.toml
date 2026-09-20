@@ -1,0 +1,12 @@
+[package]
+name = "regain-fc3"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Independent native Rust Pegasus Astro FocusCube3 USB serial driver"
+
+[dependencies]
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serialport = { version = "4.9", default-features = false }

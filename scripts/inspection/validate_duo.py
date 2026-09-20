@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def capture(options, guide=False, asi6200=False, worker=None, asi2600_p25=False):
-    command = [str(worker or ROOT / 'target/debug/zwogain-direct.exe'), '--capture-2600-p25' if asi2600_p25 else '--capture-6200' if asi6200 else '--capture-guide' if guide else '--capture-duo', '--stream']
+    command = [str(worker or ROOT / 'target/debug/regain-direct.exe'), '--capture-2600-p25' if asi2600_p25 else '--capture-6200' if asi6200 else '--capture-guide' if guide else '--capture-duo', '--stream']
     for key, value in options.items():
         command += ['--' + key] + ([] if value is True else [str(value)])
     proc = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)

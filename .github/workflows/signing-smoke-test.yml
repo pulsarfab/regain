@@ -24,7 +24,7 @@ jobs:
     name: Azure Artifact Signing smoke test
     runs-on: windows-latest
     # Load-bearing: must match the Entra federated credential subject
-    # `repo:theatrus/zwogain:environment:release`. Remove this and OIDC
+    # `repo:pulsarfab/regain:environment:release`. Remove this and OIDC
     # fails with an unhelpful audience/subject error.
     environment: release
     steps:

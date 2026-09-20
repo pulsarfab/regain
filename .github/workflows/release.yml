@@ -24,7 +24,7 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 30
     # Load-bearing: the Entra federated credential subject is
-    # `repo:theatrus@23114/zwogain@1369114153:environment:release`. Without
+    # must match this repository and its release environment after a transfer. Without
     # this line the OIDC token carries a different subject and azure/login
     # fails with an unhelpful audience/subject error.
     environment: release
@@ -75,21 +75,21 @@ jobs:
           trusted-signing-account-name: ${{ vars.SIGNING_ACCOUNT }}
           certificate-profile-name: ${{ vars.SIGNING_PROFILE }}
           files: |
-            ${{ github.workspace }}\artifacts\stage\ZwoGain.NINA.dll
-            ${{ github.workspace }}\artifacts\stage\ZwoGain.Core.dll
-            ${{ github.workspace }}\artifacts\stage\ZwoGain.Rotator.dll
-            ${{ github.workspace }}\artifacts\stage\zwogain-caa.exe
-            ${{ github.workspace }}\artifacts\stage\zwogain-accessories.exe
-            ${{ github.workspace }}\artifacts\stage\zwogain-ofp2.exe
-            ${{ github.workspace }}\artifacts\stage\zwogain-fc3.exe
-            ${{ github.workspace }}\artifacts\stage\zwogain-host.exe
-            ${{ github.workspace }}\artifacts\stage\zwogain-direct.exe
-            ${{ github.workspace }}\artifacts\stage\zwogain-alpaca.exe
-            ${{ github.workspace }}\artifacts\stage\zwogain-camera.exe
-            ${{ github.workspace }}\artifacts\ascom-stage\ZwoGain.ASCOM.dll
-            ${{ github.workspace }}\artifacts\ascom-stage\ZwoGain.ASCOM.Register.exe
-            ${{ github.workspace }}\artifacts\ascom-stage\ZwoGain.FocusCube.ASCOM.exe
-            ${{ github.workspace }}\artifacts\ascom-stage\ZwoGain.Rotator.dll
+            ${{ github.workspace }}\artifacts\stage\Regain.NINA.dll
+            ${{ github.workspace }}\artifacts\stage\Regain.Core.dll
+            ${{ github.workspace }}\artifacts\stage\Regain.Rotator.dll
+            ${{ github.workspace }}\artifacts\stage\regain-caa.exe
+            ${{ github.workspace }}\artifacts\stage\regain-accessories.exe
+            ${{ github.workspace }}\artifacts\stage\regain-ofp2.exe
+            ${{ github.workspace }}\artifacts\stage\regain-fc3.exe
+            ${{ github.workspace }}\artifacts\stage\regain-host.exe
+            ${{ github.workspace }}\artifacts\stage\regain-direct.exe
+            ${{ github.workspace }}\artifacts\stage\regain-alpaca.exe
+            ${{ github.workspace }}\artifacts\stage\regain-camera.exe
+            ${{ github.workspace }}\artifacts\ascom-stage\Regain.ASCOM.dll
+            ${{ github.workspace }}\artifacts\ascom-stage\Regain.ASCOM.Register.exe
+            ${{ github.workspace }}\artifacts\ascom-stage\Regain.FocusCube.ASCOM.exe
+            ${{ github.workspace }}\artifacts\ascom-stage\Regain.Rotator.dll
           file-digest: SHA256
           timestamp-rfc3161: http://timestamp.acs.microsoft.com
           timestamp-digest: SHA256
@@ -97,13 +97,13 @@ jobs:
       # to the wrong publisher, must not reach the archive.
       - name: Verify every signature
         run: |
-          foreach ($f in 'ZwoGain.NINA.dll','ZwoGain.Core.dll','ZwoGain.Rotator.dll','zwogain-caa.exe','zwogain-accessories.exe','zwogain-ofp2.exe','zwogain-fc3.exe','zwogain-host.exe','zwogain-direct.exe','zwogain-camera.exe','zwogain-alpaca.exe') {
+          foreach ($f in 'Regain.NINA.dll','Regain.Core.dll','Regain.Rotator.dll','regain-caa.exe','regain-accessories.exe','regain-ofp2.exe','regain-fc3.exe','regain-host.exe','regain-direct.exe','regain-camera.exe','regain-alpaca.exe') {
             $sig = Get-AuthenticodeSignature -LiteralPath "artifacts/stage/$f"
             if ($sig.Status -ne 'Valid') { throw "$f signature is $($sig.Status)" }
             if ($sig.SignerCertificate.Subject -notmatch 'StackFoundry LLC') { throw "$f has unexpected signer: $($sig.SignerCertificate.Subject)" }
             Write-Output "OK  $f  $($sig.SignerCertificate.Subject)"
           }
-          foreach ($f in 'ZwoGain.ASCOM.dll','ZwoGain.ASCOM.Register.exe','ZwoGain.FocusCube.ASCOM.exe','ZwoGain.Rotator.dll') {
+          foreach ($f in 'Regain.ASCOM.dll','Regain.ASCOM.Register.exe','Regain.FocusCube.ASCOM.exe','Regain.Rotator.dll') {
             $sig = Get-AuthenticodeSignature -LiteralPath "artifacts/ascom-stage/$f"
             if ($sig.Status -ne 'Valid' -or $sig.SignerCertificate.Subject -notmatch 'StackFoundry LLC') { throw "Invalid ASCOM signature: $f" }
           }
@@ -125,10 +125,10 @@ jobs:
           ./scripts/build-ascom-installer.ps1 -Signed
       - uses: actions/upload-artifact@v7
         with:
-          name: ZwoGain-ASCOM-installer
+          name: Regain-ASCOM-installer
           path: |
-            artifacts/ZwoGain-ASCOM-*-setup.exe
-            artifacts/ZwoGain-ASCOM-*-setup.exe.sha256
+            artifacts/Regain-ASCOM-*-setup.exe
+            artifacts/Regain-ASCOM-*-setup.exe.sha256
           if-no-files-found: error
       - name: Test signed ASCOM installation and removal
         run: ./scripts/test-ascom-installer.ps1
@@ -157,7 +157,7 @@ jobs:
           endpoint: ${{ vars.SIGNING_ENDPOINT }}
           trusted-signing-account-name: ${{ vars.SIGNING_ACCOUNT }}
           certificate-profile-name: ${{ vars.SIGNING_PROFILE }}
-          files: ${{ steps.kit.outputs.kit_path }}\ZwoGain-CameraKit.exe
+          files: ${{ steps.kit.outputs.kit_path }}\Regain-CameraKit.exe
           file-digest: SHA256
           timestamp-rfc3161: http://timestamp.acs.microsoft.com
           timestamp-digest: SHA256
@@ -165,28 +165,28 @@ jobs:
         env:
           KIT_PATH: ${{ steps.kit.outputs.kit_path }}
         run: |
-          foreach ($f in 'ZwoGain-CameraKit.exe','zwogain-host.exe') {
+          foreach ($f in 'Regain-CameraKit.exe','regain-host.exe') {
             $sig = Get-AuthenticodeSignature -LiteralPath (Join-Path $env:KIT_PATH $f)
             if ($sig.Status -ne 'Valid' -or $sig.SignerCertificate.Subject -notmatch 'StackFoundry LLC') { throw "Invalid kit signature: $f" }
           }
-          & (Join-Path $env:KIT_PATH 'ZwoGain-CameraKit.exe') --self-test --include-pixels --output artifacts/signed-kit-self-test
+          & (Join-Path $env:KIT_PATH 'Regain-CameraKit.exe') --self-test --include-pixels --output artifacts/signed-kit-self-test
           if ($LASTEXITCODE) { throw 'Signed camera kit smoke test failed.' }
           python scripts/camera-kit/build.py --package $env:KIT_PATH
           if ($LASTEXITCODE) { throw 'Signed camera kit packaging failed.' }
       - uses: actions/upload-artifact@v7
         with:
-          name: ZwoGain-${{ steps.version.outputs.value }}
+          name: Regain-${{ steps.version.outputs.value }}
           path: |
-            artifacts/ZwoGain-${{ steps.version.outputs.value }}.zip
-            artifacts/ZwoGain-${{ steps.version.outputs.value }}.manifest.json
-            artifacts/zwogain.png
+            artifacts/Regain-${{ steps.version.outputs.value }}.zip
+            artifacts/Regain-${{ steps.version.outputs.value }}.manifest.json
+            artifacts/regain.png
             artifacts/SHA256SUMS
-            artifacts/ZwoGain-CameraKit-${{ steps.version.outputs.value }}-win-x64.zip
-            artifacts/ZwoGain-CameraKit-${{ steps.version.outputs.value }}-win-x64.zip.sha256
-            artifacts/ZwoGain-ASCOM-${{ steps.version.outputs.value }}-win-x64.zip
-            artifacts/ZwoGain-ASCOM-${{ steps.version.outputs.value }}-win-x64.zip.sha256
-            artifacts/ZwoGain-ASCOM-${{ steps.version.outputs.value }}-win-x64-setup.exe
-            artifacts/ZwoGain-ASCOM-${{ steps.version.outputs.value }}-win-x64-setup.exe.sha256
+            artifacts/Regain-CameraKit-${{ steps.version.outputs.value }}-win-x64.zip
+            artifacts/Regain-CameraKit-${{ steps.version.outputs.value }}-win-x64.zip.sha256
+            artifacts/Regain-ASCOM-${{ steps.version.outputs.value }}-win-x64.zip
+            artifacts/Regain-ASCOM-${{ steps.version.outputs.value }}-win-x64.zip.sha256
+            artifacts/Regain-ASCOM-${{ steps.version.outputs.value }}-win-x64-setup.exe
+            artifacts/Regain-ASCOM-${{ steps.version.outputs.value }}-win-x64-setup.exe.sha256
           if-no-files-found: error
       - name: Create or refresh draft release
         if: github.ref_type == 'tag'
@@ -195,14 +195,14 @@ jobs:
           RELEASE_VERSION: ${{ steps.version.outputs.value }}
         run: |
           $tag = "v$env:RELEASE_VERSION"
-          $assets = @("artifacts/ZwoGain-$env:RELEASE_VERSION.zip", "artifacts/ZwoGain-$env:RELEASE_VERSION.manifest.json", 'artifacts/zwogain.png', 'artifacts/SHA256SUMS', "artifacts/ZwoGain-CameraKit-$env:RELEASE_VERSION-win-x64.zip", "artifacts/ZwoGain-CameraKit-$env:RELEASE_VERSION-win-x64.zip.sha256")
-          $assets += @("artifacts/ZwoGain-ASCOM-$env:RELEASE_VERSION-win-x64.zip", "artifacts/ZwoGain-ASCOM-$env:RELEASE_VERSION-win-x64.zip.sha256")
-          $assets += @("artifacts/ZwoGain-ASCOM-$env:RELEASE_VERSION-win-x64-setup.exe", "artifacts/ZwoGain-ASCOM-$env:RELEASE_VERSION-win-x64-setup.exe.sha256")
-          $existing = gh release view $tag --repo theatrus/zwogain --json isDraft 2>$null
+          $assets = @("artifacts/Regain-$env:RELEASE_VERSION.zip", "artifacts/Regain-$env:RELEASE_VERSION.manifest.json", 'artifacts/regain.png', 'artifacts/SHA256SUMS', "artifacts/Regain-CameraKit-$env:RELEASE_VERSION-win-x64.zip", "artifacts/Regain-CameraKit-$env:RELEASE_VERSION-win-x64.zip.sha256")
+          $assets += @("artifacts/Regain-ASCOM-$env:RELEASE_VERSION-win-x64.zip", "artifacts/Regain-ASCOM-$env:RELEASE_VERSION-win-x64.zip.sha256")
+          $assets += @("artifacts/Regain-ASCOM-$env:RELEASE_VERSION-win-x64-setup.exe", "artifacts/Regain-ASCOM-$env:RELEASE_VERSION-win-x64-setup.exe.sha256")
+          $existing = gh release view $tag --repo pulsarfab/regain --json isDraft 2>$null
           if ($LASTEXITCODE -eq 0) {
             if (!(($existing | ConvertFrom-Json).isDraft)) { throw 'Never replace assets of a published release.' }
-            gh release upload $tag @assets --repo theatrus/zwogain --clobber
+            gh release upload $tag @assets --repo pulsarfab/regain --clobber
           } else {
-            gh release create $tag @assets --repo theatrus/zwogain --verify-tag --draft --title "ZWOgain $env:RELEASE_VERSION" --notes-file docs/release-notes.md
+            gh release create $tag @assets --repo pulsarfab/regain --verify-tag --draft --title "PulsarFab regain $env:RELEASE_VERSION" --notes-file docs/release-notes.md
           }
           if ($LASTEXITCODE) { throw 'Draft release publication failed.' }

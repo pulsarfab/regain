@@ -1,0 +1,18 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Regain.ASCOM.Register/Regain.ASCOM.Register.csproj" />
+    <Project Path="src/Regain.ASCOM/Regain.ASCOM.csproj" />
+    <Project Path="src/Regain.Core/Regain.Core.csproj" />
+    <Project Path="src/Regain.Diagnostics/Regain.Diagnostics.csproj" />
+    <Project Path="src/Regain.FocusCube.ASCOM/Regain.FocusCube.ASCOM.csproj" />
+    <Project Path="src/Regain.NINA/Regain.NINA.csproj" />
+    <Project Path="src/Regain.Rotator/Regain.Rotator.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Regain.NINA.Tests/Regain.NINA.Tests.csproj" />
+    <Project Path="tests/Regain.Tests/Regain.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/Regain.Packaging/Regain.Packaging.csproj" />
+  </Folder>
+</Solution>

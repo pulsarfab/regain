@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows7.0</TargetFramework>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <UseWPF>true</UseWPF>
+    <PlatformTarget>x64</PlatformTarget>
+    <NoWarn>$(NoWarn);NU1701</NoWarn>
+    <AssemblyTitle>PulsarFab regain</AssemblyTitle>
+    <Title>PulsarFab regain</Title>
+    <Description>Regain control of your equipment. Native astronomy drivers and camera recovery.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <Resource Include="Assets/regain.png" />
+    <InternalsVisibleTo Include="Regain.NINA.Tests" />
+    <ProjectReference Include="../Regain.Core/Regain.Core.csproj" />
+    <ProjectReference Include="../Regain.Rotator/Regain.Rotator.csproj" />
+    <PackageReference Include="NINA.Plugin" Version="3.2.0.9001" PrivateAssets="all" />
+  </ItemGroup>
+</Project>

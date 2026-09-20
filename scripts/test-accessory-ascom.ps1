@@ -6,32 +6,32 @@ $privateKeys = @()
 $hive = [Microsoft.Win32.RegistryHive]::CurrentUser
 $principal = [Security.Principal.WindowsPrincipal]::new([Security.Principal.WindowsIdentity]::GetCurrent())
 if ($principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { $hive = [Microsoft.Win32.RegistryHive]::LocalMachine }
-$oldId = $env:ZWOGAIN_ACCESSORY_TEST_CLSID
-$oldProfile = $env:ZWOGAIN_ACCESSORY_SETTINGS
-$oldWorker = $env:ZWOGAIN_ACCESSORY_WORKER
-$oldSimulate = $env:ZWOGAIN_ACCESSORY_SIMULATE
+$oldId = $env:REGAIN_ACCESSORY_TEST_CLSID
+$oldProfile = $env:REGAIN_ACCESSORY_SETTINGS
+$oldWorker = $env:REGAIN_ACCESSORY_WORKER
+$oldSimulate = $env:REGAIN_ACCESSORY_SIMULATE
 try {
-    dotnet build (Join-Path $repo 'src/ZwoGain.ASCOM') -c Release
+    dotnet build (Join-Path $repo 'src/Regain.ASCOM') -c Release
     if ($LASTEXITCODE) { throw 'ASCOM build failed' }
     $testDir = Join-Path $repo ('artifacts/accessory-ascom-' + [Guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Path $testDir | Out-Null
-    $env:ZWOGAIN_ACCESSORY_SETTINGS = $testDir
-    $env:ZWOGAIN_ACCESSORY_SIMULATE = if ($Hardware) { '' } else { '1' }
-    $env:ZWOGAIN_ACCESSORY_WORKER = Join-Path $repo 'target/debug/zwogain-accessories.exe'
+    $env:REGAIN_ACCESSORY_SETTINGS = $testDir
+    $env:REGAIN_ACCESSORY_SIMULATE = if ($Hardware) { '' } else { '1' }
+    $env:REGAIN_ACCESSORY_WORKER = Join-Path $repo 'target/debug/regain-accessories.exe'
     foreach ($deviceClass in 'EfwFilterWheel','EafFocuser') {
-    $env:ZWOGAIN_ACCESSORY_TEST_CLSID = [Guid]::NewGuid().ToString()
-    $assemblyPath = Join-Path $repo 'src/ZwoGain.ASCOM/bin/Release/net48/ZwoGain.ASCOM.dll'
+    $env:REGAIN_ACCESSORY_TEST_CLSID = [Guid]::NewGuid().ToString()
+    $assemblyPath = Join-Path $repo 'src/Regain.ASCOM/bin/Release/net48/Regain.ASCOM.dll'
     $assemblyName = [Reflection.AssemblyName]::GetAssemblyName($assemblyPath).FullName
     foreach ($view in [Microsoft.Win32.RegistryView]::Registry32,[Microsoft.Win32.RegistryView]::Registry64) {
         $root = [Microsoft.Win32.RegistryKey]::OpenBaseKey($hive, $view)
         try {
-            $keyPath = 'Software\Classes\CLSID\{' + $env:ZWOGAIN_ACCESSORY_TEST_CLSID + '}'
+            $keyPath = 'Software\Classes\CLSID\{' + $env:REGAIN_ACCESSORY_TEST_CLSID + '}'
             if ($root.OpenSubKey($keyPath)) { throw 'Private test CLSID already exists' }
             $privateKeys += @{ View = $view; Path = $keyPath }
             $key = $root.CreateSubKey($keyPath + '\InprocServer32')
             try {
                 $key.SetValue('', 'mscoree.dll'); $key.SetValue('ThreadingModel', 'Both')
-                $key.SetValue('Class', 'ZwoGain.Ascom.' + $deviceClass); $key.SetValue('Assembly', $assemblyName)
+                $key.SetValue('Class', 'Regain.Ascom.' + $deviceClass); $key.SetValue('Assembly', $assemblyName)
                 $key.SetValue('RuntimeVersion', 'v4.0.30319'); $key.SetValue('CodeBase', ([Uri]$assemblyPath).AbsoluteUri)
             } finally { $key.Dispose() }
         } finally { $root.Dispose() }
@@ -50,8 +50,8 @@ try {
         $root = [Microsoft.Win32.RegistryKey]::OpenBaseKey($hive, $entry.View)
         try { $root.DeleteSubKeyTree($entry.Path, $false) } finally { $root.Dispose() }
     }
-    $env:ZWOGAIN_ACCESSORY_TEST_CLSID = $oldId
-    $env:ZWOGAIN_ACCESSORY_SETTINGS = $oldProfile
-    $env:ZWOGAIN_ACCESSORY_WORKER = $oldWorker
-    $env:ZWOGAIN_ACCESSORY_SIMULATE = $oldSimulate
+    $env:REGAIN_ACCESSORY_TEST_CLSID = $oldId
+    $env:REGAIN_ACCESSORY_SETTINGS = $oldProfile
+    $env:REGAIN_ACCESSORY_WORKER = $oldWorker
+    $env:REGAIN_ACCESSORY_SIMULATE = $oldSimulate
 }

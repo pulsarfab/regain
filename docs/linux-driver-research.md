@@ -4,7 +4,7 @@ Reviewed 2026-09-14. I found useful open-source wrappers and partial reverse
 engineering, but no verified, maintained SDK-free implementation for the
 ASI2600/6200 P25 or ASI676 families among these projects.
 
-| Project | What it provides | Use for ZWOgain |
+| Project | What it provides | Use for PulsarFab regain |
 | --- | --- | --- |
 | [INDI ASI](https://github.com/indilib/indi-3rdparty/tree/master/indi-asi) | Its [build file](https://github.com/indilib/indi-3rdparty/blob/master/indi-asi/CMakeLists.txt) requires and links the ASI library, alongside USB and INDI libraries. | Application lifecycle and hotplug handling; not a replacement USB protocol implementation. |
 | [Open Astro Project](https://github.com/openastroproject/openastro/tree/master/liboacam/zwo) | The [ZWO loader](https://github.com/openastroproject/openastro/blob/master/liboacam/zwo/ZWASI2dynloader.c) loads `libASICamera2` and resolves ASI API functions. | SDK integration reference; no independent frame-setup protocol. |

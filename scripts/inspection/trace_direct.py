@@ -17,7 +17,7 @@ def main():
     parser.add_argument('--cancel-bulks', type=int, nargs='+', help='cancel these pending bulk submissions (1-based)')
     parser.add_argument('--hash-bulk', action='store_true', help='record hashes of successful USB chunks, never pixels')
     parser.add_argument('--exit-after-bulk', type=int, help='research: exit owned worker after this successful bulk completion (1-based)')
-    parser.add_argument('--worker', type=Path, default=ROOT / 'target/debug/zwogain-direct.exe', help='exact built or installed worker to trace')
+    parser.add_argument('--worker', type=Path, default=ROOT / 'target/debug/regain-direct.exe', help='exact built or installed worker to trace')
     parser.add_argument('options', nargs=argparse.REMAINDER)
     args = parser.parse_args()
     options = args.options[1:] if args.options[:1] == ['--'] else args.options

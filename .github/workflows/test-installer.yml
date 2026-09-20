@@ -17,7 +17,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/download-artifact@v4
         with:
-          name: ZwoGain-ASCOM-installer
+          name: Regain-ASCOM-installer
           path: artifacts
           run-id: ${{ inputs.run_id }}
           github-token: ${{ github.token }}

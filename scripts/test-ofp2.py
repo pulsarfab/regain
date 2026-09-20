@@ -115,9 +115,9 @@ def main():
     directory = Path(args.bin_dir).resolve()
     def binary(name):
         return directory / (name + ('.exe' if os.name == 'nt' else ''))
-    devices = json.loads(subprocess.check_output([str(binary('zwogain-ofp2')), 'list-details', *simulate], timeout=30))
+    devices = json.loads(subprocess.check_output([str(binary('regain-ofp2')), 'list-details', *simulate], timeout=30))
     assert sum(d['serial'] == serial for d in devices) == 1, devices
-    worker = Worker(binary('zwogain-ofp2'), serial, simulate)
+    worker = Worker(binary('regain-ofp2'), serial, simulate)
     report = {'hardware': args.hardware}
     try:
         identity = worker.call('identity')
@@ -127,7 +127,7 @@ def main():
             worker.call('on', brightness=invalid, expected_error=True)
         worker.call('bad', expected_error=True)
         if args.hardware:
-            second = subprocess.run([str(binary('zwogain-ofp2')), 'status', '--serial', serial],
+            second = subprocess.run([str(binary('regain-ofp2')), 'status', '--serial', serial],
                                     capture_output=True, timeout=10)
             assert second.returncode != 0, 'Serial ownership was not exclusive'
         report['native'] = exercise(worker.call, 'Rust worker')
@@ -157,7 +157,7 @@ def main():
         return response.get('Value')
     def call(command, **values):
         if command == 'status':
-            state = json.loads(api('action', {'Action': 'zwogain.status', 'Parameters': ''}))
+            state = json.loads(api('action', {'Action': 'regain.status', 'Parameters': ''}))
             assert api('calibratorstate') == (3 if state['calibrator_on'] else 1)
             assert api('brightness') == (state['brightness'] if state['light_on'] else 0)
             # Multiple readbacks can span the end of a movement; use the atomic
@@ -165,10 +165,10 @@ def main():
             return state
         member = {'open':'opencover', 'close':'closecover', 'halt':'haltcover', 'on':'calibratoron', 'off':'calibratoroff'}[command]
         return api(member, {'Brightness': values['brightness']} if command == 'on' else {})
-    with tempfile.TemporaryDirectory(prefix='zwogain-ofp2-') as temporary:
+    with tempfile.TemporaryDirectory(prefix='regain-ofp2-') as temporary:
         profiles = Path(temporary) / 'cameras.json'
         with (Path(temporary)/'server.log').open('w+b') as log:
-            process = subprocess.Popen([str(binary('zwogain-alpaca')), *simulate, '--no-discovery',
+            process = subprocess.Popen([str(binary('regain-alpaca')), *simulate, '--no-discovery',
                                         '--port', str(port), '--profiles', str(profiles)], stdout=log, stderr=log)
             try:
                 deadline = time.monotonic()+30
@@ -181,7 +181,7 @@ def main():
                         time.sleep(.05)
                 assert api('interfaceversion') == 1
                 api('brightness', error=0x407)
-                assert 'ZwoGain.Status' in api('supportedactions')
+                assert 'Regain.Status' in api('supportedactions')
                 choices = request('/setup/api/flatpanel/discover', {})
                 assert any(d['serial'] == serial for d in choices)
                 profile['serial'] = serial

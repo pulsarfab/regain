@@ -11,9 +11,9 @@ try {
     if ($LASTEXITCODE) { throw 'Rust tests failed' }
     rustc --crate-type cdylib tests/fixtures/selection_sdk.rs -o target/debug/selection_sdk.dll
     if ($LASTEXITCODE) { throw 'SDK selection fixture build failed' }
-    dotnet test tests/ZwoGain.Tests -c Release
+    dotnet test tests/Regain.Tests -c Release
     if ($LASTEXITCODE) { throw 'Recovery tests failed' }
-    dotnet test tests/ZwoGain.NINA.Tests -c Release
+    dotnet test tests/Regain.NINA.Tests -c Release
     if ($LASTEXITCODE) { throw 'NINA contract tests failed' }
     python scripts/test-native-camera.py
     if ($LASTEXITCODE) { throw 'Native camera IPC tests failed' }

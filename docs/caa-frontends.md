@@ -1,18 +1,18 @@
 # CAA in NINA and ASCOM
 
-ZWOgain controls the CAA through its Rust USB HID worker, without the ZWO SDK.
-There is one **ZWOgain CAA Rotator** entry in NINA and one in the Windows ASCOM
+PulsarFab regain controls the CAA through its Rust USB HID worker, without the ZWO SDK.
+There is one **PulsarFab regain CAA Rotator** entry in NINA and one in the Windows ASCOM
 Chooser. Select the physical device in setup; its serial is saved. A device
 that is missing or busy is not replaced with another CAA automatically.
 
 These frontends are included in release v0.3.0.0.
-ZWOgain is independent and is not affiliated with or supported by ZWO.
+PulsarFab regain is independent and is not affiliated with or supported by ZWO.
 
 ## Setup
 
 In NINA, update the plugin, restart NINA, open Equipment → Rotator and select
-**ZWOgain CAA Rotator**. Open its setup gear. In ASCOM, use the same-named
-Chooser entry, or **ZWOgain ASCOM → CAA rotator setup** in the Start menu.
+**PulsarFab regain CAA Rotator**. Open its setup gear. In ASCOM, use the same-named
+Chooser entry, or **PulsarFab regain ASCOM → CAA rotator setup** in the Start menu.
 
 1. On **Device**, choose the CAA. Setup scans on opening and saves the
    selection automatically.
@@ -97,24 +97,24 @@ the read actions and ResetOrigin, which accept an empty string. Results are JSON
 
 | Action | Parameters | Effect |
 | --- | --- | --- |
-| `ZwoGain.CAA.Status` | empty | Raw/logical position, target, limit, busy state and faults |
-| `ZwoGain.CAA.Settings` | empty | Beep and reverse |
-| `ZwoGain.CAA.Identity` | empty | Model, firmware, serial and alias |
-| `ZwoGain.CAA.ResetOrigin` | empty | Set the current physical position to mechanical zero |
-| `ZwoGain.CAA.SetReference` | `{"degrees":152}` | Assign a mechanical reference without movement |
-| `ZwoGain.CAA.SetLimit` | `{"degrees":360}` | Set the firmware travel limit |
-| `ZwoGain.CAA.SetBeep` | `{"enabled":true}` | Change beep setting |
-| `ZwoGain.CAA.SetAlias` | `{"text":"Rotator"}` | Save up to eight printable ASCII characters |
-| `ZwoGain.CAA.RotateUnwrapped` | `{"degrees":450}` | Start explicit segmented physical travel |
+| `Regain.CAA.Status` | empty | Raw/logical position, target, limit, busy state and faults |
+| `Regain.CAA.Settings` | empty | Beep and reverse |
+| `Regain.CAA.Identity` | empty | Model, firmware, serial and alias |
+| `Regain.CAA.ResetOrigin` | empty | Set the current physical position to mechanical zero |
+| `Regain.CAA.SetReference` | `{"degrees":152}` | Assign a mechanical reference without movement |
+| `Regain.CAA.SetLimit` | `{"degrees":360}` | Set the firmware travel limit |
+| `Regain.CAA.SetBeep` | `{"enabled":true}` | Change beep setting |
+| `Regain.CAA.SetAlias` | `{"text":"Rotator"}` | Save up to eight printable ASCII characters |
+| `Regain.CAA.RotateUnwrapped` | `{"degrees":450}` | Start explicit segmented physical travel |
 
-For example, `driver.Action("ZwoGain.CAA.ResetOrigin", "")` resets mechanical
+For example, `driver.Action("Regain.CAA.ResetOrigin", "")` resets mechanical
 zero. It is different from `driver.Sync(0)`, which only changes sky coordinates.
 Raw CommandString/CommandBlind/CommandBool access is not exposed.
 
 ## Persistence and failures
 
 NINA and ASCOM save their selected serial and logical offset separately under
-`%LOCALAPPDATA%\ZwoGain\Rotators\nina.json` and `ascom.json`. Device settings
+`%LOCALAPPDATA%\Regain\Rotators\nina.json` and `ascom.json`. Device settings
 are read on connection; connecting does not reset the origin or change limits.
 After an unfinished reference operation, a new connection drops the saved sky
 offset and requires a new sync. Reference changes made in another application
@@ -127,7 +127,7 @@ may finish the current segment. Do not treat process termination as a confirmed
 motor stop. No automatic USB reset or mechanical-origin reset is used to recover.
 
 Diagnostics go to NINA's log and
-`%LOCALAPPDATA%\ZwoGain\Rotators\rotator.log`. Halt acknowledges a stored motion
+`%LOCALAPPDATA%\Regain\Rotators\rotator.log`. Halt acknowledges a stored motion
 error; a new move still requires healthy device status.
 
 USB-handle reopen retains the reference. Physical power-loss retention,
@@ -136,7 +136,7 @@ internal flash/EEPROM storage, and encoder presence remain unverified. See
 
 ## Build and package
 
-`scripts/build.ps1` includes `zwogain-caa.exe`, the shared rotator frontend,
+`scripts/build.ps1` includes `regain-caa.exe`, the shared rotator frontend,
 and protocol documentation in the NINA ZIP. `scripts/build-ascom.ps1` and
 `scripts/build-ascom-installer.ps1` include them in the ASCOM package/installer.
 The installer registers exactly one rotator for 32-bit and 64-bit clients;

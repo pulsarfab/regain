@@ -69,8 +69,8 @@ framing, timing/settings and envelope-processing tests plus the host test),
 
 Tested the installed NINA 3.2 application using Windows computer use:
 
-- ZWOgain appeared as its own camera-provider group and selected the ASI676MC.
-- The persistent **ZWOgain Retryable Camera** entry opens a camera picker in setup.
+- PulsarFab regain appeared as its own camera-provider group and selected the ASI676MC.
+- The persistent **PulsarFab regain Retryable Camera** entry opens a camera picker in setup.
   Selected the attached ASI676MC, saved, connected successfully, and reopened
   setup to verify the selected model and automatically remembered serial.
   Restarted NINA and verified both its driver selection and the setup camera /

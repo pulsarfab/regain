@@ -3,11 +3,11 @@ $ErrorActionPreference = 'Stop'
 # Exercise .NET Framework's redirected-stdin UTF-8 preamble, as on Windows CI.
 [Console]::InputEncoding = [Text.UTF8Encoding]::new($true)
 $id = [Guid](('D1DB6F94-5CC0-4752-A758-F849098874A{0}' -f ($Slot + 1)))
-if ($env:ZWOGAIN_ASCOM_TEST_CLSIDS) { $id = [Guid]($env:ZWOGAIN_ASCOM_TEST_CLSIDS.Split(',')[$Slot]) }
+if ($env:REGAIN_ASCOM_TEST_CLSIDS) { $id = [Guid]($env:REGAIN_ASCOM_TEST_CLSIDS.Split(',')[$Slot]) }
 $deadline = [DateTime]::UtcNow.AddSeconds(20)
 do {
     try { $camera = [Activator]::CreateInstance([Type]::GetTypeFromCLSID($id)); break }
-    catch { if (!$env:ZWOGAIN_ASCOM_TEST_CLSIDS -or [DateTime]::UtcNow -gt $deadline) { throw }; Start-Sleep -Milliseconds 100 }
+    catch { if (!$env:REGAIN_ASCOM_TEST_CLSIDS -or [DateTime]::UtcNow -gt $deadline) { throw }; Start-Sleep -Milliseconds 100 }
 } while ($true)
 try {
     if ($camera.InterfaceVersion -ne 4) { throw 'Wrong camera interface' }

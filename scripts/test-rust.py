@@ -80,13 +80,13 @@ def simulated(binary_dir):
     exposure = dict(width=128, height=128, x=0, y=0, bin=1,
                     microseconds=1000, dark=True, readRetries=2)
     expected = b"".join(struct.pack("<H", n) for n in range(128 * 128))
-    with Worker([str(binary_dir / ("zwogain-host" + suffix)), "--simulate"]) as worker:
+    with Worker([str(binary_dir / ("regain-host" + suffix)), "--simulate"]) as worker:
         name = worker.call("list")[0][0]["name"]
         worker.call("open", dict(name=name))
         assert worker.frame(exposure)[1] == expected
         worker.call("close")
     count = 0
-    with Worker([str(binary_dir / ("zwogain-direct" + suffix)), "--serve", "--simulate"]) as worker:
+    with Worker([str(binary_dir / ("regain-direct" + suffix)), "--serve", "--simulate"]) as worker:
         cameras = worker.call("list")[0]
         assert len(cameras) == 5
         for camera in cameras:
@@ -119,7 +119,7 @@ def simulated(binary_dir):
 
 
 def sdk_fixture(binary_dir, library):
-    with Worker([str(binary_dir / "zwogain-host"), "--sdk", str(library.resolve())]) as worker:
+    with Worker([str(binary_dir / "regain-host"), "--sdk", str(library.resolve())]) as worker:
         camera = worker.call("list")[0][0]
         assert camera["width"] == 9576 and camera["height"] == 6388
         assert camera["pixelSize"] == 3.76 and camera["bitDepth"] == 16
@@ -137,11 +137,11 @@ def sdk_fixture(binary_dir, library):
 
 def standalone(binary_dir, library=None):
     suffix = ".exe" if sys.platform == "win32" else ""
-    command = [str(binary_dir / ("zwogain-host" + suffix))]
+    command = [str(binary_dir / ("regain-host" + suffix))]
     command += ["--sdk", str(library.resolve())] if library else ["--simulate"]
     listing = json.loads(subprocess.check_output(command + ["--list"], text=True, timeout=10))
     assert len(listing["cameras"]) == 1
-    with tempfile.TemporaryDirectory(prefix="zwogain-cli-test-") as temporary:
+    with tempfile.TemporaryDirectory(prefix="regain-cli-test-") as temporary:
         destination = Path(temporary) / "frames"
         capture = command + ["--capture", "--width", "128", "--height", "128", "--frames", "2",
                              "--microseconds", "1000", "--gain", "123", "--output", str(destination)]
@@ -161,7 +161,7 @@ def standalone(binary_dir, library=None):
             for failures in [2, 3]:
                 retry_directory = Path(temporary) / f"retry-{failures}"
                 retried = subprocess.run(capture[:-1] + [str(retry_directory)],
-                    env={**os.environ, "ZWOGAIN_FIXTURE_FAIL_DOWNLOADS": str(failures)},
+                    env={**os.environ, "REGAIN_FIXTURE_FAIL_DOWNLOADS": str(failures)},
                     capture_output=True, text=True, timeout=20)
                 assert (retried.returncode == 0) == (failures == 2), retried.stderr
                 assert "fixture set 0=100" in retried.stderr, "gain not restored after failed download"

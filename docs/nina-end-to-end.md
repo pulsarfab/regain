@@ -12,7 +12,7 @@ worker-recovery checks below also passed. This covers SDK operation on the three
 attached sensors and experimental direct operation on ASI676MC; it does not
 establish P25 compatibility or recovery from physical USB faults.
 
-Preflight confirmed that the installed `ZwoGain.NINA.dll` matches the local
+Preflight confirmed that the installed `Regain.NINA.dll` matches the local
 Release build by SHA-256. The guide-offset correction `ed3a820` was subsequently
 built, installed and tested in NINA; GitHub CI passed through `81c1d96`.
 SDK property enumeration, which does not open the cameras, confirmed the
@@ -246,7 +246,7 @@ A final one-second, bin-1 full frame displayed 3552 × 3552, mean 563.85 and
 standard deviation 1405.15, with matching gain/offset metadata. The entire
 image was fitted to the image pane. Snapshot Loop, Save and subsampling were
 off. The original NINA image output directory was restored; sequence test
-files remain in its separate local `ZWOgain-e2e` subdirectory. Duo cooling and
+files remain in its separate local `PulsarFab regain-e2e` subdirectory. Duo cooling and
 dew heater were off, with its original −10°C target field restored before
 disconnecting that camera.
 
@@ -351,7 +351,7 @@ colder target and rejection of cooling below that target's tolerance.
 
 The longer real settling period also exposed NINA 3.2's independent readiness
 deadline: a five-second capture failed after its exposure plus the profile's
-60-second timeout even though ZWOgain was still recovering. The plugin now
+60-second timeout even though PulsarFab regain was still recovering. The plugin now
 temporarily extends that deadline to accommodate its bounded recovery policy,
 then restores the original value after download, failure, cancellation or
 disconnect. It preserves a concurrent user edit. Cancellation during a real
@@ -627,7 +627,7 @@ real interrupted USB transfer can resume. Ready-frame rereads remain covered by
 automated fault tests. The local suite passed 36 Rust tests, 81 core .NET tests,
 27 NINA tests and all four simulated COM slots in both client architectures.
 GitHub CI passed for this fix on Windows, Linux x64/ARM64 and macOS Intel/ARM64:
-[run 35034938155](https://github.com/theatrus/zwogain/actions/runs/35034938155).
+[run 35034938155](https://github.com/pulsarfab/regain/actions/runs/35034938155).
 
 After testing, cooling and dew heating were off. Setup retained the P25 camera
 and serial, with direct mode and fallback disabled. Reconnecting confirmed
