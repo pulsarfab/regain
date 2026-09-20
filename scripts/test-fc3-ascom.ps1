@@ -41,7 +41,6 @@ try {
     }
     foreach ($child in $children) {
         if (!$child.WaitForExit(45000)) { throw 'COM client timed out' }
-        $child.Refresh()
         if ($child.ExitCode -ne 0) { Get-Content (Join-Path $directory '*.err'); throw 'COM client failed' }
     }
     Get-Content (Join-Path $directory '*.out')
