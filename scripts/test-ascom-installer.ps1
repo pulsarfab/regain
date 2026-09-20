@@ -57,6 +57,21 @@ function Run-Uninstall([string]$Label, [bool]$Success = $true) {
     $p = Start-Process -FilePath (Join-Path $destination 'unins000.exe') -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',('/LOG="' + (Join-Path $testDir "$Label.log") + '"') -WindowStyle Hidden -Wait -PassThru
     if (($p.ExitCode -eq 0) -ne $Success) { throw "$Label returned $($p.ExitCode)" }
 }
+function Assert-FocusCubeActivation {
+    # Inno emits its own registry entries, independently of Register.exe.
+    foreach ($architecture in 'System32','SysWOW64') {
+        & "$env:WINDIR/$architecture/WindowsPowerShell/v1.0/powershell.exe" -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'test-fc3-ascom-client.ps1') -MetadataOnly
+        if ($LASTEXITCODE) { throw 'Installed FocusCube3 COM activation failed' }
+    }
+    # Verify idle shutdown and release the installed executable before maintenance.
+    $serverPath = Join-Path $destination 'ZwoGain.FocusCube.ASCOM.exe'
+    $deadline = [DateTime]::UtcNow.AddSeconds(45)
+    while (Get-CimInstance Win32_Process -Filter "Name='ZwoGain.FocusCube.ASCOM.exe'" | Where-Object ExecutablePath -eq $serverPath) {
+        if ([DateTime]::UtcNow -gt $deadline) { throw 'Installed FocusCube3 server did not exit after releasing its clients' }
+        Start-Sleep -Milliseconds 500
+    }
+    Write-Output 'Installed FocusCube3 activation (32/64-bit) and idle shutdown passed.'
+}
 try {
     # ASCOM is not needed for these self-contained COM classes. Its registry
     # version is a fixture so the production prerequisite gate is exercised.
@@ -95,6 +110,7 @@ try {
     }
     Assert-NoCameraEntries
     Run-Setup 'install'
+    Assert-FocusCubeActivation
     $registered = Get-ItemPropertyValue 'HKLM:\SOFTWARE\Classes\CLSID\{D1DB6F94-5CC0-4752-A758-F849098874A1}\InprocServer32' -Name CodeBase
     if (([Uri]$registered).LocalPath -ne (Join-Path $destination 'ZwoGain.ASCOM.dll')) { throw 'Wrong installed registration path' }
     foreach ($view in [Microsoft.Win32.RegistryView]::Registry32,[Microsoft.Win32.RegistryView]::Registry64) {
@@ -146,6 +162,7 @@ try {
     $backend.Kill(); $backend.WaitForExit(); $backend.Dispose(); $backend = $null
     Start-Sleep -Seconds 2
     Run-Setup 'upgrade'
+    Assert-FocusCubeActivation
     Run-Setup 'moved-upgrade' $false (Join-Path $testDir 'Other directory')
     Set-ItemProperty $uninstallKey -Name DisplayVersion -Value '99.0.0.0'
     Run-Setup 'downgrade' $false
