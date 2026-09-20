@@ -24,6 +24,7 @@ try {
         if ($LASTEXITCODE) { throw 'Registered CAA COM activation failed' }
     }
 } finally {
+    Get-WinEvent -FilterHashtable @{LogName='System';ProviderName='Microsoft-Windows-DistributedCOM';StartTime=(Get-Date).AddMinutes(-5)} -ErrorAction SilentlyContinue | Select-Object -First 4 TimeCreated,Id,Message | Format-List
     Get-Content -LiteralPath (Join-Path $env:LOCALAPPDATA 'ZwoGain/ASCOM/focuscube3.log') -Tail 30 -ErrorAction SilentlyContinue
     Get-CimInstance Win32_Process -Filter "Name='ZwoGain.FocusCube.ASCOM.exe'" | Select-Object ProcessId,SessionId,CommandLine
     Get-Content -LiteralPath (Join-Path $env:LOCALAPPDATA 'ZwoGain/ASCOM/registration.log') -Tail 30 -ErrorAction SilentlyContinue

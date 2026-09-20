@@ -13,6 +13,7 @@ public interface IClassFactory {
 [ComVisible(true), ClassInterface(ClassInterfaceType.None)]
 public sealed class Factory : IClassFactory {
     public int CreateInstance(IntPtr outer, ref Guid iid, out IntPtr result) {
+        Program.Log("Factory CreateInstance " + iid);
         result=IntPtr.Zero;
         if(outer!=IntPtr.Zero) return unchecked((int)0x80040110);
         try { var unknown=Marshal.GetIUnknownForObject(new Driver()); try { return Marshal.QueryInterface(unknown,ref iid,out result); } finally { Marshal.Release(unknown); } }
@@ -21,14 +22,14 @@ public sealed class Factory : IClassFactory {
     public int LockServer(bool locked) { Program.Locks += locked ? 1 : -1; return 0; }
 }
 internal static class Program {
-    [DllImport("ole32.dll")] private static extern int CoRegisterClassObject(ref Guid clsid, [MarshalAs(UnmanagedType.Interface)] IClassFactory factory, uint context, uint flags, out uint cookie);
+    [DllImport("ole32.dll")] private static extern int CoRegisterClassObject(ref Guid clsid, [MarshalAs(UnmanagedType.IUnknown)] object factory, uint context, uint flags, out uint cookie);
     [DllImport("ole32.dll")] private static extern int CoRevokeClassObject(uint cookie);
     [DllImport("ole32.dll")] private static extern int CoResumeClassObjects();
     [DllImport("ole32.dll")] private static extern int CoSuspendClassObjects();
     private static readonly List<WeakReference> Objects=[];
     internal static int Locks;
     internal static void Track(Driver driver) { lock(Objects) Objects.Add(new WeakReference(driver)); }
-    private static void Log(string message) {
+    internal static void Log(string message) {
         try {
             var dir=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"ZwoGain","ASCOM");
             Directory.CreateDirectory(dir);
@@ -53,9 +54,15 @@ internal static class Program {
             Log($"Starting COM server {clsid}; PID {System.Diagnostics.Process.GetCurrentProcess().Id}; session {System.Diagnostics.Process.GetCurrentProcess().SessionId}");
             var app=new Application { ShutdownMode=ShutdownMode.OnExplicitShutdown };
             var factory=new Factory();
-            Marshal.ThrowExceptionForHR(CoRegisterClassObject(ref clsid,factory,4,5,out cookie));
-            Marshal.ThrowExceptionForHR(CoResumeClassObjects());
-            Log("Class factory registered and resumed");
+            // Register after WPF has initialized its dispatcher/COM apartment.
+            app.Dispatcher.BeginInvoke(new Action(() => {
+                int registered=CoRegisterClassObject(ref clsid,factory,4,5,out cookie);
+                Log($"RegisterClassObject: 0x{registered:X8}");
+                Marshal.ThrowExceptionForHR(registered);
+                int resumed=CoResumeClassObjects();
+                Log($"ResumeClassObjects: 0x{resumed:X8}");
+                Marshal.ThrowExceptionForHR(resumed);
+            }));
             var idle=DateTime.UtcNow;
             var timer=new DispatcherTimer { Interval=TimeSpan.FromSeconds(5) };
             timer.Tick+=(_,_)=>{
