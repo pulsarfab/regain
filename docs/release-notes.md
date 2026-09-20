@@ -1,4 +1,4 @@
-# PulsarFab regain — upcoming release
+# PulsarFab regain 0.4.0.0
 
 **Regain control of your equipment.** ZWOgain is now PulsarFab regain, with a
 new pulsar-and-return icon, updated setup interfaces, documentation, and package
@@ -14,15 +14,22 @@ names. The repository has moved to `pulsarfab/regain`.
 - Custom actions use `Regain.*`; the old `ZwoGain.*` spelling remains accepted.
 - The README includes the new branding and refreshed UI screenshots.
 
-This source also includes the independent Rust OFP2 flat-panel driver with Alpaca
+This release also includes the independent Rust OFP2 flat-panel driver with Alpaca
 CoverCalibrator support, and Pegasus Astro FocusCube3 support in native NINA,
 native ASCOM, and Alpaca. FocusCube3 ASCOM clients share one out-of-process server
 and serial connection across 32-bit and 64-bit applications. Broader sharing
 between native NINA, Alpaca, and vendor software remains deferred.
 
-See [setup and upgrade instructions](../README.md) and
-[compatibility details](branding.md). The existing 0.3.1.0 release predates these
-changes. This note does not indicate a new release has been published.
+Install or update **PulsarFab regain** in NINA using either
+`https://nina-plugins.pulsarfab.com/` or `https://nina-plugins.psf-guard.com/`.
+Both serve the same registry and preserve the existing ZWOgain plugin identity.
+
+For Windows ASCOM, download `Regain-ASCOM-0.4.0.0-win-x64-setup.exe` below.
+The installer includes the standalone Alpaca server. For manual NINA installation,
+use `Regain-0.4.0.0.zip`. The CameraKit ZIP is a separate camera diagnostics tool.
+
+See [setup and upgrade instructions](https://github.com/pulsarfab/regain/blob/v0.4.0.0/README.md)
+and [compatibility details](https://github.com/pulsarfab/regain/blob/v0.4.0.0/docs/branding.md).
 
 Release binaries use the existing StackFoundry LLC signing certificate. Ordinary
 CI builds are unsigned. PulsarFab regain and its artwork use Apache-2.0;

@@ -5,7 +5,7 @@
 PulsarFab regain is the new name for ZWOgain. The project now covers cameras,
 rotators, filter wheels, focusers, and flat panels from multiple manufacturers.
 The repository is [pulsarfab/regain](https://github.com/pulsarfab/regain).
-The rename is in current source; it does not rename previously published releases.
+The rename starts with release 0.4.0.0; earlier releases keep their original names.
 
 ## Names and assets
 

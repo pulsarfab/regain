@@ -13,8 +13,8 @@ through a shared set of Rust drivers and matching setup tools.
 Camera recovery retries failed downloads and short exposures while your imaging
 application waits for the result.
 
-Formerly **ZWOgain**. This rebrand is in current source; published 0.3.1.0
-downloads still use the previous name. Build the packages below to try regain.
+Formerly **ZWOgain**. Version **0.4.0.0** introduces PulsarFab regain,
+OFP2 flat-panel support, and Pegasus Astro FocusCube3 support.
 See [upgrading and brand assets](docs/branding.md) for preserved identities,
 profile migration, and the new command names.
 
@@ -63,11 +63,14 @@ and [camera recovery settings](#how-retries-work) below.
 Requires **Windows x64** and **NINA 3.2.0.9001 or later**. Cameras also need the
 **ZWO Windows camera driver**. CAA, EFW, and EAF use Windows' built-in HID driver.
 
-1. Add `https://nina-plugins.psf-guard.com/` as a plugin source in NINA and install
+1. Add `https://nina-plugins.pulsarfab.com/` as a plugin source in NINA and install
    **PulsarFab regain**. Restart NINA.
 2. Select **PulsarFab regain Retryable Camera** in the camera chooser.
 3. Open the setup gear, refresh the list, pick your camera, and save.
 4. Disconnect other apps using that camera, then connect in NINA.
+
+The existing `https://nina-plugins.psf-guard.com/` source serves the same registry;
+use either address. Existing ZWOgain installations update through the same plugin entry.
 
 For manual installation, close NINA and extract the plugin ZIP from
 [Releases](https://github.com/pulsarfab/regain/releases/latest) into
@@ -178,7 +181,7 @@ outstanding.
 The standalone server exposes cameras, CAA rotators, EFW filter wheels, EAF focusers, and Deep Sky Dad OFP2 flat panels to Alpaca clients.
 It runs without .NET and does not require Windows COM registration.
 CAA, EFW, and EAF network support is included in release 0.3.1.0.
-OFP2 support is in current source and requires a newer build.
+OFP2 and FocusCube3 support is included from release 0.4.0.0.
 
 On Windows, extract `Regain-ASCOM-<version>-win-x64.zip` and run from that folder:
 
@@ -316,9 +319,9 @@ See the [USB tracing playbook, protocol, setup and validation details](docs/acce
 
 ## Pegasus Astro FocusCube3
 
-Current source includes a new **pure Rust USB serial crate**, `regain-fc3`,
+Release 0.4.0.0 includes a **pure Rust USB serial crate**, `regain-fc3`,
 a native NINA focuser provider, a styled native ASCOM driver, and **Alpaca
-Focuser device 1**. Release 0.3.1.0 predates this support.
+Focuser device 1**.
 
 On Windows use the built-in USB Serial Device driver. Close the device's
 connection in Pegasus Unity; its background server may hold the COM port
@@ -349,7 +352,7 @@ notes](docs/focuscube3.md) for the full playbook.
 
 Deep Sky Dad **OFP2** is supported by a pure Rust USB serial crate and the
 Alpaca server as **CoverCalibrator 0**. No vendor ASCOM driver or SDK is needed.
-This is current-source support; release 0.3.1.0 does not contain it.
+This support is included from release 0.4.0.0.
 
 1. Connect USB and external power. Disconnect the vendor ASCOM driver and
    close any application holding the panel's serial port.

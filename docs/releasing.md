@@ -19,8 +19,8 @@ The source for the logo is `assets/regain.svg`; the 256 × 256 PNG is embedded
 as a WPF resource. `FeaturedImageURL` uses a pack URI for installed plugins,
 so the logo does not depend on GitHub access. Registry manifests instead use
 the versioned PNG release asset for users browsing available plugins.
-The PNG was rendered with `@resvg/resvg-js` 2.6.2 from the SVG; it is checked
-in, so builds need no image renderer or Node dependency.
+The PNG is rendered by `scripts/render-brand.cjs` using `sharp` from the SVG;
+it is checked in, so builds need no image renderer or Node dependency.
 
 ## Version and draft release
 
@@ -74,11 +74,16 @@ The workflow reads `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`,
 `SIGNING_PROFILE` from GitHub variables. These repository variables are present
 as of 2026-09-14. The Azure federated credential must match the workflow's
 `release` environment; variables alone do not verify the signing service.
+After the PulsarFab transfer, the subject is
+`repo:pulsarfab@279567456/regain@1369114153:environment:release`.
+Run the signing smoke test after changes to the repository name or owner.
 
 ## Registry publication
 
 The target is `theatrus/nina-plugins-registry`, deployed to
-`https://nina-plugins.psf-guard.com/`. It expects:
+both `https://nina-plugins.pulsarfab.com/` and
+`https://nina-plugins.psf-guard.com/`. They share the same files and deployment;
+publish once to update both NINA sources. It expects:
 
 ```text
 manifests/z/ZwoGain/3.2.0.9001/manifest.json

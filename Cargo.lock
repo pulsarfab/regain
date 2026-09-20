@@ -591,6 +591,112 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf"
 
 [[package]]
+name = "regain-accessories"
+version = "0.4.0"
+dependencies = [
+ "anyhow",
+ "regain-hid",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "regain-alpaca"
+version = "0.4.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "chrono",
+ "futures-util",
+ "http-body-util",
+ "regain-core",
+ "serde",
+ "serde_json",
+ "serde_urlencoded",
+ "tempfile",
+ "tokio",
+ "tokio-util",
+ "tower",
+ "uuid",
+]
+
+[[package]]
+name = "regain-caa"
+version = "0.4.0"
+dependencies = [
+ "anyhow",
+ "regain-hid",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "regain-core"
+version = "0.4.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tokio-util",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "regain-direct"
+version = "0.4.0"
+dependencies = [
+ "anyhow",
+ "libc",
+ "nusb",
+ "serde_json",
+ "sha2",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "regain-fc3"
+version = "0.4.0"
+dependencies = [
+ "anyhow",
+ "serde",
+ "serde_json",
+ "serialport",
+]
+
+[[package]]
+name = "regain-hid"
+version = "0.4.0"
+dependencies = [
+ "anyhow",
+ "libc",
+ "serde",
+ "serde_json",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "regain-host"
+version = "0.4.0"
+dependencies = [
+ "anyhow",
+ "libloading",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "regain-ofp2"
+version = "0.4.0"
+dependencies = [
+ "anyhow",
+ "serde",
+ "serde_json",
+ "serialport",
+]
+
+[[package]]
 name = "rustix"
 version = "1.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1159,109 +1265,3 @@ name = "zmij"
 version = "1.0.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "29666d0abbfad1e3dc4dcf6144730dd3a3ab225bbbdac83319345b1b44ccfc1b"
-
-[[package]]
-name = "regain-accessories"
-version = "0.3.1"
-dependencies = [
- "anyhow",
- "serde",
- "serde_json",
- "regain-hid",
-]
-
-[[package]]
-name = "regain-alpaca"
-version = "0.3.1"
-dependencies = [
- "anyhow",
- "axum",
- "chrono",
- "futures-util",
- "http-body-util",
- "serde",
- "serde_json",
- "serde_urlencoded",
- "tempfile",
- "tokio",
- "tokio-util",
- "tower",
- "uuid",
- "regain-core",
-]
-
-[[package]]
-name = "regain-caa"
-version = "0.3.1"
-dependencies = [
- "anyhow",
- "serde",
- "serde_json",
- "regain-hid",
-]
-
-[[package]]
-name = "regain-core"
-version = "0.3.1"
-dependencies = [
- "anyhow",
- "chrono",
- "serde",
- "serde_json",
- "tokio",
- "tokio-util",
- "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "regain-direct"
-version = "0.3.1"
-dependencies = [
- "anyhow",
- "libc",
- "nusb",
- "serde_json",
- "sha2",
- "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "regain-fc3"
-version = "0.3.1"
-dependencies = [
- "anyhow",
- "serde",
- "serde_json",
- "serialport",
-]
-
-[[package]]
-name = "regain-hid"
-version = "0.3.1"
-dependencies = [
- "anyhow",
- "libc",
- "serde",
- "serde_json",
- "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "regain-host"
-version = "0.3.1"
-dependencies = [
- "anyhow",
- "libloading",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "regain-ofp2"
-version = "0.3.1"
-dependencies = [
- "anyhow",
- "serde",
- "serde_json",
- "serialport",
-]

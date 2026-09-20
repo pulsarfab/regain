@@ -23,8 +23,8 @@ jobs:
   release:
     runs-on: windows-latest
     timeout-minutes: 30
-    # Load-bearing: the Entra federated credential subject is
-    # must match this repository and its release environment after a transfer. Without
+    # Load-bearing: the Entra federated credential subject must match
+    # repo:pulsarfab@279567456/regain@1369114153:environment:release. Without
     # this line the OIDC token carries a different subject and azure/login
     # fails with an unhelpful audience/subject error.
     environment: release

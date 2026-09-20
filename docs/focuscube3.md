@@ -3,7 +3,7 @@
 `regain-fc3` is an independent Rust library and worker that speaks directly to
 the FocusCube3 USB serial port. It requires neither Pegasus Unity nor an ASCOM
 driver. Native NINA, native Windows ASCOM, and Alpaca use this same crate.
-This support is in current source; release 0.3.1.0 predates it.
+This support is included from release 0.4.0.0.
 
 ## Windows setup
 

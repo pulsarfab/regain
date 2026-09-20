@@ -4,7 +4,7 @@
 (FP2 board, product type 3). It talks directly to USB CDC serial. The vendor's
 ASCOM driver, control panel, SDK, and .NET are not required at runtime.
 The existing Rust Alpaca server exposes it as **CoverCalibrator device 0**.
-This support is in current source; release 0.3.1.0 predates it.
+This support is included from release 0.4.0.0.
 
 ## Connect through Alpaca
 
