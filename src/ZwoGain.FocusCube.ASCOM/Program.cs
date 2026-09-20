@@ -5,7 +5,7 @@ using System.Windows.Threading;
 
 namespace ZwoGain.FocusCube;
 
-[ComVisible(true), Guid("00000001-0000-0000-C000-000000000046"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+[ComImport, ComVisible(false), Guid("00000001-0000-0000-C000-000000000046"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
 public interface IClassFactory {
     [PreserveSig] int CreateInstance(IntPtr outer, ref Guid iid, out IntPtr result);
     [PreserveSig] int LockServer([MarshalAs(UnmanagedType.Bool)] bool locked);
