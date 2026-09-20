@@ -53,6 +53,8 @@ with tempfile.TemporaryDirectory(prefix="zwogain-package-") as temporary:
         shutil.copy2(root / "docs/accessories.md", stage / "accessories.md")
         shutil.copy2(root / "docs/ofp2.md", stage / "ofp2.md")
         shutil.copy2(root / "docs/ofp2-evidence.json", stage / "ofp2-evidence.json")
+        (stage / "images").mkdir()
+        shutil.copy2(root / "docs/images/alpaca-ofp2.png", stage / "images/alpaca-ofp2.png")
         shutil.copy2(root / "docs/accessory-evidence.json", stage / "accessory-evidence.json")
     for package in metadata["packages"]:
         if package["id"] not in resolved or package["source"] is None:
