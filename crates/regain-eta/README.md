@@ -9,7 +9,12 @@ let mut eta = Tilter::new(Serial::open("COM3")?)?;
 println!("{:?}", eta.status()?.points_um);
 // Only after checking mechanical clearance:
 eta.move_to(500)?; // common back focus, µm; retains tilt
-while eta.status()?.moving { std::thread::sleep(std::time::Duration::from_millis(250)); }
+loop {
+    let state = eta.status()?;
+    anyhow::ensure!(state.fault.is_none(), "ETA fault: {:?}", state.fault);
+    if !state.moving { break; }
+    std::thread::sleep(std::time::Duration::from_millis(250));
+}
 # Ok::<(), anyhow::Error>(())
 ```
 
