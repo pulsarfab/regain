@@ -1,4 +1,5 @@
-# Simulation-only fixture. Hardware movement requires the explicit hardware probe.
+# Physical mode only reads telemetry and verifies connection sharing.
+param([string]$ReadOnlyPort)
 $ErrorActionPreference = 'Stop'
 $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $id = [Guid]::NewGuid().ToString()
@@ -14,7 +15,8 @@ if ($principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator))
 try {
     dotnet build (Join-Path $repo 'src/Regain.Eta.ASCOM') -c Release -v quiet
     if ($LASTEXITCODE) { throw 'ETA M54 ASCOM build failed' }
-    $env:REGAIN_ACCESSORY_SIMULATE = '1'
+    $env:REGAIN_ACCESSORY_SIMULATE = if ($ReadOnlyPort) { '' } else { '1' }
+    if ($ReadOnlyPort) { @{Serial=$ReadOnlyPort} | ConvertTo-Json | Set-Content (Join-Path $directory 'eta-ascom.json') -Encoding UTF8 }
     $env:REGAIN_ACCESSORY_SETTINGS = $directory
     $env:REGAIN_ETA_WORKER = Join-Path $repo 'target/debug/regain-eta.exe'
     foreach ($view in [Microsoft.Win32.RegistryView]::Registry32,[Microsoft.Win32.RegistryView]::Registry64) {
@@ -39,6 +41,7 @@ try {
     foreach ($pair in @(@('System32','first'),@('SysWOW64','second'))) {
         $role=$pair[1]
         $args = '-NoProfile -ExecutionPolicy Bypass -File "' + (Join-Path $PSScriptRoot 'test-eta-ascom-client.ps1') + '" -Id ' + $id + ' -Directory "' + $directory + '" -Role ' + $role
+        if ($ReadOnlyPort) { $args += ' -ReadOnly' }
         $children += Start-Process -FilePath "$env:WINDIR/$($pair[0])/WindowsPowerShell/v1.0/powershell.exe" -ArgumentList $args -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $directory "$role.out") -RedirectStandardError (Join-Path $directory "$role.err")
     }
     foreach ($child in $children) {

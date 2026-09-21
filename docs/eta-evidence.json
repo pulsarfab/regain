@@ -21,7 +21,9 @@
     "movement": false,
     "reason": "Safe movement confirmation pending; no command bytes sent",
     "trace": "eta-serial.jsonl",
-    "trace_sha256": "000b7042d9a911bda30252d01dc81465cfbe68903ae2b321a0a4fc76327681e7"
+    "trace_sha256": "83e87ab56d3c2ed1641c3c8ab83501998ce6533a150461c86f9db20f29ca8f55",
+    "alpaca_readonly_and_client_leases": true,
+    "ascom_32_64_bit_shared_serial_readonly": true
   },
   "simulation_validation": [
     "Rust parsing, limits, sequential moves, timeout does not advance queue",

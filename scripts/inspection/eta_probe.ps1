@@ -15,5 +15,5 @@ try {
         $lines.Add((@{utc=[DateTime]::UtcNow.ToString('O');direction='read';port=$Port;baud=19200;ascii=$frame} | ConvertTo-Json -Compress))
     }
 } finally { $serial.Dispose() }
-[IO.File]::WriteAllLines($destination,$lines,[Text.UTF8Encoding]::new($false))
+[IO.File]::WriteAllText($destination,([string]::Join("`n",$lines)+"`n"),[Text.UTF8Encoding]::new($false))
 Write-Output "Saved $($lines.Count) passive frames to $destination; no bytes written."

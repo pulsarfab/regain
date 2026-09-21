@@ -5,7 +5,8 @@ Adjust back focus while preserving tilt, or move one of the three tilt points.
 Wanderer Empire, or the vendor ASCOM driver.
 
 **Availability:** current source and CI builds. ETA is not in release 0.4.0.0.
-The attached M54 has been identified and read on Windows. Movement is tested in
+The attached M54 has been identified and read on Windows through the Rust worker,
+Alpaca, and shared 32/64-bit ASCOM clients. Movement is tested in
 simulation; physical movement validation is pending. M92 support is not claimed.
 
 ## Choose a connection
@@ -116,3 +117,10 @@ See [passive trace](eta-serial.jsonl) and [validation record](eta-evidence.json)
 `scripts/inspection/eta_probe.ps1` reproduces the passive trace without writing
 to hardware. The installed vendor driver's filename is M92, while the attached
 device identifies itself as M54; regain targets the observed M54 protocol.
+
+Reproduce the physical read-only integration checks (no motor commands):
+
+```powershell
+python scripts/test-eta.py --read-only-port COM3
+./scripts/test-eta-ascom.ps1 -ReadOnlyPort COM3
+```

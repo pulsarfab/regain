@@ -1,4 +1,4 @@
-param([string]$Id, [string]$Directory, [string]$Role, [switch]$MetadataOnly)
+param([string]$Id, [string]$Directory, [string]$Role, [switch]$MetadataOnly, [switch]$ReadOnly)
 $ErrorActionPreference = 'Stop'
 function Wait-Signal([string]$Name) {
     $deadline = [DateTime]::UtcNow.AddSeconds(25)
@@ -18,7 +18,7 @@ try {
     $identity = $device.Action('Regain.Identity','') | ConvertFrom-Json
     if ($identity.model -ne 'Wanderer Astro ETA M54') { throw 'Wrong identity' }
     $device.Action('Regain.Status','') | Set-Content (Join-Path $Directory "$Role-connected")
-    if (!$identity.simulation) { throw 'This fixture is simulation-only; use the explicit hardware probe for movement' }
+    if (!$identity.simulation -and !$ReadOnly) { throw 'This fixture is simulation-only; use the explicit hardware probe for movement' }
     if ($Role -eq 'first') {
         Wait-Signal 'second-connected'
         $servers = @(Get-CimInstance Win32_Process -Filter "Name='Regain.Eta.ASCOM.exe'" | Where-Object { $_.CommandLine -like "*$Id*" })
@@ -32,6 +32,11 @@ try {
     } else {
         Wait-Signal 'first-disconnected'
         if (!$device.Connected) { throw 'First client disconnected second client' }
+        if ($ReadOnly) {
+            $status = $device.Action('Regain.Status','') | ConvertFrom-Json
+            if ($status.error -ne 0 -or $status.fault -or $status.points_um.Count -ne 3) { throw 'Invalid physical telemetry' }
+            Write-Output ('Read-only physical ETA telemetry: ' + ($status | ConvertTo-Json -Compress))
+        } else {
         $initial = $device.Position
         $device.Move($initial + 20)
         $deadline = [DateTime]::UtcNow.AddSeconds(15)
@@ -44,6 +49,7 @@ try {
         if (!$rejected) { throw 'ETA must not pretend to support physical halt' }
         $device.Action('Regain.MovePoint','{"point":2,"position":410}') | Out-Null
         while ($device.IsMoving) { if ([DateTime]::UtcNow -gt $deadline) { throw 'Point timeout' }; Start-Sleep -Milliseconds 100 }
+        }
         $device.Connected = $false
         'done' | Set-Content (Join-Path $Directory 'second-finished')
     }
