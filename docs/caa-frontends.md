@@ -136,7 +136,7 @@ internal flash/EEPROM storage, and encoder presence remain unverified. See
 
 ## Build and package
 
-`scripts/build.ps1` includes `regain-caa.exe`, the shared rotator frontend,
+`scripts/build.ps1` includes `regain-device.exe`, the shared rotator frontend,
 and protocol documentation in the NINA ZIP. `scripts/build-ascom.ps1` and
 `scripts/build-ascom-installer.ps1` include them in the ASCOM package/installer.
 The installer registers exactly one rotator for 32-bit and 64-bit clients;

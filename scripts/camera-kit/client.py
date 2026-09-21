@@ -13,7 +13,7 @@ class HostError(RuntimeError):
 
 class Host:
     def __init__(self, executable, sdk, simulate=False):
-        args = [str(executable), '--sdk', str(sdk)]
+        args = [str(executable), 'zwo', 'camera-sdk', '--sdk', str(sdk)]
         if simulate:
             args.append('--simulate')
         self.proc = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE,

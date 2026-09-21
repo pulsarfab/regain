@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/regain-host", "crates/regain-direct", "crates/regain-core", "crates/regain-alpaca", "crates/regain-caa", "crates/regain-hid", "crates/regain-accessories", "crates/regain-ofp2", "crates/regain-fc3", "crates/regain-eta"]
+members = ["crates/regain-device", "crates/regain-core", "crates/regain-alpaca", "crates/regain-zwo", "crates/regain-pegasus", "crates/regain-deepskydad", "crates/regain-wanderer", "crates/regain-transport", "crates/regain-worker"]
 resolver = "3"
 
 [workspace.package]

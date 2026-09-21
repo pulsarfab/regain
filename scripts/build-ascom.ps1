@@ -61,7 +61,7 @@ THE SOFTWARE.
         }
     }
     # On releases these are copied after signing the shared Rust payload.
-    foreach ($file in 'regain-camera.exe','regain-alpaca.exe','regain-host.exe','regain-direct.exe','regain-caa.exe','regain-accessories.exe','regain-ofp2.exe','regain-fc3.exe','regain-eta.exe') { Copy-Item -LiteralPath (Join-Path $plugin $file) -Destination $stage -Force }
+    foreach ($file in 'regain-camera.exe','regain-alpaca.exe','regain-device.exe') { Copy-Item -LiteralPath (Join-Path $plugin $file) -Destination $stage -Force }
     if ($StageOnly) { Write-Output "Staged: $stage"; return }
     $archive = Join-Path $repo "artifacts/Regain-ASCOM-$version-win-x64.zip"
     Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $archive -Force

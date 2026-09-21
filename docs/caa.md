@@ -1,6 +1,6 @@
 # Native CAA driver
 
-`regain-caa` is a Rust library and command-line driver for the ZWO CAA rotator.
+`regain-zwo::caa` is the Rust library; `regain-device zwo caa` is its command-line driver for the ZWO CAA rotator.
 It uses USB HID directly, with no ZWO SDK, hidapi C library or libusb dependency.
 It is independent of the camera driver. The NINA plugin and Windows ASCOM driver
 use this worker; see [frontend setup and actions](caa-frontends.md). Alpaca rotator
@@ -8,16 +8,17 @@ support uses the same worker. PulsarFab regain is not affiliated with ZWO.
 
 ## Run
 
-CI builds standalone CAA ZIPs for Windows x64, Linux x64/ARM64 and macOS
-Intel/ARM64. Extract the ZIP and run the binary. No SDK installation is needed.
+The shared `regain-device` executable ships with NINA/ASCOM on Windows and
+in portable Rust CI packages for Linux and macOS. No SDK installation is needed
+for CAA. Extract a matching package and run the command below.
 From source:
 
 ```powershell
-cargo build -p regain-caa --release --locked
-target/release/regain-caa.exe list
-target/release/regain-caa.exe status
+cargo build -p regain-device --release --locked
+target/release/regain-device.exe zwo caa list
+target/release/regain-device.exe zwo caa status
 # Requires clearance for motion within eight degrees of the starting position:
-target/release/regain-caa.exe exercise
+target/release/regain-device.exe zwo caa exercise
 ```
 
 On Linux/macOS omit `.exe`. If several CAAs are attached, use `--path` with a

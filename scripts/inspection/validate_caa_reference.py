@@ -22,7 +22,7 @@ class Hid:
     def __init__(self, record):
         self.record = record
         devices = json.loads(subprocess.check_output(
-            [str(ROOT / 'target/release/regain-caa.exe'), 'list'], text=True))
+            [str(ROOT / 'target/release/regain-device.exe'), 'zwo', 'caa', 'list'], text=True))
         assert len(devices) == 1, 'exactly one CAA required'
         self.k = C.WinDLL('kernel32', use_last_error=True)
         self.h = C.WinDLL('hid', use_last_error=True)

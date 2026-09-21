@@ -23,7 +23,7 @@ public class CameraTests
         images.Setup(f=>f.CreateImageArrayExposureData(It.IsAny<ushort[]>(),It.IsAny<int>(),It.IsAny<int>(),It.IsAny<int>(),It.IsAny<bool>(),It.IsAny<ImageMetaData>()))
             .Returns((ushort[] p,int w,int h,int depth,bool color,ImageMetaData m)=>new ImageArrayExposureData(p,w,h,depth,color,m,Mock.Of<IImageDataFactory>()));
         var camera=new ResilientCamera(new("ZWO ASI6200MM Pro",9576,6388,false,0,3.76,16,true,false,[1,2,3,4]),
-            images.Object,()=>new HostClient(Path.Combine(root,"target/debug/regain-direct.exe"),"unused",simulate:true,direct:true),new(){MaxRetries=0});
+            images.Object,()=>new HostClient(Path.Combine(root,"target/debug/regain-device.exe"),"unused",simulate:true,direct:true),new(){MaxRetries=0});
         try {
             await camera.Connect(default);
             camera.EnableSubSample=true;
@@ -80,7 +80,7 @@ public class CameraTests
             .Returns((ushort[] p, int w, int h, int b, bool color, ImageMetaData m) => new ImageArrayExposureData(p, w, h, b, color, m, Mock.Of<IImageDataFactory>()));
         HostClient Host()
         {
-            var host = new HostClient(Path.Combine(root, "target/debug/regain-host.exe"), "unused", true, log: line =>
+            var host = new HostClient(Path.Combine(root, "target/debug/regain-device.exe"), "unused", true, log: line =>
                 CameraLog.Forward(CameraLog.Parse("SDK", line), _ => { }, text => loggedFailure.TrySetResult(text), _ => { }));
             if (reread) host.CallAsync("simulation", new { instant = true }, TimeSpan.FromSeconds(15), default).GetAwaiter().GetResult();
             if (sdkClampsOffset)
@@ -140,7 +140,7 @@ public class CameraTests
         var profiles = new Mock<IProfileService>();
         profiles.Setup(p => p.ActiveProfile.CameraSettings).Returns(settings.Object);
         var camera = new ResilientCamera(new("ZWO Simulated", 960, 640, true, 0, 3.76, 16, true, false, [1, 2, 4]),
-            Mock.Of<IExposureDataFactory>(), () => new HostClient(Path.Combine(root, "target/debug/regain-host.exe"), "unused", true), new(), profiles.Object);
+            Mock.Of<IExposureDataFactory>(), () => new HostClient(Path.Combine(root, "target/debug/regain-device.exe"), "unused", true), new(), profiles.Object);
         try
         {
             Assert.True(await camera.Connect(default));

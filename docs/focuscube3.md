@@ -1,6 +1,6 @@
 # Pegasus Astro FocusCube3
 
-`regain-fc3` is an independent Rust library and worker that speaks directly to
+`regain-pegasus::fc3` is an independent Rust library, exposed through `regain-device pegasus fc3`, that speaks directly to
 the FocusCube3 USB serial port. It requires neither Pegasus Unity nor an ASCOM
 driver. Native NINA, native Windows ASCOM, and Alpaca use this same crate.
 This support is included from release 0.4.0.0.
@@ -118,7 +118,7 @@ JSON stdin is bounded to 4 KiB per request and accepts the .NET Framework BOM.
 
 ```powershell
 cargo build --workspace --locked
-cargo test -p regain-fc3
+cargo test -p regain-pegasus
 python scripts/test-fc3.py
 ./scripts/test-fc3-ascom.ps1
 

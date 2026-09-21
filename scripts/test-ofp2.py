@@ -67,7 +67,7 @@ def exercise(call, label):
 
 class Worker:
     def __init__(self, binary, serial, simulate):
-        self.process = subprocess.Popen([str(binary), 'serve', '--serial', serial, *simulate],
+        self.process = subprocess.Popen([*binary, 'serve', '--serial', serial, *simulate],
                                         stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         self.lines = queue.Queue()
         def reader():
@@ -115,9 +115,9 @@ def main():
     directory = Path(args.bin_dir).resolve()
     def binary(name):
         return directory / (name + ('.exe' if os.name == 'nt' else ''))
-    devices = json.loads(subprocess.check_output([str(binary('regain-ofp2')), 'list-details', *simulate], timeout=30))
+    devices = json.loads(subprocess.check_output([binary('regain-device'), 'deepskydad', 'ofp2', 'list-details', *simulate], timeout=30))
     assert sum(d['serial'] == serial for d in devices) == 1, devices
-    worker = Worker(binary('regain-ofp2'), serial, simulate)
+    worker = Worker([binary('regain-device'), 'deepskydad', 'ofp2'], serial, simulate)
     report = {'hardware': args.hardware}
     try:
         identity = worker.call('identity')
@@ -127,7 +127,7 @@ def main():
             worker.call('on', brightness=invalid, expected_error=True)
         worker.call('bad', expected_error=True)
         if args.hardware:
-            second = subprocess.run([str(binary('regain-ofp2')), 'status', '--serial', serial],
+            second = subprocess.run([binary('regain-device'), 'deepskydad', 'ofp2', 'status', '--serial', serial],
                                     capture_output=True, timeout=10)
             assert second.returncode != 0, 'Serial ownership was not exclusive'
         report['native'] = exercise(worker.call, 'Rust worker')

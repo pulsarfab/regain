@@ -12,7 +12,7 @@ public sealed class CaaRotator : IRotatorV3, IDisposable
     private CaaSession? session;
     private bool disposed;
     private CaaSession Session => disposed ? throw new ObjectDisposedException(nameof(CaaRotator)) : session ??= NewSession();
-    private static CaaSession NewSession() => new(Regain.Rotator.RegainPaths.EnvironmentVariable("REGAIN_CAA_WORKER") ?? Path.Combine(Path.GetDirectoryName(typeof(CaaRotator).Assembly.Location)!, "regain-caa.exe"), CaaSession.SettingsPath("ascom"));
+    private static CaaSession NewSession() => new(Regain.Rotator.RegainPaths.EnvironmentVariable("REGAIN_CAA_WORKER") ?? Path.Combine(Path.GetDirectoryName(typeof(CaaRotator).Assembly.Location)!, "regain-device.exe"), CaaSession.SettingsPath("ascom"));
     private CaaSession Device => Session.Connected ? Session : throw new ASCOM.NotConnectedException("CAA is disconnected");
     public string Name => "PulsarFab regain CAA Rotator";
     public string Description => "ZWO CAA rotator over USB HID";

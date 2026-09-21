@@ -1,0 +1,12 @@
+[package]
+name = "regain-worker"
+description = "Bounded JSON-line IPC shared by accessory workers"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+anyhow = "1"
+serde_json = "1"

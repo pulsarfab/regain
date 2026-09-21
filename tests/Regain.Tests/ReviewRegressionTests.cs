@@ -8,7 +8,7 @@ public class ReviewRegressionTests
     static readonly string Root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory,"../../../../../"));
     static readonly CameraDescriptor Camera = new("ZWO ASI6200MM Pro",9576,6388,false,0,3.76,16,true,false,[1,2,3,4]);
     static readonly Exposure Request = new(64,64,1,0,0,10000,true);
-    static HostClient Direct() => new(Path.Combine(Root,"target/debug/regain-direct.exe"),"unused",simulate:true,direct:true);
+    static HostClient Direct() => new(Path.Combine(Root,"target/debug/regain-device.exe"),"unused",simulate:true,direct:true);
     static async Task Until(Func<bool> done) {
         using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         while (!done()) await Task.Delay(10,deadline.Token);
@@ -75,7 +75,7 @@ public class ReviewRegressionTests
         int starts=0, exposures=0;
         var descriptor=new CameraDescriptor("ZWO Simulated",960,640,true,0,3.76,16,true,false,[1,2,4]);
         using var session=new CameraSession(descriptor,()=>{
-            var host=new HostClient(Path.Combine(Root,"target/debug/regain-host.exe"),"unused",simulate:true);
+            var host=new HostClient(Path.Combine(Root,"target/debug/regain-device.exe"),"unused",simulate:true);
             if(Interlocked.Increment(ref starts)>1)
                 host.CallAsync("simulation",new{temperature=100},TimeSpan.FromSeconds(2),default).GetAwaiter().GetResult();
             return host;
@@ -113,7 +113,7 @@ public class ReviewRegressionTests
     [Fact]
     public async Task SelectedSdkSerialCanFollowBusyCameraButNeverSubstitutesAnother()
     {
-        HostClient Sdk() => new(Path.Combine(Root,"target/debug/regain-host.exe"),Path.Combine(Root,"target/debug/selection_sdk.dll"));
+        HostClient Sdk() => new(Path.Combine(Root,"target/debug/regain-device.exe"),Path.Combine(Root,"target/debug/selection_sdk.dll"));
         using(var host=Sdk()) {
             var result=await host.CallAsync("open",new{name="Review Twin",serial="0202020202020202"},TimeSpan.FromSeconds(2),default);
             Assert.Equal("0202020202020202",result.Result.GetProperty("serial").GetString());

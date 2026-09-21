@@ -15,10 +15,12 @@ if (Path.GetFileName(archivePath) != archiveName) throw new InvalidDataException
 if (plugin.License != "Apache-2.0") throw new InvalidDataException("Plugin license must be Apache-2.0");
 using (var archive = ZipFile.OpenRead(archivePath))
 {
-    string[] required = ["Regain.NINA.dll", "Regain.Core.dll", "Regain.Rotator.dll", "regain-caa.exe", "regain-accessories.exe", "regain-ofp2.exe", "regain-fc3.exe", "regain-eta.exe", "caa.md", "regain-host.exe", "regain-direct.exe", "regain-camera.exe", "regain-alpaca.exe", "ASICamera2.dll",
+    string[] required = ["Regain.NINA.dll", "Regain.Core.dll", "Regain.Rotator.dll", "regain-device.exe", "caa.md", "regain-camera.exe", "regain-alpaca.exe", "ASICamera2.dll",
         "LICENSE", "THIRD_PARTY_NOTICES.md", "regain.png", "licenses/ZWO-ASI-SDK.txt", "licenses/Rust-Standard-Library.html"];
     foreach (string name in required)
         if (archive.GetEntry(name) is not { Length: > 0 }) throw new InvalidDataException($"Package missing {name}");
+    foreach (var old in new[] { "regain-host.exe", "regain-direct.exe", "regain-caa.exe", "regain-accessories.exe", "regain-fc3.exe", "regain-ofp2.exe", "regain-eta.exe" })
+        if (archive.GetEntry(old) is not null) throw new InvalidDataException($"Package contains obsolete worker {old}");
     foreach (var entry in archive.Entries)
     {
         if (entry.FullName.Split('/').Contains("..") || entry.FullName.StartsWith('/') || entry.FullName.Contains('\\'))

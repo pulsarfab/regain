@@ -1,5 +1,5 @@
 #![allow(dead_code, non_snake_case)]
-#[path="../../crates/regain-host/src/raw.rs"] mod raw;
+#[path="../../crates/regain-zwo/src/asi/sdk/raw.rs"] mod raw;
 #[no_mangle] pub extern "C" fn ASIGetNumOfConnectedCameras() -> i32 { 2 }
 #[no_mangle] pub unsafe extern "C" fn ASIGetCameraProperty(out: *mut raw::CameraInfo, id: i32) -> i32 {
     let mut info: raw::CameraInfo = std::mem::zeroed();

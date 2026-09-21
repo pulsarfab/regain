@@ -7,7 +7,7 @@ string Option(string name, string fallback) { int i = Array.IndexOf(args, name);
 bool simulate = args.Contains("--simulate");
 bool direct = args.Contains("--direct");
 HostClient? currentHost = null;
-HostClient Host() => currentHost = new(Option("--host", Path.Combine(root, direct ? "target/debug/regain-direct.exe" : "target/debug/regain-host.exe")), Option("--sdk", Path.Combine(root, "vendor/zwo/ASICamera2.dll")), simulate, Console.Error.WriteLine, direct);
+HostClient Host() => currentHost = new(Option("--host", Path.Combine(root, "target/debug/regain-device.exe")), Option("--sdk", Path.Combine(root, "vendor/zwo/ASICamera2.dll")), simulate, Console.Error.WriteLine, direct);
 using var cancel = new CancellationTokenSource();
 Console.CancelKeyPress += (_, e) => { e.Cancel = true; cancel.Cancel(); };
 using var discovery = Host();
@@ -17,7 +17,7 @@ if (!args.Contains("--capture")) return;
 string? selected = Option("--camera", "");
 var candidates = list.Result.EnumerateArray().Select(CameraDescriptor.Parse).Where(c => selected == "" || c.Name == selected).ToArray();
 if (candidates.Length != 1) throw new InvalidOperationException("Select one unique camera using --camera");
-HostClient SdkFallback() => currentHost = new(Path.Combine(root,"target/debug/regain-host.exe"),
+HostClient SdkFallback() => currentHost = new(Path.Combine(root,"target/debug/regain-device.exe"),
     Option("--sdk",Path.Combine(root,"vendor/zwo/ASICamera2.dll")),simulate,Console.Error.WriteLine);
 using var session = new CameraSession(candidates[0], Host, sdkFallbackFactory: direct && args.Contains("--sdk-fallback") ? SdkFallback : null);
 session.Diagnostic += s => Console.Error.WriteLine($"{DateTime.UtcNow:O} {s}");

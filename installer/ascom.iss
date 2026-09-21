@@ -157,6 +157,14 @@ end;
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
   if CurStep = ssPostInstall then begin
+    DeleteFile(ExpandConstant('{app}\regain-host.exe'));
+    DeleteFile(ExpandConstant('{app}\regain-direct.exe'));
+    DeleteFile(ExpandConstant('{app}\regain-caa.exe'));
+    DeleteFile(ExpandConstant('{app}\regain-accessories.exe'));
+    DeleteFile(ExpandConstant('{app}\regain-ofp2.exe'));
+    DeleteFile(ExpandConstant('{app}\regain-fc3.exe'));
+    DeleteFile(ExpandConstant('{app}\regain-eta.exe'));
+
     DeleteFile(ExpandConstant('{app}\ZwoGain.ASCOM.dll'));
     DeleteFile(ExpandConstant('{app}\ZwoGain.Rotator.dll'));
     DeleteFile(ExpandConstant('{app}\ZwoGain.ASCOM.Register.exe'));

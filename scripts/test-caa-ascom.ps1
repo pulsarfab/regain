@@ -14,9 +14,9 @@ try {
     $testDir = Join-Path $repo ('artifacts/caa-ascom-' + [Guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Path $testDir | Out-Null
     $env:REGAIN_ROTATOR_SETTINGS = Join-Path $testDir 'rotator.json'
-    $env:REGAIN_CAA_WORKER = Join-Path $repo 'target/release/regain-caa.exe'
+    $env:REGAIN_CAA_WORKER = Join-Path $repo 'target/debug/regain-device.exe'
     if ($Hardware) {
-        $devices = @(& $env:REGAIN_CAA_WORKER list-details | ConvertFrom-Json)
+        $devices = @(& $env:REGAIN_CAA_WORKER zwo caa list-details | ConvertFrom-Json)
         if ($LASTEXITCODE -or $devices.Count -ne 1 -or !$devices[0].identity) { throw 'Exactly one available CAA required' }
         if (!$FreshProfile) { @{ Serial = $devices[0].identity.serial; LogicalOffset = 0; Synced = $false } | ConvertTo-Json | Set-Content -LiteralPath $env:REGAIN_ROTATOR_SETTINGS }
     }

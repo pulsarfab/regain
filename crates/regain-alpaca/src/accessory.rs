@@ -52,14 +52,7 @@ impl Accessory {
         Self {
             kind,
             path,
-            executable: directory.join(match (kind, cfg!(windows)) {
-                ("eta", true) => "regain-eta.exe",
-                ("eta", false) => "regain-eta",
-                ("fc3", true) => "regain-fc3.exe",
-                ("fc3", false) => "regain-fc3",
-                (_, true) => "regain-accessories.exe",
-                _ => "regain-accessories",
-            }),
+            executable: directory.join(format!("regain-device{}", std::env::consts::EXE_SUFFIX)),
             simulate,
             state: Mutex::new(State {
                 profile: Profile::default(),
@@ -140,9 +133,14 @@ impl Accessory {
     }
     fn command(&self, action: &str) -> Command {
         let mut c = Command::new(&self.executable);
-        if !["fc3", "eta"].contains(&self.kind) {
-            c.arg(self.kind);
-        }
+        c.args([
+            match self.kind {
+                "fc3" => "pegasus",
+                "eta" => "wanderer",
+                _ => "zwo",
+            },
+            self.kind,
+        ]);
         c.arg(action);
         if self.simulate {
             c.arg("--simulate");

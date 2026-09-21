@@ -62,7 +62,7 @@ def main():
     sdk = ROOT / 'vendor/zwo/ASICamera2.dll'
     if args.trace_processing and hashlib.sha256(sdk.read_bytes()).hexdigest() != '0c8778c3cce2012961b079e3c7d0d8348a8b3823939335d9e98148cb5d5dc34a':
         parser.error('processing hooks require the inspected SDK 1.41 x64 binary')
-    host = ROOT / 'target/debug/regain-host.exe'
+    host = ROOT / 'target/debug/regain-device.exe'
     with args.output.open('x', encoding='utf-8') as log:
         lock = threading.Lock()
 
@@ -74,7 +74,7 @@ def main():
         record({'kind': 'configuration', 'timeMs': time.time_ns() // 1_000_000,
                 'parameters': {k: str(v) if isinstance(v, Path) else v for k, v in vars(args).items()},
                 'sdkSha256': hashlib.sha256(sdk.read_bytes()).hexdigest(), 'frida': frida.__version__})
-        proc = subprocess.Popen([str(host), '--sdk', str(sdk)], stdin=subprocess.PIPE,
+        proc = subprocess.Popen([str(host), 'zwo', 'camera-sdk', '--sdk', str(sdk)], stdin=subprocess.PIPE,
                                 stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
         expired = threading.Event()
         instrumentation_error = threading.Event()
@@ -225,7 +225,7 @@ def main():
                                                    'x': args.x, 'y': args.y, 'gain': args.gain,
                                                    **processing_metadata, 'calibrationBytes': len(blob)}).encode()
                             request = len(header).to_bytes(4, 'little') + header + blob + processing['retrieved']
-                            result = subprocess.run([str(ROOT / 'target/debug/regain-direct.exe'), '--process-frame'],
+                            result = subprocess.run([str(ROOT / 'target/debug/regain-device.exe'), 'zwo', 'camera-direct', '--process-frame'],
                                                     input=request, capture_output=True, timeout=30)
                             if result.returncode:
                                 raise RuntimeError(result.stderr.decode(errors='replace'))

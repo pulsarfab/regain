@@ -53,7 +53,7 @@ public sealed class CaaSession : IDisposable
     public static string SettingsPath(string slot) => RegainPaths.EnvironmentVariable("REGAIN_ROTATOR_SETTINGS") ?? RegainPaths.Profile(Path.Combine("Rotators", slot + ".json"));
     private Process Start(string arguments)
     {
-        var process = new Process { StartInfo = new(executable, arguments) { UseShellExecute = false, CreateNoWindow = true,
+        var process = new Process { StartInfo = new(executable, "zwo caa " + arguments) { UseShellExecute = false, CreateNoWindow = true,
             WindowStyle = ProcessWindowStyle.Hidden, RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true,
             StandardOutputEncoding = new System.Text.UTF8Encoding(false),
             WorkingDirectory = Path.GetDirectoryName(executable)! } };

@@ -13,7 +13,7 @@ namespace Regain.Eta;
 public sealed class Driver : IFocuserV3
 {
     internal static readonly SharedAccessoryDevice SharedDevice = new(new AccessorySession(
-        RegainPaths.EnvironmentVariable("REGAIN_ETA_WORKER") ?? Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"regain-eta.exe"),
+        RegainPaths.EnvironmentVariable("REGAIN_ETA_WORKER") ?? Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"regain-device.exe"),
         "eta", AccessorySession.SettingsPath("eta","ascom")), AccessorySetupWindow.Show);
 
     private readonly Guid client = Guid.NewGuid();

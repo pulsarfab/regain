@@ -74,7 +74,7 @@ def main():
             sdk = (args.kit / frame['sample']).read_bytes()
             assert hashlib.sha256(sdk).hexdigest() == frame['sha256']
             header = json.dumps(dict(exposure, model='asi6200mm-pro', calibrationBytes=len(calibration))).encode()
-            run = subprocess.run([str(args.worker.resolve()), '--process-frame'],
+            run = subprocess.run([str(args.worker.resolve()), 'zwo', 'camera-direct', '--process-frame'],
                                  input=struct.pack('<I', len(header)) + header + calibration + wire,
                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30, check=True)
             size = struct.unpack('<I', run.stdout[:4])[0]

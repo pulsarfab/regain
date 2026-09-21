@@ -591,16 +591,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf"
 
 [[package]]
-name = "regain-accessories"
-version = "0.4.0"
-dependencies = [
- "anyhow",
- "regain-hid",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "regain-alpaca"
 version = "0.4.0"
 dependencies = [
@@ -621,16 +611,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "regain-caa"
-version = "0.4.0"
-dependencies = [
- "anyhow",
- "regain-hid",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "regain-core"
 version = "0.4.0"
 dependencies = [
@@ -644,66 +624,79 @@ dependencies = [
 ]
 
 [[package]]
-name = "regain-direct"
+name = "regain-deepskydad"
+version = "0.4.0"
+dependencies = [
+ "anyhow",
+ "regain-transport",
+ "regain-worker",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "regain-device"
+version = "0.4.0"
+dependencies = [
+ "anyhow",
+ "regain-deepskydad",
+ "regain-pegasus",
+ "regain-wanderer",
+ "regain-zwo",
+]
+
+[[package]]
+name = "regain-pegasus"
+version = "0.4.0"
+dependencies = [
+ "anyhow",
+ "regain-transport",
+ "regain-worker",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "regain-transport"
+version = "0.4.0"
+dependencies = [
+ "anyhow",
+ "serde",
+ "serialport",
+]
+
+[[package]]
+name = "regain-wanderer"
+version = "0.4.0"
+dependencies = [
+ "anyhow",
+ "regain-transport",
+ "regain-worker",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "regain-worker"
+version = "0.4.0"
+dependencies = [
+ "anyhow",
+ "serde_json",
+]
+
+[[package]]
+name = "regain-zwo"
 version = "0.4.0"
 dependencies = [
  "anyhow",
  "libc",
+ "libloading",
  "nusb",
+ "regain-worker",
+ "serde",
  "serde_json",
  "sha2",
  "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "regain-eta"
-version = "0.4.0"
-dependencies = [
- "anyhow",
- "serde",
- "serde_json",
- "serialport",
-]
-
-[[package]]
-name = "regain-fc3"
-version = "0.4.0"
-dependencies = [
- "anyhow",
- "serde",
- "serde_json",
- "serialport",
-]
-
-[[package]]
-name = "regain-hid"
-version = "0.4.0"
-dependencies = [
- "anyhow",
- "libc",
- "serde",
- "serde_json",
- "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "regain-host"
-version = "0.4.0"
-dependencies = [
- "anyhow",
- "libloading",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "regain-ofp2"
-version = "0.4.0"
-dependencies = [
- "anyhow",
- "serde",
- "serde_json",
- "serialport",
 ]
 
 [[package]]

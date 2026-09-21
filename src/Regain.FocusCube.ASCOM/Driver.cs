@@ -13,7 +13,7 @@ namespace Regain.FocusCube;
 public sealed class Driver : IFocuserV3
 {
     internal static readonly SharedAccessoryDevice SharedDevice = new(new AccessorySession(
-        RegainPaths.EnvironmentVariable("REGAIN_FC3_WORKER") ?? Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"regain-fc3.exe"),
+        RegainPaths.EnvironmentVariable("REGAIN_FC3_WORKER") ?? Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"regain-device.exe"),
         "fc3", AccessorySession.SettingsPath("fc3","ascom")), AccessorySetupWindow.Show);
 
     private readonly Guid client = Guid.NewGuid();

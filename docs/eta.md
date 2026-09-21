@@ -1,7 +1,7 @@
 # Wanderer Astro ETA M54
 
 Adjust back focus while preserving tilt, or move one of the three tilt points.
-`regain-eta` speaks directly to the ETA's serial port without a vendor SDK,
+`regain-device wanderer eta` speaks directly to the ETA's serial port without a vendor SDK,
 Wanderer Empire, or the vendor ASCOM driver.
 
 **Availability:** current source and CI builds. ETA is not in release 0.4.0.0.
@@ -16,7 +16,7 @@ simulation; physical movement validation is pending. M92 support is not claimed.
 | Native NINA plugin | **PulsarFab regain Wanderer Astro ETA M54** under focusers | Back focus; setup gear for individual points |
 | Native Windows ASCOM | **PulsarFab regain Wanderer Astro ETA M54** under focusers | `ASCOM.Regain.ETA.Focuser`; shared serial server for 32/64-bit clients |
 | Alpaca | Focuser **2** | `/setup/v1/focuser/2/setup`; back focus and individual points |
-| Rust | `regain-eta` library or worker | Absolute point targets, telemetry and back focus |
+| Rust | `regain-wanderer::eta` library or `regain-device wanderer eta` worker | Absolute point targets, telemetry and back focus |
 
 Regain uses the focuser interface for common back-focus movement. Position is
 the mean of the three encoder readings, rounded to whole micrometres (µm), with
@@ -69,10 +69,10 @@ the physical M54 on COM3, firmware 20260804. No simulated values or movement.
 ## Worker and actions
 
 ```powershell
-cargo build -p regain-eta
-./target/debug/regain-eta.exe list-details
-./target/debug/regain-eta.exe status --serial COM3
-./target/debug/regain-eta.exe serve --serial COM3
+cargo build -p regain-device
+./target/debug/regain-device.exe wanderer eta list-details
+./target/debug/regain-device.exe wanderer eta status --serial COM3
+./target/debug/regain-device.exe wanderer eta serve --serial COM3
 ```
 
 `--serial` is the common accessory-worker selection argument; for ETA its value

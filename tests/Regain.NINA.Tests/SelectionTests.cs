@@ -11,7 +11,7 @@ public sealed class SelectionTests : IDisposable
     private static readonly CameraDescriptor Sim = new("ZWO Simulated", 960, 640, true, 0, 3.76, 16, true, false, [1, 2, 4]);
     private CameraSelectionStore Store => new(Path.Combine(folder, "camera.json"));
     private ResilientCamera Camera(CameraSelectionStore store) => new(Mock.Of<IExposureDataFactory>(), store,
-        () => new HostClient(Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../target/debug/regain-host.exe")), "unused", true), new());
+        () => new HostClient(Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../target/debug/regain-device.exe")), "unused", true), new());
 
     [Fact]
     public async Task SavedChoiceSurvivesNewInstancesAndLearnsSerial()
@@ -89,7 +89,7 @@ public sealed class SelectionTests : IDisposable
         var descriptor = Sim with { Name = "ZWO ASI676MC", Width = 3552, Height = 3552, Cooled = false };
         Store.Save(new(descriptor, UseDirectDriver: true));
         var camera = new ResilientCamera(Mock.Of<IExposureDataFactory>(), Store,
-            () => new HostClient(Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../target/debug/regain-direct.exe")),
+            () => new HostClient(Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../target/debug/regain-device.exe")),
                 "missing-sdk.dll", simulate: true, direct: true), new());
         try {
             Assert.True(await camera.Connect(default));
@@ -126,7 +126,7 @@ public sealed class SelectionTests : IDisposable
         Store.Save(new(descriptor,UseDirectDriver:true,FanSpeed:200,PowerLedBrightness:128));
         HostClient? host = null;
         var camera = new ResilientCamera(Mock.Of<IExposureDataFactory>(),Store,
-            () => host = new HostClient(Path.GetFullPath(Path.Combine(AppContext.BaseDirectory,"../../../../../target/debug/regain-direct.exe")),
+            () => host = new HostClient(Path.GetFullPath(Path.Combine(AppContext.BaseDirectory,"../../../../../target/debug/regain-device.exe")),
                 "missing-sdk.dll",simulate:true,direct:true),new());
         try {
             Assert.True(await camera.Connect(default));

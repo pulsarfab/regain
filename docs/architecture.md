@@ -1,18 +1,84 @@
 # Architecture and protocol
 
 ```text
-NINA adapter -- private pipe --> regain-alpaca --stdio --+
-                                                        |
-Windows COM -- private pipe --> regain-camera -----------+--> regain-core
-                                                        |        |
-Alpaca client -- HTTP ---------> regain-alpaca -----------+   worker pipes
-                                     |                           |
-                                     |              regain-host / regain-direct
-                                     |                        SDK / USB
-                                     |
-CAA NINA / native COM -- pipe --+-----+--> regain-caa --> USB HID
+NINA / ASCOM / Alpaca
+        |
+        +-- regain-core: camera recovery and session ownership
+        |
+        +-- regain-device VENDOR DEVICE: one process per device session
+                    |
+                    +-- regain-zwo: ASI direct/SDK, CAA, EFW, EAF
+                    +-- regain-pegasus: FocusCube3
+                    +-- regain-deepskydad: OFP2
+                    +-- regain-wanderer: ETA M54
 ```
 
+## Crate boundaries
+
+| Crate | Responsibility |
+| --- | --- |
+| `regain-zwo` | ZWO protocols, camera processing and ZWO HID report transport |
+| `regain-pegasus` | Pegasus protocols; `fc3` module |
+| `regain-deepskydad` | DeepSkyDad protocols; `ofp2` module |
+| `regain-wanderer` | Wanderer Astro protocols; `eta` module |
+| `regain-transport` | Serial candidate enumeration, explicit port settings and bounded frame reads |
+| `regain-worker` | Bounded accessory JSON-line input, reply envelopes and polling loop |
+| `regain-core` | Camera sessions, capture recovery and child-process ownership |
+| `regain-device` | One hardware worker executable; dispatch only |
+| `regain-alpaca` | Universal Alpaca server and native camera supervisor frontends |
+
+Add another product to its vendor module. Extract cross-vendor code when two
+implementations share behavior, rather than inventing a universal device trait.
+Serial framing validation, identity checks, pacing, uncertain-write handling,
+and motion limits belong to the device protocol. The common transport never
+retries writes. ETA streaming telemetry and its lack of a physical halt remain
+explicit. ZWO's HID report IDs and descriptor rules stay inside `regain-zwo::hid`.
+Camera USB transfer recovery remains in `regain-zwo::asi::direct`.
+
+## One hardware executable
+
+`regain-device` replaces the separate per-product workers in source/CI builds.
+NINA, ASCOM and Alpaca launch it with an explicit selector:
+
+| Selector | Device/backend |
+| --- | --- |
+| `zwo camera-direct` | SDK-free ASI USB camera backend |
+| `zwo camera-sdk` | ASI vendor SDK backend |
+| `zwo caa` | CAA rotator |
+| `zwo efw` / `zwo eaf` | Filter wheel / focuser |
+| `pegasus fc3` | FocusCube3 |
+| `deepskydad ofp2` | OFP2 flat panel |
+| `wanderer eta` | ETA M54 tilter/back-focus control |
+
+```sh
+cargo build --workspace --release --locked
+./target/release/regain-device zwo camera-sdk --list --simulate
+./target/release/regain-device pegasus fc3 status --serial SIMULATION --simulate
+./target/release/regain-device wanderer eta serve --serial SIMULATION --simulate
+```
+
+Each device session still has its own process and private pipes. Sharing an
+executable does not share serial ports between frontends; native ASCOM retains
+its existing per-device connection leases. Camera recovery can replace a failed
+worker without restarting other devices. `regain-alpaca` remains the network
+server; `regain-camera` remains the local ASCOM camera supervisor.
+
+We ship one full hardware executable per platform. Vendor crates can still be
+embedded independently. Rust applications can select `regain-zwo` library
+features (`asi-direct`, `asi-sdk`, `caa`, `accessories`) to include only what they
+use. There are no separate per-product CLI downloads. The SDK backend loads a
+vendor library at runtime; its presence in the executable does not require an
+SDK installation to use another backend.
+
+For Rust consumers, the former product crates become vendor modules:
+`regain_caa` → `regain_zwo::caa`, `regain_accessories` → `regain_zwo::accessories`,
+`regain_hid` → `regain_zwo::hid`, `regain_fc3` → `regain_pegasus::fc3`,
+`regain_ofp2` → `regain_deepskydad::ofp2`, and `regain_eta` → `regain_wanderer::eta`.
+Camera source is under `regain_zwo::asi::{direct,sdk}`. Update scripts to use the
+selectors above and deploy matching frontend/worker builds together. Existing
+NINA IDs, ASCOM registrations, profiles and pipe payloads remain unchanged.
+
+## Camera sessions
 
 `regain-core` owns the recovery policy and remembered controls. The NINA pipe
 adapter and standalone Alpaca server use that same controller. Each camera has
@@ -183,8 +249,8 @@ No failed/partial frame reaches NINA.
 
 ## Native USB accessories
 
-`regain-hid` owns the Windows HID, Linux hidraw, and macOS IOKit control-report
-transports. CAA and the new `regain-accessories` crate share this layer. EFW/EAF
+`regain-zwo::hid` owns the Windows HID, Linux hidraw, and macOS IOKit control-report
+transports. The `caa` and `accessories` modules share this layer. EFW/EAF
 protocol parsing and motion bounds live in Rust; `AccessorySession` in the shared
 Windows UI assembly provides serialized local IPC for NINA and native ASCOM.
 The Alpaca accessory coordinator launches the same worker and tracks ClientIDs.
@@ -193,7 +259,7 @@ No SDK DLL or HTTP bridge is used in the native accessory drivers. See
 
 ## Serial accessories
 
-`regain-fc3`, `regain-ofp2`, and `regain-eta` implement device protocols in Rust.
+`regain-pegasus`, `regain-deepskydad`, and `regain-wanderer` implement device protocols.
 NINA and native ASCOM use the shared `AccessorySession` JSON worker client and
 setup theme. Their ASCOM local servers compile the same `src/Shared/SerialServer.cs`
 host and use `SharedAccessoryDevice` connection leases. The host owns one worker;
@@ -203,6 +269,6 @@ mutually exclusive at the physical serial port.
 
 ETA reuses the focuser routes/provider for common back focus, and exposes
 individual tilt points through actions and setup. Its streaming telemetry and
-sequential point movement stay inside `regain-eta`. Unlike the other serial
+sequential point movement stay inside `regain-wanderer::eta`. Unlike the other serial
 accessories, selection uses a port path because the tested CH340 adapter has no
 unique hardware serial. See [ETA protocol and limits](eta.md).

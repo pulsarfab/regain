@@ -10,7 +10,7 @@ public class DirectBackendTests
     private static readonly Exposure Exposure = new(64, 64, 1, 0, 0, 10000, true);
     private static readonly RecoveryOptions Fast = new() { MaxRetries = 1, ReconnectDelaySeconds = .05 };
     private static HostClient Host() => new(Path.GetFullPath(Path.Combine(AppContext.BaseDirectory,
-        "../../../../../target/debug/regain-direct.exe")), "missing-sdk.dll", simulate: true, direct: true);
+        "../../../../../target/debug/regain-device.exe")), "missing-sdk.dll", simulate: true, direct: true);
 
     [Fact]
     public async Task DirectProtocolReportsOnlyImplementedCapabilitiesAndRejectsInvalidRoiWithoutRetry()
@@ -104,7 +104,7 @@ public class DirectBackendTests
 
     private static HostClient Fallback(CameraDescriptor camera, string serial = "direct-simulator") {
         var h = new HostClient(Path.GetFullPath(Path.Combine(AppContext.BaseDirectory,
-            "../../../../../target/debug/regain-host.exe")), "unused", simulate: true);
+            "../../../../../target/debug/regain-device.exe")), "unused", simulate: true);
         h.CallAsync("simulation", new { name = camera.Name, width = camera.Width, height = camera.Height,
             bins = camera.Bins, cooled = camera.Cooled, serial, instant = true, temperature = 250 },
             TimeSpan.FromSeconds(5), default).GetAwaiter().GetResult();

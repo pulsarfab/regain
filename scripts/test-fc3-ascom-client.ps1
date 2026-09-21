@@ -22,7 +22,7 @@ try {
         Wait-Signal 'second-connected'
         $servers = @(Get-CimInstance Win32_Process -Filter "Name='Regain.FocusCube.ASCOM.exe'" | Where-Object { $_.CommandLine -like "*$Id*" })
         if ($servers.Count -ne 1) { throw 'Expected one shared COM server' }
-        $workers = @(Get-CimInstance Win32_Process -Filter "Name='regain-fc3.exe'" | Where-Object ParentProcessId -eq $servers[0].ProcessId)
+        $workers = @(Get-CimInstance Win32_Process -Filter "Name='regain-device.exe'" | Where-Object ParentProcessId -eq $servers[0].ProcessId)
         if ($workers.Count -ne 1) { throw 'Two ASCOM clients must share exactly one worker' }
         $device.Connected = $false
         if ($device.Connected) { throw 'Disconnect failed' }

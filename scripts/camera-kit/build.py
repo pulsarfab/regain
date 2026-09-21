@@ -20,7 +20,7 @@ def package(kit, root, version):
     build = json.loads((kit / 'camera-kit-build.json').read_text())
     if build['version'] != version:
         raise ValueError('Prepared kit version differs from source version')
-    for name in ('Regain-CameraKit.exe', 'regain-host.exe', 'ASICamera2.dll', 'README.md'):
+    for name in ('Regain-CameraKit.exe', 'regain-device.exe', 'ASICamera2.dll', 'README.md'):
         if not (kit / name).is_file():
             raise ValueError(f'Prepared kit is missing {name}')
     # Recompute after signing. The checksums cover the exact distributed bytes.
@@ -56,7 +56,7 @@ def main():
                     '--collect-all', 'frida', '--add-data', str(root / 'scripts/inspection/trace-transport.js') + ';.',
                     str(Path(__file__).with_name('camera_kit.py'))], check=True)
     kit = work / 'dist/Regain-CameraKit'
-    for name in ('regain-host.exe', 'ASICamera2.dll', 'LICENSE', 'THIRD_PARTY_NOTICES.md'):
+    for name in ('regain-device.exe', 'ASICamera2.dll', 'LICENSE', 'THIRD_PARTY_NOTICES.md'):
         shutil.copy2(stage / name, kit / name)
     shutil.copytree(stage / 'licenses', kit / 'licenses')
     for name in ('vcruntime140.dll', 'vcruntime140_1.dll'):
@@ -93,7 +93,7 @@ def main():
     build = dict(version=version, commit=commit, dirty=dirty, python=sys.version.split()[0],
                  dependencies={name: importlib.metadata.version(name) for name in ('frida', 'pyinstaller')})
     (kit / 'camera-kit-build.json').write_text(json.dumps(build, indent=2) + '\n', encoding='utf-8')
-    verify_host(kit / 'regain-host.exe', kit / 'ASICamera2.dll')
+    verify_host(kit / 'regain-device.exe', kit / 'ASICamera2.dll')
     verify_kit(kit, work / 'failure-tests')
     # Exercise the frozen executable, embedded tracer, native DLL dependencies,
     # binary host protocol, sample writer and ZIP builder without hardware.

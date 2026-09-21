@@ -65,7 +65,7 @@ public sealed class AccessorySession : IDisposable
     private Process Start(string arguments)
     {
         if (Regain.Rotator.RegainPaths.EnvironmentVariable("REGAIN_ACCESSORY_SIMULATE") == "1") arguments += " --simulate";
-        var process = new Process { StartInfo = new(executable, (Kind is "fc3" or "ofp2" or "eta" ? "" : Kind + " ") + arguments) {
+        var process = new Process { StartInfo = new(executable, (Kind == "fc3" ? "pegasus fc3 " : Kind == "ofp2" ? "deepskydad ofp2 " : Kind == "eta" ? "wanderer eta " : "zwo " + Kind + " ") + arguments) {
             UseShellExecute = false, CreateNoWindow = true, WindowStyle = ProcessWindowStyle.Hidden,
             RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true,
             WorkingDirectory = Path.GetDirectoryName(executable)!, StandardOutputEncoding = new System.Text.UTF8Encoding(false) } };

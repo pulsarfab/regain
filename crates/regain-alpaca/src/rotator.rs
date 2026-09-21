@@ -108,9 +108,9 @@ impl Rotator {
         Self {
             path,
             executable: directory.join(if cfg!(windows) {
-                "regain-caa.exe"
+                "regain-device.exe"
             } else {
-                "regain-caa"
+                "regain-device"
             }),
             simulate,
             state: Mutex::new(State {
@@ -150,7 +150,7 @@ impl Rotator {
     }
     fn command(&self, command: &str) -> Command {
         let mut c = Command::new(&self.executable);
-        c.arg(command);
+        c.args(["zwo", "caa"]).arg(command);
         if self.simulate {
             c.arg("--simulate");
         }

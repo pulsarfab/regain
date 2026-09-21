@@ -15,14 +15,14 @@ import time
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--worker', type=Path, default=Path('target/release/regain-caa.exe'))
+    parser.add_argument('--worker', type=Path, default=Path('target/release/regain-device.exe'))
     parser.add_argument('--travel', type=float, default=180)
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
     if not 90 < args.travel <= 450:
         parser.error('travel must be greater than 90 and at most 450 degrees')
     with args.output.open('x', encoding='utf-8') as log:
-        worker = subprocess.Popen([str(args.worker.resolve()), 'serve'], stdin=subprocess.PIPE,
+        worker = subprocess.Popen([str(args.worker.resolve()), "zwo", "caa", 'serve'], stdin=subprocess.PIPE,
                                   stdout=subprocess.PIPE, text=True, encoding='utf-8')
         replies = queue.Queue()
         def read():

@@ -35,7 +35,7 @@ def main():
     def binary(name): return str(directory / (name + ('.exe' if os.name == 'nt' else '')))
     serial = a.read_only_port or 'SIMULATION'
     sim = [] if a.read_only_port else ['--simulate']
-    worker = helpers.Worker(binary('regain-eta'), serial, sim)
+    worker = helpers.Worker([binary('regain-device'), 'wanderer', 'eta'], serial, sim)
     try:
         assert worker.call('identity')['model'] == 'Wanderer Astro ETA M54'
         if a.read_only_port:

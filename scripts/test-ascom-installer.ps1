@@ -210,7 +210,12 @@ try {
     if ($backend.HasExited) { throw 'Installer stopped the running server' }
     $backend.Kill(); $backend.WaitForExit(); $backend.Dispose(); $backend = $null
     Start-Sleep -Seconds 2
+    # Previous per-product workers must disappear only after a successful upgrade.
+    $obsoleteWorkers = @('regain-host.exe','regain-direct.exe','regain-caa.exe','regain-accessories.exe','regain-ofp2.exe','regain-fc3.exe','regain-eta.exe')
+    foreach ($name in $obsoleteWorkers) { Set-Content -LiteralPath (Join-Path $destination $name) -Value 'old worker fixture' }
     Run-Setup 'upgrade'
+    foreach ($name in $obsoleteWorkers) { if (Test-Path -LiteralPath (Join-Path $destination $name)) { throw "Upgrade left $name" } }
+    if (!(Test-Path -LiteralPath (Join-Path $destination 'regain-device.exe'))) { throw 'Unified device worker missing after upgrade' }
     if (Test-Path (Join-Path $destination 'zwogain-alpaca.exe')) { throw 'Upgrade left the obsolete worker executable' }
     Assert-FocusCubeActivation
     Assert-Ofp2Activation

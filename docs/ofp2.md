@@ -1,6 +1,6 @@
 # Deep Sky Dad OFP2 flat panel
 
-`regain-ofp2` is a native Rust library and serial worker for the **OFP2**
+`regain-deepskydad::ofp2` is a native Rust library, exposed through `regain-device deepskydad ofp2`, for the **OFP2**
 (FP2 board, product type 3). It talks directly to USB CDC serial. The vendor's
 ASCOM driver, control panel, SDK, and .NET are not required at runtime.
 The existing Rust Alpaca server exposes it as **CoverCalibrator device 0**.
@@ -23,7 +23,7 @@ with `scripts/build-ascom.ps1` and `scripts/build-ascom-installer.ps1`.
    and flat panel setup** shortcut opens the same shared server.
 
 `Regain.Ofp2.ASCOM.exe` is an out-of-process COM server. Separate 32-bit and
-64-bit applications share one `regain-ofp2.exe` worker and one exclusive serial
+64-bit applications share one `regain-device.exe deepskydad ofp2` worker and one exclusive serial
 connection. Each client has its own connection lease; disconnecting or disposing
 one client leaves the others connected. The final disconnect releases the worker
 and port. An open setup dialog keeps its connection until it closes, and cannot
@@ -61,7 +61,7 @@ its initial illumination on success.
 1. Connect USB and the panel's external power supply. Close any vendor control
    panel and disconnect other applications using its serial port.
 2. Build `cargo build --workspace --release --locked`, or use a package that
-   includes `regain-ofp2` beside `regain-alpaca`.
+   includes `regain-device` beside `regain-alpaca`.
 3. Start `target/release/regain-alpaca --port 11111` (add `.exe` on Windows).
 4. Open `http://127.0.0.1:11111/setup/v1/covercalibrator/0/setup`, click
    **Find panels**, select the OFP2, and **Connect for setup**.
@@ -92,7 +92,7 @@ the board identity and product type before sending any actuation command.
 ## Rust library and worker
 
 ```rust,no_run
-use regain_ofp2::{Panel, serial::Serial};
+use regain_deepskydad::ofp2::{Panel, serial::Serial};
 
 let mut panel = Panel::new(Serial::open("COM5")?)?;
 println!("{:?}", panel.identity());
@@ -112,9 +112,9 @@ during motion. They must keep the transport alive until the operation finishes
 or explicitly halt. The CLI worker performs this polling automatically.
 
 ```powershell
-.\target\release\regain-ofp2.exe list-details
-.\target\release\regain-ofp2.exe status --serial YOUR_USB_SERIAL
-.\target\release\regain-ofp2.exe serve --serial YOUR_USB_SERIAL
+.\target\release\regain-device.exe deepskydad ofp2 list-details
+.\target\release\regain-device.exe deepskydad ofp2 status --serial YOUR_USB_SERIAL
+.\target\release\regain-device.exe deepskydad ofp2 serve --serial YOUR_USB_SERIAL
 ```
 
 `serve` accepts newline-delimited JSON and writes exactly one response per
@@ -217,7 +217,7 @@ ConformU run remain untested; CI exercises the protocol simulator on each OS.
 
 ```powershell
 # No physical device needed:
-cargo test -p regain-ofp2 --locked
+cargo test -p regain-deepskydad --locked
 python scripts/test-ofp2.py
 
 # Moves and illuminates the explicitly selected real device, then restores it:

@@ -71,7 +71,7 @@ From the repository root, after installing the dependencies described in the
 cargo build --locked
 Get-FileHash vendor/zwo/ASICamera2.dll -Algorithm SHA256
 # Descriptor-only probe of every interface; no sensor initialization:
-target/debug/regain-direct.exe --probe-all
+target/debug/regain-device.exe zwo camera-direct --probe-all
 
 # Use a NEW output path on every run. Initial small main-sensor capture:
 .reference/inspection-venv/Scripts/python.exe scripts/inspection/trace_transport.py --camera-name 'ZWO ASI2600MM Duo' --width 512 --height 256 --seconds 0.1 --gain 100 --offset 50 --frames 3 --output artifacts/inspection/duo-main-baseline-new.jsonl

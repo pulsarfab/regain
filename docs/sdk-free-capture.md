@@ -5,11 +5,11 @@ separately tested [ASI2600 main/guide](duo-capture.md) and
 [ASI6200MM Pro P25](asi6200-p25.md) interfaces; their initialization and
 capabilities differ from the ASI676 configuration below.
 
-The experimental `regain-direct` Rust executable now opens the installed
+The experimental `regain-device zwo camera-direct` Rust executable now opens the installed
 `ASICAMUSB3.sys` interface, initializes the sensor, configures a capture, waits
 for a complete buffered frame, reads it, and returns RAW16 over a binary pipe.
 It does not load or call `ASICamera2.dll`. The NINA camera uses the supervised
-SDK host by default. The packaged `regain-direct.exe --serve` is available
+SDK host by default. The packaged `regain-device.exe zwo camera-direct --serve` is available
 through an explicit experimental setup option for the verified ASI676MC modes.
 
 ## Supported research configuration

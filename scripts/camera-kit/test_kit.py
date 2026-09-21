@@ -110,7 +110,7 @@ class PackagingTests(unittest.TestCase):
             kit.mkdir()
             (root / 'artifacts').mkdir()
             (kit / 'camera-kit-build.json').write_text(json.dumps(dict(version='0.1.0.0')))
-            for name in ('Regain-CameraKit.exe', 'regain-host.exe', 'ASICamera2.dll', 'README.md'):
+            for name in ('Regain-CameraKit.exe', 'regain-device.exe', 'ASICamera2.dll', 'README.md'):
                 (kit / name).write_bytes(b'prepared payload')
             package(kit, root, '0.1.0.0')
             (kit / 'Regain-CameraKit.exe').write_bytes(b'payload with appended signature')

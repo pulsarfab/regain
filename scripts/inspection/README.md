@@ -78,12 +78,12 @@ Disconnect the camera from NINA and other applications first. This executable
 uses the installed driver exclusively and never loads ASICamera2.dll:
 
 ```powershell
-cargo run -p regain-direct --locked
-cargo run -p regain-direct --locked -- --probe
+cargo run -p regain-device --locked -- zwo camera-direct
+cargo run -p regain-device --locked -- zwo camera-direct --probe
 # Descriptor-only inventory when several cameras are attached:
-cargo run -p regain-direct --locked -- --probe-all
+cargo run -p regain-device --locked -- zwo camera-direct --probe-all
 # Explicit idle-endpoint experiment: one 16 KiB read, cancel after 100 ms, drain.
-cargo run -p regain-direct --locked -- --probe --cancel-read
+cargo run -p regain-device --locked -- zwo camera-direct --probe --cancel-read
 ```
 
 Without arguments it reports the number of interfaces, opening none. Probe mode
@@ -136,14 +136,14 @@ observed USB3 ASI676MC. Defaults: full sensor, 100 ms, gain 0, offset 10,
 bin 1, USB limit 40, two retained-frame read retries.
 
 ```powershell
-cargo run -p regain-direct --locked -- --capture --microseconds 1000000 --frames 3
-cargo run -p regain-direct --locked -- --capture --width 512 --height 256 --x 16 --y 8 --gain 100 --offset 20
+cargo run -p regain-device --locked -- zwo camera-direct --capture --microseconds 1000000 --frames 3
+cargo run -p regain-device --locked -- zwo camera-direct --capture --width 512 --height 256 --x 16 --y 8 --gain 100 --offset 20
 # Compare a second complete read with every byte of the original wire frame:
-cargo run -p regain-direct --locked -- --capture --replay
+cargo run -p regain-device --locked -- zwo camera-direct --capture --replay
 # Abandon 12 MiB of a replay, restart it, and compare against the original:
-cargo run -p regain-direct --locked -- --capture --replay-prefix-bytes 12582912
+cargo run -p regain-device --locked -- zwo camera-direct --capture --replay-prefix-bytes 12582912
 # Interrupt the first read; recover automatically without another exposure:
-cargo run -p regain-direct --locked -- --capture --interrupt-read-after-bytes 12582912 --replay
+cargo run -p regain-device --locked -- zwo camera-direct --capture --interrupt-read-after-bytes 12582912 --replay
 # Set --read-retries 0 to surface that interruption instead of recovering.
 .reference/inspection-venv/Scripts/python.exe scripts/inspection/validate_direct.py --long --output artifacts/inspection/direct-validation.jsonl
 ```
@@ -174,7 +174,7 @@ The historical CLI name `--capture-duo` selects the ASI2600MM Pro main interface
 The guide is a separate interface and has no established retained-frame replay.
 
 ```powershell
-cargo build -p regain-direct --locked
+cargo build -p regain-device --locked
 # Cancel the 13th pending bulk request, after 12 MiB of a 60-second frame:
 .reference/inspection-venv/Scripts/python.exe scripts/inspection/trace_direct.py --output artifacts/inspection/cancel-long.jsonl --cancel-bulk 13 --hash-bulk -- --capture-duo --microseconds 60000000 --gain 100 --offset 50 --replay
 # Pause the sender after 12 MiB; the next real USB read expires at 5 seconds:
@@ -223,10 +223,10 @@ These SDK-free research commands exercise the same acquisition code used by
 NINA's experimental backend. Disconnect the selected sensor in other apps first.
 
 ```powershell
-cargo build --locked -p regain-direct
-target/debug/regain-direct.exe --capture-duo --gain 100 --offset 50 --replay
-target/debug/regain-direct.exe --capture-duo --width 2080 --height 1392 --bin 3 --gain 350 --offset 120
-target/debug/regain-direct.exe --capture-guide --gain 100 --offset 200
+cargo build --locked -p regain-device
+target/debug/regain-device.exe zwo camera-direct --capture-duo --gain 100 --offset 50 --replay
+target/debug/regain-device.exe zwo camera-direct --capture-duo --width 2080 --height 1392 --bin 3 --gain 350 --offset 120
+target/debug/regain-device.exe zwo camera-direct --capture-guide --gain 100 --offset 200
 python scripts/inspection/validate_duo.py --output artifacts/inspection/NEW-main.jsonl --long
 python scripts/inspection/validate_guide.py --output artifacts/inspection/NEW-guide.jsonl
 ```
@@ -249,9 +249,9 @@ factory correction, binning and retained-frame reader. Disconnect NINA before
 running hardware commands and use a new output filename for every trace.
 
 ```powershell
-cargo build --locked -p regain-direct
+cargo build --locked -p regain-device
 # Full frame plus verification that retained replay preserves interior pixels:
-target/debug/regain-direct.exe --capture-6200 --gain 100 --offset 50 --replay
+target/debug/regain-device.exe zwo camera-direct --capture-6200 --gain 100 --offset 50 --replay
 # Bins, gain transitions, offsets, timing boundaries, ROIs and read faults:
 .reference/inspection-venv/Scripts/python.exe scripts/inspection/validate_asi6200.py --output artifacts/inspection/NEW-6200-matrix.jsonl
 # Full-sensor control transitions with vertical-band checks for stale DDR rows:
@@ -298,8 +298,8 @@ differ from the non-P25 camera; the original `--capture-duo` command remains
 restricted to PID `2601`.
 
 ```powershell
-target/release/regain-direct.exe --capture-2600-p25 --gain 100 --offset 50 --replay
-python scripts/inspection/validate_asi2600_p25.py --worker target/release/regain-direct.exe --output artifacts/inspection/NEW-2600-p25.jsonl
+target/release/regain-device.exe zwo camera-direct --capture-2600-p25 --gain 100 --offset 50 --replay
+python scripts/inspection/validate_asi2600_p25.py --worker target/release/regain-device.exe --output artifacts/inspection/NEW-2600-p25.jsonl
 python scripts/inspection/trace_direct.py --output artifacts/inspection/NEW-2600-p25-cancel.jsonl --cancel-bulk 13 -- --capture-2600-p25 --microseconds 60000000 --gain 100 --offset 50 --replay
 ```
 

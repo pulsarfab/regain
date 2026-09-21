@@ -19,12 +19,12 @@ from trace import Trace
 def paths():
     if getattr(sys, 'frozen', False):
         base = Path(sys.executable).parent
-        return base, base / 'regain-host.exe', base / 'ASICamera2.dll', Path(__file__).with_name('trace-transport.js')
+        return base, base / 'regain-device.exe', base / 'ASICamera2.dll', Path(__file__).with_name('trace-transport.js')
     portable = Path(__file__).resolve().parent.parent
-    if (portable / 'regain-host.exe').is_file():
-        return portable, portable / 'regain-host.exe', portable / 'ASICamera2.dll', Path(__file__).with_name('trace-transport.js')
+    if (portable / 'regain-device.exe').is_file():
+        return portable, portable / 'regain-device.exe', portable / 'ASICamera2.dll', Path(__file__).with_name('trace-transport.js')
     root = Path(__file__).resolve().parents[2]
-    return root, root / 'target/debug/regain-host.exe', root / 'vendor/zwo/ASICamera2.dll', root / 'scripts/inspection/trace-transport.js'
+    return root, root / 'target/debug/regain-device.exe', root / 'vendor/zwo/ASICamera2.dll', root / 'scripts/inspection/trace-transport.js'
 
 
 def sha(path):

@@ -15,7 +15,7 @@ public sealed class CaaProvider : IEquipmentProvider<IRotator>
 
 public sealed class CaaRotator : BaseINPC, IRotator, IDisposable
 {
-    private static readonly string Worker = Path.Combine(CameraProvider.DirectoryPath, "regain-caa.exe");
+    private static readonly string Worker = Path.Combine(CameraProvider.DirectoryPath, "regain-device.exe");
     private CaaSession session = NewSession();
     private static CaaSession NewSession() => new(Worker, CaaSession.SettingsPath("nina")) { Log = message => Logger.Info("PulsarFab regain CAA: " + message) };
     public string Id => "ZwoGain.CAA";

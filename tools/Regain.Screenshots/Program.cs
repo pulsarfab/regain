@@ -19,7 +19,7 @@ internal static class Program
         RenderOptions.ProcessRenderMode = System.Windows.Interop.RenderMode.SoftwareOnly;
         if (args.Contains("--ofp2")) {
             Environment.SetEnvironmentVariable("REGAIN_ACCESSORY_SIMULATE", "1");
-            using var panel = new AccessorySession(Path.Combine(root, "target", "debug", "regain-ofp2.exe"), "ofp2", Path.Combine(profiles, "ofp2.json"));
+            using var panel = new AccessorySession(Path.Combine(root, "target", "debug", "regain-device.exe"), "ofp2", Path.Combine(profiles, "ofp2.json"));
             panel.Connect();
             var window = new Ofp2SetupWindow(panel, () => true);
             typeof(Ofp2SetupWindow).GetMethod("RefreshStatus", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(window, null);
@@ -49,7 +49,7 @@ internal static class Program
         bool eta=args.Contains("--eta"), fc3=args.Contains("--fc3");
         Environment.SetEnvironmentVariable("REGAIN_ACCESSORY_SIMULATE", fc3 || eta ? null : "1");
         foreach (string kind in (eta ? new[] {"eta"} : fc3 ? new[] {"fc3"} : new[] { "efw", "eaf" })) {
-            using var session = new AccessorySession(Path.Combine(root, "target", "debug", (eta ? "regain-eta.exe" : fc3 ? "regain-fc3.exe" : "regain-accessories.exe")), kind, Path.Combine(profiles, kind + ".json"));
+            using var session = new AccessorySession(Path.Combine(root, "target", "debug", "regain-device.exe"), kind, Path.Combine(profiles, kind + ".json"));
             session.Connect();
             var window = new AccessorySetupWindow(session);
             // Run the same refresh used by the live dialog, without opening a desktop window.

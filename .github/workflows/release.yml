@@ -78,13 +78,7 @@ jobs:
             ${{ github.workspace }}\artifacts\stage\Regain.NINA.dll
             ${{ github.workspace }}\artifacts\stage\Regain.Core.dll
             ${{ github.workspace }}\artifacts\stage\Regain.Rotator.dll
-            ${{ github.workspace }}\artifacts\stage\regain-caa.exe
-            ${{ github.workspace }}\artifacts\stage\regain-accessories.exe
-            ${{ github.workspace }}\artifacts\stage\regain-ofp2.exe
-            ${{ github.workspace }}\artifacts\stage\regain-fc3.exe
-            ${{ github.workspace }}\artifacts\stage\regain-eta.exe
-            ${{ github.workspace }}\artifacts\stage\regain-host.exe
-            ${{ github.workspace }}\artifacts\stage\regain-direct.exe
+            ${{ github.workspace }}\artifacts\stage\regain-device.exe
             ${{ github.workspace }}\artifacts\stage\regain-alpaca.exe
             ${{ github.workspace }}\artifacts\stage\regain-camera.exe
             ${{ github.workspace }}\artifacts\ascom-stage\Regain.ASCOM.dll
@@ -100,7 +94,7 @@ jobs:
       # to the wrong publisher, must not reach the archive.
       - name: Verify every signature
         run: |
-          foreach ($f in 'Regain.NINA.dll','Regain.Core.dll','Regain.Rotator.dll','regain-caa.exe','regain-accessories.exe','regain-ofp2.exe','regain-fc3.exe','regain-eta.exe','regain-host.exe','regain-direct.exe','regain-camera.exe','regain-alpaca.exe') {
+          foreach ($f in 'Regain.NINA.dll','Regain.Core.dll','Regain.Rotator.dll','regain-device.exe','regain-camera.exe','regain-alpaca.exe') {
             $sig = Get-AuthenticodeSignature -LiteralPath "artifacts/stage/$f"
             if ($sig.Status -ne 'Valid') { throw "$f signature is $($sig.Status)" }
             if ($sig.SignerCertificate.Subject -notmatch 'StackFoundry LLC') { throw "$f has unexpected signer: $($sig.SignerCertificate.Subject)" }
@@ -168,7 +162,7 @@ jobs:
         env:
           KIT_PATH: ${{ steps.kit.outputs.kit_path }}
         run: |
-          foreach ($f in 'Regain-CameraKit.exe','regain-host.exe') {
+          foreach ($f in 'Regain-CameraKit.exe','regain-device.exe') {
             $sig = Get-AuthenticodeSignature -LiteralPath (Join-Path $env:KIT_PATH $f)
             if ($sig.Status -ne 'Valid' -or $sig.SignerCertificate.Subject -notmatch 'StackFoundry LLC') { throw "Invalid kit signature: $f" }
           }

@@ -80,13 +80,13 @@ def simulated(binary_dir):
     exposure = dict(width=128, height=128, x=0, y=0, bin=1,
                     microseconds=1000, dark=True, readRetries=2)
     expected = b"".join(struct.pack("<H", n) for n in range(128 * 128))
-    with Worker([str(binary_dir / ("regain-host" + suffix)), "--simulate"]) as worker:
+    with Worker([str(binary_dir / ("regain-device" + suffix)), "zwo", "camera-sdk", "--simulate"]) as worker:
         name = worker.call("list")[0][0]["name"]
         worker.call("open", dict(name=name))
         assert worker.frame(exposure)[1] == expected
         worker.call("close")
     count = 0
-    with Worker([str(binary_dir / ("regain-direct" + suffix)), "--serve", "--simulate"]) as worker:
+    with Worker([str(binary_dir / ("regain-device" + suffix)), "zwo", "camera-direct", "--serve", "--simulate"]) as worker:
         cameras = worker.call("list")[0]
         assert len(cameras) == 5
         for camera in cameras:
@@ -119,7 +119,7 @@ def simulated(binary_dir):
 
 
 def sdk_fixture(binary_dir, library):
-    with Worker([str(binary_dir / "regain-host"), "--sdk", str(library.resolve())]) as worker:
+    with Worker([str(binary_dir / "regain-device"), "zwo", "camera-sdk", "--sdk", str(library.resolve())]) as worker:
         camera = worker.call("list")[0][0]
         assert camera["width"] == 9576 and camera["height"] == 6388
         assert camera["pixelSize"] == 3.76 and camera["bitDepth"] == 16
@@ -137,7 +137,7 @@ def sdk_fixture(binary_dir, library):
 
 def standalone(binary_dir, library=None):
     suffix = ".exe" if sys.platform == "win32" else ""
-    command = [str(binary_dir / ("regain-host" + suffix))]
+    command = [str(binary_dir / ("regain-device" + suffix)), "zwo", "camera-sdk"]
     command += ["--sdk", str(library.resolve())] if library else ["--simulate"]
     listing = json.loads(subprocess.check_output(command + ["--list"], text=True, timeout=10))
     assert len(listing["cameras"]) == 1

@@ -16,7 +16,7 @@ try {
     if ($LASTEXITCODE) { throw 'OFP2 ASCOM build failed' }
     $env:REGAIN_ACCESSORY_SIMULATE = if ($Hardware) { '' } else { '1' }
     $env:REGAIN_ACCESSORY_SETTINGS = $directory
-    $env:REGAIN_OFP2_WORKER = Join-Path $repo 'target/debug/regain-ofp2.exe'
+    $env:REGAIN_OFP2_WORKER = Join-Path $repo 'target/debug/regain-device.exe'
     if ($Hardware) {
         if (!$Serial) { throw 'Hardware test requires explicit USB serial' }
         @{Serial=$Serial} | ConvertTo-Json | Set-Content (Join-Path $directory 'ofp2-ascom.json') -Encoding UTF8
@@ -52,7 +52,7 @@ try {
     Get-Content (Join-Path $directory '*.out')
     if (!(Test-Path (Join-Path $directory 'second-finished'))) { throw 'Shared connection test incomplete' }
     # Both clients have closed; the worker must be gone before the server idles out.
-    $workers = Get-CimInstance Win32_Process -Filter "Name='regain-ofp2.exe'" | Where-Object ParentProcessId -eq $server.Id
+    $workers = Get-CimInstance Win32_Process -Filter "Name='regain-device.exe'" | Where-Object ParentProcessId -eq $server.Id
     if ($workers) { throw 'Last ASCOM disconnect leaked its worker' }
     $server.Kill(); $server.WaitForExit()
     # Exercise actual SCM launch as well as an explicitly started fixture. This

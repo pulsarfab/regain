@@ -204,6 +204,21 @@ workers build with `cargo build --workspace --release --locked`;
 [portable build instructions](docs/portable-rust.md) cover SDK libraries and USB
 permissions. Native CI artifacts cover x86-64 and ARM64; they are not macOS-notarized.
 
+Hardware code is grouped by vendor: `regain-zwo`, `regain-pegasus`,
+`regain-deepskydad`, and `regain-wanderer`. They share `regain-transport` for
+serial I/O and `regain-worker` for accessory IPC. Source/CI builds use one
+hardware executable, `regain-device`, with vendor/device subcommands:
+
+```sh
+regain-device zwo camera-sdk --list --simulate
+regain-device pegasus fc3 status --serial SIMULATION --simulate
+regain-device wanderer eta status --serial SIMULATION --simulate
+```
+
+NINA, ASCOM and Alpaca select these modes automatically, keeping separate
+processes for device isolation. See [crate boundaries and CLI
+migration](docs/architecture.md#crate-boundaries).
+
 <a id="help-add-a-camera"></a>
 
 To help add a camera, use the separate [CameraKit](scripts/camera-kit/README.md)

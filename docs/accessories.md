@@ -1,6 +1,6 @@
 # Native EFW and EAF drivers
 
-PulsarFab regain's EFW filter-wheel and EAF focuser support uses the `regain-accessories`
+PulsarFab regain's EFW filter-wheel and EAF focuser support uses the `regain-zwo::accessories`
 Rust library and worker. Windows ASCOM, the native NINA providers, and Alpaca
 all use this worker. Neither ZWO accessory SDK nor an Alpaca bridge is needed
 for local Windows operation.
@@ -236,14 +236,14 @@ The observed move from 39,829 to 39,879 is
 
 ## Native implementation and validation
 
-`regain-hid` shares the CAA's native Windows HID, Linux hidraw, and macOS
+`regain-zwo::hid` shares the CAA's native Windows HID, Linux hidraw, and macOS
 IOKit transports. Windows and macOS request exclusive device access; Linux
 uses an advisory lock, so other non-cooperating drivers must still be closed.
 On Linux grant the current user access to HID devices with product IDs 1f01
 and 1f10 using a local udev rule, then replug them. No Zadig/libusb replacement
 driver is required for these HID accessories.
 
-`regain-accessories` validates packets, serial selection, slot/step ranges,
+`regain-zwo::accessories` validates packets, serial selection, slot/step ranges,
 and settings readback. The worker accepts one JSON request per line and returns
 `{"ok":true,"result":...}` or `{"ok":false,"error":"..."}`. Commands are
 `identity`, `status`, `move`, `calibrate` (EFW), `halt` (EAF), and `settings` (EAF). It polls active

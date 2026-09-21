@@ -35,6 +35,11 @@ public sealed class HostClient : IDisposable
             RedirectStandardError = true,
             WorkingDirectory = Path.GetDirectoryName(Path.GetFullPath(executable))!
         };
+        if (!supervised)
+        {
+            start.ArgumentList.Add("zwo");
+            start.ArgumentList.Add(direct ? "camera-direct" : "camera-sdk");
+        }
         if (supervised)
         {
             start.ArgumentList.Add("--stdio");

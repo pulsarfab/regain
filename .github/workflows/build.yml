@@ -46,6 +46,8 @@ jobs:
       - run: cargo test --workspace --locked
         env:
           REGAIN_TEST_WORKERS: ${{ github.workspace }}/target/release
+      - name: Exercise unified device CLI
+        run: python scripts/test-device.py --bin-dir target/release
       - name: Exercise standalone Alpaca server
         run: python scripts/test-alpaca.py --bin-dir target/release
       - name: Exercise native camera pipe
@@ -75,17 +77,6 @@ jobs:
           python scripts/test-rust.py --bin-dir target/release --sdk-fixture "$library"
       - name: Package workers for hardware testing
         run: python scripts/package-rust.py
-      - name: Package standalone native CAA driver
-        run: cargo run -p regain-caa --release --locked -- list
-      - name: Archive standalone native CAA driver
-        run: python scripts/package-rust.py --caa-only
-      - uses: actions/upload-artifact@v4
-        with:
-          name: regain-caa-${{ matrix.os }}
-          path: |
-            regain-caa-*.zip
-            regain-caa-*.zip.sha256
-          if-no-files-found: error
       - uses: actions/upload-artifact@v4
         with:
           name: regain-rust-${{ matrix.os }}
@@ -124,17 +115,6 @@ jobs:
       - run: python scripts/test-alpaca.py
       - run: ./scripts/build.ps1
         shell: pwsh
-      - name: Package standalone native CAA driver
-        run: cargo run -p regain-caa --release --locked -- list
-      - name: Archive standalone native CAA driver
-        run: python scripts/package-rust.py --caa-only
-      - uses: actions/upload-artifact@v4
-        with:
-          name: regain-caa-windows
-          path: |
-            regain-caa-*.zip
-            regain-caa-*.zip.sha256
-          if-no-files-found: error
       - run: ./scripts/build-ascom.ps1
         shell: pwsh
       - run: ./scripts/install-inno.ps1

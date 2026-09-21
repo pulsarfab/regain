@@ -7,6 +7,8 @@ try {
     if ($LASTEXITCODE) { throw 'Rust lint failed' }
     cargo build --locked
     if ($LASTEXITCODE) { throw 'Test host build failed' }
+    python scripts/test-device.py
+    if ($LASTEXITCODE) { throw 'Unified device CLI tests failed' }
     cargo test --locked
     if ($LASTEXITCODE) { throw 'Rust tests failed' }
     rustc --crate-type cdylib tests/fixtures/selection_sdk.rs -o target/debug/selection_sdk.dll

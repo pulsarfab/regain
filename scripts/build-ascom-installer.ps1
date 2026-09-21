@@ -8,7 +8,7 @@ if (!$Compiler) {
 }
 if (!$Compiler) { throw 'Install Inno Setup 6.7 or later, or pass -Compiler with the ISCC.exe path.' }
 $stage = Join-Path $repo 'artifacts/ascom-stage'
-foreach ($file in 'Regain.ASCOM.Register.exe','Regain.FocusCube.ASCOM.exe','Regain.Ofp2.ASCOM.exe','Regain.Eta.ASCOM.exe','Regain.ASCOM.dll','Regain.Rotator.dll','regain-caa.exe','regain-accessories.exe','regain-fc3.exe','regain-eta.exe','regain-ofp2.exe','regain-camera.exe','regain-alpaca.exe','regain-host.exe','regain-direct.exe','ASICamera2.dll','LICENSE') {
+foreach ($file in 'Regain.ASCOM.Register.exe','Regain.FocusCube.ASCOM.exe','Regain.Ofp2.ASCOM.exe','Regain.Eta.ASCOM.exe','Regain.ASCOM.dll','Regain.Rotator.dll','regain-device.exe','regain-camera.exe','regain-alpaca.exe','ASICamera2.dll','LICENSE') {
     if (!(Test-Path -LiteralPath (Join-Path $stage $file))) { throw "Missing $file. Run scripts/build-ascom.ps1 first." }
 }
 $assembly = [Reflection.AssemblyName]::GetAssemblyName((Join-Path $stage 'Regain.ASCOM.dll'))

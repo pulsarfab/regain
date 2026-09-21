@@ -44,7 +44,7 @@ attached ASI676MC's active processing path, not every SDK mode or camera model.
 
 ## Reproduction and evidence
 
-Build `cargo build -p regain-direct`, disconnect the camera in NINA, then run:
+Build `cargo build -p regain-device`, disconnect the camera in NINA, then run:
 
 ```powershell
 .reference/inspection-venv/Scripts/python.exe scripts/inspection/trace_transport.py --camera-name 'ZWO ASI676MC' --width 3552 --height 3552 --seconds 1 --gain 180 --offset 10 --compare-wire --trace-processing --validate-direct-processing --output artifacts/inspection/correction-new.jsonl

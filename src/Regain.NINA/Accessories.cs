@@ -37,7 +37,7 @@ public sealed class EfwProvider : IEquipmentProvider<IFilterWheel>
 public abstract class AccessoryDevice : BaseINPC, IDevice, IDisposable
 {
     protected readonly AccessorySession Session;
-    protected AccessoryDevice(string kind) => Session = new(Regain.Rotator.RegainPaths.EnvironmentVariable(kind == "eta" ? "REGAIN_ETA_WORKER" : kind == "fc3" ? "REGAIN_FC3_WORKER" : "REGAIN_ACCESSORY_WORKER") ?? Path.Combine(CameraProvider.DirectoryPath, kind == "eta" ? "regain-eta.exe" : kind == "fc3" ? "regain-fc3.exe" : "regain-accessories.exe"), kind, AccessorySession.SettingsPath(kind, "nina"));
+    protected AccessoryDevice(string kind) => Session = new(Regain.Rotator.RegainPaths.EnvironmentVariable(kind == "eta" ? "REGAIN_ETA_WORKER" : kind == "fc3" ? "REGAIN_FC3_WORKER" : "REGAIN_ACCESSORY_WORKER") ?? Path.Combine(CameraProvider.DirectoryPath, "regain-device.exe"), kind, AccessorySession.SettingsPath(kind, "nina"));
     public string Id => (Session.Kind == "eta" ? "Regain." : "ZwoGain.") + Session.Kind.ToUpperInvariant();
     public string Name => Session.Kind == "eta" ? "PulsarFab regain Wanderer Astro ETA M54" : Session.Kind == "efw" ? "PulsarFab regain EFW Filter Wheel" : Session.Kind == "fc3" ? "PulsarFab regain Pegasus FocusCube3" : "PulsarFab regain EAF Focuser";
     public string DisplayName => Name;

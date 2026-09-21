@@ -14,7 +14,7 @@ public abstract class AccessoryBase : IDisposable
     public abstract string Name { get; }
     public abstract short InterfaceVersion { get; }
     static AccessoryBase() => Dependencies.Install();
-    private AccessorySession NewSession() => new(Regain.Rotator.RegainPaths.EnvironmentVariable("REGAIN_ACCESSORY_WORKER") ?? Path.Combine(Path.GetDirectoryName(typeof(AccessoryBase).Assembly.Location)!, "regain-accessories.exe"), Kind, AccessorySession.SettingsPath(Kind, "ascom"));
+    private AccessorySession NewSession() => new(Regain.Rotator.RegainPaths.EnvironmentVariable("REGAIN_ACCESSORY_WORKER") ?? Path.Combine(Path.GetDirectoryName(typeof(AccessoryBase).Assembly.Location)!, "regain-device.exe"), Kind, AccessorySession.SettingsPath(Kind, "ascom"));
     private AccessorySession Session => disposed ? throw new ObjectDisposedException(Name) : session ??= NewSession();
     protected AccessorySession Device => Session.Connected ? Session : throw new ASCOM.NotConnectedException(Name + " is disconnected");
     protected T Read<T>(Func<AccessorySession, T> operation)

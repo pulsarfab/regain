@@ -76,7 +76,7 @@ def main():
             time.sleep(.2)
 
     results = {'camera': args.camera_name, 'builds': {}, 'modes': []}
-    for name in ('regain-alpaca.exe', 'regain-direct.exe', 'regain-host.exe'):
+    for name in ('regain-alpaca.exe', 'regain-device.exe'):
         results['builds'][name] = hashlib.sha256((args.worker_directory / name).read_bytes()).hexdigest()
     records = []
     lock = threading.Lock()

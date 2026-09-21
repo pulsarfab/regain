@@ -48,7 +48,7 @@ if ($png.Length -lt 24 -or [Convert]::ToHexString($png[0..7]) -cne '89504E470D0A
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $zip = [IO.Compression.ZipFile]::OpenRead($archive)
 try {
-    foreach ($name in @('Regain.NINA.dll','Regain.Core.dll','regain-host.exe','ASICamera2.dll','LICENSE','regain.png')) {
+    foreach ($name in @('Regain.NINA.dll','Regain.Core.dll','regain-device.exe','ASICamera2.dll','LICENSE','regain.png')) {
         if ($null -eq $zip.GetEntry($name)) { throw "Public archive missing $name" }
     }
     $entry = $zip.GetEntry('regain.png').Open()

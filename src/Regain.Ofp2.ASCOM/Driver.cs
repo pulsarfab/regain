@@ -13,7 +13,7 @@ namespace Regain.Ofp2;
 public sealed class Driver : ICoverCalibratorV1
 {
     internal static readonly SharedAccessoryDevice SharedDevice = new(new AccessorySession(
-        RegainPaths.EnvironmentVariable("REGAIN_OFP2_WORKER") ?? Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"regain-ofp2.exe"),
+        RegainPaths.EnvironmentVariable("REGAIN_OFP2_WORKER") ?? Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"regain-device.exe"),
         "ofp2", AccessorySession.SettingsPath("ofp2","ascom")), Ofp2SetupWindow.Show);
 
     private readonly Guid client = Guid.NewGuid();

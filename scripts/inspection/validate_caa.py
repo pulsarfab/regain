@@ -44,7 +44,7 @@ send({kind:'hooks-ready'});
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--worker',type=Path,default=Path('target/release/regain-caa.exe'))
+    parser.add_argument('--worker',type=Path,default=Path('target/release/regain-device.exe'))
     parser.add_argument('--output',type=Path,required=True)
     args=parser.parse_args()
     args.output.parent.mkdir(parents=True,exist_ok=True)
@@ -55,7 +55,7 @@ def main():
                 events.append(value)
                 log.write(json.dumps({'time':time.time(),**value})+'\n'); log.flush()
         record({'kind':'configuration','workerSha256':hashlib.sha256(args.worker.read_bytes()).hexdigest()})
-        proc=subprocess.Popen([str(args.worker.resolve()),'serve'],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+        proc=subprocess.Popen([str(args.worker.resolve()), "zwo", "caa",'serve'],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
         timer=threading.Timer(60,proc.kill); timer.start()
         session=None; initial=None; script=None; identity=None
         def request(command,expect=True,**fields):
@@ -77,7 +77,7 @@ def main():
             # Startup handshake also confirms we are attaching to the worker
             # after it has acquired the CAA's exclusive HID handle.
             request('settings')
-            second=subprocess.run([str(args.worker.resolve()),'status'],capture_output=True,text=True,timeout=5)
+            second=subprocess.run([str(args.worker.resolve()), "zwo", "caa",'status'],capture_output=True,text=True,timeout=5)
             assert second.returncode!=0 and 'exclusively' in second.stderr
             record({'kind':'exclusive-open','secondOpenRejected':True})
             session=frida.attach(proc.pid)

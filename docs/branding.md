@@ -10,9 +10,10 @@ The rename starts with release 0.4.0.0; earlier releases keep their original nam
 ## Names and assets
 
 Use **PulsarFab regain** for the product and **regain** in prose. Rust packages
-and command names use `regain-`: `regain-core`, `regain-host`, `regain-direct`,
-`regain-alpaca`, `regain-caa`, `regain-hid`, `regain-accessories`, `regain-ofp2`,
-and `regain-fc3`. The additional camera worker is `regain-camera`.
+and command names use `regain-`. Vendor packages are `regain-zwo`,
+`regain-pegasus`, `regain-deepskydad`, and `regain-wanderer`; common packages are
+`regain-core`, `regain-transport`, and `regain-worker`. The executables are
+`regain-device`, `regain-alpaca`, and `regain-camera`.
 .NET assemblies and namespaces use `Regain.*`; the solution is `Regain.slnx`.
 Archives use `Regain-<version>`, `Regain-ASCOM-<version>-win-x64`, and
 `Regain-CameraKit-<version>-win-x64`.

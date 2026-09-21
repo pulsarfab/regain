@@ -28,7 +28,7 @@ transport similarities do not make the ASI676 register initialization reusable.
 
 ## SDK-free main acquisition
 
-`regain-direct --capture-duo` now performs its own initialization, ASID reads,
+`regain-device zwo camera-direct --capture-duo` now performs its own initialization, ASID reads,
 ROI, timing, gain/offset, exposure, RAW16 transfer, correction and software
 binning. This is a research CLI; the NINA direct backend remains gated to the
 previously validated ASI676MC. The SDK remains the default for every camera.
@@ -111,7 +111,7 @@ and physical cold-power/USB-fault behavior require separate hardware evidence.
 
 ## SDK-free guide acquisition
 
-`regain-direct --capture-guide` implements the guide's own volatile sensor
+`regain-device zwo camera-direct --capture-guide` implements the guide's own volatile sensor
 initialization, calibration reads, physical ROI, RAW16 format, gain, offset,
 timing, streaming transfer, unpacking/dither, factory correction and bin 1/2.
 Its reviewed 265 sensor writes match both trace transactions and the SDK's

@@ -27,7 +27,7 @@ def verify_kit(kit, output):
                 return super().call(method, *args, **kwargs)
 
         dest = output / failure
-        paths = (kit, kit / 'regain-host.exe', kit / 'ASICamera2.dll', kit / 'source/trace-transport.js')
+        paths = (kit, kit / 'regain-device.exe', kit / 'ASICamera2.dll', kit / 'source/trace-transport.js')
         with patch.object(camera_kit, 'Host', FaultHost), patch.object(camera_kit, 'paths', return_value=paths):
             code = camera_kit.main(['--self-test', '--include-pixels', '--output', str(dest)])
         assert code == (130 if failure == 'cancel' else 2), (failure, code)

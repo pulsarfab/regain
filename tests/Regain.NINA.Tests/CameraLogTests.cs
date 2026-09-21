@@ -46,7 +46,7 @@ public class CameraLogTests
         string root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
         HostClient Factory()
         {
-            var host = new HostClient(Path.Combine(root, "target/debug/regain-direct.exe"), "unused", simulate: true, direct: true, log: line => {
+            var host = new HostClient(Path.Combine(root, "target/debug/regain-device.exe"), "unused", simulate: true, direct: true, log: line => {
                 var record = CameraLog.Parse("direct", line);
                 CameraLog.Forward(record, _ => { }, text => {
                     warnings.Enqueue(text);

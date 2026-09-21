@@ -18,11 +18,11 @@ public sealed class AccessoryTests : IDisposable
     {
         var root = new DirectoryInfo(AppContext.BaseDirectory);
         while (root is not null && !File.Exists(Path.Combine(root.FullName, "Cargo.toml"))) root = root.Parent;
-        var worker = Path.Combine(root!.FullName, "target", "debug", "regain-accessories.exe");
+        var worker = Path.Combine(root!.FullName, "target", "debug", "regain-device.exe");
         Assert.True(File.Exists(worker), "Build the Rust workspace before integration tests");
         Environment.SetEnvironmentVariable("REGAIN_ACCESSORY_WORKER", worker);
-        Environment.SetEnvironmentVariable("REGAIN_FC3_WORKER", Path.Combine(root.FullName,"target","debug","regain-fc3.exe"));
-        Environment.SetEnvironmentVariable("REGAIN_ETA_WORKER", Path.Combine(root.FullName,"target","debug","regain-eta.exe"));
+        Environment.SetEnvironmentVariable("REGAIN_FC3_WORKER", Path.Combine(root.FullName,"target","debug","regain-device.exe"));
+        Environment.SetEnvironmentVariable("REGAIN_ETA_WORKER", Path.Combine(root.FullName,"target","debug","regain-device.exe"));
         Environment.SetEnvironmentVariable("REGAIN_ACCESSORY_SETTINGS", directory);
         Environment.SetEnvironmentVariable("REGAIN_ACCESSORY_SIMULATE", "1");
     }

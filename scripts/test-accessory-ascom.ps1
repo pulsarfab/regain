@@ -17,7 +17,7 @@ try {
     New-Item -ItemType Directory -Path $testDir | Out-Null
     $env:REGAIN_ACCESSORY_SETTINGS = $testDir
     $env:REGAIN_ACCESSORY_SIMULATE = if ($Hardware) { '' } else { '1' }
-    $env:REGAIN_ACCESSORY_WORKER = Join-Path $repo 'target/debug/regain-accessories.exe'
+    $env:REGAIN_ACCESSORY_WORKER = Join-Path $repo 'target/debug/regain-device.exe'
     foreach ($deviceClass in 'EfwFilterWheel','EafFocuser') {
     $env:REGAIN_ACCESSORY_TEST_CLSID = [Guid]::NewGuid().ToString()
     $assemblyPath = Join-Path $repo 'src/Regain.ASCOM/bin/Release/net48/Regain.ASCOM.dll'

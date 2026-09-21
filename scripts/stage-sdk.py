@@ -69,7 +69,7 @@ if __name__ == "__main__":
     destination = args.destination.resolve()
     report = stage(destination, target)
     if args.check:
-        result = json.loads(subprocess.check_output([str(destination / "regain-host"), "--list"],
+        result = json.loads(subprocess.check_output([str(destination / "regain-device"), "zwo", "camera-sdk", "--list"],
                                                    text=True, timeout=30))
         assert result["sdkVersion"].replace(" ", "").startswith("1,41,"), result
         assert isinstance(result["cameras"], list), result

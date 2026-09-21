@@ -64,10 +64,10 @@ def main():
     sim = [] if a.hardware else ['--simulate']
     directory = Path(a.bin_dir).resolve()
     def binary(name): return str(directory / (name + ('.exe' if os.name == 'nt' else '')))
-    devices = json.loads(subprocess.check_output([binary('regain-fc3'), 'list-details', *sim], timeout=30))
+    devices = json.loads(subprocess.check_output([binary('regain-device'), 'pegasus', 'fc3', 'list-details', *sim], timeout=30))
     assert sum(d['identity']['serial'].lower() == serial.lower() for d in devices) == 1, devices
     report = {'hardware': a.hardware}
-    worker = helpers.Worker(binary('regain-fc3'), serial, sim)
+    worker = helpers.Worker([binary('regain-device'), 'pegasus', 'fc3'], serial, sim)
     try:
         identity = worker.call('identity')
         report['identity'] = {k: v for k, v in identity.items() if k not in ('serial','port')}

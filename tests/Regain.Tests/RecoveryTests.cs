@@ -132,7 +132,7 @@ public class RecoveryTests
         Assert.Throws<ArgumentOutOfRangeException>(() => (Fast with { MaximumRetryExposureSeconds = double.NaN }).Validate());
     }
     private static readonly string Root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
-    private static HostClient Host() => new(Path.Combine(Root, "target/debug/regain-host.exe"), "unused", true);
+    private static HostClient Host() => new(Path.Combine(Root, "target/debug/regain-device.exe"), "unused", true);
     private static readonly CameraDescriptor Camera = new("ZWO Simulated", 960, 640, true, 0, 3.76, 16, true, false, [1, 2, 4]);
     private static readonly Exposure Exposure = new(960, 640, 1, 0, 0, 10000, false);
     private static RecoveryOptions Fast => new() { ReconnectDelaySeconds = .05, CommandTimeoutSeconds = 15, DownloadTimeoutSeconds = .2, CoolingSampleSeconds = .01, CoolingStableSamples = 2, ReadyFrameDownloadRetries = 0 };

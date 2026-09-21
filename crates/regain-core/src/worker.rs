@@ -17,13 +17,19 @@ pub struct Runtime {
 }
 impl Runtime {
     pub async fn spawn(&self, direct: bool, log: Diagnostic) -> Result<Worker> {
-        let path = self.directory.join(format!(
-            "regain-{}{}",
-            if direct { "direct" } else { "host" },
-            std::env::consts::EXE_SUFFIX
-        ));
+        let path = self
+            .directory
+            .join(format!("regain-device{}", std::env::consts::EXE_SUFFIX));
         let mut command = Command::new(&path);
         command
+            .args([
+                "zwo",
+                if direct {
+                    "camera-direct"
+                } else {
+                    "camera-sdk"
+                },
+            ])
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())

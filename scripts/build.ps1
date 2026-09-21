@@ -25,15 +25,9 @@ try {
     foreach ($file in @('Regain.NINA.dll','Regain.Core.dll','Regain.Rotator.dll')) {
         Copy-Item -LiteralPath (Join-Path $repo "src/Regain.NINA/bin/Release/net8.0-windows7.0/$file") -Destination $stage
     }
-    Copy-Item -LiteralPath (Join-Path $repo 'target/release/regain-host.exe') -Destination $stage
-    Copy-Item -LiteralPath (Join-Path $repo 'target/release/regain-direct.exe') -Destination $stage
+    Copy-Item -LiteralPath (Join-Path $repo 'target/release/regain-device.exe') -Destination $stage
     Copy-Item -LiteralPath (Join-Path $repo 'target/release/regain-alpaca.exe') -Destination $stage
     Copy-Item -LiteralPath (Join-Path $repo 'target/release/regain-camera.exe') -Destination $stage
-    Copy-Item -LiteralPath (Join-Path $repo 'target/release/regain-caa.exe') -Destination $stage
-    Copy-Item -LiteralPath (Join-Path $repo 'target/release/regain-ofp2.exe') -Destination $stage
-    Copy-Item -LiteralPath (Join-Path $repo 'target/release/regain-fc3.exe') -Destination $stage
-    Copy-Item -LiteralPath (Join-Path $repo 'target/release/regain-eta.exe') -Destination $stage
-    Copy-Item -LiteralPath (Join-Path $repo 'target/release/regain-accessories.exe') -Destination $stage
     Copy-Item -LiteralPath (Join-Path $repo 'docs/caa.md') -Destination $stage
     Copy-Item -LiteralPath (Join-Path $repo 'docs/caa-frontends.md') -Destination $stage
     Copy-Item -LiteralPath (Join-Path $repo 'vendor/zwo/ASICamera2.dll') -Destination $stage
@@ -44,7 +38,7 @@ try {
     $licenses = Join-Path $stage 'licenses'
     New-Item -ItemType Directory -Force $licenses | Out-Null
     Copy-Item -LiteralPath (Join-Path $repo 'vendor/zwo/LICENSE.txt') -Destination (Join-Path $licenses 'ZWO-ASI-SDK.txt')
-    Copy-Item -LiteralPath (Join-Path $repo 'crates/regain-caa/LICENSE-ZWO') -Destination (Join-Path $licenses 'ZWO-CAA-NTC.txt')
+    Copy-Item -LiteralPath (Join-Path $repo 'crates/regain-zwo/LICENSE-ZWO') -Destination (Join-Path $licenses 'ZWO-CAA-NTC.txt')
     $target = (rustc -vV | Select-String '^host: ').ToString().Substring(6)
     $metadata = cargo metadata --locked --format-version 1 --filter-platform $target | ConvertFrom-Json
     if ($LASTEXITCODE) { throw 'Cargo metadata failed' }

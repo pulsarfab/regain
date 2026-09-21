@@ -4,7 +4,7 @@ PulsarFab regain is copyright 2026 Yann Ramin, Apache License 2.0 (see `LICENSE`
 The original camera/recovery logo in `assets/` and the embedded PNG are covered
 by the same license.
 
-The Rust C ABI declarations in `crates/regain-host/src/raw.rs` were adapted
+The Rust C ABI declarations in `crates/regain-zwo/src/asi/sdk/raw.rs` were adapted
 from [AutoPierCam](https://github.com/theatrus/autopiercam), copyright 2026 Yann
 Ramin, Apache License 2.0. AutoPierCam also informed the package and process
 architecture.
@@ -15,7 +15,7 @@ as `licenses/ZWO-ASI-SDK.txt`. ZWO's camera device driver is not included.
 
 The native CAA driver's NTC resistance table comes from CAA SDK 1.5.9,
 copyright 2015 ZWO Company, under the MIT-style license in
-`crates/regain-caa/LICENSE-ZWO`. Its standalone packages include that license.
+`crates/regain-zwo/LICENSE-ZWO`. Distributed packages include that license.
 The CAA driver contains no SDK binary and calls the operating system's HID API.
 
 Native worker packages include ASI SDK 1.41 for their OS and architecture;

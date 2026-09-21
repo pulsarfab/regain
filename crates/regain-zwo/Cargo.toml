@@ -1,0 +1,30 @@
+[package]
+name = "regain-zwo"
+description = "ZWO camera, rotator, filter wheel and focuser protocols"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[features]
+default = ["asi-direct", "asi-sdk", "caa", "accessories"]
+asi-direct = ["dep:sha2", "dep:nusb", "dep:libc", "dep:windows-sys", "windows-sys?/Win32_System_IO", "windows-sys?/Win32_System_Threading", "windows-sys?/Win32_System_LibraryLoader"]
+asi-sdk = ["dep:libloading"]
+hid = ["dep:libc", "dep:windows-sys", "windows-sys?/Win32_Devices_HumanInterfaceDevice"]
+caa = ["hid"]
+accessories = ["hid"]
+
+[dependencies]
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+regain-worker = { path = "../regain-worker" }
+sha2 = { version = "0.10", optional = true }
+libloading = { version = "0.9", optional = true }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", optional = true, features = ["Win32_Devices_DeviceAndDriverInstallation", "Win32_Foundation", "Win32_Storage_FileSystem", "Win32_Security"] }
+[target.'cfg(any(target_os = "linux", target_os = "macos"))'.dependencies]
+nusb = { version = "0.2.7", optional = true }
+libc = { version = "0.2", optional = true }

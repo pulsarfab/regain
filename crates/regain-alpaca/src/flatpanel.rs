@@ -43,9 +43,9 @@ impl FlatPanel {
         Self {
             path,
             executable: directory.join(if cfg!(windows) {
-                "regain-ofp2.exe"
+                "regain-device.exe"
             } else {
-                "regain-ofp2"
+                "regain-device"
             }),
             simulate,
             state: Mutex::new(State {
@@ -85,7 +85,7 @@ impl FlatPanel {
     }
     fn command(&self, action: &str) -> Command {
         let mut c = Command::new(&self.executable);
-        c.arg(action);
+        c.args(["deepskydad", "ofp2"]).arg(action);
         if self.simulate {
             c.arg("--simulate");
         }

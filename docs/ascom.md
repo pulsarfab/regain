@@ -202,7 +202,7 @@ changes. The setup page provides connection, halt, mechanical movement, sync,
 and reverse; the additional reference and multi-turn controls use the same
 `Regain.CAA.*` actions documented in [CAA setup](caa-frontends.md).
 
-Keep `regain-caa` beside the server. The server owns that same SDK-free HID
+Keep `regain-device` beside the server. The server owns that same SDK-free HID
 worker, preserving its motion limits, deadlines and no-retry behavior. The CAA
 profile and logical offset are stored beside `--profiles`, replacing the file
 extension with `.rotator.json`. Alpaca, native ASCOM and NINA profiles are
@@ -220,7 +220,7 @@ limit, and explicit segmented multi-turn travel. See [CAA setup and actions](caa
 ## EFW and EAF
 
 The same installer registers `ASCOM.ZWOgain.FilterWheel` (IFilterWheelV2) and
-`ASCOM.ZWOgain.Focuser` (IFocuserV3). They launch `regain-accessories.exe` directly
+`ASCOM.ZWOgain.Focuser` (IFocuserV3). They launch `regain-device.exe zwo` directly
 and share the CAA setup theme. The Start menu includes both setup dialogs.
 See [accessory setup and USB validation](accessories.md) for serial selection,
 filter metadata, motor settings, protocol traces, and supported hardware.
@@ -249,7 +249,7 @@ connection before using it. The native NINA provider and Alpaca still require
 their own exclusive port ownership; broader sharing is deferred.
 
 See [FocusCube3 setup and protocol](focuscube3.md) and its physical-device
-screenshots. The serial worker is `regain-fc3.exe`, not an Alpaca bridge.
+screenshots. The serial worker is `regain-device.exe pegasus fc3`, not an Alpaca bridge.
 
 ## Wanderer Astro ETA M54 (source/CI)
 

@@ -1,0 +1,13 @@
+[package]
+name = "regain-transport"
+description = "Bounded serial I/O shared by vendor protocols"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+anyhow = "1"
+serialport = { version = "4.9", default-features = false }
+serde = { version = "1", features = ["derive"] }

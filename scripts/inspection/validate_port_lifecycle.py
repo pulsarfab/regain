@@ -28,7 +28,7 @@ def arrival():
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--worker', type=Path, default=ROOT / 'target/release/regain-direct.exe')
+    parser.add_argument('--worker', type=Path, default=ROOT / 'target/release/regain-device.exe')
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=False)
@@ -37,7 +37,7 @@ def main():
 
     def run(label, options, timeout=45):
         assert hashlib.sha256(args.worker.read_bytes()).hexdigest() == digest
-        process = subprocess.run([str(args.worker), *options], capture_output=True, text=True, timeout=timeout)
+        process = subprocess.run([str(args.worker), 'zwo', 'camera-direct', *options], capture_output=True, text=True, timeout=timeout)
         (args.output / f'private-{label}.log').write_text(process.stderr)
         value = json.loads(process.stdout) if process.stdout.strip() else None
         return process.returncode, value, process.stderr

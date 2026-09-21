@@ -18,7 +18,7 @@ try {
     $env:REGAIN_ACCESSORY_SIMULATE = if ($ReadOnlyPort) { '' } else { '1' }
     if ($ReadOnlyPort) { @{Serial=$ReadOnlyPort} | ConvertTo-Json | Set-Content (Join-Path $directory 'eta-ascom.json') -Encoding UTF8 }
     $env:REGAIN_ACCESSORY_SETTINGS = $directory
-    $env:REGAIN_ETA_WORKER = Join-Path $repo 'target/debug/regain-eta.exe'
+    $env:REGAIN_ETA_WORKER = Join-Path $repo 'target/debug/regain-device.exe'
     foreach ($view in [Microsoft.Win32.RegistryView]::Registry32,[Microsoft.Win32.RegistryView]::Registry64) {
         $root = [Microsoft.Win32.RegistryKey]::OpenBaseKey($hive,$view)
         try {
@@ -51,7 +51,7 @@ try {
     Get-Content (Join-Path $directory '*.out')
     if (!(Test-Path (Join-Path $directory 'second-finished'))) { throw 'Shared connection test incomplete' }
     # Both clients have closed; the worker must be gone before the server idles out.
-    $workers = Get-CimInstance Win32_Process -Filter "Name='regain-eta.exe'" | Where-Object ParentProcessId -eq $server.Id
+    $workers = Get-CimInstance Win32_Process -Filter "Name='regain-device.exe'" | Where-Object ParentProcessId -eq $server.Id
     if ($workers) { throw 'Last ASCOM disconnect leaked its worker' }
     $server.Kill(); $server.WaitForExit()
     # Exercise actual SCM launch as well as an explicitly started fixture. This

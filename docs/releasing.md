@@ -53,9 +53,8 @@ Local builds and the ordinary **Build and test** workflow produce unsigned
 binaries. The **Release** workflow stages the package, authenticates to Azure
 through OIDC in the `release` environment, and signs `Regain.NINA.dll`,
 `Regain.Core.dll`, `Regain.Rotator.dll`, `Regain.ASCOM.dll`,
-`Regain.ASCOM.Register.exe`, `regain-caa.exe`, `regain-alpaca.exe`,
-`regain-accessories.exe`, `regain-camera.exe`, `regain-host.exe`, and
-`regain-direct.exe` with Azure Trusted
+`Regain.ASCOM.Register.exe`, the serial ASCOM local servers,
+`regain-device.exe`, `regain-alpaca.exe`, and `regain-camera.exe` with Azure Trusted
 Signing. It requires valid signatures from StackFoundry LLC before packaging.
 The bundled vendor DLL is left unchanged. ZIP and manifest checksums are
 computed after signing.

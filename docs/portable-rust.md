@@ -33,15 +33,15 @@ REGAIN_TEST_WORKERS="$PWD/target/release" cargo test --workspace --locked
 python3 scripts/test-rust.py --bin-dir target/release
 ```
 
-The Python test uses only simulated cameras. It checks both workers over pipes,
+The Python test uses only simulated cameras. It checks the unified device worker and native camera supervisor over pipes,
 all supported direct camera/bin combinations, cooler controls, failed rereads,
 and preservation of images after cleanup errors.
 
 GitHub's **Build and test** workflow also builds and tests Linux and macOS on
-x86-64 and ARM64. Its `regain-rust-*` artifacts contain the Alpaca server, both workers, the matching
+x86-64 and ARM64. Its `regain-rust-*` artifacts contain the Alpaca server, the unified device worker and native camera supervisor, the matching
 ASI SDK 1.41 library, licenses, build details, and SHA-256 checksums. Extract the
-archive and use `./regain-rust/regain-direct` in place of
-`./target/release/regain-direct` below. These test builds are unsigned and are
+archive and use `./regain-rust/regain-device zwo camera-direct` in place of
+`./target/release/regain-device zwo camera-direct` below. These test builds are unsigned and are
 not macOS-notarized.
 CI checks the SDK host against a small library built from the bundled C header,
 including native `long` sizes and structure layouts. It also loads the real
@@ -73,8 +73,8 @@ Cap the camera and start with a short, small frame. Connect just the camera bein
 tested. Save the probe output and stderr alongside the capture output:
 
 ```sh
-./target/release/regain-direct --probe-all > probe.json
-./target/release/regain-direct --capture-6200 \
+./target/release/regain-device zwo camera-direct --probe-all > probe.json
+./target/release/regain-device zwo camera-direct --capture-6200 \
   --width 256 --height 256 --microseconds 100000 --frames 3 \
   --stream > dark-frames.bin 2> capture.log
 ```
@@ -127,9 +127,9 @@ until reboot. This is a system-wide setting; our scripts do not change it.
 From an extracted package, these commands work without NINA or Python:
 
 ```sh
-./regain-rust/regain-host --list
-./regain-rust/regain-host --inspect --camera "ZWO ASI6200MM Pro"
-./regain-rust/regain-host --capture --camera "ZWO ASI6200MM Pro" \
+./regain-rust/regain-device zwo camera-sdk --list
+./regain-rust/regain-device zwo camera-sdk --inspect --camera "ZWO ASI6200MM Pro"
+./regain-rust/regain-device zwo camera-sdk --capture --camera "ZWO ASI6200MM Pro" \
   --width 256 --height 256 --microseconds 100000 --frames 3 \
   --gain 100 --offset 50 --output sdk-darks
 ```
@@ -158,7 +158,7 @@ For a source build, install `libusb-1.0-0` on Debian/Ubuntu or run
 ```sh
 cargo build --workspace --release --locked
 python3 scripts/stage-sdk.py target/release --check
-./target/release/regain-host --list
+./target/release/regain-device zwo camera-sdk --list
 ```
 
 The repository contains these platform libraries:
@@ -176,7 +176,7 @@ version-1 JSON and binary protocol over stdin/stdout on every platform; see
 
 ## OFP2 flat panel
 
-The `regain-ofp2` Rust crate uses native USB serial for Deep Sky Dad OFP2.
+The `regain-deepskydad::ofp2` Rust module uses native USB serial for Deep Sky Dad OFP2.
 Keep its worker beside the Alpaca server and configure CoverCalibrator 0 on
 the browser setup page. No ASCOM driver, SDK or libudev is required. Linux
 needs access to the `/dev/ttyACM*` port; macOS uses `/dev/cu.usbmodem*`.
