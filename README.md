@@ -5,163 +5,122 @@
 [![Build and test](https://github.com/pulsarfab/regain/actions/workflows/build.yml/badge.svg)](https://github.com/pulsarfab/regain/actions/workflows/build.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
-**Retryable camera capture. SDK-free device drivers. One Alpaca server for your rig.**
+**Recover failed camera downloads. Control your equipment without vendor SDKs. Run your rig through one Alpaca server.**
 
-PulsarFab regain connects cameras, rotators, filter wheels, focusers, and flat
-panels to **NINA**, **native Windows ASCOM**, and **ASCOM Alpaca**. Rust workers
-isolate camera SDK failures, recover interrupted downloads, and control supported
-USB and serial devices directly. Choose the integration that fits your setup.
+PulsarFab regain brings Rust device drivers to **NINA**, **native Windows ASCOM**,
+and **Alpaca**. Its direct camera drivers can reread an image after a failed USB
+download, saving the exposure. SDK mode covers more ZWO cameras and isolates the
+vendor SDK in a separate process.
 
 [Documentation](https://pulsarfab.com/docs/regain/) ·
 [Downloads](https://github.com/pulsarfab/regain/releases/latest) ·
 [Install & upgrade](https://pulsarfab.com/docs/regain/install.html) ·
 [Supported hardware](#supported-hardware)
 
-Formerly **ZWOgain**. Existing plugin and ASCOM identities are preserved;
-settings migrate automatically. See the [upgrade guide](https://pulsarfab.com/docs/regain/install.html#upgrade).
-
 ## What do you want to do?
 
-### Keep NINA or Alpaca captures running through recoverable errors
+### Save an exposure after a failed download
 
-Select **PulsarFab regain Retryable Camera** in NINA, or configure a camera on
-the Alpaca server. Both use the same Rust recovery engine as native ASCOM.
-Your imaging application waits while regain handles a recoverable failure.
+Choose **Direct USB (experimental)** with an ASI2600MM Pro, ASI6200MM Pro, or
+ASI676MC. Regain talks to the camera without the ZWO SDK and can reread the image
+still in camera memory. A download retry does not repeat the exposure—even a
+long one. The transport limits stalled reads and rejects incomplete images.
 
-- **Retry the download before repeating the exposure.** Supported direct drivers
-  can reread a frame still held in camera memory, including a long exposure.
-  The SDK path can retry while the SDK still reports a ready frame.
-- **Reconnect and restore the camera.** Regain remembers controls and cooler
-  settings, and waits for cooling recovery before a replacement exposure.
-- **Contain a stuck SDK.** A supervised worker can be replaced without taking
-  down NINA or the Alpaca server.
-- **Preserve a completed image.** A cleanup error after download keeps the image
-  and reconnects before the next capture. Abort does not start another exposure.
+Use **PulsarFab regain Retryable Camera** in NINA, a native ASCOM camera entry,
+or an Alpaca camera slot. All three use the same recovery engine.
+[Choose a camera mode](https://pulsarfab.com/docs/regain/cameras.html#backend).
+
+### Keep using your camera in SDK mode
+
+The default **ZWO SDK** mode supports cameras covered by the bundled SDK. Regain
+can retry a download while the SDK still reports an image ready, reconnect and
+restore camera and cooler settings, or restart a stuck SDK worker. Taking a
+replacement exposure is a separate, configurable option.
 
 <a id="how-retries-work"></a>
 
-| Default policy | Limit |
-| --- | --- |
-| Retry the same frame's download | 2 retries, at any exposure length |
-| Reconnect and take a replacement exposure | 3 retries, only for exposures ≤30 seconds |
-| Delay before reconnecting | 5 seconds |
+By default, regain allows **two download retries** and **three replacement
+exposures for captures up to 30 seconds**. Download retries on direct cameras
+with reread support also apply to longer exposures. Recovery requires the image
+to remain available; it cannot restore a frame lost when camera power is removed.
+[Configure recovery](https://pulsarfab.com/docs/regain/cameras.html#recovery).
 
-These limits are configurable; zero disables a retry type. Exhausted recovery
-returns an error to the application. Optional Direct USB → SDK fallback still
-obeys the replacement-exposure limit.
-[Camera setup and recovery](https://pulsarfab.com/docs/regain/cameras.html).
+### Run the whole rig from a small headless computer
 
-### Harden USB transfers and use the camera without its SDK
-
-Choose **Direct USB (experimental)** for a supported ASI model. The Rust transport
-bounds each whole-frame read, drains cancelled transfers before releasing their
-buffers, rejects partial frames, and records chunk-level failure details.
-
-On Windows, the ASI2600MM Pro P25 can also reopen its USB handle within the retry
-budget, verify the original camera and previously received pixel chunks, and
-reread the retained frame without starting another exposure. Automatic USB port
-resets and recovery across worker replacement are not part of this path.
-
-The direct driver never loads the camera SDK. Windows still needs the installed
-ZWO camera USB driver. The SDK remains the default for broader model coverage;
-direct capture and SDK fallback are separate choices.
-[Transport behavior and evidence](docs/usb-lifecycle.md) ·
-[Direct driver versus SDK](docs/transfer-recovery.md).
-
-### Put the whole rig on a small headless computer
-
-Run **one regain Alpaca server** beside the telescope and connect your imaging
-applications over the LAN. That server exposes all supported core equipment:
-camera slots, CAA rotator, EFW filter wheel, EAF and FocusCube3 focusers, and an
-OFP2 cover/flat panel. Configure them through a browser and discover them from
-Alpaca clients, including Windows applications using ASCOM Platform discovery.
-
-The Rust server and its device workers run without .NET, a desktop UI, or vendor
-accessory applications. Linux x86-64 and ARM64 builds suit small headless hosts;
-Windows and macOS builds are also available. One server manages the rig while
-separate workers isolate device access. Linux/macOS physical USB validation is
-still incomplete; see [platform requirements](docs/portable-rust.md).
-
-[Headless and LAN setup](https://pulsarfab.com/docs/regain/alpaca.html) includes USB
-permissions, service startup, stable device profiles, and discovery. The server
-has no authentication: use a trusted LAN, not public internet exposure.
+One **regain Alpaca server** exposes supported cameras, rotators, filter wheels,
+focusers, and a flat panel over your LAN. Configure devices in a browser and
+connect from Alpaca clients. The Rust server runs without .NET or a desktop UI
+on Windows, Linux, and macOS, with ARM64 builds for small hosts.
+[Set up a headless rig](https://pulsarfab.com/docs/regain/alpaca.html#headless).
 
 ### Connect more than two ASCOM cameras
 
-The native installer registers **Retryable Camera 1–4** for both 32-bit and
-64-bit ASCOM clients. Give each entry its own physical camera and saved serial,
-backend, and recovery settings. For example, main imaging, guiding, and a second
-imaging train can use three distinct entries. Same-model cameras are selected
-by serial; a missing saved camera is not silently replaced.
+Assign your main camera, guider, and second imaging train to separate
+**Retryable Camera 1–4** entries. Each keeps its own camera serial, mode, and
+recovery settings. Both 32-bit and 64-bit ASCOM clients are supported.
+[Configure camera slots](https://pulsarfab.com/docs/regain/ascom.html#multiple-cameras).
 
-For network use, configure camera slots on the Alpaca server. Device numbers and
-UUIDs remain stable when changing a slot's physical camera.
-[Multiple-camera setup](https://pulsarfab.com/docs/regain/ascom.html).
+### Use a lightweight local ASCOM driver
 
-### Keep the ASCOM side small
-
-Use the native Windows drivers for local equipment. The camera driver is a thin
-.NET Framework COM adapter: capture and recovery run in Rust workers over private
-pipes. No HTTP server or vendor control application is required. Matching setup
-dialogs provide camera, recovery, cooler, timeout, and accessory controls.
-
-FocusCube3 ASCOM clients share one local COM server and one serial worker across
-32-bit and 64-bit applications. Broader sharing between native NINA, ASCOM,
-Alpaca, and Pegasus Unity is deferred; those frontends still need exclusive
-ownership relative to one another. NINA can select the ASCOM focuser when sharing
-with another ASCOM client is needed.
-[Native ASCOM setup](https://pulsarfab.com/docs/regain/ascom.html) ·
-[FocusCube3 sharing](https://pulsarfab.com/docs/regain/focuscube3.html#sharing).
+The native ASCOM adapter handles the connection to your application; Rust
+workers handle device control and camera recovery. Matching setup dialogs cover
+cameras and accessories. An Alpaca server is optional.
+[Install native ASCOM](https://pulsarfab.com/docs/regain/ascom.html).
 
 ## Integration points
 
-| Integration | Host | How it connects | Equipment |
-| --- | --- | --- | --- |
-| **Native NINA plugin** | Windows x64, NINA ≥3.2.0.9001 | Equipment chooser and setup gear; local Rust workers | Cameras, CAA, EFW, EAF, FocusCube3 |
-| **Native ASCOM drivers** | Windows x64; 32/64-bit clients | COM interfaces and local Rust workers | Four camera entries, CAA, EFW, EAF, FocusCube3 |
-| **Universal Alpaca server** | Windows, Linux, macOS | HTTP device APIs, discovery, browser setup; Rust workers | Camera slots and all supported accessories, including OFP2 |
-| **Rust crates and worker CLIs** | Windows, Linux, macOS | USB/HID/serial libraries and worker protocols | Embed device control, inspect protocols, or build another frontend |
+| Integration | Where it runs | Equipment |
+| --- | --- | --- |
+| **Native NINA plugin** | Windows x64, NINA ≥3.2.0.9001 | Cameras, CAA, EFW, EAF, FocusCube3 |
+| **Native ASCOM drivers** | Windows x64; 32/64-bit clients | Four camera entries, CAA, EFW, EAF, FocusCube3 |
+| **Universal Alpaca server** | Windows, Linux, macOS | Camera slots and all supported accessories, including OFP2 |
+| **Rust crates and worker CLIs** | Windows, Linux, macOS | Embed USB, HID, and serial device control in another application |
 
-The Alpaca server implements these supported devices directly; it is not a
-generic proxy for arbitrary installed ASCOM drivers. The OFP2 connects to NINA
-and Windows ASCOM applications through **Alpaca discovery**, not a native plugin
-or COM driver. Settings are independent between frontends.
+OFP2 connects to NINA and ASCOM applications through Alpaca discovery.
+FocusCube3 ASCOM clients share one local server; other frontends need exclusive
+access to the device. See [connection options](https://pulsarfab.com/docs/regain/#choose).
 
 ## Supported hardware
 
 <a id="supported-cameras"></a>
+
+### Camera modes
+
+**Direct USB** uses regain's Rust drivers without the ZWO SDK. **ZWO SDK** is the
+default mode and supports a broader range of cameras. Both work in NINA, native
+ASCOM, and Alpaca.
+
+| Camera | SDK-free capture | Reread the same image after a failed download | SDK mode |
+| --- | --- | --- | --- |
+| **ZWO ASI2600MM Pro** | Yes, experimental | Yes, in Direct USB mode | Yes |
+| **ZWO ASI6200MM Pro** | Yes, experimental | Yes, in Direct USB mode | Yes |
+| **ZWO ASI676MC** | Yes, experimental | Yes, in Direct USB mode | Yes |
+| **ZWO ASI220MM Mini** | Yes, experimental | No direct reread support | Yes |
+| **Other ZWO ASI cameras** | No | Depends on the SDK keeping the image available | If supported by the bundled SDK |
+
+SDK download retries depend on the SDK's ready-frame state; they do not use
+regain's direct memory reread. Direct capture supports RAW16, with model-specific
+exposure and binning limits. See the [camera support table](https://pulsarfab.com/docs/regain/hardware.html#cameras).
+
+### Accessories: all SDK-free
+
 <a id="caa-rotator"></a>
 <a id="efw-filter-wheel-and-eaf-focuser"></a>
 <a id="pegasus-astro-focuscube3"></a>
 <a id="ofp2-flat-panel"></a>
 
-| Hardware | SDK-free path | Support and controls |
+| Hardware | Connection | Controls |
 | --- | --- | --- |
-| **ZWO ASI2600MM Pro**, original and P25 | Direct USB; SDK also available | RAW16, ROI, bins 1–4, gain/offset, cooling, dew heater, retained-frame rereads |
-| **ZWO ASI6200MM Pro**, original and P25 | Direct USB; SDK also available | RAW16, ROI, bins 1–4, gain/offset, cooling, dew heater, retained-frame rereads |
-| **ZWO ASI676MC** | Direct USB; SDK also available | RAW16, bin 1, exposures up to 30 s, retained-frame rereads |
-| **ZWO ASI220MM Mini** | Direct USB; SDK also available | Guide camera, bins 1–2, exposures up to 10 s; no same-frame reread |
-| **Other ZWO ASI cameras** | SDK required | Models supported by the bundled ZWO SDK; direct support is limited to the models above |
-| **ZWO CAA** | Rust USB HID | Rotation, sync, reverse, reference/limits; tested CAA-M54 firmware 1.1.1 |
-| **ZWO EFW** | Rust USB HID | Slot selection, names, offsets, direction, calibration; tested seven-position EFW-S-0 firmware 3.6.2 |
-| **ZWO EAF** | Rust USB HID | Absolute moves, halt, reverse, backlash, travel limit, temperature; tested EAFN firmware 3.8.1 |
-| **Pegasus Astro FocusCube3** | Rust USB serial | Absolute moves, halt, temperature, reverse, backlash, speed; tested firmware 1.8.2 |
-| **Deep Sky Dad OFP2** | Rust USB serial | Alpaca CoverCalibrator: cover open/close/halt and brightness 0–4096; tested firmware 1.0.14.2 |
+| **ZWO CAA** | USB HID | Rotation, sync, reverse, limits |
+| **ZWO EFW** | USB HID | Filter selection, names, offsets, direction, calibration |
+| **ZWO EAF** | USB HID | Focus, halt, reverse, backlash, travel limit, temperature |
+| **Pegasus Astro FocusCube3** | USB serial | Focus, halt, temperature, reverse, backlash, speed |
+| **Deep Sky Dad OFP2** | USB serial | Cover open/close/halt and panel brightness |
 
-**All listed accessory drivers are SDK-free.** On Windows, CAA/EFW/EAF use the
-built-in HID driver; FocusCube3/OFP2 use USB Serial Device. Do not replace these
-with WinUSB/Zadig. SDK-free camera capture still uses the ZWO Windows USB driver.
-
-ASI2600/6200 direct exposure limits are 2,000 seconds; hardware tests covered
-1,200-second dark frames. USB recovery tests used controlled faults, not cable
-removal or power loss. Older EAF firmware, EAF Pro/Bluetooth, and dual-disc wheels
-are unsupported. Direct live view and trigger modes are not implemented.
-A full ASCOM ConformU run remains outstanding.
-
-Device guides: [cameras](https://pulsarfab.com/docs/regain/cameras.html) ·
-[CAA, EFW & EAF](https://pulsarfab.com/docs/regain/accessories.html) ·
-[FocusCube3](https://pulsarfab.com/docs/regain/focuscube3.html) ·
-[OFP2](https://pulsarfab.com/docs/regain/ofp2.html).
+See [hardware support](https://pulsarfab.com/docs/regain/hardware.html) for supported
+accessory variants and setup requirements. SDK-free cameras still need the OS
+USB driver. Linux/macOS physical-device validation is incomplete; platform builds
+alone do not establish hardware compatibility.
 
 ## Get started
 
@@ -170,7 +129,6 @@ Device guides: [cameras](https://pulsarfab.com/docs/regain/cameras.html) ·
 Add `https://nina-plugins.pulsarfab.com/` as a plugin source, install
 **PulsarFab regain**, and restart NINA. Select your device, open its setup gear,
 and save the physical camera or accessory serial before connecting.
-The existing `https://nina-plugins.psf-guard.com/` source serves the same feed.
 [NINA walkthrough](https://pulsarfab.com/docs/regain/nina.html).
 
 ### Windows ASCOM setup
