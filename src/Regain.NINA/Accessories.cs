@@ -9,6 +9,12 @@ using Regain.Rotator;
 namespace Regain.NINA;
 
 [Export(typeof(IEquipmentProvider))]
+public sealed class EtaProvider : IEquipmentProvider<IFocuser>
+{
+    public string Name => "PulsarFab regain";
+    public IList<IFocuser> GetEquipment() => [new EtaFocuser()];
+}
+[Export(typeof(IEquipmentProvider))]
 public sealed class FocusCubeProvider : IEquipmentProvider<IFocuser>
 {
     public string Name => "PulsarFab regain";
@@ -31,12 +37,12 @@ public sealed class EfwProvider : IEquipmentProvider<IFilterWheel>
 public abstract class AccessoryDevice : BaseINPC, IDevice, IDisposable
 {
     protected readonly AccessorySession Session;
-    protected AccessoryDevice(string kind) => Session = new(Regain.Rotator.RegainPaths.EnvironmentVariable(kind == "fc3" ? "REGAIN_FC3_WORKER" : "REGAIN_ACCESSORY_WORKER") ?? Path.Combine(CameraProvider.DirectoryPath, kind == "fc3" ? "regain-fc3.exe" : "regain-accessories.exe"), kind, AccessorySession.SettingsPath(kind, "nina"));
-    public string Id => "ZwoGain." + Session.Kind.ToUpperInvariant();
-    public string Name => Session.Kind == "efw" ? "PulsarFab regain EFW Filter Wheel" : Session.Kind == "fc3" ? "PulsarFab regain Pegasus FocusCube3" : "PulsarFab regain EAF Focuser";
+    protected AccessoryDevice(string kind) => Session = new(Regain.Rotator.RegainPaths.EnvironmentVariable(kind == "eta" ? "REGAIN_ETA_WORKER" : kind == "fc3" ? "REGAIN_FC3_WORKER" : "REGAIN_ACCESSORY_WORKER") ?? Path.Combine(CameraProvider.DirectoryPath, kind == "eta" ? "regain-eta.exe" : kind == "fc3" ? "regain-fc3.exe" : "regain-accessories.exe"), kind, AccessorySession.SettingsPath(kind, "nina"));
+    public string Id => (Session.Kind == "eta" ? "Regain." : "ZwoGain.") + Session.Kind.ToUpperInvariant();
+    public string Name => Session.Kind == "eta" ? "PulsarFab regain Wanderer Astro ETA M54" : Session.Kind == "efw" ? "PulsarFab regain EFW Filter Wheel" : Session.Kind == "fc3" ? "PulsarFab regain Pegasus FocusCube3" : "PulsarFab regain EAF Focuser";
     public string DisplayName => Name;
     public string Category => "PulsarFab regain";
-    public string Description => Name + (Session.Kind == "fc3" ? " over USB serial" : " over USB HID");
+    public string Description => Name + (Session.Kind is "fc3" or "eta" ? " over USB serial" : " over USB HID");
     public string DriverInfo => "PulsarFab regain native Rust USB driver";
     public string DriverVersion => typeof(AccessoryDevice).Assembly.GetName().Version!.ToString();
     public bool HasSetupDialog => true;
@@ -49,11 +55,13 @@ public abstract class AccessoryDevice : BaseINPC, IDevice, IDisposable
     }
     public void Disconnect() { try { Session.Disconnect(); } finally { RaiseAllPropertiesChanged(); } }
     public void SetupDialog() { AccessorySetupWindow.Show(Session); RaiseAllPropertiesChanged(); }
-    public IList<string> SupportedActions => Session.Kind == "efw" ? ["Regain.Status", "Regain.Identity", "Regain.Calibrate"] : ["Regain.Status", "Regain.Identity"];
+    public IList<string> SupportedActions => Session.Kind == "eta" ? ["Regain.Status", "Regain.Identity", "Regain.MovePoint", "Regain.CancelQueued"] : Session.Kind == "efw" ? ["Regain.Status", "Regain.Identity", "Regain.Calibrate"] : ["Regain.Status", "Regain.Identity"];
     public string Action(string actionName, string actionParameters) => RegainPaths.ActionName(actionName) switch {
         "regain.status" => Session.Request(new { command = "status" }).GetRawText(),
         "regain.identity" => Session.Request(new { command = "identity" }).GetRawText(),
         "regain.calibrate" when Session.Kind == "efw" => Calibrate(),
+        "regain.movepoint" when Session.Kind == "eta" => Session.EtaMovePoint(actionParameters),
+        "regain.cancelqueued" when Session.Kind == "eta" => Session.Request(new { command = "cancel-queued" }).GetRawText(),
         _ => throw new NotSupportedException(actionName)
     };
     private string Calibrate() { Session.Calibrate(); RaiseAllPropertiesChanged(); return "null"; }
@@ -62,6 +70,7 @@ public abstract class AccessoryDevice : BaseINPC, IDevice, IDisposable
     public void SendCommandBlind(string command, bool raw = true) => throw new NotSupportedException();
     public void Dispose() => Session.Dispose();
 }
+public sealed class EtaFocuser() : NativeFocuser("eta");
 public sealed class EafFocuser() : NativeFocuser("eaf");
 public sealed class FocusCubeFocuser() : NativeFocuser("fc3");
 public abstract class NativeFocuser(string kind) : AccessoryDevice(kind), IFocuser
@@ -70,7 +79,7 @@ public abstract class NativeFocuser(string kind) : AccessoryDevice(kind), IFocus
     public int Position => Session.Status().Position;
     public int MaxStep => Session.Status().MaxStep;
     public int MaxIncrement => MaxStep;
-    public double StepSize => double.NaN;
+    public double StepSize => Session.Kind == "eta" ? 1.0 : double.NaN;
     public bool TempCompAvailable => false;
     public bool TempComp { get => false; set { if (value) throw new NotSupportedException("Use NINA temperature compensation"); } }
     public double Temperature => Session.Status().Temperature ?? double.NaN;
@@ -82,13 +91,13 @@ public abstract class NativeFocuser(string kind) : AccessoryDevice(kind), IFocus
                 ct.ThrowIfCancellationRequested();
                 var status = await Task.Run(Session.Status, ct); RaiseAllPropertiesChanged();
                 if (!status.Moving) {
-                    if (status.Position != position) throw new IOException("Focuser stopped before reaching the requested position");
+                    if (Math.Abs(status.Position - position) > (Session.Kind == "eta" ? 2 : 0)) throw new IOException("Focuser stopped before reaching the requested position");
                     if (waitInMs > 0) await Task.Delay(waitInMs, ct);
                     return;
                 }
                 await Task.Delay(100, ct);
             }
-        } catch { try { Session.Halt(); } catch (Exception error) { Logger.Error(error.Message); } throw; }
+        } catch { try { if (Session.Kind == "eta") Session.Request(new { command = "cancel-queued" }); else Session.Halt(); } catch (Exception error) { Logger.Error(error.Message); } throw; }
     }
     public void Halt() { Session.Halt(); RaiseAllPropertiesChanged(); }
 }

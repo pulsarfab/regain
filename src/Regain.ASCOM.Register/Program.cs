@@ -47,6 +47,7 @@ internal static class Program
                 }
                 FocusCubeRegistration.Register(root, Path.GetDirectoryName(assembly)!, remove);
                 Ofp2Registration.Register(root, Path.GetDirectoryName(assembly)!, remove);
+                EtaRegistration.Register(root, Path.GetDirectoryName(assembly)!, remove);
                 string framework = view == RegistryView.Registry32 ? "Framework" : "Framework64";
                 if (remove) foreach (string clsid in new[] { "EA2040E1-E936-4BDF-87F7-B58CA3E418AB", "295C08F8-EDE9-43C5-9D55-627A063D74CA" }) {
                     using var existing = root.OpenSubKey(@"Software\Classes\CLSID\{" + clsid + @"}\InprocServer32");

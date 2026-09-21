@@ -32,8 +32,14 @@ try {
         } finally { $root.Dispose() }
     }
     # Start the isolated fixture ourselves so only it inherits simulation/profile overrides.
-    $server = Start-Process -FilePath $executable -ArgumentList @('/test-clsid',$id) -WindowStyle Hidden -PassThru
-    Start-Sleep -Milliseconds 1000
+    $ready = Join-Path $directory 'server-ready'
+    $server = Start-Process -FilePath $executable -ArgumentList @('/test-clsid',$id,'/test-ready',('"'+$ready+'"')) -WindowStyle Hidden -PassThru
+    $deadline = [DateTime]::UtcNow.AddSeconds(20)
+    while (!(Test-Path -LiteralPath $ready)) {
+        if ($server.HasExited) { throw 'COM fixture exited before registration' }
+        if ([DateTime]::UtcNow -gt $deadline) { throw 'COM fixture did not become ready' }
+        Start-Sleep -Milliseconds 100
+    }
     foreach ($pair in @(@('System32','first'),@('SysWOW64','second'))) {
         $role=$pair[1]
         $args = '-NoProfile -ExecutionPolicy Bypass -File "' + (Join-Path $PSScriptRoot 'test-fc3-ascom-client.ps1') + '" -Id ' + $id + ' -Directory "' + $directory + '" -Role ' + $role

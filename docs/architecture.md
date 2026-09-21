@@ -190,3 +190,19 @@ Windows UI assembly provides serialized local IPC for NINA and native ASCOM.
 The Alpaca accessory coordinator launches the same worker and tracks ClientIDs.
 No SDK DLL or HTTP bridge is used in the native accessory drivers. See
 [accessory protocol and tracing](accessories.md).
+
+## Serial accessories
+
+`regain-fc3`, `regain-ofp2`, and `regain-eta` implement device protocols in Rust.
+NINA and native ASCOM use the shared `AccessorySession` JSON worker client and
+setup theme. Their ASCOM local servers compile the same `src/Shared/SerialServer.cs`
+host and use `SharedAccessoryDevice` connection leases. The host owns one worker;
+32/64-bit clients receive independent connection leases. Alpaca uses the same
+workers through its asynchronous worker client. These frontend owners remain
+mutually exclusive at the physical serial port.
+
+ETA reuses the focuser routes/provider for common back focus, and exposes
+individual tilt points through actions and setup. Its streaming telemetry and
+sequential point movement stay inside `regain-eta`. Unlike the other serial
+accessories, selection uses a port path because the tested CH340 adapter has no
+unique hardware serial. See [ETA protocol and limits](eta.md).

@@ -71,14 +71,16 @@ cameras and accessories. An Alpaca server is optional.
 
 | Integration | Where it runs | Equipment |
 | --- | --- | --- |
-| **Native NINA plugin** | Windows x64, NINA ≥3.2.0.9001 | Cameras, CAA, EFW, EAF, FocusCube3 |
-| **Native ASCOM drivers** | Windows x64; 32/64-bit clients | Four camera entries, CAA, EFW, EAF, FocusCube3, OFP2 (source/CI) |
+| **Native NINA plugin** | Windows x64, NINA ≥3.2.0.9001 | Cameras, CAA, EFW, EAF, FocusCube3, ETA M54 (source/CI) |
+| **Native ASCOM drivers** | Windows x64; 32/64-bit clients | Four camera entries, CAA, EFW, EAF, FocusCube3, OFP2 and ETA M54 (source/CI) |
 | **Universal Alpaca server** | Windows, Linux, macOS | Camera slots and all supported accessories, including OFP2 |
 | **Rust crates and worker CLIs** | Windows, Linux, macOS | Embed USB, HID, and serial device control in another application |
 
 OFP2 connects through native ASCOM or Alpaca; NINA can use either connection.
 Native OFP2 ASCOM is in current source and CI builds; release 0.4.0.0 includes
-Alpaca support only. OFP2 and FocusCube3 each share one local serial server among
+Alpaca support only. ETA M54 support is also in source/CI builds, with physical
+identity/position reads verified and movement validation pending. [ETA guide](docs/eta.md).
+OFP2, FocusCube3 and ETA each share one local serial server among
 ASCOM clients; other frontends need exclusive access to the device. See [connection options](https://pulsarfab.com/docs/regain/#choose).
 
 ## Supported hardware
@@ -117,6 +119,7 @@ exposure and binning limits. See the [camera support table](https://pulsarfab.co
 | **ZWO EAF** | USB HID | Focus, halt, reverse, backlash, travel limit, temperature |
 | **Pegasus Astro FocusCube3** | USB serial | Focus, halt, temperature, reverse, backlash, speed |
 | **Deep Sky Dad OFP2** | USB serial | Cover open/close/halt and panel brightness |
+| **Wanderer Astro ETA M54** (source/CI) | USB serial | Back focus preserving tilt, three point targets; no hardware halt. Physical movement validation pending. |
 
 See [hardware support](https://pulsarfab.com/docs/regain/hardware.html) for supported
 accessory variants and setup requirements. SDK-free cameras still need the OS
@@ -173,6 +176,10 @@ extracting the new package; keep saved equipment profiles.
 | **Native FocusCube3 setup** | **Alpaca FocusCube3 setup** |
 | [![Physical FocusCube3 native settings](docs/images/native-fc3.png)](docs/images/native-fc3.png) | [![Physical FocusCube3 Alpaca setup](docs/images/alpaca-fc3.png)](docs/images/alpaca-fc3.png) |
 | Physical FocusCube3, firmware 1.8.2. | Physical FocusCube3, firmware 1.8.2. |
+
+[![ETA M54 back-focus controls](docs/images/native-eta.png)](docs/eta.md)
+
+ETA M54 setup with live, read-only encoder readings from the attached device.
 
 Native captures use the standalone ASCOM theme; NINA supplies its own theme.
 Device guides include more screenshots and distinguish physical hardware from

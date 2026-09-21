@@ -36,7 +36,7 @@ with tempfile.TemporaryDirectory(prefix="regain-package-") as temporary:
     stage = Path(temporary) / prefix
     licenses = stage / "licenses"
     licenses.mkdir(parents=True)
-    for name in ['regain-caa'] if caa_only else ["regain-direct", "regain-host", "regain-alpaca", "regain-camera", "regain-caa", "regain-accessories", "regain-ofp2", "regain-fc3"]:
+    for name in ['regain-caa'] if caa_only else ["regain-direct", "regain-host", "regain-alpaca", "regain-camera", "regain-caa", "regain-accessories", "regain-ofp2", "regain-fc3", "regain-eta"]:
         binary = name + ('.exe' if 'windows' in host else '')
         shutil.copy2(root / "target" / "release" / binary, stage / binary)
     if not caa_only:
@@ -52,10 +52,14 @@ with tempfile.TemporaryDirectory(prefix="regain-package-") as temporary:
         shutil.copy2(root / "docs/ascom.md", stage / "ascom.md")
         shutil.copy2(root / "docs/accessories.md", stage / "accessories.md")
         shutil.copy2(root / "docs/ofp2.md", stage / "ofp2.md")
+        shutil.copy2(root / "docs/eta.md", stage / "eta.md")
+        shutil.copy2(root / "docs/eta-evidence.json", stage / "eta-evidence.json")
+        shutil.copy2(root / "docs/eta-serial.jsonl", stage / "eta-serial.jsonl")
         for name in ("focuscube3.md", "focuscube3-evidence.json", "focuscube3-serial.jsonl"):
             shutil.copy2(root / "docs" / name, stage / name)
         shutil.copy2(root / "docs/ofp2-evidence.json", stage / "ofp2-evidence.json")
         (stage / "images").mkdir()
+        shutil.copy2(root / "docs/images/native-eta.png", stage / "images/native-eta.png")
         shutil.copy2(root / "docs/images/alpaca-ofp2.png", stage / "images/alpaca-ofp2.png")
         for name in ("alpaca-fc3.png", "native-fc3.png"):
             shutil.copy2(root / "docs/images" / name, stage / "images" / name)

@@ -1,3 +1,4 @@
+using Regain.SerialServer;
 using System.IO;
 using System.Collections;
 using System.Runtime.InteropServices;
@@ -7,34 +8,14 @@ using Regain.Rotator;
 namespace Regain.Ofp2;
 
 // The local COM server owns one worker, while each COM object holds its own lease.
-internal static class SharedDevice
-{
-    internal static readonly object Gate = new();
-    internal static readonly AccessorySession Session = new(
-        RegainPaths.EnvironmentVariable("REGAIN_OFP2_WORKER") ?? Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "regain-ofp2.exe"),
-        "ofp2", AccessorySession.SettingsPath("ofp2", "ascom"));
-    private static readonly HashSet<Guid> Clients = [];
-    private static bool setupActive;
-    internal static bool Connected(Guid id) { lock (Gate) return Clients.Contains(id) && Session.Connected; }
-    internal static void Connect(Guid id, bool value)
-    {
-        lock (Gate) {
-            if (value) { if (!Session.Connected) { Clients.Clear(); Session.Connect(); } Clients.Add(id); }
-            else { Clients.Remove(id); if (Clients.Count == 0 && !setupActive) Session.Disconnect(); }
-        }
-    }
-    internal static void Setup()
-    {
-        lock (Gate) { if (setupActive) throw new ASCOM.InvalidOperationException("Setup is already open"); setupActive = true; }
-        try { Ofp2SetupWindow.Show(Session, () => { lock (Gate) return Clients.Count > 0; }); }
-        finally { lock (Gate) { setupActive = false; if (Clients.Count == 0) Session.Disconnect(); } }
-    }
-}
-
 [ComVisible(true), Guid("8E24512B-6BC6-4A44-9488-53E63C68CCB7"), ProgId("ASCOM.Regain.OFP2.CoverCalibrator"), ClassInterface(ClassInterfaceType.None)]
 [ComDefaultInterface(typeof(ICoverCalibratorV1))]
 public sealed class Driver : ICoverCalibratorV1
 {
+    internal static readonly SharedAccessoryDevice SharedDevice = new(new AccessorySession(
+        RegainPaths.EnvironmentVariable("REGAIN_OFP2_WORKER") ?? Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"regain-ofp2.exe"),
+        "ofp2", AccessorySession.SettingsPath("ofp2","ascom")), Ofp2SetupWindow.Show);
+
     private readonly Guid client = Guid.NewGuid();
     private bool disposed;
     public Driver() => Program.Track(this);

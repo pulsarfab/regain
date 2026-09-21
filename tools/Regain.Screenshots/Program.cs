@@ -46,16 +46,16 @@ internal static class Program
             Console.WriteLine("OFP2 setup controls and shared-client protection passed (simulation).");
             return;
         }
-        bool fc3=args.Contains("--fc3");
-        Environment.SetEnvironmentVariable("REGAIN_ACCESSORY_SIMULATE", fc3 ? null : "1");
-        foreach (string kind in (fc3 ? new[] {"fc3"} : new[] { "efw", "eaf" })) {
-            using var session = new AccessorySession(Path.Combine(root, "target", "debug", (fc3 ? "regain-fc3.exe" : "regain-accessories.exe")), kind, Path.Combine(profiles, kind + ".json"));
+        bool eta=args.Contains("--eta"), fc3=args.Contains("--fc3");
+        Environment.SetEnvironmentVariable("REGAIN_ACCESSORY_SIMULATE", fc3 || eta ? null : "1");
+        foreach (string kind in (eta ? new[] {"eta"} : fc3 ? new[] {"fc3"} : new[] { "efw", "eaf" })) {
+            using var session = new AccessorySession(Path.Combine(root, "target", "debug", (eta ? "regain-eta.exe" : fc3 ? "regain-fc3.exe" : "regain-accessories.exe")), kind, Path.Combine(profiles, kind + ".json"));
             session.Connect();
             var window = new AccessorySetupWindow(session);
             // Run the same refresh used by the live dialog, without opening a desktop window.
             typeof(AccessorySetupWindow).GetMethod("RefreshStatus", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(window, null);
             var content = (DockPanel)window.Content; window.Content = null;
-            content.Children.OfType<TabControl>().Single().SelectedIndex = 2;
+            content.Children.OfType<TabControl>().Single().SelectedIndex = eta ? 1 : 2;
             var border = new Border { Background = window.Background, Child = content, Resources = window.Resources };
             border.SetValue(TextElement.FontFamilyProperty, window.FontFamily);
             border.SetValue(TextElement.FontSizeProperty, window.FontSize);

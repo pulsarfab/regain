@@ -29,7 +29,10 @@ function Assert-NoCameraEntries {
                 'Software\Classes\AppID\{69AB224B-14D2-46A2-A744-0C60593A28B3}','Software\Classes\AppID\Regain.FocusCube.ASCOM.exe',
                 'Software\Classes\CLSID\{8E24512B-6BC6-4A44-9488-53E63C68CCB7}',
                 'Software\Classes\ASCOM.Regain.OFP2.CoverCalibrator','Software\ASCOM\CoverCalibrator Drivers\ASCOM.Regain.OFP2.CoverCalibrator',
-                'Software\Classes\AppID\{8E24512B-6BC6-4A44-9488-53E63C68CCB7}','Software\Classes\AppID\Regain.Ofp2.ASCOM.exe') {
+                'Software\Classes\AppID\{8E24512B-6BC6-4A44-9488-53E63C68CCB7}','Software\Classes\AppID\Regain.Ofp2.ASCOM.exe',
+                'Software\Classes\CLSID\{C12BF695-204B-48B6-B6C6-0B90F238AB7F}',
+                'Software\Classes\ASCOM.Regain.ETA.Focuser','Software\ASCOM\Focuser Drivers\ASCOM.Regain.ETA.Focuser',
+                'Software\Classes\AppID\{C12BF695-204B-48B6-B6C6-0B90F238AB7F}','Software\Classes\AppID\Regain.Eta.ASCOM.exe') {
                 $key = $root.OpenSubKey($path)
                 if ($key) { $key.Dispose(); throw "Rotator entry exists in $view : $path" }
             }
@@ -90,6 +93,21 @@ function Assert-Ofp2Activation {
     }
     Write-Output 'Installed OFP2 activation (32/64-bit) and idle shutdown passed.'
 }
+function Assert-EtaActivation {
+    # Inno emits its own registry entries, independently of Register.exe.
+    foreach ($architecture in 'System32','SysWOW64') {
+        & "$env:WINDIR/$architecture/WindowsPowerShell/v1.0/powershell.exe" -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'test-eta-ascom-client.ps1') -MetadataOnly
+        if ($LASTEXITCODE) { throw 'Installed ETA COM activation failed' }
+    }
+    # Verify idle shutdown and release the installed executable before maintenance.
+    $serverPath = Join-Path $destination 'Regain.Eta.ASCOM.exe'
+    $deadline = [DateTime]::UtcNow.AddSeconds(45)
+    while (Get-CimInstance Win32_Process -Filter "Name='Regain.Eta.ASCOM.exe'" | Where-Object ExecutablePath -eq $serverPath) {
+        if ([DateTime]::UtcNow -gt $deadline) { throw 'Installed ETA server did not exit after releasing its clients' }
+        Start-Sleep -Milliseconds 500
+    }
+    Write-Output 'Installed ETA activation (32/64-bit) and idle shutdown passed.'
+}
 try {
     # ASCOM is not needed for these self-contained COM classes. Its registry
     # version is a fixture so the production prerequisite gate is exercised.
@@ -130,6 +148,7 @@ try {
     Run-Setup 'install'
     Assert-FocusCubeActivation
     Assert-Ofp2Activation
+    Assert-EtaActivation
     $registered = Get-ItemPropertyValue 'HKLM:\SOFTWARE\Classes\CLSID\{D1DB6F94-5CC0-4752-A758-F849098874A1}\InprocServer32' -Name CodeBase
     if (([Uri]$registered).LocalPath -ne (Join-Path $destination 'Regain.ASCOM.dll')) { throw 'Wrong installed registration path' }
     foreach ($view in [Microsoft.Win32.RegistryView]::Registry32,[Microsoft.Win32.RegistryView]::Registry64) {
@@ -144,6 +163,9 @@ try {
             $ofp2 = $root.OpenSubKey('Software\Classes\CLSID\{8E24512B-6BC6-4A44-9488-53E63C68CCB7}\LocalServer32')
             if (!$ofp2) { throw 'OFP2 LocalServer32 registration missing' }
             try { if ($ofp2.GetValue('') -ne ('"' + (Join-Path $destination 'Regain.Ofp2.ASCOM.exe') + '" /Embedding')) { throw 'Wrong OFP2 local server path' } } finally { $ofp2.Dispose() }
+            $eta = $root.OpenSubKey('Software\Classes\CLSID\{C12BF695-204B-48B6-B6C6-0B90F238AB7F}\LocalServer32')
+            if (!$eta) { throw 'ETA LocalServer32 registration missing' }
+            try { if ($eta.GetValue('') -ne ('"' + (Join-Path $destination 'Regain.Eta.ASCOM.exe') + '" /Embedding')) { throw 'Wrong ETA local server path' } } finally { $eta.Dispose() }
             $panelChooser = $root.OpenSubKey('Software\ASCOM\CoverCalibrator Drivers\ASCOM.Regain.OFP2.CoverCalibrator')
             if (!$panelChooser) { throw "OFP2 Chooser entry missing in $view" }
             $panelChooser.Dispose()
@@ -192,6 +214,7 @@ try {
     if (Test-Path (Join-Path $destination 'zwogain-alpaca.exe')) { throw 'Upgrade left the obsolete worker executable' }
     Assert-FocusCubeActivation
     Assert-Ofp2Activation
+    Assert-EtaActivation
     Run-Setup 'moved-upgrade' $false (Join-Path $testDir 'Other directory')
     Set-ItemProperty $uninstallKey -Name DisplayVersion -Value '99.0.0.0'
     Run-Setup 'downgrade' $false

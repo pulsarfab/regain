@@ -9,6 +9,7 @@ namespace Regain.NINA.Tests;
 public sealed class AccessoryTests : IDisposable
 {
     private readonly string directory = Path.Combine(Path.GetTempPath(), "Regain-accessory-test-" + Guid.NewGuid().ToString("N"));
+    private readonly string? oldEta = Environment.GetEnvironmentVariable("REGAIN_ETA_WORKER");
     private readonly string? oldFc3 = Environment.GetEnvironmentVariable("REGAIN_FC3_WORKER");
     private readonly string? oldWorker = Environment.GetEnvironmentVariable("REGAIN_ACCESSORY_WORKER");
     private readonly string? oldProfiles = Environment.GetEnvironmentVariable("REGAIN_ACCESSORY_SETTINGS");
@@ -21,6 +22,7 @@ public sealed class AccessoryTests : IDisposable
         Assert.True(File.Exists(worker), "Build the Rust workspace before integration tests");
         Environment.SetEnvironmentVariable("REGAIN_ACCESSORY_WORKER", worker);
         Environment.SetEnvironmentVariable("REGAIN_FC3_WORKER", Path.Combine(root.FullName,"target","debug","regain-fc3.exe"));
+        Environment.SetEnvironmentVariable("REGAIN_ETA_WORKER", Path.Combine(root.FullName,"target","debug","regain-eta.exe"));
         Environment.SetEnvironmentVariable("REGAIN_ACCESSORY_SETTINGS", directory);
         Environment.SetEnvironmentVariable("REGAIN_ACCESSORY_SIMULATE", "1");
     }
@@ -96,10 +98,32 @@ public sealed class AccessoryTests : IDisposable
         focuser.Disconnect(); Assert.False(focuser.Connected);
         Assert.Contains(hardwareSerial ?? "00:00:00:00:00:03",File.ReadAllText(Path.Combine(directory,"fc3-nina.json")));
     }
+    [Fact]
+    public async Task EtaPreservesTiltAndCancelsOnlyUnstartedPoints()
+    {
+        using var eta = new EtaFocuser();
+        Assert.True(await eta.Connect(CancellationToken.None));
+        Assert.Equal(1.0, eta.StepSize); Assert.Equal(1200, eta.MaxStep);
+        await eta.Move(500, CancellationToken.None, 0);
+        Assert.Equal(500, eta.Position);
+        using (var state = System.Text.Json.JsonDocument.Parse(eta.Action("Regain.Status", "")))
+            Assert.Equal(new[] {490.0,500.0,510.0}, state.RootElement.GetProperty("points_um").EnumerateArray().Select(v=>v.GetDouble()));
+        await Assert.ThrowsAsync<InvalidOperationException>(()=>eta.Move(0, CancellationToken.None, 0));
+        Assert.Throws<InvalidOperationException>(eta.Halt);
+        using var cancellation = new CancellationTokenSource(100);
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(()=>eta.Move(600,cancellation.Token,0));
+        var deadline = DateTime.UtcNow.AddSeconds(5);
+        while (eta.IsMoving) { Assert.True(DateTime.UtcNow < deadline); await Task.Delay(100); }
+        // Only point 1 started before cancellation; the other two retain their tilt positions.
+        using var stopped = System.Text.Json.JsonDocument.Parse(eta.Action("Regain.Status", ""));
+        Assert.Equal(new[] {590.0,500.0,510.0}, stopped.RootElement.GetProperty("points_um").EnumerateArray().Select(v=>v.GetDouble()));
+        eta.Disconnect(); Assert.False(eta.Connected);
+    }
     public void Dispose()
     {
         Environment.SetEnvironmentVariable("REGAIN_ACCESSORY_WORKER", oldWorker);
         Environment.SetEnvironmentVariable("REGAIN_FC3_WORKER", oldFc3);
+        Environment.SetEnvironmentVariable("REGAIN_ETA_WORKER", oldEta);
         Environment.SetEnvironmentVariable("REGAIN_ACCESSORY_SETTINGS", oldProfiles);
         Environment.SetEnvironmentVariable("REGAIN_ACCESSORY_SIMULATE", oldSimulate);
         // Only this test's uniquely named temporary directory is removed.

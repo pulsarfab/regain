@@ -1,0 +1,42 @@
+{
+  "device": {
+    "model": "Wanderer Astro ETA M54",
+    "firmware": "20260804",
+    "usb_vid_pid": "1a86:7523",
+    "port": "COM3",
+    "unique_hardware_serial": false
+  },
+  "protocol": {
+    "baud": 19200,
+    "format": "8N1",
+    "flow_control": "none",
+    "dtr": false,
+    "rts": false,
+    "source": "https://www.wandererastro.com/h-col-106.html",
+    "published_protocol_date": "2025-03-18",
+    "trailing_field_1": "opaque; interpretation unverified"
+  },
+  "physical_validation": {
+    "identity_and_streaming_encoders": true,
+    "movement": false,
+    "reason": "Safe movement confirmation pending; no command bytes sent",
+    "trace": "eta-serial.jsonl",
+    "trace_sha256": "000b7042d9a911bda30252d01dc81465cfbe68903ae2b321a0a4fc76327681e7"
+  },
+  "simulation_validation": [
+    "Rust parsing, limits, sequential moves, timeout does not advance queue",
+    "Worker and Alpaca moves, point actions, cancellation and multiple client leases",
+    "Native ASCOM separate 32/64-bit clients share one worker",
+    "Native NINA move and cancellation preserve unstarted points"
+  ],
+  "installed_vendor_driver": {
+    "filename": "ASCOM.WandererETAM92.exe",
+    "sha256": "9C568BC89DC4D4A026E864541468B4C3FF67E527F615E395B7C2655757655DB9",
+    "note": "Filename is not evidence of the attached model; wire identity is M54"
+  },
+  "not_validated": [
+    "Physical movement/completion tolerance",
+    "M92 protocol",
+    "Linux/macOS physical serial transport"
+  ]
+}

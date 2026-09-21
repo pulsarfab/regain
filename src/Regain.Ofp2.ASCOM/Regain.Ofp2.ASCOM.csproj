@@ -9,4 +9,5 @@
     <ProjectReference Include="../Regain.Rotator/Regain.Rotator.csproj" />
     <PackageReference Include="ASCOM.DeviceInterfaces" Version="7.1.2" />
   </ItemGroup>
+  <ItemGroup><Compile Include="../Shared/SerialServer.cs" Link="SerialServer.cs" /></ItemGroup>
 </Project>

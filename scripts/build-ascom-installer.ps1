@@ -8,7 +8,7 @@ if (!$Compiler) {
 }
 if (!$Compiler) { throw 'Install Inno Setup 6.7 or later, or pass -Compiler with the ISCC.exe path.' }
 $stage = Join-Path $repo 'artifacts/ascom-stage'
-foreach ($file in 'Regain.ASCOM.Register.exe','Regain.FocusCube.ASCOM.exe','Regain.Ofp2.ASCOM.exe','Regain.ASCOM.dll','Regain.Rotator.dll','regain-caa.exe','regain-accessories.exe','regain-fc3.exe','regain-ofp2.exe','regain-camera.exe','regain-alpaca.exe','regain-host.exe','regain-direct.exe','ASICamera2.dll','LICENSE') {
+foreach ($file in 'Regain.ASCOM.Register.exe','Regain.FocusCube.ASCOM.exe','Regain.Ofp2.ASCOM.exe','Regain.Eta.ASCOM.exe','Regain.ASCOM.dll','Regain.Rotator.dll','regain-caa.exe','regain-accessories.exe','regain-fc3.exe','regain-eta.exe','regain-ofp2.exe','regain-camera.exe','regain-alpaca.exe','regain-host.exe','regain-direct.exe','ASICamera2.dll','LICENSE') {
     if (!(Test-Path -LiteralPath (Join-Path $stage $file))) { throw "Missing $file. Run scripts/build-ascom.ps1 first." }
 }
 $assembly = [Reflection.AssemblyName]::GetAssemblyName((Join-Path $stage 'Regain.ASCOM.dll'))
@@ -49,6 +49,25 @@ foreach ($root in 'HKLM32','HKLM64') {
             $registry.Add(('Root: {0}; Subkey: "{1}"; ValueType: string; ValueName: "{2}"; ValueData: "{3}"; Flags: {4}' -f $root, $row[0], $row[1], $row[2], $row[3]))
         }
         $registry.Add(('Root: {0}; Subkey: "{1}\Implemented Categories\{{{{62C8FE65-4EBB-45E7-B440-6E39B2CDBF29}}"; ValueType: none' -f $root, $key))
+    }
+    # ETA is a real COM local server, not a RegAsm in-process class.
+    $eta = 'Software\Classes\CLSID\{{C12BF695-204B-48B6-B6C6-0B90F238AB7F}'
+    foreach ($row in @(
+        @('Software\Classes\AppID\{{C12BF695-204B-48B6-B6C6-0B90F238AB7F}', 'RunAs', 'Interactive User', 'uninsdeletekey'),
+        @('Software\Classes\AppID\Regain.Eta.ASCOM.exe', 'AppID', '{{C12BF695-204B-48B6-B6C6-0B90F238AB7F}', 'uninsdeletekey'),
+        @($eta, 'AppID', '{{C12BF695-204B-48B6-B6C6-0B90F238AB7F}', '')
+    )) {
+        $registry.Add(('Root: {0}; Subkey: "{1}"; ValueType: string; ValueName: "{2}"; ValueData: "{3}"; Flags: {4}' -f $root, $row[0], $row[1], $row[2], $row[3]))
+    }
+    foreach ($row in @(
+        @($eta, 'PulsarFab regain Wanderer Astro ETA M54', 'uninsdeletekey'),
+        @("$eta\LocalServer32", '"{app}\Regain.Eta.ASCOM.exe" /Embedding', ''),
+        @("$eta\ProgID", 'ASCOM.Regain.ETA.Focuser', ''),
+        @('Software\Classes\ASCOM.Regain.ETA.Focuser', 'PulsarFab regain Wanderer Astro ETA M54', 'uninsdeletekey'),
+        @('Software\Classes\ASCOM.Regain.ETA.Focuser\CLSID', '{{C12BF695-204B-48B6-B6C6-0B90F238AB7F}', ''),
+        @('Software\ASCOM\Focuser Drivers\ASCOM.Regain.ETA.Focuser', 'PulsarFab regain Wanderer Astro ETA M54', 'uninsdeletekey')
+    )) {
+        $registry.Add(('Root: {0}; Subkey: "{1}"; ValueType: string; ValueName: ""; ValueData: "{2}"; Flags: {3}' -f $root, $row[0], $row[1].Replace('"','""'), $row[2]))
     }
     # FocusCube3 is a real COM local server, not a RegAsm in-process class.
     $fc3 = 'Software\Classes\CLSID\{{69AB224B-14D2-46A2-A744-0C60593A28B3}'

@@ -21,4 +21,9 @@
     <ItemGroup><Ofp2Files Include="../Regain.Ofp2.ASCOM/bin/$(Configuration)/net48/Regain.Ofp2.ASCOM.exe*" /></ItemGroup>
     <Copy SourceFiles="@(Ofp2Files)" DestinationFolder="$(OutDir)" />
   </Target>
+  <ItemGroup><ProjectReference Include="../Regain.Eta.ASCOM/Regain.Eta.ASCOM.csproj" ReferenceOutputAssembly="false" /></ItemGroup>
+  <Target Name="CopyEtaServer" AfterTargets="Build">
+    <ItemGroup><EtaFiles Include="../Regain.Eta.ASCOM/bin/$(Configuration)/net48/Regain.Eta.ASCOM.exe*" /></ItemGroup>
+    <Copy SourceFiles="@(EtaFiles)" DestinationFolder="$(OutDir)" />
+  </Target>
 </Project>

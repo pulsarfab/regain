@@ -32,6 +32,7 @@ try {
     Copy-Item -LiteralPath (Join-Path $repo 'target/release/regain-caa.exe') -Destination $stage
     Copy-Item -LiteralPath (Join-Path $repo 'target/release/regain-ofp2.exe') -Destination $stage
     Copy-Item -LiteralPath (Join-Path $repo 'target/release/regain-fc3.exe') -Destination $stage
+    Copy-Item -LiteralPath (Join-Path $repo 'target/release/regain-eta.exe') -Destination $stage
     Copy-Item -LiteralPath (Join-Path $repo 'target/release/regain-accessories.exe') -Destination $stage
     Copy-Item -LiteralPath (Join-Path $repo 'docs/caa.md') -Destination $stage
     Copy-Item -LiteralPath (Join-Path $repo 'docs/caa-frontends.md') -Destination $stage

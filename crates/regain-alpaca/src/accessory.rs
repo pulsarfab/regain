@@ -53,6 +53,8 @@ impl Accessory {
             kind,
             path,
             executable: directory.join(match (kind, cfg!(windows)) {
+                ("eta", true) => "regain-eta.exe",
+                ("eta", false) => "regain-eta",
                 ("fc3", true) => "regain-fc3.exe",
                 ("fc3", false) => "regain-fc3",
                 (_, true) => "regain-accessories.exe",
@@ -70,6 +72,8 @@ impl Accessory {
     fn name(&self) -> &'static str {
         if self.kind == "efw" {
             "PulsarFab regain EFW Filter Wheel"
+        } else if self.kind == "eta" {
+            "PulsarFab regain Wanderer Astro ETA M54"
         } else if self.kind == "fc3" {
             "PulsarFab regain Pegasus FocusCube3"
         } else {
@@ -94,7 +98,12 @@ impl Accessory {
     }
     fn validate(&self, p: &Profile) -> Result<()> {
         ensure!(
-            p.serial.as_ref().is_none_or(|s| if self.kind == "fc3" {
+            p.serial.as_ref().is_none_or(|s| if self.kind == "eta" {
+                !s.is_empty()
+                    && s.len() <= 128
+                    && s.bytes()
+                        .all(|b| b.is_ascii_alphanumeric() || b"/_-.".contains(&b))
+            } else if self.kind == "fc3" {
                 s.len() == 17
                     && s.split(':').count() == 6
                     && s.split(':')
@@ -131,7 +140,7 @@ impl Accessory {
     }
     fn command(&self, action: &str) -> Command {
         let mut c = Command::new(&self.executable);
-        if self.kind != "fc3" {
+        if !["fc3", "eta"].contains(&self.kind) {
             c.arg(self.kind);
         }
         c.arg(action);
@@ -191,7 +200,7 @@ impl Accessory {
     pub async fn configured(&self) -> Result<Option<Value>> {
         let mut s = self.state.lock().await;
         self.load(&mut s)?;
-        Ok(s.profile.serial.as_ref().map(|_|json!({"DeviceName":self.name(),"DeviceType":if self.kind=="efw"{"FilterWheel"}else{"Focuser"},"DeviceNumber":if self.kind=="fc3"{1}else{0},"UniqueID":s.profile.unique_id})))
+        Ok(s.profile.serial.as_ref().map(|_|json!({"DeviceName":self.name(),"DeviceType":if self.kind=="efw"{"FilterWheel"}else{"Focuser"},"DeviceNumber":if self.kind=="eta"{2}else if self.kind=="fc3"{1}else{0},"UniqueID":s.profile.unique_id})))
     }
     async fn connect(&self, s: &mut State, client: u32, on: bool) -> Result<()> {
         if !on {
@@ -283,7 +292,14 @@ impl Accessory {
                 "driverversion" => return Ok(json!(env!("CARGO_PKG_VERSION"))),
                 "interfaceversion" => return Ok(json!(if self.kind == "efw" { 2 } else { 3 })),
                 "supportedactions" => {
-                    return Ok(if self.kind == "efw" {
+                    return Ok(if self.kind == "eta" {
+                        json!([
+                            "Regain.Status",
+                            "Regain.Identity",
+                            "Regain.MovePoint",
+                            "Regain.CancelQueued"
+                        ])
+                    } else if self.kind == "efw" {
                         json!(["Regain.Status", "Regain.Identity", "Regain.Calibrate"])
                     } else {
                         json!(["Regain.Status", "Regain.Identity"])
@@ -297,9 +313,38 @@ impl Accessory {
             error(0x407, "This accessory client is not connected")
         );
         if member == "action" && put {
+            if self.kind == "eta"
+                && crate::branding::action_name(p.string("Action")?) == "regain.movepoint"
+            {
+                let value: Value = serde_json::from_str(p.string("Parameters")?)
+                    .map_err(|_| error(0x401, "Expected JSON point and position"))?;
+                let point = value["point"]
+                    .as_u64()
+                    .filter(|v| (1..=3).contains(v))
+                    .ok_or_else(|| error(0x401, "Point must be 1..3"))?;
+                let position = value["position"]
+                    .as_i64()
+                    .filter(|v| (0..=1200).contains(v))
+                    .ok_or_else(|| error(0x401, "Position must be 0..1200 micrometres"))?;
+                ensure!(
+                    value.as_object().is_some_and(|o| o
+                        .keys()
+                        .all(|k| ["point", "position"].contains(&k.as_str()))),
+                    error(0x401, "Unknown point parameter")
+                );
+                return Ok(json!(
+                    s.worker
+                        .as_mut()
+                        .unwrap()
+                        .request(json!({"command":"move-point","point":point,"position":position}))
+                        .await?
+                        .to_string()
+                ));
+            }
             let command = match crate::branding::action_name(p.string("Action")?).as_str() {
                 "regain.status" => "status",
                 "regain.identity" => "identity",
+                "regain.cancelqueued" if self.kind == "eta" => "cancel-queued",
                 "regain.calibrate" if self.kind == "efw" => "calibrate",
                 _ => return Err(error(0x40c, "Unknown action")),
             };
@@ -323,6 +368,7 @@ impl Accessory {
             match member {
                 "absolute" => return Ok(json!(true)),
                 "tempcomp" | "tempcompavailable" => return Ok(json!(false)),
+                "stepsize" if self.kind == "eta" => return Ok(json!(1.0)),
                 "stepsize" => return Err(unsupported(member)),
                 _ => (),
             }
@@ -384,6 +430,9 @@ impl Accessory {
                 .await?;
             return Ok(Value::Null);
         }
+        if member == "halt" && self.kind == "eta" {
+            return Err(unsupported("ETA has no documented stop command"));
+        }
         if member == "halt" && self.kind != "efw" {
             s.worker
                 .as_mut()
@@ -399,6 +448,10 @@ impl Accessory {
         ensure!(
             self.kind != "efw",
             error(0x400, "EFW settings belong to its profile")
+        );
+        ensure!(
+            self.kind != "eta",
+            error(0x400, "ETA has no motor settings; use MovePoint or Move")
         );
         let mut request = value;
         let obj = request

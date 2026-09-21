@@ -49,16 +49,16 @@ public sealed class AccessorySetupWindow : Window
         checkStyle.Setters.Add(new Setter(FrameworkElement.MarginProperty, new Thickness(0, 4, 0, 8)));
         Resources[typeof(CheckBox)] = checkStyle;
         var root = new DockPanel { Margin = new Thickness(24) }; Content = root;
-        var heading = new TextBlock { Text = session.Kind == "efw" ? "Electronic Filter Wheel" : session.Kind == "fc3" ? "Pegasus Astro FocusCube3" : "Electronic Automatic Focuser", FontSize = 25, Margin = new Thickness(0, 0, 0, 8) };
+        var heading = new TextBlock { Text = session.Kind == "efw" ? "Electronic Filter Wheel" : session.Kind == "eta" ? "Wanderer Astro ETA M54" : session.Kind == "fc3" ? "Pegasus Astro FocusCube3" : "Electronic Automatic Focuser", FontSize = 25, Margin = new Thickness(0, 0, 0, 8) };
         DockPanel.SetDock(heading, Dock.Top); root.Children.Add(heading);
-        var subheading = new TextBlock { Text = (session.Kind == "fc3" ? "PulsarFab regain  •  Native USB serial" : "PulsarFab regain  •  Native USB HID") + (Regain.Rotator.RegainPaths.EnvironmentVariable("REGAIN_ACCESSORY_SIMULATE") == "1" ? "  •  Simulation" : ""), Margin = new Thickness(0, 0, 0, 20) };
+        var subheading = new TextBlock { Text = (session.Kind is "fc3" or "eta" ? "PulsarFab regain  •  Native USB serial" : "PulsarFab regain  •  Native USB HID") + (Regain.Rotator.RegainPaths.EnvironmentVariable("REGAIN_ACCESSORY_SIMULATE") == "1" ? "  •  Simulation" : ""), Margin = new Thickness(0, 0, 0, 20) };
         DockPanel.SetDock(subheading, Dock.Top); root.Children.Add(subheading);
         var footer = new StackPanel(); DockPanel.SetDock(footer, Dock.Bottom); root.Children.Add(footer);
         footer.Children.Add(message);
         footer.Children.Add(Button("Close", () => Close()));
         var tabs = new TabControl(); root.Children.Add(tabs);
         var device = Page(tabs, "Device");
-        device.Children.Add(Label("Choose a USB device")); device.Children.Add(devices);
+        device.Children.Add(Label(session.Kind == "eta" ? "Choose the ETA serial port" : "Choose a USB device")); device.Children.Add(devices);
         device.Children.Add(Row(Button("Refresh", Discover), Button("Connect", () => {
             if (!session.Connected && devices.SelectedItem is CaaChoice choice) session.Select(choice.Serial);
             session.Connect(); initialized = false; RefreshStatus();
@@ -71,12 +71,24 @@ public sealed class AccessorySetupWindow : Window
         device.Children.Add(new TextBlock { Text = "A device can be owned by one USB controller at a time. Close its vendor driver or Alpaca connection before connecting here.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 20, 0, 8) });
         device.Children.Add(new TextBlock { Text = "Settings: " + session.ProfilePath, TextWrapping = TextWrapping.Wrap, FontSize = 12 });
         var motion = Page(tabs, "Motion");
-        motion.Children.Add(Label(session.Kind == "efw" ? "Filter slot (1-based display)" : "Absolute position (steps)"));
+        motion.Children.Add(Label(session.Kind == "eta" ? "Back focus (µm, mean of three points; preserves tilt)" : session.Kind == "efw" ? "Filter slot (1-based display)" : "Absolute position (steps)"));
         motion.Children.Add(target);
         moveButton = Button("Move", () => { session.Move(Parse(target) - (session.Kind == "efw" ? 1 : 0)); RefreshStatus(); });
         moveButton.IsEnabled = false; motion.Children.Add(moveButton);
         motion.Children.Add(motionStatus);
-        if (session.Kind != "efw") {
+        if (session.Kind == "eta") {
+            motion.Children.Add(new TextBlock { Text = "Travel: 0–1200 µm per point. Back-focus moves preserve tilt and run points in sequence. A move that would exceed any point limit is rejected before movement. No hardware stop command is available.", TextWrapping = TextWrapping.Wrap });
+            motion.Children.Add(Button("Cancel queued points", () => session.Request(new { command = "cancel-queued" })));
+            motion.Children.Add(Label("Cancel removes unstarted points; the active point finishes its move."));
+            var tilt = Page(tabs, "Tilt points");
+            tilt.Children.Add(new TextBlock { Text = "Set one point at a time (absolute µm, 0–1200). Encoder readings can be slightly negative at zero. The device has no unique USB serial; verify its port after reconnecting.", TextWrapping = TextWrapping.Wrap });
+            for (int i = 1; i <= 3; i++) {
+                int point = i;
+                var value = new TextBox { Width = 110, Text = "0" };
+                tilt.Children.Add(Label("Point " + point + " (µm)"));
+                tilt.Children.Add(Row(value, Button("Move point " + point, () => { session.EtaMovePoint(System.Text.Json.JsonSerializer.Serialize(new { point, position = Parse(value) })); RefreshStatus(); })));
+            }
+        } else if (session.Kind != "efw") {
             motion.Children.Add(Button("Halt", session.Halt));
             motion.Children.Add(new TextBlock { Text = "Check mechanical clearance before moving. The driver travel limit is enforced before a move. Focus step size in microns depends on the attached focuser.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 20, 0, 0) });
             var settings = Page(tabs, "Settings"); if (session.Kind == "eaf") settings.Children.Add(beep); settings.Children.Add(reverse);
@@ -112,6 +124,7 @@ public sealed class AccessorySetupWindow : Window
         var s = session.Status();
         summary.Text = session.Kind == "efw" ? $"{s.Slots} slots  •  {(s.Moving ? "Moving" : "Slot " + (s.Position + 1))}" : $"Position {s.Position:N0} / {s.MaxStep:N0} steps  •  {(s.Moving ? "Moving" : "Idle")}\nTemperature: {(s.Temperature.HasValue ? s.Temperature.Value.ToString("F1") + " °C" : "Unavailable")}";
         if (s.Calibrating) summary.Text = $"Calibrating… {s.DetectedSlots ?? 0} slots detected. Waiting for the wheel to finish.";
+        if (session.Kind == "eta") summary.Text = $"Back focus {s.Position} µm  •  {(s.Moving ? "Moving" : "Idle")}\n" + string.Join("   •   ", s.PointsUm.Select((p, i) => $"Point {i + 1}: {p:F1} µm"));
         motionStatus.Text = summary.Text;
         moveButton.IsEnabled = !s.Moving;
         if (calibrateButton is not null) calibrateButton.IsEnabled = !s.Moving;

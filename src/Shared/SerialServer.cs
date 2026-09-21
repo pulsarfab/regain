@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Threading;
 
-namespace Regain.Ofp2;
+namespace Regain.SerialServer;
 
 [ComImport, ComVisible(false), Guid("00000001-0000-0000-C000-000000000046"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
 public interface IClassFactory {
@@ -28,12 +28,12 @@ internal static class Program {
     [DllImport("ole32.dll")] private static extern int CoSuspendClassObjects();
     private static readonly List<WeakReference> Objects=[];
     internal static int Locks;
-    internal static void Track(Driver driver) { lock(Objects) Objects.Add(new WeakReference(driver)); }
+    internal static void Track(object driver) { lock(Objects) Objects.Add(new WeakReference(driver)); }
     internal static void Log(string message) {
         try {
             var dir=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"Regain","ASCOM");
             Directory.CreateDirectory(dir);
-            var path=Path.Combine(dir,"ofp2.log");
+            var path=Path.Combine(dir,typeof(Driver).Assembly.GetName().Name + ".log");
             if(File.Exists(path) && new FileInfo(path).Length>2_000_000) File.WriteAllText(path,"");
             File.AppendAllText(path,DateTimeOffset.Now.ToString("O")+" "+message+Environment.NewLine);
         } catch { }
@@ -42,7 +42,7 @@ internal static class Program {
         uint cookie=0;
         try {
             if(args.Contains("/setup")) {
-                object driver=Activator.CreateInstance(Type.GetTypeFromProgID("ASCOM.Regain.OFP2.CoverCalibrator",true));
+                object driver=Activator.CreateInstance(Type.GetTypeFromProgID(((ProgIdAttribute)Attribute.GetCustomAttribute(typeof(Driver),typeof(ProgIdAttribute))).Value,true));
                 try { driver.GetType().InvokeMember("SetupDialog",System.Reflection.BindingFlags.InvokeMethod,null,driver,null); }
                 finally { Marshal.FinalReleaseComObject(driver); }
                 return 0;
@@ -62,6 +62,8 @@ internal static class Program {
                 int resumed=CoResumeClassObjects();
                 Log($"ResumeClassObjects: 0x{resumed:X8}");
                 Marshal.ThrowExceptionForHR(resumed);
+                int ready=Array.IndexOf(args,"/test-ready");
+                if(test>=0 && ready>=0) File.WriteAllText(args[ready+1],"ready");
             }));
             var idle=DateTime.UtcNow;
             var timer=new DispatcherTimer { Interval=TimeSpan.FromSeconds(5) };
@@ -76,6 +78,6 @@ internal static class Program {
             timer.Start(); app.Run(); timer.Stop(); GC.KeepAlive(factory); return 0;
         } catch(Exception e) {
             Log(e.ToString()); return 1;
-        } finally { if(cookie!=0) CoRevokeClassObject(cookie); SharedDevice.Session.Dispose(); }
+        } finally { if(cookie!=0) CoRevokeClassObject(cookie); Driver.SharedDevice.Session.Dispose(); }
     }
 }
