@@ -12,8 +12,13 @@
     <ProjectReference Include="../Regain.ASCOM/Regain.ASCOM.csproj" />
   </ItemGroup>
   <ItemGroup><ProjectReference Include="../Regain.FocusCube.ASCOM/Regain.FocusCube.ASCOM.csproj" ReferenceOutputAssembly="false" /></ItemGroup>
+  <ItemGroup><ProjectReference Include="../Regain.Ofp2.ASCOM/Regain.Ofp2.ASCOM.csproj" ReferenceOutputAssembly="false" /></ItemGroup>
   <Target Name="CopyFocusCubeServer" AfterTargets="Build">
     <ItemGroup><FocusCubeFiles Include="../Regain.FocusCube.ASCOM/bin/$(Configuration)/net48/Regain.FocusCube.ASCOM.exe*" /></ItemGroup>
     <Copy SourceFiles="@(FocusCubeFiles)" DestinationFolder="$(OutDir)" />
+  </Target>
+  <Target Name="CopyOfp2Server" AfterTargets="Build">
+    <ItemGroup><Ofp2Files Include="../Regain.Ofp2.ASCOM/bin/$(Configuration)/net48/Regain.Ofp2.ASCOM.exe*" /></ItemGroup>
+    <Copy SourceFiles="@(Ofp2Files)" DestinationFolder="$(OutDir)" />
   </Target>
 </Project>

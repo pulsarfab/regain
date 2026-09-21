@@ -1,4 +1,4 @@
-PulsarFab regain ASCOM installs four native camera entries, a CAA rotator, an EFW filter wheel, an EAF focuser, and their local Rust workers. A standalone Alpaca server is also included.
+PulsarFab regain ASCOM installs four native camera entries, a CAA rotator, an EFW filter wheel, EAF and FocusCube3 focusers, an OFP2 cover/flat panel, and their local Rust workers. A standalone Alpaca server is also included.
 
 For cameras connected to this PC, install the ZWO Windows camera driver from https://www.zwoastro.com/software/ first. CAA, EFW and EAF use the built-in Windows HID driver.
 

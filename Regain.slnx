@@ -5,6 +5,7 @@
     <Project Path="src/Regain.Core/Regain.Core.csproj" />
     <Project Path="src/Regain.Diagnostics/Regain.Diagnostics.csproj" />
     <Project Path="src/Regain.FocusCube.ASCOM/Regain.FocusCube.ASCOM.csproj" />
+    <Project Path="src/Regain.Ofp2.ASCOM/Regain.Ofp2.ASCOM.csproj" />
     <Project Path="src/Regain.NINA/Regain.NINA.csproj" />
     <Project Path="src/Regain.Rotator/Regain.Rotator.csproj" />
   </Folder>

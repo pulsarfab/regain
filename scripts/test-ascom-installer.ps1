@@ -26,7 +26,10 @@ function Assert-NoCameraEntries {
                 'Software\Classes\ASCOM.ZWOgain.Focuser','Software\ASCOM\Focuser Drivers\ASCOM.ZWOgain.Focuser',
                 'Software\Classes\CLSID\{69AB224B-14D2-46A2-A744-0C60593A28B3}',
                 'Software\Classes\ASCOM.ZWOgain.FocusCube3.Focuser','Software\ASCOM\Focuser Drivers\ASCOM.ZWOgain.FocusCube3.Focuser',
-                'Software\Classes\AppID\{69AB224B-14D2-46A2-A744-0C60593A28B3}','Software\Classes\AppID\Regain.FocusCube.ASCOM.exe') {
+                'Software\Classes\AppID\{69AB224B-14D2-46A2-A744-0C60593A28B3}','Software\Classes\AppID\Regain.FocusCube.ASCOM.exe',
+                'Software\Classes\CLSID\{8E24512B-6BC6-4A44-9488-53E63C68CCB7}',
+                'Software\Classes\ASCOM.Regain.OFP2.CoverCalibrator','Software\ASCOM\CoverCalibrator Drivers\ASCOM.Regain.OFP2.CoverCalibrator',
+                'Software\Classes\AppID\{8E24512B-6BC6-4A44-9488-53E63C68CCB7}','Software\Classes\AppID\Regain.Ofp2.ASCOM.exe') {
                 $key = $root.OpenSubKey($path)
                 if ($key) { $key.Dispose(); throw "Rotator entry exists in $view : $path" }
             }
@@ -72,6 +75,21 @@ function Assert-FocusCubeActivation {
     }
     Write-Output 'Installed FocusCube3 activation (32/64-bit) and idle shutdown passed.'
 }
+function Assert-Ofp2Activation {
+    # Inno emits its own registry entries, independently of Register.exe.
+    foreach ($architecture in 'System32','SysWOW64') {
+        & "$env:WINDIR/$architecture/WindowsPowerShell/v1.0/powershell.exe" -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'test-ofp2-ascom-client.ps1') -MetadataOnly
+        if ($LASTEXITCODE) { throw 'Installed OFP2 COM activation failed' }
+    }
+    # Verify idle shutdown and release the installed executable before maintenance.
+    $serverPath = Join-Path $destination 'Regain.Ofp2.ASCOM.exe'
+    $deadline = [DateTime]::UtcNow.AddSeconds(45)
+    while (Get-CimInstance Win32_Process -Filter "Name='Regain.Ofp2.ASCOM.exe'" | Where-Object ExecutablePath -eq $serverPath) {
+        if ([DateTime]::UtcNow -gt $deadline) { throw 'Installed OFP2 server did not exit after releasing its clients' }
+        Start-Sleep -Milliseconds 500
+    }
+    Write-Output 'Installed OFP2 activation (32/64-bit) and idle shutdown passed.'
+}
 try {
     # ASCOM is not needed for these self-contained COM classes. Its registry
     # version is a fixture so the production prerequisite gate is exercised.
@@ -111,6 +129,7 @@ try {
     Assert-NoCameraEntries
     Run-Setup 'install'
     Assert-FocusCubeActivation
+    Assert-Ofp2Activation
     $registered = Get-ItemPropertyValue 'HKLM:\SOFTWARE\Classes\CLSID\{D1DB6F94-5CC0-4752-A758-F849098874A1}\InprocServer32' -Name CodeBase
     if (([Uri]$registered).LocalPath -ne (Join-Path $destination 'Regain.ASCOM.dll')) { throw 'Wrong installed registration path' }
     foreach ($view in [Microsoft.Win32.RegistryView]::Registry32,[Microsoft.Win32.RegistryView]::Registry64) {
@@ -122,6 +141,12 @@ try {
             $fc3 = $root.OpenSubKey('Software\Classes\CLSID\{69AB224B-14D2-46A2-A744-0C60593A28B3}\LocalServer32')
             if (!$fc3) { throw 'FocusCube3 LocalServer32 registration missing' }
             try { if ($fc3.GetValue('') -ne ('"' + (Join-Path $destination 'Regain.FocusCube.ASCOM.exe') + '" /Embedding')) { throw 'Wrong FocusCube3 local server path' } } finally { $fc3.Dispose() }
+            $ofp2 = $root.OpenSubKey('Software\Classes\CLSID\{8E24512B-6BC6-4A44-9488-53E63C68CCB7}\LocalServer32')
+            if (!$ofp2) { throw 'OFP2 LocalServer32 registration missing' }
+            try { if ($ofp2.GetValue('') -ne ('"' + (Join-Path $destination 'Regain.Ofp2.ASCOM.exe') + '" /Embedding')) { throw 'Wrong OFP2 local server path' } } finally { $ofp2.Dispose() }
+            $panelChooser = $root.OpenSubKey('Software\ASCOM\CoverCalibrator Drivers\ASCOM.Regain.OFP2.CoverCalibrator')
+            if (!$panelChooser) { throw "OFP2 Chooser entry missing in $view" }
+            $panelChooser.Dispose()
             $key = $root.OpenSubKey('Software\ASCOM\Rotator Drivers\ASCOM.ZWOgain.Rotator')
             if (!$key) { throw "Rotator Chooser entry missing in $view" }
             $key.Dispose()
@@ -166,6 +191,7 @@ try {
     Run-Setup 'upgrade'
     if (Test-Path (Join-Path $destination 'zwogain-alpaca.exe')) { throw 'Upgrade left the obsolete worker executable' }
     Assert-FocusCubeActivation
+    Assert-Ofp2Activation
     Run-Setup 'moved-upgrade' $false (Join-Path $testDir 'Other directory')
     Set-ItemProperty $uninstallKey -Name DisplayVersion -Value '99.0.0.0'
     Run-Setup 'downgrade' $false

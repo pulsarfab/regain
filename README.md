@@ -72,13 +72,14 @@ cameras and accessories. An Alpaca server is optional.
 | Integration | Where it runs | Equipment |
 | --- | --- | --- |
 | **Native NINA plugin** | Windows x64, NINA ≥3.2.0.9001 | Cameras, CAA, EFW, EAF, FocusCube3 |
-| **Native ASCOM drivers** | Windows x64; 32/64-bit clients | Four camera entries, CAA, EFW, EAF, FocusCube3 |
+| **Native ASCOM drivers** | Windows x64; 32/64-bit clients | Four camera entries, CAA, EFW, EAF, FocusCube3, OFP2 (source/CI) |
 | **Universal Alpaca server** | Windows, Linux, macOS | Camera slots and all supported accessories, including OFP2 |
 | **Rust crates and worker CLIs** | Windows, Linux, macOS | Embed USB, HID, and serial device control in another application |
 
-OFP2 connects to NINA and ASCOM applications through Alpaca discovery.
-FocusCube3 ASCOM clients share one local server; other frontends need exclusive
-access to the device. See [connection options](https://pulsarfab.com/docs/regain/#choose).
+OFP2 connects through native ASCOM or Alpaca; NINA can use either connection.
+Native OFP2 ASCOM is in current source and CI builds; release 0.4.0.0 includes
+Alpaca support only. OFP2 and FocusCube3 each share one local serial server among
+ASCOM clients; other frontends need exclusive access to the device. See [connection options](https://pulsarfab.com/docs/regain/#choose).
 
 ## Supported hardware
 

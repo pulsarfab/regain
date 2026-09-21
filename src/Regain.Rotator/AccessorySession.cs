@@ -43,7 +43,7 @@ public sealed class AccessorySession : IDisposable
     public bool Connected { get { lock (gate) return worker is { HasExited: false }; } }
     public AccessorySession(string executable, string kind, string profilePath)
     {
-        if (kind is not ("efw" or "eaf" or "fc3")) throw new ArgumentException("Unknown accessory");
+        if (kind is not ("efw" or "eaf" or "fc3" or "ofp2")) throw new ArgumentException("Unknown accessory");
         this.executable = executable; Kind = kind; ProfilePath = profilePath; Profile = ReadProfile();
     }
     public static string SettingsPath(string kind, string frontend) => RegainPaths.EnvironmentVariable("REGAIN_ACCESSORY_SETTINGS") is string directory
@@ -64,7 +64,7 @@ public sealed class AccessorySession : IDisposable
     private Process Start(string arguments)
     {
         if (Regain.Rotator.RegainPaths.EnvironmentVariable("REGAIN_ACCESSORY_SIMULATE") == "1") arguments += " --simulate";
-        var process = new Process { StartInfo = new(executable, (Kind == "fc3" ? "" : Kind + " ") + arguments) {
+        var process = new Process { StartInfo = new(executable, (Kind is "fc3" or "ofp2" ? "" : Kind + " ") + arguments) {
             UseShellExecute = false, CreateNoWindow = true, WindowStyle = ProcessWindowStyle.Hidden,
             RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true,
             WorkingDirectory = Path.GetDirectoryName(executable)!, StandardOutputEncoding = new System.Text.UTF8Encoding(false) } };
@@ -90,7 +90,7 @@ public sealed class AccessorySession : IDisposable
                 if (!read.Wait(TimeSpan.FromSeconds(15))) throw new TimeoutException("Device discovery timed out");
                 using var doc = JsonDocument.Parse(read.Result ?? throw new IOException("Discovery failed; check the accessory log"));
                 return doc.RootElement.EnumerateArray().Select(item => {
-                    var identity = item.GetProperty("identity"); var serial = identity.GetProperty("serial").GetString()!;
+                    var identity = Kind == "ofp2" ? item : item.GetProperty("identity"); var serial = identity.GetProperty("serial").GetString()!;
                     return new CaaChoice { Serial = serial, Label = identity.GetProperty("model").GetString() + " — " + serial };
                 }).ToList();
             } finally { if (!process.HasExited && !process.WaitForExit(1000)) process.Kill(); }
@@ -107,6 +107,12 @@ public sealed class AccessorySession : IDisposable
     }
     private void ValidateSerial(string serial)
     {
+        if (Kind == "ofp2") {
+            // USB serials are passed as a single unquoted CLI token. Never accept
+            // whitespace, quotes, or option prefixes from a saved profile.
+            if (!System.Text.RegularExpressions.Regex.IsMatch(serial, @"\A[A-Za-z0-9][A-Za-z0-9_-]{0,127}\z")) throw new ArgumentException("Select a panel by its USB serial number");
+            return;
+        }
         if (Kind == "fc3" ? !System.Text.RegularExpressions.Regex.IsMatch(serial, @"\A[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5}\z") : (serial.Length != 16 || serial.Any(c => !Uri.IsHexDigit(c)))) throw new ArgumentException("Select a device by its serial number");
     }
     public void Connect()

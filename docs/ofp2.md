@@ -6,6 +6,56 @@ ASCOM driver, control panel, SDK, and .NET are not required at runtime.
 The existing Rust Alpaca server exposes it as **CoverCalibrator device 0**.
 This support is included from release 0.4.0.0.
 
+## Native Windows ASCOM
+
+Current source and CI builds add **PulsarFab regain Deep Sky Dad OFP2**
+(`ASCOM.Regain.OFP2.CoverCalibrator`) to the ASCOM CoverCalibrator chooser.
+Release 0.4.0.0 includes Alpaca support only. Build the updated ASCOM package
+with `scripts/build-ascom.ps1` and `scripts/build-ascom-installer.ps1`.
+
+1. Install the regain ASCOM package and connect the panel's USB and external power.
+2. Disconnect its vendor driver and Alpaca connection to release the serial port.
+3. Select **PulsarFab regain Deep Sky Dad OFP2** in your application's ASCOM
+   flat-panel chooser, including NINA's ASCOM flat-panel selection.
+4. Open **Setup**, refresh devices, select the panel, and connect to test it.
+   The **Cover & light** tab provides Open, Close, Halt, and brightness 0–4096.
+5. Close setup and connect from the application. The Start menu's **OFP2 cover
+   and flat panel setup** shortcut opens the same shared server.
+
+`Regain.Ofp2.ASCOM.exe` is an out-of-process COM server. Separate 32-bit and
+64-bit applications share one `regain-ofp2.exe` worker and one exclusive serial
+connection. Each client has its own connection lease; disconnecting or disposing
+one client leaves the others connected. The final disconnect releases the worker
+and port. An open setup dialog keeps its connection until it closes, and cannot
+disconnect a panel owned by a connected ASCOM client.
+
+This sharing covers regain ASCOM clients. The vendor driver and regain Alpaca
+still need exclusive ownership relative to the native ASCOM server. Use NINA's
+ASCOM selection when sharing with another ASCOM application.
+
+The ASCOM profile is `%LOCALAPPDATA%\Regain\Accessories\ofp2-ascom.json`,
+separate from the Alpaca profile. Selection uses the USB serial, so COM-port
+renumbering does not select another panel. Native ASCOM requires .NET Framework
+4.8 and ASCOM Platform; the Rust serial worker remains SDK-free.
+
+![Native OFP2 cover and light setup, using simulation](images/native-ofp2.png)
+
+Production WPF setup controls rendered with the OFP2 simulator. This screenshot
+shows the new native UI; it is not a new physical-device validation.
+
+The native driver implements `ICoverCalibratorV1`: cover operations return while
+motion continues, `CalibratorOn(0)` is Ready at brightness zero, and
+`CalibratorOff()` is Off with reported brightness zero. Invalid brightness is
+rejected before actuation. Communication faults are reported without retrying
+commands; state properties report Error on a failed status read.
+
+Run `scripts/test-ofp2-ascom.ps1` for isolated 32/64-bit shared-client tests.
+It checks one worker, independent leases, final disconnect cleanup, cover
+operations, brightness limits, and zero-brightness semantics. Add `-Hardware
+-Serial YOUR_USB_SERIAL` only when cover movement is safe. The hardware test
+returns an initially open or closed cover to its starting endpoint and restores
+its initial illumination on success.
+
 ## Connect through Alpaca
 
 1. Connect USB and the panel's external power supply. Close any vendor control

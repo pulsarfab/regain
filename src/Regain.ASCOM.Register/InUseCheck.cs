@@ -36,7 +36,7 @@ internal static class InUseCheck
     // Query only: never shut down camera clients or a capture in progress.
     public static string[] Find(string directory)
     {
-        var files = new[] { "Regain.ASCOM.dll", "Regain.Rotator.dll", "regain-caa.exe", "regain-accessories.exe", "regain-ofp2.exe", "regain-fc3.exe", "Regain.FocusCube.ASCOM.exe", "regain-camera.exe", "regain-alpaca.exe", "regain-host.exe", "regain-direct.exe" }
+        var files = new[] { "Regain.ASCOM.dll", "Regain.Rotator.dll", "regain-caa.exe", "regain-accessories.exe", "regain-ofp2.exe", "regain-fc3.exe", "Regain.FocusCube.ASCOM.exe", "Regain.Ofp2.ASCOM.exe", "regain-camera.exe", "regain-alpaca.exe", "regain-host.exe", "regain-direct.exe" }
             .SelectMany(name => new[] { name, name.Replace("Regain", "ZwoGain").Replace("regain", "zwogain") })
             .Select(name => Path.Combine(Path.GetFullPath(directory), name)).Where(File.Exists).ToArray();
         if (files.Length == 0) return Array.Empty<string>();

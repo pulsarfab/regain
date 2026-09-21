@@ -89,6 +89,7 @@ jobs:
             ${{ github.workspace }}\artifacts\ascom-stage\Regain.ASCOM.dll
             ${{ github.workspace }}\artifacts\ascom-stage\Regain.ASCOM.Register.exe
             ${{ github.workspace }}\artifacts\ascom-stage\Regain.FocusCube.ASCOM.exe
+            ${{ github.workspace }}\artifacts\ascom-stage\Regain.Ofp2.ASCOM.exe
             ${{ github.workspace }}\artifacts\ascom-stage\Regain.Rotator.dll
           file-digest: SHA256
           timestamp-rfc3161: http://timestamp.acs.microsoft.com
@@ -103,7 +104,7 @@ jobs:
             if ($sig.SignerCertificate.Subject -notmatch 'StackFoundry LLC') { throw "$f has unexpected signer: $($sig.SignerCertificate.Subject)" }
             Write-Output "OK  $f  $($sig.SignerCertificate.Subject)"
           }
-          foreach ($f in 'Regain.ASCOM.dll','Regain.ASCOM.Register.exe','Regain.FocusCube.ASCOM.exe','Regain.Rotator.dll') {
+          foreach ($f in 'Regain.ASCOM.dll','Regain.ASCOM.Register.exe','Regain.FocusCube.ASCOM.exe','Regain.Ofp2.ASCOM.exe','Regain.Rotator.dll') {
             $sig = Get-AuthenticodeSignature -LiteralPath "artifacts/ascom-stage/$f"
             if ($sig.Status -ne 'Valid' -or $sig.SignerCertificate.Subject -notmatch 'StackFoundry LLC') { throw "Invalid ASCOM signature: $f" }
           }

@@ -26,6 +26,7 @@ try {
     python scripts/test-fc3.py
     if ($LASTEXITCODE) { throw 'FocusCube3 tests failed' }
     & (Join-Path $PSScriptRoot 'test-fc3-ascom.ps1')
+    & (Join-Path $PSScriptRoot 'test-ofp2-ascom.ps1')
     & (Join-Path $PSScriptRoot 'test-accessory-ascom.ps1')
     & (Join-Path $PSScriptRoot 'test-ascom.ps1')
     & (Join-Path $PSScriptRoot 'test-caa-ascom.ps1')

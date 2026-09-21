@@ -225,13 +225,18 @@ and share the CAA setup theme. The Start menu includes both setup dialogs.
 See [accessory setup and USB validation](accessories.md) for serial selection,
 filter metadata, motor settings, protocol traces, and supported hardware.
 
-## OFP2 Alpaca flat panel
+## OFP2 cover and flat panel
 
-Current source also exposes Deep Sky Dad OFP2 as CoverCalibrator 0. Its native
-Rust serial worker requires no vendor ASCOM driver. Open the **OFP2 flat panel
-setup** link on the Alpaca setup page; [OFP2 instructions](ofp2.md) cover USB
-selection, external power, brightness, motion, protocol, and hardware tests.
-Windows ASCOM/NINA clients can connect through the Platform’s Alpaca support.
+Current source and CI builds add **PulsarFab regain Deep Sky Dad OFP2**
+(`ASCOM.Regain.OFP2.CoverCalibrator`) as a native ASCOM CoverCalibrator.
+It uses `Regain.Ofp2.ASCOM.exe` and a shared Rust serial worker: 32-bit and 64-bit
+clients hold independent connections, and the last disconnect releases the port.
+The matching setup dialog provides cover Open/Close/Halt and brightness 0–4096.
+NINA can select this driver through its ASCOM flat-panel chooser.
+
+Release 0.4.0.0 includes Alpaca support only. The Alpaca server continues to expose
+OFP2 as CoverCalibrator 0; disconnect it and the vendor driver before using native
+ASCOM. See [OFP2 setup and sharing](ofp2.md#native-windows-ascom).
 
 ## Pegasus Astro FocusCube3
 

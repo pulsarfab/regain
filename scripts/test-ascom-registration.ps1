@@ -12,6 +12,8 @@ try {
     foreach ($architecture in 'System32','SysWOW64') {
         & "$env:WINDIR/$architecture/WindowsPowerShell/v1.0/powershell.exe" -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'test-fc3-ascom-client.ps1') -MetadataOnly
         if ($LASTEXITCODE) { throw 'Registered FocusCube3 COM activation failed' }
+        & "$env:WINDIR/$architecture/WindowsPowerShell/v1.0/powershell.exe" -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'test-ofp2-ascom-client.ps1') -MetadataOnly
+        if ($LASTEXITCODE) { throw 'Registered OFP2 COM activation failed' }
         foreach ($deviceClass in 'EfwFilterWheel','EafFocuser') {
             & "$env:WINDIR/$architecture/WindowsPowerShell/v1.0/powershell.exe" -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'test-accessory-ascom-client.ps1') -DeviceClass $deviceClass -MetadataOnly
             if ($LASTEXITCODE) { throw 'Registered accessory COM activation failed' }

@@ -8,7 +8,7 @@ if (!$Compiler) {
 }
 if (!$Compiler) { throw 'Install Inno Setup 6.7 or later, or pass -Compiler with the ISCC.exe path.' }
 $stage = Join-Path $repo 'artifacts/ascom-stage'
-foreach ($file in 'Regain.ASCOM.Register.exe','Regain.FocusCube.ASCOM.exe','Regain.ASCOM.dll','Regain.Rotator.dll','regain-caa.exe','regain-accessories.exe','regain-fc3.exe','regain-camera.exe','regain-alpaca.exe','regain-host.exe','regain-direct.exe','ASICamera2.dll','LICENSE') {
+foreach ($file in 'Regain.ASCOM.Register.exe','Regain.FocusCube.ASCOM.exe','Regain.Ofp2.ASCOM.exe','Regain.ASCOM.dll','Regain.Rotator.dll','regain-caa.exe','regain-accessories.exe','regain-fc3.exe','regain-ofp2.exe','regain-camera.exe','regain-alpaca.exe','regain-host.exe','regain-direct.exe','ASICamera2.dll','LICENSE') {
     if (!(Test-Path -LiteralPath (Join-Path $stage $file))) { throw "Missing $file. Run scripts/build-ascom.ps1 first." }
 }
 $assembly = [Reflection.AssemblyName]::GetAssemblyName((Join-Path $stage 'Regain.ASCOM.dll'))
@@ -66,6 +66,25 @@ foreach ($root in 'HKLM32','HKLM64') {
         @('Software\Classes\ASCOM.ZWOgain.FocusCube3.Focuser', 'PulsarFab regain Pegasus FocusCube3', 'uninsdeletekey'),
         @('Software\Classes\ASCOM.ZWOgain.FocusCube3.Focuser\CLSID', '{{69AB224B-14D2-46A2-A744-0C60593A28B3}', ''),
         @('Software\ASCOM\Focuser Drivers\ASCOM.ZWOgain.FocusCube3.Focuser', 'PulsarFab regain Pegasus FocusCube3', 'uninsdeletekey')
+    )) {
+        $registry.Add(('Root: {0}; Subkey: "{1}"; ValueType: string; ValueName: ""; ValueData: "{2}"; Flags: {3}' -f $root, $row[0], $row[1].Replace('"','""'), $row[2]))
+    }
+    # OFP2 is a real COM local server, not a RegAsm in-process class.
+    $ofp2 = 'Software\Classes\CLSID\{{8E24512B-6BC6-4A44-9488-53E63C68CCB7}'
+    foreach ($row in @(
+        @('Software\Classes\AppID\{{8E24512B-6BC6-4A44-9488-53E63C68CCB7}', 'RunAs', 'Interactive User', 'uninsdeletekey'),
+        @('Software\Classes\AppID\Regain.Ofp2.ASCOM.exe', 'AppID', '{{8E24512B-6BC6-4A44-9488-53E63C68CCB7}', 'uninsdeletekey'),
+        @($ofp2, 'AppID', '{{8E24512B-6BC6-4A44-9488-53E63C68CCB7}', '')
+    )) {
+        $registry.Add(('Root: {0}; Subkey: "{1}"; ValueType: string; ValueName: "{2}"; ValueData: "{3}"; Flags: {4}' -f $root, $row[0], $row[1], $row[2], $row[3]))
+    }
+    foreach ($row in @(
+        @($ofp2, 'PulsarFab regain Deep Sky Dad OFP2', 'uninsdeletekey'),
+        @("$ofp2\LocalServer32", '"{app}\Regain.Ofp2.ASCOM.exe" /Embedding', ''),
+        @("$ofp2\ProgID", 'ASCOM.Regain.OFP2.CoverCalibrator', ''),
+        @('Software\Classes\ASCOM.Regain.OFP2.CoverCalibrator', 'PulsarFab regain Deep Sky Dad OFP2', 'uninsdeletekey'),
+        @('Software\Classes\ASCOM.Regain.OFP2.CoverCalibrator\CLSID', '{{8E24512B-6BC6-4A44-9488-53E63C68CCB7}', ''),
+        @('Software\ASCOM\CoverCalibrator Drivers\ASCOM.Regain.OFP2.CoverCalibrator', 'PulsarFab regain Deep Sky Dad OFP2', 'uninsdeletekey')
     )) {
         $registry.Add(('Root: {0}; Subkey: "{1}"; ValueType: string; ValueName: ""; ValueData: "{2}"; Flags: {3}' -f $root, $row[0], $row[1].Replace('"','""'), $row[2]))
     }

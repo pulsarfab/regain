@@ -56,6 +56,7 @@ Name: "{group}\Camera setup"; Filename: "{app}\Regain.ASCOM.Register.exe"
 Name: "{group}\CAA rotator setup"; Filename: "{app}\Regain.ASCOM.Register.exe"; Parameters: "/rotator"
 Name: "{group}\EFW filter wheel setup"; Filename: "{app}\Regain.ASCOM.Register.exe"; Parameters: "/filterwheel"
 Name: "{group}\FocusCube3 setup"; Filename: "{app}\Regain.FocusCube.ASCOM.exe"; Parameters: "/setup"
+Name: "{group}\OFP2 cover and flat panel setup"; Filename: "{app}\Regain.Ofp2.ASCOM.exe"; Parameters: "/setup"
 Name: "{group}\EAF focuser setup"; Filename: "{app}\Regain.ASCOM.Register.exe"; Parameters: "/focuser"
 Name: "{group}\Documentation"; Filename: "https://github.com/pulsarfab/regain/blob/main/docs/ascom.md"
 
