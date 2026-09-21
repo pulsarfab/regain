@@ -12,13 +12,13 @@ panels to **NINA**, **native Windows ASCOM**, and **ASCOM Alpaca**. Rust workers
 isolate camera SDK failures, recover interrupted downloads, and control supported
 USB and serial devices directly. Choose the integration that fits your setup.
 
-[Documentation](https://pulsarfab.com/docs/) ·
+[Documentation](https://pulsarfab.com/docs/regain/) ·
 [Downloads](https://github.com/pulsarfab/regain/releases/latest) ·
-[Install & upgrade](https://pulsarfab.com/docs/install.html) ·
+[Install & upgrade](https://pulsarfab.com/docs/regain/install.html) ·
 [Supported hardware](#supported-hardware)
 
 Formerly **ZWOgain**. Existing plugin and ASCOM identities are preserved;
-settings migrate automatically. See the [upgrade guide](https://pulsarfab.com/docs/install.html#upgrade).
+settings migrate automatically. See the [upgrade guide](https://pulsarfab.com/docs/regain/install.html#upgrade).
 
 ## What do you want to do?
 
@@ -49,7 +49,7 @@ Your imaging application waits while regain handles a recoverable failure.
 These limits are configurable; zero disables a retry type. Exhausted recovery
 returns an error to the application. Optional Direct USB → SDK fallback still
 obeys the replacement-exposure limit.
-[Camera setup and recovery](https://pulsarfab.com/docs/cameras.html).
+[Camera setup and recovery](https://pulsarfab.com/docs/regain/cameras.html).
 
 ### Harden USB transfers and use the camera without its SDK
 
@@ -82,7 +82,7 @@ Windows and macOS builds are also available. One server manages the rig while
 separate workers isolate device access. Linux/macOS physical USB validation is
 still incomplete; see [platform requirements](docs/portable-rust.md).
 
-[Headless and LAN setup](https://pulsarfab.com/docs/alpaca.html) includes USB
+[Headless and LAN setup](https://pulsarfab.com/docs/regain/alpaca.html) includes USB
 permissions, service startup, stable device profiles, and discovery. The server
 has no authentication: use a trusted LAN, not public internet exposure.
 
@@ -96,7 +96,7 @@ by serial; a missing saved camera is not silently replaced.
 
 For network use, configure camera slots on the Alpaca server. Device numbers and
 UUIDs remain stable when changing a slot's physical camera.
-[Multiple-camera setup](https://pulsarfab.com/docs/ascom.html).
+[Multiple-camera setup](https://pulsarfab.com/docs/regain/ascom.html).
 
 ### Keep the ASCOM side small
 
@@ -110,8 +110,8 @@ FocusCube3 ASCOM clients share one local COM server and one serial worker across
 Alpaca, and Pegasus Unity is deferred; those frontends still need exclusive
 ownership relative to one another. NINA can select the ASCOM focuser when sharing
 with another ASCOM client is needed.
-[Native ASCOM setup](https://pulsarfab.com/docs/ascom.html) ·
-[FocusCube3 sharing](https://pulsarfab.com/docs/focuscube3.html#sharing).
+[Native ASCOM setup](https://pulsarfab.com/docs/regain/ascom.html) ·
+[FocusCube3 sharing](https://pulsarfab.com/docs/regain/focuscube3.html#sharing).
 
 ## Integration points
 
@@ -158,10 +158,10 @@ removal or power loss. Older EAF firmware, EAF Pro/Bluetooth, and dual-disc whee
 are unsupported. Direct live view and trigger modes are not implemented.
 A full ASCOM ConformU run remains outstanding.
 
-Device guides: [cameras](https://pulsarfab.com/docs/cameras.html) ·
-[CAA, EFW & EAF](https://pulsarfab.com/docs/accessories.html) ·
-[FocusCube3](https://pulsarfab.com/docs/focuscube3.html) ·
-[OFP2](https://pulsarfab.com/docs/ofp2.html).
+Device guides: [cameras](https://pulsarfab.com/docs/regain/cameras.html) ·
+[CAA, EFW & EAF](https://pulsarfab.com/docs/regain/accessories.html) ·
+[FocusCube3](https://pulsarfab.com/docs/regain/focuscube3.html) ·
+[OFP2](https://pulsarfab.com/docs/regain/ofp2.html).
 
 ## Get started
 
@@ -171,7 +171,7 @@ Add `https://nina-plugins.pulsarfab.com/` as a plugin source, install
 **PulsarFab regain**, and restart NINA. Select your device, open its setup gear,
 and save the physical camera or accessory serial before connecting.
 The existing `https://nina-plugins.psf-guard.com/` source serves the same feed.
-[NINA walkthrough](https://pulsarfab.com/docs/nina.html).
+[NINA walkthrough](https://pulsarfab.com/docs/regain/nina.html).
 
 ### Windows ASCOM setup
 
@@ -180,7 +180,7 @@ Download `Regain-ASCOM-<version>-win-x64-setup.exe` from
 10 or later x64, .NET Framework 4.8, and ASCOM Platform; cameras also need the ZWO
 Windows camera driver. Close device-control apps, run setup as administrator,
 and choose a regain device in the ASCOM Chooser.
-[Installation and portable registration](https://pulsarfab.com/docs/ascom.html) ·
+[Installation and portable registration](https://pulsarfab.com/docs/regain/ascom.html) ·
 [Build the installer](#build-from-source).
 
 ### Alpaca setup
@@ -196,12 +196,12 @@ the matching `regain-rust-*` CI artifact or a source build, then run
 `./regain-alpaca --port 11111`. Keep the server, workers, and any required SDK
 library together. For LAN access, add `--listen <host-LAN-IPv4>` and allow the
 HTTP port plus UDP 32227 for discovery.
-[Full Alpaca setup](https://pulsarfab.com/docs/alpaca.html).
+[Full Alpaca setup](https://pulsarfab.com/docs/regain/alpaca.html).
 
 <a id="settings-and-logs"></a>
 
 For profile locations, port ownership, and logs, see
-[settings & troubleshooting](https://pulsarfab.com/docs/troubleshooting.html).
+[settings & troubleshooting](https://pulsarfab.com/docs/regain/troubleshooting.html).
 Manual upgrades from ZWOgain should remove the old NINA plugin folder before
 extracting the new package; keep saved equipment profiles.
 
