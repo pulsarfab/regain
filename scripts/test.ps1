@@ -23,6 +23,8 @@ try {
     if ($LASTEXITCODE) { throw 'Alpaca rotator tests failed' }
     python scripts/test-alpaca-accessories.py
     if ($LASTEXITCODE) { throw 'Alpaca accessory tests failed' }
+    python scripts/test-alpaca-focusers.py
+    if ($LASTEXITCODE) { throw 'Dynamic focuser tests failed' }
     python scripts/test-ofp2.py
     if ($LASTEXITCODE) { throw 'OFP2 serial and Alpaca tests failed' }
     python scripts/test-fc3.py

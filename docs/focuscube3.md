@@ -22,10 +22,11 @@ Selection uses the USB serial number, not the current COM number.
   menu's **FocusCube3 setup** opens the same styled dialog through the shared
   server. Both 32-bit and 64-bit clients are supported. Alpaca is not required.
 * **Alpaca:** start `regain-alpaca --port 11111` and open
-  `http://127.0.0.1:11111/setup/v1/focuser/1/setup`. Find/select the device,
+  `http://127.0.0.1:11111/setup/focusers` and add a FocusCube3 slot. Find/select the device,
   connect for setup, then disconnect setup before closing the page. Select
-  **PulsarFab regain Pegasus FocusCube3**, Focuser device **1**, in the client. EAF
-  remains Focuser device 0. Only a configured FC3 appears in management discovery.
+  the saved slot name and number in the client. Multiple FocusCube3s can have
+  separate slots. Only selected devices appear in management discovery; see
+  [multiple focusers](focusers.md) for stable IDs and migration.
 
 The native setup dialog uses the same WPF theme as the CAA/EAF drivers, and
 inherits NINA's theme when hosted there. These screenshots use the attached

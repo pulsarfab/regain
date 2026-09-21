@@ -101,6 +101,7 @@ impl Profile {
     }
 }
 pub struct Profiles {
+    pub focusers: crate::focuser::Slots,
     path: Option<PathBuf>,
     values: Mutex<Vec<Profile>>,
 }
@@ -126,6 +127,7 @@ impl Profiles {
             ensure!(ids.insert(&p.unique_id), "Duplicate camera ID");
         }
         let profiles = Self {
+            focusers: crate::focuser::Slots::new(path.clone())?,
             path,
             values: Mutex::new(values),
         };

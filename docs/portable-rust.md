@@ -186,7 +186,7 @@ the explicit simulator; physical testing so far is Windows only.
 ## Wanderer Astro ETA M54 (source/CI)
 
 [ETA setup and protocol](eta.md) covers the SDK-free Rust worker, native NINA
-provider, shared Windows ASCOM focuser, and Alpaca focuser 2. Back-focus moves
+provider, shared Windows ASCOM focuser, and a configurable [Alpaca focuser slot](focusers.md). Back-focus moves
 preserve tilt; setup exposes individual points. Select by serial port. No
 hardware halt command is documented. Physical identity and encoder reads are
 verified; movement validation is pending.

@@ -66,7 +66,7 @@ def main():
             return json.load(urllib.request.urlopen(urllib.request.Request(base+path, None if body is None else json.dumps(body).encode(), {'Content-Type':'application/json', 'Origin':base}), timeout=10))
         def api(member, body=None, client=701, error=None):
             query = urllib.parse.urlencode({'ClientID':client, **(body or {})})
-            url = base+'/api/v1/focuser/2/'+member
+            url = base+f'/api/v1/focuser/{slot}/'+member
             req = urllib.request.Request(url+'?'+query) if body is None else urllib.request.Request(url, query.encode(), {'Content-Type':'application/x-www-form-urlencoded'}, method='PUT')
             r = json.load(urllib.request.urlopen(req, timeout=10))
             assert r['ErrorNumber'] == (error or 0), r
@@ -74,12 +74,15 @@ def main():
         def status(): return json.loads(api('action', {'Action':'Regain.Status','Parameters':''}))
         try:
             for _ in range(100):
-                try: state=web('/setup/api/accessory/eta'); break
+                try: web('/setup/api/focusers'); break
                 except OSError: time.sleep(.1)
             else: raise AssertionError('Server did not start')
+            slot=web('/setup/api/focusers',{'kind':'eta'})['slot']
+            setup=f'/setup/api/focusers/{slot}'
+            state=web(setup)
             state['profile']['serial']=serial
-            web('/setup/api/accessory/eta',state['profile'])
-            assert any(d['DeviceType']=='Focuser' and d['DeviceNumber']==2 for d in web('/management/v1/configureddevices')['Value'])
+            web(setup,state['profile'])
+            assert any(d['DeviceType']=='Focuser' and d['DeviceNumber']==slot for d in web('/management/v1/configureddevices')['Value'])
             api('connected',{'Connected':True})
             api('connected',{'Connected':True},client=702)
             api('connected',{'Connected':False},client=702)

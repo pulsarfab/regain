@@ -1,0 +1,7 @@
+"use strict";
+const $=id=>document.getElementById(id);
+async function api(body){const r=await fetch('/setup/api/focusers',body===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const v=await r.json();if(!r.ok)throw Error(v.error||r.statusText);return v;}
+async function load(){try{const rows=await api();$('focusers').replaceChildren();if(!rows.length){const p=document.createElement('p');p.textContent='No focusers configured. Add your first device above.';$('focusers').append(p);}for(const row of rows){const section=document.createElement('div');section.className='panel';const h=document.createElement('h3');h.textContent=row.name;const p=document.createElement('p');p.textContent=`Focuser ${row.slot} · ${row.profile.serial||'No device selected'} · ${row.connected?'Connected':'Disconnected'}`;const a=document.createElement('a');a.href=`/setup/v1/focuser/${row.slot}/setup`;a.textContent='Open setup →';section.append(h,p,a);$('focusers').append(section);}}catch(e){$('status').textContent=e.message;}}
+$('add-focuser').onclick=async()=>{try{$('add-focuser').disabled=true;const row=await api({kind:$('kind').value});location.href=`/setup/v1/focuser/${row.slot}/setup`;}catch(e){$('status').textContent=e.message;$('add-focuser').disabled=false;}};
+fetch('/setup/api/state').then(r=>r.json()).then(s=>{$('simulation').hidden=!s.simulation;}).catch(()=>{});
+load();

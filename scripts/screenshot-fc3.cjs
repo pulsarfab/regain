@@ -9,12 +9,16 @@ const path = require('node:path');
   const errors=[];page.on('pageerror',e=>errors.push(e.message));
   let connected=false;
   try {
-    await page.goto(base+'/setup/v1/focuser/1/setup');
+    const rows=await (await page.request.get(base+'/setup/api/focusers')).json();
+    const matches=rows.filter(r=>r.kind==='fc3'&&r.profile.serial===serial);
+    if(matches.length!==1)throw Error('Configure exactly one FocusCube3 slot with this serial before capturing');
+    const slot=matches[0].slot;
+    await page.goto(base+`/setup/v1/focuser/${slot}/setup`);
     await page.getByText('Disconnected',{exact:true}).waitFor();
     await page.locator('#scan').click();
     await page.locator('#device option').filter({hasText:serial}).waitFor({state:'attached'});
     await page.waitForFunction(()=>!busy);
-    if(await page.locator('#device').inputValue() !== serial) await Promise.all([page.waitForResponse(r=>r.url().endsWith('/setup/api/accessory/fc3')&&r.request().method()==='POST'),page.locator('#device').selectOption(serial)]);
+    if(await page.locator('#device').inputValue() !== serial) await Promise.all([page.waitForResponse(r=>r.url().endsWith(`/setup/api/focusers/${slot}`)&&r.request().method()==='POST'),page.locator('#device').selectOption(serial)]);
     await page.waitForFunction(()=>!busy);
     await page.getByRole('button',{name:'Connect for setup',exact:true}).click();connected=true;
     await page.getByText('Connected for setup',{exact:true}).waitFor();

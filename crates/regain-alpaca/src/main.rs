@@ -13,7 +13,7 @@ async fn main() -> Result<()> {
     while let Some(arg) = args.next() {
         if arg == "--help" {
             println!(
-                "PulsarFab regain ASCOM Alpaca (Rust)\n  --listen 127.0.0.1   IPv4 address (0.0.0.0 for LAN)\n  --port 11111\n  --profiles PATH     Saved camera slots\n  --workers DIRECTORY Rust workers and SDK\n  --sdk PATH          SDK library override\n  --simulate          Simulated cameras\n  --no-discovery      Disable UDP discovery\n  --stdio             Private pipe frontend\n  --backend sdk|direct Backend for private pipe frontend\nOpen http://127.0.0.1:11111/setup to select cameras."
+                "PulsarFab regain ASCOM Alpaca (Rust)\n  --listen 127.0.0.1   IPv4 address (0.0.0.0 for LAN)\n  --port 11111\n  --profiles PATH     Saved equipment profiles\n  --workers DIRECTORY Rust workers and SDK\n  --sdk PATH          SDK library override\n  --simulate          Simulated equipment\n  --no-discovery      Disable UDP discovery\n  --stdio             Private pipe frontend\n  --backend sdk|direct Backend for private pipe frontend\nOpen http://127.0.0.1:11111/setup to configure equipment."
             );
             return Ok(());
         }

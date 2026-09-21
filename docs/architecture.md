@@ -272,3 +272,11 @@ individual tilt points through actions and setup. Its streaming telemetry and
 sequential point movement stay inside `regain-wanderer::eta`. Unlike the other serial
 accessories, selection uses a port path because the tested CH340 adapter has no
 unique hardware serial. See [ETA protocol and limits](eta.md).
+
+## Dynamic Alpaca focusers
+
+Focuser numbers identify configured instances, independent of model. The persisted
+slot registry creates separate workers and profiles for each EAF, FocusCube3, or
+ETA, including repeated models. Connection/configuration changes share a gate to
+reject duplicate physical selections. Existing profile IDs migrate without
+renumbering. See [multiple focusers](focusers.md).

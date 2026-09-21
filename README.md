@@ -225,6 +225,7 @@ To help add a camera, use the separate [CameraKit](scripts/camera-kit/README.md)
 release ZIP to collect local diagnostics and SDK USB traces. No compiler is
 needed and nothing uploads automatically.
 
+[Multiple Alpaca focusers](docs/focusers.md) ·
 [Architecture and worker protocols](docs/architecture.md) ·
 [Camera bring-up](docs/camera-bringup.md) ·
 [Accessory tracing](docs/accessories.md) ·

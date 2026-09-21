@@ -15,7 +15,7 @@ simulation; physical movement validation is pending. M92 support is not claimed.
 | --- | --- | --- |
 | Native NINA plugin | **PulsarFab regain Wanderer Astro ETA M54** under focusers | Back focus; setup gear for individual points |
 | Native Windows ASCOM | **PulsarFab regain Wanderer Astro ETA M54** under focusers | `ASCOM.Regain.ETA.Focuser`; shared serial server for 32/64-bit clients |
-| Alpaca | Focuser **2** | `/setup/v1/focuser/2/setup`; back focus and individual points |
+| Alpaca | Add an ETA under **Focusers and tilt** | `/setup/focusers`; independent slots for each device |
 | Rust | `regain-wanderer::eta` library or `regain-device wanderer eta` worker | Absolute point targets, telemetry and back focus |
 
 Regain uses the focuser interface for common back-focus movement. Position is
@@ -124,3 +124,5 @@ Reproduce the physical read-only integration checks (no motor commands):
 python scripts/test-eta.py --read-only-port COM3
 ./scripts/test-eta-ascom.ps1 -ReadOnlyPort COM3
 ```
+
+See [multiple Alpaca focusers](focusers.md) for stable device numbers and existing-profile migration.

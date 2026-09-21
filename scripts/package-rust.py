@@ -47,6 +47,7 @@ with tempfile.TemporaryDirectory(prefix="regain-package-") as temporary:
     shutil.copy2(root / "docs/architecture.md", stage / "architecture.md")
     shutil.copy2(root / "docs/ascom.md", stage / "ascom.md")
     shutil.copy2(root / "docs/accessories.md", stage / "accessories.md")
+    shutil.copy2(root / "docs/focusers.md", stage / "focusers.md")
     shutil.copy2(root / "docs/ofp2.md", stage / "ofp2.md")
     shutil.copy2(root / "docs/eta.md", stage / "eta.md")
     shutil.copy2(root / "docs/eta-evidence.json", stage / "eta-evidence.json")

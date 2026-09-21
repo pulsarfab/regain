@@ -86,20 +86,23 @@ def main():
             return json.load(urllib.request.urlopen(urllib.request.Request(base+path, encoded, headers, method=method), timeout=20))
         def api(member, values=None, client=700):
             query = urllib.parse.urlencode({'ClientID': client, **(values or {})})
-            url = base+'/api/v1/focuser/1/'+member
+            url = base+f'/api/v1/focuser/{slot}/'+member
             req = urllib.request.Request(url+'?'+query) if values is None else urllib.request.Request(url, query.encode(), {'Content-Type':'application/x-www-form-urlencoded'}, method='PUT')
             r = json.load(urllib.request.urlopen(req, timeout=20))
             assert r['ErrorNumber'] == 0, r
             return r.get('Value')
         try:
             for _ in range(100):
-                try: state=web('/setup/api/accessory/fc3'); break
+                try: web('/setup/api/focusers'); break
                 except OSError: time.sleep(.1)
             else: raise AssertionError('Alpaca did not start')
+            slot=web('/setup/api/focusers',{'kind':'fc3'})['slot']
+            setup=f'/setup/api/focusers/{slot}'
+            state=web(setup)
             state['profile']['serial']=serial
-            web('/setup/api/accessory/fc3',state['profile'])
+            web(setup,state['profile'])
             configured=web('/management/v1/configureddevices')['Value']
-            assert any(d['DeviceType']=='Focuser' and d['DeviceNumber']==1 for d in configured), configured
+            assert any(d['DeviceType']=='Focuser' and d['DeviceNumber']==slot for d in configured), configured
             api('connected',{'Connected':True}); api('connected',{'Connected':True},701)
             assert json.loads(api('action',{'Action':'ZwoGain.Identity','Parameters':''}))['model'] == 'Pegasus Astro FocusCube3'
             api('connected',{'Connected':False})
@@ -107,7 +110,7 @@ def main():
             api('connected',{'Connected':True})
             def call(command, **values):
                 if command=='status': return json.loads(api('action',{'Action':'Regain.Status','Parameters':''}))
-                if command=='settings': return web('/setup/api/accessory/fc3/settings',values)
+                if command=='settings': return web(setup+'/settings',values)
                 return api(command, {'Position': values['position']} if command=='move' else {})
             report['alpaca']=exercise(call)
             api('connected',{'Connected':False}); api('connected',{'Connected':False},701)

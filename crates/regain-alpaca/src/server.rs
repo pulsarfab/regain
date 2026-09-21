@@ -31,7 +31,8 @@ pub struct Server {
     pub profiles: Arc<Profiles>,
     pub runtime: Runtime,
     pub rotator: crate::rotator::Rotator,
-    pub accessories: [crate::accessory::Accessory; 4],
+    pub filterwheel: crate::accessory::Accessory,
+    focusers: Mutex<HashMap<usize, Arc<crate::accessory::Accessory>>>,
     pub flatpanel: crate::flatpanel::FlatPanel,
     pub log: Arc<Log>,
     devices: Mutex<HashMap<usize, Arc<Device>>>,
@@ -112,14 +113,15 @@ impl Server {
                 runtime.directory.clone(),
                 runtime.simulate,
             ),
-            accessories: ["efw", "eaf", "fc3", "eta"].map(|kind| {
-                crate::accessory::Accessory::new(
-                    kind,
-                    profiles.accessory_path(kind),
-                    runtime.directory.clone(),
-                    runtime.simulate,
-                )
-            }),
+            filterwheel: crate::accessory::Accessory::new(
+                "efw",
+                0,
+                None,
+                profiles.accessory_path("efw"),
+                runtime.directory.clone(),
+                runtime.simulate,
+            ),
+            focusers: Mutex::new(HashMap::new()),
             rotator,
             profiles,
             runtime,
@@ -128,6 +130,60 @@ impl Server {
             transaction: AtomicU32::new(0),
             connections: tokio::sync::Mutex::new(()),
         })
+    }
+    fn focuser(&self, number: usize) -> Result<Arc<crate::accessory::Accessory>> {
+        let slot = self
+            .profiles
+            .focusers
+            .get(number)
+            .ok_or_else(|| error(0x401, "Unknown focuser slot"))?;
+        Ok(self
+            .focusers
+            .lock()
+            .unwrap()
+            .entry(number)
+            .or_insert_with(|| {
+                Arc::new(crate::accessory::Accessory::new(
+                    slot.kind.worker(),
+                    number,
+                    Some(slot.unique_id.clone()),
+                    self.profiles.focusers.profile_path(&slot),
+                    self.runtime.directory.clone(),
+                    self.runtime.simulate,
+                ))
+            })
+            .clone())
+    }
+    async fn check_focuser_selection(
+        &self,
+        number: usize,
+        serial: Option<&str>,
+        active_only: bool,
+    ) -> Result<()> {
+        let target = self
+            .profiles
+            .focusers
+            .get(number)
+            .ok_or_else(|| error(0x401, "Unknown focuser slot"))?;
+        if let Some(serial) = serial {
+            for slot in self.profiles.focusers.all() {
+                if slot.number == number || slot.kind != target.kind {
+                    continue;
+                }
+                let other = self.focuser(slot.number)?.setup().await?;
+                if (!active_only || other["connected"] == true)
+                    && other["profile"]["serial"]
+                        .as_str()
+                        .is_some_and(|s| s.eq_ignore_ascii_case(serial))
+                {
+                    return Err(error(
+                        0x40b,
+                        format!("Device is already selected by focuser {}", slot.number),
+                    ));
+                }
+            }
+        }
+        Ok(())
     }
     pub fn device(&self, slot: usize) -> Result<Arc<Device>> {
         self.profiles.get(slot)?;
@@ -157,8 +213,10 @@ impl Server {
     pub async fn shutdown(&self) {
         self.flatpanel.shutdown().await;
         self.rotator.shutdown().await;
-        for accessory in &self.accessories {
-            accessory.shutdown().await;
+        self.filterwheel.shutdown().await;
+        let focusers: Vec<_> = self.focusers.lock().unwrap().values().cloned().collect();
+        for focuser in focusers {
+            focuser.shutdown().await;
         }
         for device in self.devices() {
             device.shutdown().await;
@@ -253,9 +311,33 @@ impl Server {
                 get(accessory_get).put(accessory_put),
             )
             .route("/setup/v1/filterwheel/0/setup", get(accessory_page))
-            .route("/setup/v1/focuser/0/setup", get(accessory_page))
-            .route("/setup/v1/focuser/1/setup", get(accessory_page))
-            .route("/setup/v1/focuser/2/setup", get(accessory_page))
+            .route("/setup/v1/focuser/{slot}/setup", get(focuser_page))
+            .route(
+                "/setup/focusers",
+                get(|| async { axum::response::Html(include_str!("../web/focusers.html")) }),
+            )
+            .route(
+                "/focusers.js",
+                get(|| async {
+                    (
+                        [("Content-Type", "application/javascript")],
+                        include_str!("../web/focusers.js"),
+                    )
+                }),
+            )
+            .route("/setup/api/focusers", get(focuser_list).post(focuser_add))
+            .route(
+                "/setup/api/focusers/{slot}",
+                get(focuser_setup).post(focuser_configure),
+            )
+            .route(
+                "/setup/api/focusers/{slot}/discover",
+                post(focuser_discover),
+            )
+            .route(
+                "/setup/api/focusers/{slot}/settings",
+                post(focuser_settings),
+            )
             .route(
                 "/setup/v1/covercalibrator/0/setup",
                 get(|| async { axum::response::Html(include_str!("../web/flatpanel.html")) }),
@@ -342,8 +424,15 @@ async fn management(
                 Ok(None) => (),
                 Err(e) => return Json(failure(e, id, s.next())).into_response(),
             };
-            for accessory in &s.accessories {
-                match accessory.configured().await {
+            let mut accessories = vec![s.filterwheel.configured().await];
+            for slot in s.profiles.focusers.all() {
+                accessories.push(match s.focuser(slot.number) {
+                    Ok(f) => f.configured().await,
+                    Err(e) => Err(e),
+                });
+            }
+            for accessory in accessories {
+                match accessory {
                     Ok(Some(d)) => devices.push(d),
                     Ok(None) => (),
                     Err(e) => return Json(failure(e, id, s.next())).into_response(),
@@ -680,15 +769,6 @@ async fn rotator_discover(State(s): State<Arc<Server>>, headers: HeaderMap) -> R
     setup_result(s.rotator.discover().await)
 }
 
-fn accessory_index(kind: &str) -> Option<usize> {
-    match kind {
-        "efw" | "filterwheel" => Some(0),
-        "eaf" | "focuser" => Some(1),
-        "fc3" => Some(2),
-        "eta" => Some(3),
-        _ => None,
-    }
-}
 async fn accessory_page() -> axum::response::Html<&'static str> {
     axum::response::Html(include_str!("../web/accessory.html"))
 }
@@ -730,7 +810,8 @@ async fn accessory_request(
     put: bool,
     params: Result<Params>,
 ) -> Response {
-    if !(slot == 0 || (slot <= 2 && kind == "focuser"))
+    if !((slot == 0 && kind != "focuser")
+        || (kind == "focuser" && s.profiles.focusers.get(slot).is_some()))
         || member != member.to_lowercase()
         || !["filterwheel", "focuser", "covercalibrator"].contains(&kind.as_str())
     {
@@ -742,14 +823,28 @@ async fn accessory_request(
         id = p.optional_id("ClientTransactionID")?;
         if kind == "covercalibrator" {
             s.flatpanel.request(&member, put, &p).await
-        } else {
-            s.accessories[if kind == "focuser" {
-                slot + 1
+        } else if kind == "focuser" {
+            let target = s.focuser(slot)?;
+            let _gate = if put && matches!(member.as_str(), "connected" | "link") {
+                Some(s.connections.lock().await)
             } else {
-                accessory_index(&kind).unwrap()
-            }]
-            .request(&member, put, &p)
-            .await
+                None
+            };
+            if put
+                && matches!(member.as_str(), "connected" | "link")
+                && p.boolean(if member == "link" {
+                    "Link"
+                } else {
+                    "Connected"
+                })?
+            {
+                let state = target.setup().await?;
+                s.check_focuser_selection(slot, state["profile"]["serial"].as_str(), true)
+                    .await?;
+            }
+            target.request(&member, put, &p).await
+        } else {
+            s.filterwheel.request(&member, put, &p).await
         }
     }
     .await;
@@ -760,10 +855,10 @@ async fn accessory_request(
     .into_response()
 }
 async fn accessory_setup(State(s): State<Arc<Server>>, Path(kind): Path<String>) -> Response {
-    let Some(i) = accessory_index(&kind) else {
+    if !["efw", "filterwheel"].contains(&kind.as_str()) {
         return StatusCode::NOT_FOUND.into_response();
-    };
-    setup_result(s.accessories[i].setup().await)
+    }
+    setup_result(s.filterwheel.setup().await)
 }
 async fn flatpanel_setup(State(s): State<Arc<Server>>) -> Response {
     setup_result(s.flatpanel.setup().await)
@@ -793,10 +888,10 @@ async fn accessory_configure(
     if !setup_allowed(&headers) {
         return StatusCode::FORBIDDEN.into_response();
     }
-    let Some(i) = accessory_index(&kind) else {
+    if !["efw", "filterwheel"].contains(&kind.as_str()) {
         return StatusCode::NOT_FOUND.into_response();
-    };
-    setup_result(s.accessories[i].configure(value).await)
+    }
+    setup_result(s.filterwheel.configure(value).await)
 }
 async fn accessory_discover(
     State(s): State<Arc<Server>>,
@@ -806,10 +901,10 @@ async fn accessory_discover(
     if !setup_allowed(&headers) {
         return StatusCode::FORBIDDEN.into_response();
     }
-    let Some(i) = accessory_index(&kind) else {
+    if !["efw", "filterwheel"].contains(&kind.as_str()) {
         return StatusCode::NOT_FOUND.into_response();
-    };
-    setup_result(s.accessories[i].discover().await)
+    }
+    setup_result(s.filterwheel.discover().await)
 }
 async fn accessory_settings(
     State(s): State<Arc<Server>>,
@@ -820,10 +915,106 @@ async fn accessory_settings(
     if !setup_allowed(&headers) {
         return StatusCode::FORBIDDEN.into_response();
     }
-    let Some(i) = accessory_index(&kind) else {
+    if !["efw", "filterwheel"].contains(&kind.as_str()) {
         return StatusCode::NOT_FOUND.into_response();
-    };
-    setup_result(s.accessories[i].settings(value).await)
+    }
+    setup_result(s.filterwheel.settings(value).await)
+}
+
+async fn focuser_page(State(s): State<Arc<Server>>, Path(slot): Path<usize>) -> Response {
+    if s.profiles.focusers.get(slot).is_none() {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    accessory_page().await.into_response()
+}
+async fn focuser_list(State(s): State<Arc<Server>>) -> Response {
+    setup_result(
+        async {
+            let mut rows = Vec::new();
+            for slot in s.profiles.focusers.all() {
+                rows.push(s.focuser(slot.number)?.setup().await?);
+            }
+            Ok(json!(rows))
+        }
+        .await,
+    )
+}
+async fn focuser_add(
+    State(s): State<Arc<Server>>,
+    headers: HeaderMap,
+    Json(value): Json<Value>,
+) -> Response {
+    if !setup_allowed(&headers) {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    setup_result((|| {
+        let kind = serde_json::from_value(value["kind"].clone())?;
+        Ok(json!({"slot":s.profiles.focusers.add(kind)?}))
+    })())
+}
+async fn focuser_setup(State(s): State<Arc<Server>>, Path(slot): Path<usize>) -> Response {
+    setup_result(async { s.focuser(slot)?.setup().await }.await)
+}
+async fn focuser_configure(
+    State(s): State<Arc<Server>>,
+    Path(slot): Path<usize>,
+    headers: HeaderMap,
+    Json(value): Json<Value>,
+) -> Response {
+    if !setup_allowed(&headers) {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    let _gate = s.connections.lock().await;
+    setup_result(
+        async {
+            s.check_focuser_selection(slot, value["serial"].as_str(), false)
+                .await?;
+            s.focuser(slot)?.configure(value).await
+        }
+        .await,
+    )
+}
+async fn focuser_discover(
+    State(s): State<Arc<Server>>,
+    Path(slot): Path<usize>,
+    headers: HeaderMap,
+) -> Response {
+    if !setup_allowed(&headers) {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    let _gate = s.connections.lock().await;
+    setup_result(
+        async {
+            let target = s
+                .profiles
+                .focusers
+                .get(slot)
+                .ok_or_else(|| error(0x401, "Unknown focuser slot"))?;
+            for other in s.profiles.focusers.all() {
+                if other.kind == target.kind
+                    && s.focuser(other.number)?.setup().await?["connected"] == true
+                {
+                    return Err(error(
+                        0x40b,
+                        "Disconnect focusers of this model before scanning",
+                    ));
+                }
+            }
+            s.focuser(slot)?.discover().await
+        }
+        .await,
+    )
+}
+async fn focuser_settings(
+    State(s): State<Arc<Server>>,
+    Path(slot): Path<usize>,
+    headers: HeaderMap,
+    Json(value): Json<Value>,
+) -> Response {
+    if !setup_allowed(&headers) {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    setup_result(async { s.focuser(slot)?.settings(value).await }.await)
 }
 
 pub async fn discovery(address: Ipv4Addr, port: u16, token: CancellationToken) -> Result<()> {

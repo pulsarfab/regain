@@ -46,7 +46,10 @@ with tempfile.TemporaryDirectory(prefix='regain-accessories-') as directory:
                     assert process.poll() is None and time.monotonic()<deadline
                     time.sleep(.05)
             for kind,device,version in [('efw','filterwheel',2),('eaf','focuser',3)]:
-                setup='/setup/api/accessory/'+kind
+                if kind=='eaf':
+                    slot=request('/setup/api/focusers',{'kind':'eaf'})['slot']
+                    assert slot==0
+                setup='/setup/api/accessory/efw' if kind=='efw' else '/setup/api/focusers/0'
                 assert api(device,'interfaceversion')==version
                 assert ('Regain.Calibrate' in api(device,'supportedactions')) == (kind=='efw')
                 api(device,'position',error=0x407)
@@ -118,7 +121,7 @@ with tempfile.TemporaryDirectory(prefix='regain-accessories-') as directory:
                 api(device,'action',{'Action':'bad','Parameters':''},error=0x40c)
                 api(device,'connected',{'Connected':False},client=2)
                 api(device,'connected',{'Connected':False})
-                saved=json.loads(profiles.with_suffix('.'+kind+'.json').read_text())
+                saved=json.loads(profiles.with_suffix('.efw.json' if kind=='efw' else '.focuser-0.json').read_text())
                 assert saved['serial']==profile['serial']
                 if kind=='efw':
                     saved['names'][0]='Luminance';saved['focusOffsets'][1]=25

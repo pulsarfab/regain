@@ -13,6 +13,7 @@ use tokio::{io::BufReader, process::Command, sync::Mutex};
 #[serde(default, rename_all = "camelCase", deny_unknown_fields)]
 pub struct Profile {
     pub serial: Option<String>,
+    pub label: Option<String>,
     pub unique_id: String,
     pub names: Vec<String>,
     pub focus_offsets: Vec<i32>,
@@ -22,6 +23,7 @@ impl Default for Profile {
     fn default() -> Self {
         Self {
             serial: None,
+            label: None,
             unique_id: uuid::Uuid::new_v4().to_string(),
             names: vec![],
             focus_offsets: vec![],
@@ -37,6 +39,8 @@ struct State {
 }
 pub struct Accessory {
     kind: &'static str,
+    number: usize,
+    registry_id: Option<String>,
     path: Option<PathBuf>,
     executable: PathBuf,
     simulate: bool,
@@ -45,17 +49,24 @@ pub struct Accessory {
 impl Accessory {
     pub fn new(
         kind: &'static str,
+        number: usize,
+        unique_id: Option<String>,
         path: Option<PathBuf>,
         directory: PathBuf,
         simulate: bool,
     ) -> Self {
         Self {
             kind,
+            number,
+            registry_id: unique_id.clone(),
             path,
             executable: directory.join(format!("regain-device{}", std::env::consts::EXE_SUFFIX)),
             simulate,
             state: Mutex::new(State {
-                profile: Profile::default(),
+                profile: Profile {
+                    unique_id: unique_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
+                    ..Profile::default()
+                },
                 loaded: false,
                 worker: None,
                 clients: HashSet::new(),
@@ -80,6 +91,10 @@ impl Accessory {
             {
                 s.profile = serde_json::from_slice(&std::fs::read(path)?)?;
             }
+            // The focuser registry owns identity, even after restoring a profile file.
+            if let Some(id) = &self.registry_id {
+                s.profile.unique_id = id.clone();
+            }
             ensure!(
                 uuid::Uuid::parse_str(&s.profile.unique_id).is_ok(),
                 "invalid accessory UUID"
@@ -90,6 +105,12 @@ impl Accessory {
         Ok(())
     }
     fn validate(&self, p: &Profile) -> Result<()> {
+        ensure!(
+            p.label
+                .as_ref()
+                .is_none_or(|s| !s.trim().is_empty() && s.len() <= 100),
+            error(0x401, "Use a nonempty focuser name up to 100 characters")
+        );
         ensure!(
             p.serial.as_ref().is_none_or(|s| if self.kind == "eta" {
                 !s.is_empty()
@@ -157,7 +178,7 @@ impl Accessory {
         let mut s = self.state.lock().await;
         self.load(&mut s)?;
         Ok(
-            json!({"profile":s.profile,"connected":!s.clients.is_empty(),"simulation":self.simulate}),
+            json!({"profile":s.profile,"kind":self.kind,"slot":self.number,"name":s.profile.label.as_deref().unwrap_or(self.name()),"connected":!s.clients.is_empty(),"simulation":self.simulate}),
         )
     }
     pub async fn configure(&self, value: Value) -> Result<Value> {
@@ -198,7 +219,7 @@ impl Accessory {
     pub async fn configured(&self) -> Result<Option<Value>> {
         let mut s = self.state.lock().await;
         self.load(&mut s)?;
-        Ok(s.profile.serial.as_ref().map(|_|json!({"DeviceName":self.name(),"DeviceType":if self.kind=="efw"{"FilterWheel"}else{"Focuser"},"DeviceNumber":if self.kind=="eta"{2}else if self.kind=="fc3"{1}else{0},"UniqueID":s.profile.unique_id})))
+        Ok(s.profile.serial.as_ref().map(|_|json!({"DeviceName":s.profile.label.as_deref().unwrap_or(self.name()),"DeviceType":if self.kind=="efw"{"FilterWheel"}else{"Focuser"},"DeviceNumber":self.number,"UniqueID":s.profile.unique_id})))
     }
     async fn connect(&self, s: &mut State, client: u32, on: bool) -> Result<()> {
         if !on {
@@ -285,7 +306,9 @@ impl Accessory {
         }
         if !put {
             match member {
-                "name" | "description" => return Ok(json!(self.name())),
+                "name" | "description" => {
+                    return Ok(json!(s.profile.label.as_deref().unwrap_or(self.name())));
+                }
                 "driverinfo" => return Ok(json!("PulsarFab regain SDK-free native USB driver")),
                 "driverversion" => return Ok(json!(env!("CARGO_PKG_VERSION"))),
                 "interfaceversion" => return Ok(json!(if self.kind == "efw" { 2 } else { 3 })),

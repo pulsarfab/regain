@@ -21,7 +21,7 @@ try {
         Copy-Item -LiteralPath (Join-Path $repo 'docs/ascom.md') -Destination (Join-Path $stage 'README.md')
         Copy-Item -LiteralPath (Join-Path $repo 'docs/accessories.md') -Destination $stage
         Copy-Item -LiteralPath (Join-Path $repo 'docs/ofp2.md') -Destination $stage
-        foreach ($file in 'focuscube3.md','focuscube3-evidence.json','focuscube3-serial.jsonl','eta.md','eta-evidence.json','eta-serial.jsonl') { Copy-Item -LiteralPath (Join-Path $repo ('docs/' + $file)) -Destination $stage }
+        foreach ($file in 'focusers.md','focuscube3.md','focuscube3-evidence.json','focuscube3-serial.jsonl','eta.md','eta-evidence.json','eta-serial.jsonl') { Copy-Item -LiteralPath (Join-Path $repo ('docs/' + $file)) -Destination $stage }
         Copy-Item -LiteralPath (Join-Path $repo 'docs/ofp2-evidence.json') -Destination $stage
         Copy-Item -LiteralPath (Join-Path $repo 'docs/accessory-evidence.json') -Destination $stage
         Copy-Item -LiteralPath (Join-Path $repo 'docs/images') -Destination $stage -Recurse

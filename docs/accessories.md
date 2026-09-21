@@ -77,18 +77,18 @@ Simulation is never an automatic hardware fallback.
 ## Alpaca setup
 
 Start `regain-alpaca` as described in the main README. On its setup page choose
-**EFW filter wheel setup** or **EAF focuser setup**, discover devices, select the
+**EFW filter wheel setup**, or add an EAF under **Focusers and tilt**. Discover devices, select the
 serial, and connect for setup. Disconnect the setup client after editing.
 
 | Device | Setup page | Alpaca API |
 | --- | --- | --- |
 | EFW | `/setup/v1/filterwheel/0/setup` | `/api/v1/filterwheel/0/` |
-| EAF | `/setup/v1/focuser/0/setup` | `/api/v1/focuser/0/` |
+| EAF | `/setup/v1/focuser/N/setup` | `/api/v1/focuser/N/` |
 
-Each type exposes device number 0 and appears in management discovery after
-selection. With `--profiles cameras.json`, accessory profiles are
-`cameras.efw.json` and `cameras.eaf.json`. UUIDs remain stable when profiles are
-edited. Both expose read-only `Regain.Status` and `Regain.Identity` actions.
+EFW uses device number 0. Each EAF uses its saved focuser slot number N.
+Both appear in management discovery after selection. See [multiple focusers](focusers.md)
+for adding same-model devices, profile storage, and migration. UUIDs remain stable
+when profiles are edited. Both expose read-only `Regain.Status` and `Regain.Identity` actions.
 The EFW also exposes `Regain.Calibrate` and a **Calibrate wheel** button.
 The EAF web page supports the same hardware settings as the WPF dialog.
 

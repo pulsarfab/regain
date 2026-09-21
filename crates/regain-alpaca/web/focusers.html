@@ -1,0 +1,7 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>PulsarFab regain · Focusers</title><link rel="icon" href="/regain.png"><link rel="stylesheet" href="/style.css"><script src="/focusers.js" defer></script></head>
+<body><header><img src="/regain.png" alt="PulsarFab regain"><div><h1><span class="brand-maker">PulsarFab</span> regain</h1><p>ASCOM Alpaca · Focusers and tilt</p></div><span id="simulation" hidden>Simulation</span></header>
+<main><aside><h2>Equipment</h2><p><a href="/setup">Cameras →</a></p><p><a href="/setup/v1/rotator/0/setup">CAA rotator →</a></p><p><a href="/setup/v1/filterwheel/0/setup">EFW filter wheel →</a></p><p><a href="/setup/v1/covercalibrator/0/setup">OFP2 flat panel →</a></p></aside>
+<section class="workspace"><div class="title"><div><h2>Focusers and tilt</h2><p>Add a slot for each focuser, including multiple devices of the same model.</p></div></div><p id="status" role="status" aria-live="polite"></p>
+<div class="panel"><h3>Add a focuser</h3><label>Model<select id="kind"><option value="eaf">ZWO EAF</option><option value="fc3">Pegasus FocusCube3</option><option value="eta">Wanderer Astro ETA M54</option></select></label><button id="add-focuser" class="primary">Add focuser</button><p class="hint">Each slot keeps its Alpaca number. Select a serial number or port in setup; USB discovery order never changes your client connections.</p></div>
+<div id="focusers"></div></section></main><footer>PulsarFab regain · Apache 2.0</footer></body></html>
