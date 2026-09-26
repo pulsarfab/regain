@@ -206,8 +206,19 @@ mod tests {
             assert!(describe(&device, &config[..length], 0).is_err());
         }
         let mut bad = config;
-        bad[18] = 0;
-        assert!(describe(&device, &bad, 0).is_err());
+        // A zero-length unknown item caused a non-progressing loop in the vendor
+        // SDK incident shared by AutoPierCam. Validate length before dispatching
+        // even unknown descriptor types; never skip them without advancing.
+        for length in [0, 1, 255] {
+            bad[18] = length;
+            bad[19] = 0xff;
+            assert!(
+                describe(&device, &bad, 0)
+                    .unwrap_err()
+                    .to_string()
+                    .contains("invalid descriptor chain")
+            );
+        }
         bad = config;
         bad[19] = 48;
         assert!(describe(&device, &bad, 0).is_err());

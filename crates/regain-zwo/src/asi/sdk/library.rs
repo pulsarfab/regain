@@ -65,6 +65,10 @@ impl Sdk {
         self.id.context("camera is not open")
     }
     pub fn list(&self) -> Result<Value> {
+        ensure!(
+            self.id.is_none(),
+            "SDK discovery is unavailable while a camera is open; use the cached camera list"
+        );
         let mut cameras = Vec::new();
         unsafe {
             let count =
@@ -78,7 +82,9 @@ impl Sdk {
                     ),
                     "property",
                 )?;
-                // Enumeration deliberately does not open cameras owned by another driver.
+                // ASIGetCameraProperty can internally call ASIOpenCamera (SDK 1.41).
+                // This is an active device probe, NOT harmless metadata enumeration.
+                // See docs/sdk-lifecycle.md; callers must not poll this while imaging.
                 // C char can be signed or unsigned; preserve the original bytes.
                 let name = String::from_utf8_lossy(
                     &info

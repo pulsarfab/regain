@@ -36,6 +36,58 @@ retries by default regardless of exposure duration. This is an attempt to
 recover an available frame, not a guarantee that the SDK retains one. A failed
 status probe or a stalled download instead causes host replacement.
 
+## Discovery is an active hardware operation
+
+Evidence shared from [AutoPierCam PR #12](https://github.com/theatrus/autopiercam/pull/12),
+2026-09-26, SDK 1.41.0.0: a capture-owner process dump showed
+`ASIGetCameraProperty -> ASIOpenCamera -> internal SDK code` during periodic
+inventory refresh. Disassembly verified the call from the property export into
+the open export. An internal parsing loop advanced by a zero-length item and did
+not make progress. Discovery was querying camera index/ID 1 while capture used
+ID 0. Private symbols were unavailable; large nearest-export offsets do not
+identify the internal function. The source of the invalid data is not established.
+
+The operator subsequently reported other ZWO cameras on the same system stopped
+working too. This is an observed wider symptom, not proof of a particular USB
+controller, kernel-driver or firmware failure. Killing a worker contains its
+user-space hang; it does not guarantee recovery of other cameras or the USB stack.
+No process dump, credentials, images or private log paths are published here.
+
+Consequences for Regain and integrations:
+
+- Never treat `ASIGetCameraProperty` as passive enumeration, even if application
+  code does not explicitly call `ASIOpenCamera`. Do not periodically enumerate
+  the SDK during live imaging, settling, or connected-idle intervals.
+- SDK workers now reject `list` while connected, before entering the SDK. The
+  library wrapper independently checks open ownership. Clients should retain
+  discovery results; a refresh button must not silently probe hardware.
+- This is a **per-worker guard**, not a system-wide interlock. `Runtime::list`
+  creates another worker and a new connection still enumerates before opening.
+  Such requests can probe cameras owned by other processes. Integrators must
+  schedule SDK discovery before imaging; process isolation does not make these
+  probes harmless. Cross-process discovery coordination / passive inventory and
+  targeted identity resolution remain follow-up work.
+- Regain already uses separate workers with parent-side command deadlines and
+  termination. Keep deadlines independent of SDK code, and never reopen before
+  the prior owner has exited. A successful IPC exchange or other device telemetry
+  is not evidence that frames are advancing.
+- The direct USB descriptor parser already rejects lengths below two or beyond
+  the remaining buffer before type dispatch. Regression cases now explicitly
+  cover unknown-type items with zero, one, and oversized lengths, guarding the
+  same non-progressing-loop class without claiming the SDK's private parser is
+  identical to Regain's descriptor parser.
+- Keep destructive USB port resets/cycles explicit and device-scoped. Do not
+  automatically reset an entire hub or controller to recover one pier camera.
+- Preserve numeric errors, operation phases and monotonic frame-progress timing.
+  Test stalled calls, shutdown and no-rescan behavior with simulation/fixtures,
+  not live discovery on an imaging system.
+
+AutoPierCam's intended migration is to Regain's **Direct USB** backend once
+ASI662MC capture, identity, exposure limits and day/night soak behavior are
+implemented and validated. Choosing Regain's SDK backend alone does not remove
+this SDK discovery risk. ASI676MC has experimental direct support; that does not
+establish support for ASI662MC or identical long-exposure limits.
+
 ## Undocumented debug exports
 
 PE export inspection of the supplied DLL found:
