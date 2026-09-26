@@ -58,6 +58,12 @@ impl Host {
         let mut bytes = Vec::new();
         let value = match method {
             "list" => {
+                // Reject before any SDK call, including while connected but idle.
+                // The SDK's property lookup may open unrelated connected devices.
+                ensure!(
+                    !self.opened,
+                    "SDK discovery is unavailable while a camera is open; use the cached camera list"
+                );
                 if let Some(s) = &self.sdk {
                     s.list()?
                 } else {
@@ -65,6 +71,7 @@ impl Host {
                 }
             }
             "open" => {
+                ensure!(!self.opened, "already open");
                 let name = p["name"].as_str().unwrap_or("");
                 let v = if let Some(s) = &mut self.sdk {
                     s.open(name, p["serial"].as_str())?
@@ -359,6 +366,39 @@ pub fn run(args: Vec<String>) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sdk_discovery_is_rejected_until_camera_is_closed() {
+        let mut host = Host {
+            sdk: None,
+            exposure: None,
+            started: None,
+            values: json!({}),
+            fault: String::new(),
+            opened: false,
+            sim_info: json!({"name":"test camera"}),
+            sim_instant: true,
+        };
+        assert!(host.command("list", Value::Null).is_ok());
+        host.command("open", json!({"name":"test camera"})).unwrap();
+        assert!(
+            host.command("list", Value::Null)
+                .unwrap_err()
+                .to_string()
+                .contains("cached camera list")
+        );
+        assert!(host.command("open", json!({"name":"test camera"})).is_err());
+        host.command(
+            "start",
+            json!({"width":128,"height":128,"bin":1,"x":0,"y":0,"microseconds":1000,"dark":true}),
+        )
+        .unwrap();
+        assert!(host.command("list", Value::Null).is_err());
+        host.command("download", Value::Null).unwrap();
+        assert!(host.command("list", Value::Null).is_err());
+        host.command("close", Value::Null).unwrap();
+        assert!(host.command("list", Value::Null).is_ok());
+    }
     #[test]
     fn frame_bounds() {
         let mut e = Exposure {

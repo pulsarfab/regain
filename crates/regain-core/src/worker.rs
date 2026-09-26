@@ -90,6 +90,10 @@ impl Runtime {
         }
         Ok(worker)
     }
+    /// SDK discovery is active hardware probing, even in a short-lived worker:
+    /// ASIGetCameraProperty can internally open cameras owned by other processes.
+    /// Cache results and schedule SDK discovery before imaging, not as live polling.
+    /// Worker isolation bounds user-space calls, not side effects on shared USB.
     pub async fn list(
         &self,
         direct: bool,

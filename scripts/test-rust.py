@@ -83,8 +83,11 @@ def simulated(binary_dir):
     with Worker([str(binary_dir / ("regain-device" + suffix)), "zwo", "camera-sdk", "--simulate"]) as worker:
         name = worker.call("list")[0][0]["name"]
         worker.call("open", dict(name=name))
+        worker.call("list", error=True)
         assert worker.frame(exposure)[1] == expected
+        worker.call("list", error=True)
         worker.call("close")
+        assert worker.call("list")[0][0]["name"] == name
     count = 0
     with Worker([str(binary_dir / ("regain-device" + suffix)), "zwo", "camera-direct", "--serve", "--simulate"]) as worker:
         cameras = worker.call("list")[0]
@@ -124,6 +127,7 @@ def sdk_fixture(binary_dir, library):
         assert camera["width"] == 9576 and camera["height"] == 6388
         assert camera["pixelSize"] == 3.76 and camera["bitDepth"] == 16
         result = worker.call("open", dict(name=camera["name"]))[0]
+        worker.call("list", error=True)
         assert result["sdkVersion"] == "C ABI fixture"
         assert result["controls"][0]["min"] == -123
         worker.call("set", dict(control=0, value=-42))
@@ -131,6 +135,7 @@ def sdk_fixture(binary_dir, library):
         worker.call("set", dict(control=0, value=1 << 40))
         assert worker.call("get", dict(control=0))[0] == 1 << 40
         worker.call("close")
+        assert worker.call("list")[0][0]["name"] == camera["name"]
     print("Passed: native SDK loading and C header ABI fixture")
     standalone(binary_dir, library)
 
