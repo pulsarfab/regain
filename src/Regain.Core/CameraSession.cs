@@ -124,6 +124,8 @@ public sealed class CameraSession : IDisposable
             host = usingFallback ? sdkFallbackFactory!() : factory();
             supervised = host.Supervised;
         }
+        if (!supervised && Options.UsbResetAfterFailures > 0)
+            throw new NotSupportedException("USB recovery requires the shared Rust camera supervisor.");
         applied.Clear();
         Log($"Host process {host.ProcessId}; selected serial {serial ?? "initial selection"}");
         State("Opening");
@@ -134,7 +136,7 @@ public sealed class CameraSession : IDisposable
             recovery = JsonSerializer.SerializeToElement(Options, new JsonSerializerOptions(JsonSerializerDefaults.Web)),
             allowSdkFallback = sdkFallbackFactory is not null,
             recoveryState = new { temperature = recoveryTemperature, power = recoveryPower, settle = requiresCoolingSettle }
-        }, token).ConfigureAwait(false)).Result;
+        }, token, Options.CommandTimeoutSeconds + (Options.UsbResetAfterFailures > 0 ? 60 : 0)).ConfigureAwait(false)).Result;
         var identity = result.GetProperty("serial");
         string? found = identity.ValueKind == JsonValueKind.String ? identity.GetString() : null;
         if (serial is not null && serial != found)
@@ -504,7 +506,7 @@ public sealed class CameraSession : IDisposable
             token.ThrowIfCancellationRequested();
             await Call("start", exposure, CancellationToken.None).ConfigureAwait(false);
             int replacements = exposure.microseconds / 1e6 <= Options.MaximumRetryExposureSeconds ? Options.MaxRetries : 0;
-            double budget = (replacements + 1) * (ReadyTimeoutSeconds(exposure.microseconds / 1e6) + Options.CoolingTimeoutSeconds +
+            double budget = (Options.UsbResetAfterFailures > 0 ? 150 : 0) + (replacements + 1) * (ReadyTimeoutSeconds(exposure.microseconds / 1e6) + Options.CoolingTimeoutSeconds +
                 (Options.ReadyFrameDownloadRetries + 1) * (Options.DownloadTimeoutSeconds + Options.ReconnectDelaySeconds) +
                 (2 * Controls.Count + 10) * Options.CommandTimeoutSeconds);
             var clock = Stopwatch.StartNew();

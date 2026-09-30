@@ -129,6 +129,39 @@ fn paths(model: Model) -> Result<Vec<transport::DeviceInfo>> {
         .collect())
 }
 
+pub(super) fn usb_target(name: &str, serial: &str) -> Result<()> {
+    ensure!(
+        serial.len() == 16
+            && serial.bytes().all(|c| c.is_ascii_hexdigit())
+            && serial != "0000000000000000",
+        "USB recovery requires a saved camera serial"
+    );
+    let model = Model::ALL
+        .into_iter()
+        .find(|m| m.name() == name)
+        .ok_or_else(|| anyhow::anyhow!("USB recovery is unavailable for this camera model"))?;
+    let mut targets = Vec::new();
+    for path in paths(model)? {
+        // Busy devices are not seized. Only the selected model's serial query is sent.
+        let Ok(camera) = transport::Camera::open(&path) else {
+            continue;
+        };
+        let Ok(bytes) = camera.vendor(0xc8, 0, 0, 8) else {
+            continue;
+        };
+        let found: String = bytes.iter().map(|v| format!("{v:02x}")).collect();
+        if found.eq_ignore_ascii_case(serial) {
+            targets.push(path.recovery_target(model.pid() as u16, found)?);
+        }
+    }
+    ensure!(
+        targets.len() == 1,
+        "Cannot uniquely bind USB recovery to this camera serial; close other camera owners"
+    );
+    println!("{}", targets[0].encode()?);
+    Ok(())
+}
+
 #[derive(Debug)]
 struct HardwareFailure(String);
 impl std::fmt::Display for HardwareFailure {

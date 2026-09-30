@@ -258,3 +258,10 @@ provider, shared Windows ASCOM focuser, and a configurable [Alpaca focuser slot]
 preserve tilt; setup exposes individual points. Select by serial port. No
 hardware halt command is documented. Physical identity and encoder reads are
 verified; movement validation is pending.
+
+## USB reset recovery (source/CI)
+
+Camera setup can escalate failed captures to a device-scoped USB reset on Windows
+and Linux. It is disabled by default; set the failure threshold to 2 to try an
+ordinary reconnect first. See [setup, permissions, supported cameras, and power
+limitations](usb-recovery.md).

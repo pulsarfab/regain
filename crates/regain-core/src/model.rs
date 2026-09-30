@@ -77,6 +77,10 @@ pub struct RecoveryOptions {
     pub cooling_sample_seconds: f64,
     pub ready_frame_download_retries: u32,
     pub direct_read_retries: u32,
+    /// Zero disables hardware recovery. At most one operation per capture.
+    pub usb_reset_after_failures: u32,
+    /// Linux: cycle the downstream port instead of USBDEVFS_RESET.
+    pub usb_port_cycle: bool,
 }
 impl Default for RecoveryOptions {
     fn default() -> Self {
@@ -93,6 +97,8 @@ impl Default for RecoveryOptions {
             cooling_sample_seconds: 2.,
             ready_frame_download_retries: 2,
             direct_read_retries: 2,
+            usb_reset_after_failures: 0,
+            usb_port_cycle: false,
         }
     }
 }
@@ -102,6 +108,7 @@ impl RecoveryOptions {
             self.max_retries <= 20
                 && self.ready_frame_download_retries <= 5
                 && self.direct_read_retries <= 5
+                && self.usb_reset_after_failures <= 20
                 && (1..=60).contains(&self.cooling_stable_samples),
             Failure::Invalid("Invalid retry limits".into())
         );

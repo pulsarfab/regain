@@ -19,6 +19,8 @@ try {
     if ($LASTEXITCODE) { throw 'NINA contract tests failed' }
     python scripts/test-native-camera.py
     if ($LASTEXITCODE) { throw 'Native camera IPC tests failed' }
+    python scripts/test-usb-recovery.py
+    if ($LASTEXITCODE) { throw 'USB recovery tests failed' }
     python scripts/test-alpaca-rotator.py
     if ($LASTEXITCODE) { throw 'Alpaca rotator tests failed' }
     python scripts/test-alpaca-accessories.py

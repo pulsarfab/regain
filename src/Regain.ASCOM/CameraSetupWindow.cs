@@ -106,6 +106,8 @@ internal static class CameraSetupWindow
         Recovery(recovery, "readyFrameDownloadRetries", "SDK read retries", 0, 5, true);
         Recovery(recovery, "directReadRetries", "Direct read retries", 0, 5, true);
         Recovery(recovery, "reconnectDelaySeconds", "Reconnect delay (s)", .001, 3600);
+        Recovery(recovery, "usbResetAfterFailures", "USB reset after failed attempts (0 disables; 2 tries reconnect first)", 0, 20, true);
+        recovery.Children.Add(new TextBlock { Text = "USB recovery runs at most once per capture and only when a replacement exposure is allowed. Windows may request administrator approval. External camera power is unchanged.", TextWrapping = TextWrapping.Wrap });
         Recovery(cooler, "coolingTimeoutSeconds", "Cooling timeout (s)", .001, 3600);
         Recovery(cooler, "temperatureToleranceC", "Temperature tolerance (°C)", .001, 3600);
         Recovery(cooler, "coolingStableSamples", "Stable samples", 1, 60, true);

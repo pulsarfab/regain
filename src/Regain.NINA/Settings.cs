@@ -113,7 +113,9 @@ internal static class Settings
         AddFields(recovery,
             (nameof(RecoveryOptions.MaxRetries), "Full recapture retries"),
             (nameof(RecoveryOptions.MaximumRetryExposureSeconds), "Recapture exposure limit (s; 0 disables)"),
-            (nameof(RecoveryOptions.ReconnectDelaySeconds), "Reconnect delay (s)"));
+            (nameof(RecoveryOptions.ReconnectDelaySeconds), "Reconnect delay (s)"),
+            (nameof(RecoveryOptions.UsbResetAfterFailures), "USB reset after failed attempts (0 disables)"));
+        entries[nameof(RecoveryOptions.UsbResetAfterFailures)].ToolTip = "Opt-in, at most once per capture. Use 2 to try reconnecting first. Only runs when another replacement exposure is allowed. Windows may request administrator approval; this does not switch the camera's 12 V supply.";
         var cooling = AddTab("Cooling", "Restore the setpoint; wait for the previous temperature and cooler output.");
         AddFields(cooling,
             (nameof(RecoveryOptions.TemperatureToleranceC), "Temperature tolerance (°C)"),
@@ -203,7 +205,7 @@ internal static class Settings
             try
             {
                 var values = entries.ToDictionary(k => k.Key, k => double.Parse(k.Value.Text, System.Globalization.CultureInfo.InvariantCulture));
-                var options = JsonSerializer.Deserialize<RecoveryOptions>(JsonSerializer.Serialize(values))!;
+                var options = JsonSerializer.Deserialize<RecoveryOptions>(JsonSerializer.Serialize(values))! with { UsbPortCycle = current.UsbPortCycle };
                 options.Validate();
                 if (picker.SelectedItem is not CameraChoice choice)
                     throw new InvalidOperationException("Choose a camera before saving.");

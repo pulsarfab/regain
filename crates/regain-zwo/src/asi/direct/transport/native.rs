@@ -11,6 +11,34 @@ use std::{cell::RefCell, ffi::CStr, time::Duration};
 #[derive(Clone)]
 pub struct DeviceInfo(nusb::DeviceInfo);
 impl DeviceInfo {
+    pub fn recovery_target(
+        &self,
+        product: u16,
+        serial: String,
+    ) -> Result<regain_transport::usb::Target> {
+        #[cfg(target_os = "linux")]
+        {
+            Ok(regain_transport::usb::Target {
+                vendor: 0x03c3,
+                product,
+                serial,
+                location: self
+                    .0
+                    .sysfs_path()
+                    .file_name()
+                    .and_then(|s| s.to_str())
+                    .context("No physical USB path")?
+                    .into(),
+                address: Some(self.0.device_address()),
+                generation: None,
+            })
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            let _ = (product, serial);
+            anyhow::bail!("USB recovery is supported on Windows and Linux only")
+        }
+    }
     pub fn same_interface(&self, other: &Self) -> bool {
         self.0.vendor_id() == other.0.vendor_id()
             && self.0.product_id() == other.0.product_id()

@@ -52,6 +52,8 @@ jobs:
         run: python scripts/test-alpaca.py --bin-dir target/release
       - name: Exercise native camera pipe
         run: python scripts/test-native-camera.py --bin-dir target/release
+      - name: Exercise opt-in USB recovery
+        run: python scripts/test-usb-recovery.py --bin-dir target/release
       - name: Exercise Alpaca CAA rotator
         run: python scripts/test-alpaca-rotator.py --bin-dir target/release
       - name: Exercise Alpaca EFW and EAF

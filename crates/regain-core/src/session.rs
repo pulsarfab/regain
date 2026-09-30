@@ -23,6 +23,7 @@ pub struct Session {
     recovery_temperature: Option<f64>,
     recovery_power: Option<i64>,
     settle_required: bool,
+    usb_target: Option<String>,
 }
 impl Session {
     pub fn new(selection: Selection, runtime: Runtime, log: Diagnostic) -> Result<Self> {
@@ -39,6 +40,7 @@ impl Session {
             recovery_temperature: None,
             recovery_power: None,
             settle_required: false,
+            usb_target: None,
         })
     }
     fn emit(&self, level: &str, event: &str, message: impl AsRef<str>) {
@@ -165,6 +167,13 @@ impl Session {
                 }
                 other => other,
             }?;
+            if self.selection.recovery.usb_reset_after_failures > 0 && self.usb_target.is_none() {
+                // First connection can learn the serial. Release its handle before
+                // binding the physical device, then reopen that exact serial.
+                self.invalidate().await;
+                self.bind_usb(token).await?;
+                self.open(token).await?;
+            }
             self.ever_opened = true;
             self.status.lock().unwrap().connected = true;
             self.phase("Idle");
@@ -176,6 +185,97 @@ impl Session {
             self.invalidate().await;
         }
         result
+    }
+    async fn bind_usb(&mut self, token: &CancellationToken) -> Result<()> {
+        if token.is_cancelled() {
+            return Err(Failure::Cancelled.into());
+        }
+        if self.runtime.simulate {
+            self.usb_target = Some("simulation".into());
+            return Ok(());
+        }
+        let serial = self
+            .selection
+            .serial
+            .as_deref()
+            .context("USB recovery requires a camera serial")?;
+        let args = [
+            "zwo",
+            "camera-direct",
+            "--usb-target",
+            &self.selection.name,
+            serial,
+        ];
+        let command = self.runtime.usb_command(&args, 30);
+        let encoded = tokio::select! { biased; _=token.cancelled()=>return Err(Failure::Cancelled.into()), r=command=>r? };
+        let target = regain_transport::usb::Target::decode(&encoded)?;
+        ensure!(
+            target.serial.eq_ignore_ascii_case(serial),
+            "USB recovery serial mismatch"
+        );
+        self.usb_target = Some(encoded);
+        self.emit(
+            "info",
+            "usb.bound",
+            "USB recovery bound to the selected camera's serial and physical location",
+        );
+        Ok(())
+    }
+    async fn reset_usb(&mut self, token: &CancellationToken) -> Result<()> {
+        if token.is_cancelled() {
+            return Err(Failure::Cancelled.into());
+        }
+        let target = self
+            .usb_target
+            .as_deref()
+            .context("No verified USB recovery target")?;
+        ensure!(
+            self.worker.is_none(),
+            "Close the camera worker before USB recovery"
+        );
+        self.phase("USB recovery");
+        self.emit(
+            "warning",
+            "usb.reset",
+            "Resetting the selected camera; the retained frame is abandoned",
+        );
+        if !self.runtime.simulate {
+            // Once dispatched, finish the bounded helper before honoring abort so
+            // a Linux port cycle can always re-enable the port.
+            self.runtime
+                .usb_command(
+                    &[
+                        "usb",
+                        if self.selection.recovery.usb_port_cycle {
+                            "cycle"
+                        } else {
+                            "reset"
+                        },
+                        target,
+                    ],
+                    80,
+                )
+                .await?;
+        }
+        self.usb_target = None;
+        if token.is_cancelled() {
+            return Err(Failure::Cancelled.into());
+        }
+        self.phase("Waiting for USB camera");
+        let deadline = Instant::now() + Duration::from_secs(30);
+        loop {
+            match self.bind_usb(token).await {
+                Ok(()) => break,
+                Err(e) if token.is_cancelled() || Instant::now() >= deadline => return Err(e),
+                Err(_) => self.delay(0.5, token).await?,
+            }
+        }
+        self.emit(
+            "info",
+            "usb.returned",
+            "The same camera serial is available after USB recovery",
+        );
+        Ok(())
     }
     async fn open(&mut self, token: &CancellationToken) -> Result<()> {
         if self.ever_opened && self.selection.serial.is_none() {
@@ -462,6 +562,7 @@ impl Session {
             .recovery_power
             .or_else(|| state.values.get(&15).copied());
         let mut last = None;
+        let mut usb_resets = 0;
         for attempt in 0..=retries {
             let result = self
                 .attempt(&e, &mut settings, &mut prior, &mut power, attempt, token)
@@ -469,6 +570,7 @@ impl Session {
             match result {
                 Ok(mut frame) => {
                     frame.metadata["recoveries"] = json!(attempt);
+                    frame.metadata["usbResets"] = json!(usb_resets);
                     self.phase("Idle");
                     return Ok(frame);
                 }
@@ -491,6 +593,17 @@ impl Session {
                     if !can_retry {
                         last = Some(error);
                         break;
+                    }
+                    if usb_resets == 0
+                        && options.usb_reset_after_failures > 0
+                        && attempt + 1 >= options.usb_reset_after_failures
+                    {
+                        usb_resets += 1;
+                        if let Err(e) = self.reset_usb(token).await {
+                            self.emit("error", "usb.failed", format!("{e:#}"));
+                            last = Some(e);
+                            break;
+                        }
                     }
                     if self.direct && self.selection.sdk_fallback {
                         self.direct = false;
@@ -761,6 +874,7 @@ impl Session {
             self.invalidate().await;
         }
         self.status.lock().unwrap().connected = false;
+        self.usb_target = None;
         self.phase("Disconnected");
     }
 }
@@ -922,6 +1036,84 @@ mod tests {
             assert_eq!(frame.unwrap().pixels.len(), 8192);
             s.close().await;
         }
+    }
+    #[tokio::test]
+    async fn usb_escalation_is_opt_in_bounded_and_obeys_exposure_limits() {
+        for (threshold, retries, seconds, resets) in [
+            (0, 3, 0.01, 0),
+            (2, 3, 0.01, 1),
+            (1, 0, 0.01, 0),
+            (1, 3, 31., 0),
+            (4, 3, 0.01, 0),
+        ] {
+            let events = Arc::new(Mutex::new(Vec::<String>::new()));
+            let sink = events.clone();
+            let mut sel = selection(false);
+            sel.recovery.usb_reset_after_failures = threshold;
+            sel.recovery.max_retries = retries;
+            sel.recovery.ready_frame_download_retries = 0;
+            let mut rt = runtime();
+            rt.sdk_simulation = Some(json!({"instant":true,"fault":"download"}));
+            let mut session = Session::new(
+                sel,
+                rt,
+                Arc::new(move |_, event, _| sink.lock().unwrap().push(event.into())),
+            )
+            .unwrap();
+            let token = CancellationToken::new();
+            session.connect(&token).await.unwrap();
+            assert!(
+                session
+                    .capture(
+                        Exposure {
+                            microseconds: (seconds * 1e6) as u64,
+                            ..exposure()
+                        },
+                        &token
+                    )
+                    .await
+                    .is_err()
+            );
+            assert_eq!(
+                events
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .filter(|e| e.as_str() == "usb.reset")
+                    .count(),
+                resets
+            );
+            session.close().await;
+        }
+    }
+    #[tokio::test]
+    async fn usb_recovery_restores_controls_and_cancellation_never_resets() {
+        let token = CancellationToken::new();
+        let mut sel = selection(false);
+        sel.recovery.usb_reset_after_failures = 1;
+        sel.recovery.ready_frame_download_retries = 0;
+        let mut session = Session::new(sel, runtime(), log()).unwrap();
+        session.connect(&token).await.unwrap();
+        Session::queue_control(&session.status, 0, 230).unwrap();
+        session
+            .call("fault", json!({"kind":"download"}), None, &token)
+            .await
+            .unwrap();
+        let frame = session.capture(exposure(), &token).await.unwrap();
+        assert_eq!(frame.metadata["usbResets"], 1);
+        assert_eq!(frame.metadata["recoveries"], 1);
+        assert_eq!(frame.metadata["controls"]["0"], 230);
+        let cancelled = CancellationToken::new();
+        cancelled.cancel();
+        assert!(
+            session
+                .capture(exposure(), &cancelled)
+                .await
+                .err()
+                .unwrap()
+                .is::<Failure>()
+        );
+        session.close().await;
     }
     #[tokio::test]
     async fn sdk_ready_frame_read_retry_does_not_replace_exposure() {

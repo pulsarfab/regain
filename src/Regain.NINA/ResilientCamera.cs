@@ -358,7 +358,7 @@ public sealed class ResilientCamera : BaseINPC, ICamera
         double attempt = owner.ReadyTimeoutSeconds(seconds) + options.CoolingTimeoutSeconds +
             (reads + 1) * (options.DownloadTimeoutSeconds + options.ReconnectDelaySeconds) +
             (2 * owner.Controls.Count + 10) * options.CommandTimeoutSeconds;
-        int budget = (int)Math.Min(int.MaxValue, Math.Ceiling((retries + 1) * attempt));
+        int budget = (int)Math.Min(int.MaxValue, Math.Ceiling((retries + 1) * attempt + (options.UsbResetAfterFailures > 0 ? 150 : 0)));
         var settings = profiles.ActiveProfile.CameraSettings;
         if (settings.Timeout >= budget) return;
         timeoutSettings = settings;

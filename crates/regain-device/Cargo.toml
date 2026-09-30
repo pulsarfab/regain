@@ -8,6 +8,7 @@ repository.workspace = true
 
 [dependencies]
 anyhow = "1"
+regain-transport = { path = "../regain-transport" }
 regain-zwo = { path = "../regain-zwo" }
 regain-pegasus = { path = "../regain-pegasus" }
 regain-deepskydad = { path = "../regain-deepskydad" }

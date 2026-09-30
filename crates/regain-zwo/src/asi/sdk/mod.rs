@@ -244,6 +244,9 @@ impl Host {
                 json!(null)
             }
             "simulation" if self.sdk.is_none() => {
+                if let Some(fault) = p["fault"].as_str() {
+                    self.fault = fault.into();
+                }
                 if let Some(name) = p["name"].as_str() {
                     self.sim_info["name"] = json!(name);
                 }

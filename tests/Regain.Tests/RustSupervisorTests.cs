@@ -12,12 +12,14 @@ public class RustSupervisorTests
     private static readonly Exposure Request = new(64, 64, 1, 0, 0, 300000, true);
     private static readonly RecoveryOptions Fast = new() { ReconnectDelaySeconds = .03, MaxRetries = 1 };
 
-    [Fact]
-    public async Task RustSupervisorRestartsWorkerAndReturnsActualRecoveryMetadata()
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    public async Task RustSupervisorRestartsWorkerAndReturnsActualRecoveryMetadata(int usbThreshold)
     {
         HostClient? host = null;
         var log = new ConcurrentQueue<string>();
-        using var session = new CameraSession(Camera, () => host = new(Worker, "unused", simulate: true, direct: true, supervised: true, log: log.Enqueue), Fast);
+        using var session = new CameraSession(Camera, () => host = new(Worker, "unused", simulate: true, direct: true, supervised: true, log: log.Enqueue), Fast with { UsbResetAfterFailures = usbThreshold });
         await session.ConnectAsync(default);
         int child = (await host!.CallAsync("diagnostics", null, TimeSpan.FromSeconds(15), default)).Result.GetProperty("processId").GetInt32();
         // Fail all retained reads on this worker. Faults end with the worker,
@@ -32,6 +34,7 @@ public class RustSupervisorTests
         Assert.Equal(200, frame.Controls[0]);
         Assert.True(host.IsAlive);
         Assert.Contains(log, m => m.Contains("capture.retry"));
+        Assert.Equal(usbThreshold, log.Count(m => m.Contains("\"event\":\"usb.reset\"")));
     }
     [Fact]
     public async Task AbortKeepsSupervisorAliveAndRecoversForNextExposure()

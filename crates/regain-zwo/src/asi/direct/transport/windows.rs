@@ -118,6 +118,29 @@ pub fn enumerate() -> Result<Vec<DeviceInfo>> {
 #[derive(Clone)]
 pub struct DeviceInfo(Vec<u16>);
 impl DeviceInfo {
+    pub fn recovery_target(
+        &self,
+        product: u16,
+        serial: String,
+    ) -> Result<regain_transport::usb::Target> {
+        // SetupAPI USB interface symbolic links contain the physical instance ID.
+        let path = String::from_utf16_lossy(&self.0);
+        let pieces: Vec<_> = path.trim_end_matches('\0').split('#').collect();
+        ensure!(
+            pieces.len() == 4 && pieces[0].eq_ignore_ascii_case("\\\\?\\usb"),
+            "Unexpected USB interface path"
+        );
+        let mut target = regain_transport::usb::Target {
+            vendor: 0x03c3,
+            product,
+            serial,
+            location: format!("USB\\{}\\{}", pieces[1], pieces[2]),
+            address: None,
+            generation: None,
+        };
+        target.bind_generation()?;
+        Ok(target)
+    }
     pub fn same_interface(&self, other: &Self) -> bool {
         String::from_utf16_lossy(&self.0).eq_ignore_ascii_case(&String::from_utf16_lossy(&other.0))
     }

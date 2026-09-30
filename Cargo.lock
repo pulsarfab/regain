@@ -616,6 +616,7 @@ version = "0.4.0"
 dependencies = [
  "anyhow",
  "chrono",
+ "regain-transport",
  "serde",
  "serde_json",
  "tokio",
@@ -641,6 +642,7 @@ dependencies = [
  "anyhow",
  "regain-deepskydad",
  "regain-pegasus",
+ "regain-transport",
  "regain-wanderer",
  "regain-zwo",
 ]
@@ -661,8 +663,12 @@ name = "regain-transport"
 version = "0.4.0"
 dependencies = [
  "anyhow",
+ "nusb",
  "serde",
+ "serde_json",
  "serialport",
+ "tempfile",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -692,6 +698,7 @@ dependencies = [
  "libc",
  "libloading",
  "nusb",
+ "regain-transport",
  "regain-worker",
  "serde",
  "serde_json",

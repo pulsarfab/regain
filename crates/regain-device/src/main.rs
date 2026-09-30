@@ -2,9 +2,12 @@ use anyhow::{Result, bail};
 fn main() -> Result<()> {
     let mut args = std::env::args().skip(1);
     let vendor = args.next().unwrap_or_default();
+    if vendor == "usb" {
+        return regain_transport::usb::run(args.collect());
+    }
     if vendor.is_empty() || vendor == "--help" || vendor == "help" {
         println!(
-            "PulsarFab regain device worker\nUsage: regain-device VENDOR DEVICE [arguments]\n\nZWO:        zwo camera-direct | camera-sdk | caa | efw | eaf\nPegasus:    pegasus fc3\nDeepSkyDad: deepskydad ofp2\nWanderer:   wanderer eta\n\nAccessory commands: list-details | status | serve [--serial ID] [--simulate]\nCamera commands: --help"
+            "PulsarFab regain device worker\nUsage: regain-device VENDOR DEVICE [arguments]\n\nZWO:        zwo camera-direct | camera-sdk | caa | efw | eaf\nPegasus:    pegasus fc3\nDeepSkyDad: deepskydad ofp2\nWanderer:   wanderer eta\n\nAccessory commands: list-details | status | serve [--serial ID] [--simulate]\nUSB recovery: usb reset|cycle TARGET (see docs/usb-recovery.md)\nCamera commands: --help"
         );
         return Ok(());
     }

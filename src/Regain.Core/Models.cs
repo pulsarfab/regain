@@ -60,11 +60,13 @@ public sealed record RecoveryOptions
     // Retry the same download only while the SDK still reports a ready frame.
     public int ReadyFrameDownloadRetries { get; init; } = 2;
     public int DirectReadRetries { get; init; } = 2;
+    public int UsbResetAfterFailures { get; init; } = 0;
+    public bool UsbPortCycle { get; init; } = false;
     public void Validate()
     {
         if (!double.IsFinite(MaximumRetryExposureSeconds) || MaximumRetryExposureSeconds < 0 || MaximumRetryExposureSeconds > 86400)
             throw new ArgumentOutOfRangeException(nameof(MaximumRetryExposureSeconds));
-        if (MaxRetries is < 0 or > 20 || ReadyFrameDownloadRetries is < 0 or > 5 || DirectReadRetries is < 0 or > 5 || CoolingStableSamples is < 1 or > 60)
+        if (MaxRetries is < 0 or > 20 || ReadyFrameDownloadRetries is < 0 or > 5 || DirectReadRetries is < 0 or > 5 || UsbResetAfterFailures is < 0 or > 20 || CoolingStableSamples is < 1 or > 60)
             throw new ArgumentOutOfRangeException(nameof(MaxRetries));
         foreach (double v in new[] { ReconnectDelaySeconds, CommandTimeoutSeconds, DownloadTimeoutSeconds, ExposureGraceSeconds, CoolingTimeoutSeconds, TemperatureToleranceC, CoolingSampleSeconds })
             if (!double.IsFinite(v) || v <= 0 || v > 3600)

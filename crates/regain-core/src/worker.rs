@@ -16,6 +16,34 @@ pub struct Runtime {
     pub sdk_simulation: Option<Value>,
 }
 impl Runtime {
+    pub async fn usb_command(&self, args: &[&str], seconds: u64) -> Result<String> {
+        ensure!(
+            !self.simulate,
+            "Simulation must not launch USB recovery helpers"
+        );
+        let mut command = Command::new(
+            self.directory
+                .join(format!("regain-device{}", std::env::consts::EXE_SUFFIX)),
+        );
+        command
+            .args(args)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .kill_on_drop(true);
+        #[cfg(windows)]
+        command.creation_flags(0x08000000);
+        let output = tokio::time::timeout(Duration::from_secs(seconds), command.output())
+            .await
+            .context("USB helper deadline exceeded")??;
+        ensure!(
+            output.status.success(),
+            "USB helper failed ({}; Windows may require administrator approval): {}",
+            output.status,
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+        Ok(String::from_utf8(output.stdout)?.trim().to_owned())
+    }
     pub async fn spawn(&self, direct: bool, log: Diagnostic) -> Result<Worker> {
         let path = self
             .directory
