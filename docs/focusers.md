@@ -1,6 +1,6 @@
 # Multiple Alpaca focusers
 
-In current source/CI builds, open **Focusers and tilt** at `/setup/focusers`.
+In regain 0.5.0.0 and later, open **Focusers and tilt** at `/setup/focusers`.
 Add one slot per physical focuser, choose its model, then find and select its
 serial number or port. Give each slot a useful name such as “Main focuser” or
 “Guide focuser”. Two FocusCube3s or two EAFs use separate slots, just like mixed

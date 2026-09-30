@@ -37,7 +37,7 @@ Camera USB transfer recovery remains in `regain-zwo::asi::direct`.
 
 ## One hardware executable
 
-`regain-device` replaces the separate per-product workers in source/CI builds.
+`regain-device` replaces the separate per-product workers from release 0.5.0.0.
 NINA, ASCOM and Alpaca launch it with an explicit selector:
 
 | Selector | Device/backend |

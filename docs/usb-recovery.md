@@ -1,6 +1,6 @@
 # Recover a camera with USB reset
 
-Current source/CI builds can escalate failed camera captures to a USB reset.
+Regain 0.5.0.0 and later can escalate failed camera captures to a USB reset.
 NINA, native ASCOM, and Alpaca use the same Rust recovery supervisor. This is
 disabled by default.
 
