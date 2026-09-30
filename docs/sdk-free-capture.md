@@ -1,7 +1,7 @@
 # SDK-free ASI676MC capture
 
 This page records the ASI676MC bring-up. The direct backend also supports the
-separately tested [ASI2600 main/guide](duo-capture.md) and
+separately tested [ASI662MC](asi662mc.md), [ASI2600 main/guide](duo-capture.md), and
 [ASI6200MM Pro P25](asi6200-p25.md) interfaces; their initialization and
 capabilities differ from the ASI676 configuration below.
 

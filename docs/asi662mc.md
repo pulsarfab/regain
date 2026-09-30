@@ -66,11 +66,17 @@ aligned follow-up ROIs passed. Independent Rust processing matched SDK output
 byte-for-byte for full frames and several ROIs, including non-16-aligned sizes.
 
 Direct hardware tests verified full frames, aligned edge windows, gain transition
-and offset limits, repeated fresh captures, 32 µs–60 s exposures, complete replay,
+and offset limits, repeated fresh captures, 32 µs–600 s exposures, complete replay,
 and interrupted reads followed by byte-identical replay. Zero read retries
 surfaces the injected interruption. The initial unpaced short full-frame replay
 timed out; the documented minimum frame interval resolved it in the test matrix.
 These are deliberate host-read interruptions, not injected USB bus errors.
+Two full-frame 600-second captures completed acquisition in 600.129 s and
+600.243 s. Both replayed byte-for-byte. The second recovered a download
+interrupted after 1 MiB, then recovered a replay interrupted after 3 MiB.
+The captures had distinct hashes, and a subsequent 1 ms capture passed.
+These long frames were largely saturated under the available illumination;
+the tests establish acquisition and recovery, not optical exposure accuracy.
 A physical Alpaca test captured a new frame, aborted a 60-second exposure in
 16 ms, and captured again through a new worker with the same serial.
 
@@ -88,6 +94,7 @@ cargo build --workspace --locked
 target/debug/regain-device.exe zwo camera-direct --capture-662 --replay
 target/debug/regain-device.exe zwo camera-direct --capture-662 --microseconds 32 --interrupt-read-after-bytes 1048576 --replay
 .reference/inspection-venv/Scripts/python.exe scripts/inspection/validate_asi662.py --long --output artifacts/inspection/asi662-new-validation.jsonl
+.reference/inspection-venv/Scripts/python.exe scripts/inspection/validate_asi662.py --extended-only --output artifacts/inspection/asi662-new-600s.jsonl
 ```
 
 `--capture-662` selects only the ASI662MC PID and requires exactly one matching

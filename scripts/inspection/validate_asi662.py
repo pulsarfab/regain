@@ -9,6 +9,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--long', action='store_true', help='Include a 60-second full-frame replay')
+    parser.add_argument('--extended-only', action='store_true', help='Run two 600-second captures with replay/recovery, then a short capture')
     args = parser.parse_args()
     cases = [
         dict(width=64, height=64, microseconds=32),
@@ -24,11 +25,23 @@ def main():
     cases += [dict(replay=True, **{'replay-prefix-bytes':3145728})]
     if args.long:
         cases += [dict(microseconds=60000000, replay=True)]
+    if args.extended_only:
+        cases = [
+            dict(microseconds=600000000, replay=True),
+            dict(microseconds=600000000, replay=True,
+                 **{'interrupt-read-after-bytes':1048576, 'replay-prefix-bytes':3145728}),
+            dict(width=64, height=64, microseconds=1000),
+        ]
+    digests = set()
     with args.output.open('x', encoding='utf-8') as out:
         for options in cases:
+            print(f'START {options}', flush=True)
             results = capture(options, '--capture-662', (1920,1080))
             for result in results:
                 assert result['productId'] == 0x662b and result['capture']['model'] == 'ASI662MC'
+                digest = result['capture']['sha256']
+                assert digest not in digests, 'identical frame digests; freshness needs investigation'
+                digests.add(digest)
             out.write(json.dumps({'options':options,'results':results})+'\n'); out.flush()
             print(f'PASS {options}', flush=True)
         try:
