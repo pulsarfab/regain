@@ -1,14 +1,20 @@
 [package]
 name = "regain-core"
+description = "Camera worker supervision and capture recovery for PulsarFab regain"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
-description = "Camera worker supervision and capture recovery for PulsarFab regain"
+authors.workspace = true
 repository.workspace = true
+homepage.workspace = true
+readme = "README.md"
+keywords = ["astronomy", "astrophotography", "camera", "recovery"]
+categories = ["science", "hardware-support"]
 
 [dependencies]
 anyhow = "1"
-regain-transport = { path = "../regain-transport" }
+regain-transport.workspace = true
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }

@@ -3,13 +3,19 @@ name = "regain-device"
 description = "Unified hardware worker and diagnostic CLI for PulsarFab regain"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
+authors.workspace = true
 repository.workspace = true
+homepage.workspace = true
+readme = "README.md"
+keywords = ["astronomy", "astrophotography", "zwo", "focuser", "cli"]
+categories = ["science", "hardware-support", "command-line-utilities"]
 
 [dependencies]
 anyhow = "1"
-regain-transport = { path = "../regain-transport" }
-regain-zwo = { path = "../regain-zwo" }
-regain-pegasus = { path = "../regain-pegasus" }
-regain-deepskydad = { path = "../regain-deepskydad" }
-regain-wanderer = { path = "../regain-wanderer" }
+regain-transport.workspace = true
+regain-zwo.workspace = true
+regain-pegasus.workspace = true
+regain-deepskydad.workspace = true
+regain-wanderer.workspace = true

@@ -88,6 +88,18 @@ jobs:
             regain-rust-*.tar.gz
             regain-rust-*.tar.gz.sha256
           if-no-files-found: error
+  crates:
+    name: crates.io packages
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.89
+      - name: Check minimum Rust version
+        run: cargo check --workspace --all-targets --locked
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Package and verify every crate
+        run: cargo package --workspace --locked
   research-tests:
     runs-on: windows-latest
     timeout-minutes: 10

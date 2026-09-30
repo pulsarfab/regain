@@ -74,7 +74,7 @@ cameras and accessories. An Alpaca server is optional.
 | **Native NINA plugin** | Windows x64, NINA ≥3.2.0.9001 | Cameras, CAA, EFW, EAF, FocusCube3, ETA M54 |
 | **Native ASCOM drivers** | Windows x64; 32/64-bit clients | Four camera entries, CAA, EFW, EAF, FocusCube3, OFP2 and ETA M54 |
 | **Universal Alpaca server** | Windows, Linux, macOS | Camera slots and all supported accessories, including OFP2 |
-| **Rust crates and worker CLIs** | Windows, Linux, macOS | Embed USB, HID, and serial device control in another application |
+| **[Rust crates](https://crates.io/search?q=regain-) and worker CLIs** | Windows, Linux, macOS | Embed USB, HID, and serial device control in another application |
 
 OFP2 connects through native ASCOM or Alpaca; NINA can use either connection.
 Release 0.5.0.0 adds native OFP2 ASCOM and ETA M54 support. ETA physical
@@ -153,8 +153,9 @@ Extract the complete Windows ASCOM ZIP and run:
 ```
 
 Open `http://127.0.0.1:11111/setup`, select devices, and save. On Linux/macOS use
-the matching `regain-rust-*` CI artifact or a source build, then run
-`./regain-alpaca --port 11111`. Keep the server, workers, and any required SDK
+the matching `regain-rust-*` CI artifact, a source build, or
+`cargo install regain-alpaca regain-device`, then run
+`regain-alpaca --port 11111`. Keep the server, workers, and any required SDK
 library together. For LAN access, add `--listen <host-LAN-IPv4>` and allow the
 HTTP port plus UDP 32227 for discovery.
 [Full Alpaca setup](https://pulsarfab.com/docs/regain/alpaca.html).
