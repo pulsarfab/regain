@@ -93,7 +93,16 @@ def simulated(binary_dir):
         cameras = worker.call("list")[0]
         assert len(cameras) == 5
         for camera in cameras:
-            worker.call("open", dict(name=camera["name"]))
+            opened = worker.call("open", dict(name=camera["name"]))[0]
+            if camera["name"] == "ZWO ASI676MC":
+                exposure_cap = next(c for c in opened['controls'] if c['type'] == 1)
+                assert exposure_cap['min'] == 32 and exposure_cap['max'] == 2000000000
+                for duration in [30000001, 60000000, 120000000, 2000000000]:
+                    worker.call('validate', dict(exposure, microseconds=duration))
+                    worker.call('set', dict(control=1, value=duration))
+                    assert worker.call('get', dict(control=1))[0] == duration
+                worker.call('validate', dict(exposure, microseconds=2000000001), error=True)
+                worker.call('set', dict(control=1, value=2000000001), error=True)
             if camera["cooled"]:
                 for control, value in [(16, -10), (17, 1), (21, 1)]:
                     worker.call("set", dict(control=control, value=value))

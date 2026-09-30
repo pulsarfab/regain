@@ -94,7 +94,7 @@ public sealed class SelectionTests : IDisposable
         try {
             Assert.True(await camera.Connect(default));
             Assert.Equal(1, camera.MaxBinX);
-            Assert.Equal(30, camera.ExposureMax);
+            Assert.Equal(2000, camera.ExposureMax);
             Assert.False(camera.CanSetUSBLimit);
             Assert.False(camera.CanSetTemperature);
             Assert.True(double.IsNaN(camera.Temperature));
