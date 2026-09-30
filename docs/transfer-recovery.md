@@ -1,6 +1,6 @@
 # Transfer recovery and SDK gaps
 
-Status: 2026-09-15. The SDK remains the default backend. The direct driver uses
+Status: 2026-09-30. The SDK remains the default backend. The direct driver uses
 the installed ZWO Windows kernel driver without loading `ASICamera2.dll`.
 
 ## What can be recovered
@@ -27,7 +27,7 @@ Our transport waits for terminal completion and terminates the isolated worker
 if cancellation will not drain, rather than freeing driver-owned storage.
 See [Microsoft's cancellation contract](https://learn.microsoft.com/en-us/windows/win32/fileio/cancelioex-func).
 
-The ASI2600, ASI6200 and ASI676 direct descriptors advertise retained-frame capability.
+The ASI2600, ASI6200, ASI662 and ASI676 direct descriptors advertise retained-frame capability.
 Their configurable read retry count (default 2, maximum 5) applies at every
 supported exposure length, including a 1,200-second ASI2600 exposure. The
 supervisor records successful retained-read recovery separately from exposure
@@ -93,9 +93,14 @@ additional restart. Recovered pixels matched without repeating the exposure.
 This revision also needs the larger physical readout for small requested ROIs
 and a complete sensor readout interval before freezing DDR.
 
+The [ASI662MC](asi662mc.md) also supports retained-frame reads in current source
+builds. Short captures use a minimum ~100 ms sensor frame interval so that the
+full image remains replayable. Its evidence distinguishes deliberate host-read
+interruptions from actual USB bus faults.
+
 | Area | Current direct implementation | Gap |
 | --- | --- | --- |
-| Camera coverage | Verified ASI676MC USB3, ASI2600MM Pro main USB3 (`2601` and P25 `260e`), ASI6200MM Pro P25 USB3 (`620b`), ASI220MM Mini guide USB2 | Other models/revisions need their own initialization, format and recovery evidence; a shared driver package is insufficient |
+| Camera coverage | Verified ASI662MC and ASI676MC USB3, ASI2600MM Pro main USB3 (`2601` and P25 `260e`), ASI6200MM Pro P25 USB3 (`620b`), ASI220MM Mini guide USB2 | Other models/revisions need their own initialization, format and recovery evidence; a shared driver package is insufficient |
 | Single-frame imaging | RAW16, ROI, gain/offset, factory correction; main bins 1–4 and long integrations | SDK format/control coverage is broader; unverified correction-map classes and modes must not be assumed equivalent |
 | Additional SDK modes | NINA path delivers RAW16 still frames | RAW8/RGB, live video, automatic controls, white balance/gamma, flip, external triggering and ST4 are not implemented/surfaced by the direct path; availability in the SDK varies by model |
 | Transfer throughput | Sequential 1 MiB bulk requests, fixed USB limit 40 | SDK traces show queued overlapped transfers. Queue depth and bandwidth tuning need measurements and cancellation tests |

@@ -265,3 +265,10 @@ Camera setup can escalate failed captures to a device-scoped USB reset on Window
 and Linux. It is disabled by default; set the failure threshold to 2 to try an
 ordinary reconnect first. See [setup, permissions, supported cameras, and power
 limitations](usb-recovery.md).
+
+## ASI662MC direct mode (current source)
+
+Select the ASI662MC with **Direct USB** in any regain camera slot. It supports
+RAW16 bin 1 and retained-frame rereads through the shared Rust supervisor.
+Short exposures use a roughly 100 ms frame interval while preserving integration
+time. See [ASI662MC setup, limits and validation](asi662mc.md).

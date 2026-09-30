@@ -22,8 +22,9 @@ vendor SDK in a separate process.
 ### Save an exposure after a failed download
 
 Choose **Direct USB (experimental)** with an ASI2600MM Pro, ASI6200MM Pro, or
-ASI676MC. Regain talks to the camera without the ZWO SDK and can reread the image
-still in camera memory. A download retry does not repeat the exposure—even a
+ASI676MC (and ASI662MC in current source builds). Regain talks to the camera
+without the ZWO SDK and can reread the image still in camera memory. A download
+retry does not repeat the exposure—even a
 long one. The transport limits stalled reads and rejects incomplete images.
 
 Use **PulsarFab regain Retryable Camera** in NINA, a native ASCOM camera entry,
@@ -97,6 +98,7 @@ ASCOM, and Alpaca.
 | **ZWO ASI2600MM Pro** | Yes, experimental | Yes, in Direct USB mode | Yes |
 | **ZWO ASI6200MM Pro** | Yes, experimental | Yes, in Direct USB mode | Yes |
 | **ZWO ASI676MC** | Yes, experimental | Yes, in Direct USB mode | Yes |
+| **[ZWO ASI662MC](docs/asi662mc.md)** | Yes, experimental; current source | Yes; short captures use a ~100 ms frame interval | Yes |
 | **ZWO ASI220MM Mini** | Yes, experimental | No direct reread support | Yes |
 | **Other ZWO ASI cameras** | No | Depends on the SDK keeping the image available | If supported by the bundled SDK |
 

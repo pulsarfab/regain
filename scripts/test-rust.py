@@ -91,10 +91,10 @@ def simulated(binary_dir):
     count = 0
     with Worker([str(binary_dir / ("regain-device" + suffix)), "zwo", "camera-direct", "--serve", "--simulate"]) as worker:
         cameras = worker.call("list")[0]
-        assert len(cameras) == 5
+        assert len(cameras) == 6
         for camera in cameras:
             opened = worker.call("open", dict(name=camera["name"]))[0]
-            if camera["name"] == "ZWO ASI676MC":
+            if camera["name"] in ["ZWO ASI676MC", "ZWO ASI662MC"]:
                 exposure_cap = next(c for c in opened['controls'] if c['type'] == 1)
                 assert exposure_cap['min'] == 32 and exposure_cap['max'] == 2000000000
                 for duration in [30000001, 60000000, 120000000, 2000000000]:
@@ -103,6 +103,15 @@ def simulated(binary_dir):
                     assert worker.call('get', dict(control=1))[0] == duration
                 worker.call('validate', dict(exposure, microseconds=2000000001), error=True)
                 worker.call('set', dict(control=1, value=2000000001), error=True)
+            if camera["name"] == "ZWO ASI662MC":
+                assert camera['color'] and camera['bayer'] == 0 and camera['bitDepth'] == 12
+                assert camera['width'] == 1920 and camera['height'] == 1080 and camera['pixelSize'] == 2.9
+                assert camera['bins'] == [1] and camera['originAlignment'] == 8 and camera['retainedFrameReads']
+                worker.call('set', dict(control=5, value=300))
+                worker.call('set', dict(control=5, value=301), error=True)
+                worker.call('validate', dict(exposure, bin=1, x=16, y=8))
+                worker.call('validate', dict(exposure, bin=1, x=16, y=2), error=True)
+                worker.call('validate', dict(exposure, bin=2), error=True)
             if camera["cooled"]:
                 for control, value in [(16, -10), (17, 1), (21, 1)]:
                     worker.call("set", dict(control=control, value=value))

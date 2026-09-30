@@ -46,6 +46,14 @@ impl Default for Settings {
 }
 impl Settings {
     pub fn validate(&self) -> Result<()> {
+        self.validate_bayer(3552, 3552, 200)
+    }
+    pub fn validate_bayer(
+        &self,
+        sensor_width: u32,
+        sensor_height: u32,
+        offset_max: u32,
+    ) -> Result<()> {
         ensure!(
             self.timeout_read_after_bytes == 0,
             "timeout injection is ASI2600-only"
@@ -55,10 +63,10 @@ impl Settings {
                 && self.height >= 64
                 && self.width.is_multiple_of(8)
                 && self.height.is_multiple_of(2)
-                && self.width <= 3552
-                && self.height <= 3552
-                && self.x <= 3552 - self.width
-                && self.y <= 3552 - self.height
+                && self.width <= sensor_width
+                && self.height <= sensor_height
+                && self.x <= sensor_width - self.width
+                && self.y <= sensor_height - self.height
                 && self.x.is_multiple_of(2)
                 && self.y.is_multiple_of(2),
             "invalid research bin-1 Bayer ROI (minimum 64x64, even origin, width multiple of 8, even height)"
@@ -77,8 +85,8 @@ impl Settings {
         ensure!(
             (32..=MAX_EXPOSURE_US).contains(&self.microseconds)
                 && self.gain <= 600
-                && self.offset <= 200,
-            "ASI676MC limits: exposure 32us..2000s, gain 0..600, offset 0..200"
+                && self.offset <= offset_max,
+            "Bayer limits: exposure 32us..2000s, gain 0..600, offset 0..{offset_max}"
         );
         Ok(())
     }
@@ -88,8 +96,12 @@ impl Settings {
 
     // SDK 1.41 ASI676MC timing, HMAX=176 and clock=20000 at USB limit 40.
     // Keep f32 arithmetic: the SDK rounds through scalar single precision.
+    #[cfg(test)]
     pub fn timing(&self) -> (u32, u32) {
-        let line_us = 176_f32 * 1000.0 / 20000.0;
+        self.timing_with_hmax(176)
+    }
+    pub fn timing_with_hmax(&self, hmax: u16) -> (u32, u32) {
+        let line_us = f32::from(hmax) * 1000.0 / 20000.0;
         let minimum_us = ((self.height + 60) as f32 * line_us) as u32;
         let requested = if self.long_exposure() {
             minimum_us + 10_000
@@ -102,13 +114,6 @@ impl Settings {
         } else {
             let frame = self.height + 60;
             (frame, frame.saturating_sub(lines + 8).clamp(8, frame - 8))
-        }
-    }
-    pub fn gain_registers(&self) -> (u16, u16) {
-        if self.gain >= 180 {
-            (1, ((self.gain - 78) / 3) as u16)
-        } else {
-            (0, (self.gain / 3) as u16)
         }
     }
 }
@@ -137,9 +142,9 @@ mod tests {
         s.height = 3552;
         assert_eq!(s.timing(), (4756, 8));
         s.gain = 100;
-        assert_eq!(s.gain_registers(), (0, 33));
+        assert_eq!(super::super::asi676::PROFILE.gain(s.gain), (0, 33));
         s.gain = 300;
-        assert_eq!(s.gain_registers(), (1, 74));
+        assert_eq!(super::super::asi676::PROFILE.gain(s.gain), (1, 74));
     }
     #[test]
     fn long_exposures_keep_host_timed_registers_and_sdk_range() {

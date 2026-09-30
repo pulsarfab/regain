@@ -56,7 +56,7 @@ def main():
                     except urllib.error.URLError:
                         assert process.poll() is None and time.monotonic() < deadline, "Server did not start"
                         time.sleep(0.05)
-                for direct, selected in ((False, None), (True, None), (True, "ZWO ASI2600MM Pro")):
+                for direct, selected in ((False, None), (True, None), (True, "ZWO ASI2600MM Pro"), (True, "ZWO ASI662MC")):
                     descriptors = request("/setup/api/discover", {"direct": direct})
                     descriptor = next(c for c in descriptors if c["name"] == selected) if selected else descriptors[0]
                     profile = request("/setup/api/state")["cameras"][0]["profile"]
@@ -65,9 +65,12 @@ def main():
                     request("/setup/api/cameras/0", profile)
                     assert request("/setup/api/state")["cameras"][0]["profile"]["camera"]["name"] == descriptor["name"]
                     camera("connected", {"Connected": "true", "ClientID": 1})
-                    if selected:
+                    if selected == "ZWO ASI2600MM Pro":
                         assert camera("cameraxsize") == 6248 and camera("cameraysize") == 4176
                         assert camera("maxbinx") == 4 and camera("exposuremax") == 2000
+                    elif selected == "ZWO ASI662MC":
+                        assert camera("cameraxsize") == 1920 and camera("cameraysize") == 1080
+                        assert camera("maxbinx") == 1 and camera("exposuremax") == 2000
                     camera("numx", {"NumX": 64, "ClientID": 1})
                     camera("numy", {"NumY": 64, "ClientID": 1})
                     camera("startexposure", {"Duration": 0.01, "Light": "false", "ClientID": 1})

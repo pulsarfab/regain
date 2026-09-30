@@ -83,10 +83,12 @@ public sealed class SelectionTests : IDisposable
         Assert.Equal("original", store.Load()!.Serial);
     }
 
-    [Fact]
-    public async Task DirectConnectionReplacesSavedSdkCapabilities()
+    [Theory]
+    [InlineData("ZWO ASI676MC", 3552, 3552)]
+    [InlineData("ZWO ASI662MC", 1920, 1080)]
+    public async Task DirectConnectionReplacesSavedSdkCapabilities(string name, int width, int height)
     {
-        var descriptor = Sim with { Name = "ZWO ASI676MC", Width = 3552, Height = 3552, Cooled = false };
+        var descriptor = Sim with { Name = name, Width = width, Height = height, Cooled = false };
         Store.Save(new(descriptor, UseDirectDriver: true));
         var camera = new ResilientCamera(Mock.Of<IExposureDataFactory>(), Store,
             () => new HostClient(Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../target/debug/regain-device.exe")),
