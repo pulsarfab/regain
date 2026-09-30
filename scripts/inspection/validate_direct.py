@@ -12,8 +12,8 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def capture(options):
-    command = [str(ROOT / 'target/debug/regain-device.exe'), 'zwo', 'camera-direct', '--capture', '--stream']
+def capture(options, selector='--capture', dimensions=(3552, 3552)):
+    command = [str(ROOT / 'target/debug/regain-device.exe'), 'zwo', 'camera-direct', selector, '--stream']
     for key, value in options.items():
         if value is True:
             command += ['--' + key]
@@ -50,7 +50,7 @@ def capture(options):
             if options.get('replay') or options.get('replay-prefix-bytes'):
                 if not info['replay']['allBytesIdentical'] or info['replay']['additionalExposures']:
                     raise RuntimeError('replay identity failed')
-            expected = options.get('width', 3552) * options.get('height', 3552) * 2
+            expected = options.get('width', dimensions[0]) * options.get('height', dimensions[1]) * 2
             if info['bytes'] != expected or expected > 32 * 1024 * 1024:
                 raise RuntimeError('wrong frame size')
             data = exact(expected)

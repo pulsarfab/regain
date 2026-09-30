@@ -149,7 +149,7 @@ internal static class Settings
             (nameof(RecoveryOptions.ReadyFrameDownloadRetries), "SDK read retries (0-5)"),
             (nameof(RecoveryOptions.DirectReadRetries), "Direct read retries (0-5)"));
         entries[nameof(RecoveryOptions.ReadyFrameDownloadRetries)].ToolTip = "Default: 2. Requires a ready frame in the SDK. Independent of the recapture exposure limit.";
-        entries[nameof(RecoveryOptions.DirectReadRetries)].ToolTip = "Default: 2. ASI2600, ASI6200 and ASI676 retry the same retained frame at any exposure length. Guide retries read a new frame and obey the exposure limit.";
+        entries[nameof(RecoveryOptions.DirectReadRetries)].ToolTip = "Default: 2. ASI2600, ASI6200, ASI662 and ASI676 retry the same retained frame at any exposure length. Guide retries read a new frame and obey the exposure limit.";
         var status = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 8) };
         footer.Children.Add(status);
         var actions = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
@@ -209,7 +209,7 @@ internal static class Settings
                 options.Validate();
                 if (picker.SelectedItem is not CameraChoice choice)
                     throw new InvalidOperationException("Choose a camera before saving.");
-                if (direct.IsChecked == true && choice.Camera.Name is not ("ZWO ASI676MC" or "ZWO ASI2600MM Duo" or "ZWO ASI2600MM Pro" or "ZWO ASI220MM Mini" or "ZWO ASI6200MM Pro"))
+                if (direct.IsChecked == true && choice.Camera.Name is not ("ZWO ASI676MC" or "ZWO ASI662MC" or "ZWO ASI2600MM Duo" or "ZWO ASI2600MM Pro" or "ZWO ASI220MM Mini" or "ZWO ASI6200MM Pro"))
                     throw new InvalidOperationException("Direct capture is unavailable for this camera. Turn off Direct USB driver to use the SDK.");
                 string? selectedSerial = string.IsNullOrWhiteSpace(serial.Text) ? null : serial.Text.Trim().ToLowerInvariant();
                 if (selectedSerial is not null && (selectedSerial.Length != 16 || selectedSerial.Any(c => !Uri.IsHexDigit(c))))

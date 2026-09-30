@@ -81,6 +81,7 @@ impl Profile {
                         c["name"].as_str(),
                         Some(
                             "ZWO ASI676MC"
+                                | "ZWO ASI662MC"
                                 | "ZWO ASI2600MM Duo"
                                 | "ZWO ASI2600MM Pro"
                                 | "ZWO ASI220MM Mini"

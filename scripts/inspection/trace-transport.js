@@ -249,6 +249,15 @@ Process.attachModuleObserver({
                         minimumUs:camera.add(0xc4).readU32(), blanking:module.base.add(0x284574).readU32()});
                 }
             });
+            // SDK 1.41 ASI662MC: after minimum-exposure calculation.
+            Interceptor.attach(module.base.add(0xa8e34), {
+                onEnter() {
+                    const camera = this.context.rdi;
+                    emit('asi662-exposure-timing', {height:camera.add(0x80).readU32(), bin:camera.add(0x90).readU32(),
+                        clock:camera.add(0xb8).readU32(), hmax:camera.add(0xc0).readU16(),
+                        minimumUs:camera.add(0xc4).readU32(), blanking:module.base.add(0x2916d8).readU32()});
+                }
+            });
             Interceptor.attach(module.base.add(0x58284), {
                 onEnter() {
                     const camera = this.context.rdi;

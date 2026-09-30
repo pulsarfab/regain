@@ -87,6 +87,7 @@ Choose the capture switch for the attached device:
 | ASI2600MM Pro P25 | `--capture-2600-p25` |
 | ASI2600MM Pro, non-P25 | `--capture-duo` (legacy command name) |
 | ASI676MC | `--capture` |
+| ASI662MC (current source; RAW16 bin 1) | `--capture-662` |
 | ASI220MM Mini guide | `--capture-guide` |
 
 Each streamed frame contains a four-byte little-endian JSON length, that JSON,

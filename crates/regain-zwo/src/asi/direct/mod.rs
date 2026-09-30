@@ -6,8 +6,11 @@ mod asi2600_p25_tables;
 mod asi2600_tables;
 mod asi6200;
 mod asi6200_tables;
+mod asi662;
+mod asi662_tables;
 mod asi676;
 mod asi676_tables;
+mod bayer;
 mod completion;
 mod diagnostics;
 mod environment;
@@ -81,6 +84,7 @@ pub fn run(args: Vec<String>) -> Result<()> {
     if args == ["--process-frame"] {
         return processing::process_stream();
     }
+    let asi662 = args.first().is_some_and(|a| a == "--capture-662");
     let asi6200 = args.first().is_some_and(|a| a == "--capture-6200");
     let verify_retained = args
         .first()
@@ -88,7 +92,8 @@ pub fn run(args: Vec<String>) -> Result<()> {
     let p25 = verify_retained || args.first().is_some_and(|a| a == "--capture-2600-p25");
     let duo = p25 || args.first().is_some_and(|a| a == "--capture-duo");
     let guide = args.first().is_some_and(|a| a == "--capture-guide");
-    let capture = asi6200 || duo || guide || args.first().is_some_and(|a| a == "--capture");
+    let capture =
+        asi662 || asi6200 || duo || guide || args.first().is_some_and(|a| a == "--capture");
     let mut settings = settings::Settings::default();
     let mut duo_gain = 0_i32;
     let mut duo_bin = 1_u32;
@@ -104,6 +109,11 @@ pub fn run(args: Vec<String>) -> Result<()> {
         settings.width = 1920;
         settings.height = 1080;
         settings.offset = 200;
+    }
+    if asi662 {
+        settings.width = 1920;
+        settings.height = 1080;
+        settings.offset = 15;
     }
     let mut frames = 1_u32;
     let mut stream = false;
@@ -184,6 +194,8 @@ pub fn run(args: Vec<String>) -> Result<()> {
         } else if guide {
             asi220::raw_settings(&settings, duo_bin)?;
             ensure!(!replay, "guide retained replay is not established");
+        } else if asi662 {
+            asi662::PROFILE.validate(&settings)?;
         } else {
             settings.validate()?;
         }
@@ -217,7 +229,7 @@ pub fn run(args: Vec<String>) -> Result<()> {
             || args == ["--probe-all"]
             || args == ["--probe", "--cancel-read"]
             || capture,
-        "Usage: regain-device zwo camera-direct [--probe [--cancel-read] | --capture | --capture-duo | --capture-2600-p25 | --capture-6200 | --capture-guide] [--width N --height N --x N --y N --microseconds N --gain N --offset N --frames N --read-retries N --transfer-timeout-seconds N --stream --replay --replay-prefix-bytes N --interrupt-read-after-bytes N]; ASI2600/6200 also accept --timeout-read-after-bytes N; ASI2600 also accepts --reopen-after-bytes N --reopen-delay-ms N; P25 research: --keep-retained, then --verify-retained-2600-p25 --expected-wire-sha256 HASH with raw width/height; ASI2600/6200 and guide also accept --bin N; disconnect other camera apps first"
+        "Usage: regain-device zwo camera-direct [--probe [--cancel-read] | --capture | --capture-662 | --capture-duo | --capture-2600-p25 | --capture-6200 | --capture-guide] [--width N --height N --x N --y N --microseconds N --gain N --offset N --frames N --read-retries N --transfer-timeout-seconds N --stream --replay --replay-prefix-bytes N --interrupt-read-after-bytes N]; ASI2600/6200 also accept --timeout-read-after-bytes N; ASI2600 also accepts --reopen-after-bytes N --reopen-delay-ms N; P25 research: --keep-retained, then --verify-retained-2600-p25 --expected-wire-sha256 HASH with raw width/height; ASI2600/6200 and guide also accept --bin N; disconnect other camera apps first"
     );
     // Last resort for a kernel request that refuses to finish cancellation. The
     // worker must exit rather than free a buffer still owned by the USB driver.
@@ -258,7 +270,9 @@ pub fn run(args: Vec<String>) -> Result<()> {
         return Ok(());
     }
     if capture {
-        let pid = if asi6200 {
+        let pid = if asi662 {
+            0x662b
+        } else if asi6200 {
             0x620b
         } else if p25 {
             0x260e
@@ -292,7 +306,9 @@ pub fn run(args: Vec<String>) -> Result<()> {
         use std::io::Write;
         let mut output = std::io::stdout().lock();
         for frame in 0..frames {
-            let (metadata, data) = if asi6200 {
+            let (metadata, data) = if asi662 {
+                asi662::capture(&camera, &result, &settings, replay)?
+            } else if asi6200 {
                 asi6200::capture(&camera, &result, &settings, duo_gain, duo_bin, replay)?
             } else if duo {
                 asi2600::capture(&camera, &result, &settings, duo_gain, duo_bin, replay)?

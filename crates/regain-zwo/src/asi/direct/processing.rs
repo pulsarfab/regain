@@ -68,6 +68,16 @@ pub fn bin_average(data: &[u8], width: usize, height: usize, bin: usize) -> Resu
 }
 
 impl Defects {
+    pub fn decode_662(
+        data: &[u8],
+        width: usize,
+        height: usize,
+        x: usize,
+        y: usize,
+    ) -> Result<Self> {
+        Self::decode_profile(data, (width, height, x, y), (1920, 1080, 2, 12))
+    }
+
     pub fn decode(data: &[u8], width: usize, height: usize, x: usize, y: usize) -> Result<Self> {
         Self::decode_profile(data, (width, height, x, y), (SENSOR, SENSOR, 2, 12))
     }
@@ -102,7 +112,7 @@ impl Defects {
         Self::decode_profile(data, (width, height, x, y), (9576, 6388, 1, 16))
     }
 
-    fn decode_profile(
+    pub(super) fn decode_profile(
         data: &[u8],
         roi: (usize, usize, usize, usize),
         profile: (usize, usize, usize, u8),
@@ -254,6 +264,7 @@ pub fn process_stream() -> Result<()> {
     input.read_exact(&mut calibration)?;
     let model = match request["model"].as_str() {
         None | Some("asi676mc") => "asi676mc",
+        Some("asi662mc") => "asi662mc",
         Some("asi2600mm-duo" | "asi2600mm-pro-p25") => "asi2600mm-duo",
         Some("asi220mm-mini") => "asi220mm-mini",
         Some("asi6200mm-pro") => "asi6200mm-pro",
@@ -261,7 +272,7 @@ pub fn process_stream() -> Result<()> {
     };
     let bin = request["bin"].as_u64().unwrap_or(1) as usize;
     ensure!(
-        (1..=4).contains(&bin) && (model != "asi676mc" || bin == 1),
+        (1..=4).contains(&bin) && (!matches!(model, "asi676mc" | "asi662mc") || bin == 1),
         "unsupported processing bin"
     );
     width = width
@@ -280,11 +291,12 @@ pub fn process_stream() -> Result<()> {
         "asi2600mm-duo" => Defects::decode_duo(&calibration, width, height, x, y)?,
         "asi220mm-mini" => Defects::decode_guide(&calibration, width, height, x, y)?,
         "asi6200mm-pro" => Defects::decode_6200(&calibration, width, height, x, y)?,
+        "asi662mc" => Defects::decode_662(&calibration, width, height, x, y)?,
         _ => Defects::decode(&calibration, width, height, x, y)?,
     };
     let mut data = vec![0; width * height * 2];
     input.read_exact(&mut data)?;
-    if model != "asi676mc" {
+    if !matches!(model, "asi676mc" | "asi662mc") {
         let last = data.len() - 4;
         data.copy_within(width * 2..width * 2 + 4, 0);
         data.copy_within(last - width * 2..last - width * 2 + 4, last);

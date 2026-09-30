@@ -49,6 +49,8 @@ with tempfile.TemporaryDirectory(prefix="regain-package-") as temporary:
     shutil.copy2(root / "docs/accessories.md", stage / "accessories.md")
     shutil.copy2(root / "docs/focusers.md", stage / "focusers.md")
     shutil.copy2(root / "docs/usb-recovery.md", stage / "usb-recovery.md")
+    for name in ["asi662mc.md", "asi662-validation.json"]:
+        shutil.copy2(root / "docs" / name, stage / name)
     shutil.copy2(root / "docs/ofp2.md", stage / "ofp2.md")
     shutil.copy2(root / "docs/eta.md", stage / "eta.md")
     shutil.copy2(root / "docs/eta-evidence.json", stage / "eta-evidence.json")

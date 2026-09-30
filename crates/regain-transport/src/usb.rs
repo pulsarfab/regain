@@ -28,7 +28,10 @@ impl Target {
     pub fn validate(&self) -> Result<()> {
         ensure!(
             self.vendor == 0x03c3
-                && matches!(self.product, 0x676d | 0x2601 | 0x2209 | 0x620b | 0x260e),
+                && matches!(
+                    self.product,
+                    0x676d | 0x662b | 0x2601 | 0x2209 | 0x620b | 0x260e
+                ),
             "USB recovery is limited to cameras with verified serial binding"
         );
         ensure!(

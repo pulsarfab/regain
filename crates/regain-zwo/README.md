@@ -5,6 +5,11 @@ ZWO ASI camera backends, CAA rotator, EFW filter wheel and EAF focuser.
 Features: `asi-direct`, `asi-sdk`, `caa`, `accessories` (all enabled by default).
 The `hid` module is shared by ZWO accessories.
 
+The direct ASI662MC and ASI676MC backends share Bayer capture, calibration, and
+retained-frame recovery with separate traced sensor profiles. ASI662MC supports
+RAW16 bin 1; short captures use a roughly 100 ms frame interval while preserving
+integration time. See the [ASI662MC guide](https://github.com/pulsarfab/regain/blob/main/docs/asi662mc.md).
+
 CAA example: No ZWO SDK or hidapi C library is
 required. Uses Windows HID, Linux hidraw, or macOS IOKit. Windows hardware
 validation covers CAA-M54 firmware 1.1.1; Linux/macOS hardware testing is pending.

@@ -1,6 +1,6 @@
 //! Version-1 plugin protocol over inherited pipes for the verified camera interfaces.
 //! A dedicated worker owns the exclusive driver handle for the entire connection.
-use crate::asi::direct::{asi220, asi676, asi2600, asi6200, settings::Settings, transport};
+use crate::asi::direct::{asi220, asi662, asi676, asi2600, asi6200, settings::Settings, transport};
 use anyhow::{Result, bail, ensure};
 use serde_json::{Value, json};
 use std::{
@@ -26,14 +26,16 @@ enum Work {
 enum Model {
     #[default]
     Asi676,
+    Asi662,
     Duo,
     Guide,
     Asi6200,
     Asi2600P25,
 }
 impl Model {
-    const ALL: [Self; 5] = [
+    const ALL: [Self; 6] = [
         Self::Asi676,
+        Self::Asi662,
         Self::Duo,
         Self::Guide,
         Self::Asi6200,
@@ -45,6 +47,7 @@ impl Model {
     fn name(self) -> &'static str {
         match self {
             Self::Asi676 => "ZWO ASI676MC",
+            Self::Asi662 => "ZWO ASI662MC",
             Self::Duo => "ZWO ASI2600MM Duo",
             Self::Guide => "ZWO ASI220MM Mini",
             Self::Asi6200 => "ZWO ASI6200MM Pro",
@@ -54,6 +57,7 @@ impl Model {
     fn pid(self) -> u32 {
         match self {
             Self::Asi676 => 0x676d,
+            Self::Asi662 => 0x662b,
             Self::Duo => 0x2601,
             Self::Guide => 0x2209,
             Self::Asi6200 => 0x620b,
@@ -63,11 +67,12 @@ impl Model {
     fn descriptor(self) -> Value {
         let (width, height, pixel, bits, bins, alignment) = match self {
             Self::Asi676 => (3552, 3552, 2.0, 12, vec![1], 2),
+            Self::Asi662 => (1920, 1080, 2.9, 12, vec![1], 8),
             Self::Duo | Self::Asi2600P25 => (6248, 4176, 3.76, 16, vec![1, 2, 3, 4], 16),
             Self::Guide => (1920, 1080, 4.0, 12, vec![1, 2], 2),
             Self::Asi6200 => (9576, 6388, 3.76, 16, vec![1, 2, 3, 4], 16),
         };
-        json!({"id":self.pid(),"name":self.name(),"width":width,"height":height,"color":self == Self::Asi676,"bayer":0,
+        json!({"id":self.pid(),"name":self.name(),"width":width,"height":height,"color":matches!(self, Self::Asi676 | Self::Asi662),"bayer":0,
             "pixelSize":pixel,"bitDepth":bits,"cooled":self.cooled(),"shutter":false,"bins":bins,"formats":[2],
             "minimumWidth":64,"minimumHeight":64,"originAlignment":alignment,
             "retainedFrameReads":self != Self::Guide,
@@ -76,6 +81,7 @@ impl Model {
     fn controls(self, auxiliary: bool) -> Vec<Value> {
         let (gain_min, gain_max, offset_min, offset_max, offset_default, exp_max) = match self {
             Self::Asi676 => (0, 600, 0, 200, 10, super::settings::MAX_EXPOSURE_US as i32),
+            Self::Asi662 => (0, 600, 0, 300, 15, super::settings::MAX_EXPOSURE_US as i32),
             Self::Duo => (-25, 700, 0, 240, 50, asi2600::MAX_EXPOSURE_US as i32),
             Self::Asi2600P25 => (-25, 700, 0, 240, 1, asi2600::MAX_EXPOSURE_US as i32),
             Self::Guide => (0, 600, 200, 1500, 200, 10_000_000),
@@ -115,6 +121,10 @@ impl Model {
             Self::Asi676 => {
                 ensure!(bin == 1, "ASI676MC direct capture supports bin 1 only");
                 settings.validate()
+            }
+            Self::Asi662 => {
+                ensure!(bin == 1, "ASI662MC direct capture supports bin 1 only");
+                asi662::PROFILE.validate(settings)
             }
             Self::Duo | Self::Asi2600P25 => asi2600::raw_settings(settings, gain, bin).map(|_| ()),
             Self::Guide => asi220::raw_settings(settings, bin).map(|_| ()),
@@ -449,6 +459,7 @@ impl Worker {
                                 .expect("validated transfer timeout");
                             match model {
                                 Model::Asi676 => asi676::capture(camera, info, &settings, false),
+                                Model::Asi662 => asi662::capture(camera, info, &settings, false),
                                 Model::Duo | Model::Asi2600P25 => {
                                     asi2600::capture(camera, info, &settings, gain, bin, false)
                                 }
@@ -618,6 +629,7 @@ impl Host {
                 self.settings.height = descriptor["height"].as_u64().unwrap() as u32;
                 self.settings.offset = match model {
                     Model::Asi676 => 10,
+                    Model::Asi662 => 15,
                     Model::Duo => 50,
                     Model::Guide => 200,
                     Model::Asi6200 => 50,
