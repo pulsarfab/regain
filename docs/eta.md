@@ -4,7 +4,7 @@ Adjust back focus while preserving tilt, or move one of the three tilt points.
 `regain-device wanderer eta` speaks directly to the ETA's serial port without a vendor SDK,
 Wanderer Empire, or the vendor ASCOM driver.
 
-**Availability:** current source and CI builds. ETA is not in release 0.4.0.0.
+**Availability:** release 0.5.0.0 and later.
 The attached M54 has been identified and read on Windows through the Rust worker,
 Alpaca, and shared 32/64-bit ASCOM clients. Movement is tested in
 simulation; physical movement validation is pending. M92 support is not claimed.

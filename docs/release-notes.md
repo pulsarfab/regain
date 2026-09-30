@@ -1,36 +1,44 @@
-# PulsarFab regain 0.4.0.0
+# PulsarFab regain 0.5.0.0
 
-**Regain control of your equipment.** ZWOgain is now PulsarFab regain, with a
-new pulsar-and-return icon, updated setup interfaces, documentation, and package
-names. The repository has moved to `pulsarfab/regain`.
+Recover stalled cameras and connect more equipment through NINA, native ASCOM,
+or one Alpaca server.
 
-- Rust crates and executables use `regain-*`; .NET projects use `Regain.*`.
-- The NINA plugin and native ASCOM Chooser entries display PulsarFab regain.
-- Saved NINA equipment IDs, the plugin GUID, ASCOM CLSIDs, and ASCOM ProgIDs
-  remain stable. Existing settings migrate without overwriting regain profiles.
-- The installer recognizes both old and new running binaries and removes obsolete
-  files after a successful upgrade. Manual NINA upgrades should remove the old
-  plugin folder before extracting the new package.
-- Custom actions use `Regain.*`; the old `ZwoGain.*` spelling remains accepted.
-- The README includes the new branding and refreshed UI screenshots.
+- **Opt-in USB camera recovery:** NINA, ASCOM, and Alpaca can escalate failed
+  captures to a device-scoped reset, reconnect the same serial, restore settings,
+  and take a replacement exposure within the configured retry limits. Windows
+  uses an elevated hub-port cycle; Linux supports device reset or optional port
+  cycling. Disabled by default; this does not switch external 12 V power.
+- **Dynamic Alpaca focusers:** add separate EAF, FocusCube3, and ETA slots with
+  persistent device numbers and identities, including multiple units of a model.
+- **Native OFP2 ASCOM:** the Deep Sky Dad flat panel now has a CoverCalibrator
+  entry and setup window. ASCOM clients share one serial connection across
+  32-bit and 64-bit applications.
+- **Wanderer Astro ETA M54:** direct Rust control, native NINA and shared ASCOM
+  support, and Alpaca integration. Physical identity, position reads, and serial
+  sharing are verified; physical movement remains unvalidated. M92 is unsupported.
+- **Shared vendor crates and executables:** ZWO, Pegasus, DeepSkyDad, and Wanderer
+  protocols use vendor crates and common transport code. `regain-device` replaces
+  the separate device workers while preserving process isolation per session.
+- **Camera hang hardening:** live SDK discovery is rejected while a camera is
+  open, and USB timeouts are bounded across supported direct camera models.
 
-This release also includes the independent Rust OFP2 flat-panel driver with Alpaca
-CoverCalibrator support, and Pegasus Astro FocusCube3 support in native NINA,
-native ASCOM, and Alpaca. FocusCube3 ASCOM clients share one out-of-process server
-and serial connection across 32-bit and 64-bit applications. Broader sharing
-between native NINA, Alpaca, and vendor software remains deferred.
+USB recovery supports the verified ASI676MC, ASI2600MM Pro/Duo, ASI6200MM Pro,
+and ASI220MM Mini identities in SDK or direct mode. A manual Windows ASI676 reset
+and fresh RAW16 capture passed. Automatic recovery passed simulation; the physical
+automatic test still needs UAC validation. Physical Linux recovery is untested.
+See [USB recovery setup and limits](https://github.com/pulsarfab/regain/blob/v0.5.0.0/docs/usb-recovery.md).
 
-Install or update **PulsarFab regain** in NINA using either
-`https://nina-plugins.pulsarfab.com/` or `https://nina-plugins.psf-guard.com/`.
-Both serve the same registry and preserve the existing ZWOgain plugin identity.
+For Windows ASCOM and the bundled Alpaca server, use
+`Regain-ASCOM-0.5.0.0-win-x64-setup.exe`. Install the NINA plugin through
+`https://nina-plugins.pulsarfab.com/`, or use `Regain-0.5.0.0.zip` manually.
+The CameraKit ZIP is a separate diagnostic tool. NINA plugin identity and saved
+ASCOM identities remain stable. Scripts invoking old per-device executable names
+must switch to the unified commands in the
+[architecture guide](https://github.com/pulsarfab/regain/blob/v0.5.0.0/docs/architecture.md).
 
-For Windows ASCOM, download `Regain-ASCOM-0.4.0.0-win-x64-setup.exe` below.
-The installer includes the standalone Alpaca server. For manual NINA installation,
-use `Regain-0.4.0.0.zip`. The CameraKit ZIP is a separate camera diagnostics tool.
+[Documentation and supported hardware](https://pulsarfab.com/docs/regain/) ·
+[Install and upgrade](https://pulsarfab.com/docs/regain/install.html)
 
-See [setup and upgrade instructions](https://github.com/pulsarfab/regain/blob/v0.4.0.0/README.md)
-and [compatibility details](https://github.com/pulsarfab/regain/blob/v0.4.0.0/docs/branding.md).
-
-Release binaries use the existing StackFoundry LLC signing certificate. Ordinary
-CI builds are unsigned. PulsarFab regain and its artwork use Apache-2.0;
-bundled third-party components retain their own licenses.
+Windows release binaries are signed by StackFoundry LLC. Linux/macOS server and
+worker builds remain available from CI or source. Regain is Apache-2.0; bundled
+third-party components retain their own licenses.

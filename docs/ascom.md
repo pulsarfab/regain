@@ -227,7 +227,7 @@ filter metadata, motor settings, protocol traces, and supported hardware.
 
 ## OFP2 cover and flat panel
 
-Current source and CI builds add **PulsarFab regain Deep Sky Dad OFP2**
+Release 0.5.0.0 adds **PulsarFab regain Deep Sky Dad OFP2**
 (`ASCOM.Regain.OFP2.CoverCalibrator`) as a native ASCOM CoverCalibrator.
 It uses `Regain.Ofp2.ASCOM.exe` and a shared Rust serial worker: 32-bit and 64-bit
 clients hold independent connections, and the last disconnect releases the port.
@@ -251,7 +251,7 @@ their own exclusive port ownership; broader sharing is deferred.
 See [FocusCube3 setup and protocol](focuscube3.md) and its physical-device
 screenshots. The serial worker is `regain-device.exe pegasus fc3`, not an Alpaca bridge.
 
-## Wanderer Astro ETA M54 (source/CI)
+## Wanderer Astro ETA M54
 
 [ETA setup and protocol](eta.md) covers the SDK-free Rust worker, native NINA
 provider, shared Windows ASCOM focuser, and a configurable [Alpaca focuser slot](focusers.md). Back-focus moves
@@ -259,7 +259,7 @@ preserve tilt; setup exposes individual points. Select by serial port. No
 hardware halt command is documented. Physical identity and encoder reads are
 verified; movement validation is pending.
 
-## USB reset recovery (source/CI)
+## USB reset recovery
 
 Camera setup can escalate failed captures to a device-scoped USB reset on Windows
 and Linux. It is disabled by default; set the failure threshold to 2 to try an

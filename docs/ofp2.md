@@ -8,10 +8,9 @@ This support is included from release 0.4.0.0.
 
 ## Native Windows ASCOM
 
-Current source and CI builds add **PulsarFab regain Deep Sky Dad OFP2**
+Release 0.5.0.0 adds **PulsarFab regain Deep Sky Dad OFP2**
 (`ASCOM.Regain.OFP2.CoverCalibrator`) to the ASCOM CoverCalibrator chooser.
-Release 0.4.0.0 includes Alpaca support only. Build the updated ASCOM package
-with `scripts/build-ascom.ps1` and `scripts/build-ascom-installer.ps1`.
+Install the ASCOM package from the [release page](https://github.com/pulsarfab/regain/releases/latest).
 
 1. Install the regain ASCOM package and connect the panel's USB and external power.
 2. Disconnect its vendor driver and Alpaca connection to release the serial port.

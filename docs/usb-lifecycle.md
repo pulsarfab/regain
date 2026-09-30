@@ -138,7 +138,7 @@ that evidence and the correction context safely across worker death is still ope
 
 ## Windows device restart
 
-Current source/CI builds also provide opt-in camera USB recovery through the
+Regain 0.5.0.0 and later also provide opt-in camera USB recovery through the
 shared supervisor. See [USB recovery setup](usb-recovery.md). The commands below
 are the earlier model-specific research tools, not the production reset path.
 
