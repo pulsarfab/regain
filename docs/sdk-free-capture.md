@@ -86,6 +86,40 @@ simulator tests check the advertised range and control/validation boundaries;
 supervisor tests verify no fresh-exposure retry or SDK fallback after a long
 direct exposure fails. These tests do not open hardware.
 
+### Long-exposure hardware validation (2026-09-30 UTC)
+
+An attached ASI676MC completed the following bin-1, full-frame RAW16 captures
+on Windows with the direct driver changes from `b59683e`. The USB driver
+reported `0x01020200`. No SDK was loaded, including a process-module check
+during the 2,000-second exposure. Gain was 200 for 60 seconds and 0 for the
+other two captures; offset was 10 throughout.
+
+| Requested exposure | Acquisition | Total including replay and processing |
+| --- | --- | --- |
+| 60 s | 60.203 s | 61.656 s |
+| 120 s | 120.199 s | 121.717 s |
+| 2,000 s | 2,000.190 s | 2,001.736 s |
+
+Each command exited successfully and returned 25,233,408 bytes at 3552 × 3552.
+All three retained-frame replays were byte-identical, with no additional
+exposure, read retry or cleanup error. Each acquisition cleared retained state
+before arming, checked matching boundary words, and froze the sensor before
+readout. Frame/shutter timing stayed at 4756/8 lines for all three durations.
+The corrected-frame SHA-256 for the 2,000-second capture was
+`0cdfeda83e01beac2c6c85b2e37f02800b4716496f17d4eeb3376dc6bad3a047`.
+
+Afterward, AutoPierCam received two new one-second frames through the direct
+worker and canceled another active exposure by terminating that worker in
+0.005 s. A separate explicit capture session then saved a new full-resolution
+16-bit PNG at 100 ms and gain 200, with uploads and video disabled. All test
+workers exited. Its bounded settling window expired after three complete
+frames; this was a capture/save check, not an automatic-exposure convergence
+test. No device reset, port cycle, installed configuration change or camera
+image publication was performed.
+
+These are timing, transfer-integrity and lifecycle checks, not optical quality,
+day/night convergence, cold-power startup or cable-interruption validation.
+
 Complete SDK-free frame replay matched every byte at full resolution and at
 512 × 256, for both 100 ms and one-second captures. Interrupting a replay after
 3 MiB initially showed that writing `18=1` again while it was already active
