@@ -1,11 +1,16 @@
 [package]
 name = "regain-transport"
-description = "Bounded serial I/O shared by vendor protocols"
+description = "Bounded serial I/O and USB recovery shared by vendor protocols"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
-repository.workspace = true
 authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme = "README.md"
+keywords = ["astronomy", "serial", "usb", "hardware"]
+categories = ["science", "hardware-support"]
 
 [dependencies]
 anyhow = "1"

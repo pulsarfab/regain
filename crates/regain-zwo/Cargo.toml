@@ -3,9 +3,14 @@ name = "regain-zwo"
 description = "ZWO camera, rotator, filter wheel and focuser protocols"
 version.workspace = true
 edition.workspace = true
-license.workspace = true
-repository.workspace = true
+rust-version.workspace = true
+license = "Apache-2.0 AND MIT"
 authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme = "README.md"
+keywords = ["astronomy", "astrophotography", "zwo", "camera", "usb"]
+categories = ["science", "hardware-support"]
 
 [features]
 default = ["asi-direct", "asi-sdk", "caa", "accessories"]
@@ -19,8 +24,8 @@ accessories = ["hid"]
 anyhow = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-regain-worker = { path = "../regain-worker" }
-regain-transport = { path = "../regain-transport" }
+regain-worker.workspace = true
+regain-transport.workspace = true
 sha2 = { version = "0.10", optional = true }
 libloading = { version = "0.9", optional = true }
 

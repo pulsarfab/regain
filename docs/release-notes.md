@@ -1,44 +1,32 @@
-# PulsarFab regain 0.5.0.0
+# PulsarFab regain 0.5.1.0
 
-Recover stalled cameras and connect more equipment through NINA, native ASCOM,
-or one Alpaca server.
+The Rust drivers, workers, and Alpaca server are now on crates.io. This release
+does not change device behavior.
 
-- **Opt-in USB camera recovery:** NINA, ASCOM, and Alpaca can escalate failed
-  captures to a device-scoped reset, reconnect the same serial, restore settings,
-  and take a replacement exposure within the configured retry limits. Windows
-  uses an elevated hub-port cycle; Linux supports device reset or optional port
-  cycling. Disabled by default; this does not switch external 12 V power.
-- **Dynamic Alpaca focusers:** add separate EAF, FocusCube3, and ETA slots with
-  persistent device numbers and identities, including multiple units of a model.
-- **Native OFP2 ASCOM:** the Deep Sky Dad flat panel now has a CoverCalibrator
-  entry and setup window. ASCOM clients share one serial connection across
-  32-bit and 64-bit applications.
-- **Wanderer Astro ETA M54:** direct Rust control, native NINA and shared ASCOM
-  support, and Alpaca integration. Physical identity, position reads, and serial
-  sharing are verified; physical movement remains unvalidated. M92 is unsupported.
-- **Shared vendor crates and executables:** ZWO, Pegasus, DeepSkyDad, and Wanderer
-  protocols use vendor crates and common transport code. `regain-device` replaces
-  the separate device workers while preserving process isolation per session.
-- **Camera hang hardening:** live SDK discovery is rejected while a camera is
-  open, and USB timeouts are bounded across supported direct camera models.
+- **Install the Alpaca server with Cargo:** on Windows, Linux, or macOS, run
+  `cargo install regain-alpaca regain-device`, then `regain-alpaca --port 11111`.
+  Install both crates to the same directory; the server starts its workers from
+  there. ZWO SDK camera mode also needs the SDK library in that directory.
+- **Use the drivers in your own Rust code:** `regain-zwo`, `regain-pegasus`,
+  `regain-deepskydad`, and `regain-wanderer` control ZWO cameras and accessories,
+  FocusCube3, OFP2, and ETA without vendor SDKs. `regain-transport`,
+  `regain-worker`, and `regain-core` hold the shared serial, IPC, and camera
+  recovery code. Rust 1.89 or later is required.
 
-USB recovery supports the verified ASI676MC, ASI2600MM Pro/Duo, ASI6200MM Pro,
-and ASI220MM Mini identities in SDK or direct mode. A manual Windows ASI676 reset
-and fresh RAW16 capture passed. Automatic recovery passed simulation; the physical
-automatic test still needs UAC validation. Physical Linux recovery is untested.
-See [USB recovery setup and limits](https://github.com/pulsarfab/regain/blob/v0.5.0.0/docs/usb-recovery.md).
+The NINA plugin, ASCOM drivers, and CameraKit match 0.5.0.0 apart from the
+version number. See the
+[0.5.0.0 notes](https://github.com/pulsarfab/regain/releases/tag/v0.5.0.0) for
+the last feature changes.
 
 For Windows ASCOM and the bundled Alpaca server, use
-`Regain-ASCOM-0.5.0.0-win-x64-setup.exe`. Install the NINA plugin through
-`https://nina-plugins.pulsarfab.com/`, or use `Regain-0.5.0.0.zip` manually.
-The CameraKit ZIP is a separate diagnostic tool. NINA plugin identity and saved
-ASCOM identities remain stable. Scripts invoking old per-device executable names
-must switch to the unified commands in the
-[architecture guide](https://github.com/pulsarfab/regain/blob/v0.5.0.0/docs/architecture.md).
+`Regain-ASCOM-0.5.1.0-win-x64-setup.exe`. Install the NINA plugin through
+`https://nina-plugins.pulsarfab.com/`, or use `Regain-0.5.1.0.zip` manually.
+The CameraKit ZIP is a separate diagnostic tool.
 
 [Documentation and supported hardware](https://pulsarfab.com/docs/regain/) ·
-[Install and upgrade](https://pulsarfab.com/docs/regain/install.html)
+[Install and upgrade](https://pulsarfab.com/docs/regain/install.html) ·
+[Crates](https://crates.io/search?q=regain-)
 
-Windows release binaries are signed by StackFoundry LLC. Linux/macOS server and
-worker builds remain available from CI or source. Regain is Apache-2.0; bundled
-third-party components retain their own licenses.
+Windows release binaries are signed by StackFoundry LLC. Regain is Apache-2.0;
+`regain-zwo` also carries a ZWO MIT notice, and bundled third-party components
+retain their own licenses.

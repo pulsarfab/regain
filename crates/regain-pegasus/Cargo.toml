@@ -1,15 +1,20 @@
 [package]
 name = "regain-pegasus"
-description = "SDK-free pegasus device protocols"
+description = "SDK-free Pegasus Astro FocusCube3 focuser protocol"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
-repository.workspace = true
 authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme = "README.md"
+keywords = ["astronomy", "astrophotography", "pegasus", "focuser", "serial"]
+categories = ["science", "hardware-support"]
 
 [dependencies]
 anyhow = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-regain-transport = { path = "../regain-transport" }
-regain-worker = { path = "../regain-worker" }
+regain-transport.workspace = true
+regain-worker.workspace = true

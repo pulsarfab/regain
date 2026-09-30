@@ -1,7 +1,7 @@
 # regain-wanderer
 
 Independent Rust driver for Wanderer Astro ETA M54 serial tilt/back-focus control.
-No vendor SDK or ASCOM dependency. See [protocol and setup](../../docs/eta.md).
+No vendor SDK or ASCOM dependency. See the [protocol and setup guide](https://github.com/pulsarfab/regain/blob/main/docs/eta.md).
 
 ```no_run
 use regain_wanderer::eta::{Tilter, serial::Serial};

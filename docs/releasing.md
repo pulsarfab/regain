@@ -26,11 +26,16 @@ it is checked in, so builds need no image renderer or Node dependency.
 
 `Directory.Build.props` is the four-part .NET/NINA version source of truth.
 The first three components must match the Rust workspace version in
-`Cargo.toml`; the fourth permits plugin-only revisions. `scripts/version.ps1`
-rejects a mismatched tag or Rust version. Both packaged .NET assemblies and
+`Cargo.toml`; the fourth permits plugin-only revisions. The regain entries in
+`[workspace.dependencies]` repeat that Rust version, because crates.io needs a
+version on each path dependency. `scripts/version.ps1` rejects a mismatched
+tag, Rust version or dependency version. Because a crates.io version cannot be
+reused, a plugin-only revision (for example `0.5.1.1`) publishes no crates. Both packaged .NET assemblies and
 the camera's displayed driver version use the same version.
 
-1. Update the source version and `docs/release-notes.md`, then merge to main.
+1. Update the version in `Directory.Build.props`, `[workspace.package]` and
+   `[workspace.dependencies]`, run `cargo check` to refresh `Cargo.lock`, and
+   replace `docs/release-notes.md`. Merge to main.
 2. Run `scripts/test.ps1`, `scripts/build.ps1`, and `scripts/test-release.ps1`.
    A manual **Release** workflow run on `main` does the same build and validation
    and uploads artifacts without creating a tag or GitHub release.
@@ -42,6 +47,9 @@ the camera's displayed driver version use the same version.
    `Regain-ASCOM-0.3.0.0-win-x64-setup.exe`, and its `.exe.sha256`.
 4. Inspect/test those artifacts, then publish the draft as a stable release.
    A rerun can refresh a draft, but refuses to overwrite published assets.
+
+5. Publish the crates from the tagged commit, as described in
+   [crates.io publication](#cratesio-publication).
 
 The manifest generator uses the compiled plugin's identity, version, author,
 license, minimum NINA version and descriptions. It validates the actual ZIP
@@ -76,6 +84,38 @@ as of 2026-09-14. The Azure federated credential must match the workflow's
 After the PulsarFab transfer, the subject is
 `repo:pulsarfab@279567456/regain@1369114153:environment:release`.
 Run the signing smoke test after changes to the repository name or owner.
+
+## crates.io publication
+
+All nine workspace crates are published to crates.io under the same Rust
+version: `regain-worker`, `regain-transport`, `regain-core`, `regain-zwo`,
+`regain-pegasus`, `regain-deepskydad`, `regain-wanderer`, `regain-device` and
+`regain-alpaca`. Each crate has its own `README.md` and `LICENSE`, and inherits
+`version`, `edition`, `rust-version`, `authors`, `repository` and `homepage`
+from the workspace. `regain-zwo` is `Apache-2.0 AND MIT` because of the ZWO
+notice in `LICENSE-ZWO`. Keep the per-crate README text self-contained and use
+absolute links; crates.io cannot resolve links into `docs/`.
+
+The **crates.io packages** job in **Build and test** builds the workspace with
+the declared minimum Rust version (1.89) and runs `cargo package --workspace`,
+which packages and builds every crate against the others as crates.io would see
+them. Raise `rust-version` and that job together.
+
+Publish after the tag exists and its **Release** run has passed. From a clean
+checkout of the tag, with a crates.io token that can publish these crates
+(`cargo login`, or `CARGO_REGISTRY_TOKEN`):
+
+```sh
+git checkout v0.5.1.0
+cargo publish --workspace --locked --dry-run
+cargo publish --workspace --locked
+```
+
+`cargo publish --workspace` (Cargo 1.90 or later) uploads the crates in
+dependency order and waits for each to appear in the index. If it stops
+partway, rerun `cargo publish -p <crate>` for the remaining crates in the order
+listed above. A published version cannot be replaced; fix a bad release with a
+new version and `cargo yank` the bad one.
 
 ## Registry publication
 
