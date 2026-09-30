@@ -52,8 +52,11 @@ public class DirectBackendTests
         Assert.Equal((ushort)4095, frame.Pixels[^1]);
     }
 
-    [Fact]
-    public async Task CancellationTerminatesActiveDirectWorkerAndNextCaptureReconnects()
+    [Theory]
+    [InlineData(2000000)]
+    [InlineData(60000000)]
+    [InlineData(2000000000)]
+    public async Task CancellationTerminatesActiveDirectWorkerAndNextCaptureReconnects(long duration)
     {
         int starts = 0;
         using var session = new CameraSession(Camera, () => { starts++; return Host(); }, Fast);
@@ -61,7 +64,7 @@ public class DirectBackendTests
         session.Diagnostic += phases.Enqueue;
         await session.ConnectAsync(default);
         using var cancel = new CancellationTokenSource(100);
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => session.CaptureAsync(Exposure with { microseconds = 2000000 }, cancel.Token));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => session.CaptureAsync(Exposure with { microseconds = duration }, cancel.Token));
         Assert.Contains("Aborted", phases);
         var frame = await session.CaptureAsync(Exposure, default);
         Assert.Equal(2, starts);
