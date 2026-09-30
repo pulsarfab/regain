@@ -20,7 +20,7 @@ public class DirectBackendTests
         await session.ConnectAsync(default);
         Assert.Equal("direct", session.Backend);
         Assert.Equal(new[] { 1 }, session.Camera.Bins);
-        Assert.Equal(30000000, session.Controls[1].Max);
+        Assert.Equal(2000000000, session.Controls[1].Max);
         Assert.False(session.Controls[6].Writable);
         Assert.False(session.Controls.ContainsKey(8));
         var invalid = await Assert.ThrowsAsync<SdkException>(() => session.CaptureAsync(Exposure with { width = 8 }, default));
@@ -202,16 +202,21 @@ public class DirectBackendTests
     }
 
     [Theory]
-    [InlineData(60000000)]
-    [InlineData(120000000)]
-    [InlineData(1200000000)]
-    [InlineData(2000000000)]
-    public async Task LongMainExposureStartsDirectlyButFailureDoesNotRetryOrFallback(long duration)
+    [InlineData(false, 60000000)]
+    [InlineData(false, 120000000)]
+    [InlineData(false, 1200000000)]
+    [InlineData(false, 2000000000)]
+    [InlineData(true, 30000001)]
+    [InlineData(true, 60000000)]
+    [InlineData(true, 120000000)]
+    [InlineData(true, 2000000000)]
+    public async Task LongExposureStartsDirectlyButFailureDoesNotRetryOrFallback(bool asi676, long duration)
     {
         HostClient? current = null;
         int starts = 0, fallbackStarts = 0;
-        using var session = new CameraSession(Duo(), () => { starts++; return current = Host(); }, Fast,
-            sdkFallbackFactory: () => { fallbackStarts++; return Fallback(Duo()); });
+        var camera = asi676 ? Camera : Duo();
+        using var session = new CameraSession(camera, () => { starts++; return current = Host(); }, Fast,
+            sdkFallbackFactory: () => { fallbackStarts++; return Fallback(camera); });
         await session.ConnectAsync(default);
         Assert.Equal(2000000000, session.Controls[1].Max);
         bool started = false;
@@ -228,10 +233,12 @@ public class DirectBackendTests
         Assert.Equal("direct", session.Backend);
     }
 
-    [Fact]
-    public async Task MainAdvertisesLongExposureRangeWithoutSdkFallback()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task AdvertisesLongExposureRangeWithoutSdkFallback(bool asi676)
     {
-        using var session = new CameraSession(Duo(), Host, Fast);
+        using var session = new CameraSession(asi676 ? Camera : Duo(), Host, Fast);
         await session.ConnectAsync(default);
         Assert.Equal(2000000000, session.Controls[1].Max);
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() =>

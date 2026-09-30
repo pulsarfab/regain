@@ -1,5 +1,9 @@
 use anyhow::{Result, ensure};
 
+// ASI676MC SDK exposure range. At >=1 s the host times integration; the
+// sensor frame/shutter registers do not grow with the requested duration.
+pub const MAX_EXPOSURE_US: u32 = 2_000_000_000;
+
 #[derive(Clone, Debug)]
 pub struct Settings {
     pub width: u32,
@@ -71,10 +75,10 @@ impl Settings {
             "read retries must be 0..5; interrupted prefix must be a multiple of 1024 smaller than the frame"
         );
         ensure!(
-            (32..=30_000_000).contains(&self.microseconds)
+            (32..=MAX_EXPOSURE_US).contains(&self.microseconds)
                 && self.gain <= 600
                 && self.offset <= 200,
-            "research limits: exposure 32us..30s, gain 0..600, offset 0..200"
+            "ASI676MC limits: exposure 32us..2000s, gain 0..600, offset 0..200"
         );
         Ok(())
     }
@@ -138,13 +142,42 @@ mod tests {
         assert_eq!(s.gain_registers(), (1, 74));
     }
     #[test]
+    fn long_exposures_keep_host_timed_registers_and_sdk_range() {
+        for (width, height) in [(64, 64), (512, 256), (3552, 3552)] {
+            let mut s = Settings {
+                width,
+                height,
+                microseconds: 1_000_000,
+                ..Settings::default()
+            };
+            let registers = s.timing();
+            for duration in [
+                30_000_001,
+                60_000_000,
+                120_000_000,
+                1_200_000_000,
+                MAX_EXPOSURE_US,
+            ] {
+                s.microseconds = duration;
+                assert!(s.validate().is_ok());
+                assert!(s.long_exposure());
+                assert_eq!(s.timing(), registers);
+                assert!(s.microseconds.checked_sub(200_000).is_some());
+            }
+            for invalid in [31, MAX_EXPOSURE_US + 1, u32::MAX] {
+                s.microseconds = invalid;
+                assert!(s.validate().is_err());
+            }
+        }
+    }
+    #[test]
     fn invalid_settings_rejected_before_hardware_access() {
         let mut s = Settings::default();
         assert!(s.validate().is_ok());
         s.x = u32::MAX;
         assert!(s.validate().is_err());
         s.x = 0;
-        s.microseconds = 30_000_001;
+        s.microseconds = MAX_EXPOSURE_US + 1;
         assert!(s.validate().is_err());
         s.microseconds = 32;
         s.width = 3551;

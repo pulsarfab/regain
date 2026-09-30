@@ -17,7 +17,7 @@ through an explicit experimental setup option for the verified ASI676MC modes.
 - Observed USB3 ASI676MC only: VID `03c3`, PID `676d`, bulk-IN endpoint `81`.
 - Bin 1, RGGB RAW16; even ROI origin, width multiple of 8, even height,
   minimum 64 × 64, maximum 3552 × 3552.
-- Exposures 32 µs through 30 seconds, gain 0–600, offset 0–200.
+- Exposures 32 µs through 2,000 seconds, gain 0–600, offset 0–200.
 - USB bandwidth configuration fixed at the traced limit of 40.
 - Configurable retained-frame read retries, default 2, maximum 5.
 
@@ -72,6 +72,19 @@ the requested duration is timed by the host. Gain changes conversion mode at
 it. Version-pinned disassembly and traced register values anchor these formulas.
 
 ## Recovery experiments and limits
+
+The former 30-second research cap has been raised to the SDK's 2,000-second
+range. At one second and above, the existing host-timed sequence keeps the
+sensor frame/shutter registers fixed. Only the host wait changes. CLI and
+worker watchdogs already include the requested exposure duration. The
+30-second default **fresh-exposure retry** cutoff is unchanged; it is not an
+exposure limit. Retained-frame read retries do not start another exposure.
+
+Rust tests cover the old boundary, 60/120/1,200/2,000 seconds, unchanged timing
+registers at several ROIs, and rejection above the advertised range. Framed
+simulator tests check the advertised range and control/validation boundaries;
+supervisor tests verify no fresh-exposure retry or SDK fallback after a long
+direct exposure fails. These tests do not open hardware.
 
 Complete SDK-free frame replay matched every byte at full resolution and at
 512 × 256, for both 100 ms and one-second captures. Interrupting a replay after

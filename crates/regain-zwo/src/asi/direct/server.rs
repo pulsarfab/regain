@@ -75,7 +75,7 @@ impl Model {
     }
     fn controls(self, auxiliary: bool) -> Vec<Value> {
         let (gain_min, gain_max, offset_min, offset_max, offset_default, exp_max) = match self {
-            Self::Asi676 => (0, 600, 0, 200, 10, 30_000_000),
+            Self::Asi676 => (0, 600, 0, 200, 10, super::settings::MAX_EXPOSURE_US as i32),
             Self::Duo => (-25, 700, 0, 240, 50, asi2600::MAX_EXPOSURE_US as i32),
             Self::Asi2600P25 => (-25, 700, 0, 240, 1, asi2600::MAX_EXPOSURE_US as i32),
             Self::Guide => (0, 600, 200, 1500, 200, 10_000_000),

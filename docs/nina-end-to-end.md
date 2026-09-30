@@ -229,7 +229,7 @@ results, never camera pixels or calibration payloads without a separate request.
 | Cancellation | Abort a multi-second exposure on each backend; verify prompt cancellation, then successfully capture another image. |
 | SDK process recovery | Terminate only the plugin's SDK worker during a short capture; NINA should retain the request, reconnect after its delay, restore controls and display the replacement image. |
 | Direct process recovery | Terminate only the direct worker during a short capture; recover on the direct backend and display the replacement image. |
-| Retry cutoff | SDK exposure above 30 s with deliberate host termination must fail after one attempt with the default cutoff. Direct ASI2600/6200 accept up to 2,000 s; retained reads remain permitted, while full recapture still obeys the cutoff. ASI676 and guide retain their 30 s and 10 s direct limits. |
+| Retry cutoff | SDK exposure above 30 s with deliberate host termination must fail after one attempt with the default cutoff. Direct ASI676/2600/6200 accept up to 2,000 s; retained reads remain permitted, while full recapture still obeys the cutoff. The guide retains its 10 s direct limit. |
 | Duo cooling | Record initial temperature/target/enable/power. Exercise a modest target change and enabled/disabled states; capture during cooling. During a short-exposure worker failure, verify target/enable restoration and settling near the prior temperature before retry. Restore initial state. |
 | Unsupported direct cameras | Models/interfaces outside the explicit direct allowlist must be rejected clearly. The tested ASI6200MM Pro P25 now has its own path. Confirm the SDK remains usable after an unsupported direct selection. |
 
