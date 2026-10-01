@@ -1,31 +1,39 @@
-# PulsarFab regain 0.5.1.0
+# PulsarFab regain 0.5.2.0
 
-The Rust drivers, workers, and Alpaca server are now on crates.io. This release
-does not change device behavior.
+Control the **Pegasus Astro Falcon Rotator V2** directly over USB serial,
+without the vendor SDK or Unity. The same Rust driver powers native NINA,
+native Windows ASCOM and the universal Alpaca server.
 
-- **Install the Alpaca server with Cargo:** on Windows, Linux, or macOS, run
-  `cargo install regain-alpaca regain-device`, then `regain-alpaca --port 11111`.
-  Install both crates to the same directory; the server starts its workers from
-  there. ZWO SDK camera mode also needs the SDK library in that directory.
-- **Use the drivers in your own Rust code:** `regain-zwo`, `regain-pegasus`,
-  `regain-deepskydad`, and `regain-wanderer` control ZWO cameras and accessories,
-  FocusCube3, OFP2, and ETA without vendor SDKs. `regain-transport`,
-  `regain-worker`, and `regain-core` hold the shared serial, IPC, and camera
-  recovery code. Rust 1.89 or later is required.
+- **Native NINA and ASCOM:** choose PulsarFab regain Pegasus Falcon V2.
+  The shared rotator dialog offers motion, sync, reverse and reference controls.
+  ASCOM clients share one serial connection; disconnecting one leaves the others
+  connected. FocusCube3 and Falcon now use `Regain.Pegasus.ASCOM.exe`.
+- **Alpaca:** add Falcon or CAA instances at `/setup/rotators`. Each receives a
+  stable device number and UUID. Existing CAA profiles retain their identity.
+- **Rust:** Falcon support lives in `regain-pegasus::falcon`, sharing serial
+  framing with FocusCube3. The common executable exposes
+  `regain-device pegasus falcon` commands.
+- **Origin and multi-turn control:** reset or relabel the mechanical origin,
+  or explicitly travel up to +/-450 degrees. Multi-turn movement bypasses normal
+  cable-wrap protection; check clearance and cable slack before using it.
+  Uncertain writes are never replayed, and motion faults attempt a halt before
+  requiring reconnection.
 
-The NINA plugin, ASCOM drivers, and CameraKit match 0.5.0.0 apart from the
-version number. See the
-[0.5.0.0 notes](https://github.com/pulsarfab/regain/releases/tag/v0.5.0.0) for
-the last feature changes.
+Hardware tests passed on Falcon V2 revision A, firmware 1.8, on Windows:
+short moves, crossing zero, +/-450 degree travel, halt during motion, reverse,
+origin reset, repeated reconnects, native NINA and shared 32/64-bit ASCOM clients.
+Linux/macOS hardware validation remains pending. Falcon V1 is not supported.
+The [Falcon guide](https://github.com/pulsarfab/regain/blob/v0.5.2.0/docs/falcon-v2.md)
+includes protocol evidence and a screenshot connected to physical hardware.
 
 For Windows ASCOM and the bundled Alpaca server, use
-`Regain-ASCOM-0.5.1.0-win-x64-setup.exe`. Install the NINA plugin through
-`https://nina-plugins.pulsarfab.com/`, or use `Regain-0.5.1.0.zip` manually.
-The CameraKit ZIP is a separate diagnostic tool.
+`Regain-ASCOM-0.5.2.0-win-x64-setup.exe`. Install NINA through
+`https://nina-plugins.pulsarfab.com/`, or use `Regain-0.5.2.0.zip` manually.
+For Cargo installations, update both `regain-alpaca` and `regain-device` to
+0.5.2. The CameraKit ZIP is a separate diagnostic tool.
 
 [Documentation and supported hardware](https://pulsarfab.com/docs/regain/) ·
-[Install and upgrade](https://pulsarfab.com/docs/regain/install.html) ·
-[Crates](https://crates.io/search?q=regain-)
+[Install and upgrade](https://pulsarfab.com/docs/regain/install.html)
 
 Windows release binaries are signed by StackFoundry LLC. Regain is Apache-2.0;
 `regain-zwo` also carries a ZWO MIT notice, and bundled third-party components
