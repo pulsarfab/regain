@@ -23,6 +23,9 @@ try {
     if ($LASTEXITCODE) { throw 'USB recovery tests failed' }
     python scripts/test-alpaca-rotator.py
     if ($LASTEXITCODE) { throw 'Alpaca rotator tests failed' }
+    python scripts/test-alpaca-falcon.py
+    if ($LASTEXITCODE) { throw 'Falcon Alpaca tests failed' }
+    & (Join-Path $PSScriptRoot 'test-falcon-ascom.ps1')
     python scripts/test-alpaca-accessories.py
     if ($LASTEXITCODE) { throw 'Alpaca accessory tests failed' }
     python scripts/test-alpaca-focusers.py

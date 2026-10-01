@@ -30,7 +30,7 @@ use tokio::net::UdpSocket;
 pub struct Server {
     pub profiles: Arc<Profiles>,
     pub runtime: Runtime,
-    pub rotator: crate::rotator::Rotator,
+    rotators: Mutex<HashMap<usize, Arc<crate::rotator::Rotator>>>,
     pub filterwheel: crate::accessory::Accessory,
     focusers: Mutex<HashMap<usize, Arc<crate::accessory::Accessory>>>,
     pub flatpanel: crate::flatpanel::FlatPanel,
@@ -102,11 +102,6 @@ impl Log {
 }
 impl Server {
     pub fn new(profiles: Arc<Profiles>, runtime: Runtime, log: Arc<Log>) -> Arc<Self> {
-        let rotator = crate::rotator::Rotator::new(
-            profiles.rotator_path(),
-            runtime.directory.clone(),
-            runtime.simulate,
-        );
         Arc::new(Self {
             flatpanel: crate::flatpanel::FlatPanel::new(
                 profiles.accessory_path("ofp2"),
@@ -122,7 +117,7 @@ impl Server {
                 runtime.simulate,
             ),
             focusers: Mutex::new(HashMap::new()),
-            rotator,
+            rotators: Mutex::new(HashMap::new()),
             profiles,
             runtime,
             log,
@@ -130,6 +125,60 @@ impl Server {
             transaction: AtomicU32::new(0),
             connections: tokio::sync::Mutex::new(()),
         })
+    }
+    fn rotator(&self, number: usize) -> Result<Arc<crate::rotator::Rotator>> {
+        let slot = self
+            .profiles
+            .rotators
+            .get(number)
+            .ok_or_else(|| error(0x401, "Unknown rotator slot"))?;
+        Ok(self
+            .rotators
+            .lock()
+            .unwrap()
+            .entry(number)
+            .or_insert_with(|| {
+                Arc::new(crate::rotator::Rotator::new(
+                    slot.kind,
+                    number,
+                    slot.unique_id.clone(),
+                    self.profiles.rotators.profile_path(&slot),
+                    self.runtime.directory.clone(),
+                    self.runtime.simulate,
+                ))
+            })
+            .clone())
+    }
+    async fn check_rotator_selection(
+        &self,
+        number: usize,
+        serial: Option<&str>,
+        active_only: bool,
+    ) -> Result<()> {
+        let target = self
+            .profiles
+            .rotators
+            .get(number)
+            .ok_or_else(|| error(0x401, "Unknown rotator slot"))?;
+        if let Some(serial) = serial {
+            for slot in self.profiles.rotators.all() {
+                if slot.number == number || slot.kind != target.kind {
+                    continue;
+                }
+                let other = self.rotator(slot.number)?.setup().await?;
+                if (!active_only || other["connected"] == true)
+                    && other["profile"]["serial"]
+                        .as_str()
+                        .is_some_and(|v| v.eq_ignore_ascii_case(serial))
+                {
+                    return Err(error(
+                        0x40b,
+                        format!("Device is already selected by rotator {}", slot.number),
+                    ));
+                }
+            }
+        }
+        Ok(())
     }
     fn focuser(&self, number: usize) -> Result<Arc<crate::accessory::Accessory>> {
         let slot = self
@@ -212,7 +261,10 @@ impl Server {
     }
     pub async fn shutdown(&self) {
         self.flatpanel.shutdown().await;
-        self.rotator.shutdown().await;
+        let rotators: Vec<_> = self.rotators.lock().unwrap().values().cloned().collect();
+        for rotator in rotators {
+            rotator.shutdown().await;
+        }
         self.filterwheel.shutdown().await;
         let focusers: Vec<_> = self.focusers.lock().unwrap().values().cloned().collect();
         for focuser in focusers {
@@ -289,7 +341,7 @@ impl Server {
                 get(rotator_get).put(rotator_put),
             )
             .route(
-                "/setup/v1/rotator/0/setup",
+                "/setup/v1/rotator/{slot}/setup",
                 get(|| async { axum::response::Html(include_str!("../web/rotator.html")) }),
             )
             .route(
@@ -306,6 +358,28 @@ impl Server {
                 get(rotator_setup).post(rotator_select),
             )
             .route("/setup/api/rotator/discover", post(rotator_discover))
+            .route(
+                "/setup/rotators",
+                get(|| async { axum::response::Html(include_str!("../web/rotators.html")) }),
+            )
+            .route(
+                "/rotators.js",
+                get(|| async {
+                    (
+                        [(axum::http::header::CONTENT_TYPE, "text/javascript")],
+                        include_str!("../web/rotators.js"),
+                    )
+                }),
+            )
+            .route("/setup/api/rotators", get(rotators_setup).post(rotator_add))
+            .route(
+                "/setup/api/rotators/{slot}",
+                get(rotator_setup_slot).post(rotator_select_slot),
+            )
+            .route(
+                "/setup/api/rotators/{slot}/discover",
+                post(rotator_discover_slot),
+            )
             .route(
                 "/api/v1/{accessory}/{slot}/{member}",
                 get(accessory_get).put(accessory_put),
@@ -419,11 +493,16 @@ async fn management(
         }
         "configureddevices" => {
             let mut devices = s.profiles.all().into_iter().enumerate().filter(|(_,p)|p.camera.is_some()).map(|(slot,p)|json!({"DeviceName":p.label,"DeviceType":"Camera","DeviceNumber":slot,"UniqueID":p.unique_id})).collect::<Vec<_>>();
-            match s.rotator.configured().await {
-                Ok(Some(r)) => devices.push(r),
-                Ok(None) => (),
-                Err(e) => return Json(failure(e, id, s.next())).into_response(),
-            };
+            for slot in s.profiles.rotators.all() {
+                match match s.rotator(slot.number) {
+                    Ok(r) => r.configured().await,
+                    Err(e) => Err(e),
+                } {
+                    Ok(Some(r)) => devices.push(r),
+                    Ok(None) => (),
+                    Err(e) => return Json(failure(e, id, s.next())).into_response(),
+                };
+            }
             let mut accessories = vec![s.filterwheel.configured().await];
             for slot in s.profiles.focusers.all() {
                 accessories.push(match s.focuser(slot.number) {
@@ -728,14 +807,21 @@ async fn rotator_request(
     put: bool,
     params: Result<Params>,
 ) -> Response {
-    if slot != 0 || member != member.to_lowercase() {
+    if s.profiles.rotators.get(slot).is_none() || member != member.to_lowercase() {
         return StatusCode::NOT_FOUND.into_response();
     }
     let mut id = 0;
     let result = async {
         let p = params?;
         id = p.optional_id("ClientTransactionID")?;
-        s.rotator.request(&member, put, &p).await
+        let _gate = s.connections.lock().await;
+        let rotator = s.rotator(slot)?;
+        if member == "connected" && put && p.boolean("Connected")? {
+            let state = rotator.setup().await?;
+            s.check_rotator_selection(slot, state["profile"]["serial"].as_str(), true)
+                .await?;
+        }
+        rotator.request(&member, put, &p).await
     }
     .await;
     Json(match result {
@@ -744,11 +830,42 @@ async fn rotator_request(
     })
     .into_response()
 }
-async fn rotator_setup(State(s): State<Arc<Server>>) -> Response {
-    setup_result(s.rotator.setup().await)
+async fn rotators_setup(State(s): State<Arc<Server>>) -> Response {
+    setup_result(
+        async {
+            let mut rows = vec![];
+            for slot in s.profiles.rotators.all() {
+                rows.push(s.rotator(slot.number)?.setup().await?);
+            }
+            Ok(json!(rows))
+        }
+        .await,
+    )
 }
-async fn rotator_select(
+async fn rotator_add(
     State(s): State<Arc<Server>>,
+    headers: HeaderMap,
+    Json(v): Json<Value>,
+) -> Response {
+    if !setup_allowed(&headers) {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    setup_result((|| {
+        Ok(json!({"slot":s.profiles.rotators.add(serde_json::from_value(v["kind"].clone())?)?}))
+    })())
+}
+async fn rotator_setup(State(s): State<Arc<Server>>) -> Response {
+    rotator_setup_slot(State(s), Path(0)).await
+}
+async fn rotator_setup_slot(State(s): State<Arc<Server>>, Path(slot): Path<usize>) -> Response {
+    setup_result(async { s.rotator(slot)?.setup().await }.await)
+}
+async fn rotator_select(State(s): State<Arc<Server>>, h: HeaderMap, j: Json<Value>) -> Response {
+    rotator_select_slot(State(s), Path(0), h, j).await
+}
+async fn rotator_select_slot(
+    State(s): State<Arc<Server>>,
+    Path(slot): Path<usize>,
     headers: HeaderMap,
     Json(value): Json<Value>,
 ) -> Response {
@@ -760,13 +877,49 @@ async fn rotator_select(
         Value::String(s) => Some(s.clone()),
         _ => return setup_result(Err(error(0x401, "Invalid serial"))),
     };
-    setup_result(s.rotator.select(serial).await)
+    let _gate = s.connections.lock().await;
+    setup_result(
+        async {
+            s.check_rotator_selection(slot, serial.as_deref(), false)
+                .await?;
+            s.rotator(slot)?.select(serial).await
+        }
+        .await,
+    )
 }
-async fn rotator_discover(State(s): State<Arc<Server>>, headers: HeaderMap) -> Response {
+async fn rotator_discover(State(s): State<Arc<Server>>, h: HeaderMap) -> Response {
+    rotator_discover_slot(State(s), Path(0), h).await
+}
+async fn rotator_discover_slot(
+    State(s): State<Arc<Server>>,
+    Path(slot): Path<usize>,
+    headers: HeaderMap,
+) -> Response {
     if !setup_allowed(&headers) {
         return StatusCode::FORBIDDEN.into_response();
     }
-    setup_result(s.rotator.discover().await)
+    let _gate = s.connections.lock().await;
+    setup_result(
+        async {
+            let target = s
+                .profiles
+                .rotators
+                .get(slot)
+                .ok_or_else(|| error(0x401, "Unknown rotator slot"))?;
+            for other in s.profiles.rotators.all() {
+                if other.kind == target.kind
+                    && s.rotator(other.number)?.setup().await?["connected"] == true
+                {
+                    return Err(error(
+                        0x40b,
+                        "Disconnect rotators of this model before scanning",
+                    ));
+                }
+            }
+            s.rotator(slot)?.discover().await
+        }
+        .await,
+    )
 }
 
 async fn accessory_page() -> axum::response::Html<&'static str> {

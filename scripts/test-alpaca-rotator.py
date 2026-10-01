@@ -52,11 +52,12 @@ def main():
                 deadline = time.monotonic() + 30
                 while True:
                     try:
-                        request('/setup/api/rotator')
+                        request('/setup/api/rotators')
                         break
                     except urllib.error.URLError:
                         assert process.poll() is None and time.monotonic() < deadline
                         time.sleep(.05)
+                assert request('/setup/api/rotators', {'kind':'caa'})['slot'] == 0
                 assert not request('/management/v1/configureddevices')['Value']
                 assert rotator('interfaceversion') == 3
                 rotator('position', error=0x407)
@@ -113,18 +114,23 @@ def main():
                 while rotator('ismoving'):
                     assert time.monotonic() < deadline
                     time.sleep(.1)
-                assert not json.loads(profile_path.with_suffix('.rotator.json').read_text())['coordinatesUncertain']
+                assert not json.loads(profile_path.with_suffix('.rotator-0.json').read_text())['coordinatesUncertain']
                 rotator('halt', {})
                 rotator('connected', {'Connected': False}, client=2)
                 rotator('connected', {'Connected': False})
                 assert request('/management/v1/configureddevices')['Value'][0]['UniqueID'] == identifier
-                saved = json.loads(profile_path.with_suffix('.rotator.json').read_text())
+                saved = json.loads(profile_path.with_suffix('.rotator-0.json').read_text())
                 rotator('connected', {'Connected': True})
                 # The simulator starts at 152 each time; the persisted logical offset must be restored.
                 assert abs(rotator('position') - ((152 + saved['logicalOffset']) % 360)) < .01
                 rotator('connected', {'Connected': False})
                 print('Alpaca CAA: discovery, selection, clients, motion, sync, reverse, actions, limits, multi-turn and persistence passed.')
             finally:
+                try:
+                    rotator('connected', {'Connected': False}, client=2)
+                    rotator('connected', {'Connected': False})
+                except Exception:
+                    pass
                 process.terminate()
                 process.wait(timeout=10)
 

@@ -46,6 +46,7 @@ internal static class Program
                         throw new InvalidOperationException("Unregister the rotator from its currently installed directory.");
                 }
                 FocusCubeRegistration.Register(root, Path.GetDirectoryName(assembly)!, remove);
+                FalconRegistration.Register(root, Path.GetDirectoryName(assembly)!, remove);
                 Ofp2Registration.Register(root, Path.GetDirectoryName(assembly)!, remove);
                 EtaRegistration.Register(root, Path.GetDirectoryName(assembly)!, remove);
                 string framework = view == RegistryView.Registry32 ? "Framework" : "Framework64";

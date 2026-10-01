@@ -103,6 +103,7 @@ impl Profile {
 }
 pub struct Profiles {
     pub focusers: crate::focuser::Slots,
+    pub rotators: crate::slots::Slots,
     path: Option<PathBuf>,
     values: Mutex<Vec<Profile>>,
 }
@@ -129,6 +130,7 @@ impl Profiles {
         }
         let profiles = Self {
             focusers: crate::focuser::Slots::new(path.clone())?,
+            rotators: crate::slots::Slots::new_rotators(path.clone())?,
             path,
             values: Mutex::new(values),
         };

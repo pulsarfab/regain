@@ -8,7 +8,7 @@ NINA / ASCOM / Alpaca
         +-- regain-device VENDOR DEVICE: one process per device session
                     |
                     +-- regain-zwo: ASI direct/SDK, CAA, EFW, EAF
-                    +-- regain-pegasus: FocusCube3
+                    +-- regain-pegasus: FocusCube3, Falcon V2
                     +-- regain-deepskydad: OFP2
                     +-- regain-wanderer: ETA M54
 ```
@@ -18,7 +18,7 @@ NINA / ASCOM / Alpaca
 | Crate | Responsibility |
 | --- | --- |
 | `regain-zwo` | ZWO protocols, camera processing and ZWO HID report transport |
-| `regain-pegasus` | Pegasus protocols; `fc3` module |
+| `regain-pegasus` | Pegasus protocols; `fc3` and `falcon` modules; shared serial framing |
 | `regain-deepskydad` | DeepSkyDad protocols; `ofp2` module |
 | `regain-wanderer` | Wanderer Astro protocols; `eta` module |
 | `regain-transport` | Serial candidate enumeration, explicit port settings and bounded frame reads |
@@ -46,7 +46,7 @@ NINA, ASCOM and Alpaca launch it with an explicit selector:
 | `zwo camera-sdk` | ASI vendor SDK backend |
 | `zwo caa` | CAA rotator |
 | `zwo efw` / `zwo eaf` | Filter wheel / focuser |
-| `pegasus fc3` | FocusCube3 |
+| `pegasus fc3` / `pegasus falcon` | FocusCube3 / Falcon V2 |
 | `deepskydad ofp2` | OFP2 flat panel |
 | `wanderer eta` | ETA M54 tilter/back-focus control |
 
@@ -280,3 +280,8 @@ slot registry creates separate workers and profiles for each EAF, FocusCube3, or
 ETA, including repeated models. Connection/configuration changes share a gate to
 reject duplicate physical selections. Existing profile IDs migrate without
 renumbering. See [multiple focusers](focusers.md).
+
+Rotators use the same persisted slot registry as focusers, with separate profiles
+and device-number namespaces. Native Falcon and CAA share `CaaSession` and the
+rotator setup window. FocusCube3 and Falcon share `Regain.Pegasus.ASCOM.exe`,
+which registers both classes under one AppID and owns one worker per device.

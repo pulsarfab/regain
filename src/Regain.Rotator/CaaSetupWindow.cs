@@ -10,18 +10,18 @@ namespace Regain.Rotator;
 
 public static class CaaSetupWindow
 {
-    public static void Show(CaaSession session, bool ownedByApplication)
+    public static void Show(CaaSession session, bool ownedByApplication, Func<bool>? sharedClients = null, Action? disconnectSetup = null)
     {
         var dispatcher = Application.Current?.Dispatcher;
         if (dispatcher is not null && !dispatcher.CheckAccess()) {
-            dispatcher.Invoke(() => Show(session, ownedByApplication)); return;
+            dispatcher.Invoke(() => Show(session, ownedByApplication, sharedClients, disconnectSetup)); return;
         }
         bool busy = false, polling = false, closed = false, moving = false;
         var connectedControls = new List<Control>();
         var idleControls = new List<Control>();
         var offlineControls = new List<Control>();
         var root = new DockPanel { Margin = new Thickness(16) };
-        var heading = new TextBlock { Text = "CAA rotator", FontSize = 18, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 0, 0, 12) };
+        var heading = new TextBlock { Text = session.ModelName, FontSize = 18, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 0, 0, 12) };
         DockPanel.SetDock(heading, Dock.Top); root.Children.Add(heading);
         var footer = new StackPanel { Margin = new Thickness(0, 12, 0, 0) };
         DockPanel.SetDock(footer, Dock.Bottom); root.Children.Add(footer);
@@ -32,11 +32,14 @@ public static class CaaSetupWindow
         var bottom = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
         footer.Children.Add(bottom);
         var tabs = new TabControl(); root.Children.Add(tabs);
+        // Capture before constructing the first window: WPF assigns it to
+        // Application.MainWindow immediately, which would make it its own owner.
+        var owner = Application.Current?.MainWindow;
         var window = new Window {
-            Title = "PulsarFab regain CAA Setup", Width = 720, MinWidth = 580,
+            Title = "PulsarFab regain " + session.ModelName + " Setup", Width = 720, MinWidth = 580,
             Height = Math.Min(540, SystemParameters.WorkArea.Height * .9),
             MaxHeight = SystemParameters.WorkArea.Height * .9,
-            Content = root, Owner = Application.Current?.MainWindow,
+            Content = root, Owner = owner is { IsVisible: true } ? owner : null,
             WindowStartupLocation = WindowStartupLocation.CenterOwner
         };
         SetupTheme.Apply(window);
@@ -83,11 +86,11 @@ public static class CaaSetupWindow
             return value;
         }
         Task Command(string name, double value) => Task.Run(() => session.Command(name, value));
-        Task Action(string name, object args) => Task.Run(() => session.Action("Regain.CAA." + name, JsonSerializer.Serialize(args)));
+        Task Action(string name, object args) => Task.Run(() => session.Action(session.ActionPrefix + name, JsonSerializer.Serialize(args)));
 
         var device = Tab("Device", "Choose a rotator. Your selection is saved automatically.");
         var picker = new ComboBox { DisplayMemberPath = nameof(CaaChoice.Label), MinHeight = 30, Margin = new Thickness(0, 0, 0, 12) };
-        AutomationProperties.SetName(picker, "CAA rotator"); device.Children.Add(picker); offlineControls.Add(picker);
+        AutomationProperties.SetName(picker, session.ModelName); device.Children.Add(picker); offlineControls.Add(picker);
         if (!string.IsNullOrEmpty(session.Profile.Serial)) {
             picker.Items.Add(new CaaChoice { Serial = session.Profile.Serial, Label = "CAA — " + session.Profile.Serial + " (saved)" }); picker.SelectedIndex = 0;
         }
@@ -100,9 +103,12 @@ public static class CaaSetupWindow
             picker.Items.Clear(); foreach (var choice in choices) picker.Items.Add(choice);
             picker.SelectedItem = choices.FirstOrDefault(c => c.Serial == saved?.Serial) ?? (choices.Count == 1 ? choices[0] : null);
             if (picker.SelectedItem is CaaChoice) SaveSelection();
-            if (choices.Count == 0) feedback.Text = "No CAA found. Check USB and close other rotator controllers.";
+            if (choices.Count == 0) feedback.Text = "No rotator found. Check USB and close other rotator controllers.";
         }
-        void SaveSelection() => session.Select((picker.SelectedItem as CaaChoice)?.Serial ?? "");
+        void SaveSelection() {
+            if (sharedClients?.Invoke() == true) throw new InvalidOperationException("Disconnect ASCOM clients before changing selection");
+            session.Select((picker.SelectedItem as CaaChoice)?.Serial ?? "");
+        }
         Button(deviceActions, "Refresh", Discover, offlineControls);
         picker.SelectionChanged += (_, _) => {
             if (busy || session.Connected || picker.SelectedItem is not CaaChoice) return;
@@ -110,9 +116,9 @@ public static class CaaSetupWindow
         };
         var identity = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 12, 0, 18) }; device.Children.Add(identity);
 
-        var motion = Tab("Motion", "Move within the configured travel limit.");
+        var motion = Tab("Motion", session.IsFalcon ? "Move to a mechanical or sky angle. Firmware controls the route around its mechanical origin." : "Move within the configured travel limit.");
         var absolute = Field(motion, "Mechanical angle (°)", "0");
-        Button(motion, "Move mechanical", () => Command("move-mechanical", Value(absolute, 0, 361)), idleControls);
+        Button(motion, "Move mechanical", () => Command("move-mechanical", Value(absolute, 0, session.IsFalcon ? 359.99 : 361)), idleControls);
         var relative = Field(motion, "Relative sky angle (°)", "1");
         Button(motion, "Move relative", () => Command("move-relative", Value(relative, -360, 360)), idleControls);
         var sky = Field(motion, "Sync sky angle (°)", "0", "Changes sky coordinates without moving or changing mechanical zero.");
@@ -124,24 +130,26 @@ public static class CaaSetupWindow
             var toggle = new CheckBox { HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 4, 0, 16) };
             AutomationProperties.SetName(toggle, label); settings.Children.Add(toggle); idleControls.Add(toggle); return toggle;
         }
-        var beep = Toggle("Beep"); var reverse = Toggle("Reverse sky direction");
-        var alias = Field(settings, "Device alias", "", "Up to eight printable ASCII characters."); alias.MaxLength = 8;
+        var beep = Toggle("Beep"); if (session.IsFalcon) { beep.Visibility = Visibility.Collapsed; ((UIElement)settings.Children[settings.Children.Count - 2]).Visibility = Visibility.Collapsed; } var reverse = Toggle(session.IsFalcon ? "Reverse motor direction" : "Reverse sky direction");
+        var alias = Field(settings, "Device alias", "", "Up to eight printable ASCII characters."); alias.MaxLength = 8; if (session.IsFalcon) ((UIElement)settings.Children[settings.Children.Count - 1]).Visibility = Visibility.Collapsed;
         Button(settings, "Apply settings", async () => {
             bool b = beep.IsChecked == true, r = reverse.IsChecked == true; string name = alias.Text;
             if (name.Any(c => c < 32 || c > 126)) throw new ArgumentException("Use printable ASCII characters for the device alias.");
-            await Task.Run(() => { session.Request(new { command = "beep", enabled = b }); session.Request(new { command = "reverse", enabled = r });
-                session.RememberCoordinates(); session.Request(new { command = "alias", text = name }); });
+            await Task.Run(() => { if (!session.IsFalcon) session.Request(new { command = "beep", enabled = b }); session.Request(new { command = "reverse", enabled = r });
+                session.RememberCoordinates(); if (!session.IsFalcon) session.Request(new { command = "alias", text = name }); });
             feedback.Text = "Settings applied.";
         }, idleControls);
 
-        var reference = Tab("Reference", "Relabel the current position without moving. This changes where the travel limit begins.");
-        Button(reference, "Set current position to mechanical 0°", () => Task.Run(() => session.Action("Regain.CAA.ResetOrigin", "")), idleControls);
+        var reference = Tab("Reference", "Relabel the current position without moving. This changes the mechanical origin used for cable-wrap routing.");
+        Button(reference, "Set current position to mechanical 0°", () => Task.Run(() => session.Action(session.ActionPrefix + "ResetOrigin", "")), idleControls);
         var origin = Field(reference, "Mechanical reference (°)", "0");
-        Button(reference, "Set reference", () => Action("SetReference", new { degrees = Value(origin, 0, 360) }), idleControls);
+        Button(reference, "Set reference", () => Action("SetReference", new { degrees = Value(origin, 0, session.IsFalcon ? 359.99 : 360) }), idleControls);
+        int limitStart = reference.Children.Count;
         var limit = Field(reference, "Travel limit (°)", "360", "360° is standard; 361° is experimental.");
         Button(reference, "Set travel limit", () => Action("SetLimit", new { degrees = (int)Value(limit, 1, 361, true) }), idleControls);
         reference.Children.Add(new TextBlock { Text = "360° is standard. 361° is experimental.", TextWrapping = TextWrapping.Wrap });
 
+        if (session.IsFalcon) for (int i = limitStart; i < reference.Children.Count; i++) ((UIElement)reference.Children[i]).Visibility = Visibility.Collapsed;
         var multi = Tab("Multi-turn", "Travel in segments of up to 90°, resetting the mechanical reference between segments. Positive and negative values select physical direction.");
         multi.Children.Add(new TextBlock { Text = "This bypasses cable-wrap protection. Allow clearance and cable slack for the whole move.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 16) });
         var travel = Field(multi, "Physical travel (°)", "90");
@@ -163,21 +171,28 @@ public static class CaaSetupWindow
         void Display(CaaStatus status) {
             moving = status.Moving;
             live.Text = $"Mechanical {status.Mechanical:F2}°    Sky {status.Logical:F2}°    {(moving ? "Moving" : "Idle")}";
-            if (status.MotionError is not null || status.Error != 0) feedback.Text = status.MotionError ?? "CAA fault " + status.Error;
+            if (status.MotionError is not null || status.Error != 0) feedback.Text = status.MotionError ?? "Rotator fault " + status.Error;
         }
         async Task ReadDetails() {
             var details = await Task.Run(() => (Identity: session.Request(new { command = "identity" }), Settings: session.Request(new { command = "settings" }), Status: session.Status()));
             if (closed) return;
             var id = details.Identity;
             identity.Text = $"{id.GetProperty("model").GetString()} · Firmware {string.Join(".", id.GetProperty("firmware").EnumerateArray().Select(v => v.GetInt32()))}\nSerial {id.GetProperty("serial").GetString()}";
-            beep.IsChecked = details.Settings.GetProperty("beep").GetBoolean(); reverse.IsChecked = details.Settings.GetProperty("reverse").GetBoolean(); alias.Text = id.GetProperty("alias").GetString();
+            reverse.IsChecked = details.Settings.GetProperty("reverse").GetBoolean();
+            if (!session.IsFalcon) { beep.IsChecked = details.Settings.GetProperty("beep").GetBoolean(); alias.Text = id.GetProperty("alias").GetString(); }
             absolute.Text = origin.Text = details.Status.Mechanical.ToString("F2", CultureInfo.InvariantCulture);
             sky.Text = details.Status.Logical.ToString("F2", CultureInfo.InvariantCulture); limit.Text = details.Status.Limit.ToString(CultureInfo.InvariantCulture); Display(details.Status);
         }
         if (ownedByApplication) device.Children.Add(new TextBlock { Text = "Connected through your application. Disconnect there when finished.", TextWrapping = TextWrapping.Wrap });
         else {
             Button(deviceActions, "Connect", async () => { SaveSelection(); await Task.Run(session.Connect); await ReadDetails(); }, offlineControls);
-            Button(deviceActions, "Disconnect", async () => { await Task.Run(session.Disconnect); moving = false; live.Text = "Disconnected"; }, connectedControls);
+            Button(deviceActions, "Disconnect", async () => {
+                await Task.Run(() => {
+                    if (disconnectSetup is not null) disconnectSetup();
+                    else { if (sharedClients?.Invoke() == true) throw new InvalidOperationException("Other ASCOM clients are connected"); session.Disconnect(); }
+                });
+                moving = false; live.Text = "Disconnected";
+            }, connectedControls);
         }
         Button(deviceActions, "Read device", ReadDetails, connectedControls);
         var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(750) };

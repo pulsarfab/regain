@@ -12,6 +12,8 @@ try {
     foreach ($architecture in 'System32','SysWOW64') {
         & "$env:WINDIR/$architecture/WindowsPowerShell/v1.0/powershell.exe" -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'test-fc3-ascom-client.ps1') -MetadataOnly
         if ($LASTEXITCODE) { throw 'Registered FocusCube3 COM activation failed' }
+        & "$env:WINDIR/$architecture/WindowsPowerShell/v1.0/powershell.exe" -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'test-falcon-ascom-client.ps1') -MetadataOnly
+        if ($LASTEXITCODE) { throw 'Registered Falcon V2 COM activation failed' }
         & "$env:WINDIR/$architecture/WindowsPowerShell/v1.0/powershell.exe" -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'test-ofp2-ascom-client.ps1') -MetadataOnly
         if ($LASTEXITCODE) { throw 'Registered OFP2 COM activation failed' }
         & "$env:WINDIR/$architecture/WindowsPowerShell/v1.0/powershell.exe" -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'test-eta-ascom-client.ps1') -MetadataOnly
@@ -29,8 +31,8 @@ try {
     }
 } finally {
     Get-WinEvent -FilterHashtable @{LogName='System';ProviderName='Microsoft-Windows-DistributedCOM';StartTime=(Get-Date).AddMinutes(-5)} -ErrorAction SilentlyContinue | Select-Object -First 4 TimeCreated,Id,Message | Format-List
-    Get-Content -LiteralPath (Join-Path $env:LOCALAPPDATA 'Regain/ASCOM/Regain.FocusCube.ASCOM.log') -Tail 30 -ErrorAction SilentlyContinue
-    Get-CimInstance Win32_Process -Filter "Name='Regain.FocusCube.ASCOM.exe'" | Select-Object ProcessId,SessionId,CommandLine
+    Get-Content -LiteralPath (Join-Path $env:LOCALAPPDATA 'Regain/ASCOM/Regain.Pegasus.ASCOM.log') -Tail 30 -ErrorAction SilentlyContinue
+    Get-CimInstance Win32_Process -Filter "Name='Regain.Pegasus.ASCOM.exe'" | Select-Object ProcessId,SessionId,CommandLine
     Get-Content -LiteralPath (Join-Path $env:LOCALAPPDATA 'Regain/ASCOM/registration.log') -Tail 30 -ErrorAction SilentlyContinue
     $registration = Start-Process -FilePath $exe -ArgumentList '/unregserver' -WindowStyle Hidden -Wait -PassThru
     if ($registration.ExitCode) { throw 'Unregistration failed' }

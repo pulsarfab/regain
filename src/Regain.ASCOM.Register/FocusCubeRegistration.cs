@@ -6,12 +6,12 @@ internal static class FocusCubeRegistration
     internal const string Clsid = "{69AB224B-14D2-46A2-A744-0C60593A28B3}";
     internal static void Register(RegistryKey root, string directory, bool remove)
     {
-        string server = Path.Combine(directory,"Regain.FocusCube.ASCOM.exe");
+        string server = Path.Combine(directory,"Regain.Pegasus.ASCOM.exe");
         string command = "\"" + server + "\" /Embedding";
         string clsid = @"Software\Classes\CLSID\" + Clsid;
         string progid = @"Software\Classes\" + ProgId;
         string appid = @"Software\Classes\AppID\" + Clsid;
-        string appExe = @"Software\Classes\AppID\Regain.FocusCube.ASCOM.exe";
+        string appExe = @"Software\Classes\AppID\Regain.Pegasus.ASCOM.exe";
         string chooser = @"Software\ASCOM\Focuser Drivers\" + ProgId;
         if(remove) {
             using var installed=root.OpenSubKey(clsid+@"\LocalServer32");
@@ -24,8 +24,9 @@ internal static class FocusCubeRegistration
             if(!File.Exists(server)) throw new FileNotFoundException("FocusCube3 shared server is missing",server);
             // Match the ASCOM LocalServer template: a single interactive identity
             // also shares the server between elevated and ordinary clients.
-            using(var key=root.CreateSubKey(appid)) { key.SetValue(null,"PulsarFab regain FocusCube3 shared server"); key.SetValue("RunAs","Interactive User"); }
+            using(var key=root.CreateSubKey(appid)) { key.SetValue(null,"PulsarFab regain Pegasus shared server"); key.SetValue("RunAs","Interactive User"); }
             using(var key=root.CreateSubKey(appExe)) key.SetValue("AppID",Clsid);
+            root.DeleteSubKeyTree(@"Software\Classes\AppID\Regain.FocusCube.ASCOM.exe", false);
             using(var key=root.CreateSubKey(clsid)) { key.SetValue(null,"PulsarFab regain Pegasus FocusCube3"); key.SetValue("AppID",Clsid); }
             using(var key=root.CreateSubKey(clsid+@"\LocalServer32")) key.SetValue(null,command);
             using(var key=root.CreateSubKey(clsid+@"\ProgID")) key.SetValue(null,ProgId);

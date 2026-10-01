@@ -11,12 +11,12 @@ public interface IClassFactory {
     [PreserveSig] int LockServer([MarshalAs(UnmanagedType.Bool)] bool locked);
 }
 [ComVisible(true), ClassInterface(ClassInterfaceType.None)]
-public sealed class Factory : IClassFactory {
+public sealed class Factory(Type driverType) : IClassFactory {
     public int CreateInstance(IntPtr outer, ref Guid iid, out IntPtr result) {
         Program.Log("Factory CreateInstance " + iid);
         result=IntPtr.Zero;
         if(outer!=IntPtr.Zero) return unchecked((int)0x80040110);
-        try { var unknown=Marshal.GetIUnknownForObject(new Driver()); try { return Marshal.QueryInterface(unknown,ref iid,out result); } finally { Marshal.Release(unknown); } }
+        try { var unknown=Marshal.GetIUnknownForObject(Activator.CreateInstance(driverType)); try { return Marshal.QueryInterface(unknown,ref iid,out result); } finally { Marshal.Release(unknown); } }
         catch(Exception e) { return Marshal.GetHRForException(e); }
     }
     public int LockServer(bool locked) { Program.Locks += locked ? 1 : -1; return 0; }
@@ -39,26 +39,37 @@ internal static class Program {
         } catch { }
     }
     [STAThread] private static int Main(string[] args) {
-        uint cookie=0;
+        var cookies=new List<uint>();
         try {
             if(args.Contains("/setup")) {
-                object driver=Activator.CreateInstance(Type.GetTypeFromProgID(((ProgIdAttribute)Attribute.GetCustomAttribute(typeof(Driver),typeof(ProgIdAttribute))).Value,true));
+                int setup=Array.IndexOf(args,"/setup");
+                string progid=setup+1<args.Length ? args[setup+1] : ((ProgIdAttribute)Attribute.GetCustomAttribute(typeof(Driver),typeof(ProgIdAttribute))).Value;
+                if (!ServerConfiguration.Drivers.Any(t => ((ProgIdAttribute)Attribute.GetCustomAttribute(t,typeof(ProgIdAttribute))).Value == progid)) throw new ArgumentException("Unknown server driver");
+                object driver=Activator.CreateInstance(Type.GetTypeFromProgID(progid,true));
                 try { driver.GetType().InvokeMember("SetupDialog",System.Reflection.BindingFlags.InvokeMethod,null,driver,null); }
                 finally { Marshal.FinalReleaseComObject(driver); }
                 return 0;
             }
-            var clsid=typeof(Driver).GUID;
+            var driverTypes=ServerConfiguration.Drivers;
+            int chosen=Array.IndexOf(args,"/test-driver");
+            if(chosen>=0) driverTypes=driverTypes.Where(t=>((ProgIdAttribute)Attribute.GetCustomAttribute(t,typeof(ProgIdAttribute))).Value==args[chosen+1]).ToArray();
+            if(driverTypes.Length==0) throw new ArgumentException("Unknown test driver");
+            var clsid=driverTypes[0].GUID;
             // Private CLSID only for isolated test fixtures; production activation uses the fixed CLSID.
             int test=Array.IndexOf(args,"/test-clsid");
-            if(test>=0) clsid=Guid.Parse(args[test+1]);
+            if(test>=0) {clsid=Guid.Parse(args[test+1]);driverTypes=driverTypes.Take(1).ToArray();}
             Log($"Starting COM server {clsid}; PID {System.Diagnostics.Process.GetCurrentProcess().Id}; session {System.Diagnostics.Process.GetCurrentProcess().SessionId}");
             var app=new Application { ShutdownMode=ShutdownMode.OnExplicitShutdown };
-            var factory=new Factory();
+            var factories=new List<Factory>();
             // Register after WPF has initialized its dispatcher/COM apartment.
             app.Dispatcher.BeginInvoke(new Action(() => {
-                int registered=CoRegisterClassObject(ref clsid,factory,4,5,out cookie);
-                Log($"RegisterClassObject: 0x{registered:X8}");
-                Marshal.ThrowExceptionForHR(registered);
+                foreach(var type in driverTypes) {
+                    var registration=test>=0 ? clsid : type.GUID;
+                    var factory=new Factory(type); factories.Add(factory);
+                    int registered=CoRegisterClassObject(ref registration,factory,4,5,out uint cookie);
+                    Log($"RegisterClassObject {type.Name}: 0x{registered:X8}");
+                    Marshal.ThrowExceptionForHR(registered); cookies.Add(cookie);
+                }
                 int resumed=CoResumeClassObjects();
                 Log($"ResumeClassObjects: 0x{resumed:X8}");
                 Marshal.ThrowExceptionForHR(resumed);
@@ -75,9 +86,9 @@ internal static class Program {
                     else if(DateTime.UtcNow-idle>TimeSpan.FromSeconds(30)) { CoSuspendClassObjects(); app.Shutdown(); }
                 }
             };
-            timer.Start(); app.Run(); timer.Stop(); GC.KeepAlive(factory); return 0;
+            timer.Start(); app.Run(); timer.Stop(); GC.KeepAlive(factories); return 0;
         } catch(Exception e) {
             Log(e.ToString()); return 1;
-        } finally { if(cookie!=0) CoRevokeClassObject(cookie); Driver.SharedDevice.Session.Dispose(); }
+        } finally { foreach(uint cookie in cookies) CoRevokeClassObject(cookie); ServerConfiguration.Shutdown(); }
     }
 }

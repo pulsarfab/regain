@@ -1,4 +1,4 @@
-//! Alpaca rotator backed by the same exclusive HID worker as the native frontends.
+//! Alpaca rotator backed by the same exclusive USB worker as the native frontends.
 use crate::device::{Params, error, unsupported};
 use anyhow::{Result, ensure};
 use serde::{Deserialize, Serialize};
@@ -99,14 +99,25 @@ struct State {
 }
 pub struct Rotator {
     path: Option<PathBuf>,
+    kind: crate::slots::Kind,
+    number: usize,
     executable: PathBuf,
     simulate: bool,
     state: Mutex<State>,
 }
 impl Rotator {
-    pub fn new(path: Option<PathBuf>, directory: PathBuf, simulate: bool) -> Self {
+    pub fn new(
+        kind: crate::slots::Kind,
+        number: usize,
+        unique_id: String,
+        path: Option<PathBuf>,
+        directory: PathBuf,
+        simulate: bool,
+    ) -> Self {
         Self {
             path,
+            kind,
+            number,
             executable: directory.join(if cfg!(windows) {
                 "regain-device.exe"
             } else {
@@ -114,19 +125,51 @@ impl Rotator {
             }),
             simulate,
             state: Mutex::new(State {
-                profile: Profile::default(),
+                profile: Profile {
+                    unique_id,
+                    ..Profile::default()
+                },
                 loaded: false,
                 worker: None,
                 clients: HashSet::new(),
             }),
         }
     }
+    fn falcon(&self) -> bool {
+        self.kind == crate::slots::Kind::Falcon
+    }
+    fn name(&self) -> &'static str {
+        if self.falcon() {
+            "PulsarFab regain Pegasus Falcon V2"
+        } else {
+            "PulsarFab regain CAA Rotator"
+        }
+    }
+    fn actions(&self) -> Vec<String> {
+        ACTIONS
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| !self.falcon() || !matches!(i, 5..=7))
+            .map(|(_, a)| {
+                if self.falcon() {
+                    a.replace("Regain.CAA.", "Regain.Falcon.")
+                } else {
+                    a.to_string()
+                }
+            })
+            .collect()
+    }
     fn load(&self, s: &mut State) -> Result<()> {
         if !s.loaded {
             if let Some(p) = &self.path
                 && p.exists()
             {
-                s.profile = serde_json::from_slice(&std::fs::read(p)?)?;
+                let loaded: Profile = serde_json::from_slice(&std::fs::read(p)?)?;
+                ensure!(
+                    loaded.unique_id == s.profile.unique_id,
+                    "Rotator profile UUID does not match its slot"
+                );
+                s.profile = loaded;
             }
             ensure!(
                 s.profile.logical_offset.is_finite()
@@ -150,7 +193,12 @@ impl Rotator {
     }
     fn command(&self, command: &str) -> Command {
         let mut c = Command::new(&self.executable);
-        c.args(["zwo", "caa"]).arg(command);
+        c.args(if self.falcon() {
+            ["pegasus", "falcon"]
+        } else {
+            ["zwo", "caa"]
+        })
+        .arg(command);
         if self.simulate {
             c.arg("--simulate");
         }
@@ -166,13 +214,13 @@ impl Rotator {
         let mut s = self.state.lock().await;
         self.load(&mut s)?;
         Ok(
-            json!({"profile":s.profile,"connected":!s.clients.is_empty(),"simulation":self.simulate}),
+            json!({"name":self.name(),"slot":self.number,"kind":self.kind,"profile":s.profile,"connected":!s.clients.is_empty(),"simulation":self.simulate}),
         )
     }
     pub async fn configured(&self) -> Result<Option<Value>> {
         let mut s = self.state.lock().await;
         self.load(&mut s)?;
-        Ok(s.profile.serial.as_ref().map(|_| json!({"DeviceName":"PulsarFab regain CAA Rotator","DeviceType":"Rotator","DeviceNumber":0,"UniqueID":s.profile.unique_id})))
+        Ok(s.profile.serial.as_ref().map(|_| json!({"DeviceName":self.name(),"DeviceType":"Rotator","DeviceNumber":self.number,"UniqueID":s.profile.unique_id})))
     }
     pub async fn select(&self, serial: Option<String>) -> Result<Value> {
         let mut s = self.state.lock().await;
@@ -185,10 +233,15 @@ impl Rotator {
             )
         );
         ensure!(
-            serial
-                .as_ref()
-                .is_none_or(|v| v.len() == 16 && v.bytes().all(|b| b.is_ascii_hexdigit())),
-            error(0x401, "Choose a CAA serial from discovery")
+            serial.as_ref().is_none_or(|v| if self.falcon() {
+                !v.is_empty()
+                    && v.len() <= 128
+                    && v.bytes()
+                        .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_' || b == b':')
+            } else {
+                v.len() == 16 && v.bytes().all(|b| b.is_ascii_hexdigit())
+            }),
+            error(0x401, "Choose a serial from rotator discovery")
         );
         let mut profile = s.profile.clone();
         if profile.serial != serial {
@@ -214,20 +267,20 @@ impl Rotator {
             self.command("list-details").output(),
         )
         .await??;
-        ensure!(output.status.success(), "CAA discovery failed");
+        ensure!(output.status.success(), "Rotator discovery failed");
         Ok(serde_json::from_slice(&output.stdout)?)
     }
     async fn remember(&self, s: &mut State) -> Result<Value> {
         let status = s
             .worker
             .as_mut()
-            .ok_or_else(|| error(0x407, "CAA is disconnected"))?
+            .ok_or_else(|| error(0x407, "Rotator is disconnected"))?
             .request(json!({"command":"status"}))
             .await?;
         if status["moving"] == false && status["error"] == 0 && status["motion_error"].is_null() {
             let offset = status["logical_offset"]
                 .as_f64()
-                .ok_or_else(|| error(0x500, "Invalid CAA offset"))?;
+                .ok_or_else(|| error(0x500, "Invalid rotator offset"))?;
             if s.profile.coordinates_uncertain || s.profile.logical_offset != offset {
                 s.profile.logical_offset = offset;
                 s.profile.coordinates_uncertain = false;
@@ -262,7 +315,7 @@ impl Rotator {
             .profile
             .serial
             .as_ref()
-            .ok_or_else(|| error(0x40B, "Select a CAA on the setup page first"))?
+            .ok_or_else(|| error(0x40B, "Select a rotator on the setup page first"))?
             .clone();
         let mut child = self.command("serve").arg("--serial").arg(&serial).spawn()?;
         let mut worker = Worker {
@@ -276,7 +329,7 @@ impl Rotator {
                 identity["serial"]
                     .as_str()
                     .is_some_and(|v| v.eq_ignore_ascii_case(&serial)),
-                "CAA identity changed"
+                "Rotator identity changed"
             );
             if s.profile.coordinates_uncertain {
                 s.profile.logical_offset = 0.;
@@ -320,12 +373,18 @@ impl Rotator {
         }
         if !put {
             match member {
-                "name" => return Ok(json!("PulsarFab regain CAA Rotator")),
-                "description" => return Ok(json!("ZWO CAA rotator over USB HID")),
-                "driverinfo" => return Ok(json!("PulsarFab regain native Rust CAA driver")),
+                "name" => return Ok(json!(self.name())),
+                "description" => {
+                    return Ok(json!(if self.falcon() {
+                        "Pegasus Falcon V2 over USB serial"
+                    } else {
+                        "ZWO CAA rotator over USB HID"
+                    }));
+                }
+                "driverinfo" => return Ok(json!("PulsarFab regain native Rust rotator driver")),
                 "driverversion" => return Ok(json!(env!("CARGO_PKG_VERSION"))),
                 "interfaceversion" => return Ok(json!(3)),
-                "supportedactions" => return Ok(json!(ACTIONS)),
+                "supportedactions" => return Ok(json!(self.actions())),
                 _ => (),
             }
         }
@@ -336,7 +395,7 @@ impl Rotator {
         if !put {
             return match member {
                 "canreverse" => Ok(json!(true)),
-                "stepsize" => Ok(json!(0.02)),
+                "stepsize" => Ok(json!(if self.falcon() { 0.01 } else { 0.02 })),
                 "reverse" => Ok(s
                     .worker
                     .as_mut()
@@ -349,7 +408,7 @@ impl Rotator {
                     if member == "ismoving" {
                         ensure!(
                             status["error"] == 0 && status["motion_error"].is_null(),
-                            error(0x500, format!("CAA motion fault: {status}"))
+                            error(0x500, format!("Rotator motion fault: {status}"))
                         );
                         Ok(status["moving"].clone())
                     } else {
@@ -387,10 +446,19 @@ impl Rotator {
             }
             "action" => {
                 let name = crate::branding::action_name(p.string("Action")?);
+                ensure!(
+                    self.actions().iter().any(|a| a.eq_ignore_ascii_case(&name)),
+                    error(0x40C, "Unsupported rotator action")
+                );
+                let name = if self.falcon() {
+                    name.replace("regain.falcon.", "regain.caa.")
+                } else {
+                    name
+                };
                 let index = ACTIONS
                     .iter()
                     .position(|a| a.eq_ignore_ascii_case(&name))
-                    .ok_or_else(|| error(0x40C, "Unknown CAA action"))?;
+                    .ok_or_else(|| error(0x40C, "Unknown rotator action"))?;
                 let command = [
                     "status",
                     "settings",

@@ -72,15 +72,15 @@ cameras and accessories. An Alpaca server is optional.
 
 | Integration | Where it runs | Equipment |
 | --- | --- | --- |
-| **Native NINA plugin** | Windows x64, NINA ≥3.2.0.9001 | Cameras, CAA, EFW, EAF, FocusCube3, ETA M54 |
-| **Native ASCOM drivers** | Windows x64; 32/64-bit clients | Four camera entries, CAA, EFW, EAF, FocusCube3, OFP2 and ETA M54 |
+| **Native NINA plugin** | Windows x64, NINA ≥3.2.0.9001 | Cameras, CAA, EFW, EAF, FocusCube3, Falcon V2, ETA M54 |
+| **Native ASCOM drivers** | Windows x64; 32/64-bit clients | Four camera entries, CAA, EFW, EAF, FocusCube3, Falcon V2, OFP2 and ETA M54 |
 | **Universal Alpaca server** | Windows, Linux, macOS | Camera slots and all supported accessories, including OFP2 |
 | **[Rust crates](https://crates.io/search?q=regain-) and worker CLIs** | Windows, Linux, macOS | Embed USB, HID, and serial device control in another application |
 
 OFP2 connects through native ASCOM or Alpaca; NINA can use either connection.
 Release 0.5.0.0 adds native OFP2 ASCOM and ETA M54 support. ETA physical
 identity/position reads are verified; movement validation remains pending. [ETA guide](docs/eta.md).
-OFP2, FocusCube3 and ETA each share one local serial server among
+OFP2, FocusCube3, Falcon V2 and ETA share their device connection among
 ASCOM clients; other frontends need exclusive access to the device. See [connection options](https://pulsarfab.com/docs/regain/#choose).
 
 ## Supported hardware
@@ -119,6 +119,7 @@ exposure and binning limits. See the [camera support table](https://pulsarfab.co
 | **ZWO EFW** | USB HID | Filter selection, names, offsets, direction, calibration |
 | **ZWO EAF** | USB HID | Focus, halt, reverse, backlash, travel limit, temperature |
 | **Pegasus Astro FocusCube3** | USB serial | Focus, halt, temperature, reverse, backlash, speed |
+| **[Pegasus Astro Falcon V2](docs/falcon-v2.md)** | USB serial | Rotation, sync, reverse, origin reset and explicit multi-turn; hardware tested on Windows through NINA, ASCOM and Alpaca |
 | **Deep Sky Dad OFP2** | USB serial | Cover open/close/halt and panel brightness |
 | **Wanderer Astro ETA M54** | USB serial | Back focus preserving tilt, three point targets; no hardware halt. Physical movement validation pending. |
 
@@ -180,6 +181,10 @@ extracting the new package; keep saved equipment profiles.
 | Physical FocusCube3, firmware 1.8.2. | Physical FocusCube3, firmware 1.8.2. |
 
 [![ETA M54 back-focus controls](docs/images/native-eta.png)](docs/eta.md)
+
+Falcon V2 connected to physical hardware, using the shared native rotator dialog:
+
+[![Physical Falcon V2 native motion controls](docs/images/native-falcon.png)](docs/falcon-v2.md)
 
 ETA M54 setup with live, read-only encoder readings from the attached device.
 

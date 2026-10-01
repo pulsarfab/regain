@@ -1,0 +1,37 @@
+{
+  "device": "Pegasus Astro Falcon Rotator V2",
+  "firmware": "1.8",
+  "hardwareRevision": "A",
+  "usb": "303a:9002",
+  "platform": "Windows x64",
+  "date": "2026-09-30",
+  "trace": "falcon-v2-serial.jsonl",
+  "scope": "Application-level serial request/reply trace, not a USB bus capture",
+  "validated": [
+    "Identity, position, speed and uptime queries",
+    "Moves 0 to 5 to 0",
+    "Reference 359 then move to 1 across zero",
+    "Halt acknowledgement",
+    "Origin reset",
+    "Alpaca +450 and -450 degree segmented travel",
+    "Alpaca halt during motion, reverse, reference and sky-coordinate persistence",
+    "Three repeated reopen cycles with DTR and RTS asserted",
+    "Alpaca client leases, dynamic slot identity and duplicate-device rejection",
+    "Native ASCOM hardware sharing with two clients in both 32-bit and 64-bit processes",
+    "Native NINA move, sync, reverse, pre-move cancellation and reconnect",
+    "Connected physical native and Alpaca setup screens"
+  ],
+  "pending": [
+    "Physical Linux and macOS validation"
+  ],
+  "serialControlLines": {
+    "dtr": true,
+    "rts": true,
+    "note": "Initial .NET DTR-only probe entered ESP32-S2 bootloader on close. Recovered using esptool 5.4.0 watchdog reset without flashing firmware."
+  },
+  "vendorDllSha256": "75a3232e12dfb401f424d80680c10428c0db02985e29d4d9313de0b224fbcbec",
+  "sources": [
+    "https://pegasusastro.com/command-list-for-falconv2/",
+    "https://github.com/espressif/esptool/blob/master/esptool/targets/esp32s2.py"
+  ]
+}

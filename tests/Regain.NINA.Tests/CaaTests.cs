@@ -6,9 +6,17 @@ namespace Regain.NINA.Tests;
 public class CaaTests
 {
     [Fact]
-    public void OneProviderEntryExposesOriginResetSeparatelyFromSync()
+    public void VendorEntriesExposeOriginResetSeparatelyFromSync()
     {
-        var device = Assert.Single(new CaaProvider().GetEquipment());
+        var entries = new CaaProvider().GetEquipment();
+        Assert.Equal(2, entries.Count);
+        var device = entries[0];
+        var falcon = entries[1];
+        Assert.Equal("PulsarFab regain Pegasus Falcon V2", falcon.Name);
+        Assert.NotEqual(device.Id, falcon.Id);
+        Assert.Contains("Regain.Falcon.ResetOrigin", falcon.SupportedActions);
+        Assert.DoesNotContain("Regain.CAA.SetLimit", falcon.SupportedActions);
+        ((IDisposable)falcon).Dispose();
         Assert.Equal("PulsarFab regain CAA Rotator", device.Name);
         Assert.Contains("Regain.CAA.ResetOrigin", device.SupportedActions);
         Assert.Contains("Regain.CAA.RotateUnwrapped", device.SupportedActions);

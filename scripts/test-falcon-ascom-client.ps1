@@ -9,15 +9,15 @@ function Wait-Signal([string]$Name) {
 }
 $device = $null
 try {
-    $type = if ($Id) { [type]::GetTypeFromCLSID([Guid]$Id) } else { [type]::GetTypeFromProgID("ASCOM.ZWOgain.FocusCube3.Focuser") }
+    $type = if ($Id) { [type]::GetTypeFromCLSID([Guid]$Id) } else { [type]::GetTypeFromProgID("ASCOM.PulsarFab.Regain.FalconV2.Rotator") }
     $device = [Activator]::CreateInstance($type)
-    if ($MetadataOnly) { if ($device.Name -ne "PulsarFab regain Pegasus FocusCube3" -or $device.InterfaceVersion -ne 3) { throw "Invalid metadata" }; $device.Dispose(); return }
+    if ($MetadataOnly) { if ($device.Name -ne "PulsarFab regain Pegasus Falcon V2" -or $device.InterfaceVersion -ne 3) { throw "Invalid metadata" }; $device.Dispose(); return }
     if ($device.Connected) { throw 'A new COM client inherited another connection' }
     $device.Connected = $true
-    if (!$device.Absolute -or $device.MaxStep -ne 1000000) { throw 'Bad IFocuser properties' }
-    $identity = $device.Action('Regain.Identity','') | ConvertFrom-Json
-    if ($identity.model -ne 'Pegasus Astro FocusCube3') { throw 'Wrong identity' }
-    $device.Action('Regain.Status','') | Set-Content (Join-Path $Directory "$Role-connected")
+    if (!$device.CanReverse -or [Math]::Abs($device.StepSize - 0.01) -gt 0.0001) { throw 'Bad IRotator properties' }
+    $identity = $device.Action('Regain.Falcon.Identity','') | ConvertFrom-Json
+    if ($identity.model -ne 'Pegasus Astro Falcon V2') { throw 'Wrong identity' }
+    $device.Action('Regain.Falcon.Status','') | Set-Content (Join-Path $Directory "$Role-connected")
     if ($Role -eq 'first') {
         Wait-Signal 'second-connected'
         $servers = @(Get-CimInstance Win32_Process -Filter "Name='Regain.Pegasus.ASCOM.exe'" | Where-Object { $_.CommandLine -like "*$Id*" })
@@ -32,17 +32,17 @@ try {
         Wait-Signal 'first-disconnected'
         if (!$device.Connected) { throw 'First client disconnected second client' }
         $initial = $device.Position
-        $device.Move($initial + 20)
+        $device.MoveAbsolute(($initial + 5) % 360)
         $deadline = [DateTime]::UtcNow.AddSeconds(15)
         while ($device.IsMoving) { if ([DateTime]::UtcNow -gt $deadline) { throw 'Move timeout' }; Start-Sleep -Milliseconds 100 }
-        if ($device.Position -ne ($initial + 20)) { throw 'Wrong final position' }
-        $device.Move($initial)
+        if ([Math]::Abs($device.Position - (($initial + 5) % 360)) -gt 0.05) { throw 'Wrong final position' }
+        $device.MoveAbsolute($initial)
         while ($device.IsMoving) { if ([DateTime]::UtcNow -gt $deadline) { throw 'Return timeout' }; Start-Sleep -Milliseconds 100 }
         $device.Halt()
         $device.Connected = $false
         'done' | Set-Content (Join-Path $Directory 'second-finished')
     }
     $device.Dispose()
-    Write-Output "FocusCube3 COM $Role ($([IntPtr]::Size * 8)-bit) passed"
+    Write-Output "Falcon V2 COM $Role ($([IntPtr]::Size * 8)-bit) passed"
 } catch { Write-Error $_; exit 1 }
 finally { if ($null -ne $device) { try { $device.Connected=$false } catch { }; [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($device) } }

@@ -56,7 +56,8 @@ Name: "{group}\ETA tilt and back-focus setup"; Filename: "{app}\Regain.Eta.ASCOM
 Name: "{group}\Camera setup"; Filename: "{app}\Regain.ASCOM.Register.exe"
 Name: "{group}\CAA rotator setup"; Filename: "{app}\Regain.ASCOM.Register.exe"; Parameters: "/rotator"
 Name: "{group}\EFW filter wheel setup"; Filename: "{app}\Regain.ASCOM.Register.exe"; Parameters: "/filterwheel"
-Name: "{group}\FocusCube3 setup"; Filename: "{app}\Regain.FocusCube.ASCOM.exe"; Parameters: "/setup"
+Name: "{group}\FocusCube3 setup"; Filename: "{app}\Regain.Pegasus.ASCOM.exe"; Parameters: "/setup"
+Name: "{group}\Falcon V2 setup"; Filename: "{app}\Regain.Pegasus.ASCOM.exe"; Parameters: "/setup ASCOM.PulsarFab.Regain.FalconV2.Rotator"
 Name: "{group}\OFP2 cover and flat panel setup"; Filename: "{app}\Regain.Ofp2.ASCOM.exe"; Parameters: "/setup"
 Name: "{group}\EAF focuser setup"; Filename: "{app}\Regain.ASCOM.Register.exe"; Parameters: "/focuser"
 Name: "{group}\Documentation"; Filename: "https://github.com/pulsarfab/regain/blob/main/docs/ascom.md"
@@ -169,6 +170,8 @@ begin
     DeleteFile(ExpandConstant('{app}\ZwoGain.Rotator.dll'));
     DeleteFile(ExpandConstant('{app}\ZwoGain.ASCOM.Register.exe'));
     DeleteFile(ExpandConstant('{app}\ZwoGain.ASCOM.Register.exe.config'));
+    DeleteFile(ExpandConstant('{app}\Regain.FocusCube.ASCOM.exe'));
+    DeleteFile(ExpandConstant('{app}\Regain.FocusCube.ASCOM.exe.config'));
     DeleteFile(ExpandConstant('{app}\ZwoGain.FocusCube.ASCOM.exe'));
     DeleteFile(ExpandConstant('{app}\ZwoGain.FocusCube.ASCOM.exe.config'));
     DeleteFile(ExpandConstant('{app}\zwogain-host.exe'));
