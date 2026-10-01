@@ -198,3 +198,7 @@ Camera setup can escalate failed captures to a device-scoped USB reset on Window
 and Linux. It is disabled by default; set the failure threshold to 2 to try an
 ordinary reconnect first. See [setup, permissions, supported cameras, and power
 limitations](usb-recovery.md).
+
+Falcon V2 is available as `regain-device pegasus falcon`. Add a rotator slot at
+`/setup/rotators`; multiple CAAs or Falcons keep separate numbers and profiles.
+See [Falcon V2 setup and validation](falcon-v2.md).

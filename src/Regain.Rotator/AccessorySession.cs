@@ -32,7 +32,7 @@ public sealed class AccessoryStatus
 }
 
 /// Exclusive USB worker session shared by the native NINA and ASCOM frontends.
-public sealed class AccessorySession : IDisposable
+public sealed class AccessorySession : IDisposable, IDeviceSession
 {
     private readonly object gate = new();
     private readonly string executable;

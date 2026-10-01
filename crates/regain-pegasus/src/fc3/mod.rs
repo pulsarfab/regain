@@ -6,14 +6,7 @@ pub mod serial;
 pub mod simulation;
 
 pub const MAX_POSITION: i32 = 1_000_000;
-pub trait Transport {
-    fn exchange(&mut self, command: &str) -> Result<String>;
-}
-impl<T: Transport + ?Sized> Transport for Box<T> {
-    fn exchange(&mut self, command: &str) -> Result<String> {
-        (**self).exchange(command)
-    }
-}
+pub use crate::Transport;
 #[derive(Debug, Clone, Serialize)]
 pub struct Status {
     pub position: i32,

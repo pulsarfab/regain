@@ -15,7 +15,7 @@ def main():
     assert 'VENDOR DEVICE' in help_text
     bad = subprocess.run([executable, 'unknown', 'unknown'], capture_output=True, timeout=10)
     assert bad.returncode != 0 and b'Unknown device' in bad.stderr
-    for vendor, device in [('zwo', 'caa'), ('zwo', 'efw'), ('zwo', 'eaf'), ('pegasus', 'fc3'), ('deepskydad', 'ofp2'), ('wanderer', 'eta')]:
+    for vendor, device in [('zwo', 'caa'), ('zwo', 'efw'), ('zwo', 'eaf'), ('pegasus', 'fc3'), ('pegasus', 'falcon'), ('deepskydad', 'ofp2'), ('wanderer', 'eta')]:
         command = [executable, vendor, device]
         entries = json.loads(subprocess.check_output(command + ['list-details', '--simulate'], timeout=10))
         assert len(entries) == 1, (vendor, device, entries)
@@ -29,7 +29,7 @@ def main():
         for payload in [b'{"command":"status"}', b'x' * 4097 + b'\n{"command":"status"}\n']:
             result = subprocess.run(serve, input=payload, capture_output=True, timeout=10, check=True)
             assert not result.stdout, (device, result.stdout)
-    print('Unified worker: all six accessory selectors, BOM, error recovery, bounded input and EOF passed')
+    print('Unified worker: all seven accessory selectors, BOM, error recovery, bounded input and EOF passed')
 
 
 if __name__ == '__main__':

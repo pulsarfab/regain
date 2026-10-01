@@ -8,7 +8,7 @@ if (!$Compiler) {
 }
 if (!$Compiler) { throw 'Install Inno Setup 6.7 or later, or pass -Compiler with the ISCC.exe path.' }
 $stage = Join-Path $repo 'artifacts/ascom-stage'
-foreach ($file in 'Regain.ASCOM.Register.exe','Regain.FocusCube.ASCOM.exe','Regain.Ofp2.ASCOM.exe','Regain.Eta.ASCOM.exe','Regain.ASCOM.dll','Regain.Rotator.dll','regain-device.exe','regain-camera.exe','regain-alpaca.exe','ASICamera2.dll','LICENSE') {
+foreach ($file in 'Regain.ASCOM.Register.exe','Regain.Pegasus.ASCOM.exe','Regain.Ofp2.ASCOM.exe','Regain.Eta.ASCOM.exe','Regain.ASCOM.dll','Regain.Rotator.dll','regain-device.exe','regain-camera.exe','regain-alpaca.exe','ASICamera2.dll','LICENSE') {
     if (!(Test-Path -LiteralPath (Join-Path $stage $file))) { throw "Missing $file. Run scripts/build-ascom.ps1 first." }
 }
 $assembly = [Reflection.AssemblyName]::GetAssemblyName((Join-Path $stage 'Regain.ASCOM.dll'))
@@ -73,18 +73,31 @@ foreach ($root in 'HKLM32','HKLM64') {
     $fc3 = 'Software\Classes\CLSID\{{69AB224B-14D2-46A2-A744-0C60593A28B3}'
     foreach ($row in @(
         @('Software\Classes\AppID\{{69AB224B-14D2-46A2-A744-0C60593A28B3}', 'RunAs', 'Interactive User', 'uninsdeletekey'),
-        @('Software\Classes\AppID\Regain.FocusCube.ASCOM.exe', 'AppID', '{{69AB224B-14D2-46A2-A744-0C60593A28B3}', 'uninsdeletekey'),
+        @('Software\Classes\AppID\Regain.Pegasus.ASCOM.exe', 'AppID', '{{69AB224B-14D2-46A2-A744-0C60593A28B3}', 'uninsdeletekey'),
         @($fc3, 'AppID', '{{69AB224B-14D2-46A2-A744-0C60593A28B3}', '')
     )) {
         $registry.Add(('Root: {0}; Subkey: "{1}"; ValueType: string; ValueName: "{2}"; ValueData: "{3}"; Flags: {4}' -f $root, $row[0], $row[1], $row[2], $row[3]))
     }
     foreach ($row in @(
         @($fc3, 'PulsarFab regain Pegasus FocusCube3', 'uninsdeletekey'),
-        @("$fc3\LocalServer32", '"{app}\Regain.FocusCube.ASCOM.exe" /Embedding', ''),
+        @("$fc3\LocalServer32", '"{app}\Regain.Pegasus.ASCOM.exe" /Embedding', ''),
         @("$fc3\ProgID", 'ASCOM.ZWOgain.FocusCube3.Focuser', ''),
         @('Software\Classes\ASCOM.ZWOgain.FocusCube3.Focuser', 'PulsarFab regain Pegasus FocusCube3', 'uninsdeletekey'),
         @('Software\Classes\ASCOM.ZWOgain.FocusCube3.Focuser\CLSID', '{{69AB224B-14D2-46A2-A744-0C60593A28B3}', ''),
         @('Software\ASCOM\Focuser Drivers\ASCOM.ZWOgain.FocusCube3.Focuser', 'PulsarFab regain Pegasus FocusCube3', 'uninsdeletekey')
+    )) {
+        $registry.Add(('Root: {0}; Subkey: "{1}"; ValueType: string; ValueName: ""; ValueData: "{2}"; Flags: {3}' -f $root, $row[0], $row[1].Replace('"','""'), $row[2]))
+    }
+    # Falcon V2 shares the Pegasus executable and AppID with FocusCube3.
+    $falcon = 'Software\Classes\CLSID\{{D2F1A72E-1038-4BFA-BDF1-F1ED7BD3F67B}'
+    $registry.Add(('Root: {0}; Subkey: "{1}"; ValueType: string; ValueName: "AppID"; ValueData: "{{{{69AB224B-14D2-46A2-A744-0C60593A28B3}}"' -f $root, $falcon))
+    foreach ($row in @(
+        @($falcon, 'PulsarFab regain Pegasus Falcon V2', 'uninsdeletekey'),
+        @("$falcon\LocalServer32", '"{app}\Regain.Pegasus.ASCOM.exe" /Embedding', ''),
+        @("$falcon\ProgID", 'ASCOM.PulsarFab.Regain.FalconV2.Rotator', ''),
+        @('Software\Classes\ASCOM.PulsarFab.Regain.FalconV2.Rotator', 'PulsarFab regain Pegasus Falcon V2', 'uninsdeletekey'),
+        @('Software\Classes\ASCOM.PulsarFab.Regain.FalconV2.Rotator\CLSID', '{{D2F1A72E-1038-4BFA-BDF1-F1ED7BD3F67B}', ''),
+        @('Software\ASCOM\Rotator Drivers\ASCOM.PulsarFab.Regain.FalconV2.Rotator', 'PulsarFab regain Pegasus Falcon V2', 'uninsdeletekey')
     )) {
         $registry.Add(('Root: {0}; Subkey: "{1}"; ValueType: string; ValueName: ""; ValueData: "{2}"; Flags: {3}' -f $root, $row[0], $row[1].Replace('"','""'), $row[2]))
     }

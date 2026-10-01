@@ -24,9 +24,11 @@ function Assert-NoCameraEntries {
                 'Software\Classes\CLSID\{EA2040E1-E936-4BDF-87F7-B58CA3E418AB}', 'Software\Classes\CLSID\{295C08F8-EDE9-43C5-9D55-627A063D74CA}',
                 'Software\Classes\ASCOM.ZWOgain.FilterWheel','Software\ASCOM\FilterWheel Drivers\ASCOM.ZWOgain.FilterWheel',
                 'Software\Classes\ASCOM.ZWOgain.Focuser','Software\ASCOM\Focuser Drivers\ASCOM.ZWOgain.Focuser',
+                'Software\Classes\CLSID\{D2F1A72E-1038-4BFA-BDF1-F1ED7BD3F67B}',
+                'Software\Classes\ASCOM.PulsarFab.Regain.FalconV2.Rotator','Software\ASCOM\Rotator Drivers\ASCOM.PulsarFab.Regain.FalconV2.Rotator',
                 'Software\Classes\CLSID\{69AB224B-14D2-46A2-A744-0C60593A28B3}',
                 'Software\Classes\ASCOM.ZWOgain.FocusCube3.Focuser','Software\ASCOM\Focuser Drivers\ASCOM.ZWOgain.FocusCube3.Focuser',
-                'Software\Classes\AppID\{69AB224B-14D2-46A2-A744-0C60593A28B3}','Software\Classes\AppID\Regain.FocusCube.ASCOM.exe',
+                'Software\Classes\AppID\{69AB224B-14D2-46A2-A744-0C60593A28B3}','Software\Classes\AppID\Regain.Pegasus.ASCOM.exe',
                 'Software\Classes\CLSID\{8E24512B-6BC6-4A44-9488-53E63C68CCB7}',
                 'Software\Classes\ASCOM.Regain.OFP2.CoverCalibrator','Software\ASCOM\CoverCalibrator Drivers\ASCOM.Regain.OFP2.CoverCalibrator',
                 'Software\Classes\AppID\{8E24512B-6BC6-4A44-9488-53E63C68CCB7}','Software\Classes\AppID\Regain.Ofp2.ASCOM.exe',
@@ -68,11 +70,13 @@ function Assert-FocusCubeActivation {
     foreach ($architecture in 'System32','SysWOW64') {
         & "$env:WINDIR/$architecture/WindowsPowerShell/v1.0/powershell.exe" -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'test-fc3-ascom-client.ps1') -MetadataOnly
         if ($LASTEXITCODE) { throw 'Installed FocusCube3 COM activation failed' }
+        & "$env:WINDIR/$architecture/WindowsPowerShell/v1.0/powershell.exe" -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'test-falcon-ascom-client.ps1') -MetadataOnly
+        if ($LASTEXITCODE) { throw 'Installed Falcon V2 COM activation failed' }
     }
     # Verify idle shutdown and release the installed executable before maintenance.
-    $serverPath = Join-Path $destination 'Regain.FocusCube.ASCOM.exe'
+    $serverPath = Join-Path $destination 'Regain.Pegasus.ASCOM.exe'
     $deadline = [DateTime]::UtcNow.AddSeconds(45)
-    while (Get-CimInstance Win32_Process -Filter "Name='Regain.FocusCube.ASCOM.exe'" | Where-Object ExecutablePath -eq $serverPath) {
+    while (Get-CimInstance Win32_Process -Filter "Name='Regain.Pegasus.ASCOM.exe'" | Where-Object ExecutablePath -eq $serverPath) {
         if ([DateTime]::UtcNow -gt $deadline) { throw 'Installed FocusCube3 server did not exit after releasing its clients' }
         Start-Sleep -Milliseconds 500
     }
@@ -159,7 +163,7 @@ try {
             try { if (([Uri]$key.GetValue('CodeBase')).LocalPath -ne (Join-Path $destination 'Regain.ASCOM.dll')) { throw 'Wrong rotator registration path' } } finally { $key.Dispose() }
             $fc3 = $root.OpenSubKey('Software\Classes\CLSID\{69AB224B-14D2-46A2-A744-0C60593A28B3}\LocalServer32')
             if (!$fc3) { throw 'FocusCube3 LocalServer32 registration missing' }
-            try { if ($fc3.GetValue('') -ne ('"' + (Join-Path $destination 'Regain.FocusCube.ASCOM.exe') + '" /Embedding')) { throw 'Wrong FocusCube3 local server path' } } finally { $fc3.Dispose() }
+            try { if ($fc3.GetValue('') -ne ('"' + (Join-Path $destination 'Regain.Pegasus.ASCOM.exe') + '" /Embedding')) { throw 'Wrong FocusCube3 local server path' } } finally { $fc3.Dispose() }
             $ofp2 = $root.OpenSubKey('Software\Classes\CLSID\{8E24512B-6BC6-4A44-9488-53E63C68CCB7}\LocalServer32')
             if (!$ofp2) { throw 'OFP2 LocalServer32 registration missing' }
             try { if ($ofp2.GetValue('') -ne ('"' + (Join-Path $destination 'Regain.Ofp2.ASCOM.exe') + '" /Embedding')) { throw 'Wrong OFP2 local server path' } } finally { $ofp2.Dispose() }

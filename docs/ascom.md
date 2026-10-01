@@ -242,7 +242,7 @@ ASCOM. See [OFP2 setup and sharing](ofp2.md#native-windows-ascom).
 
 Choose **PulsarFab regain Pegasus FocusCube3** (`ASCOM.ZWOgain.FocusCube3.Focuser`).
 Unlike the in-process camera and ZWO accessory COM classes, this focuser uses
-`Regain.FocusCube.ASCOM.exe` as a shared COM local server. Separate 32-bit and
+`Regain.Pegasus.ASCOM.exe` as a shared COM local server. Separate 32-bit and
 64-bit clients share one Rust serial worker; the final disconnect releases it.
 The FocusCube3 Start menu setup uses this server too. Close Unity's device
 connection before using it. The native NINA provider and Alpaca still require
@@ -272,3 +272,11 @@ Select the ASI662MC with **Direct USB** in any regain camera slot. It supports
 RAW16 bin 1 and retained-frame rereads through the shared Rust supervisor.
 Short exposures use a roughly 100 ms frame interval while preserving integration
 time. See [ASI662MC setup, limits and validation](asi662mc.md).
+
+### Pegasus Falcon V2
+
+Current source adds **PulsarFab regain Pegasus Falcon V2** to the Rotator Chooser
+(`ASCOM.PulsarFab.Regain.FalconV2.Rotator`). It shares the Pegasus local-server
+executable with FocusCube3 and one Falcon serial worker between ASCOM clients.
+The styled setup dialog includes motion, sync, reverse, reference and explicit
+multi-turn controls. See [Falcon V2](falcon-v2.md) for setup and hardware evidence.

@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net48</TargetFramework><OutputType>WinExe</OutputType><UseWPF>true</UseWPF>
+    <AssemblyName>Regain.Pegasus.ASCOM</AssemblyName><TargetFramework>net48</TargetFramework><OutputType>WinExe</OutputType><UseWPF>true</UseWPF>
     <LangVersion>latest</LangVersion><Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings>
     <PlatformTarget>x64</PlatformTarget><Prefer32Bit>false</Prefer32Bit>
     <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects><CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>

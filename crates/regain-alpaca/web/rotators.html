@@ -1,0 +1,7 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>PulsarFab regain · Rotators</title><link rel="icon" href="/regain.png"><link rel="stylesheet" href="/style.css"><script src="/rotators.js" defer></script></head>
+<body><header><img src="/regain.png" alt="PulsarFab regain"><div><h1><span class="brand-maker">PulsarFab</span> regain</h1><p>ASCOM Alpaca · Rotators</p></div><span id="simulation" hidden>Simulation</span></header>
+<main><aside><h2>Equipment</h2><p><a href="/setup">Cameras →</a></p><p><a href="/setup/focusers">Focusers and tilt →</a></p><p><a href="/setup/v1/filterwheel/0/setup">EFW filter wheel →</a></p><p><a href="/setup/v1/covercalibrator/0/setup">OFP2 flat panel →</a></p></aside>
+<section class="workspace"><div class="title"><div><h2>Rotators</h2><p>Add a slot for each rotator, including multiple devices of the same model.</p></div></div><p id="status" role="status" aria-live="polite"></p>
+<div class="panel"><h3>Add a rotator</h3><label>Model<select id="kind"><option value="caa">ZWO CAA</option><option value="falcon">Pegasus Falcon V2</option></select></label><button id="add-rotator" class="primary">Add rotator</button><p class="hint">Each slot keeps its Alpaca number. Select a serial number or port in setup; USB discovery order never changes your client connections.</p></div>
+<div id="rotators"></div></section></main><footer>PulsarFab regain · Apache 2.0</footer></body></html>

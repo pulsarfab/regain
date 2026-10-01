@@ -2,24 +2,24 @@ param([switch]$Hardware, [string]$Serial)
 $ErrorActionPreference = 'Stop'
 $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $id = [Guid]::NewGuid().ToString()
-$directory = Join-Path $repo ('artifacts/fc3-com-' + $id)
+$directory = Join-Path $repo ('artifacts/falcon-com-' + $id)
 New-Item -ItemType Directory -Path $directory | Out-Null
 $executable = Join-Path $repo 'src/Regain.FocusCube.ASCOM/bin/Release/net48/Regain.Pegasus.ASCOM.exe'
 $old = @{}
-foreach ($name in 'REGAIN_ACCESSORY_SIMULATE','REGAIN_ACCESSORY_SETTINGS','REGAIN_FC3_WORKER') { $old[$name] = [Environment]::GetEnvironmentVariable($name) }
+foreach ($name in 'REGAIN_ROTATOR_SIMULATE','REGAIN_ROTATOR_SETTINGS','REGAIN_FALCON_WORKER') { $old[$name] = [Environment]::GetEnvironmentVariable($name) }
 $keys = @(); $children = @(); $server = $null
 $hive = [Microsoft.Win32.RegistryHive]::CurrentUser
 $principal = [Security.Principal.WindowsPrincipal]::new([Security.Principal.WindowsIdentity]::GetCurrent())
 if ($principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { $hive = [Microsoft.Win32.RegistryHive]::LocalMachine }
 try {
     dotnet build (Join-Path $repo 'src/Regain.FocusCube.ASCOM') -c Release -v quiet
-    if ($LASTEXITCODE) { throw 'FocusCube3 ASCOM build failed' }
-    $env:REGAIN_ACCESSORY_SIMULATE = if ($Hardware) { '' } else { '1' }
-    $env:REGAIN_ACCESSORY_SETTINGS = $directory
-    $env:REGAIN_FC3_WORKER = Join-Path $repo 'target/debug/regain-device.exe'
+    if ($LASTEXITCODE) { throw 'Falcon V2 ASCOM build failed' }
+    $env:REGAIN_ROTATOR_SIMULATE = if ($Hardware) { '' } else { '1' }
+    $env:REGAIN_ROTATOR_SETTINGS = Join-Path $directory 'falcon-ascom.json'
+    $env:REGAIN_FALCON_WORKER = Join-Path $repo 'target/debug/regain-device.exe'
     if ($Hardware) {
         if (!$Serial) { throw 'Hardware test requires explicit USB serial' }
-        @{Serial=$Serial} | ConvertTo-Json | Set-Content (Join-Path $directory 'fc3-ascom.json') -Encoding UTF8
+        @{Serial=$Serial} | ConvertTo-Json | Set-Content (Join-Path $directory 'falcon-ascom.json') -Encoding UTF8
     }
     foreach ($view in [Microsoft.Win32.RegistryView]::Registry32,[Microsoft.Win32.RegistryView]::Registry64) {
         $root = [Microsoft.Win32.RegistryKey]::OpenBaseKey($hive,$view)
@@ -28,12 +28,12 @@ try {
             if ($root.OpenSubKey($path)) { throw 'Private test CLSID exists' }
             $keys += @{ View=$view; Path=$path }
             $key = $root.CreateSubKey($path + '\LocalServer32')
-            try { $key.SetValue('', '"' + $executable + '" /test-clsid ' + $id) } finally { $key.Dispose() }
+            try { $key.SetValue('', '"' + $executable + '" /test-driver ASCOM.PulsarFab.Regain.FalconV2.Rotator /test-clsid ' + $id) } finally { $key.Dispose() }
         } finally { $root.Dispose() }
     }
     # Start the isolated fixture ourselves so only it inherits simulation/profile overrides.
     $ready = Join-Path $directory 'server-ready'
-    $server = Start-Process -FilePath $executable -ArgumentList @('/test-clsid',$id,'/test-ready',('"'+$ready+'"')) -WindowStyle Hidden -PassThru
+    $server = Start-Process -FilePath $executable -ArgumentList @('/test-driver','ASCOM.PulsarFab.Regain.FalconV2.Rotator','/test-clsid',$id,'/test-ready',('"'+$ready+'"')) -WindowStyle Hidden -PassThru
     $deadline = [DateTime]::UtcNow.AddSeconds(20)
     while (!(Test-Path -LiteralPath $ready)) {
         if ($server.HasExited) { throw 'COM fixture exited before registration' }
@@ -42,7 +42,7 @@ try {
     }
     foreach ($pair in @(@('System32','first'),@('SysWOW64','second'))) {
         $role=$pair[1]
-        $args = '-NoProfile -ExecutionPolicy Bypass -File "' + (Join-Path $PSScriptRoot 'test-fc3-ascom-client.ps1') + '" -Id ' + $id + ' -Directory "' + $directory + '" -Role ' + $role
+        $args = '-NoProfile -ExecutionPolicy Bypass -File "' + (Join-Path $PSScriptRoot 'test-falcon-ascom-client.ps1') + '" -Id ' + $id + ' -Directory "' + $directory + '" -Role ' + $role
         $children += Start-Process -FilePath "$env:WINDIR/$($pair[0])/WindowsPowerShell/v1.0/powershell.exe" -ArgumentList $args -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $directory "$role.out") -RedirectStandardError (Join-Path $directory "$role.err")
     }
     foreach ($child in $children) {
@@ -68,10 +68,10 @@ try {
         } finally {$root.Dispose()}
     }
     foreach ($architecture in 'System32','SysWOW64') {
-        & "$env:WINDIR/$architecture/WindowsPowerShell/v1.0/powershell.exe" -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'test-fc3-ascom-client.ps1') -Id $id -MetadataOnly
+        & "$env:WINDIR/$architecture/WindowsPowerShell/v1.0/powershell.exe" -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'test-falcon-ascom-client.ps1') -Id $id -MetadataOnly
         if ($LASTEXITCODE) { throw 'Cold COM activation failed' }
     }
-    Write-Output 'FocusCube3 automatic COM activation passed in both architectures'
+    Write-Output 'Falcon V2 automatic COM activation passed in both architectures'
     } else { Write-Output 'Machine-wide cold activation is exercised by elevated Windows CI; local fixtures verify the running shared server.' }
 } finally {
     foreach ($child in $children) { if (!$child.HasExited) { $child.Kill() }; $child.Dispose() }

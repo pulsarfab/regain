@@ -1,6 +1,6 @@
 [package]
 name = "regain-pegasus"
-description = "SDK-free Pegasus Astro FocusCube3 focuser protocol"
+description = "SDK-free Pegasus Astro focuser and rotator protocols"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

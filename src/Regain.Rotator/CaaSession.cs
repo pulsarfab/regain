@@ -33,8 +33,13 @@ public sealed class CaaChoice
 }
 
 /// One exclusive SDK-free Rust worker per rotator. Commands are never replayed.
-public sealed class CaaSession : IDisposable
+public sealed class CaaSession : IDisposable, IDeviceSession
 {
+    public bool IsFalcon { get; }
+    public string ModelName => IsFalcon ? "Pegasus Falcon V2" : "CAA Rotator";
+    public string ActionPrefix => IsFalcon ? "Regain.Falcon." : "Regain.CAA.";
+    public string[] SupportedActions => IsFalcon ? new[] { "Status", "Settings", "Identity", "SetReference", "RotateUnwrapped", "ResetOrigin" }.Select(a => ActionPrefix + a).ToArray() : Actions;
+    private bool ValidSerial(string serial) => IsFalcon ? serial.Length is > 0 and <= 128 && serial.All(c => char.IsLetterOrDigit(c) || c is '-' or '_' or ':') : serial.Length == 16 && serial.All(Uri.IsHexDigit);
     private readonly object gate = new();
     private readonly string executable;
     public string ProfilePath { get; }
@@ -43,9 +48,10 @@ public sealed class CaaSession : IDisposable
     public Action<string>? Log { get; set; }
     public bool Connected { get { lock (gate) return worker is { HasExited: false }; } }
     public CaaProfile Profile { get; private set; }
-    public CaaSession(string executable, string profilePath)
+    public CaaSession(string executable, string profilePath, bool falcon = false)
     {
         this.executable = executable;
+        IsFalcon = falcon;
         ProfilePath = profilePath;
         Profile = ReadProfile();
     }
@@ -53,7 +59,7 @@ public sealed class CaaSession : IDisposable
     public static string SettingsPath(string slot) => RegainPaths.EnvironmentVariable("REGAIN_ROTATOR_SETTINGS") ?? RegainPaths.Profile(Path.Combine("Rotators", slot + ".json"));
     private Process Start(string arguments)
     {
-        var process = new Process { StartInfo = new(executable, "zwo caa " + arguments) { UseShellExecute = false, CreateNoWindow = true,
+        var process = new Process { StartInfo = new(executable, (IsFalcon ? "pegasus falcon " : "zwo caa ") + arguments + (RegainPaths.EnvironmentVariable("REGAIN_ROTATOR_SIMULATE") == "1" ? " --simulate" : "")) { UseShellExecute = false, CreateNoWindow = true,
             WindowStyle = ProcessWindowStyle.Hidden, RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true,
             StandardOutputEncoding = new System.Text.UTF8Encoding(false),
             WorkingDirectory = Path.GetDirectoryName(executable)! } };
@@ -78,8 +84,8 @@ public sealed class CaaSession : IDisposable
         using var process = Start("list-details");
         try {
             var read = process.StandardOutput.ReadLineAsync();
-            if (!read.Wait(TimeSpan.FromSeconds(15))) throw new TimeoutException("CAA enumeration timed out");
-            using var doc = JsonDocument.Parse(read.Result ?? throw new IOException("CAA enumeration failed; check rotator.log"));
+            if (!read.Wait(TimeSpan.FromSeconds(15))) throw new TimeoutException("Rotator enumeration timed out");
+            using var doc = JsonDocument.Parse(read.Result ?? throw new IOException("Rotator enumeration failed; check rotator.log"));
             var result = new List<CaaChoice>();
             foreach (var item in doc.RootElement.EnumerateArray()) {
                 if (!item.TryGetProperty("identity", out var id)) continue;
@@ -93,7 +99,7 @@ public sealed class CaaSession : IDisposable
     {
         lock (gate) {
             if (Connected) throw new InvalidOperationException("Disconnect before changing the rotator");
-            if (serial.Length != 16 || serial.Any(c => !Uri.IsHexDigit(c))) throw new ArgumentException("Choose a CAA from the list");
+            if (!ValidSerial(serial)) throw new ArgumentException("Choose a rotator from the list");
             if (!string.Equals(Profile.Serial, serial, StringComparison.OrdinalIgnoreCase)) Profile = new() { Serial = serial };
             Save();
         }
@@ -113,39 +119,39 @@ public sealed class CaaSession : IDisposable
             if (Connected) return;
             // Setup may have been opened by a separate ASCOM instance since this one was created.
             Profile = ReadProfile();
-            Diagnostic("Connecting CAA; settings: " + ProfilePath + "; worker: " + executable);
+            Diagnostic("Connecting rotator; settings: " + ProfilePath + "; worker: " + executable);
             if (string.IsNullOrEmpty(Profile.Serial)) {
                 var choices = Discover();
-                if (choices.Count == 0) throw new InvalidOperationException("No available CAA found. Check USB and close other rotator controllers.");
-                if (choices.Count != 1) throw new InvalidOperationException("More than one CAA found. Choose a rotator in ASCOM setup.");
+                if (choices.Count == 0) throw new InvalidOperationException("No available rotator found. Check USB and close other rotator controllers.");
+                if (choices.Count != 1) throw new InvalidOperationException("More than one rotator found. Choose a rotator in ASCOM setup.");
                 Select(choices[0].Serial);
-                Diagnostic("Saved the only available CAA as the selected rotator");
+                Diagnostic("Saved the only available rotator as the selected rotator");
             }
-            if (Profile.Serial.Length != 16 || Profile.Serial.Any(c => !Uri.IsHexDigit(c))) throw new InvalidOperationException("The saved CAA selection is invalid. Choose a rotator in setup.");
+            if (!ValidSerial(Profile.Serial)) throw new InvalidOperationException("The saved rotator selection is invalid. Choose a rotator in setup.");
             worker?.Dispose(); worker = Start("serve --serial " + Profile.Serial);
             input = new StreamWriter(worker.StandardInput.BaseStream, new System.Text.UTF8Encoding(false)) { AutoFlush = true };
             try {
                 var identity = Request(new { command = "identity" });
-                if (!string.Equals(identity.GetProperty("serial").GetString(), Profile.Serial, StringComparison.OrdinalIgnoreCase)) throw new IOException("CAA identity changed");
+                if (!string.Equals(identity.GetProperty("serial").GetString(), Profile.Serial, StringComparison.OrdinalIgnoreCase)) throw new IOException("Rotator identity changed");
                 if (Profile.CoordinatesUncertain) {
                     Profile.LogicalOffset = 0; Profile.Synced = false; Profile.CoordinatesUncertain = false; Save();
                     Diagnostic("Previous reference operation did not finish cleanly; sync the sky angle again");
                 }
                 var status = Status();
                 Request(new { command = "sync", degrees = Wrap(status.Logical + Profile.LogicalOffset) });
-                Diagnostic("Connected CAA using native USB HID");
+                Diagnostic("Connected rotator using the native Rust worker");
             } catch { CloseWorker(); throw; }
         }
     }
     public JsonElement Request(object request)
     {
         lock (gate) {
-            if (!Connected) throw new InvalidOperationException("CAA is disconnected");
+            if (!Connected) throw new InvalidOperationException("Rotator is disconnected");
             try {
                 input!.WriteLine(JsonSerializer.Serialize(request));
                 var read = worker!.StandardOutput.ReadLineAsync();
-                if (!read.Wait(TimeSpan.FromSeconds(10))) { CloseWorker(); throw new TimeoutException("CAA worker timed out; motion was not retried"); }
-                using var document = JsonDocument.Parse(read.Result ?? throw new IOException("CAA worker exited"));
+                if (!read.Wait(TimeSpan.FromSeconds(10))) { CloseWorker(); throw new TimeoutException("Rotator worker timed out; motion was not retried"); }
+                using var document = JsonDocument.Parse(read.Result ?? throw new IOException("Rotator worker exited"));
                 if (!document.RootElement.GetProperty("ok").GetBoolean()) throw new InvalidOperationException(document.RootElement.GetProperty("error").GetString());
                 return document.RootElement.GetProperty("result").Clone();
             } catch (Exception e) { Diagnostic(e.Message); throw; }
@@ -164,7 +170,7 @@ public sealed class CaaSession : IDisposable
     }
     public void CheckMotion(CaaStatus status)
     {
-        if (status.Error != 0 || status.MotionError is not null) throw new IOException(status.MotionError ?? "CAA fault " + status.Error);
+        if (status.Error != 0 || status.MotionError is not null) throw new IOException(status.MotionError ?? "Rotator fault " + status.Error);
     }
     public void RememberCoordinates(bool? synced = null)
     {
@@ -181,13 +187,15 @@ public sealed class CaaSession : IDisposable
     public string Action(string name, string parameters)
     {
         lock (gate) {
-        int index = Array.FindIndex(Actions, a => a.Equals(RegainPaths.ActionName(name), StringComparison.OrdinalIgnoreCase));
-        string command = index switch { 0 => "status", 1 => "settings", 2 => "identity", 3 => "reference", 4 => "limit", 5 => "beep", 6 => "alias", 7 => "rotate-unwrapped", 8 => "reset-origin", _ => throw new NotSupportedException("Unknown CAA action") };
+        if (!SupportedActions.Any(a => a.Equals(name, StringComparison.OrdinalIgnoreCase)) && IsFalcon) throw new NotSupportedException("Unsupported Falcon action");
+        string canonical = IsFalcon ? RegainPaths.ActionName(name).Replace("regain.falcon.", "regain.caa.") : name;
+        int index = Array.FindIndex(Actions, a => a.Equals(RegainPaths.ActionName(canonical), StringComparison.OrdinalIgnoreCase));
+        string command = index switch { 0 => "status", 1 => "settings", 2 => "identity", 3 => "reference", 4 => "limit", 5 => "beep", 6 => "alias", 7 => "rotate-unwrapped", 8 => "reset-origin", _ => throw new NotSupportedException("Unknown rotator action") };
         JsonElement result;
         if (index < 3) result = Request(new { command });
         else if (index == 8) {
             Profile.CoordinatesUncertain = true; Profile.Synced = false; Save();
-            result = Request(new { command }); RememberCoordinates(); Diagnostic("CAA mechanical origin reset to zero");
+            result = Request(new { command }); RememberCoordinates(); Diagnostic("Rotator mechanical origin reset to zero");
         }
         else {
             using var values = JsonDocument.Parse(parameters);
@@ -199,7 +207,7 @@ public sealed class CaaSession : IDisposable
             if (index is 3 or 7) { Profile.CoordinatesUncertain = true; Profile.Synced = false; Save(); }
             result = Request(request);
             if (index == 3) RememberCoordinates();
-            Diagnostic("CAA action " + name);
+            Diagnostic("Rotator action " + name);
         }
         return result.GetRawText();
         }
@@ -207,7 +215,7 @@ public sealed class CaaSession : IDisposable
     public void Disconnect()
     {
         lock (gate) {
-            try { if (Connected) { Halt(); Diagnostic("Disconnected CAA"); } }
+            try { if (Connected) { Halt(); Diagnostic("Disconnected rotator"); } }
             finally { CloseWorker(); }
         }
     }
