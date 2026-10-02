@@ -137,7 +137,7 @@ impl WhiteBalance {
         let applied =
             !dark && self.settings.output == Output::Corrected && self.settings.mode != Mode::Off;
         if applied {
-            for (index, pixel) in pixels.chunks_exact_mut(2).enumerate() {
+            for (index, pixel) in pixels.as_chunks_mut::<2>().0.iter_mut().enumerate() {
                 let gain = match channel(
                     bayer,
                     (x % 2) as usize + index % width,
@@ -261,7 +261,9 @@ mod tests {
                     assert_eq!(wb.settings.gains, Gains { red: 2., blue: 0.5 });
                     assert_eq!(meta["applied"], true);
                     assert!(
-                        p.chunks_exact(2)
+                        p.as_chunks::<2>()
+                            .0
+                            .iter()
                             .all(|v| u16::from_le_bytes([v[0], v[1]]) == 8000)
                     );
                 }
@@ -347,7 +349,7 @@ mod tests {
             ..Settings::default()
         })
         .unwrap();
-        for (i, v) in p.chunks_exact_mut(2).enumerate() {
+        for (i, v) in p.as_chunks_mut::<2>().0.iter_mut().enumerate() {
             let value: u16 = if channel(0, i % 32, i / 32) == 0 {
                 1024
             } else {
@@ -372,7 +374,7 @@ mod tests {
             dark: false,
         };
         let mut p = vec![0u8; g.width * g.height * 2];
-        for v in p.chunks_exact_mut(2) {
+        for v in p.as_chunks_mut::<2>().0 {
             v.copy_from_slice(&8000u16.to_le_bytes());
         }
         let mut wb = WhiteBalance::default();
