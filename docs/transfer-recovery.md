@@ -102,7 +102,7 @@ interruptions from actual USB bus faults.
 | --- | --- | --- |
 | Camera coverage | Verified ASI662MC and ASI676MC USB3, ASI2600MM Pro main USB3 (`2601` and P25 `260e`), ASI6200MM Pro P25 USB3 (`620b`), ASI220MM Mini guide USB2 | Other models/revisions need their own initialization, format and recovery evidence; a shared driver package is insufficient |
 | Single-frame imaging | RAW16, ROI, gain/offset, factory correction; main bins 1–4 and long integrations | SDK format/control coverage is broader; unverified correction-map classes and modes must not be assumed equivalent |
-| Additional SDK modes | NINA path delivers RAW16 still frames | RAW8/RGB, live video, automatic controls, white balance/gamma, flip, external triggering and ST4 are not implemented/surfaced by the direct path; availability in the SDK varies by model |
+| Additional SDK modes | NINA path delivers RAW16 still frames | RAW8/RGB, live video, automatic exposure, hardware white balance/gamma, flip, external triggering and ST4 are not implemented/surfaced by the direct path; availability in the SDK varies by model. Current pipe workers offer opt-in [shared software WB/AWB](white-balance.md) for color cameras. |
 | Transfer throughput | Sequential 1 MiB bulk requests, fixed USB limit 40 | SDK traces show queued overlapped transfers. Queue depth and bandwidth tuning need measurements and cancellation tests |
 | Cooling | Temperature, target, enablement, power and dew control; bounded Rust PI regulator | It is not the SDK regulator and needs more environmental and hardware validation |
 | ASI6200 auxiliary controls | Fan speed and power-LED brightness, 0–255, with readback and restoration | Momentary USB hub reset is not exposed or replayed automatically |

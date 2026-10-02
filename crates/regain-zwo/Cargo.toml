@@ -14,13 +14,14 @@ categories = ["science", "hardware-support"]
 
 [features]
 default = ["asi-direct", "asi-sdk", "caa", "accessories"]
-asi-direct = ["dep:sha2", "dep:nusb", "dep:libc", "dep:windows-sys", "windows-sys?/Win32_System_IO", "windows-sys?/Win32_System_Threading", "windows-sys?/Win32_System_LibraryLoader"]
-asi-sdk = ["dep:libloading"]
+asi-direct = ["dep:regain-core", "dep:sha2", "dep:nusb", "dep:libc", "dep:windows-sys", "windows-sys?/Win32_System_IO", "windows-sys?/Win32_System_Threading", "windows-sys?/Win32_System_LibraryLoader"]
+asi-sdk = ["dep:libloading", "dep:regain-core"]
 hid = ["dep:libc", "dep:windows-sys", "windows-sys?/Win32_Devices_HumanInterfaceDevice"]
 caa = ["hid"]
 accessories = ["hid"]
 
 [dependencies]
+regain-core = { workspace = true, optional = true }
 anyhow = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
