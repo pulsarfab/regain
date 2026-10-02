@@ -146,6 +146,21 @@ pub struct Worker {
     id: u64,
 }
 impl Worker {
+    /// Query (None) or configure shared software white balance while idle.
+    /// Inspect the open response's `whiteBalance.supported` capability first.
+    pub async fn white_balance(
+        &mut self,
+        settings: Option<crate::white_balance::Settings>,
+        token: &CancellationToken,
+    ) -> Result<Value> {
+        if let Some(settings) = settings {
+            settings.gains.validate()?;
+        }
+        Ok(self
+            .call("white-balance", serde_json::to_value(settings)?, 15., token)
+            .await?
+            .0)
+    }
     pub fn pid(&self) -> Option<u32> {
         self.child.id()
     }

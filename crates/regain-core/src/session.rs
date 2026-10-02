@@ -67,6 +67,31 @@ impl Session {
     pub fn snapshot(&self) -> Status {
         self.status.lock().unwrap().clone()
     }
+    /// Opt into Regain-owned WB. The caller serializes this with capture, like
+    /// all Session operations. Settings and effective AWB gains survive recovery.
+    pub async fn set_white_balance(
+        &mut self,
+        settings: crate::white_balance::Settings,
+        token: &CancellationToken,
+    ) -> Result<()> {
+        settings.gains.validate()?;
+        let result = self
+            .call(
+                "white-balance",
+                serde_json::to_value(settings)?,
+                None,
+                token,
+            )
+            .await?
+            .0;
+        self.status.lock().unwrap().white_balance =
+            Some(serde_json::from_value(result["settings"].clone())?);
+        // Legacy WB/flip controls must not be replayed over managed WB.
+        for kind in [3, 4, 9] {
+            self.applied.remove(&kind);
+        }
+        Ok(())
+    }
     pub async fn simulate_read_failures(
         &mut self,
         count: u32,
@@ -92,6 +117,10 @@ impl Session {
     }
     pub fn queue_control(status: &SharedStatus, kind: i32, value: i64) -> Result<()> {
         let mut state = status.lock().unwrap();
+        ensure!(
+            state.white_balance.is_none() || !matches!(kind, 3 | 4 | 9),
+            Failure::Invalid("WB and flip controls are owned by managed white balance".into())
+        );
         let cap = state
             .controls
             .get(&kind)
@@ -377,6 +406,21 @@ impl Session {
             }
             state.control_connection_available = true;
             state.process_id = self.worker.as_ref().and_then(Worker::pid);
+            state.white_balance_capabilities = result["whiteBalance"].clone();
+        }
+        if let Some(settings) = previous.white_balance {
+            // A new worker has no previous estimate for Locked to freeze.
+            if settings.mode == crate::white_balance::Mode::Locked {
+                self.set_white_balance(
+                    crate::white_balance::Settings {
+                        mode: crate::white_balance::Mode::Manual,
+                        ..settings
+                    },
+                    token,
+                )
+                .await?;
+            }
+            self.set_white_balance(settings, token).await?;
         }
         self.emit(
             "info",
@@ -400,7 +444,8 @@ impl Session {
             .values
             .into_iter()
             .filter(|(k, _)| {
-                state.controls.get(k).is_some_and(|c| c.writable || *k == 6)
+                (state.white_balance.is_none() || !matches!(k, 3 | 4 | 9))
+                    && state.controls.get(k).is_some_and(|c| c.writable || *k == 6)
                     && matches!(
                         k,
                         0 | 2
@@ -432,6 +477,9 @@ impl Session {
         let mut ordered: Vec<_> = values.iter().map(|(k, v)| (*k, *v)).collect();
         ordered.sort_by_key(|(k, _)| if *k == 17 { 100 } else { *k });
         for (kind, value) in ordered {
+            if self.snapshot().white_balance.is_some() && matches!(kind, 3 | 4 | 9) {
+                continue;
+            }
             if self.applied.get(&kind) == Some(&value) {
                 continue;
             }
@@ -540,6 +588,15 @@ impl Session {
         self.direct && self.snapshot().info["retainedFrameReads"] == true
     }
     pub async fn capture(&mut self, e: Exposure, token: &CancellationToken) -> Result<Frame> {
+        if self.snapshot().white_balance.is_some() {
+            let state = self.snapshot();
+            crate::white_balance::WhiteBalance::validate_geometry(
+                state.info["color"] == true,
+                state.info["bayer"].as_u64(),
+                e.bin,
+            )
+            .map_err(|error| invalid(error.to_string()))?;
+        }
         let state = self.snapshot();
         validate_capture(
             &state.info,
@@ -777,6 +834,11 @@ impl Session {
             self.invalidate().await;
         }
         metadata["startedUtc"] = json!(started);
+        if self.snapshot().white_balance.is_some() {
+            let settings = serde_json::from_value(metadata["whiteBalance"]["settings"].clone())
+                .map_err(|_| invalid("Missing or invalid managed white balance frame metadata"))?;
+            self.status.lock().unwrap().white_balance = Some(settings);
+        }
         metadata["endedUtc"] = json!(Utc::now());
         metadata["exposure"] = serde_json::to_value(e)?;
         metadata["controls"] = serde_json::to_value(settings)?;
@@ -841,9 +903,15 @@ impl Session {
     pub async fn close(&mut self) {
         let token = CancellationToken::new();
         let closed = if self.worker.is_some() {
-            self.call("close", Value::Null, Some(2.), &token)
-                .await
-                .is_ok()
+            match self.call("close", Value::Null, Some(2.), &token).await {
+                Ok(_) => true,
+                Err(error) => {
+                    let message = format!("Camera close or settings restoration failed: {error:#}");
+                    self.emit("warning", "camera.cleanup_failed", &message);
+                    self.status.lock().unwrap().error = Some(message);
+                    false
+                }
+            }
         } else {
             false
         };
@@ -966,6 +1034,72 @@ mod tests {
     }
     fn log() -> Diagnostic {
         Arc::new(|_, _, _| {})
+    }
+    #[tokio::test]
+    async fn managed_white_balance_survives_worker_recovery_and_retains_locked_gains() {
+        use crate::white_balance::{Gains, Mode, Output, Settings};
+        for direct in [false, true] {
+            let token = CancellationToken::new();
+            let mut s = Session::new(selection(direct), runtime(), log()).unwrap();
+            s.connect(&token).await.unwrap();
+            assert_eq!(s.snapshot().white_balance_capabilities["supported"], true);
+            let settings = Settings {
+                mode: Mode::Manual,
+                gains: Gains { red: 2., blue: 0.5 },
+                output: Output::Corrected,
+            };
+            s.set_white_balance(settings, &token).await.unwrap();
+            s.set_white_balance(
+                Settings {
+                    mode: Mode::Locked,
+                    ..settings
+                },
+                &token,
+            )
+            .await
+            .unwrap();
+            assert!(Session::queue_control(&s.status, 3, 50).is_err());
+            let e = Exposure {
+                dark: false,
+                ..exposure()
+            };
+            let first = s.capture(e.clone(), &token).await.unwrap();
+            assert_eq!(first.metadata["whiteBalance"]["applied"], true);
+            s.invalidate().await;
+            let recovered = s.capture(e, &token).await.unwrap();
+            assert_eq!(first.pixels, recovered.pixels);
+            assert_eq!(
+                s.snapshot().white_balance.unwrap(),
+                Settings {
+                    mode: Mode::Locked,
+                    ..settings
+                }
+            );
+            s.set_white_balance(
+                Settings {
+                    mode: Mode::Once,
+                    ..Settings::default()
+                },
+                &token,
+            )
+            .await
+            .unwrap();
+            s.capture(
+                Exposure {
+                    dark: false,
+                    ..exposure()
+                },
+                &token,
+            )
+            .await
+            .unwrap();
+            let effective = s.snapshot().white_balance.unwrap();
+            assert_eq!(effective.mode, Mode::Locked);
+            s.invalidate().await;
+            s.capture(exposure(), &token).await.unwrap();
+            assert_eq!(s.snapshot().white_balance.unwrap(), effective);
+            s.invalidate().await;
+        }
     }
     #[test]
     fn cooling_requires_output_or_sustained_setpoint_and_resets_on_warming_or_gaps() {

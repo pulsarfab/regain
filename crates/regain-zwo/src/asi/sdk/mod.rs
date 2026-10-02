@@ -3,6 +3,7 @@ mod library;
 #[allow(dead_code)]
 mod raw;
 use anyhow::{Result, bail, ensure};
+use regain_core::white_balance::{Geometry, Settings as WhiteBalanceSettings, WhiteBalance};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::{
@@ -52,8 +53,29 @@ struct Host {
     opened: bool,
     sim_info: Value,
     sim_instant: bool,
+    camera: Value,
+    white_balance: Option<WhiteBalance>,
 }
 impl Host {
+    fn require_unflipped(&self) -> Result<()> {
+        let flip = if let Some(s) = &self.sdk {
+            if self.camera["controls"]
+                .as_array()
+                .is_some_and(|caps| caps.iter().any(|c| c["type"] == 9))
+            {
+                s.get(9)?
+            } else {
+                0
+            }
+        } else {
+            self.values["9"].as_i64().unwrap_or(0)
+        };
+        ensure!(
+            flip == 0,
+            regain_core::Failure::Invalid("managed white balance requires flip 0".into())
+        );
+        Ok(())
+    }
     fn command(&mut self, method: &str, p: Value) -> Result<(Value, Vec<u8>)> {
         let mut bytes = Vec::new();
         let value = match method {
@@ -73,7 +95,7 @@ impl Host {
             "open" => {
                 ensure!(!self.opened, "already open");
                 let name = p["name"].as_str().unwrap_or("");
-                let v = if let Some(s) = &mut self.sdk {
+                let mut v = if let Some(s) = &mut self.sdk {
                     s.open(name, p["serial"].as_str())?
                 } else {
                     ensure!(
@@ -94,8 +116,45 @@ impl Host {
                         {"type":16,"min":-40,"max":30,"default":-10,"value":-10,"writable":true},
                         {"type":17,"min":0,"max":1,"default":1,"value":1,"writable":true}]})
                 };
+                let supported = v["info"]["color"] == true
+                    && v["info"]["bayer"].as_u64().is_some_and(|b| b <= 3)
+                    && (self.sdk.is_none()
+                        || [3, 4].iter().all(|kind| {
+                            v["controls"].as_array().is_some_and(|caps| {
+                                caps.iter().any(|c| {
+                                    c["type"] == *kind
+                                        && c["writable"] == true
+                                        && c["min"].as_i64().is_some_and(|n| n <= 50)
+                                        && c["max"].as_i64().is_some_and(|n| n >= 50)
+                                })
+                            })
+                        }));
+                v["whiteBalance"] = WhiteBalance::capabilities(supported);
+                self.camera = v.clone();
+                self.white_balance = None;
                 self.opened = true;
                 v
+            }
+            "white-balance" => {
+                ensure!(self.opened, "not open");
+                if !p.is_null() && p.as_object().is_none_or(|o| !o.is_empty()) {
+                    ensure!(
+                        self.exposure.is_none(),
+                        "cannot change white balance during capture"
+                    );
+                    ensure!(
+                        self.camera["whiteBalance"]["supported"] == true,
+                        "managed white balance unavailable"
+                    );
+                    let settings: WhiteBalanceSettings = serde_json::from_value(p)?;
+                    let mut next = self.white_balance.clone().unwrap_or_default();
+                    next.configure(settings)?;
+                    self.require_unflipped()?;
+                    self.white_balance = Some(next);
+                }
+                json!({"capabilities":self.camera["whiteBalance"],
+                    "managed":self.white_balance.is_some(),
+                    "settings":self.white_balance.as_ref().map(WhiteBalance::settings)})
             }
             "get" => {
                 ensure!(self.opened, "not open");
@@ -118,6 +177,10 @@ impl Host {
                         .ok_or_else(|| anyhow::anyhow!("control missing"))?,
                 )?;
                 if method == "set-control-state" {
+                    ensure!(
+                        self.white_balance.is_none() || !matches!(c, 3 | 4 | 9),
+                        "WB and flip controls are owned by managed white balance; close to return to legacy controls"
+                    );
                     let value = p["value"]
                         .as_i64()
                         .ok_or_else(|| anyhow::anyhow!("value missing"))?;
@@ -150,6 +213,10 @@ impl Host {
                 let v = p["value"]
                     .as_i64()
                     .ok_or_else(|| anyhow::anyhow!("value missing"))?;
+                ensure!(
+                    self.white_balance.is_none() || !matches!(c, 3 | 4 | 9),
+                    "WB and flip controls are owned by managed white balance; close to return to legacy controls"
+                );
                 if let Some(s) = &self.sdk {
                     s.set(c, v)?;
                 } else {
@@ -163,6 +230,18 @@ impl Host {
                 ensure!(self.exposure.is_none(), "exposure pending");
                 let e: Exposure = serde_json::from_value(p)?;
                 e.size()?;
+                if self.white_balance.is_some() {
+                    WhiteBalance::validate_geometry(
+                        self.camera["info"]["color"] == true,
+                        self.camera["info"]["bayer"].as_u64(),
+                        u32::try_from(e.bin)?,
+                    )
+                    .map_err(|error| regain_core::invalid(error.to_string()))?;
+                    self.require_unflipped()?;
+                    if let Some(s) = &mut self.sdk {
+                        s.neutral_white_balance()?;
+                    }
+                }
                 if let Some(s) = &self.sdk {
                     s.start(&e)?;
                 }
@@ -220,7 +299,20 @@ impl Host {
                         pixel.copy_from_slice(&(i as u16).to_le_bytes());
                     }
                 }
-                let v = json!({"width":e.width,"height":e.height,"bytes":bytes.len()});
+                let mut v = json!({"width":e.width,"height":e.height,"bytes":bytes.len()});
+                if let Some(wb) = &mut self.white_balance {
+                    v["whiteBalance"] = wb.process(
+                        &mut bytes,
+                        Geometry {
+                            width: e.width as usize,
+                            height: e.height as usize,
+                            x: e.x as u32,
+                            y: e.y as u32,
+                            bayer: self.camera["info"]["bayer"].as_u64().unwrap() as u8,
+                            dark: e.dark,
+                        },
+                    )?;
+                }
                 self.exposure = None;
                 v
             }
@@ -237,6 +329,8 @@ impl Host {
                 }
                 self.opened = false;
                 self.exposure = None;
+                self.white_balance = None;
+                self.camera = Value::Null;
                 json!(null)
             }
             "fault" if self.sdk.is_none() => {
@@ -258,6 +352,11 @@ impl Host {
                 }
                 if let Some(cooled) = p["cooled"].as_bool() {
                     self.sim_info["cooled"] = json!(cooled);
+                }
+                for key in ["color", "bayer"] {
+                    if !p[key].is_null() {
+                        self.sim_info[key] = p[key].clone();
+                    }
                 }
 
                 if let (Some(control), Some(minimum)) =
@@ -314,6 +413,8 @@ pub fn run(args: Vec<String>) -> Result<()> {
         fault: String::new(),
         opened: false,
         sim_instant: false,
+        camera: Value::Null,
+        white_balance: None,
         sim_info: json!({"id":0,"name":"ZWO Simulated","width":960,"height":640,"color":true,"bayer":0,"pixelSize":3.76,"bitDepth":16,"cooled":true,"shutter":false,"bins":[1,2,4],"formats":[0,2]}),
     };
     if let Some(options) = command {
@@ -351,8 +452,15 @@ pub fn run(args: Vec<String>) -> Result<()> {
                     })
                 );
                 let sdk_error = e.downcast_ref::<library::SdkError>();
+                let code = sdk_error.map(|s| s.code).or_else(|| {
+                    matches!(
+                        e.downcast_ref::<regain_core::Failure>(),
+                        Some(regain_core::Failure::Invalid(_))
+                    )
+                    .then_some(8)
+                });
                 (
-                    json!({"version":1,"id":req["id"],"ok":false,"error":format!("{e:#}"),"sdkCode":sdk_error.map(|s|s.code),"sdkOperation":sdk_error.map(|s|&s.operation),"binaryLength":0}),
+                    json!({"version":1,"id":req["id"],"ok":false,"error":format!("{e:#}"),"sdkCode":code,"sdkOperation":sdk_error.map(|s|&s.operation),"binaryLength":0}),
                     Vec::new(),
                 )
             }
@@ -381,6 +489,8 @@ mod tests {
             opened: false,
             sim_info: json!({"name":"test camera"}),
             sim_instant: true,
+            camera: Value::Null,
+            white_balance: None,
         };
         assert!(host.command("list", Value::Null).is_ok());
         host.command("open", json!({"name":"test camera"})).unwrap();

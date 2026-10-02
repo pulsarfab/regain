@@ -1,6 +1,7 @@
 pub mod model;
 mod process;
 pub mod session;
+pub mod white_balance;
 pub mod worker;
 pub use model::*;
 pub use session::Session;

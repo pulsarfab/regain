@@ -12,10 +12,10 @@ import time
 
 
 class Worker:
-    def __init__(self, command):
+    def __init__(self, command, *, env=None):
         self.log = tempfile.TemporaryFile()
         self.process = subprocess.Popen(command, stdin=subprocess.PIPE,
-                                        stdout=subprocess.PIPE, stderr=self.log)
+                                        stdout=subprocess.PIPE, stderr=self.log, env=env)
         self.timer = threading.Timer(30, self.process.kill)
         self.timer.start()
         self.sequence = 0
@@ -158,6 +158,120 @@ def sdk_fixture(binary_dir, library):
     standalone(binary_dir, library)
 
 
+def white_balance(binary_dir):
+    """Both public worker protocols, strictly simulated: no SDK load or USB."""
+    suffix = ".exe" if sys.platform == "win32" else ""
+    binary = str(binary_dir / ("regain-device" + suffix))
+    e = dict(width=128, height=128, x=0, y=0, bin=1, microseconds=1000, dark=False)
+    outputs = []
+    for backend, extra, name in [("camera-sdk", [], "ZWO Simulated"),
+                                  ("camera-direct", ["--serve"], "ZWO ASI662MC")]:
+        with Worker([binary, "zwo", backend, *extra, "--simulate"]) as w:
+            w.call("white-balance", error=True)
+            opened, _ = w.call("open", dict(name=name))
+            assert opened["whiteBalance"]["supported"]
+            assert w.call("white-balance")[0]["managed"] is False
+            legacy_meta, raw = w.frame(e)
+            assert "whiteBalance" not in legacy_meta
+            manual = dict(mode="manual", gains=dict(red=2.0, blue=0.5), output="raw")
+            for invalid in [dict(mode="bad"), dict(mode="manual", unexpected=True),
+                            dict(mode="manual", gains=dict(red=0, blue=1)),
+                            dict(mode="manual", gains=dict(red=9, blue=1))]:
+                w.call("white-balance", invalid, error=True)
+                assert w.call("white-balance")[0]["managed"] is False
+            w.call("white-balance", manual)
+            meta, pixels = w.frame(e)
+            assert pixels == raw and meta["whiteBalance"]["applied"] is False
+            w.call("white-balance", {**manual, "output": "corrected"})
+            # Native SDK WB and flip cannot be mixed with managed WB.
+            for control in [3, 4, 9]:
+                w.call("set", dict(control=control, value=50), error=True)
+                if backend == "camera-sdk":
+                    w.call("set-control-state", dict(control=control, value=50, auto=True), error=True)
+            w.call("start", e)
+            w.call("white-balance", dict(mode="off"), error=True)
+            while w.call("status")[0] != 2:
+                time.sleep(0.01)
+            meta, pixels = w.call("download")
+            assert meta["whiteBalance"]["applied"] is True
+            expected = bytearray()
+            for i, (value,) in enumerate(struct.iter_unpack("<H", raw)):
+                x, y = i % 128, i // 128
+                gain = 2 if x % 2 == y % 2 == 0 else 0.5 if x % 2 == y % 2 == 1 else 1
+                expected.extend(struct.pack("<H", min(65535, int(value * gain + 0.5))))
+            assert pixels == expected
+            outputs.append(pixels)
+            meta, pixels = w.frame({**e, "dark": True})
+            assert pixels == raw and meta["whiteBalance"]["applied"] is False
+            w.call("white-balance", dict(mode="once"))
+            meta, pixels = w.frame(e)
+            assert pixels == raw
+            assert meta["whiteBalance"]["estimation"] == "updated"
+            assert w.call("white-balance")[0]["settings"]["mode"] == "locked"
+            w.call("white-balance", dict(mode="continuous"))
+            w.frame(e)
+            gains = w.call("white-balance")[0]["settings"]["gains"]
+            locked, _ = w.call("white-balance", dict(mode="locked"))
+            assert locked["settings"]["gains"] == gains
+            w.call("start", {**e, "bin": 2}, error=True)
+            w.call("white-balance", dict(mode="off", output="corrected"))
+            assert w.frame(e)[1] == raw
+            w.call("close")
+            w.call("open", dict(name=name))
+            assert w.call("white-balance")[0]["managed"] is False
+            if backend == "camera-sdk":
+                w.call("set", dict(control=9, value=1))
+                w.call("white-balance", dict(mode="once"), error=True)
+                assert w.call("white-balance")[0]["managed"] is False
+                w.call("set", dict(control=9, value=0))
+            w.call("close")
+            if backend == "camera-sdk":
+                w.call("simulation", dict(color=False))
+                mono = name
+            else:
+                mono = "ZWO ASI220MM Mini"
+            assert w.call("open", dict(name=mono))[0]["whiteBalance"]["supported"] is False
+            w.call("white-balance", dict(mode="once"), error=True)
+            w.call("close")
+    assert outputs[0] == outputs[1], "SDK and Direct applied different WB processing"
+    print("Passed: SDK/Direct shared WB, raw preservation, AWB once/continuous/lock, validation and lifecycle")
+
+
+def white_balance_fixture(binary_dir):
+    """Build our own inert ABI fixture; no installed/vendor SDK is loaded."""
+    suffix = ".exe" if sys.platform == "win32" else ""
+    library_suffix = ".dll" if sys.platform == "win32" else ".dylib" if sys.platform == "darwin" else ".so"
+    source = Path(__file__).resolve().parent.parent / "tests/fixtures/white_balance_sdk.rs"
+    with tempfile.TemporaryDirectory(prefix="regain-wb-fixture-") as directory:
+        library = Path(directory) / ("white_balance_sdk" + library_suffix)
+        subprocess.run(["rustc", "--edition", "2021", "--crate-type", "cdylib", str(source), "-o", str(library)], check=True, timeout=120)
+        command = [str(binary_dir / ("regain-device" + suffix)), "zwo", "camera-sdk", "--sdk", str(library)]
+        e = dict(width=64, height=64, x=0, y=0, bin=1, microseconds=1000, dark=False)
+        for fault in [None, "REGAIN_FIXTURE_REJECT_WB", "REGAIN_FIXTURE_RESTORE_FAIL"]:
+            env = dict(os.environ)
+            if fault:
+                env[fault] = "1"
+            with Worker(command, env=env) as w:
+                assert w.call("open", dict(name="WB fixture"))[0]["whiteBalance"]["supported"]
+                saved = [w.call("get-control-state", dict(control=c))[0] for c in [3, 4]]
+                w.call("white-balance", dict(mode="once", output="corrected"))
+                if fault == "REGAIN_FIXTURE_REJECT_WB":
+                    w.call("start", e, error=True)
+                    assert w.call("status")[0] == 0
+                else:
+                    meta, pixels = w.frame(e)
+                    assert meta["whiteBalance"]["settings"]["gains"] == dict(red=2.0, blue=0.5)
+                    assert pixels == struct.pack("<H", 8000) * (64 * 64)
+                    for c in [3, 4]:
+                        assert w.call("get-control-state", dict(control=c))[0] == dict(value=50, auto=False)
+                w.call("close", error=fault == "REGAIN_FIXTURE_RESTORE_FAIL")
+                if fault != "REGAIN_FIXTURE_RESTORE_FAIL":
+                    w.call("open", dict(name="WB fixture"))
+                    assert [w.call("get-control-state", dict(control=c))[0] for c in [3, 4]] == saved
+                    w.call("close")
+    print("Passed: synthetic SDK ABI neutralization, AWB, restore including auto flags, and fail-closed readback/restore errors")
+
+
 def standalone(binary_dir, library=None):
     suffix = ".exe" if sys.platform == "win32" else ""
     command = [str(binary_dir / ("regain-device" + suffix)), "zwo", "camera-sdk"]
@@ -204,6 +318,8 @@ if __name__ == "__main__":
     parser.add_argument("--sdk-fixture", type=Path)
     args = parser.parse_args()
     simulated(args.bin_dir.resolve())
+    white_balance(args.bin_dir.resolve())
+    white_balance_fixture(args.bin_dir.resolve())
     standalone(args.bin_dir.resolve())
     if args.sdk_fixture:
         sdk_fixture(args.bin_dir.resolve(), args.sdk_fixture)

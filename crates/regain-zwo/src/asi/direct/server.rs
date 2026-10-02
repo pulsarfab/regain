@@ -2,6 +2,7 @@
 //! A dedicated worker owns the exclusive driver handle for the entire connection.
 use crate::asi::direct::{asi220, asi662, asi676, asi2600, asi6200, settings::Settings, transport};
 use anyhow::{Result, bail, ensure};
+use regain_core::white_balance::{Geometry, Settings as WhiteBalanceSettings, WhiteBalance};
 use serde_json::{Value, json};
 use std::{
     io::{Read, Write},
@@ -554,6 +555,8 @@ struct Host {
     reconnect_required: bool,
     simulated_delay: Duration,
     simulated_cleanup: bool,
+    white_balance: Option<WhiteBalance>,
+    white_balance_frame: Option<Geometry>,
 }
 impl Host {
     fn update(&mut self) {
@@ -648,8 +651,31 @@ impl Host {
                 }
                 self.worker = Some(worker);
                 self.reconnect_required = false;
+                self.white_balance = None;
+                self.white_balance_frame = None;
                 json!({"serial":identity,"info":descriptor,"sdkVersion":format!("SDK-less experimental {}",model.name()),
-                    "backend":"direct","controls":controls})
+                    "backend":"direct","controls":controls,
+                    "whiteBalance":WhiteBalance::capabilities(descriptor["color"] == true)})
+            }
+            "white-balance" => {
+                ensure!(self.worker.is_some(), "camera is not open");
+                if !params.is_null() && params.as_object().is_none_or(|o| !o.is_empty()) {
+                    ensure!(
+                        self.pending.is_none() && self.frame.is_none(),
+                        "cannot change white balance during capture"
+                    );
+                    ensure!(
+                        self.model.descriptor()["color"] == true,
+                        "managed white balance unavailable"
+                    );
+                    let settings: WhiteBalanceSettings = serde_json::from_value(params.clone())?;
+                    let mut next = self.white_balance.clone().unwrap_or_default();
+                    next.configure(settings)?;
+                    self.white_balance = Some(next);
+                }
+                json!({"capabilities":WhiteBalance::capabilities(self.model.descriptor()["color"] == true),
+                    "managed":self.white_balance.is_some(),
+                    "settings":self.white_balance.as_ref().map(WhiteBalance::settings)})
             }
             "get" | "set" => {
                 let worker = self
@@ -744,7 +770,22 @@ impl Host {
                     "invalid transfer deadline"
                 );
                 self.model.validate(&settings, self.gain, bin)?;
+                if self.white_balance.is_some() {
+                    WhiteBalance::validate_geometry(
+                        self.model.descriptor()["color"] == true,
+                        Some(0),
+                        bin,
+                    )?;
+                }
                 if method == "start" {
+                    self.white_balance_frame = Some(Geometry {
+                        width: settings.width as usize,
+                        height: settings.height as usize,
+                        x: settings.x,
+                        y: settings.y,
+                        bayer: 0,
+                        dark: params["dark"].as_bool().unwrap_or(false),
+                    });
                     let seconds = params["captureTimeoutSeconds"].as_f64().unwrap_or(
                         f64::from(settings.microseconds) / 1e6
                             + 45.0
@@ -833,7 +874,15 @@ impl Host {
                     .map_err(hardware)?;
                 pixels = frame.1;
                 self.reconnect_required = frame.0.get("cleanupError").is_some();
-                frame.0
+                let mut metadata = frame.0;
+                if let Some(wb) = &mut self.white_balance {
+                    metadata["whiteBalance"] = wb.process(
+                        &mut pixels,
+                        self.white_balance_frame
+                            .ok_or_else(|| anyhow::anyhow!("missing white balance geometry"))?,
+                    )?;
+                }
+                metadata
             }
             "stop" | "close" => {
                 ensure!(

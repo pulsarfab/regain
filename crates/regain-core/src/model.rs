@@ -160,6 +160,8 @@ pub struct Status {
     pub sdk_exposure_state: Option<i64>,
     pub sdk_error_code: Option<i32>,
     pub process_id: Option<u32>,
+    pub white_balance_capabilities: Value,
+    pub white_balance: Option<crate::white_balance::Settings>,
 }
 pub type SharedStatus = Arc<Mutex<Status>>;
 pub type Diagnostic = Arc<dyn Fn(&str, &str, &str) + Send + Sync>;

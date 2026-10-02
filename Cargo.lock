@@ -698,6 +698,7 @@ dependencies = [
  "libc",
  "libloading",
  "nusb",
+ "regain-core",
  "regain-transport",
  "regain-worker",
  "serde",

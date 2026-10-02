@@ -13,7 +13,9 @@ calling `ASICamera2.dll`. Linux and macOS use the existing native USB transport.
   8 pixels. Unsupported origins are rejected rather than silently adjusted.
 - Exposure: 32 µs–2,000 s; gain 0–600; offset 0–300, default 15.
 - USB bandwidth fixed at the traced value 40. No cooling, ST4, bin 2, other
-  formats, flips, white balance, or automatic exposure controls in direct mode.
+  formats, flips, hardware white balance, or automatic exposure controls in direct mode.
+- The pipe worker offers opt-in [shared software white balance and AWB](white-balance.md),
+  with unscaled raw output by default; this is not a sensor register control.
 - Factory Bayer defect correction, complete-frame boundary checks, bounded USB
   transfers, and configurable rereads of the same retained frame.
 

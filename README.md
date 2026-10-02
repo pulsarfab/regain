@@ -70,6 +70,11 @@ cameras and accessories. An Alpaca server is optional.
 
 ## Integration points
 
+Current source includes a [shared color-camera white-balance/AWB API](docs/white-balance.md)
+for Rust and pipe-worker clients. It supports manual gains, AWB once/continuous,
+and locking across SDK and Direct USB, with raw output preserved by default.
+Frontend UI integration is separate; existing clients are unchanged.
+
 | Integration | Where it runs | Equipment |
 | --- | --- | --- |
 | **Native NINA plugin** | Windows x64, NINA ≥3.2.0.9001 | Cameras, CAA, EFW, EAF, FocusCube3, Falcon V2, ETA M54 |

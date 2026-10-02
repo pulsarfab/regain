@@ -18,6 +18,7 @@ pub const LIBRARY_NAME: &str = "libASICamera2.dylib";
 pub struct Sdk {
     lib: Library,
     id: Option<i32>,
+    white_balance_saved: Option<[(i64, bool); 2]>,
 }
 #[derive(Debug)]
 pub struct SdkError {
@@ -46,7 +47,11 @@ impl Sdk {
         ensure!(path.is_absolute(), "SDK path must be absolute");
         // SAFETY: application-controlled library, ABI declarations from bundled header.
         let lib = unsafe { Library::new(path) }.context("load ASICamera2")?;
-        Ok(Self { lib, id: None })
+        Ok(Self {
+            lib,
+            id: None,
+            white_balance_saved: None,
+        })
     }
     unsafe fn symbol<T: Copy>(&self, name: &[u8]) -> Result<T> {
         Ok(*unsafe { self.lib.get::<T>(name)? })
@@ -341,20 +346,59 @@ impl Sdk {
             )
         }
     }
+    /// Preserve vendor settings before opting into shared software WB. Repeat
+    /// readback before every exposure: never silently double-apply correction.
+    pub fn neutral_white_balance(&mut self) -> Result<()> {
+        if self.white_balance_saved.is_none() {
+            self.white_balance_saved = Some([self.control_state(3)?, self.control_state(4)?]);
+        }
+        for control in [3, 4] {
+            self.set_control_state(control, 50, false)?;
+            ensure!(
+                self.control_state(control)? == (50, false),
+                regain_core::Failure::Invalid(
+                    "SDK white balance did not accept neutral manual state".into()
+                )
+            );
+        }
+        Ok(())
+    }
     pub fn close(&mut self) -> Result<()> {
-        if let Some(id) = self.id.take() {
-            unsafe {
-                Self::check(
-                    self.symbol::<raw::CloseCamera>(b"ASICloseCamera\0")?(id),
-                    "close",
-                )?;
+        let mut failures = Vec::new();
+        if let Some(saved) = self.white_balance_saved.take() {
+            for (control, (value, auto)) in [3, 4].into_iter().zip(saved) {
+                let restored = self.set_control_state(control, value, auto).and_then(|()| {
+                    let actual = self.control_state(control)?;
+                    // An automatic control's value may immediately evolve.
+                    ensure!(
+                        actual.1 == auto && (auto || actual.0 == value),
+                        "SDK WB restore readback mismatch"
+                    );
+                    Ok(())
+                });
+                if let Err(error) = restored {
+                    failures.push(format!("restore WB {control}: {error:#}"));
+                }
             }
         }
+        if let Some(id) = self.id.take() {
+            unsafe {
+                if let Err(error) = Self::check(
+                    self.symbol::<raw::CloseCamera>(b"ASICloseCamera\0")?(id),
+                    "close",
+                ) {
+                    failures.push(format!("{error:#}"));
+                }
+            }
+        }
+        ensure!(failures.is_empty(), "{}", failures.join("; "));
         Ok(())
     }
 }
 impl Drop for Sdk {
     fn drop(&mut self) {
-        let _ = self.close();
+        if let Err(error) = self.close() {
+            eprintln!("SDK close/settings restoration failed: {error:#}");
+        }
     }
 }
