@@ -105,17 +105,32 @@ impl Host {
                 ensure!(!self.opened, "already open");
                 let name = p["name"].as_str().unwrap_or("");
                 let serial = crate::asi::normalized_serial(p["serial"].as_str());
+                let selected_id = p
+                    .get("id")
+                    .map(|v| -> Result<i32> {
+                        let id = v
+                            .as_i64()
+                            .ok_or_else(|| anyhow::anyhow!("invalid selected camera ID"))?;
+                        ensure!(id >= 0, "invalid selected camera ID");
+                        Ok(i32::try_from(id)?)
+                    })
+                    .transpose()?;
                 let mut v = if let Some(s) = &mut self.sdk {
-                    s.open(name, serial.as_deref())?
+                    if let Some(id) = selected_id {
+                        s.open_selected(id, name, serial.as_deref())?
+                    } else {
+                        s.open(name, serial.as_deref())?
+                    }
                 } else {
                     ensure!(
                         name == self.sim_info["name"]
+                            && selected_id.is_none_or(|id| self.sim_info["id"] == id)
                             && serial.as_deref().is_none_or(|s| s.eq_ignore_ascii_case(
                                 self.values["simSerial"].as_str().unwrap_or("sim00001")
                             )),
                         "wrong simulated identity"
                     );
-                    let info = self.command("list", json!({}))?.0[0].clone();
+                    let info = self.sim_info.clone();
                     json!({"serial":self.values["simSerial"].as_str().unwrap_or("sim00001"),"sdkVersion":"simulator","info":info,"controls":[
                         {"type":0,"min":0,"max":600,"default":100,"value":100,"writable":true},
                         {"type":1,"min":32,"max":2000000000i64,"default":10000,"value":10000,"writable":true},

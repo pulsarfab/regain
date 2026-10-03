@@ -71,8 +71,11 @@ fn research_port_operation(cycle: bool) -> Result<()> {
 pub fn run(args: Vec<String>) -> Result<()> {
     transport::require_sdk_absent()?;
     if args.first().is_some_and(|a| a == "--usb-target") {
-        ensure!(args.len() == 3, "Usage: --usb-target CAMERA_NAME SERIAL");
-        return server::usb_target(&args[1], &args[2]);
+        ensure!(
+            (3..=4).contains(&args.len()),
+            "Usage: --usb-target CAMERA_NAME SERIAL [LOCATOR]"
+        );
+        return server::usb_target(&args[1], &args[2], args.get(3).map(String::as_str));
     }
     #[cfg(windows)]
     if args == ["--reset-port-2600-p25"] || args == ["--cycle-port-2600-p25"] {

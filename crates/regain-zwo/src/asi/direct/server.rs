@@ -140,7 +140,7 @@ fn paths(model: Model) -> Result<Vec<transport::DeviceInfo>> {
         .collect())
 }
 
-pub(super) fn usb_target(name: &str, serial: &str) -> Result<()> {
+pub(super) fn usb_target(name: &str, serial: &str, locator: Option<&str>) -> Result<()> {
     ensure!(
         serial.len() == 16
             && serial.bytes().all(|c| c.is_ascii_hexdigit())
@@ -152,7 +152,12 @@ pub(super) fn usb_target(name: &str, serial: &str) -> Result<()> {
         .find(|m| m.name() == name)
         .ok_or_else(|| anyhow::anyhow!("USB recovery is unavailable for this camera model"))?;
     let mut targets = Vec::new();
-    for path in paths(model)? {
+    let candidates = selected_paths(paths(model)?, locator, |p| p.locator())?;
+    ensure!(
+        candidates.len() == 1,
+        "USB recovery requires an unambiguous interface; refusing serial sweep"
+    );
+    for path in candidates {
         // Busy devices are not seized. Only the selected model's serial query is sent.
         let Ok(camera) = transport::Camera::open(&path) else {
             continue;
@@ -185,8 +190,12 @@ fn hardware(error: anyhow::Error) -> anyhow::Error {
     error.context(HardwareFailure("direct camera operation failed".into()))
 }
 
-fn open_camera(model: Model, serial: Option<&str>) -> Result<(transport::Camera, Value, String)> {
-    let paths = paths(model)?;
+fn open_camera(
+    model: Model,
+    serial: Option<&str>,
+    locator: Option<&str>,
+) -> Result<(transport::Camera, Value, String)> {
+    let paths = selected_paths(paths(model)?, locator, |p| p.locator())?;
     ensure!(!paths.is_empty(), "selected direct camera is not attached");
     ensure!(
         serial.is_some() || paths.len() == 1,
@@ -222,6 +231,38 @@ fn open_camera(model: Model, serial: Option<&str>) -> Result<(transport::Camera,
         camera.enable_environment(auxiliary)?;
     }
     Ok((camera, info, found))
+}
+
+fn selected_paths<T>(
+    paths: Vec<T>,
+    locator: Option<&str>,
+    key: impl Fn(&T) -> String,
+) -> Result<Vec<T>> {
+    if let Some(locator) = locator {
+        ensure!(!locator.is_empty(), "empty camera locator");
+        let matches: Vec<_> = paths.into_iter().filter(|p| key(p) == locator).collect();
+        ensure!(
+            matches.len() == 1,
+            "selected camera interface missing or ambiguous; no fallback discovery"
+        );
+        Ok(matches)
+    } else {
+        Ok(paths)
+    }
+}
+
+#[test]
+fn targeted_paths_never_probe_a_different_camera_or_fall_back() {
+    let paths = vec!["other", "selected", "busy"];
+    let selected = selected_paths(paths.clone(), Some("selected"), |p| p.to_string()).unwrap();
+    let mut opened = Vec::new();
+    let _: Result<()> = find_accessible(selected, |p| {
+        opened.push(p);
+        bail!("selected device busy")
+    });
+    assert_eq!(opened, ["selected"]);
+    assert!(selected_paths(paths, Some("missing"), |p| p.to_string()).is_err());
+    assert!(selected_paths(vec!["same", "same"], Some("same"), |p| p.to_string()).is_err());
 }
 
 fn find_accessible<I: IntoIterator, T>(
@@ -373,16 +414,30 @@ struct Worker {
     thread: Option<std::thread::JoinHandle<()>>,
     telemetry: transport::Telemetry,
     auxiliary: bool,
+    locator: String,
 }
 impl Worker {
-    fn open(model: Model, serial: Option<String>, simulate: bool) -> Result<(Self, String)> {
+    fn open(
+        model: Model,
+        serial: Option<String>,
+        locator: Option<String>,
+        simulate: bool,
+    ) -> Result<(Self, String)> {
         let (sender, receiver) = mpsc::channel::<Work>();
         let (ready_tx, ready_rx) = mpsc::sync_channel(1);
         let thread = std::thread::spawn(move || {
             let device = if simulate {
+                if locator
+                    .as_deref()
+                    .is_some_and(|s| s != "simulated-interface")
+                {
+                    let _ =
+                        ready_tx.send(Err(anyhow::anyhow!("simulated camera interface changed")));
+                    return;
+                }
                 None
             } else {
-                match open_camera(model, serial.as_deref()) {
+                match open_camera(model, serial.as_deref(), locator.as_deref()) {
                     Ok(device) => Some(device),
                     Err(e) => {
                         let _ = ready_tx.send(Err(e));
@@ -406,7 +461,14 @@ impl Worker {
                 .as_ref()
                 .map(|d| d.1["auxiliaryControls"] == true)
                 .unwrap_or(matches!(model, Model::Asi6200 | Model::Asi2600P25));
-            if ready_tx.send(Ok((identity, telemetry, auxiliary))).is_err() {
+            let locator = device
+                .as_ref()
+                .map(|d| d.0.locator())
+                .unwrap_or_else(|| "simulated-interface".into());
+            if ready_tx
+                .send(Ok((identity, telemetry, auxiliary, locator)))
+                .is_err()
+            {
                 return;
             }
             let (watchdog, deadlines) = mpsc::channel::<Option<Duration>>();
@@ -546,12 +608,13 @@ impl Worker {
             .recv()
             .map_err(|_| anyhow::anyhow!("direct worker exited during open"))?
         {
-            Ok((identity, telemetry, auxiliary)) => Ok((
+            Ok((identity, telemetry, auxiliary, locator)) => Ok((
                 Self {
                     sender,
                     thread: Some(thread),
                     telemetry,
                     auxiliary,
+                    locator,
                 },
                 identity,
             )),
@@ -646,6 +709,12 @@ impl Host {
                     "Direct USB discovery is unavailable while a camera is open; use the cached camera list"
                 );
                 let mut found = Vec::new();
+                // One OS metadata enumeration, not one pass per supported model.
+                let devices = if self.simulate {
+                    Vec::new()
+                } else {
+                    transport::enumerate().map_err(hardware)?
+                };
                 for model in Model::ALL {
                     if self.simulate {
                         let mut info = model.descriptor();
@@ -655,13 +724,17 @@ impl Host {
                         found.push(info);
                         continue;
                     }
-                    for path in paths(model).map_err(hardware)? {
+                    for path in devices
+                        .iter()
+                        .filter(|p| p.matches(0x03c3, model.pid() as u16))
+                    {
                         let mut info = model.descriptor();
+                        info["locator"] = json!(path.locator());
                         if params["serials"] == true {
                             // Identity probing is explicitly opt-in, before ownership.
                             // Drop each handle before inspecting another; never seize a busy device.
                             let serial = (|| -> Result<String> {
-                                let camera = transport::Camera::open(&path)?;
+                                let camera = transport::Camera::open(path)?;
                                 let bytes = camera.vendor(0xc8, 0, 0, 8)?;
                                 ensure!(
                                     bytes.len() == 8 && bytes.iter().any(|&b| b != 0),
@@ -686,11 +759,21 @@ impl Host {
                     .find(|m| params["name"] == m.name())
                     .ok_or_else(|| anyhow::anyhow!("unsupported SDK-less camera model"))?;
                 let serial = crate::asi::normalized_serial(params["serial"].as_str());
+                let locator = params
+                    .get("locator")
+                    .map(|v| {
+                        v.as_str()
+                            .filter(|s| !s.is_empty())
+                            .map(str::to_owned)
+                            .ok_or_else(|| anyhow::anyhow!("invalid camera locator"))
+                    })
+                    .transpose()?;
                 let (worker, identity) =
-                    Worker::open(model, serial, self.simulate).map_err(hardware)?;
+                    Worker::open(model, serial, locator, self.simulate).map_err(hardware)?;
                 self.model = model;
                 self.settings = Settings::default();
-                let descriptor = model.descriptor();
+                let mut descriptor = model.descriptor();
+                descriptor["locator"] = json!(worker.locator);
                 self.settings.width = descriptor["width"].as_u64().unwrap() as u32;
                 self.settings.height = descriptor["height"].as_u64().unwrap() as u32;
                 self.settings.offset = match model {
