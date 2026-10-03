@@ -111,7 +111,40 @@ impl Sdk {
         }
         Ok(json!(cameras))
     }
+    pub fn list_with_serials(&mut self) -> Result<Value> {
+        let mut list = self.list()?;
+        for info in list.as_array_mut().unwrap() {
+            let id = info["id"].as_i64().unwrap() as i32;
+            let result = (|| -> Result<Value> {
+                unsafe {
+                    Self::check(
+                        self.symbol::<raw::OpenCamera>(b"ASIOpenCamera\0")?(id),
+                        "open for identity",
+                    )?;
+                }
+                self.id = Some(id);
+                let result = self.initialize();
+                let details = result?;
+                ensure!(
+                    details["serial"].is_string(),
+                    "camera serial is unavailable"
+                );
+                Ok(details["serial"].clone())
+            })();
+            // Outside the per-device result so a close failure aborts the scan.
+            if self.id.is_some() {
+                self.close()?;
+            }
+            match result {
+                Ok(serial) => info["serial"] = serial,
+                Err(error) => info["discoveryError"] = json!(format!("{error:#}")),
+            }
+        }
+        Ok(list)
+    }
     pub fn open(&mut self, name: &str, serial: Option<&str>) -> Result<Value> {
+        let normalized = crate::asi::normalized_serial(serial);
+        let serial = normalized.as_deref();
         ensure!(self.id.is_none(), "already open");
         let list = self.list()?;
         let candidates: Vec<_> = list

@@ -86,23 +86,33 @@ impl Host {
                     !self.opened,
                     "SDK discovery is unavailable while a camera is open; use the cached camera list"
                 );
-                if let Some(s) = &self.sdk {
-                    s.list()?
+                if let Some(s) = &mut self.sdk {
+                    if p["serials"] == true {
+                        s.list_with_serials()?
+                    } else {
+                        s.list()?
+                    }
                 } else {
-                    json!([self.sim_info])
+                    let mut info = self.sim_info.clone();
+                    if p["serials"] == true {
+                        info["serial"] =
+                            json!(self.values["simSerial"].as_str().unwrap_or("sim00001"));
+                    }
+                    json!([info])
                 }
             }
             "open" => {
                 ensure!(!self.opened, "already open");
                 let name = p["name"].as_str().unwrap_or("");
+                let serial = crate::asi::normalized_serial(p["serial"].as_str());
                 let mut v = if let Some(s) = &mut self.sdk {
-                    s.open(name, p["serial"].as_str())?
+                    s.open(name, serial.as_deref())?
                 } else {
                     ensure!(
                         name == self.sim_info["name"]
-                            && (p["serial"].is_null()
-                                || p["serial"]
-                                    == self.values["simSerial"].as_str().unwrap_or("sim00001")),
+                            && serial.as_deref().is_none_or(|s| s.eq_ignore_ascii_case(
+                                self.values["simSerial"].as_str().unwrap_or("sim00001")
+                            )),
                         "wrong simulated identity"
                     );
                     let info = self.command("list", json!({}))?.0[0].clone();
@@ -493,6 +503,15 @@ mod tests {
             white_balance: None,
         };
         assert!(host.command("list", Value::Null).is_ok());
+        assert_eq!(
+            host.command("list", json!({"serials":true})).unwrap().0[0]["serial"],
+            "sim00001"
+        );
+        for serial in [Value::Null, json!(""), json!("  "), json!(" SIM00001 ")] {
+            host.command("open", json!({"name":"test camera","serial":serial}))
+                .unwrap();
+            host.command("close", Value::Null).unwrap();
+        }
         host.command("open", json!({"name":"test camera"})).unwrap();
         assert!(
             host.command("list", Value::Null)
