@@ -299,10 +299,14 @@ fn capture_native(
         Some(0x260e) => Revision::P25,
         _ => anyhow::bail!("ASI2600 capture requires observed PID 2601 or 260e"),
     };
-    ensure!(
-        info["usbVersionBcd"] == 0x300,
-        "ASI2600 capture requires USB3"
-    );
+    super::link::validate(
+        info,
+        if revision == Revision::Original {
+            0x2601
+        } else {
+            0x260e
+        },
+    )?;
     let started = Instant::now();
     // Cache identity while the handle is healthy. A failed USB read may make
     // even the serial query impossible until the handle has been replaced.

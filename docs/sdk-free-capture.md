@@ -14,6 +14,10 @@ through an explicit experimental setup option for the verified ASI676MC modes.
 
 ## Supported research configuration
 
+The current driver also supports [USB 2 high-speed fallback](usb2-cameras.md),
+including USB 2-specific short-frame pacing. The observations below describe
+the original USB 3 bring-up.
+
 - Observed USB3 ASI676MC only: VID `03c3`, PID `676d`, bulk-IN endpoint `81`.
 - Bin 1, RGGB RAW16; even ROI origin, width multiple of 8, even height,
   minimum 64 × 64, maximum 3552 × 3552.

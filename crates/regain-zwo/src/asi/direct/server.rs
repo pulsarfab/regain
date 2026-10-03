@@ -204,11 +204,7 @@ fn open_camera(
     let (camera, mut info, found) = find_accessible(paths, |path| {
         let camera = transport::Camera::open(&path)?;
         let info = camera.probe()?;
-        ensure!(
-            info["productId"] == model.pid()
-                && info["usbVersionBcd"] == if model == Model::Guide { 0x200 } else { 0x300 },
-            "camera USB interface differs from the verified model"
-        );
+        let link = super::link::validate(&info, model.pid())?;
         // SDK 1.41 ASIGetSerialNumber uses vendor IN C8, value/index 0, eight bytes.
         let bytes = camera.vendor(0xc8, 0, 0, 8)?;
         ensure!(
@@ -217,6 +213,11 @@ fn open_camera(
         );
         let found: String = bytes.iter().map(|v| format!("{v:02x}")).collect();
         if serial.is_none_or(|s| s == found) {
+            super::diagnostics::log(
+                "info",
+                "camera.transport",
+                format_args!("{}: {}", model.name(), link.label()),
+            );
             return Ok(Some((camera, info, found)));
         }
         Ok(None)

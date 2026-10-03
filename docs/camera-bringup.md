@@ -7,6 +7,10 @@ transport plumbing, not proof that sensor registers or recovery commands match.
 
 ## Current coverage
 
+USB 2 fallback uses the shared endpoint validator for all supported cameras.
+See [USB 2 coverage and remaining hardware validation](usb2-cameras.md).
+The historical model evidence below retains its original bus/transport scope.
+
 | Target | Captured / understood | Still required |
 | --- | --- | --- |
 | ASI662MC, USB3, RAW16, bin 1 | Sensor profile, volatile initialization, ROI/timing/gain/offset, same-frame SDK correction match, direct retained rereads and interrupted-read recovery. Short frames use a ~100 ms minimum interval. | Cold startup, optical validation, other modes and Linux/macOS hardware. See [ASI662MC evidence](asi662mc.md). |

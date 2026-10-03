@@ -80,6 +80,8 @@ uses the installed driver exclusively and never loads ASICamera2.dll:
 ```powershell
 cargo run -p regain-device --locked -- zwo camera-direct
 cargo run -p regain-device --locked -- zwo camera-direct --probe
+# Selected model only, refusing ambiguity and opening no other model:
+cargo run -p regain-device --locked -- zwo camera-direct --probe-pid 662b
 # Descriptor-only inventory when several cameras are attached:
 cargo run -p regain-device --locked -- zwo camera-direct --probe-all
 # Explicit idle-endpoint experiment: one 16 KiB read, cancel after 100 ms, drain.
