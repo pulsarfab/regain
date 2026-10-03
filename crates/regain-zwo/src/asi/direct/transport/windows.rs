@@ -118,6 +118,12 @@ pub fn enumerate() -> Result<Vec<DeviceInfo>> {
 #[derive(Clone)]
 pub struct DeviceInfo(Vec<u16>);
 impl DeviceInfo {
+    /// Opaque selection key; callers must still verify the camera serial.
+    pub fn locator(&self) -> String {
+        String::from_utf16_lossy(&self.0)
+            .trim_end_matches('\0')
+            .to_ascii_lowercase()
+    }
     pub fn recovery_target(
         &self,
         product: u16,

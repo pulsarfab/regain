@@ -31,6 +31,9 @@ pub struct Camera {
     phase: Cell<&'static str>,
 }
 impl Camera {
+    pub fn locator(&self) -> String {
+        self.identity.locator()
+    }
     pub fn open(info: &DeviceInfo) -> Result<Self> {
         Ok(Self {
             device: RefCell::new(Some(platform::Device::open(info)?)),

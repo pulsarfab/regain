@@ -130,3 +130,33 @@ inventory API: callers must cache results and keep discovery on the camera
 owner thread. Both backends reject discovery while owning a camera. Busy or
 unidentified devices are not silently substituted. Empty/whitespace serial
 filters are unspecified; nonempty filters are trimmed and case-normalized.
+
+## Targeted reconnect protocol
+
+Integrators should **not** opt into all-camera serial discovery on automatic
+startup or fault retry. SDK `open` now accepts an optional `id` from cached
+discovery together with `name` and, after first connection, the verified
+`serial`. This calls the SDK's count API once to initialize its device table,
+then opens only that ID. It verifies serial before `ASIInitCamera` and reads
+properties with `ASIGetCameraPropertyByID` on the selected open handle. Missing
+IDs, changed identities and property errors fail closed: no property sweep or
+fallback to another camera. Legacy name-based open remains available to explicit
+discovery clients. SDK internals can still enumerate USB; this is not a claim
+that the vendor library makes zero OS discovery calls.
+
+Direct USB list enumerates OS metadata once and includes an opaque `locator`.
+Pass it with `open` to filter interfaces **before** opening a handle; verify
+the saved serial as well. Returned descriptors retain the locator for retries.
+Missing/ambiguous locators never fall back to a serial sweep. A locator describes
+topology, not trusted identity. After a USB reset a changed interface may require
+operator rediscovery. Do not persist or publish private interface paths.
+
+USB target binding accepts the optional locator, and refuses to probe multiple
+same-model interfaces without it. Normal capture reconnect should retain cached
+inventory; failed discovery should have a separate, longer backoff.
+
+Synthetic ABI tests assert the exact selected-ID call sequence across process
+replacement and reject stale serials before initialization. Direct selector tests
+prove missing, duplicate and busy targets cannot open another candidate. These
+tests do not establish mixed-application hardware safety or resolve a USB-stack
+deadlock already in progress.

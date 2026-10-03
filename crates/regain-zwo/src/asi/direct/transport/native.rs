@@ -11,6 +11,17 @@ use std::{cell::RefCell, ffi::CStr, time::Duration};
 #[derive(Clone)]
 pub struct DeviceInfo(nusb::DeviceInfo);
 impl DeviceInfo {
+    /// Physical topology key, stable across device-address changes after reset.
+    /// This is a candidate selector, never a substitute for serial verification.
+    pub fn locator(&self) -> String {
+        format!(
+            "{}:{:?}:{:04x}:{:04x}",
+            self.0.bus_id(),
+            self.0.port_chain(),
+            self.0.vendor_id(),
+            self.0.product_id()
+        )
+    }
     pub fn recovery_target(
         &self,
         product: u16,

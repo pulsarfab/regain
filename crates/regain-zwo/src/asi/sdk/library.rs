@@ -199,6 +199,83 @@ impl Sdk {
         }
         bail!("selected camera serial is not present")
     }
+    /// Reopen a previously selected SDK ID without querying any other camera's
+    /// properties. Never fall back to a model/serial sweep if the ID is stale.
+    pub fn open_selected(&mut self, id: i32, name: &str, serial: Option<&str>) -> Result<Value> {
+        ensure!(self.id.is_none(), "already open");
+        ensure!(id >= 0, "invalid selected camera ID");
+        unsafe {
+            // Populate this fresh SDK process's device table, but do not call
+            // ASIGetCameraProperty(index): that export actively opens devices.
+            let count =
+                self.symbol::<raw::GetNumOfConnectedCameras>(b"ASIGetNumOfConnectedCameras\0")?();
+            ensure!(
+                (1..=128).contains(&count),
+                "selected camera is not attached"
+            );
+            Self::check(
+                self.symbol::<raw::OpenCamera>(b"ASIOpenCamera\0")?(id),
+                "open selected camera",
+            )?;
+        }
+        self.id = Some(id);
+        let result = (|| -> Result<Value> {
+            // Identity must be checked before ASIInitCamera, which can disturb
+            // acquisition. A reused ID must not initialize a different camera.
+            let found = self.read_serial()?;
+            ensure!(
+                serial.is_none_or(|s| found.as_deref().is_some_and(|f| f.eq_ignore_ascii_case(s))),
+                "selected camera serial changed; rediscovery requires operator action"
+            );
+            let mut info: raw::CameraInfo = unsafe { std::mem::zeroed() };
+            unsafe {
+                Self::check(
+                    self.symbol::<unsafe extern "C" fn(c_int, *mut raw::CameraInfo) -> c_int>(
+                        b"ASIGetCameraPropertyByID\0",
+                    )?(id, &mut info),
+                    "selected camera property",
+                )?;
+            }
+            let actual_name = String::from_utf8_lossy(
+                &info
+                    .name
+                    .iter()
+                    .take_while(|&&v| v != 0)
+                    .map(|&v| v.to_ne_bytes()[0])
+                    .collect::<Vec<_>>(),
+            )
+            .into_owned();
+            ensure!(
+                actual_name == name && info.camera_id == id,
+                "selected camera identity changed"
+            );
+            let mut details = self.initialize()?;
+            details["info"] = json!({"id":id,"name":actual_name,"width":info.max_width,"height":info.max_height,
+                "color":info.is_color_camera != 0,"bayer":info.bayer_pattern,"pixelSize":info.pixel_size,
+                "bitDepth":info.bit_depth,"cooled":info.is_cooled_camera != 0,
+                "shutter":info.has_mechanical_shutter != 0,"st4":info.has_st4_port != 0,
+                "usb3Camera":info.is_usb3_camera != 0,"usb3Host":info.is_usb3_host != 0,
+                "triggerCamera":info.is_trigger_camera != 0,
+                "bins":info.supported_bins.into_iter().take_while(|&v| v>0).collect::<Vec<_>>(),
+                "formats":info.supported_video_formats.into_iter().take_while(|&v| v>=0).collect::<Vec<_>>()});
+            Ok(details)
+        })();
+        if result.is_err() {
+            self.close()?;
+        }
+        result
+    }
+    fn read_serial(&self) -> Result<Option<String>> {
+        let mut serial = [0u8; 8];
+        let code = unsafe {
+            self.symbol::<unsafe extern "C" fn(c_int, *mut u8) -> c_int>(b"ASIGetSerialNumber\0")?(
+                self.id()?,
+                serial.as_mut_ptr(),
+            )
+        };
+        Ok((code == 0 && serial.iter().any(|&v| v != 0))
+            .then(|| serial.iter().map(|b| format!("{b:02x}")).collect()))
+    }
     fn initialize(&self) -> Result<Value> {
         unsafe {
             let id = self.id()?;

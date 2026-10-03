@@ -272,6 +272,34 @@ def white_balance_fixture(binary_dir):
     print("Passed: synthetic SDK ABI neutralization, AWB, restore including auto flags, and fail-closed readback/restore errors")
 
 
+def targeted_open_fixture(binary_dir):
+    """Assert actual FFI call sequence, including replaced-process reconnects."""
+    suffix = ".exe" if sys.platform == "win32" else ""
+    libsuffix = ".dll" if sys.platform == "win32" else ".dylib" if sys.platform == "darwin" else ".so"
+    source = Path(__file__).resolve().parent.parent / "tests/fixtures/targeted_sdk.rs"
+    with tempfile.TemporaryDirectory(prefix="regain-target-fixture-") as directory:
+        library = Path(directory) / ("targeted_sdk" + libsuffix)
+        subprocess.run(["rustc", "--edition", "2021", "--crate-type", "cdylib", str(source), "-o", str(library)], check=True, timeout=120)
+        command = [str(binary_dir / ("regain-device" + suffix)), "zwo", "camera-sdk", "--sdk", str(library)]
+        for serial, selected_id in [("0101010101010101", 1)] * 3 + [("0202020202020202", 1), ("0101010101010101", 7)]:
+            valid = serial == "0101010101010101" and selected_id == 1
+            with Worker(command) as w:
+                w.call("open", dict(name="Target fixture", id=selected_id, serial=serial), error=not valid)
+                if valid:
+                    w.call("list", error=True)
+                    w.call("close")
+                w.log.seek(0)
+                calls = [line for line in w.log.read().decode().splitlines() if line.startswith("CALL ")]
+                expected = ["CALL enumerate", f"CALL open {selected_id}"]
+                if selected_id == 1:
+                    expected += ["CALL serial 1"]
+                    if valid:
+                        expected += ["CALL property 1", "CALL init 1", "CALL serial 1"]
+                    expected += ["CALL close 1"]
+                assert calls == expected, (calls, expected)
+    print("Passed: targeted SDK ABI opens only selected ID; no property sweep; stale ID/serial fail before initialization")
+
+
 def standalone(binary_dir, library=None):
     suffix = ".exe" if sys.platform == "win32" else ""
     command = [str(binary_dir / ("regain-device" + suffix)), "zwo", "camera-sdk"]
@@ -320,6 +348,7 @@ if __name__ == "__main__":
     simulated(args.bin_dir.resolve())
     white_balance(args.bin_dir.resolve())
     white_balance_fixture(args.bin_dir.resolve())
+    targeted_open_fixture(args.bin_dir.resolve())
     standalone(args.bin_dir.resolve())
     if args.sdk_fixture:
         sdk_fixture(args.bin_dir.resolve(), args.sdk_fixture)
