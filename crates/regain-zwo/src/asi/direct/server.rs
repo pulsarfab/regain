@@ -1121,3 +1121,64 @@ pub fn run(simulate: bool) -> Result<()> {
         output.flush()?;
     }
 }
+
+#[cfg(test)]
+mod usb2_inventory_tests {
+    use super::*;
+
+    #[test]
+    fn every_advertised_model_has_a_usb2_descriptor_path() {
+        // Use the production inventory: adding a model must extend coverage,
+        // rather than silently falling outside a separate hard-coded PID list.
+        // This is descriptor/contract coverage, NOT a sensor capture simulation.
+        let mut device = [0; 18];
+        device[0] = 18;
+        device[1] = 1;
+        device[2..4].copy_from_slice(&0x0210_u16.to_le_bytes());
+        device[8..10].copy_from_slice(&0x03c3_u16.to_le_bytes());
+        let config = [
+            9, 2, 25, 0, 1, 1, 0, 0x80, 0, 9, 4, 0, 0, 1, 0xff, 0, 0, 0, 7, 5, 0x81, 2, 0, 2, 0,
+        ];
+        for model in Model::ALL {
+            device[10..12].copy_from_slice(&(model.pid() as u16).to_le_bytes());
+            let info = super::super::protocol::describe(&device, &config, 0).unwrap();
+            assert_eq!(
+                super::super::link::validate(&info, model.pid()).unwrap(),
+                super::super::link::Link::HighSpeed,
+                "{}",
+                model.name()
+            );
+            let descriptor = model.descriptor();
+            let controls = model.controls(false);
+            let offset = controls.iter().find(|c| c["type"] == 5).unwrap()["value"]
+                .as_u64()
+                .unwrap() as u32;
+            for microseconds in [32, 100_000, 999_999, 1_000_000] {
+                for (width, height) in [
+                    (64, 64),
+                    (
+                        descriptor["width"].as_u64().unwrap() as u32,
+                        descriptor["height"].as_u64().unwrap() as u32,
+                    ),
+                ] {
+                    let settings = Settings {
+                        width,
+                        height,
+                        microseconds,
+                        offset,
+                        ..Settings::default()
+                    };
+                    let result = model.validate(&settings, 0, 1);
+                    if model == Model::Guide && microseconds == 32 {
+                        // Existing guide-specific zero-line restriction must
+                        // not disappear in a blanket USB2 compatibility change.
+                        assert!(result.unwrap_err().to_string().contains("zero-line"));
+                    } else {
+                        result.unwrap();
+                    }
+                }
+            }
+            assert_eq!(descriptor["retainedFrameReads"], model != Model::Guide);
+        }
+    }
+}

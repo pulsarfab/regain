@@ -42,6 +42,10 @@ exhaust a transfer deadline; partial frames are never accepted as success.
 
 ## Validation and limits
 
+The subsequent [coverage spike](usb2-coverage-spike.md) found a missing
+link-specific SDK FPGA output-throttle branch. Descriptor acceptance and the
+two Bayer hardware passes below are not a blanket sign-off for other models.
+
 Operator-authorized Windows tests on 2026-10-03 used local ASI662MC and ASI676MC
 cameras, each physically connected through USB 2 in turn. The descriptors
 reported `03c3:662b` / `03c3:676d`, `bcdUSB 0x0210`,

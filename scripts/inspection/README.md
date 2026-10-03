@@ -1,5 +1,19 @@
 # Transport experiments
 
+## Static USB 2 coverage audit (no hardware access)
+
+`inspect_usb2_sdk.py` parses the digest-pinned Linux x86-64 SDK as bytes. It
+never loads the SDK, enumerates USB or opens a camera. Unlike the hardware
+experiments below, no idle camera is required. See the
+[coverage spike](../../docs/usb2-coverage-spike.md) for findings and limitations.
+
+```powershell
+.reference/inspection-venv/Scripts/python.exe scripts/inspection/inspect_usb2_sdk.py --symbol 'CCameraBase10OpenCamera|CCameraFX3.*(IsUSB3Host|SetFPGABandWidth)' --disassemble
+.reference/inspection-venv/Scripts/python.exe scripts/inspection/inspect_usb2_sdk.py --symbol 'CCameraS(662MC|676MC_DDR|2600MM_Pro|2600MM_Duo|6200MM_Pro)10SetFPSPerc' --disassemble
+```
+
+## Owned-device experiments
+
 For the CAA rotator, use [the separate HID workup](../../docs/caa.md).
 `caa_sdk_probe.py` traces the SDK, `validate_caa.py` exercises the native
 driver's error handling, and `extract_caa_temperature.py` reproduces its NTC
