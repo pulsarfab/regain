@@ -44,7 +44,10 @@ exhaust a transfer deadline; partial frames are never accepted as success.
 
 The subsequent [coverage spike](usb2-coverage-spike.md) found a missing
 link-specific SDK FPGA output-throttle branch. Descriptor acceptance and the
-two Bayer hardware passes below are not a blanket sign-off for other models.
+Bayer hardware passes below are not a blanket sign-off for other models.
+The spike's later [P25 hardware pass](usb2-coverage-spike.md#p25-follow-up-hardware-result)
+adds Windows USB 2 ASI2600MM Pro P25 evidence, including full-row freshness and
+production-worker cancellation/reopen.
 
 Operator-authorized Windows tests on 2026-10-03 used local ASI662MC and ASI676MC
 cameras, each physically connected through USB 2 in turn. The descriptors
@@ -85,7 +88,9 @@ USB bus faults, physical disconnect/reset, optical accuracy, cold power-up,
 long exposures beyond 30 seconds, or a complete installed-app SDK-to-direct
 handoff. Long frames were saturated under available illumination.
 
-**ASI2600/6200 models' new USB 2 paths are not yet hardware-validated.** ASI220MM Mini's
+**ASI2600MM Duo and both ASI6200 revisions' new USB 2 paths are not yet
+hardware-validated.** ASI2600MM Pro P25 passed the follow-up matrix linked above.
+ASI220MM Mini's
 existing USB 2 evidence is in [the guide workup](duo-capture.md). Descriptor
 fixtures cover all supported identities, USB 2/3 layouts and rejected cases;
 simulator success must not be reported as physical model validation. Model-

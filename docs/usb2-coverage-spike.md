@@ -4,7 +4,9 @@
 PR #11 is necessary and passed ASI662MC/ASI676MC hardware tests, but this spike
 found additional SDK output-pacing behavior that Regain does not yet reproduce.
 Do not describe accepting a USB 2 descriptor as proving successful capture on
-every camera. No cameras were opened, reset or enumerated during this spike.
+every camera. The static audit opened/enumerated no cameras. The subsequent
+operator-authorized P25 hardware validation is recorded below; no port resets
+were performed.
 
 ## Scope and evidence matrix
 
@@ -19,7 +21,7 @@ Older/native USB 2 cameras must not be assigned a modern FX3 profile by name.
 | ASI662MC / `662b` | Current profile | Windows capture, replay, interrupted reads, short ROI and 30 s exposure passed | SDK output-rate comparison, cold start, actual bus faults |
 | ASI676MC / `676d` | Current profile | Same, plus production worker reopen; short ROI required sensor pacing fix | SDK output-rate comparison, cold start, actual bus faults |
 | ASI2600MM Duo / `2601` | Original main sensor | Descriptor/contract fixtures only for new fallback | USB 2 initialization, DDR freshness and complete capture/recovery matrix |
-| ASI2600MM Pro / `260e` | P25 | Descriptor/contract fixtures only for new fallback | Same; do not reuse original sensor/readout timings |
+| ASI2600MM Pro / `260e` | P25 | Windows USB 2: 40 cases / 42 frames, all-row freshness, bins/ROI, retained recovery, production cancellation/reopen passed | SDK output-rate comparison, cold start, actual bus faults; do not reuse original timing |
 | ASI6200MM Pro / `620b` | Original, BC:1c = 3 | Descriptor/contract fixtures only for new fallback | Same, including full 122,342,976-byte frames |
 | ASI6200MM Pro / `620b` | P25, BC:1c = 5 | Same descriptor; distinct revision/timing | Independent full-frame freshness/recovery matrix |
 | ASI220MM Mini / `2209` | Duo guide | Existing native USB 2 acquisition evidence | Streaming resynchronization, not retained replay; zero-line short exposures remain rejected |
@@ -27,6 +29,35 @@ Older/native USB 2 cameras must not be assigned a modern FX3 profile by name.
 See [USB 2 hardware results](usb2-cameras.md) and [guide workup](duo-capture.md).
 All new Linux/macOS USB 2 hardware paths remain unvalidated. A shared enclosure,
 PID, USB transport or SDK class family does not merge the evidence rows.
+
+### P25 follow-up hardware result
+
+After the static audit, the operator connected the ASI2600MM Pro P25 via USB 2.
+The selected-product probe confirmed `03c3:260e`, `bcdUSB 0210`, 512-byte bulk IN
+`81`, configuration length 25 and Windows driver `01020200`. The existing
+production capture implementation was tested without changing FPGA pacing.
+
+`validate_asi2600_p25.py --long 30` passed all **40 cases / 42 frames**:
+ten full-frame offset transitions checked every row across 32 us, 100 ms,
+999,999 us, 1 s and 2 s; three fresh full frames; minimum/moved/edge ROI;
+bins 1–4; gain boundaries; ROI exposures through 60 s; and full-frame 30 s.
+All retained replays matched. A 12 MiB host-read interruption required two
+retained retries (the first restart timed out); stopping the sender caused a
+real bulk timeout and recovered after one retry. Both matched the interrupted
+prefix. Abandoning a replay after 12 MiB also recovered with matching pixels.
+The validator rejected no case. Long full-frame acquisition took 35.851 s.
+
+A separate production pipe-worker test terminated an active 10-second exposure,
+then reopened using the saved serial and locator. A full 52,183,296-byte frame
+passed, followed by close/reopen and another distinct full frame. Both used
+zero read retries, exact byte/digest checks and verified identity; no list or
+discover protocol command was issued. All owned workers exited. No images
+were saved/uploaded, installed settings changed, or USB ports cycled/reset.
+See [sanitized summary](usb2-p25-evidence.json).
+
+This establishes the tested P25 fallback on this Windows USB 2 setup. It does
+not disprove the static output-pacing difference or validate a different
+controller, camera revision, cold boot, physical disconnect or OS.
 
 ## Finding: link-specific FPGA output pacing is missing
 
