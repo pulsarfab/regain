@@ -244,7 +244,8 @@ fn find_accessible<I: IntoIterator, T>(
         }
     }
     if let Some(error) = last_error {
-        return Err(error.context("selected serial could not be found among accessible cameras"));
+        return Err(error
+            .context("could not open or identify an eligible camera; see the USB failure below"));
     }
     bail!("selected camera serial is not attached")
 }
@@ -252,6 +253,41 @@ fn find_accessible<I: IntoIterator, T>(
 #[cfg(test)]
 mod selection_tests {
     use super::*;
+    #[test]
+    fn serial_discovery_and_blank_selection_do_not_require_hardware() {
+        let mut host = Host {
+            simulate: true,
+            ..Host::default()
+        };
+        let list = host.command("list", &json!({"serials":true})).unwrap().0;
+        assert!(
+            list.as_array()
+                .unwrap()
+                .iter()
+                .all(|c| c["serial"] == "direct-simulator")
+        );
+        for serial in [
+            Value::Null,
+            json!(""),
+            json!("  "),
+            json!(" DIRECT-SIMULATOR "),
+        ] {
+            host.command("open", &json!({"name":"ZWO ASI662MC","serial":serial}))
+                .unwrap();
+            assert!(host.command("list", &json!({"serials":true})).is_err());
+            host.command("close", &Value::Null).unwrap();
+        }
+        assert!(
+            host.command("open", &json!({"name":"ZWO ASI662MC","serial":"wrong"}))
+                .is_err()
+        );
+        let error = find_accessible([0], |_| -> Result<Option<()>> {
+            bail!("synthetic USB busy")
+        })
+        .unwrap_err();
+        assert!(format!("{error:#}").contains("synthetic USB busy"));
+        assert!(!error.to_string().contains("serial"));
+    }
     #[test]
     fn original_6200_does_not_advertise_or_accept_p25_auxiliary_controls() {
         let caps = Model::Asi6200.controls(false);
@@ -605,14 +641,41 @@ impl Host {
                 Value::Null
             }
             "list" => {
+                ensure!(
+                    self.worker.is_none(),
+                    "Direct USB discovery is unavailable while a camera is open; use the cached camera list"
+                );
                 let mut found = Vec::new();
                 for model in Model::ALL {
-                    let count = if self.simulate {
-                        1
-                    } else {
-                        paths(model).map_err(hardware)?.len()
-                    };
-                    found.extend((0..count).map(|_| model.descriptor()));
+                    if self.simulate {
+                        let mut info = model.descriptor();
+                        if params["serials"] == true {
+                            info["serial"] = json!("direct-simulator");
+                        }
+                        found.push(info);
+                        continue;
+                    }
+                    for path in paths(model).map_err(hardware)? {
+                        let mut info = model.descriptor();
+                        if params["serials"] == true {
+                            // Identity probing is explicitly opt-in, before ownership.
+                            // Drop each handle before inspecting another; never seize a busy device.
+                            let serial = (|| -> Result<String> {
+                                let camera = transport::Camera::open(&path)?;
+                                let bytes = camera.vendor(0xc8, 0, 0, 8)?;
+                                ensure!(
+                                    bytes.len() == 8 && bytes.iter().any(|&b| b != 0),
+                                    "camera serial is unavailable"
+                                );
+                                Ok(bytes.iter().map(|b| format!("{b:02x}")).collect())
+                            })();
+                            match serial {
+                                Ok(serial) => info["serial"] = json!(serial),
+                                Err(error) => info["discoveryError"] = json!(format!("{error:#}")),
+                            }
+                        }
+                        found.push(info);
+                    }
                 }
                 json!(found)
             }
@@ -622,7 +685,7 @@ impl Host {
                     .into_iter()
                     .find(|m| params["name"] == m.name())
                     .ok_or_else(|| anyhow::anyhow!("unsupported SDK-less camera model"))?;
-                let serial = params["serial"].as_str().map(str::to_owned);
+                let serial = crate::asi::normalized_serial(params["serial"].as_str());
                 let (worker, identity) =
                     Worker::open(model, serial, self.simulate).map_err(hardware)?;
                 self.model = model;

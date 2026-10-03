@@ -119,3 +119,14 @@ in readiness polling or the download call, and whether post-error status remains
 2. Test controlled unplug/replug and cooling recovery separately from software
 host termination. Never treat the simulator's retained-frame behavior as proof
 of the real camera's transfer semantics.
+# Optional serial discovery
+
+Camera workers accept `list` with `{"serials":true}` before opening capture.
+The default list remains descriptor-only. Each result optionally includes
+`serial`, or `discoveryError` when that device could not be identified. Direct
+USB reads the identity without starting acquisition; SDK discovery opens,
+initializes and closes each candidate. This is active probing, not a live
+inventory API: callers must cache results and keep discovery on the camera
+owner thread. Both backends reject discovery while owning a camera. Busy or
+unidentified devices are not silently substituted. Empty/whitespace serial
+filters are unspecified; nonempty filters are trimmed and case-normalized.
