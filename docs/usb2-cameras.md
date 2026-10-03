@@ -88,8 +88,12 @@ USB bus faults, physical disconnect/reset, optical accuracy, cold power-up,
 long exposures beyond 30 seconds, or a complete installed-app SDK-to-direct
 handoff. Long frames were saturated under available illumination.
 
-**ASI2600MM Duo and both ASI6200 revisions' new USB 2 paths are not yet
+**ASI2600MM Duo and ASI6200 P25's new USB 2 paths are not yet
 hardware-validated.** ASI2600MM Pro P25 passed the follow-up matrix linked above.
+The original ASI6200 passed full-frame USB 2 capture, offset freshness and
+retained recovery, but its stronger high-gain row-uniformity check failed (also
+seen in saved USB 3 evidence). See the [qualified result](usb2-coverage-spike.md#original-asi6200-follow-up-hardware-result);
+it is not a clean full-matrix sign-off.
 ASI220MM Mini's
 existing USB 2 evidence is in [the guide workup](duo-capture.md). Descriptor
 fixtures cover all supported identities, USB 2/3 layouts and rejected cases;

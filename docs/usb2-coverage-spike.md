@@ -22,7 +22,7 @@ Older/native USB 2 cameras must not be assigned a modern FX3 profile by name.
 | ASI676MC / `676d` | Current profile | Same, plus production worker reopen; short ROI required sensor pacing fix | SDK output-rate comparison, cold start, actual bus faults |
 | ASI2600MM Duo / `2601` | Original main sensor | Descriptor/contract fixtures only for new fallback | USB 2 initialization, DDR freshness and complete capture/recovery matrix |
 | ASI2600MM Pro / `260e` | P25 | Windows USB 2: 40 cases / 42 frames, all-row freshness, bins/ROI, retained recovery, production cancellation/reopen passed | SDK output-rate comparison, cold start, actual bus faults; do not reuse original timing |
-| ASI6200MM Pro / `620b` | Original, BC:1c = 3 | Descriptor/contract fixtures only for new fallback | Same, including full 122,342,976-byte frames |
+| ASI6200MM Pro / `620b` | Original, BC:1c = 3 | Windows full frames, every-row offset freshness, bins/ROI, replay/recovery and 30 s exposure passed; strict high-gain row-uniformity gate failed | High-gain characterization, SDK output-rate comparison, cold start and actual bus faults; not an unconditional matrix pass |
 | ASI6200MM Pro / `620b` | P25, BC:1c = 5 | Same descriptor; distinct revision/timing | Independent full-frame freshness/recovery matrix |
 | ASI220MM Mini / `2209` | Duo guide | Existing native USB 2 acquisition evidence | Streaming resynchronization, not retained replay; zero-line short exposures remain rejected |
 
@@ -58,6 +58,51 @@ See [sanitized summary](usb2-p25-evidence.json).
 This establishes the tested P25 fallback on this Windows USB 2 setup. It does
 not disprove the static output-pacing difference or validate a different
 controller, camera revision, cold boot, physical disconnect or OS.
+
+### Original ASI6200 follow-up hardware result
+
+The operator next connected the original ASI6200MM Pro via USB 2. The selected
+product probe reported `03c3:620b`, `bcdUSB 0210`, 512-byte bulk IN `81`,
+configuration length 25 and Windows driver `01020200`. Every capture verified
+revision 3 and HMAX 1515. No SDK or additional output-throttle change was used.
+
+The stronger `validate_asi6200.py --revision 3 --full-controls --long 30`
+accepted **63 cases / 65 frames** before stopping at case 63, full-frame gain
+520. Accepted checks included three fresh full frames, bins 1–4, minimum/moved/
+edge ROIs, ROI exposures through 60 s, and ten full-frame offset transitions
+(200/50, 32 us through 2 s). The offset checks inspect every individual row,
+not only the 16 broad bands. All accepted retained replays were identical.
+A 12 MiB interrupted read recovered with two retries; deliberately stalling the
+sender recovered from a real USB timeout with one. Both matched the original
+prefix. Abandoning a replay after 12 MiB recovered identical pixels too.
+
+**The matrix is not an unconditional pass.** Case 63's row-median extrema were
+1614–1858 ADU and failed the new conservative per-row uniformity threshold.
+Follow-up full captures at gains 520 (twice), 521 and 700 also failed that
+threshold, despite complete byte/digest checks and identical retained replay
+with zero retries. Their broad-band medians were much tighter. Previously saved
+[USB 3 evidence](asi6200-original-evidence.json), native cases 63–65, has the
+same effect: row ranges 1590–1856, 1688–1948 and 0–784 respectively. Thus this
+is not evidence of a newly USB 2-specific failure. High-gain noise/clipping is
+a plausible explanation, not a proven diagnosis. The strict gate remains;
+do not silently relax it or relabel the failed samples as freshness passes.
+Future validator failures retain sanitized statistics before exiting.
+
+Returning to gain 100 passed the row check (1999–2002 ADU at offset 200).
+A separate full 30-second exposure delivered 122,342,976 bytes in 40.446 s,
+with zero retries and identical replay. The original matrix never reached that
+case: this was an explicitly separate follow-up, not a successful matrix rerun.
+See [sanitized USB 2 evidence](usb2-6200-original-evidence.json).
+
+Production pipe-worker tests also passed: terminate an active 10-second
+exposure, reopen with cached serial/locator, and download a fresh full frame;
+reject a deliberately insufficient 5 ms transfer budget with a structured
+timeout and zero image bytes, then accept a new full exposure; finally close/
+reopen and capture again. The three successful frame hashes were distinct,
+with zero retries and acquisition times 8.757, 8.869 and 8.778 s. No `list` or
+`discover` protocol command was issued. All owned workers exited. No USB reset,
+installed settings change, image save or upload occurred. Worker termination
+does not substitute for physical disconnect testing.
 
 ## Finding: link-specific FPGA output pacing is missing
 
