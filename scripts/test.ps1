@@ -1,6 +1,10 @@
 $ErrorActionPreference = 'Stop'
 Push-Location (Join-Path $PSScriptRoot '..')
 try {
+    foreach ($architecture in 'System32','SysWOW64') {
+        & "$env:WINDIR/$architecture/WindowsPowerShell/v1.0/powershell.exe" -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'test-com-property.ps1')
+        if ($LASTEXITCODE) { throw 'Strict COM property tests failed' }
+    }
     cargo fmt --check
     if ($LASTEXITCODE) { throw 'Rust formatting failed' }
     cargo clippy --all-targets --locked -- -D warnings

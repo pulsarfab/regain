@@ -1,5 +1,6 @@
 param([string]$Id, [string]$Directory, [string]$Role, [switch]$MetadataOnly)
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'ComTestProperty.ps1')
 function Wait-Signal([string]$Name) {
     $deadline = [DateTime]::UtcNow.AddSeconds(150)
     while (!(Test-Path -LiteralPath (Join-Path $Directory $Name))) {
@@ -25,8 +26,8 @@ $initial = $null
 try {
     $type = if ($Id) { [type]::GetTypeFromCLSID([Guid]$Id) } else { [type]::GetTypeFromProgID('ASCOM.Regain.OFP2.CoverCalibrator') }
     $device = [Activator]::CreateInstance($type)
-    $deviceName = $device.Name
-    $interfaceVersion = $device.InterfaceVersion
+    $deviceName = Get-ComTestProperty -Device $device -Name 'Name'
+    $interfaceVersion = Get-ComTestProperty -Device $device -Name 'InterfaceVersion'
     if ($deviceName -ne 'PulsarFab regain Deep Sky Dad OFP2' -or $interfaceVersion -ne 1) {
         throw "Invalid CoverCalibrator metadata ($([IntPtr]::Size * 8)-bit, role '$Role'): Name='$deviceName', InterfaceVersion='$interfaceVersion'"
     }
