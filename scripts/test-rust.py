@@ -341,6 +341,18 @@ def standalone(binary_dir, library=None):
           else "Passed: standalone simulated camera commands")
 
 
+def wait_for_acquired_frames(worker, minimum, timeout=3):
+    """Poll read-only status; scheduler delays are not a capture failure."""
+    deadline = time.monotonic() + timeout
+    while True:
+        status = worker.call("stream-status")[0]
+        assert status["error"] is None, status
+        if status["acquiredFrames"] >= minimum:
+            return status
+        assert time.monotonic() < deadline, status
+        time.sleep(0.02)
+
+
 def continuous(binary_dir):
     """No hardware: every direct family, plus SDK simulation, drains while idle."""
     suffix = ".exe" if sys.platform == "win32" else ""
@@ -355,8 +367,10 @@ def continuous(binary_dir):
                          microseconds=1000, dark=False, maxFps=0.5)
                 worker.call("stream-start", p)
                 worker.call("list", error=True)
-                time.sleep(0.15)
-                status = worker.call("stream-status")[0]
+                # Three acquired frames within 3 s still distinguishes camera
+                # draining from the 0.5 FPS delivery cap, without assuming a
+                # loaded Windows runner schedules the owner within 150 ms.
+                status = wait_for_acquired_frames(worker, 3)
                 assert status["acquiredFrames"] > 2, status
                 assert status["replacedFrames"] > 0, status
                 assert status["error"] is None, status
@@ -365,8 +379,8 @@ def continuous(binary_dir):
                 first, pixels = worker.call("stream-download")
                 assert len(pixels) == 128 * 128 * 2
                 worker.call("stream-download", error=True)
-                time.sleep(0.05)
-                assert worker.call("stream-status")[0]["acquiredFrames"] > status["acquiredFrames"]
+                advanced = wait_for_acquired_frames(worker, status["acquiredFrames"] + 1)
+                assert advanced["acquiredFrames"] > status["acquiredFrames"]
                 worker.call("stream-stop")
                 deadline = time.monotonic() + 3
                 while worker.call("stream-status")[0]["active"]:
