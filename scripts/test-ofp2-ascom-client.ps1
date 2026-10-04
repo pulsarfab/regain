@@ -1,4 +1,4 @@
-param([string]$Id, [string]$Directory, [string]$Role, [switch]$MetadataOnly)
+param([string]$Id, [string]$Directory, [string]$Role, [switch]$MetadataOnly, [switch]$Diagnostics)
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'ComTestProperty.ps1')
 function Wait-Signal([string]$Name) {
@@ -30,6 +30,14 @@ try {
     $interfaceVersion = Get-ComTestProperty -Device $device -Name 'InterfaceVersion'
     if ($deviceName -ne 'PulsarFab regain Deep Sky Dad OFP2' -or $interfaceVersion -ne 1) {
         throw "Invalid CoverCalibrator metadata ($([IntPtr]::Size * 8)-bit, role '$Role'): Name='$deviceName', InterfaceVersion='$interfaceVersion'"
+    }
+    if ($Diagnostics) {
+        Add-Type -Path (Join-Path $PSScriptRoot 'ComTestDiagnostics.cs')
+        $report = [ComTestDiagnostics]::Read($device)
+        Write-Output $report
+        if ($report -notmatch 'GetIDsOfNames Name HRESULT=0x00000000' -or $report -notmatch 'TypeInfo GUID=879a2d28-3659-457a-b5e8-5cf7262975eb') {
+            throw 'COM diagnostic probe did not read the expected CoverCalibrator interface'
+        }
     }
     if ($MetadataOnly) { $device.Dispose(); return }
     if ($device.Connected) { throw 'New COM client inherited another connection' }
@@ -81,7 +89,17 @@ try {
         'done' | Set-Content (Join-Path $Directory 'second-finished')
     }
     Write-Output "OFP2 COM $Role ($([IntPtr]::Size * 8)-bit) passed"
-} catch { Write-Error $_; exit 1 }
+} catch {
+    $failure = $_
+    if ($null -ne $device) {
+        try {
+            Add-Type -Path (Join-Path $PSScriptRoot 'ComTestDiagnostics.cs')
+            Write-Output ([ComTestDiagnostics]::Read($device))
+        } catch { Write-Warning "COM diagnostic failed: $_" }
+    }
+    Write-Error "OFP2 client $Role ($([IntPtr]::Size * 8)-bit): $failure"
+    exit 1
+}
 finally {
     if ($null -ne $device) {
         try { if ($Role -eq 'second' -and $device.Connected) { $device.HaltCover(); if ($initial.calibrator_on) { $device.CalibratorOn([int]$initial.brightness) } else { $device.CalibratorOff() } }; $device.Connected = $false } catch { }

@@ -1,4 +1,4 @@
-param([switch]$Hardware, [string]$Serial)
+param([switch]$Hardware, [string]$Serial, [switch]$Diagnostics)
 $ErrorActionPreference = 'Stop'
 $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $id = [Guid]::NewGuid().ToString()
@@ -43,11 +43,12 @@ try {
     foreach ($pair in @(@('System32','first'),@('SysWOW64','second'))) {
         $role=$pair[1]
         $args = '-NoProfile -ExecutionPolicy Bypass -File "' + (Join-Path $PSScriptRoot 'test-ofp2-ascom-client.ps1') + '" -Id ' + $id + ' -Directory "' + $directory + '" -Role ' + $role
+        if ($Diagnostics) { $args += ' -Diagnostics' }
         $children += Start-Process -FilePath "$env:WINDIR/$($pair[0])/WindowsPowerShell/v1.0/powershell.exe" -ArgumentList $args -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $directory "$role.out") -RedirectStandardError (Join-Path $directory "$role.err")
     }
     foreach ($child in $children) {
         if (!$child.WaitForExit(180000)) { throw 'COM client timed out' }
-        if ($child.ExitCode -ne 0) { Get-Content (Join-Path $directory '*.err'); throw 'COM client failed' }
+        if ($child.ExitCode -ne 0) { Get-Content (Join-Path $directory '*.out'); Get-Content (Join-Path $directory '*.err'); throw 'COM client failed' }
     }
     Get-Content (Join-Path $directory '*.out')
     if (!(Test-Path (Join-Path $directory 'second-finished'))) { throw 'Shared connection test incomplete' }
