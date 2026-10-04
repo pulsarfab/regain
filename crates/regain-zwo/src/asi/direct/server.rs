@@ -22,6 +22,7 @@ enum Work {
         Duration,
         Duration,
         bool,
+        u32,
         mpsc::SyncSender<Result<Frame>>,
     ),
     Environment(u32, Option<i64>, mpsc::SyncSender<Result<i64>>),
@@ -587,6 +588,7 @@ impl Worker {
                         timeout,
                         simulated_delay,
                         simulated_cleanup,
+                        mut simulated_framing_failures,
                         reply,
                     ) => {
                         // Never free live I/O buffers if a kernel operation becomes stuck.
@@ -618,7 +620,7 @@ impl Worker {
                                     }
                                     let session = video.as_mut().unwrap();
                                     session.set_max_fps(settings.video_max_fps);
-                                    session.next(camera, &cancelled)
+                                    session.next(camera, info, &cancelled)
                                 } else {
                                     if let Some(mut old) = video.take() {
                                         old.stop(camera)?;
@@ -642,6 +644,7 @@ impl Worker {
                                     }
                                 }
                             } else {
+                                let mut framing_recoveries = 0;
                                 if video_mode {
                                     // FPS changes pace the existing stream; they do
                                     // not reconfigure the sensor on real hardware.
@@ -652,11 +655,37 @@ impl Worker {
                                         simulated_sequence = 0;
                                         simulated_video = Some(settings.clone());
                                     }
-                                    bayer_video::wait_until(
-                                        Instant::now(),
-                                        Duration::from_micros(u64::from(settings.microseconds)),
+                                    let (_, recovered) = bayer_video::recover_frame_once(
+                                        &mut simulated_framing_failures,
                                         &cancelled,
+                                        |remaining| {
+                                            bayer_video::wait_until(
+                                                Instant::now(),
+                                                Duration::from_micros(u64::from(
+                                                    settings.microseconds,
+                                                )),
+                                                &cancelled,
+                                            )?;
+                                            if *remaining > 0 {
+                                                *remaining -= 1;
+                                                return Err(super::protocol::FrameBoundaryError(
+                                                    "invalid frame boundary markers",
+                                                )
+                                                .into());
+                                            }
+                                            Ok(())
+                                        },
+                                        |_| {
+                                            bayer_video::wait_until(
+                                                Instant::now(),
+                                                bayer_video::frame_interval(
+                                                    settings.video_max_fps,
+                                                )?,
+                                                &cancelled,
+                                            )
+                                        },
                                     )?;
+                                    framing_recoveries = recovered;
                                     simulated_sequence += 1;
                                 } else {
                                     simulated_video = None;
@@ -671,7 +700,7 @@ impl Worker {
                                 Ok((
                                     json!({"width":settings.width,"height":settings.height,"bin":bin,"sdkLoaded":false,
                                 "simulated":true,"readRecoveries":0,"mode":if video_mode { "video" } else { "still" },
-                                "deliveredFrames":simulated_sequence}),
+                                "deliveredFrames":simulated_sequence,"framingRecoveries":framing_recoveries}),
                                     pixels,
                                 ))
                             }
@@ -766,6 +795,7 @@ struct Host {
     reconnect_required: bool,
     simulated_delay: Duration,
     simulated_cleanup: bool,
+    simulated_framing_failures: u32,
     white_balance: Option<WhiteBalance>,
     white_balance_frame: Option<Geometry>,
     video_active: bool,
@@ -804,6 +834,9 @@ impl Host {
                 ensure!(delay <= 5000, "invalid simulated read delay");
                 self.simulated_delay = Duration::from_millis(delay);
                 self.simulated_cleanup = params["cleanupFailure"].as_bool().unwrap_or(false);
+                let failures = params["framingFailures"].as_u64().unwrap_or(0);
+                ensure!(failures <= 2, "invalid simulated framing failures");
+                self.simulated_framing_failures = failures as u32;
                 Value::Null
             }
             "simulate-read-failures" => {
@@ -916,6 +949,7 @@ impl Host {
                     "backend":"direct","controls":controls,
                     "captureModes":if model.video_profile().is_some() { json!(["still","video"]) } else { json!(["still"]) },
                     "videoMaxExposureMicroseconds":if model.video_profile().is_some() { json!(30_000_000) } else { Value::Null },
+                    "videoFrameRecoveryAttempts":if model.video_profile().is_some() { json!(1) } else { json!(0) },
                     "whiteBalance":WhiteBalance::capabilities(descriptor["color"] == true)})
             }
             "white-balance" => {
@@ -1075,15 +1109,19 @@ impl Host {
                         dark: params["dark"].as_bool().unwrap_or(false),
                     });
                     let seconds = params["captureTimeoutSeconds"].as_f64().unwrap_or(
-                        f64::from(settings.microseconds) / 1e6
+                        f64::from(settings.microseconds) / 1e6 * if video_mode { 2.0 } else { 1.0 }
                             + if video_mode {
-                                1.0 / settings.video_max_fps
+                                2.0 / settings.video_max_fps
                             } else {
                                 0.0
                             }
                             + 45.0
                             + (settings.transfer_timeout_seconds + 15.0)
-                                * f64::from(settings.read_retries + 1),
+                                * if video_mode {
+                                    2.0
+                                } else {
+                                    f64::from(settings.read_retries + 1)
+                                },
                     );
                     ensure!(
                         seconds.is_finite() && (0.001..=86400.0).contains(&seconds),
@@ -1140,6 +1178,7 @@ impl Host {
                             Duration::from_secs_f64(seconds),
                             self.simulated_delay,
                             self.simulated_cleanup,
+                            self.simulated_framing_failures,
                             sender,
                         ))
                         .map_err(|_| hardware(anyhow::anyhow!("direct worker exited")))?;
@@ -1311,6 +1350,7 @@ mod video_tests {
             .command("open", &json!({"name":"ZWO ASI662MC"}))
             .unwrap();
         assert_eq!(result["captureModes"], json!(["still", "video"]));
+        assert_eq!(result["videoFrameRecoveryAttempts"], 1);
         host
     }
     fn frame(host: &mut Host, params: &Value) -> Frame {
@@ -1337,6 +1377,58 @@ mod video_tests {
         params.as_object_mut().unwrap().remove("mode");
         assert_eq!(frame(&mut host, &params).0["mode"], "still");
         assert!(!host.video_active);
+        host.command("close", &Value::Null).unwrap();
+    }
+    #[test]
+    fn one_bad_video_envelope_is_recovered_without_faulting_the_protocol() {
+        let mut host = open();
+        host.command("simulation", &json!({"framingFailures":1}))
+            .unwrap();
+        let (metadata, pixels) = frame(&mut host, &parameters());
+        assert_eq!(metadata["framingRecoveries"], 1);
+        assert_eq!(pixels.len(), 8192);
+        host.command("simulation", &json!({"framingFailures":0}))
+            .unwrap();
+        assert_eq!(frame(&mut host, &parameters()).0["framingRecoveries"], 0);
+        host.command("close", &Value::Null).unwrap();
+    }
+    #[test]
+    fn repeated_bad_video_envelopes_still_fault_instead_of_looping() {
+        let mut host = open();
+        host.command("simulation", &json!({"framingFailures":2}))
+            .unwrap();
+        host.command("start", &parameters()).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(2);
+        loop {
+            match host.command("status", &Value::Null) {
+                Ok((status, _)) => assert_eq!(status, 1),
+                Err(error) => {
+                    assert!(format!("{error:#}").contains("after one stream restart"));
+                    break;
+                }
+            }
+            assert!(Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        assert!(host.command("download", &Value::Null).is_err());
+        host.command("close", &Value::Null).unwrap();
+    }
+    #[test]
+    fn stop_interrupts_the_recovery_fps_wait_and_allows_a_new_capture() {
+        let mut host = open();
+        host.command("simulation", &json!({"framingFailures":1}))
+            .unwrap();
+        let mut params = parameters();
+        params["maxFps"] = json!(0.01);
+        host.command("start", &params).unwrap();
+        std::thread::sleep(Duration::from_millis(30));
+        assert_eq!(host.command("status", &Value::Null).unwrap().0, 1);
+        let started = Instant::now();
+        host.command("stop", &Value::Null).unwrap();
+        assert!(started.elapsed() < Duration::from_secs(2));
+        host.command("simulation", &json!({"framingFailures":0}))
+            .unwrap();
+        assert_eq!(frame(&mut host, &parameters()).0["framingRecoveries"], 0);
         host.command("close", &Value::Null).unwrap();
     }
     #[test]
@@ -1369,6 +1461,7 @@ mod video_tests {
             .command("open", &json!({"name":"ZWO ASI676MC"}))
             .unwrap();
         assert_eq!(caps["captureModes"], json!(["still", "video"]));
+        assert_eq!(caps["videoFrameRecoveryAttempts"], 1);
         let mut params = parameters();
         params["x"] = json!(2); // Valid for 676, not the 662's 8-pixel alignment.
         params["y"] = json!(2);
@@ -1389,6 +1482,7 @@ mod video_tests {
                 .command("open", &json!({"name":model.name()}))
                 .unwrap();
             assert_eq!(caps["captureModes"], json!(["still"]));
+            assert_eq!(caps["videoFrameRecoveryAttempts"], 0);
             assert!(unsupported.command("start", &parameters()).is_err());
             unsupported.command("close", &Value::Null).unwrap();
         }

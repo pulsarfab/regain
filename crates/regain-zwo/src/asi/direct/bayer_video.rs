@@ -1,7 +1,7 @@
 //! ASI662MC/ASI676MC RAW16 video: configure once, consume successive envelopes.
 //! Model-specific SDK 1.41 video traces; never replay a live video frame.
 use super::{bayer, link, processing, protocol, settings::Settings, transport::Camera};
-use anyhow::{Result, ensure};
+use anyhow::{Context, Result, ensure};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::{
@@ -140,9 +140,34 @@ impl Video {
         result
     }
 
-    pub fn next(&mut self, camera: &Camera, cancel: &AtomicBool) -> Result<(Value, Vec<u8>)> {
+    pub fn next(
+        &mut self,
+        camera: &Camera,
+        info: &Value,
+        cancel: &AtomicBool,
+    ) -> Result<(Value, Vec<u8>)> {
         ensure!(self.active, "video is stopped; start a new session");
-        let result = self.read(camera, cancel);
+        let result = recover_frame_once(
+            self,
+            cancel,
+            |session| session.read(camera, cancel),
+            |session| {
+                let discarded_at = Instant::now();
+                session.stop(camera)?;
+                // Failed grabs count against the FPS cap too. No rapid retry burst.
+                wait_until(
+                    discarded_at,
+                    frame_interval(session.settings.video_max_fps)?,
+                    cancel,
+                )?;
+                *session = Self::start(camera, info, session.settings.clone(), session.profile)?;
+                Ok(())
+            },
+        )
+        .map(|((mut metadata, pixels), recoveries)| {
+            metadata["framingRecoveries"] = json!(recoveries);
+            (metadata, pixels)
+        });
         if result.is_err() {
             // Partial video data cannot be replayed as the same exposure. End
             // this stream, preserve the failure and require explicit restart.
@@ -240,6 +265,47 @@ impl Video {
     }
 }
 
+/// One fresh exposure after a complete-but-malformed frame. Never retained replay,
+/// never a USB port reset, and never a retry of arbitrary hardware/cleanup errors.
+pub(super) fn recover_frame_once<S, T>(
+    state: &mut S,
+    cancel: &AtomicBool,
+    mut read: impl FnMut(&mut S) -> Result<T>,
+    mut restart: impl FnMut(&mut S) -> Result<()>,
+) -> Result<(T, u32)> {
+    ensure!(!cancel.load(Ordering::Relaxed), "video read cancelled");
+    match read(state) {
+        Ok(frame) => Ok((frame, 0)),
+        Err(error)
+            if error
+                .downcast_ref::<protocol::FrameBoundaryError>()
+                .is_some() =>
+        {
+            ensure!(!cancel.load(Ordering::Relaxed), "video read cancelled");
+            super::diagnostics::log(
+                "warning",
+                "video.frame_discarded",
+                format_args!("{error:#}; restarting stream once for a fresh exposure"),
+            );
+            restart(state).with_context(|| {
+                format!("video framing recovery restart failed after {error:#}")
+            })?;
+            ensure!(!cancel.load(Ordering::Relaxed), "video read cancelled");
+            let frame =
+                read(state).context("video framing recovery failed after one stream restart")?;
+            super::diagnostics::log(
+                "info",
+                "video.framing_recovered",
+                format_args!(
+                    "Discarded malformed frame; validated a fresh frame after stream restart"
+                ),
+            );
+            Ok((frame, 1))
+        }
+        Err(error) => Err(error),
+    }
+}
+
 fn sequence_gap(previous: Option<u16>, next: u16) -> Result<u16> {
     let Some(previous) = previous else {
         return Ok(0);
@@ -253,6 +319,134 @@ fn sequence_gap(previous: Option<u16>, next: u16) -> Result<u16> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn bad_frame() -> anyhow::Error {
+        protocol::frame_sequence(&[0; 16], 16).unwrap_err()
+    }
+    #[test]
+    fn valid_frame_does_not_restart_or_consume_recovery() {
+        let mut calls = 0;
+        assert_eq!(
+            recover_frame_once(
+                &mut calls,
+                &AtomicBool::new(false),
+                |s| {
+                    *s += 1;
+                    Ok(42)
+                },
+                |_| panic!("valid frame must not restart")
+            )
+            .unwrap(),
+            (42, 0)
+        );
+        assert_eq!(calls, 1);
+    }
+    #[test]
+    fn framing_recovery_discards_bad_frame_and_restarts_only_once() {
+        let mut calls = (0, 0);
+        let result = recover_frame_once(
+            &mut calls,
+            &AtomicBool::new(false),
+            |s| {
+                s.0 += 1;
+                if s.0 == 1 {
+                    Err(bad_frame())
+                } else {
+                    Ok(vec![42])
+                }
+            },
+            |s| {
+                s.1 += 1;
+                Ok(())
+            },
+        )
+        .unwrap();
+        assert_eq!(result, (vec![42], 1));
+        assert_eq!(calls, (2, 1));
+        calls = (0, 0);
+        let error = recover_frame_once::<_, ()>(
+            &mut calls,
+            &AtomicBool::new(false),
+            |s| {
+                s.0 += 1;
+                Err(bad_frame())
+            },
+            |s| {
+                s.1 += 1;
+                Ok(())
+            },
+        )
+        .unwrap_err();
+        assert!(
+            error
+                .downcast_ref::<protocol::FrameBoundaryError>()
+                .is_some()
+        );
+        assert_eq!(calls, (2, 1));
+    }
+    #[test]
+    fn framing_recovery_never_retries_unrelated_errors_or_failed_restart() {
+        let mut calls = (0, 0);
+        assert!(
+            recover_frame_once::<_, ()>(
+                &mut calls,
+                &AtomicBool::new(false),
+                |s| {
+                    s.0 += 1;
+                    anyhow::bail!("USB disconnected")
+                },
+                |s| {
+                    s.1 += 1;
+                    Ok(())
+                }
+            )
+            .is_err()
+        );
+        assert_eq!(calls, (1, 0));
+        calls = (0, 0);
+        assert!(
+            recover_frame_once::<_, ()>(
+                &mut calls,
+                &AtomicBool::new(false),
+                |s| {
+                    s.0 += 1;
+                    Err(bad_frame())
+                },
+                |s| {
+                    s.1 += 1;
+                    anyhow::bail!("stop failed")
+                }
+            )
+            .is_err()
+        );
+        assert_eq!(calls, (1, 1));
+    }
+    #[test]
+    fn framing_recovery_respects_cancel_before_restart_and_replacement() {
+        for cancel_in_restart in [false, true] {
+            let cancel = AtomicBool::new(false);
+            let mut calls = (0, 0);
+            assert!(
+                recover_frame_once::<_, ()>(
+                    &mut calls,
+                    &cancel,
+                    |s| {
+                        s.0 += 1;
+                        if !cancel_in_restart {
+                            cancel.store(true, Ordering::Relaxed);
+                        }
+                        Err(bad_frame())
+                    },
+                    |s| {
+                        s.1 += 1;
+                        cancel.store(true, Ordering::Relaxed);
+                        Ok(())
+                    }
+                )
+                .is_err()
+            );
+            assert_eq!(calls, (1, u32::from(cancel_in_restart)));
+        }
+    }
     #[test]
     fn model_profiles_keep_distinct_limits() {
         use crate::asi::direct::{asi662, asi676};

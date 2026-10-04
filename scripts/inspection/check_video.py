@@ -19,16 +19,19 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--simulate', action='store_true')
+    parser.add_argument('--worker', type=Path, default=ROOT / 'target/debug/regain-device.exe')
+    parser.add_argument('--long-transition-only', action='store_true',
+                        help='Reproduce gain-300 6.4s -> 25s changes and repeated 25s frames')
     parser.add_argument('--camera-name', choices=['ZWO ASI662MC', 'ZWO ASI676MC'], default='ZWO ASI662MC')
     args = parser.parse_args()
     full_width, full_height = (1920, 1080) if args.camera_name == 'ZWO ASI662MC' else (3552, 3552)
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    command = [str(ROOT / 'target/debug/regain-device.exe'), 'zwo', 'camera-direct', '--serve']
+    command = [str(args.worker.resolve()), 'zwo', 'camera-direct', '--serve']
     if args.simulate:
         command.append('--simulate')
     with args.output.open('x', encoding='utf-8') as log:
         proc = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        timer = threading.Timer(180, proc.kill)
+        timer = threading.Timer(300 if args.long_transition_only else 180, proc.kill)
         timer.start()
         diagnostics = []
 
@@ -77,6 +80,11 @@ def main():
                 digest = hashlib.sha256(pixels).hexdigest()
                 if 'sha256' in result and result['sha256'] != digest:
                     raise RuntimeError('frame checksum mismatch')
+                # Aggregate local diagnostics only; no images or sensor samples retained.
+                sample = sorted(struct.unpack_from('<H', pixels, offset)[0]
+                                for offset in range(0, len(pixels), 128))
+                result['diagnosticRaw16P50'] = sample[len(sample) // 2]
+                result['diagnosticRaw16P90'] = sample[len(sample) * 9 // 10]
             return reply['result']
 
         def params(us=100000, width=full_width, height=full_height, fps=2.0):
@@ -99,10 +107,21 @@ def main():
         try:
             record(dict(kind='configuration', simulate=args.simulate, cameraName=args.camera_name,
                         workerSha256=hashlib.sha256(Path(command[0]).read_bytes()).hexdigest(),
+                        sourceDirty=bool(subprocess.check_output(['git', 'status', '--porcelain'], cwd=ROOT, text=True).strip()),
                         source=subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()))
             opened = call('open', dict(name=args.camera_name))
             if 'video' not in opened['captureModes']:
                 raise RuntimeError('video capability absent')
+            if args.long_transition_only:
+                call('set', dict(control=0, value=300))
+                for us in [6400000, 25000000, 25000000, 6400000, 25000000]:
+                    capture(params(us=us, fps=.5))
+                call('close')
+                proc.stdin.close()
+                if proc.wait(timeout=10) != 0:
+                    raise RuntimeError('worker failed on exit')
+                record(dict(kind='experiment-complete'))
+                return
             # No discovery calls; exact model selection refuses ambiguous matches.
             for _ in range(6):
                 capture(params())
