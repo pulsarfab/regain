@@ -1,5 +1,6 @@
-param([switch]$Hardware, [string]$Serial)
+param([switch]$Hardware, [string]$Serial, [switch]$Diagnostics, [switch]$MetadataOnly, [switch]$SkipBuild)
 $ErrorActionPreference = 'Stop'
+if ($MetadataOnly -and $Hardware) { throw 'Metadata stress must not use hardware' }
 $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $id = [Guid]::NewGuid().ToString()
 $directory = Join-Path $repo ('artifacts/ofp2-com-' + $id)
@@ -12,8 +13,11 @@ $hive = [Microsoft.Win32.RegistryHive]::CurrentUser
 $principal = [Security.Principal.WindowsPrincipal]::new([Security.Principal.WindowsIdentity]::GetCurrent())
 if ($principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { $hive = [Microsoft.Win32.RegistryHive]::LocalMachine }
 try {
-    dotnet build (Join-Path $repo 'src/Regain.Ofp2.ASCOM') -c Release -v quiet
-    if ($LASTEXITCODE) { throw 'OFP2 ASCOM build failed' }
+    if (!$SkipBuild) {
+        dotnet build (Join-Path $repo 'src/Regain.Ofp2.ASCOM') -c Release -v quiet
+        if ($LASTEXITCODE) { throw 'OFP2 ASCOM build failed' }
+    }
+    if (!(Test-Path -LiteralPath $executable)) { throw 'OFP2 ASCOM executable missing' }
     $env:REGAIN_ACCESSORY_SIMULATE = if ($Hardware) { '' } else { '1' }
     $env:REGAIN_ACCESSORY_SETTINGS = $directory
     $env:REGAIN_OFP2_WORKER = Join-Path $repo 'target/debug/regain-device.exe'
@@ -43,13 +47,19 @@ try {
     foreach ($pair in @(@('System32','first'),@('SysWOW64','second'))) {
         $role=$pair[1]
         $args = '-NoProfile -ExecutionPolicy Bypass -File "' + (Join-Path $PSScriptRoot 'test-ofp2-ascom-client.ps1') + '" -Id ' + $id + ' -Directory "' + $directory + '" -Role ' + $role
+        if ($Diagnostics) { $args += ' -Diagnostics' }
+        if ($MetadataOnly) { $args += ' -MetadataOnly -SynchronizedMetadata' }
         $children += Start-Process -FilePath "$env:WINDIR/$($pair[0])/WindowsPowerShell/v1.0/powershell.exe" -ArgumentList $args -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $directory "$role.out") -RedirectStandardError (Join-Path $directory "$role.err")
     }
     foreach ($child in $children) {
         if (!$child.WaitForExit(180000)) { throw 'COM client timed out' }
-        if ($child.ExitCode -ne 0) { Get-Content (Join-Path $directory '*.err'); throw 'COM client failed' }
+        if ($child.ExitCode -ne 0) { Get-Content (Join-Path $directory '*.out'); Get-Content (Join-Path $directory '*.err'); throw 'COM client failed' }
     }
     Get-Content (Join-Path $directory '*.out')
+    if ($MetadataOnly) {
+        Write-Output 'OFP2 simultaneous cold metadata passed in both architectures'
+        return # finally still tears down the private fixture and registration.
+    }
     if (!(Test-Path (Join-Path $directory 'second-finished'))) { throw 'Shared connection test incomplete' }
     # Both clients have closed; the worker must be gone before the server idles out.
     $workers = Get-CimInstance Win32_Process -Filter "Name='regain-device.exe'" | Where-Object ParentProcessId -eq $server.Id

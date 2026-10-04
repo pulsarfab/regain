@@ -28,6 +28,30 @@ internal static class Program {
     [DllImport("ole32.dll")] private static extern int CoSuspendClassObjects();
     private static readonly List<WeakReference> Objects=[];
     internal static int Locks;
+    // Resolve dispatch metadata on the server STA before publishing any class
+    // factories, keeping lazy CLR type-info work out of concurrent first requests.
+    // No driver instance or device connection is needed for this preparation.
+    private static IntPtr PrepareDispatchMetadata(Type driverType) {
+        var declaration=(ComDefaultInterfaceAttribute?)Attribute.GetCustomAttribute(driverType,typeof(ComDefaultInterfaceAttribute));
+        var contract=declaration?.Value ?? throw new InvalidOperationException($"{driverType.Name} has no default COM interface");
+        var pointer=Marshal.GetITypeInfoForType(contract);
+        try {
+            var info=(System.Runtime.InteropServices.ComTypes.ITypeInfo)Marshal.GetObjectForIUnknown(pointer);
+            try {
+                info.GetTypeAttr(out var attribute);
+                try {
+                    var description=(System.Runtime.InteropServices.ComTypes.TYPEATTR)Marshal.PtrToStructure(attribute,typeof(System.Runtime.InteropServices.ComTypes.TYPEATTR));
+                    if(description.guid!=contract.GUID) throw new InvalidOperationException($"Unexpected dispatch interface for {driverType.Name}: {description.guid}");
+                } finally { info.ReleaseTypeAttr(attribute); }
+                var names=contract.GetProperties().Select(p=>p.Name)
+                    .Concat(contract.GetMethods().Where(m=>!m.IsSpecialName).Select(m=>m.Name)).Distinct();
+                foreach(var name in names) info.GetIDsOfNames([name],1,new int[1]);
+                Log($"Prepared dispatch metadata {driverType.Name}: {contract.GUID}");
+            } finally { Marshal.ReleaseComObject(info); }
+            // Retain an owned reference until class objects have been revoked.
+            return pointer;
+        } catch { Marshal.Release(pointer); throw; }
+    }
     internal static void Track(object driver) { lock(Objects) Objects.Add(new WeakReference(driver)); }
     internal static void Log(string message) {
         try {
@@ -40,6 +64,7 @@ internal static class Program {
     }
     [STAThread] private static int Main(string[] args) {
         var cookies=new List<uint>();
+        var metadata=new List<IntPtr>();
         try {
             if(args.Contains("/setup")) {
                 int setup=Array.IndexOf(args,"/setup");
@@ -63,6 +88,7 @@ internal static class Program {
             var factories=new List<Factory>();
             // Register after WPF has initialized its dispatcher/COM apartment.
             app.Dispatcher.BeginInvoke(new Action(() => {
+                foreach(var type in driverTypes) metadata.Add(PrepareDispatchMetadata(type));
                 foreach(var type in driverTypes) {
                     var registration=test>=0 ? clsid : type.GUID;
                     var factory=new Factory(type); factories.Add(factory);
@@ -89,6 +115,10 @@ internal static class Program {
             timer.Start(); app.Run(); timer.Stop(); GC.KeepAlive(factories); return 0;
         } catch(Exception e) {
             Log(e.ToString()); return 1;
-        } finally { foreach(uint cookie in cookies) CoRevokeClassObject(cookie); ServerConfiguration.Shutdown(); }
+        } finally {
+            foreach(uint cookie in cookies) CoRevokeClassObject(cookie);
+            foreach(var pointer in metadata) Marshal.Release(pointer);
+            ServerConfiguration.Shutdown();
+        }
     }
 }
