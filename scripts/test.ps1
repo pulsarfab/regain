@@ -40,6 +40,12 @@ try {
     if ($LASTEXITCODE) { throw 'FocusCube3 tests failed' }
     & (Join-Path $PSScriptRoot 'test-fc3-ascom.ps1')
     & (Join-Path $PSScriptRoot 'test-ofp2-ascom.ps1')
+    # Recreate the server for every iteration; both architectures make their
+    # first metadata request together. These are assertions, not test retries.
+    foreach ($iteration in 1..20) {
+        Write-Output "OFP2 cold metadata iteration $iteration/20"
+        & (Join-Path $PSScriptRoot 'test-ofp2-ascom.ps1') -MetadataOnly -SkipBuild
+    }
     python scripts/test-eta.py
     if ($LASTEXITCODE) { throw 'ETA tests failed' }
     & (Join-Path $PSScriptRoot 'test-eta-ascom.ps1')
