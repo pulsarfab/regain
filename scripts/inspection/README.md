@@ -323,6 +323,17 @@ The matrix covers full-frame freshness, small/moved/edge regions, bins 1–4,
 gain boundaries, exposure timing and interrupted reads. Add `--long 1200` for
 a twenty-minute exposure. See [P25 results](../../docs/asi2600-p25.md).
 
+The ASI2600 full-row matrix can also target the Duo main sensor explicitly:
+
+```powershell
+python scripts/inspection/validate_asi2600_p25.py --duo --worker target/debug/regain-device.exe --long 30 --output artifacts/NEW-duo-usb2.jsonl
+```
+
+Use a capped, idle, operator-authorized camera. This selects only the Duo main
+PID, never its guide sensor. It retains statistics and hashes, not image files.
+The default without `--duo` remains the Pro P25. Do not run hardware matrices
+in automated tests or CI.
+
 ## Cooler and auxiliary recovery
 
 Disconnect other camera apps first. This Windows test needs Frida and a powered

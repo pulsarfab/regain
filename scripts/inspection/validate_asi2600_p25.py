@@ -1,4 +1,4 @@
-"""ASI2600MM Pro P25 direct dark-frame matrix, including full-frame freshness."""
+"""ASI2600MM P25/Duo direct dark-frame matrix, including full-frame freshness."""
 import argparse
 import hashlib
 import json
@@ -11,6 +11,7 @@ def main():
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--long', type=int, default=0, help='additional full-frame exposure, 0..2000 seconds')
     parser.add_argument('--worker', type=Path)
+    parser.add_argument('--duo', action='store_true', help='target ASI2600MM Duo main sensor instead of Pro P25; never open the guide camera')
     parser.add_argument('--full-rows-only', action='store_true', help='only the ten full-frame offset/timing transitions')
     args = parser.parse_args()
     if not 0 <= args.long <= 2000:
@@ -41,7 +42,7 @@ def main():
         for i, options in enumerate(cases):
             if hashlib.sha256(worker.read_bytes()).hexdigest() != digest:
                 raise RuntimeError('worker changed during hardware tests')
-            results = capture(options, worker=worker, asi2600_p25=True)
+            results = capture(options, worker=worker, asi2600_p25=not args.duo)
             valid = True
             if options['width'] == 6248 and options['gain'] == 100 and options['microseconds'] <= 2000000:
                 valid = all(abs(value - options['offset'] * 10) <= 15
@@ -50,7 +51,7 @@ def main():
                                          captures=results, freshRows=valid)) + '\n')
             output.flush()
             if not valid:
-                raise RuntimeError('offset did not reach all row bands; inspect saved statistics')
+                raise RuntimeError('offset did not reach every row; inspect saved statistics')
             print(f'case {i}: {len(results)} frames, recovery {[r["readRecoveries"] for r in results]}', flush=True)
 
 
