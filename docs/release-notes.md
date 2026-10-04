@@ -18,6 +18,10 @@ NINA, ASCOM and Alpaca single-exposure behavior is unchanged. SDK remains defaul
   malformed-frame recovery. No additional discovery or implicit USB reset.
 - Report settings generations, frame age, acquired/delivered/replaced counts
   and bounded timing diagnostics without image data or camera identities.
+- Prepare and validate serial ASCOM dispatch metadata before accepting clients,
+  retaining it for the server lifetime. Cold-start regression checks exercise
+  simultaneous first metadata reads from both Windows client architectures;
+  missing metadata remains a hard failure, not a retried or hidden error.
 
 Windows operator checks passed full-frame exposure/gain transitions from 234 ms
 through 6.4 seconds and back on ASI662MC USB 2 and ASI676MC USB 3, using both SDK
