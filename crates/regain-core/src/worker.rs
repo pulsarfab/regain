@@ -221,7 +221,8 @@ impl Worker {
             .as_u64()
             .ok_or_else(|| invalid("Missing frame length"))?;
         ensure!(
-            count <= 512 * 1024 * 1024 && (method == "download" || count == 0),
+            count <= 512 * 1024 * 1024
+                && (matches!(method, "download" | "stream-download") || count == 0),
             Failure::Invalid("Invalid worker image length".into())
         );
         if reply["ok"] == false {

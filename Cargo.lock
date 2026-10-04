@@ -592,7 +592,7 @@ checksum = "f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf"
 
 [[package]]
 name = "regain-alpaca"
-version = "0.5.7"
+version = "0.5.8"
 dependencies = [
  "anyhow",
  "axum",
@@ -612,7 +612,7 @@ dependencies = [
 
 [[package]]
 name = "regain-core"
-version = "0.5.7"
+version = "0.5.8"
 dependencies = [
  "anyhow",
  "chrono",
@@ -626,7 +626,7 @@ dependencies = [
 
 [[package]]
 name = "regain-deepskydad"
-version = "0.5.7"
+version = "0.5.8"
 dependencies = [
  "anyhow",
  "regain-transport",
@@ -637,7 +637,7 @@ dependencies = [
 
 [[package]]
 name = "regain-device"
-version = "0.5.7"
+version = "0.5.8"
 dependencies = [
  "anyhow",
  "regain-deepskydad",
@@ -649,7 +649,7 @@ dependencies = [
 
 [[package]]
 name = "regain-pegasus"
-version = "0.5.7"
+version = "0.5.8"
 dependencies = [
  "anyhow",
  "regain-transport",
@@ -660,7 +660,7 @@ dependencies = [
 
 [[package]]
 name = "regain-transport"
-version = "0.5.7"
+version = "0.5.8"
 dependencies = [
  "anyhow",
  "nusb",
@@ -673,7 +673,7 @@ dependencies = [
 
 [[package]]
 name = "regain-wanderer"
-version = "0.5.7"
+version = "0.5.8"
 dependencies = [
  "anyhow",
  "regain-transport",
@@ -684,7 +684,7 @@ dependencies = [
 
 [[package]]
 name = "regain-worker"
-version = "0.5.7"
+version = "0.5.8"
 dependencies = [
  "anyhow",
  "serde_json",
@@ -692,7 +692,7 @@ dependencies = [
 
 [[package]]
 name = "regain-zwo"
-version = "0.5.7"
+version = "0.5.8"
 dependencies = [
  "anyhow",
  "libc",

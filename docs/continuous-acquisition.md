@@ -1,8 +1,9 @@
-# Continuous acquisition (development)
+# Continuous acquisition
 
 The ASI SDK and Direct USB pipe workers expose an **opt-in** continuous path.
 Existing `start/status/download` single-exposure clients are unchanged. Merely
-updating Regain does not switch AutoPierCam or NINA to this new path.
+updating Regain does not switch existing clients to this new path. AutoPierCam
+0.2.21 explicitly opts in; NINA, ASCOM and Alpaca retain single-exposure semantics.
 
 The capture owner drains frames independently of IPC reads, output-pipe writes
 and the delivery FPS limit. A single latest-frame slot replaces older frames;
@@ -39,11 +40,21 @@ requested exposure and any terminal error. Replaced frames are deliberate
 consumer decimation, **not measured USB/SDK dropped frames**.
 
 Repeating `stream-start` with only `maxFps` changed adjusts delivery pacing,
-without reconfiguring capture. A new ROI/exposure request stops the video session,
-discards the host's buffered frame and starts a new settings generation. Raw
-legacy commands (including discovery and controls) are rejected during the stream.
-Stop before changing gain or WB. This boundary policy is intentionally conservative;
-it is not yet equivalent to ASICap's live scalar-control updates.
+without reconfiguring capture. Exposure and optional `gain` edits are coalesced
+and applied after the in-flight frame drains. SDK video and Direct 662/676 video
+update scalar controls without a stream restart. A new ROI/format/mode instead
+stops and reconfigures at that boundary. Repeated still mode also uses boundary
+reconfiguration. Invalid edits are rejected before changing the stream.
+
+Status reports `settingsPending` while an edit awaits its boundary. Applied edits
+clear the latest-frame slot and advance `settingsGeneration`. Live scalar updates
+then discard at least two frames and drain for old-plus-new exposure duration;
+`settling` stays true until this conservative transition fence clears. This is a
+buffer/timing safeguard, not an optical measurement of the settings-latch boundary.
+Clients must budget the previous exposure plus the transition fence in their
+watchdog. Fatal apply errors latch the stream fault instead of continuing with
+partially programmed settings. Raw legacy commands (including discovery and
+controls) remain rejected during the stream. Stop before changing WB.
 
 `stream-stop` immediately stops native video when the backend returns. In
 repeated-still mode it reports `stopping: true`: the owner drains the pending
@@ -85,7 +96,7 @@ Passive public-SDK-export observation on an ASI662MC/USB 2 found:
   root cause. ASICap's SDK binary also differs from the bundled SDK despite the
   same file-version string.
 
-Before implementing live exposure/gain updates, trace transitions in both
+When validating live exposure/gain updates, trace transitions in both
 directions while recording control-call begin/end, video reads and first-frame
 latency. Public SDK success alone does not establish which buffered frame first
 uses new settings. Test that transition explicitly rather than associating every
@@ -104,6 +115,49 @@ consecutive `ASIGetVideoData` calls returned timeout 11 after roughly 700 ms
 each, with approximately 100 ms between retries. ASICap did not issue stop/start
 calls and resumed successful reads. Settings were restored to RAW16, 234 ms,
 gain 300 afterward. The trace was detached and no camera frames were saved.
+
+### USB control ordering observed in ASICap (ASI662MC, USB 2)
+
+A bounded passive trace of the SDK's public exports and fixed USB control
+headers followed 234 ms -> 900 ms -> 1 s -> 2 s -> 6 s -> 1 s -> 234 ms,
+plus gain 300 -> 270 -> 300 while video remained active. ASICap's seconds
+control rounded an attempted 1.6 s entry to 2 s; the SDK trace confirmed 2 s.
+Across the two trace windows, 981 completed video reads, eight scalar writes
+and 661 observed control transfers succeeded. The displayed dropped-frame
+count stayed at its pre-existing value of one. No public video stop/start,
+USB A9/AA command, or sensor standby write (B6/3000) was observed. These are
+short local transition checks, not a remote-fault reproduction or soak test.
+
+- Exposure writes took 5-10 ms. The SDK updated FPGA frame length BD/0010..12
+  under BD/0001 hold, released it, then updated sensor shutter B6/3050..52
+  under B6/3001 hold. Thus **separate FPGA and sensor holds are also SDK
+  behavior**, not by themselves evidence of an atomicity bug in Regain.
+- Entering long mode at 1 s updated FPGA register zero from 21 -> 61 -> E1
+  (hex); leaving it updated E1 -> 61 -> 21. These mode-bit writes preceded
+  the timing words. Regain's full `bayer::configure` currently writes timing
+  words before its combined mode-bit write in 0.5.7. This is an observed ordering
+  difference, not proof of the remote failure's cause.
+- Gain used a five-write held sensor batch (3001, 3030, 3070, 3071, 3001),
+  taking about 3 ms. It did not rebuild ROI, calibration or the stream.
+- Long-mode acquisition continued on the SDK's internal worker, manipulating
+  FPGA 000B and 0019. During one 2 -> 6 s update, that worker's wake write
+  interleaved with the control thread's shutter-register batch. The SDK does
+  not enforce a blanket quiet period around every scalar update.
+- On return to 234 ms, the in-flight long-mode read completed 144 ms after
+  `ASISetControlValue` returned; subsequent reads settled to about 234 ms.
+  This again rules out treating control completion as a guarantee that the
+  next returned frame was acquired entirely with the new settings.
+
+The 0.5.8 implementation retains full stop/configure/start for structural
+changes such as ROI/format, and uses targeted exposure/gain updates
+for an unchanged stream. It preserves held-write ordering and explicitly handles
+short/long-mode transitions and fence transitional frames. Do not add an
+arbitrary post-write delay or copy SDK thread concurrency as a substitute for
+a serialized, tested control/trigger state machine. The trace did not exercise
+full stream startup, establish an optical settings-latch boundary, or validate
+this sequence on ASI676/2600/6200. Both passive observers detached; ASICap was
+restored to RAW16, manual 234 ms, gain 300 and remained acquiring. Only control
+headers/register values and API timing were recorded, not frame payloads.
 
 ## Verification
 

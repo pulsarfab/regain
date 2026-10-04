@@ -72,7 +72,7 @@ pub unsafe extern "C" fn ASIGetSerialNumber(_: c_int, out: *mut u8) -> c_int {
 }
 #[no_mangle]
 pub unsafe extern "C" fn ASIGetNumOfControls(_: c_int, out: *mut c_int) -> c_int {
-    *out = 3;
+    *out = 5;
     0
 }
 #[no_mangle]
@@ -82,9 +82,9 @@ pub unsafe extern "C" fn ASIGetControlCaps(
     out: *mut raw::ControlCaps,
 ) -> c_int {
     let mut caps: raw::ControlCaps = std::mem::zeroed();
-    caps.control_type = [3, 4, 9][index as usize];
+    caps.control_type = [3, 4, 9, 0, 1][index as usize];
     caps.min_value = 0;
-    caps.max_value = 100;
+    caps.max_value = if caps.control_type == 1 { 2_000_000_000 } else if caps.control_type == 0 { 600 } else { 100 };
     caps.is_auto_supported = 1;
     caps.is_writable = 1;
     *out = caps;
@@ -192,7 +192,7 @@ pub extern "C" fn ASIStopVideoCapture(_: c_int) -> c_int {
 #[no_mangle]
 pub unsafe extern "C" fn ASIGetVideoData(_: c_int, data: *mut u8, size: c_long, wait: c_int) -> c_int {
     let mut s = STATE.lock().unwrap();
-    if !s.video || wait != 502 { return 16; }
+    if !s.video || !(500..=1000).contains(&wait) { return 16; }
     if size != c_long::from(s.width) * c_long::from(s.height) * 2 { return 9; }
     if s.timeout_at.is_some_and(|t| t.elapsed() < std::time::Duration::from_millis(90)) { return 16; }
     s.video_reads += 1;

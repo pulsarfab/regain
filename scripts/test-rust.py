@@ -425,6 +425,18 @@ def continuous_sdk_fixture(binary_dir):
                     assert after["acquiredFrames"] > status["acquiredFrames"] + 5, (status, after)
                     worker.call("stream-start", dict(p, maxFps=0.1))
                     assert worker.call("stream-status")[0]["settingsGeneration"] == 1
+                    for exposure, gain in [(900000, 270), (1000000, 300), (2000, 100)]:
+                        worker.call("stream-start", dict(p, microseconds=exposure, gain=gain))
+                        deadline = time.monotonic() + 5
+                        while True:
+                            changed = worker.call("stream-status")[0]
+                            assert changed["error"] is None, changed
+                            if not changed["settingsPending"] and not changed["settling"] and changed["ready"]:
+                                break
+                            assert time.monotonic() < deadline, changed
+                            time.sleep(0.02)
+                        metadata, _ = worker.call("stream-download")
+                        assert metadata["settingsGeneration"] == changed["settingsGeneration"]
                 worker.call("stream-stop")
                 worker.call("close")
                 worker.log.seek(0)

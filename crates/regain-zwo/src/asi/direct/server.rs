@@ -602,6 +602,12 @@ impl Worker {
                                     .transfer_timeout(settings.transfer_timeout_seconds)
                                     .expect("validated transfer timeout");
                                 if video_mode {
+                                    if let Some(session) = video.as_mut()
+                                        && settings.continuous_drain
+                                        && session.can_update(&settings)
+                                    {
+                                        session.update(camera, info, &settings)?;
+                                    }
                                     if video.as_ref().is_none_or(|v| !v.matches(&settings)) {
                                         if let Some(mut old) = video.take() {
                                             old.stop(camera)?;
@@ -1041,7 +1047,8 @@ impl Host {
                     .as_ref()
                     .ok_or_else(|| anyhow::anyhow!("camera is not open"))?;
                 ensure!(
-                    self.pending.is_none() && self.frame.is_none() && !self.reconnect_required,
+                    (method == "validate" || (self.pending.is_none() && self.frame.is_none()))
+                        && !self.reconnect_required,
                     "exposure pending or reconnect required after cleanup failure"
                 );
                 let bin = number("bin")?;
@@ -1052,6 +1059,9 @@ impl Host {
                 settings.x = number("x")?;
                 settings.y = number("y")?;
                 settings.microseconds = number("microseconds")?;
+                if params.get("gain").is_some() {
+                    settings.gain = number("gain")?;
+                }
                 if !params["readRetries"].is_null() {
                     settings.read_retries = number("readRetries")?;
                 }
@@ -1067,7 +1077,8 @@ impl Host {
                         && settings.transfer_timeout_seconds <= 3600.0,
                     "invalid transfer deadline"
                 );
-                self.model.validate(&settings, self.gain, bin)?;
+                let gain = i32::try_from(settings.gain)?;
+                self.model.validate(&settings, gain, bin)?;
                 let mode = params.get("mode").map_or(Some("still"), Value::as_str);
                 ensure!(
                     matches!(mode, Some("still" | "video")),
@@ -1176,7 +1187,7 @@ impl Host {
                         .send(Work::Capture(
                             settings,
                             video_mode,
-                            self.gain,
+                            gain,
                             bin,
                             Duration::from_secs_f64(seconds),
                             self.simulated_delay,

@@ -20,6 +20,11 @@ pub struct Exposure {
     dark: bool,
 }
 impl Exposure {
+    fn same_geometry(&self, other: &Self) -> bool {
+        let mut prior = self.clone();
+        prior.microseconds = other.microseconds;
+        prior == *other
+    }
     fn size(&self) -> Result<usize> {
         ensure!(
             self.width > 0
@@ -261,28 +266,69 @@ impl Host {
                 );
                 if let Some(s) = &self.sdk {
                     s.set(c, v)?;
+                    self.values[c.to_string()] = json!(v);
                 } else {
                     let minimum = self.values[format!("clampMinimum:{c}")].as_i64();
                     self.values[c.to_string()] = json!(minimum.map_or(v, |m| v.max(m)));
                 }
                 json!(null)
             }
-            "start" => {
+            "validate" | "start" => {
                 ensure!(self.opened, "not open");
-                ensure!(self.exposure.is_none(), "exposure pending");
+                ensure!(
+                    method == "validate" || self.exposure.is_none(),
+                    "exposure pending"
+                );
                 let mode = p.get("mode").map_or(Some("still"), Value::as_str);
                 ensure!(
                     matches!(mode, Some("still" | "video")),
                     "unknown capture mode"
                 );
                 let video = mode == Some("video");
-                let e: Exposure = serde_json::from_value(p)?;
+                let e: Exposure = serde_json::from_value(p.clone())?;
                 e.size()?;
+                for (key, control) in [("microseconds", 1), ("gain", 0)] {
+                    if let Some(value) = p.get(key) {
+                        let value = value
+                            .as_i64()
+                            .ok_or_else(|| anyhow::anyhow!("invalid {key}"))?;
+                        let cap = self.camera["controls"]
+                            .as_array()
+                            .and_then(|caps| caps.iter().find(|c| c["type"] == control))
+                            .ok_or_else(|| anyhow::anyhow!("missing {key} capability"))?;
+                        ensure!(
+                            cap["min"].as_i64().is_some_and(|min| value >= min)
+                                && cap["max"].as_i64().is_some_and(|max| value <= max),
+                            "{key} outside camera limits"
+                        );
+                    }
+                }
                 ensure!(
                     !video || !e.dark,
                     "video does not support shutter dark exposures"
                 );
-                let reuse = video && self.video.as_ref() == Some(&e);
+                if method == "validate" {
+                    return Ok((Value::Null, bytes));
+                }
+                let reuse = video
+                    && self.video.as_ref().is_some_and(|old| {
+                        old == &e || (p["continuousDrain"] == true && old.same_geometry(&e))
+                    });
+                if let Some(gain) = p["gain"].as_i64()
+                    && self.values["0"].as_i64() != Some(gain)
+                {
+                    if let Some(s) = &self.sdk {
+                        s.set(0, gain)?;
+                    }
+                    self.values["0"] = json!(gain);
+                }
+                if reuse && self.video.as_ref() != Some(&e) {
+                    if let Some(s) = &self.sdk {
+                        s.set(1, e.microseconds)?;
+                    }
+                    self.video = Some(e.clone());
+                    self.video_progress = Some(Instant::now());
+                }
                 if !reuse {
                     self.stop_video()?;
                 }
@@ -410,7 +456,8 @@ impl Host {
                     // Already drained on the same owner thread by status.
                 } else if let Some(s) = &self.sdk {
                     s.download(&mut bytes)?;
-                } else {
+                }
+                if self.sdk.is_none() {
                     for (i, pixel) in bytes.as_chunks_mut::<2>().0.iter_mut().enumerate() {
                         pixel.copy_from_slice(&(i as u16).to_le_bytes());
                     }

@@ -13,6 +13,9 @@ type Frame = (Value, Vec<u8>);
 #[derive(Default)]
 struct Stream {
     params: Option<Value>,
+    requested: Option<Value>,
+    settling_until: Option<Instant>,
+    discard_frames: u32,
     latest: Option<Frame>,
     failure: Option<String>,
     failure_details: Value,
@@ -52,7 +55,11 @@ impl Stream {
             }
         }
         self.params = None;
+        self.requested = None;
+        self.settling_until = None;
+        self.discard_frames = 0;
         self.latest = None;
+        self.delivered_at = None;
         self.failure = None;
         self.failure_details = Value::Null;
         self.stopping = false;
@@ -100,10 +107,15 @@ impl Stream {
                     "stream faulted; stop before restarting"
                 );
                 if self.params.as_ref() != Some(&p) {
-                    ensure!(
-                        self.params.as_ref().is_none_or(|p| p["mode"] != "still"),
-                        "stop the repeated-still stream and wait for its exposure boundary before reconfiguration"
-                    );
+                    command("validate", p.clone())?;
+                    if self.params.is_some() {
+                        // The acquisition owner applies edits only after draining
+                        // the in-flight frame, never midway through a Direct trigger.
+                        self.requested = Some(p);
+                        self.latest = None;
+                        self.interval = Duration::from_secs_f64(1.0 / fps);
+                        return Ok((self.status(), Vec::new()));
+                    }
                     let began = Instant::now();
                     self.stop(command)?;
                     let stopped_ms = began.elapsed().as_millis();
@@ -126,6 +138,8 @@ impl Stream {
                     self.last_frame_at = None;
                     self.reported_at = self.configured_at;
                     // Keep delivery cadence across settings changes.
+                } else {
+                    self.requested = None;
                 }
                 self.interval = Duration::from_secs_f64(1.0 / fps);
                 Ok((self.status(), Vec::new()))
@@ -146,6 +160,7 @@ impl Stream {
                 Ok((metadata, bytes))
             }
             "stream-stop" => {
+                self.requested = None;
                 if self.failure.is_none()
                     && self.params.as_ref().is_some_and(|p| p["mode"] == "still")
                 {
@@ -176,7 +191,7 @@ impl Stream {
                     self.delivered_at = None;
                     self.generation = 0;
                     v["continuousAcquisition"] = json!({"supported":true,"buffer":"latest-only",
-                        "fpsScope":"delivery","settingsChange":"restart-boundary"});
+                        "fpsScope":"delivery","settingsChange":"scalar-boundary-structural-restart"});
                     self.camera = v.clone();
                 }
                 Ok((v, bytes))
@@ -189,6 +204,8 @@ impl Stream {
             "error":self.failure,"errorDetails":self.failure_details,"acquiredFrames":self.acquired,"deliveredFrames":self.delivered,
             "replacedFrames":self.replaced,"mode":self.params.as_ref().map(|p| &p["mode"]),
             "fpsScope":"delivery", "stopping":self.stopping,"settingsGeneration":self.generation,
+            "settingsPending":self.requested.is_some(),
+            "settling":self.discard_frames > 0 || self.settling_until.is_some_and(|t| Instant::now() < t),
             "lastFrameAgeMilliseconds":self.last_frame_at.map(|t| t.elapsed().as_millis()),
             "exposureMicroseconds":self.params.as_ref().map(|p| &p["microseconds"])})
     }
@@ -214,9 +231,51 @@ impl Stream {
                 self.stopping = false;
                 return Ok(());
             }
+            if let Some(next) = self.requested.take() {
+                let live = scalar_update(&params, &next);
+                if !live {
+                    command("stop", Value::Null)?;
+                }
+                command("start", next.clone())?;
+                self.latest = None;
+                self.generation += 1;
+                self.configured_at = Some(Instant::now());
+                // A successful register write does not identify the first new
+                // sensor frame. Drain transition data for old+new integration
+                // and at least two reads; never label buffered data as settled.
+                self.discard_frames = if live { 2 } else { 0 };
+                self.settling_until = live.then(|| {
+                    Instant::now()
+                        + Duration::from_micros(
+                            params["microseconds"]
+                                .as_u64()
+                                .unwrap_or(0)
+                                .saturating_add(next["microseconds"].as_u64().unwrap_or(0)),
+                        )
+                });
+                diagnostic(
+                    "stream.settings_applied",
+                    json!({"settingsGeneration":self.generation,
+                    "settingsChange":if live {"scalar-boundary"} else {"restart-boundary"},
+                    "exposureMicroseconds":next["microseconds"],"gain":next["gain"],
+                    "transitionFramesToDiscard":self.discard_frames}),
+                );
+                self.params = Some(next);
+                return Ok(());
+            }
+            if self.discard_frames > 0 || self.settling_until.is_some_and(|t| Instant::now() < t) {
+                self.discard_frames = self.discard_frames.saturating_sub(1);
+                command("start", params)?;
+                return Ok(());
+            }
+            self.settling_until = None;
             self.acquired += 1;
+            let first_for_generation = self.last_frame_at.is_none_or(|last| {
+                self.configured_at
+                    .is_some_and(|configured| last < configured)
+            });
             self.last_frame_at = Some(Instant::now());
-            if self.acquired == 1 {
+            if first_for_generation {
                 diagnostic(
                     "stream.first_frame",
                     json!({"settingsGeneration":self.generation,
@@ -252,6 +311,21 @@ impl Stream {
             );
         }
     }
+}
+
+fn scalar_update(old: &Value, new: &Value) -> bool {
+    if old["mode"] != "video" || new["mode"] != "video" {
+        return false;
+    }
+    let mut prior = old.clone();
+    for key in ["microseconds", "gain"] {
+        if let Some(value) = new.get(key) {
+            prior[key] = value.clone();
+        } else if let Some(object) = prior.as_object_mut() {
+            object.remove(key);
+        }
+    }
+    prior == *new
 }
 
 fn diagnostic(event: &str, details: Value) {
@@ -415,10 +489,106 @@ mod tests {
         assert!(s.latest.is_some());
         s.command("stream-start", json!({"microseconds":2000}), &mut backend)
             .unwrap();
+        assert_eq!(s.generation, 1);
+        assert!(s.latest.is_none());
+        s.tick(&mut backend);
         assert_eq!(s.generation, 2);
+        assert!(s.latest.is_none());
+        s.settling_until = Some(Instant::now());
+        s.tick(&mut backend);
+        s.tick(&mut backend);
         assert!(s.latest.is_none());
         s.tick(&mut backend);
         assert_eq!(s.latest.unwrap().0["settingsGeneration"], 2);
+    }
+    #[test]
+    fn explicit_stop_resets_delivery_cadence_for_a_new_session() {
+        let mut s = Stream::default();
+        start(&mut s, json!({"microseconds":1000,"maxFps":0.01}));
+        s.tick(&mut backend);
+        s.command("stream-download", Value::Null, &mut backend)
+            .unwrap();
+        s.command("stream-stop", Value::Null, &mut backend).unwrap();
+        s.command(
+            "stream-start",
+            json!({"microseconds":1000,"maxFps":0.01}),
+            &mut backend,
+        )
+        .unwrap();
+        s.tick(&mut backend);
+        assert!(s.ready(Instant::now()));
+    }
+    #[test]
+    fn scalar_changes_are_coalesced_at_boundary_without_restart() {
+        let mut s = Stream::default();
+        start(&mut s, json!({"microseconds":1000,"gain":100}));
+        let mut calls = Vec::new();
+        let mut observed = |method: &str, p: Value| {
+            calls.push((method.to_string(), p.clone()));
+            backend(method, p)
+        };
+        for exposure in [2000, 3000] {
+            s.command(
+                "stream-start",
+                json!({"microseconds":exposure,"gain":200}),
+                &mut observed,
+            )
+            .unwrap();
+        }
+        s.tick(&mut observed);
+        assert_eq!(s.params.as_ref().unwrap()["microseconds"], 3000);
+        assert_eq!(s.params.as_ref().unwrap()["gain"], 200);
+        assert_eq!(calls.iter().filter(|(m, _)| m == "start").count(), 1);
+        assert!(!calls.iter().any(|(m, _)| m == "stop"));
+        assert_eq!(s.discard_frames, 2);
+    }
+    #[test]
+    fn structural_or_still_changes_restart_only_after_draining() {
+        for mode in ["video", "still"] {
+            let mut s = Stream::default();
+            start(&mut s, json!({"microseconds":1000,"width":64,"mode":mode}));
+            let mut calls = Vec::new();
+            let mut observed = |method: &str, p: Value| {
+                calls.push(method.to_string());
+                backend(method, p)
+            };
+            s.command(
+                "stream-start",
+                json!({"microseconds":2000,"width":128,"mode":mode}),
+                &mut observed,
+            )
+            .unwrap();
+            s.tick(&mut observed);
+            assert_eq!(calls, ["validate", "status", "download", "stop", "start"]);
+            assert!(s.latest.is_none());
+        }
+    }
+    #[test]
+    fn rejected_edit_preserves_active_stream_and_failed_apply_latches_fault() {
+        let mut s = Stream::default();
+        start(&mut s, json!({"microseconds":1000}));
+        assert!(
+            s.command(
+                "stream-start",
+                json!({"microseconds":0}),
+                &mut |_, _| bail!("invalid")
+            )
+            .is_err()
+        );
+        assert!(s.requested.is_none());
+        assert!(s.failure.is_none());
+        s.command("stream-start", json!({"microseconds":2000}), &mut backend)
+            .unwrap();
+        s.tick(&mut |method, p| {
+            if method == "start" {
+                bail!("write failed")
+            } else {
+                backend(method, p)
+            }
+        });
+        assert!(s.failure.is_some());
+        assert!(s.latest.is_none());
+        s.tick(&mut |_, _| panic!("fault must not retrigger"));
     }
     #[test]
     fn invalid_fps_and_concurrent_legacy_calls_do_not_touch_backend() {

@@ -1,31 +1,39 @@
-# PulsarFab regain 0.5.7.0
+# PulsarFab regain 0.5.8.0
 
-This patch hardens experimental ASI662MC and ASI676MC Direct USB video against
-a transient malformed frame. SDK and retained still capture remain defaults;
-NINA, ASCOM and Alpaca clients do not switch modes automatically.
+Adds opt-in continuous ZWO acquisition for preview/capture consumers. Existing
+NINA, ASCOM and Alpaca single-exposure behavior is unchanged. SDK remains default.
 
-- Discard one invalid video frame envelope, restart the stream on the same
-  camera handle and acquire a fresh validated frame before reporting failure.
-- Honor the FPS cap during recovery, preserve cancellation, and advertise the
-  bounded recovery allowance to consumers. Never substitute replayed pixels.
-- A second malformed frame, partial transfer or unrelated error remains
-  visible. No discovery sweeps or physical USB resets are added.
-- Add simulated SDK failed-exposure statuses for consumer recovery tests.
+- Drain on the exclusive camera owner independently of IPC and consumer FPS,
+  retaining one latest frame instead of accumulating old frames.
+- Use native SDK video for SDK cameras. Direct ASI662MC/ASI676MC use native video
+  through 30 seconds; other supported Direct families and longer exposures use
+  repeated still capture, not an invented native video protocol.
+- Apply exposure/gain edits at a drained frame boundary without restarting
+  native video. Structural changes still stop/reconfigure/restart. Clear pending
+  frames and fence settings transitions before labeling new frames settled.
+- Match the observed ASICap long-exposure mode-bit and held timing-write order
+  for Direct ASI662MC/ASI676MC. Keep unchanged settings free of per-frame writes.
+- Treat SDK video read timeout as a bounded wait with backoff, not an immediate
+  exposure fault. Preserve terminal errors, cancellation and existing bounded
+  malformed-frame recovery. No additional discovery or implicit USB reset.
+- Report settings generations, frame age, acquired/delivered/replaced counts
+  and bounded timing diagnostics without image data or camera identities.
 
-Validation: 67 ZWO library tests and strict lint passed. Operator-authorized
-ASI662MC USB 2 checks passed the 6.4/25/25/6.4/25-second gain-300 sequence on
-both released and candidate workers. Local AutoPierCam checks also passed
-seven fixed 60-second frames per backend and an adaptive video-to-still ramp.
-The reported USB 2 boundary failure was not reproduced locally; synthetic
-faults verify recovery behavior, not the remote system's fault cause.
+Windows operator checks passed full-frame exposure/gain transitions from 234 ms
+through 6.4 seconds and back on ASI662MC USB 2 and ASI676MC USB 3, using both SDK
+and Direct USB with a 0.5 FPS delivery cap. Automated tests use simulators and
+an inert SDK fixture, including slow consumers and blocked output pipes.
 
-Optical accuracy, cold startup, physical-disconnect recovery, long-running
-stability and Linux/macOS video hardware remain unvalidated. No private images,
-camera identities, raw traces or calibration payloads are bundled.
+The remote hard-lock failure was not reproduced. These changes align acquisition
+and control sequencing with observed ASICap behavior; they do not establish a
+firmware, interference or power diagnosis. Optical accuracy, cold startup,
+physical-disconnect recovery, long-running stability, other camera hardware and
+Linux/macOS continuous hardware remain unvalidated. No private images, camera
+identities, raw traces or calibration payloads are bundled.
 
-For Windows ASCOM and Alpaca, use `Regain-ASCOM-0.5.7.0-win-x64-setup.exe`.
+For Windows ASCOM and Alpaca, use `Regain-ASCOM-0.5.8.0-win-x64-setup.exe`.
 Install NINA from `https://nina-plugins.pulsarfab.com/` or
-`https://nina-plugins.psf-guard.com/`, or use `Regain-0.5.7.0.zip` manually.
-Plugin identity and minimum NINA version are unchanged. Rust version is 0.5.7.
+`https://nina-plugins.psf-guard.com/`, or use `Regain-0.5.8.0.zip` manually.
+Plugin identity and minimum NINA version are unchanged. Rust version is 0.5.8.
 Windows release programs are signed by StackFoundry LLC. Existing published
 assets are unchanged; dependency licenses remain included.
