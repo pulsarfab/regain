@@ -68,7 +68,8 @@ SDK video polling uses the documented `2 × exposure + 500 ms` wait, capped at
 1 second per call so the same owner can service requests. A normal timeout is
 not an exposure failure; retries back off 100 ms, without stopping the stream.
 Delivered SDK video metadata includes the cumulative timeout count. An independent no-frame deadline is `2 × exposure +
-30 seconds`; other SDK errors remain terminal. Clients must allow more than
+30 seconds`, retaining the prior exposure for two successful reads after a live
+decrease; other SDK errors remain terminal. Clients must allow more than
 one second for ordinary stream commands and retain process-level watchdogs for
 SDK/kernel calls that fail to honor their deadlines. No USB reset is implicit.
 

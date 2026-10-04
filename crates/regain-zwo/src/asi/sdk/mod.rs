@@ -9,6 +9,27 @@ use serde_json::{Value, json};
 use std::time::{Duration, Instant};
 
 const MAX_FRAME: usize = 512 * 1024 * 1024;
+#[derive(Default)]
+struct VideoGrace {
+    prior_us: i64,
+    reads: u8,
+}
+impl VideoGrace {
+    fn changed(&mut self, prior_us: i64) {
+        self.prior_us = self.prior_us.max(prior_us);
+        self.reads = 2;
+    }
+    fn received(&mut self) {
+        self.reads = self.reads.saturating_sub(1);
+        if self.reads == 0 {
+            self.prior_us = 0;
+        }
+    }
+    fn deadline(&self, current_us: i64) -> Duration {
+        Duration::from_micros(current_us.max(self.prior_us).max(1) as u64).saturating_mul(2)
+            + Duration::from_secs(30)
+    }
+}
 #[derive(Clone, PartialEq, Deserialize)]
 pub struct Exposure {
     width: i32,
@@ -62,6 +83,7 @@ struct Host {
     video_progress: Option<Instant>,
     video_retry_at: Option<Instant>,
     video_timeouts: u64,
+    video_grace: VideoGrace,
 }
 impl Host {
     fn stop_video(&mut self) -> Result<()> {
@@ -76,6 +98,7 @@ impl Host {
         self.video_progress = None;
         self.video_retry_at = None;
         self.video_timeouts = 0;
+        self.video_grace = VideoGrace::default();
         Ok(())
     }
     fn require_unflipped(&self) -> Result<()> {
@@ -326,6 +349,11 @@ impl Host {
                     if let Some(s) = &self.sdk {
                         s.set(1, e.microseconds)?;
                     }
+                    // A live control write can leave an old, longer integration
+                    // queued inside the SDK. Do not time it out using the new
+                    // shorter exposure. Retire this bounded grace after two reads.
+                    self.video_grace
+                        .changed(self.video.as_ref().unwrap().microseconds);
                     self.video = Some(e.clone());
                     self.video_progress = Some(Instant::now());
                 }
@@ -380,6 +408,7 @@ impl Host {
                                 })
                         };
                         if self.video_ready {
+                            self.video_grace.received();
                             self.video_progress = Some(Instant::now());
                             self.video_retry_at = None;
                         } else {
@@ -389,10 +418,9 @@ impl Host {
                                     Some(Instant::now() + Duration::from_millis(100));
                             }
                             ensure!(
-                                self.video_progress.is_some_and(|t| t.elapsed()
-                                    < Duration::from_micros(e.microseconds as u64)
-                                        .saturating_mul(2)
-                                        + Duration::from_secs(30)),
+                                self.video_progress.is_some_and(
+                                    |t| t.elapsed() < self.video_grace.deadline(e.microseconds)
+                                ),
                                 "SDK video produced no frame within its exposure/readout deadline"
                             );
                         }
@@ -594,6 +622,7 @@ pub fn run(args: Vec<String>) -> Result<()> {
         video_progress: None,
         video_retry_at: None,
         video_timeouts: 0,
+        video_grace: VideoGrace::default(),
         sim_info: json!({"id":0,"name":"ZWO Simulated","width":960,"height":640,"color":true,"bayer":0,"pixelSize":3.76,"bitDepth":16,"cooled":true,"shutter":false,"bins":[1,2,4],"formats":[0,2]}),
     };
     if let Some(options) = command {
@@ -620,6 +649,18 @@ mod tests {
     use super::*;
 
     #[test]
+    fn video_deadline_retains_old_integration_for_two_reads_after_decrease() {
+        let mut grace = VideoGrace::default();
+        grace.changed(60_000_000);
+        assert_eq!(grace.deadline(234_000), Duration::from_secs(150));
+        grace.received();
+        assert_eq!(grace.deadline(234_000), Duration::from_secs(150));
+        grace.received();
+        assert_eq!(grace.deadline(234_000), Duration::from_millis(30_468));
+        assert_eq!(grace.deadline(120_000_000), Duration::from_secs(270));
+    }
+
+    #[test]
     fn sdk_discovery_is_rejected_until_camera_is_closed() {
         let mut host = Host {
             sdk: None,
@@ -638,6 +679,7 @@ mod tests {
             video_progress: None,
             video_retry_at: None,
             video_timeouts: 0,
+            video_grace: VideoGrace::default(),
         };
         assert!(host.command("list", Value::Null).is_ok());
         assert_eq!(
