@@ -51,11 +51,23 @@ continue producing frames, gaps are reported, and buffered frames are not
 guaranteed to be the newest scene after a slow consumer resumes.
 
 Video never replays a retained exposure (`readRetries` must be omitted or zero).
-Duplicate/backward frame sequences and incomplete envelopes fail capture and stop
-the stream. Shared software WB/AWB remains opt-in. `dark: true` is rejected;
+Current source discards a complete transfer with bad boundary markers or mismatched
+boundary sequence, stops/reinitializes the stream, and attempts **one fresh exposure**
+inside the same request. It never delivers the rejected pixels or resets a USB port.
+The replacement grab respects the FPS interval and cancellation. A second bad frame,
+failed stop/reinitialization, incomplete transfer, or other hardware error remains
+fatal; duplicate/backward video sequences are also fatal. Recovery logs
+`video.frame_discarded` / `video.framing_recovered` and returns `framingRecoveries`.
+This bounds a transient error; it does not establish the cause of reported USB 2
+framing loss or guarantee long-running stability.
+Shared software WB/AWB remains opt-in. `dark: true` is rejected;
 physically cap the camera when collecting dark video.
 
-`open` advertises `captureModes` and `videoMaxExposureMicroseconds`. Example
+`open` advertises `captureModes`, `videoMaxExposureMicroseconds`, and
+`videoFrameRecoveryAttempts: 1`. Clients imposing their own frame deadline must
+allow two exposures, two FPS intervals and stream-restart/transfer overhead. The
+worker's default watchdog includes both attempts; an explicit capture deadline
+remains authoritative. Example
 `start` parameters for one requested video frame:
 
 ```json
@@ -63,6 +75,13 @@ physically cap the camera when collecting dark video.
 ```
 
 The research CLI also supports `--capture-662 --video --max-fps 0.5 --frames 3`.
+
+For the reported gain-300, 6.4 s → 25 s USB 2 transition, the manual
+`scripts/inspection/check_video.py --long-transition-only --output <local.jsonl>`
+profile captures that transition twice plus a repeated 25 s frame. It requires
+an idle, operator-authorized camera, validates lengths/checksums, and keeps only
+metadata/aggregate brightness diagnostics, not images. `--worker` selects an
+explicit comparison binary; `--simulate` never opens hardware.
 `--stream` alone still means binary output framing, not video acquisition.
 
 ### Video evidence and limits

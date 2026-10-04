@@ -2,6 +2,45 @@
 use anyhow::{Result, ensure};
 use serde_json::{Value, json};
 
+/// A complete transfer with an invalid envelope is safe to discard, never publish.
+/// Keep this typed so recovery cannot accidentally swallow unrelated I/O errors.
+#[derive(Debug)]
+pub struct FrameBoundaryError(pub &'static str);
+impl std::fmt::Display for FrameBoundaryError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.0)
+    }
+}
+impl std::error::Error for FrameBoundaryError {}
+
+#[cfg(test)]
+mod boundary_error_tests {
+    use super::*;
+    #[test]
+    fn only_complete_malformed_envelopes_are_recoverable() {
+        assert!(
+            !frame_sequence(&[0; 8], 16)
+                .unwrap_err()
+                .is::<FrameBoundaryError>()
+        );
+        assert!(
+            frame_sequence(&[0; 16], 16)
+                .unwrap_err()
+                .is::<FrameBoundaryError>()
+        );
+        let mut bytes = [0; 16];
+        bytes[..4].copy_from_slice(&[0x7e, 0x5a, 1, 0]);
+        bytes[12..].copy_from_slice(&[2, 0, 0xf0, 0x3c]);
+        assert!(
+            frame_sequence(&bytes, 16)
+                .unwrap_err()
+                .is::<FrameBoundaryError>()
+        );
+        bytes[12] = 1;
+        assert_eq!(frame_sequence(&bytes, 16).unwrap(), 1);
+    }
+}
+
 #[cfg(windows)]
 pub const HEADER: usize = 38;
 #[cfg(windows)]
@@ -15,16 +54,14 @@ pub const BULK: u32 = 0x22004b;
 /// Matching sequence is an alignment check, not proof of a fresh exposure.
 pub fn frame_sequence(data: &[u8], expected: usize) -> Result<u16> {
     ensure!(expected >= 16 && data.len() == expected, "incomplete frame");
-    ensure!(
-        data[..2] == [0x7e, 0x5a] && data[data.len() - 2..] == [0xf0, 0x3c],
-        "invalid frame boundary markers"
-    );
+    if data[..2] != [0x7e, 0x5a] || data[data.len() - 2..] != [0xf0, 0x3c] {
+        return Err(FrameBoundaryError("invalid frame boundary markers").into());
+    }
     let first = u16_at(data, 2);
     let last = u16_at(data, data.len() - 4);
-    ensure!(
-        first != 0 && first == last,
-        "frame boundary sequence mismatch"
-    );
+    if first == 0 || first != last {
+        return Err(FrameBoundaryError("frame boundary sequence mismatch").into());
+    }
     Ok(first)
 }
 

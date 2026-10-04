@@ -389,7 +389,7 @@ pub fn run(args: Vec<String>) -> Result<()> {
             for frame in 0..frames {
                 let (metadata, data) = if let Some(session) = &mut video_session {
                     pacer.wait(settings.video_max_fps, &cancelled)?;
-                    let frame = session.next(&camera, &cancelled)?;
+                    let frame = session.next(&camera, &result, &cancelled)?;
                     pacer.completed();
                     frame
                 } else if asi662 {
