@@ -88,8 +88,15 @@ USB bus faults, physical disconnect/reset, optical accuracy, cold power-up,
 long exposures beyond 30 seconds, or a complete installed-app SDK-to-direct
 handoff. Long frames were saturated under available illumination.
 
-**ASI2600MM Duo and ASI6200 P25's new USB 2 paths are not yet
-hardware-validated.** ASI2600MM Pro P25 passed the follow-up matrix linked above.
+**ASI2600MM Duo's new USB 2 path is not yet hardware-validated.**
+ASI2600MM Pro P25 passed the follow-up matrix linked above.
+ASI6200 P25 passed USB 2 transfers, bins/ROI and recovery. Its initial dark-offset
+matrix stopped near one second with an elevated pedestal; the operator then
+secured the cap, and that case passed unchanged. See the
+[qualified P25 result](usb2-coverage-spike.md#asi6200-p25-follow-up-hardware-result).
+All capped every-row offset transitions passed, but gain 700 exceeded the
+stricter individual-row uniformity threshold. This is not a clean full-matrix
+sign-off; complete transfers and identical replay alone do not resolve it.
 The original ASI6200 passed full-frame USB 2 capture, offset freshness and
 retained recovery, but its stronger high-gain row-uniformity check failed (also
 seen in saved USB 3 evidence). See the [qualified result](usb2-coverage-spike.md#original-asi6200-follow-up-hardware-result);

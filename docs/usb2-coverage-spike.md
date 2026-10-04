@@ -23,7 +23,7 @@ Older/native USB 2 cameras must not be assigned a modern FX3 profile by name.
 | ASI2600MM Duo / `2601` | Original main sensor | Descriptor/contract fixtures only for new fallback | USB 2 initialization, DDR freshness and complete capture/recovery matrix |
 | ASI2600MM Pro / `260e` | P25 | Windows USB 2: 40 cases / 42 frames, all-row freshness, bins/ROI, retained recovery, production cancellation/reopen passed | SDK output-rate comparison, cold start, actual bus faults; do not reuse original timing |
 | ASI6200MM Pro / `620b` | Original, BC:1c = 3 | Windows full frames, every-row offset freshness, bins/ROI, replay/recovery and 30 s exposure passed; strict high-gain row-uniformity gate failed | High-gain characterization, SDK output-rate comparison, cold start and actual bus faults; not an unconditional matrix pass |
-| ASI6200MM Pro / `620b` | P25, BC:1c = 5 | Same descriptor; distinct revision/timing | Independent full-frame freshness/recovery matrix |
+| ASI6200MM Pro / `620b` | P25, BC:1c = 5 | Windows full frames, bins/ROI, retained/worker recovery and capped every-row offset transitions passed; strict gain-700 row-uniformity gate failed | High-gain characterization, SDK pacing, cold start and actual bus faults; not an unconditional matrix pass |
 | ASI220MM Mini / `2209` | Duo guide | Existing native USB 2 acquisition evidence | Streaming resynchronization, not retained replay; zero-line short exposures remain rejected |
 
 See [USB 2 hardware results](usb2-cameras.md) and [guide workup](duo-capture.md).
@@ -103,6 +103,67 @@ with zero retries and acquisition times 8.757, 8.869 and 8.778 s. No `list` or
 `discover` protocol command was issued. All owned workers exited. No USB reset,
 installed settings change, image save or upload occurred. Worker termination
 does not substitute for physical disconnect testing.
+
+### ASI6200 P25 follow-up hardware result
+
+The operator then connected the ASI6200MM Pro P25 through USB 2. The selected
+probe reported `03c3:620b`, `bcdUSB 0210`, bulk IN `81` with 512-byte packets,
+configuration length 25 and Windows driver `01020200`. A small capture and
+every matrix frame verified revision 5 / HMAX 880, independently of the
+original edition's results. No SDK or output-throttle change was used.
+
+The strict matrix accepted **42 cases / 44 frames** before stopping at case 42
+(999,999 us, gain 100, offset 200). Accepted checks included three distinct
+full frames with identical replay, bins 1–4, minimum/moved/edge ROI, the ROI
+gain sweep through 700, ROI exposures through 60 s, and every-row full-frame
+offset transitions at 32 us and 100 ms. Full 122,342,976-byte reads recovered
+after a 12 MiB host interruption (two retries) and a real stalled-sender timeout
+(one retry), with matching prefixes and replay. An abandoned 12 MiB replay
+also recovered identical pixels.
+
+**The initial dark-offset gate did not pass.** At 999,999 us the row medians were
+2055–2071 ADU rather than within 15 ADU of 2000. The entire frame was elevated,
+not separated into old/new offset bands. At 32 us, the offset-200 row range was
+2002–2004; at 100 ms it was 2007–2010. Incoming light or an exposure-dependent
+sensor pedestal may explain the increase, but neither is established. The
+operator confirmed it was not fully dark-capped, then secured the cap and
+noted that the sensor was warm from being outdoors. No threshold was relaxed,
+and the failed frame's statistics are retained. With the cap secured, three
+fresh full frames and the formerly failing 999,999 us case passed (2004–2006
+ADU at offset 200). This supports stray light as the initial failure's cause,
+without establishing a calibrated dark-current model. The first matrix did
+not reach the remaining full-frame offset/gain cases; the capped follow-up
+is separate, not a retroactive pass of the initial run.
+
+The capped follow-up accepted **28 cases / 30 frames**: three new full frames,
+all ten every-row offset transitions through 2 s, and full-frame gains through
+521. At gain 700, case 28 stopped with row-median extrema 2768–3808 ADU,
+exceeding the conservative uniformity limit. Byte counts, digests and retained
+replay passed with no read retries, but that does not prove high-gain freshness.
+The prior USB 3 P25 summary recorded only broad-band extrema (3232–3264 ADU at
+gain 700), not every-row extrema, so it cannot resolve this stricter gate.
+Neither warming nor high-gain noise should be asserted as the cause without
+further evidence; no sensor cooling/settings change was made to mask it.
+
+Two further gain-700 frames reproduced the row-range failure (2816–3840 and
+2768–3808), while their broad-band ranges were only 3280–3328 and 3296–3328.
+All retained pixels matched with zero retries. Returning to gain 100 restored
+the expected short-frame row range, 2002–2004 at offset 200. A separate capped
+30-second full frame then passed exact length/digest and replay with zero
+retries, acquisition 39.981 s. Its row range was 2052–2056 at offset 200; the
+short-exposure absolute-dark-offset gate is not applied to this long frame.
+Warm-sensor dark current may contribute, but was not measured independently.
+
+Production pipe-worker recovery passed independently of that dark-scene
+assumption: termination during a 10-second exposure, cached-identity reopen,
+5 ms transfer-budget rejection with a structured timeout and zero image bytes,
+a subsequent exposure, and close/reopen. All three successful full frames had
+different hashes, zero retries and acquisition times 8.105, 8.056 and 8.076 s.
+No `list`/`discover` protocol commands were issued. No images were saved or
+uploaded, installed settings changed, or USB port reset/cycle performed.
+All owned test workers exited, including the final capped long exposure.
+See [sanitized evidence](usb2-6200-p25-evidence.json). This is partial USB 2
+hardware evidence, not an unconditional P25 matrix sign-off.
 
 ## Finding: link-specific FPGA output pacing is missing
 
