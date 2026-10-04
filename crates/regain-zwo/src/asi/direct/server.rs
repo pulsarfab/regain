@@ -1,6 +1,8 @@
 //! Version-1 plugin protocol over inherited pipes for the verified camera interfaces.
 //! A dedicated worker owns the exclusive driver handle for the entire connection.
-use crate::asi::direct::{asi220, asi662, asi676, asi2600, asi6200, settings::Settings, transport};
+use crate::asi::direct::{
+    asi220, asi662, asi676, asi2600, asi6200, settings::Settings, transport, video662,
+};
 use anyhow::{Result, bail, ensure};
 use regain_core::white_balance::{Geometry, Settings as WhiteBalanceSettings, WhiteBalance};
 use serde_json::{Value, json};
@@ -14,6 +16,7 @@ type Frame = (Value, Vec<u8>);
 enum Work {
     Capture(
         Settings,
+        bool,
         i32,
         u32,
         Duration,
@@ -22,6 +25,7 @@ enum Work {
         mpsc::SyncSender<Result<Frame>>,
     ),
     Environment(u32, Option<i64>, mpsc::SyncSender<Result<i64>>),
+    StopVideo(mpsc::SyncSender<Result<()>>),
 }
 #[derive(Clone, Copy, Default, PartialEq)]
 enum Model {
@@ -416,6 +420,7 @@ struct Worker {
     telemetry: transport::Telemetry,
     auxiliary: bool,
     locator: String,
+    cancel_video: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 impl Worker {
     fn open(
@@ -426,6 +431,8 @@ impl Worker {
     ) -> Result<(Self, String)> {
         let (sender, receiver) = mpsc::channel::<Work>();
         let (ready_tx, ready_rx) = mpsc::sync_channel(1);
+        let cancel_video = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let cancelled = cancel_video.clone();
         let thread = std::thread::spawn(move || {
             let device = if simulate {
                 if locator
@@ -499,6 +506,10 @@ impl Worker {
                 (22, 255),
                 (23, 255),
             ]);
+            let mut video: Option<video662::Video> = None;
+            let mut simulated_video: Option<Settings> = None;
+            let mut simulated_sequence = 0_u64;
+            let mut video_pacer = video662::Pacer::default();
             loop {
                 let work = match receiver.recv_timeout(Duration::from_millis(100)) {
                     Ok(work) => work,
@@ -518,6 +529,12 @@ impl Worker {
                         continue;
                     }
                     Err(mpsc::RecvTimeoutError::Disconnected) => {
+                        if let Some(mut video) = video.take()
+                            && let Some((camera, _, _)) = &device
+                        {
+                            let _ = watchdog.send(Some(Duration::from_secs(15)));
+                            let _ = video.stop(camera);
+                        }
                         if let Some((camera, _, _)) = &device
                             && model.cooled()
                         {
@@ -528,6 +545,20 @@ impl Worker {
                     }
                 };
                 match work {
+                    Work::StopVideo(reply) => {
+                        let _ = watchdog.send(Some(Duration::from_secs(15)));
+                        let result = if let Some(mut video) = video.take()
+                            && let Some((camera, _, _)) = &device
+                        {
+                            video.stop(camera)
+                        } else {
+                            Ok(())
+                        };
+                        simulated_video = None;
+                        video_pacer = video662::Pacer::default();
+                        let _ = watchdog.send(None);
+                        let _ = reply.send(result);
+                    }
                     Work::Environment(control, value, reply) => {
                         let _ = watchdog.send(Some(Duration::from_secs(15)));
                         let result = if let Some((camera, _, _)) = &device {
@@ -543,6 +574,7 @@ impl Worker {
                     }
                     Work::Capture(
                         settings,
+                        video_mode,
                         gain,
                         bin,
                         timeout,
@@ -552,36 +584,93 @@ impl Worker {
                     ) => {
                         // Never free live I/O buffers if a kernel operation becomes stuck.
                         let _ = watchdog.send(Some(timeout));
-                        let result = if let Some((camera, info, _)) = &device {
-                            // Validated on the command thread, before capture starts.
-                            camera
-                                .transfer_timeout(settings.transfer_timeout_seconds)
-                                .expect("validated transfer timeout");
-                            match model {
-                                Model::Asi676 => asi676::capture(camera, info, &settings, false),
-                                Model::Asi662 => asi662::capture(camera, info, &settings, false),
-                                Model::Duo | Model::Asi2600P25 => {
-                                    asi2600::capture(camera, info, &settings, gain, bin, false)
-                                }
-                                Model::Guide => asi220::capture(camera, info, &settings, bin),
-                                Model::Asi6200 => {
-                                    asi6200::capture(camera, info, &settings, gain, bin, false)
-                                }
+                        let result = (|| -> Result<Frame> {
+                            if video_mode {
+                                video_pacer.wait(settings.video_max_fps, &cancelled)?;
                             }
-                        } else {
-                            std::thread::sleep(Duration::from_micros(u64::from(
-                                settings.microseconds,
-                            )));
-                            std::thread::sleep(simulated_delay);
-                            let pixels: Vec<_> = (0..settings.width * settings.height)
-                                .flat_map(|i| (i as u16).to_le_bytes())
-                                .collect();
-                            Ok((
-                                json!({"width":settings.width,"height":settings.height,"bin":bin,"sdkLoaded":false,
-                                "simulated":true,"readRecoveries":0}),
-                                pixels,
-                            ))
-                        };
+                            if let Some((camera, info, _)) = &device {
+                                // Validated on the command thread, before capture starts.
+                                camera
+                                    .transfer_timeout(settings.transfer_timeout_seconds)
+                                    .expect("validated transfer timeout");
+                                if video_mode {
+                                    if video.as_ref().is_none_or(|v| !v.matches(&settings)) {
+                                        if let Some(mut old) = video.take() {
+                                            old.stop(camera)?;
+                                        }
+                                        ensure!(
+                                            !cancelled.load(std::sync::atomic::Ordering::Relaxed),
+                                            "video read cancelled"
+                                        );
+                                        video = Some(video662::Video::start(
+                                            camera,
+                                            info,
+                                            settings.clone(),
+                                        )?);
+                                    }
+                                    let session = video.as_mut().unwrap();
+                                    session.set_max_fps(settings.video_max_fps);
+                                    session.next(camera, &cancelled)
+                                } else {
+                                    if let Some(mut old) = video.take() {
+                                        old.stop(camera)?;
+                                    }
+                                    match model {
+                                        Model::Asi676 => {
+                                            asi676::capture(camera, info, &settings, false)
+                                        }
+                                        Model::Asi662 => {
+                                            asi662::capture(camera, info, &settings, false)
+                                        }
+                                        Model::Duo | Model::Asi2600P25 => asi2600::capture(
+                                            camera, info, &settings, gain, bin, false,
+                                        ),
+                                        Model::Guide => {
+                                            asi220::capture(camera, info, &settings, bin)
+                                        }
+                                        Model::Asi6200 => asi6200::capture(
+                                            camera, info, &settings, gain, bin, false,
+                                        ),
+                                    }
+                                }
+                            } else {
+                                if video_mode {
+                                    // FPS changes pace the existing stream; they do
+                                    // not reconfigure the sensor on real hardware.
+                                    if let Some(prior) = &mut simulated_video {
+                                        prior.video_max_fps = settings.video_max_fps;
+                                    }
+                                    if simulated_video.as_ref() != Some(&settings) {
+                                        simulated_sequence = 0;
+                                        simulated_video = Some(settings.clone());
+                                    }
+                                    video662::wait_until(
+                                        Instant::now(),
+                                        Duration::from_micros(u64::from(settings.microseconds)),
+                                        &cancelled,
+                                    )?;
+                                    simulated_sequence += 1;
+                                } else {
+                                    simulated_video = None;
+                                    std::thread::sleep(Duration::from_micros(u64::from(
+                                        settings.microseconds,
+                                    )));
+                                }
+                                std::thread::sleep(simulated_delay);
+                                let pixels: Vec<_> = (0..settings.width * settings.height)
+                                    .flat_map(|i| (i as u16).to_le_bytes())
+                                    .collect();
+                                Ok((
+                                    json!({"width":settings.width,"height":settings.height,"bin":bin,"sdkLoaded":false,
+                                "simulated":true,"readRecoveries":0,"mode":if video_mode { "video" } else { "still" },
+                                "deliveredFrames":simulated_sequence}),
+                                    pixels,
+                                ))
+                            }
+                        })();
+                        if video_mode && result.is_ok() {
+                            video_pacer.completed();
+                        }
                         let result = if simulate && simulated_cleanup {
                             crate::asi::direct::completion::finish(
                                 result,
@@ -616,6 +705,7 @@ impl Worker {
                     telemetry,
                     auxiliary,
                     locator,
+                    cancel_video,
                 },
                 identity,
             )),
@@ -635,10 +725,23 @@ impl Worker {
             .map_err(|_| anyhow::anyhow!("environment worker unavailable"))?
     }
     fn close(mut self) {
+        self.cancel_video
+            .store(true, std::sync::atomic::Ordering::Relaxed);
         drop(self.sender);
         if let Some(thread) = self.thread.take() {
             let _ = thread.join();
         }
+    }
+    fn stop_video(&self) -> Result<()> {
+        self.cancel_video
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+        let (sender, receiver) = mpsc::sync_channel(1);
+        self.sender
+            .send(Work::StopVideo(sender))
+            .map_err(|_| anyhow::anyhow!("direct worker exited"))?;
+        receiver
+            .recv_timeout(Duration::from_secs(20))
+            .map_err(|_| anyhow::anyhow!("video stop deadline expired; terminate isolated host"))?
     }
 }
 
@@ -657,6 +760,7 @@ struct Host {
     simulated_cleanup: bool,
     white_balance: Option<WhiteBalance>,
     white_balance_frame: Option<Geometry>,
+    video_active: bool,
 }
 impl Host {
     fn update(&mut self) {
@@ -802,6 +906,8 @@ impl Host {
                 self.white_balance_frame = None;
                 json!({"serial":identity,"info":descriptor,"sdkVersion":format!("SDK-less experimental {}",model.name()),
                     "backend":"direct","controls":controls,
+                    "captureModes":if model == Model::Asi662 { json!(["still","video"]) } else { json!(["still"]) },
+                    "videoMaxExposureMicroseconds":if model == Model::Asi662 { json!(30_000_000) } else { Value::Null },
                     "whiteBalance":WhiteBalance::capabilities(descriptor["color"] == true)})
             }
             "white-balance" => {
@@ -917,6 +1023,33 @@ impl Host {
                     "invalid transfer deadline"
                 );
                 self.model.validate(&settings, self.gain, bin)?;
+                let mode = params.get("mode").map_or(Some("still"), Value::as_str);
+                ensure!(
+                    matches!(mode, Some("still" | "video")),
+                    "unknown capture mode"
+                );
+                let video_mode = mode == Some("video");
+                if video_mode {
+                    ensure!(
+                        self.model == Model::Asi662,
+                        "video is only available for ASI662MC"
+                    );
+                    ensure!(
+                        params["dark"] != true,
+                        "video dark-frame semantics are unavailable; cap the camera explicitly"
+                    );
+                    settings.video_max_fps = params.get("maxFps").map_or(Ok(1.0), |v| {
+                        v.as_f64()
+                            .ok_or_else(|| anyhow::anyhow!("invalid video maxFps"))
+                    })?;
+                    video662::validate(&settings)?;
+                    // Live video is never retried as the same retained image.
+                    ensure!(
+                        params["readRetries"].as_u64().is_none_or(|v| v == 0),
+                        "video does not support retained read retries"
+                    );
+                    settings.read_retries = 0;
+                }
                 if self.white_balance.is_some() {
                     WhiteBalance::validate_geometry(
                         self.model.descriptor()["color"] == true,
@@ -935,6 +1068,11 @@ impl Host {
                     });
                     let seconds = params["captureTimeoutSeconds"].as_f64().unwrap_or(
                         f64::from(settings.microseconds) / 1e6
+                            + if video_mode {
+                                1.0 / settings.video_max_fps
+                            } else {
+                                0.0
+                            }
                             + 45.0
                             + (settings.transfer_timeout_seconds + 15.0)
                                 * f64::from(settings.read_retries + 1),
@@ -943,6 +1081,13 @@ impl Host {
                         seconds.is_finite() && (0.001..=86400.0).contains(&seconds),
                         "invalid capture deadline"
                     );
+                    if self.video_active && !video_mode {
+                        worker.stop_video().map_err(hardware)?;
+                    }
+                    self.video_active = video_mode;
+                    worker
+                        .cancel_video
+                        .store(false, std::sync::atomic::Ordering::Relaxed);
                     // Instant faulted readout for the supervisor's policy tests.
                     // This branch is inaccessible without --simulate.
                     if let Some(failures) = self.simulated_read_failures.take() {
@@ -981,6 +1126,7 @@ impl Host {
                         .sender
                         .send(Work::Capture(
                             settings,
+                            video_mode,
                             self.gain,
                             bin,
                             Duration::from_secs_f64(seconds),
@@ -1032,6 +1178,20 @@ impl Host {
                 metadata
             }
             "stop" | "close" => {
+                if self.video_active {
+                    let stopped = self
+                        .worker
+                        .as_ref()
+                        .ok_or_else(|| anyhow::anyhow!("camera is not open"))?
+                        .stop_video();
+                    if let Err(error) = stopped {
+                        self.reconnect_required = true;
+                        return Err(hardware(error));
+                    }
+                    self.pending = None;
+                    self.frame = None;
+                    self.video_active = false;
+                }
                 ensure!(
                     self.pending.is_none(),
                     "active capture must be aborted by terminating the isolated host"
@@ -1070,7 +1230,12 @@ pub fn run(simulate: bool) -> Result<()> {
         let mut length = [0_u8; 4];
         match input.read_exact(&mut length) {
             Ok(()) => {}
-            Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => return Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
+                if host.video_active {
+                    host.command("close", &Value::Null)?;
+                }
+                return Ok(());
+            }
             Err(e) => return Err(e.into()),
         }
         let size = u32::from_le_bytes(length) as usize;
@@ -1119,6 +1284,98 @@ pub fn run(simulate: bool) -> Result<()> {
         output.write_all(&json)?;
         output.write_all(&pixels)?;
         output.flush()?;
+    }
+}
+
+#[cfg(test)]
+mod video_tests {
+    use super::*;
+    fn parameters() -> Value {
+        json!({"mode":"video","maxFps":120.0,"width":64,"height":64,
+            "x":0,"y":0,"bin":1,"microseconds":1000,"dark":false})
+    }
+    fn open() -> Host {
+        let mut host = Host {
+            simulate: true,
+            ..Host::default()
+        };
+        let (result, _) = host
+            .command("open", &json!({"name":"ZWO ASI662MC"}))
+            .unwrap();
+        assert_eq!(result["captureModes"], json!(["still", "video"]));
+        host
+    }
+    fn frame(host: &mut Host, params: &Value) -> Frame {
+        host.command("start", params).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while host.command("status", &Value::Null).unwrap().0 == 1 {
+            assert!(Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        host.command("download", &Value::Null).unwrap()
+    }
+    #[test]
+    fn video_reuses_session_reconfigures_and_preserves_still_default() {
+        let mut host = open();
+        let mut params = parameters();
+        let (first, pixels) = frame(&mut host, &params);
+        assert_eq!(first["deliveredFrames"], 1);
+        assert_eq!(pixels.len(), 64 * 64 * 2);
+        assert_eq!(frame(&mut host, &params).0["deliveredFrames"], 2);
+        params["maxFps"] = json!(100.0);
+        assert_eq!(frame(&mut host, &params).0["deliveredFrames"], 3);
+        params["microseconds"] = json!(2000);
+        assert_eq!(frame(&mut host, &params).0["deliveredFrames"], 1);
+        params.as_object_mut().unwrap().remove("mode");
+        assert_eq!(frame(&mut host, &params).0["mode"], "still");
+        assert!(!host.video_active);
+        host.command("close", &Value::Null).unwrap();
+    }
+    #[test]
+    fn stop_cancels_exposure_and_low_fps_wait_then_can_restart() {
+        let mut host = open();
+        let mut params = parameters();
+        params["microseconds"] = json!(30_000_000);
+        host.command("start", &params).unwrap();
+        let began = Instant::now();
+        host.command("stop", &Value::Null).unwrap();
+        assert!(began.elapsed() < Duration::from_secs(2));
+        assert_eq!(host.command("status", &Value::Null).unwrap().0, 0);
+        params = parameters();
+        params["maxFps"] = json!(0.01);
+        frame(&mut host, &params);
+        host.command("start", &params).unwrap();
+        let began = Instant::now();
+        host.command("stop", &Value::Null).unwrap();
+        assert!(began.elapsed() < Duration::from_secs(2));
+        frame(&mut host, &parameters());
+        host.command("close", &Value::Null).unwrap();
+    }
+    #[test]
+    fn invalid_video_requests_do_not_change_active_state() {
+        let mut host = open();
+        for (key, value) in [
+            ("mode", json!("typo")),
+            ("mode", Value::Null),
+            ("maxFps", json!(0)),
+            ("maxFps", json!("1")),
+            ("dark", json!(true)),
+            ("microseconds", json!(30_000_001)),
+            ("bin", json!(2)),
+            ("readRetries", json!(1)),
+            ("captureTimeoutSeconds", json!(-1)),
+        ] {
+            let mut params = parameters();
+            params[key] = value;
+            assert!(host.command("start", &params).is_err(), "{key}");
+            assert!(!host.video_active);
+            assert!(host.pending.is_none());
+        }
+        host.command("close", &Value::Null).unwrap();
+        host.command("open", &json!({"name":"ZWO ASI676MC"}))
+            .unwrap();
+        assert!(host.command("start", &parameters()).is_err());
+        host.command("close", &Value::Null).unwrap();
     }
 }
 

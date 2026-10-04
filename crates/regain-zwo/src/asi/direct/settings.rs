@@ -4,7 +4,7 @@ use anyhow::{Result, ensure};
 // sensor frame/shutter registers do not grow with the requested duration.
 pub const MAX_EXPOSURE_US: u32 = 2_000_000_000;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Settings {
     pub width: u32,
     pub height: u32,
@@ -22,6 +22,8 @@ pub struct Settings {
     pub reopen_after_bytes: u32,
     pub reopen_delay_ms: u32,
     pub keep_retained: bool,
+    /// Host acquisition cap for explicit video mode, independent of exposure.
+    pub video_max_fps: f64,
 }
 impl Default for Settings {
     fn default() -> Self {
@@ -41,6 +43,7 @@ impl Default for Settings {
             reopen_after_bytes: 0,
             reopen_delay_ms: 1000,
             keep_retained: false,
+            video_max_fps: 1.0,
         }
     }
 }

@@ -1,5 +1,28 @@
 # Transport experiments
 
+## ASI662MC video (explicit manual hardware checks)
+
+`trace_video.py` owns a disposable SDK 1.41 process and passively records video
+USB transactions. It verifies the DLL digest and requires observed SDK/video
+hooks. By default only one ASI may be attached; `--allow-discovery` requires
+operator approval because SDK discovery can open other attached cameras.
+Only the exact ASI662MC is captured; ambiguous matches are refused.
+
+`check_video.py` instead owns the built Direct USB worker, selects the ASI662MC
+without an SDK discovery sweep, and checks full frames, ROI, fractional FPS,
+exposure changes through 30 seconds, cancellation and return to still capture.
+Run only with an idle, operator-authorized camera. It has a 180-second watchdog.
+`--simulate` exercises the protocol without hardware. Neither tool is an
+automated hardware test; pixels are hashed/validated and discarded. Keep local
+traces in ignored `artifacts/` because they can contain USB paths and identities.
+
+```powershell
+.reference/inspection-venv/Scripts/python.exe scripts/inspection/trace_video.py --output artifacts/asi662-video-reference.jsonl
+.reference/inspection-venv/Scripts/python.exe scripts/inspection/check_video.py --output artifacts/asi662-video-check.jsonl
+```
+
+See [video semantics and limits](../../docs/asi662mc.md#experimental-continuous-video-source-builds).
+
 ## Static USB 2 coverage audit (no hardware access)
 
 `inspect_usb2_sdk.py` parses the digest-pinned Linux x86-64 SDK as bytes. It

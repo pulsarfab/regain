@@ -78,7 +78,7 @@ fn writes(camera: &Camera, commands: &[(u8, u16, u16)]) -> Result<()> {
     Ok(())
 }
 
-fn stop(camera: &Camera) -> Result<()> {
+pub(super) fn stop(camera: &Camera) -> Result<()> {
     let flags = camera.vendor(0xbc, 0, 0, 1)?[0];
     writes(
         camera,
@@ -91,7 +91,13 @@ fn stop(camera: &Camera) -> Result<()> {
     camera.reset_pipe()
 }
 
-fn word(camera: &Camera, request: u8, register: u16, value: u32, bytes: u16) -> Result<()> {
+pub(super) fn word(
+    camera: &Camera,
+    request: u8,
+    register: u16,
+    value: u32,
+    bytes: u16,
+) -> Result<()> {
     let hold = if request == 0xb6 { 0x3001 } else { 1 };
     camera.vendor(request, hold, 1, 0)?;
     for byte in 0..bytes {
@@ -157,6 +163,62 @@ fn calibration(
     Ok(defects)
 }
 
+pub(super) fn configure(
+    camera: &Camera,
+    info: &Value,
+    settings: &Settings,
+    profile: &Profile,
+) -> Result<(processing::Defects, u32, u32)> {
+    profile.validate(settings)?;
+    let link = super::link::validate(info, u32::from(profile.pid))?;
+    writes(camera, profile.initialize)?;
+    let defects = calibration(camera, settings, profile)?;
+    writes(camera, profile.raw16)?;
+    // Set every requested value explicitly, regardless of the preceding owner.
+    word(camera, 0xb6, 0x303c, settings.x, 2)?;
+    word(camera, 0xb6, 0x3044, settings.y, 2)?;
+    word(
+        camera,
+        0xb6,
+        0x303e,
+        settings.width.next_multiple_of(profile.sensor_alignment),
+        2,
+    )?;
+    word(
+        camera,
+        0xb6,
+        0x3046,
+        settings.height.next_multiple_of(profile.sensor_alignment) + 2,
+        2,
+    )?;
+    word(camera, 0xbd, 0x40, settings.width * settings.height / 2, 4)?;
+    word(camera, 0xbd, 8, settings.height, 2)?;
+    word(camera, 0xbd, 4, settings.width, 2)?;
+    let (hcg, gain) = profile.gain(settings.gain);
+    writes(
+        camera,
+        &[
+            (0xb6, 0x3001, 1),
+            (0xb6, 0x3030, hcg),
+            (0xb6, profile.gain_register, gain & 255),
+            (0xb6, profile.gain_register + 1, gain >> 8),
+            (0xb6, 0x3001, 0),
+        ],
+    )?;
+    word(camera, 0xb6, 0x30dc, settings.offset, 2)?;
+    let (frame_lines, shutter_lines) = profile.timing_for_link(settings, link);
+    word(camera, 0xbd, 0x10, frame_lines, 3)?;
+    word(camera, 0xb6, 0x3050, shutter_lines, 3)?;
+    let flags = camera.vendor(0xbc, 0, 0, 1)?[0];
+    let flags = if settings.long_exposure() {
+        flags | 0xc0
+    } else {
+        flags & !0xc0
+    };
+    camera.vendor(0xbd, 0, u16::from(flags), 0)?;
+    Ok((defects, frame_lines, shutter_lines))
+}
+
 pub fn capture(
     camera: &Camera,
     info: &Value,
@@ -165,54 +227,10 @@ pub fn capture(
     profile: &Profile,
 ) -> Result<(Value, Vec<u8>)> {
     profile.validate(settings)?;
-    let link = super::link::validate(info, u32::from(profile.pid))?;
+    super::link::validate(info, u32::from(profile.pid))?;
     let start = Instant::now();
     let result = (|| -> Result<(Value, Vec<u8>)> {
-        writes(camera, profile.initialize)?;
-        let defects = calibration(camera, settings, profile)?;
-        writes(camera, profile.raw16)?;
-        // Set every requested value explicitly, regardless of the preceding owner.
-        word(camera, 0xb6, 0x303c, settings.x, 2)?;
-        word(camera, 0xb6, 0x3044, settings.y, 2)?;
-        word(
-            camera,
-            0xb6,
-            0x303e,
-            settings.width.next_multiple_of(profile.sensor_alignment),
-            2,
-        )?;
-        word(
-            camera,
-            0xb6,
-            0x3046,
-            settings.height.next_multiple_of(profile.sensor_alignment) + 2,
-            2,
-        )?;
-        word(camera, 0xbd, 0x40, settings.width * settings.height / 2, 4)?;
-        word(camera, 0xbd, 8, settings.height, 2)?;
-        word(camera, 0xbd, 4, settings.width, 2)?;
-        let (hcg, gain) = profile.gain(settings.gain);
-        writes(
-            camera,
-            &[
-                (0xb6, 0x3001, 1),
-                (0xb6, 0x3030, hcg),
-                (0xb6, profile.gain_register, gain & 255),
-                (0xb6, profile.gain_register + 1, gain >> 8),
-                (0xb6, 0x3001, 0),
-            ],
-        )?;
-        word(camera, 0xb6, 0x30dc, settings.offset, 2)?;
-        let (frame_lines, shutter_lines) = profile.timing_for_link(settings, link);
-        word(camera, 0xbd, 0x10, frame_lines, 3)?;
-        word(camera, 0xb6, 0x3050, shutter_lines, 3)?;
-        let flags = camera.vendor(0xbc, 0, 0, 1)?[0];
-        let flags = if settings.long_exposure() {
-            flags | 0xc0
-        } else {
-            flags & !0xc0
-        };
-        camera.vendor(0xbd, 0, u16::from(flags), 0)?;
+        let (defects, frame_lines, shutter_lines) = configure(camera, info, settings, profile)?;
         stop(camera)?;
         let status_before_arm = camera.vendor(0xbc, 0x23, 0, 1)?[0];
         ensure!(

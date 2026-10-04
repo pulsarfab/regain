@@ -304,7 +304,8 @@ Process.attachModuleObserver({
             }
         }
         for (const name of ['ASIOpenCamera', 'ASIInitCamera', 'ASICloseCamera', 'ASIStartExposure', 'ASISetControlValue', 'ASISetROIFormat', 'ASISetStartPos',
-            'ASIStopExposure', 'ASIGetExpStatus', 'ASIGetDataAfterExp']) attach(module, name, {
+            'ASIStopExposure', 'ASIGetExpStatus', 'ASIGetDataAfterExp',
+            'ASIStartVideoCapture', 'ASIGetVideoData', 'ASIStopVideoCapture']) attach(module, name, {
             onEnter(args) {
                 this.start = Date.now(); this.status = name === 'ASIGetExpStatus' ? args[1] : null;
                 const parameters = name === 'ASISetControlValue' ? [args[1].toInt32(), args[2].toInt32(), args[3].toInt32()]

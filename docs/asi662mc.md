@@ -27,6 +27,70 @@ latency; this backend is intended for individual recoverable images, not maximum
 planetary video throughput. Exposures of one second and above keep the traced
 host-timed sequence. Retrying a download does not take another exposure.
 
+## Experimental continuous video (source builds)
+
+The Direct USB pipe worker additionally accepts explicit `mode: "video"` for
+the ASI662MC. Still capture remains the default; existing NINA, ASCOM, Alpaca
+and AutoPierCam clients do not switch to video automatically. This initial
+video path supports RAW16/bin 1, the same ROI rules, and **32 µs–30 s** exposures.
+It does not extend video support to the ASI676MC or other models.
+
+Repeat `start` → `status` → `download` for each requested frame. Matching settings
+reuse the armed sensor and factory calibration. Exposure, gain or ROI changes
+stop and reconfigure the stream; changing only `maxFps` does not. `stop`/`close`
+cancel pending exposure and pacing waits. A stuck native transfer remains bounded
+by the isolated worker's deadline; this mode does not reset a physical USB port.
+
+`maxFps` defaults to 1 and accepts **0.01–120**, including 0.5 FPS. It caps grabs,
+not merely publication: the next grab waits one interval after the previous
+completed grab. Exposure/readout can lower actual throughput further. There are
+no catch-up bursts. This is not a sensor frame-rate control: the sensor may
+continue producing frames, gaps are reported, and buffered frames are not
+guaranteed to be the newest scene after a slow consumer resumes.
+
+Video never replays a retained exposure (`readRetries` must be omitted or zero).
+Duplicate/backward frame sequences and incomplete envelopes fail capture and stop
+the stream. Shared software WB/AWB remains opt-in. `dark: true` is rejected;
+physically cap the camera when collecting dark video.
+
+`open` advertises `captureModes` and `videoMaxExposureMicroseconds`. Example
+`start` parameters for one requested video frame:
+
+```json
+{"mode":"video","maxFps":0.5,"width":1920,"height":1080,"bin":1,"x":0,"y":0,"microseconds":100000,"dark":false}
+```
+
+The research CLI also supports `--capture-662 --video --max-fps 0.5 --frames 3`.
+`--stream` alone still means binary output framing, not video acquisition.
+
+### Video evidence and limits
+
+Owned SDK 1.41 Windows traces covered full-frame 100 ms, 1.6 s and 6.4 s capture,
+plus a 512 × 256 ROI on USB 2. Video keeps the sensor armed between downloads,
+unlike retained still capture. Bandwidth 40 uses FPGA word `0x161c` on USB 2
+and `0x0180` on USB 3. The long-exposure low-power/XHS gates are corroborated by
+the digest-pinned Linux SDK's ASI662MC `WorkingFunc` at `0x13b730`. Monotonic
+deadlines implement the intended integration timing rather than reproducing
+Windows polling-sleep rounding.
+
+The explicit manual worker matrix passed on USB 2: 21 video frames covering
+full-frame/ROI, 0.5 FPS, slow consumers, exposure changes through 30 s, cancellation,
+restart and return to still capture. Long-exposure stop took about 218 ms; a
+100-second FPS wait cancelled immediately at the measurement resolution. An
+initial FPS test exposed early grabs after initialization; pacing now starts
+from the previous completed grab and survives exposure changes. Pixels were
+validated and discarded, not saved or uploaded.
+
+The same 21-frame matrix subsequently passed with the ASI662MC on USB 3 while
+an ASI676MC remained attached on USB 2. The 0.5 FPS frames arrived about
+2.08–2.09 s apart; long-exposure stop took 203 ms and FPS-wait cancellation 16 ms.
+Return to still capture passed. A separate three-frame SDK USB 3 reference
+confirmed bandwidth word `0x0180`. The Direct worker never opened the 676;
+the explicitly authorized SDK reference did perform its discovery pass.
+
+These checks do not establish optical accuracy, cold startup, USB-disconnect
+recovery, long-running stability or Linux/macOS hardware behavior for video.
+
 ## What is shared
 
 `asi662.rs` and `asi676.rs` supply separate sensor profiles and reviewed volatile

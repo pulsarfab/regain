@@ -21,6 +21,7 @@ mod server;
 mod settings;
 mod transfer;
 mod transport;
+mod video662;
 use anyhow::{Result, ensure};
 
 fn probe_product(args: &[String]) -> Result<Option<u16>> {
@@ -135,11 +136,27 @@ pub fn run(args: Vec<String>) -> Result<()> {
     }
     let mut frames = 1_u32;
     let mut stream = false;
+    let mut video = false;
+    let mut fps_specified = false;
+    let mut retries_specified = false;
     let mut replay = false;
     let mut expected_wire_hash = None;
     if capture {
         let mut options = args[1..].iter();
         while let Some(option) = options.next() {
+            if option == "--max-fps" {
+                fps_specified = true;
+                settings.video_max_fps = options
+                    .next()
+                    .ok_or_else(|| anyhow::anyhow!("missing max FPS"))?
+                    .parse()?;
+                continue;
+            }
+            if option == "--video" {
+                ensure!(asi662, "video is only available for ASI662MC");
+                video = true;
+                continue;
+            }
             if option == "--keep-retained" && p25 && !verify_retained {
                 settings.keep_retained = true;
                 continue;
@@ -199,7 +216,10 @@ pub fn run(args: Vec<String>) -> Result<()> {
                 "--timeout-read-after-bytes" if duo || asi6200 => {
                     settings.timeout_read_after_bytes = value
                 }
-                "--read-retries" => settings.read_retries = value,
+                "--read-retries" => {
+                    retries_specified = true;
+                    settings.read_retries = value;
+                }
                 "--reopen-after-bytes" if duo => settings.reopen_after_bytes = value,
                 "--reopen-delay-ms" if duo => settings.reopen_delay_ms = value,
                 _ => anyhow::bail!("unknown capture option {option}"),
@@ -217,7 +237,20 @@ pub fn run(args: Vec<String>) -> Result<()> {
         } else {
             settings.validate()?;
         }
-        ensure!((1..=20).contains(&frames), "frame count must be 1..20");
+        ensure!(
+            (1..=if video { 1000 } else { 20 }).contains(&frames),
+            "invalid frame count"
+        );
+        ensure!(!fps_specified || video, "--max-fps requires --video");
+        if video {
+            video662::validate(&settings)?;
+            ensure!(!replay, "video does not support retained-frame replay");
+            ensure!(
+                !retries_specified || settings.read_retries == 0,
+                "video does not support retained read retries"
+            );
+            settings.read_retries = 0;
+        }
         ensure!(
             !settings.keep_retained || frames == 1,
             "keep-retained requires one frame"
@@ -258,7 +291,12 @@ pub fn run(args: Vec<String>) -> Result<()> {
             + (settings.transfer_timeout_seconds.ceil() as u64 + 15)
                 * u64::from(settings.read_retries + 1)
                 * if replay { 2 } else { 1 }
-            + u64::from(settings.reopen_delay_ms) / 1000)
+            + u64::from(settings.reopen_delay_ms) / 1000
+            + if video {
+                (1.0 / settings.video_max_fps).ceil() as u64
+            } else {
+                0
+            })
             * u64::from(frames)
             + 15
     } else {
@@ -327,36 +365,58 @@ pub fn run(args: Vec<String>) -> Result<()> {
     if capture {
         use std::io::Write;
         let mut output = std::io::stdout().lock();
-        for frame in 0..frames {
-            let (metadata, data) = if asi662 {
-                asi662::capture(&camera, &result, &settings, replay)?
-            } else if asi6200 {
-                asi6200::capture(&camera, &result, &settings, duo_gain, duo_bin, replay)?
-            } else if duo {
-                asi2600::capture(&camera, &result, &settings, duo_gain, duo_bin, replay)?
-            } else if guide {
-                asi220::capture(&camera, &result, &settings, duo_bin)?
-            } else {
-                asi676::capture(&camera, &result, &settings, replay)?
-            };
-            transport::require_sdk_absent()?;
-            result["capture"] = metadata;
-            result["frame"] = serde_json::json!(frame);
-            if stream {
-                let json = serde_json::to_vec(&result)?;
-                output.write_all(&(json.len() as u32).to_le_bytes())?;
-                output.write_all(&json)?;
-                output.write_all(&data)?;
-            } else {
-                writeln!(output, "{}", serde_json::to_string(&result)?)?;
+        let mut video_session = if video {
+            Some(video662::Video::start(&camera, &result, settings.clone())?)
+        } else {
+            None
+        };
+        let cancelled = std::sync::atomic::AtomicBool::new(false);
+        let mut pacer = video662::Pacer::default();
+        let capture_result = (|| -> Result<()> {
+            for frame in 0..frames {
+                let (metadata, data) = if let Some(session) = &mut video_session {
+                    pacer.wait(settings.video_max_fps, &cancelled)?;
+                    let frame = session.next(&camera, &cancelled)?;
+                    pacer.completed();
+                    frame
+                } else if asi662 {
+                    asi662::capture(&camera, &result, &settings, replay)?
+                } else if asi6200 {
+                    asi6200::capture(&camera, &result, &settings, duo_gain, duo_bin, replay)?
+                } else if duo {
+                    asi2600::capture(&camera, &result, &settings, duo_gain, duo_bin, replay)?
+                } else if guide {
+                    asi220::capture(&camera, &result, &settings, duo_bin)?
+                } else {
+                    asi676::capture(&camera, &result, &settings, replay)?
+                };
+                transport::require_sdk_absent()?;
+                result["capture"] = metadata;
+                result["frame"] = serde_json::json!(frame);
+                if stream {
+                    let json = serde_json::to_vec(&result)?;
+                    output.write_all(&(json.len() as u32).to_le_bytes())?;
+                    output.write_all(&json)?;
+                    output.write_all(&data)?;
+                } else {
+                    writeln!(output, "{}", serde_json::to_string(&result)?)?;
+                }
+                output.flush()?;
+                ensure!(
+                    result["capture"].get("cleanupError").is_none(),
+                    "frame delivered, but camera must reconnect after cleanup failure: {}",
+                    result["capture"]["cleanupError"]
+                );
             }
-            output.flush()?;
-            ensure!(
-                result["capture"].get("cleanupError").is_none(),
-                "frame delivered, but camera must reconnect after cleanup failure: {}",
-                result["capture"]["cleanupError"]
-            );
-        }
+            Ok(())
+        })();
+        let cleanup = if let Some(session) = &mut video_session {
+            session.stop(&camera)
+        } else {
+            Ok(())
+        };
+        capture_result?;
+        cleanup?;
         return Ok(());
     }
     if args == ["--probe", "--cancel-read"] {
@@ -372,6 +432,32 @@ pub fn run(args: Vec<String>) -> Result<()> {
     }
     println!("{}", serde_json::to_string_pretty(&result)?);
     Ok(())
+}
+
+#[test]
+fn invalid_video_cli_options_fail_before_camera_access() {
+    for (args, expected) in [
+        (
+            vec!["--capture-662", "--max-fps", "0.5"],
+            "requires --video",
+        ),
+        (vec!["--capture", "--video"], "only available for ASI662MC"),
+        (
+            vec!["--capture-662", "--video", "--max-fps", "0"],
+            "video maxFps",
+        ),
+        (
+            vec!["--capture-662", "--video", "--read-retries", "1"],
+            "retained read retries",
+        ),
+        (
+            vec!["--capture-662", "--video", "--microseconds", "30000001"],
+            "30-second",
+        ),
+    ] {
+        let error = run(args.into_iter().map(str::to_owned).collect()).unwrap_err();
+        assert!(error.to_string().contains(expected), "{error:#}");
+    }
 }
 
 #[test]

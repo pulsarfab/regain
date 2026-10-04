@@ -179,7 +179,14 @@ impl Camera {
         self.read_frame_wait(length, 5000)
     }
     pub fn read_frame_wait(&self, length: usize, first_timeout_ms: u32) -> Result<Vec<u8>> {
-        self.read_frame_inner(length, first_timeout_ms, None)
+        self.read_frame_inner(length, first_timeout_ms, None, None)
+    }
+    pub fn read_video_frame(
+        &self,
+        length: usize,
+        cancel: &std::sync::atomic::AtomicBool,
+    ) -> Result<Vec<u8>> {
+        self.read_frame_inner(length, 5000, None, Some(cancel))
     }
     pub fn read_frame_checked(
         &self,
@@ -187,13 +194,14 @@ impl Camera {
         first_timeout_ms: u32,
         continuity: &mut crate::asi::direct::transfer::Continuity,
     ) -> Result<Vec<u8>> {
-        self.read_frame_inner(length, first_timeout_ms, Some(continuity))
+        self.read_frame_inner(length, first_timeout_ms, Some(continuity), None)
     }
     fn read_frame_inner(
         &self,
         length: usize,
         first_timeout_ms: u32,
         mut continuity: Option<&mut crate::asi::direct::transfer::Continuity>,
+        cancel: Option<&std::sync::atomic::AtomicBool>,
     ) -> Result<Vec<u8>> {
         ensure!(
             (5000..=15000).contains(&first_timeout_ms),
@@ -207,6 +215,10 @@ impl Camera {
         let budget = Budget::new(self.transfer_timeout.get());
         self.phase("downloading");
         for (number, chunk) in data.chunks_mut(1024 * 1024).enumerate() {
+            ensure!(
+                !cancel.is_some_and(|c| c.load(std::sync::atomic::Ordering::Relaxed)),
+                "video read cancelled"
+            );
             self.service_environment()?;
             let requested_timeout = if number == 0 { first_timeout_ms } else { 5000 };
             let result = match budget.timeout_ms(requested_timeout) {

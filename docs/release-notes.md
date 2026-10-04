@@ -1,52 +1,40 @@
-# PulsarFab regain 0.5.4.0
+# PulsarFab regain 0.5.5.0
 
-This patch fixes Direct USB acquisition over USB 2 high-speed connections for
-supported ZWO cameras, plus two ASI2600MM Duo retained-frame acquisition bugs.
-SDK remains the default; Direct USB remains experimental and opt-in.
+This patch adds experimental, explicit ASI662MC Direct USB video acquisition to
+the isolated camera worker. SDK and retained still capture remain the defaults;
+existing NINA, ASCOM and Alpaca clients do not switch automatically.
 
-- Accept validated USB 2 high-speed endpoint layouts as well as USB 3 for the
-  existing Direct USB models. Unsupported or ambiguous descriptors fail before
-  camera programming. This does not add support for every camera in the ZWO SDK.
-- Pace short ASI662MC/ASI676MC USB 2 frames without changing their integration
-  time, fixing the observed ASI676 retained-replay mismatch.
-- Wait for the complete programmed Duo sensor frame interval before freezing
-  DDR. The old fixed wait could leave stale lower rows despite identical replay.
-- Pad tiny Duo physical reads to at least 128 KiB on both USB 2 and USB 3, then
-  apply factory correction and crop to the exact requested ROI. This fixes the
-  observed zero-byte timeout at 64x64 / 100 ms.
-- Preserve explicit camera selection, cached identity, bounded deadlines and
-  same-frame retained retries. No new discovery sweep or automatic port reset
-  is introduced by these changes.
+- RAW16/bin-1 full frames and ROI, with video exposures from 32 microseconds to
+  30 seconds. Other Direct USB models retain their existing still-capture path.
+- Reuse sensor setup and calibration between video frames. Exposure/gain/ROI
+  changes safely restart the stream; changing the FPS cap alone does not.
+- Cap actual grabs at the requested rate, including 0.5 FPS and rates as low as
+  0.01 FPS. No catch-up bursts; exposure and readout can reduce actual throughput.
+- Cancel exposure and FPS waits, stop the stream on invalid frame sequences or
+  transfer failure, and preserve the existing bounded worker isolation.
+- Never replay live video as a retained still frame. Shared software WB/AWB
+  remains available. No new camera discovery sweep or physical USB reset.
 
-Operator-authorized Windows testing covered ASI662MC, ASI676MC, ASI2600MM Pro
-P25, ASI2600MM Duo and both ASI6200MM Pro revisions over USB 2. The 2600 P25
-and Duo each passed 40 cases / 42 frames; Duo also passed the USB 3 regression.
-Checks included ROI/binning, full-row offset transitions, retained replay,
-interrupted reads, timeouts and worker recovery. Full-frame exposures were
-tested through 30 seconds and selected ROI exposures through 60 seconds.
-Evidence is tied to the exact builds recorded in the coverage report.
+Operator-authorized Windows testing passed the same 21-video-frame matrix on
+USB 2 and USB 3, including full frames/ROI, fractional FPS, slow consumers,
+exposure changes through 30 seconds, cancellation, restart and return to still
+capture. Long-exposure cancellation took approximately 203–218 ms. SDK reference
+traces corroborated transport setup. Automated tests use simulations only.
 
-**Limits:** ASI6200 extreme-gain frames exceeded the conservative individual-row
-uniformity check despite valid transfers and matching replay. Noise versus
-freshness at these settings remains uncharacterized; these are qualified
-results, not unconditional matrix passes. Physical disconnect/port-reset
-recovery, cold power-up, other USB controllers, Linux/macOS hardware and optical
-accuracy remain unvalidated. No advertised 2,000-second maximum was validated
-in this pass. No private images, camera serials or calibration payloads are bundled.
+**Limits:** FPS limits grabs, not sensor output; slow consumers may receive
+buffered frames rather than the newest scene. Optical accuracy, cold startup,
+physical-disconnect recovery, long-running stability and Linux/macOS video
+hardware remain unvalidated. This release does not add ASI676MC video support.
+No private images, camera serials, raw traces or calibration payloads are bundled.
 
-See the [USB 2 coverage and evidence](https://github.com/pulsarfab/regain/blob/v0.5.4.0/docs/usb2-coverage-spike.md)
-for model-specific results and limitations.
+See [ASI662MC video semantics and evidence](https://github.com/pulsarfab/regain/blob/v0.5.5.0/docs/asi662mc.md).
 
 For Windows ASCOM and the bundled Alpaca server, use
-`Regain-ASCOM-0.5.4.0-win-x64-setup.exe`. Install NINA through
+`Regain-ASCOM-0.5.5.0-win-x64-setup.exe`. Install NINA through
 `https://nina-plugins.pulsarfab.com/` or `https://nina-plugins.psf-guard.com/`,
-or use `Regain-0.5.4.0.zip` manually. The stable registry entry retains its
-existing plugin identity and minimum NINA version. Rust workspace version is
-0.5.4; the CameraKit ZIP is a separate diagnostic tool.
+or use `Regain-0.5.5.0.zip` manually. The registry retains the existing plugin
+identity and minimum NINA version. Rust workspace version is 0.5.5.
 
-[Documentation and supported hardware](https://pulsarfab.com/docs/regain/) ·
-[Install and upgrade](https://pulsarfab.com/docs/regain/install.html)
-
-Windows release binaries are signed by StackFoundry LLC. Regain is Apache-2.0;
-`regain-zwo` also carries a ZWO MIT notice, and bundled third-party components
-retain their own licenses. Existing published assets are unchanged.
+Windows release programs are signed by StackFoundry LLC. Regain is Apache-2.0;
+`regain-zwo` also carries a ZWO MIT notice, and bundled dependencies retain their
+licenses. Existing published assets are unchanged.
