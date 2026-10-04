@@ -29,7 +29,12 @@ cancellation, restart and return to still capture. Long-exposure cancellation
 took about 219 ms; cancellation of a 100-second FPS wait was immediate at the
 measurement resolution. Pixels were validated and discarded, not saved/uploaded.
 
-USB 3 video validation is pending. These checks do not establish optical
+The same 21-video-frame matrix passed on USB 3, including the 30-second capture,
+restart and still regression. Long-exposure cancellation took about 218 ms and
+FPS-wait cancellation was immediate at the measurement resolution. A separate
+three-frame SDK reference confirmed USB 3 enumeration and bandwidth word `0x0180`.
+
+These checks do not establish optical
 accuracy, cold startup, physical-disconnect recovery, long-running stability or
 Linux/macOS video hardware behavior. No private camera identity, image,
 calibration payload or raw trace is committed or bundled.
