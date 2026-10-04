@@ -24,6 +24,8 @@ pub struct Settings {
     pub keep_retained: bool,
     /// Host acquisition cap for explicit video mode, independent of exposure.
     pub video_max_fps: f64,
+    /// Continuous owner drains without acquisition pacing; FPS applies at IPC delivery.
+    pub continuous_drain: bool,
 }
 impl Default for Settings {
     fn default() -> Self {
@@ -44,6 +46,7 @@ impl Default for Settings {
             reopen_delay_ms: 1000,
             keep_retained: false,
             video_max_fps: 1.0,
+            continuous_drain: false,
         }
     }
 }

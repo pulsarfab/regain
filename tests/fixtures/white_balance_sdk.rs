@@ -11,6 +11,9 @@ struct State {
     x: c_int,
     y: c_int,
     active: bool,
+    video: bool,
+    video_reads: u64,
+    timeout_at: Option<std::time::Instant>,
 }
 static STATE: Mutex<State> = Mutex::new(State {
     wb: [(62, 0), (99, 1)],
@@ -19,6 +22,9 @@ static STATE: Mutex<State> = Mutex::new(State {
     x: 0,
     y: 0,
     active: false,
+    video: false,
+    video_reads: 0,
+    timeout_at: None,
 });
 #[no_mangle]
 pub extern "C" fn ASIGetNumOfConnectedCameras() -> c_int {
@@ -49,6 +55,7 @@ pub extern "C" fn ASIInitCamera(_: c_int) -> c_int {
 }
 #[no_mangle]
 pub extern "C" fn ASICloseCamera(_: c_int) -> c_int {
+    eprintln!("CALL close");
     STATE.lock().unwrap().active = false;
     0
 }
@@ -101,6 +108,7 @@ pub unsafe extern "C" fn ASIGetControlValue(
 }
 #[no_mangle]
 pub extern "C" fn ASISetControlValue(_: c_int, c: c_int, value: c_long, auto: c_int) -> c_int {
+    eprintln!("CALL set {c} {value} {auto}");
     if c == 3 || c == 4 {
         if c == 4 && value == 50 && std::env::var_os("REGAIN_FIXTURE_REJECT_WB").is_some() {
             return 0;
@@ -119,6 +127,8 @@ pub extern "C" fn ASIDisableDarkSubtract(_: c_int) -> c_int {
 #[no_mangle]
 pub extern "C" fn ASISetROIFormat(_: c_int, w: c_int, h: c_int, _: c_int, _: c_int) -> c_int {
     let mut s = STATE.lock().unwrap();
+    if s.video { return 16; }
+    eprintln!("CALL roi {w} {h}");
     s.width = w;
     s.height = h;
     0
@@ -154,11 +164,47 @@ pub unsafe extern "C" fn ASIGetStartPos(_: c_int, x: *mut c_int, y: *mut c_int) 
 }
 #[no_mangle]
 pub extern "C" fn ASIStartExposure(_: c_int, _: c_int) -> c_int {
+    eprintln!("CALL still-start");
     let mut s = STATE.lock().unwrap();
     if s.wb != [(50, 0), (50, 0)] {
         return 16;
     }
     s.active = true;
+    0
+}
+
+#[no_mangle]
+pub extern "C" fn ASIStartVideoCapture(_: c_int) -> c_int {
+    let mut s = STATE.lock().unwrap();
+    if s.video { return 16; }
+    eprintln!("CALL video-start");
+    s.video = true;
+    s.video_reads = 0;
+    s.timeout_at = None;
+    0
+}
+#[no_mangle]
+pub extern "C" fn ASIStopVideoCapture(_: c_int) -> c_int {
+    eprintln!("CALL video-stop");
+    STATE.lock().unwrap().video = false;
+    0
+}
+#[no_mangle]
+pub unsafe extern "C" fn ASIGetVideoData(_: c_int, data: *mut u8, size: c_long, wait: c_int) -> c_int {
+    let mut s = STATE.lock().unwrap();
+    if !s.video || wait != 502 { return 16; }
+    if size != c_long::from(s.width) * c_long::from(s.height) * 2 { return 9; }
+    if s.timeout_at.is_some_and(|t| t.elapsed() < std::time::Duration::from_millis(90)) { return 16; }
+    s.video_reads += 1;
+    // Timeouts must not trigger stop/start or a new single exposure.
+    if s.video_reads <= 3 {
+        s.timeout_at = Some(std::time::Instant::now());
+        return 11;
+    }
+    if s.video_reads > 10 && std::env::var_os("REGAIN_FIXTURE_VIDEO_REMOVED").is_some() {
+        return 5;
+    }
+    for i in 0..size as usize { *data.add(i) = s.video_reads as u8; }
     0
 }
 #[no_mangle]

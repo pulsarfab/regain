@@ -155,11 +155,13 @@ impl Video {
                 let discarded_at = Instant::now();
                 session.stop(camera)?;
                 // Failed grabs count against the FPS cap too. No rapid retry burst.
-                wait_until(
-                    discarded_at,
-                    frame_interval(session.settings.video_max_fps)?,
-                    cancel,
-                )?;
+                if !session.settings.continuous_drain {
+                    wait_until(
+                        discarded_at,
+                        frame_interval(session.settings.video_max_fps)?,
+                        cancel,
+                    )?;
+                }
                 *session = Self::start(camera, info, session.settings.clone(), session.profile)?;
                 Ok(())
             },

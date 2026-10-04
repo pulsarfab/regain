@@ -340,6 +340,103 @@ def standalone(binary_dir, library=None):
           else "Passed: standalone simulated camera commands")
 
 
+def continuous(binary_dir):
+    """No hardware: every direct family, plus SDK simulation, drains while idle."""
+    suffix = ".exe" if sys.platform == "win32" else ""
+    binary = str(binary_dir / ("regain-device" + suffix))
+    for backend in ["camera-sdk", "camera-direct"]:
+        with Worker([binary, "zwo", backend] + (["--serve"] if backend == "camera-direct" else []) + ["--simulate"]) as worker:
+            cameras = worker.call("list")[0]
+            for camera in cameras:
+                opened = worker.call("open", dict(name=camera["name"]))[0]
+                assert opened["continuousAcquisition"]["fpsScope"] == "delivery"
+                p = dict(width=128, height=128, bin=1, x=0, y=0,
+                         microseconds=1000, dark=False, maxFps=0.5)
+                worker.call("stream-start", p)
+                worker.call("list", error=True)
+                time.sleep(0.15)
+                status = worker.call("stream-status")[0]
+                assert status["acquiredFrames"] > 2, status
+                assert status["replacedFrames"] > 0, status
+                assert status["error"] is None, status
+                expected = "video" if "video" in opened.get("captureModes", []) else "still"
+                assert status["mode"] == expected
+                first, pixels = worker.call("stream-download")
+                assert len(pixels) == 128 * 128 * 2
+                worker.call("stream-download", error=True)
+                time.sleep(0.05)
+                assert worker.call("stream-status")[0]["acquiredFrames"] > status["acquiredFrames"]
+                worker.call("stream-stop")
+                deadline = time.monotonic() + 3
+                while worker.call("stream-status")[0]["active"]:
+                    assert time.monotonic() < deadline
+                    time.sleep(0.01)
+                worker.call("close")
+    print("Passed: continuous draining/delivery pacing for SDK and every Direct simulator")
+
+
+def continuous_sdk_fixture(binary_dir):
+    suffix = ".exe" if sys.platform == "win32" else ""
+    libsuffix = ".dll" if sys.platform == "win32" else ".dylib" if sys.platform == "darwin" else ".so"
+    source = Path(__file__).resolve().parent.parent / "tests/fixtures/white_balance_sdk.rs"
+    with tempfile.TemporaryDirectory(prefix="regain-video-test-") as directory:
+        library = Path(directory) / ("video_sdk" + libsuffix)
+        subprocess.run(["rustc", "--edition=2021", "--crate-type=cdylib", str(source),
+                        "-o", str(library)], check=True, timeout=60)
+        command = [str(binary_dir / ("regain-device" + suffix)), "zwo", "camera-sdk", "--sdk", str(library)]
+        for removed in [False, True]:
+            env = {**os.environ, **({"REGAIN_FIXTURE_VIDEO_REMOVED": "1"} if removed else {})}
+            with Worker(command, env=env) as worker:
+                worker.call("open", dict(name="WB fixture"))
+                p = dict(width=512, height=512, bin=1, x=0, y=0,
+                         microseconds=1000, dark=False, maxFps=120)
+                worker.call("stream-start", p)
+                time.sleep(0.1)
+                status = worker.call("stream-status")[0]
+                if removed:
+                    deadline = time.monotonic() + 3
+                    while status["error"] is None and time.monotonic() < deadline:
+                        time.sleep(0.02)
+                        status = worker.call("stream-status")[0]
+                    assert status["error"] and "5" in status["error"], status
+                    assert status["errorDetails"]["sdkCode"] == 5, status
+                    worker.call("stream-download", error=True)
+                else:
+                    deadline = time.monotonic() + 3
+                    while status["acquiredFrames"] <= 3 and status["error"] is None and time.monotonic() < deadline:
+                        time.sleep(0.02)
+                        status = worker.call("stream-status")[0]
+                    assert status["acquiredFrames"] > 3 and status["error"] is None, status
+                    # A frame larger than a pipe buffer blocks the I/O thread.
+                    # The camera owner must continue draining while it is blocked.
+                    worker.sequence += 1
+                    request = json.dumps(dict(version=1, id=worker.sequence,
+                                              method="stream-download", params={})).encode()
+                    worker.process.stdin.write(struct.pack("<I", len(request)) + request)
+                    worker.process.stdin.flush()
+                    time.sleep(0.2)
+                    length, = struct.unpack("<I", worker.read(4))
+                    reply = json.loads(worker.read(length))
+                    assert reply["ok"], reply
+                    assert reply["result"]["videoTimeouts"] == 3, reply
+                    pixels = worker.read(reply["binaryLength"])
+                    assert len(pixels) == 512 * 512 * 2
+                    after = worker.call("stream-status")[0]
+                    assert after["acquiredFrames"] > status["acquiredFrames"] + 5, (status, after)
+                    worker.call("stream-start", dict(p, maxFps=0.1))
+                    assert worker.call("stream-status")[0]["settingsGeneration"] == 1
+                worker.call("stream-stop")
+                worker.call("close")
+                worker.log.seek(0)
+                calls = worker.log.read().decode(errors="replace").splitlines()
+                assert calls.count("CALL video-start") == 1, calls
+                assert calls.count("CALL video-stop") == 1, calls
+                assert calls.count("CALL roi 512 512") == 1, calls
+                assert calls.count("CALL set 1 1000 0") == 1, calls
+                assert "CALL still-start" not in calls, calls
+    print("Passed: SDK video ABI, timeout handling, no per-frame reconfiguration, blocked pipe and terminal error")
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--bin-dir", type=Path, default=Path("target/debug"))
@@ -349,6 +446,8 @@ if __name__ == "__main__":
     white_balance(args.bin_dir.resolve())
     white_balance_fixture(args.bin_dir.resolve())
     targeted_open_fixture(args.bin_dir.resolve())
+    continuous(args.bin_dir.resolve())
+    continuous_sdk_fixture(args.bin_dir.resolve())
     standalone(args.bin_dir.resolve())
     if args.sdk_fixture:
         sdk_fixture(args.bin_dir.resolve(), args.sdk_fixture)
