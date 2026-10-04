@@ -95,7 +95,9 @@ handoff. Long frames were saturated under available illumination.
 **ASI2600MM Duo passed 40 USB 2 cases / 42 frames after two scoped fixes:**
 complete readout before standby and a minimum physical read for tiny ROIs.
 The [Duo follow-up](usb2-coverage-spike.md#duo-follow-up-two-acquisition-fixes)
-records the rejected failures, passing recovery tests and pending USB 3 regression.
+records the rejected failures and passing recovery tests. The subsequent
+[USB 3 regression](usb3-duo-regression-evidence.json) also passed 40 cases /
+42 frames after extending tiny-frame padding to both links.
 ASI2600MM Pro P25 passed the follow-up matrix linked above.
 ASI6200 P25 passed USB 2 transfers, bins/ROI and recovery. Its initial dark-offset
 matrix stopped near one second with an elevated pedestal; the operator then

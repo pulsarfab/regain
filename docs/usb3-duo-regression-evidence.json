@@ -1,0 +1,74 @@
+{
+  "date": "2026-10-03",
+  "model": "ASI2600MM Duo main sensor",
+  "sourceCommit": "506e562c140c74b109774042173611416901239b",
+  "workerSha256": "ac2486b39c502edb971424f2bbd01ef91040e890db71bfaa33c3c86bff6c8162",
+  "platform": "Windows x64",
+  "transport": {
+    "vendorId": "03c3", "productId": "2601", "bcdUSB": "0300",
+    "bulkInEndpoint": "81", "maxPacketSize": 1024, "maxBurst": 15,
+    "configurationBytes": 31, "driverVersion": "01020200"
+  },
+  "rejectedBeforePadding": {
+    "sourceCommit": "7001d1bc2f17171ce02f9d81539b96c2865b7a9e",
+    "workerSha256": "415a2bc8c3c457155a4963a8c4bfa7b37486b712fbfbbed10930386095617d99",
+    "acceptedCasesBeforeFailure": 11,
+    "acceptedFramesBeforeFailure": 13,
+    "fullFrameOffsetTransitionsPassed": 10,
+    "failedCase": 11,
+    "width": 64, "height": 64, "exposureUs": 100000,
+    "gain": 100, "offset": 50,
+    "category": "timeout", "expectedBytes": 8192, "receivedBytes": 0,
+    "readRetryBudgetExhausted": true
+  },
+  "fix": {
+    "smallPhysicalReadMinimumBytesBothLinks": 131072,
+    "factoryCorrectionBeforeExactRoiCrop": true,
+    "largerPhysicalGeometryUnchanged": true,
+    "usb2PaddingBehaviorUnchangedFromPreviouslyTestedBuild": true,
+    "newBinaryNotRetestedOnUsb2": true,
+    "shortFullFrameReadoutGuardUs": 264525
+  },
+  "matrix": {
+    "validator": "scripts/inspection/validate_asi2600_p25.py --duo --long 30",
+    "casesPassed": 40, "framesPassed": 42,
+    "allRetainedReplaysIdentical": true,
+    "fullFrameBytes": 52183296,
+    "fullFrameOffsetTransitionCasesPassed": 10,
+    "fullFrameOffsetTransitionExposureUs": [32, 100000, 999999, 1000000, 2000000],
+    "fullFrameOffsetTransitionGain": 100,
+    "testedOffsets": [240, 50],
+    "testedBins": [1, 2, 3, 4],
+    "roiGainSweep": [-25, -1, 0, 99, 100, 101, 460, 461, 520, 521, 700],
+    "maximumRoiExposureSeconds": 60,
+    "maximumFullFrameExposureSeconds": 30,
+    "longFullFrameAcquisitionMs": 33791,
+    "longFullFrameRowMedianRange": [520, 525],
+    "hostInterruption": {"prefixBytes": 12582912, "readRecoveries": 1, "prefixMatches": true},
+    "stalledSenderTimeout": {"prefixBytes": 12582912, "readRecoveries": 1, "prefixMatches": true, "deadlineExpired": true},
+    "abandonedReplay": {"prefixBytes": 12582912, "replayIdenticalAfterRecovery": true}
+  },
+  "additionalTinyRoiChecks": {
+    "outputWidth": 64, "outputHeight": 64, "outputBytes": 8192,
+    "physicalReadBytes": 131072, "origins": [[0, 0], [16, 2], [6176, 4112]],
+    "allRetainedReplaysIdentical": true, "readRecoveries": [0, 0, 0]
+  },
+  "productionWorker": {
+    "activeExposureTerminatedSeconds": 10,
+    "cachedSerialAndLocatorReused": true, "identityVerified": true,
+    "listOrDiscoverCommands": 0,
+    "insufficientBudgetSeconds": 0.005,
+    "budgetFailure": {"category": "timeout", "deadlineExpired": true, "binaryLength": 0},
+    "newExposureAfterBudgetFailurePassed": true,
+    "fullFramesAfterCancellationBudgetFailureAndReopen": 3,
+    "distinctFrameDigests": true,
+    "readRecoveries": [0, 0, 0], "acquisitionMs": [3813, 3789, 3807],
+    "workersClosed": true
+  },
+  "allOwnedWorkersClosed": true,
+  "guideCameraOpened": false, "sdkLoadedInDirectWorkers": false,
+  "newOutputThrottleApplied": false,
+  "imagesSavedOrUploaded": false, "installedSettingsChanged": false,
+  "portResetOrCyclePerformed": false,
+  "notValidated": ["full-frame extreme-gain noise characterization", "cold power-up", "physical bus faults or disconnect", "other USB controllers", "Linux/macOS hardware", "optical accuracy"]
+}

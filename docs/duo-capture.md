@@ -71,10 +71,10 @@ while lower rows retained unrelated data, despite identical replay. The driver
 now waits the complete programmed frame interval at the Duo's HMAX 779 / 20 MHz,
 plus 100 ms (264,525 us for a short full frame), before standby. P25 keeps its
 own HMAX 790. The guard applies to both links because the sensor-completion
-requirement is not USB-specific; new USB 3 hardware regression remains a gate.
-USB 2 Duo 64×64 retained reads also stalled. Those small sensor reads now use
+requirement is not USB-specific.
+Duo 64×64 retained reads also stalled on both USB 2 and USB 3. Those small sensor reads now use
 at least 128 KiB, followed by factory correction and cropping back to the exact
-requested ROI. Original Duo USB 3 geometry remains unchanged. See the
+requested ROI on both links. Larger physical geometry is unchanged. See the
 [USB 2 coverage follow-up](usb2-coverage-spike.md) for current results and limits.
 
 Short integrations stream: the driver explicitly reads frozen DDR after
