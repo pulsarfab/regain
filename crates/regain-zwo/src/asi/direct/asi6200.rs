@@ -288,10 +288,7 @@ fn capture_native(
     replay: bool,
 ) -> Result<(Value, Vec<u8>)> {
     validate(s, gain)?;
-    ensure!(
-        info["productId"] == 0x620b && info["usbVersionBcd"] == 0x300,
-        "ASI6200 research capture requires observed PID 620b USB3"
-    );
+    super::link::validate(info, 0x620b)?;
     let started = Instant::now();
     let revision = Revision::detect(camera)?;
     camera.phase("initializing");

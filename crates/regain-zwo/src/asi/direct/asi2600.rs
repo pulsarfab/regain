@@ -187,6 +187,13 @@ fn timing(s: &Settings, revision: Revision) -> (u32, u32) {
     };
     (frame.min(0xffffff), (shutter.min(0x1fffe) / 2).max(1))
 }
+fn readout_guard(frame: u32, revision: Revision) -> Duration {
+    // BC23=15 announces readout, not completion of every row in DDR. This
+    // applies to the original Duo as well as P25: a fixed 100 ms froze only
+    // the upper part of a Duo full frame during USB 2 offset transitions.
+    // Wait a complete programmed interval (20 MHz clock), plus settling.
+    Duration::from_micros((u64::from(frame) * u64::from(revision.hmax())).div_ceil(20) + 100_000)
+}
 fn begin_retained_read(camera: &Camera, revision: Revision) -> Result<()> {
     camera.phase("restarting_retained");
     if revision == Revision::Original {
@@ -246,7 +253,7 @@ pub fn capture(
     replay: bool,
 ) -> Result<(Value, Vec<u8>)> {
     let raw = raw_settings(s, gain, bin)?;
-    let sensor = sensor_settings(&raw, info["productId"] == 0x260e);
+    let sensor = sensor_settings(&raw);
     let (mut meta, mut data) = capture_native(camera, info, &sensor, gain, replay)?;
     if sensor.width != raw.width || sensor.height != raw.height {
         let mut cropped = Vec::with_capacity(raw.width as usize * raw.height as usize * 2);
@@ -274,11 +281,12 @@ pub fn capture(
     meta["sha256"] = json!(format!("{:x}", Sha256::digest(&data)));
     Ok((meta, data))
 }
-fn sensor_settings(raw: &Settings, p25: bool) -> Settings {
+fn sensor_settings(raw: &Settings) -> Settings {
     let mut sensor = raw.clone();
-    // P25 64x64 DDR reads stall; 512x128 replay succeeds. Expand small
-    // requests to at least 128 KiB, correct in sensor coordinates, then crop.
-    if p25 && sensor.width * sensor.height < 65536 {
+    // P25 and Duo 64x64 DDR reads stall, including Duo on USB 3.
+    // Expand small requests to at least 128 KiB, correct in sensor coordinates,
+    // then crop. This retained-read floor applies independently of link speed.
+    if sensor.width * sensor.height < 65536 {
         sensor.width = sensor.width.max(512);
         sensor.height = sensor.height.max(128);
         sensor.x = sensor.x.min((6248 - sensor.width) / 16 * 16);
@@ -299,10 +307,14 @@ fn capture_native(
         Some(0x260e) => Revision::P25,
         _ => anyhow::bail!("ASI2600 capture requires observed PID 2601 or 260e"),
     };
-    ensure!(
-        info["usbVersionBcd"] == 0x300,
-        "ASI2600 capture requires USB3"
-    );
+    super::link::validate(
+        info,
+        if revision == Revision::Original {
+            0x2601
+        } else {
+            0x260e
+        },
+    )?;
     let started = Instant::now();
     // Cache identity while the handle is healthy. A failed USB read may make
     // even the serial query impossible until the handle has been replaced.
@@ -456,18 +468,9 @@ fn capture_native(
         }
         // Sensor standby, deliberately without AA (which clears retained DDR).
         camera.phase("sensor_readout");
-        // On this unit 23=15 can precede a safely freezable frame: immediate
-        // standby repeatedly stalled 64x64 replay. The empirical 100ms guard
-        // fixes that case. Long integrations must consume the initial pass
-        // below; an extra settling delay does not substitute for that step.
-        let settling = if revision == Revision::P25 {
-            // BC23=15 starts readout; it does not mean every DDR row is fresh.
-            // P25 full-frame offset transitions require one programmed sensor
-            // frame interval before standby, plus the observed settling guard.
-            Duration::from_micros(u64::from(frame) * u64::from(revision.hmax()) / 20 + 100_000)
-        } else {
-            Duration::from_millis(100)
-        };
+        // Long integrations must still consume the initial pass below; an
+        // extra settling delay does not substitute for that step.
+        let settling = readout_guard(frame, revision);
         let settle_started = Instant::now();
         while settle_started.elapsed() < settling {
             camera.service_environment()?;
@@ -611,6 +614,7 @@ fn capture_native(
         defects.correct(&mut data)?;
         let meta = json!({"model":if revision == Revision::P25 { "ASI2600MM Pro P25" } else { "ASI2600MM Pro" },"width":s.width,"height":s.height,"x":s.x,"y":s.y,
             "bin":1,"gain":gain,"offset":s.offset,"microseconds":s.microseconds,"bytes":data.len(),
+            "readoutGuardUs":settling.as_micros(),
             "wireSha256":wire_hash,"wireInteriorSha256":wire_interior_hash,
             "sha256":format!("{:x}",Sha256::digest(&data)),"sequence":sequence,
             "factoryDefects":defects.indices.len(),"acquisitionMs":armed.elapsed().as_millis(),"elapsedMs":started.elapsed().as_millis(),
@@ -688,6 +692,28 @@ mod tests {
     use super::*;
 
     #[test]
+    fn both_revisions_wait_for_all_rows_before_freezing_ddr() {
+        assert_eq!(readout_guard(4224, Revision::Original).as_micros(), 264525);
+        assert_eq!(readout_guard(4224, Revision::P25).as_micros(), 266848);
+        for revision in [Revision::Original, Revision::P25] {
+            for height in [64, 256, 4176] {
+                for microseconds in [32, 100_000, 999_999, 1_000_000, 30_000_000] {
+                    let s = Settings {
+                        height,
+                        microseconds,
+                        ..Settings::default()
+                    };
+                    let (frame, _) = timing(&s, revision);
+                    let guard = readout_guard(frame, revision).as_micros();
+                    assert!(
+                        guard * 20 >= u128::from(frame) * u128::from(revision.hmax()) + 2_000_000
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
     fn p25_registers_match_sdk_141_camera_kit_observations() {
         // ASI2600 P25 kit e0a00a37..., not values derived from this implementation.
         for (height, microseconds, expected) in [
@@ -724,8 +750,15 @@ mod tests {
     }
 
     #[test]
-    fn p25_small_transfers_cover_requested_roi_at_sensor_edges() {
-        for (width, height) in [(64, 64), (64, 128), (512, 64), (6248, 64)] {
+    fn both_revisions_small_transfers_cover_requested_roi_at_sensor_edges() {
+        for (width, height) in [
+            (64, 64),
+            (64, 128),
+            (512, 64),
+            (512, 128),
+            (6248, 64),
+            (6248, 4176),
+        ] {
             for edge in [false, true] {
                 let raw = Settings {
                     width,
@@ -735,20 +768,25 @@ mod tests {
                     } else {
                         16.min((6248 - width) / 16 * 16)
                     },
-                    y: if edge { 4176 - height } else { 2 },
+                    y: if edge {
+                        4176 - height
+                    } else {
+                        2.min(4176 - height)
+                    },
                     ..Settings::default()
                 };
-                let sensor = sensor_settings(&raw, true);
+                let sensor = sensor_settings(&raw);
                 validate(&sensor, 100).unwrap();
                 assert!(sensor.width * sensor.height * 2 >= 131072);
                 assert!(sensor.x <= raw.x && sensor.y <= raw.y);
                 assert!(sensor.x + sensor.width >= raw.x + raw.width);
                 assert!(sensor.y + sensor.height >= raw.y + raw.height);
-                let original = sensor_settings(&raw, false);
-                assert_eq!(
-                    (original.width, original.height, original.x, original.y),
-                    (raw.width, raw.height, raw.x, raw.y)
-                );
+                if raw.width * raw.height >= 65536 {
+                    assert_eq!(
+                        (sensor.width, sensor.height, sensor.x, sensor.y),
+                        (raw.width, raw.height, raw.x, raw.y)
+                    );
+                }
             }
         }
     }

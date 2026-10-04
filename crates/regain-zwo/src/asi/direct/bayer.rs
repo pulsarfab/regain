@@ -52,6 +52,23 @@ impl Profile {
         };
         (frame + padding, shutter + padding)
     }
+
+    fn timing_for_link(&self, settings: &Settings, link: super::link::Link) -> (u32, u32) {
+        let (frame, shutter) = self.timing(settings);
+        if link != super::link::Link::HighSpeed || settings.long_exposure() {
+            return (frame, shutter);
+        }
+        // USB 2 ASI676 short-ROI testing exposed a rollover between the first
+        // read and retained replay. Apply the same ~100 ms pacing strategy as
+        // ASI662: extend frame AND shutter delay, never integration duration.
+        let paced = Settings {
+            microseconds: 100_000,
+            ..settings.clone()
+        };
+        let minimum = paced.timing_with_hmax(self.hmax).0;
+        let padding = minimum.saturating_sub(frame);
+        (frame + padding, shutter + padding)
+    }
 }
 
 fn writes(camera: &Camera, commands: &[(u8, u16, u16)]) -> Result<()> {
@@ -148,11 +165,7 @@ pub fn capture(
     profile: &Profile,
 ) -> Result<(Value, Vec<u8>)> {
     profile.validate(settings)?;
-    ensure!(
-        info["productId"] == profile.pid && info["usbVersionBcd"] == 0x300,
-        "direct acquisition is restricted to the observed {} USB3 device",
-        profile.name
-    );
+    let link = super::link::validate(info, u32::from(profile.pid))?;
     let start = Instant::now();
     let result = (|| -> Result<(Value, Vec<u8>)> {
         writes(camera, profile.initialize)?;
@@ -190,7 +203,7 @@ pub fn capture(
             ],
         )?;
         word(camera, 0xb6, 0x30dc, settings.offset, 2)?;
-        let (frame_lines, shutter_lines) = profile.timing(settings);
+        let (frame_lines, shutter_lines) = profile.timing_for_link(settings, link);
         word(camera, 0xbd, 0x10, frame_lines, 3)?;
         word(camera, 0xb6, 0x3050, shutter_lines, 3)?;
         let flags = camera.vendor(0xbc, 0, 0, 1)?[0];
@@ -365,4 +378,32 @@ pub fn capture(
     })();
     let cleanup = stop(camera);
     crate::asi::direct::completion::finish(result, cleanup)
+}
+
+#[test]
+fn usb2_pacing_preserves_integration_and_leaves_usb3_and_long_exposures_unchanged() {
+    use super::link::Link;
+    for profile in [&super::asi662::PROFILE, &super::asi676::PROFILE] {
+        for height in [64, 482, profile.height] {
+            for microseconds in [32, 1000, 100000, 999999, 1000000, 30000000, 2000000000] {
+                let settings = Settings {
+                    height,
+                    microseconds,
+                    ..Settings::default()
+                };
+                let original = profile.timing(&settings);
+                assert_eq!(
+                    profile.timing_for_link(&settings, Link::SuperSpeed),
+                    original
+                );
+                let paced = profile.timing_for_link(&settings, Link::HighSpeed);
+                assert_eq!(paced.0 - paced.1, original.0 - original.1);
+                if settings.long_exposure() {
+                    assert_eq!(paced, original);
+                } else {
+                    assert!(f64::from(paced.0) * f64::from(profile.hmax) / 20.0 >= 100000.0);
+                }
+            }
+        }
+    }
 }

@@ -146,10 +146,7 @@ fn timing(s: &Settings) -> (u32, u32, u32) {
 
 pub fn capture(c: &Camera, info: &Value, s: &Settings, bin: u32) -> Result<(Value, Vec<u8>)> {
     let raw = raw_settings(s, bin)?;
-    ensure!(
-        info["productId"] == 0x2209 && info["usbVersionBcd"] == 0x200,
-        "guide capture requires observed PID 2209 USB2"
-    );
+    super::link::validate(info, 0x2209)?;
     let started = Instant::now();
     let result = (|| {
         stop(c)?;

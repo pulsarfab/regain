@@ -1,0 +1,69 @@
+{
+  "date": "2026-10-03",
+  "model": "ASI6200MM Pro original",
+  "sourceCommit": "958caa4c0cd252b2e7f1f35b5e777e0dab95fe1a",
+  "workerSha256": "1f159f92b80e0abc3b221675a5c5e3d7b2c94717f78cd66169021f88ab3d8cdc",
+  "platform": "Windows x64",
+  "transport": {
+    "vendorId": "03c3", "productId": "620b", "bcdUSB": "0210",
+    "bulkInEndpoint": "81", "maxPacketSize": 512,
+    "configurationBytes": 25, "driverVersion": "01020200"
+  },
+  "hardwareRevision": 3,
+  "sensorHmax": 1515,
+  "matrix": {
+    "validator": "scripts/inspection/validate_asi6200.py",
+    "fullControls": true,
+    "cleanPass": false,
+    "casesPassedBeforeFailure": 63,
+    "framesPassedBeforeFailure": 65,
+    "failedCase": 63,
+    "failedGain": 520,
+    "failedRowMedianRange": [1614, 1858],
+    "failure": "conservative individual-row uniformity threshold exceeded",
+    "fullFrameBytes": 122342976,
+    "fullFrameOffsetTransitionCasesPassed": 10,
+    "fullFrameOffsetTransitionExposureUs": [32, 100000, 999999, 1000000, 2000000],
+    "testedOffsets": [200, 50],
+    "testedBins": [1, 2, 3, 4],
+    "maximumRoiExposureSeconds": 60,
+    "allAcceptedRetainedReplaysIdentical": true,
+    "hostInterruption": {"prefixBytes": 12582912, "readRecoveries": 2, "prefixMatches": true},
+    "stalledSenderTimeout": {"prefixBytes": 12582912, "readRecoveries": 1, "prefixMatches": true, "deadlineExpired": true},
+    "abandonedReplay": {"prefixBytes": 12582912, "replayIdenticalAfterRecovery": true}
+  },
+  "separateFollowup": {
+    "highGainFailures": [
+      {"gain": 520, "rowMedianRange": [1598, 1860], "bandMedianRange": [1730, 1742]},
+      {"gain": 520, "rowMedianRange": [1610, 1876], "bandMedianRange": [1730, 1738]},
+      {"gain": 521, "rowMedianRange": [1688, 1948], "bandMedianRange": [1820, 1828]},
+      {"gain": 700, "rowMedianRange": [0, 1072], "bandMedianRange": [0, 0]}
+    ],
+    "highGainTransfersAndRetainedReplaysPassed": true,
+    "highGainReadRecoveries": [0, 0, 0, 0],
+    "historicalUsb3RowMedianRangesSameGains": [[1590, 1856], [1688, 1948], [0, 784]],
+    "highGainRootCauseEstablished": false,
+    "gain100AfterHighGains": {"offset": 200, "rowMedianRange": [1999, 2002], "freshnessGatePassed": true},
+    "fullFrame30Seconds": {"bytes": 122342976, "acquisitionMs": 40446, "readRecoveries": 0, "replayIdentical": true}
+  },
+  "productionWorker": {
+    "activeExposureTerminatedSeconds": 10,
+    "cachedSerialAndLocatorReused": true,
+    "identityVerified": true,
+    "listOrDiscoverCommands": 0,
+    "insufficientBudgetSeconds": 0.005,
+    "budgetFailure": {"category": "timeout", "deadlineExpired": true, "binaryLength": 0},
+    "newExposureAfterBudgetFailurePassed": true,
+    "fullFramesAfterCancellationBudgetFailureAndReopen": 3,
+    "distinctFrameDigests": true,
+    "readRecoveries": [0, 0, 0],
+    "acquisitionMs": [8757, 8869, 8778],
+    "workersClosed": true
+  },
+  "sdkLoadedInDirectWorkers": false,
+  "newOutputThrottleApplied": false,
+  "imagesSavedOrUploaded": false,
+  "installedSettingsChanged": false,
+  "portResetOrCyclePerformed": false,
+  "notValidated": ["high-gain individual-row noise/freshness characterization", "cold power-up", "physical bus faults or disconnect", "other USB controllers", "Linux/macOS hardware", "optical accuracy", "P25 revision"]
+}

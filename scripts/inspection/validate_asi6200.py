@@ -6,12 +6,31 @@ from pathlib import Path
 from validate_duo import ROOT, capture
 
 
+def validate_full_frame(options, results):
+    # Conservative investigation gate, not a calibrated noise model: original
+    # 6200 high gains 520/521/700 also exceed this row range in saved USB 3
+    # evidence. A failure needs inspection; it alone does not prove stale DDR.
+    if options['width'] != 9576 or options['microseconds'] > 2000000:
+        return
+    for result in results:
+        # Whole-band medians can hide a small run of stale rows. These extrema
+        # are computed from every individual row, not the 16 summary bands.
+        rows = result['statistics']['rowMedianRange']
+        if options['gain'] == 100:
+            expected = options['offset'] * 10
+            if any(abs(value - expected) > 15 for value in rows):
+                raise RuntimeError(f'full-frame offset did not reach every row: {rows}')
+        if max(rows) - min(rows) > max(15, abs(result['statistics']['median']) * 0.1):
+            raise RuntimeError(f'nonuniform full-frame dark control transition: {rows}')
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--long', type=int, default=0, help='append a full-frame exposure, up to 2000 seconds')
     parser.add_argument('--full-controls', action='store_true', help='also sweep controls across the whole sensor and reject stale row bands')
     parser.add_argument('--worker', type=Path, help='test an exact built or installed worker instead of target/debug')
+    parser.add_argument('--revision', type=int, choices=[3, 5], help='require original (3) or P25 (5) metadata on every capture')
     args = parser.parse_args()
     if not 0 <= args.long <= 2000:
         parser.error('long duration must be 0..2000 seconds')
@@ -45,19 +64,22 @@ def main():
             if hashlib.sha256(worker.read_bytes()).hexdigest() != worker_sha:
                 raise RuntimeError('worker changed during the hardware matrix')
             results = capture(options, asi6200=True, worker=worker)
-            if args.full_controls and options['width'] == 9576 and options['gain'] == 100 and options['microseconds'] <= 2000000:
-                for result in results:
-                    bands = result['statistics']['rowBandMedians']
-                    expected = options['offset'] * 10
-                    if any(abs(value - expected) > 15 for value in bands):
-                        raise RuntimeError(f'full-frame offset did not reach every row band: {bands}')
-            if args.full_controls and options['width'] == 9576 and options['microseconds'] <= 2000000:
-                for result in results:
-                    bands = result['statistics']['rowBandMedians']
-                    if max(bands) - min(bands) > max(15, abs(result['statistics']['median']) * 0.1):
-                        raise RuntimeError(f'nonuniform full-frame dark control transition: {bands}')
-            output.write(json.dumps({'case':i, 'workerSha256':worker_sha, 'options':options, 'captures':results})+'\n')
+            if args.revision is not None and any(result['hardwareRevision'] != args.revision for result in results):
+                raise RuntimeError('camera revision differs from the requested matrix')
+            validation_error = None
+            try:
+                if args.full_controls:
+                    validate_full_frame(options, results)
+            except RuntimeError as error:
+                validation_error = error
+            # Preserve sanitized statistics even when the freshness gate fails;
+            # the failing case must not disappear from the evidence file.
+            output.write(json.dumps({'case':i, 'workerSha256':worker_sha, 'options':options,
+                                     'captures':results,
+                                     'validationFailure':str(validation_error) if validation_error else None})+'\n')
             output.flush()
+            if validation_error is not None:
+                raise validation_error
             print(f'case {i}: {len(results)} frames, recovery {[r["readRecoveries"] for r in results]}', flush=True)
 
 

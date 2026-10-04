@@ -1,0 +1,52 @@
+{
+  "date": "2026-10-03",
+  "model": "ASI2600MM Pro P25",
+  "sourceCommit": "958caa4c0cd252b2e7f1f35b5e777e0dab95fe1a",
+  "workerSha256": "1f159f92b80e0abc3b221675a5c5e3d7b2c94717f78cd66169021f88ab3d8cdc",
+  "platform": "Windows x64",
+  "transport": {
+    "vendorId": "03c3",
+    "productId": "260e",
+    "bcdUSB": "0210",
+    "bulkInEndpoint": "81",
+    "maxPacketSize": 512,
+    "configurationBytes": 25,
+    "driverVersion": "01020200"
+  },
+  "matrix": {
+    "validator": "scripts/inspection/validate_asi2600_p25.py",
+    "additionalLongExposureSeconds": 30,
+    "casesPassed": 40,
+    "framesPassed": 42,
+    "allRetainedReplaysIdentical": true,
+    "allRequiredRowFreshnessChecksPassed": true,
+    "fullFrameBytes": 52183296,
+    "fullFrameOffsetTransitionCases": 10,
+    "fullFrameOffsetTransitionExposureUs": [32, 100000, 999999, 1000000, 2000000],
+    "testedOffsets": [240, 50],
+    "testedBins": [1, 2, 3, 4],
+    "maximumRoiExposureSeconds": 60,
+    "maximumFullFrameExposureSeconds": 30,
+    "longFullFrameAcquisitionMs": 35851,
+    "hostInterruption": {"prefixBytes": 12582912, "readRecoveries": 2, "prefixMatches": true},
+    "stalledSenderTimeout": {"prefixBytes": 12582912, "readRecoveries": 1, "prefixMatches": true, "deadlineExpired": true},
+    "abandonedReplay": {"prefixBytes": 12582912, "replayIdenticalAfterRecovery": true}
+  },
+  "productionWorker": {
+    "activeExposureTerminatedSeconds": 10,
+    "cachedSerialAndLocatorReused": true,
+    "identityVerified": true,
+    "listOrDiscoverCommands": 0,
+    "fullFramesAfterCancellationAndReopen": 2,
+    "distinctFrameDigests": true,
+    "readRecoveries": [0, 0],
+    "acquisitionMs": [5189, 5167],
+    "workersClosed": true
+  },
+  "sdkLoadedInDirectWorkers": false,
+  "newOutputThrottleApplied": false,
+  "imagesSavedOrUploaded": false,
+  "installedSettingsChanged": false,
+  "portResetOrCyclePerformed": false,
+  "notValidated": ["cold power-up", "physical bus faults or disconnect", "other USB controllers", "Linux/macOS hardware", "optical accuracy", "other camera revisions"]
+}

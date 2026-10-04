@@ -1,5 +1,19 @@
 # Transport experiments
 
+## Static USB 2 coverage audit (no hardware access)
+
+`inspect_usb2_sdk.py` parses the digest-pinned Linux x86-64 SDK as bytes. It
+never loads the SDK, enumerates USB or opens a camera. Unlike the hardware
+experiments below, no idle camera is required. See the
+[coverage spike](../../docs/usb2-coverage-spike.md) for findings and limitations.
+
+```powershell
+.reference/inspection-venv/Scripts/python.exe scripts/inspection/inspect_usb2_sdk.py --symbol 'CCameraBase10OpenCamera|CCameraFX3.*(IsUSB3Host|SetFPGABandWidth)' --disassemble
+.reference/inspection-venv/Scripts/python.exe scripts/inspection/inspect_usb2_sdk.py --symbol 'CCameraS(662MC|676MC_DDR|2600MM_Pro|2600MM_Duo|6200MM_Pro)10SetFPSPerc' --disassemble
+```
+
+## Owned-device experiments
+
 For the CAA rotator, use [the separate HID workup](../../docs/caa.md).
 `caa_sdk_probe.py` traces the SDK, `validate_caa.py` exercises the native
 driver's error handling, and `extract_caa_temperature.py` reproduces its NTC
@@ -80,6 +94,8 @@ uses the installed driver exclusively and never loads ASICamera2.dll:
 ```powershell
 cargo run -p regain-device --locked -- zwo camera-direct
 cargo run -p regain-device --locked -- zwo camera-direct --probe
+# Selected model only, refusing ambiguity and opening no other model:
+cargo run -p regain-device --locked -- zwo camera-direct --probe-pid 662b
 # Descriptor-only inventory when several cameras are attached:
 cargo run -p regain-device --locked -- zwo camera-direct --probe-all
 # Explicit idle-endpoint experiment: one 16 KiB read, cancel after 100 ms, drain.
@@ -306,6 +322,17 @@ python scripts/inspection/trace_direct.py --output artifacts/inspection/NEW-2600
 The matrix covers full-frame freshness, small/moved/edge regions, bins 1–4,
 gain boundaries, exposure timing and interrupted reads. Add `--long 1200` for
 a twenty-minute exposure. See [P25 results](../../docs/asi2600-p25.md).
+
+The ASI2600 full-row matrix can also target the Duo main sensor explicitly:
+
+```powershell
+python scripts/inspection/validate_asi2600_p25.py --duo --worker target/debug/regain-device.exe --long 30 --output artifacts/NEW-duo-usb2.jsonl
+```
+
+Use a capped, idle, operator-authorized camera. This selects only the Duo main
+PID, never its guide sensor. It retains statistics and hashes, not image files.
+The default without `--duo` remains the Pro P25. Do not run hardware matrices
+in automated tests or CI.
 
 ## Cooler and auxiliary recovery
 

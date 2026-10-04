@@ -25,7 +25,11 @@ $initial = $null
 try {
     $type = if ($Id) { [type]::GetTypeFromCLSID([Guid]$Id) } else { [type]::GetTypeFromProgID('ASCOM.Regain.OFP2.CoverCalibrator') }
     $device = [Activator]::CreateInstance($type)
-    if ($device.Name -ne 'PulsarFab regain Deep Sky Dad OFP2' -or $device.InterfaceVersion -ne 1) { throw 'Invalid CoverCalibrator metadata' }
+    $deviceName = $device.Name
+    $interfaceVersion = $device.InterfaceVersion
+    if ($deviceName -ne 'PulsarFab regain Deep Sky Dad OFP2' -or $interfaceVersion -ne 1) {
+        throw "Invalid CoverCalibrator metadata ($([IntPtr]::Size * 8)-bit, role '$Role'): Name='$deviceName', InterfaceVersion='$interfaceVersion'"
+    }
     if ($MetadataOnly) { $device.Dispose(); return }
     if ($device.Connected) { throw 'New COM client inherited another connection' }
     Assert-Rejected { $device.GetType().InvokeMember('Brightness', [Reflection.BindingFlags]::GetProperty, $null, $device, $null) }

@@ -1,6 +1,7 @@
 # SDK-free ASI662MC
 
-Current source builds support the **ASI662MC USB3** (`03c3:662b`) in NINA,
+Current source builds support the **ASI662MC** (`03c3:662b`) on USB 3 and
+[USB 2 high-speed](usb2-cameras.md) in NINA,
 native ASCOM, and Alpaca through the existing **Direct USB** camera option.
 The driver lives in `regain-zwo`; the shared `regain-device` worker owns the
 connection. Windows uses the installed ZWO USB driver, without loading or

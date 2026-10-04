@@ -223,4 +223,24 @@ mod tests {
         bad[19] = 48;
         assert!(describe(&device, &bad, 0).is_err());
     }
+
+    #[test]
+    fn usb2_descriptor_reaches_the_same_capture_gate_without_a_superspeed_companion() {
+        let mut device = [0; 18];
+        device[0] = 18;
+        device[1] = 1;
+        device[2..4].copy_from_slice(&0x0210_u16.to_le_bytes());
+        device[8..10].copy_from_slice(&0x03c3_u16.to_le_bytes());
+        let config = [
+            9, 2, 25, 0, 1, 1, 0, 0x80, 0, 9, 4, 0, 0, 1, 0xff, 0, 0, 0, 7, 5, 0x81, 2, 0, 2, 0,
+        ];
+        for pid in [0x662b_u16, 0x676d, 0x2601, 0x260e, 0x620b, 0x2209] {
+            device[10..12].copy_from_slice(&pid.to_le_bytes());
+            let info = describe(&device, &config, 0x01020200).unwrap();
+            assert_eq!(
+                super::super::link::validate(&info, u32::from(pid)).unwrap(),
+                super::super::link::Link::HighSpeed
+            );
+        }
+    }
 }

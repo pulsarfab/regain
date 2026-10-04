@@ -14,6 +14,7 @@ mod bayer;
 mod completion;
 mod diagnostics;
 mod environment;
+mod link;
 mod processing;
 mod protocol;
 mod server;
@@ -21,6 +22,19 @@ mod settings;
 mod transfer;
 mod transport;
 use anyhow::{Result, ensure};
+
+fn probe_product(args: &[String]) -> Result<Option<u16>> {
+    if args.first().is_none_or(|arg| arg != "--probe-pid") {
+        return Ok(None);
+    }
+    ensure!(args.len() == 2, "Usage: --probe-pid HEX_PRODUCT_ID");
+    let pid = u16::from_str_radix(args[1].trim_start_matches("0x"), 16)?;
+    ensure!(
+        matches!(pid, 0x662b | 0x676d | 0x2601 | 0x260e | 0x620b | 0x2209),
+        "descriptor probe requires a supported camera product ID"
+    );
+    Ok(Some(pid))
+}
 
 #[cfg(windows)]
 fn research_port_operation(cycle: bool) -> Result<()> {
@@ -70,6 +84,7 @@ fn research_port_operation(cycle: bool) -> Result<()> {
 
 pub fn run(args: Vec<String>) -> Result<()> {
     transport::require_sdk_absent()?;
+    let probe_product = probe_product(&args)?;
     if args.first().is_some_and(|a| a == "--usb-target") {
         ensure!(
             (3..=4).contains(&args.len()),
@@ -228,6 +243,7 @@ pub fn run(args: Vec<String>) -> Result<()> {
     }
     ensure!(
         args.is_empty()
+            || probe_product.is_some()
             || args == ["--probe"]
             || args == ["--probe-all"]
             || args == ["--probe", "--cancel-read"]
@@ -254,6 +270,9 @@ pub fn run(args: Vec<String>) -> Result<()> {
         std::process::exit(124);
     });
     let mut paths = transport::enumerate()?;
+    if let Some(pid) = probe_product {
+        paths.retain(|path| path.matches(0x03c3, pid));
+    }
     if args == ["--probe-all"] {
         let mut devices = Vec::new();
         for path in &paths {
@@ -340,7 +359,7 @@ pub fn run(args: Vec<String>) -> Result<()> {
         }
         return Ok(());
     }
-    if args.len() == 2 {
+    if args == ["--probe", "--cancel-read"] {
         ensure!(
             result["endpoints"]
                 .as_array()
@@ -353,4 +372,20 @@ pub fn run(args: Vec<String>) -> Result<()> {
     }
     println!("{}", serde_json::to_string_pretty(&result)?);
     Ok(())
+}
+
+#[test]
+fn descriptor_probe_is_explicit_and_limited_to_supported_products() {
+    assert_eq!(
+        probe_product(&["--probe-pid".into(), "662b".into()]).unwrap(),
+        Some(0x662b)
+    );
+    assert_eq!(
+        probe_product(&["--probe-pid".into(), "0x260e".into()]).unwrap(),
+        Some(0x260e)
+    );
+    assert!(probe_product(&["--probe-pid".into()]).is_err());
+    assert!(probe_product(&["--probe-pid".into(), "ffff".into()]).is_err());
+    assert!(probe_product(&["--probe-pid".into(), "662b".into(), "--cancel-read".into()]).is_err());
+    assert_eq!(probe_product(&["--probe".into()]).unwrap(), None);
 }
