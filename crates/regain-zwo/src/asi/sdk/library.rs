@@ -369,6 +369,57 @@ impl Sdk {
         }
     }
     pub fn start(&self, p: &crate::asi::sdk::Exposure) -> Result<()> {
+        self.configure_capture(p)?;
+        unsafe {
+            Self::check(
+                self.symbol::<unsafe extern "C" fn(c_int, c_int) -> c_int>(b"ASIStartExposure\0")?(
+                    self.id()?,
+                    p.dark as i32,
+                ),
+                "start exposure",
+            )
+        }
+    }
+    pub fn start_video(&self, p: &crate::asi::sdk::Exposure) -> Result<()> {
+        ensure!(!p.dark, "video does not support shutter dark exposures");
+        self.configure_capture(p)?;
+        unsafe {
+            Self::check(
+                self.symbol::<raw::StartVideoCapture>(b"ASIStartVideoCapture\0")?(self.id()?),
+                "start video",
+            )
+        }
+    }
+    /// A timeout is a poll result, not a failed exposure. The host enforces the
+    /// exposure-aware progress deadline and keeps commands responsive.
+    pub fn video_frame(&self, bytes: &mut [u8], exposure_us: i64) -> Result<bool> {
+        // SDK recommendation: 2 * exposure + 500 ms. Bound a single call so
+        // the owner can service stop/settings commands during long exposures.
+        let wait_ms =
+            (exposure_us.saturating_div(1000).saturating_mul(2) + 500).clamp(500, 1000) as i32;
+        let code = unsafe {
+            self.symbol::<raw::GetVideoData>(b"ASIGetVideoData\0")?(
+                self.id()?,
+                bytes.as_mut_ptr(),
+                c_long::try_from(bytes.len())?,
+                wait_ms,
+            )
+        };
+        if code == 11 {
+            return Ok(false);
+        }
+        Self::check(code, "video download")?;
+        Ok(true)
+    }
+    pub fn stop_video(&self) -> Result<()> {
+        unsafe {
+            Self::check(
+                self.symbol::<raw::StopVideoCapture>(b"ASIStopVideoCapture\0")?(self.id()?),
+                "stop video",
+            )
+        }
+    }
+    fn configure_capture(&self, p: &crate::asi::sdk::Exposure) -> Result<()> {
         unsafe {
             let id = self.id()?;
             // No SDK automatic exposure, orientation changes or hidden dark subtraction.
@@ -412,13 +463,7 @@ impl Sdk {
             )?;
             ensure!((x, y) == (p.x, p.y), "SDK ROI origin differs from request");
             self.set(1, p.microseconds)?;
-            Self::check(
-                self.symbol::<unsafe extern "C" fn(c_int, c_int) -> c_int>(b"ASIStartExposure\0")?(
-                    id,
-                    p.dark as i32,
-                ),
-                "start exposure",
-            )
+            Ok(())
         }
     }
     pub fn status(&self) -> Result<i32> {

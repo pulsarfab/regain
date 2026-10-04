@@ -1,4 +1,5 @@
 //! ZWO ASI camera backends. Each runs in an isolated regain-device process.
+mod continuous;
 #[cfg(feature = "asi-direct")]
 pub mod direct;
 #[cfg(feature = "asi-sdk")]

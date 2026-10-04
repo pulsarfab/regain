@@ -53,7 +53,11 @@ impl Profile {
         (frame + padding, shutter + padding)
     }
 
-    fn timing_for_link(&self, settings: &Settings, link: super::link::Link) -> (u32, u32) {
+    pub(super) fn timing_for_link(
+        &self,
+        settings: &Settings,
+        link: super::link::Link,
+    ) -> (u32, u32) {
         let (frame, shutter) = self.timing(settings);
         if link != super::link::Link::HighSpeed || settings.long_exposure() {
             return (frame, shutter);
@@ -76,6 +80,102 @@ fn writes(camera: &Camera, commands: &[(u8, u16, u16)]) -> Result<()> {
         camera.vendor(request, register, value, 0)?;
     }
     Ok(())
+}
+
+pub(super) fn set_gain(camera: &Camera, profile: &Profile, gain: u32) -> Result<()> {
+    let (hcg, gain) = profile.gain(gain);
+    writes(
+        camera,
+        &[
+            (0xb6, 0x3001, 1),
+            (0xb6, 0x3030, hcg),
+            (0xb6, profile.gain_register, gain & 255),
+            (0xb6, profile.gain_register + 1, gain >> 8),
+            (0xb6, 0x3001, 0),
+        ],
+    )
+}
+
+pub(super) fn exposure_writes(
+    profile: &Profile,
+    settings: &Settings,
+    link: super::link::Link,
+    flags: u8,
+) -> Vec<(u8, u16, u16)> {
+    let mut commands = Vec::new();
+    let mut flags = flags;
+    // Preserve unrelated mode bits. SDK enters bit 6 then 7; exits 7 then 6.
+    for mask in if settings.long_exposure() {
+        [0x40, 0x80]
+    } else {
+        [0x80, 0x40]
+    } {
+        let next = if settings.long_exposure() {
+            flags | mask
+        } else {
+            flags & !mask
+        };
+        if next != flags {
+            commands.push((0xbd, 0, u16::from(next)));
+            flags = next;
+        }
+    }
+    let (frame, shutter) = profile.timing_for_link(settings, link);
+    for (request, register, hold, value) in
+        [(0xbd, 0x10, 1, frame), (0xb6, 0x3050, 0x3001, shutter)]
+    {
+        commands.push((request, hold, 1));
+        for byte in 0..3 {
+            commands.push((
+                request,
+                register + byte,
+                ((value >> (byte * 8)) & 255) as u16,
+            ));
+        }
+        commands.push((request, hold, 0));
+    }
+    commands
+}
+
+pub(super) fn set_exposure(
+    camera: &Camera,
+    profile: &Profile,
+    settings: &Settings,
+    link: super::link::Link,
+) -> Result<()> {
+    let flags = camera.vendor(0xbc, 0, 0, 1)?[0];
+    writes(camera, &exposure_writes(profile, settings, link, flags))
+}
+
+#[test]
+fn scalar_exposure_plan_matches_sdk_order_without_stream_commands() {
+    use super::{asi662, asi676, link::Link};
+    for profile in [&asi662::PROFILE, &asi676::PROFILE] {
+        let mut settings = Settings {
+            microseconds: 1_000_000,
+            ..Settings::default()
+        };
+        let enter = exposure_writes(profile, &settings, Link::HighSpeed, 0x21);
+        assert_eq!(
+            &enter[..3],
+            &[(0xbd, 0, 0x61), (0xbd, 0, 0xe1), (0xbd, 1, 1)]
+        );
+        settings.microseconds = 234_000;
+        let exit = exposure_writes(profile, &settings, Link::HighSpeed, 0xe1);
+        assert_eq!(
+            &exit[..3],
+            &[(0xbd, 0, 0x61), (0xbd, 0, 0x21), (0xbd, 1, 1)]
+        );
+        for plan in [enter, exit] {
+            assert_eq!(plan.len(), 12);
+            assert_eq!(plan[6], (0xbd, 1, 0));
+            assert_eq!(plan[7], (0xb6, 0x3001, 1));
+            assert_eq!(plan[11], (0xb6, 0x3001, 0));
+            assert!(!plan.iter().any(
+                |&(request, register, _)| matches!(request, 0xa9 | 0xaa) || register == 0x3000
+            ));
+        }
+    }
 }
 
 pub(super) fn stop(camera: &Camera) -> Result<()> {
@@ -207,15 +307,7 @@ pub(super) fn configure(
     )?;
     word(camera, 0xb6, 0x30dc, settings.offset, 2)?;
     let (frame_lines, shutter_lines) = profile.timing_for_link(settings, link);
-    word(camera, 0xbd, 0x10, frame_lines, 3)?;
-    word(camera, 0xb6, 0x3050, shutter_lines, 3)?;
-    let flags = camera.vendor(0xbc, 0, 0, 1)?[0];
-    let flags = if settings.long_exposure() {
-        flags | 0xc0
-    } else {
-        flags & !0xc0
-    };
-    camera.vendor(0xbd, 0, u16::from(flags), 0)?;
+    set_exposure(camera, profile, settings, link)?;
     Ok((defects, frame_lines, shutter_lines))
 }
 

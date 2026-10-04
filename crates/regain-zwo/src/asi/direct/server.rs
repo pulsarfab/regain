@@ -7,7 +7,6 @@ use anyhow::{Result, bail, ensure};
 use regain_core::white_balance::{Geometry, Settings as WhiteBalanceSettings, WhiteBalance};
 use serde_json::{Value, json};
 use std::{
-    io::{Read, Write},
     sync::mpsc,
     time::{Duration, Instant},
 };
@@ -594,7 +593,7 @@ impl Worker {
                         // Never free live I/O buffers if a kernel operation becomes stuck.
                         let _ = watchdog.send(Some(timeout));
                         let result = (|| -> Result<Frame> {
-                            if video_mode {
+                            if video_mode && !settings.continuous_drain {
                                 video_pacer.wait(settings.video_max_fps, &cancelled)?;
                             }
                             if let Some((camera, info, _)) = &device {
@@ -603,6 +602,12 @@ impl Worker {
                                     .transfer_timeout(settings.transfer_timeout_seconds)
                                     .expect("validated transfer timeout");
                                 if video_mode {
+                                    if let Some(session) = video.as_mut()
+                                        && settings.continuous_drain
+                                        && session.can_update(&settings)
+                                    {
+                                        session.update(camera, info, &settings)?;
+                                    }
                                     if video.as_ref().is_none_or(|v| !v.matches(&settings)) {
                                         if let Some(mut old) = video.take() {
                                             old.stop(camera)?;
@@ -676,6 +681,9 @@ impl Worker {
                                             Ok(())
                                         },
                                         |_| {
+                                            if settings.continuous_drain {
+                                                return Ok(());
+                                            }
                                             bayer_video::wait_until(
                                                 Instant::now(),
                                                 bayer_video::frame_interval(
@@ -1039,16 +1047,21 @@ impl Host {
                     .as_ref()
                     .ok_or_else(|| anyhow::anyhow!("camera is not open"))?;
                 ensure!(
-                    self.pending.is_none() && self.frame.is_none() && !self.reconnect_required,
+                    (method == "validate" || (self.pending.is_none() && self.frame.is_none()))
+                        && !self.reconnect_required,
                     "exposure pending or reconnect required after cleanup failure"
                 );
                 let bin = number("bin")?;
                 let mut settings = self.settings.clone();
+                settings.continuous_drain = params["continuousDrain"] == true;
                 settings.width = number("width")?;
                 settings.height = number("height")?;
                 settings.x = number("x")?;
                 settings.y = number("y")?;
                 settings.microseconds = number("microseconds")?;
+                if params.get("gain").is_some() {
+                    settings.gain = number("gain")?;
+                }
                 if !params["readRetries"].is_null() {
                     settings.read_retries = number("readRetries")?;
                 }
@@ -1064,7 +1077,8 @@ impl Host {
                         && settings.transfer_timeout_seconds <= 3600.0,
                     "invalid transfer deadline"
                 );
-                self.model.validate(&settings, self.gain, bin)?;
+                let gain = i32::try_from(settings.gain)?;
+                self.model.validate(&settings, gain, bin)?;
                 let mode = params.get("mode").map_or(Some("still"), Value::as_str);
                 ensure!(
                     matches!(mode, Some("still" | "video")),
@@ -1173,7 +1187,7 @@ impl Host {
                         .send(Work::Capture(
                             settings,
                             video_mode,
-                            self.gain,
+                            gain,
                             bin,
                             Duration::from_secs_f64(seconds),
                             self.simulated_delay,
@@ -1272,66 +1286,18 @@ pub fn run(simulate: bool) -> Result<()> {
         simulate,
         ..Host::default()
     };
-    let (mut input, mut output) = (std::io::stdin().lock(), std::io::stdout().lock());
-    loop {
-        let mut length = [0_u8; 4];
-        match input.read_exact(&mut length) {
-            Ok(()) => {}
-            Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
-                if host.video_active {
-                    host.command("close", &Value::Null)?;
-                }
-                return Ok(());
-            }
-            Err(e) => return Err(e.into()),
-        }
-        let size = u32::from_le_bytes(length) as usize;
-        ensure!((1..=65536).contains(&size), "invalid request length");
-        let mut bytes = vec![0; size];
-        input.read_exact(&mut bytes)?;
-        let request: Value = serde_json::from_slice(&bytes)?;
-        ensure!(request["version"] == 1, "unsupported protocol");
-        let began = Instant::now();
-        let (reply, pixels) = match host
-            .command(request["method"].as_str().unwrap_or(""), &request["params"])
-        {
-            Ok((result, pixels)) => (
-                json!({"version":1,"id":request["id"],"ok":true,
-                "result":result,"binaryLength":pixels.len()}),
-                pixels,
-            ),
-            Err(error) => {
-                crate::asi::direct::diagnostics::log(
-                    "warning",
-                    "command.failed",
-                    format_args!("{} request {}: {error:#}", request["method"], request["id"]),
-                );
-                (
-                    json!({"version":1,"id":request["id"],"ok":false,"error":format!("{error:#}"),
+    crate::asi::continuous::serve(
+        |method, params| {
+            transport::require_sdk_absent()?;
+            host.command(method, &params)
+        },
+        |error| {
+            json!({
                 "sdkCode":if error.is::<HardwareFailure>() { None } else {Some(8)},
-                "sdkOperation":"direct","transportFailure":crate::asi::direct::transfer::Failure::details(&error),"binaryLength":0}),
-                    Vec::new(),
-                )
-            }
-        };
-        transport::require_sdk_absent()?;
-        if request["method"] == "download" {
-            crate::asi::direct::diagnostics::log(
-                "debug",
-                "frame.delivered",
-                format_args!(
-                    "{} bytes (IPC preparation {} ms)",
-                    pixels.len(),
-                    began.elapsed().as_millis()
-                ),
-            );
-        }
-        let json = serde_json::to_vec(&reply)?;
-        output.write_all(&(json.len() as u32).to_le_bytes())?;
-        output.write_all(&json)?;
-        output.write_all(&pixels)?;
-        output.flush()?;
-    }
+                "sdkOperation":"direct", "transportFailure":crate::asi::direct::transfer::Failure::details(error)
+            })
+        },
+    )
 }
 
 #[cfg(test)]

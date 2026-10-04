@@ -6,14 +6,31 @@ use anyhow::{Result, bail, ensure};
 use regain_core::white_balance::{Geometry, Settings as WhiteBalanceSettings, WhiteBalance};
 use serde::Deserialize;
 use serde_json::{Value, json};
-use std::{
-    io::{Read, Write},
-    time::{Duration, Instant},
-};
+use std::time::{Duration, Instant};
 
-const MAX_JSON: usize = 65536;
 const MAX_FRAME: usize = 512 * 1024 * 1024;
-#[derive(Clone, Deserialize)]
+#[derive(Default)]
+struct VideoGrace {
+    prior_us: i64,
+    reads: u8,
+}
+impl VideoGrace {
+    fn changed(&mut self, prior_us: i64) {
+        self.prior_us = self.prior_us.max(prior_us);
+        self.reads = 2;
+    }
+    fn received(&mut self) {
+        self.reads = self.reads.saturating_sub(1);
+        if self.reads == 0 {
+            self.prior_us = 0;
+        }
+    }
+    fn deadline(&self, current_us: i64) -> Duration {
+        Duration::from_micros(current_us.max(self.prior_us).max(1) as u64).saturating_mul(2)
+            + Duration::from_secs(30)
+    }
+}
+#[derive(Clone, PartialEq, Deserialize)]
 pub struct Exposure {
     width: i32,
     height: i32,
@@ -24,6 +41,11 @@ pub struct Exposure {
     dark: bool,
 }
 impl Exposure {
+    fn same_geometry(&self, other: &Self) -> bool {
+        let mut prior = self.clone();
+        prior.microseconds = other.microseconds;
+        prior == *other
+    }
     fn size(&self) -> Result<usize> {
         ensure!(
             self.width > 0
@@ -55,8 +77,30 @@ struct Host {
     sim_instant: bool,
     camera: Value,
     white_balance: Option<WhiteBalance>,
+    video: Option<Exposure>,
+    video_pixels: Vec<u8>,
+    video_ready: bool,
+    video_progress: Option<Instant>,
+    video_retry_at: Option<Instant>,
+    video_timeouts: u64,
+    video_grace: VideoGrace,
 }
 impl Host {
+    fn stop_video(&mut self) -> Result<()> {
+        if self.video.is_some() {
+            if let Some(sdk) = &self.sdk {
+                sdk.stop_video()?;
+            }
+            self.video = None;
+        }
+        self.video_pixels.clear();
+        self.video_ready = false;
+        self.video_progress = None;
+        self.video_retry_at = None;
+        self.video_timeouts = 0;
+        self.video_grace = VideoGrace::default();
+        Ok(())
+    }
     fn require_unflipped(&self) -> Result<()> {
         let flip = if let Some(s) = &self.sdk {
             if self.camera["controls"]
@@ -155,6 +199,7 @@ impl Host {
                             })
                         }));
                 v["whiteBalance"] = WhiteBalance::capabilities(supported);
+                v["captureModes"] = json!(["still", "video"]);
                 self.camera = v.clone();
                 self.white_balance = None;
                 self.opened = true;
@@ -244,18 +289,78 @@ impl Host {
                 );
                 if let Some(s) = &self.sdk {
                     s.set(c, v)?;
+                    self.values[c.to_string()] = json!(v);
                 } else {
                     let minimum = self.values[format!("clampMinimum:{c}")].as_i64();
                     self.values[c.to_string()] = json!(minimum.map_or(v, |m| v.max(m)));
                 }
                 json!(null)
             }
-            "start" => {
+            "validate" | "start" => {
                 ensure!(self.opened, "not open");
-                ensure!(self.exposure.is_none(), "exposure pending");
-                let e: Exposure = serde_json::from_value(p)?;
+                ensure!(
+                    method == "validate" || self.exposure.is_none(),
+                    "exposure pending"
+                );
+                let mode = p.get("mode").map_or(Some("still"), Value::as_str);
+                ensure!(
+                    matches!(mode, Some("still" | "video")),
+                    "unknown capture mode"
+                );
+                let video = mode == Some("video");
+                let e: Exposure = serde_json::from_value(p.clone())?;
                 e.size()?;
-                if self.white_balance.is_some() {
+                for (key, control) in [("microseconds", 1), ("gain", 0)] {
+                    if let Some(value) = p.get(key) {
+                        let value = value
+                            .as_i64()
+                            .ok_or_else(|| anyhow::anyhow!("invalid {key}"))?;
+                        let cap = self.camera["controls"]
+                            .as_array()
+                            .and_then(|caps| caps.iter().find(|c| c["type"] == control))
+                            .ok_or_else(|| anyhow::anyhow!("missing {key} capability"))?;
+                        ensure!(
+                            cap["min"].as_i64().is_some_and(|min| value >= min)
+                                && cap["max"].as_i64().is_some_and(|max| value <= max),
+                            "{key} outside camera limits"
+                        );
+                    }
+                }
+                ensure!(
+                    !video || !e.dark,
+                    "video does not support shutter dark exposures"
+                );
+                if method == "validate" {
+                    return Ok((Value::Null, bytes));
+                }
+                let reuse = video
+                    && self.video.as_ref().is_some_and(|old| {
+                        old == &e || (p["continuousDrain"] == true && old.same_geometry(&e))
+                    });
+                if let Some(gain) = p["gain"].as_i64()
+                    && self.values["0"].as_i64() != Some(gain)
+                {
+                    if let Some(s) = &self.sdk {
+                        s.set(0, gain)?;
+                    }
+                    self.values["0"] = json!(gain);
+                }
+                if reuse && self.video.as_ref() != Some(&e) {
+                    if let Some(s) = &self.sdk {
+                        s.set(1, e.microseconds)?;
+                    }
+                    // A live control write can leave an old, longer integration
+                    // queued inside the SDK. Do not time it out using the new
+                    // shorter exposure. Retire this bounded grace after two reads.
+                    self.video_grace
+                        .changed(self.video.as_ref().unwrap().microseconds);
+                    self.video = Some(e.clone());
+                    self.video_progress = Some(Instant::now());
+                }
+                if !reuse {
+                    self.stop_video()?;
+                }
+                if !reuse && self.white_balance.is_some() {
                     WhiteBalance::validate_geometry(
                         self.camera["info"]["color"] == true,
                         self.camera["info"]["bayer"].as_u64(),
@@ -267,15 +372,61 @@ impl Host {
                         s.neutral_white_balance()?;
                     }
                 }
-                if let Some(s) = &self.sdk {
-                    s.start(&e)?;
+                if !reuse {
+                    if let Some(s) = &self.sdk {
+                        if video {
+                            s.start_video(&e)?;
+                        } else {
+                            s.start(&e)?;
+                        }
+                    }
+                    if video {
+                        self.video = Some(e.clone());
+                        self.video_progress = Some(Instant::now());
+                    }
                 }
                 self.started = Some(Instant::now());
                 self.exposure = Some(e);
                 json!(null)
             }
             "status" => {
-                if let Some(s) = &self.sdk {
+                if let Some(e) = &self.video {
+                    if self.exposure.is_none() {
+                        return Ok((json!(0), bytes));
+                    }
+                    if !self.video_ready {
+                        if self.video_retry_at.is_some_and(|t| Instant::now() < t) {
+                            return Ok((json!(1), bytes));
+                        }
+                        self.video_pixels.resize(e.size()?, 0);
+                        self.video_ready = if let Some(s) = &self.sdk {
+                            s.video_frame(&mut self.video_pixels, e.microseconds)?
+                        } else {
+                            self.sim_instant
+                                || self.started.is_some_and(|t| {
+                                    t.elapsed() >= Duration::from_micros(e.microseconds as u64)
+                                })
+                        };
+                        if self.video_ready {
+                            self.video_grace.received();
+                            self.video_progress = Some(Instant::now());
+                            self.video_retry_at = None;
+                        } else {
+                            if self.sdk.is_some() {
+                                self.video_timeouts += 1;
+                                self.video_retry_at =
+                                    Some(Instant::now() + Duration::from_millis(100));
+                            }
+                            ensure!(
+                                self.video_progress.is_some_and(
+                                    |t| t.elapsed() < self.video_grace.deadline(e.microseconds)
+                                ),
+                                "SDK video produced no frame within its exposure/readout deadline"
+                            );
+                        }
+                    }
+                    json!(if self.video_ready { 2 } else { 1 })
+                } else if let Some(s) = &self.sdk {
                     json!(s.status()?)
                 } else if self.exposure.is_some()
                     && self.values["failedStatuses"].as_u64().unwrap_or(0) > 0
@@ -322,15 +473,27 @@ impl Host {
                         _ => {}
                     }
                 }
-                bytes.resize(e.size()?, 0);
-                if let Some(s) = &self.sdk {
-                    s.download(&mut bytes)?;
+                if self.video.is_some() {
+                    ensure!(self.video_ready, "video frame not ready");
+                    bytes = std::mem::take(&mut self.video_pixels);
+                    self.video_ready = false;
                 } else {
+                    bytes.resize(e.size()?, 0);
+                }
+                if self.video.is_some() {
+                    // Already drained on the same owner thread by status.
+                } else if let Some(s) = &self.sdk {
+                    s.download(&mut bytes)?;
+                }
+                if self.sdk.is_none() {
                     for (i, pixel) in bytes.as_chunks_mut::<2>().0.iter_mut().enumerate() {
                         pixel.copy_from_slice(&(i as u16).to_le_bytes());
                     }
                 }
                 let mut v = json!({"width":e.width,"height":e.height,"bytes":bytes.len()});
+                if self.video.is_some() {
+                    v["videoTimeouts"] = json!(self.video_timeouts);
+                }
                 if let Some(wb) = &mut self.white_balance {
                     v["whiteBalance"] = wb.process(
                         &mut bytes,
@@ -348,13 +511,16 @@ impl Host {
                 v
             }
             "stop" => {
-                if let Some(s) = &self.sdk {
+                if self.video.is_some() {
+                    self.stop_video()?;
+                } else if let Some(s) = &self.sdk {
                     s.stop()?;
                 }
                 self.exposure = None;
                 json!(null)
             }
             "close" => {
+                self.stop_video()?;
                 if let Some(s) = &mut self.sdk {
                     s.close()?;
                 }
@@ -450,68 +616,49 @@ pub fn run(args: Vec<String>) -> Result<()> {
         sim_instant: false,
         camera: Value::Null,
         white_balance: None,
+        video: None,
+        video_pixels: Vec::new(),
+        video_ready: false,
+        video_progress: None,
+        video_retry_at: None,
+        video_timeouts: 0,
+        video_grace: VideoGrace::default(),
         sim_info: json!({"id":0,"name":"ZWO Simulated","width":960,"height":640,"color":true,"bayer":0,"pixelSize":3.76,"bitDepth":16,"cooled":true,"shutter":false,"bins":[1,2,4],"formats":[0,2]}),
     };
     if let Some(options) = command {
         return cli::run(&mut host, options);
     }
-    let (mut input, mut output) = (std::io::stdin().lock(), std::io::stdout().lock());
-    loop {
-        let mut header = [0u8; 4];
-        match input.read_exact(&mut header) {
-            Ok(()) => {}
-            Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => return Ok(()),
-            Err(e) => return Err(e.into()),
-        }
-        let len = u32::from_le_bytes(header) as usize;
-        ensure!(len > 0 && len <= MAX_JSON, "invalid request length");
-        let mut data = vec![0; len];
-        input.read_exact(&mut data)?;
-        let req: Value = serde_json::from_slice(&data)?;
-        ensure!(req["version"] == 1, "unsupported protocol");
-        let (reply, frame) = match host
-            .command(req["method"].as_str().unwrap_or(""), req["params"].clone())
-        {
-            Ok((v, b)) => (
-                json!({"version":1,"id":req["id"],"ok":true,"result":v,"binaryLength":b.len()}),
-                b,
-            ),
-            Err(e) => {
-                // Log-only feedback travels on stderr, separately from command status.
-                let _ = writeln!(
-                    std::io::stderr().lock(),
-                    "REGAIN_DIAGNOSTIC {}",
-                    json!({
-                        "version":1,"level":"warning","event":"command.failed","pid":std::process::id(),
-                        "message":format!("{} request {}: {e:#}", req["method"], req["id"])
-                    })
-                );
-                let sdk_error = e.downcast_ref::<library::SdkError>();
-                let code = sdk_error.map(|s| s.code).or_else(|| {
-                    matches!(
-                        e.downcast_ref::<regain_core::Failure>(),
-                        Some(regain_core::Failure::Invalid(_))
-                    )
-                    .then_some(8)
-                });
-                (
-                    json!({"version":1,"id":req["id"],"ok":false,"error":format!("{e:#}"),"sdkCode":code,"sdkOperation":sdk_error.map(|s|&s.operation),"binaryLength":0}),
-                    Vec::new(),
+    crate::asi::continuous::serve(
+        |method, params| host.command(method, params),
+        |e| {
+            let sdk_error = e.downcast_ref::<library::SdkError>();
+            let code = sdk_error.map(|s| s.code).or_else(|| {
+                matches!(
+                    e.downcast_ref::<regain_core::Failure>(),
+                    Some(regain_core::Failure::Invalid(_))
                 )
-            }
-        };
-        let data = serde_json::to_vec(&reply)?;
-        ensure!(data.len() <= MAX_JSON, "reply too large");
-        output.write_all(&(data.len() as u32).to_le_bytes())?;
-        output.write_all(&data)?;
-        output.write_all(&frame)?;
-        output.flush()?;
-    }
+                .then_some(8)
+            });
+            json!({"sdkCode":code,"sdkOperation":sdk_error.map(|s|&s.operation)})
+        },
+    )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn video_deadline_retains_old_integration_for_two_reads_after_decrease() {
+        let mut grace = VideoGrace::default();
+        grace.changed(60_000_000);
+        assert_eq!(grace.deadline(234_000), Duration::from_secs(150));
+        grace.received();
+        assert_eq!(grace.deadline(234_000), Duration::from_secs(150));
+        grace.received();
+        assert_eq!(grace.deadline(234_000), Duration::from_millis(30_468));
+        assert_eq!(grace.deadline(120_000_000), Duration::from_secs(270));
+    }
 
     #[test]
     fn sdk_discovery_is_rejected_until_camera_is_closed() {
@@ -526,6 +673,13 @@ mod tests {
             sim_instant: true,
             camera: Value::Null,
             white_balance: None,
+            video: None,
+            video_pixels: Vec::new(),
+            video_ready: false,
+            video_progress: None,
+            video_retry_at: None,
+            video_timeouts: 0,
+            video_grace: VideoGrace::default(),
         };
         assert!(host.command("list", Value::Null).is_ok());
         assert_eq!(

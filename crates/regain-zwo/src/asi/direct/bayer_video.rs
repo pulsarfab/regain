@@ -77,6 +77,33 @@ pub(super) fn wait_until(start: Instant, duration: Duration, cancel: &AtomicBool
 }
 
 impl Video {
+    pub fn can_update(&self, settings: &Settings) -> bool {
+        let mut prior = self.settings.clone();
+        prior.microseconds = settings.microseconds;
+        prior.gain = settings.gain;
+        prior.video_max_fps = settings.video_max_fps;
+        self.active && prior == *settings
+    }
+
+    /// Called only between completed reads on the exclusive USB owner.
+    /// Never touch ROI, calibration, standby or the bulk pipe for scalar edits.
+    pub fn update(&mut self, camera: &Camera, info: &Value, settings: &Settings) -> Result<()> {
+        ensure!(
+            self.can_update(settings),
+            "structural video change requires restart"
+        );
+        validate(settings, self.profile)?;
+        if self.settings.microseconds != settings.microseconds {
+            let speed = link::validate(info, u32::from(self.profile.pid))?;
+            bayer::set_exposure(camera, self.profile, settings, speed)?;
+        }
+        if self.settings.gain != settings.gain {
+            bayer::set_gain(camera, self.profile, settings.gain)?;
+        }
+        self.settings = settings.clone();
+        Ok(())
+    }
+
     pub fn matches(&self, settings: &Settings) -> bool {
         let mut prior = self.settings.clone();
         prior.video_max_fps = settings.video_max_fps;
@@ -155,11 +182,13 @@ impl Video {
                 let discarded_at = Instant::now();
                 session.stop(camera)?;
                 // Failed grabs count against the FPS cap too. No rapid retry burst.
-                wait_until(
-                    discarded_at,
-                    frame_interval(session.settings.video_max_fps)?,
-                    cancel,
-                )?;
+                if !session.settings.continuous_drain {
+                    wait_until(
+                        discarded_at,
+                        frame_interval(session.settings.video_max_fps)?,
+                        cancel,
+                    )?;
+                }
                 *session = Self::start(camera, info, session.settings.clone(), session.profile)?;
                 Ok(())
             },
