@@ -30,6 +30,10 @@ descriptor values, without device paths or serials in the transport diagnostic.
 
 Sensor register tables, frame envelopes, correction, serial verification,
 exclusive ownership and bounded transfer/retry/cancellation budgets remain unchanged.
+The Duo follow-up additionally fixes premature sensor standby: both ASI2600
+revisions now wait their complete programmed frame interval plus settling
+before freezing DDR. USB 2 Duo tiny ROIs use the existing P25-style minimum
+128 KiB sensor read followed by correction/cropping; output geometry is unchanged.
 On USB 2 the Bayer cameras use a minimum sensor frame interval of approximately
 100 ms for exposures shorter than one second. Frame and shutter-delay lines
 are extended equally, preserving integration time. This retains ASI662 pacing
@@ -88,7 +92,10 @@ USB bus faults, physical disconnect/reset, optical accuracy, cold power-up,
 long exposures beyond 30 seconds, or a complete installed-app SDK-to-direct
 handoff. Long frames were saturated under available illumination.
 
-**ASI2600MM Duo's new USB 2 path is not yet hardware-validated.**
+**ASI2600MM Duo passed 40 USB 2 cases / 42 frames after two scoped fixes:**
+complete readout before standby and a minimum physical read for tiny ROIs.
+The [Duo follow-up](usb2-coverage-spike.md#duo-follow-up-two-acquisition-fixes)
+records the rejected failures, passing recovery tests and pending USB 3 regression.
 ASI2600MM Pro P25 passed the follow-up matrix linked above.
 ASI6200 P25 passed USB 2 transfers, bins/ROI and recovery. Its initial dark-offset
 matrix stopped near one second with an elevated pedestal; the operator then

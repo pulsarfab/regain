@@ -65,6 +65,18 @@ empirical 100 ms guard resolved the tested 64×64 case. Sensor standby uses
 `1ee=5`, `00=5`, **without AA or the FPGA full-stop bit**, which clear retained
 state on this unit. The exact firmware completion edge is not yet understood.
 
+USB 2 follow-up on 2026-10-03 exposed that this historical 100 ms guard was
+insufficient for full-frame freshness: offset changes reached the upper rows
+while lower rows retained unrelated data, despite identical replay. The driver
+now waits the complete programmed frame interval at the Duo's HMAX 779 / 20 MHz,
+plus 100 ms (264,525 us for a short full frame), before standby. P25 keeps its
+own HMAX 790. The guard applies to both links because the sensor-completion
+requirement is not USB-specific; new USB 3 hardware regression remains a gate.
+USB 2 Duo 64×64 retained reads also stalled. Those small sensor reads now use
+at least 128 KiB, followed by factory correction and cropping back to the exact
+requested ROI. Original Duo USB 3 geometry remains unchanged. See the
+[USB 2 coverage follow-up](usb2-coverage-spike.md) for current results and limits.
+
 Short integrations stream: the driver explicitly reads frozen DDR after
 standby. Long integrations already schedule an initial USB pass, which must
 be consumed before asking for replay. Prematurely issuing `18=1` caused a

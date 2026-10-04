@@ -20,7 +20,7 @@ Older/native USB 2 cameras must not be assigned a modern FX3 profile by name.
 | --- | --- | --- | --- |
 | ASI662MC / `662b` | Current profile | Windows capture, replay, interrupted reads, short ROI and 30 s exposure passed | SDK output-rate comparison, cold start, actual bus faults |
 | ASI676MC / `676d` | Current profile | Same, plus production worker reopen; short ROI required sensor pacing fix | SDK output-rate comparison, cold start, actual bus faults |
-| ASI2600MM Duo / `2601` | Original main sensor | Descriptor/contract fixtures only for new fallback | USB 2 initialization, DDR freshness and complete capture/recovery matrix |
+| ASI2600MM Duo / `2601` | Original main sensor | Windows USB 2: 40 cases / 42 frames plus tiny-edge ROI and production recovery passed after standby/retained-size fixes | USB 3 regression, SDK output-rate comparison, cold start and actual bus faults |
 | ASI2600MM Pro / `260e` | P25 | Windows USB 2: 40 cases / 42 frames, all-row freshness, bins/ROI, retained recovery, production cancellation/reopen passed | SDK output-rate comparison, cold start, actual bus faults; do not reuse original timing |
 | ASI6200MM Pro / `620b` | Original, BC:1c = 3 | Windows full frames, every-row offset freshness, bins/ROI, replay/recovery and 30 s exposure passed; strict high-gain row-uniformity gate failed | High-gain characterization, SDK output-rate comparison, cold start and actual bus faults; not an unconditional matrix pass |
 | ASI6200MM Pro / `620b` | P25, BC:1c = 5 | Windows full frames, bins/ROI, retained/worker recovery and capped every-row offset transitions passed; strict gain-700 row-uniformity gate failed | High-gain characterization, SDK pacing, cold start and actual bus faults; not an unconditional matrix pass |
@@ -164,6 +164,59 @@ uploaded, installed settings changed, or USB port reset/cycle performed.
 All owned test workers exited, including the final capped long exposure.
 See [sanitized evidence](usb2-6200-p25-evidence.json). This is partial USB 2
 hardware evidence, not an unconditional P25 matrix sign-off.
+
+### Duo follow-up: two acquisition fixes
+
+The operator connected the ASI2600MM Duo main sensor via USB 2. The selected
+probe reported `03c3:2601`, `bcdUSB 0210`, bulk IN `81` / 512-byte packets,
+25-byte configuration and Windows driver `01020200`. The guide sensor was
+never opened. A 512×256 read/replay passed, but the stronger full-frame checks
+exposed two failures missed by the earlier matrix:
+
+1. At 32 us, gain 100 and offset 240, upper row bands reached 2400 ADU while
+   lower bands retained near-saturated data, with row medians up to 65535.
+   Changing to offset 50 and back to 240 changed only the upper bands. All
+   retained replays matched, demonstrating why replay equality alone is not
+   proof of a fresh sensor frame. Original Duo used a fixed 100 ms wait after
+   the readout flag; its short full sensor interval is about 164.525 ms.
+   The corrected guard uses the full programmed interval plus 100 ms, with
+   revision-specific HMAX (779 for Duo, 790 for P25). This fixes sensor timing
+   on both links, not just USB 2; USB 3 hardware regression remains required.
+2. With the readout guard fixed, a 64×64 USB 2 retained read exhausted its
+   retries with no bytes received. The Duo USB 2 path now shares the P25's
+   minimum 128 KiB physical read, factory correction and exact ROI crop.
+   Original Duo USB 3 geometry is unchanged. 64×64 origin, moved and edge
+   requests then returned exactly 8,192 bytes with identical replay.
+
+These are scoped fixes, not a relaxed freshness/timeout gate or a USB port
+reset. The earlier failures remain rejected. The manual matrix can be
+reproduced with `validate_asi2600_p25.py --duo --long 30` and a new output path.
+
+The final build passed all **40 cases / 42 frames**, including ten every-row
+full-frame offset transitions at 32 us, 100 ms, 999,999 us, 1 s and 2 s;
+three distinct full frames; bins 1–4; minimum/moved/edge ROI; ROI gain boundaries
+from -25 through 700; ROI exposure through 60 s; and full-frame 30 s.
+Every retained replay matched. A 12 MiB interrupted read and a real stalled-
+sender timeout each recovered after one retained retry, with matching prefixes.
+Abandoned replay also recovered identical pixels. The 30-second full frame
+took 35.808 s, used zero retries and delivered 52,183,296 bytes. These checks
+do not characterize every-row noise at extreme gain; full-row offset gates
+use gain 100, and the gain sweep uses a smaller ROI.
+
+Production worker termination during a 10-second exposure followed by cached-
+identity reopen passed. An intentionally insufficient 5 ms transfer budget
+returned a structured timeout and zero image bytes, followed by a successful
+fresh exposure and close/reopen capture. The three successful full frames
+were distinct, used zero retries and took 4.880, 4.883 and 4.856 s respectively.
+No `list`/`discover` protocol commands were issued. All test workers closed.
+No guide camera, port reset/cycle, installed settings or image uploads were
+involved. See [sanitized evidence](usb2-duo-evidence.json).
+
+Local validation passed all workspace tests (50 camera-driver unit tests),
+strict workspace clippy, fmt, the pipe simulators/synthetic SDK ABI suite and
+11 pure research tests. New USB 3 hardware regression is still required for
+the changed Duo readout guard. Other models' earlier evidence applies to their
+tested builds; no blanket hardware sign-off is implied by these fixes.
 
 ## Finding: link-specific FPGA output pacing is missing
 
