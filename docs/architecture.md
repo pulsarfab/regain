@@ -188,6 +188,13 @@ Methods: `list`, `open` (name and optional serial), `get`, `set`, `start`
 rejects both. Responses echo request IDs; mismatches, truncated payloads or
 bad bounds invalidate the worker. Standard error is diagnostics only.
 
+The ASI662MC Direct USB worker additionally accepts opt-in `mode: "video"` and
+`maxFps` on `start`/`validate`; omitted mode remains `still`. Video is limited to
+30-second exposures with retained replay disabled (`readRetries` omitted/zero).
+Its acquisition pacing and exposure waits are cancellable. See
+[ASI662MC video semantics and hardware evidence](asi662mc.md#experimental-continuous-video-source-builds).
+This low-level option does not automatically change the higher-level clients.
+
 Worker stderr may contain `REGAIN_DIAGNOSTIC ` followed by a JSON record with
 `version: 1`, `level`, `event`, `message`, and `pid`. These records never appear
 on stdout or change a command result. NINA sends retry/failure events to its

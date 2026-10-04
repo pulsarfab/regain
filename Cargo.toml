@@ -3,7 +3,7 @@ members = ["crates/regain-device", "crates/regain-core", "crates/regain-alpaca",
 resolver = "3"
 
 [workspace.package]
-version = "0.5.4"
+version = "0.5.5"
 edition = "2024"
 rust-version = "1.89"
 license = "Apache-2.0"
@@ -13,10 +13,10 @@ homepage = "https://pulsarfab.com/docs/regain/"
 
 # Keep these versions equal to workspace.package.version; crates.io needs them.
 [workspace.dependencies]
-regain-core = { path = "crates/regain-core", version = "0.5.4" }
-regain-deepskydad = { path = "crates/regain-deepskydad", version = "0.5.4" }
-regain-pegasus = { path = "crates/regain-pegasus", version = "0.5.4" }
-regain-transport = { path = "crates/regain-transport", version = "0.5.4" }
-regain-wanderer = { path = "crates/regain-wanderer", version = "0.5.4" }
-regain-worker = { path = "crates/regain-worker", version = "0.5.4" }
-regain-zwo = { path = "crates/regain-zwo", version = "0.5.4" }
+regain-core = { path = "crates/regain-core", version = "0.5.5" }
+regain-deepskydad = { path = "crates/regain-deepskydad", version = "0.5.5" }
+regain-pegasus = { path = "crates/regain-pegasus", version = "0.5.5" }
+regain-transport = { path = "crates/regain-transport", version = "0.5.5" }
+regain-wanderer = { path = "crates/regain-wanderer", version = "0.5.5" }
+regain-worker = { path = "crates/regain-worker", version = "0.5.5" }
+regain-zwo = { path = "crates/regain-zwo", version = "0.5.5" }

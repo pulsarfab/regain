@@ -13,7 +13,7 @@ SHA256 = "d1de4a5ab85c8cafbddfad9c593bbba515890d3adf20c1ca44dafcf15f2775ce"
 DEFAULT = Path(__file__).resolve().parents[2] / "vendor/zwo/native/x86_64-unknown-linux-gnu/libASICamera2.so"
 
 
-def inspect(path, pattern, disassemble=False):
+def inspect(path, pattern, disassemble=False, selected_address=None):
     data = path.read_bytes()
     if hashlib.sha256(data).hexdigest() != SHA256:
         raise ValueError("SDK digest differs from the reviewed 1.41 Linux x86-64 binary")
@@ -49,6 +49,8 @@ def inspect(path, pattern, disassemble=False):
         _, info, _ = struct.unpack_from("<QQq", data, pos)
         addresses[plt[3] + 16 * (i + 1)] = tables[relocations[6]][info >> 32][0] + "@plt"
     selected = sorted({s for s in symbols if s[1] == 2 and s[3] and re.search(pattern, s[0])}, key=lambda s: s[3])
+    if selected_address is not None:
+        selected = [s for s in selected if s[3] == selected_address]
     if not selected:
         raise ValueError("No matching defined function symbols")
     print(f"SDK SHA256 {SHA256}; {len(selected)} matching symbols")
@@ -85,5 +87,6 @@ if __name__ == "__main__":
     parser.add_argument("--sdk", type=Path, default=DEFAULT)
     parser.add_argument("--symbol", required=True, help="regex over mangled function symbols")
     parser.add_argument("--disassemble", action="store_true")
+    parser.add_argument("--address", type=lambda v: int(v, 0), help="select one address when local symbols share a name")
     args = parser.parse_args()
-    inspect(args.sdk, args.symbol, args.disassemble)
+    inspect(args.sdk, args.symbol, args.disassemble, args.address)

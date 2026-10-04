@@ -37,6 +37,15 @@ class Usb2SdkInspectionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "No matching"):
             inspect(DEFAULT, "DefinitelyNotAnSdkSymbol")
 
+    def test_address_disambiguates_local_working_functions(self):
+        output = io.StringIO()
+        with redirect_stdout(output):
+            inspect(DEFAULT, "WorkingFunc", False, 0x13b730)
+        self.assertIn("1 matching symbols", output.getvalue())
+        self.assertIn("0x13b730", output.getvalue())
+        with self.assertRaisesRegex(ValueError, "No matching"):
+            inspect(DEFAULT, "WorkingFunc", False, 1)
+
 
 if __name__ == "__main__":
     unittest.main()
