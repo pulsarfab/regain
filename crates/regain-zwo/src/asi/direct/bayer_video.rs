@@ -1,8 +1,6 @@
-//! ASI662MC RAW16 video: configure/arm once, consume successive frame envelopes.
-//! Based on SDK 1.41 USB 2 video traces; never replay a live video frame.
-use super::{
-    asi662::PROFILE, bayer, link, processing, protocol, settings::Settings, transport::Camera,
-};
+//! ASI662MC/ASI676MC RAW16 video: configure once, consume successive envelopes.
+//! Model-specific SDK 1.41 video traces; never replay a live video frame.
+use super::{bayer, link, processing, protocol, settings::Settings, transport::Camera};
 use anyhow::{Result, ensure};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -12,6 +10,7 @@ use std::{
 };
 
 pub struct Video {
+    profile: &'static bayer::Profile,
     settings: Settings,
     defects: processing::Defects,
     previous: Option<u16>,
@@ -20,8 +19,8 @@ pub struct Video {
     cleanup_failed: bool,
 }
 
-pub fn validate(settings: &Settings) -> Result<()> {
-    PROFILE.validate(settings)?;
+pub fn validate(settings: &Settings, profile: &bayer::Profile) -> Result<()> {
+    profile.validate(settings)?;
     frame_interval(settings.video_max_fps)?;
     ensure!(
         settings.microseconds <= 30_000_000,
@@ -86,12 +85,17 @@ impl Video {
     pub fn set_max_fps(&mut self, max_fps: f64) {
         self.settings.video_max_fps = max_fps;
     }
-    pub fn start(camera: &Camera, info: &Value, settings: Settings) -> Result<Self> {
-        validate(&settings)?;
-        let speed = link::validate(info, u32::from(PROFILE.pid))?;
+    pub fn start(
+        camera: &Camera,
+        info: &Value,
+        settings: Settings,
+        profile: &'static bayer::Profile,
+    ) -> Result<Self> {
+        validate(&settings, profile)?;
+        let speed = link::validate(info, u32::from(profile.pid))?;
         camera.phase("video_initializing");
         let result = (|| {
-            let (defects, _, _) = bayer::configure(camera, info, &settings, &PROFILE)?;
+            let (defects, _, _) = bayer::configure(camera, info, &settings, profile)?;
             // SDK SetFPSPerc(40), DDR enabled: USB2 and USB3 use different
             // FPGA bandwidth pacing. This is independent of ROI dimensions.
             bayer::word(
@@ -115,6 +119,7 @@ impl Video {
             camera.reset_pipe()?;
             camera.phase("video_streaming");
             Ok(Self {
+                profile,
                 settings,
                 defects,
                 previous: None,
@@ -198,7 +203,7 @@ impl Video {
         protocol::replace_envelope(&mut pixels, self.settings.width as usize)?;
         self.defects.correct(&mut pixels)?;
         camera.phase("video_streaming");
-        let metadata = json!({"sdkLoaded":false,"mode":"video","model":PROFILE.name,
+        let metadata = json!({"sdkLoaded":false,"mode":"video","model":self.profile.name,
             "width":self.settings.width,"height":self.settings.height,"x":self.settings.x,"y":self.settings.y,
             "bin":1,"format":"RAW16","bayer":"RGGB","gain":self.settings.gain,"offset":self.settings.offset,
             "exposureMicroseconds":self.settings.microseconds,"bytes":pixels.len(),
@@ -248,6 +253,22 @@ fn sequence_gap(previous: Option<u16>, next: u16) -> Result<u16> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn model_profiles_keep_distinct_limits() {
+        use crate::asi::direct::{asi662, asi676};
+        let mut settings = Settings::default();
+        validate(&settings, &asi676::PROFILE).unwrap();
+        assert!(validate(&settings, &asi662::PROFILE).is_err());
+        settings.width = 64;
+        settings.height = 64;
+        settings.x = 2;
+        validate(&settings, &asi676::PROFILE).unwrap();
+        assert!(validate(&settings, &asi662::PROFILE).is_err());
+        settings.x = 0;
+        settings.offset = 201;
+        assert!(validate(&settings, &asi676::PROFILE).is_err());
+        validate(&settings, &asi662::PROFILE).unwrap();
+    }
     #[test]
     fn sequence_tracks_gaps_wrap_and_rejects_stale_frames() {
         assert_eq!(sequence_gap(None, 24).unwrap(), 0);

@@ -31,9 +31,11 @@ host-timed sequence. Retrying a download does not take another exposure.
 
 The Direct USB pipe worker additionally accepts explicit `mode: "video"` for
 the ASI662MC. Still capture remains the default; existing NINA, ASCOM, Alpaca
-and AutoPierCam clients do not switch to video automatically. This initial
+clients do not switch to video automatically. AutoPierCam 0.2.18 opts into this
+mode when the selected camera advertises it and exposure is at most 30 s. This
 video path supports RAW16/bin 1, the same ROI rules, and **32 µs–30 s** exposures.
-It does not extend video support to the ASI676MC or other models.
+The ASI676MC has its own [video validation and sensor profile](asi676-video.md);
+other models retain their existing still-capture paths.
 
 Repeat `start` → `status` → `download` for each requested frame. Matching settings
 reuse the armed sensor and factory calibration. Exposure, gain or ROI changes

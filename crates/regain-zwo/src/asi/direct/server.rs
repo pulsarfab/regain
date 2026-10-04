@@ -1,7 +1,7 @@
 //! Version-1 plugin protocol over inherited pipes for the verified camera interfaces.
 //! A dedicated worker owns the exclusive driver handle for the entire connection.
 use crate::asi::direct::{
-    asi220, asi662, asi676, asi2600, asi6200, settings::Settings, transport, video662,
+    asi220, asi662, asi676, asi2600, asi6200, bayer_video, settings::Settings, transport,
 };
 use anyhow::{Result, bail, ensure};
 use regain_core::white_balance::{Geometry, Settings as WhiteBalanceSettings, WhiteBalance};
@@ -38,6 +38,13 @@ enum Model {
     Asi2600P25,
 }
 impl Model {
+    fn video_profile(self) -> Option<&'static super::bayer::Profile> {
+        match self {
+            Self::Asi662 => Some(&asi662::PROFILE),
+            Self::Asi676 => Some(&asi676::PROFILE),
+            _ => None,
+        }
+    }
     const ALL: [Self; 6] = [
         Self::Asi676,
         Self::Asi662,
@@ -506,10 +513,10 @@ impl Worker {
                 (22, 255),
                 (23, 255),
             ]);
-            let mut video: Option<video662::Video> = None;
+            let mut video: Option<bayer_video::Video> = None;
             let mut simulated_video: Option<Settings> = None;
             let mut simulated_sequence = 0_u64;
-            let mut video_pacer = video662::Pacer::default();
+            let mut video_pacer = bayer_video::Pacer::default();
             loop {
                 let work = match receiver.recv_timeout(Duration::from_millis(100)) {
                     Ok(work) => work,
@@ -555,7 +562,7 @@ impl Worker {
                             Ok(())
                         };
                         simulated_video = None;
-                        video_pacer = video662::Pacer::default();
+                        video_pacer = bayer_video::Pacer::default();
                         let _ = watchdog.send(None);
                         let _ = reply.send(result);
                     }
@@ -602,10 +609,11 @@ impl Worker {
                                             !cancelled.load(std::sync::atomic::Ordering::Relaxed),
                                             "video read cancelled"
                                         );
-                                        video = Some(video662::Video::start(
+                                        video = Some(bayer_video::Video::start(
                                             camera,
                                             info,
                                             settings.clone(),
+                                            model.video_profile().expect("validated video model"),
                                         )?);
                                     }
                                     let session = video.as_mut().unwrap();
@@ -644,7 +652,7 @@ impl Worker {
                                         simulated_sequence = 0;
                                         simulated_video = Some(settings.clone());
                                     }
-                                    video662::wait_until(
+                                    bayer_video::wait_until(
                                         Instant::now(),
                                         Duration::from_micros(u64::from(settings.microseconds)),
                                         &cancelled,
@@ -906,8 +914,8 @@ impl Host {
                 self.white_balance_frame = None;
                 json!({"serial":identity,"info":descriptor,"sdkVersion":format!("SDK-less experimental {}",model.name()),
                     "backend":"direct","controls":controls,
-                    "captureModes":if model == Model::Asi662 { json!(["still","video"]) } else { json!(["still"]) },
-                    "videoMaxExposureMicroseconds":if model == Model::Asi662 { json!(30_000_000) } else { Value::Null },
+                    "captureModes":if model.video_profile().is_some() { json!(["still","video"]) } else { json!(["still"]) },
+                    "videoMaxExposureMicroseconds":if model.video_profile().is_some() { json!(30_000_000) } else { Value::Null },
                     "whiteBalance":WhiteBalance::capabilities(descriptor["color"] == true)})
             }
             "white-balance" => {
@@ -1031,8 +1039,8 @@ impl Host {
                 let video_mode = mode == Some("video");
                 if video_mode {
                     ensure!(
-                        self.model == Model::Asi662,
-                        "video is only available for ASI662MC"
+                        self.model.video_profile().is_some(),
+                        "video is only available for ASI662MC/ASI676MC"
                     );
                     ensure!(
                         params["dark"] != true,
@@ -1042,7 +1050,7 @@ impl Host {
                         v.as_f64()
                             .ok_or_else(|| anyhow::anyhow!("invalid video maxFps"))
                     })?;
-                    video662::validate(&settings)?;
+                    bayer_video::validate(&settings, self.model.video_profile().unwrap())?;
                     // Live video is never retried as the same retained image.
                     ensure!(
                         params["readRetries"].as_u64().is_none_or(|v| v == 0),
@@ -1352,6 +1360,41 @@ mod video_tests {
         host.command("close", &Value::Null).unwrap();
     }
     #[test]
+    fn asi676_video_uses_its_own_geometry_and_restarts_cleanly() {
+        let mut host = Host {
+            simulate: true,
+            ..Host::default()
+        };
+        let (caps, _) = host
+            .command("open", &json!({"name":"ZWO ASI676MC"}))
+            .unwrap();
+        assert_eq!(caps["captureModes"], json!(["still", "video"]));
+        let mut params = parameters();
+        params["x"] = json!(2); // Valid for 676, not the 662's 8-pixel alignment.
+        params["y"] = json!(2);
+        assert_eq!(frame(&mut host, &params).0["deliveredFrames"], 1);
+        assert_eq!(frame(&mut host, &params).0["deliveredFrames"], 2);
+        host.command("stop", &Value::Null).unwrap();
+        assert_eq!(frame(&mut host, &params).0["deliveredFrames"], 1);
+        host.command("close", &Value::Null).unwrap();
+        let mut unsupported = Host {
+            simulate: true,
+            ..Host::default()
+        };
+        for model in Model::ALL
+            .into_iter()
+            .filter(|m| m.video_profile().is_none())
+        {
+            let (caps, _) = unsupported
+                .command("open", &json!({"name":model.name()}))
+                .unwrap();
+            assert_eq!(caps["captureModes"], json!(["still"]));
+            assert!(unsupported.command("start", &parameters()).is_err());
+            unsupported.command("close", &Value::Null).unwrap();
+        }
+    }
+
+    #[test]
     fn invalid_video_requests_do_not_change_active_state() {
         let mut host = open();
         for (key, value) in [
@@ -1372,7 +1415,7 @@ mod video_tests {
             assert!(host.pending.is_none());
         }
         host.command("close", &Value::Null).unwrap();
-        host.command("open", &json!({"name":"ZWO ASI676MC"}))
+        host.command("open", &json!({"name":"ZWO ASI2600MM Duo"}))
             .unwrap();
         assert!(host.command("start", &parameters()).is_err());
         host.command("close", &Value::Null).unwrap();

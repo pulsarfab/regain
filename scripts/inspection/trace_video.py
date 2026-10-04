@@ -1,4 +1,4 @@
-"""Bounded ASI662MC SDK video reference; pixels discarded.
+"""Bounded ASI662MC/ASI676MC SDK video reference; pixels discarded.
 
 Manual hardware research only, never called by CI. Owns a disposable child and
 traces only that child. Raw USB traces contain device paths: keep output ignored.
@@ -62,14 +62,14 @@ def worker(args):
     for index in range(count):
         candidate = CameraInfo()
         call('ASIGetCameraProperty', c.byref(candidate), index)
-        if candidate.name == b'ZWO ASI662MC':
+        if candidate.name == args.camera_name.encode():
             matches.append(candidate)
     if len(matches) != 1:
-        raise RuntimeError('exactly one ASI662MC must match')
+        raise RuntimeError('exactly one selected model must match')
     info = matches[0]
     try:
-        if info.name != b'ZWO ASI662MC':
-            raise RuntimeError('reference trace requires ASI662MC')
+        if info.name != args.camera_name.encode():
+            raise RuntimeError('reference trace model mismatch')
         print(json.dumps({'kind': 'camera', 'name': info.name.decode(),
                           'usb3Host': bool(info.usb3host)}), flush=True)
         call('ASIOpenCamera', info.id)
@@ -78,7 +78,7 @@ def worker(args):
         call('ASISetStartPos', info.id, 0, 0)
         call('ASISetROIFormat', info.id, args.width, args.height, 1, 2)
         for control, value in [(0, args.gain), (1, args.microseconds),
-                               (5, 15), (6, 40), (9, 0)]:
+                               (5, 15 if args.camera_name == 'ZWO ASI662MC' else 10), (6, 40), (9, 0)]:
             call('ASISetControlValue', info.id, control, value, 0)
         data = (c.c_ubyte * (args.width * args.height * 2))()
         call('ASIStartVideoCapture', info.id)
@@ -101,8 +101,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--frames', type=int, default=8)
-    parser.add_argument('--width', type=int, default=1920)
-    parser.add_argument('--height', type=int, default=1080)
+    parser.add_argument('--camera-name', choices=['ZWO ASI662MC', 'ZWO ASI676MC'], default='ZWO ASI662MC')
+    parser.add_argument('--width', type=int)
+    parser.add_argument('--height', type=int)
     parser.add_argument('--microseconds', type=int, default=100000)
     parser.add_argument('--gain', type=int, default=0)
     parser.add_argument('--deadline', type=int, default=90)
@@ -110,9 +111,12 @@ def main():
                         help='operator-approved one-time SDK discovery with other cameras attached')
     parser.add_argument('--worker', action='store_true', help=argparse.SUPPRESS)
     args = parser.parse_args()
+    full_width, full_height = (1920, 1080) if args.camera_name == 'ZWO ASI662MC' else (3552, 3552)
+    args.width = full_width if args.width is None else args.width
+    args.height = full_height if args.height is None else args.height
     if not (1 <= args.frames <= 100 and 32 <= args.microseconds <= 30000000
-            and 64 <= args.width <= 1920 and args.width % 8 == 0
-            and 64 <= args.height <= 1080 and args.height % 2 == 0
+            and 64 <= args.width <= full_width and args.width % 8 == 0
+            and 64 <= args.height <= full_height and args.height % 2 == 0
             and 0 <= args.gain <= 600 and 1 <= args.deadline <= 300):
         parser.error('invalid bounded video parameters')
     if sys.platform != 'win32' or hashlib.sha256(SDK.read_bytes()).hexdigest() != SDK_SHA:
