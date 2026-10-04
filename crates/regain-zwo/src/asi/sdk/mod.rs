@@ -277,6 +277,12 @@ impl Host {
             "status" => {
                 if let Some(s) = &self.sdk {
                     json!(s.status()?)
+                } else if self.exposure.is_some()
+                    && self.values["failedStatuses"].as_u64().unwrap_or(0) > 0
+                {
+                    self.values["failedStatuses"] =
+                        json!(self.values["failedStatuses"].as_u64().unwrap() - 1);
+                    json!(3)
                 } else {
                     json!(match (&self.exposure, self.started) {
                         (Some(e), Some(t))
@@ -363,6 +369,10 @@ impl Host {
                 json!(null)
             }
             "simulation" if self.sdk.is_none() => {
+                if let Some(count) = p["failedStatuses"].as_u64() {
+                    ensure!(count <= 2, "at most two simulated failed exposure statuses");
+                    self.values["failedStatuses"] = json!(count);
+                }
                 if let Some(fault) = p["fault"].as_str() {
                     self.fault = fault.into();
                 }
