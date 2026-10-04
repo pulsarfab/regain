@@ -11,6 +11,7 @@ mod asi662_tables;
 mod asi676;
 mod asi676_tables;
 mod bayer;
+mod bayer_video;
 mod completion;
 mod diagnostics;
 mod environment;
@@ -21,7 +22,6 @@ mod server;
 mod settings;
 mod transfer;
 mod transport;
-mod video662;
 use anyhow::{Result, ensure};
 
 fn probe_product(args: &[String]) -> Result<Option<u16>> {
@@ -104,6 +104,11 @@ pub fn run(args: Vec<String>) -> Result<()> {
         return processing::process_stream();
     }
     let asi662 = args.first().is_some_and(|a| a == "--capture-662");
+    let video_profile = if asi662 {
+        &asi662::PROFILE
+    } else {
+        &asi676::PROFILE
+    };
     let asi6200 = args.first().is_some_and(|a| a == "--capture-6200");
     let verify_retained = args
         .first()
@@ -153,7 +158,10 @@ pub fn run(args: Vec<String>) -> Result<()> {
                 continue;
             }
             if option == "--video" {
-                ensure!(asi662, "video is only available for ASI662MC");
+                ensure!(
+                    asi662 || args[0] == "--capture",
+                    "video is only available for ASI662MC/ASI676MC"
+                );
                 video = true;
                 continue;
             }
@@ -243,7 +251,7 @@ pub fn run(args: Vec<String>) -> Result<()> {
         );
         ensure!(!fps_specified || video, "--max-fps requires --video");
         if video {
-            video662::validate(&settings)?;
+            bayer_video::validate(&settings, video_profile)?;
             ensure!(!replay, "video does not support retained-frame replay");
             ensure!(
                 !retries_specified || settings.read_retries == 0,
@@ -281,7 +289,7 @@ pub fn run(args: Vec<String>) -> Result<()> {
             || args == ["--probe-all"]
             || args == ["--probe", "--cancel-read"]
             || capture,
-        "Usage: regain-device zwo camera-direct [--probe [--cancel-read] | --capture | --capture-662 | --capture-duo | --capture-2600-p25 | --capture-6200 | --capture-guide] [--width N --height N --x N --y N --microseconds N --gain N --offset N --frames N --read-retries N --transfer-timeout-seconds N --stream --replay --replay-prefix-bytes N --interrupt-read-after-bytes N]; ASI2600/6200 also accept --timeout-read-after-bytes N; ASI2600 also accepts --reopen-after-bytes N --reopen-delay-ms N; P25 research: --keep-retained, then --verify-retained-2600-p25 --expected-wire-sha256 HASH with raw width/height; ASI2600/6200 and guide also accept --bin N; disconnect other camera apps first"
+        "Usage: regain-device zwo camera-direct [--probe [--cancel-read] | --capture | --capture-662 | --capture-duo | --capture-2600-p25 | --capture-6200 | --capture-guide] [--width N --height N --x N --y N --microseconds N --gain N --offset N --frames N --read-retries N --transfer-timeout-seconds N --stream --replay --replay-prefix-bytes N --interrupt-read-after-bytes N]; ASI662MC/ASI676MC accept --video --max-fps N (0.01..120, exposures up to 30 s, no replay); ASI2600/6200 also accept --timeout-read-after-bytes N; ASI2600 also accepts --reopen-after-bytes N --reopen-delay-ms N; P25 research: --keep-retained, then --verify-retained-2600-p25 --expected-wire-sha256 HASH with raw width/height; ASI2600/6200 and guide also accept --bin N; disconnect other camera apps first"
     );
     // Last resort for a kernel request that refuses to finish cancellation. The
     // worker must exit rather than free a buffer still owned by the USB driver.
@@ -366,12 +374,17 @@ pub fn run(args: Vec<String>) -> Result<()> {
         use std::io::Write;
         let mut output = std::io::stdout().lock();
         let mut video_session = if video {
-            Some(video662::Video::start(&camera, &result, settings.clone())?)
+            Some(bayer_video::Video::start(
+                &camera,
+                &result,
+                settings.clone(),
+                video_profile,
+            )?)
         } else {
             None
         };
         let cancelled = std::sync::atomic::AtomicBool::new(false);
-        let mut pacer = video662::Pacer::default();
+        let mut pacer = bayer_video::Pacer::default();
         let capture_result = (|| -> Result<()> {
             for frame in 0..frames {
                 let (metadata, data) = if let Some(session) = &mut video_session {
@@ -441,7 +454,10 @@ fn invalid_video_cli_options_fail_before_camera_access() {
             vec!["--capture-662", "--max-fps", "0.5"],
             "requires --video",
         ),
-        (vec!["--capture", "--video"], "only available for ASI662MC"),
+        (
+            vec!["--capture-duo", "--video"],
+            "only available for ASI662MC/ASI676MC",
+        ),
         (
             vec!["--capture-662", "--video", "--max-fps", "0"],
             "video maxFps",

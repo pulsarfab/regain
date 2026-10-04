@@ -1,6 +1,6 @@
-"""Explicit manual ASI662MC Direct USB video validation; no image files or SDK.
+"""Explicit manual ASI662MC/ASI676MC video validation; no image files or SDK.
 
-Run only with an idle operator-authorized ASI662MC. Other models are not opened.
+Run only with an idle operator-authorized selected model. Other models are not opened.
 Use --simulate for protocol development without hardware. Results are local JSONL.
 """
 import argparse
@@ -19,7 +19,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--simulate', action='store_true')
+    parser.add_argument('--camera-name', choices=['ZWO ASI662MC', 'ZWO ASI676MC'], default='ZWO ASI662MC')
     args = parser.parse_args()
+    full_width, full_height = (1920, 1080) if args.camera_name == 'ZWO ASI662MC' else (3552, 3552)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     command = [str(ROOT / 'target/debug/regain-device.exe'), 'zwo', 'camera-direct', '--serve']
     if args.simulate:
@@ -65,7 +67,7 @@ def main():
             if reply['id'] != request_id or not reply['ok']:
                 raise RuntimeError(str(reply))
             size = reply.get('binaryLength', 0)
-            if not 0 <= size <= 4147200:
+            if not 0 <= size <= full_width * full_height * 2:
                 raise RuntimeError('invalid pixel byte count')
             pixels = exact(size)
             if size:
@@ -77,7 +79,7 @@ def main():
                     raise RuntimeError('frame checksum mismatch')
             return reply['result']
 
-        def params(us=100000, width=1920, height=1080, fps=2.0):
+        def params(us=100000, width=full_width, height=full_height, fps=2.0):
             return dict(mode='video', maxFps=fps, width=width, height=height,
                         x=0, y=0, bin=1, microseconds=us, dark=False)
 
@@ -95,12 +97,13 @@ def main():
             return result
 
         try:
-            record(dict(kind='configuration', simulate=args.simulate,
+            record(dict(kind='configuration', simulate=args.simulate, cameraName=args.camera_name,
+                        workerSha256=hashlib.sha256(Path(command[0]).read_bytes()).hexdigest(),
                         source=subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()))
-            opened = call('open', dict(name='ZWO ASI662MC'))
+            opened = call('open', dict(name=args.camera_name))
             if 'video' not in opened['captureModes']:
                 raise RuntimeError('video capability absent')
-            # No discovery calls; exact model selection refuses multiple 662s.
+            # No discovery calls; exact model selection refuses ambiguous matches.
             for _ in range(6):
                 capture(params())
             # A lower rate must cap reads, not merely output/display updates.
