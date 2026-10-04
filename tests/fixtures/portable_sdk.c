@@ -32,18 +32,18 @@ ASI_ERROR_CODE ASIGetSerialNumber(int id, ASI_ID *serial) {
     return ASIOpenCamera(id);
 }
 ASI_ERROR_CODE ASIGetNumOfControls(int id, int *count) {
-    *count = 1;
+    *count = 2;
     return ASIOpenCamera(id);
 }
 ASI_ERROR_CODE ASIGetControlCaps(int id, int index, ASI_CONTROL_CAPS *caps) {
-    (void)index;
     memset(caps, 0, sizeof(*caps));
-    strcpy(caps->Name, "Gain");
-    caps->MinValue = -123;
-    caps->MaxValue = 700;
-    caps->DefaultValue = 100;
+    if (index < 0 || index > 1) return ASI_ERROR_INVALID_INDEX;
+    strcpy(caps->Name, index == 0 ? "Gain" : "Exposure");
+    caps->MinValue = index == 0 ? -123 : 32;
+    caps->MaxValue = index == 0 ? 700 : 2000000000;
+    caps->DefaultValue = index == 0 ? 100 : 1000;
     caps->IsWritable = ASI_TRUE;
-    caps->ControlType = ASI_GAIN;
+    caps->ControlType = index == 0 ? ASI_GAIN : ASI_EXPOSURE;
     return ASIOpenCamera(id);
 }
 ASI_ERROR_CODE ASIGetControlValue(int id, ASI_CONTROL_TYPE control, long *value, ASI_BOOL *automatic) {

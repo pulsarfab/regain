@@ -310,7 +310,8 @@ def standalone(binary_dir, library=None):
         destination = Path(temporary) / "frames"
         capture = command + ["--capture", "--width", "128", "--height", "128", "--frames", "2",
                              "--microseconds", "1000", "--gain", "123", "--output", str(destination)]
-        done = subprocess.run(capture, capture_output=True, text=True, timeout=20, check=True)
+        done = subprocess.run(capture, capture_output=True, text=True, timeout=20)
+        assert done.returncode == 0, done.stderr
         assert len(done.stdout.splitlines()) == 2
         expected = b"".join(struct.pack("<H", n) for n in range(128 * 128))
         for index in [1, 2]:
