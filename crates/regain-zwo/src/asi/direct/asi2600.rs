@@ -253,9 +253,7 @@ pub fn capture(
     replay: bool,
 ) -> Result<(Value, Vec<u8>)> {
     let raw = raw_settings(s, gain, bin)?;
-    let p25 = info["productId"] == 0x260e;
-    let link = super::link::validate(info, if p25 { 0x260e } else { 0x2601 })?;
-    let sensor = sensor_settings(&raw, p25, link);
+    let sensor = sensor_settings(&raw);
     let (mut meta, mut data) = capture_native(camera, info, &sensor, gain, replay)?;
     if sensor.width != raw.width || sensor.height != raw.height {
         let mut cropped = Vec::with_capacity(raw.width as usize * raw.height as usize * 2);
@@ -283,12 +281,12 @@ pub fn capture(
     meta["sha256"] = json!(format!("{:x}", Sha256::digest(&data)));
     Ok((meta, data))
 }
-fn sensor_settings(raw: &Settings, p25: bool, link: super::link::Link) -> Settings {
+fn sensor_settings(raw: &Settings) -> Settings {
     let mut sensor = raw.clone();
-    // P25 and USB 2 Duo 64x64 DDR reads stall; larger retained frames work.
+    // P25 and Duo 64x64 DDR reads stall, including Duo on USB 3.
     // Expand small requests to at least 128 KiB, correct in sensor coordinates,
-    // then crop. Keep the original Duo USB 3 geometry unchanged.
-    if (p25 || link == super::link::Link::HighSpeed) && sensor.width * sensor.height < 65536 {
+    // then crop. This retained-read floor applies independently of link speed.
+    if sensor.width * sensor.height < 65536 {
         sensor.width = sensor.width.max(512);
         sensor.height = sensor.height.max(128);
         sensor.x = sensor.x.min((6248 - sensor.width) / 16 * 16);
@@ -752,8 +750,15 @@ mod tests {
     }
 
     #[test]
-    fn p25_and_usb2_duo_small_transfers_cover_requested_roi_at_sensor_edges() {
-        for (width, height) in [(64, 64), (64, 128), (512, 64), (6248, 64)] {
+    fn both_revisions_small_transfers_cover_requested_roi_at_sensor_edges() {
+        for (width, height) in [
+            (64, 64),
+            (64, 128),
+            (512, 64),
+            (512, 128),
+            (6248, 64),
+            (6248, 4176),
+        ] {
             for edge in [false, true] {
                 let raw = Settings {
                     width,
@@ -763,26 +768,25 @@ mod tests {
                     } else {
                         16.min((6248 - width) / 16 * 16)
                     },
-                    y: if edge { 4176 - height } else { 2 },
+                    y: if edge {
+                        4176 - height
+                    } else {
+                        2.min(4176 - height)
+                    },
                     ..Settings::default()
                 };
-                for (p25, link) in [
-                    (true, super::super::link::Link::SuperSpeed),
-                    (true, super::super::link::Link::HighSpeed),
-                    (false, super::super::link::Link::HighSpeed),
-                ] {
-                    let sensor = sensor_settings(&raw, p25, link);
-                    validate(&sensor, 100).unwrap();
-                    assert!(sensor.width * sensor.height * 2 >= 131072);
-                    assert!(sensor.x <= raw.x && sensor.y <= raw.y);
-                    assert!(sensor.x + sensor.width >= raw.x + raw.width);
-                    assert!(sensor.y + sensor.height >= raw.y + raw.height);
+                let sensor = sensor_settings(&raw);
+                validate(&sensor, 100).unwrap();
+                assert!(sensor.width * sensor.height * 2 >= 131072);
+                assert!(sensor.x <= raw.x && sensor.y <= raw.y);
+                assert!(sensor.x + sensor.width >= raw.x + raw.width);
+                assert!(sensor.y + sensor.height >= raw.y + raw.height);
+                if raw.width * raw.height >= 65536 {
+                    assert_eq!(
+                        (sensor.width, sensor.height, sensor.x, sensor.y),
+                        (raw.width, raw.height, raw.x, raw.y)
+                    );
                 }
-                let original = sensor_settings(&raw, false, super::super::link::Link::SuperSpeed);
-                assert_eq!(
-                    (original.width, original.height, original.x, original.y),
-                    (raw.width, raw.height, raw.x, raw.y)
-                );
             }
         }
     }
