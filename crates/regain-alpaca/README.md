@@ -1,8 +1,9 @@
 # regain-alpaca
 
-Alpaca server for ZWO cameras, CAA rotators, EFW filter wheels, EAF,
+Alpaca server for ZWO cameras, CAA and Falcon V2 rotators, EFW filter wheels, EAF,
 FocusCube3 and ETA focusers, and the OFP2 flat panel. Cameras can reread or
-retake an image after a failed USB download.
+retake an image after a failed USB download. Add camera, focuser, and rotator
+slots for multiple devices; each slot keeps a stable device number.
 
 ```sh
 cargo install regain-alpaca regain-device

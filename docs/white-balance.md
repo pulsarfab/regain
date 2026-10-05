@@ -1,4 +1,4 @@
-# Shared color-camera white balance (current source)
+# Shared color-camera white balance
 
 Regain owns one opt-in software white-balance implementation for the SDK and
 Direct USB camera workers. Applications choose settings and display status; they

@@ -1,6 +1,6 @@
 # Transfer recovery and SDK gaps
 
-Status: 2026-09-30. The SDK remains the default backend. The direct driver uses
+The SDK remains the default backend. The direct driver uses
 the installed ZWO Windows kernel driver without loading `ASICamera2.dll`.
 
 ## What can be recovered
@@ -27,7 +27,7 @@ Our transport waits for terminal completion and terminates the isolated worker
 if cancellation will not drain, rather than freeing driver-owned storage.
 See [Microsoft's cancellation contract](https://learn.microsoft.com/en-us/windows/win32/fileio/cancelioex-func).
 
-The ASI2600, ASI6200, ASI662 and ASI676 direct descriptors advertise retained-frame capability.
+The ASI2600, ASI6200, ASI585, ASI662 and ASI676 direct descriptors advertise retained-frame capability.
 Their configurable read retry count (default 2, maximum 5) applies at every
 supported exposure length, including a 1,200-second ASI2600 exposure. The
 supervisor records successful retained-read recovery separately from exposure
@@ -93,23 +93,24 @@ additional restart. Recovered pixels matched without repeating the exposure.
 This revision also needs the larger physical readout for small requested ROIs
 and a complete sensor readout interval before freezing DDR.
 
-The [ASI662MC](asi662mc.md) also supports retained-frame reads in current source
-builds. Short captures use a minimum ~100 ms sensor frame interval so that the
+The [ASI662MC](asi662mc.md) and [ASI585MM Pro](asi585mm-pro.md) also support
+retained-frame reads, each validated after a 600-second exposure. Short captures
+use a minimum ~100 ms sensor frame interval so that the
 full image remains replayable. Its evidence distinguishes deliberate host-read
 interruptions from actual USB bus faults.
 
 | Area | Current direct implementation | Gap |
 | --- | --- | --- |
-| Camera coverage | Verified ASI662MC and ASI676MC USB3, ASI2600MM Pro main USB3 (`2601` and P25 `260e`), ASI6200MM Pro P25 USB3 (`620b`), ASI220MM Mini guide USB2 | Other models/revisions need their own initialization, format and recovery evidence; a shared driver package is insufficient |
+| Camera coverage | ASI585MM Pro, ASI662MC, ASI676MC, ASI2600MM Pro/Duo main, ASI6200MM Pro, and ASI220MM Mini guide; see each device guide and [USB 2 results](usb2-cameras.md) | Other models/revisions need their own initialization, format and recovery evidence; a shared driver package is insufficient |
 | Single-frame imaging | RAW16, ROI, gain/offset, factory correction; main bins 1–4 and long integrations | SDK format/control coverage is broader; unverified correction-map classes and modes must not be assumed equivalent |
-| Additional SDK modes | NINA path delivers RAW16 still frames | RAW8/RGB, live video, automatic exposure, hardware white balance/gamma, flip, external triggering and ST4 are not implemented/surfaced by the direct path; availability in the SDK varies by model. Current pipe workers offer opt-in [shared software WB/AWB](white-balance.md) for color cameras. |
+| Acquisition modes | NINA, ASCOM, and Alpaca deliver RAW16 still frames; worker APIs add [continuous acquisition](continuous-acquisition.md) and [software WB/AWB](white-balance.md) | Direct native video covers ASI585/662/676 through 30 s and has no retained replay. Other direct models use repeated stills. Neither Regain backend captures RAW8/RGB; automatic exposure, external triggering, and ST4 are not surfaced. |
 | Transfer throughput | Sequential 1 MiB bulk requests, fixed USB limit 40 | SDK traces show queued overlapped transfers. Queue depth and bandwidth tuning need measurements and cancellation tests |
-| Cooling | Temperature, target, enablement, power and dew control; bounded Rust PI regulator | It is not the SDK regulator and needs more environmental and hardware validation |
+| Cooling | Temperature, target, enablement, power and supported dew controls; bounded Rust PI regulator | Capability depends on the camera: ASI585 exposes cooling but no controllable heater. It is not the SDK regulator and needs more environmental and hardware validation |
 | ASI6200 auxiliary controls | Fan speed and power-LED brightness, 0–255, with readback and restoration | Momentary USB hub reset is not exposed or replayed automatically |
 | Acquisition lifecycle | Observed readiness registers, retained state and framing checks; P25 cameras additionally wait a full programmed sensor frame plus 100 ms before standby | These guards are time based. Full-frame control transitions caught stale rows that valid framing and repeated dark frames did not. A definitive firmware completion indicator remains open |
 | Error reporting | Structured category, progress, Windows/NT/USB or native status, and deadline flag in diagnostics and terminal protocol errors | Control/initialization failures still use ordinary error context |
 | Time bounds | Configurable whole-read deadline for every transfer/replay attempt, per-request deadlines, supervisor readiness grace, worker watchdog | Cancellation drain and an in-progress control request can extend observed failure time; outer bounds still apply |
-| Disconnect recovery | Windows ASI2600 P25 can reopen the handle within the read budget and verify prior pixel chunks; full reconnect restores controls/cooling and takes a replacement exposure when policy allows | Diagnostic port reset/cycle works but retained reads then time out; cross-worker adoption, physical removal, and power loss remain open |
+| Disconnect recovery | Windows ASI2600 P25 can reopen the handle within the read budget and verify prior pixel chunks; full reconnect restores controls/cooling and takes a replacement exposure when policy allows. [Opt-in USB reset](usb-recovery.md) can escalate on Windows/Linux | Reset abandons the retained frame. Cross-worker retained-frame adoption, physical removal, and external power cycling remain open |
 
 For the public SDK, `ASIGetDataAfterExp` is a whole-image retrieval call with no
 offset or continuation token. Inspected code and traces place USB acquisition

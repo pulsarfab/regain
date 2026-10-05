@@ -3,7 +3,7 @@
 `regain-pegasus::falcon` speaks directly to the Falcon V2 USB serial port.
 The same Rust driver powers native NINA, native Windows ASCOM, and the
 universal Alpaca server. Pegasus Unity and the vendor SDK are not required.
-This is current-source, experimental support; it does not cover Falcon V1.
+Support remains experimental; it does not cover Falcon V1.
 
 **Hardware tested:** firmware 1.8, revision A, on Windows. Tests passed for
 short moves, crossing zero, +450° and −450° travel, halt during motion,

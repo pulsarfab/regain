@@ -1,4 +1,4 @@
-# CI, releases and the theatr.us NINA registry
+# CI, releases and NINA distribution
 
 ## Build and license
 
@@ -39,16 +39,19 @@ the camera's displayed driver version use the same version.
 2. Run `scripts/test.ps1`, `scripts/build.ps1`, and `scripts/test-release.ps1`.
    A manual **Release** workflow run on `main` does the same build and validation
    and uploads artifacts without creating a tag or GitHub release.
-3. Push a matching tag, such as `v0.3.0.0`. The **Release** workflow reruns all
+3. Push a matching tag, such as `v0.5.10.0`. The **Release** workflow reruns all
    checks and creates a **draft** GitHub release with ten assets:
-   `Regain-0.3.0.0.zip`, `Regain-0.3.0.0.manifest.json`, `regain.png`,
-   `SHA256SUMS`, `Regain-CameraKit-0.3.0.0-win-x64.zip`, its `.zip.sha256`,
-   `Regain-ASCOM-0.3.0.0-win-x64.zip`, its `.zip.sha256`,
-   `Regain-ASCOM-0.3.0.0-win-x64-setup.exe`, and its `.exe.sha256`.
+   `Regain-0.5.10.0.zip`, `Regain-0.5.10.0.manifest.json`, `regain.png`,
+   `SHA256SUMS`, `Regain-CameraKit-0.5.10.0-win-x64.zip`, its `.zip.sha256`,
+   `Regain-ASCOM-0.5.10.0-win-x64.zip`, its `.zip.sha256`,
+   `Regain-ASCOM-0.5.10.0-win-x64-setup.exe`, and its `.exe.sha256`.
 4. Inspect/test those artifacts, then publish the draft as a stable release.
    A rerun can refresh a draft, but refuses to overwrite published assets.
 
-5. Publish the crates from the tagged commit, as described in
+5. Dispatch **Publish to NINA registry** on `main` with the published tag.
+   It updates the shared registry for both public feeds; release publication
+   alone does not dispatch it. Verify the deployed manifests report the new version.
+6. Publish the crates from the tagged commit, as described in
    [crates.io publication](#cratesio-publication).
 
 The manifest generator uses the compiled plugin's identity, version, author,
@@ -106,7 +109,7 @@ checkout of the tag, with a crates.io token that can publish these crates
 (`cargo login`, or `CARGO_REGISTRY_TOKEN`):
 
 ```sh
-git checkout v0.5.1.0
+git checkout v0.5.10.0
 cargo publish --workspace --locked --dry-run
 cargo publish --workspace --locked
 ```
@@ -139,7 +142,7 @@ release lookup uses the source repository token.
 
 Run **Publish to NINA registry** from `main`, supplying a published stable tag.
 It checks identity/version, rejects draft/prerelease/channel manifests,
-downloads the installer and logo **without authentication**, verifies the ZIP
+downloads the plugin ZIP and logo **without authentication**, verifies the ZIP
 SHA-256 and logo consistency, prevents downgrades/version replacement, and only
 then commits and pushes the manifest. Repeating the exact same publication is
 a no-op. Concurrent registry changes cause a normal push rejection, not a
@@ -148,7 +151,7 @@ force push.
 The same operation can be prepared locally using existing `gh`/git credentials:
 
 ```powershell
-./scripts/publish-registry.ps1 -Tag v0.1.0.0 -RegistryPath ../nina-plugins-registry
+./scripts/publish-registry.ps1 -Tag v0.5.10.0 -RegistryPath ../nina-plugins-registry
 # Review the resulting diff. To have the script commit/push, use a clean checkout
 # and invoke it with -Push instead of the preparation-only invocation.
 ```

@@ -4,7 +4,7 @@ One command-line tool and worker for every regain device driver:
 
 ```text
 regain-device zwo camera-direct | camera-sdk | caa | efw | eaf
-regain-device pegasus fc3
+regain-device pegasus fc3 | falcon
 regain-device deepskydad ofp2
 regain-device wanderer eta
 regain-device usb reset|cycle TARGET
