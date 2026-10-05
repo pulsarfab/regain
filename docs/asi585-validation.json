@@ -1,0 +1,798 @@
+{
+  "model": "ZWO ASI585MM Pro",
+  "usb": "03c3:585e",
+  "date": "2026-10-04",
+  "platform": "Windows x64, USB 3",
+  "sdkVersion": "1.41",
+  "sdkSha256": "0c8778c3cce2012961b079e3c7d0d8348a8b3823939335d9e98148cb5d5dc34a",
+  "privacy": "No images, sensor samples, calibration maps, serials, or USB paths included.",
+  "sdkSameFrameComparisons": [
+    {
+      "parameters": {
+        "width": 1920,
+        "height": 1080,
+        "bin": 2,
+        "x": 0,
+        "y": 0,
+        "seconds": 0.1,
+        "gain": 100,
+        "offset": 30,
+        "bandwidth": 40
+      },
+      "bytes": 4147200,
+      "pixelsIdentical": true,
+      "factoryMapMatchesSdk": true
+    },
+    {
+      "parameters": {
+        "width": 1280,
+        "height": 720,
+        "bin": 3,
+        "x": 0,
+        "y": 0,
+        "seconds": 0.1,
+        "gain": 100,
+        "offset": 30,
+        "bandwidth": 40
+      },
+      "bytes": 1843200,
+      "pixelsIdentical": true,
+      "factoryMapMatchesSdk": true
+    },
+    {
+      "parameters": {
+        "width": 960,
+        "height": 540,
+        "bin": 4,
+        "x": 0,
+        "y": 0,
+        "seconds": 0.1,
+        "gain": 100,
+        "offset": 30,
+        "bandwidth": 40
+      },
+      "bytes": 1036800,
+      "pixelsIdentical": true,
+      "factoryMapMatchesSdk": true
+    },
+    {
+      "parameters": {
+        "width": 64,
+        "height": 64,
+        "bin": 1,
+        "x": 3776,
+        "y": 2096,
+        "seconds": 0.01,
+        "gain": 200,
+        "offset": 300,
+        "bandwidth": 40
+      },
+      "bytes": 8192,
+      "pixelsIdentical": true,
+      "factoryMapMatchesSdk": true
+    },
+    {
+      "parameters": {
+        "width": 3840,
+        "height": 2160,
+        "bin": 1,
+        "x": 0,
+        "y": 0,
+        "seconds": 0.1,
+        "gain": 100,
+        "offset": 30,
+        "bandwidth": 40
+      },
+      "bytes": 16588800,
+      "pixelsIdentical": true,
+      "factoryMapMatchesSdk": true
+    },
+    {
+      "parameters": {
+        "width": 512,
+        "height": 256,
+        "bin": 1,
+        "x": 0,
+        "y": 0,
+        "seconds": 0.1,
+        "gain": 201,
+        "offset": 30,
+        "bandwidth": 40
+      },
+      "bytes": 262144,
+      "pixelsIdentical": true,
+      "factoryMapMatchesSdk": true
+    },
+    {
+      "parameters": {
+        "width": 512,
+        "height": 256,
+        "bin": 1,
+        "x": 0,
+        "y": 0,
+        "seconds": 0.999999,
+        "gain": 600,
+        "offset": 30,
+        "bandwidth": 40
+      },
+      "bytes": 262144,
+      "pixelsIdentical": true,
+      "factoryMapMatchesSdk": true
+    },
+    {
+      "parameters": {
+        "width": 512,
+        "height": 256,
+        "bin": 1,
+        "x": 0,
+        "y": 0,
+        "seconds": 1.001,
+        "gain": 100,
+        "offset": 30,
+        "bandwidth": 40
+      },
+      "bytes": 262144,
+      "pixelsIdentical": true,
+      "factoryMapMatchesSdk": true
+    },
+    {
+      "parameters": {
+        "width": 520,
+        "height": 258,
+        "bin": 1,
+        "x": 18,
+        "y": 12,
+        "seconds": 0.001,
+        "gain": 199,
+        "offset": 15,
+        "bandwidth": 40
+      },
+      "bytes": 268320,
+      "pixelsIdentical": true,
+      "factoryMapMatchesSdk": true
+    },
+    {
+      "parameters": {
+        "width": 64,
+        "height": 64,
+        "bin": 1,
+        "x": 0,
+        "y": 0,
+        "seconds": 3.2e-05,
+        "gain": 0,
+        "offset": 0,
+        "bandwidth": 40
+      },
+      "bytes": 8192,
+      "pixelsIdentical": true,
+      "factoryMapMatchesSdk": true
+    }
+  ],
+  "directStills": [
+    {
+      "options": {
+        "width": 64,
+        "height": 64,
+        "microseconds": 32
+      },
+      "frames": [
+        {
+          "width": 64,
+          "height": 64,
+          "bin": 1,
+          "exposureMicroseconds": 32,
+          "bytes": 8192,
+          "readoutRetriesUsed": 0,
+          "sensorFrozenBeforeRead": true
+        }
+      ]
+    },
+    {
+      "options": {
+        "width": 64,
+        "height": 66,
+        "microseconds": 1000
+      },
+      "frames": [
+        {
+          "width": 64,
+          "height": 66,
+          "bin": 1,
+          "exposureMicroseconds": 1000,
+          "bytes": 8448,
+          "readoutRetriesUsed": 0,
+          "sensorFrozenBeforeRead": true
+        }
+      ]
+    },
+    {
+      "options": {
+        "width": 520,
+        "height": 258,
+        "x": 18,
+        "y": 12,
+        "microseconds": 10000
+      },
+      "frames": [
+        {
+          "width": 520,
+          "height": 258,
+          "bin": 1,
+          "exposureMicroseconds": 10000,
+          "bytes": 268320,
+          "readoutRetriesUsed": 0,
+          "sensorFrozenBeforeRead": true
+        }
+      ]
+    },
+    {
+      "options": {
+        "width": 64,
+        "height": 64,
+        "x": 3776,
+        "y": 2096,
+        "microseconds": 100000
+      },
+      "frames": [
+        {
+          "width": 64,
+          "height": 64,
+          "bin": 1,
+          "exposureMicroseconds": 100000,
+          "bytes": 8192,
+          "readoutRetriesUsed": 0,
+          "sensorFrozenBeforeRead": true
+        }
+      ]
+    },
+    {
+      "options": {
+        "width": 512,
+        "height": 256,
+        "x": 16,
+        "y": 8,
+        "microseconds": 100000,
+        "frames": 3
+      },
+      "frames": [
+        {
+          "width": 512,
+          "height": 256,
+          "bin": 1,
+          "exposureMicroseconds": 100000,
+          "bytes": 262144,
+          "readoutRetriesUsed": 0,
+          "sensorFrozenBeforeRead": true
+        },
+        {
+          "width": 512,
+          "height": 256,
+          "bin": 1,
+          "exposureMicroseconds": 100000,
+          "bytes": 262144,
+          "readoutRetriesUsed": 0,
+          "sensorFrozenBeforeRead": true
+        },
+        {
+          "width": 512,
+          "height": 256,
+          "bin": 1,
+          "exposureMicroseconds": 100000,
+          "bytes": 262144,
+          "readoutRetriesUsed": 0,
+          "sensorFrozenBeforeRead": true
+        }
+      ]
+    },
+    {
+      "options": {
+        "width": 512,
+        "height": 256,
+        "gain": 0,
+        "offset": 0
+      },
+      "frames": [
+        {
+          "width": 512,
+          "height": 256,
+          "bin": 1,
+          "exposureMicroseconds": 100000,
+          "bytes": 262144,
+          "readoutRetriesUsed": 0,
+          "sensorFrozenBeforeRead": true
+        }
+      ]
+    },
+    {
+      "options": {
+        "width": 512,
+        "height": 256,
+        "gain": 199,
+        "offset": 15
+      },
+      "frames": [
+        {
+          "width": 512,
+          "height": 256,
+          "bin": 1,
+          "exposureMicroseconds": 100000,
+          "bytes": 262144,
+          "readoutRetriesUsed": 0,
+          "sensorFrozenBeforeRead": true
+        }
+      ]
+    },
+    {
+      "options": {
+        "width": 512,
+        "height": 256,
+        "gain": 200,
+        "offset": 15
+      },
+      "frames": [
+        {
+          "width": 512,
+          "height": 256,
+          "bin": 1,
+          "exposureMicroseconds": 100000,
+          "bytes": 262144,
+          "readoutRetriesUsed": 0,
+          "sensorFrozenBeforeRead": true
+        }
+      ]
+    },
+    {
+      "options": {
+        "width": 512,
+        "height": 256,
+        "gain": 201,
+        "offset": 300
+      },
+      "frames": [
+        {
+          "width": 512,
+          "height": 256,
+          "bin": 1,
+          "exposureMicroseconds": 100000,
+          "bytes": 262144,
+          "readoutRetriesUsed": 0,
+          "sensorFrozenBeforeRead": true
+        }
+      ]
+    },
+    {
+      "options": {
+        "width": 512,
+        "height": 256,
+        "gain": 600,
+        "offset": 300
+      },
+      "frames": [
+        {
+          "width": 512,
+          "height": 256,
+          "bin": 1,
+          "exposureMicroseconds": 100000,
+          "bytes": 262144,
+          "readoutRetriesUsed": 0,
+          "sensorFrozenBeforeRead": true
+        }
+      ]
+    },
+    {
+      "options": {
+        "microseconds": 32,
+        "replay": true
+      },
+      "frames": [
+        {
+          "width": 3840,
+          "height": 2160,
+          "bin": 1,
+          "exposureMicroseconds": 32,
+          "bytes": 16588800,
+          "readoutRetriesUsed": 0,
+          "sensorFrozenBeforeRead": true,
+          "identicalReplay": true,
+          "additionalExposures": 0
+        }
+      ]
+    },
+    {
+      "options": {
+        "microseconds": 1000,
+        "replay": true
+      },
+      "frames": [
+        {
+          "width": 3840,
+          "height": 2160,
+          "bin": 1,
+          "exposureMicroseconds": 1000,
+          "bytes": 16588800,
+          "readoutRetriesUsed": 0,
+          "sensorFrozenBeforeRead": true,
+          "identicalReplay": true,
+          "additionalExposures": 0
+        }
+      ]
+    },
+    {
+      "options": {
+        "microseconds": 100000,
+        "replay": true
+      },
+      "frames": [
+        {
+          "width": 3840,
+          "height": 2160,
+          "bin": 1,
+          "exposureMicroseconds": 100000,
+          "bytes": 16588800,
+          "readoutRetriesUsed": 0,
+          "sensorFrozenBeforeRead": true,
+          "identicalReplay": true,
+          "additionalExposures": 0
+        }
+      ]
+    },
+    {
+      "options": {
+        "microseconds": 999999,
+        "replay": true
+      },
+      "frames": [
+        {
+          "width": 3840,
+          "height": 2160,
+          "bin": 1,
+          "exposureMicroseconds": 999999,
+          "bytes": 16588800,
+          "readoutRetriesUsed": 0,
+          "sensorFrozenBeforeRead": true,
+          "identicalReplay": true,
+          "additionalExposures": 0
+        }
+      ]
+    },
+    {
+      "options": {
+        "microseconds": 1000000,
+        "replay": true
+      },
+      "frames": [
+        {
+          "width": 3840,
+          "height": 2160,
+          "bin": 1,
+          "exposureMicroseconds": 1000000,
+          "bytes": 16588800,
+          "readoutRetriesUsed": 0,
+          "sensorFrozenBeforeRead": true,
+          "identicalReplay": true,
+          "additionalExposures": 0
+        }
+      ]
+    },
+    {
+      "options": {
+        "microseconds": 1001000,
+        "replay": true
+      },
+      "frames": [
+        {
+          "width": 3840,
+          "height": 2160,
+          "bin": 1,
+          "exposureMicroseconds": 1001000,
+          "bytes": 16588800,
+          "readoutRetriesUsed": 0,
+          "sensorFrozenBeforeRead": true,
+          "identicalReplay": true,
+          "additionalExposures": 0
+        }
+      ]
+    },
+    {
+      "options": {
+        "microseconds": 2000000,
+        "replay": true
+      },
+      "frames": [
+        {
+          "width": 3840,
+          "height": 2160,
+          "bin": 1,
+          "exposureMicroseconds": 2000000,
+          "bytes": 16588800,
+          "readoutRetriesUsed": 0,
+          "sensorFrozenBeforeRead": true,
+          "identicalReplay": true,
+          "additionalExposures": 0
+        }
+      ]
+    },
+    {
+      "options": {
+        "microseconds": 32,
+        "replay": true,
+        "interrupt-read-after-bytes": 1048576
+      },
+      "frames": [
+        {
+          "width": 3840,
+          "height": 2160,
+          "bin": 1,
+          "exposureMicroseconds": 32,
+          "bytes": 16588800,
+          "readoutRetriesUsed": 1,
+          "sensorFrozenBeforeRead": true,
+          "identicalReplay": true,
+          "additionalExposures": 0
+        }
+      ]
+    },
+    {
+      "options": {
+        "microseconds": 1000,
+        "replay": true,
+        "interrupt-read-after-bytes": 3145728
+      },
+      "frames": [
+        {
+          "width": 3840,
+          "height": 2160,
+          "bin": 1,
+          "exposureMicroseconds": 1000,
+          "bytes": 16588800,
+          "readoutRetriesUsed": 1,
+          "sensorFrozenBeforeRead": true,
+          "identicalReplay": true,
+          "additionalExposures": 0
+        }
+      ]
+    },
+    {
+      "options": {
+        "microseconds": 100000,
+        "replay": true,
+        "interrupt-read-after-bytes": 1048576
+      },
+      "frames": [
+        {
+          "width": 3840,
+          "height": 2160,
+          "bin": 1,
+          "exposureMicroseconds": 100000,
+          "bytes": 16588800,
+          "readoutRetriesUsed": 1,
+          "sensorFrozenBeforeRead": true,
+          "identicalReplay": true,
+          "additionalExposures": 0
+        }
+      ]
+    },
+    {
+      "options": {
+        "microseconds": 1000000,
+        "replay": true,
+        "interrupt-read-after-bytes": 3145728
+      },
+      "frames": [
+        {
+          "width": 3840,
+          "height": 2160,
+          "bin": 1,
+          "exposureMicroseconds": 1000000,
+          "bytes": 16588800,
+          "readoutRetriesUsed": 1,
+          "sensorFrozenBeforeRead": true,
+          "identicalReplay": true,
+          "additionalExposures": 0
+        }
+      ]
+    },
+    {
+      "options": {
+        "replay": true,
+        "replay-prefix-bytes": 3145728
+      },
+      "frames": [
+        {
+          "width": 3840,
+          "height": 2160,
+          "bin": 1,
+          "exposureMicroseconds": 100000,
+          "bytes": 16588800,
+          "readoutRetriesUsed": 0,
+          "sensorFrozenBeforeRead": true,
+          "identicalReplay": true,
+          "additionalExposures": 0
+        }
+      ]
+    },
+    {
+      "options": {
+        "microseconds": 60000000,
+        "replay": true
+      },
+      "frames": [
+        {
+          "width": 3840,
+          "height": 2160,
+          "bin": 1,
+          "exposureMicroseconds": 60000000,
+          "bytes": 16588800,
+          "readoutRetriesUsed": 0,
+          "sensorFrozenBeforeRead": true,
+          "identicalReplay": true,
+          "additionalExposures": 0
+        }
+      ]
+    },
+    {
+      "options": {
+        "width": 1920,
+        "height": 1080,
+        "bin": 2,
+        "replay": true
+      },
+      "frames": [
+        {
+          "width": 1920,
+          "height": 1080,
+          "bin": 2,
+          "exposureMicroseconds": 100000,
+          "bytes": 4147200,
+          "readoutRetriesUsed": 0,
+          "sensorFrozenBeforeRead": true,
+          "identicalReplay": true,
+          "additionalExposures": 0
+        }
+      ]
+    },
+    {
+      "options": {
+        "width": 1280,
+        "height": 720,
+        "bin": 3,
+        "replay": true
+      },
+      "frames": [
+        {
+          "width": 1280,
+          "height": 720,
+          "bin": 3,
+          "exposureMicroseconds": 100000,
+          "bytes": 1843200,
+          "readoutRetriesUsed": 0,
+          "sensorFrozenBeforeRead": true,
+          "identicalReplay": true,
+          "additionalExposures": 0
+        }
+      ]
+    },
+    {
+      "options": {
+        "width": 960,
+        "height": 540,
+        "bin": 4,
+        "replay": true
+      },
+      "frames": [
+        {
+          "width": 960,
+          "height": 540,
+          "bin": 4,
+          "exposureMicroseconds": 100000,
+          "bytes": 1036800,
+          "readoutRetriesUsed": 0,
+          "sensorFrozenBeforeRead": true,
+          "identicalReplay": true,
+          "additionalExposures": 0
+        }
+      ]
+    }
+  ],
+  "zeroRetryInterruptionSurfaced": true,
+  "video": {
+    "frames": 21,
+    "maximumExposureSeconds": 30,
+    "checks": [
+      "full frame",
+      "ROI",
+      "fractional FPS",
+      "slow consumer",
+      "exposure and gain changes",
+      "cancellation",
+      "restart",
+      "return to still"
+    ]
+  },
+  "continuous": {
+    "settingsGenerations": 8,
+    "maximumExposureSeconds": 20,
+    "acquiredFrames": 74,
+    "checks": [
+      "live exposure/gain edits",
+      "latest-frame replacement",
+      "transition flags",
+      "settings generations",
+      "atomic polling",
+      "delivery FPS limit"
+    ]
+  },
+  "cooler": {
+    "initialTemperature": 20.9,
+    "minimumTemperature": 17.5,
+    "during60SecondExposure": {
+      "kind": "cooler",
+      "second": 50,
+      "temperature": 19.1,
+      "power": 11,
+      "target": 18
+    },
+    "binnedVideo": [
+      {
+        "kind": "cooled-video",
+        "bin": 1,
+        "bytes": 16588800
+      },
+      {
+        "kind": "cooled-video",
+        "bin": 2,
+        "bytes": 4147200
+      },
+      {
+        "kind": "cooled-video",
+        "bin": 3,
+        "bytes": 1843200
+      },
+      {
+        "kind": "cooled-video",
+        "bin": 4,
+        "bytes": 1036800
+      }
+    ],
+    "initialStateRestored": true,
+    "heaterExposed": false,
+    "output": "vendor B2 DAC; shared bounded PI regulator"
+  },
+  "integrations": {
+    "physical": [
+      "Direct worker",
+      "Alpaca HTTP ImageBytes and cooler controls",
+      "native camera IPC capture, abort and cleanup"
+    ],
+    "automated": [
+      "Rust workspace tests",
+      "worker protocol",
+      "NINA contracts",
+      "C# recovery",
+      "Alpaca simulator",
+      "native camera simulator"
+    ],
+    "ascomBuild": "passed; COM wrapper unchanged"
+  },
+  "notValidated": [
+    "USB 2 hardware",
+    "Linux/macOS hardware",
+    "cold startup",
+    "physical USB reset",
+    "overnight streaming",
+    "optical accuracy"
+  ],
+  "extendedCapture": {
+    "exposureMicroseconds": 600000000,
+    "bytes": 16588800,
+    "acquisitionMs": 600322,
+    "readoutRetriesUsed": 1,
+    "interruptedPrefixMatches": true,
+    "sensorFrozenBeforeRead": true,
+    "identicalReplay": true,
+    "additionalExposures": 0,
+    "freshShortCaptureAfterward": true,
+    "hostInterruptionBytes": 1048576,
+    "replayDiscardedPrefixBytes": 3145728
+  }
+}

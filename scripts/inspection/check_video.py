@@ -1,4 +1,4 @@
-"""Explicit manual ASI662MC/ASI676MC video validation; no image files or SDK.
+"""Explicit manual ASI585MM Pro/ASI662MC/ASI676MC video validation; no image files or SDK.
 
 Run only with an idle operator-authorized selected model. Other models are not opened.
 Use --simulate for protocol development without hardware. Results are local JSONL.
@@ -22,9 +22,9 @@ def main():
     parser.add_argument('--worker', type=Path, default=ROOT / 'target/debug/regain-device.exe')
     parser.add_argument('--long-transition-only', action='store_true',
                         help='Reproduce gain-300 6.4s -> 25s changes and repeated 25s frames')
-    parser.add_argument('--camera-name', choices=['ZWO ASI662MC', 'ZWO ASI676MC'], default='ZWO ASI662MC')
+    parser.add_argument('--camera-name', choices=['ZWO ASI662MC', 'ZWO ASI676MC', 'ZWO ASI585MM Pro'], default='ZWO ASI662MC')
     args = parser.parse_args()
-    full_width, full_height = (1920, 1080) if args.camera_name == 'ZWO ASI662MC' else (3552, 3552)
+    full_width, full_height = {'ZWO ASI662MC': (1920, 1080), 'ZWO ASI676MC': (3552, 3552), 'ZWO ASI585MM Pro': (3840, 2160)}[args.camera_name]
     args.output.parent.mkdir(parents=True, exist_ok=True)
     command = [str(args.worker.resolve()), 'zwo', 'camera-direct', '--serve']
     if args.simulate:

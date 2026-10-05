@@ -5,6 +5,11 @@ ZWO ASI camera backends, CAA rotator, EFW filter wheel and EAF focuser.
 Features: `asi-direct`, `asi-sdk`, `caa`, `accessories` (all enabled by default).
 The `hid` module is shared by ZWO accessories.
 
+The [ASI585MM Pro backend](https://github.com/pulsarfab/regain/blob/main/docs/asi585mm-pro.md)
+shares the same capture, calibration, replay, and video machinery, with a mono
+sensor profile, software bins 1–4, and DAC-based cooling. No vendor SDK, additional
+crate, or separate executable is required. The model exposes no heater control.
+
 The direct ASI662MC and ASI676MC backends share Bayer capture, calibration, and
 retained-frame recovery with separate traced sensor profiles. ASI662MC supports
 RAW16 bin 1; short captures use a roughly 100 ms frame interval while preserving

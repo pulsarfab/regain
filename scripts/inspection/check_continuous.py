@@ -17,7 +17,7 @@ spec.loader.exec_module(fixture)
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--hardware", action="store_true", required=True)
-    parser.add_argument("--model", choices=["ZWO ASI662MC", "ZWO ASI676MC"], required=True)
+    parser.add_argument("--model", choices=["ZWO ASI662MC", "ZWO ASI676MC", "ZWO ASI585MM Pro"], required=True)
     parser.add_argument("--backend", choices=["sdk", "direct"], required=True)
     parser.add_argument("--sdk", type=Path)
     parser.add_argument("--output", type=Path, required=True)
@@ -42,7 +42,7 @@ def main():
         else: identity["locator"] = selected["locator"]
         opened = worker.call("open", identity)[0]
         assert opened["continuousAcquisition"]["supported"]
-        width, height = ((1920, 1080) if "662" in args.model else (3552, 3552))
+        width, height = {"ZWO ASI662MC": (1920, 1080), "ZWO ASI676MC": (3552, 3552), "ZWO ASI585MM Pro": (3840, 2160)}[args.model]
         sequence = [234000, 900000, 1000000, 2000000, 6400000, 234000]
         if args.long: sequence = [6400000, 25000000, 25000000, 60000000, 234000]
         if args.transitions:

@@ -414,3 +414,16 @@ using commands recovered from the installed Deep Sky Dad FP 1.0.3.6 assembly.
 Add `-Exercise -MotionDetails` to illuminate, move, halt, resume and restore
 the panel. External power and clear motion space are required. JSONL records
 are serial transactions, not USB bus traces. See [protocol and evidence](../../docs/ofp2.md).
+
+## ASI585MM Pro
+
+Use `--camera-name "ZWO ASI585MM Pro"` with `trace_transport.py`,
+`trace_video.py`, and `check_video.py`. `check_continuous.py` accepts that name
+through `--model`. The helpers select this exact monochrome model.
+`validate_asi585.py` checks still captures, software bins, and retained rereads;
+`--long` includes 60 seconds and `--extended-only` includes two 600-second frames.
+`check_asi585_environment.py --hardware --output <local.jsonl>` checks cooling
+while exposing and binned video, rejects absent heater/fan/LED controls, and
+restores the initial target/enable settings. It deliberately changes cooling;
+run only on an idle operator-authorized camera. See the
+[model guide](../../docs/asi585mm-pro.md).

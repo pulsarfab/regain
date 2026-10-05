@@ -194,7 +194,8 @@ Process.attachModuleObserver({
             for (const [entry, retrieved, before, after, model, buffer, length] of [
                 [0x14f130, 0x14f1ed, 0x14f2fa, 0x14f302, 'asi2600mm-duo', 'rsi', 'r13'],
                 [0xd2590, 0xd261c, 0xd2767, 0xd276f, 'asi220mm-mini', 'rbp', 'r12'],
-                [0x1f02c0, 0x1f0382, 0x1f0487, 0x1f048f, 'asi6200mm-pro', 'rsi', 'r14']
+                [0x1f02c0, 0x1f0382, 0x1f0487, 0x1f048f, 'asi6200mm-pro', 'rsi', 'r14'],
+                [0x1e7b30, 0x1e7be3, 0x1e7cea, 0x1e7cf2, 'asi585mm-pro', 'rsi', 'r13']
             ]) {
                 const calls = new Map();
                 Interceptor.attach(module.base.add(entry), {
@@ -249,6 +250,13 @@ Process.attachModuleObserver({
                         minimumUs:camera.add(0xc4).readU32(), blanking:module.base.add(0x284574).readU32()});
                 }
             });
+            // SDK 1.41 ASI585MM Pro: reviewed SetExp after CalcMaxFPS.
+            Interceptor.attach(module.base.add(0x1cf824), {onEnter() {
+                const camera = this.context.rdi;
+                emit('asi585-exposure-timing', {height:camera.add(0x80).readU32(), bin:camera.add(0x90).readU32(),
+                    clock:camera.add(0xb8).readU32(), hmax:camera.add(0xc0).readU16(),
+                    minimumUs:camera.add(0xc4).readU32()});
+            }});
             // SDK 1.41 ASI662MC: after minimum-exposure calculation.
             Interceptor.attach(module.base.add(0xa8e34), {
                 onEnter() {

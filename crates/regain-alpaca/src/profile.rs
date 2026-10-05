@@ -80,7 +80,8 @@ impl Profile {
                     matches!(
                         c["name"].as_str(),
                         Some(
-                            "ZWO ASI676MC"
+                            "ZWO ASI585MM Pro"
+                                | "ZWO ASI676MC"
                                 | "ZWO ASI662MC"
                                 | "ZWO ASI2600MM Duo"
                                 | "ZWO ASI2600MM Pro"

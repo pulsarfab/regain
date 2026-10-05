@@ -1,4 +1,4 @@
-"""Bounded ASI662MC/ASI676MC SDK video reference; pixels discarded.
+"""Bounded ASI585MM Pro/ASI662MC/ASI676MC SDK video reference; pixels discarded.
 
 Manual hardware research only, never called by CI. Owns a disposable child and
 traces only that child. Raw USB traces contain device paths: keep output ignored.
@@ -101,7 +101,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--frames', type=int, default=8)
-    parser.add_argument('--camera-name', choices=['ZWO ASI662MC', 'ZWO ASI676MC'], default='ZWO ASI662MC')
+    parser.add_argument('--camera-name', choices=['ZWO ASI662MC', 'ZWO ASI676MC', 'ZWO ASI585MM Pro'], default='ZWO ASI662MC')
     parser.add_argument('--width', type=int)
     parser.add_argument('--height', type=int)
     parser.add_argument('--microseconds', type=int, default=100000)
@@ -111,7 +111,7 @@ def main():
                         help='operator-approved one-time SDK discovery with other cameras attached')
     parser.add_argument('--worker', action='store_true', help=argparse.SUPPRESS)
     args = parser.parse_args()
-    full_width, full_height = (1920, 1080) if args.camera_name == 'ZWO ASI662MC' else (3552, 3552)
+    full_width, full_height = {'ZWO ASI662MC': (1920, 1080), 'ZWO ASI676MC': (3552, 3552), 'ZWO ASI585MM Pro': (3840, 2160)}[args.camera_name]
     args.width = full_width if args.width is None else args.width
     args.height = full_height if args.height is None else args.height
     if not (1 <= args.frames <= 100 and 32 <= args.microseconds <= 30000000
