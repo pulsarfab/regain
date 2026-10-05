@@ -781,5 +781,18 @@
     "physical USB reset",
     "overnight streaming",
     "optical accuracy"
-  ]
+  ],
+  "extendedCapture": {
+    "exposureMicroseconds": 600000000,
+    "bytes": 16588800,
+    "acquisitionMs": 600322,
+    "readoutRetriesUsed": 1,
+    "interruptedPrefixMatches": true,
+    "sensorFrozenBeforeRead": true,
+    "identicalReplay": true,
+    "additionalExposures": 0,
+    "freshShortCaptureAfterward": true,
+    "hostInterruptionBytes": 1048576,
+    "replayDiscardedPrefixBytes": 3145728
+  }
 }

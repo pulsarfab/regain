@@ -85,8 +85,13 @@ Both shared still and video paths use the same model profile and mono processing
 
 Same-frame SDK comparisons passed full frame, offset ROI, edge ROI, gain boundaries,
 32 µs through 1.001 s, and bins 1–4: independent Rust correction and factory-map
-decoding matched the SDK output byte for byte. See
-[validation evidence](asi585-validation.json) for hardware test results.
+decoding matched the SDK output byte for byte. Direct hardware checks passed
+28 still frames, 21 video frames through 30 seconds, and continuous exposure/gain
+transitions through 20 seconds. A separate **600-second full-frame exposure**
+recovered an interrupted download and produced an identical retained re-read,
+with no additional exposure; a fresh short capture afterward also passed.
+Cooling remained active during a 60-second exposure, and binned video passed at
+bins 1�4. See [validation evidence](asi585-validation.json) for the measurements.
 
 Hardware validation uses Windows USB 3. USB 2, Linux/macOS hardware, cold startup,
 physical USB reset, optical accuracy, and overnight streaming are not established
