@@ -1,5 +1,11 @@
 # Continuous acquisition
 
+SDK video reads use an exposure-derived wait (`2 * exposure + 500 ms`) bounded
+to 500–5000 ms. A normal SDK timeout remains a poll miss with bounded backoff;
+the separate exposure-aware no-progress watchdog is unchanged. Because the
+camera owner handles reads and commands serially, clients must allow more than
+five seconds for IPC responses during SDK video capture, including stop/close.
+
 The ASI SDK and Direct USB pipe workers expose an **opt-in** continuous path.
 Existing `start/status/download` single-exposure clients are unchanged. Merely
 updating Regain does not switch existing clients to this new path. AutoPierCam
@@ -51,6 +57,17 @@ clear the latest-frame slot and advance `settingsGeneration`. Live scalar update
 then discard at least two frames and drain for old-plus-new exposure duration;
 `settling` stays true until this conservative transition fence clears. This is a
 buffer/timing safeguard, not an optical measurement of the settings-latch boundary.
+Preview clients can opt in with `deliverTransitionFrames: true`. The same
+settling fence then labels frames instead of withholding them: each download
+includes `settingsSettled`. A false value means exposure/gain provenance is
+uncertain; do not feed that frame to auto-exposure or label it with the requested
+settings. Clients without this opt-in retain settled-only delivery. Delivery FPS
+still applies, and structural reconfiguration still drains the old geometry.
+`stream.first_frame` denotes the first **settled** frame of a generation.
+Raw arrival diagnostics (`rawFrames`, `lastRawFrameAgeMilliseconds`,
+`rawFrameIntervalMilliseconds`, `transitionFrames`, and transition-frame events)
+separate camera progress from settled/delivered frame counts. Counters are
+session totals, not a measured sensor FPS or SDK dropped-frame count.
 Clients must budget the previous exposure plus the transition fence in their
 watchdog. Fatal apply errors latch the stream fault instead of continuing with
 partially programmed settings. Raw legacy commands (including discovery and

@@ -16,6 +16,12 @@ struct Stream {
     requested: Option<Value>,
     settling_until: Option<Instant>,
     discard_frames: u32,
+    deliver_transitions: bool,
+    raw_frames: u64,
+    transition_frames: u64,
+    last_raw_at: Option<Instant>,
+    raw_interval: Option<Duration>,
+    settled_generation: u64,
     latest: Option<Frame>,
     failure: Option<String>,
     failure_details: Value,
@@ -88,6 +94,12 @@ impl Stream {
                 );
                 ensure!(p.is_object(), "stream parameters must be an object");
                 p.as_object_mut().unwrap().remove("maxFps");
+                let deliver_transitions = p
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("deliverTransitionFrames")
+                    .map_or(Some(false), |v| v.as_bool())
+                    .ok_or_else(|| anyhow::anyhow!("invalid deliverTransitionFrames"))?;
                 // Automatic selection never invents a model's USB video protocol.
                 if p.get("mode").is_none() {
                     let native = self.camera["captureModes"]
@@ -108,6 +120,7 @@ impl Stream {
                 );
                 if self.params.as_ref() != Some(&p) {
                     command("validate", p.clone())?;
+                    self.deliver_transitions = deliver_transitions;
                     if self.params.is_some() {
                         // The acquisition owner applies edits only after draining
                         // the in-flight frame, never midway through a Direct trigger.
@@ -133,6 +146,10 @@ impl Stream {
                     self.acquired = 0;
                     self.delivered = 0;
                     self.replaced = 0;
+                    self.raw_frames = 0;
+                    self.transition_frames = 0;
+                    self.last_raw_at = None;
+                    self.raw_interval = None;
                     self.generation += 1;
                     self.configured_at = Some(Instant::now());
                     self.last_frame_at = None;
@@ -140,6 +157,15 @@ impl Stream {
                     // Keep delivery cadence across settings changes.
                 } else {
                     self.requested = None;
+                    if !deliver_transitions
+                        && self
+                            .latest
+                            .as_ref()
+                            .is_some_and(|f| f.0["settingsSettled"] == false)
+                    {
+                        self.latest = None;
+                    }
+                    self.deliver_transitions = deliver_transitions;
                 }
                 self.interval = Duration::from_secs_f64(1.0 / fps);
                 Ok((self.status(), Vec::new()))
@@ -190,7 +216,9 @@ impl Stream {
                 if method == "open" {
                     self.delivered_at = None;
                     self.generation = 0;
+                    self.settled_generation = 0;
                     v["continuousAcquisition"] = json!({"supported":true,"buffer":"latest-only",
+                        "transitionFrameDelivery":true,
                         "fpsScope":"delivery","settingsChange":"scalar-boundary-structural-restart"});
                     self.camera = v.clone();
                 }
@@ -203,6 +231,9 @@ impl Stream {
         json!({"active":self.params.is_some(), "ready":self.ready(Instant::now()),
             "error":self.failure,"errorDetails":self.failure_details,"acquiredFrames":self.acquired,"deliveredFrames":self.delivered,
             "replacedFrames":self.replaced,"mode":self.params.as_ref().map(|p| &p["mode"]),
+            "rawFrames":self.raw_frames,"transitionFrames":self.transition_frames,
+            "lastRawFrameAgeMilliseconds":self.last_raw_at.map(|t|t.elapsed().as_millis()),
+            "rawFrameIntervalMilliseconds":self.raw_interval.map(|d|d.as_millis()),
             "fpsScope":"delivery", "stopping":self.stopping,"settingsGeneration":self.generation,
             "settingsPending":self.requested.is_some(),
             "settling":self.discard_frames > 0 || self.settling_until.is_some_and(|t| Instant::now() < t),
@@ -225,6 +256,10 @@ impl Stream {
                 _ => bail!("unexpected capture state {state}"),
             }
             let mut frame = command("download", Value::Null)?;
+            let raw_at = Instant::now();
+            self.raw_interval = self.last_raw_at.map(|t| raw_at.duration_since(t));
+            self.last_raw_at = Some(raw_at);
+            self.raw_frames += 1;
             if self.stopping {
                 command("stop", Value::Null)?;
                 self.params = None;
@@ -263,19 +298,32 @@ impl Stream {
                 self.params = Some(next);
                 return Ok(());
             }
-            if self.discard_frames > 0 || self.settling_until.is_some_and(|t| Instant::now() < t) {
+            let transitional =
+                self.discard_frames > 0 || self.settling_until.is_some_and(|t| raw_at < t);
+            if transitional {
                 self.discard_frames = self.discard_frames.saturating_sub(1);
-                command("start", params)?;
-                return Ok(());
+                self.transition_frames += 1;
+                diagnostic(
+                    "stream.transition_frame",
+                    json!({
+                        "rawSequence":self.raw_frames,"settingsGeneration":self.generation,
+                        "rawFrameIntervalMilliseconds":self.raw_interval.map(|d|d.as_millis()),
+                        "millisecondsSinceConfigured":self.configured_at.map(|t|t.elapsed().as_millis()),
+                        "deliveredToLatestSlot":self.deliver_transitions
+                    }),
+                );
+                if !self.deliver_transitions {
+                    command("start", params)?;
+                    return Ok(());
+                }
+            } else {
+                self.settling_until = None;
             }
-            self.settling_until = None;
             self.acquired += 1;
-            let first_for_generation = self.last_frame_at.is_none_or(|last| {
-                self.configured_at
-                    .is_some_and(|configured| last < configured)
-            });
+            let first_for_generation = !transitional && self.settled_generation != self.generation;
             self.last_frame_at = Some(Instant::now());
             if first_for_generation {
+                self.settled_generation = self.generation;
                 diagnostic(
                     "stream.first_frame",
                     json!({"settingsGeneration":self.generation,
@@ -292,6 +340,10 @@ impl Stream {
             }
             frame.0["acquisitionSequence"] = json!(self.acquired);
             frame.0["settingsGeneration"] = json!(self.generation);
+            frame.0["settingsSettled"] = json!(!transitional);
+            frame.0["rawSequence"] = json!(self.raw_frames);
+            frame.0["rawFrameIntervalMilliseconds"] =
+                json!(self.raw_interval.map(|d| d.as_millis()));
             if self.latest.replace(frame).is_some() {
                 self.replaced += 1;
             }
@@ -474,6 +526,78 @@ mod tests {
         );
         assert!(s.ready(s.delivered_at.unwrap() + Duration::from_secs(10)));
     }
+    #[test]
+    fn long_transition_preview_flows_without_claiming_settled_settings() {
+        let mut s = Stream::default();
+        start(
+            &mut s,
+            json!({"microseconds":3_000_000,"maxFps":0.5,"deliverTransitionFrames":true}),
+        );
+        s.tick(&mut backend);
+        s.command(
+            "stream-start",
+            json!({"microseconds":20_000_000,"maxFps":0.5,"deliverTransitionFrames":true}),
+            &mut backend,
+        )
+        .unwrap();
+        s.tick(&mut backend); // completed old frame is the control boundary
+        let generation = s.generation;
+        for sequence in 3..=4 {
+            s.tick(&mut backend);
+            // The wall-clock and two-frame fences still protect AE, not preview.
+            assert!(s.status()["settling"] == true);
+            s.delivered_at = None; // advance the delivery clock without sleeping
+            let frame = s
+                .command("stream-download", Value::Null, &mut backend)
+                .unwrap();
+            assert_eq!(frame.0["settingsSettled"], false);
+            assert_eq!(frame.0["rawSequence"], sequence);
+            assert_eq!(frame.0["settingsGeneration"], generation);
+        }
+        s.settling_until = Some(Instant::now());
+        s.tick(&mut backend);
+        s.delivered_at = None;
+        let frame = s
+            .command("stream-download", Value::Null, &mut backend)
+            .unwrap();
+        assert_eq!(frame.0["settingsSettled"], true);
+        assert_eq!(s.raw_frames, 5);
+        assert_eq!(s.transition_frames, 2);
+        assert_eq!(s.delivered, 3);
+        assert!(s.raw_interval.is_some());
+    }
+    #[test]
+    fn transition_opt_out_clears_uncertain_slot_and_keeps_delivery_limit() {
+        let mut s = Stream::default();
+        start(
+            &mut s,
+            json!({"microseconds":20_000_000,"gain":300,"maxFps":0.5,"deliverTransitionFrames":true}),
+        );
+        s.tick(&mut backend);
+        s.command("stream-download", Value::Null, &mut backend)
+            .unwrap();
+        let next = json!({"microseconds":20_000_000,"gain":270,"maxFps":0.5,"deliverTransitionFrames":true});
+        s.command("stream-start", next.clone(), &mut backend)
+            .unwrap();
+        s.tick(&mut backend);
+        for _ in 0..5 {
+            s.tick(&mut backend);
+        }
+        assert_eq!(s.latest.as_ref().unwrap().0["settingsSettled"], false);
+        assert!(!s.ready(Instant::now()));
+        assert!(s.replaced >= 4);
+        let mut settled_only = next;
+        settled_only["deliverTransitionFrames"] = json!(false);
+        s.command("stream-start", settled_only, &mut backend)
+            .unwrap();
+        assert!(s.latest.is_none());
+        s.tick(&mut backend);
+        assert!(s.latest.is_none());
+        s.settling_until = Some(Instant::now());
+        s.tick(&mut backend);
+        assert_eq!(s.latest.as_ref().unwrap().0["settingsSettled"], true);
+    }
+
     #[test]
     fn fps_only_changes_do_not_reconfigure_but_settings_changes_discard_old_frame() {
         let mut s = Stream::default();

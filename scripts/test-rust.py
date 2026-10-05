@@ -452,6 +452,23 @@ def continuous_sdk_fixture(binary_dir):
                             time.sleep(0.02)
                         metadata, _ = worker.call("stream-download")
                         assert metadata["settingsGeneration"] == changed["settingsGeneration"]
+                        assert metadata["settingsSettled"] is True
+                    # Instant ABI pixels let a long transition exercise delivery
+                    # without sleeping for sensor integration or using hardware.
+                    worker.call("stream-start", dict(p, microseconds=20000000,
+                                                     gain=300, deliverTransitionFrames=True))
+                    deadline = time.monotonic() + 3
+                    while True:
+                        changed = worker.call("stream-status")[0]
+                        assert changed["error"] is None, changed
+                        if not changed["settingsPending"] and changed["ready"]:
+                            break
+                        assert time.monotonic() < deadline, changed
+                        time.sleep(0.02)
+                    metadata, pixels = worker.call("stream-download")
+                    assert metadata["settingsSettled"] is False, metadata
+                    assert changed["settling"] and changed["transitionFrames"] > 0, changed
+                    assert metadata["rawSequence"] > 0 and len(pixels) == 512 * 512 * 2
                 worker.call("stream-stop")
                 worker.call("close")
                 worker.log.seek(0)
