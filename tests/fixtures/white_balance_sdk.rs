@@ -200,6 +200,12 @@ pub unsafe extern "C" fn ASIGetVideoData(_: c_int, data: *mut u8, size: c_long, 
     if size != c_long::from(s.width) * c_long::from(s.height) * 2 { return 9; }
     if s.timeout_at.is_some_and(|t| t.elapsed() < std::time::Duration::from_millis(90)) { return 16; }
     s.video_reads += 1;
+    if s.video_reads == 5 {
+        if let Some(marker) = std::env::var_os("REGAIN_FIXTURE_VIDEO_BLOCK_MARKER") {
+            std::fs::write(marker, b"reading").unwrap();
+            std::thread::sleep(std::time::Duration::from_millis(1500));
+        }
+    }
     // Timeouts must not trigger stop/start or a new single exposure.
     if s.video_reads <= 3 {
         s.timeout_at = Some(std::time::Instant::now());

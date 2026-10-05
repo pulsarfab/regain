@@ -4,11 +4,72 @@ use anyhow::{Result, bail, ensure};
 use serde_json::{Value, json};
 use std::{
     io::{Read, Write},
-    sync::mpsc,
+    sync::{Arc, Mutex, mpsc},
     time::{Duration, Instant},
 };
 
 type Frame = (Value, Vec<u8>);
+
+/// Published camera-independent state. Never hold this lock across a backend
+/// call or pipe write: SDK reads can block, and clients can stop reading.
+#[derive(Default)]
+struct Published {
+    status: Value,
+    updated: Option<Instant>,
+    latest: Option<Frame>,
+    interval: Duration,
+    delivered_at: Option<Instant>,
+    delivered: u64,
+    replaced: u64,
+}
+
+impl Published {
+    fn status(&self) -> Value {
+        let mut status = self.status.clone();
+        if !status.is_object() {
+            status = json!({"active":false,"error":null});
+        }
+        status["ready"] = json!(
+            self.latest.is_some()
+                && status["error"].is_null()
+                && self
+                    .delivered_at
+                    .is_none_or(|t| t.elapsed() >= self.interval)
+        );
+        status["deliveredFrames"] = json!(self.delivered);
+        status["replacedFrames"] = json!(self.replaced);
+        let elapsed = self.updated.map_or(0, |t| t.elapsed().as_millis() as u64);
+        for key in ["lastFrameAgeMilliseconds", "lastRawFrameAgeMilliseconds"] {
+            if let Some(age) = status[key].as_u64() {
+                status[key] = json!(age.saturating_add(elapsed));
+            }
+        }
+        status
+    }
+
+    fn call(&mut self, method: &str) -> Result<Frame> {
+        let status = self.status();
+        if method == "stream-status" {
+            return Ok((status, Vec::new()));
+        }
+        if method == "stream-poll" && (status["ready"] != true || status["settingsPending"] == true)
+        {
+            return Ok((json!({"continuous":status}), Vec::new()));
+        }
+        if let Some(error) = status["error"].as_str() {
+            bail!("continuous acquisition failed: {error}");
+        }
+        ensure!(
+            status["ready"] == true,
+            "continuous frame not ready or delivery FPS limited"
+        );
+        let (mut metadata, pixels) = self.latest.take().unwrap();
+        self.delivered += 1;
+        self.delivered_at = Some(Instant::now());
+        metadata["continuous"] = self.status();
+        Ok((metadata, pixels))
+    }
+}
 
 #[derive(Default)]
 struct Stream {
@@ -40,6 +101,41 @@ struct Stream {
 }
 
 impl Stream {
+    fn publish(&mut self, shared: &Mutex<Published>) {
+        let mut published = shared.lock().unwrap();
+        let new_session = self.params.is_some() && published.status["active"] != true;
+        if new_session {
+            published.delivered = 0;
+            published.replaced = 0;
+            published.delivered_at = None;
+        }
+        if self.params.is_none()
+            || self.failure.is_some()
+            || self.requested.is_some()
+            || published.status["settingsGeneration"] != self.generation
+            || (!self.deliver_transitions
+                && published
+                    .latest
+                    .as_ref()
+                    .is_some_and(|f| f.0["settingsSettled"] == false))
+        {
+            published.latest = None;
+        }
+        if self.params.is_none() {
+            published.delivered_at = None;
+        }
+        if let Some(frame) = self.latest.take()
+            && published.latest.replace(frame).is_some()
+        {
+            published.replaced += 1;
+        }
+        self.delivered = published.delivered;
+        self.replaced = published.replaced;
+        published.interval = self.interval;
+        published.status = self.status();
+        published.updated = Some(Instant::now());
+    }
+
     fn ready(&self, now: Instant) -> bool {
         self.failure.is_none()
             && self.latest.is_some()
@@ -171,6 +267,15 @@ impl Stream {
                 Ok((self.status(), Vec::new()))
             }
             "stream-status" => Ok((self.status(), Vec::new())),
+            "stream-poll" => {
+                // One round trip: do not force a blocking SDK read between a
+                // readiness query and downloading the already available frame.
+                if self.ready(Instant::now()) && self.requested.is_none() {
+                    self.command("stream-download", Value::Null, command)
+                } else {
+                    Ok((json!({"continuous":self.status()}), Vec::new()))
+                }
+            }
             "stream-download" => {
                 if let Some(error) = &self.failure {
                     bail!("continuous acquisition failed: {error}");
@@ -219,6 +324,7 @@ impl Stream {
                     self.settled_generation = 0;
                     v["continuousAcquisition"] = json!({"supported":true,"buffer":"latest-only",
                         "transitionFrameDelivery":true,
+                        "atomicFramePoll":true,
                         "fpsScope":"delivery","settingsChange":"scalar-boundary-structural-restart"});
                     self.camera = v.clone();
                 }
@@ -396,6 +502,8 @@ pub(super) fn serve(
 ) -> Result<()> {
     let (requests, receiver) = mpsc::sync_channel::<Value>(1);
     let (replies, response) = mpsc::sync_channel::<Frame>(1);
+    let published = Arc::new(Mutex::new(Published::default()));
+    let io_published = Arc::clone(&published);
     let io = std::thread::spawn(move || -> Result<()> {
         let (mut input, mut output) = (std::io::stdin().lock(), std::io::stdout().lock());
         loop {
@@ -411,8 +519,28 @@ pub(super) fn serve(
             input.read_exact(&mut data)?;
             let request: Value = serde_json::from_slice(&data)?;
             ensure!(request["version"] == 1, "unsupported protocol");
-            requests.send(request)?;
-            let (reply, pixels) = response.recv()?;
+            let method = request["method"].as_str().unwrap_or("");
+            let (reply, pixels) = if matches!(
+                method,
+                "stream-status" | "stream-poll" | "stream-download"
+            ) {
+                // Cache and frame consumption require no camera request. Release
+                // the mutex before serialization/output, including large frames.
+                let result = io_published.lock().unwrap().call(method);
+                match result {
+                    Ok((value, pixels)) => (
+                        json!({"version":1,"id":request["id"],"ok":true,"result":value,"binaryLength":pixels.len()}),
+                        pixels,
+                    ),
+                    Err(error) => (
+                        json!({"version":1,"id":request["id"],"ok":false,"error":format!("{error:#}"),"binaryLength":0}),
+                        Vec::new(),
+                    ),
+                }
+            } else {
+                requests.send(request)?;
+                response.recv()?
+            };
             let data = serde_json::to_vec(&reply)?;
             ensure!(data.len() <= 65536, "reply too large");
             output.write_all(&(data.len() as u32).to_le_bytes())?;
@@ -459,6 +587,7 @@ pub(super) fn serve(
                             (reply, Vec::new())
                         }
                     };
+                stream.publish(&published);
                 if replies.send((reply, bytes)).is_err() {
                     break;
                 }
@@ -467,6 +596,7 @@ pub(super) fn serve(
             Err(mpsc::RecvTimeoutError::Timeout) => (),
         }
         stream.tick(&mut command);
+        stream.publish(&published);
     }
     let stopped = stream.stop(&mut command);
     let closed = command("close", Value::Null);
@@ -566,6 +696,101 @@ mod tests {
         assert_eq!(s.delivered, 3);
         assert!(s.raw_interval.is_some());
     }
+    #[test]
+    fn publication_preserves_decimation_clears_on_edits_and_latches_faults() {
+        let mut s = Stream::default();
+        let shared = Mutex::new(Published::default());
+        start(&mut s, json!({"microseconds":1000,"maxFps":0.5}));
+        s.publish(&shared);
+        for _ in 0..3 {
+            s.tick(&mut backend);
+            s.publish(&shared);
+        }
+        assert_eq!(shared.lock().unwrap().status()["replacedFrames"], 2);
+        assert!(
+            !shared
+                .lock()
+                .unwrap()
+                .call("stream-poll")
+                .unwrap()
+                .1
+                .is_empty()
+        );
+        s.tick(&mut backend);
+        s.publish(&shared);
+        assert!(
+            shared
+                .lock()
+                .unwrap()
+                .call("stream-poll")
+                .unwrap()
+                .1
+                .is_empty()
+        );
+        assert_eq!(shared.lock().unwrap().status()["deliveredFrames"], 1);
+        s.command("stream-start", json!({"microseconds":2000}), &mut backend)
+            .unwrap();
+        s.publish(&shared);
+        assert!(shared.lock().unwrap().latest.is_none());
+        s.failure = Some("terminal error".into());
+        s.publish(&shared);
+        assert!(shared.lock().unwrap().call("stream-download").is_err());
+        assert_eq!(
+            shared.lock().unwrap().call("stream-poll").unwrap().0["continuous"]["error"],
+            "terminal error"
+        );
+        s.stop(&mut backend).unwrap();
+        s.publish(&shared);
+        s.command("stream-start", json!({"microseconds":1000}), &mut backend)
+            .unwrap();
+        s.publish(&shared);
+        s.tick(&mut backend);
+        s.publish(&shared);
+        assert_eq!(shared.lock().unwrap().status()["deliveredFrames"], 0);
+        assert!(
+            !shared
+                .lock()
+                .unwrap()
+                .call("stream-poll")
+                .unwrap()
+                .1
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn atomic_poll_delivers_ready_frame_without_an_intervening_backend_read() {
+        let mut s = Stream::default();
+        start(&mut s, json!({"microseconds":20_000_000,"maxFps":0.5}));
+        assert!(
+            s.command("stream-poll", Value::Null, &mut backend)
+                .unwrap()
+                .1
+                .is_empty()
+        );
+        s.tick(&mut backend);
+        let mut no_backend =
+            |_: &str, _: Value| -> Result<Frame> { panic!("poll must only use cached state") };
+        let frame = s
+            .command("stream-poll", Value::Null, &mut no_backend)
+            .unwrap();
+        assert_eq!(frame.1, vec![42; 8]);
+        assert_eq!(frame.0["continuous"]["deliveredFrames"], 1);
+        assert!(
+            s.command("stream-poll", Value::Null, &mut no_backend)
+                .unwrap()
+                .1
+                .is_empty()
+        );
+        s.tick(&mut backend);
+        assert!(
+            s.command("stream-poll", Value::Null, &mut no_backend)
+                .unwrap()
+                .1
+                .is_empty()
+        );
+    }
+
     #[test]
     fn transition_opt_out_clears_uncertain_slot_and_keeps_delivery_limit() {
         let mut s = Stream::default();

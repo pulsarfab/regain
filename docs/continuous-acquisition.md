@@ -10,6 +10,10 @@ and the delivery FPS limit. A single latest-frame slot replaces older frames;
 there is no growing image queue or catch-up burst. The I/O thread never calls
 camera discovery, control or capture APIs. SDK calls remain on one owner thread;
 Direct USB retains its exclusive hardware worker.
+Cached status and latest-frame consumption run on the I/O thread through a short
+mutex-protected publication slot. The owner never holds that mutex during a
+camera call, and I/O never holds it during serialization or pipe writes. Thus
+neither a five-second SDK read nor a blocked output pipe stalls the other side.
 
 ## Protocol
 
@@ -38,6 +42,13 @@ The metadata includes acquisition sequence and settings generation. Status
 reports acquired, delivered and replaced frame counts, frame age, current mode,
 requested exposure and any terminal error. Replaced frames are deliberate
 consumer decimation, **not measured USB/SDK dropped frames**.
+
+Workers advertising `atomicFramePoll` support accept `stream-poll`: it returns
+one eligible frame with `continuous` status, or status and an empty payload when
+pending/FPS-limited/faulted. This combines readiness and consumption without an
+extra readiness/download exchange. All three cached operations (`stream-status`,
+`stream-download`, `stream-poll`) are independent of blocking acquisition. The
+latest-only slot, FPS limit and terminal-error checks are unchanged.
 
 Repeating `stream-start` with only `maxFps` changed adjusts delivery pacing,
 without reconfiguring capture. Exposure and optional `gain` edits are coalesced
@@ -81,7 +92,7 @@ not an exposure failure; retries back off 100 ms, without stopping the stream.
 Delivered SDK video metadata includes the cumulative timeout count. An independent no-frame deadline is `2 × exposure +
 30 seconds`, retaining the prior exposure for two successful reads after a live
 decrease; other SDK errors remain terminal. Clients must allow more than
-five seconds for ordinary stream commands, including stop/close, and retain process-level watchdogs for
+five seconds for owner commands (settings/stop/close), and retain process-level watchdogs for
 SDK/kernel calls that fail to honor their deadlines. No USB reset is implicit.
 
 Diagnostics record configuration/stop duration, first-frame latency for each

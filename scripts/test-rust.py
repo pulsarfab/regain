@@ -399,6 +399,26 @@ def continuous_sdk_fixture(binary_dir):
         subprocess.run(["rustc", "--edition=2021", "--crate-type=cdylib", str(source),
                         "-o", str(library)], check=True, timeout=60)
         command = [str(binary_dir / ("regain-device" + suffix)), "zwo", "camera-sdk", "--sdk", str(library)]
+        marker = Path(directory) / "blocked-read"
+        with Worker(command, env={**os.environ, "REGAIN_FIXTURE_VIDEO_BLOCK_MARKER": str(marker)}) as worker:
+            worker.call("open", dict(name="WB fixture"))
+            worker.call("stream-start", dict(width=64, height=64, bin=1, x=0, y=0,
+                                             microseconds=20000000, dark=False, maxFps=120))
+            deadline = time.monotonic() + 3
+            while not marker.exists():
+                assert time.monotonic() < deadline, "fixture did not enter blocked read"
+                time.sleep(0.005)
+            began = time.monotonic()
+            status = worker.call("stream-status")[0]
+            assert status["ready"], status
+            metadata, pixels = worker.call("stream-poll")
+            assert len(pixels) == 64 * 64 * 2
+            assert metadata["continuous"]["deliveredFrames"] == 1
+            for _ in range(5):
+                assert worker.call("stream-poll")[1] == b""
+            assert time.monotonic() - began < 0.75, "IPC waited for blocked camera owner"
+            worker.call("stream-stop")
+            worker.call("close")
         for removed in [False, True]:
             env = {**os.environ, **({"REGAIN_FIXTURE_VIDEO_REMOVED": "1"} if removed else {})}
             with Worker(command, env=env) as worker:
