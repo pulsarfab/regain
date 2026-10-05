@@ -1,11 +1,5 @@
 # Continuous acquisition
 
-SDK video reads use an exposure-derived wait (`2 * exposure + 500 ms`) bounded
-to 500–5000 ms. A normal SDK timeout remains a poll miss with bounded backoff;
-the separate exposure-aware no-progress watchdog is unchanged. Because the
-camera owner handles reads and commands serially, clients must allow more than
-five seconds for IPC responses during SDK video capture, including stop/close.
-
 The ASI SDK and Direct USB pipe workers expose an **opt-in** continuous path.
 Existing `start/status/download` single-exposure clients are unchanged. Merely
 updating Regain does not switch existing clients to this new path. AutoPierCam
@@ -82,12 +76,12 @@ continues to require terminating the isolated host. Cleanup failure latches a
 fault and requires host replacement; it must not start more captures.
 
 SDK video polling uses the documented `2 × exposure + 500 ms` wait, capped at
-1 second per call so the same owner can service requests. A normal timeout is
+5 seconds per call (minimum 500 ms) so the same owner can service requests. A normal timeout is
 not an exposure failure; retries back off 100 ms, without stopping the stream.
 Delivered SDK video metadata includes the cumulative timeout count. An independent no-frame deadline is `2 × exposure +
 30 seconds`, retaining the prior exposure for two successful reads after a live
 decrease; other SDK errors remain terminal. Clients must allow more than
-one second for ordinary stream commands and retain process-level watchdogs for
+five seconds for ordinary stream commands, including stop/close, and retain process-level watchdogs for
 SDK/kernel calls that fail to honor their deadlines. No USB reset is implicit.
 
 Diagnostics record configuration/stop duration, first-frame latency for each
