@@ -1,33 +1,38 @@
-# PulsarFab regain 0.5.9.0
+# PulsarFab regain 0.5.10.0
 
-Improves continuous ZWO frame delivery and SDK long-exposure waits. Existing
-NINA, ASCOM and Alpaca single-exposure behavior is unchanged.
+Adds experimental SDK-free support for the **ZWO ASI585MM Pro** in NINA,
+native Windows ASCOM, and Alpaca. This is the monochrome cooled camera;
+ASI585MC variants are not covered by this driver.
 
-- Raise the SDK video-read wait cap from one second to five seconds, retaining
-  exposure-derived shorter waits, normal-timeout backoff and the independent
-  exposure-aware no-progress watchdog. Terminal SDK errors still fault.
-- Serve cached stream status and latest-frame downloads independently of the
-  camera owner. Blocking SDK reads no longer block these IPC operations; blocked
-  output consumers still cannot stop camera draining. All hardware calls remain
-  serialized on one owner, with one bounded latest-frame slot.
-- Add an atomic stream poll for preview consumers.
-- Allow explicit opt-in delivery of transition frames, marked settingsSettled=false.
-  Keep the conservative settings fence for scientific/settings-sensitive consumers;
-  legacy continuous clients retain settled-only delivery.
-- Report raw arrival timing separately from delivered/settled frames. No camera
-  identity or image content is added to diagnostics.
-- Preserve delivery FPS limits, boundary-safe control edits, terminal faults,
-  and cleanup. No extra camera discovery or implicit USB resets.
+- Capture RAW16 still images at bins 1–4, with ROI, gain, offset, factory defect
+  correction, and retained-frame retries after interrupted USB downloads.
+- Control cooling through the shared Rust regulator: temperature, target,
+  enable, and commanded power. This camera exposes no controllable heater,
+  fan-speed, or LED control; unsupported writes are rejected.
+- Use explicit worker video and continuous modes through 30-second exposures,
+  including live exposure/gain edits and latest-frame delivery. NINA, ASCOM,
+  and Alpaca continue to use still captures.
+- Service cooling during exposure waits and video delivery delays in the
+  shared camera path. ASI585 uses its traced cooler DAC output while larger
+  cameras retain their existing output mapping.
+- Refresh the README and setup guides for current hardware, USB 2 support,
+  optional USB reset, dynamic Alpaca slots, continuous acquisition, and AWB.
+  Both Regain camera backends currently capture RAW16.
 
-Automated validation uses simulated cameras and inert SDK ABI fixtures, including
-a blocked acquisition call, slow/blocked output, transitional settings, FIFO-free
-latest-frame delivery and terminal failures. Physical checks are operator-run,
-not part of automated CI. These changes do not establish a firmware, power or
-interference root cause for the reported SDK stall. Long soak, optical settings
-accuracy, physical-disconnect recovery and Linux/macOS hardware remain unverified.
+Windows USB 3 hardware validation included byte-for-byte comparison with the
+SDK, bins 1–4, partial-read recovery, 21 video frames through 30 seconds,
+continuous settings changes, cooling during a 60-second exposure, and Alpaca
+and native camera IPC checks. A **600-second full-frame exposure** recovered
+an interrupted download and returned an identical retained image with no
+additional exposure. See [ASI585MM Pro support and validation](https://github.com/pulsarfab/regain/blob/v0.5.10.0/docs/asi585mm-pro.md).
 
-For Windows ASCOM and Alpaca use Regain-ASCOM-0.5.9.0-win-x64-setup.exe.
-NINA plugin 0.5.9.0 is available through the two public plugin registries or
-Regain-0.5.9.0.zip. Minimum NINA version and plugin identity are unchanged.
-Rust version is 0.5.9. Windows release programs are signed by StackFoundry LLC.
-Previously published assets remain immutable.
+Direct support remains experimental. ASI585 USB 2, Linux/macOS hardware,
+cold startup, physical USB reset, optical accuracy, and overnight streaming
+have not been validated. Other model-specific limits remain documented in
+the [README](https://github.com/pulsarfab/regain/blob/v0.5.10.0/README.md).
+
+For Windows ASCOM and Alpaca use `Regain-ASCOM-0.5.10.0-win-x64-setup.exe`.
+The NINA plugin package is `Regain-0.5.10.0.zip`, also distributed through the
+two public plugin feeds after publication. Minimum NINA version and plugin
+identity are unchanged. Rust crates use version 0.5.10. Windows release
+programs are signed by StackFoundry LLC.

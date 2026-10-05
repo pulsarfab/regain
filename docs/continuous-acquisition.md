@@ -191,5 +191,6 @@ over real pipes. Its inert SDK ABI fixture checks persistent video, transient
 timeouts, terminal removal, no per-frame reconfiguration, and continued draining
 while a large output frame blocks the pipe. No automated test opens a camera.
 
-Real hardware soak/transition checks and AutoPierCam adoption remain required
-before making this the production capture path.
+Short hardware transition checks are recorded above and in the
+[ASI585MM Pro validation](asi585mm-pro.md). Long soaks, optical verification of
+settings transitions, and Linux/macOS hardware checks remain outstanding.

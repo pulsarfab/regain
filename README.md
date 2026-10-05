@@ -21,11 +21,13 @@ vendor SDK in a separate process.
 
 ### Save an exposure after a failed download
 
-Choose **Direct USB (experimental)** with an ASI2600MM Pro, ASI6200MM Pro, or
-ASI676MC, ASI662MC, or ASI585MM Pro (the latter in current source builds). Regain talks to the camera
+Choose **Direct USB (experimental)** with an ASI2600MM Pro/Duo main sensor,
+ASI6200MM Pro, ASI676MC, ASI662MC, or ASI585MM Pro. Regain talks to the camera
 without the ZWO SDK and can reread the image still in camera memory. A download
 retry does not repeat the exposure—even a
-long one. The transport limits stalled reads and rejects incomplete images.
+long one. The transport bounds stalled reads, drains cancelled transfers safely,
+and rejects incomplete images. ASI585MM Pro and ASI662MC have each recovered an
+interrupted download after a 600-second exposure without another exposure.
 
 Use **PulsarFab regain Retryable Camera** in NINA, a native ASCOM camera entry,
 or an Alpaca camera slot. All three use the same recovery engine.
@@ -52,6 +54,9 @@ One **regain Alpaca server** exposes supported cameras, rotators, filter wheels,
 focusers, and a flat panel over your LAN. Configure devices in a browser and
 connect from Alpaca clients. The Rust server runs without .NET or a desktop UI
 on Windows, Linux, and macOS, with ARM64 builds for small hosts.
+Add camera, focuser, and rotator slots as needed; device numbers stay stable
+when a selected device changes. Multiple focusers or rotators can use different
+supported vendors on the same server.
 [Set up a headless rig](https://pulsarfab.com/docs/regain/alpaca.html#headless).
 
 ### Connect more than two ASCOM cameras
@@ -68,16 +73,30 @@ workers handle device control and camera recovery. Matching setup dialogs cover
 cameras and accessories. An Alpaca server is optional.
 [Install native ASCOM](https://pulsarfab.com/docs/regain/ascom.html).
 
+### Recover a camera that needs a USB reset
+
+Enable **USB reset after failed attempts** in camera recovery settings. NINA,
+ASCOM, and Alpaca can escalate to a device-scoped reset on Windows or Linux,
+then reconnect the same camera and restore its settings. This is opt-in and
+uses the replacement-exposure budget: resetting loses the retained image.
+Windows requires elevation; Linux also offers an explicit port-cycle option.
+Neither switches a camera's external power supply. [USB recovery setup](docs/usb-recovery.md).
+
+### Build a live preview or camera application
+
+The [continuous acquisition API](docs/continuous-acquisition.md) drains the
+camera independently of a slow consumer and delivers only the latest frame.
+SDK video and Direct USB video on ASI585MM Pro, ASI662MC, and ASI676MC support
+live exposure/gain edits, settings generations, and marked transition frames.
+Other direct cameras use repeated still captures. Native direct video is
+limited to 30-second exposures and cannot reread an earlier video frame.
+
+Color-camera clients can also use [shared software white balance and AWB](docs/white-balance.md)
+across SDK and Direct USB, with raw output preserved by default. These are
+Rust/worker APIs; NINA, ASCOM, and Alpaca use still capture and do not expose
+new video or AWB controls.
+
 ## Integration points
-
-Current source includes a [shared color-camera white-balance/AWB API](docs/white-balance.md)
-for Rust and pipe-worker clients. It supports manual gains, AWB once/continuous,
-and locking across SDK and Direct USB, with raw output preserved by default.
-Frontend UI integration is separate; existing clients are unchanged.
-
-The [continuous acquisition API](docs/continuous-acquisition.md) also supports
-ASI585MM Pro in Direct USB mode, including live exposure/gain edits and bounded
-latest-frame delivery. NINA, ASCOM, and Alpaca continue to request still captures.
 
 | Integration | Where it runs | Equipment |
 | --- | --- | --- |
@@ -87,7 +106,7 @@ latest-frame delivery. NINA, ASCOM, and Alpaca continue to request still capture
 | **[Rust crates](https://crates.io/search?q=regain-) and worker CLIs** | Windows, Linux, macOS | Embed USB, HID, and serial device control in another application |
 
 OFP2 connects through native ASCOM or Alpaca; NINA can use either connection.
-Release 0.5.0.0 adds native OFP2 ASCOM and ETA M54 support. ETA physical
+ETA physical
 identity/position reads are verified; movement validation remains pending. [ETA guide](docs/eta.md).
 OFP2, FocusCube3, Falcon V2 and ETA share their device connection among
 ASCOM clients; other frontends need exclusive access to the device. See [connection options](https://pulsarfab.com/docs/regain/#choose).
@@ -104,17 +123,24 @@ ASCOM, and Alpaca.
 
 | Camera | SDK-free capture | Reread the same image after a failed download | SDK mode |
 | --- | --- | --- | --- |
-| **ZWO ASI2600MM Pro** | Yes, experimental | Yes, in Direct USB mode | Yes |
+| **ZWO ASI2600MM Pro / Duo main sensor** | Yes, experimental | Yes, in Direct USB mode | Yes |
 | **ZWO ASI6200MM Pro** | Yes, experimental | Yes, in Direct USB mode | Yes |
 | **ZWO ASI676MC** | Yes, experimental | Yes, in Direct USB mode | Yes |
-| **[ZWO ASI662MC](docs/asi662mc.md)** | Yes, experimental; current source | Yes; short captures use a ~100 ms frame interval | Yes |
-| **[ZWO ASI585MM Pro](docs/asi585mm-pro.md)** | Yes, experimental; current source; RAW16 bins 1–4 and cooling | Yes; short captures use a ~100 ms frame interval | Yes |
-| **ZWO ASI220MM Mini** | Yes, experimental | No direct reread support | Yes |
+| **[ZWO ASI662MC](docs/asi662mc.md)** | Yes, experimental; RAW16 bin 1 | Yes; short captures use a ~100 ms frame interval | Yes |
+| **[ZWO ASI585MM Pro](docs/asi585mm-pro.md)** | Yes, experimental; RAW16 bins 1–4 and cooling | Yes; short captures use a ~100 ms frame interval | Yes |
+| **ZWO ASI220MM Mini / Duo guide sensor** | Yes, experimental | No direct reread support | Yes |
 | **Other ZWO ASI cameras** | No | Depends on the SDK keeping the image available | If supported by the bundled SDK |
 
 SDK download retries depend on the SDK's ready-frame state; they do not use
-regain's direct memory reread. Direct capture supports RAW16, with model-specific
-exposure and binning limits. See the [camera support table](https://pulsarfab.com/docs/regain/hardware.html#cameras).
+regain's direct memory reread. Both backends currently capture RAW16, with
+model-specific exposure and binning limits. Cooler, heater, fan, and LED controls
+appear only when supported; ASI585MM Pro exposes cooling but no controllable heater.
+ASI585MC variants are not covered by the ASI585MM Pro direct driver.
+See the [camera support table](https://pulsarfab.com/docs/regain/hardware.html#cameras).
+
+Direct cameras accept USB 2 high-speed and USB 3 connections where supported
+by their hardware. USB 2 validation varies by model; ASI585MM Pro has been
+tested on Windows USB 3 only. See [USB 2 support and validation](docs/usb2-cameras.md).
 
 ### Accessories: all SDK-free
 
@@ -145,6 +171,9 @@ alone do not establish hardware compatibility.
 Add `https://nina-plugins.pulsarfab.com/` as a plugin source, install
 **PulsarFab regain**, and restart NINA. Select your device, open its setup gear,
 and save the physical camera or accessory serial before connecting.
+Camera SDK mode is the default. To use retained-frame recovery, select
+**Direct USB (experimental)** for a supported model; SDK fallback is a separate
+option. Close other applications that own the device before connecting.
 [NINA walkthrough](https://pulsarfab.com/docs/regain/nina.html).
 
 ### Windows ASCOM setup
@@ -171,6 +200,8 @@ the matching `regain-rust-*` CI artifact, a source build, or
 `regain-alpaca --port 11111`. Keep the server, workers, and any required SDK
 library together. For LAN access, add `--listen <host-LAN-IPv4>` and allow the
 HTTP port plus UDP 32227 for discovery.
+Cargo installation does not bundle the ZWO SDK: direct cameras and accessories
+can run without it, while SDK camera mode needs the matching vendor library.
 [Full Alpaca setup](https://pulsarfab.com/docs/regain/alpaca.html).
 
 <a id="settings-and-logs"></a>
@@ -192,11 +223,11 @@ extracting the new package; keep saved equipment profiles.
 
 [![ETA M54 back-focus controls](docs/images/native-eta.png)](docs/eta.md)
 
+ETA M54 setup with live, read-only encoder readings from the attached device.
+
 Falcon V2 connected to physical hardware, using the shared native rotator dialog:
 
 [![Physical Falcon V2 native motion controls](docs/images/native-falcon.png)](docs/falcon-v2.md)
-
-ETA M54 setup with live, read-only encoder readings from the attached device.
 
 Native captures use the standalone ASCOM theme; NINA supplies its own theme.
 Device guides include more screenshots and distinguish physical hardware from
@@ -223,7 +254,7 @@ permissions. Native CI artifacts cover x86-64 and ARM64; they are not macOS-nota
 
 Hardware code is grouped by vendor: `regain-zwo`, `regain-pegasus`,
 `regain-deepskydad`, and `regain-wanderer`. They share `regain-transport` for
-serial I/O and `regain-worker` for accessory IPC. Source/CI builds use one
+serial I/O and `regain-worker` for accessory IPC. Packages use one
 hardware executable, `regain-device`, with vendor/device subcommands:
 
 ```sh

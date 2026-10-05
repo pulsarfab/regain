@@ -1,6 +1,6 @@
 # SDK-free ASI585MM Pro
 
-Current source supports the **ZWO ASI585MM Pro** (`03c3:585e`) through the
+Regain 0.5.10.0 adds the **ZWO ASI585MM Pro** (`03c3:585e`) through the
 existing **Direct USB** choice in NINA, native ASCOM, and Alpaca. This is the
 monochrome cooled camera; it does not establish support for ASI585MC variants.
 The driver shares the `regain-zwo` crate and `regain-device` worker with other

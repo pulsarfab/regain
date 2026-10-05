@@ -5,8 +5,8 @@ native COM driver with four camera entries. Both use the same Rust recovery code
 the NINA plugin. The SDK is the default; direct USB and SDK fallback are options
 for each camera.
 
-The Windows frontends are included in release 0.3.0.0. Linux and macOS builds
-are available as CI artifacts. They have
+Windows releases include the native drivers and Alpaca server. Linux and macOS
+builds are available as CI artifacts or through Cargo. The frontends have
 passed simulated capture tests, including 32-bit and 64-bit COM clients, and
 real Windows Alpaca and COM captures listed below. A full ASCOM ConformU run
 is still needed. Linux and macOS USB transfers also need hardware testing.
@@ -24,8 +24,8 @@ and SDK library together. The server and workers need no .NET installation.
 ```
 
 On Windows use `.\regain-alpaca.exe --port 11111`. Open
-`http://127.0.0.1:11111/setup`, find the cameras, select one, and save. Add slots
-for additional cameras. Main and guide cameras are separate USB devices.
+`http://127.0.0.1:11111/setup`, find the cameras, select one, and save. Add camera,
+focuser, or rotator slots for additional devices. Main and guide cameras are separate USB devices.
 Use distinct serial numbers when connecting multiple cameras of the same model.
 
 Choose the device in an Alpaca client. Windows ASCOM clients can also use the
@@ -227,14 +227,14 @@ filter metadata, motor settings, protocol traces, and supported hardware.
 
 ## OFP2 cover and flat panel
 
-Release 0.5.0.0 adds **PulsarFab regain Deep Sky Dad OFP2**
+Choose **PulsarFab regain Deep Sky Dad OFP2**
 (`ASCOM.Regain.OFP2.CoverCalibrator`) as a native ASCOM CoverCalibrator.
 It uses `Regain.Ofp2.ASCOM.exe` and a shared Rust serial worker: 32-bit and 64-bit
 clients hold independent connections, and the last disconnect releases the port.
 The matching setup dialog provides cover Open/Close/Halt and brightness 0–4096.
 NINA can select this driver through its ASCOM flat-panel chooser.
 
-Release 0.4.0.0 includes Alpaca support only. The Alpaca server continues to expose
+The Alpaca server also exposes
 OFP2 as CoverCalibrator 0; disconnect it and the vendor driver before using native
 ASCOM. See [OFP2 setup and sharing](ofp2.md#native-windows-ascom).
 
@@ -266,16 +266,32 @@ and Linux. It is disabled by default; set the failure threshold to 2 to try an
 ordinary reconnect first. See [setup, permissions, supported cameras, and power
 limitations](usb-recovery.md).
 
-## ASI662MC direct mode (current source)
+## ASI662MC direct mode
 
 Select the ASI662MC with **Direct USB** in any regain camera slot. It supports
 RAW16 bin 1 and retained-frame rereads through the shared Rust supervisor.
 Short exposures use a roughly 100 ms frame interval while preserving integration
 time. See [ASI662MC setup, limits and validation](asi662mc.md).
 
-### Pegasus Falcon V2
+## ASI585MM Pro direct mode
 
-Current source adds **PulsarFab regain Pegasus Falcon V2** to the Rotator Chooser
+Select **Direct USB** for the ASI585MM Pro in NINA, native ASCOM, or Alpaca.
+It supports RAW16 bins 1–4, retained-frame rereads, temperature, cooler target,
+enable, and power. The camera exposes no controllable heater. A 600-second
+hardware exposure passed interrupted-download recovery without another exposure.
+This is the monochrome cooled model; ASI585MC variants are not covered.
+See [limits and validation](asi585mm-pro.md).
+
+## Video and preview clients
+
+The [continuous acquisition](continuous-acquisition.md) and
+[white-balance](white-balance.md) APIs are available to Rust/worker clients.
+NINA, native ASCOM, and Alpaca continue to use still-image capture. Their camera
+interfaces do not add live video, automatic exposure, or AWB controls.
+
+## Pegasus Falcon V2
+
+Choose **PulsarFab regain Pegasus Falcon V2** in the Rotator Chooser
 (`ASCOM.PulsarFab.Regain.FalconV2.Rotator`). It shares the Pegasus local-server
 executable with FocusCube3 and one Falcon serial worker between ASCOM clients.
 The styled setup dialog includes motion, sync, reverse, reference and explicit

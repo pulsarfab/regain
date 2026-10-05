@@ -1,6 +1,6 @@
 # SDK-free ASI662MC
 
-Current source builds support the **ASI662MC** (`03c3:662b`) on USB 3 and
+Regain supports the **ASI662MC** (`03c3:662b`) on USB 3 and
 [USB 2 high-speed](usb2-cameras.md) in NINA,
 native ASCOM, and Alpaca through the existing **Direct USB** camera option.
 The driver lives in `regain-zwo`; the shared `regain-device` worker owns the
@@ -27,7 +27,9 @@ latency; this backend is intended for individual recoverable images, not maximum
 planetary video throughput. Exposures of one second and above keep the traced
 host-timed sequence. Retrying a download does not take another exposure.
 
-## Experimental continuous video (source builds)
+<a id="experimental-continuous-video-source-builds"></a>
+
+## Experimental video
 
 The Direct USB pipe worker additionally accepts explicit `mode: "video"` for
 the ASI662MC. Still capture remains the default; existing NINA, ASCOM, Alpaca

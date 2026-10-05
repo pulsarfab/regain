@@ -87,7 +87,8 @@ Choose the capture switch for the attached device:
 | ASI2600MM Pro P25 | `--capture-2600-p25` |
 | ASI2600MM Pro, non-P25 | `--capture-duo` (legacy command name) |
 | ASI676MC | `--capture` |
-| ASI662MC (current source; RAW16 bin 1) | `--capture-662` |
+| ASI662MC (RAW16 bin 1) | `--capture-662` |
+| ASI585MM Pro (RAW16 bins 1–4) | `--capture-585` |
 | ASI220MM Mini guide | `--capture-guide` |
 
 Each streamed frame contains a four-byte little-endian JSON length, that JSON,
@@ -150,8 +151,8 @@ can prevent restoration; the CLI watchdog reports this when it terminates.
 
 Failed downloads get up to two same-frame retries while the SDK reports the
 frame ready (`--read-retries` changes the count). This CLI does not automatically
-reconnect or take replacement exposures. The NINA supervisor provides that
-full recovery lifecycle.
+reconnect or take replacement exposures. NINA, native ASCOM, and Alpaca use
+the shared Rust supervisor for that full recovery lifecycle.
 
 For a source build, install `libusb-1.0-0` on Debian/Ubuntu or run
 `brew install libusb` on macOS, then stage the SDK beside the release workers:

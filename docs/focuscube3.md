@@ -56,7 +56,7 @@ connect directly at the same time. A busy/missing device fails connection;
 the driver does not silently switch devices or fall back to a simulator.
 
 **ASCOM clients share one out-of-process COM server**,
-`Regain.Pegasus.ASCOM.exe` (current source; also hosts Falcon V2), and one serial worker. Each COM object owns its
+`Regain.Pegasus.ASCOM.exe` (also hosts Falcon V2), and one serial worker. Each COM object owns its
 own connection lease. Disconnecting one client leaves the others connected;
 the last disconnect releases the port. Setup retains the connection while its
 dialog is open. COM releases from exited clients are collected by the server;

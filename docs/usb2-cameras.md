@@ -1,7 +1,7 @@
 # Direct cameras on USB 2
 
 The direct backend accepts USB 2 **high-speed** connections for all of its
-supported camera identities: ASI662MC, ASI676MC, ASI2600MM Duo main, ASI2600MM
+supported camera identities: ASI585MM Pro, ASI662MC, ASI676MC, ASI2600MM Duo main, ASI2600MM
 Pro P25, ASI6200MM Pro (original and P25), and ASI220MM Mini. This is a transport
 fallback on the same selected camera, not an SDK fallback. The bus negotiates
 the connection; Regain does not cycle a port or change driver bindings to force
@@ -45,6 +45,9 @@ the existing Cypress driver transfer interface. Slow/shared buses can still
 exhaust a transfer deadline; partial frames are never accepted as success.
 
 ## Validation and limits
+
+ASI585MM Pro uses the shared descriptor acceptance, but has been physically
+validated on Windows USB 3 only. Its USB 2 capture behavior remains unverified.
 
 The subsequent [coverage spike](usb2-coverage-spike.md) found a missing
 link-specific SDK FPGA output-throttle branch. Descriptor acceptance and the
