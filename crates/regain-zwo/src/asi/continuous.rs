@@ -21,6 +21,7 @@ struct Published {
     delivered_at: Option<Instant>,
     delivered: u64,
     replaced: u64,
+    owner_unresponsive: bool,
 }
 
 impl Published {
@@ -28,6 +29,9 @@ impl Published {
         let mut status = self.status.clone();
         if !status.is_object() {
             status = json!({"active":false,"error":null});
+        }
+        if self.owner_unresponsive {
+            status["error"] = json!("acquisition owner unresponsive for over ten seconds");
         }
         status["ready"] = json!(
             self.latest.is_some()
@@ -48,6 +52,17 @@ impl Published {
     }
 
     fn call(&mut self, method: &str) -> Result<Frame> {
+        // The owner publishes after every bounded SDK poll, even during long
+        // exposures. Responsive cached IPC must not conceal a stuck native call.
+        if self.status["active"] == true
+            && self.status["error"].is_null()
+            && self
+                .updated
+                .is_some_and(|t| t.elapsed() > Duration::from_secs(10))
+        {
+            self.owner_unresponsive = true;
+            self.latest = None;
+        }
         let status = self.status();
         if method == "stream-status" {
             return Ok((status, Vec::new()));
@@ -103,6 +118,12 @@ struct Stream {
 impl Stream {
     fn publish(&mut self, shared: &Mutex<Published>) {
         let mut published = shared.lock().unwrap();
+        if self.params.is_none() {
+            published.owner_unresponsive = false;
+        } else if published.owner_unresponsive {
+            self.failure = Some("acquisition owner unresponsive for over ten seconds".into());
+            self.latest = None;
+        }
         let new_session = self.params.is_some() && published.status["active"] != true;
         if new_session {
             published.delivered = 0;
@@ -696,6 +717,38 @@ mod tests {
         assert_eq!(s.delivered, 3);
         assert!(s.raw_interval.is_some());
     }
+    #[test]
+    fn cached_ipc_latches_unresponsive_owner_and_invalidates_buffer() {
+        let mut s = Stream::default();
+        let shared = Mutex::new(Published::default());
+        start(&mut s, json!({"microseconds":60_000_000}));
+        s.tick(&mut backend);
+        s.publish(&shared);
+        {
+            let mut published = shared.lock().unwrap();
+            published.updated = Some(Instant::now() - Duration::from_secs(11));
+            let (metadata, pixels) = published.call("stream-poll").unwrap();
+            assert!(pixels.is_empty());
+            assert!(
+                metadata["continuous"]["error"]
+                    .as_str()
+                    .unwrap()
+                    .contains("owner unresponsive")
+            );
+            assert!(published.latest.is_none());
+        }
+        s.tick(&mut backend); // A late native return must not revive the stream.
+        s.publish(&shared);
+        assert!(s.failure.is_some());
+        assert!(shared.lock().unwrap().call("stream-download").is_err());
+        s.stop(&mut backend).unwrap();
+        s.publish(&shared);
+        assert!(!shared.lock().unwrap().owner_unresponsive);
+        start(&mut s, json!({"microseconds":60_000_000}));
+        s.publish(&shared);
+        assert!(shared.lock().unwrap().call("stream-status").unwrap().0["error"].is_null());
+    }
+
     #[test]
     fn publication_preserves_decimation_clears_on_edits_and_latches_faults() {
         let mut s = Stream::default();
