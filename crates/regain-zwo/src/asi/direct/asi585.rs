@@ -85,7 +85,9 @@ pub fn finish(
     }
     if bin > 1 && metadata.get("mean").is_some() {
         let pixels = data
-            .chunks_exact(2)
+            .as_chunks::<2>()
+            .0
+            .iter()
             .map(|b| u16::from_le_bytes([b[0], b[1]]));
         let (sum, min, max, nonzero) =
             pixels.fold((0u64, u16::MAX, 0, 0usize), |(sum, min, max, n), p| {

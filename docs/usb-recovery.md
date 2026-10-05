@@ -19,7 +19,7 @@ the retained frame. It never turns a failed download into a successful image.
 ## Supported cameras
 
 USB recovery binds a camera's verified serial to its physical USB device before
-imaging. It supports the currently implemented ASI662MC (current source), ASI676MC, ASI2600MM Pro/Duo,
+imaging. It supports the currently implemented ASI585MM Pro (current source), ASI662MC, ASI676MC, ASI2600MM Pro/Duo,
 ASI6200MM Pro, and ASI220MM Mini USB identities, in either SDK or direct mode.
 It is not general reset support for every camera supported by the ZWO SDK.
 Unknown models, missing/ambiguous serials, and busy devices fail closed. Existing

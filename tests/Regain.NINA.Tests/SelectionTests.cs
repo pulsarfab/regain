@@ -119,6 +119,29 @@ public sealed class SelectionTests : IDisposable
         Assert.Null(Store.Load()!.Serial);
     }
 
+    [Fact]
+    public async Task Asi585DirectSelectionExposesCoolingWithoutAHeater()
+    {
+        var descriptor = new CameraDescriptor("ZWO ASI585MM Pro",3840,2160,false,0,2.9,12,true,false,[1,2,3,4]);
+        Store.Save(new(descriptor,UseDirectDriver:true));
+        var camera = new ResilientCamera(Mock.Of<IExposureDataFactory>(),Store,
+            () => new HostClient(Path.GetFullPath(Path.Combine(AppContext.BaseDirectory,"../../../../../target/debug/regain-device.exe")),
+                "missing-sdk.dll",simulate:true,direct:true),new());
+        try {
+            Assert.True(await camera.Connect(default));
+            Assert.Equal(4,camera.MaxBinX);
+            Assert.True(camera.CanSetTemperature);
+            Assert.False(camera.HasDewHeater);
+            Assert.False(double.IsNaN(camera.Temperature));
+            camera.TemperatureSetPoint = 20;
+            camera.CoolerOn = true;
+            Assert.Equal(20,camera.TemperatureSetPoint);
+            Assert.True(camera.CoolerOn);
+            camera.CoolerOn = false;
+        }
+        finally {camera.Disconnect();}
+    }
+
     [Theory]
     [InlineData("ZWO ASI6200MM Pro",9576,6388)]
     [InlineData("ZWO ASI2600MM Pro",6248,4176)]
