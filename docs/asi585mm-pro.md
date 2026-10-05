@@ -15,7 +15,7 @@ ZWO cameras. Windows uses the installed ZWO USB driver without loading
 | NINA, local ASCOM, or an Alpaca camera slot | Existing camera integrations, cooler setpoint, temperature, and cooler power |
 | Live preview through the worker API | Explicit RAW16 `video` mode, 32 µs–30 s; no retained-image replay |
 | Keep only the latest image while adjusting exposure | [Continuous acquisition](continuous-acquisition.md), live exposure/gain updates, settings generations, and optional transition frames |
-| Other pixel formats | Use SDK mode; direct capture is RAW16 |
+| Other pixel formats | Not implemented in Regain; both camera backends currently capture RAW16 |
 
 NINA, ASCOM, and Alpaca use still capture. Video and continuous modes are explicit
 worker APIs; they are not new ASCOM camera methods. A failed live frame may be
@@ -34,7 +34,7 @@ as a re-read of the same exposure.
   sensor interval near 100 ms while preserving integration lines, allowing
   retained downloads. This adds latency and is not a maximum-frame-rate driver.
 - No color white balance, flips, hardware bins, RAW8, or automatic exposure in
-  direct mode. The SDK mode remains available.
+  direct mode. SDK mode also captures RAW16 in Regain.
 
 For a research capture, run `regain-device zwo camera-direct --capture-585
 --replay`. Add `--width 1920 --height 1080 --bin 2` for a binned still image, or
@@ -91,7 +91,7 @@ transitions through 20 seconds. A separate **600-second full-frame exposure**
 recovered an interrupted download and produced an identical retained re-read,
 with no additional exposure; a fresh short capture afterward also passed.
 Cooling remained active during a 60-second exposure, and binned video passed at
-bins 1�4. See [validation evidence](asi585-validation.json) for the measurements.
+bins 1–4. See [validation evidence](asi585-validation.json) for the measurements.
 
 Hardware validation uses Windows USB 3. USB 2, Linux/macOS hardware, cold startup,
 physical USB reset, optical accuracy, and overnight streaming are not established

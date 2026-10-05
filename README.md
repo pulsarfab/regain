@@ -108,7 +108,7 @@ ASCOM, and Alpaca.
 | **ZWO ASI6200MM Pro** | Yes, experimental | Yes, in Direct USB mode | Yes |
 | **ZWO ASI676MC** | Yes, experimental | Yes, in Direct USB mode | Yes |
 | **[ZWO ASI662MC](docs/asi662mc.md)** | Yes, experimental; current source | Yes; short captures use a ~100 ms frame interval | Yes |
-| **[ZWO ASI585MM Pro](docs/asi585mm-pro.md)** | Yes, experimental; current source; RAW16 bins 1–4 and cooling | Yes; short captures use a ~100 ms frame interval | Yes |
+| **[ZWO ASI585MM Pro](docs/asi585mm-pro.md)** | Yes, experimental; current source; RAW16 bins 1â€“4 and cooling | Yes; short captures use a ~100 ms frame interval | Yes |
 | **ZWO ASI220MM Mini** | Yes, experimental | No direct reread support | Yes |
 | **Other ZWO ASI cameras** | No | Depends on the SDK keeping the image available | If supported by the bundled SDK |
 
