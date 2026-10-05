@@ -217,6 +217,7 @@ def main():
                             blob = blob[:int.from_bytes(blob[4:8], 'big')]
                             model = {'ZWO ASI2600MM Duo': 'asi2600mm-duo', 'ZWO ASI676MC': 'asi676mc',
                                      'ZWO ASI662MC': 'asi662mc',
+                                     'ZWO ASI585MM Pro': 'asi585mm-pro',
                                      'ZWO ASI6200MM Pro': 'asi6200mm-pro',
                                      'ZWO ASI2600MM Pro': 'asi2600mm-pro-p25',
                                      'ZWO ASI220MM Mini': 'asi220mm-mini'}.get(camera['name'])
@@ -265,14 +266,15 @@ def main():
                 finally:
                     call('set', {'control':0,'value':old_gain})
             if args.environment_probe:
-                if camera['name'] not in ('ZWO ASI2600MM Duo', 'ZWO ASI2600MM Pro', 'ZWO ASI6200MM Pro'):
+                if camera['name'] not in ('ZWO ASI2600MM Duo', 'ZWO ASI2600MM Pro', 'ZWO ASI6200MM Pro', 'ZWO ASI585MM Pro'):
                     raise RuntimeError('environment probe requires a supported cooled camera')
                 available = {c['type'] for c in opened['controls'] if c['writable']}
                 env_controls = tuple(c for c in (16,17,21,22,23) if c in available)
                 previous = {c: call('get', {'control': c}) for c in env_controls}
                 try:
                     for c,v in [(16,20),(17,1),(21,1)]:
-                        call('set', {'control':c,'value':v})
+                        if c in env_controls:
+                            call('set', {'control':c,'value':v})
                     if 22 in env_controls:
                         for c,v in [(22,200),(23,128)]:
                             call('set', {'control':c,'value':v})

@@ -1,4 +1,4 @@
-//! ASI2600/6200 environment controls, serviced on the transport owner thread.
+//! ASI585/2600/6200 environment controls, serviced on the transport owner thread.
 //! Register mapping/current calibration observed with SDK 1.41, PIDs 2601/620b.
 //! The regulator is our own bounded PI controller, not the SDK's PID algorithm.
 use crate::asi::direct::transport::Camera;
@@ -20,7 +20,7 @@ const CURRENT: [(f64, f64); 12] = [
     (6.01, 40.0),
 ];
 
-pub fn power_register(percent: f64) -> u16 {
+fn power_dac(percent: f64) -> u16 {
     let amps = percent.clamp(0.0, 100.0) * 6.01 / 100.0;
     let mut dac = 40;
     for pair in CURRENT.windows(2) {
@@ -32,7 +32,17 @@ pub fn power_register(percent: f64) -> u16 {
             break;
         }
     }
-    (272 - dac.clamp(40, 255)) * 220 / 256
+    dac.clamp(40, 255)
+}
+
+pub fn power_register(percent: f64) -> u16 {
+    (272 - power_dac(percent)) * 220 / 256
+}
+
+#[derive(Clone, Copy, PartialEq)]
+pub enum CoolerOutput {
+    Fpga,
+    Dac,
 }
 
 pub struct Environment {
@@ -44,6 +54,8 @@ pub struct Environment {
     integral: f64,
     tick: Instant,
     auxiliary: Option<(i64, i64)>,
+    heater: bool,
+    output: CoolerOutput,
 }
 
 fn flags(camera: &Camera, mask: u8, enabled: bool) -> Result<()> {
@@ -61,39 +73,51 @@ impl Environment {
     /// Restore actuator state after a handle reconnect without replacing the
     /// saved setpoint, regulator history, or the frame retained in DDR.
     pub fn restore(&mut self, camera: &Camera) -> Result<()> {
-        camera.vendor(
-            0xbd,
-            0x26,
-            power_register(if self.enabled { self.power } else { 0.0 }),
-            0,
-        )?;
+        self.write_power(camera, if self.enabled { self.power } else { 0.0 })?;
         flags(camera, 0x80, !self.enabled)?;
-        camera.vendor(0xbd, 0x2a, if self.dew { 197 } else { 0 }, 0)?;
-        flags(camera, 0x40, self.dew)?;
+        if self.heater {
+            camera.vendor(0xbd, 0x2a, if self.dew { 197 } else { 0 }, 0)?;
+            flags(camera, 0x40, self.dew)?;
+        }
         if let Some((fan, led)) = self.auxiliary {
             self.set(camera, 22, fan)?;
             self.set(camera, 23, led)?;
         }
         let expected_flags = (u8::from(!self.enabled) * 0x80) | (u8::from(self.dew) * 0x40);
         ensure!(
-            camera.vendor(0xbc, 0x19, 0, 1)?[0] & 0xc0 == expected_flags,
+            camera.vendor(0xbc, 0x19, 0, 1)?[0] & if self.heater { 0xc0 } else { 0x80 }
+                == expected_flags,
             "cooler/dew state did not restore"
         );
-        ensure!(
-            u16::from(camera.vendor(0xbc, 0x26, 0, 1)?[0])
-                == power_register(if self.enabled { self.power } else { 0.0 }),
-            "cooler output did not restore"
-        );
+        if self.output == CoolerOutput::Fpga {
+            ensure!(
+                u16::from(camera.vendor(0xbc, 0x26, 0, 1)?[0])
+                    == power_register(if self.enabled { self.power } else { 0.0 }),
+                "cooler output did not restore"
+            );
+        }
         self.temperature = Self::read_temperature(camera)?;
         self.tick = Instant::now();
         Ok(())
     }
-    pub fn open(camera: &Camera, auxiliary: bool) -> Result<Self> {
+    pub fn open(
+        camera: &Camera,
+        auxiliary: bool,
+        heater: bool,
+        output: CoolerOutput,
+    ) -> Result<Self> {
         let bits = camera.vendor(0xbc, 0x19, 0, 1)?[0];
-        let register = camera.vendor(0xbc, 0x26, 0, 1)?[0];
+        // The ASI585 DAC has no traced output readback. Establish zero demand
+        // on a fresh connection while preserving the cooler enable bit.
+        let register = if output == CoolerOutput::Fpga {
+            camera.vendor(0xbc, 0x26, 0, 1)?[0]
+        } else {
+            camera.vendor(0xb2, power_dac(0.0), 0, 0)?;
+            0
+        };
         let temperature = Self::read_temperature(camera)?;
         // Match the observed output on reconnect before the plugin restores its target.
-        let power = if bits & 0x80 != 0 {
+        let power = if bits & 0x80 != 0 || output == CoolerOutput::Dac {
             0.0
         } else {
             (0..=100)
@@ -103,7 +127,9 @@ impl Environment {
         Ok(Self {
             target: (temperature.round() as i64).clamp(-40, 30),
             enabled: bits & 0x80 == 0,
-            dew: bits & 0x40 != 0,
+            dew: heater && bits & 0x40 != 0,
+            heater,
+            output,
             temperature,
             power,
             integral: power,
@@ -117,6 +143,13 @@ impl Environment {
                 None
             },
         })
+    }
+    fn write_power(&self, camera: &Camera, percent: f64) -> Result<()> {
+        match self.output {
+            CoolerOutput::Fpga => camera.vendor(0xbd, 0x26, power_register(percent), 0)?,
+            CoolerOutput::Dac => camera.vendor(0xb2, power_dac(percent), 0, 0)?,
+        };
+        Ok(())
     }
     fn read_temperature(camera: &Camera) -> Result<f64> {
         let bytes = camera.vendor(0xb3, 0, 0, 2)?;
@@ -133,7 +166,7 @@ impl Environment {
             15 => self.power.round() as i64,
             16 => self.target,
             17 => i64::from(self.enabled),
-            21 => i64::from(self.dew),
+            21 if self.heater => i64::from(self.dew),
             22 if self.auxiliary.is_some() => self.auxiliary.unwrap().0,
             23 if self.auxiliary.is_some() => self.auxiliary.unwrap().1,
             _ => anyhow::bail!("unsupported environment control"),
@@ -148,14 +181,14 @@ impl Environment {
             17 => {
                 ensure!((0..=1).contains(&value), "invalid cooler enable");
                 if value == 0 || !self.enabled {
-                    camera.vendor(0xbd, 0x26, power_register(0.0), 0)?;
+                    self.write_power(camera, 0.0)?;
                     self.power = 0.0;
                     self.integral = 0.0;
                 }
                 flags(camera, 0x80, value == 0)?;
                 self.enabled = value != 0;
             }
-            21 => {
+            21 if self.heater => {
                 ensure!((0..=1).contains(&value), "invalid dew heater enable");
                 camera.vendor(0xbd, 0x2a, if value == 0 { 0 } else { 197 }, 0)?;
                 flags(camera, 0x40, value != 0)?;
@@ -205,7 +238,7 @@ impl Environment {
                 (self.power - 2.0 * dt).max(0.0),
                 (self.power + 2.0 * dt).min(100.0),
             );
-            camera.vendor(0xbd, 0x26, power_register(self.power), 0)?;
+            self.write_power(camera, self.power)?;
         }
         Ok(())
     }
@@ -216,11 +249,34 @@ mod tests {
     use super::*;
     #[test]
     fn observed_current_conversion_is_bounded_and_monotonic() {
+        assert_eq!(power_dac(0.0), 255);
+        assert_eq!(power_dac(100.0), 40);
         assert_eq!(power_register(0.0), 14);
         assert_eq!(power_register(1.0), 16);
         assert_eq!(power_register(100.0), 199);
         for p in 0..100 {
             assert!(power_register(f64::from(p)) <= power_register(f64::from(p + 1)));
+            assert!(power_dac(f64::from(p)) >= power_dac(f64::from(p + 1)));
+        }
+    }
+
+    #[test]
+    fn cooler_only_model_does_not_report_heater_or_auxiliary_controls() {
+        let environment = Environment {
+            target: 20,
+            enabled: false,
+            dew: false,
+            temperature: 21.5,
+            power: 0.0,
+            integral: 0.0,
+            tick: Instant::now(),
+            auxiliary: None,
+            heater: false,
+            output: CoolerOutput::Dac,
+        };
+        assert_eq!(environment.get(8).unwrap(), 215);
+        for control in [21, 22, 23] {
+            assert!(environment.get(control).is_err());
         }
     }
 }

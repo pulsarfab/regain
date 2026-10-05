@@ -1,4 +1,4 @@
-//! Shared, trace-verified ASI676MC/ASI662MC bin-1 Bayer acquisition. No ASI DLL calls.
+//! Shared, trace-verified ASI585MM Pro/ASI662MC/ASI676MC sensor acquisition. No ASI DLL calls.
 use crate::asi::direct::{processing, protocol, settings::Settings, transport::Camera};
 use anyhow::{Result, ensure};
 use serde_json::{Value, json};
@@ -13,6 +13,9 @@ pub struct Profile {
     pub height: u32,
     pub offset_max: u32,
     pub alignment: u32,
+    pub y_alignment: u32,
+    pub sensor_height_alignment: u32,
+    pub color: bool,
     pub sensor_alignment: u32,
     pub hmax: u16,
     pub gain_register: u16,
@@ -26,11 +29,26 @@ impl Profile {
     pub fn validate(&self, settings: &Settings) -> Result<()> {
         settings.validate_bayer(self.width, self.height, self.offset_max)?;
         ensure!(
-            settings.x.is_multiple_of(self.alignment) && settings.y.is_multiple_of(self.alignment),
-            "{} ROI origin must be aligned to {} pixels",
+            settings.x.is_multiple_of(self.alignment)
+                && settings.y.is_multiple_of(self.y_alignment),
+            "{} ROI origin must be aligned to x={} and y={} pixels",
             self.name,
-            self.alignment
+            self.alignment,
+            self.y_alignment
         );
+        Ok(())
+    }
+    pub fn replace_envelope(&self, data: &mut [u8], width: usize) -> Result<()> {
+        if self.color {
+            return protocol::replace_envelope(data, width);
+        }
+        ensure!(
+            width >= 8 && data.len() >= width * 6 && data.len().is_multiple_of(width * 2),
+            "invalid mono geometry"
+        );
+        let last = data.len() - 4;
+        data.copy_within(width * 2..width * 2 + 4, 0);
+        data.copy_within(last - width * 2..last - width * 2 + 4, last);
         Ok(())
     }
     pub fn gain(&self, gain: u32) -> (u16, u16) {
@@ -254,7 +272,12 @@ fn calibration(
                 settings.x as usize,
                 settings.y as usize,
             ),
-            (profile.width as usize, profile.height as usize, 2, 12),
+            (
+                profile.width as usize,
+                profile.height as usize,
+                if profile.color { 2 } else { 1 },
+                12,
+            ),
         )
     })();
     let restore = camera.vendor(0xbe, 1, 0, 0);
@@ -288,7 +311,10 @@ pub(super) fn configure(
         camera,
         0xb6,
         0x3046,
-        settings.height.next_multiple_of(profile.sensor_alignment) + 2,
+        settings
+            .height
+            .next_multiple_of(profile.sensor_height_alignment)
+            + 2,
         2,
     )?;
     word(camera, 0xbd, 0x40, settings.width * settings.height / 2, 4)?;
@@ -344,14 +370,22 @@ pub fn capture(
             let flags = camera.vendor(0xbc, 0x0b, 0, 1)?[0];
             camera.vendor(0xbd, 0x0b, u16::from(flags | 1), 0)?;
             let trigger = Instant::now();
-            std::thread::sleep(Duration::from_micros(u64::from(
-                settings.microseconds - 200_000,
-            )));
+            super::bayer_video::wait_until_servicing(
+                trigger,
+                Duration::from_micros(u64::from(settings.microseconds - 200_000)),
+                &std::sync::atomic::AtomicBool::new(false),
+                || camera.service_environment(),
+            )?;
             let status = camera.vendor(0xbc, 0x19, 0, 1)?[0];
             camera.vendor(0xbd, 0x19, u16::from(status & !1), 0)?;
             let remaining = Duration::from_micros(u64::from(settings.microseconds))
                 .saturating_sub(trigger.elapsed());
-            std::thread::sleep(remaining);
+            super::bayer_video::wait_until_servicing(
+                Instant::now(),
+                remaining,
+                &std::sync::atomic::AtomicBool::new(false),
+                || camera.service_environment(),
+            )?;
             let flags = camera.vendor(0xbc, 0x0b, 0, 1)?[0];
             camera.vendor(0xbd, 0x0b, u16::from(flags | 1), 0)?;
             camera.vendor(0xbd, 0x0b, u16::from(flags & !1), 0)?;
@@ -361,6 +395,7 @@ pub fn capture(
             Duration::from_micros(u64::from(settings.microseconds)) + Duration::from_secs(5);
         let mut ready_samples = 0;
         loop {
+            camera.service_environment()?;
             let status = camera.vendor(0xbc, 0x23, 0, 1)?[0];
             ready_samples += 1;
             if status == 5 {
@@ -455,7 +490,7 @@ pub fn capture(
                 u32::from_le_bytes(data[data.len() - 4..].try_into().unwrap())
             ),
         ];
-        protocol::replace_envelope(&mut data, settings.width as usize)?;
+        profile.replace_envelope(&mut data, settings.width as usize)?;
         defects.correct(&mut data)?;
         let mut sum = 0_u64;
         let mut min = u16::MAX;
@@ -471,7 +506,7 @@ pub fn capture(
         let metadata = json!({"sdkLoaded":false,"model":profile.name,"width":settings.width,"height":settings.height,
             "x":settings.x,"y":settings.y,"gain":settings.gain,"offset":settings.offset,
             "exposureMicroseconds":settings.microseconds,"hostTimed":settings.long_exposure(),
-            "bin":1,"format":"RAW16","bayer":"RGGB","defectCorrectionApplied":true,
+            "bin":1,"format":"RAW16","bayer":if profile.color { json!("RGGB") } else { Value::Null },"defectCorrectionApplied":true,
             "defectCount":defects.indices.len(),"defectIndexSha256":defects.index_hash(),
             "transportPixelsReplaced":true,"wireSha256":wire_digest,"wireBoundaryWords":boundary_words,
             "sha256":format!("{:x}",Sha256::digest(&data)),"acquisitionMs":acquisition_ms,

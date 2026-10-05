@@ -56,7 +56,7 @@ def main():
                     except urllib.error.URLError:
                         assert process.poll() is None and time.monotonic() < deadline, "Server did not start"
                         time.sleep(0.05)
-                for direct, selected in ((False, None), (True, None), (True, "ZWO ASI2600MM Pro"), (True, "ZWO ASI662MC")):
+                for direct, selected in ((False, None), (True, None), (True, "ZWO ASI2600MM Pro"), (True, "ZWO ASI662MC"), (True, "ZWO ASI585MM Pro")):
                     descriptors = request("/setup/api/discover", {"direct": direct})
                     descriptor = next(c for c in descriptors if c["name"] == selected) if selected else descriptors[0]
                     profile = request("/setup/api/state")["cameras"][0]["profile"]
@@ -71,6 +71,14 @@ def main():
                     elif selected == "ZWO ASI662MC":
                         assert camera("cameraxsize") == 1920 and camera("cameraysize") == 1080
                         assert camera("maxbinx") == 1 and camera("exposuremax") == 2000
+                    if selected == "ZWO ASI585MM Pro":
+                        assert camera("cameraxsize") == 3840 and camera("cameraysize") == 2160
+                        assert camera("maxbinx") == 4 and camera("sensorname") == "ZWO ASI585MM Pro"
+                        assert camera("cansetccdtemperature") and camera("cangetcoolerpower")
+                        camera("setccdtemperature", {"SetCCDTemperature": 20, "ClientID": 1})
+                        camera("cooleron", {"CoolerOn": "true", "ClientID": 1})
+                        assert camera("cooleron") and camera("setccdtemperature") == 20
+                        camera("cooleron", {"CoolerOn": "false", "ClientID": 1})
                     camera("numx", {"NumX": 64, "ClientID": 1})
                     camera("numy", {"NumY": 64, "ClientID": 1})
                     camera("startexposure", {"Duration": 0.01, "Light": "false", "ClientID": 1})

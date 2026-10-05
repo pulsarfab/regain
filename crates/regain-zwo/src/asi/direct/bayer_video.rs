@@ -1,4 +1,4 @@
-//! ASI662MC/ASI676MC RAW16 video: configure once, consume successive envelopes.
+//! ASI585MM Pro/ASI662MC/ASI676MC RAW16 video: configure once, consume successive envelopes.
 //! Model-specific SDK 1.41 video traces; never replay a live video frame.
 use super::{bayer, link, processing, protocol, settings::Settings, transport::Camera};
 use anyhow::{Context, Result, ensure};
@@ -53,9 +53,17 @@ pub struct Pacer {
 }
 impl Pacer {
     pub fn wait(&mut self, max_fps: f64, cancel: &AtomicBool) -> Result<()> {
+        self.wait_servicing(max_fps, cancel, || Ok(()))
+    }
+    pub fn wait_servicing(
+        &mut self,
+        max_fps: f64,
+        cancel: &AtomicBool,
+        service: impl FnMut() -> Result<()>,
+    ) -> Result<()> {
         let interval = frame_interval(max_fps)?;
         if let Some(previous) = self.previous {
-            wait_until(previous, interval, cancel)?;
+            wait_until_servicing(previous, interval, cancel, service)?;
         }
         ensure!(!cancel.load(Ordering::Relaxed), "video read cancelled");
         Ok(())
@@ -66,14 +74,44 @@ impl Pacer {
 }
 
 pub(super) fn wait_until(start: Instant, duration: Duration, cancel: &AtomicBool) -> Result<()> {
+    wait_until_servicing(start, duration, cancel, || Ok(()))
+}
+
+pub(super) fn wait_until_servicing(
+    start: Instant,
+    duration: Duration,
+    cancel: &AtomicBool,
+    mut service: impl FnMut() -> Result<()>,
+) -> Result<()> {
     loop {
         ensure!(!cancel.load(Ordering::Relaxed), "video read cancelled");
         let remaining = duration.saturating_sub(start.elapsed());
         if remaining.is_zero() {
             return Ok(());
         }
+        service()?;
         std::thread::sleep(remaining.min(Duration::from_millis(10)));
     }
+}
+
+#[test]
+fn wait_services_cooling_and_propagates_feedback_failure() {
+    let mut calls = 0;
+    let error = wait_until_servicing(
+        Instant::now(),
+        Duration::from_secs(60),
+        &AtomicBool::new(false),
+        || {
+            calls += 1;
+            if calls == 2 {
+                anyhow::bail!("temperature unavailable");
+            }
+            Ok(())
+        },
+    )
+    .unwrap_err();
+    assert_eq!(calls, 2);
+    assert!(error.to_string().contains("temperature unavailable"));
 }
 
 impl Video {
@@ -183,10 +221,11 @@ impl Video {
                 session.stop(camera)?;
                 // Failed grabs count against the FPS cap too. No rapid retry burst.
                 if !session.settings.continuous_drain {
-                    wait_until(
+                    wait_until_servicing(
                         discarded_at,
                         frame_interval(session.settings.video_max_fps)?,
                         cancel,
+                        || camera.service_environment(),
                     )?;
                 }
                 *session = Self::start(camera, info, session.settings.clone(), session.profile)?;
@@ -223,24 +262,28 @@ impl Video {
             for (delay, register, mask) in [(600, 0x19, 1), (800, 0x0b, 0x10)] {
                 let delay = Duration::from_millis(delay);
                 if delay < wake {
-                    wait_until(triggered, delay, cancel)?;
+                    wait_until_servicing(triggered, delay, cancel, || {
+                        camera.service_environment()
+                    })?;
                     let flags = camera.vendor(0xbc, register, 0, 1)?[0];
                     camera.vendor(0xbd, register, u16::from(flags | mask), 0)?;
                 }
             }
             // Same explicit end-of-integration sequence on every video frame.
             // Stop remains cancellable rather than sleeping the full exposure.
-            wait_until(
+            wait_until_servicing(
                 triggered,
                 Duration::from_micros(u64::from(self.settings.microseconds - 200_000)),
                 cancel,
+                || camera.service_environment(),
             )?;
             let state = camera.vendor(0xbc, 0x19, 0, 1)?[0];
             camera.vendor(0xbd, 0x19, u16::from(state & !1), 0)?;
-            wait_until(
+            wait_until_servicing(
                 triggered,
                 Duration::from_micros(u64::from(self.settings.microseconds)),
                 cancel,
+                || camera.service_environment(),
             )?;
             let flags = camera.vendor(0xbc, 0x0b, 0, 1)?[0];
             camera.vendor(0xbd, 0x0b, u16::from(flags & !0x10), 0)?;
@@ -254,12 +297,13 @@ impl Video {
         let skipped = sequence_gap(self.previous, sequence)?;
         self.previous = Some(sequence);
         self.delivered += 1;
-        protocol::replace_envelope(&mut pixels, self.settings.width as usize)?;
+        self.profile
+            .replace_envelope(&mut pixels, self.settings.width as usize)?;
         self.defects.correct(&mut pixels)?;
         camera.phase("video_streaming");
         let metadata = json!({"sdkLoaded":false,"mode":"video","model":self.profile.name,
             "width":self.settings.width,"height":self.settings.height,"x":self.settings.x,"y":self.settings.y,
-            "bin":1,"format":"RAW16","bayer":"RGGB","gain":self.settings.gain,"offset":self.settings.offset,
+            "bin":1,"format":"RAW16","bayer":if self.profile.color { json!("RGGB") } else { Value::Null },"gain":self.settings.gain,"offset":self.settings.offset,
             "exposureMicroseconds":self.settings.microseconds,"bytes":pixels.len(),
             "maxFps":self.settings.video_max_fps,
             "boundarySequence":sequence,"skippedFrames":skipped,"deliveredFrames":self.delivered,

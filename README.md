@@ -22,7 +22,7 @@ vendor SDK in a separate process.
 ### Save an exposure after a failed download
 
 Choose **Direct USB (experimental)** with an ASI2600MM Pro, ASI6200MM Pro, or
-ASI676MC (and ASI662MC in current source builds). Regain talks to the camera
+ASI676MC, ASI662MC, or ASI585MM Pro (the latter in current source builds). Regain talks to the camera
 without the ZWO SDK and can reread the image still in camera memory. A download
 retry does not repeat the exposure—even a
 long one. The transport limits stalled reads and rejects incomplete images.
@@ -75,6 +75,10 @@ for Rust and pipe-worker clients. It supports manual gains, AWB once/continuous,
 and locking across SDK and Direct USB, with raw output preserved by default.
 Frontend UI integration is separate; existing clients are unchanged.
 
+The [continuous acquisition API](docs/continuous-acquisition.md) also supports
+ASI585MM Pro in Direct USB mode, including live exposure/gain edits and bounded
+latest-frame delivery. NINA, ASCOM, and Alpaca continue to request still captures.
+
 | Integration | Where it runs | Equipment |
 | --- | --- | --- |
 | **Native NINA plugin** | Windows x64, NINA ≥3.2.0.9001 | Cameras, CAA, EFW, EAF, FocusCube3, Falcon V2, ETA M54 |
@@ -104,6 +108,7 @@ ASCOM, and Alpaca.
 | **ZWO ASI6200MM Pro** | Yes, experimental | Yes, in Direct USB mode | Yes |
 | **ZWO ASI676MC** | Yes, experimental | Yes, in Direct USB mode | Yes |
 | **[ZWO ASI662MC](docs/asi662mc.md)** | Yes, experimental; current source | Yes; short captures use a ~100 ms frame interval | Yes |
+| **[ZWO ASI585MM Pro](docs/asi585mm-pro.md)** | Yes, experimental; current source; RAW16 bins 1�4 and cooling | Yes; short captures use a ~100 ms frame interval | Yes |
 | **ZWO ASI220MM Mini** | Yes, experimental | No direct reread support | Yes |
 | **Other ZWO ASI cameras** | No | Depends on the SDK keeping the image available | If supported by the bundled SDK |
 

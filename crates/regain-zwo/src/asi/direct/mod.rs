@@ -4,6 +4,8 @@ mod asi220_tables;
 mod asi2600;
 mod asi2600_p25_tables;
 mod asi2600_tables;
+mod asi585;
+mod asi585_tables;
 mod asi6200;
 mod asi6200_tables;
 mod asi662;
@@ -31,7 +33,10 @@ fn probe_product(args: &[String]) -> Result<Option<u16>> {
     ensure!(args.len() == 2, "Usage: --probe-pid HEX_PRODUCT_ID");
     let pid = u16::from_str_radix(args[1].trim_start_matches("0x"), 16)?;
     ensure!(
-        matches!(pid, 0x662b | 0x676d | 0x2601 | 0x260e | 0x620b | 0x2209),
+        matches!(
+            pid,
+            0x585e | 0x662b | 0x676d | 0x2601 | 0x260e | 0x620b | 0x2209
+        ),
         "descriptor probe requires a supported camera product ID"
     );
     Ok(Some(pid))
@@ -103,8 +108,11 @@ pub fn run(args: Vec<String>) -> Result<()> {
     if args == ["--process-frame"] {
         return processing::process_stream();
     }
+    let asi585 = args.first().is_some_and(|a| a == "--capture-585");
     let asi662 = args.first().is_some_and(|a| a == "--capture-662");
-    let video_profile = if asi662 {
+    let video_profile = if asi585 {
+        &asi585::PROFILE
+    } else if asi662 {
         &asi662::PROFILE
     } else {
         &asi676::PROFILE
@@ -116,8 +124,12 @@ pub fn run(args: Vec<String>) -> Result<()> {
     let p25 = verify_retained || args.first().is_some_and(|a| a == "--capture-2600-p25");
     let duo = p25 || args.first().is_some_and(|a| a == "--capture-duo");
     let guide = args.first().is_some_and(|a| a == "--capture-guide");
-    let capture =
-        asi662 || asi6200 || duo || guide || args.first().is_some_and(|a| a == "--capture");
+    let capture = asi585
+        || asi662
+        || asi6200
+        || duo
+        || guide
+        || args.first().is_some_and(|a| a == "--capture");
     let mut settings = settings::Settings::default();
     let mut duo_gain = 0_i32;
     let mut duo_bin = 1_u32;
@@ -139,6 +151,11 @@ pub fn run(args: Vec<String>) -> Result<()> {
         settings.height = 1080;
         settings.offset = 15;
     }
+    if asi585 {
+        settings.width = 3840;
+        settings.height = 2160;
+        settings.offset = 3;
+    }
     let mut frames = 1_u32;
     let mut stream = false;
     let mut video = false;
@@ -159,8 +176,8 @@ pub fn run(args: Vec<String>) -> Result<()> {
             }
             if option == "--video" {
                 ensure!(
-                    asi662 || args[0] == "--capture",
-                    "video is only available for ASI662MC/ASI676MC"
+                    asi585 || asi662 || args[0] == "--capture",
+                    "video is only available for ASI585MM Pro/ASI662MC/ASI676MC"
                 );
                 video = true;
                 continue;
@@ -207,7 +224,7 @@ pub fn run(args: Vec<String>) -> Result<()> {
                 .ok_or_else(|| anyhow::anyhow!("missing option value"))?
                 .parse()?;
             match option.as_str() {
-                "--bin" if duo || guide || asi6200 => duo_bin = value,
+                "--bin" if duo || guide || asi6200 || asi585 => duo_bin = value,
                 "--width" => settings.width = value,
                 "--height" => settings.height = value,
                 "--x" => settings.x = value,
@@ -240,6 +257,8 @@ pub fn run(args: Vec<String>) -> Result<()> {
         } else if guide {
             asi220::raw_settings(&settings, duo_bin)?;
             ensure!(!replay, "guide retained replay is not established");
+        } else if asi585 {
+            asi585::raw_settings(&settings, duo_bin)?;
         } else if asi662 {
             asi662::PROFILE.validate(&settings)?;
         } else {
@@ -251,7 +270,14 @@ pub fn run(args: Vec<String>) -> Result<()> {
         );
         ensure!(!fps_specified || video, "--max-fps requires --video");
         if video {
-            bayer_video::validate(&settings, video_profile)?;
+            bayer_video::validate(
+                &if asi585 {
+                    asi585::raw_settings(&settings, duo_bin)?
+                } else {
+                    settings.clone()
+                },
+                video_profile,
+            )?;
             ensure!(!replay, "video does not support retained-frame replay");
             ensure!(
                 !retries_specified || settings.read_retries == 0,
@@ -289,7 +315,7 @@ pub fn run(args: Vec<String>) -> Result<()> {
             || args == ["--probe-all"]
             || args == ["--probe", "--cancel-read"]
             || capture,
-        "Usage: regain-device zwo camera-direct [--probe [--cancel-read] | --capture | --capture-662 | --capture-duo | --capture-2600-p25 | --capture-6200 | --capture-guide] [--width N --height N --x N --y N --microseconds N --gain N --offset N --frames N --read-retries N --transfer-timeout-seconds N --stream --replay --replay-prefix-bytes N --interrupt-read-after-bytes N]; ASI662MC/ASI676MC accept --video --max-fps N (0.01..120, exposures up to 30 s, no replay); ASI2600/6200 also accept --timeout-read-after-bytes N; ASI2600 also accepts --reopen-after-bytes N --reopen-delay-ms N; P25 research: --keep-retained, then --verify-retained-2600-p25 --expected-wire-sha256 HASH with raw width/height; ASI2600/6200 and guide also accept --bin N; disconnect other camera apps first"
+        "Usage: regain-device zwo camera-direct [--probe [--cancel-read] | --capture | --capture-585 | --capture-662 | --capture-duo | --capture-2600-p25 | --capture-6200 | --capture-guide] [--width N --height N --x N --y N --microseconds N --gain N --offset N --frames N --read-retries N --transfer-timeout-seconds N --stream --replay --replay-prefix-bytes N --interrupt-read-after-bytes N]; ASI585MM Pro/ASI662MC/ASI676MC accept --video --max-fps N (0.01..120, exposures up to 30 s, no replay); ASI2600/6200 also accept --timeout-read-after-bytes N; ASI2600 also accepts --reopen-after-bytes N --reopen-delay-ms N; P25 research: --keep-retained, then --verify-retained-2600-p25 --expected-wire-sha256 HASH with raw width/height; ASI585/2600/6200 and guide also accept --bin N; disconnect other camera apps first"
     );
     // Last resort for a kernel request that refuses to finish cancellation. The
     // worker must exit rather than free a buffer still owned by the USB driver.
@@ -338,7 +364,9 @@ pub fn run(args: Vec<String>) -> Result<()> {
         return Ok(());
     }
     if capture {
-        let pid = if asi662 {
+        let pid = if asi585 {
+            0x585e
+        } else if asi662 {
             0x662b
         } else if asi6200 {
             0x620b
@@ -377,7 +405,11 @@ pub fn run(args: Vec<String>) -> Result<()> {
             Some(bayer_video::Video::start(
                 &camera,
                 &result,
-                settings.clone(),
+                if asi585 {
+                    asi585::raw_settings(&settings, duo_bin)?
+                } else {
+                    settings.clone()
+                },
                 video_profile,
             )?)
         } else {
@@ -391,7 +423,13 @@ pub fn run(args: Vec<String>) -> Result<()> {
                     pacer.wait(settings.video_max_fps, &cancelled)?;
                     let frame = session.next(&camera, &result, &cancelled)?;
                     pacer.completed();
-                    frame
+                    if asi585 {
+                        asi585::finish(frame, &settings, duo_bin)?
+                    } else {
+                        frame
+                    }
+                } else if asi585 {
+                    asi585::capture(&camera, &result, &settings, duo_bin, replay)?
                 } else if asi662 {
                     asi662::capture(&camera, &result, &settings, replay)?
                 } else if asi6200 {
@@ -456,7 +494,7 @@ fn invalid_video_cli_options_fail_before_camera_access() {
         ),
         (
             vec!["--capture-duo", "--video"],
-            "only available for ASI662MC/ASI676MC",
+            "only available for ASI585MM Pro/ASI662MC/ASI676MC",
         ),
         (
             vec!["--capture-662", "--video", "--max-fps", "0"],

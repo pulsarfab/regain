@@ -1,7 +1,7 @@
 //! Version-1 plugin protocol over inherited pipes for the verified camera interfaces.
 //! A dedicated worker owns the exclusive driver handle for the entire connection.
 use crate::asi::direct::{
-    asi220, asi662, asi676, asi2600, asi6200, bayer_video, settings::Settings, transport,
+    asi220, asi585, asi662, asi676, asi2600, asi6200, bayer_video, settings::Settings, transport,
 };
 use anyhow::{Result, bail, ensure};
 use regain_core::white_balance::{Geometry, Settings as WhiteBalanceSettings, WhiteBalance};
@@ -32,6 +32,7 @@ enum Model {
     #[default]
     Asi676,
     Asi662,
+    Asi585,
     Duo,
     Guide,
     Asi6200,
@@ -41,25 +42,31 @@ impl Model {
     fn video_profile(self) -> Option<&'static super::bayer::Profile> {
         match self {
             Self::Asi662 => Some(&asi662::PROFILE),
+            Self::Asi585 => Some(&asi585::PROFILE),
             Self::Asi676 => Some(&asi676::PROFILE),
             _ => None,
         }
     }
-    const ALL: [Self; 6] = [
+    const ALL: [Self; 7] = [
         Self::Asi676,
         Self::Asi662,
+        Self::Asi585,
         Self::Duo,
         Self::Guide,
         Self::Asi6200,
         Self::Asi2600P25,
     ];
     fn cooled(self) -> bool {
-        matches!(self, Self::Duo | Self::Asi6200 | Self::Asi2600P25)
+        matches!(
+            self,
+            Self::Duo | Self::Asi6200 | Self::Asi2600P25 | Self::Asi585
+        )
     }
     fn name(self) -> &'static str {
         match self {
             Self::Asi676 => "ZWO ASI676MC",
             Self::Asi662 => "ZWO ASI662MC",
+            Self::Asi585 => "ZWO ASI585MM Pro",
             Self::Duo => "ZWO ASI2600MM Duo",
             Self::Guide => "ZWO ASI220MM Mini",
             Self::Asi6200 => "ZWO ASI6200MM Pro",
@@ -70,6 +77,7 @@ impl Model {
         match self {
             Self::Asi676 => 0x676d,
             Self::Asi662 => 0x662b,
+            Self::Asi585 => 0x585e,
             Self::Duo => 0x2601,
             Self::Guide => 0x2209,
             Self::Asi6200 => 0x620b,
@@ -80,6 +88,7 @@ impl Model {
         let (width, height, pixel, bits, bins, alignment) = match self {
             Self::Asi676 => (3552, 3552, 2.0, 12, vec![1], 2),
             Self::Asi662 => (1920, 1080, 2.9, 12, vec![1], 8),
+            Self::Asi585 => (3840, 2160, 2.9, 12, vec![1, 2, 3, 4], 4),
             Self::Duo | Self::Asi2600P25 => (6248, 4176, 3.76, 16, vec![1, 2, 3, 4], 16),
             Self::Guide => (1920, 1080, 4.0, 12, vec![1, 2], 2),
             Self::Asi6200 => (9576, 6388, 3.76, 16, vec![1, 2, 3, 4], 16),
@@ -94,6 +103,7 @@ impl Model {
         let (gain_min, gain_max, offset_min, offset_max, offset_default, exp_max) = match self {
             Self::Asi676 => (0, 600, 0, 200, 10, super::settings::MAX_EXPOSURE_US as i32),
             Self::Asi662 => (0, 600, 0, 300, 15, super::settings::MAX_EXPOSURE_US as i32),
+            Self::Asi585 => (0, 600, 0, 300, 3, super::settings::MAX_EXPOSURE_US as i32),
             Self::Duo => (-25, 700, 0, 240, 50, asi2600::MAX_EXPOSURE_US as i32),
             Self::Asi2600P25 => (-25, 700, 0, 240, 1, asi2600::MAX_EXPOSURE_US as i32),
             Self::Guide => (0, 600, 200, 1500, 200, 10_000_000),
@@ -116,6 +126,9 @@ impl Model {
                 (17, 0, 1, 0, true),
                 (21, 0, 1, 0, true),
             ] {
+                if kind == 21 && self == Self::Asi585 {
+                    continue;
+                }
                 caps.push(
                     json!({"type":kind,"min":min,"max":max,"value":value,"writable":writable}),
                 );
@@ -138,6 +151,7 @@ impl Model {
                 ensure!(bin == 1, "ASI662MC direct capture supports bin 1 only");
                 asi662::PROFILE.validate(settings)
             }
+            Self::Asi585 => asi585::raw_settings(settings, bin).map(|_| ()),
             Self::Duo | Self::Asi2600P25 => asi2600::raw_settings(settings, gain, bin).map(|_| ()),
             Self::Guide => asi220::raw_settings(settings, bin).map(|_| ()),
             Self::Asi6200 => asi6200::raw_settings(settings, gain, bin).map(|_| ()),
@@ -240,7 +254,15 @@ fn open_camera(
     };
     info["auxiliaryControls"] = json!(auxiliary);
     if model.cooled() {
-        camera.enable_environment(auxiliary)?;
+        camera.enable_environment(
+            auxiliary,
+            model != Model::Asi585,
+            if model == Model::Asi585 {
+                super::environment::CoolerOutput::Dac
+            } else {
+                super::environment::CoolerOutput::Fpga
+            },
+        )?;
     }
     Ok((camera, info, found))
 }
@@ -594,7 +616,16 @@ impl Worker {
                         let _ = watchdog.send(Some(timeout));
                         let result = (|| -> Result<Frame> {
                             if video_mode && !settings.continuous_drain {
-                                video_pacer.wait(settings.video_max_fps, &cancelled)?;
+                                video_pacer.wait_servicing(
+                                    settings.video_max_fps,
+                                    &cancelled,
+                                    || {
+                                        if let Some((camera, _, _)) = &device {
+                                            camera.service_environment()?;
+                                        }
+                                        Ok(())
+                                    },
+                                )?;
                             }
                             if let Some((camera, info, _)) = &device {
                                 // Validated on the command thread, before capture starts.
@@ -602,6 +633,12 @@ impl Worker {
                                     .transfer_timeout(settings.transfer_timeout_seconds)
                                     .expect("validated transfer timeout");
                                 if video_mode {
+                                    let requested = settings.clone();
+                                    let settings = if model == Model::Asi585 {
+                                        asi585::raw_settings(&settings, bin)?
+                                    } else {
+                                        settings
+                                    };
                                     if let Some(session) = video.as_mut()
                                         && settings.continuous_drain
                                         && session.can_update(&settings)
@@ -625,7 +662,12 @@ impl Worker {
                                     }
                                     let session = video.as_mut().unwrap();
                                     session.set_max_fps(settings.video_max_fps);
-                                    session.next(camera, info, &cancelled)
+                                    let frame = session.next(camera, info, &cancelled)?;
+                                    if model == Model::Asi585 {
+                                        asi585::finish(frame, &requested, bin)
+                                    } else {
+                                        Ok(frame)
+                                    }
                                 } else {
                                     if let Some(mut old) = video.take() {
                                         old.stop(camera)?;
@@ -633,6 +675,9 @@ impl Worker {
                                     match model {
                                         Model::Asi676 => {
                                             asi676::capture(camera, info, &settings, false)
+                                        }
+                                        Model::Asi585 => {
+                                            asi585::capture(camera, info, &settings, bin, false)
                                         }
                                         Model::Asi662 => {
                                             asi662::capture(camera, info, &settings, false)
@@ -933,6 +978,7 @@ impl Host {
                 self.settings.offset = match model {
                     Model::Asi676 => 10,
                     Model::Asi662 => 15,
+                    Model::Asi585 => 3,
                     Model::Duo => 50,
                     Model::Guide => 200,
                     Model::Asi6200 => 50,
@@ -1088,7 +1134,7 @@ impl Host {
                 if video_mode {
                     ensure!(
                         self.model.video_profile().is_some(),
-                        "video is only available for ASI662MC/ASI676MC"
+                        "video is only available for ASI585MM Pro/ASI662MC/ASI676MC"
                     );
                     ensure!(
                         params["dark"] != true,
@@ -1098,7 +1144,14 @@ impl Host {
                         v.as_f64()
                             .ok_or_else(|| anyhow::anyhow!("invalid video maxFps"))
                     })?;
-                    bayer_video::validate(&settings, self.model.video_profile().unwrap())?;
+                    bayer_video::validate(
+                        &if self.model == Model::Asi585 {
+                            asi585::raw_settings(&settings, bin)?
+                        } else {
+                            settings.clone()
+                        },
+                        self.model.video_profile().unwrap(),
+                    )?;
                     // Live video is never retried as the same retained image.
                     ensure!(
                         params["readRetries"].as_u64().is_none_or(|v| v == 0),

@@ -28,7 +28,7 @@ mode automatically. The result and `stream-status` report the actual mode.
 
 - All SDK cameras use `ASIStartVideoCapture` / `ASIGetVideoData` for video.
   An unchanged stream does not rewrite ROI, exposure or white balance per frame.
-- Direct ASI662MC/ASI676MC reuse their established native video protocols,
+- Direct ASI585MM Pro/ASI662MC/ASI676MC reuse their established native video protocols,
   currently limited to 30 seconds. Their worker skips acquisition FPS sleeps
   in continuous mode, including during the existing bounded framing recovery.
 - Other Direct families, and exposures beyond that video limit, use repeated
@@ -52,7 +52,7 @@ latest-only slot, FPS limit and terminal-error checks are unchanged.
 
 Repeating `stream-start` with only `maxFps` changed adjusts delivery pacing,
 without reconfiguring capture. Exposure and optional `gain` edits are coalesced
-and applied after the in-flight frame drains. SDK video and Direct 662/676 video
+and applied after the in-flight frame drains. SDK video and Direct 585/662/676 video
 update scalar controls without a stream restart. A new ROI/format/mode instead
 stops and reconfigures at that boundary. Repeated still mode also uses boundary
 reconfiguration. Invalid edits are rejected before changing the stream.

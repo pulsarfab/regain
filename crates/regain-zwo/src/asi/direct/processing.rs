@@ -265,6 +265,7 @@ pub fn process_stream() -> Result<()> {
     let model = match request["model"].as_str() {
         None | Some("asi676mc") => "asi676mc",
         Some("asi662mc") => "asi662mc",
+        Some("asi585mm-pro") => "asi585mm-pro",
         Some("asi2600mm-duo" | "asi2600mm-pro-p25") => "asi2600mm-duo",
         Some("asi220mm-mini") => "asi220mm-mini",
         Some("asi6200mm-pro") => "asi6200mm-pro",
@@ -292,6 +293,9 @@ pub fn process_stream() -> Result<()> {
         "asi220mm-mini" => Defects::decode_guide(&calibration, width, height, x, y)?,
         "asi6200mm-pro" => Defects::decode_6200(&calibration, width, height, x, y)?,
         "asi662mc" => Defects::decode_662(&calibration, width, height, x, y)?,
+        "asi585mm-pro" => {
+            Defects::decode_profile(&calibration, (width, height, x, y), (3840, 2160, 1, 12))?
+        }
         _ => Defects::decode(&calibration, width, height, x, y)?,
     };
     let mut data = vec![0; width * height * 2];

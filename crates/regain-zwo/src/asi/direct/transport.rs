@@ -44,9 +44,14 @@ impl Camera {
             phase: Cell::new("idle"),
         })
     }
-    pub fn enable_environment(&self, auxiliary: bool) -> Result<()> {
+    pub fn enable_environment(
+        &self,
+        auxiliary: bool,
+        heater: bool,
+        output: super::environment::CoolerOutput,
+    ) -> Result<()> {
         *self.environment.borrow_mut() = Some(crate::asi::direct::environment::Environment::open(
-            self, auxiliary,
+            self, auxiliary, heater, output,
         )?);
         self.publish_environment()?;
         Ok(())
