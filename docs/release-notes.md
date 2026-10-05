@@ -1,43 +1,33 @@
-# PulsarFab regain 0.5.8.0
+# PulsarFab regain 0.5.9.0
 
-Adds opt-in continuous ZWO acquisition for preview/capture consumers. Existing
-NINA, ASCOM and Alpaca single-exposure behavior is unchanged. SDK remains default.
+Improves continuous ZWO frame delivery and SDK long-exposure waits. Existing
+NINA, ASCOM and Alpaca single-exposure behavior is unchanged.
 
-- Drain on the exclusive camera owner independently of IPC and consumer FPS,
-  retaining one latest frame instead of accumulating old frames.
-- Use native SDK video for SDK cameras. Direct ASI662MC/ASI676MC use native video
-  through 30 seconds; other supported Direct families and longer exposures use
-  repeated still capture, not an invented native video protocol.
-- Apply exposure/gain edits at a drained frame boundary without restarting
-  native video. Structural changes still stop/reconfigure/restart. Clear pending
-  frames and fence settings transitions before labeling new frames settled.
-- Match the observed ASICap long-exposure mode-bit and held timing-write order
-  for Direct ASI662MC/ASI676MC. Keep unchanged settings free of per-frame writes.
-- Treat SDK video read timeout as a bounded wait with backoff, not an immediate
-  exposure fault. Preserve terminal errors, cancellation and existing bounded
-  malformed-frame recovery. No additional discovery or implicit USB reset.
-- Report settings generations, frame age, acquired/delivered/replaced counts
-  and bounded timing diagnostics without image data or camera identities.
-- Prepare and validate serial ASCOM dispatch metadata before accepting clients,
-  retaining it for the server lifetime. Cold-start regression checks exercise
-  simultaneous first metadata reads from both Windows client architectures;
-  missing metadata remains a hard failure, not a retried or hidden error.
+- Raise the SDK video-read wait cap from one second to five seconds, retaining
+  exposure-derived shorter waits, normal-timeout backoff and the independent
+  exposure-aware no-progress watchdog. Terminal SDK errors still fault.
+- Serve cached stream status and latest-frame downloads independently of the
+  camera owner. Blocking SDK reads no longer block these IPC operations; blocked
+  output consumers still cannot stop camera draining. All hardware calls remain
+  serialized on one owner, with one bounded latest-frame slot.
+- Add an atomic stream poll for preview consumers.
+- Allow explicit opt-in delivery of transition frames, marked settingsSettled=false.
+  Keep the conservative settings fence for scientific/settings-sensitive consumers;
+  legacy continuous clients retain settled-only delivery.
+- Report raw arrival timing separately from delivered/settled frames. No camera
+  identity or image content is added to diagnostics.
+- Preserve delivery FPS limits, boundary-safe control edits, terminal faults,
+  and cleanup. No extra camera discovery or implicit USB resets.
 
-Windows operator checks passed full-frame exposure/gain transitions from 234 ms
-through 6.4 seconds and back on ASI662MC USB 2 and ASI676MC USB 3, using both SDK
-and Direct USB with a 0.5 FPS delivery cap. Automated tests use simulators and
-an inert SDK fixture, including slow consumers and blocked output pipes.
+Automated validation uses simulated cameras and inert SDK ABI fixtures, including
+a blocked acquisition call, slow/blocked output, transitional settings, FIFO-free
+latest-frame delivery and terminal failures. Physical checks are operator-run,
+not part of automated CI. These changes do not establish a firmware, power or
+interference root cause for the reported SDK stall. Long soak, optical settings
+accuracy, physical-disconnect recovery and Linux/macOS hardware remain unverified.
 
-The remote hard-lock failure was not reproduced. These changes align acquisition
-and control sequencing with observed ASICap behavior; they do not establish a
-firmware, interference or power diagnosis. Optical accuracy, cold startup,
-physical-disconnect recovery, long-running stability, other camera hardware and
-Linux/macOS continuous hardware remain unvalidated. No private images, camera
-identities, raw traces or calibration payloads are bundled.
-
-For Windows ASCOM and Alpaca, use `Regain-ASCOM-0.5.8.0-win-x64-setup.exe`.
-Install NINA from `https://nina-plugins.pulsarfab.com/` or
-`https://nina-plugins.psf-guard.com/`, or use `Regain-0.5.8.0.zip` manually.
-Plugin identity and minimum NINA version are unchanged. Rust version is 0.5.8.
-Windows release programs are signed by StackFoundry LLC. Existing published
-assets are unchanged; dependency licenses remain included.
+For Windows ASCOM and Alpaca use Regain-ASCOM-0.5.9.0-win-x64-setup.exe.
+NINA plugin 0.5.9.0 is available through the two public plugin registries or
+Regain-0.5.9.0.zip. Minimum NINA version and plugin identity are unchanged.
+Rust version is 0.5.9. Windows release programs are signed by StackFoundry LLC.
+Previously published assets remain immutable.

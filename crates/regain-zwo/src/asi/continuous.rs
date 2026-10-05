@@ -4,11 +4,87 @@ use anyhow::{Result, bail, ensure};
 use serde_json::{Value, json};
 use std::{
     io::{Read, Write},
-    sync::mpsc,
+    sync::{Arc, Mutex, mpsc},
     time::{Duration, Instant},
 };
 
 type Frame = (Value, Vec<u8>);
+
+/// Published camera-independent state. Never hold this lock across a backend
+/// call or pipe write: SDK reads can block, and clients can stop reading.
+#[derive(Default)]
+struct Published {
+    status: Value,
+    updated: Option<Instant>,
+    latest: Option<Frame>,
+    interval: Duration,
+    delivered_at: Option<Instant>,
+    delivered: u64,
+    replaced: u64,
+    owner_unresponsive: bool,
+}
+
+impl Published {
+    fn status(&self) -> Value {
+        let mut status = self.status.clone();
+        if !status.is_object() {
+            status = json!({"active":false,"error":null});
+        }
+        if self.owner_unresponsive {
+            status["error"] = json!("acquisition owner unresponsive for over ten seconds");
+        }
+        status["ready"] = json!(
+            self.latest.is_some()
+                && status["error"].is_null()
+                && self
+                    .delivered_at
+                    .is_none_or(|t| t.elapsed() >= self.interval)
+        );
+        status["deliveredFrames"] = json!(self.delivered);
+        status["replacedFrames"] = json!(self.replaced);
+        let elapsed = self.updated.map_or(0, |t| t.elapsed().as_millis() as u64);
+        for key in ["lastFrameAgeMilliseconds", "lastRawFrameAgeMilliseconds"] {
+            if let Some(age) = status[key].as_u64() {
+                status[key] = json!(age.saturating_add(elapsed));
+            }
+        }
+        status
+    }
+
+    fn call(&mut self, method: &str) -> Result<Frame> {
+        // The owner publishes after every bounded SDK poll, even during long
+        // exposures. Responsive cached IPC must not conceal a stuck native call.
+        if self.status["active"] == true
+            && self.status["error"].is_null()
+            && self
+                .updated
+                .is_some_and(|t| t.elapsed() > Duration::from_secs(10))
+        {
+            self.owner_unresponsive = true;
+            self.latest = None;
+        }
+        let status = self.status();
+        if method == "stream-status" {
+            return Ok((status, Vec::new()));
+        }
+        if method == "stream-poll" && (status["ready"] != true || status["settingsPending"] == true)
+        {
+            return Ok((json!({"continuous":status}), Vec::new()));
+        }
+        if let Some(error) = status["error"].as_str() {
+            bail!("continuous acquisition failed: {error}");
+        }
+        ensure!(
+            status["ready"] == true,
+            "continuous frame not ready or delivery FPS limited"
+        );
+        let (mut metadata, pixels) = self.latest.take().unwrap();
+        self.delivered += 1;
+        self.delivered_at = Some(Instant::now());
+        metadata["continuous"] = self.status();
+        Ok((metadata, pixels))
+    }
+}
 
 #[derive(Default)]
 struct Stream {
@@ -16,6 +92,12 @@ struct Stream {
     requested: Option<Value>,
     settling_until: Option<Instant>,
     discard_frames: u32,
+    deliver_transitions: bool,
+    raw_frames: u64,
+    transition_frames: u64,
+    last_raw_at: Option<Instant>,
+    raw_interval: Option<Duration>,
+    settled_generation: u64,
     latest: Option<Frame>,
     failure: Option<String>,
     failure_details: Value,
@@ -34,6 +116,47 @@ struct Stream {
 }
 
 impl Stream {
+    fn publish(&mut self, shared: &Mutex<Published>) {
+        let mut published = shared.lock().unwrap();
+        if self.params.is_none() {
+            published.owner_unresponsive = false;
+        } else if published.owner_unresponsive {
+            self.failure = Some("acquisition owner unresponsive for over ten seconds".into());
+            self.latest = None;
+        }
+        let new_session = self.params.is_some() && published.status["active"] != true;
+        if new_session {
+            published.delivered = 0;
+            published.replaced = 0;
+            published.delivered_at = None;
+        }
+        if self.params.is_none()
+            || self.failure.is_some()
+            || self.requested.is_some()
+            || published.status["settingsGeneration"] != self.generation
+            || (!self.deliver_transitions
+                && published
+                    .latest
+                    .as_ref()
+                    .is_some_and(|f| f.0["settingsSettled"] == false))
+        {
+            published.latest = None;
+        }
+        if self.params.is_none() {
+            published.delivered_at = None;
+        }
+        if let Some(frame) = self.latest.take()
+            && published.latest.replace(frame).is_some()
+        {
+            published.replaced += 1;
+        }
+        self.delivered = published.delivered;
+        self.replaced = published.replaced;
+        published.interval = self.interval;
+        published.status = self.status();
+        published.updated = Some(Instant::now());
+    }
+
     fn ready(&self, now: Instant) -> bool {
         self.failure.is_none()
             && self.latest.is_some()
@@ -88,6 +211,12 @@ impl Stream {
                 );
                 ensure!(p.is_object(), "stream parameters must be an object");
                 p.as_object_mut().unwrap().remove("maxFps");
+                let deliver_transitions = p
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("deliverTransitionFrames")
+                    .map_or(Some(false), |v| v.as_bool())
+                    .ok_or_else(|| anyhow::anyhow!("invalid deliverTransitionFrames"))?;
                 // Automatic selection never invents a model's USB video protocol.
                 if p.get("mode").is_none() {
                     let native = self.camera["captureModes"]
@@ -108,6 +237,7 @@ impl Stream {
                 );
                 if self.params.as_ref() != Some(&p) {
                     command("validate", p.clone())?;
+                    self.deliver_transitions = deliver_transitions;
                     if self.params.is_some() {
                         // The acquisition owner applies edits only after draining
                         // the in-flight frame, never midway through a Direct trigger.
@@ -133,6 +263,10 @@ impl Stream {
                     self.acquired = 0;
                     self.delivered = 0;
                     self.replaced = 0;
+                    self.raw_frames = 0;
+                    self.transition_frames = 0;
+                    self.last_raw_at = None;
+                    self.raw_interval = None;
                     self.generation += 1;
                     self.configured_at = Some(Instant::now());
                     self.last_frame_at = None;
@@ -140,11 +274,29 @@ impl Stream {
                     // Keep delivery cadence across settings changes.
                 } else {
                     self.requested = None;
+                    if !deliver_transitions
+                        && self
+                            .latest
+                            .as_ref()
+                            .is_some_and(|f| f.0["settingsSettled"] == false)
+                    {
+                        self.latest = None;
+                    }
+                    self.deliver_transitions = deliver_transitions;
                 }
                 self.interval = Duration::from_secs_f64(1.0 / fps);
                 Ok((self.status(), Vec::new()))
             }
             "stream-status" => Ok((self.status(), Vec::new())),
+            "stream-poll" => {
+                // One round trip: do not force a blocking SDK read between a
+                // readiness query and downloading the already available frame.
+                if self.ready(Instant::now()) && self.requested.is_none() {
+                    self.command("stream-download", Value::Null, command)
+                } else {
+                    Ok((json!({"continuous":self.status()}), Vec::new()))
+                }
+            }
             "stream-download" => {
                 if let Some(error) = &self.failure {
                     bail!("continuous acquisition failed: {error}");
@@ -190,7 +342,10 @@ impl Stream {
                 if method == "open" {
                     self.delivered_at = None;
                     self.generation = 0;
+                    self.settled_generation = 0;
                     v["continuousAcquisition"] = json!({"supported":true,"buffer":"latest-only",
+                        "transitionFrameDelivery":true,
+                        "atomicFramePoll":true,
                         "fpsScope":"delivery","settingsChange":"scalar-boundary-structural-restart"});
                     self.camera = v.clone();
                 }
@@ -203,6 +358,9 @@ impl Stream {
         json!({"active":self.params.is_some(), "ready":self.ready(Instant::now()),
             "error":self.failure,"errorDetails":self.failure_details,"acquiredFrames":self.acquired,"deliveredFrames":self.delivered,
             "replacedFrames":self.replaced,"mode":self.params.as_ref().map(|p| &p["mode"]),
+            "rawFrames":self.raw_frames,"transitionFrames":self.transition_frames,
+            "lastRawFrameAgeMilliseconds":self.last_raw_at.map(|t|t.elapsed().as_millis()),
+            "rawFrameIntervalMilliseconds":self.raw_interval.map(|d|d.as_millis()),
             "fpsScope":"delivery", "stopping":self.stopping,"settingsGeneration":self.generation,
             "settingsPending":self.requested.is_some(),
             "settling":self.discard_frames > 0 || self.settling_until.is_some_and(|t| Instant::now() < t),
@@ -225,6 +383,10 @@ impl Stream {
                 _ => bail!("unexpected capture state {state}"),
             }
             let mut frame = command("download", Value::Null)?;
+            let raw_at = Instant::now();
+            self.raw_interval = self.last_raw_at.map(|t| raw_at.duration_since(t));
+            self.last_raw_at = Some(raw_at);
+            self.raw_frames += 1;
             if self.stopping {
                 command("stop", Value::Null)?;
                 self.params = None;
@@ -263,19 +425,32 @@ impl Stream {
                 self.params = Some(next);
                 return Ok(());
             }
-            if self.discard_frames > 0 || self.settling_until.is_some_and(|t| Instant::now() < t) {
+            let transitional =
+                self.discard_frames > 0 || self.settling_until.is_some_and(|t| raw_at < t);
+            if transitional {
                 self.discard_frames = self.discard_frames.saturating_sub(1);
-                command("start", params)?;
-                return Ok(());
+                self.transition_frames += 1;
+                diagnostic(
+                    "stream.transition_frame",
+                    json!({
+                        "rawSequence":self.raw_frames,"settingsGeneration":self.generation,
+                        "rawFrameIntervalMilliseconds":self.raw_interval.map(|d|d.as_millis()),
+                        "millisecondsSinceConfigured":self.configured_at.map(|t|t.elapsed().as_millis()),
+                        "deliveredToLatestSlot":self.deliver_transitions
+                    }),
+                );
+                if !self.deliver_transitions {
+                    command("start", params)?;
+                    return Ok(());
+                }
+            } else {
+                self.settling_until = None;
             }
-            self.settling_until = None;
             self.acquired += 1;
-            let first_for_generation = self.last_frame_at.is_none_or(|last| {
-                self.configured_at
-                    .is_some_and(|configured| last < configured)
-            });
+            let first_for_generation = !transitional && self.settled_generation != self.generation;
             self.last_frame_at = Some(Instant::now());
             if first_for_generation {
+                self.settled_generation = self.generation;
                 diagnostic(
                     "stream.first_frame",
                     json!({"settingsGeneration":self.generation,
@@ -292,6 +467,10 @@ impl Stream {
             }
             frame.0["acquisitionSequence"] = json!(self.acquired);
             frame.0["settingsGeneration"] = json!(self.generation);
+            frame.0["settingsSettled"] = json!(!transitional);
+            frame.0["rawSequence"] = json!(self.raw_frames);
+            frame.0["rawFrameIntervalMilliseconds"] =
+                json!(self.raw_interval.map(|d| d.as_millis()));
             if self.latest.replace(frame).is_some() {
                 self.replaced += 1;
             }
@@ -344,6 +523,8 @@ pub(super) fn serve(
 ) -> Result<()> {
     let (requests, receiver) = mpsc::sync_channel::<Value>(1);
     let (replies, response) = mpsc::sync_channel::<Frame>(1);
+    let published = Arc::new(Mutex::new(Published::default()));
+    let io_published = Arc::clone(&published);
     let io = std::thread::spawn(move || -> Result<()> {
         let (mut input, mut output) = (std::io::stdin().lock(), std::io::stdout().lock());
         loop {
@@ -359,8 +540,28 @@ pub(super) fn serve(
             input.read_exact(&mut data)?;
             let request: Value = serde_json::from_slice(&data)?;
             ensure!(request["version"] == 1, "unsupported protocol");
-            requests.send(request)?;
-            let (reply, pixels) = response.recv()?;
+            let method = request["method"].as_str().unwrap_or("");
+            let (reply, pixels) = if matches!(
+                method,
+                "stream-status" | "stream-poll" | "stream-download"
+            ) {
+                // Cache and frame consumption require no camera request. Release
+                // the mutex before serialization/output, including large frames.
+                let result = io_published.lock().unwrap().call(method);
+                match result {
+                    Ok((value, pixels)) => (
+                        json!({"version":1,"id":request["id"],"ok":true,"result":value,"binaryLength":pixels.len()}),
+                        pixels,
+                    ),
+                    Err(error) => (
+                        json!({"version":1,"id":request["id"],"ok":false,"error":format!("{error:#}"),"binaryLength":0}),
+                        Vec::new(),
+                    ),
+                }
+            } else {
+                requests.send(request)?;
+                response.recv()?
+            };
             let data = serde_json::to_vec(&reply)?;
             ensure!(data.len() <= 65536, "reply too large");
             output.write_all(&(data.len() as u32).to_le_bytes())?;
@@ -407,6 +608,7 @@ pub(super) fn serve(
                             (reply, Vec::new())
                         }
                     };
+                stream.publish(&published);
                 if replies.send((reply, bytes)).is_err() {
                     break;
                 }
@@ -415,6 +617,7 @@ pub(super) fn serve(
             Err(mpsc::RecvTimeoutError::Timeout) => (),
         }
         stream.tick(&mut command);
+        stream.publish(&published);
     }
     let stopped = stream.stop(&mut command);
     let closed = command("close", Value::Null);
@@ -474,6 +677,205 @@ mod tests {
         );
         assert!(s.ready(s.delivered_at.unwrap() + Duration::from_secs(10)));
     }
+    #[test]
+    fn long_transition_preview_flows_without_claiming_settled_settings() {
+        let mut s = Stream::default();
+        start(
+            &mut s,
+            json!({"microseconds":3_000_000,"maxFps":0.5,"deliverTransitionFrames":true}),
+        );
+        s.tick(&mut backend);
+        s.command(
+            "stream-start",
+            json!({"microseconds":20_000_000,"maxFps":0.5,"deliverTransitionFrames":true}),
+            &mut backend,
+        )
+        .unwrap();
+        s.tick(&mut backend); // completed old frame is the control boundary
+        let generation = s.generation;
+        for sequence in 3..=4 {
+            s.tick(&mut backend);
+            // The wall-clock and two-frame fences still protect AE, not preview.
+            assert!(s.status()["settling"] == true);
+            s.delivered_at = None; // advance the delivery clock without sleeping
+            let frame = s
+                .command("stream-download", Value::Null, &mut backend)
+                .unwrap();
+            assert_eq!(frame.0["settingsSettled"], false);
+            assert_eq!(frame.0["rawSequence"], sequence);
+            assert_eq!(frame.0["settingsGeneration"], generation);
+        }
+        s.settling_until = Some(Instant::now());
+        s.tick(&mut backend);
+        s.delivered_at = None;
+        let frame = s
+            .command("stream-download", Value::Null, &mut backend)
+            .unwrap();
+        assert_eq!(frame.0["settingsSettled"], true);
+        assert_eq!(s.raw_frames, 5);
+        assert_eq!(s.transition_frames, 2);
+        assert_eq!(s.delivered, 3);
+        assert!(s.raw_interval.is_some());
+    }
+    #[test]
+    fn cached_ipc_latches_unresponsive_owner_and_invalidates_buffer() {
+        let mut s = Stream::default();
+        let shared = Mutex::new(Published::default());
+        start(&mut s, json!({"microseconds":60_000_000}));
+        s.tick(&mut backend);
+        s.publish(&shared);
+        {
+            let mut published = shared.lock().unwrap();
+            published.updated = Some(Instant::now() - Duration::from_secs(11));
+            let (metadata, pixels) = published.call("stream-poll").unwrap();
+            assert!(pixels.is_empty());
+            assert!(
+                metadata["continuous"]["error"]
+                    .as_str()
+                    .unwrap()
+                    .contains("owner unresponsive")
+            );
+            assert!(published.latest.is_none());
+        }
+        s.tick(&mut backend); // A late native return must not revive the stream.
+        s.publish(&shared);
+        assert!(s.failure.is_some());
+        assert!(shared.lock().unwrap().call("stream-download").is_err());
+        s.stop(&mut backend).unwrap();
+        s.publish(&shared);
+        assert!(!shared.lock().unwrap().owner_unresponsive);
+        start(&mut s, json!({"microseconds":60_000_000}));
+        s.publish(&shared);
+        assert!(shared.lock().unwrap().call("stream-status").unwrap().0["error"].is_null());
+    }
+
+    #[test]
+    fn publication_preserves_decimation_clears_on_edits_and_latches_faults() {
+        let mut s = Stream::default();
+        let shared = Mutex::new(Published::default());
+        start(&mut s, json!({"microseconds":1000,"maxFps":0.5}));
+        s.publish(&shared);
+        for _ in 0..3 {
+            s.tick(&mut backend);
+            s.publish(&shared);
+        }
+        assert_eq!(shared.lock().unwrap().status()["replacedFrames"], 2);
+        assert!(
+            !shared
+                .lock()
+                .unwrap()
+                .call("stream-poll")
+                .unwrap()
+                .1
+                .is_empty()
+        );
+        s.tick(&mut backend);
+        s.publish(&shared);
+        assert!(
+            shared
+                .lock()
+                .unwrap()
+                .call("stream-poll")
+                .unwrap()
+                .1
+                .is_empty()
+        );
+        assert_eq!(shared.lock().unwrap().status()["deliveredFrames"], 1);
+        s.command("stream-start", json!({"microseconds":2000}), &mut backend)
+            .unwrap();
+        s.publish(&shared);
+        assert!(shared.lock().unwrap().latest.is_none());
+        s.failure = Some("terminal error".into());
+        s.publish(&shared);
+        assert!(shared.lock().unwrap().call("stream-download").is_err());
+        assert_eq!(
+            shared.lock().unwrap().call("stream-poll").unwrap().0["continuous"]["error"],
+            "terminal error"
+        );
+        s.stop(&mut backend).unwrap();
+        s.publish(&shared);
+        s.command("stream-start", json!({"microseconds":1000}), &mut backend)
+            .unwrap();
+        s.publish(&shared);
+        s.tick(&mut backend);
+        s.publish(&shared);
+        assert_eq!(shared.lock().unwrap().status()["deliveredFrames"], 0);
+        assert!(
+            !shared
+                .lock()
+                .unwrap()
+                .call("stream-poll")
+                .unwrap()
+                .1
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn atomic_poll_delivers_ready_frame_without_an_intervening_backend_read() {
+        let mut s = Stream::default();
+        start(&mut s, json!({"microseconds":20_000_000,"maxFps":0.5}));
+        assert!(
+            s.command("stream-poll", Value::Null, &mut backend)
+                .unwrap()
+                .1
+                .is_empty()
+        );
+        s.tick(&mut backend);
+        let mut no_backend =
+            |_: &str, _: Value| -> Result<Frame> { panic!("poll must only use cached state") };
+        let frame = s
+            .command("stream-poll", Value::Null, &mut no_backend)
+            .unwrap();
+        assert_eq!(frame.1, vec![42; 8]);
+        assert_eq!(frame.0["continuous"]["deliveredFrames"], 1);
+        assert!(
+            s.command("stream-poll", Value::Null, &mut no_backend)
+                .unwrap()
+                .1
+                .is_empty()
+        );
+        s.tick(&mut backend);
+        assert!(
+            s.command("stream-poll", Value::Null, &mut no_backend)
+                .unwrap()
+                .1
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn transition_opt_out_clears_uncertain_slot_and_keeps_delivery_limit() {
+        let mut s = Stream::default();
+        start(
+            &mut s,
+            json!({"microseconds":20_000_000,"gain":300,"maxFps":0.5,"deliverTransitionFrames":true}),
+        );
+        s.tick(&mut backend);
+        s.command("stream-download", Value::Null, &mut backend)
+            .unwrap();
+        let next = json!({"microseconds":20_000_000,"gain":270,"maxFps":0.5,"deliverTransitionFrames":true});
+        s.command("stream-start", next.clone(), &mut backend)
+            .unwrap();
+        s.tick(&mut backend);
+        for _ in 0..5 {
+            s.tick(&mut backend);
+        }
+        assert_eq!(s.latest.as_ref().unwrap().0["settingsSettled"], false);
+        assert!(!s.ready(Instant::now()));
+        assert!(s.replaced >= 4);
+        let mut settled_only = next;
+        settled_only["deliverTransitionFrames"] = json!(false);
+        s.command("stream-start", settled_only, &mut backend)
+            .unwrap();
+        assert!(s.latest.is_none());
+        s.tick(&mut backend);
+        assert!(s.latest.is_none());
+        s.settling_until = Some(Instant::now());
+        s.tick(&mut backend);
+        assert_eq!(s.latest.as_ref().unwrap().0["settingsSettled"], true);
+    }
+
     #[test]
     fn fps_only_changes_do_not_reconfigure_but_settings_changes_discard_old_frame() {
         let mut s = Stream::default();

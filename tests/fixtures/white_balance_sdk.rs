@@ -13,6 +13,7 @@ struct State {
     active: bool,
     video: bool,
     video_reads: u64,
+    exposure: i64,
     timeout_at: Option<std::time::Instant>,
 }
 static STATE: Mutex<State> = Mutex::new(State {
@@ -24,6 +25,7 @@ static STATE: Mutex<State> = Mutex::new(State {
     active: false,
     video: false,
     video_reads: 0,
+    exposure: 1000,
     timeout_at: None,
 });
 #[no_mangle]
@@ -109,6 +111,7 @@ pub unsafe extern "C" fn ASIGetControlValue(
 #[no_mangle]
 pub extern "C" fn ASISetControlValue(_: c_int, c: c_int, value: c_long, auto: c_int) -> c_int {
     eprintln!("CALL set {c} {value} {auto}");
+    if c == 1 { STATE.lock().unwrap().exposure = value as i64; }
     if c == 3 || c == 4 {
         if c == 4 && value == 50 && std::env::var_os("REGAIN_FIXTURE_REJECT_WB").is_some() {
             return 0;
@@ -192,10 +195,17 @@ pub extern "C" fn ASIStopVideoCapture(_: c_int) -> c_int {
 #[no_mangle]
 pub unsafe extern "C" fn ASIGetVideoData(_: c_int, data: *mut u8, size: c_long, wait: c_int) -> c_int {
     let mut s = STATE.lock().unwrap();
-    if !s.video || !(500..=1000).contains(&wait) { return 16; }
+    let expected_wait = (s.exposure / 1000 * 2 + 500).clamp(500, 5000);
+    if !s.video || i64::from(wait) != expected_wait { return 16; }
     if size != c_long::from(s.width) * c_long::from(s.height) * 2 { return 9; }
     if s.timeout_at.is_some_and(|t| t.elapsed() < std::time::Duration::from_millis(90)) { return 16; }
     s.video_reads += 1;
+    if s.video_reads == 5 {
+        if let Some(marker) = std::env::var_os("REGAIN_FIXTURE_VIDEO_BLOCK_MARKER") {
+            std::fs::write(marker, b"reading").unwrap();
+            std::thread::sleep(std::time::Duration::from_millis(1500));
+        }
+    }
     // Timeouts must not trigger stop/start or a new single exposure.
     if s.video_reads <= 3 {
         s.timeout_at = Some(std::time::Instant::now());

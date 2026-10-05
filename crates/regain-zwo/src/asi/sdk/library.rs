@@ -15,6 +15,14 @@ pub const LIBRARY_NAME: &str = "libASICamera2.so";
 #[cfg(target_os = "macos")]
 pub const LIBRARY_NAME: &str = "libASICamera2.dylib";
 
+fn video_wait_ms(exposure_us: i64) -> i32 {
+    (exposure_us
+        .saturating_div(1000)
+        .saturating_mul(2)
+        .saturating_add(500))
+    .clamp(500, 5000) as i32
+}
+
 pub struct Sdk {
     lib: Library,
     id: Option<i32>,
@@ -395,8 +403,7 @@ impl Sdk {
     pub fn video_frame(&self, bytes: &mut [u8], exposure_us: i64) -> Result<bool> {
         // SDK recommendation: 2 * exposure + 500 ms. Bound a single call so
         // the owner can service stop/settings commands during long exposures.
-        let wait_ms =
-            (exposure_us.saturating_div(1000).saturating_mul(2) + 500).clamp(500, 1000) as i32;
+        let wait_ms = video_wait_ms(exposure_us);
         let code = unsafe {
             self.symbol::<raw::GetVideoData>(b"ASIGetVideoData\0")?(
                 self.id()?,
@@ -554,6 +561,26 @@ impl Drop for Sdk {
     fn drop(&mut self) {
         if let Err(error) = self.close() {
             eprintln!("SDK close/settings restoration failed: {error:#}");
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::video_wait_ms;
+
+    #[test]
+    fn video_wait_tracks_exposure_with_five_second_cap() {
+        for (exposure, expected) in [
+            (0, 500),
+            (234_000, 968),
+            (1_000_000, 2500),
+            (3_000_000, 5000),
+            (20_000_000, 5000),
+            (60_000_000, 5000),
+            (i64::MAX, 5000),
+        ] {
+            assert_eq!(video_wait_ms(exposure), expected);
         }
     }
 }
