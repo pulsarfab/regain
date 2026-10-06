@@ -828,8 +828,7 @@ The store accepts at most 64 bindings and 512 KiB of strict JSON, rejects duplic
 keys/identities and unknown members, and serializes saves under a persistent OS
 lock file. Save checks the exact expected revision and writes a fresh revision by
 flushed atomic replacement. An unreadable file is not treated as an empty file
-and native setup cannot overwrite it. Selection removal/management and descriptor
-configuration editing remain pending.
+and native setup cannot overwrite it. Selection removal/management remains pending.
 
 Connect copies the selection, checks its instance before launching the helper,
 authenticates the live host, and matches the output UUID/class exactly. Metadata
@@ -854,3 +853,33 @@ reconnect. Writable targets use the host's exposed grid; the host checks source
 permission/grid on every command. Failed readback throws because NINA's NaN
 comparison would otherwise report successful completion. Poll/write versions
 prevent a pre-write response from restoring invalidated cached state.
+
+## Shared native configuration editor
+
+`HubConfigurationDraft`, `HubEditorSession` and the themed WPF window live in the
+same .NET 8/net48 frontend assembly. NINA's output selector opens this editor
+through private IPC; native ASCOM adoption is still required. The editor client
+has no output lease and never disconnects another frontend to make Apply succeed.
+
+Draft fields, tagged transport/device variants and described scalar choices come
+from `describeConfig`. Generated IDs are immutable; saved device/channel numbers
+stay fixed. The public scalar setter cannot replace a whole record or collection
+and thereby bypass those protections. Structural operations create new IDs or
+remove explicitly selected items. Hidden store metadata survives in the candidate;
+ordinary preview omits it and fields marked sensitive or export-omit. The host's
+identity ledger and cross-field validator remain authoritative.
+
+Review validates a cloned candidate without connecting sources. Apply requires
+that exact reviewed candidate, draft version and saved revision. An in-flight
+Apply is sent once. A successful reply still requires reconciliation with saved
+configuration and host status; a lost reply or revision conflict cannot be
+cleared by reviewing the same stale draft. Reload may attach a fresh private
+client, but never retries Apply. The editor shows both revisions if another
+editor commits between this Apply and the following reload.
+
+Closing the editor cancels its waits and closes only its private client. Disposed
+state is terminal even if a late response arrives; token-source disposal waits
+for active operations/cancellation callbacks. Scalar parse errors retain the
+invalid text across collapsed sections and block structural changes or review.
+Collection controls load lazily in 32-item pages. Cached source health is separate
+from live inspection, which remains a native setup refinement.

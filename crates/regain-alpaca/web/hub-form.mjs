@@ -12,6 +12,12 @@ export function initialValue(reader, raw, uuid = newIdentity) {
   if (Object.hasOwn(schema, 'default')) return structuredClone(schema.default);
   if (Object.hasOwn(schema, 'const')) return schema.const;
   if (schema.oneOf) {
+    const scalar = reader.choices(schema);
+    if (scalar.length) {
+      const choice = scalar.find(v => v.enabled);
+      if (!choice) throw new Error('No supported configuration choice');
+      return choice.value;
+    }
     const choice = reader.variants(schema).find(v => v.enabled);
     if (!choice) throw new Error('No supported configuration choice');
     return initialValue(reader, choice.schema, uuid);
@@ -39,11 +45,12 @@ export function previewValue(reader, raw, value) {
   const metadata = schema['x-regain'];
   if (metadata?.hidden || metadata?.export === 'omit' || metadata?.sensitive) return undefined;
   if (value == null) return value;
-  if (schema.oneOf) schema = reader.resolve(schema.oneOf.find(v => v.properties?.kind?.const === value.kind) ?? {});
+  if (schema.oneOf && reader.variants(schema).length) schema = reader.resolve(reader.variants(schema).find(v => v.kind === value.kind)?.schema ?? {});
   if (schema.anyOf) schema = reader.resolve(schema.anyOf.find(v => v.type !== 'null'));
   if (Array.isArray(value)) return value.map(item => previewValue(reader, schema.items ?? {}, item));
   if (typeof value === 'object') return Object.fromEntries(Object.entries(value).flatMap(([key,item]) => {
-    const preview = previewValue(reader, schema.properties?.[key] ?? {}, item);
+    if (!schema.properties?.[key]) return [];
+    const preview = previewValue(reader, schema.properties[key], item);
     return preview === undefined ? [] : [[key,preview]];
   }));
   return value;
@@ -78,7 +85,7 @@ export function renderConfiguration(container, reader, draft, base, changed) {
       return group;
     }
     if (schema.anyOf) schema = reader.resolve(schema.anyOf.find(v => v.type !== 'null'));
-    if (schema.oneOf) {
+    if (schema.oneOf && reader.variants(schema).length) {
       const select = el('select'); heading.append(select);
       for (const variant of reader.variants(schema)) {
         const option = el('option', variant.title + (variant.enabled ? '' : ' (not available)'));
@@ -117,11 +124,11 @@ export function renderConfiguration(container, reader, draft, base, changed) {
     }
     let input;
     const reference = schema['x-regain']?.reference;
-    if (reference || schema.enum) {
+    if (reference || reader.choices(schema).length) {
       input = el('select'); input.append(el('option', ''));
       const choices = reference ? (reference === 'source' ? draft.sources : draft.outputs).map(v => ({value:v.id, label:`${v.label} (${v.id})`, enabled:true})) : reader.choices(schema).map(v => ({...v, label:v.value + (v.enabled ? '' : ' (not available)')}));
       if (value && !choices.some(v => v.value === value)) choices.unshift({value, label:`Unavailable: ${value}`});
-      for (const choice of choices) { const option = el('option', choice.label); option.value = choice.value; option.disabled = choice.enabled === false; input.append(option); }
+      for (const choice of choices) { const option = el('option', choice.label); option.value = choice.value; option.disabled = choice.enabled === false; option.title = choice.description ?? ''; input.append(option); }
       input.value = value ?? '';
       input.onchange = () => { set(input.value); changed(); };
     } else {

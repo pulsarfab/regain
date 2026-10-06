@@ -2,8 +2,8 @@
 
 Regain Hub combines source devices into shared Switch, SafetyMonitor, and
 ObservingConditions outputs. The current development branch can publish those
-outputs through Alpaca or the native NINA providers. Native ASCOM hub outputs,
-the full native configuration editor and broader proxy devices remain in progress;
+outputs through Alpaca or the native NINA providers. Both frontends can edit the
+shared configuration. Native ASCOM hub outputs and broader proxy devices remain in progress;
 this is not a released feature.
 
 To try the editor without equipment, copy
@@ -58,9 +58,32 @@ device. Names identify simulation explicitly. UUIDs identify outputs, so renamin
 or reordering does not change the saved equipment selection.
 
 Setup uses the existing Regain theme and a private local connection. It starts or
-attaches to the shared host, without an HTTP listener or ASCOM output. Source and
-policy editing currently uses the web editor above; the shared-descriptor native
-editor remains on the plan. The native selector does not connect equipment.
+attaches to the shared host, without an HTTP listener or ASCOM output. Select
+**Edit shared configuration** after loading outputs to edit sources, channel
+mappings, safety policies and weather settings. Field labels, descriptions,
+choices, defaults and bounds come from the host's schema. The selector and editor
+do not acquire equipment leases.
+
+1. Expand a source or output to edit its fields. IDs remain fixed and can be
+   expanded for inspection; new items receive new IDs. Collections show up to
+   32 items per page. Correct invalid input before changing the form structure.
+2. Select **Review changes** to validate through the host and inspect the redacted
+   configuration. Further edits invalidate that review.
+3. Disconnect all output clients, then select **Apply reviewed configuration**.
+   The editor sends one revision-checked request and reloads the saved result.
+   A conflict or uncertain outcome requires reloading; Apply is never replayed.
+4. Use **Source health** for saved host status or cached source diagnostics.
+   Reading health does not open an equipment connection. Close the editor and
+   select **Load hub outputs** again to refresh the output choices.
+
+![Native hub configuration draft with a simulated output](images/hub-native-editor-simulation.png)
+
+![Native hub configuration review before applying](images/hub-native-review-simulation.png)
+
+These are renders of the actual WPF window during an automated simulation test
+against the production host. They demonstrate setup; interactive NINA and
+real-device acceptance remain pending. Initialization, credential management,
+inspection, simulation controls and selection removal remain on the plan.
 
 Selections are stored in `%LOCALAPPDATA%\Regain\hub-frontends.json`. They contain
 the configuration path, hub instance and output IDs, class, label and simulation

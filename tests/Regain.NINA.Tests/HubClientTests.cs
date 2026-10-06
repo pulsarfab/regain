@@ -126,7 +126,10 @@ public sealed class HubClientTests
     [Fact]
     public async Task QueuedCancellationReturnsCapacityWithoutSendingItsCommand()
     {
-        using var peer = await Peer.Open(limits: new HubClientLimits(TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(5)));
+        // This deliberately stalls a large writer while queued cancellation is
+        // exercised. Deadline behavior has separate short-bound fixtures; a
+        // cold/loaded CI runner must not turn this ordering test into one.
+        using var peer = await Peer.Open(limits: new HubClientLimits(TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(20)));
         var first = peer.Client.RequestAsync(JsonSerializer.SerializeToElement(new { op = "put", payload = new string('x', 100000) }));
         await peer.PartialRead();
         using var token = new CancellationTokenSource();

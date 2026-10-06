@@ -11,7 +11,7 @@ using Xunit;
 
 namespace Regain.NINA.Tests;
 
-public sealed class HubNativeTests
+public sealed partial class HubNativeTests
 {
     private static HubSelection Binding(string directory, string type = "switch") => new() {
         ConfigPath = Path.Combine(directory, "configuration.json"), InstanceId = Guid.NewGuid(), OutputId = Guid.NewGuid(),

@@ -20,8 +20,10 @@ public sealed class HubSelectionWindow : Window
     private readonly TextBlock status = new() { TextWrapping = TextWrapping.Wrap };
     private readonly Button load = new() { Content = "Load hub outputs", Padding = new Thickness(14, 8, 14, 8) };
     private readonly Button save = new() { Content = "Save selected output", Padding = new Thickness(14, 8, 14, 8), IsEnabled = false };
+    private readonly Button edit = new() { Content = "Edit shared configuration", Padding = new Thickness(14, 8, 14, 8), IsEnabled = false };
     private HubSelection? result;
     private string? loadedPath;
+    private Guid loadedInstance;
     private bool busy;
     private bool closed;
     private sealed class Choice(HubSelection binding)
@@ -34,7 +36,7 @@ public sealed class HubSelectionWindow : Window
         this.executable = executable; this.store = store; this.type = type;
         try { expectedRevision = store.Load().Revision; selectionsReadable = true; }
         catch { selectionsReadable = false; }
-        Title = "PulsarFab regain — hub " + type; Width = 760; Height = 470; MinWidth = 620;
+        Title = "PulsarFab regain — hub " + type; Width = 760; Height = 520; MinWidth = 620;
         WindowStartupLocation = WindowStartupLocation.CenterScreen; SetupTheme.Apply(this);
         var panel = new StackPanel { Margin = new Thickness(24) };
         Content = new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
@@ -47,17 +49,17 @@ public sealed class HubSelectionWindow : Window
             var dialog = new OpenFileDialog { Filter = "Hub configuration (*.json)|*.json", CheckFileExists = true };
             if (dialog.ShowDialog(this) == true) path.Text = dialog.FileName;
         };
-        panel.Children.Add(browse); panel.Children.Add(load);
+        panel.Children.Add(browse); panel.Children.Add(load); panel.Children.Add(edit);
         panel.Children.Add(new TextBlock { Text = "Output (stable UUID)", Margin = new Thickness(0, 16, 0, 0) });
         panel.Children.Add(outputs); panel.Children.Add(save);
         panel.Children.Add(status);
         if (!selectionsReadable) status.Text = SelectionError;
         path.Text = current?.ConfigPath ?? "";
-        path.TextChanged += (_, _) => { save.IsEnabled = false; outputs.ItemsSource = null; loadedPath = null; };
+        path.TextChanged += (_, _) => { save.IsEnabled = false; edit.IsEnabled = false; outputs.ItemsSource = null; loadedPath = null; };
         outputs.SelectionChanged += (_, _) => save.IsEnabled = selectionsReadable && !busy && loadedPath == path.Text && outputs.SelectedItem is Choice;
         load.Click += async (_, _) => {
             if (busy) return;
-            busy = true; load.IsEnabled = false; save.IsEnabled = false; path.IsEnabled = false; browse.IsEnabled = false;
+            busy = true; load.IsEnabled = false; save.IsEnabled = false; edit.IsEnabled = false; path.IsEnabled = false; browse.IsEnabled = false;
             outputs.ItemsSource = null; loadedPath = null; status.Text = "Attaching to the shared hub…";
             try {
                 var selectedPath = path.Text;
@@ -69,7 +71,7 @@ public sealed class HubSelectionWindow : Window
                     DeviceType = type, Label = d.GetProperty("label").GetString()!, Simulated = d.GetProperty("simulated").GetBoolean()
                 })).ToArray();
                 lifetime.Token.ThrowIfCancellationRequested();
-                outputs.ItemsSource = choices; loadedPath = selectedPath;
+                outputs.ItemsSource = choices; loadedPath = selectedPath; loadedInstance = attachment.InstanceId;
                 outputs.SelectedItem = choices.FirstOrDefault(c => current?.InstanceId == c.Binding.InstanceId && current.OutputId == c.Binding.OutputId)
                     ?? choices.FirstOrDefault();
                 status.Text = !selectionsReadable ? SelectionError : choices.Length == 0 ? "No outputs of this class exist in this hub configuration." :
@@ -79,8 +81,16 @@ public sealed class HubSelectionWindow : Window
             finally {
                 busy = false; load.IsEnabled = true; path.IsEnabled = true; browse.IsEnabled = true;
                 save.IsEnabled = selectionsReadable && !closed && loadedPath == path.Text && outputs.SelectedItem is Choice;
+                edit.IsEnabled = !closed && loadedPath == path.Text;
                 if (closed) lifetime.Dispose();
             }
+        };
+        edit.Click += (_, _) => {
+            if (busy || loadedPath is null || loadedPath != path.Text) return;
+            try { HubConfigurationWindow.Show(this, executable, loadedPath, loadedInstance);
+                status.Text = "Load hub outputs again to refresh saved configuration changes."; }
+            catch { status.Text = "Could not open shared configuration setup."; }
+            finally { loadedPath = null; outputs.ItemsSource = null; save.IsEnabled = false; edit.IsEnabled = false; }
         };
         save.Click += (_, _) => {
             if (!selectionsReadable || busy || loadedPath != path.Text || outputs.SelectedItem is not Choice choice) return;

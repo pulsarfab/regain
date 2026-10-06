@@ -1149,3 +1149,77 @@ The shared native output selector is implemented. Complete shared-descriptor nat
 configuration editing, selection removal/management, diagnostics and interactive
 NINA acceptance remain required. Milestone 3 is not complete: COM imports and their
 hung-driver isolation are still pending. All broader original gates stay open.
+
+## Shared native configuration editor
+
+1. Keep native setup in the existing frontend assembly and reuse the setup theme.
+   A private editor client reads the host description/config/status, validates
+   drafts and sends one revision-checked Apply. It acquires no equipment lease,
+   starts no HTTP publisher and cannot disconnect a NINA client to save changes.
+2. Schema `oneOf` is not always a tagged object: ConnectionPolicy contains
+   described scalar constants. Both JavaScript and .NET readers now distinguish
+   these cases, preserve per-choice descriptions/capability gates, and initialize
+   an available scalar choice without inventing a `kind` property. Chrome verifies
+   the actual remote-source control changes to managed and reaches a valid review.
+3. Protect identity through the draft API as well as disabled controls. Scalar
+   setters cannot replace records/collections containing immutable descendants;
+   structural APIs create new UUIDs, while baseline lookup uses stable record IDs.
+   The host's ledger remains the final authority for retired IDs/numbers and
+   cross-field constraints. Unknown/hidden metadata survives in the candidate but
+   does not appear in the ordinary preview; credential references are redacted.
+4. Invalid scalar text must survive collapse and remain an error. Refuse structural
+   redraws while errors exist so removing/reordering fields cannot discard an
+   invalid draft silently. Expander events bubble; only the originating expander
+   may unload its content, otherwise collapsing a child destroys its ancestor.
+5. Review binds to a cloned candidate/version. Apply checks both again and sends
+   once. A committed response still requires reload; a lost committed response
+   cannot be cleared by another Review. A competing editor produces a conflict,
+   and an active output client produces a rejection without being disconnected.
+   If another commit wins after Apply, display the applied and current revisions.
+6. Dispose must remain terminal under late responses or queued review requests.
+   Cancel outside the lifecycle lock, retain the token source through active
+   operations and cancellation callbacks, then dispose it. Closing the setup
+   window closes only its private client; malformed review results require reload
+   instead of enabling Apply. Cancellation of a dispatched review can retire the
+   pipe and therefore requires explicit reconciliation too. A terminal cached-health
+   read failure also revokes any earlier review; diagnostic reads serialize with
+   the editor's review/apply operations so they cannot restore a stale review.
+7. Use lazy controls and 32-item pages, expandable readonly identities and a
+   single cached-health source picker. Do not create a button for every source
+   or pre-render every channel. Live inspection and richer policy diagnostics
+   remain separate setup refinements.
+8. The first WPF render returned transparent pixels despite a passing workflow.
+   Inspecting the pixels prevented treating an empty screenshot as evidence.
+   WPF throttles rendering when a desktop session has no display; the
+   [upstream compatibility guidance](https://github.com/dotnet/wpf/issues/2811#issuecomment-604764804)
+   documents a switch for short renders. Enable it only in the test runtime,
+   render the actual laid-out WPF content and reject empty captures. Production
+   rendering settings are unchanged. The verified images show automated
+   simulation, not interactive NINA or hardware acceptance.
+9. Push CI for 8e73b27 exposed the deliberately stalled writer in the queued
+   cancellation ordering test hitting its 2-second fixture frame deadline.
+   Increase that fixture to 10-second frames/20-second requests. Separate deadline
+   tests retain their short bounds, and production transport limits are unchanged.
+   PR CI for the same head passed all eight jobs; do not describe the failed push
+   as a green checkpoint.
+
+Validation: all 109 NINA tests pass (`artifacts/hub-native-editor-all-tests.log`),
+including 21 additional draft/editor/window checks. The real production-host
+fixtures cover saved edits, field errors, competing revisions, active clients,
+and no equipment leases. Fault tests cover committed reply loss, malformed
+validation, health transport failure and disposal while requests wait. The actual WPF window executes
+edit/review/apply/saved-health and host-survival checks; reviewed renders are in
+`docs/images/hub-native-*-simulation.png`. net48 x86/x64 public editor fixtures
+pass (`artifacts/hub-native-editor-net48.log`), as do warning-denied net48/net8/NINA
+builds (`artifacts/hub-native-editor-build.log`), 29 Alpaca checks after rebuilding
+the web resources, JavaScript contract/draft checks and four independent JSON
+Schema tests. Chrome verifies the actual scalar policy picker and host validation
+(`artifacts/hub-web-policy-reviewed.jpg`). Its disposable publisher/host were
+stopped after checking their executable and unique config path. No hardware was
+actuated. This increment still requires complete CI and interactive acceptance.
+
+Next: native setup initialization/credential management/inspection/simulation
+controls/selection management, interactive NINA acceptance, isolated COM imports,
+native ASCOM outputs, broader proxies and camera/coordination contracts, recovery,
+conformance and real-device trials, README/site/screenshots and final audit/merge.
+The full original plan remains in scope; milestone 3's complete gate is still open.

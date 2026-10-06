@@ -494,10 +494,25 @@ after durable apply, cancelled connections, uncertainty, per-metric failures and
 safe-evidence expiry through HTTP backoff without a source generation reset. Both
 native library targets build with warnings denied, and net48 x86/x64 attachment
 fixtures still pass. These interface tests are not interactive NINA acceptance.
-The native selector is implemented; a complete shared-descriptor configuration
-editor, selection management and frontend diagnostics are still required.
+The native selector now opens a shared-descriptor WPF editor for source mappings,
+safety policies and weather settings. A private setup session performs redacted
+review, one revision-checked Apply and explicit reconciliation without equipment
+leases or an HTTP listener. Saved IDs/numbers remain fixed, new records receive
+new IDs, invalid text survives collapsed sections, and collections load lazily
+in pages. Cached host/source health is available separately. Initialization,
+credential management, live inspection, simulation controls, richer diagnostics
+and selection removal/management remain required setup refinements.
 
-Next: the shared-descriptor native configuration editor and interactive NINA acceptance,
+This editor checkpoint adds 21 checks: draft/schema/control behavior, production
+host review/apply, competing revisions, connected-client rejection, lost committed
+reply, disposal/cancellation, health transport loss, malformed validation replies and an actual WPF
+window workflow. Screenshots are labeled automated simulation. Real net48 x86/x64
+processes also exercise editor review/apply/reconciliation. PR CI for native
+checkpoint 8e73b27 passed all eight jobs; push CI exposed the stalled-writer
+ordering fixture's short timeout, corrected without changing production deadlines
+or the separate timeout tests. This increment requires its own CI results.
+
+Next: native setup refinements and interactive NINA acceptance,
 isolated COM imports, connection/state/error conformance,
 and the remaining shared setup refinements. Basic frontend error translation is tested; complete
 protocol conformance remains unverified. Generic
@@ -508,7 +523,7 @@ milestone 2 or frontend/hardware gate is closed by these library controllers.
 
 - [ ] Implement isolated COM import with timeouts, explicit connection ownership,
   cached telemetry, and recovery from a hung driver host.
-- [ ] Add native NINA Switch, SafetyMonitor, and ObservingConditions providers and
+- [x] Add native NINA Switch, SafetyMonitor, and ObservingConditions providers and
   configuration UI using shared descriptors and local IPC.
 - [ ] Exercise native, Alpaca, and COM inputs through the same policies.
 - [ ] Verify NINA operation with no Alpaca listener and, for native/network-only
@@ -596,3 +611,4 @@ Keep existing device profiles and registrations compatible throughout migration.
 | 2026-10-05 | Added shared cached DeviceState and supervised asynchronous connection changes, then exposed Switch 3, SafetyMonitor 3 and ObservingConditions 2 through capability negotiation. Retained asynchronous failures until explicit reconciliation and preserved separate client leases. | 181 Windows hub tests plus the endpoint fixture and 29 Alpaca tests pass, with Clippy, Rust 1.89.0, schema freshness and fresh package verification. No hardware was actuated. Next: native frontend attachment, conformance and remaining setup refinements; original milestones 2–5 stay open. |
 | 2026-10-05 | Added the shared .NET attachment/IPC client for native NINA and ASCOM, using the existing frontend assembly and Rust host helper. Reviewed pipe permissions, cancellation, unknown operations, bounded buffers, terminal errors and finalizer lifetime. | 73 NINA regression/contract tests pass, including 32 new hub-client checks; real net48 x86/x64 attachment/lease tests and warnings-denied builds pass. Fixed a shared-intermediate bitness cache exposed by the runtime fixture. Scalar checkpoint bb55313 passed both complete CI runs. Next: actual native NINA providers/setup and all original remaining gates. |
 | 2026-10-06 | Added native NINA Switch, SafetyMonitor and ObservingConditions providers, saved output identities, and a shared native output selector. Reviewed cancellation, stale objects, write/readback uncertainty, capability failures and selection-store conflicts. | 88 NINA tests pass, including 15 new native production-host/fault cases and actual NINA-adapter/Alpaca-publisher sharing. net48 x86/x64 selection/session/reconnect fixtures and warnings-denied builds pass. Both CI runs for client checkpoint 9006a99 passed completely. Native descriptor editing, interactive NINA acceptance, COM imports and all original remaining gates stay open. |
+| 2026-10-06 | Added the shared native descriptor editor, review/apply/reconciliation session and cached health. Corrected described scalar choices in both frontend readers, preserved invalid input/identities, fenced disposed sessions and reviewed uncertain saves. | 109 NINA tests, real net48 x86/x64 editor fixtures, warnings-denied builds, 29 Alpaca tests, JavaScript and four independent schema checks pass. An automated WPF workflow supplies verified simulation renders; Chrome verified editing/reviewing Connection Policy without equipment leases. Native-provider PR CI passed; the push fixture timing correction and this editor require new CI. Next: shared setup refinements, interactive NINA, isolated COM imports, native ASCOM and all remaining original milestones. No complete milestone 2–5 gate is closed by this checkpoint. |

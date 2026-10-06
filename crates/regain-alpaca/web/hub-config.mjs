@@ -24,21 +24,30 @@ export function configurationContract(description) {
     const required = resolve(node)?.['x-regain']?.requiresCapability;
     return !required || capabilities.includes(required);
   };
-  const variants = (node, capabilities) => (resolve(node).oneOf ?? []).map(choice => ({
+  const variants = (node, capabilities) => {
+    const alternatives = (resolve(node).oneOf ?? []).map(resolve);
+    if (!alternatives.every(choice => typeof choice.properties?.kind?.const === 'string')) return [];
+    return alternatives.map(choice => ({
     schema: choice,
     kind: choice.properties?.kind?.const,
     title: choice.title ?? choice.properties?.kind?.const,
     description: choice.description ?? '',
     enabled: available(choice, capabilities)
-  }));
+    }));
+  };
   const choices = (node, capabilities = description.capabilities ?? []) => {
     const schema = resolve(node);
+    if (!schema.enum && schema.oneOf) {
+      const scalar = schema.oneOf.map(resolve);
+      if (!scalar.every(choice => typeof choice.const === 'string')) return [];
+      return scalar.map(choice => ({value:choice.const, enabled:available(choice, capabilities), description:choice.description ?? ''}));
+    }
     return (schema.enum ?? []).map(value => ({value, enabled: !schema['x-regain']?.enumCapabilities?.[value] || capabilities.includes(schema['x-regain'].enumCapabilities[value])}));
   };
   const fields = (node, value = {}, capabilities, isNew = false) => {
     let schema = resolve(node);
     if (schema.oneOf) {
-      const choice = schema.oneOf.find(s => s.properties?.kind?.const === value.kind);
+      const choice = variants(schema, capabilities).find(s => s.kind === value?.kind)?.schema;
       if (!choice) return [];
       schema = resolve(choice);
     }

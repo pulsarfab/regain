@@ -50,7 +50,11 @@ public sealed class HubConfiguration
     {
         node = Resolve(node);
         if (!node.TryGetProperty("oneOf", out var choices)) return [];
-        return choices.EnumerateArray().Select(choice => new HubConfigurationChoice(
+        var variants = choices.EnumerateArray().Select(Resolve).ToArray();
+        // Scalar enum alternatives carry descriptions too; they are choices,
+        // not tagged object variants with a `kind` discriminator.
+        if (!variants.All(choice => choice.TryGetProperty("properties", out var properties) && properties.TryGetProperty("kind", out _))) return [];
+        return variants.Select(choice => new HubConfigurationChoice(
             choice.Clone(), Text(choice.GetProperty("properties").GetProperty("kind"), "const"),
             Text(choice, "title"), Text(choice, "description"), Available(choice, contextCapabilities))).ToArray();
     }
@@ -58,7 +62,12 @@ public sealed class HubConfiguration
     public IReadOnlyList<HubConfigurationEnumChoice> Choices(JsonElement node, IEnumerable<string>? contextCapabilities = null)
     {
         node = Resolve(node);
-        if (!node.TryGetProperty("enum", out var choices)) return [];
+        if (!node.TryGetProperty("enum", out var choices)) {
+            if (!node.TryGetProperty("oneOf", out var alternatives)) return [];
+            var scalar = alternatives.EnumerateArray().Select(Resolve).ToArray();
+            if (!scalar.All(c => c.TryGetProperty("const", out var constant) && constant.ValueKind == JsonValueKind.String)) return [];
+            return scalar.Select(c => new HubConfigurationEnumChoice(Text(c, "const"), Available(c, contextCapabilities), Text(c, "description"))).ToArray();
+        }
         JsonElement rules = default;
         if (node.TryGetProperty("x-regain", out var metadata)) metadata.TryGetProperty("enumCapabilities", out rules);
         return choices.EnumerateArray().Select(choice => {
@@ -71,12 +80,12 @@ public sealed class HubConfiguration
     public IReadOnlyList<HubConfigurationField> Fields(JsonElement node, JsonElement? value = null, IEnumerable<string>? contextCapabilities = null, bool isNew = false)
     {
         node = Resolve(node);
-        if (node.TryGetProperty("oneOf", out var choices))
+        if (node.TryGetProperty("oneOf", out _))
         {
             var kind = value.HasValue ? Text(value.Value, "kind") : "";
-            var matches = choices.EnumerateArray().Where(c => Text(c.GetProperty("properties").GetProperty("kind"), "const") == kind).ToArray();
+            var matches = Variants(node, contextCapabilities).Where(c => c.Kind == kind).ToArray();
             if (matches.Length != 1) return [];
-            node = Resolve(matches[0]);
+            node = Resolve(matches[0].Schema);
         }
         if (!node.TryGetProperty("properties", out var properties)) return [];
         var required = node.TryGetProperty("required", out var requiredNames)
@@ -99,10 +108,11 @@ public sealed class HubConfiguration
     private static string Text(JsonElement value, string key) => value.ValueKind == JsonValueKind.Object && value.TryGetProperty(key, out var text) ? text.GetString() ?? "" : "";
 }
 
-public sealed class HubConfigurationEnumChoice(string value, bool enabled)
+public sealed class HubConfigurationEnumChoice(string value, bool enabled, string description = "")
 {
     public string Value { get; } = value;
     public bool Enabled { get; } = enabled;
+    public string Description { get; } = description;
 }
 public sealed class HubConfigurationChoice(JsonElement schema, string kind, string title, string description, bool enabled)
 {

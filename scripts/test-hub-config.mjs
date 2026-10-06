@@ -13,6 +13,15 @@ const fields = reader.fields(source, { kind: 'alpaca', baseUrl: 'http://localhos
 assert.equal(fields.some(f => f.key === 'progId'), false);
 assert.equal(fields.find(f => f.key === 'baseUrl').value, 'http://localhost:11111');
 assert.equal(fields.find(f => f.key === 'connectionPolicy').value, 'externallyManaged');
+const connectionPolicy = fields.find(f => f.key === 'connectionPolicy').schema;
+assert.deepEqual(reader.variants(connectionPolicy), []);
+assert.deepEqual(reader.fields(connectionPolicy, 'externallyManaged'), []);
+assert.deepEqual(reader.choices(connectionPolicy).map(v => v.value), ['externallyManaged', 'managed']);
+assert.equal(reader.choices(connectionPolicy).every(v => v.description.length > 0), true);
+const {default: ignoredPolicyDefault, ...policyWithoutDefault} = connectionPolicy;
+assert.equal(initialValue(reader, policyWithoutDefault), 'externallyManaged');
+assert.equal(previewValue(reader, connectionPolicy, 'managed'), 'managed');
+assert.equal(initialValue(reader, {oneOf:[{const:'disabled','x-regain':{requiresCapability:'comSources'}},{const:'enabled'}]}), 'enabled');
 assert.equal(reader.fields(reader.root).some(f => f.key === 'identities'), false);
 assert.equal(reader.fields(reader.root).find(f => f.key === 'revision').readOnly, true);
 const output = reader.root.$defs.OutputConfig;
