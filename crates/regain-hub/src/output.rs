@@ -46,6 +46,10 @@ impl OutputConnection {
                     for (name, value) in wheel.device_state(self.now()) {
                         values.push(StateValue { name, value });
                     }
+                } else if let Ok(panel) = self.covercalibrator() {
+                    for (name, value) in panel.device_state(self.now()) {
+                        values.push(StateValue { name, value });
+                    }
                 } else {
                     for (metric, value) in self.weather()?.device_state() {
                         values.push(StateValue {
@@ -112,6 +116,7 @@ impl OutputConnection {
             }
             Get::Focuser { property } => self.focuser()?.property(property).await?,
             Get::FilterWheel { property } => self.filterwheel()?.property(property).await?,
+            Get::CoverCalibrator { property } => self.covercalibrator()?.property(property).await?,
             Get::Rotator { property } => {
                 let value = self.rotator()?.property(property).await?;
                 if property == crate::rotator::RotatorProperty::CanReverse && value == false {
@@ -154,6 +159,13 @@ impl OutputConnection {
             Put::HaltRotator {} => self.rotator()?.halt().await?,
             Put::RotatorReverse { enabled } => self.rotator()?.set_reverse(enabled).await?,
             Put::MoveFilterWheel { position } => self.filterwheel()?.move_to(position).await?,
+            Put::OpenCover {} => self.covercalibrator()?.open_cover().await?,
+            Put::CloseCover {} => self.covercalibrator()?.close_cover().await?,
+            Put::HaltCover {} => self.covercalibrator()?.halt_cover().await?,
+            Put::CalibratorOn { brightness } => {
+                self.covercalibrator()?.calibrator_on(brightness).await?
+            }
+            Put::CalibratorOff {} => self.covercalibrator()?.calibrator_off().await?,
         }
         Ok(Value::Null)
     }

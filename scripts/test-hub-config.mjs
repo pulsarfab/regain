@@ -524,3 +524,45 @@ for (const fault of ['property','source','generation','sequence','type','extra',
   assert.equal(revoked,true); assert.equal(setup.observation,null);
 }
 console.log('Wheel diagnostic metadata, paging, identity and signed Int32 bounds passed.');
+
+const panelSaved=structuredClone(focuserSaved);
+panelSaved.sources[0].backend={kind:'native',device:'ofp2',identity:'SIM-OFP2'};
+panelSaved.outputs[0].device.deviceType='covercalibrator';
+const panelOutput=panelSaved.outputs[0];
+function panelReply(start=0,limit=6) {
+  const fields=description.outputDiagnostics.covercalibratorProperties, health=diagHealth(panelSaved.sources[0].id);
+  health.transportConnected=true; health.leaseCount=1;
+  const values={brightness:0,maxBrightness:4096,coverState:4,calibratorState:3,coverMoving:false,calibratorChanging:false};
+  const properties=fields.slice(start,start+limit).map(field=>({property:field.property,sample:{state:'available',reading:{
+    value:{type:field.valueType,value:values[field.property]},ageSeconds:5,source:health.source,
+    generation:health.generation,sequence:0,revision:panelSaved.revision}}}));
+  const end=Math.min(start+limit,fields.length);
+  return {purpose:'cachedDiagnostics',output:panelOutput.id,configurationRevision:panelSaved.revision,observedSeconds:6,
+    deviceType:'covercalibrator',simulated:true,start,limit,total:fields.length,nextStart:end<fields.length?end:null,
+    diagnostics:{kind:'covercalibrator',health,properties}};
+}
+{
+  const setup=new OutputDiagnostics(async command=>panelReply(command.start,command.limit),()=>assert.fail('Review revoked'));
+  setup.load(description,panelSaved);
+  assert.equal((await setup.read(panelOutput.id,0,3)).nextStart,3);
+  const last=await setup.read(panelOutput.id,3,32);
+  assert.equal(last.nextStart,null); assert.match(diagnosticSummary(last),/calibratorState: 3/);
+  assert.match(diagnosticSummary(last),/coverMoving: false/);
+  assert.equal((await setup.read(panelOutput.id,6,1)).diagnostics.properties.length,0);
+}
+for (const [index,value] of [[0,-1],[0,2147483648],[0,0.5],[1,0],[1,2147483648],[2,6],[3,-1],[4,0],[5,'false']]) {
+  let revoked=false;
+  const setup=new OutputDiagnostics(async()=>{
+    const reply=panelReply(index,1); reply.diagnostics.properties[0].sample.reading.value.value=value; return reply;
+  },()=>revoked=true);
+  setup.load(description,panelSaved); await assert.rejects(setup.read(panelOutput.id,index,1));
+  assert.equal(revoked,true); assert.equal(setup.observation,null);
+}
+{
+  const setup=new OutputDiagnostics(async()=>{
+    const reply=panelReply(4,1); reply.diagnostics.properties[0].sample={state:'unavailable',error:{kind:'unavailable',message:'Unknown cover completion',upstreamCode:null}}; return reply;
+  },()=>assert.fail('Review revoked'));
+  setup.load(description,panelSaved);
+  assert.match(diagnosticSummary(await setup.read(panelOutput.id,4,1)),/Unknown cover completion/);
+}
+console.log('Panel diagnostic states, completion availability, paging and Int32 bounds passed.');

@@ -121,6 +121,13 @@ pub fn source_plans(config: &HubConfig) -> Result<BTreeMap<Uuid, SourcePlan>, Ve
                 samples.insert(sample.key.clone(), sample);
             }
         }
+        if config.outputs.iter().any(|output| matches!(output.device,
+            VirtualDevice::Proxy { source: id, device_type: DeviceType::CoverCalibrator } if id == source.id)) {
+            for property in crate::covercalibrator::CoverCalibratorProperty::ALL {
+                let sample = property.sample_request();
+                samples.insert(sample.key.clone(), sample);
+            }
+        }
         if samples.len() > MAX_SAMPLE_KEYS {
             return Err(vec![FieldError::new(
                 format!("sources[{index}]"),

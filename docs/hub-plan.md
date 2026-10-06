@@ -30,9 +30,10 @@ wheel imports and virtual wheel inputs pass local full regressions and are pushe
 Dedicated wheel simulation passes local full Rust, NINA and both-architecture
 net48 confirmation, with a verified native setup capture. Shared wheel creation is
 verified locally in both setup frontends and real net48 clients, and pushed.
-The panel typed controller and native OFP2 motion evidence pass local full Rust,
-NINA 213/213 and both-architecture net48 checks. Panel runtime/publication/setup
-and camera proxies remain.
+The panel typed controller/native OFP2 evidence is committed locally at f622d51.
+Panel runtime, typed IPC and cached diagnostics pass full local Rust, NINA 214/214
+and both-architecture net48 checks. Panel publication, imports/virtual inputs,
+dedicated simulation/shared setup and camera proxies remain.
 Milestone 5's coordinated groups are not yet
 implemented. PR #21 stays draft until the full plan passes.
 
@@ -1096,7 +1097,22 @@ Keep existing device profiles and registrations compatible throughout migration.
 
 ## Progress log
 
-Latest checkpoint (2026-10-06): the panel controller reuses shared typed sessions
+Latest checkpoint (2026-10-06): panel runtime/IPC/cache reuse the existing host,
+polling, typed observation envelopes and diagnostic displays. Nineteen panel,
+eight factory and twenty-two native cases pass in full Rust hub/Alpaca regressions.
+Actual Alpaca V1/V2 runtime polling and production OFP2 simulation retain sibling
+leases, actual state, live brightness dependencies, independent errors, ages and
+write uncertainty. DeviceState omits unavailable fields without I/O. Strict
+Clippy, Rust 1.89, generated contracts, Node/six schema checks, fresh-host NINA
+214/214 and real net48 x86/x64 pass. Retain the first fixture compile failures and
+partial-poll assertion evidence: MaxBrightness had not yet arrived, so Brightness
+was correctly unavailable. The fixture now waits for that dependency within its
+unchanged deadline. This increment stays local while preceding wheel CI finishes.
+Next: panel Alpaca/native NINA/ASCOM publication, imports/virtual inputs, dedicated
+simulation and shared creation, then cameras/coordination and every original
+remaining acceptance/final gate.
+
+Previous controller checkpoint (2026-10-06): the panel controller reuses shared typed sessions
 and operation leases. Fifteen controller tests, including real loopback Alpaca
 V1/V2, cover absent components, strict live brightness, zero-on, actual warm-up,
 known/unknown completion, cancellation, independent leases and uncertain applied

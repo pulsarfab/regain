@@ -1519,6 +1519,106 @@ async fn native_panel_controller_shares_motion_and_zero_on_without_disconnect_ac
 }
 
 #[tokio::test]
+async fn native_panel_runtime_uses_one_worker_for_two_outputs_and_cached_independent_status() {
+    use regain_hub::{
+        config::{DeviceType, HubConfig, OutputConfig, VirtualDevice},
+        covercalibrator::CoverCalibratorProperty as Property,
+        diagnostics::{Diagnostics, Reading},
+        factory::NoCredentials,
+        runtime::HubRuntime,
+    };
+    let Some(native) = runtime() else {
+        return;
+    };
+    let source_config = config(NativeDevice::Ofp2, "SIM-OFP2");
+    let mut config = HubConfig::empty();
+    config.sources.push(source_config.clone());
+    for number in [4, 17] {
+        config.outputs.push(OutputConfig {
+            id: Uuid::new_v4(),
+            number,
+            label: format!("Simulated panel {number}"),
+            device: VirtualDevice::Proxy {
+                source: source_config.id,
+                device_type: DeviceType::CoverCalibrator,
+            },
+        });
+    }
+    let runtime = HubRuntime::build(
+        config.clone(),
+        &native,
+        &NoCredentials,
+        Arc::new(MonotonicClock::default()),
+    )
+    .unwrap();
+    let snapshot = || runtime.source_snapshot(source_config.id).unwrap();
+    assert_eq!(snapshot().lease_count, 0);
+    let first = runtime.client();
+    let second = runtime.client();
+    first.connect(config.outputs[0].id).await.unwrap();
+    second.connect(config.outputs[1].id).await.unwrap();
+    assert_eq!(snapshot().lease_count, 2);
+    assert!(snapshot().simulated);
+    first
+        .connection(config.outputs[0].id)
+        .unwrap()
+        .covercalibrator()
+        .unwrap()
+        .calibrator_on(17)
+        .await
+        .unwrap();
+    tokio::time::timeout(Duration::from_secs(3), async {
+        while snapshot().values.get("brightness") != Some(&json!(17)) {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .unwrap();
+    let status = runtime.output_status(config.outputs[1].id, 0, 32).unwrap();
+    assert!(status.simulated);
+    let Diagnostics::CoverCalibrator { health, properties } = status.diagnostics else {
+        panic!()
+    };
+    assert_eq!(health.source, source_config.id);
+    assert_eq!(properties.len(), 6);
+    assert!(
+        properties
+            .iter()
+            .all(|p| matches!(p.sample, Reading::Available { .. }))
+    );
+    first.close();
+    tokio::time::timeout(Duration::from_secs(3), async {
+        while snapshot().lease_count != 1 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    let connection = second.connection(config.outputs[1].id).unwrap();
+    assert_eq!(
+        connection
+            .covercalibrator()
+            .unwrap()
+            .property(Property::Brightness)
+            .await
+            .unwrap(),
+        17
+    );
+    assert_eq!(
+        connection
+            .covercalibrator()
+            .unwrap()
+            .property(Property::CalibratorState)
+            .await
+            .unwrap(),
+        3
+    );
+    drop(connection);
+    second.close();
+    runtime.shutdown().await.unwrap();
+}
+
+#[tokio::test]
 async fn native_efw_controller_uses_saved_or_standard_metadata_and_independent_worker_leases() {
     use regain_hub::filterwheel::{
         FilterWheelController, FilterWheelProperty, NativeFilterWheelMetadata,

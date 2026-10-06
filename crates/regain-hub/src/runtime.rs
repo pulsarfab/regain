@@ -2,6 +2,7 @@
 //! and connection leases belong to the host, never to frontend-supplied IDs.
 use crate::{
     config::{Bitness, DeviceType, HubConfig, SafetyMember, VirtualDevice},
+    covercalibrator::{CoverCalibratorController, CoverCalibratorSession},
     factory::{CredentialProvider, build_sources_bound},
     filterwheel::{FilterWheelController, FilterWheelSession},
     focuser::{FocuserController, FocuserSession},
@@ -45,6 +46,7 @@ enum Output {
     Focuser(FocuserController),
     Rotator(RotatorController),
     FilterWheel(FilterWheelController),
+    CoverCalibrator(CoverCalibratorController),
 }
 
 pub struct HubRuntime {
@@ -194,6 +196,24 @@ impl HubRuntime {
                     )
                     .expect("Validated connection deadline"),
                 ),
+                VirtualDevice::Proxy {
+                    source,
+                    device_type: DeviceType::CoverCalibrator,
+                } => Output::CoverCalibrator(
+                    CoverCalibratorController::new(
+                        registry.get(*source).unwrap(),
+                        std::time::Duration::from_secs_f64(
+                            config
+                                .sources
+                                .iter()
+                                .find(|entry| entry.id == *source)
+                                .unwrap()
+                                .polling
+                                .connection_timeout_seconds,
+                        ),
+                    )
+                    .expect("Validated connection deadline"),
+                ),
                 VirtualDevice::Proxy { .. } => unreachable!("Validated output implementation"),
             };
             outputs.insert(output.id, mapped);
@@ -282,6 +302,9 @@ impl HubRuntime {
             Output::Focuser(_) => crate::focuser::FocuserProperty::ALL.len() as u32,
             Output::Rotator(_) => crate::rotator::RotatorProperty::ALL.len() as u32,
             Output::FilterWheel(_) => crate::filterwheel::FilterWheelProperty::ALL.len() as u32,
+            Output::CoverCalibrator(_) => {
+                crate::covercalibrator::CoverCalibratorProperty::ALL.len() as u32
+            }
         };
         let end = page(start, limit, total)?;
         let now = self.clock.now();
@@ -383,6 +406,22 @@ impl HubRuntime {
                         .map(|property| crate::diagnostics::FilterWheelProperty {
                             property: *property,
                             sample: crate::filterwheel::cached_property(&state, *property, now)
+                                .into(),
+                        })
+                        .collect(),
+                }
+            }
+            Output::CoverCalibrator(panel) => {
+                let state = panel.source().snapshot();
+                Diagnostics::CoverCalibrator {
+                    health: SourceHealth::from(&state),
+                    properties: crate::covercalibrator::CoverCalibratorProperty::ALL
+                        .iter()
+                        .skip(start as usize)
+                        .take((end - start) as usize)
+                        .map(|property| crate::diagnostics::CoverCalibratorProperty {
+                            property: *property,
+                            sample: crate::covercalibrator::cached_property(&state, *property, now)
                                 .into(),
                         })
                         .collect(),
@@ -614,6 +653,9 @@ impl HubRuntime {
             Output::FilterWheel(output) => {
                 Ok(ConnectedDevice::FilterWheel(output.connect().await?))
             }
+            Output::CoverCalibrator(output) => {
+                Ok(ConnectedDevice::CoverCalibrator(output.connect().await?))
+            }
         }
     }
 }
@@ -621,7 +663,7 @@ impl HubRuntime {
 fn validate_outputs(config: &HubConfig) -> Result<(), Vec<FieldError>> {
     let mut errors = config.validate();
     for (index, output) in config.outputs.iter().enumerate() {
-        if matches!(output.device, VirtualDevice::Proxy { device_type, .. } if !matches!(device_type, DeviceType::Focuser | DeviceType::Rotator | DeviceType::FilterWheel))
+        if matches!(output.device, VirtualDevice::Proxy { device_type, .. } if !matches!(device_type, DeviceType::Focuser | DeviceType::Rotator | DeviceType::FilterWheel | DeviceType::CoverCalibrator))
         {
             errors.push(FieldError::new(
                 format!("outputs[{index}].device"),
@@ -681,6 +723,7 @@ enum ConnectedDevice {
     Focuser(FocuserSession),
     Rotator(RotatorSession),
     FilterWheel(FilterWheelSession),
+    CoverCalibrator(CoverCalibratorSession),
 }
 /// Hold this guard throughout a command. Its leases outlive a simultaneous
 /// frontend disconnect; dropping a client does not imply motion rollback.
@@ -696,6 +739,7 @@ impl OutputConnection {
             ConnectedDevice::Focuser(session) => session.connected(),
             ConnectedDevice::Rotator(session) => session.connected(),
             ConnectedDevice::FilterWheel(session) => session.connected(),
+            ConnectedDevice::CoverCalibrator(session) => session.connected(),
             _ => true,
         }
     }
@@ -708,6 +752,12 @@ impl OutputConnection {
     pub fn filterwheel(&self) -> Result<&FilterWheelSession, SourceError> {
         match &self.device {
             ConnectedDevice::FilterWheel(value) => Ok(value),
+            _ => Err(wrong_type()),
+        }
+    }
+    pub fn covercalibrator(&self) -> Result<&CoverCalibratorSession, SourceError> {
+        match &self.device {
+            ConnectedDevice::CoverCalibrator(value) => Ok(value),
             _ => Err(wrong_type()),
         }
     }

@@ -62,7 +62,7 @@ export class OutputDiagnostics {
   validate(result,output,start,limit) {
     validateDiagnosticSchema(this.description.responseSchema,result);
     const kind=output.device.kind==='proxy' ? output.device.deviceType : output.device.kind;
-    const type={switch:'switch',safety:'safetymonitor',weather:'observingconditions',focuser:'focuser',rotator:'rotator',filterwheel:'filterwheel'}[kind];
+    const type={switch:'switch',safety:'safetymonitor',weather:'observingconditions',focuser:'focuser',rotator:'rotator',filterwheel:'filterwheel',covercalibrator:'covercalibrator'}[kind];
     if (result.purpose!=='cachedDiagnostics' || result.output!==output.id || result.configurationRevision!==this.saved.revision || result.deviceType!==type || result.observedSeconds<0 || result.start!==start || result.limit!==limit || result.total<start || result.total>1024 || result.diagnostics.kind!==kind) protocol();
     const end=Math.min(start+limit,result.total);
     if (result.nextStart!==(end<result.total ? end : null)) protocol();
@@ -88,7 +88,7 @@ export class OutputDiagnostics {
         if (item.source!==saved.source || item.enabled!==saved.enabled || saved.policy && !equalDiagnosticValue(item.policy,saved.policy) || item.enabled!==(item.decision!==null)) protocol();
         health(item.health); if (item.health.source!==item.source || item.decision && (item.decision.configurationRevision!==this.saved.revision || !d.controllerActive && (item.decision.permitsSafe || item.decision.rawIsSafe!==null))) protocol();
       });
-    } else if (d.kind==='focuser' || d.kind==='rotator' || d.kind==='filterwheel') {
+    } else if (d.kind==='focuser' || d.kind==='rotator' || d.kind==='filterwheel' || d.kind==='covercalibrator') {
       const properties=this.description[`${d.kind}Properties`];
       if (!Array.isArray(properties) || properties.length!==result.total || d.properties.length!==end-start || d.health.source!==output.device.source) protocol();
       health(d.health);
@@ -136,7 +136,7 @@ export function diagnosticSummary(result) {
       if(m.health.writeUncertain) lines.push('Source has an uncertain write; reconcile equipment state before another command.');
       lines.push(pollingSummary(m.health));
     }
-  } else if (d.kind==='focuser' || d.kind==='rotator' || d.kind==='filterwheel') {
+  } else if (d.kind==='focuser' || d.kind==='rotator' || d.kind==='filterwheel' || d.kind==='covercalibrator') {
     for (const item of d.properties) lines.push(item.sample.state==='available'
       ? `${item.property}: ${Array.isArray(item.sample.reading.value.value)?JSON.stringify(item.sample.reading.value.value):item.sample.reading.value.value} · age ${item.sample.reading.ageSeconds.toFixed(1)} s`
       : `${item.property}: unavailable · ${item.sample.error.message}`);

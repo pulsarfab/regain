@@ -112,6 +112,58 @@ fn wheel_outputs_share_one_typed_metadata_plan_with_scalar_position_readouts() {
 }
 
 #[test]
+fn panel_outputs_share_one_typed_poll_plan_with_combined_brightness_gauges() {
+    use regain_hub::config::DeviceType;
+    let mut config = HubConfig::empty();
+    let mut source = weather().sources[0].clone();
+    let SourceBackend::Alpaca { device_type, .. } = &mut source.backend else {
+        panic!()
+    };
+    *device_type = DeviceType::CoverCalibrator;
+    let source_id = source.id;
+    config.sources.push(source);
+    for number in [4, 17] {
+        config.outputs.push(OutputConfig {
+            id: Uuid::new_v4(),
+            number,
+            label: format!("Panel {number}"),
+            device: VirtualDevice::Proxy {
+                source: source_id,
+                device_type: DeviceType::CoverCalibrator,
+            },
+        });
+    }
+    config.outputs.push(switch(
+        0,
+        vec![gauge(
+            0,
+            Readout::Property {
+                source: source_id,
+                property: "brightness".into(),
+                unit: None,
+            },
+        )],
+    ));
+    let plans = source_plans(&config).unwrap();
+    assert_eq!(plans.len(), 1);
+    let samples = &plans[&source_id].samples;
+    assert_eq!(samples.len(), 6);
+    for property in regain_hub::covercalibrator::CoverCalibratorProperty::ALL {
+        let sample = samples
+            .iter()
+            .find(|sample| sample.key == property.member())
+            .unwrap();
+        assert_eq!(sample.member, property.member());
+        assert!(sample.parameters.is_empty());
+        assert!(if property.value_type() == "boolean" {
+            matches!(sample.value_type, SampleType::Boolean)
+        } else {
+            matches!(sample.value_type, SampleType::Number)
+        });
+    }
+}
+
+#[test]
 fn typed_properties_count_toward_the_combined_poll_limit_after_deduplication() {
     use regain_hub::config::DeviceType;
     for (device_type, typed_count) in [

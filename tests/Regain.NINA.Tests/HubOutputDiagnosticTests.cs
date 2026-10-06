@@ -12,6 +12,7 @@ public sealed partial class HubNativeTests
     [Theory]
     [InlineData("focuser", "fc3", "00:00:00:00:00:03", 4)]
     [InlineData("rotator", "caa", "0102030405060708", 3)]
+    [InlineData("covercalibrator", "ofp2", "SIM-OFP2", 2)]
     public async Task TypedAccessoryDiagnosticsUseHostFieldsAndRejectIdentityTypeAndRangeFaults(string deviceType, string nativeDevice, string identity, int positionIndex)
     {
         await using var host = await Host.Open(); using var editor = await Editor(host); await editor.ReloadAsync();
@@ -45,14 +46,14 @@ public sealed partial class HubNativeTests
         JsonElement Element(JsonNode node) => JsonSerializer.SerializeToElement(node);
         var first = Reply(0, 4); HubDiagnosticContract.Reply(editor.OutputDiagnosticDescription, Element(saved), Element(output), Element(first), 0, 4);
         var last = Reply(4, 32); HubDiagnosticContract.Reply(editor.OutputDiagnosticDescription, Element(saved), Element(output), Element(last), 4, 32);
-        var summary = HubConfigurationWindow.OutputDiagnosticSummary(Element(Reply(positionIndex, 32))); Assert.Contains("position: 1", summary); Assert.Contains("age 0.5 s", summary);
+        var summary = HubConfigurationWindow.OutputDiagnosticSummary(Element(Reply(positionIndex, 32))); Assert.Contains(deviceType == "covercalibrator" ? "coverState: 1" : "position: 1", summary); Assert.Contains("age 0.5 s", summary);
         foreach (var fault in new[] { "property", "source", "generation", "sequence", "type", "minimum", "extra", "age" }) {
             var reply = Reply(positionIndex, 1); var item = reply["diagnostics"]!["properties"]![0]!; var reading = item["sample"]!["reading"]!;
             if (fault == "property") item["property"] = "isMoving";
             if (fault == "source") reading["source"] = Guid.NewGuid().ToString();
             if (fault == "generation") reading["generation"] = Guid.NewGuid().ToString();
             if (fault == "sequence") reading["sequence"] = 1;
-            if (fault == "type") reading["value"]!["type"] = deviceType == "focuser" ? "number" : "integer";
+            if (fault == "type") reading["value"]!["type"] = deviceType == "rotator" ? "integer" : "number";
             if (fault == "minimum") reading["value"]!["value"] = -1;
             if (fault == "extra") reading["authorization"] = "PRIVATE_FORBIDDEN_REPLY";
             if (fault == "age") reading["ageSeconds"] = -1;
@@ -63,6 +64,16 @@ public sealed partial class HubNativeTests
                 var reply = Reply(index, 1); reply["diagnostics"]!["properties"]![0]!["sample"]!["reading"]!["value"]!["value"] = value;
                 Assert.Throws<HubException>(() => HubDiagnosticContract.Reply(editor.OutputDiagnosticDescription, Element(saved), Element(output), Element(reply), index, 1));
             }
+        }
+        if (deviceType == "covercalibrator") {
+            foreach (var (index, value) in new (int, string)[] { (0,"2147483648"),(1,"0"),(1,"2147483648"),(2,"6"),(3,"-1"),(4,"0"),(5,"\"false\"") }) {
+                var reply = Reply(index,1); reply["diagnostics"]!["properties"]![0]!["sample"]!["reading"]!["value"]!["value"] = JsonNode.Parse(value);
+                Assert.Throws<HubException>(() => HubDiagnosticContract.Reply(editor.OutputDiagnosticDescription, Element(saved), Element(output), Element(reply), index, 1));
+            }
+            var unavailable = Reply(4,1);
+            unavailable["diagnostics"]!["properties"]![0]!["sample"] = new JsonObject { ["state"]="unavailable", ["error"]=new JsonObject { ["kind"]="unavailable",["message"]="Unknown cover completion",["upstreamCode"]=null } };
+            HubDiagnosticContract.Reply(editor.OutputDiagnosticDescription, Element(saved), Element(output), Element(unavailable), 4, 1);
+            Assert.Contains("Unknown cover completion", HubConfigurationWindow.OutputDiagnosticSummary(Element(unavailable)));
         }
     }
     [Fact]

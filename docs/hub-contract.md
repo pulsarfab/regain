@@ -1908,9 +1908,42 @@ explicit simulator preserves that distinction. Native Open/Close rejects a known
 ongoing movement before sending another actuator command; Halt and light commands
 remain independently available. Imported drivers keep their own motion policies.
 
-This controller/native increment does not enable panel runtime IPC, publication,
-COM imports, virtual inputs, dedicated simulation controls or shared creation;
-those paths remain required before opening the panel setup gate.
+The runtime/IPC/cache increment below extends this controller. Publication,
+COM imports, virtual inputs, dedicated simulation controls and shared creation
+remain required before opening the panel setup gate.
 Reference: [ASCOM CoverCalibrator](https://ascom-standards.org/newdocs/covercalibrator.html),
 with the installed ASCOM 7.1.2 enum/interface declarations and captured
 [OFP2 protocol evidence](ofp2.md).
+
+### Panel runtime, IPC and cached diagnostics
+
+CoverCalibrator proxies have independent saved UUIDs and class-local numbers,
+with multiple outputs sharing one source actor and its deduplicated six-property
+poll plan. Native OFP2 and Alpaca sources use the same typed controller. IPC
+advertises coverCalibratorOutputs and dispatches the coverCalibrator getter plus
+openCover, closeCover, haltCover, calibratorOn and calibratorOff setters. Brightness
+is a strict signed Int32 on the wire; source presence/range checks still happen
+at dispatch. Wrong-class operations are unsupported. Pending admission and live
+connections participate in existing shutdown/apply quiescence and cancellation.
+
+The common outputStatus operation exposes six ordered properties with source
+health, independent errors and existing bounded pagination. Construction and
+diagnostic reads open no connection and perform no capability/getter I/O.
+Brightness depends on CalibratorState and live MaxBrightness; maximum depends on
+light presence. Their age retains the oldest contributing observation. Cover
+errors do not erase valid light readings. Negotiated legacy completion uses its
+enum observation and age even when the V2 property poll reports Unsupported.
+Modern completion errors remain errors; they cannot become inferred false.
+
+DeviceState uses one cached source snapshot and emits known Brightness,
+CalibratorChanging, CalibratorState, CoverMoving and CoverState values. Missing
+or invalid fields are omitted independently. MaxBrightness is configuration
+metadata and is excluded from this operational set. No query timestamp is
+presented as a measurement timestamp. Unknown endpoints remain numeric Unknown;
+unavailable completion is omitted rather than represented as stopped.
+
+Both setup diagnostic readers consume generated property types/bounds and the
+response schema using their existing typed-accessory display. They preserve
+identity/epoch/page checks and reject incorrect Int32, enum and Boolean values.
+This does not enable panel selection, creation, native NINA/ASCOM or Alpaca HTTP
+publication; those integrations and every later plan gate remain required.

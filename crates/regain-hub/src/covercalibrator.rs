@@ -81,8 +81,93 @@ impl CoverCalibratorProperty {
 #[derive(Debug, serde::Serialize, schemars::JsonSchema)]
 #[serde(tag = "type", rename_all = "camelCase", deny_unknown_fields)]
 pub enum CoverCalibratorValue {
-    Integer { value: i32 },
-    Boolean { value: bool },
+    Integer {
+        #[schemars(range(min = 0, max = 2147483647i64))]
+        value: i32,
+    },
+    Boolean {
+        value: bool,
+    },
+}
+pub type CoverCalibratorSample = crate::readout::TypedSample<CoverCalibratorValue>;
+
+pub(crate) fn cached_property(
+    state: &crate::source::SourceSnapshot,
+    property: CoverCalibratorProperty,
+    now: Duration,
+) -> Result<CoverCalibratorSample, SourceError> {
+    use CoverCalibratorProperty::*;
+    if !state.transport_connected {
+        return Err(SourceError::new(
+            ErrorKind::Disconnected,
+            "Source is disconnected",
+        ));
+    }
+    if let Some(error) = &state.error {
+        return Err(error.clone());
+    }
+    let read = |property: CoverCalibratorProperty| {
+        let key = property.member();
+        if let Some(error) = state.sample_errors.get(key) {
+            return Err(error.clone());
+        }
+        let value = property.decode(state.values.get(key).ok_or_else(bad_reading)?)?;
+        crate::readout::typed_sample(state, key, now, value)
+    };
+    let integer = |sample: &CoverCalibratorSample| match sample.value {
+        CoverCalibratorValue::Integer { value } => value,
+        _ => unreachable!(),
+    };
+    match property {
+        CoverMoving | CalibratorChanging if legacy(state) => {
+            let mut sample = read(if property == CoverMoving {
+                CoverState
+            } else {
+                CalibratorState
+            })?;
+            sample.value = CoverCalibratorValue::Boolean {
+                value: completion(integer(&sample))?,
+            };
+            Ok(sample)
+        }
+        Brightness | MaxBrightness => {
+            let light = read(CalibratorState)?;
+            if integer(&light) == 0 {
+                return Err(unsupported());
+            }
+            let maximum = read(MaxBrightness)?;
+            let mut sample = if property == MaxBrightness {
+                maximum
+            } else {
+                let mut brightness = read(Brightness)?;
+                if integer(&brightness) > integer(&maximum)
+                    || integer(&light) == 1 && integer(&brightness) != 0
+                {
+                    return Err(bad_reading());
+                }
+                brightness.age_seconds = brightness.age_seconds.max(maximum.age_seconds);
+                brightness
+            };
+            // Keep the oldest dependency age; cache reads never rejuvenate it.
+            sample.age_seconds = sample.age_seconds.max(light.age_seconds);
+            Ok(sample)
+        }
+        _ => read(property),
+    }
+}
+fn legacy(state: &crate::source::SourceSnapshot) -> bool {
+    state
+        .connection_info
+        .as_ref()
+        .and_then(|info| info.interface_version)
+        == Some(1)
+}
+fn completion(state: i32) -> Result<bool, SourceError> {
+    match state {
+        0 | 1 | 3 => Ok(false),
+        2 => Ok(true),
+        _ => Err(bad_reading()),
+    }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct CoverCalibratorCapabilities {
@@ -95,6 +180,9 @@ pub struct CoverCalibratorController {
     connection_timeout: Duration,
 }
 impl CoverCalibratorController {
+    pub(crate) fn source(&self) -> &Arc<SourceHandle> {
+        &self.source
+    }
     /// Construction is inert. The timeout bounds source admission and all initial
     /// property reads, including pending asynchronous upstream connections.
     pub fn new(
@@ -140,6 +228,32 @@ pub struct CoverCalibratorSession {
     source: TypedSourceSession,
 }
 impl CoverCalibratorSession {
+    pub(crate) fn device_state(&self, now: Duration) -> Values {
+        use CoverCalibratorProperty::*;
+        let Ok(state) = self.source.snapshot() else {
+            return Values::new();
+        };
+        [
+            (Brightness, "Brightness"),
+            (CalibratorChanging, "CalibratorChanging"),
+            (CalibratorState, "CalibratorState"),
+            (CoverMoving, "CoverMoving"),
+            (CoverState, "CoverState"),
+        ]
+        .into_iter()
+        .filter_map(|(property, name)| {
+            cached_property(&state, property, now).ok().map(|sample| {
+                (
+                    name.into(),
+                    match sample.value {
+                        CoverCalibratorValue::Integer { value } => json!(value),
+                        CoverCalibratorValue::Boolean { value } => json!(value),
+                    },
+                )
+            })
+        })
+        .collect()
+    }
     pub fn connected(&self) -> bool {
         self.source.connected()
     }
@@ -147,12 +261,7 @@ impl CoverCalibratorSession {
         self.source.generation()
     }
     fn legacy(&self) -> Result<bool, SourceError> {
-        Ok(self
-            .source
-            .snapshot()?
-            .connection_info
-            .and_then(|info| info.interface_version)
-            == Some(1))
+        Ok(legacy(&self.source.snapshot()?))
     }
     async fn integer(&self, property: CoverCalibratorProperty) -> Result<i32, SourceError> {
         let value = self.source.read(property.member()).await?;
@@ -208,12 +317,7 @@ impl CoverCalibratorSession {
                             CalibratorState
                         })
                         .await?;
-                    return match state {
-                        0 | 1 | 3 => Ok(json!(false)),
-                        2 => Ok(json!(true)),
-                        // Unknown/Error does not establish motion completion.
-                        _ => Err(bad_reading()),
-                    };
+                    return completion(state).map(|value| json!(value));
                 }
                 let value = self.source.read(property.member()).await?;
                 property.decode(&value)?;

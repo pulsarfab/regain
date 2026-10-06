@@ -42,6 +42,14 @@ pub fn description() -> Value {
             "exclusiveMinimum": Option::<i32>::None,
             "maximum": if *property == crate::filterwheel::FilterWheelProperty::Position { Some(crate::filterwheel::MAX_FILTER_SLOTS as i32 - 1) } else { None },
         })).collect::<Vec<_>>(),
+    "covercalibratorProperties": crate::covercalibrator::CoverCalibratorProperty::ALL.iter().map(|property|
+        json!({"property":property,"valueType":property.value_type(),
+            "minimum": match property { crate::covercalibrator::CoverCalibratorProperty::MaxBrightness => Some(1),
+                crate::covercalibrator::CoverCalibratorProperty::CoverMoving | crate::covercalibrator::CoverCalibratorProperty::CalibratorChanging => None, _ => Some(0) },
+            "exclusiveMinimum": Option::<i32>::None,
+            "maximum": match property { crate::covercalibrator::CoverCalibratorProperty::CoverState | crate::covercalibrator::CoverCalibratorProperty::CalibratorState => Some(5),
+                crate::covercalibrator::CoverCalibratorProperty::CoverMoving | crate::covercalibrator::CoverCalibratorProperty::CalibratorChanging => None, _ => Some(i32::MAX) },
+        })).collect::<Vec<_>>(),
     "responseSchema": schemars::generate::SchemaSettings::default()
         .for_serialize().into_generator().into_root_schema_for::<OutputStatus>()})
 }
@@ -104,6 +112,11 @@ pub enum Diagnostics {
         health: SourceHealth,
         properties: Vec<FilterWheelProperty>,
     },
+    #[serde(rename = "covercalibrator")]
+    CoverCalibrator {
+        health: SourceHealth,
+        properties: Vec<CoverCalibratorProperty>,
+    },
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
@@ -125,6 +138,13 @@ pub struct RotatorProperty {
 pub struct FilterWheelProperty {
     pub property: crate::filterwheel::FilterWheelProperty,
     pub sample: Reading<crate::filterwheel::FilterWheelSample>,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CoverCalibratorProperty {
+    pub property: crate::covercalibrator::CoverCalibratorProperty,
+    pub sample: Reading<crate::covercalibrator::CoverCalibratorSample>,
 }
 
 /// Selected fields only: no backend configuration, connection strings, cached

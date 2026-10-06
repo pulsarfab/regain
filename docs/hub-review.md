@@ -3560,3 +3560,53 @@ Preceding a586c76 PR/push CI 37544747351/37544741219 now passes all eight jobs.
 Verified wheel simulation/shared creation is pushed at 5d0ed34; new PR/push
 CI 37547703480/37547695748 is running. Draft PR #21's body describes that pushed
 head and does not claim local panel changes are published or hardware accepted.
+
+### Panel runtime, IPC and cached diagnostics review (2026-10-06, local increment)
+
+Reviewed existing source/controller/client ownership rather than adding a panel
+host. Dynamic outputs share a source and one deduplicated six-property polling
+plan, including combined Switch brightness gauges. Typed IPC uses the existing
+Get/Put dispatch and version/capability negotiation. Pending admission,
+cancellation, generation loss, wrong-class access and uncertain writes keep the
+same lifecycle/quiescence fences. Close, Halt and Off are never invented on
+disconnect or uncertain completion.
+
+Cached light properties depend only on their required light observations.
+Brightness validates MaxBrightness and CalibratorState, including Off=0 and
+logical On(0); maximum validates presence. Ages retain the oldest dependency.
+Legacy completion uses the source enum and its age even when polling the V2
+property returns Unsupported. Unknown completion remains unavailable; modern
+errors retain their original class. Cover errors do not erase valid light data.
+DeviceState reads one cache snapshot and independently omits unavailable values;
+MaxBrightness and a fabricated measurement timestamp are excluded.
+
+Both diagnostic readers reuse their existing typed-accessory paths and generated
+types/ranges. New private tests reject Int32 overflow, invalid state enums,
+incorrect Boolean values and epoch/type/page faults, while retaining unavailable
+completion messages. This is diagnostic support, not a native NINA/ASCOM panel
+driver. Selection, creation and all publications remain gated/pending.
+
+The first added fixtures used nonexistent client/registry accessors; compilation
+caught these and the tests now use the actual public client/snapshot API. The
+first expanded actual Alpaca runtime cases asserted brightness availability as
+soon as state properties arrived. Captured snapshots in
+artifacts/hub-panel-runtime-alpaca-evidence.log prove completedPasses=0 and absent
+MaxBrightness in both V1/V2. Production correctly withheld the dependent value.
+The fixture now awaits that observation within its existing three-second budget;
+no production poll deadline, assertion or retry rule was relaxed.
+
+Verification: all 19 panel cases, eight factory cases, 22 native cases and full
+Rust hub/Alpaca suites pass. Actual loopback Alpaca V1/V2 now exercises the runtime
+and configuration-derived poll plan, shared ownership, partial legacy failures,
+zero-on, actual motion and applied-once lost acknowledgements. Production OFP2
+runtime uses explicit SIM-OFP2 with two outputs and retained light on sibling
+disconnect. Strict Clippy, Rust 1.89 all targets, generated-contract freshness,
+Node/six independent schema checks, warning-denied managed build, fresh-host NINA
+214/214 and real net48 x86/x64 regressions pass.
+
+Logs: artifacts/hub-panel-runtime-{check,focused,focused-confirmed,native,
+native-confirmed,contract-generate,contract,node,schema,rust,rust-confirmed,
+alpaca-evidence,clippy,clippy-final,msrv,msrv-final,host,managed-build,nina,net48}.log.
+Keep this locally verified increment with f622d51 until preceding 5d0ed34 CI ends.
+Both PR/push runs have seven successful jobs and Windows build/installer work
+remaining at last observation. All original remaining plan gates still apply.

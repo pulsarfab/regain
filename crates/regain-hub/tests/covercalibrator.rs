@@ -30,6 +30,9 @@ struct Device {
     uncertain: AtomicBool,
     hang_write: AtomicBool,
     hang_read: Mutex<Option<String>>,
+    errors: Mutex<std::collections::BTreeMap<String, SourceError>>,
+    ages: Mutex<std::collections::BTreeMap<String, f64>>,
+    polls: AtomicUsize,
 }
 impl Device {
     fn new() -> Arc<Self> {
@@ -51,6 +54,9 @@ impl Device {
             uncertain: AtomicBool::new(false),
             hang_write: AtomicBool::new(false),
             hang_read: Mutex::default(),
+            errors: Mutex::default(),
+            ages: Mutex::default(),
+            polls: AtomicUsize::new(0),
         })
     }
     fn set(&self, key: &str, value: Value) {
@@ -154,7 +160,27 @@ impl Backend for Mock {
         })
     }
     fn poll(&mut self) -> BackendFuture<'_, Values> {
-        Box::pin(async { Ok(self.0.values.lock().unwrap().clone()) })
+        Box::pin(async {
+            self.0.polls.fetch_add(1, SeqCst);
+            Ok(self.0.values.lock().unwrap().clone())
+        })
+    }
+    fn sample(&mut self) -> BackendFuture<'_, regain_hub::source::SampleBatch> {
+        Box::pin(async {
+            let mut values = self.poll().await?;
+            let errors = self.0.errors.lock().unwrap().clone();
+            let mut ages_seconds = self.0.ages.lock().unwrap().clone();
+            for key in errors.keys() {
+                values.remove(key);
+                ages_seconds.remove(key);
+            }
+            Ok(regain_hub::source::SampleBatch {
+                values,
+                errors,
+                ages_seconds,
+                ..Default::default()
+            })
+        })
     }
     fn reset(&mut self) {}
 }
@@ -720,8 +746,13 @@ async fn alpaca_panel(version: u16, lose_ack: bool) {
                     json!(false)
                 }
                 _ => {
-                    if state.version == 1 {
-                        assert!(member != "covermoving" && member != "calibratorchanging");
+                    if state.version == 1
+                        && matches!(member.as_str(), "covermoving" | "calibratorchanging")
+                    {
+                        return Json(
+                            json!({"ErrorNumber":0x400,"ErrorMessage":"Legacy property absent",
+                            "ClientTransactionID":parameters["ClientTransactionID"].as_str().unwrap().parse::<u32>().unwrap()}),
+                        );
                     }
                     state.device.values.lock().unwrap()[&member].clone()
                 }
@@ -751,6 +782,7 @@ async fn alpaca_panel(version: u16, lose_ack: bool) {
         label: "Private panel".into(),
         polling: PollPolicy {
             request_timeout_seconds: 1.0,
+            connection_timeout_seconds: 3.0,
             ..PollPolicy::default()
         },
         backend: SourceBackend::Alpaca {
@@ -761,18 +793,47 @@ async fn alpaca_panel(version: u16, lose_ack: bool) {
             credential_reference: None,
         },
     };
-    let source = SourceHandle::spawn(
-        config.id,
-        Uuid::new_v4(),
-        config.polling.clone(),
-        Box::new(AlpacaBackend::new(&config, vec![], None).unwrap()),
-        Arc::new(MonotonicClock::default()),
-    )
-    .unwrap();
-    let controller =
-        CoverCalibratorController::new(source.clone(), Duration::from_secs(3)).unwrap();
-    let first = controller.connect().await.unwrap();
-    let second = controller.connect().await.unwrap();
+    use regain_hub::{
+        config::{HubConfig, OutputConfig, VirtualDevice},
+        diagnostics::{Diagnostics, Reading},
+        runtime::HubRuntime,
+        source::SourceRegistry,
+    };
+    let mut hub = HubConfig::empty();
+    hub.sources.push(config.clone());
+    for number in [4, 17] {
+        hub.outputs.push(OutputConfig {
+            id: Uuid::new_v4(),
+            number,
+            label: format!("Private panel {number}"),
+            device: VirtualDevice::Proxy {
+                source: config.id,
+                device_type: DeviceType::CoverCalibrator,
+            },
+        });
+    }
+    let samples = regain_hub::factory::source_plans(&hub)
+        .unwrap()
+        .remove(&config.id)
+        .unwrap()
+        .samples;
+    let clock = Arc::new(MonotonicClock::default());
+    let registry = Arc::new(
+        SourceRegistry::build(&hub, clock.clone(), |config| {
+            Ok(Box::new(AlpacaBackend::new(config, samples.clone(), None)?))
+        })
+        .unwrap(),
+    );
+    let source = registry.get(config.id).unwrap();
+    let runtime = HubRuntime::from_registry(hub.clone(), registry, clock).unwrap();
+    let a = runtime.client();
+    let b = runtime.client();
+    a.connect(hub.outputs[0].id).await.unwrap();
+    b.connect(hub.outputs[1].id).await.unwrap();
+    let first_connection = a.connection(hub.outputs[0].id).unwrap();
+    let second_connection = b.connection(hub.outputs[1].id).unwrap();
+    let first = first_connection.covercalibrator().unwrap();
+    let second = second_connection.covercalibrator().unwrap();
     let info = source.snapshot().connection_info.unwrap();
     assert_eq!(info.interface_version, Some(version));
     assert!(info.owns_connection);
@@ -827,15 +888,33 @@ async fn alpaca_panel(version: u16, lose_ack: bool) {
         fixture.device.set("calibratorchanging", json!(false));
         assert_eq!(second.property(Property::Brightness).await.unwrap(), 0);
         assert_eq!(second.property(Property::CalibratorState).await.unwrap(), 3);
+        tokio::time::timeout(Duration::from_secs(3), async {
+            loop {
+                let Diagnostics::CoverCalibrator {properties,..} = runtime.output_status(hub.outputs[1].id,0,32).unwrap().diagnostics else {panic!()};
+                let state = serde_json::to_value(&properties).unwrap();
+                // Polling publishes one property at a time. State arrival does
+                // not establish that the brightness-bound dependency arrived.
+                if state[2]["sample"]["reading"]["value"]["value"] == 4 && state[3]["sample"]["reading"]["value"]["value"] == 3
+                    && source.snapshot().values.get("maxbrightness") == Some(&json!(4096)) {
+                    assert!(matches!(properties[0].sample,Reading::Available { .. }), "{}", serde_json::to_string(&source.snapshot()).unwrap());
+                    if version == 1 { assert!(matches!(&properties[4].sample,Reading::Unavailable {error} if error.kind == ErrorKind::Unavailable)); }
+                    else { assert!(matches!(properties[4].sample,Reading::Available { .. })); }
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        }).await.unwrap();
     }
-    drop(first);
+    drop(first_connection);
+    a.close();
     settle().await;
     assert_eq!(source.snapshot().lease_count, 1);
     if !lose_ack {
         assert!(fixture.connected.load(SeqCst));
     }
-    drop(second);
-    source.shutdown().await.unwrap();
+    drop(second_connection);
+    b.close();
+    runtime.shutdown().await.unwrap();
     assert!(!fixture.connected.load(SeqCst));
     let requests = fixture.requests.lock().unwrap().clone();
     let mut transactions = std::collections::BTreeSet::new();
@@ -877,3 +956,6 @@ async fn real_alpaca_v2_retains_async_motion_and_zero_on_with_shared_connection(
 async fn real_alpaca_lost_ack_applies_once_and_never_replays_or_darkens() {
     alpaca_panel(2, true).await;
 }
+
+#[path = "support/covercalibrator_runtime.rs"]
+mod panel_runtime;
