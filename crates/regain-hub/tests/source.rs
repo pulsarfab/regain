@@ -3,7 +3,8 @@ use regain_hub::{
     parameters::PollPolicy,
     safety::MonotonicClock,
     source::{
-        Backend, BackendFuture, ErrorKind, SourceError, SourceHandle, SourceRegistry, Values,
+        Backend, BackendFuture, ErrorKind, SampleBatch, SourceError, SourceHandle, SourceRegistry,
+        Values,
     },
 };
 use serde_json::{Value, json};
@@ -31,6 +32,7 @@ struct Device {
     hang_read: AtomicBool,
     hang_write: AtomicBool,
     outcomes: Mutex<VecDeque<Result<Values, SourceError>>>,
+    batches: Mutex<VecDeque<SampleBatch>>,
     connect_retry_after: Mutex<Option<Duration>>,
 }
 struct Mock(Arc<Device>);
@@ -92,6 +94,15 @@ impl Backend for Mock {
     fn reset(&mut self) {
         self.0.resets.fetch_add(1, SeqCst);
     }
+    fn sample(&mut self) -> BackendFuture<'_, SampleBatch> {
+        Box::pin(async {
+            let batch = self.0.batches.lock().unwrap().pop_front();
+            match batch {
+                Some(batch) => Ok(batch),
+                None => self.poll().await.map(SampleBatch::from),
+            }
+        })
+    }
 }
 fn spawn(device: &Arc<Device>) -> Arc<SourceHandle> {
     SourceHandle::spawn(
@@ -107,6 +118,76 @@ async fn settle() {
     for _ in 0..10 {
         tokio::task::yield_now().await;
     }
+}
+
+#[tokio::test(start_paused = true)]
+async fn refresh_acknowledges_trigger_without_waiting_for_a_hung_sensor() {
+    let device = Arc::new(Device::default());
+    let source = spawn(&device);
+    let lease = Uuid::new_v4();
+    source.acquire(lease).await.unwrap();
+    settle().await;
+    let before = source.snapshot();
+    device.hang_poll.store(true, SeqCst);
+    source.refresh(lease).await.unwrap();
+    settle().await;
+    assert_eq!(device.polls.load(SeqCst), 2);
+    assert_eq!(source.snapshot().completed_passes, before.completed_passes);
+    assert_eq!(source.snapshot().values, before.values);
+    tokio::time::advance(Duration::from_secs(1)).await;
+    settle().await;
+    assert_eq!(source.snapshot().error.unwrap().kind, ErrorKind::Transient);
+}
+
+#[tokio::test(start_paused = true)]
+async fn partial_sample_cache_bounds_survive_incremental_updates() {
+    use regain_hub::source::MAX_SAMPLE_TEXT_BYTES;
+    let device = Arc::new(Device::default());
+    for key in ["a", "b"] {
+        device.batches.lock().unwrap().push_back(SampleBatch {
+            values: Values::from([(key.into(), json!("x".repeat(MAX_SAMPLE_TEXT_BYTES / 2 + 1)))]),
+            partial: true,
+            more: key == "a",
+            ..SampleBatch::default()
+        });
+    }
+    let source = spawn(&device);
+    source.acquire(Uuid::new_v4()).await.unwrap();
+    settle().await;
+    assert_eq!(source.snapshot().values.len(), 1);
+    tokio::time::advance(Duration::from_millis(1)).await;
+    settle().await;
+    let snapshot = source.snapshot();
+    assert_eq!(snapshot.error.unwrap().kind, ErrorKind::Permanent);
+    assert_eq!(snapshot.values.len(), 1);
+    assert!(!snapshot.values.contains_key("b"));
+}
+
+#[tokio::test(start_paused = true)]
+async fn rotating_complete_batches_cannot_accumulate_unbounded_sequence_keys() {
+    use regain_hub::source::MAX_SAMPLE_KEYS;
+    let device = Arc::new(Device::default());
+    device.batches.lock().unwrap().extend([
+        SampleBatch {
+            values: (0..MAX_SAMPLE_KEYS)
+                .map(|i| (i.to_string(), json!(i)))
+                .collect(),
+            more: true,
+            ..SampleBatch::default()
+        },
+        SampleBatch {
+            values: Values::from([("new-key".into(), json!(1))]),
+            ..SampleBatch::default()
+        },
+    ]);
+    let source = spawn(&device);
+    source.acquire(Uuid::new_v4()).await.unwrap();
+    settle().await;
+    tokio::time::advance(Duration::from_millis(1)).await;
+    settle().await;
+    let snapshot = source.snapshot();
+    assert_eq!(snapshot.error.unwrap().kind, ErrorKind::Permanent);
+    assert_eq!(snapshot.sample_sequences.len(), MAX_SAMPLE_KEYS);
 }
 
 #[tokio::test(start_paused = true)]

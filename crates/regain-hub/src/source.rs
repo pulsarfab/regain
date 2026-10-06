@@ -18,6 +18,8 @@ use tokio::{
 use uuid::Uuid;
 
 pub type Values = BTreeMap<String, Value>;
+pub const MAX_SAMPLE_KEYS: usize = 1024;
+pub const MAX_SAMPLE_TEXT_BYTES: usize = 1024 * 1024;
 /// A failed measurement does not invalidate unrelated readings from the same
 /// device. Ages are upstream sensor ages at request time, not HTTP cache ages.
 #[derive(Clone, Debug, Default)]
@@ -25,6 +27,10 @@ pub struct SampleBatch {
     pub values: Values,
     pub errors: BTreeMap<String, SourceError>,
     pub ages_seconds: BTreeMap<String, f64>,
+    /// Merge only the supplied keys; false replaces the complete sample set.
+    pub partial: bool,
+    /// Another bounded request is needed to finish this polling pass.
+    pub more: bool,
 }
 impl From<Values> for SampleBatch {
     fn from(values: Values) -> Self {
@@ -107,6 +113,12 @@ pub trait Backend: Send {
         Box::pin(async { self.poll().await.map(SampleBatch::from) })
     }
     fn reset(&mut self);
+    fn restart_poll(&mut self) {}
+    /// Trigger sensor acquisition without waiting for measurements. Sources
+    /// without an upstream acquisition command just restart their local poll.
+    fn refresh(&mut self) -> BackendFuture<'_, ()> {
+        Box::pin(async { Ok(()) })
+    }
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -122,6 +134,9 @@ pub struct SourceSnapshot {
     pub values: Values,
     pub sample_errors: BTreeMap<String, SourceError>,
     pub sample_ages_seconds: BTreeMap<String, f64>,
+    pub sample_started_seconds: BTreeMap<String, f64>,
+    pub sample_sequences: BTreeMap<String, u64>,
+    pub completed_passes: u64,
     pub sampled_at_seconds: Option<f64>,
     pub error: Option<SourceError>,
 }
@@ -140,6 +155,10 @@ pub struct PollEvent {
 
 type Reply<T> = oneshot::Sender<Result<T, SourceError>>;
 enum Command {
+    Refresh {
+        lease: Uuid,
+        reply: Reply<()>,
+    },
     Acquire {
         lease: Uuid,
         reply: Reply<SourceSnapshot>,
@@ -263,6 +282,9 @@ impl SourceHandle {
             values: Values::new(),
             sample_errors: BTreeMap::new(),
             sample_ages_seconds: BTreeMap::new(),
+            sample_started_seconds: BTreeMap::new(),
+            sample_sequences: BTreeMap::new(),
+            completed_passes: 0,
             sampled_at_seconds: None,
             error: None,
         };
@@ -288,6 +310,7 @@ impl SourceHandle {
                 next_poll: Some(Instant::now()),
                 attempt: 0,
                 backoff_failures: 0,
+                retrying: false,
             }
             .run(receiver),
         );
@@ -326,6 +349,12 @@ impl SourceHandle {
             acquire,
             reply,
         })?;
+        response.await.map_err(|_| closed())?
+    }
+    /// Acknowledge the refresh trigger, not completion of a sampling pass.
+    pub async fn refresh(&self, lease: Uuid) -> Result<(), SourceError> {
+        let (reply, response) = oneshot::channel();
+        self.enqueue(Command::Refresh { lease, reply })?;
         response.await.map_err(|_| closed())?
     }
     pub async fn read(
@@ -394,6 +423,7 @@ struct Actor {
     next_poll: Option<Instant>,
     attempt: u32,
     backoff_failures: u32,
+    retrying: bool,
 }
 impl Actor {
     fn deadline(&self) -> Duration {
@@ -409,6 +439,8 @@ impl Actor {
         self.state.transport_connected = false;
         self.state.generation = Uuid::new_v4();
         self.state.sequence = 0;
+        self.state.sample_started_seconds.clear();
+        self.state.sample_sequences.clear();
         self.state.values.clear();
         self.state.sample_errors.clear();
         self.state.sample_ages_seconds.clear();
@@ -429,6 +461,8 @@ impl Actor {
                 // New transport cannot inherit another worker's safe evidence.
                 self.state.generation = Uuid::new_v4();
                 self.state.sequence = 0;
+                self.state.sample_started_seconds.clear();
+                self.state.sample_sequences.clear();
                 self.state.values.clear();
                 self.state.sample_errors.clear();
                 self.state.sample_ages_seconds.clear();
@@ -455,10 +489,14 @@ impl Actor {
         self.state.sampled_at_seconds = None;
         self.state.generation = Uuid::new_v4();
         self.state.sequence = 0;
+        self.state.sample_started_seconds.clear();
+        self.state.sample_sequences.clear();
         self.controller = None;
         self.write_uncertain = false;
         self.attempt = 0;
         self.backoff_failures = 0;
+        self.retrying = false;
+        self.backend.restart_poll();
         self.publish();
     }
     fn authorized(&self, lease: Uuid, write: bool) -> Result<(), SourceError> {
@@ -495,6 +533,65 @@ impl Actor {
     }
     async fn command(&mut self, command: Command) {
         match command {
+            Command::Refresh { lease, reply } => {
+                if reply.is_closed() {
+                    return;
+                }
+                let result = self.authorized(lease, false).and_then(|()| {
+                    if self.retrying
+                        && self
+                            .next_poll
+                            .is_none_or(|deadline| deadline > Instant::now())
+                    {
+                        return Err(SourceError {
+                            retry_after: self
+                                .next_poll
+                                .map(|deadline| deadline.saturating_duration_since(Instant::now())),
+                            ..SourceError::new(ErrorKind::Busy, "Source is waiting before retrying")
+                        });
+                    }
+                    if !self.state.transport_connected {
+                        return Err(SourceError::new(
+                            ErrorKind::Disconnected,
+                            "Source is disconnected",
+                        ));
+                    }
+                    Ok(())
+                });
+                let result = match result {
+                    Ok(()) => timeout(self.deadline(), self.backend.refresh())
+                        .await
+                        .unwrap_or_else(|_| Err(SourceError::timeout())),
+                    Err(error) => Err(error),
+                };
+                match &result {
+                    Ok(()) => {
+                        self.backend.restart_poll();
+                        self.next_poll = Some(Instant::now());
+                    }
+                    Err(error) if error.kind != ErrorKind::Busy => {
+                        if error.transport_lost {
+                            self.fault(error.clone());
+                        }
+                        if matches!(
+                            error.kind,
+                            ErrorKind::Transient | ErrorKind::Disconnected | ErrorKind::Uncertain
+                        ) {
+                            self.retrying = true;
+                            self.next_poll = Instant::now().checked_add(
+                                error
+                                    .retry_after
+                                    .unwrap_or_default()
+                                    .max(Duration::from_secs_f64(
+                                        self.policy.initial_backoff_seconds,
+                                    )),
+                            );
+                        }
+                    }
+                    _ => {}
+                }
+                let _ = reply.send(result);
+            }
             Command::Acquire { lease, reply } => {
                 if reply.is_closed() {
                     return;
@@ -512,6 +609,7 @@ impl Actor {
                     let delay = match self.connect().await {
                         Ok(()) => Duration::ZERO,
                         Err(error) => {
+                            self.retrying = true;
                             error
                                 .retry_after
                                 .unwrap_or_default()
@@ -661,7 +759,14 @@ impl Actor {
                     // Confirm with a new poll instead of reporting the old value
                     // or inventing an optimistic value for an asynchronous device.
                     self.state.sampled_at_seconds = None;
-                    self.next_poll = Some(Instant::now());
+                    self.state.values.clear();
+                    self.state.sample_errors.clear();
+                    self.state.sample_ages_seconds.clear();
+                    self.state.sample_started_seconds.clear();
+                    self.backend.restart_poll();
+                    if !self.retrying {
+                        self.next_poll = Some(Instant::now());
+                    }
                     self.publish();
                 }
                 let _ = reply.send(result);
@@ -676,11 +781,30 @@ impl Actor {
             Ok(()) => timeout(self.deadline(), self.backend.sample())
                 .await
                 .unwrap_or_else(|_| Err(SourceError::timeout())),
-        };
+        }
+        .and_then(|batch| {
+            validate_batch(&self.state, &batch)?;
+            Ok(batch)
+        });
         let received = self.clock.now();
-        let retryable = result
+        let retry_error = result
             .as_ref()
-            .is_err_and(|e| matches!(e.kind, ErrorKind::Transient | ErrorKind::Disconnected));
+            .err()
+            .filter(|error| matches!(error.kind, ErrorKind::Transient | ErrorKind::Disconnected))
+            .or_else(|| {
+                result.as_ref().ok().and_then(|batch| {
+                    batch
+                        .errors
+                        .values()
+                        .filter(|error| {
+                            matches!(error.kind, ErrorKind::Transient | ErrorKind::Disconnected)
+                        })
+                        .max_by_key(|error| error.retry_after)
+                })
+            })
+            .cloned();
+        let retryable = retry_error.is_some();
+        let more = result.as_ref().is_ok_and(|batch| batch.more);
         let exhausted = !retryable || self.attempt >= self.policy.attempts_per_cycle;
         if let Err(error) = &result
             && error.transport_lost
@@ -704,17 +828,45 @@ impl Actor {
         };
         match &result {
             Ok(batch) => {
-                self.state.values = batch.values.clone();
-                self.state.sample_errors = batch.errors.clone();
-                self.state.sample_ages_seconds = batch.ages_seconds.clone();
+                if !batch.partial {
+                    self.state.values.clear();
+                    self.state.sample_errors.clear();
+                    self.state.sample_ages_seconds.clear();
+                    self.state.sample_started_seconds.clear();
+                }
+                for (key, value) in &batch.values {
+                    self.state.values.insert(key.clone(), value.clone());
+                    self.state.sample_errors.remove(key);
+                    self.state.sample_ages_seconds.insert(
+                        key.clone(),
+                        batch.ages_seconds.get(key).copied().unwrap_or(0.0),
+                    );
+                    self.state
+                        .sample_started_seconds
+                        .insert(key.clone(), started.as_secs_f64());
+                    let sequence = self.state.sample_sequences.entry(key.clone()).or_default();
+                    *sequence = sequence.saturating_add(1);
+                }
+                for (key, error) in &batch.errors {
+                    self.state.values.remove(key);
+                    self.state.sample_started_seconds.remove(key);
+                    self.state.sample_ages_seconds.remove(key);
+                    self.state.sample_errors.insert(key.clone(), error.clone());
+                }
                 self.state.sampled_at_seconds = Some(started.as_secs_f64());
                 self.state.error = None;
-                self.backoff_failures = 0;
+                if !retryable {
+                    self.backoff_failures = 0;
+                }
             }
             Err(error) => {
                 self.state.error = Some(error.clone());
             }
         }
+        if !more && exhausted {
+            self.state.completed_passes = self.state.completed_passes.saturating_add(1);
+        }
+        self.retrying = retryable || result.is_err();
         self.publish();
         let _ = self.events.send(event);
         let delay = if retryable {
@@ -728,9 +880,8 @@ impl Actor {
             // UUID randomness avoids a shared retry wave without another RNG API.
             let unit = (Uuid::new_v4().as_u128() as u64 as f64) / (u64::MAX as f64);
             let backoff = Duration::from_secs_f64(cap * (0.5 + unit * 0.5));
-            let delay = result
+            let delay = retry_error
                 .as_ref()
-                .err()
                 .and_then(|e| e.retry_after)
                 .unwrap_or_default()
                 .max(backoff);
@@ -741,6 +892,8 @@ impl Actor {
             }
         } else if result.is_err() {
             Duration::from_secs_f64(self.policy.backoff_cap_seconds)
+        } else if more {
+            Duration::from_millis(1)
         } else {
             Duration::from_secs_f64(self.policy.poll_seconds)
         };
@@ -759,4 +912,59 @@ async fn wait_until(deadline: Option<Instant>) {
         Some(deadline) => tokio::time::sleep_until(deadline).await,
         None => std::future::pending().await,
     }
+}
+
+fn validate_batch(state: &SourceSnapshot, batch: &SampleBatch) -> Result<(), SourceError> {
+    let invalid = || {
+        SourceError::new(
+            ErrorKind::Permanent,
+            "Invalid or oversized scalar sample cache",
+        )
+    };
+    if batch.values.len() > MAX_SAMPLE_KEYS
+        || batch.errors.len() > MAX_SAMPLE_KEYS
+        || batch.ages_seconds.len() > MAX_SAMPLE_KEYS
+    {
+        return Err(invalid());
+    }
+    // Include historical sequence keys: changing key names must not accumulate
+    // an unbounded counter map even when complete batches replace old values.
+    let mut keys: BTreeSet<&str> = state.sample_sequences.keys().map(String::as_str).collect();
+    if batch.partial {
+        keys.extend(state.sample_errors.keys().map(String::as_str));
+    }
+    for key in batch.values.keys().chain(batch.errors.keys()) {
+        if key.is_empty() || key.len() > 200 {
+            return Err(invalid());
+        }
+        keys.insert(key);
+    }
+    if keys.len() > MAX_SAMPLE_KEYS
+        || batch
+            .values
+            .keys()
+            .any(|key| batch.errors.contains_key(key))
+    {
+        return Err(invalid());
+    }
+    for (key, age) in &batch.ages_seconds {
+        if !batch.values.contains_key(key) || !age.is_finite() || *age < 0.0 {
+            return Err(invalid());
+        }
+    }
+    let mut text_bytes = 0usize;
+    let retained = state.values.iter().filter(|(key, _)| {
+        batch.partial && !batch.values.contains_key(*key) && !batch.errors.contains_key(*key)
+    });
+    for (_, value) in retained.chain(batch.values.iter()) {
+        match value {
+            Value::String(value) => text_bytes = text_bytes.saturating_add(value.len()),
+            Value::Bool(_) | Value::Number(_) => {}
+            _ => return Err(invalid()),
+        }
+        if text_bytes > MAX_SAMPLE_TEXT_BYTES {
+            return Err(invalid());
+        }
+    }
+    Ok(())
 }

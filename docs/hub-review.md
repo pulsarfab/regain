@@ -177,3 +177,39 @@ Outstanding review work: whole-batch polling budgets need latency/large-source
 testing before frontend exposure; capability/connection negotiation, Refresh,
 native worker transport, protected credential resolution, host IPC/resume,
 frontend error mappings, conformance and hardware acceptance remain open.
+
+## 2026-10-05: incremental polling and weather refresh
+
+1. One deadline covering a whole weather batch rejected healthy individual
+   requests. Alpaca sample steps now issue one request each; sensor age/value
+   requests are separate, with a conservative shared age anchor. Commands can
+   run between steps without waiting for all channels.
+2. A single batch timestamp/sequence would rejuvenate cached fields and multiply
+   averaging observations as other fields arrived. Cache entries now retain their
+   own timestamps and sequences. Transport resets clear both; writes invalidate
+   samples and restart confirmation polling.
+3. Incremental updates could evade the previous aggregate response limit. The
+   actor validates scalar batches and bounds the combined text cache, key count,
+   and historical sequence keys before publishing changes.
+4. Transient per-field failures must retry that field and retain Retry-After.
+   Exhaustion advances the poll plan; manual Refresh cannot bypass the delay.
+   Safety remains one Boolean IsSafe observation per attempt, preserving its
+   existing failed-cycle and recovery semantics.
+5. An initial Refresh draft waited for a complete pass. The canonical
+   [ObservingConditions interface](https://ascom-standards.org/newdocs/observingconditions.html#ASCOM.ObservingConditions.Refresh)
+   requires a short trigger instead. Weather Refresh now invokes the upstream
+   trigger, schedules local polling, and returns without waiting for sensor data.
+   Multiple sources trigger concurrently; cached ages remain unchanged until
+   actual readings arrive. Trigger failures are returned without replay.
+
+Verification: 70 Rust tests (19 unit, 10 config, 16 source/safety, 13 HTTP,
+6 switch, 6 weather), Clippy with warnings denied, Rust 1.89.0 compatibility,
+standalone packaging, formatting/diff checks, and schema freshness passed.
+New tests cover a polling pass longer than the request deadline, intervening
+commands, unchanged earlier sample evidence, same-key retry, Retry-After during
+partial polling and Refresh, a hung sensor after Refresh, aggregate text limits,
+and rotating keys. Fixtures use virtual time or loopback HTTP, not hardware.
+
+Next: shared native accessory worker transport and hub adapters, followed by
+capability negotiation and host IPC. Frontend conformance, hardware acceptance,
+and all later milestones remain required; no milestone gate closes here.

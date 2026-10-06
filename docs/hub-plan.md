@@ -298,11 +298,18 @@ calm reporting. Unknown-unit channel mappings require an explicit canonical unit
 there are no implicit conversions. Removed switch slots stay within a bounded
 0–1023 range, including the persisted identity history.
 
-Next: review polling budgets for multi-property sources under latency (the current
-actor deadline covers the whole poll batch), complete capability/connection
-negotiation, add native worker adapters and shared host IPC, then connect the
-first three virtual classes to the existing Alpaca server/setup UI. Refresh,
-frontend error translation, and protocol conformance remain unverified. Generic
+Multi-property Alpaca polling now budgets each HTTP request separately, including
+sensor-age reads, and admits commands between requests. Per-key timestamps and
+sequences prevent unrelated samples from refreshing old evidence or adding to an
+average. Partial and historical caches have key/text limits. Transient reads
+retry the failed key and honor Retry-After. Weather Refresh triggers upstream
+acquisition and schedules polling without waiting for measurements; it respects
+retry delays and retains sensor ages. Local latency, retry, and cache tests pass.
+
+Next: add native worker adapters using a shared accessory worker client, complete
+capability/connection negotiation and shared host IPC, then connect the first
+three virtual classes to the existing Alpaca server/setup UI. Frontend error
+translation and protocol conformance remain unverified. Generic
 scalar polling does not establish camera image or acquisition support. No complete
 milestone 2 or frontend/hardware gate is closed by these library controllers.
 
@@ -378,3 +385,4 @@ Keep existing device profiles and registrations compatible throughout migration.
 | 2026-10-05 | Completed milestone 1's generated configuration description and shared setup readers. Corrected schema/backend Unicode label counting and locked existing device numbers in the readers. | 28 Rust tests, 4 independent schema tests, JavaScript contract tests, 2 native .NET contract tests, net48 build, Clippy, and Rust 1.89.0 check passed. Next: shared source registry, polling/transport adapters, then the Alpaca vertical slice. PR #21 remains draft; all later gates remain required. |
 | 2026-10-05 | Added shared source actors/registry, bounded Alpaca transport, and safety output subscriptions with independent leases and policies. Reviewed cancellation, connection ownership, retry delays, ambiguous writes, malformed responses, and event loss. | 50 Rust tests now cover the foundation plus actor/network/safety integration. Clippy, Rust 1.89.0 check, standalone package verification, and generated-contract freshness passed. Next: typed switch/weather controllers, native workers, host IPC, and Alpaca publication. Full original milestones 2–5 remain required. |
 | 2026-10-05 | Added typed switch/weather controllers, scalar sample status, unit assertions, cancellation-safe leases, partial sensor failures, and dispatch generation checks. Refined stable slots and weather averaging against the ASCOM interfaces. | 63 Rust tests pass, including mixed switch controls/gauges, cancellation, step/permission checks, tombstones, weather freshness/fallback/averaging, and HTTP weather source sharing. Updated schema passes web, independent JSON Schema, and native .NET readers. Next: poll scheduling/budgets, capability negotiation, native adapters, and host IPC before frontend/conformance gates. |
+| 2026-10-05 | Split Alpaca polling into bounded requests with per-key evidence, bounded incremental caches, same-key retries, and prompt weather Refresh. Corrected Refresh against the ASCOM interface during review. | 70 local Rust tests, Clippy, Rust 1.89.0, standalone package verification, and generated-contract freshness pass. Latency fixtures exercise command interleaving and Retry-After. Next: shared native accessory transport/adapters, capability negotiation, and host IPC. All frontend and later milestone gates remain open. |

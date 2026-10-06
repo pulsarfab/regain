@@ -77,6 +77,12 @@ pub struct AlpacaBackend {
     opened_connection: bool,
     connection_uncertain: bool,
     samples: Vec<SampleRequest>,
+    cursor: usize,
+    pending_age: Option<(f64, tokio::time::Instant)>,
+    safety_source: bool,
+    weather_source: bool,
+    sample_failures: u32,
+    attempts_per_cycle: u32,
 }
 impl AlpacaBackend {
     /// `authorization` is resolved by the host's credential provider. This type
@@ -126,6 +132,20 @@ impl AlpacaBackend {
         if samples.len() > MAX_SAMPLES {
             return Err(invalid("Too many poll samples"));
         }
+        let safety_source = device_type.as_str() == Some("safetymonitor");
+        let weather_source = device_type.as_str() == Some("observingconditions");
+        if safety_source
+            && (samples.len() != 1
+                || samples[0].key != "issafe"
+                || samples[0].member != "issafe"
+                || !matches!(samples[0].value_type, SampleType::Boolean)
+                || !samples[0].parameters.is_empty()
+                || samples[0].sensor_age.is_some())
+        {
+            return Err(invalid(
+                "SafetyMonitor polling requires one IsSafe observation per attempt",
+            ));
+        }
         for sample in &samples {
             if sample.key.is_empty() || sample.key.len() > 200 || !keys.insert(&sample.key) {
                 return Err(invalid("Poll sample keys must be unique and bounded"));
@@ -161,6 +181,12 @@ impl AlpacaBackend {
             opened_connection: false,
             connection_uncertain: false,
             samples,
+            cursor: 0,
+            pending_age: None,
+            safety_source,
+            weather_source,
+            sample_failures: 0,
+            attempts_per_cycle: config.polling.attempts_per_cycle,
         })
     }
     async fn request(
@@ -279,6 +305,84 @@ impl AlpacaBackend {
         }
         Ok(batch)
     }
+    async fn sample_step(&mut self) -> Result<SampleBatch, SourceError> {
+        if self.samples.is_empty() {
+            return Ok(SampleBatch::default());
+        }
+        if self.safety_source {
+            return self.collect_samples().await;
+        }
+        let sample = self.samples[self.cursor].clone();
+        let mut batch = SampleBatch {
+            partial: true,
+            ..SampleBatch::default()
+        };
+        let needs_age = sample.sensor_age.is_some() && self.pending_age.is_none();
+        let began = tokio::time::Instant::now();
+        let age = self
+            .pending_age
+            .map_or(0.0, |(age, at)| age + at.elapsed().as_secs_f64());
+        let result = if needs_age {
+            self.request(
+                false,
+                "timesincelastupdate",
+                Values::from([(
+                    "SensorName".into(),
+                    Value::from(sample.sensor_age.clone().unwrap()),
+                )]),
+            )
+            .await
+        } else {
+            self.request(false, &sample.member, sample.parameters.clone())
+                .await
+        };
+        match result {
+            Ok(value) if needs_age => {
+                if let Some(age) = value.as_f64().filter(|age| age.is_finite() && *age >= 0.0) {
+                    self.sample_failures = 0;
+                    self.pending_age = Some((age, began));
+                    batch.more = true;
+                    return Ok(batch);
+                }
+                batch.errors.insert(
+                    sample.key,
+                    SourceError::new(ErrorKind::Unavailable, "Sensor has no valid update time"),
+                );
+            }
+            Ok(value) => {
+                let valid = match sample.value_type {
+                    SampleType::Boolean => value.is_boolean(),
+                    SampleType::Number => value.as_f64().is_some_and(f64::is_finite),
+                    SampleType::Text => value.is_string(),
+                };
+                if valid {
+                    batch.ages_seconds.insert(sample.key.clone(), age);
+                    batch.values.insert(sample.key, value);
+                } else {
+                    batch.errors.insert(sample.key, bad_response(false));
+                }
+            }
+            Err(error) => {
+                if error.transport_lost {
+                    return Err(error);
+                }
+                if matches!(error.kind, ErrorKind::Transient | ErrorKind::Disconnected) {
+                    self.sample_failures += 1;
+                    if self.sample_failures < self.attempts_per_cycle {
+                        batch.errors.insert(sample.key, error);
+                        batch.more = true;
+                        return Ok(batch);
+                    }
+                }
+                batch.errors.insert(sample.key, error);
+            }
+        }
+        self.sample_failures = 0;
+        self.pending_age = None;
+        self.cursor = (self.cursor + 1) % self.samples.len();
+        batch.more = self.cursor != 0;
+        Ok(batch)
+    }
 }
 impl Backend for AlpacaBackend {
     fn connect(&mut self) -> BackendFuture<'_, ()> {
@@ -360,11 +464,25 @@ impl Backend for AlpacaBackend {
         })
     }
     fn sample(&mut self) -> BackendFuture<'_, SampleBatch> {
-        Box::pin(self.collect_samples())
+        Box::pin(self.sample_step())
     }
     fn reset(&mut self) {
         // Dropping a reqwest future cancels that local request; no serial stream
         // needs draining. Retain acknowledged connection ownership for cleanup.
+        self.restart_poll();
+    }
+    fn restart_poll(&mut self) {
+        self.cursor = 0;
+        self.pending_age = None;
+        self.sample_failures = 0;
+    }
+    fn refresh(&mut self) -> BackendFuture<'_, ()> {
+        Box::pin(async {
+            if self.weather_source {
+                self.request(true, "refresh", Values::new()).await?;
+            }
+            Ok(())
+        })
     }
 }
 

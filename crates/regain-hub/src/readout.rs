@@ -63,7 +63,10 @@ pub fn scalar(
         .filter(|value| value.is_finite())
         .ok_or_else(|| unavailable("No valid scalar reading"))?;
     let sampled = state
-        .sampled_at_seconds
+        .sample_started_seconds
+        .get(&key)
+        .copied()
+        .or(state.sampled_at_seconds)
         .ok_or_else(|| unavailable("No sample has been received"))?;
     let upstream_age = state.sample_ages_seconds.get(&key).copied().unwrap_or(0.0);
     let elapsed = now.as_secs_f64() - sampled;
@@ -79,7 +82,11 @@ pub fn scalar(
         age_seconds,
         source: state.source,
         generation: state.generation,
-        sequence: state.sequence,
+        sequence: state
+            .sample_sequences
+            .get(&key)
+            .copied()
+            .unwrap_or(state.sequence),
         revision: state.revision,
     })
 }

@@ -26,6 +26,12 @@ struct Reply {
     delay: Duration,
 }
 impl Reply {
+    fn delayed(value: Value, millis: u64) -> Self {
+        Self {
+            delay: Duration::from_millis(millis),
+            ..Self::value(value)
+        }
+    }
     fn json(body: Value) -> Self {
         Self {
             status: 200,
@@ -37,6 +43,251 @@ impl Reply {
     fn value(value: Value) -> Self {
         Self::json(json!({"ErrorNumber":0, "Value":value}))
     }
+}
+
+#[tokio::test]
+async fn polling_budget_is_per_request_and_commands_interleave_without_rejuvenating_samples() {
+    use regain_hub::{config::Readout, safety::MonotonicClock, source::SourceHandle};
+    let mut server = Server::new(vec![Reply::value(json!(true))]).await;
+    if let SourceBackend::Alpaca { device_type, .. } = &mut server.config.backend {
+        *device_type = DeviceType::Switch;
+    }
+    server.config.polling.request_timeout_seconds = 0.5;
+    for _ in 0..5 {
+        server.push(Reply::delayed(json!(42), 200));
+    }
+    let samples = (0..4)
+        .map(|channel| {
+            SampleRequest::readout(
+                &Readout::Channel {
+                    source: server.config.id,
+                    channel,
+                    unit: None,
+                },
+                false,
+            )
+        })
+        .collect();
+    let backend = AlpacaBackend::new(&server.config, samples, None).unwrap();
+    let source = SourceHandle::spawn(
+        server.config.id,
+        Uuid::new_v4(),
+        server.config.polling.clone(),
+        Box::new(backend),
+        Arc::new(MonotonicClock::default()),
+    )
+    .unwrap();
+    let lease = Uuid::new_v4();
+    source.acquire(lease).await.unwrap();
+    let mut status = source.status();
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while !status.borrow_and_update().values.contains_key("channel/0") {
+            status.changed().await.unwrap();
+        }
+        let first = source.snapshot();
+        assert_eq!(
+            source
+                .read(lease, "maxswitch", Values::new())
+                .await
+                .unwrap(),
+            42
+        );
+        while status.borrow_and_update().completed_passes == 0 {
+            status.changed().await.unwrap();
+        }
+        let done = source.snapshot();
+        assert_eq!(done.values.len(), 4);
+        assert_eq!(done.generation, first.generation);
+        assert_eq!(
+            done.sample_started_seconds["channel/0"],
+            first.sample_started_seconds["channel/0"]
+        );
+        assert_eq!(done.sample_sequences["channel/0"], 1);
+        assert!(
+            done.sample_started_seconds["channel/3"] - done.sample_started_seconds["channel/0"]
+                > 0.5
+        );
+        assert!(done.error.is_none());
+    })
+    .await
+    .unwrap();
+    let requests = server.fixture.requests.lock().unwrap();
+    let command = requests
+        .iter()
+        .position(|(_, uri, _)| uri.contains("/maxswitch?"))
+        .unwrap();
+    let last = requests
+        .iter()
+        .position(|(_, uri, _)| uri.contains("Id=3"))
+        .unwrap();
+    assert!(
+        command < last,
+        "A large polling pass must not monopolize the actor"
+    );
+}
+
+#[tokio::test]
+async fn weather_refresh_triggers_upstream_without_waiting_for_polling_and_respects_retry_after() {
+    use regain_hub::{safety::MonotonicClock, source::SourceHandle};
+    let mut server = Server::new(vec![Reply::value(json!(true))]).await;
+    if let SourceBackend::Alpaca { device_type, .. } = &mut server.config.backend {
+        *device_type = DeviceType::ObservingConditions;
+    }
+    // An empty poll plan isolates the refresh request from normal sampling.
+    let backend = AlpacaBackend::new(&server.config, vec![], None).unwrap();
+    let source = SourceHandle::spawn(
+        server.config.id,
+        Uuid::new_v4(),
+        server.config.polling.clone(),
+        Box::new(backend),
+        Arc::new(MonotonicClock::default()),
+    )
+    .unwrap();
+    let lease = Uuid::new_v4();
+    source.acquire(lease).await.unwrap();
+    server.push(Reply::json(json!({"ErrorNumber":0})));
+    source.refresh(lease).await.unwrap();
+    assert_eq!(
+        server.fixture.requests.lock().unwrap().last().unwrap().0,
+        "PUT"
+    );
+    assert!(
+        server
+            .fixture
+            .requests
+            .lock()
+            .unwrap()
+            .last()
+            .unwrap()
+            .1
+            .contains("/refresh")
+    );
+    server.push(Reply {
+        status: 429,
+        retry_after: Some("120".into()),
+        ..Reply::value(Value::Null)
+    });
+    assert!(source.refresh(lease).await.is_err());
+    let requests = server.fixture.requests.lock().unwrap().len();
+    let error = source.refresh(lease).await.unwrap_err();
+    assert_eq!(error.kind, ErrorKind::Busy);
+    assert!(error.retry_after.unwrap() > Duration::from_secs(119));
+    assert_eq!(server.fixture.requests.lock().unwrap().len(), requests);
+}
+
+#[tokio::test]
+async fn transient_partial_sample_retries_same_key_before_advancing() {
+    use regain_hub::config::Readout;
+    let mut server = Server::new(vec![
+        Reply::value(json!(true)),
+        Reply {
+            status: 503,
+            retry_after: Some("5".into()),
+            ..Reply::value(Value::Null)
+        },
+        Reply::value(json!(10)),
+        Reply::value(json!(20)),
+    ])
+    .await;
+    if let SourceBackend::Alpaca { device_type, .. } = &mut server.config.backend {
+        *device_type = DeviceType::Switch;
+    }
+    let samples = (0..2)
+        .map(|channel| {
+            SampleRequest::readout(
+                &Readout::Channel {
+                    source: server.config.id,
+                    channel,
+                    unit: None,
+                },
+                false,
+            )
+        })
+        .collect();
+    let mut backend = AlpacaBackend::new(&server.config, samples, None).unwrap();
+    backend.connect().await.unwrap();
+    let failed = backend.sample().await.unwrap();
+    assert_eq!(
+        failed.errors["channel/0"].retry_after,
+        Some(Duration::from_secs(5))
+    );
+    assert!(failed.more);
+    let retry = backend.sample().await.unwrap();
+    assert_eq!(retry.values["channel/0"], 10);
+    assert!(retry.more);
+    let last = backend.sample().await.unwrap();
+    assert_eq!(last.values["channel/1"], 20);
+    assert!(!last.more);
+}
+
+#[tokio::test]
+async fn partial_poll_retry_after_blocks_refresh_and_resumes_the_failed_sample() {
+    use regain_hub::{config::Readout, safety::MonotonicClock, source::SourceHandle};
+    let mut server = Server::new(vec![
+        Reply::value(json!(true)),
+        Reply {
+            status: 503,
+            retry_after: Some("1".into()),
+            ..Reply::value(Value::Null)
+        },
+        Reply::value(json!(10)),
+        Reply::value(json!(20)),
+    ])
+    .await;
+    if let SourceBackend::Alpaca { device_type, .. } = &mut server.config.backend {
+        *device_type = DeviceType::Switch;
+    }
+    let samples = (0..2)
+        .map(|channel| {
+            SampleRequest::readout(
+                &Readout::Channel {
+                    source: server.config.id,
+                    channel,
+                    unit: None,
+                },
+                false,
+            )
+        })
+        .collect();
+    let backend = AlpacaBackend::new(&server.config, samples, None).unwrap();
+    let source = SourceHandle::spawn(
+        server.config.id,
+        Uuid::new_v4(),
+        server.config.polling.clone(),
+        Box::new(backend),
+        Arc::new(MonotonicClock::default()),
+    )
+    .unwrap();
+    let lease = Uuid::new_v4();
+    source.acquire(lease).await.unwrap();
+    let mut status = source.status();
+    tokio::time::timeout(Duration::from_secs(3), async {
+        while !status
+            .borrow_and_update()
+            .sample_errors
+            .contains_key("channel/0")
+        {
+            status.changed().await.unwrap();
+        }
+        let before = tokio::time::Instant::now();
+        let error = source.refresh(lease).await.unwrap_err();
+        assert_eq!(error.kind, ErrorKind::Busy);
+        let remaining = error.retry_after.unwrap();
+        assert!(remaining > Duration::from_millis(900));
+        while status.borrow_and_update().completed_passes == 0 {
+            status.changed().await.unwrap();
+        }
+        assert!(before.elapsed() >= remaining);
+    })
+    .await
+    .unwrap();
+    assert_eq!(source.snapshot().values["channel/0"], 10);
+    assert_eq!(source.snapshot().values["channel/1"], 20);
+    let requests = server.fixture.requests.lock().unwrap();
+    assert_eq!(requests.len(), 4);
+    assert!(requests[1].1.contains("Id=0"));
+    assert!(requests[2].1.contains("Id=0"));
+    assert!(requests[3].1.contains("Id=1"));
 }
 #[derive(Default)]
 struct Fixture {
@@ -494,7 +745,7 @@ async fn weather_sensor_ages_and_partial_errors_survive_the_http_source_and_outp
     let source = registry.get(server.config.id).unwrap();
     let mut status = source.status();
     tokio::time::timeout(Duration::from_secs(3), async {
-        while status.borrow_and_update().sequence == 0 {
+        while status.borrow_and_update().completed_passes == 0 {
             status.changed().await.unwrap();
         }
     })

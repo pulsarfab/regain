@@ -140,9 +140,22 @@ the available observations; getters never insert duplicate samples. Fallback,
 generation changes, and observation gaps clear history. WindGust passes through
 its source statistic without a second averaging step.
 
-These are controller contracts, not evidence of completed interface conformance.
-Source polling budgets, Refresh, frontend translations, and large/slow-source
-acceptance must be verified when wiring the actual frontends.
+Each Alpaca sample step makes at most one HTTP request. Age and value requests
+share a conservative age anchor but have separate deadlines. Commands can run
+between steps. Snapshots retain per-key observation time and sequence; another
+property's response cannot rejuvenate a measurement or grow its average. Scalar
+caches allow at most 1024 keys (including historical sequence counters) and 1 MiB
+of text. Failed measurements remove only their own cached value.
+
+Refresh is a short acquisition trigger, not a wait for new sensor values. Remote
+ObservingConditions sources receive PUT Refresh; other scalar sources schedule a
+new local poll. Source requests run concurrently across a weather output, while
+each actor serializes its own I/O. Retry-After prevents a refresh from bypassing
+an upstream delay. Refresh does not rewrite sensor ages or replay on failure.
+Clients observe TimeSinceLastUpdate to determine when measurements change.
+
+These are controller contracts with local latency/retry tests, not evidence of
+completed frontend interface conformance or hardware acceptance.
 
 ## Windows COM and interface baseline
 

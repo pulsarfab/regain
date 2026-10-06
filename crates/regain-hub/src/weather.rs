@@ -470,6 +470,22 @@ pub struct WeatherSession {
     _leases: Vec<SourceLease>,
 }
 impl WeatherSession {
+    pub async fn refresh(&self) -> Result<(), SourceError> {
+        let mut requests = tokio::task::JoinSet::new();
+        for lease in &self._leases {
+            let source = lease.source.clone();
+            let id = lease.id;
+            requests.spawn(async move { source.refresh(id).await });
+        }
+        let mut error = None;
+        while let Some(result) = requests.join_next().await {
+            let result = result.unwrap_or_else(|_| Err(unavailable("Source refresh task stopped")));
+            if let Err(failure) = result {
+                error.get_or_insert(failure);
+            }
+        }
+        error.map_or(Ok(()), Err)
+    }
     pub fn read(&self, metric: WeatherMetric) -> Result<WeatherReading, SourceError> {
         self.output
             .engine

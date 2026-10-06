@@ -35,6 +35,9 @@ fn snapshot(source: Uuid, sequence: u64, seconds: u64, values: Values) -> Source
         values,
         sample_errors: BTreeMap::new(),
         sample_ages_seconds: BTreeMap::new(),
+        sample_started_seconds: BTreeMap::new(),
+        sample_sequences: BTreeMap::new(),
+        completed_passes: 0,
         sampled_at_seconds: Some(seconds as f64),
         error: None,
     }
