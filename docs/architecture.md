@@ -118,6 +118,20 @@ camera and control structures against a fixture built from the vendor C header.
 
 ## Portable Rust transport
 
+Continuous frame downloads include optional `exposureTiming` metadata, fixed
+when the acquisition owner receives the raw frame rather than when IPC delivers
+it. Its `basis` is `host-receipt-estimate`, not a sensor timestamp.
+`estimatedStartUnixMilliseconds` subtracts the configured exposure (rounded up
+to milliseconds) from `receivedUnixMilliseconds`. The additional
+`freshnessMarginMilliseconds` is the greater of a full exposure and the observed
+raw-frame interval, rounded conservatively. Consumers can subtract that margin
+when selecting a post-event frame. Transition frames carry null timing.
+
+This estimate does not bound undocumented native buffering, readout delays or
+wall-clock adjustments. It supports conservative image sharing, not scientific
+exposure-time certification. It changes no camera commands: in-flight exposures
+continue, and NINA, ASCOM and Alpaca single-exposure behavior is unchanged.
+
 The Rust workers also run on Linux and macOS, with the same pipe protocol.
 Only the NINA/COM adapters and Windows job objects are Windows-specific.
 Linux/macOS camera operation still needs hardware testing.
