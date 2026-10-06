@@ -6,8 +6,8 @@ outputs through Alpaca, native NINA providers and native ASCOM. Their setup uses
 the shared configuration. Broader proxy devices and acceptance remain in progress;
 this is not a released feature.
 
-Windows sources can import ASCOM Switch, SafetyMonitor, ObservingConditions, Focuser and Rotator
-drivers directly through private x86/x64 helpers. Add a **COM** source, enter the
+Windows sources can import ASCOM Switch, SafetyMonitor, ObservingConditions, Focuser, Rotator
+and FilterWheel drivers directly through private x86/x64 helpers. Add a **COM** source, enter the
 installed driver's ProgID and select its registration bitness. Available choices
 come from the host's installed helper capabilities. This does not connect through
 Alpaca or require a Regain native ASCOM output. Select **Managed** to let the hub
@@ -414,7 +414,7 @@ then give it a label and an unused focuser number. Review, apply and reload. Sav
 IDs and numbers are retained; adding another output referencing the same source
 shares its connection while each frontend keeps its own lease. Review reports
 mismatched source classes rather than opening equipment. Rotators use the same
-form below; camera, wheel and panel proxies remain under development. Select/save the output in the
+form below; camera and panel proxies remain under development. Select/save the output in the
 native selector or register it through the ASCOM manager before connecting a client.
 
 ![Browser-created focuser output backed by explicit simulation](images/hub-web-focuser-setup.jpg)
@@ -443,7 +443,7 @@ the others. Saved IDs and numbers remain stable across reload.
 Review rejects mismatched source classes without opening equipment. Modern
 rotator publication requires upstream reversal support. For native NINA, select
 and save the new output in the shared selector; for ASCOM, register it with the
-shared manager. Wheel creation, panels and camera proxies remain under development.
+shared manager. Panels and camera proxies remain under development.
 
 ![Shared native rotator output backed by explicit simulation](images/hub-native-rotator-setup-simulation.png)
 
@@ -460,17 +460,39 @@ remained unchanged. Cached health confirms zero leases and disconnected transpor
 no equipment or installed vendor driver was opened. This is simulation acceptance,
 not hardware or conformance evidence.
 
-## Wheel outputs (development)
+## Create shared wheel outputs (development)
 
-Saved wheel proxies can publish a native EFW or an Alpaca FilterWheel source
-through Alpaca, native NINA and ASCOM FilterWheel V3. Select the saved wheel in
-the shared NINA selector, or register that output with the shared ASCOM manager.
-The hub owns source connection sharing; each frontend retains its own lease.
-Windows COM wheel imports use the existing isolated x86/x64 workers and preserve
-managed or borrowed connections. A saved virtual source can reuse another wheel
-output through the same leases and generation checks; its cached metadata keeps
-the original sample age and errors. Wheel creation in the generated forms,
-including its COM source choice, remains under development.
+Add a source for each wheel, then choose its transport:
+
+| Source | What to select |
+| --- | --- |
+| Direct Regain driver | `efw`, with the wheel's stable identity and optional filter metadata |
+| Remote Alpaca | FilterWheel class, server URL, device number and connection policy |
+| Windows ASCOM driver | FilterWheel class, installed ProgID and an available worker bitness |
+| Another hub device | The existing wheel output's stable ID |
+| Simulation | FilterWheel class; no equipment connection |
+
+Add an output, choose **Republish a device**, select **filterwheel** and its
+source, then give it a label and an unused wheel number. Review, apply and reload.
+Add another output referencing that source to share the wheel. Each Alpaca, NINA
+or ASCOM client retains an independent lease. Review rejects mismatched source
+classes without opening equipment; saved IDs and numbers survive reload.
+
+Select the saved wheel in the shared NINA selector, or register that output with
+the shared ASCOM manager. Windows COM inputs use isolated x86/x64 workers and
+preserve managed or borrowed connections. A virtual input can reuse another
+wheel output through the same leases and generation checks; cached metadata
+keeps its original sample age and errors.
+
+![Native wheel created through shared setup](images/hub-native-filterwheel-setup-simulation.png)
+
+![Browser wheel created through shared setup](images/hub-web-filterwheel-setup-simulation.jpg)
+
+These actual captures use explicit simulation. The verified browser workflow
+creates outputs 7 and 8 sharing one source, rejects a mismatched class and
+preserves their identities after save/reload. A names-only simulation update
+retains Position and offsets, with zero source leases and disconnected transport.
+This is setup acceptance; hardware and conformance gates remain open.
 
 Names retain their order, Unicode and blank slots. FocusOffsets retain signed
 Int32 values and are metadata; the hub does not move a focuser automatically.

@@ -449,3 +449,34 @@ async fn oversized_wheel_ipc_metadata_is_explicit_and_does_not_close_or_mutate_t
     serving.await.unwrap().unwrap();
     runtime.shutdown().await.unwrap();
 }
+
+#[tokio::test]
+async fn wheel_setup_capability_is_published_without_opening_equipment() {
+    use regain_hub::ipc::{Limits, serve_stream};
+    let device = Device::new();
+    let (_, runtime, source) = runtime_setup(&device);
+    let (mut stream, server) = tokio::io::duplex(1024 * 1024);
+    let task = tokio::spawn(serve_stream(server, runtime.clone(), Limits::default()));
+    call(&mut stream, 1, json!({"op":"hello"})).await;
+    let description = call(&mut stream, 2, json!({"op":"describeConfig"})).await;
+    assert!(
+        description["result"]["capabilities"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|value| value == "filterWheelOutputs")
+    );
+    assert!(
+        !description["result"]["capabilities"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|value| value == "broaderProxyOutputs")
+    );
+    assert_eq!(source.snapshot().lease_count, 0);
+    assert_eq!(device.connects.load(SeqCst), 0);
+    assert_eq!(device.reads.load(SeqCst), 0);
+    drop(stream);
+    task.await.unwrap().unwrap();
+    runtime.shutdown().await.unwrap();
+}

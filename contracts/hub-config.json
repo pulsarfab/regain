@@ -2691,8 +2691,7 @@
                 "x-regain": {
                   "enumCapabilities": {
                     "camera": "broaderComSources",
-                    "covercalibrator": "broaderComSources",
-                    "filterwheel": "broaderComSources"
+                    "covercalibrator": "broaderComSources"
                   }
                 }
               },
@@ -2770,8 +2769,7 @@
                 "x-regain": {
                   "enumCapabilities": {
                     "camera": "broaderSimulation",
-                    "covercalibrator": "broaderSimulation",
-                    "filterwheel": "broaderSimulation"
+                    "covercalibrator": "broaderSimulation"
                   }
                 }
               },
@@ -3156,7 +3154,7 @@
                   "enumCapabilities": {
                     "camera": "broaderProxyOutputs",
                     "covercalibrator": "broaderProxyOutputs",
-                    "filterwheel": "broaderProxyOutputs",
+                    "filterwheel": "filterWheelOutputs",
                     "focuser": "focuserOutputs",
                     "observingconditions": "broaderProxyOutputs",
                     "rotator": "rotatorOutputs",
@@ -3344,7 +3342,7 @@
         },
         {
           "default": 0.2,
-          "description": "Position returns -1 until this monotonic duration elapses. Stalled wheels require an explicit simulation Position update; no Halt is added.",
+          "description": "Position returns -1 until this monotonic duration elapses. Clear stalledMotion to resume, or inject Position to replace pending test movement.",
           "label": "Move duration (s)",
           "maximum": 300.0,
           "minimum": 0.0,

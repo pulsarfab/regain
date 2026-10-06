@@ -11,8 +11,10 @@ namespace Regain.NINA.Tests;
 
 public sealed partial class HubNativeTests
 {
-    [Fact]
-    public async Task NativeWindowCreatesAndReloadsSimulatedRotatorFromSharedControls()
+    [Theory]
+    [InlineData("rotator")]
+    [InlineData("filterwheel")]
+    public async Task NativeWindowCreatesAndReloadsSimulatedTypedOutputFromSharedControls(string deviceType)
     {
         await Wpf(async () => {
             await using var host = await Host.Open();
@@ -34,24 +36,24 @@ public sealed partial class HubNativeTests
                 var source = Controls<Expander>(Group("Sources")).Last(); source.IsExpanded = true;
                 Controls<Expander>(source).Single(e => (string)e.Header == "Backend").IsExpanded = true;
                 Choose("/sources/3/backend", "simulated");
-                Choose("/sources/3/backend/deviceType", "rotator");
-                Text("/sources/3/label", "Explicit simulation rotator setup");
+                Choose("/sources/3/backend/deviceType", deviceType);
+                Text("/sources/3/label", "Explicit simulation " + deviceType + " setup");
                 Group("Sources").IsExpanded = false;
                 Group("Outputs").IsExpanded = true;
                 Click(Controls<Button>(Group("Outputs")).Last(b => (string)b.Content == "Add item"));
                 var output = Controls<Expander>(Group("Outputs")).Last(); output.IsExpanded = true;
                 Controls<Expander>(output).Single(e => (string)e.Header == "Device").IsExpanded = true;
                 Choose("/outputs/3/device", "proxy");
-                Choose("/outputs/3/device/deviceType", "rotator");
+                Choose("/outputs/3/device/deviceType", deviceType);
                 var references = Controls<ComboBox>(window).Single(c => (string?)c.Tag == "/outputs/3/device/source");
-                references.SelectedItem = references.Items.OfType<ComboBoxItem>().Single(c => ((string)c.Content).StartsWith("Explicit simulation rotator setup (", StringComparison.Ordinal));
-                Text("/outputs/3/number", "7"); Text("/outputs/3/label", "Shared rotator [SIMULATION]");
+                references.SelectedItem = references.Items.OfType<ComboBoxItem>().Single(c => ((string)c.Content).StartsWith("Explicit simulation " + deviceType + " setup (", StringComparison.Ordinal));
+                Text("/outputs/3/number", "7"); Text("/outputs/3/label", "Shared " + deviceType + " [SIMULATION]");
                 Click(review); await UiUntil(() => apply.IsEnabled);
                 Click(apply); await UiUntil(() => review.IsEnabled && !apply.IsEnabled);
                 var saved = await host.Command(new { op = "getConfig" });
                 var savedSource = saved.GetProperty("sources")[3]; var savedOutput = saved.GetProperty("outputs")[3];
-                Assert.Equal("rotator", savedSource.GetProperty("backend").GetProperty("deviceType").GetString());
-                Assert.Equal("rotator", savedOutput.GetProperty("device").GetProperty("deviceType").GetString());
+                Assert.Equal(deviceType, savedSource.GetProperty("backend").GetProperty("deviceType").GetString());
+                Assert.Equal(deviceType, savedOutput.GetProperty("device").GetProperty("deviceType").GetString());
                 Assert.Equal(savedSource.GetProperty("id").GetGuid(), savedOutput.GetProperty("device").GetProperty("source").GetGuid());
                 Assert.Equal(7, savedOutput.GetProperty("number").GetInt32());
                 var reload = Controls<Button>(window).Single(b => (string)b.Content == "Reload saved configuration");
@@ -60,14 +62,14 @@ public sealed partial class HubNativeTests
                 foreach (var item in saved.GetProperty("sources").EnumerateArray())
                     Assert.Equal(0, (await host.Command(new { op = "sourceStatus", source = item.GetProperty("id").GetGuid() })).GetProperty("leaseCount").GetInt32());
                 Controls<TabControl>(window).Single().SelectedIndex = 0;
-                Group("Outputs").IsExpanded = true; Group("Shared rotator [SIMULATION]").IsExpanded = true;
-                Controls<Expander>(Group("Shared rotator [SIMULATION]")).Single(e => (string)e.Header == "Device").IsExpanded = true;
+                Group("Outputs").IsExpanded = true; Group("Shared " + deviceType + " [SIMULATION]").IsExpanded = true;
+                Controls<Expander>(Group("Shared " + deviceType + " [SIMULATION]")).Single(e => (string)e.Header == "Device").IsExpanded = true;
                 var savedReference = Controls<ComboBox>(window).Single(c => (string?)c.Tag == "/outputs/3/device/source");
                 Assert.Equal(savedSource.GetProperty("id").GetString(), (string)((ComboBoxItem)savedReference.SelectedItem).Tag);
                 await window.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ContextIdle);
                 window.UpdateLayout();
                 Assert.True(savedReference.IsVisible); savedReference.BringIntoView();
-                await Capture(window, "hub-native-rotator-setup-simulation.png");
+                await Capture(window, "hub-native-" + deviceType + "-setup-simulation.png");
             } finally { window.Close(); }
         });
     }

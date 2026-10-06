@@ -234,6 +234,7 @@ impl HubRuntime {
             "proxyOutputs",
             "focuserOutputs",
             "rotatorOutputs",
+            "filterWheelOutputs",
         ];
         if !self.com_architectures.is_empty() {
             capabilities.push("comSources");

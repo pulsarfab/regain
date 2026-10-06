@@ -3474,3 +3474,37 @@ Preceding publication head 0669339 passes all eight jobs in both PR/push CI
 to the same draft PR #21; new PR/push CI 37544747351/37544741219 is live. Earlier
 unexplained Windows failures remain retained. Shared wheel creation, panels,
 cameras, coordination and every original acceptance/final gate remain required.
+
+### Shared wheel creation review (2026-10-06, local increment)
+
+The generated schema enables wheel COM/simulation choices and gates wheel proxies
+on filterWheelOutputs. The runtime advertises that configuration capability only
+now that native, Alpaca, COM, virtual and dedicated simulation paths exist. Camera
+and panel gates remain closed. Neither frontend adds a separate wheel editor.
+Parameterized WPF creation and actual net48 creation workflows reuse the rotator
+path, retaining saved identity, inert review/apply and independent source leases.
+The actual IPC test checks configuration capability publication before connecting.
+Node form events exercise both rotator and wheel transitions; six independent
+schema checks pass. The first full run caught a test request-ID error: inserting
+ID 20 before existing lower IDs correctly closed the stream. A separate sequential
+IPC capability test retains the original stream-order checks. Its cleanup now
+asserts the shutdown result. No production protocol rule or deadline changed.
+
+All 22 wheel cases and full Rust hub/Alpaca suites pass, along with strict Clippy,
+Rust 1.89, contract freshness, NINA 213/213 and real net48 x86/x64 clients.
+The latter create two wheel outputs, verify saved identities, metadata/motion and
+independent leases. Fresh WPF setup and simulation captures are visually checked.
+Review corrects stalled-motion help: clearing the fault resumes motion; Position
+injection replaces it. The generated description and both frontends agree.
+
+Actual browser acceptance uses a fresh hub with empty equipment profiles and
+only explicit simulation. It creates outputs 7/8 sharing one source, blocks Apply
+for a mismatched class, saves/reloads stable IDs, rejects local invalid JSON
+without requiring reload and applies only Names. The observed status retains
+Position 0, seven zero offsets, zero leases and disconnected transport. Private
+processes are stopped after verification; no installed driver/equipment is opened.
+Evidence: artifacts/hub-wheel-creation-{focused-confirmed,rust-confirmed,clippy,
+msrv,host,contract-final,node-final,schema-final,nina,net48,ipc-final}.log;
+artifacts/hub-wheel-creation-browser-{saved,verification}.json; actual captures
+in docs/images. Preceding a586c76 CI remains live. Panels, cameras, coordination
+and all original remaining acceptance/final gates stay required.

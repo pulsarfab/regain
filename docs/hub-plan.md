@@ -26,7 +26,8 @@ Rotator COM, virtual and dedicated simulation inputs and shared creation are
 implemented. Wheel publication through all three outputs is pushed. Windows COM
 wheel imports and virtual wheel inputs pass local full regressions and are pushed.
 Dedicated wheel simulation passes local full Rust, NINA and both-architecture
-net48 confirmation, with a verified native setup capture. Shared wheel creation, panels and
+net48 confirmation, with a verified native setup capture. Shared wheel creation is
+verified locally in both setup frontends and real net48 clients. Panels and
 camera proxies remain.
 Milestone 5's coordinated groups are not yet
 implemented. PR #21 stays draft until the full plan passes.
@@ -44,8 +45,7 @@ Explicit metadata must match hardware slots, including on the low-level write
 path. Wheel runtime/IPC and cached diagnostics are implemented and verified
 locally. Alpaca publication is verified locally; native NINA/ASCOM publication
 passes managed checks. Windows COM imports pass private worker/parent checks;
-shared creation remains required before
-enabling wheel proxies in setup.
+shared creation is verified locally in setup; broader acceptance remains open.
 
 Shared wheel polling increment is locally verified: the existing property poller supports
 bounded string and Int32 arrays, and factory plans deduplicate wheel metadata and
@@ -123,8 +123,15 @@ suites, strict Clippy, Rust 1.89, generated contracts, Node/six schema checks,
 rebuilt-host NINA 212/212 and real net48 x86/x64 clients pass. The actual native
 capture is visually verified. Review corrected optional-array schema admission,
 boxed actor updates and local JSON error classification. This increment is local;
-preceding a586c76 CI is still running.
-Next: shared wheel creation, then all
+preceding a586c76 CI is still running. The simulation increment is committed at
+04ae046. Shared wheel creation now uses the existing schema-driven editors:
+FilterWheel has its own output capability, with COM/simulation input choices
+enabled. Full Rust hub/Alpaca, strict Clippy, Rust 1.89, generated contracts,
+Node/six schema checks, NINA 213/213 and real net48 x86/x64 pass. Native WPF and
+browser captures are visually verified. Browser acceptance creates outputs 7/8,
+rejects a class mismatch, preserves saved IDs on reload and changes only Names
+with zero source leases; invalid local JSON leaves the editor usable.
+Next: panels, then all
 remaining typed devices/cameras/coordination and original acceptance/final gates.
 
 Runtime checkpoint push CI evidence: Windows initial focuser Connect receives
@@ -1027,7 +1034,7 @@ deduplicated polling and cached typed diagnostics/DeviceState are implemented.
 All three frontend publications, Windows COM imports and virtual inputs are
 implemented. Dedicated focuser simulation is implemented. Broader simulation, general typed
 setup and conformance remain required.
-Shared setup now enables Focuser and Rotator proxy creation, with other proxy classes
+Shared setup now enables Focuser, Rotator and FilterWheel proxy creation, with other proxy classes
 gated until their interfaces are implemented and verified.
 
 Rotator controller increment: shared typed sessions and live property/command
@@ -1167,3 +1174,5 @@ Keep existing device profiles and registrations compatible throughout migration.
 | 2026-10-06 | Verified preceding runtime PR CI and pushed reviewed wheel HTTP/native publication at 0669339 to draft PR #21. Implemented and reviewed Windows COM wheel imports using existing STA workers, typed polling/controllers and bounded array validation. | Runtime PR 37539206029 passes all eight jobs; its separate push failures remain retained. New publication PR/push CI 37541898392/37541893308 is live. COM import checks pass all 27 private worker and 16 actual registered parent cases, full Rust hub/Alpaca, strict Clippy, Rust 1.89, contracts, Node/five schema checks, fresh-host NINA 209/209 and real net48 x86/x64. Retain wrong fixture HRESULT and initial parent array-rejection failures; fixes preserve deadlines and error semantics. Keep imports local until preceding CI finishes. Next: wheel virtual/simulation/shared creation, panels, camera ownership/transport, coordination and every original remaining gate. |
 | 2026-10-06 | Added and reviewed virtual wheel inputs using shared typed connection supervision, controllers and cached metadata forwarding; extended actual EFW worker simulation through two nested outputs. | All 21 wheel and 20 native tests, full Rust hub/Alpaca suites, strict Clippy, Rust 1.89, generated contracts, Node/five schema checks, rebuilt-host NINA 209/209 and real net48 x86/x64 pass. Retain first cache classification failure; corrected assertions require original Permanent errors at every layer and valid metadata. Preceding 0669339 PR/push CI has seven successful jobs and successful Windows test.ps1 steps, including private SCM/production wheel registration; final build/installer checks remain live. Keep COM/virtual increments local until those runs finish. Next: dedicated wheel simulation/shared creation, panels, camera ownership/transport, coordination and every original remaining acceptance/final gate. |
 | 2026-10-06 | Added and reviewed dedicated wheel simulation using shared actors, timed motion, bounded array controls and atomic metadata. Actual IPC verifies applied updates with oversized replies; both frontends require reload without replay. | Full Rust hub/Alpaca suites, 27 simulator cases, strict Clippy, Rust 1.89, contracts, Node/six schema checks, fresh-host NINA 212/212 and real net48 x86/x64 pass. Actual WPF capture verified. Retain initial schema/test/Clippy failures and corrected evidence. Preceding a586c76 PR/push CI remains live; keep this increment local. Next: shared wheel creation, panels, cameras/coordination and every original acceptance/final gate. |
+
+| 2026-10-06 | Enabled shared wheel creation using generated capability choices and existing editors; parameterized rotator/wheel WPF and real net48 creation checks. Reviewed browser creation, mismatched classes, saved identities and names-only updates. | Full Rust hub/Alpaca, 22 wheel cases, strict Clippy, Rust 1.89, contracts, Node/six schema checks, fresh-host NINA 213/213 and real net48 x86/x64 pass. Corrected a test request-ID ordering error in a separate IPC capability test; no protocol rule changed. Actual native/browser captures and zero-lease status verified. Preceding a586c76 CI remains live; keep local increments until it ends. Next: panels, cameras/coordination and every original acceptance/final gate. |

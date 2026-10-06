@@ -841,8 +841,7 @@ The Rust source factory adopts these workers in the development branch. Windows
 NINA/ASCOM payloads include both private architectures and dependencies; these
 are import helpers, not registered native ASCOM hub outputs. Schema capability
 choices advertise only installed helper architectures and completed creation
-classes. Wheel COM imports are implemented in the runtime; their generated-form
-choice remains gated until shared wheel creation is complete. Other platforms
+classes. Wheel COM imports are enabled in the generated forms. Other platforms
 offer exported Alpaca sources instead.
 
 Requests are UTF-8 newline JSON, fewer than 4096 bytes before the newline, with
@@ -1734,12 +1733,13 @@ this change alone does not enable additional COM classes or wheel outputs.
 
 ### Wheel runtime and cached diagnostics
 
-The runtime admits FilterWheel proxies over native and network sources. Private
+The runtime admits FilterWheel proxies over native, network, COM, virtual and
+simulated sources. Private
 IPC advertises `filterWheelOutputs`, reads `filterWheel` properties and accepts
 `moveFilterWheel` with a signed Int32 position. Unsupported-class operations
 remain errors. Existing connection leases, command admission, generation fencing,
 unknown-write latching and EOF cleanup are shared with other typed accessories.
-Wheel creation remains gated until all frontend interfaces are verified.
+Shared creation uses the same generated editors and completed output capability.
 
 Cached wheel diagnostics expose Names, FocusOffsets and Position through the same
 typed observation envelope as focusers and rotators. The wire fields stay
@@ -1778,7 +1778,7 @@ HTTP clients retain separate hub leases and share the source's metadata, Positio
 and command control. The last disconnect releases only its source; failures with
 unknown command completion fence sibling clients and never replay Position or
 issue an invented stop/calibration. Virtual inputs and Windows COM imports are
-described below; dedicated wheel simulation and shared creation remain outstanding.
+described below, along with dedicated simulation and shared creation.
 
 ### Native wheel publication
 
@@ -1797,8 +1797,7 @@ IFilterWheel Position setter acknowledges acceptance without blocking for motion
 completion; reads return the actual position, including -1 while moving. Neither
 frontend applies focuser offsets or adds calibration, Halt or raw commands.
 Malformed metadata/positions remain errors, and lost Position replies retain the
-shared source uncertainty fence. Standard interface publication does not enable
-unfinished wheel source kinds or shared creation choices.
+shared source uncertainty fence. Shared creation uses the capability described below.
 
 ### Windows COM wheel imports
 
@@ -1816,8 +1815,8 @@ bounds before motion. It owns source/command leases, deduplicated polling and
 generation/uncertainty fences across all frontends. Read errors never fabricate
 slots or positions; ambiguous setter failures cannot trigger replay or an invented
 Halt. Registered aliases to the hub's own classes are denied before activation.
-COM wheel creation remains gated in generated setup pending the complete wheel
-creation increment. Other platforms can use an upstream Alpaca FilterWheel.
+Generated setup enables COM wheel creation for installed helper architectures.
+Other platforms can use an upstream Alpaca FilterWheel.
 
 ### Virtual wheel inputs
 
@@ -1839,8 +1838,7 @@ age. Mismatched arrays invalidate all three properties. A malformed Position
 leaves valid metadata available; its original polling error classification is
 preserved through every layer and clears when the source recovers. Explicit
 native-worker simulation propagates through nested outputs and diagnostics.
-Dedicated wheel simulation is described below; shared creation remains a separate
-gate.
+Dedicated wheel simulation and shared creation are described below.
 
 ### Dedicated wheel simulation
 
@@ -1865,4 +1863,16 @@ readers preserve those types and validate status metadata pairing. Simulation
 updates can apply before serialization reports responseTooLarge. Frontends revoke
 review and require reload after that response, without replay. The stream remains
 usable for an explicit smaller update; arrays are never truncated and frame
-limits are not enlarged. Shared wheel creation and broader acceptance remain open.
+limits are not enlarged. Broader acceptance remains open.
+
+### Shared wheel creation
+
+Both setup forms consume the generated FilterWheel choices. The host advertises
+filterWheelOutputs for proxy creation; COM availability still requires installed
+helper architectures. Camera and panel proxy gates remain independent. Native
+EFW, Alpaca, COM, virtual and explicit simulated sources can back wheel outputs.
+Each output has its own stable identity and class-local number, and multiple
+outputs may reference one source. Review rejects class mismatches without opening
+equipment. Applying configuration requires all client leases to be released;
+reload reconciles saved identities and never repeats an uncertain mutation.
+The native selector and ASCOM manager reuse those saved output identities.

@@ -479,7 +479,7 @@ pub fn description() -> Value {
                 "description":"Zero-based actual slot, or -1 while moving. Setting Position explicitly replaces pending test motion.",
                 "default":wheel.position,"minimum":-1,"maximum":MAX_FILTER_SLOTS-1}));
             fields.push(json!({"path":["filterWheel","moveDurationSeconds"],"type":"number","label":"Move duration (s)",
-                "description":"Position returns -1 until this monotonic duration elapses. Stalled wheels require an explicit simulation Position update; no Halt is added.",
+                "description":"Position returns -1 until this monotonic duration elapses. Clear stalledMotion to resume, or inject Position to replace pending test movement.",
                 "default":wheel.move_duration_seconds,"minimum":0.0,"maximum":300.0}));
         }
         let faults = match device {
