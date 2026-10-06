@@ -2,8 +2,8 @@
 
 Regain Hub combines source devices into shared Switch, SafetyMonitor, and
 ObservingConditions outputs. The current development branch can publish those
-outputs through Alpaca or the native NINA providers. Both frontends can edit the
-shared configuration. Native ASCOM hub outputs and broader proxy devices remain in progress;
+outputs through Alpaca, native NINA providers and native ASCOM. Their setup uses
+the shared configuration. Broader proxy devices and acceptance remain in progress;
 this is not a released feature.
 
 Windows sources can import ASCOM Switch, SafetyMonitor and ObservingConditions
@@ -87,8 +87,8 @@ empty and the configuration remains unchanged.
 ![Shared hub setup after saving a simulated output](images/hub-setup-simulation.jpg)
 
 This screenshot shows a hardware-free test. It is evidence of the editor workflow,
-not real-device acceptance. Simulation controls, richer
-safety diagnostics, initialization, and conformance remain on
+not real-device acceptance. Actor retry diagnostics, interactive acceptance and
+conformance remain on
 the [hub plan](hub-plan.md).
 
 The current preview offers Switch v3, SafetyMonitor v3 and ObservingConditions v2
@@ -163,8 +163,8 @@ do not acquire equipment leases.
 
 These are renders of the actual WPF window during an automated simulation test
 against the production host. They demonstrate setup; interactive NINA and
-real-device acceptance remain pending. Initialization and
-broader diagnostics remain on the plan.
+real-device acceptance remain pending. Actor retry diagnostics and
+broader device support remain on the plan.
 
 ![Native setup inspection of simulated Switch channels](images/hub-native-inspection-simulation.png)
 
@@ -200,6 +200,38 @@ These are the actual shared WPF editor and browser against the production host
 with explicitly simulated sources. The browser readback verifies the changed
 level and preserved temperature. No attached equipment is controlled by these
 simulation fields.
+
+Use **Output health** in the shared native editor, or **Check output health** in
+web setup, to read a saved output's cached state. Choose its first item and page
+size, then **Read cached output health**; **Read next output items** advances the
+host's cursor. New outputs must be applied and reloaded first. Labels, defaults,
+bounds and the reply schema come from the host. Successful reads preserve a
+configuration review; lost, malformed or obsolete replies require explicit Reload.
+
+Safety shows the whole output's current permission even when only some members
+are visible. Member details include raw/effective state, reason, failure/unsafe/
+recovery counters, evidence age and recovery hold against the saved policy. An
+inactive controller shows unknown/unsafe. Reading this page cannot connect
+equipment, count a safety observation or establish permission. Switch shows
+reserved channel numbers, freshness/errors and configured write intent; live
+write permission is checked separately. Weather reports each metric independently.
+These are observations of caches, not a simultaneous equipment snapshot.
+
+**Export observed diagnostics** in web setup, or **Export observed output
+diagnostics** in native setup, saves the completed observation with its time and
+revision plus public host status from Reload. Native exports can also include
+the last source observation. Editable configuration and credentials are excluded.
+Exporting does not refresh data; Reload clears the previous output observation.
+Actual next-retry scheduling will be added separately; no countdown is inferred
+from configured polling or backoff.
+
+![Native cached safety diagnostics during simulation](images/hub-native-output-diagnostics.png)
+
+![Browser cached safety diagnostics during simulation](images/hub-web-output-diagnostics.jpg)
+
+These are the actual shared WPF editor and browser using the production host with
+private simulated sources. Safety remains unsafe and all source leases remain
+zero. They demonstrate diagnostics and export, not hardware acceptance.
 
 Use **Credentials** to save an upstream Authorization header in the host's
 separate user storage. Its labels, descriptions, length limits and protection

@@ -22,7 +22,9 @@ jobs:
       matrix:
         os: [ubuntu-24.04, ubuntu-24.04-arm, macos-15, macos-15-intel]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 15
+    # Cold Intel macOS builds plus the complete process suites exceed 15 minutes.
+    # This bounds the whole job; individual transport/test deadlines stay fixed.
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable

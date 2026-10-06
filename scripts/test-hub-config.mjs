@@ -4,6 +4,7 @@ import { configurationContract } from '../crates/regain-alpaca/web/hub-config.mj
 import { initialValue, newIdentity, previewValue } from '../crates/regain-alpaca/web/hub-form.mjs';
 import { CredentialSetup, credentialContract } from '../crates/regain-alpaca/web/hub-credentials.mjs';
 import { SimulationSetup, simulationControls, validateSimulationValue } from '../crates/regain-alpaca/web/hub-simulation.mjs';
+import { OutputDiagnostics, diagnosticSummary, validateDiagnosticSchema } from '../crates/regain-alpaca/web/hub-diagnostics.mjs';
 
 const description = JSON.parse(readFileSync(new URL('../contracts/hub-config.json', import.meta.url), 'utf8'));
 const reader = configurationContract(description);
@@ -158,3 +159,82 @@ sim.load(simDescription,simulatedSource('observingconditions'),simRevision);
 assert.deepEqual(sim.patch([{path:['weather','temperature'],value:null},{path:['sampleAgeSeconds'],value:60}]),{weather:{temperature:null},sampleAgeSeconds:60});
 assert.throws(()=>sim.patch([{path:['weather','temperature'],value:3},{path:['weather','temperature'],value:4}]));
 console.log('Web simulation passed: shared descriptors, sparse updates, physical limits, sensor absence, revision fencing, lost/malformed replies, no replay and operation admission.');
+
+const diagSaved=JSON.parse(readFileSync(new URL('../crates/regain-hub/examples/simulated-observatory.json',import.meta.url),'utf8'));
+// getConfig serializes defaulted fields; use that wire shape in reply fixtures.
+for (const output of diagSaved.outputs) {
+  for (const channel of output.device.channels??[]) channel.readout.unit??=null;
+  for (const measurement of Object.values(output.device.measurements??{})) {
+    for (const field of reader.fields(reader.root.$defs.Measurement,measurement)) if (!Object.hasOwn(measurement,field.key)) measurement[field.key]=field.value;
+    for (const readout of measurement.sources) readout.unit??=null;
+  }
+}
+const diagGeneration='77777777-7777-4777-8777-777777777777';
+const diagHealth=source=>({source,revision:diagSaved.revision,generation:diagGeneration,sequence:0,transportConnected:false,writeUncertain:false,leaseCount:0,error:null});
+const diagUnavailable={state:'unavailable',error:{kind:'disconnected',message:'Source is disconnected',upstreamCode:null}};
+function diagReply(output,start=0,limit=1) {
+  const device=output.device; let total, diagnostics;
+  if(device.kind==='switch') {
+    total=device.channels.length;
+    diagnostics={kind:'switch',channels:device.channels.slice(start,start+limit).map(c=>({state:'configured',number:c.number,id:c.id,label:c.label,readout:c.readout,units:c.units,minimum:c.minimum,maximum:c.maximum,step:c.step,configuredWritable:c.writable,maximumAgeSeconds:31,sample:structuredClone(diagUnavailable),health:diagHealth(c.readout.source)}))};
+  } else if(device.kind==='safety') {
+    total=device.members.length;
+    const policy=Object.fromEntries(Object.entries(description.schema.$defs.SafetyPolicy.properties).map(([key,field])=>[key,field.default]));
+    diagnostics={kind:'safety',controllerActive:false,isSafe:false,members:device.members.slice(start,start+limit).map(m=>({source:m.source,enabled:m.enabled,policy,health:diagHealth(m.source),decision:{configurationRevision:diagSaved.revision,generation:diagGeneration,phase:'unknown',rawIsSafe:null,permitsSafe:false,recoveryConfirmed:false,safeAgeSeconds:null,failedCycles:0,unsafeReadings:0,safeReadings:0,safeHoldSeconds:0,reason:'No evidence',lastSequence:0}}))};
+  } else {
+    const metrics=Object.keys(device.measurements).sort(); total=metrics.length;
+    diagnostics={kind:'weather',averagePeriodHours:0,measurements:metrics.slice(start,start+limit).map(metric=>({metric,configuration:device.measurements[metric],sample:structuredClone(diagUnavailable),sources:device.measurements[metric].sources.map(s=>diagHealth(s.source))}))};
+  }
+  const end=Math.min(start+limit,total);
+  return {purpose:'cachedDiagnostics',output:output.id,configurationRevision:diagSaved.revision,observedSeconds:1,deviceType:{switch:'switch',safety:'safetymonitor',weather:'observingconditions'}[device.kind],simulated:true,start,limit,total,nextStart:end<total?end:null,diagnostics};
+}
+for(const output of diagSaved.outputs) {
+  let review=true;
+  const setup=new OutputDiagnostics(async(command,path,deadline)=>{assert.equal(command.op,'outputStatus');assert.equal(command.expectedRevision,diagSaved.revision);assert.equal(deadline,description.outputDiagnostics.deadlineSeconds);return diagReply(output,command.start,command.limit);},()=>review=false);
+  setup.load(description,diagSaved); const reply=await setup.read(output.id,0,1);
+  assert.equal(review,true); assert.equal(setup.observation.result.output,output.id);
+  assert.equal(setup.observation.configurationRevision,diagSaved.revision);
+  assert.equal(JSON.stringify(setup.observation).includes('backend'),false);
+  const summary=diagnosticSummary(reply); assert.match(summary,/Simulation/);
+  if(output.device.kind==='safety') {assert.match(summary,/UNSAFE/);assert.match(summary,/raw unknown/);}
+  else assert.match(summary,/unavailable/);
+}
+for(const fault of ['lost','revision','output','cursor','channel','secretRoot','secretHealth','type','emptyGeneration','missingError']) {
+  let requests=0, review=true;
+  const setup=new OutputDiagnostics(async command=>{
+    requests++; if(fault==='lost') throw new Error('Lost reply');
+    const reply=diagReply(diagSaved.outputs[0],command.start,command.limit);
+    if(fault==='revision') reply.configurationRevision=diagGeneration;
+    if(fault==='output') reply.output=diagGeneration;
+    if(fault==='cursor') reply.nextStart=0;
+    if(fault==='channel') reply.diagnostics.channels[0].id=diagGeneration;
+    if(fault==='secretRoot') reply.authorization='PRIVATE_FORBIDDEN_REPLY';
+    if(fault==='secretHealth') reply.diagnostics.channels[0].health.authorization='PRIVATE_FORBIDDEN_REPLY';
+    if(fault==='type') reply.diagnostics.channels[0].minimum='0';
+    if(fault==='emptyGeneration') reply.diagnostics.channels[0].health.generation='00000000-0000-0000-0000-000000000000';
+    if(fault==='missingError') delete reply.diagnostics.channels[0].health.error;
+    return reply;
+  },()=>review=false);
+  setup.load(description,diagSaved);
+  await assert.rejects(setup.read(diagSaved.outputs[0].id,0,1),error=>!error.message.includes('PRIVATE_FORBIDDEN_REPLY'));
+  assert.equal(setup.uncertain,true);assert.equal(setup.observation,null);assert.equal(review,false);
+  await assert.rejects(setup.read(diagSaved.outputs[0].id,0,1));assert.equal(requests,1);
+  setup.load(description,diagSaved);assert.equal(requests,1);assert.equal(setup.uncertain,false);
+}
+let diagRequests=0, finishDiagnostic;
+const diagPending=new OutputDiagnostics(async command=>{diagRequests++;return await new Promise(resolve=>finishDiagnostic=()=>resolve(diagReply(diagSaved.outputs[0],command.start,command.limit)));});
+diagPending.load(description,diagSaved);
+await assert.rejects(diagPending.read(diagGeneration,0,1));await assert.rejects(diagPending.read(diagSaved.outputs[0].id,0,0));assert.equal(diagRequests,0);
+const observing=diagPending.read(diagSaved.outputs[0].id,0,1);
+await assert.rejects(diagPending.read(diagSaved.outputs[0].id,1,1));assert.throws(()=>diagPending.load(description,diagSaved));assert.equal(diagRequests,1);
+finishDiagnostic();await observing;
+const notFinite=diagReply(diagSaved.outputs[0]);notFinite.observedSeconds=Infinity;
+assert.throws(()=>validateDiagnosticSchema(description.outputDiagnostics.responseSchema,notFinite));
+console.log('Web output diagnostics passed: generated reply schema, saved identity/revision/page fences, nested redaction, uncertainty/reload, admission and host decisions.');
+// A $ref and its siblings both constrain a reply; neither can replace the other.
+{
+  const schema = {$defs:{value:{type:'number',minimum:2}},$ref:'#/$defs/value',maximum:3};
+  validateDiagnosticSchema(schema,2);
+  assert.throws(()=>validateDiagnosticSchema(schema,1));
+  assert.throws(()=>validateDiagnosticSchema(schema,4));
+}

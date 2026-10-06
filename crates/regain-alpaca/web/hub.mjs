@@ -2,22 +2,27 @@ import { configurationContract } from './hub-config.mjs';
 import { renderConfiguration, previewValue } from './hub-form.mjs';
 import { CredentialSetup } from './hub-credentials.mjs';
 import { SimulationSetup } from './hub-simulation.mjs';
+import { OutputDiagnostics, diagnosticSummary } from './hub-diagnostics.mjs';
 const $ = id => document.getElementById(id);
 let base, draft, reader, description, reviewed, dirty = false, busy = false, uncertain = false;
+let publicHostStatus;
 function status(message, error = false) { $('status').textContent = message; $('status').classList.toggle('error', error); }
 function errors(fields = []) { $('errors').replaceChildren(...fields.map(field => { const item = document.createElement('li'); item.textContent = `${field.path}: ${field.message}`; return item; })); }
 function revokeReview() { reviewed = undefined; $('apply').disabled = true; $('preview').hidden = true; }
 function changed() { dirty = true; revokeReview(); status('Unsaved changes. Review before applying.'); }
 const credentials = new CredentialSetup(rpc, reference => { $('credential-reference').value = reference; }, revokeReview);
+const outputDiagnostics = new OutputDiagnostics(rpc,revokeReview);
 function controls() {
   $('editor-fields').disabled = busy || !reader || uncertain; $('validate').disabled = busy || !reader || uncertain; $('apply').disabled = busy || !reviewed || uncertain; $('reload').disabled = busy;
   for (const button of $('sources').querySelectorAll('button')) button.disabled = busy || uncertain;
   for (const fields of $('sources').querySelectorAll('.simulation-fields')) fields.disabled = busy || uncertain;
+  for (const fields of $('outputs').querySelectorAll('fieldset')) fields.disabled = busy || uncertain;
+  $('export-diagnostics').disabled = busy || !outputDiagnostics.observation;
   const fields = $('credential-fields'); if (fields) fields.disabled = busy || uncertain || credentials.uncertain;
   const create = $('credential-create'); if (create) create.disabled = busy || uncertain || credentials.description?.clientChosenReferences !== true;
 }
-async function rpc(command, path = '/setup/api/hub') {
-  const abort = new AbortController(); const timer = setTimeout(() => abort.abort(),40000);
+async function rpc(command, path = '/setup/api/hub', deadlineSeconds = 40) {
+  const abort = new AbortController(); const timer = setTimeout(() => abort.abort(),deadlineSeconds * 1000);
   try {
     const response = await fetch(path, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(command),cache:'no-store',signal:abort.signal});
     const value = await response.json();
@@ -93,6 +98,26 @@ function renderSources() {
     return box;
   }));
 }
+function renderOutputs() {
+  $('output-result').hidden=true; $('output-summary').textContent='';
+  $('outputs').replaceChildren(...base.outputs.map(output=>{
+    const box=document.createElement('article'), title=document.createElement('strong'); title.textContent=output.label; box.append(title);
+    const fields=document.createElement('fieldset'); box.append(fields); const parameters={}; let next;
+    for(const [key,field] of Object.entries(description.outputDiagnostics.parameters)) {
+      const label=document.createElement('label'); label.textContent=field.label; const input=document.createElement('input'); input.type='number'; input.step='1'; input.min=field.minimum; input.max=field.maximum; input.value=field.default; input.title=field.description; input.dataset.diagnosticParameter=key;
+      input.oninput=()=>{next=undefined; nextButton.disabled=true;}; label.append(input); fields.append(label); parameters[key]=input;
+    }
+    const read=document.createElement('button'), nextButton=document.createElement('button'); read.type=nextButton.type='button'; read.textContent='Read cached output health'; nextButton.textContent='Read next output items'; nextButton.disabled=true;
+    async function observe(start) {
+      $('output-result').hidden=true; $('output-summary').textContent=''; next=undefined; nextButton.disabled=true;
+      const result=await outputDiagnostics.read(output.id,start,parameters.limit.valueAsNumber);
+      $('output-result').hidden=false; $('output-result').textContent=JSON.stringify(result,null,2); $('output-summary').textContent=diagnosticSummary(result);
+      parameters.start.value=result.start; next=result.nextStart; nextButton.disabled=next===null || next===undefined;
+      status(`Cached output: ${output.label}. No equipment connection or safety confirmation was started.`);
+    }
+    read.onclick=()=>action(()=>observe(parameters.start.valueAsNumber)); nextButton.onclick=()=>action(()=>observe(next)); fields.append(read,nextButton); return box;
+  }));
+}
 function renderSimulation(box,source) {
   const setup = new SimulationSetup(rpc,revokeReview); setup.load(description.simulationControl,source,base.revision);
   const group = document.createElement('details'); const title = document.createElement('summary'); title.textContent = 'Simulation controls'; group.append(title); box.append(group);
@@ -129,6 +154,7 @@ function renderSimulation(box,source) {
 }
 async function load() {
   uncertain = true; revokeReview();
+  outputDiagnostics.observation=null; publicHostStatus=undefined;
   const password = $('credential-authorization'); if (password) password.value = '';
   await rpc({}, '/setup/api/hub/reload');
   // Read status separately so applied-but-blocked outcomes remain visible.
@@ -138,10 +164,11 @@ async function load() {
   reader = configurationContract(description); base = saved; draft = structuredClone(saved); reviewed = undefined;
   if (host.configurationRevision !== saved.revision) throw new Error('Saved configuration changed during reload; reload again');
   credentials.load(description.credentialStorage);
+  outputDiagnostics.load(description,saved); publicHostStatus=structuredClone(host);
   uncertain = host.phase !== 'ready'; dirty = false;
   $('host-state').textContent = `Host: ${host.phase}${host.persistenceWarning ? ` · ${host.persistenceWarning}` : ''}`;
   $('revision').textContent = `Saved revision: ${base.revision}`;
-  renderConfiguration($('configuration'),reader,draft,base,changed); renderSources(); renderCredentials(); $('preview').hidden = true;
+  renderConfiguration($('configuration'),reader,draft,base,changed); renderSources(); renderOutputs(); renderCredentials(); $('preview').hidden = true;
   status(uncertain ? 'Host is not ready. Inspect its status before applying another change.' : 'Configuration loaded. Source connections are shared across frontends.', uncertain);
 }
 $('reload').onclick = () => {
@@ -149,6 +176,12 @@ $('reload').onclick = () => {
   action(load);
 };
 $('editor').onsubmit = event => event.preventDefault();
+$('export-diagnostics').onclick=()=>action(async()=>{
+  const snapshot={format:'regainHubSetupDiagnostics',version:1,exportedAtUtc:new Date().toISOString(),instanceId:base.instanceId,editorState:uncertain?'Uncertain':reviewed?'Reviewed':'Editing',savedRevision:base.revision,savedHostStatus:publicHostStatus,observation:null,outputObservation:outputDiagnostics.observation};
+  const url=URL.createObjectURL(new Blob([JSON.stringify(snapshot,null,2)],{type:'application/json'}));
+  const link=document.createElement('a'); link.href=url; link.download='regain-hub-diagnostics.json'; link.click(); setTimeout(()=>URL.revokeObjectURL(url),1000);
+  status('Exported observed host/output status with timestamps and revision. Editable configuration and credentials are excluded.');
+});
 $('editor').addEventListener('invalid', event => {
   for (let node = event.target.parentElement; node; node = node.parentElement) if (node.tagName === 'DETAILS') node.open = true;
 }, true);

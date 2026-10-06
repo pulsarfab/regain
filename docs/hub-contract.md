@@ -1219,5 +1219,18 @@ connection strings, credentials/references and arbitrary cached vendor text.
 Controller and source observations are separate caches rather than an atomic
 equipment snapshot; their epochs must remain visible during transitions. There
 is no equipment read, refresh, connection lease or write in this operation.
-Native/web presentation and exports, including actual next-retry scheduling,
-remain pending; clients must not invent a countdown from a configured delay.
+The shared native editor and web setup use the host-generated serialized response
+schema, including required nullable fields, plus saved output/source identity,
+revision, class and page fences. A successful cache read preserves a configuration
+review. Lost, malformed, cancelled or obsolete replies discard the current
+observation and review and require explicit reload; reads are never replayed.
+Local invalid selection/page input sends no request and preserves the review.
+
+The version-1 setup diagnostic export adds `outputObservation` alongside the
+existing source observation. It retains public host status from the last reload
+and the completed output observation's UTC time, instance, revision and typed
+result. Exporting makes no new host or equipment request and excludes editable
+configuration, credentials and backend connection details. Different observation
+times remain explicit; the file is not an atomic equipment snapshot. Reload clears
+the previous output observation. Actual actor retry scheduling remains pending;
+clients must not invent a countdown from a configured delay.

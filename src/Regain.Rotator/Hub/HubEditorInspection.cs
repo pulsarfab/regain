@@ -85,6 +85,6 @@ public sealed partial class HubEditorSession
         return JsonSerializer.SerializeToElement(new { format = "regainHubSetupDiagnostics", version = 1,
             exportedAtUtc = DateTimeOffset.UtcNow, instanceId = InstanceId, editorState = State.ToString(),
             savedRevision = SavedConfiguration?.GetProperty("revision"), savedHostStatus = HostStatus,
-            observation = LastSourceObservation });
+            observation = LastSourceObservation, outputObservation = LastOutputObservation });
     }
 }

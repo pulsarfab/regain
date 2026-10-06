@@ -99,6 +99,10 @@ internal static class Program
             using var editor = await HubEditorSession.AttachAsync(args[0], args[1], attached.InstanceId, deadline.Token);
             await editor.ReloadAsync(deadline.Token);
             var oldRevision = editor.Draft!.Revision;
+            var cachedOutput = await editor.OutputStatusAsync(output, 0, 1, deadline.Token);
+            if (cachedOutput.GetProperty("purpose").GetString() != "cachedDiagnostics" ||
+                editor.DiagnosticSnapshot().GetProperty("outputObservation").GetProperty("kind").GetString() != "cachedOutputHealth")
+                throw new InvalidOperationException("Native cached output editor/export failed");
             editor.Draft.SetValue("/outputs/0/label", JsonSerializer.SerializeToElement("net48 edited simulation")); editor.Changed();
             if (!await editor.ReviewAsync(deadline.Token) || !editor.Draft.Preview().Contains("net48 edited simulation"))
                 throw new InvalidOperationException("Native editor review failed");

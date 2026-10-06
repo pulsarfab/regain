@@ -17,7 +17,7 @@ public sealed partial class HubConfigurationWindow : Window
     private readonly TextBox preview = new() { IsReadOnly = true, TextWrapping = TextWrapping.Wrap, AcceptsReturn = true,
         VerticalScrollBarVisibility = ScrollBarVisibility.Auto, FontFamily = new FontFamily("Consolas"), FontSize = 12 };
     private readonly TextBox diagnostics = new() { IsReadOnly = true, TextWrapping = TextWrapping.Wrap, AcceptsReturn = true,
-        VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+        VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Tag = "source-result" };
     private readonly StackPanel sources = new();
     private readonly TextBlock status = new() { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(8) };
     private readonly TextBlock errors = new() { Foreground = Brushes.Firebrick, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(8) };
@@ -48,6 +48,7 @@ public sealed partial class HubConfigurationWindow : Window
         tabs.Items.Add(new TabItem { Header = "Source health", Content = health }); panel.Children.Add(tabs);
         tabs.Items.Add(new TabItem { Header = "Credentials", Content = new ScrollViewer { Content = credentials, VerticalScrollBarVisibility = ScrollBarVisibility.Auto } });
         tabs.Items.Add(new TabItem { Header = "Simulation", Content = new ScrollViewer { Content = simulation, VerticalScrollBarVisibility = ScrollBarVisibility.Auto } });
+        AddOutputDiagnosticsTab();
         reload.Click += async (_, _) => {
             if ((session?.Draft?.Dirty == true || form?.Errors.Count > 0) && MessageBox.Show(this, "Discard the unsaved draft and reload?", "Reload hub configuration", MessageBoxButton.YesNo) != MessageBoxResult.Yes) return;
             await Run(Load);
@@ -94,6 +95,7 @@ public sealed partial class HubConfigurationWindow : Window
         RenderInspection();
         RenderCredentials();
         RenderSimulation();
+        RenderOutputDiagnostics();
     }
     private async Task Run(Func<Task> action)
     {
@@ -127,6 +129,7 @@ public sealed partial class HubConfigurationWindow : Window
         CredentialControls(editable);
         InspectionControls(editable);
         SimulationControls(editable);
+        OutputDiagnosticControls(editable);
     }
     private void ShowErrors(JsonElement fields) => errors.Text = string.Join("\n", fields.EnumerateArray().Select(field => field.GetProperty("path").GetString() + ": " + field.GetProperty("message").GetString()));
     private static string Pretty(JsonElement value) => JsonSerializer.Serialize(value, new JsonSerializerOptions { WriteIndented = true });

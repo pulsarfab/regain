@@ -61,7 +61,7 @@ pub struct ConnectionInfo {
     pub uncertain: bool,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub enum ErrorKind {
     Connecting,
@@ -75,8 +75,8 @@ pub enum ErrorKind {
     Unavailable,
 }
 
-#[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Debug, Serialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SourceError {
     pub kind: ErrorKind,
     pub message: &'static str,

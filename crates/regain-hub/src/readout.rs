@@ -15,8 +15,8 @@ impl Readout {
         }
     }
 }
-#[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Debug, Serialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ScalarSample {
     pub value: f64,
     pub age_seconds: f64,

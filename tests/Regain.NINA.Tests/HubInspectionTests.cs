@@ -137,7 +137,7 @@ public sealed partial class HubNativeTests
                 limit.Text = "2";
                 inspect.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); await UiUntil(() => next.IsEnabled);
                 Assert.False(apply.IsEnabled);
-                var result = Controls<TextBox>(window).Single(t => t.IsReadOnly && t.FontFamily.Source != "Consolas");
+                var result = Controls<TextBox>(window).Single(t => (string?)t.Tag == "source-result");
                 using (var json = JsonDocument.Parse(result.Text)) Assert.True(json.RootElement.GetProperty("simulation").GetBoolean());
                 await Capture(window, "hub-native-inspection-simulation.png");
                 next.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); await UiUntil(() => inspect.IsEnabled);

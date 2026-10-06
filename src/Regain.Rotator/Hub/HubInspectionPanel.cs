@@ -53,7 +53,7 @@ public sealed partial class HubConfigurationWindow
             var dialog = new SaveFileDialog { Title = "Export observed hub setup diagnostics", FileName = "regain-hub-diagnostics.json", Filter = "JSON diagnostics|*.json", AddExtension = true };
             if (dialog.ShowDialog(this) == true) {
                 File.WriteAllText(dialog.FileName, Pretty(snapshot));
-                status.Text = "Exported public host status and the last source observation. Configuration and credential values are excluded.";
+                status.Text = "Exported public host status and completed source/output observations. Configuration and credential values are excluded.";
             }
             return Task.CompletedTask;
         })));

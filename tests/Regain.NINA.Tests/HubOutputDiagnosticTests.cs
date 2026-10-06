@@ -1,0 +1,137 @@
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using System.Windows;
+using System.Windows.Controls;
+using Regain.Hub;
+using Xunit;
+
+namespace Regain.NINA.Tests;
+
+public sealed partial class HubNativeTests
+{
+    [Fact]
+    public void DiagnosticSchemaReferencesRetainSiblingConstraintsAndDecodedStrings()
+    {
+        using var schema = JsonDocument.Parse("{\"$defs\":{\"value\":{\"type\":\"number\",\"minimum\":2}},\"$ref\":\"#/$defs/value\",\"maximum\":3}");
+        HubDiagnosticContract.Schema(schema.RootElement, JsonSerializer.SerializeToElement(2));
+        Assert.Throws<HubException>(() => HubDiagnosticContract.Schema(schema.RootElement, JsonSerializer.SerializeToElement(1)));
+        Assert.Throws<HubException>(() => HubDiagnosticContract.Schema(schema.RootElement, JsonSerializer.SerializeToElement(4)));
+        using var escaped = JsonDocument.Parse("\"\\u00b0C\"");
+        using var plain = JsonDocument.Parse("\"°C\"");
+        Assert.True(HubDiagnosticContract.Equal(escaped.RootElement, plain.RootElement));
+    }
+    [Fact]
+    public async Task CachedOutputEditorPreservesReviewSavedIdentityAndSiblingLeases()
+    {
+        await using var host = await Host.Open(); using var editor = await Editor(host); await editor.ReloadAsync();
+        var saved = editor.SavedConfiguration!.Value; Guid Output(int i) => saved.GetProperty("outputs")[i].GetProperty("id").GetGuid();
+        Assert.True(await editor.ReviewAsync());
+        await Assert.ThrowsAsync<InvalidOperationException>(() => editor.OutputStatusAsync(Guid.NewGuid(), 0, 1));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => editor.OutputStatusAsync(Output(0), 0, 0));
+        Assert.Equal(HubEditorState.Reviewed, editor.State);
+        var first = await editor.OutputStatusAsync(Output(0), 0, 1); Assert.Equal(1, first.GetProperty("nextStart").GetInt32());
+        Assert.Equal(HubEditorState.Reviewed, editor.State);
+        var second = await editor.OutputStatusAsync(Output(0), 1, 32); Assert.Equal(2, second.GetProperty("diagnostics").GetProperty("channels").GetArrayLength());
+        var safety = await editor.OutputStatusAsync(Output(1), 0, 32);
+        Assert.False(safety.GetProperty("diagnostics").GetProperty("isSafe").GetBoolean()); Assert.Contains("raw unknown", HubConfigurationWindow.OutputDiagnosticSummary(safety));
+        await editor.OutputStatusAsync(Output(2), 0, 32);
+        for (int i = 0; i < 3; i++) Assert.Equal(0, (await host.Status(i)).GetProperty("leaseCount").GetInt32());
+        using var device = host.Switch(); await device.Connect(CancellationToken.None);
+        var observed = await editor.OutputStatusAsync(Output(0), 0, 32);
+        Assert.Equal(1, observed.GetProperty("diagnostics").GetProperty("channels")[0].GetProperty("health").GetProperty("leaseCount").GetInt32());
+        Assert.True(device.Connected); Assert.Equal(HubEditorState.Reviewed, editor.State);
+        var export = editor.DiagnosticSnapshot(); Assert.Equal("cachedOutputHealth", export.GetProperty("outputObservation").GetProperty("kind").GetString());
+        Assert.Equal(saved.GetProperty("revision").GetGuid(), export.GetProperty("outputObservation").GetProperty("configurationRevision").GetGuid());
+        Assert.DoesNotContain("credential", export.GetRawText(), StringComparison.OrdinalIgnoreCase); Assert.False(export.TryGetProperty("configuration", out _));
+        await editor.ReloadAsync(); Assert.Null(editor.LastOutputObservation); Assert.Equal(JsonValueKind.Null, editor.DiagnosticSnapshot().GetProperty("outputObservation").ValueKind);
+    }
+    [Theory]
+    [InlineData("lost")]
+    [InlineData("revision")]
+    [InlineData("output")]
+    [InlineData("cursor")]
+    [InlineData("channel")]
+    [InlineData("secretRoot")]
+    [InlineData("secretHealth")]
+    [InlineData("numberType")]
+    [InlineData("missingError")]
+    public async Task CachedOutputRepliesAreStrictAndCannotAuthorizeReplayOrAnExport(string fault)
+    {
+        await using var host = await Host.Open(); using var original = await Editor(host); await original.ReloadAsync();
+        var saved = original.SavedConfiguration!.Value; var description = original.Description!.Value;
+        var output = saved.GetProperty("outputs")[0].GetProperty("id").GetGuid(); int requests = 0;
+        using var editor = new HubEditorSession(original.InstanceId, async (command, token) => {
+            switch (command.GetProperty("op").GetString()) {
+                case "describeConfig": return description;
+                case "getConfig": return saved;
+                case "hostStatus": return original.HostStatus!.Value;
+                case "validateConfig": return JsonSerializer.SerializeToElement(new { valid = true, errors = Array.Empty<object>() });
+                case "outputStatus":
+                    requests++; Assert.Equal(saved.GetProperty("revision").GetGuid(), command.GetProperty("expectedRevision").GetGuid());
+                    if (fault == "lost") throw new HubException(HubFailure.Disconnected);
+                    var reply = JsonNode.Parse((await host.Command(new { op = "outputStatus", output, expectedRevision = saved.GetProperty("revision").GetGuid(), start = 0, limit = 1 })).GetRawText())!;
+                    if (fault == "revision") reply["configurationRevision"] = Guid.NewGuid().ToString();
+                    if (fault == "output") reply["output"] = Guid.NewGuid().ToString();
+                    if (fault == "cursor") reply["nextStart"] = 0;
+                    if (fault == "channel") reply["diagnostics"]!["channels"]![0]!["id"] = Guid.NewGuid().ToString();
+                    if (fault == "secretRoot") reply["authorization"] = "PRIVATE_FORBIDDEN_REPLY";
+                    if (fault == "secretHealth") reply["diagnostics"]!["channels"]![0]!["health"]!["authorization"] = "PRIVATE_FORBIDDEN_REPLY";
+                    if (fault == "numberType") reply["diagnostics"]!["channels"]![0]!["minimum"] = "0";
+                    if (fault == "missingError") reply["diagnostics"]!["channels"]![0]!["health"]!.AsObject().Remove("error");
+                    return JsonSerializer.SerializeToElement(reply);
+                default: throw new Exception("Unexpected request");
+            }
+        }, () => { });
+        await editor.ReloadAsync(); Assert.True(await editor.ReviewAsync());
+        var error = await Assert.ThrowsAsync<HubException>(() => editor.OutputStatusAsync(output, 0, 1));
+        Assert.DoesNotContain("PRIVATE_FORBIDDEN_REPLY", error.Message); Assert.Equal(HubEditorState.Uncertain, editor.State); Assert.Null(editor.LastOutputObservation);
+        Assert.DoesNotContain("PRIVATE_FORBIDDEN_REPLY", editor.DiagnosticSnapshot().GetRawText());
+        await Assert.ThrowsAsync<InvalidOperationException>(() => editor.OutputStatusAsync(output, 0, 1)); Assert.Equal(1, requests);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => editor.ApplyAsync());
+        await editor.ReloadAsync(); Assert.Equal(1, requests); Assert.Equal(HubEditorState.Editing, editor.State);
+    }
+    [Fact]
+    public async Task CachedOutputCancellationCannotPreserveAReviewOrDisposeAnotherClient()
+    {
+        await using var host = await Host.Open(); using var original = await Editor(host); await original.ReloadAsync();
+        var saved = original.SavedConfiguration!.Value; var entered = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously); int closed = 0;
+        using var editor = new HubEditorSession(original.InstanceId, async (command, token) => {
+            switch (command.GetProperty("op").GetString()) {
+                case "describeConfig": return original.Description!.Value;
+                case "getConfig": return saved;
+                case "hostStatus": return original.HostStatus!.Value;
+                case "validateConfig": return JsonSerializer.SerializeToElement(new { valid = true, errors = Array.Empty<object>() });
+                case "outputStatus": entered.SetResult(true); await Task.Delay(Timeout.Infinite, token); throw new Exception("Unreachable");
+                default: throw new Exception("Unexpected request");
+            }
+        }, () => closed++);
+        await editor.ReloadAsync(); Assert.True(await editor.ReviewAsync()); using var cancellation = new CancellationTokenSource();
+        var pending = editor.OutputStatusAsync(saved.GetProperty("outputs")[0].GetProperty("id").GetGuid(), 0, 1, cancellation.Token);
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(5)); cancellation.Cancel(); await Assert.ThrowsAnyAsync<OperationCanceledException>(() => pending);
+        Assert.Equal(HubEditorState.Uncertain, editor.State); Assert.Null(editor.LastOutputObservation); editor.Dispose(); Assert.Equal(1, closed);
+        Assert.Equal("ready", (await host.Command(new { op = "hostStatus" })).GetProperty("phase").GetString());
+        for (int i = 0; i < 3; i++) Assert.Equal(0, (await host.Status(i)).GetProperty("leaseCount").GetInt32());
+    }
+    [Fact]
+    public async Task NativeOutputDiagnosticWindowShowsUnsafeSimulationAndHostPagination()
+    {
+        await Wpf(async () => {
+            await using var host = await Host.Open(); var window = new HubConfigurationWindow(host.Executable, host.ConfigPath, host.Selection(0, "switch").InstanceId);
+            try {
+                window.Show(); await UiUntil(() => Controls<Button>(window).Single(b => (string)b.Content == "Review changes").IsEnabled);
+                Controls<TabControl>(window).Single().SelectedIndex = 5;
+                var selected = Controls<ComboBox>(window).Single(c => (string?)c.Tag == "diagnostic-output"); selected.SelectedIndex = 1;
+                var read = Controls<Button>(window).Single(b => (string)b.Content == "Read cached output health");
+                read.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                await UiUntil(() => read.IsEnabled && Controls<TextBlock>(window).Single(t => (string?)t.Tag == "output-summary").Text.Contains("UNSAFE"));
+                Assert.Contains("raw unknown", Controls<TextBlock>(window).Single(t => (string?)t.Tag == "output-summary").Text);
+                await Capture(window, "hub-native-output-diagnostics.png");
+                selected.SelectedIndex = 0; var limit = Controls<TextBox>(window).Single(t => (string?)t.Tag == "diagnostic-limit"); limit.Text = "1";
+                read.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); var next = Controls<Button>(window).Single(b => (string)b.Content == "Read next output items"); await UiUntil(() => next.IsEnabled);
+                next.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); await UiUntil(() => read.IsEnabled);
+                Assert.Equal("1", Controls<TextBox>(window).Single(t => (string?)t.Tag == "diagnostic-start").Text);
+                for (int i = 0; i < 3; i++) Assert.Equal(0, (await host.Status(i)).GetProperty("leaseCount").GetInt32());
+            } finally { window.Close(); }
+        });
+    }
+}

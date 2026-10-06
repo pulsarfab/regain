@@ -1956,3 +1956,55 @@ instead of through a cold Task.Run queue. Production behavior and the 200-ms/two
 second fixture deadlines are unchanged. New disposable-runner CI must verify these
 corrections. CLI eeb9208 CI is still active; broader diagnostics and every original
 remaining milestone/acceptance gate remain required.
+
+### Shared output health, wire schema and observed exports
+
+The existing native NINA/ASCOM editor and browser now expose cached output health
+using the same host-described parameters and generated reply schema. Review
+checked whole-output safety permission outside the visible membership page,
+inactive unknown/unsafe state, configured Switch intent without granting live
+write permission, independent weather failures, saved identity/revision/cursors,
+and preservation of sibling source leases and configuration review. Read failures
+clear the current observation; lost/malformed/cancelled/obsolete results invalidate
+review and block replay until explicit Reload. Local invalid input sends no RPC.
+Exports retain observed public host/source/output data and their separate timestamps,
+not editable configuration, credentials or arbitrary backend text. Browser export
+now records Reviewed accurately when the configuration review survives a cache read.
+
+Review found that a deserialization schema permitted omission of nullable fields
+which the presentation expects. The reply now uses schemars' serialization
+contract: these fields are required but can contain null. Regression cases remove
+a nested nullable health error and require uncertainty without export/replay.
+Reference constraints and their siblings both apply; native comparison uses decoded
+strings so equivalent Unicode escapes compare equally. Neither frontend implements
+safety policy or invents retry scheduling.
+
+All 168 NINA tests pass with warnings treated as errors, including strict malformed
+reply cases, cancellation/admission and actual WPF output paging. Real net48 x86/x64
+clients pass with editor/API/export checks; builds have no warnings. Full Rust
+hub/Alpaca tests, Clippy, Rust 1.89.0, generated-contract freshness, Node and four
+independent schema tests pass in the `artifacts/hub-diagnostic-ui-*` logs. The first
+concurrent rebuild met a Windows executable lock while the native fixture was
+running; after its confirmed completion the sequential Rust build/tests passed.
+No fixture process was killed or deadline increased to work around this.
+
+The actual browser verifies safety unknown/unsafe, Switch pagination, independent
+weather errors, preserved Review/Apply state and a downloaded Reviewed diagnostic
+snapshot. The browser download-event observation timed out, but its success UI and
+saved `Downloads/regain-hub-diagnostics.json` were inspected against the private
+fixture's instance/revision. Public source status proves zero leases and no source
+connections; console warning/error inventory is empty. Evidence is retained in
+`artifacts/hub-output-browser-verification.json` and `hub-output-browser-export.json`.
+Actual WPF/browser screenshots are labeled simulation; they do not prove hardware
+or interactive vendor acceptance.
+
+Native-creation PR CI 37468454801 passes all eight jobs. Its push CI 37468447863's
+first x86 COM response timeout remains unexplained; do not erase that evidence.
+Diagnostic API de2691a PR 37471446346 and push 37471435465 pass seven jobs, including
+Windows. Intel macOS is cancelled by GitHub's outer 15-minute job limit (confirmed
+check annotation). Both logs show about three minutes generating the contract,
+5.6 minutes release compilation and about two minutes test compilation; the push
+run finishes Rust tests and reaches the device CLI. No failed or hung test is
+shown. The portable job budget is now 25 minutes; inner request/test deadlines
+remain fixed. Complete new CI is required, alongside actor retry diagnostics,
+typed proxies/cameras/coordination and every original remaining acceptance gate.

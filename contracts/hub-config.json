@@ -26,6 +26,964 @@
     },
     "purpose": "cachedDiagnostics",
     "requiresRevision": true,
+    "responseSchema": {
+      "$defs": {
+        "DeviceType": {
+          "enum": [
+            "camera",
+            "switch",
+            "safetymonitor",
+            "observingconditions",
+            "focuser",
+            "rotator",
+            "filterwheel",
+            "covercalibrator"
+          ],
+          "type": "string"
+        },
+        "Diagnostics": {
+          "oneOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "controllerActive": {
+                  "type": "boolean"
+                },
+                "isSafe": {
+                  "description": "The whole output's decision, including members outside this page.",
+                  "type": "boolean"
+                },
+                "kind": {
+                  "const": "safety",
+                  "type": "string"
+                },
+                "members": {
+                  "items": {
+                    "$ref": "#/$defs/SafetyMember"
+                  },
+                  "type": "array"
+                }
+              },
+              "required": [
+                "kind",
+                "controllerActive",
+                "isSafe",
+                "members"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "channels": {
+                  "items": {
+                    "$ref": "#/$defs/SwitchChannel"
+                  },
+                  "type": "array"
+                },
+                "kind": {
+                  "const": "switch",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind",
+                "channels"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "averagePeriodHours": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "kind": {
+                  "const": "weather",
+                  "type": "string"
+                },
+                "measurements": {
+                  "items": {
+                    "$ref": "#/$defs/WeatherMeasurement"
+                  },
+                  "type": "array"
+                }
+              },
+              "required": [
+                "kind",
+                "averagePeriodHours",
+                "measurements"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "ErrorKind": {
+          "enum": [
+            "connecting",
+            "disconnected",
+            "busy",
+            "transient",
+            "permanent",
+            "uncertain",
+            "unsupported",
+            "invalidValue",
+            "unavailable"
+          ],
+          "type": "string"
+        },
+        "Measurement": {
+          "additionalProperties": false,
+          "properties": {
+            "averageSeconds": {
+              "description": "Averaging interval; zero returns the latest fresh sample. All non-gust metrics\nin an output use the same interval. Source changes clear history; wind gust\npreserves the upstream three-second peak over two minutes without re-averaging.",
+              "format": "double",
+              "maximum": 3600.0,
+              "minimum": 0.0,
+              "type": "number",
+              "x-regain": {
+                "units": "s"
+              }
+            },
+            "maximumAgeSeconds": {
+              "description": "Hard sample age limit. An expired sample is unavailable and may trigger fallback.",
+              "format": "double",
+              "maximum": 3600.0,
+              "minimum": 0.1,
+              "type": "number",
+              "x-regain": {
+                "units": "s"
+              }
+            },
+            "sources": {
+              "description": "First fresh valid source wins; changing source clears the averaging window.",
+              "items": {
+                "$ref": "#/$defs/Readout"
+              },
+              "maxItems": 16,
+              "minItems": 1,
+              "type": "array"
+            }
+          },
+          "required": [
+            "sources",
+            "maximumAgeSeconds",
+            "averageSeconds"
+          ],
+          "type": "object"
+        },
+        "Phase": {
+          "enum": [
+            "unknown",
+            "freshSafe",
+            "graceSafe",
+            "pendingUnsafe",
+            "pendingSafe",
+            "unsafe",
+            "stale",
+            "faulted"
+          ],
+          "type": "string"
+        },
+        "Reading": {
+          "oneOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "reading": {
+                  "$ref": "#/$defs/ScalarSample"
+                },
+                "state": {
+                  "const": "available",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "state",
+                "reading"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "error": {
+                  "$ref": "#/$defs/SourceError"
+                },
+                "state": {
+                  "const": "unavailable",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "state",
+                "error"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "Reading2": {
+          "oneOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "reading": {
+                  "$ref": "#/$defs/WeatherReading"
+                },
+                "state": {
+                  "const": "available",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "state",
+                "reading"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "error": {
+                  "$ref": "#/$defs/SourceError"
+                },
+                "state": {
+                  "const": "unavailable",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "state",
+                "error"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "Readout": {
+          "oneOf": [
+            {
+              "additionalProperties": false,
+              "description": "Read one channel from a Switch source, retaining its access permissions.",
+              "properties": {
+                "channel": {
+                  "description": "Upstream channel number, not this output's channel number.",
+                  "format": "uint32",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "kind": {
+                  "const": "channel",
+                  "type": "string"
+                },
+                "source": {
+                  "description": "Stable ID of the Switch source.",
+                  "format": "uuid",
+                  "type": "string",
+                  "x-regain": {
+                    "reference": "source"
+                  }
+                },
+                "unit": {
+                  "default": null,
+                  "description": "Explicit unit of an upstream channel, needed for weather mappings.\nNo conversion is performed; use the target metric's canonical unit.",
+                  "maxLength": 80,
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "kind",
+                "source",
+                "channel",
+                "unit"
+              ],
+              "title": "Switch channel",
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "description": "Read a scalar property such as temperature from a compatible source.",
+              "properties": {
+                "kind": {
+                  "const": "property",
+                  "type": "string"
+                },
+                "property": {
+                  "description": "Lowercase property name advertised by the source, for example temperature.",
+                  "maxLength": 80,
+                  "minLength": 1,
+                  "pattern": "^[a-z]+$",
+                  "type": "string"
+                },
+                "source": {
+                  "description": "Stable source ID.",
+                  "format": "uuid",
+                  "type": "string",
+                  "x-regain": {
+                    "reference": "source"
+                  }
+                },
+                "unit": {
+                  "default": null,
+                  "description": "Unit assertion for a property without standard unit metadata.\nA standard property's known unit cannot be overridden.",
+                  "maxLength": 80,
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "kind",
+                "source",
+                "property",
+                "unit"
+              ],
+              "title": "Device property",
+              "type": "object"
+            }
+          ]
+        },
+        "SafetyMember": {
+          "additionalProperties": false,
+          "properties": {
+            "decision": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Snapshot"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Disabled memberships have no vote. Inactive enabled memberships are\nunknown/unsafe; reading diagnostics never starts a policy controller."
+            },
+            "enabled": {
+              "type": "boolean"
+            },
+            "health": {
+              "$ref": "#/$defs/SourceHealth"
+            },
+            "policy": {
+              "$ref": "#/$defs/SafetyPolicy"
+            },
+            "source": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          "required": [
+            "source",
+            "enabled",
+            "policy",
+            "decision",
+            "health"
+          ],
+          "type": "object"
+        },
+        "SafetyPolicy": {
+          "additionalProperties": false,
+          "properties": {
+            "confirmationSeconds": {
+              "default": 30.0,
+              "description": "Minimum interval between counted observations for this membership; faster shared polling cannot accelerate confirmation.",
+              "maximum": 3600.0,
+              "minimum": 0.1,
+              "title": "Confirmation interval",
+              "type": "number",
+              "x-regain": {
+                "apply": "reconnect",
+                "default": 30.0,
+                "description": "Minimum interval between counted observations for this membership; faster shared polling cannot accelerate confirmation.",
+                "group": "Safety policy",
+                "key": "confirmationSeconds",
+                "label": "Confirmation interval",
+                "maximum": 3600.0,
+                "minimum": 0.1,
+                "sensitive": false,
+                "step": 0.1,
+                "units": "s",
+                "valueType": "number"
+              }
+            },
+            "failedCyclesToUnsafe": {
+              "default": 3,
+              "description": "Withdraw established permission after this many exhausted checks. Maximum safe age applies independently.",
+              "maximum": 1000.0,
+              "minimum": 1.0,
+              "title": "Failed checks before unsafe",
+              "type": "integer",
+              "x-regain": {
+                "apply": "reconnect",
+                "default": 3,
+                "description": "Withdraw established permission after this many exhausted checks. Maximum safe age applies independently.",
+                "group": "Safety policy",
+                "key": "failedCyclesToUnsafe",
+                "label": "Failed checks before unsafe",
+                "maximum": 1000.0,
+                "minimum": 1.0,
+                "sensitive": false,
+                "step": 1.0,
+                "units": "checks",
+                "valueType": "integer"
+              }
+            },
+            "maximumSafeAgeSeconds": {
+              "default": 90.0,
+              "description": "Hard lifetime of safe evidence, measured from request start. Retries and status reads never extend it.",
+              "maximum": 3600.0,
+              "minimum": 0.1,
+              "title": "Maximum safe age",
+              "type": "number",
+              "x-regain": {
+                "apply": "reconnect",
+                "default": 90.0,
+                "description": "Hard lifetime of safe evidence, measured from request start. Retries and status reads never extend it.",
+                "group": "Safety policy",
+                "key": "maximumSafeAgeSeconds",
+                "label": "Maximum safe age",
+                "maximum": 3600.0,
+                "minimum": 0.1,
+                "sensitive": false,
+                "step": 0.1,
+                "units": "s",
+                "valueType": "number"
+              }
+            },
+            "returnToSafeHoldSeconds": {
+              "default": 10.0,
+              "description": "Minimum duration of a safe run, beginning when the first safe response arrives. A new observation must complete the hold.",
+              "maximum": 3600.0,
+              "minimum": 0.0,
+              "title": "Recovery hold",
+              "type": "number",
+              "x-regain": {
+                "apply": "reconnect",
+                "default": 10.0,
+                "description": "Minimum duration of a safe run, beginning when the first safe response arrives. A new observation must complete the hold.",
+                "group": "Safety policy",
+                "key": "returnToSafeHoldSeconds",
+                "label": "Recovery hold",
+                "maximum": 3600.0,
+                "minimum": 0.0,
+                "sensitive": false,
+                "step": 0.1,
+                "units": "s",
+                "valueType": "number"
+              }
+            },
+            "safeReadingsToSafe": {
+              "default": 3,
+              "description": "Consecutive safe observations required in addition to the recovery hold.",
+              "maximum": 1000.0,
+              "minimum": 1.0,
+              "title": "Safe readings before recovery",
+              "type": "integer",
+              "x-regain": {
+                "apply": "reconnect",
+                "default": 3,
+                "description": "Consecutive safe observations required in addition to the recovery hold.",
+                "group": "Safety policy",
+                "key": "safeReadingsToSafe",
+                "label": "Safe readings before recovery",
+                "maximum": 1000.0,
+                "minimum": 1.0,
+                "sensitive": false,
+                "step": 1.0,
+                "units": "readings",
+                "valueType": "integer"
+              }
+            },
+            "unsafeReadingsToUnsafe": {
+              "default": 1,
+              "description": "One withdraws permission immediately. Larger values only retain previously established permission within its age limit.",
+              "maximum": 1000.0,
+              "minimum": 1.0,
+              "title": "Unsafe readings before unsafe",
+              "type": "integer",
+              "x-regain": {
+                "apply": "reconnect",
+                "default": 1,
+                "description": "One withdraws permission immediately. Larger values only retain previously established permission within its age limit.",
+                "group": "Safety policy",
+                "key": "unsafeReadingsToUnsafe",
+                "label": "Unsafe readings before unsafe",
+                "maximum": 1000.0,
+                "minimum": 1.0,
+                "sensitive": false,
+                "step": 1.0,
+                "units": "readings",
+                "valueType": "integer"
+              }
+            }
+          },
+          "type": "object"
+        },
+        "ScalarSample": {
+          "additionalProperties": false,
+          "properties": {
+            "ageSeconds": {
+              "format": "double",
+              "type": "number"
+            },
+            "generation": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "revision": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "sequence": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "source": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "value": {
+              "format": "double",
+              "type": "number"
+            }
+          },
+          "required": [
+            "value",
+            "ageSeconds",
+            "source",
+            "generation",
+            "sequence",
+            "revision"
+          ],
+          "type": "object"
+        },
+        "Snapshot": {
+          "additionalProperties": false,
+          "properties": {
+            "configurationRevision": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "failedCycles": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "generation": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "lastSequence": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "permitsSafe": {
+              "type": "boolean"
+            },
+            "phase": {
+              "$ref": "#/$defs/Phase"
+            },
+            "rawIsSafe": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "reason": {
+              "type": "string"
+            },
+            "recoveryConfirmed": {
+              "type": "boolean"
+            },
+            "safeAgeSeconds": {
+              "format": "double",
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "safeHoldSeconds": {
+              "format": "double",
+              "type": "number"
+            },
+            "safeReadings": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "unsafeReadings": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "configurationRevision",
+            "generation",
+            "phase",
+            "rawIsSafe",
+            "permitsSafe",
+            "recoveryConfirmed",
+            "safeAgeSeconds",
+            "failedCycles",
+            "unsafeReadings",
+            "safeReadings",
+            "safeHoldSeconds",
+            "reason",
+            "lastSequence"
+          ],
+          "type": "object"
+        },
+        "SourceError": {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "$ref": "#/$defs/ErrorKind"
+            },
+            "message": {
+              "type": "string"
+            },
+            "upstreamCode": {
+              "format": "int32",
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "message",
+            "upstreamCode"
+          ],
+          "type": "object"
+        },
+        "SourceHealth": {
+          "additionalProperties": false,
+          "description": "Selected fields only: no backend configuration, connection strings, cached\narbitrary vendor text, credentials or credential references are exported.",
+          "properties": {
+            "error": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/SourceError"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "generation": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "leaseCount": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "revision": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "sequence": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "source": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "transportConnected": {
+              "type": "boolean"
+            },
+            "writeUncertain": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "source",
+            "revision",
+            "generation",
+            "sequence",
+            "transportConnected",
+            "writeUncertain",
+            "leaseCount",
+            "error"
+          ],
+          "type": "object"
+        },
+        "SwitchChannel": {
+          "oneOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "number": {
+                  "format": "uint32",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "state": {
+                  "const": "removed",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "state",
+                "number"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "configuredWritable": {
+                  "description": "Configuration intent only. Live CanWrite and source bounds still\ngovern every operational write; diagnostics do not probe them.",
+                  "type": "boolean"
+                },
+                "health": {
+                  "$ref": "#/$defs/SourceHealth"
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "maximum": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "maximumAgeSeconds": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "minimum": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "number": {
+                  "format": "uint32",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "readout": {
+                  "$ref": "#/$defs/Readout"
+                },
+                "sample": {
+                  "$ref": "#/$defs/Reading"
+                },
+                "state": {
+                  "const": "configured",
+                  "type": "string"
+                },
+                "step": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "units": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "state",
+                "number",
+                "id",
+                "label",
+                "readout",
+                "units",
+                "minimum",
+                "maximum",
+                "step",
+                "configuredWritable",
+                "maximumAgeSeconds",
+                "sample",
+                "health"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "WeatherMeasurement": {
+          "additionalProperties": false,
+          "properties": {
+            "configuration": {
+              "$ref": "#/$defs/Measurement"
+            },
+            "metric": {
+              "$ref": "#/$defs/WeatherMetric"
+            },
+            "sample": {
+              "$ref": "#/$defs/Reading2"
+            },
+            "sources": {
+              "items": {
+                "$ref": "#/$defs/SourceHealth"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "metric",
+            "configuration",
+            "sample",
+            "sources"
+          ],
+          "type": "object"
+        },
+        "WeatherMetric": {
+          "enum": [
+            "cloudcover",
+            "dewpoint",
+            "humidity",
+            "pressure",
+            "rainrate",
+            "skybrightness",
+            "skyquality",
+            "skytemperature",
+            "starfwhm",
+            "temperature",
+            "winddirection",
+            "windgust",
+            "windspeed"
+          ],
+          "type": "string"
+        },
+        "WeatherReading": {
+          "additionalProperties": false,
+          "properties": {
+            "ageSeconds": {
+              "format": "double",
+              "type": "number"
+            },
+            "averageSeconds": {
+              "format": "double",
+              "type": "number"
+            },
+            "generation": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "readout": {
+              "$ref": "#/$defs/Readout"
+            },
+            "revision": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "sampleCount": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "sequence": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "source": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "unit": {
+              "type": "string"
+            },
+            "value": {
+              "format": "double",
+              "type": "number"
+            }
+          },
+          "required": [
+            "value",
+            "unit",
+            "source",
+            "revision",
+            "generation",
+            "sequence",
+            "readout",
+            "ageSeconds",
+            "sampleCount",
+            "averageSeconds"
+          ],
+          "type": "object"
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "configurationRevision": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "deviceType": {
+          "$ref": "#/$defs/DeviceType"
+        },
+        "diagnostics": {
+          "$ref": "#/$defs/Diagnostics"
+        },
+        "limit": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "nextStart": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "observedSeconds": {
+          "description": "Local monotonic time, not a UTC date or a remotely comparable clock.",
+          "format": "double",
+          "type": "number"
+        },
+        "output": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "purpose": {
+          "type": "string"
+        },
+        "simulated": {
+          "type": "boolean"
+        },
+        "start": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "total": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "purpose",
+        "output",
+        "configurationRevision",
+        "observedSeconds",
+        "deviceType",
+        "simulated",
+        "start",
+        "limit",
+        "total",
+        "nextStart",
+        "diagnostics"
+      ],
+      "title": "OutputStatus",
+      "type": "object"
+    },
     "writesEquipment": false
   },
   "schema": {

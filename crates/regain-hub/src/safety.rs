@@ -38,7 +38,7 @@ pub struct Observation {
     pub outcome: Outcome,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub enum Phase {
     Unknown,
@@ -51,8 +51,8 @@ pub enum Phase {
     Faulted,
 }
 
-#[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Debug, Serialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Snapshot {
     pub configuration_revision: Uuid,
     pub generation: Uuid,

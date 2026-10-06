@@ -8,6 +8,7 @@ use crate::{
     source::{SourceError, SourceSnapshot},
     weather::WeatherReading,
 };
+use schemars::JsonSchema;
 use serde::Serialize;
 use serde_json::{Value, json};
 use uuid::Uuid;
@@ -20,7 +21,8 @@ pub fn description() -> Value {
     "parameters":{
         "start":{"type":"integer","label":"First output item","description":"Saved membership, channel slot or weather metric index.","default":0,"minimum":0,"maximum":1024},
         "limit":{"type":"integer","label":"Items per page","description":"Maximum cached output items returned in one request.","default":16,"minimum":1,"maximum":MAX_PAGE}
-    }})
+    }, "responseSchema": schemars::generate::SchemaSettings::default()
+        .for_serialize().into_generator().into_root_schema_for::<OutputStatus>()})
 }
 
 pub(crate) fn page(start: u32, limit: u32, total: u32) -> Result<u32, SourceError> {
@@ -30,8 +32,8 @@ pub(crate) fn page(start: u32, limit: u32, total: u32) -> Result<u32, SourceErro
     Ok(start.saturating_add(limit).min(total))
 }
 
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct OutputStatus {
     pub purpose: &'static str,
     pub output: Uuid,
@@ -47,11 +49,12 @@ pub struct OutputStatus {
     pub diagnostics: Diagnostics,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, JsonSchema)]
 #[serde(
     tag = "kind",
     rename_all = "camelCase",
-    rename_all_fields = "camelCase"
+    rename_all_fields = "camelCase",
+    deny_unknown_fields
 )]
 pub enum Diagnostics {
     Safety {
@@ -71,8 +74,8 @@ pub enum Diagnostics {
 
 /// Selected fields only: no backend configuration, connection strings, cached
 /// arbitrary vendor text, credentials or credential references are exported.
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SourceHealth {
     pub source: Uuid,
     pub revision: Uuid,
@@ -98,8 +101,8 @@ impl From<&SourceSnapshot> for SourceHealth {
     }
 }
 
-#[derive(Debug, Serialize)]
-#[serde(tag = "state", rename_all = "camelCase")]
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(tag = "state", rename_all = "camelCase", deny_unknown_fields)]
 pub enum Reading<T> {
     Available { reading: T },
     Unavailable { error: SourceError },
@@ -113,8 +116,8 @@ impl<T> From<Result<T, SourceError>> for Reading<T> {
     }
 }
 
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SafetyMember {
     pub source: Uuid,
     pub enabled: bool,
@@ -125,11 +128,12 @@ pub struct SafetyMember {
     pub health: SourceHealth,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, JsonSchema)]
 #[serde(
     tag = "state",
     rename_all = "camelCase",
-    rename_all_fields = "camelCase"
+    rename_all_fields = "camelCase",
+    deny_unknown_fields
 )]
 pub enum SwitchChannel {
     Removed {
@@ -141,8 +145,8 @@ pub enum SwitchChannel {
     },
 }
 
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ConfiguredSwitchChannel {
     pub number: u32,
     pub id: Uuid,
@@ -160,8 +164,8 @@ pub struct ConfiguredSwitchChannel {
     pub health: SourceHealth,
 }
 
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct WeatherMeasurement {
     pub metric: WeatherMetric,
     pub configuration: Measurement,

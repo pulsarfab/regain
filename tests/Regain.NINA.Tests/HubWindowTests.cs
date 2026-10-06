@@ -37,11 +37,11 @@ public sealed partial class HubNativeTests
                 var tabs = Controls<TabControl>(window).Single(); tabs.SelectedIndex = 2;
                 var status = Controls<Button>(window).Single(b => (string)b.Content == "Saved host status");
                 status.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-                Assert.Contains(saved.GetProperty("revision").GetString()!, Controls<TextBox>(window).Single(t => t.IsReadOnly && t.FontFamily.Source != "Consolas").Text);
+                Assert.Contains(saved.GetProperty("revision").GetString()!, Controls<TextBox>(window).Single(t => (string?)t.Tag == "source-result").Text);
                 await Capture(window, "hub-native-health-simulation.png");
                 var read = Controls<Button>(window).Single(b => (string)b.Content == "Read cached source health");
                 read.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); await UiUntil(() => read.IsEnabled);
-                using var health = JsonDocument.Parse(Controls<TextBox>(window).Single(t => t.IsReadOnly && t.FontFamily.Source != "Consolas").Text);
+                using var health = JsonDocument.Parse(Controls<TextBox>(window).Single(t => (string?)t.Tag == "source-result").Text);
                 Assert.Equal(0, health.RootElement.GetProperty("leaseCount").GetInt32());
                 window.Close();
                 Assert.Equal(saved.GetProperty("revision").GetGuid(), (await host.Command(new { op = "getConfig" })).GetProperty("revision").GetGuid());
