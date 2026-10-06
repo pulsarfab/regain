@@ -967,3 +967,62 @@ native NINA/ASCOM frontends, COM imports, broader proxies and coordination,
 hardware acceptance, documentation/site updates, and the final audit/merge.
 The setup/IPC 1 MiB frame limit is smaller than the store's 4 MiB file limit;
 large-configuration transfer needs an explicit refinement. Milestone 2 stays open.
+
+## 2026-10-05: modern scalar state and connection interfaces
+
+The shared host now supplies cached DeviceState and supervised connection changes.
+Alpaca publishes Switch v3, SafetyMonitor v3 and ObservingConditions v2 when their
+capabilities are negotiated. This checkpoint adds the methods, not a conformance
+certification or a completed frontend/hardware gate.
+
+Review findings and corrections:
+
+1. DeviceState must not perform source I/O or renew evidence. Clone each Switch
+   source cache once and use the same sample for its boolean/numeric pair. Read
+   Weather under one engine lock and time. Omit stale, failed, retired or absent
+   readings independently, preserve real slot numbers, and use canonical ASCOM
+   names. Safety evaluates its current shared policy rather than cached permission.
+2. TimeStamp is optional measurement time. Mixed cached values have no single UTC
+   measurement timestamp, so omit it rather than reporting query time as fresh
+   evidence. Empty collections return []. Primary references are linked in the
+   hub contract; the tests verify that repeated getters cannot defeat expiry.
+3. An asynchronous acknowledgment must not leave an unbounded detached task.
+   Reserve one operation per client before spawning, count it toward apply
+   quiescence, impose an independent 30-second deadline, and retain failure.
+   Overlapping legacy/modern changes return busy. EOF cancels pending reservations;
+   a lost request waiter does not replay an admitted change.
+4. The HTTP adapter must include pipe initialization in Connecting. Keep a bounded
+   per-client supervisor, revoke every private lease on failed changes, and retain
+   asynchronous errors until explicit connect/disconnect reconciliation. A polling
+   caller must not mistake failure for Connecting=false. Reuse capacity after
+   explicit disconnect and preserve other clients' leases.
+5. Connected is a virtual-output lease, not a promise that every upstream is
+   healthy. An initial failure fixture using an unavailable worker incorrectly
+   expected lease acquisition to fail. Replace it with actual host admission
+   exhaustion, await its bounded initialization deadline, then verify retained
+   errors and recovery. No production health/connection semantics were changed.
+6. Negotiate new capabilities before sending typed members to older hosts. Retain
+   legacy versions there. Switch CanAsync=false is honest about scalar writes;
+   async setters and StateChangeComplete are unsupported, while mandatory
+   CancelAsync validates its channel and succeeds as a no-op. Local virtual-source
+   reads use the same state/async contract. DriverVersion uses major.minor.
+7. Review cancellation, queued operation admission, panic/drop guards, EOF before
+   task start, and explicit failure clearing. There is no global lock across I/O,
+   automatic replay, or cancellation claim about physical rollback. Successful
+   lease disconnect does not claim all backend cleanup has completed.
+
+Validation: 181 Windows hub tests plus the endpoint process fixture and 29 Alpaca
+tests pass (`artifacts/hub-modern-tests.log`). Four shared-runtime/IPC and three
+HTTP tests were added. They cover cached bundles without source reads, expiry,
+slot tombstones, partial weather failures, canonical names, separate clients,
+overlap, queued-task EOF, retained failure and reconciliation, and capacity reuse
+across 26 client IDs. Clippy with warnings denied, Rust 1.89.0, generated-contract
+freshness, formatting/diff checks and fresh transport/core/hub/Alpaca package
+verification pass (`target/hub-modern-package`). Setup checkpoint f0962d9 passes
+all four portable platforms, package and COM checks; Windows jobs are still
+running at this review. No hardware was actuated.
+
+Remaining: native .NET/NINA/ASCOM attachment and providers, complete scalar error
+and conformance-tool checks, setup refinements, COM imports, broader proxies and
+camera/focuser coordination, OS resume/recovery, hardware trials, documentation
+and site updates, and final audit/merge. Original milestones 2–5 remain open.

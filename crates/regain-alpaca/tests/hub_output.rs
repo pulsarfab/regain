@@ -358,7 +358,7 @@ async fn dynamic_discovery_scalar_mapping_and_independent_client_leases() {
     );
     assert_eq!(
         f.ok("GET", "/api/v1/switch/7/interfaceversion", "").await,
-        2
+        3
     );
     assert_eq!(
         f.ok("GET", "/api/v1/switch/7/connected", "ClientID=10")
@@ -454,6 +454,165 @@ async fn dynamic_discovery_scalar_mapping_and_independent_client_leases() {
             == 0
     })
     .await;
+    f.finish().await;
+}
+
+#[tokio::test]
+async fn device_state_preserves_slots_and_omits_failed_stale_or_unconfigured_values() {
+    use regain_hub::config::{ConfigStore, WeatherMetric};
+    let config: HubConfig = serde_json::from_str(include_str!(
+        "../../regain-hub/examples/simulated-observatory.json"
+    ))
+    .unwrap();
+    let store = ConfigStore::new(None, config).unwrap();
+    let original = store.snapshot();
+    let mut edited = original.clone();
+    if let VirtualDevice::Switch { channels } = &mut edited.outputs[0].device {
+        channels.remove(0);
+    }
+    if let VirtualDevice::Weather { measurements } = &mut edited.outputs[2].device {
+        let mut metric = measurements[&WeatherMetric::Temperature].clone();
+        if let regain_hub::config::Readout::Property { property, .. } = &mut metric.sources[0] {
+            *property = "starfwhm".into();
+        }
+        measurements.insert(WeatherMetric::StarFwhm, metric);
+    }
+    store.apply(original.revision, edited, false).unwrap();
+    let f = Fixture::from_config(store.snapshot()).await;
+    for kind in ["switch", "safetymonitor", "observingconditions"] {
+        assert_eq!(
+            f.call(
+                "GET",
+                &format!("/api/v1/{kind}/0/devicestate"),
+                "ClientID=7"
+            )
+            .await["ErrorNumber"],
+            0x407
+        );
+        f.ok(
+            "PUT",
+            &format!("/api/v1/{kind}/0/connected"),
+            "ClientID=7&Connected=true",
+        )
+        .await;
+    }
+    eventually(async || {
+        f.ok("GET", "/api/v1/switch/0/devicestate", "ClientID=7")
+            .await
+            .as_array()
+            .unwrap()
+            .len()
+            == 4
+    })
+    .await;
+    assert_eq!(
+        f.ok("GET", "/api/v1/switch/0/maxswitch", "ClientID=7")
+            .await,
+        3
+    );
+    assert_eq!(
+        f.ok("GET", "/api/v1/switch/0/devicestate", "ClientID=7")
+            .await,
+        json!([
+            {"Name":"GetSwitch1","Value":false}, {"Name":"GetSwitchValue1","Value":0.0},
+            {"Name":"GetSwitch2","Value":true}, {"Name":"GetSwitchValue2","Value":12.0}
+        ])
+    );
+    eventually(async || {
+        f.ok(
+            "GET",
+            "/api/v1/observingconditions/0/devicestate",
+            "ClientID=7",
+        )
+        .await
+        .as_array()
+        .unwrap()
+        .len()
+            == 3
+    })
+    .await;
+    let weather = f
+        .ok(
+            "GET",
+            "/api/v1/observingconditions/0/devicestate",
+            "ClientID=7",
+        )
+        .await;
+    assert!(
+        weather
+            .as_array()
+            .unwrap()
+            .contains(&json!({"Name":"StarFWHM","Value":2.0}))
+    );
+    f.hub
+        .update_simulation(
+            f.config.sources[2].id,
+            SimulationUpdate {
+                weather: std::collections::BTreeMap::from([(WeatherMetric::Pressure, None)]),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    eventually(async || {
+        let weather = f
+            .ok(
+                "GET",
+                "/api/v1/observingconditions/0/devicestate",
+                "ClientID=7",
+            )
+            .await;
+        weather.as_array().unwrap().len() == 2
+            && weather
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|state| state["Name"] != "Pressure")
+    })
+    .await;
+    f.hub
+        .update_simulation(
+            f.config.sources[2].id,
+            SimulationUpdate {
+                sample_age_seconds: Some(120.0),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    eventually(async || {
+        f.ok(
+            "GET",
+            "/api/v1/observingconditions/0/devicestate",
+            "ClientID=7",
+        )
+        .await
+            == json!([])
+    })
+    .await;
+    f.hub
+        .update_simulation(
+            f.config.sources[0].id,
+            SimulationUpdate {
+                sample_age_seconds: Some(120.0),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    eventually(async || {
+        f.ok("GET", "/api/v1/switch/0/devicestate", "ClientID=7")
+            .await
+            == json!([])
+    })
+    .await;
+    assert_eq!(
+        f.ok("GET", "/api/v1/safetymonitor/0/devicestate", "ClientID=7")
+            .await,
+        json!([
+            {"Name":"IsSafe","Value":false}
+        ])
+    );
     f.finish().await;
 }
 
@@ -832,4 +991,223 @@ async fn slow_upstream_connection_does_not_block_other_outputs_or_claim_valid_re
     f.finish().await;
     serving.abort();
     let _ = serving.await;
+}
+
+#[tokio::test]
+async fn modern_connection_methods_and_switch_async_contract_preserve_client_ownership() {
+    let f = Fixture::new().await;
+    for (kind, number, version) in [
+        ("switch", 7, 3),
+        ("safetymonitor", 3, 3),
+        ("observingconditions", 12, 2),
+    ] {
+        assert_eq!(
+            f.ok(
+                "GET",
+                &format!("/api/v1/{kind}/{number}/interfaceversion"),
+                ""
+            )
+            .await,
+            version
+        );
+        assert_eq!(
+            f.ok("GET", &format!("/api/v1/{kind}/{number}/driverversion"), "")
+                .await,
+            "0.6"
+        );
+        assert_eq!(
+            f.ok(
+                "GET",
+                &format!("/api/v1/{kind}/{number}/connecting"),
+                "ClientID=1"
+            )
+            .await,
+            false
+        );
+        f.ok(
+            "PUT",
+            &format!("/api/v1/{kind}/{number}/connect"),
+            "ClientID=1",
+        )
+        .await;
+        eventually(async || {
+            f.ok(
+                "GET",
+                &format!("/api/v1/{kind}/{number}/connecting"),
+                "ClientID=1",
+            )
+            .await
+                == false
+                && f.ok(
+                    "GET",
+                    &format!("/api/v1/{kind}/{number}/connected"),
+                    "ClientID=1",
+                )
+                .await
+                    == true
+        })
+        .await;
+    }
+    f.ok("PUT", "/api/v1/switch/7/connect", "ClientID=2").await;
+    eventually(async || {
+        f.ok("GET", "/api/v1/switch/7/connected", "ClientID=2")
+            .await
+            == true
+    })
+    .await;
+    assert_eq!(
+        f.ok("GET", "/api/v1/switch/7/canasync", "ClientID=1&Id=1")
+            .await,
+        false
+    );
+    for (method, member, data) in [
+        ("GET", "statechangecomplete", "ClientID=1&Id=1"),
+        ("PUT", "setasync", "ClientID=1&Id=1&State=true"),
+        ("PUT", "setasyncvalue", "ClientID=1&Id=1&Value=30"),
+    ] {
+        assert_eq!(
+            f.call(method, &format!("/api/v1/switch/7/{member}"), data)
+                .await["ErrorNumber"],
+            0x400
+        );
+    }
+    f.ok("PUT", "/api/v1/switch/7/cancelasync", "ClientID=1&Id=1")
+        .await;
+    assert_eq!(
+        f.call("GET", "/api/v1/switch/7/canasync", "ClientID=1&Id=999")
+            .await["ErrorNumber"],
+        0x401
+    );
+    assert_eq!(
+        f.call(
+            "PUT",
+            "/api/v1/switch/7/setasyncvalue",
+            "ClientID=1&Id=1&Value=NaN"
+        )
+        .await["ErrorNumber"],
+        0x401
+    );
+    f.ok("PUT", "/api/v1/switch/7/disconnect", "ClientID=1")
+        .await;
+    eventually(async || {
+        f.ok("GET", "/api/v1/switch/7/connecting", "ClientID=1")
+            .await
+            == false
+    })
+    .await;
+    assert_eq!(
+        f.ok("GET", "/api/v1/switch/7/connected", "ClientID=1")
+            .await,
+        false
+    );
+    assert_eq!(
+        f.ok("GET", "/api/v1/switch/7/connected", "ClientID=2")
+            .await,
+        true
+    );
+    assert_eq!(
+        f.ok("GET", "/api/v1/safetymonitor/3/connected", "ClientID=1")
+            .await,
+        true
+    );
+    f.finish().await;
+}
+
+#[tokio::test]
+async fn asynchronous_open_failure_is_visible_until_explicit_disconnect_and_does_not_leak_capacity()
+{
+    use regain_hub::client::{Client, ClientLimits};
+    let f = Fixture::new().await;
+    let endpoint = Endpoint::for_config(&f._dir.path().join("hub.json")).unwrap();
+    // Occupy the remaining host streams without output/source leases. Catalog
+    // reads still work, but HTTP's new private session is rejected.
+    let mut clients = Vec::new();
+    for _ in 1..host::MAX_CLIENTS {
+        clients.push(
+            Client::connect(
+                &endpoint,
+                f.config.instance_id,
+                Duration::from_secs(5),
+                ClientLimits::default(),
+            )
+            .await
+            .unwrap(),
+        );
+    }
+    f.ok("PUT", "/api/v1/switch/7/connect", "ClientID=42").await;
+    // The accepted attempt owns a real ten-second attachment deadline. A
+    // crowded host leaves it pending until that deadline, rather than rejecting
+    // its stream immediately. Poll that specific operation to completion.
+    tokio::time::timeout(Duration::from_secs(15), async {
+        while f
+            .call("GET", "/api/v1/switch/7/connecting", "ClientID=42")
+            .await["ErrorNumber"]
+            == 0
+        {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap();
+    let failure = f
+        .call("GET", "/api/v1/switch/7/connecting", "ClientID=42")
+        .await;
+    assert_ne!(failure["ErrorNumber"], 0);
+    assert_eq!(
+        f.ok("GET", "/api/v1/switch/7/connected", "ClientID=42")
+            .await,
+        false
+    );
+    assert_eq!(
+        f.call("GET", "/api/v1/switch/7/connecting", "ClientID=42")
+            .await["ErrorNumber"],
+        failure["ErrorNumber"]
+    );
+    f.ok("PUT", "/api/v1/switch/7/disconnect", "ClientID=42")
+        .await;
+    assert_eq!(
+        f.ok("GET", "/api/v1/switch/7/connecting", "ClientID=42")
+            .await,
+        false
+    );
+    drop(clients);
+    for id in 1..=26 {
+        f.ok("PUT", "/api/v1/switch/7/connect", &format!("ClientID={id}"))
+            .await;
+        eventually(async || {
+            f.ok(
+                "GET",
+                "/api/v1/switch/7/connected",
+                &format!("ClientID={id}"),
+            )
+            .await
+                == true
+                && f.ok(
+                    "GET",
+                    "/api/v1/switch/7/connecting",
+                    &format!("ClientID={id}"),
+                )
+                .await
+                    == false
+        })
+        .await;
+        f.ok(
+            "PUT",
+            "/api/v1/switch/7/disconnect",
+            &format!("ClientID={id}"),
+        )
+        .await;
+        eventually(async || {
+            f.ok(
+                "GET",
+                "/api/v1/switch/7/connecting",
+                &format!("ClientID={id}"),
+            )
+            .await
+                == false
+        })
+        .await;
+    }
+    eventually(async || f.hub.active_connections() == 0).await;
+    f.finish().await;
 }

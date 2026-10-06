@@ -35,5 +35,14 @@ leaves the shared host running; reconnect/resume controls are still in developme
 
 This screenshot shows a hardware-free test. It is evidence of the editor workflow,
 not real-device acceptance. Credential management, simulation controls, richer
-safety diagnostics, initialization, modern interfaces, and conformance remain on
+safety diagnostics, initialization, and conformance remain on
 the [hub plan](hub-plan.md).
+
+The current preview offers Switch v3, SafetyMonitor v3 and ObservingConditions v2
+with nonblocking Connect/Disconnect and Connecting. Legacy Connected also works.
+DeviceState reads cached operational values and omits unavailable Switch/Weather
+readings; it never makes stale measurements fresh. Switch channels report
+CanAsync=false. A failed asynchronous connection stays visible through Connecting
+until an explicit connect or disconnect; polling does not retry it. Connected
+means a lease on the virtual output, so use source diagnostics to assess upstream
+health. Conformance-tool and real-device acceptance checks remain pending.

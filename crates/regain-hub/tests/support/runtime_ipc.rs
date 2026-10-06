@@ -78,6 +78,155 @@ fn connect(output: Uuid) -> Value {
     json!({"op":"connect","output":output})
 }
 
+#[tokio::test(start_paused = true)]
+async fn ipc_async_connection_uses_shared_progress_and_failure_without_replaying() {
+    let f = fixture();
+    f.devices[0].hang_connect.store(true, SeqCst);
+    let mut peer = Peer::start(f.runtime.clone(), Limits::default()).await;
+    assert!(
+        peer.hello["operations"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("changeConnection"))
+    );
+    let accepted = peer
+        .call(
+            json!({"op":"changeConnection","output":f.switch,"connected":true,"asynchronous":true}),
+        )
+        .await;
+    assert!(accepted.get("result").is_some(), "{accepted}");
+    assert_eq!(
+        peer.call(get(f.switch, json!({"member":"connecting"})))
+            .await["result"],
+        true
+    );
+    assert_eq!(peer.call(connect(f.switch)).await["error"]["code"], "busy");
+    assert_eq!(
+        peer.call(json!({"op":"disconnect","output":f.switch}))
+            .await["error"]["code"],
+        "busy"
+    );
+    tokio::time::advance(Duration::from_secs(31)).await;
+    settle().await;
+    let failure = peer
+        .call(get(f.switch, json!({"member":"connecting"})))
+        .await;
+    assert!(failure.get("error").is_some(), "{failure}");
+    assert_eq!(
+        peer.call(get(f.switch, json!({"member":"connected"})))
+            .await["result"],
+        false
+    );
+    let attempts = f.devices[0].connects.load(SeqCst);
+    assert_eq!(
+        peer.call(get(f.switch, json!({"member":"connecting"})))
+            .await["error"]["code"],
+        failure["error"]["code"]
+    );
+    assert_eq!(f.devices[0].connects.load(SeqCst), attempts);
+    assert!(
+        peer.call(
+            json!({"op":"changeConnection","output":f.switch,"connected":false,"asynchronous":true})
+        )
+        .await
+        .get("result")
+        .is_some()
+    );
+    assert_eq!(
+        peer.call(get(f.switch, json!({"member":"connecting"})))
+            .await["result"],
+        false
+    );
+    drop(peer);
+    f.runtime.shutdown().await.unwrap();
+}
+
+#[tokio::test(start_paused = true)]
+async fn device_state_is_cached_and_failed_samples_do_not_refresh_safety_or_weather() {
+    let f = fixture();
+    let mut peer = Peer::start(f.runtime.clone(), Limits::default()).await;
+    assert!(
+        peer.hello["capabilities"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("scalarDeviceState"))
+    );
+    assert_eq!(
+        peer.call(get(f.weather, json!({"member":"deviceState"})))
+            .await["error"]["code"],
+        "disconnected"
+    );
+    for output in [f.switch, f.safety, f.weather] {
+        peer.call(connect(output)).await;
+    }
+    settle().await;
+    // Source read calls are deliberately stalled. The bundle must read the
+    // shared cache/policy and never probe individual capabilities or sensors.
+    for device in &f.devices {
+        device.hang_read.store(true, SeqCst);
+    }
+    assert_eq!(
+        peer.call(get(f.switch, json!({"member":"deviceState"})))
+            .await["result"],
+        json!([
+            {"Name":"GetSwitch0","Value":true}, {"Name":"GetSwitchValue0","Value":1.0},
+            {"Name":"GetSwitch1","Value":true}, {"Name":"GetSwitchValue1","Value":20.0}
+        ])
+    );
+    assert_eq!(
+        peer.call(get(f.weather, json!({"member":"deviceState"})))
+            .await["result"],
+        json!([
+            {"Name":"Temperature","Value":20.0}
+        ])
+    );
+    assert_eq!(
+        peer.call(get(f.safety, json!({"member":"deviceState"})))
+            .await["result"],
+        json!([
+            {"Name":"IsSafe","Value":true}
+        ])
+    );
+    assert!(
+        f.devices
+            .iter()
+            .all(|device| device.reads.load(SeqCst) == 0)
+    );
+    for device in &f.devices {
+        device.hang_poll.store(true, SeqCst);
+    }
+    tokio::time::advance(Duration::from_secs(15)).await;
+    settle().await;
+    for _ in 0..3 {
+        assert_eq!(
+            peer.call(get(f.safety, json!({"member":"deviceState"})))
+                .await["result"],
+            json!([
+                {"Name":"IsSafe","Value":false}
+            ])
+        );
+        assert_eq!(
+            peer.call(get(f.switch, json!({"member":"deviceState"})))
+                .await["result"],
+            json!([])
+        );
+    }
+    tokio::time::advance(Duration::from_secs(61)).await;
+    settle().await;
+    assert_eq!(
+        peer.call(get(f.weather, json!({"member":"deviceState"})))
+            .await["result"],
+        json!([])
+    );
+    assert!(
+        f.devices
+            .iter()
+            .all(|device| device.reads.load(SeqCst) == 0)
+    );
+    drop(peer);
+    f.runtime.shutdown().await.unwrap();
+}
+
 #[tokio::test]
 async fn setup_inspection_is_advertised_and_available_without_connecting_an_output() {
     let f = fixture();

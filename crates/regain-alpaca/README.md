@@ -32,8 +32,12 @@ safety starts unsafe. Open `/setup/hub` to edit sources and outputs, inspect sou
 capabilities, review changes, and apply a new revision after disconnecting output
 clients. Field definitions and validation come from the shared host.
 
-This preview uses synchronous Connected interfaces; modern interfaces, credential
-and recovery UI, and conformance are still being implemented. After host loss,
+The preview offers Switch v3, SafetyMonitor v3 and ObservingConditions v2, including
+nonblocking Connect/Disconnect, Connecting, and cached DeviceState. Legacy
+Connected remains available. Unavailable Switch/Weather readings are omitted from
+DeviceState, and Switch channels report CanAsync=false. Asynchronous connection
+failures remain visible until an explicit connect or disconnect. Credential and
+recovery UI and conformance checks are still being implemented. After host loss,
 explicitly restart the HTTP frontend; device
 commands are never replayed. See [the hub plan](../../docs/hub-plan.md).
 

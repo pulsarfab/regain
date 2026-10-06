@@ -447,8 +447,13 @@ Switch, SafetyMonitor, and ObservingConditions with configured IDs/numbers. Each
 connected Alpaca ClientID has a separate bounded IPC session. Current tests cover
 scalar mapping, simulation labels, disconnect independence, failed source reads,
 uncertain writes, client capacity, and HTTP process death without host death.
-The adapter advertises synchronous interfaces (Switch 2, Safety/Weather 1);
-modern connection/state interfaces are an explicit remaining refinement.
+The adapter now advertises Switch 3, SafetyMonitor 3 and ObservingConditions 2
+when the host negotiates scalar state and modern connection capabilities. It
+supports nonblocking Connect/Disconnect, retained Connecting errors, and cached
+DeviceState with unavailable readings omitted. The shared host supervises admitted
+connection changes and includes them in apply quiescence. Legacy Connected remains
+synchronous. Switch channels report CanAsync=false, reject asynchronous setters,
+and implement CancelAsync as a validated no-op. Conformance remains unverified.
 
 An initial `/setup/hub` editor now consumes shared Rust schema metadata for fields,
 choices, references, units, bounds, defaults, identities, and capability gating.
@@ -460,7 +465,13 @@ device-command requests. Chrome verified editing, review, and successful apply;
 the simulation screenshot is checked in. Credential controls, initialization,
 richer diagnostics, and reconnect/resume UI are still needed before setup acceptance.
 
-Next: modern connection/state/error conformance, native frontend attachment,
+Local validation for the modern scalar increment passes 181 Windows hub tests
+plus the endpoint process fixture and 29 Alpaca tests. Faults cover stale cached
+bundles, failed asynchronous connections, overlapping changes, EOF before task
+start, retained errors and explicit reconciliation. Clippy, Rust 1.89.0 and fresh
+package verification pass. These checks do not establish conformance certification.
+
+Next: native frontend attachment, connection/state/error conformance,
 and the remaining shared setup refinements. Basic frontend error translation is tested; complete
 protocol conformance remains unverified. Generic
 scalar polling does not establish camera image or acquisition support. No complete
@@ -555,3 +566,4 @@ Keep existing device profiles and registrations compatible throughout migration.
 | 2026-10-05 | Added the bounded Rust frontend IPC client and shared-host attachment helper. Reviewed cancellation, uncertain writes, protocol limits, explicit reattachment, and launcher lifetime; corrected inherited Windows capture handles. | 177 Windows hub tests plus the endpoint fixture and 18 Alpaca tests pass, along with Clippy, Rust 1.89.0, schema freshness, and fresh package verification. Next: actual Alpaca/native frontend adoption, setup, and remaining original milestones. No frontend or hardware gate is closed by the client library alone. |
 | 2026-10-05 | Connected the first three hub output classes to ordinary Alpaca HTTP mode, with dynamic discovery, separate client leases, scalar/error mapping, negotiated weather metadata, and shared-host lifetime. Review bounded connection tasks before spawning and preserved uncertain outcomes. | Five router/private-endpoint tests and one production HTTP process test added. Prior full suite plus targeted changes pass; final validation recorded in hub-review.md. Shared setup, modern interfaces, conformance, native frontends, and all remaining original milestones stay open. |
 | 2026-10-05 | Added the first shared web editor, setup API, stable reference pickers, capability-aware choices, review/apply workflow, and explicit paged inspection. Corrected empty-string presence validation and LAN UUID generation during review. | 177 Windows hub tests plus the endpoint fixture and 26 Alpaca tests pass. JavaScript draft/contract checks, four Python schema tests, two .NET reader tests and net48 build pass. Chrome verified edit/review/apply and supplied a simulation screenshot. Complete setup refinements, modern interfaces, native frontends, and all original remaining gates before merge. |
+| 2026-10-05 | Added shared cached DeviceState and supervised asynchronous connection changes, then exposed Switch 3, SafetyMonitor 3 and ObservingConditions 2 through capability negotiation. Retained asynchronous failures until explicit reconciliation and preserved separate client leases. | 181 Windows hub tests plus the endpoint fixture and 29 Alpaca tests pass, with Clippy, Rust 1.89.0, schema freshness and fresh package verification. No hardware was actuated. Next: native frontend attachment, conformance and remaining setup refinements; original milestones 2–5 stay open. |

@@ -27,6 +27,11 @@ struct Session {
     gate: Arc<AsyncMutex<()>>,
     outputs: Mutex<BTreeSet<Uuid>>,
     retired: AtomicBool,
+    progress: Mutex<Option<ConnectionProgress>>,
+}
+struct ConnectionProgress {
+    output: Uuid,
+    error: Option<(i32, String)>,
 }
 impl Session {
     fn new() -> Self {
@@ -35,6 +40,7 @@ impl Session {
             gate: Arc::new(AsyncMutex::new(())),
             outputs: Mutex::new(BTreeSet::new()),
             retired: AtomicBool::new(false),
+            progress: Mutex::new(None),
         }
     }
     fn close(&self) {
@@ -139,7 +145,12 @@ impl Publisher {
             error(0x407, "Hub is disconnected; attach the server again")
         );
         if let Some(session) = state.clients.get(&id) {
-            return Ok(session.clone());
+            if !session.retired.load(Ordering::SeqCst) {
+                return Ok(session.clone());
+            }
+            let replacement = Arc::new(Session::new());
+            state.clients.insert(id, replacement.clone());
+            return Ok(replacement);
         }
         ensure!(
             state.clients.len() < MAX_CLIENTS,
@@ -163,13 +174,23 @@ impl Publisher {
             state.clients.remove(&id);
         }
     }
-    async fn connection(self: &Arc<Self>, id: u32, output: Uuid, on: bool) -> Result<()> {
+    async fn connection(
+        self: &Arc<Self>,
+        id: u32,
+        output: Uuid,
+        on: bool,
+        asynchronous: bool,
+    ) -> Result<()> {
         // Supervise accepted connection changes through HTTP caller cancellation.
         // No global lock is held across I/O; other clients and cached safety run.
         let session = if on {
             self.reserve(id)?
         } else {
             match self.existing(id) {
+                Some(session) if session.retired.load(Ordering::SeqCst) => {
+                    self.retire(id, &session);
+                    return Ok(());
+                }
                 Some(session) => session,
                 None => return Ok(()),
             }
@@ -181,16 +202,28 @@ impl Publisher {
             .try_lock_owned()
             .map_err(|_| error(0x40b, "This client's hub connection is changing"))?;
         let owner = self.clone();
-        tokio::spawn(async move {
+        *session.progress.lock().unwrap() = Some(ConnectionProgress {
+            output,
+            error: None,
+        });
+        let mut progress = ConnectionGuard {
+            owner: owner.clone(),
+            session: session.clone(),
+            id,
+            output,
+            asynchronous,
+            finished: false,
+        };
+        let task = tokio::spawn(async move {
             let _gate = gate;
-            ensure!(
-                !session.retired.load(Ordering::SeqCst),
-                error(
-                    0x407,
-                    "Hub client was disconnected; connect explicitly again"
-                )
-            );
             let result = async {
+                ensure!(
+                    !session.retired.load(Ordering::SeqCst),
+                    error(
+                        0x407,
+                        "Hub client was disconnected; connect explicitly again"
+                    )
+                );
                 let client = session
                     .client
                     .get_or_try_init(|| {
@@ -212,8 +245,21 @@ impl Publisher {
                     client.hello().host_instance == owner.catalog.hello().host_instance,
                     error(0x407, "Hub host changed; attach the server again")
                 );
+                let modern = client
+                    .hello()
+                    .capabilities
+                    .iter()
+                    .any(|capability| capability == "asyncOutputConnection");
                 client
-                    .request(if on {
+                    .request(if modern {
+                        // The HTTP wrapper covers its own pipe initialization;
+                        // the host owns the operation and its retained result.
+                        Command::ChangeConnection {
+                            output,
+                            connected: on,
+                            asynchronous: false,
+                        }
+                    } else if on {
                         Command::Connect { output }
                     } else {
                         Command::Disconnect { output }
@@ -229,15 +275,15 @@ impl Publisher {
                 Ok(())
             }
             .await;
-            // Failed changes close the whole session: do not conceal an uncertain
-            // connection or leave its leases unreachable after caller cancellation.
-            if result.is_err() || session.outputs.lock().unwrap().is_empty() {
-                owner.retire(id, &session);
-            }
+            progress.finish(&result);
             result
-        })
-        .await
-        .map_err(|_| error(0x500, "Hub connection task stopped; outcome is uncertain"))?
+        });
+        if asynchronous {
+            Ok(())
+        } else {
+            task.await
+                .map_err(|_| error(0x500, "Hub connection task stopped; outcome is uncertain"))?
+        }
     }
     pub async fn request(
         self: &Arc<Self>,
@@ -247,9 +293,36 @@ impl Publisher {
         params: &Params,
     ) -> Result<Value> {
         let id = params.optional_id("ClientID")?;
+        if (put && matches!(member, "connect" | "disconnect")) || (!put && member == "connecting") {
+            ensure!(
+                self.catalog
+                    .hello()
+                    .capabilities
+                    .iter()
+                    .any(|capability| capability == "asyncOutputConnection"),
+                unsupported(member)
+            );
+            if put {
+                self.connection(id, device.id, member == "connect", true)
+                    .await?;
+                return Ok(Value::Null);
+            }
+            let Some(session) = self.existing(id) else {
+                return Ok(json!(false));
+            };
+            if let Some(progress) = &*session.progress.lock().unwrap()
+                && progress.output == device.id
+            {
+                if let Some((code, message)) = &progress.error {
+                    return Err(error(*code, message.clone()));
+                }
+                return Ok(json!(true));
+            }
+            return Ok(json!(false));
+        }
         if member == "connected" {
             if put {
-                self.connection(id, device.id, params.boolean("Connected")?)
+                self.connection(id, device.id, params.boolean("Connected")?, false)
                     .await?;
                 return Ok(Value::Null);
             }
@@ -284,14 +357,32 @@ impl Publisher {
                         "PulsarFab Regain shared hub; source status and policies are managed by the local host"
                     ));
                 }
-                "driverversion" => return Ok(json!(env!("CARGO_PKG_VERSION"))),
-                // Synchronous Connected contract until modern connection/state
-                // operations are implemented and checked for each class.
+                "driverversion" => {
+                    return Ok(json!(concat!(
+                        env!("CARGO_PKG_VERSION_MAJOR"),
+                        ".",
+                        env!("CARGO_PKG_VERSION_MINOR")
+                    )));
+                }
                 "interfaceversion" => {
-                    return Ok(json!(if device.device_type == DeviceType::Switch {
-                        2
-                    } else {
-                        1
+                    let capabilities = &self.catalog.hello().capabilities;
+                    let modern =
+                        ["scalarDeviceState", "asyncOutputConnection"]
+                            .iter()
+                            .all(|required| {
+                                capabilities.iter().any(|capability| capability == required)
+                            });
+                    return Ok(json!(match device.device_type {
+                        DeviceType::Switch
+                            if modern
+                                && capabilities
+                                    .iter()
+                                    .any(|capability| capability == "switchAsyncContract") =>
+                            3,
+                        DeviceType::Switch => 2,
+                        DeviceType::SafetyMonitor if modern => 3,
+                        DeviceType::ObservingConditions if modern => 2,
+                        _ => 1,
                     }));
                 }
                 "supportedactions" => return Ok(json!([])),
@@ -316,20 +407,34 @@ impl Publisher {
             .client
             .get()
             .ok_or_else(|| error(0x407, "Hub client is not connected"))?;
-        if matches!(
-            &command,
+        let capability = match &command {
             Command::Get {
                 property: Get::SensorDescription { .. },
                 ..
+            } => Some("weatherSensorDescription"),
+            Command::Get {
+                property: Get::DeviceState {},
+                ..
+            } => Some("scalarDeviceState"),
+            Command::Get {
+                property: Get::CanAsync { .. } | Get::StateChangeComplete { .. },
+                ..
             }
-        ) && !client
-            .hello()
-            .capabilities
-            .iter()
-            .any(|capability| capability == "weatherSensorDescription")
-        {
+            | Command::Put {
+                property: Put::SetAsync { .. } | Put::SetAsyncValue { .. } | Put::CancelAsync { .. },
+                ..
+            } => Some("switchAsyncContract"),
+            _ => None,
+        };
+        if capability.is_some_and(|required| {
+            !client
+                .hello()
+                .capabilities
+                .iter()
+                .any(|available| available == required)
+        }) {
             return Err(unsupported(
-                "SensorDescription requires an updated shared hub host",
+                "This member requires an updated shared hub host",
             ));
         }
         let value = client.request(command).await.map_err(translate)?;
@@ -345,6 +450,52 @@ impl Publisher {
                 .ok_or_else(|| error(0x500, "Invalid hub weather reading"));
         }
         Ok(value)
+    }
+}
+struct ConnectionGuard {
+    owner: Arc<Publisher>,
+    session: Arc<Session>,
+    id: u32,
+    output: Uuid,
+    asynchronous: bool,
+    finished: bool,
+}
+impl ConnectionGuard {
+    fn finish(&mut self, result: &Result<()>) {
+        if let Err(failure) = result {
+            let (code, message) = failure
+                .downcast_ref::<crate::device::Error>()
+                .map(|failure| (failure.0, failure.1.clone()))
+                .unwrap_or((0x500, "Hub connection failed; outcome is uncertain".into()));
+            *self.session.progress.lock().unwrap() = Some(ConnectionProgress {
+                output: self.output,
+                error: Some((code, message)),
+            });
+            // Revoke every private lease on failure. Retain an asynchronous
+            // failure in the bounded client slot until explicit reconciliation,
+            // so polling Connecting cannot mistake failure for success.
+            self.session.close();
+            self.session.outputs.lock().unwrap().clear();
+            if !self.asynchronous {
+                self.owner.retire(self.id, &self.session);
+            }
+        } else {
+            *self.session.progress.lock().unwrap() = None;
+            if self.session.outputs.lock().unwrap().is_empty() {
+                self.owner.retire(self.id, &self.session);
+            }
+        }
+        self.finished = true;
+    }
+}
+impl Drop for ConnectionGuard {
+    fn drop(&mut self) {
+        if !self.finished {
+            self.finish(&Err(error(
+                0x500,
+                "Hub connection task stopped; outcome is uncertain",
+            )));
+        }
     }
 }
 impl Drop for Publisher {
@@ -386,11 +537,21 @@ fn operation(device: &OutputDescriptor, member: &str, put: bool, p: &Params) -> 
                 hours: p.number("AveragePeriod")?,
             },
             (DeviceType::ObservingConditions, "refresh") => Put::Refresh {},
+            (DeviceType::Switch, "setasync") => Put::SetAsync {
+                id: channel(p)?,
+                state: p.boolean("State")?,
+            },
+            (DeviceType::Switch, "setasyncvalue") => Put::SetAsyncValue {
+                id: channel(p)?,
+                value: p.number("Value")?,
+            },
+            (DeviceType::Switch, "cancelasync") => Put::CancelAsync { id: channel(p)? },
             _ => return Err(unsupported(member)),
         };
         return Ok(Command::Put { output, property });
     }
     let property = match (device.device_type, member) {
+        (_, "devicestate") => Get::DeviceState {},
         (DeviceType::SafetyMonitor, "issafe") => Get::IsSafe {},
         (DeviceType::Switch, "maxswitch") => Get::MaxSwitch {},
         (DeviceType::Switch, "getswitch") => Get::GetSwitch { id: channel(p)? },
@@ -400,6 +561,8 @@ fn operation(device: &OutputDescriptor, member: &str, put: bool, p: &Params) -> 
             Get::GetSwitchDescription { id: channel(p)? }
         }
         (DeviceType::Switch, "canwrite") => Get::CanWrite { id: channel(p)? },
+        (DeviceType::Switch, "canasync") => Get::CanAsync { id: channel(p)? },
+        (DeviceType::Switch, "statechangecomplete") => Get::StateChangeComplete { id: channel(p)? },
         (DeviceType::Switch, "minswitchvalue") => Get::MinSwitchValue { id: channel(p)? },
         (DeviceType::Switch, "maxswitchvalue") => Get::MaxSwitchValue { id: channel(p)? },
         (DeviceType::Switch, "switchstep") => Get::SwitchStep { id: channel(p)? },

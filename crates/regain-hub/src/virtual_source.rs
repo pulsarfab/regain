@@ -136,6 +136,14 @@ impl Backend for VirtualBackend {
                 no_args(&args)?;
                 return Ok(json!(true));
             }
+            if member == "connecting" {
+                no_args(&args)?;
+                return Ok(json!(false));
+            }
+            if member == "devicestate" {
+                no_args(&args)?;
+                return connection.get(Get::DeviceState {}).await;
+            }
             let get = match self.kind {
                 DeviceType::SafetyMonitor if member == "issafe" => {
                     no_args(&args)?;
@@ -153,6 +161,8 @@ impl Backend for VirtualBackend {
                             "getswitchname" => Get::GetSwitchName { id },
                             "getswitchdescription" => Get::GetSwitchDescription { id },
                             "canwrite" => Get::CanWrite { id },
+                            "canasync" => Get::CanAsync { id },
+                            "statechangecomplete" => Get::StateChangeComplete { id },
                             "minswitchvalue" => Get::MinSwitchValue { id },
                             "maxswitchvalue" => Get::MaxSwitchValue { id },
                             "switchstep" => Get::SwitchStep { id },
@@ -187,6 +197,7 @@ impl Backend for VirtualBackend {
         Box::pin(async move {
             let connection = self.connection()?;
             let put = match (self.kind, member.as_str()) {
+                (DeviceType::Switch, "cancelasync") => Put::CancelAsync { id: id(&args, 1)? },
                 (DeviceType::Switch, "setswitchvalue") => Put::SetSwitchValue {
                     id: id(&args, 2)?,
                     value: args

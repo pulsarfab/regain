@@ -17,6 +17,23 @@ use tokio::sync::watch;
 use uuid::Uuid;
 
 impl WeatherMetric {
+    pub(crate) fn state_name(self) -> &'static str {
+        match self {
+            Self::CloudCover => "CloudCover",
+            Self::DewPoint => "DewPoint",
+            Self::Humidity => "Humidity",
+            Self::Pressure => "Pressure",
+            Self::RainRate => "RainRate",
+            Self::SkyBrightness => "SkyBrightness",
+            Self::SkyQuality => "SkyQuality",
+            Self::SkyTemperature => "SkyTemperature",
+            Self::StarFwhm => "StarFWHM",
+            Self::Temperature => "Temperature",
+            Self::WindDirection => "WindDirection",
+            Self::WindGust => "WindGust",
+            Self::WindSpeed => "WindSpeed",
+        }
+    }
     pub fn property(self) -> String {
         serde_json::to_value(self).unwrap().as_str().unwrap().into()
     }
@@ -470,6 +487,22 @@ pub struct WeatherSession {
     _leases: Vec<SourceLease>,
 }
 impl WeatherSession {
+    /// One shared-engine lock and one monotonic time for this cached collection.
+    /// A failed sensor does not suppress valid readings from another sensor.
+    pub(crate) fn device_state(&self) -> BTreeMap<WeatherMetric, f64> {
+        let mut engine = self.output.engine.lock().unwrap();
+        let now = self.output.clock.now();
+        let metrics: Vec<_> = engine.measurements.keys().copied().collect();
+        metrics
+            .into_iter()
+            .filter_map(|metric| {
+                engine
+                    .read(metric, now)
+                    .ok()
+                    .map(|reading| (metric, reading.value))
+            })
+            .collect()
+    }
     pub(crate) fn sensor_description(&self, property: &str) -> Result<String, SourceError> {
         let metric: WeatherMetric =
             serde_json::from_value(serde_json::Value::from(property.to_ascii_lowercase()))

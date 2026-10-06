@@ -108,7 +108,7 @@ concurrency limits, and the implemented operations/capabilities. Client IDs in
 requests are rejected, rather than interpreted as another client's authority.
 
 Currently implemented: describeConfig, getConfig, validateConfig, listDevices,
-sourceStatus, hostStatus, connect, disconnect, and typed get/put for Switch, SafetyMonitor,
+sourceStatus, hostStatus, connect, disconnect, changeConnection, and typed get/put for Switch, SafetyMonitor,
 and Weather. `validateConfig` reports persisted configuration/relationship errors
 with `scope: "configuration"`; it does not authorize durable apply or establish
 live hardware capabilities. `getConfig` retains credential references for local
@@ -117,8 +117,9 @@ also advertises `applyConfig`. A read-only embedded runtime does not advertise i
 and returns unsupported. Camera image transport remains a separate pending feature.
 
 Requests start in arrival order but do not wait for earlier I/O to complete.
-This lets Disconnect cancel a pending Connect while cached safety reads remain
-responsive during another request. There are at most eight in-flight operations
+This lets legacy Disconnect cancel a pending legacy Connect while cached safety
+reads remain responsive during another request. A supervised changeConnection
+instead rejects overlapping legacy or modern changes as busy. There are at most eight in-flight operations
 and one buffered input frame per stream. Overload, malformed/unknown fields,
 unsupported protocol versions, and invalid request order close the stream.
 No-argument commands also reject unknown fields. Invalid typed device operations
@@ -134,6 +135,30 @@ without corrupting the next frame. Protocol failures never echo request content.
 
 Framing/fault checks use in-memory duplex streams and the full runtime. Endpoint
 and separate-process tests also exercise hello/listDevices over actual local IPC.
+
+The `asyncOutputConnection` capability advertises `changeConnection` with
+`output`, `connected`, and `asynchronous` fields, plus typed `get` member
+`connecting`. Each client admits one connection change before spawning its task;
+the reservation counts toward apply quiescence immediately. Asynchronous admission
+returns null without waiting; synchronous callers await the same supervised task.
+It has its own 30-second deadline, survives a lost waiter, and retains failure for
+Connecting until an explicit connection action. EOF closes the client and cancels
+pending connection reservations. No accepted change is replayed.
+
+`scalarDeviceState` advertises typed member `deviceState`: an array of ASCOM
+`Name`/`Value` objects. Safety evaluates current permission; Switch clones each
+source cache once and derives both channel values from the same sample; Weather
+reads its shared engine under one lock and monotonic time. Failed, stale, retired,
+or unconfigured Switch/Weather readings are omitted independently. Empty state
+returns `[]`. This collection never issues source reads or renews evidence.
+TimeStamp is omitted because mixed cached samples have no single UTC measurement
+time; query time would imply freshness that was not observed.
+
+`switchAsyncContract` advertises CanAsync, StateChangeComplete, SetAsync,
+SetAsyncValue and CancelAsync. These scalar channels report CanAsync=false.
+StateChangeComplete and async setters return unsupported after ID validation;
+CancelAsync validates the ID and succeeds because no asynchronous change can have
+started. This does not claim physical completion for upstream writes.
 
 ### Local endpoints and ownership locks
 
@@ -235,7 +260,11 @@ Disconnecting the last output retires that session and returns capacity. There i
 no implicit idle eviction of a connected device. Changes for one client are
 admitted before spawning a supervised task; overlapping changes return busy.
 Accepted changes survive loss of their HTTP waiter. Failed connection changes
-retire that client's entire session to avoid retaining uncertain leases.
+revoke that client's entire private session to release uncertain leases. An
+asynchronous failure retains its error in the bounded client slot until explicit
+Connect/Disconnect reconciliation; polling Connecting cannot mistake it for
+successful completion. A failed synchronous call returns its error and retires
+the slot. Explicit reconnect replaces a failed session; disconnect clears it.
 
 `Connected` reports a lease on the virtual output, not the health of every source.
 Safety remains false until its host policy permits operation; missing or failed
@@ -245,9 +274,22 @@ while its Alpaca measurement property returns the scalar value. SensorDescriptio
 uses a negotiated `weatherSensorDescription` capability so an older host is not
 sent an unknown typed request.
 
-This increment advertises Switch interface 2 and SafetyMonitor/ObservingConditions
-interface 1 with synchronous Connected. Modern asynchronous connection/state
-interfaces and conformance remain required refinements before final acceptance.
+With the three negotiated capabilities above, the adapter advertises Switch 3,
+SafetyMonitor 3 and ObservingConditions 2. Connect/Disconnect return after bounded
+admission, and Connecting includes the HTTP adapter's private-pipe initialization
+as well as the host operation. Legacy Connected remains synchronous. Older hosts
+retain Switch 2 and SafetyMonitor/ObservingConditions 1; unsupported capabilities
+are checked before sending new typed requests. DriverVersion uses major.minor.
+DeviceState uses canonical operational names, including stable GetSwitchN and
+GetSwitchValueN slot numbers and StarFWHM. It omits unavailable entries as described
+above. Complete protocol/error conformance and conformance-tool runs remain
+required before final acceptance. The implementation was reviewed against the
+[ASCOM read-all guidance](https://ascom-standards.org/newdocs/readall-faq.html),
+[timestamp guidance](https://ascom-standards.org/newdocs/timestamp-faq.html), and
+[Switch](https://ascom-standards.org/newdocs/switch.html),
+[SafetyMonitor](https://ascom-standards.org/newdocs/safetymonitor.html) and
+[ObservingConditions](https://ascom-standards.org/newdocs/observingconditions.html)
+contracts.
 Renaming channels uses configuration; SetSwitchName and arbitrary actions/commands
 are unsupported. The initial shared setup UI is described below.
 

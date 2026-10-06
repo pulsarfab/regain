@@ -226,6 +226,7 @@ fn mutating(command: &Command) -> bool {
             | Command::DeleteCredential { .. }
             | Command::UpdateSimulation { .. }
             | Command::Connect { .. }
+            | Command::ChangeConnection { .. }
             | Command::Disconnect { .. }
     )
 }
@@ -245,6 +246,7 @@ fn operation(command: &Command) -> &'static str {
         Command::InspectSource { .. } => "inspectSource",
         Command::UpdateSimulation { .. } => "updateSimulation",
         Command::Connect { .. } => "connect",
+        Command::ChangeConnection { .. } => "changeConnection",
         Command::Disconnect { .. } => "disconnect",
         Command::Get { .. } => "get",
         Command::Put { .. } => "put",

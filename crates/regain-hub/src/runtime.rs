@@ -277,6 +277,8 @@ impl HubRuntime {
             state: Mutex::new(ClientState {
                 closed: lifecycle.closed,
                 connections: BTreeMap::new(),
+                change: None,
+                connection_errors: BTreeMap::new(),
             }),
         });
         lifecycle
@@ -471,6 +473,8 @@ enum ClientConnection {
 struct ClientState {
     closed: bool,
     connections: BTreeMap<Uuid, ClientConnection>,
+    change: Option<(Uuid, Uuid)>, // operation token, output
+    connection_errors: BTreeMap<Uuid, SourceError>,
 }
 pub struct ClientSession {
     id: Uuid,
@@ -486,6 +490,13 @@ impl ClientSession {
     }
 
     pub async fn connect(self: &Arc<Self>, output: Uuid) -> Result<(), SourceError> {
+        self.connect_inner(output, None).await
+    }
+    async fn connect_inner(
+        self: &Arc<Self>,
+        output: Uuid,
+        change: Option<Uuid>,
+    ) -> Result<(), SourceError> {
         if !self.runtime.outputs.contains_key(&output) {
             return Err(unknown_output());
         }
@@ -506,6 +517,13 @@ impl ClientSession {
             if state.closed {
                 return Err(disconnected());
             }
+            if state.change.map(|(token, _)| token) != change {
+                return Err(SourceError::new(
+                    ErrorKind::Busy,
+                    "A client connection change is in progress",
+                ));
+            }
+            state.connection_errors.remove(&output);
             match state.connections.get(&output) {
                 Some(ClientConnection::Ready(_)) => return Ok(()),
                 Some(ClientConnection::Pending { .. }) => {
@@ -553,6 +571,119 @@ impl ClientSession {
         Ok(())
     }
 
+    /// One admitted, supervised connection operation per client. Reserve before
+    /// spawning so Connecting and apply quiescence cannot miss a queued change.
+    /// Dropping the waiter does not replay/cancel an accepted change; EOF closes
+    /// the client and cancels its pending connection through the existing fence.
+    pub async fn change_connection(
+        self: &Arc<Self>,
+        output: Uuid,
+        connected: bool,
+        asynchronous: bool,
+    ) -> Result<(), SourceError> {
+        if !self.runtime.contains_output(output) {
+            return Err(unknown_output());
+        }
+        let token = Uuid::new_v4();
+        let activity = {
+            let lifecycle = self.runtime.lifecycle.lock().unwrap();
+            if lifecycle.closed {
+                return Err(disconnected());
+            }
+            if lifecycle.frozen {
+                return Err(SourceError::new(
+                    ErrorKind::Busy,
+                    "Hub configuration is being applied",
+                ));
+            }
+            let mut state = self.state.lock().unwrap();
+            if state.closed {
+                return Err(disconnected());
+            }
+            if state.change.is_some()
+                || state
+                    .connections
+                    .values()
+                    .any(|connection| matches!(connection, ClientConnection::Pending { .. }))
+            {
+                return Err(SourceError::new(
+                    ErrorKind::Busy,
+                    "A client connection change is in progress",
+                ));
+            }
+            state.connection_errors.remove(&output);
+            if connected
+                == matches!(
+                    state.connections.get(&output),
+                    Some(ClientConnection::Ready(_))
+                )
+            {
+                return Ok(());
+            }
+            state.change = Some((token, output));
+            Activity::new(self.runtime.activity.clone())
+        };
+        let mut guard = ConnectionChange {
+            client: self.clone(),
+            token,
+            output,
+            _activity: activity,
+            finished: false,
+        };
+        let task = tokio::spawn(async move {
+            // Async admission returns before IPC's outer operation deadline.
+            // Keep the accepted task bounded independently of its waiter.
+            let result = tokio::time::timeout(std::time::Duration::from_secs(30), async {
+                if connected {
+                    guard.client.connect_inner(output, Some(token)).await
+                } else {
+                    guard.client.disconnect(output);
+                    Ok(())
+                }
+            })
+            .await
+            .unwrap_or_else(|_| Err(SourceError::uncertain()));
+            guard.finish(&result);
+            result
+        });
+        if asynchronous {
+            Ok(())
+        } else {
+            task.await.unwrap_or_else(|_| Err(SourceError::uncertain()))
+        }
+    }
+    pub fn connecting(&self, output: Uuid) -> Result<bool, SourceError> {
+        if !self.runtime.contains_output(output) {
+            return Err(unknown_output());
+        }
+        let state = self.state.lock().unwrap();
+        if state.closed {
+            return Err(disconnected());
+        }
+        if let Some(error) = state.connection_errors.get(&output) {
+            return Err(error.clone());
+        }
+        Ok(state.change.is_some_and(|(_, changing)| changing == output)
+            || matches!(
+                state.connections.get(&output),
+                Some(ClientConnection::Pending { .. })
+            ))
+    }
+    pub(crate) fn disconnect_checked(&self, output: Uuid) -> Result<(), SourceError> {
+        let mut state = self.state.lock().unwrap();
+        if state.change.is_some() {
+            return Err(SourceError::new(
+                ErrorKind::Busy,
+                "A client connection change is in progress",
+            ));
+        }
+        state.connection_errors.remove(&output);
+        let connection = state.connections.remove(&output);
+        drop(state);
+        drop(connection);
+        Ok(())
+    }
+
     pub fn connection(&self, output: Uuid) -> Result<Arc<OutputConnection>, SourceError> {
         match self.state.lock().unwrap().connections.get(&output) {
             Some(ClientConnection::Ready(value)) => Ok(value.clone()),
@@ -575,9 +706,39 @@ impl ClientSession {
         let connections = {
             let mut state = self.state.lock().unwrap();
             state.closed = true;
+            state.connection_errors.clear();
             std::mem::take(&mut state.connections)
         };
         drop(connections);
+    }
+}
+
+struct ConnectionChange {
+    client: Arc<ClientSession>,
+    token: Uuid,
+    output: Uuid,
+    _activity: Activity,
+    finished: bool,
+}
+impl ConnectionChange {
+    fn finish(&mut self, result: &Result<(), SourceError>) {
+        let mut state = self.client.state.lock().unwrap();
+        if state.change == Some((self.token, self.output)) {
+            state.change = None;
+            if !state.closed
+                && let Err(error) = result
+            {
+                state.connection_errors.insert(self.output, error.clone());
+            }
+        }
+        self.finished = true;
+    }
+}
+impl Drop for ConnectionChange {
+    fn drop(&mut self) {
+        if !self.finished {
+            self.finish(&Err(SourceError::uncertain()));
+        }
     }
 }
 

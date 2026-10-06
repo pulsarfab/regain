@@ -114,6 +114,11 @@ pub enum Command {
     Disconnect {
         output: Uuid,
     },
+    ChangeConnection {
+        output: Uuid,
+        connected: bool,
+        asynchronous: bool,
+    },
     Get {
         output: Uuid,
         property: Get,
@@ -127,6 +132,8 @@ pub enum Command {
 #[serde(tag = "member", rename_all = "camelCase", deny_unknown_fields)]
 pub enum Get {
     Connected {},
+    DeviceState {},
+    Connecting {},
     IsSafe {},
     SafetyStatus {},
     MaxSwitch {},
@@ -135,6 +142,8 @@ pub enum Get {
     GetSwitchName { id: u32 },
     GetSwitchDescription { id: u32 },
     CanWrite { id: u32 },
+    CanAsync { id: u32 },
+    StateChangeComplete { id: u32 },
     MinSwitchValue { id: u32 },
     MaxSwitchValue { id: u32 },
     SwitchStep { id: u32 },
@@ -150,6 +159,9 @@ pub enum Put {
     SetSwitchValue { id: u32, value: f64 },
     AveragePeriod { hours: f64 },
     Refresh {},
+    SetAsync { id: u32, state: bool },
+    SetAsyncValue { id: u32, value: f64 },
+    CancelAsync { id: u32 },
 }
 
 #[derive(Serialize)]
@@ -351,14 +363,14 @@ where
                 if !greeted {
                     if !matches!(request.command, Command::Hello {}) { return Err(ProtocolError::Handshake); }
                     greeted = true;
-                    let mut operations = vec!["describeConfig","getConfig","validateConfig","listDevices","sourceStatus","inspectSource","updateSimulation","connect","disconnect","get","put","hostStatus"];
+                    let mut operations = vec!["describeConfig","getConfig","validateConfig","listDevices","sourceStatus","inspectSource","updateSimulation","connect","disconnect","changeConnection","get","put","hostStatus"];
                     if service.can_apply() { operations.push("applyConfig"); }
                     if service.credential_description().is_some() { operations.extend(["createCredential", "credentialStatus", "deleteCredential"]); }
                     let hello = json!({"protocolVersion":VERSION, "instanceId":service.instance_id(),
                         "hostInstance":service.host_id(), "configurationRevision":service.configuration().revision, "clientId":client.id(),
                         "maxFrameBytes":MAX_FRAME_BYTES, "maxInFlight":MAX_IN_FLIGHT,
                         "operations":operations,
-                        "capabilities":["switchOutputs","safetyOutputs","weatherOutputs","weatherSensorDescription"]});
+                        "capabilities":["switchOutputs","safetyOutputs","weatherOutputs","weatherSensorDescription","scalarDeviceState","asyncOutputConnection","switchAsyncContract"]});
                     write_response(&mut writer, Response::new(request.id, Ok(hello)), limits.frame_timeout).await?;
                     continue;
                 }
@@ -367,7 +379,7 @@ where
                 let service = service.clone();
                 let client = client.clone();
                 let mut operation = Box::pin(async move {
-                    let write = matches!(request.command, Command::Put { .. } | Command::ApplyConfig { .. } | Command::CreateCredential { .. } | Command::DeleteCredential { .. } | Command::UpdateSimulation { .. });
+                    let write = matches!(request.command, Command::Put { .. } | Command::ChangeConnection { .. } | Command::ApplyConfig { .. } | Command::CreateCredential { .. } | Command::DeleteCredential { .. } | Command::UpdateSimulation { .. });
                     let result = timeout(limits.operation_timeout, dispatch_service(&service, &client, request.command)).await
                         .unwrap_or_else(|_| Err(if write { SourceError::uncertain().into() } else {
                             RpcError { code:"timeout", message:"Hub operation deadline expired", upstream_code:None, retry_after_seconds:None, fields:Vec::new() }
@@ -447,6 +459,7 @@ async fn dispatch(
     let target = match &command {
         Command::Connect { output }
         | Command::Disconnect { output }
+        | Command::ChangeConnection { output, .. }
         | Command::Get { output, .. }
         | Command::Put { output, .. } => Some(*output),
         _ => None,
@@ -496,13 +509,27 @@ async fn dispatch(
             Value::Null
         }
         Command::Disconnect { output } => {
-            client.disconnect(output);
+            client.disconnect_checked(output)?;
+            Value::Null
+        }
+        Command::ChangeConnection {
+            output,
+            connected,
+            asynchronous,
+        } => {
+            client
+                .change_connection(output, connected, asynchronous)
+                .await?;
             Value::Null
         }
         Command::Get {
             output,
             property: Get::Connected {},
         } => json!(client.connection(output).is_ok()),
+        Command::Get {
+            output,
+            property: Get::Connecting {},
+        } => json!(client.connecting(output)?),
         Command::Get { output, property } => client.connection(output)?.get(property).await?,
         Command::Put { output, property } => {
             client.connection(output)?.put(property).await?;

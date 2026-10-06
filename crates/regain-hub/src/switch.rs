@@ -3,7 +3,7 @@ use crate::{
     config::{HubConfig, Readout, SwitchChannel, VirtualDevice},
     readout::{ScalarSample, SourceLease, invalid, scalar, unavailable},
     safety::Clock,
-    source::{ErrorKind, SourceError, SourceRegistry, Values},
+    source::{ErrorKind, SourceError, SourceRegistry, SourceSnapshot, Values},
 };
 use serde::Serialize;
 use serde_json::json;
@@ -153,11 +153,19 @@ impl SwitchSession {
     }
     pub(crate) fn sample(&self, number: u32) -> Result<ScalarSample, SourceError> {
         let channel = self.active(number)?;
-        let sample = scalar(
+        self.sample_from(
+            channel,
             &self.leases[&channel.readout.source()].source.snapshot(),
-            &channel.readout,
             self.output.clock.now(),
-        )?;
+        )
+    }
+    fn sample_from(
+        &self,
+        channel: &SwitchChannel,
+        snapshot: &SourceSnapshot,
+        now: std::time::Duration,
+    ) -> Result<ScalarSample, SourceError> {
+        let sample = scalar(snapshot, &channel.readout, now)?;
         if sample.age_seconds >= self.output.maximum_age[&sample.source] {
             return Err(unavailable("Switch reading is stale"));
         }
@@ -165,6 +173,29 @@ impl SwitchSession {
             return Err(unavailable("Switch reading is outside its declared bounds"));
         }
         Ok(sample)
+    }
+    /// Cached operational values only. Clone each source cache once and use the
+    /// same sample for the boolean/numeric pair; omit failed or retired slots.
+    pub(crate) fn device_state(&self) -> BTreeMap<u32, (bool, f64)> {
+        let mut values = BTreeMap::new();
+        let now = self.output.clock.now();
+        for (id, lease) in &self.leases {
+            let snapshot = lease.source.snapshot();
+            for channel in self
+                .output
+                .channels
+                .values()
+                .filter(|c| c.readout.source() == *id)
+            {
+                if let Ok(sample) = self.sample_from(channel, &snapshot, now) {
+                    values.insert(
+                        channel.number,
+                        (sample.value != channel.minimum, sample.value),
+                    );
+                }
+            }
+        }
+        values
     }
     pub fn state(&self, number: u32) -> Result<bool, SourceError> {
         Ok(self.value(number)? != self.active(number)?.minimum)

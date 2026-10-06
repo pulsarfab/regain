@@ -21,6 +21,7 @@ struct Device {
     connects: AtomicUsize,
     disconnects: AtomicUsize,
     writes: AtomicUsize,
+    reads: AtomicUsize,
     hang_connect: AtomicBool,
     hang_disconnect: AtomicBool,
     hang_write: AtomicBool,
@@ -53,6 +54,7 @@ impl Backend for Mock {
     }
     fn read(&mut self, member: String, _: Values) -> BackendFuture<'_, Value> {
         Box::pin(async move {
+            self.device.reads.fetch_add(1, SeqCst);
             if self.device.hang_read.load(SeqCst) {
                 std::future::pending::<()>().await;
             }
@@ -182,6 +184,82 @@ async fn settle() {
     for _ in 0..50 {
         tokio::task::yield_now().await;
     }
+}
+
+#[tokio::test(start_paused = true)]
+async fn asynchronous_connection_admission_is_bounded_and_failures_remain_visible_until_reconciled()
+{
+    let f = fixture();
+    let client = f.runtime.client();
+    f.devices[0].hang_connect.store(true, SeqCst);
+    client
+        .change_connection(f.switch, true, true)
+        .await
+        .unwrap();
+    assert!(client.connecting(f.switch).unwrap());
+    assert!(!client.connecting(f.weather).unwrap());
+    assert!(f.runtime.active_connections() > 0);
+    assert_eq!(
+        client
+            .change_connection(f.switch, true, true)
+            .await
+            .unwrap_err()
+            .kind,
+        ErrorKind::Busy
+    );
+    assert_eq!(
+        client.connect(f.weather).await.unwrap_err().kind,
+        ErrorKind::Busy
+    );
+    settle().await;
+    tokio::time::advance(Duration::from_secs(31)).await;
+    settle().await;
+    let error = client.connecting(f.switch).unwrap_err();
+    assert_ne!(error.kind, ErrorKind::Connecting);
+    assert_eq!(client.connecting(f.switch).unwrap_err().kind, error.kind);
+    assert!(client.connection(f.switch).is_err());
+    assert_eq!(f.runtime.active_connections(), 0);
+    f.devices[0].hang_connect.store(false, SeqCst);
+    client
+        .change_connection(f.switch, true, false)
+        .await
+        .unwrap();
+    assert!(!client.connecting(f.switch).unwrap());
+    assert!(client.connection(f.switch).is_ok());
+    client
+        .change_connection(f.weather, true, false)
+        .await
+        .unwrap();
+    client
+        .change_connection(f.switch, false, true)
+        .await
+        .unwrap();
+    assert!(client.connecting(f.switch).unwrap());
+    settle().await;
+    assert!(!client.connecting(f.switch).unwrap());
+    assert!(client.connection(f.switch).is_err());
+    assert!(client.connection(f.weather).is_ok());
+    client.close();
+    f.runtime.shutdown().await.unwrap();
+}
+
+#[tokio::test(start_paused = true)]
+async fn eof_before_an_accepted_connection_task_runs_cannot_start_source_io() {
+    let f = fixture();
+    let client = f.runtime.client();
+    client
+        .change_connection(f.switch, true, true)
+        .await
+        .unwrap();
+    client.close();
+    settle().await;
+    assert_eq!(f.devices[0].connects.load(SeqCst), 0);
+    assert_eq!(f.runtime.active_connections(), 0);
+    assert_eq!(
+        client.connecting(f.switch).unwrap_err().kind,
+        ErrorKind::Disconnected
+    );
+    f.runtime.shutdown().await.unwrap();
 }
 
 #[tokio::test(start_paused = true)]
