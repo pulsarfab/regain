@@ -1,0 +1,26 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { configurationContract } from '../crates/regain-alpaca/web/hub-config.mjs';
+
+const description = JSON.parse(readFileSync(new URL('../contracts/hub-config.json', import.meta.url), 'utf8'));
+const reader = configurationContract(description);
+const source = reader.root.$defs.SourceBackend;
+const variants = reader.variants(source, ['alpacaSources']);
+assert.equal(variants.find(v => v.kind === 'alpaca').enabled, true);
+assert.equal(variants.find(v => v.kind === 'com').enabled, false);
+const fields = reader.fields(source, { kind: 'alpaca', baseUrl: 'http://localhost:11111', deviceNumber: 0 });
+assert.equal(fields.some(f => f.key === 'progId'), false);
+assert.equal(fields.find(f => f.key === 'baseUrl').value, 'http://localhost:11111');
+assert.equal(fields.find(f => f.key === 'connectionPolicy').value, 'externallyManaged');
+assert.equal(reader.fields(reader.root).some(f => f.key === 'identities'), false);
+assert.equal(reader.fields(reader.root).find(f => f.key === 'revision').readOnly, true);
+const output = reader.root.$defs.OutputConfig;
+assert.equal(reader.fields(output).find(f => f.key === 'number').readOnly, true);
+assert.equal(reader.fields(output, {}, [], true).find(f => f.key === 'number').readOnly, false);
+const policy = reader.fields(reader.root.$defs.SafetyPolicy);
+assert.equal(policy.find(f => f.key === 'maximumSafeAgeSeconds').value, 90);
+assert.equal(policy.find(f => f.key === 'maximumSafeAgeSeconds').schema['x-regain'].units, 's');
+assert.equal(policy.find(f => f.key === 'safeReadingsToSafe').schema.type, 'integer');
+assert.throws(() => configurationContract({ ...description, contractVersion: 2 }));
+assert.throws(() => reader.resolve({ $ref: '#/$defs/missing' }));
+console.log('Web hub configuration contract passed: conditional fields, capability gates, defaults, units, identities and protocol version.');

@@ -1,5 +1,6 @@
 //! Persisted hub identities and revision-checked configuration replacement.
 use crate::parameters::{FieldError, PollPolicy, SafetyPolicy};
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -10,8 +11,16 @@ use std::{
 use uuid::Uuid;
 
 pub const SCHEMA_VERSION: u32 = 1;
+pub const MAX_LABEL_CHARS: usize = 200;
+pub const MAX_DEVICES: usize = 256;
+pub const MAX_SAFETY_MEMBERS: usize = 64;
+pub const MAX_SWITCH_CHANNELS: usize = 1024;
+pub const MAX_MEASUREMENT_SOURCES: usize = 16;
+pub const MAX_HISTORY_SECONDS: f64 = 3600.0;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
+)]
 #[serde(rename_all = "lowercase")]
 pub enum DeviceType {
     Camera,
@@ -24,22 +33,24 @@ pub enum DeviceType {
     CoverCalibrator,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub enum ConnectionPolicy {
+    /// Read an upstream connection managed by another application. Never disconnect it.
     #[default]
     ExternallyManaged,
+    /// Connect while the hub holds leases; release only connections the hub opened.
     Managed,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum Bitness {
     X86,
     X64,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum NativeDevice {
     CameraDirect,
@@ -64,7 +75,7 @@ impl NativeDevice {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(
     tag = "kind",
     rename_all = "camelCase",
@@ -72,49 +83,102 @@ impl NativeDevice {
     deny_unknown_fields
 )]
 pub enum SourceBackend {
+    /// # Direct Regain driver
+    /// Use the existing Rust worker and its device-specific recovery behavior.
+    #[schemars(extend("x-regain" = {"requiresCapability":"nativeSources"}))]
     Native {
+        /// Hardware driver and backend to use.
         device: NativeDevice,
+        /// Stable hardware serial or device identity; never a discovery-list index.
+        #[schemars(length(min = 1, max = MAX_LABEL_CHARS))]
         identity: String,
     },
+    /// # Remote Alpaca
+    /// Read or control an ASCOM Alpaca device over HTTP or HTTPS.
+    #[schemars(extend("x-regain" = {"requiresCapability":"alpacaSources"}))]
     Alpaca {
+        /// Server base URL. Credentials, query strings, and fragments are not allowed.
+        #[schemars(title = "Server URL", url)]
         base_url: String,
+        /// ASCOM device class advertised by the source.
         device_type: DeviceType,
+        /// Stable device number on that server.
         device_number: u32,
+        /// Whether the hub or another application manages the upstream connection.
         #[serde(default)]
         connection_policy: ConnectionPolicy,
+        /// Name of a credential in local protected storage. Never enter the credential itself.
         #[serde(default)]
+        #[schemars(length(min = 1, max = MAX_LABEL_CHARS), extend("x-regain" = {"sensitive":true,"export":"omit"}))]
         credential_reference: Option<String>,
     },
+    /// # Windows ASCOM driver
+    /// Import a registered driver in an isolated Windows COM worker.
+    #[schemars(extend("x-regain" = {"requiresCapability":"comSources"}))]
     Com {
+        /// Registered ASCOM ProgID, for example ASCOM.Example.SafetyMonitor.
+        #[schemars(title = "Driver ProgID", length(min = 1, max = MAX_LABEL_CHARS))]
         prog_id: String,
+        /// ASCOM interface exposed by this source.
         device_type: DeviceType,
+        /// Match the architecture in which the source driver is registered.
         bitness: Bitness,
+        /// Whether the hub or another application manages the upstream connection.
         #[serde(default)]
         connection_policy: ConnectionPolicy,
     },
+    /// # Another hub device
+    /// Reference a virtual output by its stable ID. Cyclic references are rejected.
+    #[schemars(extend("x-regain" = {"requiresCapability":"virtualSources"}))]
     Virtual {
+        /// Stable ID of the virtual output to read.
         output: Uuid,
     },
+    /// # Simulation
+    /// A visibly labelled simulated source for configuration and failure testing.
+    #[schemars(extend("x-regain" = {"requiresCapability":"simulation"}))]
     Simulated {
+        /// Simulated device interface.
         device_type: DeviceType,
     },
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SourceConfig {
+    /// Stable source ID. Refer to the same ID to share this source.
+    #[schemars(extend("readOnly" = true))]
     pub id: Uuid,
+    /// Display name for this source; changing it does not change device identity.
+    #[schemars(length(min = 1, max = MAX_LABEL_CHARS))]
     pub label: String,
+    /// Select the source transport and its device identity.
     pub backend: SourceBackend,
+    /// Shared read cadence, deadlines, and retry policy. Writes are never blindly retried.
     #[serde(default)]
     pub polling: PollPolicy,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
 pub enum Readout {
-    Channel { source: Uuid, channel: u32 },
-    Property { source: Uuid, property: String },
+    /// # Switch channel
+    /// Read one channel from a Switch source, retaining its access permissions.
+    Channel {
+        /// Stable ID of the Switch source.
+        source: Uuid,
+        /// Upstream channel number, not this output's channel number.
+        channel: u32,
+    },
+    /// # Device property
+    /// Read a scalar property such as temperature from a compatible source.
+    Property {
+        /// Stable source ID.
+        source: Uuid,
+        /// Lowercase property name advertised by the source, for example temperature.
+        #[schemars(length(min = 1, max = 80), regex(pattern = "^[a-z]+$"))]
+        property: String,
+    },
 }
 impl Readout {
     pub fn source(&self) -> Uuid {
@@ -124,30 +188,50 @@ impl Readout {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SafetyMember {
+    /// Required SafetyMonitor source. Each enabled membership participates in AND aggregation.
     pub source: Uuid,
+    /// Include this source in the safety decision. At least one source must be enabled.
     pub enabled: bool,
+    /// This membership's confirmation and freshness rules, independent of other outputs.
     #[serde(default)]
     pub policy: SafetyPolicy,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SwitchChannel {
+    /// Stable channel ID. Removing a channel never makes its number available for reuse.
+    #[schemars(extend("readOnly" = true))]
     pub id: Uuid,
+    /// Persisted output channel number. It does not change when channels are reordered.
+    #[schemars(extend("x-regain" = {"immutableAfterCreate":true}))]
     pub number: u32,
+    /// Name shown to clients for this channel.
+    #[schemars(length(min = 1, max = MAX_LABEL_CHARS))]
     pub label: String,
+    /// Upstream channel or scalar property; an existing channel cannot be silently retargeted.
     pub readout: Readout,
+    /// Request writes only when the source supports them; cannot make a read-only sensor writable.
+    #[schemars(extend("x-regain" = {"requiresCapability":"writeReadout"}))]
     pub writable: bool,
+    /// Minimum exposed value. Runtime writes must also satisfy the source's own bounds.
     pub minimum: f64,
+    /// Maximum exposed value; must be at least the minimum.
     pub maximum: f64,
+    /// Positive value increment supported by this channel.
+    #[schemars(extend("exclusiveMinimum" = 0))]
     pub step: f64,
+    /// Unit label for display; no implicit unit conversion is performed.
+    #[schemars(length(max = 80))]
     pub units: String,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
+)]
 #[serde(rename_all = "lowercase")]
 pub enum WeatherMetric {
     CloudCover,
@@ -165,16 +249,21 @@ pub enum WeatherMetric {
     WindSpeed,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Measurement {
     /// First fresh valid source wins; changing source clears the averaging window.
+    #[schemars(length(min = 1, max = MAX_MEASUREMENT_SOURCES))]
     pub sources: Vec<Readout>,
+    /// Hard sample age limit. An expired sample is unavailable and may trigger fallback.
+    #[schemars(range(min = 0.1, max = MAX_HISTORY_SECONDS), extend("x-regain" = {"units":"s"}))]
     pub maximum_age_seconds: f64,
+    /// Averaging interval; zero returns the latest fresh sample. Changing source clears history.
+    #[schemars(range(min = 0.0, max = MAX_HISTORY_SECONDS), extend("x-regain" = {"units":"s"}))]
     pub average_seconds: f64,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(
     tag = "kind",
     rename_all = "camelCase",
@@ -182,17 +271,33 @@ pub struct Measurement {
     deny_unknown_fields
 )]
 pub enum VirtualDevice {
+    /// # Combined safety
+    /// Require every enabled source to permit operation, with per-source diagnostics.
     Safety {
+        /// Required safety inputs and their independent policies.
+        #[schemars(length(min = 1, max = MAX_SAFETY_MEMBERS))]
         members: Vec<SafetyMember>,
     },
+    /// # Combined switches and gauges
+    /// Publish selected read-only sensors and writable controls as one Switch device.
     Switch {
+        /// Stable channel assignments and their source mappings.
+        #[schemars(length(min = 1, max = MAX_SWITCH_CHANNELS))]
         channels: Vec<SwitchChannel>,
     },
+    /// # Combined weather
+    /// Select a source, freshness limit, and fallback order for each weather measurement.
     Weather {
+        /// Measurement names follow the ASCOM ObservingConditions interface.
+        #[schemars(extend("minProperties" = 1))]
         measurements: BTreeMap<WeatherMetric, Measurement>,
     },
+    /// # Republish a device
+    /// Preserve the source's interface and capabilities through another frontend.
     Proxy {
+        /// Stable ID of the upstream source.
         source: Uuid,
+        /// Must match the upstream device class.
         device_type: DeviceType,
     },
 }
@@ -218,42 +323,60 @@ impl VirtualDevice {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct OutputConfig {
+    /// Stable virtual-device ID used by all frontends.
+    #[schemars(extend("readOnly" = true))]
     pub id: Uuid,
+    /// Stable device number within its ASCOM device class; never derived from display order.
+    #[schemars(extend("x-regain" = {"immutableAfterCreate":true}))]
     pub number: u32,
+    /// Name shown in equipment lists and setup dialogs.
+    #[schemars(length(min = 1, max = MAX_LABEL_CHARS))]
     pub label: String,
+    /// Select how this output combines or republishes its inputs.
     pub device: VirtualDevice,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct HubConfig {
+    /// Persisted configuration format; unsupported versions require explicit migration.
+    #[schemars(extend("const" = SCHEMA_VERSION, "readOnly" = true))]
     pub schema_version: u32,
+    /// Revision returned by the hub. An update must supply this exact revision.
+    #[schemars(extend("readOnly" = true))]
     pub revision: Uuid,
+    /// Stable hub instance identity; never copied from another installation.
+    #[schemars(extend("readOnly" = true))]
     pub instance_id: Uuid,
+    /// Sources shared by virtual devices. Configure each physical/remote source once.
+    #[schemars(length(max = MAX_DEVICES))]
     pub sources: Vec<SourceConfig>,
+    /// Virtual devices published through NINA, Alpaca, or native ASCOM.
+    #[schemars(length(max = MAX_DEVICES))]
     pub outputs: Vec<OutputConfig>,
     /// Owned by the store. Retired IDs remain reserved after deletion/restart.
     #[serde(default)]
+    #[schemars(extend("readOnly" = true, "x-regain" = {"hidden":true}))]
     pub identities: IdentityLedger,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct IdentityLedger {
     sources: BTreeMap<Uuid, String>,
     outputs: BTreeMap<Uuid, OutputIdentity>,
     channels: BTreeMap<Uuid, ChannelIdentity>,
 }
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct OutputIdentity {
     number: u32,
     device_type: DeviceType,
 }
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ChannelIdentity {
     output: Uuid,
@@ -434,7 +557,7 @@ impl HubConfig {
         if self.instance_id.is_nil() {
             error("instanceId".into(), "identity", "Instance ID cannot be nil");
         }
-        if self.sources.len() > 256 || self.outputs.len() > 256 {
+        if self.sources.len() > MAX_DEVICES || self.outputs.len() > MAX_DEVICES {
             error(
                 "sources".into(),
                 "limit",
@@ -454,7 +577,7 @@ impl HubConfig {
                     "Source IDs must be non-nil and unique",
                 );
             }
-            if source.label.trim().is_empty() || source.label.len() > 200 {
+            if source.label.trim().is_empty() || source.label.chars().count() > MAX_LABEL_CHARS {
                 error(format!("{p}.label"), "label", "Use a label of 1–200 bytes");
             }
             for e in source.polling.validate_timing() {
@@ -490,7 +613,7 @@ impl HubConfig {
                     }
                 }
                 SourceBackend::Native { device, identity } => {
-                    if identity.trim().is_empty() {
+                    if identity.trim().is_empty() || identity.chars().count() > MAX_LABEL_CHARS {
                         error(
                             format!("{p}.backend.identity"),
                             "identity",
@@ -560,7 +683,7 @@ impl HubConfig {
                     "Device number must be unique within its device class",
                 );
             }
-            if output.label.trim().is_empty() || output.label.len() > 200 {
+            if output.label.trim().is_empty() || output.label.chars().count() > MAX_LABEL_CHARS {
                 error(format!("{p}.label"), "label", "Use a label of 1–200 bytes");
             }
             for source in output.device.sources() {
@@ -574,7 +697,7 @@ impl HubConfig {
             }
             match &output.device {
                 VirtualDevice::Safety { members } => {
-                    if members.len() > 64 || !members.iter().any(|m| m.enabled) {
+                    if members.len() > MAX_SAFETY_MEMBERS || !members.iter().any(|m| m.enabled) {
                         error(
                             format!("{p}.device.members"),
                             "required",
@@ -606,7 +729,7 @@ impl HubConfig {
                     }
                 }
                 VirtualDevice::Switch { channels } => {
-                    if channels.is_empty() || channels.len() > 1024 {
+                    if channels.is_empty() || channels.len() > MAX_SWITCH_CHANNELS {
                         error(
                             format!("{p}.device.channels"),
                             "required",
@@ -627,8 +750,8 @@ impl HubConfig {
                             );
                         }
                         if channel.label.trim().is_empty()
-                            || channel.label.len() > 200
-                            || channel.units.len() > 80
+                            || channel.label.chars().count() > MAX_LABEL_CHARS
+                            || channel.units.chars().count() > 80
                         {
                             error(
                                 path.clone(),
@@ -662,8 +785,13 @@ impl HubConfig {
                         );
                     }
                     for (metric, measurement) in measurements {
-                        let path = format!("{p}.device.measurements.{metric:?}");
-                        if measurement.sources.is_empty() || measurement.sources.len() > 16 {
+                        let path = format!(
+                            "{p}.device.measurements.{}",
+                            serde_json::to_value(metric).unwrap().as_str().unwrap()
+                        );
+                        if measurement.sources.is_empty()
+                            || measurement.sources.len() > MAX_MEASUREMENT_SOURCES
+                        {
                             error(
                                 path.clone(),
                                 "required",
@@ -671,9 +799,10 @@ impl HubConfig {
                             );
                         }
                         if !measurement.maximum_age_seconds.is_finite()
-                            || !(0.1..=3600.0).contains(&measurement.maximum_age_seconds)
+                            || !(0.1..=MAX_HISTORY_SECONDS)
+                                .contains(&measurement.maximum_age_seconds)
                             || !measurement.average_seconds.is_finite()
-                            || !(0.0..=3600.0).contains(&measurement.average_seconds)
+                            || !(0.0..=MAX_HISTORY_SECONDS).contains(&measurement.average_seconds)
                         {
                             error(
                                 path.clone(),

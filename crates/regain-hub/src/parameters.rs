@@ -83,6 +83,15 @@ macro_rules! parameters {
         impl Default for $name {
             fn default() -> Self { Self { $($field: $default,)* } }
         }
+        impl schemars::JsonSchema for $name {
+            fn schema_name() -> std::borrow::Cow<'static, str> { stringify!($name).into() }
+            fn schema_id() -> std::borrow::Cow<'static, str> { concat!(module_path!(), "::", stringify!($name)).into() }
+            fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+                let mut schema = <Self as ParameterSet>::schema();
+                schema.as_object_mut().unwrap().remove("$schema");
+                serde_json::from_value(schema).expect("Parameter schema is an object")
+            }
+        }
         impl ParameterSet for $name {
             fn parameters() -> Vec<Parameter> { vec![$(Parameter {
                 key: camel_case(stringify!($field)),

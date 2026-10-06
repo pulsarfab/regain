@@ -1,0 +1,1375 @@
+{
+  "apply": "disconnect",
+  "capabilities": [],
+  "contractVersion": 1,
+  "schema": {
+    "$defs": {
+      "Bitness": {
+        "enum": [
+          "x86",
+          "x64"
+        ],
+        "type": "string"
+      },
+      "ChannelIdentity": {
+        "additionalProperties": false,
+        "properties": {
+          "number": {
+            "format": "uint32",
+            "minimum": 0,
+            "title": "Number",
+            "type": "integer",
+            "x-regain": {
+              "apply": "reconnect"
+            }
+          },
+          "output": {
+            "format": "uuid",
+            "title": "Output",
+            "type": "string",
+            "x-regain": {
+              "apply": "reconnect"
+            }
+          },
+          "readout": {
+            "$ref": "#/$defs/Readout",
+            "title": "Readout",
+            "x-regain": {
+              "apply": "reconnect"
+            }
+          }
+        },
+        "required": [
+          "output",
+          "number",
+          "readout"
+        ],
+        "type": "object"
+      },
+      "ConnectionPolicy": {
+        "oneOf": [
+          {
+            "const": "externallyManaged",
+            "description": "Read an upstream connection managed by another application. Never disconnect it.",
+            "type": "string"
+          },
+          {
+            "const": "managed",
+            "description": "Connect while the hub holds leases; release only connections the hub opened.",
+            "type": "string"
+          }
+        ]
+      },
+      "DeviceType": {
+        "enum": [
+          "camera",
+          "switch",
+          "safetymonitor",
+          "observingconditions",
+          "focuser",
+          "rotator",
+          "filterwheel",
+          "covercalibrator"
+        ],
+        "type": "string"
+      },
+      "IdentityLedger": {
+        "additionalProperties": false,
+        "properties": {
+          "channels": {
+            "additionalProperties": {
+              "$ref": "#/$defs/ChannelIdentity"
+            },
+            "title": "Channels",
+            "type": "object",
+            "x-regain": {
+              "apply": "reconnect"
+            }
+          },
+          "outputs": {
+            "additionalProperties": {
+              "$ref": "#/$defs/OutputIdentity"
+            },
+            "title": "Outputs",
+            "type": "object",
+            "x-regain": {
+              "apply": "reconnect"
+            }
+          },
+          "sources": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Sources",
+            "type": "object",
+            "x-regain": {
+              "apply": "reconnect"
+            }
+          }
+        },
+        "required": [
+          "sources",
+          "outputs",
+          "channels"
+        ],
+        "type": "object"
+      },
+      "Measurement": {
+        "additionalProperties": false,
+        "properties": {
+          "averageSeconds": {
+            "description": "Averaging interval; zero returns the latest fresh sample. Changing source clears history.",
+            "format": "double",
+            "maximum": 3600.0,
+            "minimum": 0.0,
+            "title": "Average Seconds",
+            "type": "number",
+            "x-regain": {
+              "units": "s"
+            }
+          },
+          "maximumAgeSeconds": {
+            "description": "Hard sample age limit. An expired sample is unavailable and may trigger fallback.",
+            "format": "double",
+            "maximum": 3600.0,
+            "minimum": 0.1,
+            "title": "Maximum Age Seconds",
+            "type": "number",
+            "x-regain": {
+              "units": "s"
+            }
+          },
+          "sources": {
+            "description": "First fresh valid source wins; changing source clears the averaging window.",
+            "items": {
+              "$ref": "#/$defs/Readout"
+            },
+            "maxItems": 16,
+            "minItems": 1,
+            "title": "Sources",
+            "type": "array",
+            "x-regain": {
+              "apply": "reconnect"
+            }
+          }
+        },
+        "required": [
+          "sources",
+          "maximumAgeSeconds",
+          "averageSeconds"
+        ],
+        "type": "object"
+      },
+      "NativeDevice": {
+        "enum": [
+          "camera-direct",
+          "camera-sdk",
+          "caa",
+          "efw",
+          "eaf",
+          "fc3",
+          "falcon",
+          "ofp2",
+          "eta"
+        ],
+        "type": "string"
+      },
+      "OutputConfig": {
+        "additionalProperties": false,
+        "properties": {
+          "device": {
+            "$ref": "#/$defs/VirtualDevice",
+            "description": "Select how this output combines or republishes its inputs.",
+            "title": "Device",
+            "x-regain": {
+              "apply": "reconnect"
+            }
+          },
+          "id": {
+            "description": "Stable virtual-device ID used by all frontends.",
+            "format": "uuid",
+            "readOnly": true,
+            "title": "Id",
+            "type": "string",
+            "x-regain": {
+              "apply": "reconnect"
+            }
+          },
+          "label": {
+            "description": "Name shown in equipment lists and setup dialogs.",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Label",
+            "type": "string",
+            "x-regain": {
+              "apply": "reconnect"
+            }
+          },
+          "number": {
+            "description": "Stable device number within its ASCOM device class; never derived from display order.",
+            "format": "uint32",
+            "minimum": 0,
+            "title": "Number",
+            "type": "integer",
+            "x-regain": {
+              "immutableAfterCreate": true
+            }
+          }
+        },
+        "required": [
+          "id",
+          "number",
+          "label",
+          "device"
+        ],
+        "type": "object"
+      },
+      "OutputIdentity": {
+        "additionalProperties": false,
+        "properties": {
+          "deviceType": {
+            "$ref": "#/$defs/DeviceType",
+            "title": "Device Type",
+            "x-regain": {
+              "apply": "reconnect"
+            }
+          },
+          "number": {
+            "format": "uint32",
+            "minimum": 0,
+            "title": "Number",
+            "type": "integer",
+            "x-regain": {
+              "apply": "reconnect"
+            }
+          }
+        },
+        "required": [
+          "number",
+          "deviceType"
+        ],
+        "type": "object"
+      },
+      "PollPolicy": {
+        "additionalProperties": false,
+        "properties": {
+          "attemptsPerCycle": {
+            "default": 3,
+            "description": "Total attempts including the first request. Only read operations are retried.",
+            "maximum": 10.0,
+            "minimum": 1.0,
+            "title": "Attempts per cycle",
+            "type": "integer",
+            "x-regain": {
+              "apply": "reconnect",
+              "default": 3,
+              "description": "Total attempts including the first request. Only read operations are retried.",
+              "group": "Source polling",
+              "key": "attemptsPerCycle",
+              "label": "Attempts per cycle",
+              "maximum": 10.0,
+              "minimum": 1.0,
+              "sensitive": false,
+              "step": 1.0,
+              "units": "attempts",
+              "valueType": "integer"
+            }
+          },
+          "backoffCapSeconds": {
+            "default": 30.0,
+            "description": "Cap before jitter. A server Retry-After may require a longer wait; evidence still expires.",
+            "maximum": 3600.0,
+            "minimum": 0.05,
+            "title": "Maximum retry delay",
+            "type": "number",
+            "x-regain": {
+              "apply": "reconnect",
+              "default": 30.0,
+              "description": "Cap before jitter. A server Retry-After may require a longer wait; evidence still expires.",
+              "group": "Source polling",
+              "key": "backoffCapSeconds",
+              "label": "Maximum retry delay",
+              "maximum": 3600.0,
+              "minimum": 0.05,
+              "sensitive": false,
+              "step": 0.1,
+              "units": "s",
+              "valueType": "number"
+            }
+          },
+          "backoffMultiplier": {
+            "default": 2.0,
+            "description": "Multiplier after consecutive transport failures.",
+            "maximum": 10.0,
+            "minimum": 1.0,
+            "title": "Retry multiplier",
+            "type": "number",
+            "x-regain": {
+              "apply": "reconnect",
+              "default": 2.0,
+              "description": "Multiplier after consecutive transport failures.",
+              "group": "Source polling",
+              "key": "backoffMultiplier",
+              "label": "Retry multiplier",
+              "maximum": 10.0,
+              "minimum": 1.0,
+              "sensitive": false,
+              "step": 0.1,
+              "units": "",
+              "valueType": "number"
+            }
+          },
+          "initialBackoffSeconds": {
+            "default": 0.5,
+            "description": "Initial exponential retry delay, before equal jitter.",
+            "maximum": 300.0,
+            "minimum": 0.05,
+            "title": "Initial retry delay",
+            "type": "number",
+            "x-regain": {
+              "apply": "reconnect",
+              "default": 0.5,
+              "description": "Initial exponential retry delay, before equal jitter.",
+              "group": "Source polling",
+              "key": "initialBackoffSeconds",
+              "label": "Initial retry delay",
+              "maximum": 300.0,
+              "minimum": 0.05,
+              "sensitive": false,
+              "step": 0.05,
+              "units": "s",
+              "valueType": "number"
+            }
+          },
+          "pollSeconds": {
+            "default": 30.0,
+            "description": "Time between source polling cycles.",
+            "maximum": 3600.0,
+            "minimum": 0.1,
+            "title": "Check interval",
+            "type": "number",
+            "x-regain": {
+              "apply": "reconnect",
+              "default": 30.0,
+              "description": "Time between source polling cycles.",
+              "group": "Source polling",
+              "key": "pollSeconds",
+              "label": "Check interval",
+              "maximum": 3600.0,
+              "minimum": 0.1,
+              "sensitive": false,
+              "step": 0.1,
+              "units": "s",
+              "valueType": "number"
+            }
+          },
+          "requestTimeoutSeconds": {
+            "default": 1.0,
+            "description": "Deadline for one source request; does not extend safety evidence lifetime.",
+            "maximum": 60.0,
+            "minimum": 0.05,
+            "title": "Request timeout",
+            "type": "number",
+            "x-regain": {
+              "apply": "reconnect",
+              "default": 1.0,
+              "description": "Deadline for one source request; does not extend safety evidence lifetime.",
+              "group": "Source polling",
+              "key": "requestTimeoutSeconds",
+              "label": "Request timeout",
+              "maximum": 60.0,
+              "minimum": 0.05,
+              "sensitive": false,
+              "step": 0.05,
+              "units": "s",
+              "valueType": "number"
+            }
+          }
+        },
+        "type": "object"
+      },
+      "Readout": {
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "description": "Read one channel from a Switch source, retaining its access permissions.",
+            "properties": {
+              "channel": {
+                "description": "Upstream channel number, not this output's channel number.",
+                "format": "uint32",
+                "minimum": 0,
+                "title": "Channel",
+                "type": "integer",
+                "x-regain": {
+                  "apply": "reconnect"
+                }
+              },
+              "kind": {
+                "const": "channel",
+                "title": "Kind",
+                "type": "string",
+                "x-regain": {
+                  "apply": "reconnect"
+                }
+              },
+              "source": {
+                "description": "Stable ID of the Switch source.",
+                "format": "uuid",
+                "title": "Source",
+                "type": "string",
+                "x-regain": {
+                  "apply": "reconnect"
+                }
+              }
+            },
+            "required": [
+              "kind",
+              "source",
+              "channel"
+            ],
+            "title": "Switch channel",
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "description": "Read a scalar property such as temperature from a compatible source.",
+            "properties": {
+              "kind": {
+                "const": "property",
+                "title": "Kind",
+                "type": "string",
+                "x-regain": {
+                  "apply": "reconnect"
+                }
+              },
+              "property": {
+                "description": "Lowercase property name advertised by the source, for example temperature.",
+                "maxLength": 80,
+                "minLength": 1,
+                "pattern": "^[a-z]+$",
+                "title": "Property",
+                "type": "string",
+                "x-regain": {
+                  "apply": "reconnect"
+                }
+              },
+              "source": {
+                "description": "Stable source ID.",
+                "format": "uuid",
+                "title": "Source",
+                "type": "string",
+                "x-regain": {
+                  "apply": "reconnect"
+                }
+              }
+            },
+            "required": [
+              "kind",
+              "source",
+              "property"
+            ],
+            "title": "Device property",
+            "type": "object"
+          }
+        ]
+      },
+      "SafetyMember": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "description": "Include this source in the safety decision. At least one source must be enabled.",
+            "title": "Enabled",
+            "type": "boolean",
+            "x-regain": {
+              "apply": "reconnect"
+            }
+          },
+          "policy": {
+            "$ref": "#/$defs/SafetyPolicy",
+            "default": {
+              "confirmationSeconds": 30.0,
+              "failedCyclesToUnsafe": 3,
+              "maximumSafeAgeSeconds": 90.0,
+              "returnToSafeHoldSeconds": 10.0,
+              "safeReadingsToSafe": 3,
+              "unsafeReadingsToUnsafe": 1
+            },
+            "description": "This membership's confirmation and freshness rules, independent of other outputs.",
+            "title": "Policy",
+            "x-regain": {
+              "apply": "reconnect"
+            }
+          },
+          "source": {
+            "description": "Required SafetyMonitor source. Each enabled membership participates in AND aggregation.",
+            "format": "uuid",
+            "title": "Source",
+            "type": "string",
+            "x-regain": {
+              "apply": "reconnect"
+            }
+          }
+        },
+        "required": [
+          "source",
+          "enabled"
+        ],
+        "type": "object"
+      },
+      "SafetyPolicy": {
+        "additionalProperties": false,
+        "properties": {
+          "confirmationSeconds": {
+            "default": 30.0,
+            "description": "Minimum interval between counted observations for this membership; faster shared polling cannot accelerate confirmation.",
+            "maximum": 3600.0,
+            "minimum": 0.1,
+            "title": "Confirmation interval",
+            "type": "number",
+            "x-regain": {
+              "apply": "reconnect",
+              "default": 30.0,
+              "description": "Minimum interval between counted observations for this membership; faster shared polling cannot accelerate confirmation.",
+              "group": "Safety policy",
+              "key": "confirmationSeconds",
+              "label": "Confirmation interval",
+              "maximum": 3600.0,
+              "minimum": 0.1,
+              "sensitive": false,
+              "step": 0.1,
+              "units": "s",
+              "valueType": "number"
+            }
+          },
+          "failedCyclesToUnsafe": {
+            "default": 3,
+            "description": "Withdraw established permission after this many exhausted checks. Maximum safe age applies independently.",
+            "maximum": 1000.0,
+            "minimum": 1.0,
+            "title": "Failed checks before unsafe",
+            "type": "integer",
+            "x-regain": {
+              "apply": "reconnect",
+              "default": 3,
+              "description": "Withdraw established permission after this many exhausted checks. Maximum safe age applies independently.",
+              "group": "Safety policy",
+              "key": "failedCyclesToUnsafe",
+              "label": "Failed checks before unsafe",
+              "maximum": 1000.0,
+              "minimum": 1.0,
+              "sensitive": false,
+              "step": 1.0,
+              "units": "checks",
+              "valueType": "integer"
+            }
+          },
+          "maximumSafeAgeSeconds": {
+            "default": 90.0,
+            "description": "Hard lifetime of safe evidence, measured from request start. Retries and status reads never extend it.",
+            "maximum": 3600.0,
+            "minimum": 0.1,
+            "title": "Maximum safe age",
+            "type": "number",
+            "x-regain": {
+              "apply": "reconnect",
+              "default": 90.0,
+              "description": "Hard lifetime of safe evidence, measured from request start. Retries and status reads never extend it.",
+              "group": "Safety policy",
+              "key": "maximumSafeAgeSeconds",
+              "label": "Maximum safe age",
+              "maximum": 3600.0,
+              "minimum": 0.1,
+              "sensitive": false,
+              "step": 0.1,
+              "units": "s",
+              "valueType": "number"
+            }
+          },
+          "returnToSafeHoldSeconds": {
+            "default": 10.0,
+            "description": "Minimum duration of a safe run, beginning when the first safe response arrives. A new observation must complete the hold.",
+            "maximum": 3600.0,
+            "minimum": 0.0,
+            "title": "Recovery hold",
+            "type": "number",
+            "x-regain": {
+              "apply": "reconnect",
+              "default": 10.0,
+              "description": "Minimum duration of a safe run, beginning when the first safe response arrives. A new observation must complete the hold.",
+              "group": "Safety policy",
+              "key": "returnToSafeHoldSeconds",
+              "label": "Recovery hold",
+              "maximum": 3600.0,
+              "minimum": 0.0,
+              "sensitive": false,
+              "step": 0.1,
+              "units": "s",
+              "valueType": "number"
+            }
+          },
+          "safeReadingsToSafe": {
+            "default": 3,
+            "description": "Consecutive safe observations required in addition to the recovery hold.",
+            "maximum": 1000.0,
+            "minimum": 1.0,
+            "title": "Safe readings before recovery",
+            "type": "integer",
+            "x-regain": {
+              "apply": "reconnect",
+              "default": 3,
+              "description": "Consecutive safe observations required in addition to the recovery hold.",
+              "group": "Safety policy",
+              "key": "safeReadingsToSafe",
+              "label": "Safe readings before recovery",
+              "maximum": 1000.0,
+              "minimum": 1.0,
+              "sensitive": false,
+              "step": 1.0,
+              "units": "readings",
+              "valueType": "integer"
+            }
+          },
+          "unsafeReadingsToUnsafe": {
+            "default": 1,
+            "description": "One withdraws permission immediately. Larger values only retain previously established permission within its age limit.",
+            "maximum": 1000.0,
+            "minimum": 1.0,
+            "title": "Unsafe readings before unsafe",
+            "type": "integer",
+            "x-regain": {
+              "apply": "reconnect",
+              "default": 1,
+              "description": "One withdraws permission immediately. Larger values only retain previously established permission within its age limit.",
+              "group": "Safety policy",
+              "key": "unsafeReadingsToUnsafe",
+              "label": "Unsafe readings before unsafe",
+              "maximum": 1000.0,
+              "minimum": 1.0,
+              "sensitive": false,
+              "step": 1.0,
+              "units": "readings",
+              "valueType": "integer"
+            }
+          }
+        },
+        "type": "object"
+      },
+      "SourceBackend": {
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "description": "Use the existing Rust worker and its device-specific recovery behavior.",
+            "properties": {
+              "device": {
+                "$ref": "#/$defs/NativeDevice",
+                "description": "Hardware driver and backend to use.",
+                "title": "Device",
+                "x-regain": {
+                  "apply": "reconnect"
+                }
+              },
+              "identity": {
+                "description": "Stable hardware serial or device identity; never a discovery-list index.",
+                "maxLength": 200,
+                "minLength": 1,
+                "title": "Identity",
+                "type": "string",
+                "x-regain": {
+                  "apply": "reconnect"
+                }
+              },
+              "kind": {
+                "const": "native",
+                "title": "Kind",
+                "type": "string",
+                "x-regain": {
+                  "apply": "reconnect"
+                }
+              }
+            },
+            "required": [
+              "kind",
+              "device",
+              "identity"
+            ],
+            "title": "Direct Regain driver",
+            "type": "object",
+            "x-regain": {
+              "requiresCapability": "nativeSources"
+            }
+          },
+          {
+            "additionalProperties": false,
+            "description": "Read or control an ASCOM Alpaca device over HTTP or HTTPS.",
+            "properties": {
+              "baseUrl": {
+                "description": "Server base URL. Credentials, query strings, and fragments are not allowed.",
+                "format": "uri",
+                "title": "Server URL",
+                "type": "string",
+                "x-regain": {
+                  "apply": "reconnect"
+                }
+              },
+              "connectionPolicy": {
+                "$ref": "#/$defs/ConnectionPolicy",
+                "default": "externallyManaged",
+                "description": "Whether the hub or another application manages the upstream connection.",
+                "title": "Connection Policy",
+                "x-regain": {
+                  "apply": "reconnect"
+                }
+              },
+              "credentialReference": {
+                "default": null,
+                "description": "Name of a credential in local protected storage. Never enter the credential itself.",
+                "maxLength": 200,
+                "minLength": 1,
+                "title": "Credential Reference",
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "x-regain": {
+                  "export": "omit",
+                  "sensitive": true
+                }
+              },
+              "deviceNumber": {
+                "description": "Stable device number on that server.",
+                "format": "uint32",
+                "minimum": 0,
+                "title": "Device Number",
+                "type": "integer",
+                "x-regain": {
+                  "apply": "reconnect"
+                }
+              },
+              "deviceType": {
+                "$ref": "#/$defs/DeviceType",
+                "description": "ASCOM device class advertised by the source.",
+                "title": "Device Type",
+                "x-regain": {
+                  "apply": "reconnect"
+                }
+              },
+              "kind": {
+                "const": "alpaca",
+                "title": "Kind",
+                "type": "string",
+                "x-regain": {
+                  "apply": "reconnect"
+                }
+              }
+            },
+            "required": [
+              "kind",
+              "baseUrl",
+              "deviceType",
+              "deviceNumber"
+            ],
+            "title": "Remote Alpaca",
+            "type": "object",
+            "x-regain": {
+              "requiresCapability": "alpacaSources"
+            }
+          },
+          {
+            "additionalProperties": false,
+            "description": "Import a registered driver in an isolated Windows COM worker.",
+            "properties": {
+              "bitness": {
+                "$ref": "#/$defs/Bitness",
+                "description": "Match the architecture in which the source driver is registered.",
+                "title": "Bitness",
+                "x-regain": {
+                  "apply": "reconnect"
+                }
+              },
+              "connectionPolicy": {
+                "$ref": "#/$defs/ConnectionPolicy",
+                "default": "externallyManaged",
+                "description": "Whether the hub or another application manages the upstream connection.",
+                "title": "Connection Policy",
+                "x-regain": {
+                  "apply": "reconnect"
+                }
+              },
+              "deviceType": {
+                "$ref": "#/$defs/DeviceType",
+                "description": "ASCOM interface exposed by this source.",
+                "title": "Device Type",
+                "x-regain": {
+                  "apply": "reconnect"
+                }
+              },
+              "kind": {
+                "const": "com",
+                "title": "Kind",
+                "type": "string",
+                "x-regain": {
+                  "apply": "reconnect"
+                }
+              },
+              "progId": {
+                "description": "Registered ASCOM ProgID, for example ASCOM.Example.SafetyMonitor.",
+                "maxLength": 200,
+                "minLength": 1,
+                "title": "Driver ProgID",
+                "type": "string",
+                "x-regain": {
+                  "apply": "reconnect"
+                }
+              }
+            },
+            "required": [
+              "kind",
+              "progId",
+              "deviceType",
+              "bitness"
+            ],
+            "title": "Windows ASCOM driver",
+            "type": "object",
+            "x-regain": {
+              "requiresCapability": "comSources"
+            }
+          },
+          {
+            "additionalProperties": false,
+            "description": "Reference a virtual output by its stable ID. Cyclic references are rejected.",
+            "properties": {
+              "kind": {
+                "const": "virtual",
+                "title": "Kind",
+                "type": "string",
+                "x-regain": {
+                  "apply": "reconnect"
+                }
+              },
+              "output": {
+                "description": "Stable ID of the virtual output to read.",
+                "format": "uuid",
+                "title": "Output",
+                "type": "string",
+                "x-regain": {
+                  "apply": "reconnect"
+                }
+              }
+            },
+            "required": [
+              "kind",
+              "output"
+            ],
+            "title": "Another hub device",
+            "type": "object",
+            "x-regain": {
+              "requiresCapability": "virtualSources"
+            }
+          },
+          {
+            "additionalProperties": false,
+            "description": "A visibly labelled simulated source for configuration and failure testing.",
+            "properties": {
+              "deviceType": {
+                "$ref": "#/$defs/DeviceType",
+                "description": "Simulated device interface.",
+                "title": "Device Type",
+                "x-regain": {
+                  "apply": "reconnect"
+                }
+              },
+              "kind": {
+                "const": "simulated",
+                "title": "Kind",
+                "type": "string",
+                "x-regain": {
+                  "apply": "reconnect"
+                }
+              }
+            },
+            "required": [
+              "kind",
+              "deviceType"
+            ],
+            "title": "Simulation",
+            "type": "object",
+            "x-regain": {
+              "requiresCapability": "simulation"
+            }
+          }
+        ]
+      },
+      "SourceConfig": {
+        "additionalProperties": false,
+        "properties": {
+          "backend": {
+            "$ref": "#/$defs/SourceBackend",
+            "description": "Select the source transport and its device identity.",
+            "title": "Backend",
+            "x-regain": {
+              "apply": "reconnect"
+            }
+          },
+          "id": {
+            "description": "Stable source ID. Refer to the same ID to share this source.",
+            "format": "uuid",
+            "readOnly": true,
+            "title": "Id",
+            "type": "string",
+            "x-regain": {
+              "apply": "reconnect"
+            }
+          },
+          "label": {
+            "description": "Display name for this source; changing it does not change device identity.",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Label",
+            "type": "string",
+            "x-regain": {
+              "apply": "reconnect"
+            }
+          },
+          "polling": {
+            "$ref": "#/$defs/PollPolicy",
+            "default": {
+              "attemptsPerCycle": 3,
+              "backoffCapSeconds": 30.0,
+              "backoffMultiplier": 2.0,
+              "initialBackoffSeconds": 0.5,
+              "pollSeconds": 30.0,
+              "requestTimeoutSeconds": 1.0
+            },
+            "description": "Shared read cadence, deadlines, and retry policy. Writes are never blindly retried.",
+            "title": "Polling",
+            "x-regain": {
+              "apply": "reconnect"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "backend"
+        ],
+        "type": "object"
+      },
+      "SwitchChannel": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Stable channel ID. Removing a channel never makes its number available for reuse.",
+            "format": "uuid",
+            "readOnly": true,
+            "title": "Id",
+            "type": "string",
+            "x-regain": {
+              "apply": "reconnect"
+            }
+          },
+          "label": {
+            "description": "Name shown to clients for this channel.",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Label",
+            "type": "string",
+            "x-regain": {
+              "apply": "reconnect"
+            }
+          },
+          "maximum": {
+            "description": "Maximum exposed value; must be at least the minimum.",
+            "format": "double",
+            "title": "Maximum",
+            "type": "number",
+            "x-regain": {
+              "apply": "reconnect"
+            }
+          },
+          "minimum": {
+            "description": "Minimum exposed value. Runtime writes must also satisfy the source's own bounds.",
+            "format": "double",
+            "title": "Minimum",
+            "type": "number",
+            "x-regain": {
+              "apply": "reconnect"
+            }
+          },
+          "number": {
+            "description": "Persisted output channel number. It does not change when channels are reordered.",
+            "format": "uint32",
+            "minimum": 0,
+            "title": "Number",
+            "type": "integer",
+            "x-regain": {
+              "immutableAfterCreate": true
+            }
+          },
+          "readout": {
+            "$ref": "#/$defs/Readout",
+            "description": "Upstream channel or scalar property; an existing channel cannot be silently retargeted.",
+            "title": "Readout",
+            "x-regain": {
+              "apply": "reconnect"
+            }
+          },
+          "step": {
+            "description": "Positive value increment supported by this channel.",
+            "exclusiveMinimum": 0,
+            "format": "double",
+            "title": "Step",
+            "type": "number",
+            "x-regain": {
+              "apply": "reconnect"
+            }
+          },
+          "units": {
+            "description": "Unit label for display; no implicit unit conversion is performed.",
+            "maxLength": 80,
+            "title": "Units",
+            "type": "string",
+            "x-regain": {
+              "apply": "reconnect"
+            }
+          },
+          "writable": {
+            "description": "Request writes only when the source supports them; cannot make a read-only sensor writable.",
+            "title": "Writable",
+            "type": "boolean",
+            "x-regain": {
+              "requiresCapability": "writeReadout"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "number",
+          "label",
+          "readout",
+          "writable",
+          "minimum",
+          "maximum",
+          "step",
+          "units"
+        ],
+        "type": "object"
+      },
+      "VirtualDevice": {
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "description": "Require every enabled source to permit operation, with per-source diagnostics.",
+            "properties": {
+              "kind": {
+                "const": "safety",
+                "title": "Kind",
+                "type": "string",
+                "x-regain": {
+                  "apply": "reconnect"
+                }
+              },
+              "members": {
+                "description": "Required safety inputs and their independent policies.",
+                "items": {
+                  "$ref": "#/$defs/SafetyMember"
+                },
+                "maxItems": 64,
+                "minItems": 1,
+                "title": "Members",
+                "type": "array",
+                "x-regain": {
+                  "apply": "reconnect"
+                }
+              }
+            },
+            "required": [
+              "kind",
+              "members"
+            ],
+            "title": "Combined safety",
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "description": "Publish selected read-only sensors and writable controls as one Switch device.",
+            "properties": {
+              "channels": {
+                "description": "Stable channel assignments and their source mappings.",
+                "items": {
+                  "$ref": "#/$defs/SwitchChannel"
+                },
+                "maxItems": 1024,
+                "minItems": 1,
+                "title": "Channels",
+                "type": "array",
+                "x-regain": {
+                  "apply": "reconnect"
+                }
+              },
+              "kind": {
+                "const": "switch",
+                "title": "Kind",
+                "type": "string",
+                "x-regain": {
+                  "apply": "reconnect"
+                }
+              }
+            },
+            "required": [
+              "kind",
+              "channels"
+            ],
+            "title": "Combined switches and gauges",
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "description": "Select a source, freshness limit, and fallback order for each weather measurement.",
+            "properties": {
+              "kind": {
+                "const": "weather",
+                "title": "Kind",
+                "type": "string",
+                "x-regain": {
+                  "apply": "reconnect"
+                }
+              },
+              "measurements": {
+                "additionalProperties": false,
+                "description": "Measurement names follow the ASCOM ObservingConditions interface.",
+                "minProperties": 1,
+                "properties": {
+                  "cloudcover": {
+                    "$ref": "#/$defs/Measurement",
+                    "title": "Cloudcover",
+                    "x-regain": {
+                      "apply": "reconnect"
+                    }
+                  },
+                  "dewpoint": {
+                    "$ref": "#/$defs/Measurement",
+                    "title": "Dewpoint",
+                    "x-regain": {
+                      "apply": "reconnect"
+                    }
+                  },
+                  "humidity": {
+                    "$ref": "#/$defs/Measurement",
+                    "title": "Humidity",
+                    "x-regain": {
+                      "apply": "reconnect"
+                    }
+                  },
+                  "pressure": {
+                    "$ref": "#/$defs/Measurement",
+                    "title": "Pressure",
+                    "x-regain": {
+                      "apply": "reconnect"
+                    }
+                  },
+                  "rainrate": {
+                    "$ref": "#/$defs/Measurement",
+                    "title": "Rainrate",
+                    "x-regain": {
+                      "apply": "reconnect"
+                    }
+                  },
+                  "skybrightness": {
+                    "$ref": "#/$defs/Measurement",
+                    "title": "Skybrightness",
+                    "x-regain": {
+                      "apply": "reconnect"
+                    }
+                  },
+                  "skyquality": {
+                    "$ref": "#/$defs/Measurement",
+                    "title": "Skyquality",
+                    "x-regain": {
+                      "apply": "reconnect"
+                    }
+                  },
+                  "skytemperature": {
+                    "$ref": "#/$defs/Measurement",
+                    "title": "Skytemperature",
+                    "x-regain": {
+                      "apply": "reconnect"
+                    }
+                  },
+                  "starfwhm": {
+                    "$ref": "#/$defs/Measurement",
+                    "title": "Starfwhm",
+                    "x-regain": {
+                      "apply": "reconnect"
+                    }
+                  },
+                  "temperature": {
+                    "$ref": "#/$defs/Measurement",
+                    "title": "Temperature",
+                    "x-regain": {
+                      "apply": "reconnect"
+                    }
+                  },
+                  "winddirection": {
+                    "$ref": "#/$defs/Measurement",
+                    "title": "Winddirection",
+                    "x-regain": {
+                      "apply": "reconnect"
+                    }
+                  },
+                  "windgust": {
+                    "$ref": "#/$defs/Measurement",
+                    "title": "Windgust",
+                    "x-regain": {
+                      "apply": "reconnect"
+                    }
+                  },
+                  "windspeed": {
+                    "$ref": "#/$defs/Measurement",
+                    "title": "Windspeed",
+                    "x-regain": {
+                      "apply": "reconnect"
+                    }
+                  }
+                },
+                "title": "Measurements",
+                "type": "object",
+                "x-regain": {
+                  "apply": "reconnect"
+                }
+              }
+            },
+            "required": [
+              "kind",
+              "measurements"
+            ],
+            "title": "Combined weather",
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "description": "Preserve the source's interface and capabilities through another frontend.",
+            "properties": {
+              "deviceType": {
+                "$ref": "#/$defs/DeviceType",
+                "description": "Must match the upstream device class.",
+                "title": "Device Type",
+                "x-regain": {
+                  "apply": "reconnect"
+                }
+              },
+              "kind": {
+                "const": "proxy",
+                "title": "Kind",
+                "type": "string",
+                "x-regain": {
+                  "apply": "reconnect"
+                }
+              },
+              "source": {
+                "description": "Stable ID of the upstream source.",
+                "format": "uuid",
+                "title": "Source",
+                "type": "string",
+                "x-regain": {
+                  "apply": "reconnect"
+                }
+              }
+            },
+            "required": [
+              "kind",
+              "source",
+              "deviceType"
+            ],
+            "title": "Republish a device",
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "additionalProperties": false,
+    "properties": {
+      "identities": {
+        "$ref": "#/$defs/IdentityLedger",
+        "default": {
+          "channels": {},
+          "outputs": {},
+          "sources": {}
+        },
+        "description": "Owned by the store. Retired IDs remain reserved after deletion/restart.",
+        "readOnly": true,
+        "title": "Identities",
+        "x-regain": {
+          "hidden": true
+        }
+      },
+      "instanceId": {
+        "description": "Stable hub instance identity; never copied from another installation.",
+        "format": "uuid",
+        "readOnly": true,
+        "title": "Instance Id",
+        "type": "string",
+        "x-regain": {
+          "apply": "reconnect"
+        }
+      },
+      "outputs": {
+        "description": "Virtual devices published through NINA, Alpaca, or native ASCOM.",
+        "items": {
+          "$ref": "#/$defs/OutputConfig"
+        },
+        "maxItems": 256,
+        "title": "Outputs",
+        "type": "array",
+        "x-regain": {
+          "apply": "reconnect"
+        }
+      },
+      "revision": {
+        "description": "Revision returned by the hub. An update must supply this exact revision.",
+        "format": "uuid",
+        "readOnly": true,
+        "title": "Revision",
+        "type": "string",
+        "x-regain": {
+          "apply": "reconnect"
+        }
+      },
+      "schemaVersion": {
+        "const": 1,
+        "description": "Persisted configuration format; unsupported versions require explicit migration.",
+        "format": "uint32",
+        "minimum": 0,
+        "readOnly": true,
+        "title": "Schema Version",
+        "type": "integer",
+        "x-regain": {
+          "apply": "reconnect"
+        }
+      },
+      "sources": {
+        "description": "Sources shared by virtual devices. Configure each physical/remote source once.",
+        "items": {
+          "$ref": "#/$defs/SourceConfig"
+        },
+        "maxItems": 256,
+        "title": "Sources",
+        "type": "array",
+        "x-regain": {
+          "apply": "reconnect"
+        }
+      }
+    },
+    "required": [
+      "schemaVersion",
+      "revision",
+      "instanceId",
+      "sources",
+      "outputs"
+    ],
+    "title": "HubConfig",
+    "type": "object"
+  },
+  "schemaVersion": 1,
+  "validation": "The hub validates relationships, identities, capabilities and revisions before applying. Schema validation alone does not authorize an update."
+}

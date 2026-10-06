@@ -46,3 +46,30 @@ frontend contracts, source sampling/ownership and IPC, Windows COM isolation,
 native NINA/ASCOM outputs, protocol conformance, camera images/coordination,
 real-device acceptance, and user-facing documentation/screenshots. These remain
 required by the plan and are not covered by the current 27 tests.
+
+## 2026-10-05: shared configuration description and frontend contracts
+
+The complete source/output structure now derives JSON Schema from its Rust
+types. Existing policy schemas plug into that derivation, retaining the one
+declaration for defaults, bounds, labels, descriptions, groups, and units.
+The native .NET reader (shared by NINA and ASCOM) and JavaScript reader interpret
+the same document. Tagged variants provide conditional fields without evaluating
+arbitrary expressions. Runtime capability names gate choices/fields, while the
+engine remains authoritative for semantic validation and applying changes.
+
+Review corrections: align Unicode label lengths with JSON Schema's character
+counts; preserve hidden identity history rather than rebuilding configuration
+from visible fields; lock stable numbers after creation; keep unsupported
+capabilities disabled instead of treating missing information as support.
+
+Verification: 28 Rust tests, 4 independent Draft 2020-12 validation tests,
+JavaScript contract tests, 2 native .NET reader tests, net48 build, Clippy with
+warnings denied, Rust 1.89.0 check, and generated-file freshness check passed.
+The tests cover defaults, units, types, conditional fields, capability gates,
+immutable identities, unknown contracts/references, malformed documents and
+structural-versus-semantic validation. CI runs the contract freshness check and
+independent schema/web tests; native tests are part of the existing NINA suite.
+
+This closes descriptor coverage at the library/reader layer. Actual setup windows,
+runtime capabilities, host IPC, source polling, and frontend acceptance remain
+milestones 2–4; the reader tests do not substitute for those gates.

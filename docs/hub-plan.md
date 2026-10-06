@@ -201,13 +201,13 @@ configuration changes, as this plan originally specified.
 
 ### 1. Shared configuration and safety engine
 
-- [ ] Add the shared crate/modules and descriptor generation.
+- [x] Add the shared crate/modules and descriptor generation.
 - [x] Implement configuration validation, migrations, redaction, and atomic apply.
 - [x] Implement pure safety state transitions against an injectable monotonic clock.
 - [x] Add independent expiry, observation sequencing, and revision fencing.
 - [x] Build deterministic fixtures for startup, unsafe, grace, expiry during hung
   polling/backoff, failed recovery, late responses, restart, and sleep/resume.
-- [ ] Verify multi-source AND, independent policies, no getter-based counting, and
+- [x] Verify multi-source AND, independent policies, no getter-based counting, and
   identical metadata/defaults in generated frontend contracts.
 
 Gate: deterministic policy tests pass; malformed and conflicting configuration
@@ -221,11 +221,16 @@ camera profile migration remains in milestone 4. Configuration examples and test
 perform no hardware I/O. Policy descriptors generate defaults, labels, units,
 ranges, and validation from one declaration.
 
-Still open before closing this milestone: complete configuration descriptions for
-source/output structure, conditional/capability metadata and shared frontend
-contracts. Local Rust 1.89.0 compatibility and standalone crate packaging checks
-have passed. Multi-source AND,
-independent membership cadence, and getter/retry counting already have tests.
+Milestone 1's foundation gate has passed. Source/output schema and descriptions
+are generated from the Rust types; policy schema comes from the same declarations
+as defaults and numeric validation. `contracts/hub-config.json` is the generated
+contract fixture; the live host will serve the same description with its actual
+capabilities. Generic JavaScript and .NET readers consume its tagged choices,
+conditional fields, capability gates, labels, defaults, units, and read-only
+identity rules. They do not duplicate equipment keys or safety policy.
+Independent JSON Schema validation and both reader tests passed. Local Rust
+1.89.0 compatibility, standalone packaging, multi-source AND, independent
+membership cadence, and getter/retry counting also have tests.
 The source poll scheduler will attach its real attempts/backoff to these tested
 events in milestone 2. The host must call generation reset on resume and relevant
 configuration changes; the engine's reset behavior is tested, not yet wired to OS
@@ -326,3 +331,4 @@ Keep existing device profiles and registrations compatible throughout migration.
 | 2026-10-05 | Reconciled main `c8fd7c4`; reviewed native camera pipes, stable slots, serial COM sharing, Field Kit source/license, and installed interface declarations. Recorded shared host/IPC, COM isolation, identity, configuration, and safety contracts. | Milestone 0 contracts reviewed; executable config examples and milestone 1 implementation next. No hub frontend support is shipped yet. |
 | 2026-10-05 | Milestone 0 gate passed; implemented and reviewed the shared configuration/safety foundation. | `cargo test -p regain-hub --locked`: 27 passed. `cargo clippy -p regain-hub --all-targets --locked -- -D warnings`: passed. Complete remaining milestone 1 metadata/contracts, then implement the shared source runtime and Alpaca vertical slice. All later milestones remain in scope. |
 | 2026-10-05 | Checked minimum Rust version and crate distribution independently of the application. | `cargo +1.89.0 check -p regain-hub --all-targets --locked`, `cargo package -p regain-hub --allow-dirty --locked`, formatting and diff checks passed. Package contains both executable config fixtures and its license. |
+| 2026-10-05 | Completed milestone 1's generated configuration description and shared setup readers. Corrected schema/backend Unicode label counting and locked existing device numbers in the readers. | 28 Rust tests, 4 independent schema tests, JavaScript contract tests, 2 native .NET contract tests, net48 build, Clippy, and Rust 1.89.0 check passed. Next: shared source registry, polling/transport adapters, then the Alpaca vertical slice. PR #21 remains draft; all later gates remain required. |

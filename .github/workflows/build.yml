@@ -41,6 +41,8 @@ jobs:
             sudo apt-get install -y libusb-1.0-0
           fi
       - run: cargo fmt --check
+      - name: Verify generated hub configuration contract
+        run: cargo run -p regain-hub --example export_config --locked -- contracts/hub-config.json --check
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - run: cargo build --workspace --release --locked
       - run: cargo test --workspace --locked
@@ -113,6 +115,12 @@ jobs:
       - run: python -m pip install -r scripts/inspection/requirements.txt
       - run: python -m unittest discover -s scripts/inspection -p "test_*.py"
       - run: python -m unittest discover -s scripts/camera-kit -p "test_*.py"
+      - run: python -m pip install -r scripts/hub/requirements.txt
+      - run: python scripts/hub/test_schema.py
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node scripts/test-hub-config.mjs
       - name: Test release branch and tag validation
         run: ./scripts/test-release-ref.ps1
         shell: pwsh
