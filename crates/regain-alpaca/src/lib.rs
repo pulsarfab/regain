@@ -3,6 +3,7 @@ pub mod branding;
 pub mod device;
 pub mod flatpanel;
 pub mod focuser;
+pub mod hub;
 pub mod native;
 pub mod profile;
 pub mod rotator;

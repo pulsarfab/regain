@@ -15,6 +15,9 @@ async fn main() -> Result<()> {
             println!(
                 "PulsarFab regain ASCOM Alpaca (Rust)\n  --listen 127.0.0.1   IPv4 address (0.0.0.0 for LAN)\n  --port 11111\n  --profiles PATH     Saved equipment profiles\n  --workers DIRECTORY Rust workers and SDK\n  --sdk PATH          SDK library override\n  --simulate          Simulated equipment\n  --no-discovery      Disable UDP discovery\n  --stdio             Private pipe frontend\n  --backend sdk|direct Backend for private pipe frontend\nOpen http://127.0.0.1:11111/setup to configure equipment."
             );
+            println!(
+                "  --hub-host --hub-config ABSOLUTE_PATH\n                      Shared local hub host (no HTTP listener)"
+            );
             return Ok(());
         }
         ensure!(
@@ -29,10 +32,15 @@ async fn main() -> Result<()> {
                     | "--no-discovery"
                     | "--stdio"
                     | "--backend"
+                    | "--hub-host"
+                    | "--hub-config"
             ),
             "Unknown option: {arg}"
         );
-        let value = if matches!(arg.as_str(), "--simulate" | "--no-discovery" | "--stdio") {
+        let value = if matches!(
+            arg.as_str(),
+            "--simulate" | "--no-discovery" | "--stdio" | "--hub-host"
+        ) {
             String::new()
         } else {
             args.next()
@@ -40,12 +48,41 @@ async fn main() -> Result<()> {
         };
         options.insert(arg, value);
     }
+    if options.contains_key("--hub-host") {
+        ensure!(
+            options.contains_key("--hub-config"),
+            "--hub-host requires --hub-config ABSOLUTE_PATH"
+        );
+        ensure!(
+            options.keys().all(|key| matches!(
+                key.as_str(),
+                "--hub-host" | "--hub-config" | "--workers" | "--simulate"
+            )),
+            "Hub host mode accepts only --hub-config, --workers and --simulate"
+        );
+    } else {
+        ensure!(
+            !options.contains_key("--hub-config"),
+            "--hub-config currently requires --hub-host"
+        );
+    }
     let executable = std::env::current_exe()?;
     let directory = options
         .get("--workers")
         .map(PathBuf::from)
         .unwrap_or(executable.parent().unwrap().to_path_buf())
         .canonicalize()?;
+    if options.contains_key("--hub-host") {
+        return regain_alpaca::hub::run(
+            &PathBuf::from(&options["--hub-config"]),
+            regain_hub::native::NativeRuntime {
+                directory,
+                simulate: options.contains_key("--simulate"),
+            },
+            shutdown_signal(),
+        )
+        .await;
+    }
     let sdk = options.get("--sdk").map(PathBuf::from).unwrap_or_else(|| {
         directory.join(if cfg!(windows) {
             "ASICamera2.dll"

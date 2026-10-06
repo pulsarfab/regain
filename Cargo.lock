@@ -923,6 +923,7 @@ dependencies = [
  "futures-util",
  "http-body-util",
  "regain-core",
+ "regain-hub",
  "serde",
  "serde_json",
  "serde_urlencoded",

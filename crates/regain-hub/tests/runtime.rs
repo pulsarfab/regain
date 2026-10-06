@@ -87,6 +87,8 @@ impl Backend for Mock {
     fn reset(&mut self) {}
 }
 
+#[path = "support/runtime_host.rs"]
+mod host;
 #[path = "support/runtime_ipc.rs"]
 mod ipc;
 

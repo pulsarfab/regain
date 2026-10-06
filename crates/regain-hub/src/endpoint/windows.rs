@@ -267,7 +267,9 @@ fn create(endpoint: &Endpoint, first: bool) -> io::Result<NamedPipeServer> {
         ServerOptions::new()
             .first_pipe_instance(first)
             .reject_remote_clients(true)
-            .max_instances(33)
+            // Bound live server tasks in host::serve. A closed server instance
+            // can still count toward a fixed OS limit while its former client
+            // retains a handle; it must not block replacement listener creation.
             .create_with_security_attributes_raw(
                 address(endpoint),
                 (&mut attributes as *mut SECURITY_ATTRIBUTES).cast(),

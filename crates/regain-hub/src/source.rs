@@ -366,6 +366,7 @@ impl SourceHandle {
                 backoff_failures: 0,
                 retrying: false,
                 connection_started: None,
+                disconnect_result: None,
                 completion,
             }
             .run(receiver),
@@ -496,6 +497,7 @@ struct Actor {
     backoff_failures: u32,
     retrying: bool,
     connection_started: Option<Instant>,
+    disconnect_result: Option<Result<(), SourceError>>,
     completion: watch::Sender<Option<Result<(), SourceError>>>,
 }
 impl Actor {
@@ -568,6 +570,11 @@ impl Actor {
         }
     }
     async fn disconnect(&mut self) -> Result<(), SourceError> {
+        // Last-lease release may already have attempted cleanup before the
+        // queued shutdown arrives. Preserve that result, including uncertainty.
+        if let Some(result) = &self.disconnect_result {
+            return result.clone();
+        }
         self.connection_started = None;
         let result = timeout(self.deadline(), self.backend.disconnect())
             .await
@@ -591,6 +598,7 @@ impl Actor {
         self.retrying = false;
         self.backend.restart_poll();
         self.state.error = result.as_ref().err().cloned();
+        self.disconnect_result = Some(result.clone());
         self.publish();
         result
     }
@@ -709,6 +717,7 @@ impl Actor {
                 let inserted = self.leases.insert(lease);
                 let first = inserted && self.leases.len() == 1;
                 if first {
+                    self.disconnect_result = None;
                     let delay = match self.connect().await {
                         Ok(()) => Duration::ZERO,
                         Err(error) => {

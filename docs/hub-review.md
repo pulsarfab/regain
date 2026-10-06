@@ -490,3 +490,46 @@ also pass. Existing production native-worker tests use explicit simulation.
 Executable host startup/attach, global client admission, durable configuration
 apply, protected credentials, resume, and all frontend/conformance/hardware gates
 remain pending. These endpoints do not yet expose a user-facing hub service.
+
+## 2026-10-05: shared executable host and bounded service lifetime
+
+Added `regain-alpaca --hub-host --hub-config ABSOLUTE_PATH`. Ownership is acquired
+before preparing sources; a losing invocation only verifies the existing owner's
+bounded hello and exits. This mode opens no HTTP/discovery listener. It rejects
+ambiguous normal-server/stdio options and invalid configs without echoing JSON.
+Protected credential references remain unavailable until their provider lands.
+
+Review findings and corrections:
+
+1. Aborting a caller that awaits service shutdown must not abandon cleanup and
+   release ownership. The supervisor starts immediately; dropping its waiter
+   cancels admission but lets cleanup run independently, retaining the listener
+   until all source actors finish. Its Tokio runtime must remain alive. Tests
+   retain unsafe subscribers and force an uncertain disconnect during cancellation.
+2. Closing safety leases could race actor Shutdown, causing two Disconnect calls.
+   The actor now retains its last cleanup result until a new connection lifetime.
+   Tests verify uncertainty survives shutdown without replay and that a later
+   connection still receives its own cleanup.
+3. A fixed Windows pipe-instance limit counts instances whose server handle closed
+   while the former client retains its handle. This could prevent creation of the
+   next listener and stop the host. Bound live service tasks at 32 instead; the
+   listener remains replaceable. Admission tests retain malformed-client handles
+   while successfully opening another client.
+4. Readiness verifies reply correlation, protocol, instance UUID, runtime/client
+   UUIDs, and supported frame/concurrency bounds under one overall deadline. A
+   silent endpoint or wrong hub identity cannot masquerade as a ready owner.
+5. Individual IPC failures are isolated. Shutdown stops admission, closes clients,
+   drains source cleanup, and reports cleanup/listener failures without replay.
+
+Local verification: 124 hub tests plus the process fixture and 14 Alpaca tests
+pass. Three tests launch the production executable, proving duplicate-launch
+handling, crash/restart, invalid arguments/config rejection, and real loopback
+Alpaca safety changes delivered over protected IPC. Existing standalone HTTP
+ImageBytes tests pass for SDK simulation and all four direct camera simulations.
+Clippy, Rust 1.89.0 checks, and transport/core/hub/Alpaca package verification pass.
+Endpoint commit `0c8bfe7` passed Linux x64/ARM64 and macOS Intel/ARM64 CI; the newly
+integrated host still needs its own portable CI results.
+
+Frontend automatic launch/attach, durable applyConfig, protected credentials,
+capability discovery, resume handling, virtual/simulated source adapters, and
+Alpaca/NINA/ASCOM publication remain pending. No milestone 2 or later gate is closed.

@@ -359,10 +359,20 @@ OS ownership lock keyed by canonical configuration path. Accepted connections
 retain the lock, atomic config replacement keeps the same identity, and process
 death releases ownership. Windows tests exercise anonymous denial, permissive ACL
 rejection, competing processes, crash recovery, and real framed IPC. Unix permission,
-link, and socket-cleanup tests await portable CI. The shared executable still needs
-startup/attach coordination, bounded client admission, and shutdown integration.
+link, and socket-cleanup tests pass in Linux x64/ARM64 and macOS Intel/ARM64 CI for
+endpoint commit `0c8bfe7`.
 
-Next: connect endpoint ownership to executable host startup, implement durable config
+The shared executable now has `--hub-host --hub-config ABSOLUTE_PATH` mode with no
+HTTP/discovery listener. It acquires ownership before preparing sources; a second
+launch validates the existing host's hello and exits. A supervisor bounds clients
+at 32 and retains ownership through shutdown even if its waiter is cancelled.
+Review exposed and fixed repeated last-lease/actor disconnects and Windows pipe
+instance exhaustion from retained client handles. Production-executable tests
+cover restart, duplicate launch, rejected options/configs, and a network safety
+source changing from safe to unsafe over local IPC. Frontend launch/attach and
+reconnection are still pending.
+
+Next: implement durable config
 apply, protected credentials, and device capabilities, then connect the first
 three virtual classes to the existing Alpaca server/setup UI. Frontend error
 translation and protocol conformance remain unverified. Generic
@@ -449,3 +459,4 @@ Keep existing device profiles and registrations compatible throughout migration.
 | 2026-10-05 | Added shared output/client sessions, cancellation-safe connection reservations, and explicit runtime/registry shutdown. Safety policy and weather settings are shared per output; queued commands cannot revive a retired actor. Reviewed last-client cleanup, in-flight writes, and cancelled shutdown. | 104 local hub tests cover shared state, disconnect order, cancellation/replacement, source stalls with independent safety expiry, uncertain writes/cleanup, and resumed shutdown. Mixed native/network integration uses the runtime builder. Next: IPC framing, user-only endpoints, startup ownership, protected storage, and frontend publication; all remaining original gates stay open. |
 | 2026-10-05 | Added bounded scalar IPC framing, handshake, typed controller dispatch, configuration reads/validation, and per-stream clients. Review fixed request-start ordering and strict parsing of no-argument commands. | 114 local hub tests pass, including ten framed-stream integration/fault cases; Clippy, Rust 1.89.0, and package verification pass. Next: user-only named pipes/Unix sockets, startup ownership and process tests, durable applyConfig, and executable/frontend integration. No OS endpoint or hardware acceptance gate is closed by duplex-stream tests. |
 | 2026-10-05 | Added user-scoped local endpoints and OS ownership locks, with private-storage validation, bounded connection retries, accepted-stream ownership retention, and separate-process crash/IPC fixtures. | 120 local hub tests plus process fixtures, Clippy, Rust 1.89.0, package verification, and contract freshness pass. Windows checks include anonymous denial and permissive ACL rejection. Unix permission/link/cleanup checks await portable CI. Next: executable host startup/attach and shutdown integration, durable apply, protected credentials, and frontend publication. Milestones 2–5 remain open. |
+| 2026-10-05 | Integrated the private host into regain-alpaca, bounded admission/readiness, and cancellation-safe supervisor cleanup. Fixed repeated actor cleanup and Windows pipe exhaustion exposed by host tests. | 124 hub tests plus process fixtures and 14 Alpaca tests pass locally, including three production-executable tests. Clippy, Rust 1.89.0, transport/core/hub/Alpaca packaging and existing standalone camera/HTTP simulation checks pass. Endpoint CI verifies Linux x64/ARM64 and macOS ARM64. Next: durable apply, protected credentials, capabilities, frontend IPC attachment and Alpaca publication; all remaining original gates stay open. |

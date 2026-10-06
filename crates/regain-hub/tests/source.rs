@@ -131,6 +131,23 @@ async fn settle() {
 }
 
 #[tokio::test(start_paused = true)]
+async fn last_lease_cleanup_is_not_repeated_at_shutdown_but_a_new_connection_is_cleaned_up() {
+    let device = Arc::new(Device::default());
+    let source = spawn(&device);
+    let first = Uuid::new_v4();
+    source.acquire(first).await.unwrap();
+    source.release(first).await.unwrap();
+    assert_eq!(device.disconnects.load(SeqCst), 1);
+    let second = Uuid::new_v4();
+    source.acquire(second).await.unwrap();
+    assert_eq!(device.connects.load(SeqCst), 2);
+    source.release(second).await.unwrap();
+    assert_eq!(device.disconnects.load(SeqCst), 2);
+    source.shutdown().await.unwrap();
+    assert_eq!(device.disconnects.load(SeqCst), 2);
+}
+
+#[tokio::test(start_paused = true)]
 async fn pending_handshake_is_bounded_even_if_an_adapter_never_finishes() {
     let device = Arc::new(Device::default());
     device.pending_connect.store(true, SeqCst);

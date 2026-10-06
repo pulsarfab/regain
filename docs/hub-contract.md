@@ -10,10 +10,12 @@ not connect to hardware. Replace the example identities before eventual use.
 
 ## Ownership and hosting
 
-Extend `regain-alpaca` with a `--hub-host --hub-config ABSOLUTE_PATH` mode. This
-mode owns hub configuration, sources, polling, and policies without opening HTTP.
-Native NINA and ASCOM talk to it through local IPC. The ordinary Alpaca server
-attaches to this same host for hub devices while retaining existing legacy slots.
+`regain-alpaca --hub-host --hub-config ABSOLUTE_PATH` now owns hub configuration,
+sources, polling, and policies without opening HTTP or UDP discovery. It accepts
+`--workers DIRECTORY` and explicit `--simulate`; ordinary HTTP/stdio options are
+rejected in this mode. It requires an existing valid configuration file and does
+not connect sources until clients request outputs. Native NINA/ASCOM and ordinary
+Alpaca attachment are still to be implemented against this same local host.
 Existing direct camera/accessory frontend behavior remains compatible.
 
 Use one host per canonical configuration path and operating-system user. Windows
@@ -64,8 +66,9 @@ registry before allowing the next runtime to open its sources.
 
 These runtime contracts have local lifecycle/fault tests. Scalar framing and
 dispatch now use this runtime through a host-supplied stream. Protected local
-endpoints and OS ownership locks are implemented separately below. Executable
-startup/attach, configuration replacement, and resume handling remain open.
+endpoints and OS ownership locks are implemented separately below. The executable
+host is integrated; frontend launch/attach, configuration replacement, and resume
+handling remain open.
 
 Use the existing convention: little-endian 32-bit JSON length followed by UTF-8
 JSON; responses may carry separately bounded binary image data. Version the hub
@@ -155,11 +158,25 @@ inode before unlinking, preserving a replacement file.
 
 Endpoint connection retries only not-ready errors until its supplied deadline;
 permission failures return immediately. A connected stream is not readiness proof:
-the launcher must still validate the versioned hello and expected hub identity.
-The shared executable's startup coordinator, global client admission bound, and
-shutdown integration remain pending. Windows tests cover anonymous denial,
+the launcher validates the versioned hello and expected hub identity. A second
+`--hub-host` invocation probes the existing owner within ten seconds and exits;
+it never constructs competing sources. The first owner binds and prepares the
+runtime, then serves at most 32 local clients, each with the IPC request bounds.
+Clients with malformed protocols retire independently. Backpressure stops accepting
+more streams while the client limit is reached.
+
+Shutdown closes clients and drains source actors before releasing the OS lock.
+Dropping a service waiter requests shutdown through an independent supervisor;
+the Tokio runtime must stay alive until its cleanup completes. Cleanup failures
+remain visible and are not replayed. Last-lease cleanup and later actor shutdown
+share one disconnect result; a genuinely new connection starts a new cleanup
+lifetime. Frontend automatic launch/attach and reconnection remain pending.
+
+Windows tests cover anonymous denial,
 permissive-storage rejection, cross-process contention/crash recovery, and actual
-IPC. Unix-specific permission tests await the portable CI matrix for this change.
+IPC. Endpoint commit `0c8bfe7` also passed Linux x64/ARM64 and macOS Intel/ARM64 CI,
+including Unix permission/link/socket-cleanup fixtures. The host integration's
+portable checks are separate and must pass before this checkpoint is complete.
 
 ## Identities and configuration
 
