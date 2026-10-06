@@ -146,6 +146,7 @@ public sealed partial class HubEditorSession : IDisposable
                     "completedPasses", "sampledAtSeconds", "error");
                 if (result.GetProperty("source").GetGuid() != source || result.GetProperty("revision").GetGuid() != Draft!.Revision)
                     throw new FormatException();
+                if (result.TryGetProperty("simulation", out var simulation)) ValidateSimulationStatus(source, simulation);
             } catch { throw new HubException(HubFailure.Protocol); }
             LastSourceObservation = Observation("cachedSourceHealth", result);
             return result;

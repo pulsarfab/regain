@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { configurationContract } from '../crates/regain-alpaca/web/hub-config.mjs';
 import { initialValue, newIdentity, previewValue } from '../crates/regain-alpaca/web/hub-form.mjs';
 import { CredentialSetup, credentialContract } from '../crates/regain-alpaca/web/hub-credentials.mjs';
+import { SimulationSetup, simulationControls, validateSimulationValue } from '../crates/regain-alpaca/web/hub-simulation.mjs';
 
 const description = JSON.parse(readFileSync(new URL('../contracts/hub-config.json', import.meta.url), 'utf8'));
 const reader = configurationContract(description);
@@ -101,3 +102,59 @@ pending.setReference('😀'.repeat(201)); assert.throws(() => pending.validateRe
 pending.setReference('\ud800'); assert.throws(() => pending.validateReference());
 pending.load({...storage,clientChosenReferences:false}); await assert.rejects(pending.create('Bearer unsupported-fixture')); assert.equal(writes,1);
 console.log('Web credentials passed: retained references, lost/malformed/storage failures, strict replies, no replay, review invalidation, admission and scalar limits.');
+
+const simDescription = description.simulationControl;
+const simulatedSource = type => ({id:'11111111-1111-4111-8111-111111111111',backend:{kind:'simulated',deviceType:type}});
+const simRevision = '22222222-2222-4222-8222-222222222222';
+function simulationState(type) {
+  const state = {deviceType:type,safe:false,switchValues:{},weather:{},fault:'none',sampleAgeSeconds:0};
+  for (const control of simulationControls(simDescription,simulatedSource(type))) {
+    if (control.path.length === 1) state[control.path[0]] = control.default;
+    else state[control.path[0]][control.path[1]] = control.default;
+  }
+  return state;
+}
+for (const type of ['switch','safetymonitor','observingconditions']) {
+  const fields = simulationControls(simDescription,simulatedSource(type));
+  assert.equal(fields.length,type==='switch'?5:type==='safetymonitor'?2:15);
+  assert.deepEqual(fields.find(f=>f.path[0]==='fault').enum,simDescription.faultsByDeviceType[type]);
+}
+assert.deepEqual(simulationControls(simDescription,{backend:{kind:'native'}}),[]);
+const weatherFields = simulationControls(simDescription,simulatedSource('observingconditions'));
+const pressure = weatherFields.find(f=>f.path[1]==='pressure');
+assert.throws(()=>validateSimulationValue(pressure,0)); assert.equal(validateSimulationValue(pressure,null),null);
+assert.throws(()=>validateSimulationValue(weatherFields.find(f=>f.path[1]==='temperature'),-273.16));
+for (const failure of ['lost','wrongRevision','wrongSource','malformed','unavailable']) {
+  let requests = 0, review = true; const state = simulationState('switch');
+  const source = simulatedSource('switch');
+  const setup = new SimulationSetup(async command => {
+    if (command.op==='sourceStatus') return {source:source.id,revision:simRevision,simulated:true,simulation:state};
+    requests++; assert.equal(command.expectedRevision,simRevision); assert.deepEqual(command.update,{switchValues:{1:42}});
+    state.switchValues[1]=42;
+    if (failure==='lost') throw new Error('Lost reply');
+    if (failure==='unavailable') { const error = new Error('Unavailable'); error.detail={code:'unavailable'}; throw error; }
+    const result = {source:source.id,configurationRevision:simRevision,simulation:structuredClone(state)};
+    if (failure==='wrongRevision') result.configurationRevision=source.id;
+    if (failure==='wrongSource') result.source=simRevision;
+    if (failure==='malformed') result.simulation.fault='unexpected';
+    return result;
+  },()=>review=false);
+  setup.load(simDescription,source,simRevision);
+  await assert.rejects(setup.update([{path:['switchValues','1'],value:42}])); assert.equal(setup.uncertain,true); assert.equal(review,false);
+  await assert.rejects(setup.update([{path:['switchValues','1'],value:42}])); await assert.rejects(setup.read()); assert.equal(requests,1);
+  setup.load(simDescription,source,simRevision); assert.equal((await setup.read()).switchValues[1],42); assert.equal(requests,1);
+}
+let simWrites=0, finishSimulation;
+const sim = new SimulationSetup(async command => {simWrites++; return await new Promise(resolve=>finishSimulation=resolve);},()=>{});
+sim.load(simDescription,simulatedSource('switch'),simRevision);
+await assert.rejects(sim.update([])); await assert.rejects(sim.update([{path:['switchValues','1'],value:101}]));
+await assert.rejects(sim.update([{path:['safe'],value:true}])); assert.equal(simWrites,0); assert.equal(sim.uncertain,false);
+const changing = sim.update([{path:['switchValues','1'],value:7}]);
+await assert.rejects(sim.read()); await assert.rejects(sim.update([{path:['switchValues','1'],value:8}]));
+assert.throws(()=>sim.load(simDescription,simulatedSource('switch'),simRevision)); assert.equal(simWrites,1);
+const finalSim = simulationState('switch'); finalSim.switchValues[1]=7;
+finishSimulation({source:sim.source.id,configurationRevision:simRevision,simulation:finalSim}); await changing;
+sim.load(simDescription,simulatedSource('observingconditions'),simRevision);
+assert.deepEqual(sim.patch([{path:['weather','temperature'],value:null},{path:['sampleAgeSeconds'],value:60}]),{weather:{temperature:null},sampleAgeSeconds:60});
+assert.throws(()=>sim.patch([{path:['weather','temperature'],value:3},{path:['weather','temperature'],value:4}]));
+console.log('Web simulation passed: shared descriptors, sparse updates, physical limits, sensor absence, revision fencing, lost/malformed replies, no replay and operation admission.');

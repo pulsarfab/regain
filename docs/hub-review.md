@@ -1807,3 +1807,45 @@ inspected. Broader diagnostics, initialization, simulation controls, interactive
 acceptance and every remaining original milestone stay required. Checkpoint
 2a26281 now passes both complete eight-job CI runs; web/native-inspection CI must
 still be checked to terminal completion.
+
+### Shared native and web simulation setup
+
+Reviewed the shared descriptors, native/WPF session, browser state model and
+production IPC/HTTP paths. Controls are limited to saved explicit simulated
+sources and sparse selected fields. Weather physical limits use the same backend
+validation; defaults and channel names derive from actual simulation. Both editors
+fence configuration revisions, validate reply identity/status, serialize operations
+and revoke review before dispatch. Reading current state clears the form selection
+without opening equipment; an uncertain update cannot be replayed. Safety polling
+and uncertain-write reconciliation retain their existing semantics.
+
+Production fixtures exposed a real wire bug: numeric Switch keys failed through
+serde's internally tagged command capture. An explicit map decoder now parses
+canonical IDs and rejects aliases, duplicates and unknown channels. Tests exercise
+actual tagged JSON and protected HTTP with successful sparse updates, stale
+revisions before any lease, sibling-lease preservation and unchanged configuration.
+Review also found invalid typed response values could be mistaken for local input
+errors in JavaScript; they now become protocol failures that block another write.
+
+The net48 build rejected a nested record lacking IsExternalInit; a simple immutable
+class avoids adding a compatibility shim. The actual net48 fixture initially left
+its injected level for a later independent contract suite; it now explicitly
+restores state and waits for its own lease cleanup. No deadline was increased and
+no live process was restarted on an observation timeout.
+
+Evidence: full hub/Alpaca suites, strict Clippy and Rust 1.89 checks pass in
+`artifacts/hub-simulation-rust-suite.log`, `hub-simulation-clippy.log` and
+`hub-simulation-msrv.log`. Generated-contract freshness, JavaScript state tests
+and all four Python schema checks pass. All 149 NINA tests pass after final review;
+the warnings-denied net48 build and real x86/x64 simulation/ASCOM client fixtures
+pass. Browser verification records sparse level updates preserving other channels,
+absent temperature and sample age, unchanged revision, no equipment leases and
+zero console errors in `artifacts/hub-web-simulation-verification.json`. The actual
+WPF/browser screenshots were inspected and labeled simulation. The owned browser
+tab and both copied fixture processes were closed after identity checks.
+
+Both a2cad0a CI runs are successful. Inspection checkpoint 94b9adc passes all eight
+jobs in PR 37462088304 and push 37462081747. Simulation CI is required after push.
+Shared initialization, broader diagnostics, typed proxies/cameras/coordination,
+interactive/conformance/hardware acceptance and every original remaining milestone
+stay open; this increment does not close the entire setup milestone.

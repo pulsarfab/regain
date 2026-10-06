@@ -46,6 +46,15 @@ pub fn routes() -> Router<Arc<Server>> {
             }),
         )
         .route(
+            "/hub-simulation.mjs",
+            get(|| async {
+                (
+                    [("Content-Type", "application/javascript")],
+                    include_str!("../web/hub-simulation.mjs"),
+                )
+            }),
+        )
+        .route(
             "/hub-credentials.mjs",
             get(|| async {
                 (

@@ -47,6 +47,7 @@ public sealed partial class HubConfigurationWindow : Window
         DockPanel.SetDock(sourceScroll, Dock.Top); health.Children.Add(sourceScroll); health.Children.Add(diagnostics);
         tabs.Items.Add(new TabItem { Header = "Source health", Content = health }); panel.Children.Add(tabs);
         tabs.Items.Add(new TabItem { Header = "Credentials", Content = new ScrollViewer { Content = credentials, VerticalScrollBarVisibility = ScrollBarVisibility.Auto } });
+        tabs.Items.Add(new TabItem { Header = "Simulation", Content = new ScrollViewer { Content = simulation, VerticalScrollBarVisibility = ScrollBarVisibility.Auto } });
         reload.Click += async (_, _) => {
             if ((session?.Draft?.Dirty == true || form?.Errors.Count > 0) && MessageBox.Show(this, "Discard the unsaved draft and reload?", "Reload hub configuration", MessageBoxButton.YesNo) != MessageBoxResult.Yes) return;
             await Run(Load);
@@ -92,6 +93,7 @@ public sealed partial class HubConfigurationWindow : Window
         form.Render(); configuration.Content = form.Root; preview.Clear(); diagnostics.Clear(); errors.Text = "";
         RenderInspection();
         RenderCredentials();
+        RenderSimulation();
     }
     private async Task Run(Func<Task> action)
     {
@@ -124,6 +126,7 @@ public sealed partial class HubConfigurationWindow : Window
         apply.IsEnabled = !busy && session?.State == HubEditorState.Reviewed && form?.Errors.Count == 0;
         CredentialControls(editable);
         InspectionControls(editable);
+        SimulationControls(editable);
     }
     private void ShowErrors(JsonElement fields) => errors.Text = string.Join("\n", fields.EnumerateArray().Select(field => field.GetProperty("path").GetString() + ": " + field.GetProperty("message").GetString()));
     private static string Pretty(JsonElement value) => JsonSerializer.Serialize(value, new JsonSerializerOptions { WriteIndented = true });

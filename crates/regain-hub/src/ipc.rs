@@ -108,6 +108,12 @@ pub enum Command {
     },
     UpdateSimulation {
         source: Uuid,
+        #[serde(
+            default,
+            rename = "expectedRevision",
+            skip_serializing_if = "Option::is_none"
+        )]
+        expected_revision: Option<Uuid>,
         update: crate::simulated::SimulationUpdate,
     },
     Connect {
@@ -421,7 +427,6 @@ async fn dispatch_service(
             description["credentialStorage"] =
                 service.credential_description().unwrap_or(Value::Null);
             description["capabilityInspection"] = crate::capabilities::description();
-            description["simulationControl"] = crate::simulated::description();
             Ok(description)
         }
         Command::CreateCredential {
@@ -497,8 +502,20 @@ async fn dispatch(
         }
         Command::ListDevices {} => json!(runtime.outputs()),
         Command::SourceStatus { source } => json!(runtime.source_snapshot(source)?),
-        Command::UpdateSimulation { source, update } => {
-            json!(runtime.update_simulation(source, update).await?)
+        Command::UpdateSimulation {
+            source,
+            expected_revision,
+            update,
+        } => {
+            if expected_revision.is_some_and(|revision| revision != runtime.revision()) {
+                return Err(UpdateError::Conflict.into());
+            }
+            let status = runtime.update_simulation(source, update).await?;
+            if expected_revision.is_some() {
+                json!({"source":source,"configurationRevision":runtime.revision(),"simulation":status})
+            } else {
+                json!(status)
+            }
         }
         Command::InspectSource {
             source,

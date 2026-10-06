@@ -8,27 +8,28 @@ tagged or published. Changed cross-crate APIs require an unpublished version so
 Cargo package verification uses the new workspace packages.
 Last updated: 2026-10-06.
 
-Current increment: explicit shared native source inspection and diagnostics export.
-NINA and ASCOM consume host-described page defaults, labels, limits and deadlines.
-Inspection uses saved settings, owns only a temporary source lease, reports
-simulation and individual property failures, and never establishes live safety
-permission. It revokes earlier review, fences obsolete revisions and lost replies,
-and never replays a probe. Exports contain public saved host status and the last
-completed source observation with its time/revision, excluding configuration and
-credential values. The actual WPF render is documented as simulation.
+Current increment: shared simulation controls in native NINA/ASCOM and web setup.
+The host describes field paths, labels, defaults, physical limits, fault choices
+and deadlines. Editors change only selected fields on saved, explicitly simulated
+sources, check the saved revision and reject uncertain replies without replay.
+Read current state resets the form without opening equipment. Weather sensors can
+be marked absent. Safety still uses normal polling and confirmation; clearing an
+injected fault never clears a retained uncertain-write latch. Actual WPF/browser
+screenshots are documented as simulation. Numeric Switch wire keys now decode
+through internally tagged commands and reject duplicate/noncanonical keys.
 
 Native-credential checkpoint 2a26281 passes all eight jobs in both PR CI
 37457955380 and push CI 37457946553. Windows logs prove installed metadata without
 host/equipment activation, nested helper busy guards and natural retirement,
 upgrade preservation, failed uninstall with conflict, orphan removal after
 deleting bindings, preservation of another installation/settings and cleanup.
-Web-credential checkpoint a2cad0a has active PR/push CI; package verification and
-portable tests are passing, while Windows is still running. Inspect the exact
-runs before claiming them complete. Interactive UAC/Chooser, conformance and
-vendor acceptance remain required.
+Web-credential checkpoint a2cad0a passes both complete CI runs 37460531169 and
+37460523532. Native-inspection checkpoint 94b9adc passes PR CI 37462088304 and
+push CI 37462081747, including all eight jobs. This simulation increment still
+requires its own CI. Interactive UAC/Chooser, conformance and vendor acceptance
+remain required.
 
-Next: verify web-credential/native-inspection CI, complete shared native
-initialization/simulation controls and broader diagnostics,
+Next: verify simulation CI, complete shared setup initialization and broader diagnostics,
 then broader typed proxies, camera ownership, coordination and every remaining
 original milestone gate. This increment does not close the full setup milestone.
 
@@ -533,8 +534,12 @@ cursors, revokes review before a probe, and requires reload after transport loss
 cancellation or obsolete replies. Export includes public host status and the last
 source observation with its time/revision; no configuration or credentials are
 collected. All 144 NINA tests and real net48 x86/x64 inspection/export fixtures
-pass; the actual shared WPF render is documented as simulation. Initialization,
-simulation controls and broader diagnostics remain required setup refinements.
+pass; the actual shared WPF render is documented as simulation. Shared simulation
+controls now use the same host descriptors in the native and web editors, with
+sparse revision-checked changes, current-state reset, sensor absence and bounded
+fault injection. All 149 NINA checks, actual net48 x86/x64 clients and browser
+verification pass. Initialization and broader diagnostics remain required setup
+refinements.
 
 The common native selector now includes saved-choice management, showing the
 configuration path, instance and output identity. Revision-checked removal shares
@@ -707,3 +712,4 @@ Keep existing device profiles and registrations compatible throughout migration.
 | 2026-10-06 | Added shared native credential setup, host-described protection/input/reference fields, caller-chosen immutable references and explicit lost-reply reconciliation. Review added transaction admission to status reads and revoked stale configuration reviews after credential mutations. Fixed installer prerequisite fixture handling of absent values and preserved original value kinds through explicit writable handles. | 136 NINA tests, full Rust hub/Alpaca suites, strict Clippy, Rust 1.89 compatibility, net48 build and x86/x64 fixtures pass. Actual WPF credential render inspected. CI e728f55 proves helper publication/SCM/removal but fails the initial installer platform-value read; the corrected lifecycle fixture needs new CI. Next: web credentials and native setup refinements, then all original remaining gates. |
 | 2026-10-06 | Added web credential controls using shared host descriptors and strict public response shapes. Implemented separate setup connection and explicit same-origin Reload, preserving the catalog and output leases with bounded admission and shutdown fencing. Corrected the host-capacity fixture to account for both private streams. | JavaScript credential state tests, full Alpaca suites, strict Clippy, Rust 1.89 checks and 136 NINA regressions pass. Browser proves secret clearing, review invalidation, retained reference, status after own host restart, removal, no console errors and no equipment leases; actual screenshot inspected. 2a26281 PR CI passes all eight jobs, including actual installer lifecycle/installed metadata/in-use checks; interactive/conformance/vendor acceptance remains required. Next: shared native setup refinements and every remaining original milestone gate. |
 | 2026-10-06 | Added shared native explicit inspection with host-described page parameters/deadline, saved-source selection, temporary lease ownership, checked revisions/cursors, no probe replay, and observed diagnostics export excluding configuration/credentials. Review preserved the preview when local invalid input sends no request. | 144 NINA checks, warnings-denied shared builds and real net48 x86/x64 inspection/export fixtures pass; the actual WPF render was inspected. Both 2a26281 CI runs pass all eight jobs. a2cad0a CI is still active. Next: shared initialization/simulation controls and broader diagnostics, then every original remaining milestone and acceptance gate. |
+| 2026-10-06 | Added shared native/web simulation controls from host descriptors, sparse saved-source updates, revision fencing, current-state reset, absent weather sensors and class-specific faults. Fixed numeric Switch decoding through tagged IPC and reviewed malformed replies as uncertain without replay. | Full hub/Alpaca tests, strict Clippy, Rust 1.89, generated-contract freshness, JavaScript/four schema checks, all 149 NINA tests, warning-denied net48 and real x86/x64 clients pass. Actual WPF/browser renders are documented as simulation; browser verifies preserved sibling readings, unchanged config, no leases/errors. Both a2cad0a and 94b9adc CI runs pass. Next: simulation CI, initialization and broader diagnostics, followed by all original remaining gates. |

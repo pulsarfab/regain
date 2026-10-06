@@ -13,6 +13,7 @@ pub fn describe_config(capabilities: &[&str]) -> Value {
         "schemaVersion": SCHEMA_VERSION,
         "schema": schema,
         "capabilities": capabilities,
+        "simulationControl": crate::simulated::description(),
         "apply": "disconnect",
         "validation": "The hub validates relationships, identities, capabilities and revisions before applying. Schema validation alone does not authorize an update."
     })

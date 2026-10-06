@@ -1442,5 +1442,496 @@
     "type": "object"
   },
   "schemaVersion": 1,
+  "simulationControl": {
+    "apply": "immediate",
+    "controlsByDeviceType": {
+      "observingconditions": [
+        {
+          "default": 0.0,
+          "description": "Inject a weather reading. Mark absent to remove this sensor.",
+          "label": "CloudCover (%)",
+          "maximum": 100.0,
+          "minimum": 0.0,
+          "nullable": true,
+          "path": [
+            "weather",
+            "cloudcover"
+          ],
+          "type": "number"
+        },
+        {
+          "default": 2.0,
+          "description": "Inject a weather reading. Mark absent to remove this sensor.",
+          "label": "DewPoint (°C)",
+          "minimum": -273.15,
+          "nullable": true,
+          "path": [
+            "weather",
+            "dewpoint"
+          ],
+          "type": "number"
+        },
+        {
+          "default": 50.0,
+          "description": "Inject a weather reading. Mark absent to remove this sensor.",
+          "label": "Humidity (%)",
+          "maximum": 100.0,
+          "minimum": 0.0,
+          "nullable": true,
+          "path": [
+            "weather",
+            "humidity"
+          ],
+          "type": "number"
+        },
+        {
+          "default": 1013.0,
+          "description": "Inject a weather reading. Mark absent to remove this sensor.",
+          "exclusiveMinimum": 0.0,
+          "label": "Pressure (hPa)",
+          "nullable": true,
+          "path": [
+            "weather",
+            "pressure"
+          ],
+          "type": "number"
+        },
+        {
+          "default": 0.0,
+          "description": "Inject a weather reading. Mark absent to remove this sensor.",
+          "label": "RainRate (mm/h)",
+          "minimum": 0.0,
+          "nullable": true,
+          "path": [
+            "weather",
+            "rainrate"
+          ],
+          "type": "number"
+        },
+        {
+          "default": 0.0,
+          "description": "Inject a weather reading. Mark absent to remove this sensor.",
+          "label": "SkyBrightness (lux)",
+          "minimum": 0.0,
+          "nullable": true,
+          "path": [
+            "weather",
+            "skybrightness"
+          ],
+          "type": "number"
+        },
+        {
+          "default": 21.0,
+          "description": "Inject a weather reading. Mark absent to remove this sensor.",
+          "label": "SkyQuality (mag/arcsec²)",
+          "nullable": true,
+          "path": [
+            "weather",
+            "skyquality"
+          ],
+          "type": "number"
+        },
+        {
+          "default": -15.0,
+          "description": "Inject a weather reading. Mark absent to remove this sensor.",
+          "label": "SkyTemperature (°C)",
+          "minimum": -273.15,
+          "nullable": true,
+          "path": [
+            "weather",
+            "skytemperature"
+          ],
+          "type": "number"
+        },
+        {
+          "default": 2.0,
+          "description": "Inject a weather reading. Mark absent to remove this sensor.",
+          "label": "StarFWHM (arcsec)",
+          "minimum": 0.0,
+          "nullable": true,
+          "path": [
+            "weather",
+            "starfwhm"
+          ],
+          "type": "number"
+        },
+        {
+          "default": 12.0,
+          "description": "Inject a weather reading. Mark absent to remove this sensor.",
+          "label": "Temperature (°C)",
+          "minimum": -273.15,
+          "nullable": true,
+          "path": [
+            "weather",
+            "temperature"
+          ],
+          "type": "number"
+        },
+        {
+          "default": 180.0,
+          "description": "Inject a weather reading. Mark absent to remove this sensor.",
+          "label": "WindDirection (deg)",
+          "maximum": 360.0,
+          "minimum": 0.0,
+          "nullable": true,
+          "path": [
+            "weather",
+            "winddirection"
+          ],
+          "type": "number"
+        },
+        {
+          "default": 3.0,
+          "description": "Inject a weather reading. Mark absent to remove this sensor.",
+          "label": "WindGust (m/s)",
+          "minimum": 0.0,
+          "nullable": true,
+          "path": [
+            "weather",
+            "windgust"
+          ],
+          "type": "number"
+        },
+        {
+          "default": 2.0,
+          "description": "Inject a weather reading. Mark absent to remove this sensor.",
+          "label": "WindSpeed (m/s)",
+          "minimum": 0.0,
+          "nullable": true,
+          "path": [
+            "weather",
+            "windspeed"
+          ],
+          "type": "number"
+        },
+        {
+          "default": "none",
+          "description": "Select none to clear a fault. This does not clear an uncertain-write latch.",
+          "enum": [
+            "none",
+            "readError",
+            "timeout"
+          ],
+          "label": "Injected fault",
+          "path": [
+            "fault"
+          ],
+          "type": "string"
+        },
+        {
+          "default": 0.0,
+          "description": "Age reported for each new simulated observation. Refresh resets it to zero.",
+          "label": "Sample age (s)",
+          "maximum": 86400.0,
+          "minimum": 0.0,
+          "path": [
+            "sampleAgeSeconds"
+          ],
+          "type": "number"
+        }
+      ],
+      "safetymonitor": [
+        {
+          "default": false,
+          "description": "Feeds normal polling and safety confirmation. It does not directly grant permission.",
+          "label": "Raw simulated safety reading",
+          "path": [
+            "safe"
+          ],
+          "type": "boolean"
+        },
+        {
+          "default": "none",
+          "description": "Select none to clear a fault. This does not clear an uncertain-write latch.",
+          "enum": [
+            "none",
+            "readError",
+            "timeout",
+            "invalidSafety"
+          ],
+          "label": "Injected fault",
+          "path": [
+            "fault"
+          ],
+          "type": "string"
+        }
+      ],
+      "switch": [
+        {
+          "default": 0.0,
+          "description": "Inject a channel reading, including a read-only sensor. The host rounds in-range values to its supported step.",
+          "label": "Simulation relay",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "path": [
+            "switchValues",
+            "0"
+          ],
+          "step": 1.0,
+          "type": "number"
+        },
+        {
+          "default": 0.0,
+          "description": "Inject a channel reading, including a read-only sensor. The host rounds in-range values to its supported step.",
+          "label": "Simulation level",
+          "maximum": 100.0,
+          "minimum": 0.0,
+          "path": [
+            "switchValues",
+            "1"
+          ],
+          "step": 1.0,
+          "type": "number"
+        },
+        {
+          "default": 12.0,
+          "description": "Inject a channel reading, including a read-only sensor. The host rounds in-range values to its supported step.",
+          "label": "Simulation temperature",
+          "maximum": 80.0,
+          "minimum": -40.0,
+          "path": [
+            "switchValues",
+            "2"
+          ],
+          "step": 0.1,
+          "type": "number"
+        },
+        {
+          "default": "none",
+          "description": "Select none to clear a fault. This does not clear an uncertain-write latch.",
+          "enum": [
+            "none",
+            "readError",
+            "timeout",
+            "uncertainWrite"
+          ],
+          "label": "Injected fault",
+          "path": [
+            "fault"
+          ],
+          "type": "string"
+        },
+        {
+          "default": 0.0,
+          "description": "Age reported for each new simulated observation. Refresh resets it to zero.",
+          "label": "Sample age (s)",
+          "maximum": 86400.0,
+          "minimum": 0.0,
+          "path": [
+            "sampleAgeSeconds"
+          ],
+          "type": "number"
+        }
+      ]
+    },
+    "deadlineSeconds": 30,
+    "deviceTypes": [
+      "switch",
+      "safetymonitor",
+      "observingconditions"
+    ],
+    "faultsByDeviceType": {
+      "observingconditions": [
+        "none",
+        "readError",
+        "timeout"
+      ],
+      "safetymonitor": [
+        "none",
+        "readError",
+        "timeout",
+        "invalidSafety"
+      ],
+      "switch": [
+        "none",
+        "readError",
+        "timeout",
+        "uncertainWrite"
+      ]
+    },
+    "fieldsByDeviceType": {
+      "observingconditions": [
+        "weather",
+        "fault",
+        "sampleAgeSeconds"
+      ],
+      "safetymonitor": [
+        "safe",
+        "fault"
+      ],
+      "switch": [
+        "switchValues",
+        "fault",
+        "sampleAgeSeconds"
+      ]
+    },
+    "persistence": "Test state is shared for this runtime only. A new runtime starts safety unsafe.",
+    "revisionCheckedUpdates": true,
+    "schema": {
+      "$defs": {
+        "Fault": {
+          "enum": [
+            "none",
+            "readError",
+            "timeout",
+            "invalidSafety",
+            "uncertainWrite"
+          ],
+          "type": "string"
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "fault": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Fault"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Failure to inject. \"none\" clears a fault; omitted leaves it unchanged."
+        },
+        "safe": {
+          "description": "Simulated raw safety reading. Starts false on each new runtime.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "sampleAgeSeconds": {
+          "description": "Fixed age reported for each new simulated scalar observation. Refresh\nrepresents a fresh sensor acquisition and resets this to zero.",
+          "format": "double",
+          "maximum": 86400,
+          "minimum": 0,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "switchValues": {
+          "additionalProperties": false,
+          "default": {},
+          "description": "Inject channel readings, including read-only sensors. Ordinary switch\ncommands still enforce write permissions and the same value grid.",
+          "maxProperties": 3,
+          "patternProperties": {
+            "^\\d+$": {
+              "format": "double",
+              "type": "number"
+            }
+          },
+          "type": "object"
+        },
+        "weather": {
+          "additionalProperties": false,
+          "default": {},
+          "description": "Update weather readings; null removes a simulated sensor.",
+          "maxProperties": 13,
+          "properties": {
+            "cloudcover": {
+              "format": "double",
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "dewpoint": {
+              "format": "double",
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "humidity": {
+              "format": "double",
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "pressure": {
+              "format": "double",
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "rainrate": {
+              "format": "double",
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "skybrightness": {
+              "format": "double",
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "skyquality": {
+              "format": "double",
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "skytemperature": {
+              "format": "double",
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "starfwhm": {
+              "format": "double",
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "temperature": {
+              "format": "double",
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "winddirection": {
+              "format": "double",
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "windgust": {
+              "format": "double",
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "windspeed": {
+              "format": "double",
+              "type": [
+                "number",
+                "null"
+              ]
+            }
+          },
+          "type": "object"
+        }
+      },
+      "title": "SimulationUpdate",
+      "type": "object"
+    },
+    "sourceKinds": [
+      "simulated"
+    ],
+    "uncertainWrites": "Changing a fault does not clear an uncertain-write latch. Disconnect every source lease before retrying commands."
+  },
   "validation": "The hub validates relationships, identities, capabilities and revisions before applying. Schema validation alone does not authorize an update."
 }

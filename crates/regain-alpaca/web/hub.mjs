@@ -1,6 +1,7 @@
 import { configurationContract } from './hub-config.mjs';
 import { renderConfiguration, previewValue } from './hub-form.mjs';
 import { CredentialSetup } from './hub-credentials.mjs';
+import { SimulationSetup } from './hub-simulation.mjs';
 const $ = id => document.getElementById(id);
 let base, draft, reader, description, reviewed, dirty = false, busy = false, uncertain = false;
 function status(message, error = false) { $('status').textContent = message; $('status').classList.toggle('error', error); }
@@ -11,6 +12,7 @@ const credentials = new CredentialSetup(rpc, reference => { $('credential-refere
 function controls() {
   $('editor-fields').disabled = busy || !reader || uncertain; $('validate').disabled = busy || !reader || uncertain; $('apply').disabled = busy || !reviewed || uncertain; $('reload').disabled = busy;
   for (const button of $('sources').querySelectorAll('button')) button.disabled = busy || uncertain;
+  for (const fields of $('sources').querySelectorAll('.simulation-fields')) fields.disabled = busy || uncertain;
   const fields = $('credential-fields'); if (fields) fields.disabled = busy || uncertain || credentials.uncertain;
   const create = $('credential-create'); if (create) create.disabled = busy || uncertain || credentials.description?.clientChosenReferences !== true;
 }
@@ -29,9 +31,9 @@ async function action(work, mutation = false) {
   try { await work(); }
   catch (error) {
     errors(error.detail?.fields);
-    if (credentials.uncertain || mutation && (!error.detail || ['uncertain','disconnected','unavailable','timeout','revisionConflict'].includes(error.detail.code))) {
+    if (credentials.uncertain || error.uncertain || mutation && (!error.detail || ['uncertain','disconnected','unavailable','timeout','revisionConflict'].includes(error.detail.code))) {
       uncertain = true; reviewed = undefined;
-      status('The outcome is unknown. Reload and inspect the saved revision and host status; read the retained credential reference before another credential change. Do not repeat the write.', true);
+      status('The outcome is unknown. Reload and inspect the saved revision, host status and affected source; read a retained credential reference before another credential change. Do not repeat the write.', true);
     } else status(error.message, true);
   } finally { busy = false; controls(); }
 }
@@ -87,8 +89,43 @@ function renderSources() {
         $('source-result').hidden = false; $('source-result').textContent = JSON.stringify(result,null,2); status(`${text}: ${source.label}`);
       }); box.append(button);
     }
+    if (description.simulationControl?.sourceKinds?.includes(source.backend.kind)) renderSimulation(box,source);
     return box;
   }));
+}
+function renderSimulation(box,source) {
+  const setup = new SimulationSetup(rpc,revokeReview); setup.load(description.simulationControl,source,base.revision);
+  const group = document.createElement('details'); const title = document.createElement('summary'); title.textContent = 'Simulation controls'; group.append(title); box.append(group);
+  const note = document.createElement('p'); note.className = 'hint'; note.textContent = `${description.simulationControl.persistence} ${description.simulationControl.uncertainWrites} Select only the fields to change. Read current state to reset this form; initial values are defaults for a new runtime.`; group.append(note);
+  const fields = document.createElement('fieldset'); fields.className = 'simulation-fields'; group.append(fields);
+  const inputs = setup.controls.map(control => {
+    const row = document.createElement('div'); const label = document.createElement('label'); const include = document.createElement('input'); include.type = 'checkbox'; label.append(include,`Change ${control.label}`); row.append(label);
+    const hint = document.createElement('p'); hint.className = 'hint'; hint.textContent = control.description; row.append(hint);
+    const bounds = [['minimum','Minimum'],['exclusiveMinimum','Greater than'],['maximum','Maximum'],['step','Step']].filter(([key])=>control[key]!==undefined).map(([key,label])=>`${label} ${control[key]}`);
+    if (bounds.length) { const note = document.createElement('p'); note.className='hint'; note.textContent=bounds.join(' · '); row.append(note); }
+    const input = document.createElement(control.type === 'string' ? 'select' : 'input'); input.dataset.simulationPath = control.path.join('/');
+    if (control.type === 'string') for (const option of control.enum) { const item = document.createElement('option'); item.value = option; item.textContent = option; input.append(item); }
+    else {
+      input.type = control.type === 'boolean' ? 'checkbox' : 'number';
+      if (control.type === 'number') { input.step = 'any'; if (control.minimum !== undefined) input.min = control.minimum; if (control.maximum !== undefined) input.max = control.maximum; }
+    }
+    input.setAttribute('aria-label',control.label); row.append(input);
+    let absent;
+    if (control.nullable) { const label = document.createElement('label'); absent = document.createElement('input'); absent.type = 'checkbox'; label.append(absent,'Sensor absent'); row.append(label); }
+    function enabled() { input.disabled = !include.checked || absent?.checked === true; if (absent) absent.disabled = !include.checked; }
+    include.onchange = enabled; if (absent) absent.onchange = enabled;
+    function set(value) { include.checked = false; if (absent) absent.checked = value === null; if (control.type === 'boolean') input.checked = value === true; else input.value = value ?? ''; enabled(); }
+    set(control.default); fields.append(row);
+    return {control,include,input,absent,set};
+  });
+  const show = value => { for (const item of inputs) { let field = value; for (const key of item.control.path) field = field[key]; item.set(field); } $('source-result').hidden = false; $('source-result').textContent = JSON.stringify(value,null,2); };
+  const read = document.createElement('button'); read.type = 'button'; read.textContent = 'Read current simulation and reset form';
+  read.onclick = () => action(async () => { show(await setup.read()); status(`Current simulation: ${source.label}. No equipment connection was opened.`); }); fields.append(read);
+  const apply = document.createElement('button'); apply.type = 'button'; apply.textContent = 'Apply selected simulation changes';
+  apply.onclick = () => action(async () => {
+    const selected = inputs.filter(i => i.include.checked).map(i => ({path:i.control.path,value:i.absent?.checked ? null : i.control.type === 'boolean' ? i.input.checked : i.control.type === 'number' ? i.input.valueAsNumber : i.input.value}));
+    show(await setup.update(selected)); status(`Simulation updated: ${source.label}. Configuration is unchanged; normal safety polling and confirmation apply.`);
+  },true); fields.append(apply);
 }
 async function load() {
   uncertain = true; revokeReview();

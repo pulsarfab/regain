@@ -51,15 +51,23 @@ impl WeatherMetric {
         }
     }
     pub(crate) fn accepts(self, value: f64) -> bool {
+        let (minimum, maximum, exclusive) = self.bounds();
         value.is_finite()
-            && match self {
-                Self::CloudCover | Self::Humidity => (0.0..=100.0).contains(&value),
-                Self::WindDirection => (0.0..=360.0).contains(&value),
-                Self::DewPoint | Self::SkyTemperature | Self::Temperature => value >= -273.15,
-                Self::Pressure => value > 0.0,
-                Self::SkyQuality => true,
-                _ => value >= 0.0,
+            && minimum.is_none_or(|min| if exclusive { value > min } else { value >= min })
+            && maximum.is_none_or(|max| value <= max)
+    }
+    /// The same physical limits validate readings and describe setup controls.
+    pub(crate) fn bounds(self) -> (Option<f64>, Option<f64>, bool) {
+        match self {
+            Self::CloudCover | Self::Humidity => (Some(0.0), Some(100.0), false),
+            Self::WindDirection => (Some(0.0), Some(360.0), false),
+            Self::DewPoint | Self::SkyTemperature | Self::Temperature => {
+                (Some(-273.15), None, false)
             }
+            Self::Pressure => (Some(0.0), None, true),
+            Self::SkyQuality => (None, None, false),
+            _ => (Some(0.0), None, false),
+        }
     }
 }
 pub fn validate_measurements(

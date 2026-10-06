@@ -102,8 +102,18 @@ internal static class Program
                 throw new InvalidOperationException("Native setup inspection/export failed");
             while ((await editor.SourceStatusAsync(inspectedSource, deadline.Token)).GetProperty("leaseCount").GetInt32() != 0)
                 await Task.Delay(25, deadline.Token);
+            if (editor.SimulationControls(inspectedSource).Count != 5) throw new InvalidOperationException("Missing described simulation controls");
+            var simulated = await editor.UpdateSimulationAsync(inspectedSource,JsonSerializer.SerializeToElement(new { switchValues = new Dictionary<string,double> { ["1"] = 23 } }),deadline.Token);
+            if (simulated.GetProperty("simulation").GetProperty("switchValues").GetProperty("1").GetDouble()!=23 ||
+                simulated.GetProperty("simulation").GetProperty("switchValues").GetProperty("2").GetDouble()!=12)
+                throw new InvalidOperationException("Sparse simulation update changed another channel");
+            // Restore this fixture's shared value before the independent ASCOM
+            // contract suite checks the new-runtime default.
+            await editor.UpdateSimulationAsync(inspectedSource,JsonSerializer.SerializeToElement(new { switchValues = new Dictionary<string,double> { ["1"] = 0 } }),deadline.Token);
+            while ((await editor.SourceStatusAsync(inspectedSource, deadline.Token)).GetProperty("leaseCount").GetInt32() != 0)
+                await Task.Delay(25, deadline.Token);
             await NativeOutputs.Run(args[0], args[1], attached.InstanceId, saved, probe, deadline.Token);
-            Console.WriteLine($"net48 {IntPtr.Size * 8}-bit: shared identity, independent leases, selection CAS/removal, native session/reconnect, editor review/apply/reconcile, setup inspection/export, typed ASCOM outputs and surviving host passed");
+            Console.WriteLine($"net48 {IntPtr.Size * 8}-bit: shared identity, independent leases, selection CAS/removal, native session/reconnect, editor review/apply/reconcile, setup inspection/export/simulation, typed ASCOM outputs and surviving host passed");
             return 0;
         } catch (Exception error) { Console.Error.WriteLine(error.GetType().Name + ": " + error.Message); return 1; }
         finally {

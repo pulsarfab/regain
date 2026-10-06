@@ -11,6 +11,80 @@ use serde_json::json;
 use std::{collections::BTreeMap, sync::Arc, time::Duration};
 use uuid::Uuid;
 
+#[test]
+fn setup_descriptors_share_backend_defaults_ranges_and_fault_choices() {
+    let description = regain_hub::simulated::description();
+    for kind in [
+        DeviceType::Switch,
+        DeviceType::SafetyMonitor,
+        DeviceType::ObservingConditions,
+    ] {
+        let state = serde_json::to_value(
+            SimulatedBackend::new(kind, vec![])
+                .unwrap()
+                .simulation_status()
+                .unwrap(),
+        )
+        .unwrap();
+        let name = serde_json::to_value(kind).unwrap();
+        let fields = description["controlsByDeviceType"][name.as_str().unwrap()]
+            .as_array()
+            .unwrap();
+        for field in fields {
+            let mut current = &state;
+            for part in field["path"].as_array().unwrap() {
+                current = &current[part.as_str().unwrap()];
+            }
+            assert_eq!(*current, field["default"]);
+            if field["path"] == json!(["fault"]) {
+                assert_eq!(
+                    field["enum"],
+                    description["faultsByDeviceType"][name.as_str().unwrap()]
+                );
+            }
+            if field["path"][0] == "switchValues" {
+                let id = field["path"][1].as_str().unwrap().parse::<u32>().unwrap();
+                let mut backend = SimulatedBackend::new(kind, vec![]).unwrap();
+                for key in ["minimum", "maximum"] {
+                    backend
+                        .update_simulation(SimulationUpdate {
+                            switch_values: BTreeMap::from([(id, field[key].as_f64().unwrap())]),
+                            ..Default::default()
+                        })
+                        .unwrap();
+                }
+            }
+        }
+    }
+}
+#[test]
+fn tagged_simulation_commands_decode_canonical_channel_maps_and_reject_aliases() {
+    let source = Uuid::new_v4();
+    let revision = Uuid::new_v4();
+    let command: regain_hub::ipc::Command = serde_json::from_value(json!({"op":"updateSimulation","source":source,"expectedRevision":revision,"update":{"switchValues":{"1":42.0}}})).unwrap();
+    let regain_hub::ipc::Command::UpdateSimulation {
+        expected_revision,
+        update,
+        ..
+    } = command
+    else {
+        panic!("Wrong command");
+    };
+    assert_eq!(expected_revision, Some(revision));
+    assert_eq!(update.switch_values[&1], 42.0);
+    for map in [
+        r#"{"01":2}"#,
+        r#"{"1":2,"1":3}"#,
+        r#"{"3":2}"#,
+        r#"{"-1":2}"#,
+    ] {
+        let command = format!(
+            r#"{{"op":"updateSimulation","source":"{source}","update":{{"switchValues":{map}}}}}"#
+        );
+        assert!(serde_json::from_str::<regain_hub::ipc::Command>(&command).is_err());
+    }
+}
+
 fn config(kind: DeviceType) -> HubConfig {
     let mut config = HubConfig::empty();
     config.sources.push(

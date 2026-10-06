@@ -36,6 +36,105 @@ struct Fixture {
     stop: CancellationToken,
     host: tokio::task::JoinHandle<Result<(), host::HostError>>,
 }
+
+#[tokio::test]
+async fn setup_simulation_updates_are_sparse_revision_checked_and_same_origin() {
+    let f = Fixture::new().await;
+    let source = f.config.sources[0].id;
+    let revision = f.config.revision;
+    let command = json!({"op":"updateSimulation","source":source,"expectedRevision":revision,"update":{"switchValues":{"1":42.0}}});
+    assert_eq!(
+        setup(
+            &f.router,
+            command.clone(),
+            "application/json",
+            "http://other.invalid"
+        )
+        .await
+        .0,
+        StatusCode::FORBIDDEN
+    );
+    let (code, _) = setup(&f.router,json!({"op":"updateSimulation","source":source,"expectedRevision":uuid::Uuid::new_v4(),"update":{"switchValues":{"1":42.0}}}),"application/json","http://127.0.0.1:11111").await;
+    assert_eq!(code, StatusCode::BAD_REQUEST);
+    assert_eq!(
+        f.hub
+            .source_snapshot(source)
+            .unwrap()
+            .simulation
+            .unwrap()
+            .switch_values[&1],
+        0.0
+    );
+    assert_eq!(f.hub.source_snapshot(source).unwrap().lease_count, 0);
+    let (_, outcome) = setup(
+        &f.router,
+        command,
+        "application/json",
+        "http://127.0.0.1:11111",
+    )
+    .await;
+    assert_eq!(outcome["result"]["source"], json!(source), "{outcome}");
+    assert_eq!(outcome["result"]["configurationRevision"], json!(revision));
+    assert_eq!(outcome["result"]["simulation"]["switchValues"]["1"], 42.0);
+    assert_eq!(outcome["result"]["simulation"]["switchValues"]["2"], 12.0);
+    assert_eq!(outcome["result"]["simulation"]["fault"], "none");
+    let status = f.hub.source_snapshot(source).unwrap();
+    tokio::time::timeout(Duration::from_secs(2), async {
+        while f.hub.source_snapshot(source).unwrap().lease_count != 0 {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .unwrap();
+    assert!(!status.write_uncertain);
+    let (_, saved) = setup(
+        &f.router,
+        json!({"op":"getConfig"}),
+        "application/json",
+        "http://127.0.0.1:11111",
+    )
+    .await;
+    let mut candidate = saved["result"].clone();
+    candidate["sources"][0]["label"] = json!("Replacement simulated source");
+    let (_, applied) = setup(
+        &f.router,
+        json!({"op":"applyConfig","expectedRevision":revision,"candidate":candidate}),
+        "application/json",
+        "http://127.0.0.1:11111",
+    )
+    .await;
+    assert_eq!(applied["result"]["ready"], true);
+    let (_, rejected) = setup(&f.router,json!({"op":"updateSimulation","source":source,"expectedRevision":revision,"update":{"switchValues":{"1":99.0}}}),"application/json","http://127.0.0.1:11111").await;
+    assert_eq!(rejected["error"]["code"], "revisionConflict");
+    let (_, fresh) = setup(
+        &f.router,
+        json!({"op":"sourceStatus","source":source}),
+        "application/json",
+        "http://127.0.0.1:11111",
+    )
+    .await;
+    assert_eq!(fresh["result"]["leaseCount"], 0);
+    assert_eq!(fresh["result"]["simulation"]["switchValues"]["1"], 0.0);
+    let response = f
+        .router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/hub-simulation.mjs")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let bytes = response.into_body().collect().await.unwrap().to_bytes();
+    assert!(
+        std::str::from_utf8(&bytes)
+            .unwrap()
+            .contains("SimulationSetup")
+    );
+    f.finish().await;
+}
 impl Fixture {
     async fn new() -> Self {
         let mut config: HubConfig = serde_json::from_str(include_str!(

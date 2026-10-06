@@ -1134,3 +1134,29 @@ health or setup inspection, with instance/revision and UTC observation time. It
 does not refresh sources or include editable configuration or credential calls.
 Reload clears the previous source observation. This is an observed setup snapshot;
 broader live output/policy diagnostics and frontend recovery remain separate gates.
+
+### Shared simulation controls
+
+`DescribeConfig.simulationControl.controlsByDeviceType` supplies scalar field
+paths, types, labels, descriptions, defaults, physical bounds, nullable weather
+readings and class-specific fault choices. Defaults derive from the actual
+simulated backend; weather bounds also validate real readings. Native NINA/ASCOM
+and web setup consume this metadata for saved explicit `simulated` sources only.
+They read current state through cached `sourceStatus`, reset the selected fields
+and send sparse updates. Unselected fields and saved configuration stay unchanged.
+
+New setup callers send `updateSimulation` with `expectedRevision`. The host checks
+it before acquiring a lease, then returns `{source, configurationRevision,
+simulation}`. Editors verify both identities and the typed status; a lost,
+obsolete or malformed reply requires explicit Reload/read before another write.
+They never fall back to an unguarded update. Legacy callers omitting the optional
+revision retain the previous flat status response. Internally tagged commands
+explicitly parse Switch map keys as canonical channel IDs 0–2 and reject duplicate
+keys, aliases such as `01` and unknown channels before use.
+
+Simulation updates use normal source ownership/admission and release only their
+own temporary lease. Changing raw safety input feeds normal confirmation instead
+of granting permission. Clearing an injected fault cannot reset a retained
+uncertain-write latch. A new runtime resets simulated readings; these changes are
+not persisted, silently substituted for hardware or applied to native worker
+simulation settings.

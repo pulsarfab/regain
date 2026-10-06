@@ -131,7 +131,7 @@ do not acquire equipment leases.
 
 These are renders of the actual WPF window during an automated simulation test
 against the production host. They demonstrate setup; interactive NINA and
-real-device acceptance remain pending. Initialization, simulation controls and
+real-device acceptance remain pending. Initialization and
 broader diagnostics remain on the plan.
 
 ![Native setup inspection of simulated Switch channels](images/hub-native-inspection-simulation.png)
@@ -142,6 +142,32 @@ lease is preserved. Changing the selected source or page input clears the next
 cursor. Obsolete revisions and lost replies require explicit reload; inspection
 is never replayed automatically. New sources must be applied and reloaded before
 they can be inspected.
+
+Use **Simulation** in the native editor, or expand **Simulation controls** under
+a source in web setup, to change saved sources explicitly configured as simulated.
+The host supplies the same labels, defaults, limits and fault choices to both
+editors. Select **Read current simulation and reset form** first: initial values
+are new-runtime defaults, and reading clears the field selections. Check **Change**
+only for the fields to update, then **Apply selected simulation changes**. Other
+readings remain unchanged. These changes affect every frontend sharing this
+runtime immediately; they do not edit or persist the hub configuration.
+
+Weather controls can mark a **Sensor absent** or change its reading and sample
+age. Safety input feeds the usual polling and recovery confirmation; it does not
+grant permission immediately. Fault injection can exercise failed reads, timeouts
+and uncertain Switch writes. Clearing the fault does not clear an uncertain-write
+latch: disconnect every source lease before reconciling and retrying commands.
+After a lost reply or revision conflict, reload and read the current state before
+another change. The editor never replays the update automatically.
+
+![Shared native simulation controls](images/hub-native-simulation-controls.png)
+
+![Web simulation controls with a shared level of 17 and temperature of 12](images/hub-web-simulation-controls.png)
+
+These are the actual shared WPF editor and browser against the production host
+with explicitly simulated sources. The browser readback verifies the changed
+level and preserved temperature. No attached equipment is controlled by these
+simulation fields.
 
 Use **Credentials** to save an upstream Authorization header in the host's
 separate user storage. Its labels, descriptions, length limits and protection

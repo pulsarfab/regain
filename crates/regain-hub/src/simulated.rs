@@ -29,7 +29,8 @@ pub struct SimulationUpdate {
     pub safe: Option<bool>,
     /// Inject channel readings, including read-only sensors. Ordinary switch
     /// commands still enforce write permissions and the same value grid.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "switch_values")]
+    #[schemars(with = "BTreeMap<u32, f64>")]
     #[schemars(extend("maxProperties" = 3))]
     pub switch_values: BTreeMap<u32, f64>,
     /// Update weather readings; null removes a simulated sensor.
@@ -43,6 +44,36 @@ pub struct SimulationUpdate {
     #[schemars(range(min = 0, max = 86400))]
     pub sample_age_seconds: Option<f64>,
 }
+// Internally tagged commands deserialize through serde's captured content,
+// whose map keys do not perform JSON's string-to-integer conversion. Parse the
+// wire keys explicitly and reject duplicates/noncanonical aliases before use.
+fn switch_values<'de, D: serde::Deserializer<'de>>(
+    decoder: D,
+) -> Result<BTreeMap<u32, f64>, D::Error> {
+    struct Channels;
+    impl<'de> serde::de::Visitor<'de> for Channels {
+        type Value = BTreeMap<u32, f64>;
+        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            formatter.write_str("canonical simulated channel keys")
+        }
+        fn visit_map<M: serde::de::MapAccess<'de>>(
+            self,
+            mut map: M,
+        ) -> Result<Self::Value, M::Error> {
+            let mut result = BTreeMap::new();
+            while let Some((key, value)) = map.next_entry::<String, f64>()? {
+                let id = key.parse::<u32>().map_err(serde::de::Error::custom)?;
+                if id > 2 || id.to_string() != key || result.insert(id, value).is_some() {
+                    return Err(serde::de::Error::custom(
+                        "Invalid or duplicate simulated channel",
+                    ));
+                }
+            }
+            Ok(result)
+        }
+    }
+    decoder.deserialize_map(Channels)
+}
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SimulationStatus {
@@ -54,7 +85,74 @@ pub struct SimulationStatus {
     pub sample_age_seconds: f64,
 }
 pub fn description() -> Value {
+    let mut controls = BTreeMap::new();
+    for device in [
+        DeviceType::Switch,
+        DeviceType::SafetyMonitor,
+        DeviceType::ObservingConditions,
+    ] {
+        let state = SimulatedBackend::new(device, Vec::new()).unwrap().state;
+        let mut fields = Vec::new();
+        if device == DeviceType::SafetyMonitor {
+            fields.push(json!({"path":["safe"],"type":"boolean","label":"Raw simulated safety reading",
+                "description":"Feeds normal polling and safety confirmation. It does not directly grant permission.","default":state.safe}));
+        }
+        if device == DeviceType::Switch {
+            for (id, value) in state.switch_values {
+                let grid = channel_grid(id).unwrap();
+                fields.push(json!({"path":["switchValues",id.to_string()],"type":"number","label":channel_name(id),
+                    "description":"Inject a channel reading, including a read-only sensor. The host rounds in-range values to its supported step.",
+                    "default":value,"minimum":grid.minimum,"maximum":grid.maximum,"step":grid.step}));
+            }
+        }
+        if device == DeviceType::ObservingConditions {
+            for (metric, value) in state.weather {
+                let (minimum, maximum, exclusive) = metric.bounds();
+                let mut field = json!({"path":["weather",metric.property()],"type":"number","nullable":true,
+                    "label":format!("{} ({})",metric.state_name(),metric.unit()),"description":"Inject a weather reading. Mark absent to remove this sensor.","default":value});
+                if let Some(minimum) = minimum {
+                    field[if exclusive {
+                        "exclusiveMinimum"
+                    } else {
+                        "minimum"
+                    }] = json!(minimum);
+                }
+                if let Some(maximum) = maximum {
+                    field["maximum"] = json!(maximum);
+                }
+                fields.push(field);
+            }
+        }
+        let faults = match device {
+            DeviceType::Switch => vec![
+                Fault::None,
+                Fault::ReadError,
+                Fault::Timeout,
+                Fault::UncertainWrite,
+            ],
+            DeviceType::SafetyMonitor => vec![
+                Fault::None,
+                Fault::ReadError,
+                Fault::Timeout,
+                Fault::InvalidSafety,
+            ],
+            _ => vec![Fault::None, Fault::ReadError, Fault::Timeout],
+        };
+        fields.push(json!({"path":["fault"],"type":"string","label":"Injected fault","description":"Select none to clear a fault. This does not clear an uncertain-write latch.","default":state.fault,"enum":faults}));
+        if device != DeviceType::SafetyMonitor {
+            fields.push(json!({"path":["sampleAgeSeconds"],"type":"number","label":"Sample age (s)","description":"Age reported for each new simulated observation. Refresh resets it to zero.","default":state.sample_age_seconds,"minimum":0.0,"maximum":86400.0}));
+        }
+        controls.insert(
+            serde_json::to_value(device)
+                .unwrap()
+                .as_str()
+                .unwrap()
+                .to_string(),
+            fields,
+        );
+    }
     json!({"schema":schemars::schema_for!(SimulationUpdate), "apply":"immediate",
+        "controlsByDeviceType":controls,"revisionCheckedUpdates":true,"deadlineSeconds":30,
         "sourceKinds":["simulated"],"deviceTypes":["switch","safetymonitor","observingconditions"],
         "fieldsByDeviceType":{"switch":["switchValues","fault","sampleAgeSeconds"],"safetymonitor":["safe","fault"],"observingconditions":["weather","fault","sampleAgeSeconds"]},
         "faultsByDeviceType":{"switch":["none","readError","timeout","uncertainWrite"],"safetymonitor":["none","readError","timeout","invalidSafety"],"observingconditions":["none","readError","timeout"]},
@@ -196,11 +294,7 @@ impl SimulatedBackend {
                     "minswitchvalue" => json!(grid.minimum),
                     "maxswitchvalue" => json!(grid.maximum),
                     "switchstep" => json!(grid.step),
-                    "getswitchname" => json!(match id {
-                        0 => "Simulation relay",
-                        1 => "Simulation level",
-                        _ => "Simulation temperature",
-                    }),
+                    "getswitchname" => json!(channel_name(id)),
                     "getswitchdescription" => {
                         json!("Explicit simulated channel; no hardware is controlled")
                     }
@@ -248,6 +342,13 @@ fn channel_grid(id: u32) -> Result<Grid, SourceError> {
         1 => Grid::new(0.0, 100.0, 1.0),
         2 => Grid::new(-40.0, 80.0, 0.1),
         _ => Err(invalid("Unknown simulated channel")),
+    }
+}
+fn channel_name(id: u32) -> &'static str {
+    match id {
+        0 => "Simulation relay",
+        1 => "Simulation level",
+        _ => "Simulation temperature",
     }
 }
 fn channel_id(args: &Values, count: usize) -> Result<u32, SourceError> {
