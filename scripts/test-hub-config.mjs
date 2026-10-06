@@ -356,3 +356,46 @@ try {
   if (priorDocument===undefined) delete globalThis.document; else globalThis.document=priorDocument;
 }
 console.log('Web form transitions passed: actual event handlers change transports and proxy kinds, replace conditional fields and restrict typed classes.');
+
+// Rotator diagnostics share typed accessory validation but keep angular limits.
+const rotatorSaved=structuredClone(focuserSaved);
+rotatorSaved.sources[0].backend={kind:'native',device:'caa',identity:'0102030405060708'};
+rotatorSaved.outputs[0].device.deviceType='rotator';
+const rotatorOutput=rotatorSaved.outputs[0];
+function rotatorReply(start=0,limit=1) {
+  const fields=description.outputDiagnostics.rotatorProperties, total=fields.length, health=diagHealth(rotatorSaved.sources[0].id);
+  health.transportConnected=true; health.leaseCount=1;
+  const properties=fields.slice(start,start+limit).map(field=>({property:field.property,sample:{state:'available',reading:{
+    value:{type:field.valueType,value:field.valueType==='boolean'?true:field.property==='stepSize'?0.02:42.5},
+    ageSeconds:0.5,source:health.source,generation:health.generation,sequence:0,revision:rotatorSaved.revision}}}));
+  const end=Math.min(start+limit,total);
+  return {purpose:'cachedDiagnostics',output:rotatorOutput.id,configurationRevision:rotatorSaved.revision,observedSeconds:1,
+    deviceType:'rotator',simulated:true,start,limit,total,nextStart:end<total?end:null,diagnostics:{kind:'rotator',health,properties}};
+}
+{
+  const setup=new OutputDiagnostics(async command=>rotatorReply(command.start,command.limit),()=>assert.fail('Review revoked'));
+  setup.load(description,rotatorSaved);
+  const first=await setup.read(rotatorOutput.id,0,4); assert.equal(first.nextStart,4);
+  assert.match(diagnosticSummary(first),/position: 42.5/); assert.match(diagnosticSummary(first),/age 0.5 s/);
+  assert.equal((await setup.read(rotatorOutput.id,4,32)).nextStart,null);
+}
+for (const fault of ['property','source','generation','sequence','type','minimum','exclusiveMaximum','extra','age','stepZero','stepSingleRange']) {
+  let revoked=false; const index=fault.startsWith('step')?5:3;
+  const setup=new OutputDiagnostics(async()=>{
+    const reply=rotatorReply(index,1), item=reply.diagnostics.properties[0], reading=item.sample.reading;
+    if(fault==='property') item.property='isMoving';
+    if(fault==='source') reading.source='88888888-8888-4888-8888-888888888888';
+    if(fault==='generation') reading.generation='88888888-8888-4888-8888-888888888888';
+    if(fault==='sequence') reading.sequence=1;
+    if(fault==='type') reading.value={type:'integer',value:1};
+    if(fault==='minimum') reading.value.value=-1;
+    if(fault==='exclusiveMaximum') reading.value.value=360;
+    if(fault==='extra') reading.authorization='PRIVATE_FORBIDDEN_REPLY';
+    if(fault==='age') reading.ageSeconds=-1;
+    if(fault==='stepZero') reading.value.value=0;
+    if(fault==='stepSingleRange') reading.value.value=Number.MAX_VALUE;
+    return reply;
+  },()=>revoked=true);
+  setup.load(description,rotatorSaved); await assert.rejects(setup.read(rotatorOutput.id,index,1));
+  assert.equal(revoked,true); assert.equal(setup.observation,null);
+}

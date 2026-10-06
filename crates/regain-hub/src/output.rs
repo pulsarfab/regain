@@ -14,7 +14,7 @@ struct StateValue {
 impl OutputConnection {
     pub(crate) async fn get(&self, property: Get) -> Result<Value, SourceError> {
         Ok(match property {
-            Get::Connected {} => json!(self.focuser().map_or(true, |focuser| focuser.connected())),
+            Get::Connected {} => json!(self.connected()),
             Get::Connecting {} => json!(false),
             Get::DeviceState {} => {
                 let mut values = Vec::new();
@@ -36,6 +36,10 @@ impl OutputConnection {
                     }
                 } else if let Ok(focuser) = self.focuser() {
                     for (name, value) in focuser.device_state(self.now()) {
+                        values.push(StateValue { name, value });
+                    }
+                } else if let Ok(rotator) = self.rotator() {
+                    for (name, value) in rotator.device_state(self.now()) {
                         values.push(StateValue { name, value });
                     }
                 } else {
@@ -103,6 +107,7 @@ impl OutputConnection {
                 json!(self.weather()?.sensor_description(&sensor)?)
             }
             Get::Focuser { property } => self.focuser()?.property(property).await?,
+            Get::Rotator { property } => self.rotator()?.property(property).await?,
         })
     }
     pub(crate) async fn put(&self, property: Put) -> Result<(), SourceError> {
@@ -126,6 +131,14 @@ impl OutputConnection {
             Put::MoveFocuser { position } => self.focuser()?.move_to(position).await?,
             Put::HaltFocuser {} => self.focuser()?.halt().await?,
             Put::FocuserTempComp { enabled } => self.focuser()?.set_temp_comp(enabled).await?,
+            Put::MoveRotator { degrees } => self.rotator()?.move_relative(degrees).await?,
+            Put::MoveAbsoluteRotator { degrees } => self.rotator()?.move_absolute(degrees).await?,
+            Put::MoveMechanicalRotator { degrees } => {
+                self.rotator()?.move_mechanical(degrees).await?
+            }
+            Put::SyncRotator { degrees } => self.rotator()?.sync(degrees).await?,
+            Put::HaltRotator {} => self.rotator()?.halt().await?,
+            Put::RotatorReverse { enabled } => self.rotator()?.set_reverse(enabled).await?,
         }
         Ok(())
     }

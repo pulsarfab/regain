@@ -1,4 +1,6 @@
 //! Private typed actors and loopback transports; no physical motion.
+#[path = "support/rotator_runtime.rs"]
+mod runtime;
 use regain_hub::{
     parameters::PollPolicy,
     rotator::{RotatorController, RotatorProperty},
@@ -20,6 +22,8 @@ struct Device {
     errors: Mutex<std::collections::BTreeMap<String, SourceError>>,
     writes: Mutex<Vec<(String, Values)>>,
     connects: AtomicUsize,
+    reads: AtomicUsize,
+    polls: AtomicUsize,
     disconnects: AtomicUsize,
     pending: AtomicBool,
     uncertain: AtomicBool,
@@ -41,6 +45,8 @@ impl Device {
             errors: Mutex::default(),
             writes: Mutex::default(),
             connects: AtomicUsize::new(0),
+            reads: AtomicUsize::new(0),
+            polls: AtomicUsize::new(0),
             disconnects: AtomicUsize::new(0),
             pending: AtomicBool::new(false),
             uncertain: AtomicBool::new(false),
@@ -102,6 +108,7 @@ impl Backend for Mock {
     }
     fn read(&mut self, member: String, args: Values) -> BackendFuture<'_, Value> {
         Box::pin(async move {
+            self.0.reads.fetch_add(1, SeqCst);
             assert!(args.is_empty());
             let hang = self.0.hang_read.lock().unwrap().as_ref() == Some(&member);
             if hang {
@@ -129,7 +136,20 @@ impl Backend for Mock {
         })
     }
     fn poll(&mut self) -> BackendFuture<'_, Values> {
-        Box::pin(async { Ok(self.0.values.lock().unwrap().clone()) })
+        Box::pin(async {
+            self.0.polls.fetch_add(1, SeqCst);
+            Ok(self.0.values.lock().unwrap().clone())
+        })
+    }
+    fn sample(&mut self) -> BackendFuture<'_, regain_hub::source::SampleBatch> {
+        Box::pin(async {
+            let mut batch = regain_hub::source::SampleBatch::from(self.poll().await?);
+            batch.errors = self.0.errors.lock().unwrap().clone();
+            for key in batch.errors.keys() {
+                batch.values.remove(key);
+            }
+            Ok(batch)
+        })
     }
     fn reset(&mut self) {}
 }
@@ -491,8 +511,13 @@ async fn alpaca_transport(version: u16, uncertain_reply: bool) {
         routing::any,
     };
     use regain_hub::{
-        alpaca::AlpacaBackend,
-        config::{ConnectionPolicy, DeviceType, SourceBackend, SourceConfig},
+        config::{
+            ConnectionPolicy, DeviceType, HubConfig, OutputConfig, SourceBackend, SourceConfig,
+            VirtualDevice,
+        },
+        factory::{NoCredentials, build_sources},
+        native::NativeRuntime,
+        runtime::HubRuntime,
         source::ConnectionMethod,
     };
     #[derive(Clone)]
@@ -628,27 +653,41 @@ async fn alpaca_transport(version: u16, uncertain_reply: bool) {
             credential_reference: None,
         },
     };
-    let source = SourceHandle::spawn(
-        config.id,
-        Uuid::new_v4(),
-        config.polling.clone(),
-        Box::new(
-            AlpacaBackend::new(
-                &config,
-                RotatorProperty::ALL
-                    .into_iter()
-                    .map(|property| property.sample_request())
-                    .collect(),
-                None,
-            )
-            .unwrap(),
-        ),
-        Arc::new(MonotonicClock::default()),
+    let mut hub_config = HubConfig::empty();
+    hub_config.sources.push(config.clone());
+    let output = Uuid::new_v4();
+    hub_config.outputs.push(OutputConfig {
+        id: output,
+        number: 23,
+        label: "HTTP rotator output".into(),
+        device: VirtualDevice::Proxy {
+            source: config.id,
+            device_type: DeviceType::Rotator,
+        },
+    });
+    let clock = Arc::new(MonotonicClock::default());
+    let directory = tempfile::tempdir().unwrap();
+    let registry = build_sources(
+        &hub_config,
+        &NativeRuntime {
+            directory: directory.path().into(),
+            simulate: false,
+            references: None,
+        },
+        &NoCredentials,
+        clock.clone(),
     )
     .unwrap();
-    let controller = RotatorController::new(source.clone(), Duration::from_secs(5)).unwrap();
-    let first = controller.connect().await.unwrap();
-    let second = controller.connect().await.unwrap();
+    let source = registry.get(config.id).unwrap();
+    let host = HubRuntime::from_registry(hub_config, registry, clock).unwrap();
+    let first_client = host.client();
+    let second_client = host.client();
+    first_client.connect(output).await.unwrap();
+    second_client.connect(output).await.unwrap();
+    let first_connection = first_client.connection(output).unwrap();
+    let second_connection = second_client.connection(output).unwrap();
+    let first = first_connection.rotator().unwrap();
+    let second = second_connection.rotator().unwrap();
     assert_eq!(first.generation(), second.generation());
     let info = source.snapshot().connection_info.unwrap();
     assert_eq!(info.interface_version, Some(version));
@@ -734,14 +773,16 @@ async fn alpaca_transport(version: u16, uncertain_reply: bool) {
         assert_eq!(writes[3].0, "movemechanical");
         assert_eq!(writes[4].0, "moveabsolute");
     }
-    drop(first);
+    drop(first_connection);
+    first_client.close();
     // A FIFO read from the surviving output is stronger than a scheduler yield
     // for proving another output's Drop cannot disconnect this client.
     if !uncertain_reply {
         assert!(second.is_moving().await.unwrap());
     }
     assert!(fixture.connected.load(SeqCst));
-    drop(second);
+    drop(second_connection);
+    second_client.close();
     let mut status = source.status();
     tokio::time::timeout(Duration::from_secs(5), async {
         while status.borrow_and_update().lease_count != 0 {
@@ -793,7 +834,7 @@ async fn alpaca_transport(version: u16, uncertain_reply: bool) {
         .map(|(_, _, args)| args["ClientTransactionID"].as_str().unwrap())
         .collect::<std::collections::BTreeSet<_>>();
     assert_eq!(transactions.len(), requests.len());
-    source.shutdown().await.unwrap();
+    host.shutdown().await.unwrap();
     server.abort();
     assert!(server.await.unwrap_err().is_cancelled());
 }

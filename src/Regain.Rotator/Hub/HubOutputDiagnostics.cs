@@ -81,8 +81,8 @@ internal static class HubDiagnosticContract
         Schema(description.GetProperty("responseSchema"), result);
         void Require(bool condition) { if (!condition) throw new HubException(HubFailure.Protocol); }
         var revision = saved.GetProperty("revision").GetGuid(); var device = output.GetProperty("device"); var kind = device.GetProperty("kind").GetString();
-        if (kind == "proxy" && device.GetProperty("deviceType").GetString() == "focuser") kind = "focuser";
-        var type = kind switch { "safety" => "safetymonitor", "switch" => "switch", "weather" => "observingconditions", "focuser" => "focuser", _ => "unsupported" };
+        if (kind == "proxy") kind = device.GetProperty("deviceType").GetString();
+        var type = kind switch { "safety" => "safetymonitor", "switch" => "switch", "weather" => "observingconditions", "focuser" => "focuser", "rotator" => "rotator", _ => "unsupported" };
         var total = result.GetProperty("total").GetInt32(); var end = Math.Min(start + limit, total); var diagnostics = result.GetProperty("diagnostics");
         Require(result.GetProperty("purpose").GetString() == "cachedDiagnostics" && result.GetProperty("output").GetGuid() == output.GetProperty("id").GetGuid() && result.GetProperty("configurationRevision").GetGuid() == revision && result.GetProperty("deviceType").GetString() == type && result.GetProperty("observedSeconds").GetDouble() >= 0 && result.GetProperty("start").GetInt32() == start && result.GetProperty("limit").GetInt32() == limit && total >= start && total <= 1024 && diagnostics.GetProperty("kind").GetString() == kind);
         Require(end < total ? result.GetProperty("nextStart").GetInt32() == end : result.GetProperty("nextStart").ValueKind == JsonValueKind.Null);
@@ -108,8 +108,8 @@ internal static class HubDiagnosticContract
                 Health(item.GetProperty("health")); Require(item.GetProperty("health").GetProperty("source").GetGuid() == item.GetProperty("source").GetGuid());
                 if (decision.ValueKind != JsonValueKind.Null) Require(decision.GetProperty("configurationRevision").GetGuid() == revision && (active || !decision.GetProperty("permitsSafe").GetBoolean() && decision.GetProperty("rawIsSafe").ValueKind == JsonValueKind.Null));
             }
-        } else if (kind == "focuser") {
-            var fields = description.GetProperty("focuserProperties"); var items = diagnostics.GetProperty("properties"); var health = diagnostics.GetProperty("health");
+        } else if (kind == "focuser" || kind == "rotator") {
+            var fields = description.GetProperty(kind + "Properties"); var items = diagnostics.GetProperty("properties"); var health = diagnostics.GetProperty("health");
             Health(health); Require(total == fields.GetArrayLength() && items.GetArrayLength() == end - start && health.GetProperty("source").GetGuid() == device.GetProperty("source").GetGuid());
             for (int i = 0; i < items.GetArrayLength(); i++) {
                 var item = items[i]; var field = fields[start + i]; Require(item.GetProperty("property").GetString() == field.GetProperty("property").GetString());
@@ -118,6 +118,8 @@ internal static class HubDiagnosticContract
                 Require(reading.GetProperty("source").GetGuid() == health.GetProperty("source").GetGuid() && reading.GetProperty("generation").GetGuid() == health.GetProperty("generation").GetGuid() && reading.GetProperty("revision").GetGuid() == revision && reading.GetProperty("sequence").GetUInt64() <= health.GetProperty("sequence").GetUInt64() && reading.GetProperty("ageSeconds").GetDouble() >= 0 && value.GetProperty("type").GetString() == field.GetProperty("valueType").GetString());
                 if (field.GetProperty("minimum").ValueKind != JsonValueKind.Null) Require(value.GetProperty("value").GetDouble() >= field.GetProperty("minimum").GetDouble());
                 if (field.GetProperty("exclusiveMinimum").ValueKind != JsonValueKind.Null) Require(value.GetProperty("value").GetDouble() > field.GetProperty("exclusiveMinimum").GetDouble());
+                if (field.TryGetProperty("maximum", out var maximum) && maximum.ValueKind != JsonValueKind.Null) Require(value.GetProperty("value").GetDouble() <= maximum.GetDouble());
+                if (field.TryGetProperty("exclusiveMaximum", out var exclusiveMaximum) && exclusiveMaximum.ValueKind != JsonValueKind.Null) Require(value.GetProperty("value").GetDouble() < exclusiveMaximum.GetDouble());
             }
         } else {
             var configured = device.GetProperty("measurements").EnumerateObject().OrderBy(p => p.Name, StringComparer.Ordinal).ToArray(); var items = diagnostics.GetProperty("measurements");

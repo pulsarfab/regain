@@ -2554,3 +2554,60 @@ Shared-setup PR CI 37501496852 and controller PR CI 37503876752 pass all eight
 jobs. Controller push 37503869679 was cancelled after seven successes. Preserve
 the unexplained earlier initial-connection failure and COM timeout; later green
 runs do not establish their causes. This newer increment requires new CI.
+
+### Rotator runtime, typed IPC and cached diagnostics (2026-10-06)
+
+Admitted native/Alpaca rotator outputs through the existing runtime, private client
+leases, pending connection admission and immutable typed sessions. Reviewed all
+six explicit command dispatches, wrong-class/argument rejection, cancellation,
+generation loss, concurrent ownership, IPC EOF and no replay. Connected now uses
+one common typed-session accessor for both focusers and rotators. Frontend setup
+capabilities still enable only Focuser; the IPC capability does not promise a
+completed NINA/ASCOM/Alpaca interface or completed COM/virtual/simulated input.
+
+Seven properties deduplicate into the poll plan. Review found typed insertion
+could bypass the combined sample bound after scalar mappings; the final limit
+now covers all classes. The factory boundary test reaches exactly 1024 samples,
+then rejects 1025 with unchanged configuration for both focusers and rotators.
+Initial fixture compilation needed explicit error extraction because SourcePlan
+has no Debug implementation. Scalar property fixtures require lowercase letters;
+their initial numeric names were corrected without relaxing production validation.
+
+Cached rotator samples preserve strict types/angles, optional upstream errors,
+monotonic ages and source/revision/generation/sequence. Diagnostics stay inert and
+paged; failed properties do not erase unrelated mechanical readings. Both native
+and web readers use the generated response schema and common typed accessory
+validation, with host-described minimum/exclusive maximum/Single-range limits.
+Native tests cover identity, type, range, sequence and age faults; web tests cover
+eleven malformed reply cases. Existing summary rendering is reused; broader
+interactive acceptance and rotator frontend publication remain required.
+
+Review against [Rotator V4](https://ascom-standards.org/newdocs/rotator.html) and
+the [read-all rules](https://ascom-standards.org/newdocs/readall-faq.html) removed
+Reverse/TargetPosition from DeviceState. Only available IsMoving, MechanicalPosition
+and Position belong there; richer observations remain in diagnostics. No query
+timestamp masquerades as a measurement. Tests assert the exact names and omit
+invalid motion/position while preserving a valid mechanical position.
+
+Fifteen rotator cases now include four runtime/IPC cases and three actual V3/V4
+loopback transports built through the real configuration-derived source factory.
+They exercise sparse identities, shared leases, every command, cancellation,
+read-generation loss, EOF and applied malformed replies. Initial integration
+fixtures used the private OutputConnection get method; they now observe actual
+IPC instead of widening production access. The EOF fixture initially expected
+an actor latch after final teardown; inspection of the existing source/focuser
+contract corrected that assertion. It verifies retained uncertainty before EOF,
+no replay and final lease cleanup; native durable reference markers are separate.
+
+Fourteen native cases pass with actual production workers in explicit simulation,
+including the new runtime/factory path for both CAA and Falcon, shared sources,
+Sync/target confirmation and cached health. No physical equipment or installed
+vendor driver is activated. After rebuilding actual workers/host, full Rust
+hub/Alpaca suites, strict Clippy, Rust 1.89 all-target checks, generated-contract
+freshness, Node/four independent schema tests, all 187 warnings-denied NINA tests
+and real net48 x86/x64 clients pass. Evidence uses
+artifacts/hub-rotator-runtime-final-*.log; focused tests use
+artifacts/hub-rotator-runtime-focused.log. Native-reference PR CI 37508673278
+has seven successes and Windows still running; push 37508667983 also remains live
+at this observation. This newer runtime increment needs its own CI. All original
+remaining milestone and acceptance gates stay required before PR #21 can merge.

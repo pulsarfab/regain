@@ -6,6 +6,7 @@ use crate::{
     focuser::{FocuserController, FocuserSession},
     native::NativeRuntime,
     parameters::FieldError,
+    rotator::{RotatorController, RotatorSession},
     safety::Clock,
     safety_output::SafetyOutput,
     source::{ErrorKind, SourceError, SourceRegistry, SourceSnapshot},
@@ -41,6 +42,7 @@ enum Output {
     Switch(Arc<SwitchOutput>),
     Weather(Arc<WeatherOutput>),
     Focuser(FocuserController),
+    Rotator(RotatorController),
 }
 
 pub struct HubRuntime {
@@ -154,6 +156,24 @@ impl HubRuntime {
                         .expect("Validated connection deadline"),
                     )
                 }
+                VirtualDevice::Proxy {
+                    source,
+                    device_type: DeviceType::Rotator,
+                } => Output::Rotator(
+                    RotatorController::new(
+                        registry.get(*source).unwrap(),
+                        std::time::Duration::from_secs_f64(
+                            config
+                                .sources
+                                .iter()
+                                .find(|entry| entry.id == *source)
+                                .unwrap()
+                                .polling
+                                .connection_timeout_seconds,
+                        ),
+                    )
+                    .expect("Validated connection deadline"),
+                ),
                 VirtualDevice::Proxy { .. } => unreachable!("Validated output implementation"),
             };
             outputs.insert(output.id, mapped);
@@ -238,6 +258,7 @@ impl HubRuntime {
                 _ => unreachable!("Validated weather controller"),
             },
             Output::Focuser(_) => crate::focuser::FocuserProperty::ALL.len() as u32,
+            Output::Rotator(_) => crate::rotator::RotatorProperty::ALL.len() as u32,
         };
         let end = page(start, limit, total)?;
         let now = self.clock.now();
@@ -309,6 +330,21 @@ impl HubRuntime {
                         .map(|property| crate::diagnostics::FocuserProperty {
                             property: *property,
                             sample: crate::focuser::cached_property(&state, *property, now).into(),
+                        })
+                        .collect(),
+                }
+            }
+            Output::Rotator(rotator) => {
+                let state = rotator.source().snapshot();
+                Diagnostics::Rotator {
+                    health: SourceHealth::from(&state),
+                    properties: crate::rotator::RotatorProperty::ALL
+                        .iter()
+                        .skip(start as usize)
+                        .take((end - start) as usize)
+                        .map(|property| crate::diagnostics::RotatorProperty {
+                            property: *property,
+                            sample: crate::rotator::cached_property(&state, *property, now).into(),
                         })
                         .collect(),
                 }
@@ -535,6 +571,7 @@ impl HubRuntime {
             }),
             Output::Weather(output) => Ok(ConnectedDevice::Weather(output.connect().await?)),
             Output::Focuser(output) => Ok(ConnectedDevice::Focuser(output.connect().await?)),
+            Output::Rotator(output) => Ok(ConnectedDevice::Rotator(output.connect().await?)),
         }
     }
 }
@@ -542,7 +579,7 @@ impl HubRuntime {
 fn validate_outputs(config: &HubConfig) -> Result<(), Vec<FieldError>> {
     let mut errors = config.validate();
     for (index, output) in config.outputs.iter().enumerate() {
-        if matches!(output.device, VirtualDevice::Proxy { device_type, .. } if device_type != DeviceType::Focuser)
+        if matches!(output.device, VirtualDevice::Proxy { device_type, .. } if !matches!(device_type, DeviceType::Focuser | DeviceType::Rotator))
         {
             errors.push(FieldError::new(
                 format!("outputs[{index}].device"),
@@ -600,6 +637,7 @@ enum ConnectedDevice {
     },
     Weather(WeatherSession),
     Focuser(FocuserSession),
+    Rotator(RotatorSession),
 }
 /// Hold this guard throughout a command. Its leases outlive a simultaneous
 /// frontend disconnect; dropping a client does not imply motion rollback.
@@ -610,6 +648,19 @@ pub struct OutputConnection {
     clock: Arc<dyn Clock>,
 }
 impl OutputConnection {
+    pub fn connected(&self) -> bool {
+        match &self.device {
+            ConnectedDevice::Focuser(session) => session.connected(),
+            ConnectedDevice::Rotator(session) => session.connected(),
+            _ => true,
+        }
+    }
+    pub fn rotator(&self) -> Result<&RotatorSession, SourceError> {
+        match &self.device {
+            ConnectedDevice::Rotator(value) => Ok(value),
+            _ => Err(wrong_type()),
+        }
+    }
     pub fn focuser(&self) -> Result<&FocuserSession, SourceError> {
         match &self.device {
             ConnectedDevice::Focuser(value) => Ok(value),

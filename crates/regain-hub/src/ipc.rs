@@ -195,6 +195,9 @@ pub enum Get {
     Focuser {
         property: crate::focuser::FocuserProperty,
     },
+    Rotator {
+        property: crate::rotator::RotatorProperty,
+    },
 }
 #[derive(Deserialize, Serialize)]
 #[serde(tag = "member", rename_all = "camelCase", deny_unknown_fields)]
@@ -209,6 +212,12 @@ pub enum Put {
     MoveFocuser { position: i32 },
     HaltFocuser {},
     FocuserTempComp { enabled: bool },
+    MoveRotator { degrees: f64 },
+    MoveAbsoluteRotator { degrees: f64 },
+    MoveMechanicalRotator { degrees: f64 },
+    SyncRotator { degrees: f64 },
+    HaltRotator {},
+    RotatorReverse { enabled: bool },
 }
 
 #[derive(Serialize)]
@@ -417,7 +426,7 @@ where
                         "hostInstance":service.host_id(), "configurationRevision":service.configuration().revision, "clientId":client.id(),
                         "maxFrameBytes":MAX_FRAME_BYTES, "maxInFlight":MAX_IN_FLIGHT,
                         "operations":operations,
-                        "capabilities":["switchOutputs","safetyOutputs","weatherOutputs","focuserOutputs","weatherSensorDescription","scalarDeviceState","asyncOutputConnection","switchAsyncContract"]});
+                        "capabilities":["switchOutputs","safetyOutputs","weatherOutputs","focuserOutputs","rotatorOutputs","weatherSensorDescription","scalarDeviceState","asyncOutputConnection","switchAsyncContract"]});
                     write_response(&mut writer, Response::new(request.id, Ok(hello)), limits.frame_timeout).await?;
                     continue;
                 }
@@ -593,11 +602,11 @@ async fn dispatch(
         Command::Get {
             output,
             property: Get::Connected {},
-        } => json!(client.connection(output).is_ok_and(|connection| {
-            connection
-                .focuser()
-                .map_or(true, |focuser| focuser.connected())
-        })),
+        } => json!(
+            client
+                .connection(output)
+                .is_ok_and(|connection| connection.connected())
+        ),
         Command::Get {
             output,
             property: Get::Connecting {},

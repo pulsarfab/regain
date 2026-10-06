@@ -60,8 +60,8 @@ export class OutputDiagnostics {
   }
   validate(result,output,start,limit) {
     validateDiagnosticSchema(this.description.responseSchema,result);
-    const kind=output.device.kind==='proxy' && output.device.deviceType==='focuser' ? 'focuser' : output.device.kind;
-    const type={switch:'switch',safety:'safetymonitor',weather:'observingconditions',focuser:'focuser'}[kind];
+    const kind=output.device.kind==='proxy' ? output.device.deviceType : output.device.kind;
+    const type={switch:'switch',safety:'safetymonitor',weather:'observingconditions',focuser:'focuser',rotator:'rotator'}[kind];
     if (result.purpose!=='cachedDiagnostics' || result.output!==output.id || result.configurationRevision!==this.saved.revision || result.deviceType!==type || result.observedSeconds<0 || result.start!==start || result.limit!==limit || result.total<start || result.total>1024 || result.diagnostics.kind!==kind) protocol();
     const end=Math.min(start+limit,result.total);
     if (result.nextStart!==(end<result.total ? end : null)) protocol();
@@ -87,15 +87,15 @@ export class OutputDiagnostics {
         if (item.source!==saved.source || item.enabled!==saved.enabled || saved.policy && !equalDiagnosticValue(item.policy,saved.policy) || item.enabled!==(item.decision!==null)) protocol();
         health(item.health); if (item.health.source!==item.source || item.decision && (item.decision.configurationRevision!==this.saved.revision || !d.controllerActive && (item.decision.permitsSafe || item.decision.rawIsSafe!==null))) protocol();
       });
-    } else if (d.kind==='focuser') {
-      const properties=this.description.focuserProperties;
+    } else if (d.kind==='focuser' || d.kind==='rotator') {
+      const properties=this.description[`${d.kind}Properties`];
       if (!Array.isArray(properties) || properties.length!==result.total || d.properties.length!==end-start || d.health.source!==output.device.source) protocol();
       health(d.health);
       d.properties.forEach((item,index)=>{
         const field=properties[start+index]; if (item.property!==field.property) protocol();
         if (item.sample.state==='available') {
           const reading=item.sample.reading, value=reading.value;
-          if (reading.source!==d.health.source || reading.generation!==d.health.generation || reading.revision!==this.saved.revision || reading.sequence>d.health.sequence || reading.ageSeconds<0 || value.type!==field.valueType || field.minimum!==null && value.value<field.minimum || field.exclusiveMinimum!==null && value.value<=field.exclusiveMinimum) protocol();
+          if (reading.source!==d.health.source || reading.generation!==d.health.generation || reading.revision!==this.saved.revision || reading.sequence>d.health.sequence || reading.ageSeconds<0 || value.type!==field.valueType || field.minimum!==null && value.value<field.minimum || field.exclusiveMinimum!==null && value.value<=field.exclusiveMinimum || field.maximum!=null && value.value>field.maximum || field.exclusiveMaximum!=null && value.value>=field.exclusiveMaximum) protocol();
         }
       });
     } else {
@@ -135,7 +135,7 @@ export function diagnosticSummary(result) {
       if(m.health.writeUncertain) lines.push('Source has an uncertain write; reconcile equipment state before another command.');
       lines.push(pollingSummary(m.health));
     }
-  } else if (d.kind==='focuser') {
+  } else if (d.kind==='focuser' || d.kind==='rotator') {
     for (const item of d.properties) lines.push(item.sample.state==='available'
       ? `${item.property}: ${item.sample.reading.value.value} · age ${item.sample.reading.ageSeconds.toFixed(1)} s`
       : `${item.property}: unavailable · ${item.sample.error.message}`);

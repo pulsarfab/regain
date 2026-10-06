@@ -203,9 +203,22 @@ earlier COM timeout; passing local tests alone do not close either investigation
 Shared-setup PR CI 37501496852 passes all eight jobs. Rotator-controller PR CI
 37503876752 also passes all eight jobs; push 37503869679 was cancelled after seven
 successes. These successes do not explain the retained initial-connection failure.
-The newer native-reference increment still requires its own CI.
+Native-reference PR CI 37508673278 has seven successful jobs, with Windows still
+running at this observation; push 37508667983 also remains live.
 
-Next: integrate rotators into runtime/IPC, all three frontends,
+Implemented increment: native/Alpaca rotator outputs in the shared source runtime
+and private typed IPC. Sparse saved identities, independent connection/command
+leases, pending cancellation and immutable generation fences reuse the existing
+host path. Polling deduplicates seven typed properties per source. Paged diagnostics
+and DeviceState read cache only and preserve per-property errors and sample ages;
+native/web readers share the generated schema and property/range descriptions.
+DeviceState contains only the three standard rotator operational properties;
+Reverse and TargetPosition remain in typed reads and diagnostics. Review also
+fixed the combined poll limit to include typed properties after deduplication.
+Rotator frontend publication, imports, dedicated simulation and shared creation
+are still gated; the configuration editor continues to enable only Focuser proxies.
+
+Next: publish rotators through Alpaca and native NINA/ASCOM, then complete
 COM/virtual/simulation imports and shared
 setup. Continue the remaining typed accessory proxies.
 Retain the earlier COM fixture timeout
@@ -826,8 +839,8 @@ gated until their interfaces are implemented and verified.
 
 Rotator controller increment: shared typed sessions and live property/command
 semantics are implemented with eleven private actor/Alpaca V3/V4 cases. Native
-CAA/Falcon reference persistence and adapter coverage are implemented. Runtime/IPC,
-native NINA/ASCOM/Alpaca outputs, COM/virtual/simulation inputs and shared setup
+CAA/Falcon reference persistence, adapter coverage and native/Alpaca runtime/IPC
+are implemented. Native NINA/ASCOM/Alpaca publication, COM/virtual/simulation inputs and shared setup
 remain required. The remaining rotator publication gates stay open.
 
 - [ ] Specify camera buffer lifetime, image transport, capability passthrough, and
@@ -931,3 +944,4 @@ Keep existing device profiles and registrations compatible throughout migration.
 | 2026-10-06 | Enabled shared class-gated Focuser setup, including Windows COM choices; fixed the browser tagged-type event closure found in actual acceptance. | Native review/apply creates two shared outputs without source leases. All 186 NINA tests, real net48 x86/x64 fixtures, Rust/Clippy/MSRV, Node form-event tests and Chrome creation/save/reload/sparse Int32 acceptance pass. New screenshot shows explicit simulation. Next: other typed accessory proxies and every original remaining gate. |
 | 2026-10-06 | Added typed rotator semantics and extracted shared accessory session ownership from the focuser controller. Reviewed generation, cancellation, independent angles, optional errors and no replay. Added evidence to a newly observed Windows initial focuser-connection failure without retries/deadline changes. | Eleven private actor/actual Alpaca V3/V4 cases, full hub/Alpaca regressions, Clippy/MSRV, contract/Node/four schema checks, 186 NINA tests and real net48 x86/x64 clients pass. Rotator publication remains gated. Next: native reference persistence and typed adapters, then runtime/IPC, all frontends/imports/setup and every original remaining gate. |
 | 2026-10-06 | Added and reviewed native CAA/Falcon typed properties and durable reference recovery. Uncertainty markers, strict readback and revision-fenced commits preserve unknown Sync outcomes; reconnect restores only local mappings. Fixed stale CAA direction observation and Sync target reporting. | Five Windows storage cases, thirteen native cases, eight CAA controller/fourteen protocol/eight Falcon tests, final Rust/Clippy/MSRV/contracts, Node/four schema checks, all 186 NINA tests and real net48 x86/x64 clients pass. Portable permissions coverage needs CI. Prior controller PR CI passes all eight jobs. Next: rotator runtime/IPC, all frontends/imports/setup and every original remaining gate. |
+| 2026-10-06 | Integrated native/Alpaca rotators into shared runtime, typed IPC, deduplicated polling and cached diagnostic contracts. Reviewed generation/cancellation/EOF, standard DeviceState membership and combined typed/scalar sample limits. Native/web readers share host fields and bounds. | Fifteen rotator cases, fourteen native cases, exact-limit factory regression, full final Rust/Clippy/MSRV/contracts, Node/four schema tests, all 187 NINA tests and real net48 x86/x64 clients pass. Reference checkpoint PR CI has seven successes with Windows live. Next: Alpaca/native NINA/ASCOM rotator publication, imports/simulation/setup and every original remaining gate. |

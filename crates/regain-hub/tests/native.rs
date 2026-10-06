@@ -46,6 +46,137 @@ fn config(device: NativeDevice, identity: &str) -> SourceConfig {
 }
 
 #[tokio::test]
+async fn runtime_native_rotator_proxies_share_verified_workers_and_cached_typed_health() {
+    use regain_hub::{
+        config::{DeviceType, HubConfig, OutputConfig, VirtualDevice},
+        diagnostics::Diagnostics,
+        factory::NoCredentials,
+        native_reference::NativeReferenceStore,
+        rotator::RotatorProperty,
+        runtime::HubRuntime,
+    };
+    let Some(mut native) = runtime() else {
+        return;
+    };
+    let directory = tempfile::tempdir().unwrap();
+    native.references = Some(
+        NativeReferenceStore::at_directory(&directory.path().join("references"), &"d".repeat(64))
+            .unwrap(),
+    );
+    for (device, identity) in [
+        (NativeDevice::Caa, "0102030405060708"),
+        (NativeDevice::Falcon, "FALCON-SIMULATION"),
+    ] {
+        let source = config(device, identity);
+        let mut config = HubConfig::empty();
+        config.sources.push(source.clone());
+        for number in [5, 27] {
+            config.outputs.push(OutputConfig {
+                id: Uuid::new_v4(),
+                number,
+                label: format!("Native rotator {number}"),
+                device: VirtualDevice::Proxy {
+                    source: source.id,
+                    device_type: DeviceType::Rotator,
+                },
+            });
+        }
+        let host = HubRuntime::build(
+            config.clone(),
+            &native,
+            &NoCredentials,
+            Arc::new(MonotonicClock::default()),
+        )
+        .unwrap();
+        assert_eq!(host.active_connections(), 0);
+        assert!(host.outputs().iter().all(|item| item.simulated));
+        assert_eq!(
+            host.outputs()
+                .iter()
+                .map(|item| item.number)
+                .collect::<Vec<_>>(),
+            vec![5, 27]
+        );
+        let inactive = host.output_status(config.outputs[0].id, 0, 32).unwrap();
+        assert!(inactive.simulated);
+        assert_eq!(inactive.total, 7);
+        assert_eq!(host.source_snapshot(source.id).unwrap().lease_count, 0);
+        let first = host.client();
+        let second = host.client();
+        first.connect(config.outputs[0].id).await.unwrap();
+        second.connect(config.outputs[1].id).await.unwrap();
+        let connection = second.connection(config.outputs[1].id).unwrap();
+        assert_eq!(host.source_snapshot(source.id).unwrap().lease_count, 2);
+        first
+            .connection(config.outputs[0].id)
+            .unwrap()
+            .rotator()
+            .unwrap()
+            .sync(42.5)
+            .await
+            .unwrap();
+        assert_eq!(
+            connection
+                .rotator()
+                .unwrap()
+                .property(RotatorProperty::Position)
+                .await
+                .unwrap(),
+            42.5
+        );
+        assert_eq!(
+            connection
+                .rotator()
+                .unwrap()
+                .property(RotatorProperty::TargetPosition)
+                .await
+                .unwrap(),
+            42.5
+        );
+        tokio::time::timeout(Duration::from_secs(3), async {
+            loop {
+                let Diagnostics::Rotator { properties, .. } = host
+                    .output_status(config.outputs[1].id, 0, 32)
+                    .unwrap()
+                    .diagnostics
+                else {
+                    panic!()
+                };
+                if serde_json::to_value(&properties[3].sample).unwrap()["reading"]["value"]["value"]
+                    == 42.5
+                {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        })
+        .await
+        .unwrap();
+        first.close();
+        tokio::time::timeout(Duration::from_secs(3), async {
+            while host.source_snapshot(source.id).unwrap().lease_count != 1 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        assert!(connection.connected());
+        assert_eq!(
+            connection
+                .rotator()
+                .unwrap()
+                .property(RotatorProperty::Position)
+                .await
+                .unwrap(),
+            42.5
+        );
+        drop(connection);
+        second.close();
+        host.shutdown().await.unwrap();
+    }
+}
+
+#[tokio::test]
 async fn typed_native_rotators_preserve_reference_across_actual_worker_recreation() {
     use regain_hub::{
         native_reference::NativeReferenceStore,

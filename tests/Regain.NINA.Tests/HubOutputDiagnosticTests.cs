@@ -9,21 +9,23 @@ namespace Regain.NINA.Tests;
 
 public sealed partial class HubNativeTests
 {
-    [Fact]
-    public async Task TypedFocuserDiagnosticsUseHostFieldsAndRejectIdentityTypeAndRangeFaults()
+    [Theory]
+    [InlineData("focuser", "fc3", "00:00:00:00:00:03", 4)]
+    [InlineData("rotator", "caa", "0102030405060708", 3)]
+    public async Task TypedAccessoryDiagnosticsUseHostFieldsAndRejectIdentityTypeAndRangeFaults(string deviceType, string nativeDevice, string identity, int positionIndex)
     {
         await using var host = await Host.Open(); using var editor = await Editor(host); await editor.ReloadAsync();
         var saved = JsonNode.Parse(editor.SavedConfiguration!.Value.GetRawText())!.AsObject();
         var output = saved["outputs"]![0]!.DeepClone().AsObject(); var source = saved["sources"]![0]!["id"]!.GetValue<string>();
         var sourceConfig = saved["sources"]![0]!.DeepClone().AsObject();
-        sourceConfig["backend"] = new JsonObject { ["kind"] = "native", ["device"] = "fc3", ["identity"] = "00:00:00:00:00:03" };
+        sourceConfig["backend"] = new JsonObject { ["kind"] = "native", ["device"] = nativeDevice, ["identity"] = identity };
         saved["sources"] = new JsonArray(sourceConfig);
-        output["device"] = new JsonObject { ["kind"] = "proxy", ["deviceType"] = "focuser", ["source"] = source };
+        output["device"] = new JsonObject { ["kind"] = "proxy", ["deviceType"] = deviceType, ["source"] = source };
         saved["outputs"] = new JsonArray(output); saved["identities"] = new JsonObject { ["outputs"] = new JsonObject(), ["channels"] = new JsonObject() };
         var original = await editor.OutputStatusAsync(Guid.Parse(output["id"]!.GetValue<string>()), 0, 1);
         var health = JsonNode.Parse(original.GetProperty("diagnostics").GetProperty("channels")[0].GetProperty("health").GetRawText())!;
         health["transportConnected"] = true; health["leaseCount"] = 1;
-        var fields = editor.OutputDiagnosticDescription.GetProperty("focuserProperties");
+        var fields = editor.OutputDiagnosticDescription.GetProperty(deviceType + "Properties");
         JsonObject Reply(int start, int limit) {
             var properties = new JsonArray(); int end = Math.Min(start + limit, fields.GetArrayLength());
             for (int i = start; i < end; i++) {
@@ -35,26 +37,32 @@ public sealed partial class HubNativeTests
                         ["sequence"] = health["sequence"]!.DeepClone(), ["revision"] = saved["revision"]!.DeepClone() } } });
             }
             return new JsonObject { ["purpose"] = "cachedDiagnostics", ["output"] = output["id"]!.DeepClone(),
-                ["configurationRevision"] = saved["revision"]!.DeepClone(), ["observedSeconds"] = 1, ["deviceType"] = "focuser",
+                ["configurationRevision"] = saved["revision"]!.DeepClone(), ["observedSeconds"] = 1, ["deviceType"] = deviceType,
                 ["simulated"] = true, ["start"] = start, ["limit"] = limit, ["total"] = fields.GetArrayLength(),
                 ["nextStart"] = end < fields.GetArrayLength() ? JsonValue.Create(end) : null,
-                ["diagnostics"] = new JsonObject { ["kind"] = "focuser", ["health"] = health.DeepClone(), ["properties"] = properties } };
+                ["diagnostics"] = new JsonObject { ["kind"] = deviceType, ["health"] = health.DeepClone(), ["properties"] = properties } };
         }
         JsonElement Element(JsonNode node) => JsonSerializer.SerializeToElement(node);
         var first = Reply(0, 4); HubDiagnosticContract.Reply(editor.OutputDiagnosticDescription, Element(saved), Element(output), Element(first), 0, 4);
         var last = Reply(4, 32); HubDiagnosticContract.Reply(editor.OutputDiagnosticDescription, Element(saved), Element(output), Element(last), 4, 32);
-        var summary = HubConfigurationWindow.OutputDiagnosticSummary(Element(last)); Assert.Contains("position: 1", summary); Assert.Contains("age 0.5 s", summary);
+        var summary = HubConfigurationWindow.OutputDiagnosticSummary(Element(Reply(positionIndex, 32))); Assert.Contains("position: 1", summary); Assert.Contains("age 0.5 s", summary);
         foreach (var fault in new[] { "property", "source", "generation", "sequence", "type", "minimum", "extra", "age" }) {
-            var reply = Reply(4, 1); var item = reply["diagnostics"]!["properties"]![0]!; var reading = item["sample"]!["reading"]!;
+            var reply = Reply(positionIndex, 1); var item = reply["diagnostics"]!["properties"]![0]!; var reading = item["sample"]!["reading"]!;
             if (fault == "property") item["property"] = "isMoving";
             if (fault == "source") reading["source"] = Guid.NewGuid().ToString();
             if (fault == "generation") reading["generation"] = Guid.NewGuid().ToString();
             if (fault == "sequence") reading["sequence"] = 1;
-            if (fault == "type") reading["value"]!["type"] = "number";
+            if (fault == "type") reading["value"]!["type"] = deviceType == "focuser" ? "number" : "integer";
             if (fault == "minimum") reading["value"]!["value"] = -1;
             if (fault == "extra") reading["authorization"] = "PRIVATE_FORBIDDEN_REPLY";
             if (fault == "age") reading["ageSeconds"] = -1;
-            Assert.Throws<HubException>(() => HubDiagnosticContract.Reply(editor.OutputDiagnosticDescription, Element(saved), Element(output), Element(reply), 4, 1));
+            Assert.Throws<HubException>(() => HubDiagnosticContract.Reply(editor.OutputDiagnosticDescription, Element(saved), Element(output), Element(reply), positionIndex, 1));
+        }
+        if (deviceType == "rotator") {
+            foreach (var (index, value) in new[] { (3, 360.0), (5, 0.0), (5, (double)float.MaxValue * 2) }) {
+                var reply = Reply(index, 1); reply["diagnostics"]!["properties"]![0]!["sample"]!["reading"]!["value"]!["value"] = value;
+                Assert.Throws<HubException>(() => HubDiagnosticContract.Reply(editor.OutputDiagnosticDescription, Element(saved), Element(output), Element(reply), index, 1));
+            }
         }
     }
     [Fact]

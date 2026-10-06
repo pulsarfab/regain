@@ -1459,5 +1459,30 @@ generation-fenced. A lost or ignored reference command is never replayed.
 Dropping one controller lease does not halt another client's motion. Existing
 vendor worker retirement/fault cleanup may attempt a stop when the final worker
 is retired; that behavior is distinct from per-session command ownership. This
-increment does not enable rotator runtime/IPC, COM/virtual/simulation imports,
-shared setup or any frontend publication.
+increment alone does not enable COM/virtual/simulation imports, shared setup or
+any frontend publication. Runtime/IPC integration is specified below.
+
+Native/Alpaca rotator proxies now use the shared runtime's saved UUIDs, sparse
+numbers, pending connection admission and independent client leases. The private
+protocol advertises rotatorOutputs and has typed Get Rotator plus six explicit
+commands: relative/absolute/mechanical move, Sync, Halt and Reverse. Invalid
+properties, argument types/ranges, unknown outputs and wrong-class commands cannot
+dispatch. Connected reflects the immutable typed session's actual generation;
+it cannot adopt an actor replacement. Cancelled pending connections and IPC EOF
+release only owned leases. The shared actor's mutation latch remains while any
+lease survives and clears at complete transport teardown, as for focusers; native
+reference uncertainty remains durable independently of that actor lifetime.
+
+Seven rotator poll properties deduplicate across outputs and scalar mappings.
+The combined sample limit applies after typed insertion. Paged output health
+uses cached samples with original age, source/revision/generation/sequence and
+per-property errors. Both setup readers validate the generated serialized schema
+and host-described types/bounds, including angle <360 and positive Single-range
+StepSize. Cache observation does not start a connection, probe or safety policy.
+
+Rotator DeviceState includes available IsMoving, MechanicalPosition and Position,
+omits failed/unknown entries and reports no invented UTC measurement timestamp.
+Reverse and TargetPosition remain in typed reads/diagnostics; the standard read-all
+contract does not include those configuration entries. Native NINA/ASCOM/Alpaca
+publication, COM/virtual/dedicated simulation inputs and shared rotator creation
+remain gated until their respective interfaces and acceptance tests are complete.

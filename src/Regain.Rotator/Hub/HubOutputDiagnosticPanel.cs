@@ -83,7 +83,7 @@ public sealed partial class HubConfigurationWindow
                 lines.Add(member.GetProperty("source").GetString() + ": " + s.GetProperty("phase").GetString() + " · raw " + (raw.ValueKind == JsonValueKind.Null ? "unknown" : raw.GetBoolean() ? "safe" : "unsafe") + " · effective " + (s.GetProperty("permitsSafe").GetBoolean() ? "safe" : "unsafe") + " · " + s.GetProperty("reason").GetString());
                 lines.Add("Failed checks " + s.GetProperty("failedCycles") + "/" + policy.GetProperty("failedCyclesToUnsafe") + "; unsafe readings " + s.GetProperty("unsafeReadings") + "/" + policy.GetProperty("unsafeReadingsToUnsafe") + "; recovery " + s.GetProperty("safeReadings") + "/" + policy.GetProperty("safeReadingsToSafe") + " safe readings, " + Number(s.GetProperty("safeHoldSeconds")) + "/" + policy.GetProperty("returnToSafeHoldSeconds") + " s hold; safe age " + (s.GetProperty("safeAgeSeconds").ValueKind == JsonValueKind.Null ? "unknown" : Number(s.GetProperty("safeAgeSeconds")) + " s") + "/" + policy.GetProperty("maximumSafeAgeSeconds") + " s.");
             }
-        } else if (kind == "focuser") {
+        } else if (kind == "focuser" || kind == "rotator") {
             foreach (var item in d.GetProperty("properties").EnumerateArray()) {
                 var sample = item.GetProperty("sample"); var label = item.GetProperty("property").GetString();
                 if (sample.GetProperty("state").GetString() == "available") {

@@ -93,6 +93,70 @@ pub enum RotatorValue {
     Number { value: f64 },
 }
 
+#[derive(Debug, serde::Serialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RotatorSample {
+    pub value: RotatorValue,
+    pub age_seconds: f64,
+    pub source: Uuid,
+    pub generation: Uuid,
+    pub sequence: u64,
+    pub revision: Uuid,
+}
+pub(crate) fn cached_property(
+    state: &crate::source::SourceSnapshot,
+    property: RotatorProperty,
+    now: Duration,
+) -> Result<RotatorSample, SourceError> {
+    if !state.transport_connected {
+        return Err(SourceError::new(
+            ErrorKind::Disconnected,
+            "Source is disconnected",
+        ));
+    }
+    if let Some(error) = &state.error {
+        return Err(error.clone());
+    }
+    let key = property.member();
+    if let Some(error) = state.sample_errors.get(key) {
+        return Err(error.clone());
+    }
+    let unavailable = || {
+        SourceError::new(
+            ErrorKind::Unavailable,
+            "No rotator sample has been received",
+        )
+    };
+    let value = property.decode(state.values.get(key).ok_or_else(unavailable)?)?;
+    let sampled = state
+        .sample_started_seconds
+        .get(key)
+        .copied()
+        .or(state.sampled_at_seconds)
+        .ok_or_else(unavailable)?;
+    let elapsed = now.as_secs_f64() - sampled;
+    let upstream_age = state.sample_ages_seconds.get(key).copied().unwrap_or(0.0);
+    let age_seconds = elapsed + upstream_age;
+    if elapsed < 0.0 || upstream_age < 0.0 || !age_seconds.is_finite() {
+        return Err(SourceError::new(
+            ErrorKind::Unavailable,
+            "Invalid rotator sample age",
+        ));
+    }
+    Ok(RotatorSample {
+        value,
+        age_seconds,
+        source: state.source,
+        generation: state.generation,
+        sequence: state
+            .sample_sequences
+            .get(key)
+            .copied()
+            .unwrap_or(state.sequence),
+        revision: state.revision,
+    })
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct RotatorCapabilities {
     pub can_reverse: bool,
@@ -103,6 +167,9 @@ pub struct RotatorController {
     connection_timeout: Duration,
 }
 impl RotatorController {
+    pub(crate) fn source(&self) -> &Arc<SourceHandle> {
+        &self.source
+    }
     /// No device I/O or mutation at construction. Bound the whole handshake,
     /// including initial capability reads, using the configured source deadline.
     pub fn new(
@@ -138,6 +205,27 @@ pub struct RotatorSession {
     source: TypedSourceSession,
 }
 impl RotatorSession {
+    pub(crate) fn device_state(&self, now: Duration) -> Values {
+        let Ok(state) = self.source.snapshot() else {
+            return Values::new();
+        };
+        [
+            (RotatorProperty::IsMoving, "IsMoving"),
+            (RotatorProperty::MechanicalPosition, "MechanicalPosition"),
+            (RotatorProperty::Position, "Position"),
+        ]
+        .into_iter()
+        .filter_map(|(property, name)| {
+            cached_property(&state, property, now).ok().map(|sample| {
+                let value = match sample.value {
+                    RotatorValue::Boolean { value } => json!(value),
+                    RotatorValue::Number { value } => json!(value),
+                };
+                (name.into(), value)
+            })
+        })
+        .collect()
+    }
     pub fn connected(&self) -> bool {
         self.source.connected()
     }

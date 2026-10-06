@@ -42,6 +42,83 @@ fn switch(number: u32, channels: Vec<SwitchChannel>) -> OutputConfig {
 }
 
 #[test]
+fn typed_properties_count_toward_the_combined_poll_limit_after_deduplication() {
+    use regain_hub::config::DeviceType;
+    for (device_type, typed_count) in [(DeviceType::Focuser, 9), (DeviceType::Rotator, 7)] {
+        let mut config = HubConfig::empty();
+        let mut source = weather().sources[0].clone();
+        let SourceBackend::Alpaca {
+            device_type: imported_type,
+            ..
+        } = &mut source.backend
+        else {
+            panic!()
+        };
+        *imported_type = device_type;
+        let source_id = source.id;
+        config.sources.push(source);
+        let count = regain_hub::source::MAX_SAMPLE_KEYS - typed_count;
+        let channels = (0..count as u32)
+            .map(|number| {
+                gauge(
+                    number,
+                    Readout::Property {
+                        source: source_id,
+                        property: format!(
+                            "custom{}{}{}",
+                            char::from(b'a' + (number / 676) as u8),
+                            char::from(b'a' + (number / 26 % 26) as u8),
+                            char::from(b'a' + (number % 26) as u8)
+                        ),
+                        unit: None,
+                    },
+                )
+            })
+            .collect();
+        config.outputs.push(switch(0, channels));
+        config.outputs.push(OutputConfig {
+            id: Uuid::new_v4(),
+            number: 0,
+            label: "Typed output".into(),
+            device: VirtualDevice::Proxy {
+                source: source_id,
+                device_type,
+            },
+        });
+        assert!(
+            config.validate().is_empty(),
+            "{:?}",
+            config.validate().into_iter().take(3).collect::<Vec<_>>()
+        );
+        assert_eq!(
+            source_plans(&config).unwrap()[&source_id].samples.len(),
+            regain_hub::source::MAX_SAMPLE_KEYS
+        );
+        let VirtualDevice::Switch { channels } = &mut config.outputs[0].device else {
+            panic!()
+        };
+        channels.push(gauge(
+            count as u32,
+            Readout::Property {
+                source: source_id,
+                property: "extra".into(),
+                unit: None,
+            },
+        ));
+        assert!(config.validate().is_empty());
+        let before = config.clone();
+        assert!(
+            source_plans(&config)
+                .err()
+                .unwrap()
+                .iter()
+                .any(|error| error.code == "sample")
+        );
+        assert_eq!(config, before);
+    }
+}
+
+#[test]
 fn readouts_are_deduplicated_across_outputs_without_losing_weather_age_requests() {
     let mut config = weather();
     let source = config.sources[0].id;

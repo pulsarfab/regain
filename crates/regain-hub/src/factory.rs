@@ -107,6 +107,20 @@ pub fn source_plans(config: &HubConfig) -> Result<BTreeMap<Uuid, SourcePlan>, Ve
             }
             samples.insert("issafe".into(), SampleRequest::safety());
         }
+        if config.outputs.iter().any(|output| matches!(output.device,
+            VirtualDevice::Proxy { source: id, device_type: DeviceType::Rotator } if id == source.id)) {
+            for property in crate::rotator::RotatorProperty::ALL {
+                let sample = property.sample_request();
+                samples.insert(sample.key.clone(), sample);
+            }
+        }
+        if samples.len() > MAX_SAMPLE_KEYS {
+            return Err(vec![FieldError::new(
+                format!("sources[{index}]"),
+                "sample",
+                "Combined source poll plan exceeds the sample limit",
+            )]);
+        }
         plans.insert(
             source.id,
             SourcePlan {

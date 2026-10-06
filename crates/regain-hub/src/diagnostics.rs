@@ -27,6 +27,15 @@ pub fn description() -> Value {
                 crate::focuser::FocuserProperty::MaxStep | crate::focuser::FocuserProperty::MaxIncrement => Some(1), _ => None },
             "exclusiveMinimum": if *property == crate::focuser::FocuserProperty::StepSize { Some(0) } else { None }
         })).collect::<Vec<_>>(),
+    "rotatorProperties": crate::rotator::RotatorProperty::ALL.iter().map(|property|
+        json!({"property":property,"valueType":property.value_type(),
+            "minimum": if matches!(property, crate::rotator::RotatorProperty::MechanicalPosition
+                | crate::rotator::RotatorProperty::Position | crate::rotator::RotatorProperty::TargetPosition) { Some(0.0) } else { None },
+            "exclusiveMinimum": if *property == crate::rotator::RotatorProperty::StepSize { Some(0.0) } else { None },
+            "maximum": if *property == crate::rotator::RotatorProperty::StepSize { Some(f32::MAX as f64) } else { None },
+            "exclusiveMaximum": if matches!(property, crate::rotator::RotatorProperty::MechanicalPosition
+                | crate::rotator::RotatorProperty::Position | crate::rotator::RotatorProperty::TargetPosition) { Some(360.0) } else { None },
+        })).collect::<Vec<_>>(),
     "responseSchema": schemars::generate::SchemaSettings::default()
         .for_serialize().into_generator().into_root_schema_for::<OutputStatus>()})
 }
@@ -80,6 +89,10 @@ pub enum Diagnostics {
         health: SourceHealth,
         properties: Vec<FocuserProperty>,
     },
+    Rotator {
+        health: SourceHealth,
+        properties: Vec<RotatorProperty>,
+    },
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
@@ -87,6 +100,13 @@ pub enum Diagnostics {
 pub struct FocuserProperty {
     pub property: crate::focuser::FocuserProperty,
     pub sample: Reading<crate::focuser::FocuserSample>,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RotatorProperty {
+    pub property: crate::rotator::RotatorProperty,
+    pub sample: Reading<crate::rotator::RotatorSample>,
 }
 
 /// Selected fields only: no backend configuration, connection strings, cached
