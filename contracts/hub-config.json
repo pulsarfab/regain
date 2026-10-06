@@ -440,7 +440,7 @@
                 "title": "Source",
                 "type": "string",
                 "x-regain": {
-                  "apply": "reconnect"
+                  "reference": "source"
                 }
               },
               "unit": {
@@ -494,7 +494,7 @@
                 "title": "Source",
                 "type": "string",
                 "x-regain": {
-                  "apply": "reconnect"
+                  "reference": "source"
                 }
               },
               "unit": {
@@ -554,7 +554,7 @@
             "title": "Source",
             "type": "string",
             "x-regain": {
-              "apply": "reconnect"
+              "reference": "source"
             }
           }
         },
@@ -713,7 +713,10 @@
                 "description": "Hardware driver and backend to use.",
                 "title": "Device",
                 "x-regain": {
-                  "apply": "reconnect"
+                  "enumCapabilities": {
+                    "camera-direct": "nativeCameraSources",
+                    "camera-sdk": "nativeCameraSources"
+                  }
                 }
               },
               "identity": {
@@ -900,7 +903,7 @@
                 "title": "Output",
                 "type": "string",
                 "x-regain": {
-                  "apply": "reconnect"
+                  "reference": "output"
                 }
               }
             },
@@ -923,7 +926,13 @@
                 "description": "Simulated device interface.",
                 "title": "Device Type",
                 "x-regain": {
-                  "apply": "reconnect"
+                  "enumCapabilities": {
+                    "camera": "broaderSimulation",
+                    "covercalibrator": "broaderSimulation",
+                    "filterwheel": "broaderSimulation",
+                    "focuser": "broaderSimulation",
+                    "rotator": "broaderSimulation"
+                  }
                 }
               },
               "kind": {
@@ -1321,7 +1330,7 @@
                 "title": "Source",
                 "type": "string",
                 "x-regain": {
-                  "apply": "reconnect"
+                  "reference": "source"
                 }
               }
             },
@@ -1331,7 +1340,10 @@
               "deviceType"
             ],
             "title": "Republish a device",
-            "type": "object"
+            "type": "object",
+            "x-regain": {
+              "requiresCapability": "proxyOutputs"
+            }
           }
         ]
       }

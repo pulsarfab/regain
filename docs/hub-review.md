@@ -908,3 +908,62 @@ Remaining: shared setup and configuration/reconnection UI, modern asynchronous
 interfaces and conformance, native .NET clients/providers, COM imports, broader
 proxies, camera/focuser coordination, OS resume, discovery, hardware acceptance,
 documentation/screenshots, and final audit/merge. Milestone 2 remains open.
+
+## 2026-10-05: shared web setup editor
+
+The first `/setup/hub` editor uses the generated configuration schema and host
+capabilities. It supports drafts, host validation, a redacted review, revision-
+checked durable apply, cached source status, and explicit paged inspection.
+The three published hub classes also expose their standard per-device setup URL.
+
+Review findings and corrections:
+
+1. Keep field keys, descriptions, units, bounds, defaults, references and choice
+   gates in shared metadata. Add source/output reference hints and enum capability
+   gates to the Rust schema; both JavaScript and .NET readers consume them.
+   Unsupported camera/broader simulation/proxy choices remain visibly unavailable.
+2. A required JSON property may contain an empty string. Browser validation
+   incorrectly rejected empty unit labels. Require nonempty strings only when the
+   schema supplies a positive `minLength`; leave host validation authoritative.
+3. `crypto.randomUUID` is unavailable on ordinary LAN HTTP. Generate RFC 4122 v4
+   identities with `crypto.getRandomValues`, preserve existing UUIDs and numbers,
+   and keep saved identities read-only. Do not use a weak random fallback.
+4. Serve a bounded, JSON-only, POST-only setup API with the existing same-origin
+   check, exact media-type validation and no CORS grant. Whitelist configuration,
+   status, inspection and simulation commands. Device connection/control and
+   credential operations cannot be invoked through this initial setup API.
+   This remains the server's existing trusted-network setup surface; the origin
+   check is not remote-user authentication.
+5. Edits invalidate the reviewed snapshot. Apply uses its loaded revision and
+   never retries after a lost/uncertain reply. Reload saved revision and host
+   status for reconciliation. Connected/stale configurations fail without writes;
+   applied-but-blocked and persistence-warning outcomes remain visible.
+6. Use shared inspection descriptors rather than duplicating bounds in the page.
+   Inspection is an explicit temporary connection; ordinary status is cached.
+   Preview redaction follows metadata and does not mutate the draft.
+7. Chrome verified edit, review, apply, the new revision, and the updated output
+   label. The screenshot in `docs/images/hub-setup-simulation.jpg` uses explicit
+   simulation. No hardware was used. A blocked in-app browser dialog did not
+   establish UI acceptance; the successful Chrome flow did.
+8. PR CI exposed the existing response-size test's 50 ms deadline on macOS Intel:
+   it timed out before receiving oversized headers. Give size validation its own
+   3-second budget and the stalled mutation a separate 1-second deadline against
+   a 5-second server delay. Retain permanent-size failure, uncertain-write and
+   exactly-one-request assertions; production deadlines are unchanged.
+
+Validation: the full local suite passes with 177 Windows hub tests plus the
+endpoint process fixture and 26 Alpaca tests (`artifacts/hub-setup-tests.log`).
+After the final test changes, all seven HTTP/setup integration tests and the
+response-size/stalled-write test pass. JavaScript contract/draft checks, four
+independent Python schema tests, two .NET 8 reader tests, a net48 build, Clippy
+with warnings denied, Rust 1.89.0, generated-schema freshness, and fresh package
+verification pass (`target/hub-setup-package`). HTTP checkpoint e27ad31 passed
+complete push CI; its PR run failed only the timing-coupled test corrected here.
+Disposable preview host/HTTP processes have been stopped.
+
+Remaining: setup initialization, credential controls, simulation controls,
+richer safety/cleanup diagnostics, reconnect/resume, modern interface conformance,
+native NINA/ASCOM frontends, COM imports, broader proxies and coordination,
+hardware acceptance, documentation/site updates, and the final audit/merge.
+The setup/IPC 1 MiB frame limit is smaller than the store's 4 MiB file limit;
+large-configuration transfer needs an explicit refinement. Milestone 2 stays open.

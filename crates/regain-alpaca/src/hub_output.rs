@@ -60,6 +60,24 @@ pub struct Publisher {
     state: Mutex<State>,
 }
 impl Publisher {
+    /// Setup requests retain the host's structured validation and uncertainty.
+    /// This private catalog session never acquires output connection leases.
+    pub(crate) async fn setup(&self, command: Command) -> Result<Value, ClientError> {
+        if !matches!(
+            &command,
+            Command::DescribeConfig {}
+                | Command::GetConfig {}
+                | Command::HostStatus {}
+                | Command::SourceStatus { .. }
+                | Command::InspectSource { .. }
+                | Command::ValidateConfig { .. }
+                | Command::ApplyConfig { .. }
+                | Command::UpdateSimulation { .. }
+        ) {
+            return Err(ClientError::InvalidRequest);
+        }
+        self.catalog.request(command).await
+    }
     /// The shared host must already be attached. No automatic restart/replay.
     pub async fn connect(endpoint: Endpoint, instance: Uuid) -> Result<Arc<Self>> {
         let catalog = Client::connect(

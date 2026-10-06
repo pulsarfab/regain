@@ -55,6 +55,19 @@ public sealed class HubConfiguration
             Text(choice, "title"), Text(choice, "description"), Available(choice, contextCapabilities))).ToArray();
     }
 
+    public IReadOnlyList<HubConfigurationEnumChoice> Choices(JsonElement node, IEnumerable<string>? contextCapabilities = null)
+    {
+        node = Resolve(node);
+        if (!node.TryGetProperty("enum", out var choices)) return [];
+        JsonElement rules = default;
+        if (node.TryGetProperty("x-regain", out var metadata)) metadata.TryGetProperty("enumCapabilities", out rules);
+        return choices.EnumerateArray().Select(choice => {
+            var value = choice.GetString()!;
+            var required = Text(rules, value);
+            return new HubConfigurationEnumChoice(value, required.Length == 0 || (contextCapabilities ?? capabilities).Contains(required, StringComparer.Ordinal));
+        }).ToArray();
+    }
+
     public IReadOnlyList<HubConfigurationField> Fields(JsonElement node, JsonElement? value = null, IEnumerable<string>? contextCapabilities = null, bool isNew = false)
     {
         node = Resolve(node);
@@ -86,6 +99,11 @@ public sealed class HubConfiguration
     private static string Text(JsonElement value, string key) => value.ValueKind == JsonValueKind.Object && value.TryGetProperty(key, out var text) ? text.GetString() ?? "" : "";
 }
 
+public sealed class HubConfigurationEnumChoice(string value, bool enabled)
+{
+    public string Value { get; } = value;
+    public bool Enabled { get; } = enabled;
+}
 public sealed class HubConfigurationChoice(JsonElement schema, string kind, string title, string description, bool enabled)
 {
     public JsonElement Schema { get; } = schema;

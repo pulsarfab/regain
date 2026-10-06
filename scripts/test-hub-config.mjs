@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { configurationContract } from '../crates/regain-alpaca/web/hub-config.mjs';
+import { initialValue, newIdentity, previewValue } from '../crates/regain-alpaca/web/hub-form.mjs';
 
 const description = JSON.parse(readFileSync(new URL('../contracts/hub-config.json', import.meta.url), 'utf8'));
 const reader = configurationContract(description);
@@ -24,3 +25,26 @@ assert.equal(policy.find(f => f.key === 'safeReadingsToSafe').schema.type, 'inte
 assert.throws(() => configurationContract({ ...description, contractVersion: 2 }));
 assert.throws(() => reader.resolve({ $ref: '#/$defs/missing' }));
 console.log('Web hub configuration contract passed: conditional fields, capability gates, defaults, units, identities and protocol version.');
+
+const editor = configurationContract({...description, capabilities:['alpacaSources','simulation']});
+const created = initialValue(editor, editor.root.$defs.SourceConfig, () => '11111111-1111-4111-8111-111111111111');
+assert.equal(created.id, '11111111-1111-4111-8111-111111111111');
+assert.equal(created.backend.kind, 'alpaca');
+assert.equal(created.backend.connectionPolicy, 'externallyManaged');
+assert.deepEqual(initialValue(editor, editor.root.$defs.SafetyMember).policy, editor.root.$defs.SafetyMember.properties.policy.default);
+assert.match(newIdentity(), /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+assert.notEqual(newIdentity(), newIdentity());
+const saved = JSON.parse(readFileSync(new URL('../crates/regain-hub/examples/mixed-switch.json', import.meta.url), 'utf8'));
+const privateSource = saved.sources.find(source => source.backend.kind === 'alpaca');
+privateSource.backend.credentialReference = 'private-reference';
+saved.identities = {sources: {'hidden':'ledger'}};
+const preview = previewValue(editor, editor.root, saved);
+assert.equal(preview.identities, undefined);
+assert.equal(preview.sources.find(source => source.backend.kind === 'alpaca').backend.credentialReference, undefined);
+assert.equal(privateSource.backend.credentialReference, 'private-reference');
+assert.deepEqual(preview.outputs, saved.outputs);
+assert.equal(editor.variants(editor.root.$defs.VirtualDevice).find(v => v.kind === 'proxy').enabled, false);
+const simulatedSchema = editor.variants(editor.root.$defs.SourceBackend).find(v => v.kind === 'simulated').schema;
+assert.equal(initialValue(editor, simulatedSchema).deviceType,'switch');
+assert.equal(editor.choices(simulatedSchema.properties.deviceType).find(v=>v.value==='camera').enabled,false);
+console.log('Web hub draft helpers passed: identities, capability choices, shared defaults, non-mutating metadata-driven redaction.');

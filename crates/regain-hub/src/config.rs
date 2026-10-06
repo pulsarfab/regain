@@ -89,6 +89,7 @@ pub enum SourceBackend {
     #[schemars(extend("x-regain" = {"requiresCapability":"nativeSources"}))]
     Native {
         /// Hardware driver and backend to use.
+        #[schemars(extend("x-regain" = {"enumCapabilities":{"camera-direct":"nativeCameraSources","camera-sdk":"nativeCameraSources"}}))]
         device: NativeDevice,
         /// Stable hardware serial or device identity; never a discovery-list index.
         #[schemars(length(min = 1, max = MAX_LABEL_CHARS))]
@@ -133,6 +134,7 @@ pub enum SourceBackend {
     #[schemars(extend("x-regain" = {"requiresCapability":"virtualSources"}))]
     Virtual {
         /// Stable ID of the virtual output to read.
+        #[schemars(extend("x-regain" = {"reference":"output"}))]
         output: Uuid,
     },
     /// # Simulation
@@ -140,6 +142,7 @@ pub enum SourceBackend {
     #[schemars(extend("x-regain" = {"requiresCapability":"simulation"}))]
     Simulated {
         /// Simulated device interface.
+        #[schemars(extend("x-regain" = {"enumCapabilities":{"camera":"broaderSimulation","focuser":"broaderSimulation","rotator":"broaderSimulation","filterwheel":"broaderSimulation","covercalibrator":"broaderSimulation"}}))]
         device_type: DeviceType,
     },
 }
@@ -167,6 +170,7 @@ pub enum Readout {
     /// Read one channel from a Switch source, retaining its access permissions.
     Channel {
         /// Stable ID of the Switch source.
+        #[schemars(extend("x-regain" = {"reference":"source"}))]
         source: Uuid,
         /// Upstream channel number, not this output's channel number.
         channel: u32,
@@ -180,6 +184,7 @@ pub enum Readout {
     /// Read a scalar property such as temperature from a compatible source.
     Property {
         /// Stable source ID.
+        #[schemars(extend("x-regain" = {"reference":"source"}))]
         source: Uuid,
         /// Lowercase property name advertised by the source, for example temperature.
         #[schemars(length(min = 1, max = 80), regex(pattern = "^[a-z]+$"))]
@@ -203,6 +208,7 @@ impl Readout {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SafetyMember {
     /// Required SafetyMonitor source. Each enabled membership participates in AND aggregation.
+    #[schemars(extend("x-regain" = {"reference":"source"}))]
     pub source: Uuid,
     /// Include this source in the safety decision. At least one source must be enabled.
     pub enabled: bool,
@@ -308,8 +314,10 @@ pub enum VirtualDevice {
     },
     /// # Republish a device
     /// Preserve the source's interface and capabilities through another frontend.
+    #[schemars(extend("x-regain" = {"requiresCapability":"proxyOutputs"}))]
     Proxy {
         /// Stable ID of the upstream source.
+        #[schemars(extend("x-regain" = {"reference":"source"}))]
         source: Uuid,
         /// Must match the upstream device class.
         device_type: DeviceType,

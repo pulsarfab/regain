@@ -60,20 +60,27 @@ impl Fixture {
         std::fs::write(&path, serde_json::to_vec(&config).unwrap()).unwrap();
         let endpoint = Endpoint::for_config(&path).unwrap();
         let listener = endpoint.try_lock().unwrap().unwrap().bind().unwrap();
-        let hub = HubRuntime::build(
-            config.clone(),
-            &NativeRuntime {
-                directory: dir.path().into(),
-                simulate: false,
-            },
-            &NoCredentials,
-            Arc::new(MonotonicClock::default()),
+        let directory = dir.path().to_path_buf();
+        let service = regain_hub::service::HubService::persistent(
+            regain_hub::config::ConfigStore::load(&path).unwrap(),
+            Arc::new(move |config| {
+                HubRuntime::build(
+                    config,
+                    &NativeRuntime {
+                        directory: directory.clone(),
+                        simulate: false,
+                    },
+                    &NoCredentials,
+                    Arc::new(MonotonicClock::default()),
+                )
+            }),
         )
         .unwrap();
+        let hub = service.runtime().unwrap();
         let stop = CancellationToken::new();
-        let host = tokio::spawn(host::serve(
+        let host = tokio::spawn(host::serve_service(
             listener,
-            hub.clone(),
+            service,
             Limits::default(),
             stop.clone(),
         ));
@@ -152,6 +159,180 @@ async fn eventually(mut read: impl AsyncFnMut() -> bool) {
     })
     .await
     .unwrap();
+}
+
+async fn setup(
+    router: &Router,
+    command: Value,
+    content_type: &str,
+    origin: &str,
+) -> (StatusCode, Value) {
+    let response = router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/setup/api/hub")
+                .header("Content-Type", content_type)
+                .header("Host", "127.0.0.1:11111")
+                .header("Origin", origin)
+                .body(Body::from(serde_json::to_vec(&command).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let status = response.status();
+    if status != StatusCode::FORBIDDEN {
+        assert_eq!(response.headers()["cache-control"], "no-store");
+    }
+    let bytes = response.into_body().collect().await.unwrap().to_bytes();
+    (
+        status,
+        serde_json::from_slice(&bytes).unwrap_or(Value::Null),
+    )
+}
+
+#[tokio::test]
+async fn setup_routes_share_metadata_validate_and_apply_with_revision_and_connection_guards() {
+    let f = Fixture::new().await;
+    let invoke = async |command| {
+        setup(
+            &f.router,
+            command,
+            "application/json",
+            "http://127.0.0.1:11111",
+        )
+        .await
+    };
+    let (status, metadata) = invoke(json!({"op":"describeConfig"})).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(metadata["result"]["contractVersion"], 1);
+    assert_eq!(
+        metadata["result"]["schema"]["$defs"]["SafetyMember"]["properties"]["source"]["x-regain"]["reference"],
+        "source"
+    );
+    let (_, original) = invoke(json!({"op":"getConfig"})).await;
+    let mut candidate = original["result"].clone();
+    let revision = candidate["revision"].clone();
+    candidate["outputs"][0]["label"] = json!("Updated hub switches");
+    let (_, validated) = invoke(json!({"op":"validateConfig","candidate":candidate})).await;
+    assert_eq!(validated["result"]["valid"], true);
+    f.ok(
+        "PUT",
+        "/api/v1/switch/7/connected",
+        "ClientID=10&Connected=true",
+    )
+    .await;
+    let (status, _) =
+        invoke(json!({"op":"applyConfig","expectedRevision":revision,"candidate":candidate})).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    f.ok(
+        "PUT",
+        "/api/v1/switch/7/connected",
+        "ClientID=10&Connected=false",
+    )
+    .await;
+    eventually(async || f.hub.active_connections() == 0).await;
+    let (status, applied) =
+        invoke(json!({"op":"applyConfig","expectedRevision":revision,"candidate":candidate})).await;
+    assert_eq!(status, StatusCode::OK, "{applied}");
+    assert_eq!(applied["result"]["ready"], true);
+    assert_ne!(applied["result"]["configurationRevision"], revision);
+    assert!(
+        f.ok("GET", "/api/v1/switch/7/name", "")
+            .await
+            .as_str()
+            .unwrap()
+            .contains("Updated hub switches")
+    );
+    assert_eq!(
+        invoke(json!({"op":"applyConfig","expectedRevision":revision,"candidate":candidate}))
+            .await
+            .0,
+        StatusCode::BAD_REQUEST
+    );
+    let persisted: HubConfig =
+        serde_json::from_slice(&std::fs::read(f._dir.path().join("hub.json")).unwrap()).unwrap();
+    assert_eq!(persisted.outputs[0].label, "Updated hub switches");
+    assert_eq!(persisted.outputs[0].id, f.config.outputs[0].id);
+    candidate["outputs"][0]["label"] = json!("");
+    let (_, invalid) = invoke(json!({"op":"validateConfig","candidate":candidate})).await;
+    assert_eq!(invalid["result"]["valid"], false);
+    assert!(!invalid["result"]["errors"].as_array().unwrap().is_empty());
+    f.finish().await;
+}
+
+#[tokio::test]
+async fn setup_rejects_cross_origin_wrong_media_type_and_device_commands_without_side_effects() {
+    let f = Fixture::new().await;
+    for (media, origin) in [
+        ("application/json", "http://untrusted.example"),
+        ("text/plain", "http://127.0.0.1:11111"),
+        ("application/jsonp", "http://127.0.0.1:11111"),
+    ] {
+        assert_eq!(
+            setup(
+                &f.router,
+                json!({"op":"inspectSource","source":f.config.sources[0].id,"start":0,"limit":8}),
+                media,
+                origin
+            )
+            .await
+            .0,
+            StatusCode::FORBIDDEN
+        );
+    }
+    assert_eq!(
+        setup(
+            &f.router,
+            json!({"op":"connect","output":f.config.outputs[0].id}),
+            "application/json",
+            "http://127.0.0.1:11111"
+        )
+        .await
+        .0,
+        StatusCode::BAD_REQUEST
+    );
+    assert_eq!(f.hub.active_connections(), 0);
+    assert_eq!(
+        f.hub
+            .source_snapshot(f.config.sources[0].id)
+            .unwrap()
+            .lease_count,
+        0
+    );
+    let (status, inspected) = setup(
+        &f.router,
+        json!({"op":"inspectSource","source":f.config.sources[0].id,"start":0,"limit":8}),
+        "application/json",
+        "http://127.0.0.1:11111",
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{inspected}");
+    eventually(async || f.hub.active_connections() == 0).await;
+    for path in [
+        "/setup/hub",
+        "/hub.mjs",
+        "/hub-config.mjs",
+        "/hub-form.mjs",
+        "/hub.css",
+        "/setup/v1/switch/7/setup",
+        "/setup/v1/safetymonitor/3/setup",
+        "/setup/v1/observingconditions/12/setup",
+    ] {
+        assert_eq!(request(&f.router, "GET", path, "").await.0, StatusCode::OK);
+    }
+    for path in [
+        "/setup/v1/switch/0/setup",
+        "/setup/v1/safetymonitor/7/setup",
+        "/setup/v1/unsupported/7/setup",
+    ] {
+        assert_eq!(
+            request(&f.router, "GET", path, "").await.0,
+            StatusCode::NOT_FOUND
+        );
+    }
+    f.finish().await;
 }
 
 #[tokio::test]

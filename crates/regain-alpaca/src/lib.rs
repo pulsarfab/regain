@@ -5,6 +5,7 @@ pub mod flatpanel;
 pub mod focuser;
 pub mod hub;
 pub mod hub_output;
+pub mod hub_setup;
 pub mod native;
 pub mod profile;
 pub mod rotator;

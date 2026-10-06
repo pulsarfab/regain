@@ -297,6 +297,7 @@ impl Server {
     }
     pub fn router(self: &Arc<Self>) -> Router {
         Router::new()
+            .merge(crate::hub_setup::routes())
             .route(
                 "/",
                 get(|| async { axum::response::Redirect::temporary("/setup") }),
@@ -768,7 +769,7 @@ pub fn image_response(frame: Arc<Frame>, binary: bool, client: u32, server: u32)
     }
     response
 }
-fn setup_allowed(headers: &HeaderMap) -> bool {
+pub(crate) fn setup_allowed(headers: &HeaderMap) -> bool {
     headers
         .get("content-type")
         .and_then(|v| v.to_str().ok())

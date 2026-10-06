@@ -31,6 +31,10 @@ export function configurationContract(description) {
     description: choice.description ?? '',
     enabled: available(choice, capabilities)
   }));
+  const choices = (node, capabilities = description.capabilities ?? []) => {
+    const schema = resolve(node);
+    return (schema.enum ?? []).map(value => ({value, enabled: !schema['x-regain']?.enumCapabilities?.[value] || capabilities.includes(schema['x-regain'].enumCapabilities[value])}));
+  };
   const fields = (node, value = {}, capabilities, isNew = false) => {
     let schema = resolve(node);
     if (schema.oneOf) {
@@ -46,5 +50,5 @@ export function configurationContract(description) {
         value: Object.hasOwn(value, key) ? value[key] : field.default };
     });
   };
-  return { root, resolve, variants, fields, available };
+  return { root, resolve, variants, choices, fields, available };
 }

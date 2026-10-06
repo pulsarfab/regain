@@ -35,6 +35,12 @@ public sealed class HubConfigurationTests
         Assert.Equal("s",age.Schema.GetProperty("x-regain").GetProperty("units").GetString());
         Assert.Equal("integer",policy.Single(f=>f.Key=="safeReadingsToSafe").Schema.GetProperty("type").GetString());
         Assert.All(policy,f=>Assert.False(string.IsNullOrWhiteSpace(f.Description)));
+        var nativeDevice=choices.Single(c=>c.Kind=="native").Schema.GetProperty("properties").GetProperty("device");
+        Assert.False(reader.Choices(nativeDevice).Single(c=>c.Value=="camera-direct").Enabled);
+        Assert.True(reader.Choices(nativeDevice).Single(c=>c.Value=="efw").Enabled);
+        Assert.True(reader.Choices(nativeDevice,["nativeCameraSources"]).Single(c=>c.Value=="camera-direct").Enabled);
+        var membership=reader.Root.GetProperty("$defs").GetProperty("SafetyMember");
+        Assert.Equal("source",reader.Fields(membership).Single(f=>f.Key=="source").Schema.GetProperty("x-regain").GetProperty("reference").GetString());
     }
     [Fact]
     public void UnknownContractsAndReferencesAreRejected()

@@ -28,9 +28,13 @@ not disconnect other frontends. Stopping the HTTP server leaves the host running
 
 For a hardware-free trial, copy the hub crate's `examples/simulated-observatory.json`
 and pass its absolute path. Discovery labels these devices as simulation and
-safety starts unsafe. This preview uses synchronous Connected interfaces; shared
-setup pages, modern interfaces, automatic recovery UI, and conformance are still
-being implemented. After host loss, explicitly restart the HTTP frontend; device
+safety starts unsafe. Open `/setup/hub` to edit sources and outputs, inspect source
+capabilities, review changes, and apply a new revision after disconnecting output
+clients. Field definitions and validation come from the shared host.
+
+This preview uses synchronous Connected interfaces; modern interfaces, credential
+and recovery UI, and conformance are still being implemented. After host loss,
+explicitly restart the HTTP frontend; device
 commands are never replayed. See [the hub plan](../../docs/hub-plan.md).
 
 Part of [PulsarFab regain](https://github.com/pulsarfab/regain). Apache-2.0.

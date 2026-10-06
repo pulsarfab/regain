@@ -1126,7 +1126,9 @@ async fn http_errors_retry_after_and_redirects_are_bounded_without_automatic_ret
 #[tokio::test]
 async fn stalled_and_oversized_responses_fail_and_writes_are_sent_once() {
     let mut server = Server::new(vec![]).await;
-    server.config.polling.request_timeout_seconds = 0.05;
+    // Response-size validation is independent of the deadline. A 50 ms budget
+    // can expire on a loaded runner before the oversized headers are received.
+    server.config.polling.request_timeout_seconds = 3.0;
     let mut backend = server.backend();
     server.push(Reply {
         status: 200,
@@ -1135,6 +1137,10 @@ async fn stalled_and_oversized_responses_fail_and_writes_are_sent_once() {
         delay: Duration::ZERO,
     });
     assert_eq!(backend.poll().await.unwrap_err().kind, ErrorKind::Permanent);
+    // Keep a separate finite write deadline, with a deliberately longer server
+    // stall. The timeout must not cause the adapter to replay the mutation.
+    server.config.polling.request_timeout_seconds = 1.0;
+    let mut backend = server.backend();
     server.push(Reply {
         status: 200,
         body: "{}".into(),

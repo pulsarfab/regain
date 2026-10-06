@@ -249,12 +249,44 @@ This increment advertises Switch interface 2 and SafetyMonitor/ObservingConditio
 interface 1 with synchronous Connected. Modern asynchronous connection/state
 interfaces and conformance remain required refinements before final acceptance.
 Renaming channels uses configuration; SetSwitchName and arbitrary actions/commands
-are unsupported. Setup UI integration is still pending.
+are unsupported. The initial shared setup UI is described below.
 
 Host loss fails requests and does not reconnect or replay mutations. Reattach the
 HTTP frontend explicitly to obtain a new catalog/session set. Server shutdown or
 process death closes its private streams; the shared host and other clients remain
 alive. Restart/configuration-edit UI and OS resume handling remain pending.
+
+### Shared web configuration editor
+
+`/setup/hub` and the three scalar device setup URLs serve the same schema-driven
+editor. The main equipment page links to it. Rust describes fields, tagged choices,
+defaults, bounds, units, source/output references, immutable identities, and
+capability-gated enum choices. JavaScript and .NET readers consume that metadata;
+the editor does not redefine device or safety policy parameters. Source and output
+UUIDs are generated locally with cryptographic randomness, including on LAN HTTP.
+Saved numbers/IDs stay read-only; deleting an item preserves the host's tombstones.
+
+The editor keeps an unsaved draft separate from the loaded revision. Review uses
+host validation and a metadata-redacted configuration preview. Editing invalidates
+the reviewed candidate. Apply sends that candidate and its expected revision;
+connected clients or stale edits are rejected by the host. Lost/uncertain apply
+responses require reloading saved configuration/status before another attempt.
+Applied-but-blocked state disables editing and remains distinct from a failed save.
+
+The POST-only setup API accepts bounded JSON with same-origin checks and no CORS
+grant. It allows description/configuration/status, validation/apply, source
+inspection, and explicit simulation updates; it cannot issue output connection or
+device commands. Responses are no-store and retain field errors/uncertainty. This
+is the existing Alpaca server's trusted-network setup surface, not remote-user
+authentication. Credential creation/deletion is not exposed here yet.
+
+Source Status reads the actor snapshot. Inspect is explicit because it takes a
+temporary connection lease; page start/size labels, bounds, and defaults come from
+the shared inspection descriptor. Inspection does not manufacture safety evidence.
+New configuration initialization, credential UI, simulation controls, richer
+safety/health diagnostics, native setup adoption, and reconnect/resume UI remain
+required refinements. Large-file editing also remains bounded by the 1 MiB IPC
+frame limit even though file storage has a separate 4 MiB ceiling.
 
 ## Identities and configuration
 
