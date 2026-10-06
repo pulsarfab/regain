@@ -2878,3 +2878,8 @@ No source, production or fixture deadline changed. These new passes do not prove
 the causes of the previously retained intermittent failures. At this observation,
 virtual checkpoint 87ca1c1 has seven successful jobs in both PR/push CI
 37522869618/37522861252; Windows installer acceptance is still running.
+
+Both virtual-checkpoint CI runs subsequently completed successfully with all eight
+jobs, including Windows packaging, private COM imports and installer acceptance.
+This is exact-head evidence for 87ca1c1. The locally verified COM checkpoint
+89fae59 now proceeds into the same draft PR; dedicated simulation remains separate.
