@@ -242,8 +242,57 @@ client closes both transport halves so stream-owned leases can drain.
 
 Explicit reattachment negotiates new host/client identities. A closed client
 cannot become connected again. Closing a client is not proof that server-side
-cleanup has completed. Native .NET clients, frontend reconnection policy, shared
-setup, and OS resume invalidation remain required.
+cleanup has completed. The shared .NET client is now implemented below; actual
+native providers, frontend reconnection policy, complete shared setup, and OS
+resume invalidation remain required.
+
+### Shared .NET attachment and client
+
+`Regain.Hub.HubAttachment` and `HubClient` live in the existing shared frontend
+assembly, `Regain.Rotator`, and build for .NET 8 and .NET Framework 4.8. This avoids
+another executable or per-output transport. Native NINA/ASCOM providers still
+need to adopt them; the client alone does not add selectable devices.
+
+AttachAsync requires fully qualified existing paths, bounds configuration reads
+at 4 MiB, and invokes `regain-alpaca --hub-attach` once. The hidden helper has a
+15-second deadline and 16 KiB limits for stdout/stderr. It is not attached to a
+device worker job. Cancellation/failure stops only that helper, never its child
+or the reported candidate PID. Neither raw stderr nor request bytes appear in
+exported exceptions. The attachment record must match the selected configuration
+identity and use the expected local pipe namespace. It is a snapshot, not proof
+that a configuration revision remains current.
+
+ConnectAsync opens a non-inheritable, asynchronous named pipe with identification
+impersonation rights. Before hello, it verifies the opened handle's owner and
+protected DACL: exactly one ordinary allow ACE for the current user. It rejects
+remote names, unrelated pipe namespaces, permissive descriptors and changed host
+identities. This mirrors the Rust endpoint check using
+[GetSecurityInfo](https://learn.microsoft.com/en-us/windows/win32/api/aclapi/nf-aclapi-getsecurityinfo)
+on the actual handle. The implementation uses
+[identification rather than impersonation](https://learn.microsoft.com/en-us/windows/win32/secauthz/impersonation-levels).
+
+The client negotiates at most eight requests and 1 MiB frames, correlates
+out-of-order replies, distinguishes null from absent results, rejects duplicate
+JSON keys/unknown envelope fields or reply IDs, and retains structured field
+errors and retry delays. Outgoing token/byte limits precede dispatch; only known,
+advertised operations are callable. Unknown future operations are not assumed
+read-only. Idle streams remain valid; partial frames and writes have five-second
+default deadlines, while the 35-second request deadline includes queue/write/reply.
+
+Queued cancellation returns capacity without sending. Dispatched cancellation
+ends the caller's wait but retains its request slot/deadline until reply or
+terminal loss. A dispatched mutation reports uncertainty after transport failure;
+it is never replayed. Dispose closes this client's stream, not the host. Pump
+tasks retain the connection state rather than the public client, so an abandoned
+client can be finalized and release its leases. Closed means terminal transport,
+not completed server-side hardware cleanup. Reattach explicitly and read current
+configuration/status before reconciling a lost mutation.
+
+Tests exercise faults, actual permissive-pipe rejection before hello, two managed
+clients sharing one Rust host, independent leases, abandoned-client cleanup, and
+real net48 x86/x64 processes through the public API. They use simulation only.
+Native device providers, shared native setup, reconnect/resume and conformance
+remain separate acceptance gates.
 
 ### Initial Alpaca output adapter
 

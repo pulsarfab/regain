@@ -25,6 +25,7 @@ try {
     if ($LASTEXITCODE) { throw 'Recovery tests failed' }
     dotnet test tests/Regain.NINA.Tests -c Release
     if ($LASTEXITCODE) { throw 'NINA contract tests failed' }
+    & (Join-Path $PSScriptRoot 'test-hub-dotnet.ps1')
     python scripts/test-native-camera.py
     if ($LASTEXITCODE) { throw 'Native camera IPC tests failed' }
     python scripts/test-usb-recovery.py

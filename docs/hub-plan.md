@@ -471,7 +471,16 @@ bundles, failed asynchronous connections, overlapping changes, EOF before task
 start, retained errors and explicit reconciliation. Clippy, Rust 1.89.0 and fresh
 package verification pass. These checks do not establish conformance certification.
 
-Next: native frontend attachment, connection/state/error conformance,
+The shared .NET client now builds in the existing frontend assembly for .NET 8
+and net48. It uses the Rust attachment helper and protected local IPC, with bounded
+framing/admission, strict identity/reply validation, cancellation accounting and
+no replay. Tests cover a real shared host, separate leases, permissive-pipe denial,
+queued/dispatched cancellation and abandoned-client cleanup. Actual net48 x86/x64
+processes pass the same public attachment/connect/disconnect API. All 73 NINA
+regression/contract tests pass, including 32 hub-client checks. Native providers
+and setup adoption remain pending; this foundation does not close milestone 3.
+
+Next: native NINA providers and shared native setup, connection/state/error conformance,
 and the remaining shared setup refinements. Basic frontend error translation is tested; complete
 protocol conformance remains unverified. Generic
 scalar polling does not establish camera image or acquisition support. No complete
@@ -567,3 +576,4 @@ Keep existing device profiles and registrations compatible throughout migration.
 | 2026-10-05 | Connected the first three hub output classes to ordinary Alpaca HTTP mode, with dynamic discovery, separate client leases, scalar/error mapping, negotiated weather metadata, and shared-host lifetime. Review bounded connection tasks before spawning and preserved uncertain outcomes. | Five router/private-endpoint tests and one production HTTP process test added. Prior full suite plus targeted changes pass; final validation recorded in hub-review.md. Shared setup, modern interfaces, conformance, native frontends, and all remaining original milestones stay open. |
 | 2026-10-05 | Added the first shared web editor, setup API, stable reference pickers, capability-aware choices, review/apply workflow, and explicit paged inspection. Corrected empty-string presence validation and LAN UUID generation during review. | 177 Windows hub tests plus the endpoint fixture and 26 Alpaca tests pass. JavaScript draft/contract checks, four Python schema tests, two .NET reader tests and net48 build pass. Chrome verified edit/review/apply and supplied a simulation screenshot. Complete setup refinements, modern interfaces, native frontends, and all original remaining gates before merge. |
 | 2026-10-05 | Added shared cached DeviceState and supervised asynchronous connection changes, then exposed Switch 3, SafetyMonitor 3 and ObservingConditions 2 through capability negotiation. Retained asynchronous failures until explicit reconciliation and preserved separate client leases. | 181 Windows hub tests plus the endpoint fixture and 29 Alpaca tests pass, with Clippy, Rust 1.89.0, schema freshness and fresh package verification. No hardware was actuated. Next: native frontend attachment, conformance and remaining setup refinements; original milestones 2–5 stay open. |
+| 2026-10-05 | Added the shared .NET attachment/IPC client for native NINA and ASCOM, using the existing frontend assembly and Rust host helper. Reviewed pipe permissions, cancellation, unknown operations, bounded buffers, terminal errors and finalizer lifetime. | 73 NINA regression/contract tests pass, including 32 new hub-client checks; real net48 x86/x64 attachment/lease tests and warnings-denied builds pass. Fixed a shared-intermediate bitness cache exposed by the runtime fixture. Scalar checkpoint bb55313 passed both complete CI runs. Next: actual native NINA providers/setup and all original remaining gates. |

@@ -1026,3 +1026,59 @@ Remaining: native .NET/NINA/ASCOM attachment and providers, complete scalar erro
 and conformance-tool checks, setup refinements, COM imports, broader proxies and
 camera/focuser coordination, OS resume/recovery, hardware trials, documentation
 and site updates, and final audit/merge. Original milestones 2–5 remain open.
+
+## 2026-10-05: shared native frontend attachment and IPC
+
+Added `Regain.Hub.HubAttachment` and `HubClient` to the existing shared frontend
+assembly for .NET 8 and net48. These are transport/attachment APIs, not exported
+NINA or ASCOM providers. Native setup and device adoption remain required.
+
+Review findings and corrections:
+
+1. Reuse the Rust attachment helper rather than introducing another source owner.
+   Bound helper output/error capture and its lifetime, launch hidden without a
+   worker job, and stop only the helper on cancellation. A candidate PID cannot
+   authorize killing a shared host. Require fully qualified paths; rooted drive-
+   relative paths such as C:config.json are insufficient.
+2. Authenticate the opened pipe before hello. Verify owner, protected DACL and a
+   single ordinary current-user allow ACE. Use identification rights and disable
+   handle inheritance. Actual permissive-pipe rejection is tested before any
+   handshake bytes are sent; the positive path uses the real Rust private endpoint.
+3. Negotiate request/frame bounds, assign IDs under the writer gate, and reject
+   unknown/repeated IDs, duplicate JSON keys and invalid envelopes. Null is a
+   valid result, distinct from a missing result. Preserve structured remote fields
+   without placing arbitrary response text in exceptions.
+4. An advertised future operation cannot safely default to read-only. Refuse
+   operations outside the known command set until their semantics are implemented.
+   Bound outgoing tokens before encoding and clear temporary wire/helper buffers
+   on success and failure. Configuration input retains credential references only.
+5. Queued cancellation must free capacity without dispatch. Dispatched cancellation
+   only ends the caller wait; retain its capacity and deadline until reply/loss.
+   Frame/request deadlines close stalled transports even after caller cancellation.
+   Dispatched writes fail uncertain and are never replayed.
+6. An idle read task must not keep an abandoned public client alive forever. Pumps
+   retain separate connection state; finalization closes the stream. Explicit
+   Dispose and GC/EOF tests prove local release. Neither Closed nor Dispose claims
+   physical rollback or completed server-side cleanup.
+7. The first real-host test expected hostInstance in hostStatus, but that member
+   belongs to hello. Correct the fixture to use negotiated identity and current
+   service revision/phase; verify actual source lease counts after one client closes.
+8. net48 x86 runtime passed, then x64 loaded a stale x86 dependency: SDK default
+   intermediate paths do not distinguish PlatformTarget. Give each bitness a
+   separate intermediate directory. Both fixtures now execute the public API,
+   verify separate clients/leases and a surviving host, and clean up only their
+   newly launched simulation-only test process after verifying its executable.
+
+Validation: all 73 NINA regression/contract tests pass, including 32 hub-client
+checks (`artifacts/hub-dotnet-all-tests.log`). Final targeted checks also pass after
+fully qualified path and final deadline validation (`artifacts/hub-dotnet-final-tests.log`). Both
+net48 x86/x64 runtime fixtures pass (`artifacts/hub-net48-tests.log`), and both
+shared library targets build with warnings denied. The new net48 fixture script
+is included in the normal Windows test playbook. Scalar checkpoint bb55313 passed
+both complete push/PR CI runs, including all four portable platforms and Windows.
+No hardware was actuated, and disposable host processes were cleaned up.
+
+Next: native NINA Switch/SafetyMonitor/ObservingConditions providers and shared
+native setup, then isolated COM imports, native ASCOM outputs, broader proxies and
+coordination, reconnect/resume, conformance, hardware trials, documentation/site
+updates and final audit/merge. This checkpoint does not close those gates.
