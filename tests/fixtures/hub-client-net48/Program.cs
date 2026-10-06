@@ -158,12 +158,31 @@ internal static class Program
             await NativeOutputs.Run(args[0], args[1], attached.InstanceId, saved, probe, deadline.Token);
             await NativeOutputs.FocuserRun(args[0], args[1], attached.InstanceId, saved, focuserServer, deadline.Token);
             await NativeOutputs.SimulatedFocuserRun(args[0],args[1],attached.InstanceId,saved,simulatedFocuser,editor,deadline.Token);
-            await NativeOutputs.RotatorRun(args[0],args[1],attached.InstanceId,saved,rotatorServer,deadline.Token);
-            await NativeOutputs.SimulatedRotatorRun(args[0],args[1],attached.InstanceId,saved,simulatedRotator,editor,deadline.Token);
+            async Task RotatorCheckpoint(string stage, Guid source, Func<Task> run)
+            {
+                try { await run(); }
+                catch {
+                    // Preserve dispatch/reply evidence before another IPC round
+                    // trip. Success adds no diagnostics, reads or retries.
+                    var trace = rotatorServer.RequestTrace;
+                    var moves = rotatorServer.Moves; var halts = rotatorServer.Halts;
+                    ThreadPool.GetAvailableThreads(out var workers, out var completionPorts);
+                    string state;
+                    try { state = (await editor.SourceStatusAsync(source, deadline.Token)).GetRawText(); }
+                    catch (Exception diagnostic) { state = "unavailable: " + diagnostic.Message; }
+                    Console.Error.WriteLine($"{stage}: moves={moves}, halts={halts}, availableWorkers={workers}, " +
+                        $"availableCompletionPorts={completionPorts}, source={state}, private request trace={trace}");
+                    throw;
+                }
+            }
+            await RotatorCheckpoint("ASCOM loopback rotator", rotatorServer.SourceId,
+                () => NativeOutputs.RotatorRun(args[0],args[1],attached.InstanceId,saved,rotatorServer,deadline.Token));
+            await RotatorCheckpoint("ASCOM simulated rotator", simulatedRotator,
+                () => NativeOutputs.SimulatedRotatorRun(args[0],args[1],attached.InstanceId,saved,simulatedRotator,editor,deadline.Token));
             await NativeOutputs.CreatedRotatorRun(args[0],args[1],attached.InstanceId,editor,deadline.Token);
             Console.WriteLine($"net48 {IntPtr.Size * 8}-bit: shared identity, independent leases, selection CAS/removal, native session/reconnect, editor review/apply/reconcile, setup inspection/export/simulation, typed ASCOM outputs and surviving host passed");
             return 0;
-        } catch (Exception error) { Console.Error.WriteLine(error.GetType().Name + ": " + error.Message); return 1; }
+        } catch (Exception error) { Console.Error.WriteLine(error.ToString()); return 1; }
         finally {
             // Test-only cleanup, never used by production frontends. The script
             // supplies a fresh simulation-only config and launches sequentially.
