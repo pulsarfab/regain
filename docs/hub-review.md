@@ -213,3 +213,39 @@ and rotating keys. Fixtures use virtual time or loopback HTTP, not hardware.
 Next: shared native accessory worker transport and hub adapters, followed by
 capability negotiation and host IPC. Frontend conformance, hardware acceptance,
 and all later milestones remain required; no milestone gate closes here.
+
+## 2026-10-05: common native accessory transport
+
+Moved the existing Alpaca accessory worker client into `regain-core::accessory`
+so the hub can use the same process transport without depending on HTTP frontend
+code. Existing CAA/Falcon, EFW/EAF/FC3/ETA, and OFP2 endpoints now use it.
+
+Review corrections:
+
+1. The old client bounded elapsed time but not response memory. Both directions
+   now enforce framing limits (4096-byte request, 1 MiB response); partial EOF,
+   malformed replies, duplicate envelope fields, and oversized data fail.
+2. Cancelling an awaited request could leave its delayed response in the stream.
+   A request guard now closes stdin and retires the child on cancellation,
+   deadline, or invalid framing. A subsequent request reports disconnected.
+3. Workers now use the existing Windows kill-on-close job ownership. Ordinary
+   close still offers the device worker its EOF shutdown policy before a bounded
+   forced termination. No operation is retried by this client.
+4. An `ok:false` reply only proves that a worker answered; the underlying USB
+   command may already have been sent. `CommandFailed` remains distinct from
+   framing/transport failure but must be treated conservatively for writes by
+   the forthcoming native hub adapter. It is not a proof of pre-dispatch rejection.
+5. Package verification resolved published regain-core 0.5.10, which lacks the
+   new API, even when packaging the workspace. Development now uses 0.6.0 and
+   Windows 0.6.0.0; maintenance remains on release/0.5. Nothing was published.
+
+Local verification: 18 core unit tests plus a self-hosted process fixture covering
+valid replies, command errors, local rejection, graceful EOF, malformed/oversized
+responses, partial EOF, deadlines, and cancellation. Clippy and Rust 1.89.0 checks
+pass for core and Alpaca. Seven simulation suites pass: EFW/EAF, CAA, Falcon,
+FocusCube3, ETA, OFP2, and dynamic focuser slots. These use the production workers
+with simulation enabled and exercise client sharing, motion/settings, calibration,
+coordinate persistence, and error paths. Native hub source mapping is next.
+After the version correction, `cargo package --workspace --allow-dirty --locked`
+verified all ten package archives against the unpublished workspace dependencies;
+`cargo +1.89.0 check --workspace --all-targets --locked` also passed.

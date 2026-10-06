@@ -3,6 +3,9 @@
 Status: implementation in progress on `codex/regain-hub`; one PR against main.
 Maintenance releases remain on `release/0.5`. Do not merge the hub PR until all
 milestone gates and the final completion audit pass.
+This branch uses development version `0.6.0` / Windows `0.6.0.0`; it has not been
+tagged or published. Changed cross-crate APIs require an unpublished version so
+Cargo package verification uses the new workspace packages.
 Last updated: 2026-10-05.
 
 Use this document as the working checklist. Complete one reviewable milestone at
@@ -306,7 +309,15 @@ retry the failed key and honor Retry-After. Weather Refresh triggers upstream
 acquisition and schedules polling without waiting for measurements; it respects
 retry delays and retains sensor ages. Local latency, retry, and cache tests pass.
 
-Next: add native worker adapters using a shared accessory worker client, complete
+The shared accessory worker client now lives in `regain-core`; existing Alpaca
+CAA/Falcon, EFW/EAF/FocusCube3/ETA, and OFP2 endpoints use it. The common client
+bounds messages and retires a child after timeout, cancellation, or invalid
+framing. Process fixtures and all seven existing accessory/Alpaca simulation
+suites pass. This extraction prepares the hub adapters; it does not expose native
+sources in the hub yet. A framed worker error may still follow a dispatched USB
+command and must not authorize replay.
+
+Next: add native worker adapters using this shared accessory worker client, complete
 capability/connection negotiation and shared host IPC, then connect the first
 three virtual classes to the existing Alpaca server/setup UI. Frontend error
 translation and protocol conformance remain unverified. Generic
@@ -386,3 +397,4 @@ Keep existing device profiles and registrations compatible throughout migration.
 | 2026-10-05 | Added shared source actors/registry, bounded Alpaca transport, and safety output subscriptions with independent leases and policies. Reviewed cancellation, connection ownership, retry delays, ambiguous writes, malformed responses, and event loss. | 50 Rust tests now cover the foundation plus actor/network/safety integration. Clippy, Rust 1.89.0 check, standalone package verification, and generated-contract freshness passed. Next: typed switch/weather controllers, native workers, host IPC, and Alpaca publication. Full original milestones 2–5 remain required. |
 | 2026-10-05 | Added typed switch/weather controllers, scalar sample status, unit assertions, cancellation-safe leases, partial sensor failures, and dispatch generation checks. Refined stable slots and weather averaging against the ASCOM interfaces. | 63 Rust tests pass, including mixed switch controls/gauges, cancellation, step/permission checks, tombstones, weather freshness/fallback/averaging, and HTTP weather source sharing. Updated schema passes web, independent JSON Schema, and native .NET readers. Next: poll scheduling/budgets, capability negotiation, native adapters, and host IPC before frontend/conformance gates. |
 | 2026-10-05 | Split Alpaca polling into bounded requests with per-key evidence, bounded incremental caches, same-key retries, and prompt weather Refresh. Corrected Refresh against the ASCOM interface during review. | 70 local Rust tests, Clippy, Rust 1.89.0, standalone package verification, and generated-contract freshness pass. Latency fixtures exercise command interleaving and Retry-After. Next: shared native accessory transport/adapters, capability negotiation, and host IPC. All frontend and later milestone gates remain open. |
+| 2026-10-05 | Extracted the shared accessory worker client into regain-core and adopted it in existing Alpaca accessories. Added cancellation-safe process retirement, framing limits, and process fixtures. Moved development versions to 0.6.0 / 0.6.0.0 after packaging exposed resolution of the published 0.5.10 dependency. | Core tests, Clippy, Rust 1.89.0 checks, and seven production-worker/Alpaca simulation suites pass. Native hub mapping, capabilities, host IPC, and all later gates remain pending. No release or tag was created. |

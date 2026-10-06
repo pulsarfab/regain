@@ -1,3 +1,4 @@
+pub mod accessory;
 pub mod model;
 mod process;
 pub mod session;

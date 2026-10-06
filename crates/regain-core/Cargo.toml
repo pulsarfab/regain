@@ -12,6 +12,10 @@ readme = "README.md"
 keywords = ["astronomy", "astrophotography", "camera", "recovery"]
 categories = ["science", "hardware-support"]
 
+[[test]]
+name = "accessory_worker"
+harness = false
+
 [dependencies]
 anyhow = "1"
 regain-transport.workspace = true

@@ -915,7 +915,7 @@ dependencies = [
 
 [[package]]
 name = "regain-alpaca"
-version = "0.5.10"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -935,7 +935,7 @@ dependencies = [
 
 [[package]]
 name = "regain-core"
-version = "0.5.10"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -949,7 +949,7 @@ dependencies = [
 
 [[package]]
 name = "regain-deepskydad"
-version = "0.5.10"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "regain-transport",
@@ -960,7 +960,7 @@ dependencies = [
 
 [[package]]
 name = "regain-device"
-version = "0.5.10"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "regain-deepskydad",
@@ -972,7 +972,7 @@ dependencies = [
 
 [[package]]
 name = "regain-hub"
-version = "0.5.10"
+version = "0.6.0"
 dependencies = [
  "axum",
  "futures-util",
@@ -989,7 +989,7 @@ dependencies = [
 
 [[package]]
 name = "regain-pegasus"
-version = "0.5.10"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "regain-transport",
@@ -1000,7 +1000,7 @@ dependencies = [
 
 [[package]]
 name = "regain-transport"
-version = "0.5.10"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "nusb",
@@ -1013,7 +1013,7 @@ dependencies = [
 
 [[package]]
 name = "regain-wanderer"
-version = "0.5.10"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "regain-transport",
@@ -1024,7 +1024,7 @@ dependencies = [
 
 [[package]]
 name = "regain-worker"
-version = "0.5.10"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "serde_json",
@@ -1032,7 +1032,7 @@ dependencies = [
 
 [[package]]
 name = "regain-zwo"
-version = "0.5.10"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "libc",
