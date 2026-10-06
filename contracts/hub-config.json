@@ -2,6 +2,32 @@
   "apply": "disconnect",
   "capabilities": [],
   "contractVersion": 1,
+  "outputDiagnostics": {
+    "countsSafetyObservations": false,
+    "deadlineSeconds": 5,
+    "opensSource": false,
+    "parameters": {
+      "limit": {
+        "default": 16,
+        "description": "Maximum cached output items returned in one request.",
+        "label": "Items per page",
+        "maximum": 32,
+        "minimum": 1,
+        "type": "integer"
+      },
+      "start": {
+        "default": 0,
+        "description": "Saved membership, channel slot or weather metric index.",
+        "label": "First output item",
+        "maximum": 1024,
+        "minimum": 0,
+        "type": "integer"
+      }
+    },
+    "purpose": "cachedDiagnostics",
+    "requiresRevision": true,
+    "writesEquipment": false
+  },
   "schema": {
     "$defs": {
       "Bitness": {

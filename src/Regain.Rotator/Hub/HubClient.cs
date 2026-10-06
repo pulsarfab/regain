@@ -76,7 +76,7 @@ public sealed partial class HubClient : IDisposable
     private sealed class Connection
     {
         private static readonly string[] knownOperations = ["describeConfig", "getConfig", "validateConfig", "applyConfig",
-            "listDevices", "sourceStatus", "hostStatus", "inspectSource", "updateSimulation", "createCredential",
+            "listDevices", "sourceStatus", "outputStatus", "hostStatus", "inspectSource", "updateSimulation", "createCredential",
             "credentialStatus", "deleteCredential", "connect", "disconnect", "changeConnection", "get", "put"];
         private readonly object gate = new();
         private readonly Stream stream;

@@ -8,6 +8,7 @@ pub mod com;
 pub mod config;
 pub mod credentials;
 pub mod description;
+pub mod diagnostics;
 pub mod endpoint;
 pub mod factory;
 pub mod host;

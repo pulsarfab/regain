@@ -243,6 +243,7 @@ fn operation(command: &Command) -> &'static str {
         Command::DeleteCredential { .. } => "deleteCredential",
         Command::ListDevices {} => "listDevices",
         Command::SourceStatus { .. } => "sourceStatus",
+        Command::OutputStatus { .. } => "outputStatus",
         Command::InspectSource { .. } => "inspectSource",
         Command::UpdateSimulation { .. } => "updateSimulation",
         Command::Connect { .. } => "connect",

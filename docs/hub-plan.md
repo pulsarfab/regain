@@ -18,13 +18,25 @@ injected fault never clears a retained uncertain-write latch. Actual WPF/browser
 screenshots are documented as simulation. Numeric Switch wire keys now decode
 through internally tagged commands and reject duplicate/noncanonical keys.
 
-Current increment: first-time creation in the shared native NINA/ASCOM selector.
+Completed increment: first-time creation in the shared native NINA/ASCOM selector.
 It uses the same Rust no-clobber path as CLI setup, retains a selected filename
 before dispatch and blocks another creation after unknown completion. Explicit
 bounded file read reconciles identity/absence without starting a host. The filename
 stays copyable while protected from editing. Loading an empty file enables the
 common editor even with no selectable outputs. Local tests prove those flows;
 broader diagnostics and interactive setup acceptance remain required.
+
+Current increment: shared cached output diagnostics in the Rust host/IPC and
+protected HTTP setup API. Saved-revision checks and pages of at most 32 items
+cover safety memberships, reserved Switch slots and weather metrics. Safety
+reports the existing controller's raw/effective decision, reason, counters,
+age/hold and policy; an inactive controller remains unknown/unsafe even when
+another owner has cached safe data. Reads cannot accelerate recovery or clear
+uncertain writes. Switch uses its operational freshness/bounds interpretation;
+weather uses a private, projected copy of the same averaging/fallback engine.
+Sample and policy generation/revision identities remain visible. Local Rust,
+HTTP, native-client and real net48 checks pass. Native/web presentation, diagnostic
+exports and actual actor retry scheduling remain the next diagnostics work.
 
 Native-credential checkpoint 2a26281 passes all eight jobs in both PR CI
 37457955380 and push CI 37457946553. Windows logs prove installed metadata without
@@ -36,12 +48,17 @@ Web-credential checkpoint a2cad0a passes both complete CI runs 37460531169 and
 push CI 37462081747, including all eight jobs. Simulation checkpoint 6f36ff5
 passes seven jobs in both runs, but Windows fails separate pipe fixtures: a
 partial-frame sender race and cold handshake scheduling. This increment removes
-the test scheduling races without raising production/test deadlines; new CI is
-required. CLI checkpoint eeb9208 CI remains active; seven PR jobs pass and Windows
-is running. Interactive UAC/Chooser, conformance and vendor acceptance remain required.
+the test scheduling races without raising production/test deadlines. CLI
+checkpoint eeb9208 passes both complete runs 37466565218 and 37466555917.
+Native-creation 3dd86b4 PR run 37468454801 remains active with seven jobs passing
+and Windows executing installer tests. Push run 37468447863 fails the first x86
+COM import fixture on its five-second response wait; all NINA and net48 fixtures
+passed before that failure. Preserve and investigate that timeout; its cause is
+not yet proved. Interactive UAC/Chooser, conformance and vendor acceptance remain required.
 
-Next: verify corrected native-creation CI and previous CLI CI, complete broader
-source/output/policy diagnostics, then broader typed proxies, camera ownership,
+Next: complete native/web cached output presentation/export using the shared
+descriptors, expose real actor retry scheduling, verify native-creation PR CI and
+investigate the push COM fixture timeout. Then complete broader typed proxies, camera ownership,
 coordination and every remaining
 original milestone gate. This increment does not close the full setup milestone.
 

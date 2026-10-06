@@ -79,6 +79,47 @@ fn connect(output: Uuid) -> Value {
 }
 
 #[tokio::test(start_paused = true)]
+async fn ipc_output_diagnostics_negotiate_read_only_revision_fenced_pages() {
+    let f = fixture();
+    let mut peer = Peer::start(f.runtime.clone(), Limits::default()).await;
+    assert!(
+        peer.hello["operations"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("outputStatus"))
+    );
+    let command = json!({"op":"outputStatus","output":f.switch,"expectedRevision":f.config.revision,"start":0,"limit":1});
+    let observed = peer.call(command.clone()).await;
+    assert_eq!(observed["result"]["purpose"], "cachedDiagnostics");
+    assert_eq!(observed["result"]["nextStart"], 1);
+    let mut stale = command.clone();
+    stale["expectedRevision"] = json!(Uuid::new_v4());
+    assert_eq!(peer.call(stale).await["error"]["code"], "revisionConflict");
+    let mut invalid = command.clone();
+    invalid["limit"] = json!(33);
+    assert_eq!(peer.call(invalid).await["error"]["code"], "invalidValue");
+    let mut missing = command;
+    missing.as_object_mut().unwrap().remove("expectedRevision");
+    assert!(serde_json::from_value::<regain_hub::ipc::Command>(missing).is_err());
+    assert_eq!(f.runtime.active_connections(), 0);
+    assert!(
+        f.runtime
+            .source_snapshots()
+            .iter()
+            .all(|source| source.lease_count == 0)
+    );
+    assert!(
+        f.devices
+            .iter()
+            .all(|device| device.connects.load(SeqCst) == 0
+                && device.reads.load(SeqCst) == 0
+                && device.writes.load(SeqCst) == 0
+                && device.polls.load(SeqCst) == 0)
+    );
+    drop(peer);
+}
+
+#[tokio::test(start_paused = true)]
 async fn ipc_async_connection_uses_shared_progress_and_failure_without_replaying() {
     let f = fixture();
     f.devices[0].hang_connect.store(true, SeqCst);

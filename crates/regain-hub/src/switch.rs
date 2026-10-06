@@ -137,6 +137,68 @@ impl SwitchOutput {
             .map(|channel| channel.label.clone())
             .unwrap_or_else(|| format!("Removed channel {number}")))
     }
+    fn sample_from(
+        &self,
+        channel: &SwitchChannel,
+        snapshot: &SourceSnapshot,
+        now: std::time::Duration,
+    ) -> Result<ScalarSample, SourceError> {
+        let sample = scalar(snapshot, &channel.readout, now)?;
+        if sample.age_seconds >= self.maximum_age[&sample.source] {
+            return Err(unavailable("Switch reading is stale"));
+        }
+        if sample.value < channel.minimum || sample.value > channel.maximum {
+            return Err(unavailable("Switch reading is outside its declared bounds"));
+        }
+        Ok(sample)
+    }
+    pub(crate) fn diagnostics(
+        &self,
+        start: u32,
+        end: u32,
+        now: std::time::Duration,
+    ) -> Result<Vec<crate::diagnostics::SwitchChannel>, SourceError> {
+        let mut states = BTreeMap::new();
+        let mut channels = Vec::new();
+        let mut keys: BTreeMap<Uuid, std::collections::BTreeSet<String>> = BTreeMap::new();
+        for (_, channel) in self.channels.range(start..end) {
+            keys.entry(channel.readout.source())
+                .or_default()
+                .insert(channel.readout.sample_key());
+        }
+        for number in start..end {
+            let Some(channel) = self.channel(number)? else {
+                channels.push(crate::diagnostics::SwitchChannel::Removed { number });
+                continue;
+            };
+            let source = channel.readout.source();
+            if let std::collections::btree_map::Entry::Vacant(entry) = states.entry(source) {
+                entry.insert(
+                    self.registry
+                        .get(source)?
+                        .with_snapshot(|state| state.project_samples(&keys[&source])),
+                );
+            }
+            let state = &states[&source];
+            channels.push(crate::diagnostics::SwitchChannel::Configured {
+                channel: Box::new(crate::diagnostics::ConfiguredSwitchChannel {
+                    number,
+                    id: channel.id,
+                    label: channel.label.clone(),
+                    readout: channel.readout.clone(),
+                    units: channel.units.clone(),
+                    minimum: channel.minimum,
+                    maximum: channel.maximum,
+                    step: channel.step,
+                    configured_writable: channel.writable,
+                    maximum_age_seconds: self.maximum_age[&source],
+                    sample: self.sample_from(channel, state, now).into(),
+                    health: state.into(),
+                }),
+            });
+        }
+        Ok(channels)
+    }
 }
 pub struct SwitchSession {
     output: Arc<SwitchOutput>,
@@ -153,26 +215,11 @@ impl SwitchSession {
     }
     pub(crate) fn sample(&self, number: u32) -> Result<ScalarSample, SourceError> {
         let channel = self.active(number)?;
-        self.sample_from(
+        self.output.sample_from(
             channel,
             &self.leases[&channel.readout.source()].source.snapshot(),
             self.output.clock.now(),
         )
-    }
-    fn sample_from(
-        &self,
-        channel: &SwitchChannel,
-        snapshot: &SourceSnapshot,
-        now: std::time::Duration,
-    ) -> Result<ScalarSample, SourceError> {
-        let sample = scalar(snapshot, &channel.readout, now)?;
-        if sample.age_seconds >= self.output.maximum_age[&sample.source] {
-            return Err(unavailable("Switch reading is stale"));
-        }
-        if sample.value < channel.minimum || sample.value > channel.maximum {
-            return Err(unavailable("Switch reading is outside its declared bounds"));
-        }
-        Ok(sample)
     }
     /// Cached operational values only. Clone each source cache once and use the
     /// same sample for the boolean/numeric pair; omit failed or retired slots.
@@ -187,7 +234,7 @@ impl SwitchSession {
                 .values()
                 .filter(|c| c.readout.source() == *id)
             {
-                if let Ok(sample) = self.sample_from(channel, &snapshot, now) {
+                if let Ok(sample) = self.output.sample_from(channel, &snapshot, now) {
                     values.insert(
                         channel.number,
                         (sample.value != channel.minimum, sample.value),

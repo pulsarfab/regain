@@ -77,6 +77,7 @@ impl Publisher {
                 | Command::GetConfig {}
                 | Command::HostStatus {}
                 | Command::SourceStatus { .. }
+                | Command::OutputStatus { .. }
                 | Command::InspectSource { .. }
                 | Command::ValidateConfig { .. }
                 | Command::ApplyConfig { .. }

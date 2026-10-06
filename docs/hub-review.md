@@ -3,6 +3,60 @@
 This records local review and tests for the single hub PR. Passing a foundation
 test does not imply that a frontend, transport, or hardware gate has passed.
 
+## 2026-10-06: cached output diagnostic API
+
+Reviewed controller ownership, saved-revision fencing, pagination, sample epochs,
+expiry/recovery, write uncertainty, weather averaging and exportable field scope.
+The negotiated `outputStatus` operation uses the existing host and protected setup
+endpoint without constructing output sessions, capability requests or source leases.
+Pages are bounded to 32; an empty terminal page is explicit and invalid cursors
+are rejected. Safety's whole-output decision includes members outside the page.
+
+Corrections made during implementation/review:
+
+- Reuse Switch's actual scalar age/range interpretation instead of a second
+  diagnostic freshness rule. Expose configured write intent without implying
+  runtime CanWrite or probing its capabilities.
+- Keep an inactive safety controller unknown/unsafe even if another client has
+  cached safe input. Preserve live raw/effective state, independent counters,
+  reason/hold/age and policy. Reads cannot finish recovery; expired evidence can
+  withdraw permission without waiting for another poll.
+- Read weather on a private engine copy so diagnostics cannot modify live
+  history or last-valid clocks. Project only selected scalar keys and relevant
+  histories, retaining wind-speed dependencies for wind direction. Large unrelated
+  vendor text stays outside the copy and reply.
+- Include decision/sample generation and revision identities rather than
+  implying atomic consistency between an engine cache and current source health.
+  Retain uncertain writes without another command or reset.
+- The initial pagination test accidentally duplicated an Alpaca source identity.
+  Production validation correctly rejected it; the private mock fixture now uses
+  a distinct device number and tests the real whole-output aggregation.
+
+Verification: full `cargo test -p regain-hub -p regain-alpaca --locked` passes,
+including 41 runtime tests and 13 HTTP publication/setup tests. Ten new tests
+cover diagnostic invariants, recovery/expiry, inactive cached safe, whole-output
+aggregation, sparse/reserved slots, weather fallback and independent sensor
+failures, private history/clock preservation, uncertain writes and IPC/HTTP guards.
+Strict Clippy, Rust 1.89.0 all-target checks, generated contract freshness, Node
+contract suites and four independent schema checks pass. All 155 NINA regressions
+pass. Actual net48 x86/x64 production-host fixtures now call this negotiated API
+before connection and with two sibling leases; both pass with zero build warnings.
+Logs: `artifacts/hub-output-diagnostics-{rust,clippy,msrv,nina,net48}.log`.
+
+CI evidence from earlier increments: CLI creation eeb9208 passes both complete
+runs 37466565218/37466555917. Native creation 3dd86b4 PR run 37468454801 is still
+active, with seven completed jobs passing and Windows at installer checks. Its
+push run 37468447863 fails the first x86 COM import fixture's five-second response
+wait. NINA 155 and both net48 fixtures passed first. Full failure output is retained
+at `artifacts/hub-native-creation-push-ci-failure.log`; do not infer a cause or
+consider this checkpoint fully accepted before investigation.
+
+Next required diagnostic work: native/web presentation and protected exports
+using shared descriptors, and actual source actor retry scheduling. The API is
+not evidence of rendered diagnostics, interactive acceptance or any remaining
+typed-device/camera/coordination/conformance/hardware milestone. All original
+gates remain required before merging the single PR.
+
 ## 2026-10-05: contracts and safety/configuration foundation
 
 Reviewed against main `c8fd7c4`, the original hub plan, the installed ASCOM/NINA

@@ -54,6 +54,8 @@ pub enum Phase {
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Snapshot {
+    pub configuration_revision: Uuid,
+    pub generation: Uuid,
     pub phase: Phase,
     pub raw_is_safe: Option<bool>,
     pub permits_safe: bool,
@@ -275,6 +277,8 @@ impl Endpoint {
     pub fn snapshot(&mut self, now: Duration) -> Snapshot {
         self.expire(now);
         Snapshot {
+            configuration_revision: self.fence.revision,
+            generation: self.fence.generation,
             phase: self.phase,
             raw_is_safe: self.raw,
             permits_safe: self.permits,

@@ -1184,3 +1184,40 @@ startup. It reports an identified existing file or explicit absence; malformed,
 unsupported and unreadable files remain uncertain. Identification does not claim
 full configuration validation or ownership of another creator's file. Loading
 then validates through the regular host and permits editing an empty configuration.
+
+### Cached output diagnostics
+
+`outputStatus` is a negotiated read-only setup operation, available through private
+IPC and the same-origin JSON setup endpoint. It requires an output ID, the saved
+`expectedRevision`, `start` and `limit`; stale revisions fail before observation.
+`describeConfig.outputDiagnostics` defines labels/defaults/bounds and the frontend
+request budget. Limits are 1–32, and start may equal total for an empty terminal
+page. Safety follows saved membership order, Switch follows stable slot numbers
+including removed slots, and weather follows canonical metric order. Replies carry
+purpose `cachedDiagnostics`, output/class/simulation, configuration revision,
+local monotonic observation time and validated page cursors.
+
+Safety reports the existing controller's whole-output decision, independent of
+the visible page. Each enabled membership includes policy and raw/effective state,
+reason, independent counters, evidence age, recovery hold and decision epoch. A
+disabled membership has no decision. An inactive controller reports unknown/unsafe;
+reading another client's cached safe data cannot construct a live policy or count
+an observation. Snapshot reads can withdraw expired permission, never restore it.
+
+Switch diagnostics use the operational scalar freshness/bounds function and
+include selected sample identity, configured range/units, per-channel failure and
+source health. `configuredWritable` describes saved intent and grants no write
+permission: diagnostics do not probe CanWrite or acquire control. Removed channel
+numbers remain visible. Weather reads the same fallback/averaging rules on a
+private copy projected to the page's scalar keys/history, including wind-speed
+dependencies. It cannot seed/prune live history or change last-valid clocks.
+Weather samples now also retain revision, generation and sequence identity.
+
+Diagnostic health includes source ID/epoch, transport state, lease count, retained
+write uncertainty and sanitized error. It excludes backend configuration,
+connection strings, credentials/references and arbitrary cached vendor text.
+Controller and source observations are separate caches rather than an atomic
+equipment snapshot; their epochs must remain visible during transitions. There
+is no equipment read, refresh, connection lease or write in this operation.
+Native/web presentation and exports, including actual next-retry scheduling,
+remain pending; clients must not invent a countdown from a configured delay.

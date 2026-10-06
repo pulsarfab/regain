@@ -38,6 +38,69 @@ struct Fixture {
 }
 
 #[tokio::test]
+async fn setup_output_diagnostics_are_same_origin_revision_checked_and_inert() {
+    let f = Fixture::new().await;
+    let command = json!({"op":"outputStatus","output":f.config.outputs[0].id,"expectedRevision":f.config.revision,"start":0,"limit":1});
+    for (media, origin) in [
+        ("application/json", "https://other.invalid"),
+        ("text/plain", "http://127.0.0.1:11111"),
+    ] {
+        assert_eq!(
+            setup(&f.router, command.clone(), media, origin).await.0,
+            StatusCode::FORBIDDEN
+        );
+    }
+    let (code, observed) = setup(
+        &f.router,
+        command.clone(),
+        "application/json",
+        "http://127.0.0.1:11111",
+    )
+    .await;
+    assert_eq!(code, StatusCode::OK, "{observed}");
+    assert_eq!(observed["result"]["purpose"], "cachedDiagnostics");
+    assert_eq!(observed["result"]["output"], json!(f.config.outputs[0].id));
+    assert_eq!(
+        observed["result"]["configurationRevision"],
+        json!(f.config.revision)
+    );
+    assert_eq!(observed["result"]["simulated"], true);
+    let mut stale = command.clone();
+    stale["expectedRevision"] = json!(uuid::Uuid::new_v4());
+    let (_, rejected) = setup(
+        &f.router,
+        stale,
+        "application/json",
+        "http://127.0.0.1:11111",
+    )
+    .await;
+    assert_eq!(rejected["error"]["code"], "revisionConflict");
+    let mut missing = command;
+    missing.as_object_mut().unwrap().remove("expectedRevision");
+    assert_eq!(
+        setup(
+            &f.router,
+            missing,
+            "application/json",
+            "http://127.0.0.1:11111"
+        )
+        .await
+        .0,
+        StatusCode::BAD_REQUEST
+    );
+    assert_eq!(f.hub.active_connections(), 0);
+    assert!(
+        f.hub
+            .source_snapshots()
+            .iter()
+            .all(|source| source.lease_count == 0
+                && source.sequence == 0
+                && !source.transport_connected)
+    );
+    f.finish().await;
+}
+
+#[tokio::test]
 async fn setup_simulation_updates_are_sparse_revision_checked_and_same_origin() {
     let f = Fixture::new().await;
     let source = f.config.sources[0].id;

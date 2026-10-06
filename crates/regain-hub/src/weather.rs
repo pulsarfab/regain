@@ -158,17 +158,21 @@ pub struct WeatherReading {
     pub value: f64,
     pub unit: &'static str,
     pub source: Uuid,
+    pub revision: Uuid,
+    pub generation: Uuid,
+    pub sequence: u64,
     pub readout: Readout,
     pub age_seconds: f64,
     pub sample_count: usize,
     pub average_seconds: f64,
 }
+#[derive(Clone)]
 struct Point {
     at: f64,
     age: f64,
     value: f64,
 }
-#[derive(Default)]
+#[derive(Clone, Default)]
 struct History {
     identity: Option<(usize, Uuid, Uuid)>,
     sequence: u64,
@@ -184,6 +188,53 @@ pub struct WeatherEngine {
     last_valid: BTreeMap<WeatherMetric, (f64, f64)>,
 }
 impl WeatherEngine {
+    fn diagnostic_copy(&self, metrics: &[WeatherMetric]) -> Self {
+        let mut metrics: std::collections::BTreeSet<_> = metrics.iter().copied().collect();
+        if metrics.contains(&WeatherMetric::WindDirection) {
+            metrics.insert(WeatherMetric::WindSpeed);
+        }
+        let measurements: BTreeMap<_, _> = self
+            .measurements
+            .iter()
+            .filter(|(metric, _)| metrics.contains(metric))
+            .map(|(metric, measurement)| (*metric, measurement.clone()))
+            .collect();
+        let mut keys: BTreeMap<Uuid, std::collections::BTreeSet<String>> = BTreeMap::new();
+        for readout in measurements
+            .values()
+            .flat_map(|measurement| &measurement.sources)
+        {
+            keys.entry(readout.source())
+                .or_default()
+                .insert(readout.sample_key());
+        }
+        Self {
+            measurements,
+            states: keys
+                .iter()
+                .filter_map(|(source, keys)| {
+                    self.states
+                        .get(source)
+                        .map(|state| (*source, state.project_samples(keys)))
+                })
+                .collect(),
+            history: self
+                .history
+                .iter()
+                .filter(|(metric, _)| metrics.contains(metric))
+                .map(|(metric, history)| (*metric, history.clone()))
+                .collect(),
+            average: self.average,
+            last_now: self.last_now,
+            clock_fault: self.clock_fault,
+            last_valid: self
+                .last_valid
+                .iter()
+                .filter(|(metric, _)| metrics.contains(metric))
+                .map(|(metric, time)| (*metric, *time))
+                .collect(),
+        }
+    }
     pub fn new(measurements: BTreeMap<WeatherMetric, Measurement>) -> Self {
         let average = measurements
             .iter()
@@ -364,6 +415,9 @@ impl WeatherEngine {
             value,
             unit: metric.unit(),
             source: sample.source,
+            revision: sample.revision,
+            generation: sample.generation,
+            sequence: sample.sequence,
             readout: measurement.sources[index].clone(),
             age_seconds: sample.age_seconds,
             sample_count: history.points.len(),
@@ -484,6 +538,56 @@ impl WeatherOutput {
             _leases: leases,
         })
     }
+    pub(crate) fn diagnostics(
+        &self,
+        start: u32,
+        end: u32,
+        now: Duration,
+    ) -> (f64, Vec<crate::diagnostics::WeatherMeasurement>) {
+        // Read the same averaging/fallback engine on a private copy. Inspection
+        // cannot prune, seed or change the live history/last-valid clocks.
+        let engine = self.engine.lock().unwrap();
+        let measurements: Vec<_> = engine
+            .measurements
+            .iter()
+            .skip(start as usize)
+            .take((end - start) as usize)
+            .map(|(metric, configuration)| (*metric, configuration.clone()))
+            .collect();
+        let copy = engine.diagnostic_copy(
+            &measurements
+                .iter()
+                .map(|(metric, _)| *metric)
+                .collect::<Vec<_>>(),
+        );
+        drop(engine);
+        let mut engine = copy;
+        let average = engine.average_period_hours();
+        let measurements = measurements
+            .into_iter()
+            .map(|(metric, configuration)| {
+                let sample = engine.read(metric, now).into();
+                let sources = configuration
+                    .sources
+                    .iter()
+                    .map(|readout| {
+                        // The registry is validated and immutable in this runtime.
+                        self.registry
+                            .get(readout.source())
+                            .unwrap()
+                            .with_snapshot(|state| crate::diagnostics::SourceHealth::from(state))
+                    })
+                    .collect();
+                crate::diagnostics::WeatherMeasurement {
+                    metric,
+                    configuration,
+                    sample,
+                    sources,
+                }
+            })
+            .collect();
+        (average, measurements)
+    }
 }
 impl Drop for WeatherOutput {
     fn drop(&mut self) {
@@ -569,5 +673,80 @@ impl WeatherSession {
             .lock()
             .unwrap()
             .set_average_period_hours(hours)
+    }
+}
+
+#[cfg(test)]
+mod diagnostic_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn diagnostic_copy_retains_sample_identity_and_cannot_mutate_live_history_or_clocks() {
+        let source = Uuid::new_v4();
+        let revision = Uuid::new_v4();
+        let generation = Uuid::new_v4();
+        let mut engine = WeatherEngine::new(BTreeMap::from([(
+            WeatherMetric::Temperature,
+            Measurement {
+                sources: vec![Readout::Property {
+                    source,
+                    property: "temperature".into(),
+                    unit: None,
+                }],
+                maximum_age_seconds: 5.0,
+                average_seconds: 2.0,
+            },
+        )]));
+        let state = SourceSnapshot {
+            source,
+            revision,
+            generation,
+            sequence: 1,
+            transport_connected: true,
+            write_uncertain: false,
+            connection_info: None,
+            simulated: false,
+            simulation: None,
+            lease_count: 1,
+            values: BTreeMap::from([
+                ("temperature".into(), json!(20)),
+                (
+                    "arbitraryVendorText".into(),
+                    json!("PRIVATE_FIXTURE_SECRET".repeat(100_000)),
+                ),
+            ]),
+            sample_errors: BTreeMap::new(),
+            sample_ages_seconds: BTreeMap::new(),
+            sample_started_seconds: BTreeMap::new(),
+            sample_sequences: BTreeMap::new(),
+            completed_passes: 1,
+            sampled_at_seconds: Some(0.0),
+            error: None,
+        };
+        engine.observe(state, Duration::ZERO);
+        let history_count = engine.history[&WeatherMetric::Temperature].points.len();
+        let last_valid = engine.last_valid.clone();
+        let mut copy = engine.diagnostic_copy(&[WeatherMetric::Temperature]);
+        assert_eq!(copy.states[&source].values.len(), 1);
+        let reading = copy
+            .read(WeatherMetric::Temperature, Duration::from_secs(1))
+            .unwrap();
+        assert_eq!(reading.revision, revision);
+        assert_eq!(reading.generation, generation);
+        assert_eq!(reading.sequence, 1);
+        assert_eq!(reading.sample_count, history_count);
+        assert!(
+            copy.read(WeatherMetric::Temperature, Duration::from_secs(5))
+                .is_err()
+        );
+        assert!(!copy.history.contains_key(&WeatherMetric::Temperature));
+        assert_eq!(
+            engine.history[&WeatherMetric::Temperature].points.len(),
+            history_count
+        );
+        assert_eq!(engine.last_now, 0.0);
+        assert_eq!(engine.last_valid, last_valid);
+        assert_eq!(engine.states[&source].values.len(), 2);
     }
 }

@@ -22,6 +22,7 @@ struct Device {
     disconnects: AtomicUsize,
     writes: AtomicUsize,
     reads: AtomicUsize,
+    polls: AtomicUsize,
     hang_connect: AtomicBool,
     hang_disconnect: AtomicBool,
     hang_write: AtomicBool,
@@ -76,6 +77,7 @@ impl Backend for Mock {
     }
     fn poll(&mut self) -> BackendFuture<'_, Values> {
         Box::pin(async {
+            self.device.polls.fetch_add(1, SeqCst);
             if self.device.hang_poll.load(SeqCst) {
                 std::future::pending::<()>().await;
             }
@@ -106,6 +108,9 @@ struct Fixture {
     weather: Uuid,
 }
 fn fixture() -> Fixture {
+    fixture_with(|_| {})
+}
+fn fixture_with(change: impl FnOnce(&mut HubConfig)) -> Fixture {
     let mut config: HubConfig =
         serde_json::from_str(include_str!("../examples/mixed-switch.json")).unwrap();
     let switch = config.outputs[0].id;
@@ -145,6 +150,7 @@ fn fixture() -> Fixture {
     for source in &mut config.sources {
         source.polling.poll_seconds = 1.0;
     }
+    change(&mut config);
     let devices: Vec<_> = config
         .sources
         .iter()
@@ -185,6 +191,9 @@ async fn settle() {
         tokio::task::yield_now().await;
     }
 }
+
+#[path = "support/runtime_diagnostics.rs"]
+mod diagnostics;
 
 #[tokio::test(start_paused = true)]
 async fn asynchronous_connection_admission_is_bounded_and_failures_remain_visible_until_reconciled()

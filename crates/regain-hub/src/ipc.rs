@@ -101,6 +101,13 @@ pub enum Command {
     SourceStatus {
         source: Uuid,
     },
+    OutputStatus {
+        output: Uuid,
+        #[serde(rename = "expectedRevision")]
+        expected_revision: Uuid,
+        start: u32,
+        limit: u32,
+    },
     InspectSource {
         source: Uuid,
         start: u32,
@@ -371,7 +378,7 @@ where
                 if !greeted {
                     if !matches!(request.command, Command::Hello {}) { return Err(ProtocolError::Handshake); }
                     greeted = true;
-                    let mut operations = vec!["describeConfig","getConfig","validateConfig","listDevices","sourceStatus","inspectSource","updateSimulation","connect","disconnect","changeConnection","get","put","hostStatus"];
+                    let mut operations = vec!["describeConfig","getConfig","validateConfig","listDevices","sourceStatus","outputStatus","inspectSource","updateSimulation","connect","disconnect","changeConnection","get","put","hostStatus"];
                     if service.can_apply() { operations.push("applyConfig"); }
                     if service.credential_description().is_some() { operations.extend(["createCredential", "credentialStatus", "deleteCredential"]); }
                     let hello = json!({"protocolVersion":VERSION, "instanceId":service.instance_id(),
@@ -502,6 +509,17 @@ async fn dispatch(
         }
         Command::ListDevices {} => json!(runtime.outputs()),
         Command::SourceStatus { source } => json!(runtime.source_snapshot(source)?),
+        Command::OutputStatus {
+            output,
+            expected_revision,
+            start,
+            limit,
+        } => {
+            if expected_revision != runtime.revision() {
+                return Err(UpdateError::Conflict.into());
+            }
+            json!(runtime.output_status(output, start, limit)?)
+        }
         Command::UpdateSimulation {
             source,
             expected_revision,

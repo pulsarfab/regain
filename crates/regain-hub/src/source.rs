@@ -186,6 +186,48 @@ pub struct SourceSnapshot {
     pub sampled_at_seconds: Option<f64>,
     pub error: Option<SourceError>,
 }
+impl SourceSnapshot {
+    /// A cached scalar reader needs only its selected keys. Do not copy vendor
+    /// text, connection data or simulation controls into a diagnostic engine.
+    pub(crate) fn project_samples(&self, keys: &BTreeSet<String>) -> Self {
+        fn selected<T: Clone>(
+            values: &BTreeMap<String, T>,
+            keys: &BTreeSet<String>,
+        ) -> BTreeMap<String, T> {
+            keys.iter()
+                .filter_map(|key| values.get(key).map(|value| (key.clone(), value.clone())))
+                .collect()
+        }
+        Self {
+            source: self.source,
+            revision: self.revision,
+            generation: self.generation,
+            sequence: self.sequence,
+            transport_connected: self.transport_connected,
+            write_uncertain: self.write_uncertain,
+            connection_info: None,
+            simulated: self.simulated,
+            simulation: None,
+            lease_count: self.lease_count,
+            values: keys
+                .iter()
+                .filter_map(|key| {
+                    self.values
+                        .get(key)
+                        .filter(|value| value.is_number() || value.is_boolean())
+                        .map(|value| (key.clone(), value.clone()))
+                })
+                .collect(),
+            sample_errors: selected(&self.sample_errors, keys),
+            sample_ages_seconds: selected(&self.sample_ages_seconds, keys),
+            sample_started_seconds: selected(&self.sample_started_seconds, keys),
+            sample_sequences: selected(&self.sample_sequences, keys),
+            completed_passes: self.completed_passes,
+            sampled_at_seconds: self.sampled_at_seconds,
+            error: self.error.clone(),
+        }
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct PollEvent {
@@ -406,6 +448,9 @@ impl SourceHandle {
     }
     pub fn snapshot(&self) -> SourceSnapshot {
         self.snapshot.borrow().clone()
+    }
+    pub(crate) fn with_snapshot<T>(&self, read: impl FnOnce(&SourceSnapshot) -> T) -> T {
+        read(&self.snapshot.borrow())
     }
     /// The terminal cleanup result is retained, making concurrent/repeated
     /// shutdown idempotent without replaying an upstream Disconnect.

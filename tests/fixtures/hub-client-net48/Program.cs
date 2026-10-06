@@ -37,8 +37,20 @@ internal static class Program
             if (first.Hello.ClientId == second.Hello.ClientId) throw new InvalidOperationException("Clients were not independent");
             var saved = await first.RequestAsync(JsonSerializer.SerializeToElement(new { op = "getConfig" }), deadline.Token);
             var output = saved.GetProperty("outputs")[0].GetProperty("id").GetGuid();
+            var outputStatus = JsonSerializer.SerializeToElement(new { op = "outputStatus", output,
+                expectedRevision = saved.GetProperty("revision").GetGuid(), start = 0, limit = 1 });
+            var diagnostic = await first.RequestAsync(outputStatus, deadline.Token);
+            if (diagnostic.GetProperty("purpose").GetString() != "cachedDiagnostics" ||
+                diagnostic.GetProperty("output").GetGuid() != output ||
+                diagnostic.GetProperty("configurationRevision").GetGuid() != saved.GetProperty("revision").GetGuid() ||
+                diagnostic.GetProperty("nextStart").GetInt32() != 1 ||
+                diagnostic.GetProperty("diagnostics").GetProperty("channels")[0].GetProperty("health").GetProperty("leaseCount").GetInt32() != 0)
+                throw new InvalidOperationException("Cached output diagnostics changed identity, pagination or acquired equipment");
             var connect = JsonSerializer.SerializeToElement(new { op = "changeConnection", output, connected = true, asynchronous = false });
             await first.RequestAsync(connect, deadline.Token); await second.RequestAsync(connect, deadline.Token);
+            diagnostic = await second.RequestAsync(outputStatus, deadline.Token);
+            if (diagnostic.GetProperty("diagnostics").GetProperty("channels")[0].GetProperty("health").GetProperty("leaseCount").GetInt32() != 2)
+                throw new InvalidOperationException("Output diagnostics changed the independent client leases");
             var connected = JsonSerializer.SerializeToElement(new { op = "get", output, property = new { member = "connected" } });
             first.Dispose();
             if (!(await second.RequestAsync(connected, deadline.Token)).GetBoolean()) throw new InvalidOperationException("One client revoked another");

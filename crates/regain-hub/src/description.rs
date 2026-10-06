@@ -14,6 +14,7 @@ pub fn describe_config(capabilities: &[&str]) -> Value {
         "schema": schema,
         "capabilities": capabilities,
         "simulationControl": crate::simulated::description(),
+        "outputDiagnostics": crate::diagnostics::description(),
         "apply": "disconnect",
         "validation": "The hub validates relationships, identities, capabilities and revisions before applying. Schema validation alone does not authorize an update."
     })

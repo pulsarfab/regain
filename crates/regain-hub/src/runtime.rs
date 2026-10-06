@@ -188,6 +188,111 @@ impl HubRuntime {
     pub fn source_snapshot(&self, source: Uuid) -> Result<SourceSnapshot, SourceError> {
         self.registry.get(source).map(|source| source.snapshot())
     }
+    /// Cached setup observation only: no connection/control leases or source I/O.
+    /// The IPC dispatcher fences this read against the editor's saved revision.
+    pub fn output_status(
+        &self,
+        output: Uuid,
+        start: u32,
+        limit: u32,
+    ) -> Result<crate::diagnostics::OutputStatus, SourceError> {
+        use crate::diagnostics::{Diagnostics, OutputStatus, SafetyMember, SourceHealth, page};
+        let controller = self
+            .outputs
+            .get(&output)
+            .ok_or_else(|| SourceError::new(ErrorKind::InvalidValue, "Unknown output ID"))?;
+        let config = self
+            .config
+            .outputs
+            .iter()
+            .find(|entry| entry.id == output)
+            .unwrap();
+        let total = match controller {
+            Output::Safety { members, .. } => members.len() as u32,
+            Output::Switch(switch) => switch.max_switch(),
+            Output::Weather(_) => match &config.device {
+                VirtualDevice::Weather { measurements } => measurements.len() as u32,
+                _ => unreachable!("Validated weather controller"),
+            },
+        };
+        let end = page(start, limit, total)?;
+        let now = self.clock.now();
+        let diagnostics = match controller {
+            Output::Safety { members, active } => {
+                // Upgrade only an already running controller. Constructing a
+                // SafetyOutput here would acquire leases and seed live policy.
+                let running = active.lock().unwrap().upgrade();
+                let snapshot = running.as_ref().map(|controller| controller.snapshot());
+                let mut observations = Vec::new();
+                for member in members
+                    .iter()
+                    .skip(start as usize)
+                    .take((end - start) as usize)
+                {
+                    let state = self
+                        .registry
+                        .get(member.source)?
+                        .with_snapshot(|state| SourceHealth::from(state));
+                    let decision = if !member.enabled {
+                        None
+                    } else if let Some(snapshot) = &snapshot {
+                        snapshot.endpoints.get(&member.source).cloned()
+                    } else {
+                        // Pure policy construction has no event consumers or
+                        // transport ownership. Cached source safe never feeds it.
+                        let mut endpoint = crate::safety::Endpoint::new(
+                            member.policy.clone(),
+                            crate::safety::Fence {
+                                revision: state.revision,
+                                generation: state.generation,
+                            },
+                        )
+                        .expect("Validated safety membership");
+                        Some(endpoint.snapshot(now))
+                    };
+                    observations.push(SafetyMember {
+                        source: member.source,
+                        enabled: member.enabled,
+                        policy: member.policy.clone(),
+                        decision,
+                        health: state,
+                    });
+                }
+                Diagnostics::Safety {
+                    controller_active: running.is_some(),
+                    is_safe: snapshot.is_some_and(|snapshot| snapshot.is_safe),
+                    members: observations,
+                }
+            }
+            Output::Switch(switch) => Diagnostics::Switch {
+                channels: switch.diagnostics(start, end, now)?,
+            },
+            Output::Weather(weather) => {
+                let (average_period_hours, measurements) = weather.diagnostics(start, end, now);
+                Diagnostics::Weather {
+                    average_period_hours,
+                    measurements,
+                }
+            }
+        };
+        Ok(OutputStatus {
+            purpose: "cachedDiagnostics",
+            output,
+            configuration_revision: self.config.revision,
+            observed_seconds: now.as_secs_f64(),
+            device_type: config.device.device_type(),
+            simulated: config.device.sources().iter().any(|source| {
+                self.registry
+                    .get(*source)
+                    .is_ok_and(|source| source.with_snapshot(|state| state.simulated))
+            }),
+            start,
+            limit,
+            total,
+            next_start: (end < total).then_some(end),
+            diagnostics,
+        })
+    }
     /// Setup probing owns a temporary connection and participates in apply's
     /// quiescence check just like a pending output connection.
     pub async fn inspect_source(
@@ -274,7 +379,7 @@ impl HubRuntime {
                 simulated: output.device.sources().iter().any(|source| {
                     self.registry
                         .get(*source)
-                        .is_ok_and(|source| source.snapshot().simulated)
+                        .is_ok_and(|source| source.with_snapshot(|state| state.simulated))
                 }),
             })
             .collect()
