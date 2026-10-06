@@ -2,6 +2,7 @@
 //! protocols, discovery, and motion coordinators remain in the vendor crates.
 use crate::{
     config::{DeviceType, NativeDevice, SourceBackend, SourceConfig},
+    native_reference::{NativeReferenceStore, ReferenceKey, ReferenceRecord, ReferenceState},
     source::{Backend, BackendFuture, ErrorKind, SampleBatch, SourceError, Values},
 };
 use regain_core::accessory::{AccessoryError, AccessoryWorker};
@@ -14,6 +15,7 @@ use tokio::process::Command;
 pub struct NativeRuntime {
     pub directory: PathBuf,
     pub simulate: bool,
+    pub references: Option<NativeReferenceStore>,
 }
 pub struct NativeAccessoryBackend {
     runtime: NativeRuntime,
@@ -22,6 +24,10 @@ pub struct NativeAccessoryBackend {
     deadline: Duration,
     worker: Option<AccessoryWorker>,
     verified_identity: Option<Value>,
+    reference_key: ReferenceKey,
+    reference: Option<ReferenceRecord>,
+    reference_uncertain: bool,
+    observed_reverse: Option<bool>,
 }
 impl NativeAccessoryBackend {
     /// Validates configuration without discovery, process launch, or device I/O.
@@ -39,12 +45,21 @@ impl NativeAccessoryBackend {
             return Err(invalid("Invalid native identity or polling settings"));
         }
         Ok(Self {
-            runtime,
+            runtime: runtime.clone(),
             device: *device,
             identity: identity.clone(),
             deadline: Duration::from_secs_f64(config.polling.request_timeout_seconds),
             worker: None,
             verified_identity: None,
+            reference_key: ReferenceKey {
+                source: config.id,
+                device: *device,
+                identity: identity.to_ascii_lowercase(),
+                simulated: runtime.simulate,
+            },
+            reference: None,
+            reference_uncertain: false,
+            observed_reverse: None,
         })
     }
     pub fn device_type(&self) -> DeviceType {
@@ -79,10 +94,38 @@ impl NativeAccessoryBackend {
         Ok(status)
     }
     async fn samples(&mut self) -> Result<SampleBatch, SourceError> {
+        let reverse = if self.device_type() == DeviceType::Rotator {
+            let settings = self.request(json!({"command":"settings"}), false).await?;
+            let reverse = settings["reverse"].as_bool().ok_or_else(bad_status)?;
+            if self.observed_reverse.is_some_and(|saved| saved != reverse) {
+                self.reference_uncertain = true;
+            } else if self.observed_reverse.is_none() {
+                self.observed_reverse = Some(reverse);
+            }
+            if let Some(ReferenceRecord {
+                state: ReferenceState::Known { reverse: saved, .. },
+                ..
+            }) = &self.reference
+                && *saved != reverse
+            {
+                self.reference_uncertain = true;
+            }
+            Some(reverse)
+        } else {
+            None
+        };
         let status = self.status().await?;
         let mut batch = SampleBatch::default();
         for (member, field, boolean) in properties(self.device) {
+            if self.reference_uncertain && matches!(*member, "position" | "targetposition") {
+                batch.errors.insert((*member).into(), unknown_reference());
+                continue;
+            }
             let value = match (*member, self.device) {
+                ("canreverse", NativeDevice::Caa | NativeDevice::Falcon) => json!(true),
+                ("stepsize", NativeDevice::Caa) => json!(0.02),
+                ("stepsize", NativeDevice::Falcon) => json!(0.01),
+                ("reverse", NativeDevice::Caa | NativeDevice::Falcon) => json!(reverse.unwrap()),
                 ("position", NativeDevice::Efw) if status["moving"] == true => json!(-1),
                 ("coverstate", NativeDevice::Ofp2) => match status["cover"].as_str() {
                     Some("closed") => json!(1),
@@ -161,6 +204,15 @@ impl Backend for NativeAccessoryBackend {
                 return Ok(());
             }
             self.reset();
+            if self.device_type() == DeviceType::Rotator
+                && let Some(store) = &self.runtime.references
+            {
+                self.reference = store.load(self.reference_key.clone()).await?;
+                self.reference_uncertain = self
+                    .reference
+                    .as_ref()
+                    .is_some_and(|record| matches!(record.state, ReferenceState::Uncertain));
+            }
             let (vendor, device) = worker_arguments(self.device)?;
             let path = self
                 .runtime
@@ -208,6 +260,35 @@ impl Backend for NativeAccessoryBackend {
                 ));
             }
             identity["simulation"] = json!(self.runtime.simulate);
+            if let Some(ReferenceState::Known { offset, reverse }) =
+                self.reference.as_ref().map(|record| record.state.clone())
+            {
+                let restore = async {
+                    let settings = self.request(json!({"command":"settings"}), false).await?;
+                    let actual = settings["reverse"].as_bool().ok_or_else(bad_status)?;
+                    if actual != reverse {
+                        // An external direction change invalidates the saved
+                        // transform. Connect must never mutate hardware to fix it.
+                        self.reference_uncertain = true;
+                    } else {
+                        let reply = self
+                            .request(
+                                json!({"command":"restore-reference", "offset":offset}),
+                                false,
+                            )
+                            .await?;
+                        if reply["accepted"] != true {
+                            return Err(bad_status());
+                        }
+                    }
+                    Ok(())
+                }
+                .await;
+                if let Err(error) = restore {
+                    self.reset();
+                    return Err(error);
+                }
+            }
             self.verified_identity = Some(identity);
             Ok(())
         })
@@ -265,6 +346,106 @@ impl Backend for NativeAccessoryBackend {
     fn write(&mut self, member: String, parameters: Values) -> BackendFuture<'_, Value> {
         Box::pin(async move {
             let request = command_request(self.device, &member, &parameters)?;
+            if self.device_type() == DeviceType::Rotator {
+                let reference_change = matches!(member.as_str(), "sync" | "reverse");
+                let preflight = if member != "halt" {
+                    Some(self.samples().await?)
+                } else {
+                    None
+                };
+                if self.reference_uncertain
+                    && matches!(member.as_str(), "move" | "moveabsolute" | "reverse")
+                {
+                    return Err(unknown_reference());
+                }
+                if reference_change {
+                    let store = self.runtime.references.clone().ok_or_else(|| {
+                        SourceError::new(
+                            ErrorKind::Unavailable,
+                            "Durable native reference storage is required",
+                        )
+                    })?;
+                    let preflight = preflight.as_ref().unwrap();
+                    if preflight
+                        .values
+                        .get("ismoving")
+                        .and_then(Value::as_bool)
+                        .ok_or_else(bad_status)?
+                    {
+                        return Err(SourceError::new(
+                            ErrorKind::Busy,
+                            "Native rotator is moving",
+                        ));
+                    }
+                    let expected_angle = if member == "sync" {
+                        parameters["Position"].as_f64().unwrap()
+                    } else {
+                        preflight
+                            .values
+                            .get("position")
+                            .and_then(Value::as_f64)
+                            .filter(|value| value.is_finite())
+                            .ok_or_else(bad_status)?
+                    };
+                    let marker = store
+                        .replace(
+                            self.reference_key.clone(),
+                            self.reference.as_ref().map(|record| record.revision),
+                            ReferenceState::Uncertain,
+                        )
+                        .await?;
+                    self.reference = Some(marker);
+                    self.reference_uncertain = true;
+                    // Everything after this point may have changed the source.
+                    // A failed confirmation/save is uncertain, never replayable.
+                    let result = async {
+                        let reply = self.request(request, true).await?;
+                        if reply["accepted"] != true {
+                            return Err(SourceError::uncertain());
+                        }
+                        // CAA settings refreshes the worker's direction mapping.
+                        // Read it before the logical coordinate confirmation.
+                        let settings = self.request(json!({"command":"settings"}), false).await?;
+                        let reverse = settings["reverse"].as_bool().ok_or_else(bad_status)?;
+                        let status = self.status().await?;
+                        if status["moving"] != false {
+                            return Err(SourceError::uncertain());
+                        }
+                        let logical = status["logical_degrees"]
+                            .as_f64()
+                            .filter(|value| value.is_finite())
+                            .ok_or_else(bad_status)?;
+                        if ((logical - expected_angle + 180.0).rem_euclid(360.0) - 180.0).abs()
+                            > 1e-6
+                            || member == "reverse"
+                                && parameters["Reverse"].as_bool() != Some(reverse)
+                        {
+                            return Err(SourceError::uncertain());
+                        }
+                        let offset = status["logical_offset"]
+                            .as_f64()
+                            .filter(|offset| offset.is_finite())
+                            .ok_or_else(bad_status)?
+                            .rem_euclid(360.0);
+                        let record = store
+                            .replace(
+                                self.reference_key.clone(),
+                                self.reference.as_ref().map(|record| record.revision),
+                                ReferenceState::Known { offset, reverse },
+                            )
+                            .await?;
+                        self.reference = Some(record);
+                        self.reference_uncertain = false;
+                        self.observed_reverse = Some(reverse);
+                        Ok(Value::Null)
+                    }
+                    .await;
+                    return result.map_err(|error| SourceError {
+                        transport_lost: error.transport_lost,
+                        ..SourceError::uncertain()
+                    });
+                }
+            }
             if request["command"] == "move" {
                 let status = self.status().await?;
                 let maximum = if self.device == NativeDevice::Efw {
@@ -292,6 +473,9 @@ impl Backend for NativeAccessoryBackend {
     fn reset(&mut self) {
         self.worker.take();
         self.verified_identity = None;
+        self.reference = None;
+        self.reference_uncertain = false;
+        self.observed_reverse = None;
     }
 }
 fn worker_arguments(device: NativeDevice) -> Result<(&'static str, &'static str), SourceError> {
@@ -330,6 +514,9 @@ pub(crate) fn properties(device: NativeDevice) -> &'static [(&'static str, &'sta
         ],
         Efw => &[("position", "position", false), ("slots", "slots", false)],
         Caa => &[
+            ("canreverse", "canreverse", true),
+            ("reverse", "reverse", true),
+            ("stepsize", "stepsize", false),
             ("position", "logical_degrees", false),
             ("mechanicalposition", "mechanical_degrees", false),
             ("targetposition", "target_degrees", false),
@@ -337,6 +524,8 @@ pub(crate) fn properties(device: NativeDevice) -> &'static [(&'static str, &'sta
             ("temperature", "temperature_c", false),
         ],
         Falcon => &[
+            ("canreverse", "canreverse", true),
+            ("stepsize", "stepsize", false),
             ("position", "logical_degrees", false),
             ("mechanicalposition", "mechanical_degrees", false),
             ("targetposition", "target_degrees", false),
@@ -376,7 +565,7 @@ fn command_request(
         return Ok(json!({"command":"move", "position":position}));
     }
     if matches!(device, Caa | Falcon)
-        && matches!(member, "move" | "moveabsolute" | "movemechanical")
+        && matches!(member, "move" | "moveabsolute" | "movemechanical" | "sync")
     {
         let position = single("Position")?
             .as_f64()
@@ -390,8 +579,14 @@ fn command_request(
             })
             .ok_or_else(|| invalid("Position is outside the ASCOM angle range"))?;
         return Ok(
-            json!({"command":match member {"move"=>"move-relative", "moveabsolute"=>"move-to", _=>"move-mechanical"}, "degrees":position}),
+            json!({"command":match member {"move"=>"move-relative", "moveabsolute"=>"move-to", "sync"=>"sync", _=>"move-mechanical"}, "degrees":position}),
         );
+    }
+    if matches!(device, Caa | Falcon) && member == "reverse" {
+        let enabled = single("Reverse")?
+            .as_bool()
+            .ok_or_else(|| invalid("Reverse must be boolean"))?;
+        return Ok(json!({"command":"reverse", "enabled":enabled}));
     }
     if device == Ofp2 && member == "calibratoron" {
         let brightness = single("Brightness")?
@@ -452,6 +647,12 @@ fn invalid(message: &'static str) -> SourceError {
 fn bad_status() -> SourceError {
     SourceError::new(ErrorKind::Permanent, "Invalid native device status")
 }
+fn unknown_reference() -> SourceError {
+    SourceError::new(
+        ErrorKind::Unavailable,
+        "Native rotator reference is uncertain; explicitly Sync before logical movement",
+    )
+}
 
 #[cfg(test)]
 mod tests {
@@ -480,7 +681,7 @@ mod tests {
         for (device, member) in [
             (NativeDevice::Eta, "halt"),
             (NativeDevice::Efw, "halt"),
-            (NativeDevice::Caa, "sync"),
+            (NativeDevice::Caa, "resetorigin"),
             (NativeDevice::Fc3, "connected"),
         ] {
             assert_eq!(

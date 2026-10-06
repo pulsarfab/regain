@@ -130,6 +130,7 @@ async fn main() -> Result<()> {
             regain_hub::native::NativeRuntime {
                 directory,
                 simulate: options.contains_key("--simulate"),
+                references: None,
             },
             shutdown_signal(),
         )

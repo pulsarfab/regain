@@ -320,7 +320,7 @@ fn storage_error(error: io::Error) -> CredentialError {
     }
 }
 #[cfg(unix)]
-fn data_directory() -> io::Result<PathBuf> {
+pub(crate) fn data_directory() -> io::Result<PathBuf> {
     let path = std::env::var_os("XDG_DATA_HOME")
         .map(PathBuf::from)
         .filter(|path| path.is_absolute())

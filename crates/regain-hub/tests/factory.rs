@@ -199,6 +199,7 @@ async fn validate_before_credentials_and_fail_closed_when_no_provider_is_availab
     let native = NativeRuntime {
         directory: "missing-worker-directory".into(),
         simulate: false,
+        references: None,
     };
     let credentials = Counter(AtomicUsize::new(0));
     let clock = Arc::new(MonotonicClock::default());

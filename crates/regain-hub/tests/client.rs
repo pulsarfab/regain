@@ -234,6 +234,7 @@ async fn dropping_last_client_closes_both_transport_halves_and_releases_server_l
         &NativeRuntime {
             directory: "unused".into(),
             simulate: false,
+            references: None,
         },
         &NoCredentials,
         Arc::new(MonotonicClock::default()),

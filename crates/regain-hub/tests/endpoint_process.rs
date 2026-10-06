@@ -37,6 +37,7 @@ async fn fixture(mode: &str, path: &Path) {
             &NativeRuntime {
                 directory: path.parent().unwrap().into(),
                 simulate: false,
+                references: None,
             },
             &NoCredentials,
             Arc::new(MonotonicClock::default()),

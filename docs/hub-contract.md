@@ -1433,3 +1433,31 @@ malformed dispatched replies retain source uncertainty, fence all old sessions a
 cannot cause replay or automatic Halt. Alpaca V3 uses legacy Connected; V4 uses
 Connect/Connecting/Disconnect with the same per-source connection ownership.
 The controller alone does not enable rotator runtime, IPC or frontend publication.
+
+Native CAA/Falcon adapters expose the seven typed rotator properties through the
+existing dedicated worker. Settings precede status so observed direction changes
+cannot silently use a stale CAA transform. Native relative commands retain the
+worker's +/-360 degree range; remote controllers do not impose that restriction.
+
+Confirmed native offsets live outside editable configuration in private,
+versioned records bound to user/configuration scope, source UUID, vendor, device
+identity and simulation mode. Sync and Reverse require durable storage: an atomic
+Uncertain record precedes dispatch, readback must confirm idle/angle/direction,
+then a revision-checked commit records the known offset. Corrupt, foreign,
+oversized or inaccessible records cannot supply a guessed reference. Filesystem
+work runs outside the async executor; an OS lock and expected revision prevent
+a cancelled, late commit from clearing a newer marker.
+
+Reconnect checks actual direction before restoring a saved offset. Restoration
+changes only worker-local logical mapping and target; it issues no movement,
+direction or mechanical-origin write. A mismatch or uncertain record leaves
+Position/TargetPosition unavailable and rejects logical movement and Reverse.
+MechanicalPosition, explicit MoveMechanical and Halt remain available. Explicit
+Sync may reconcile the reference after uncertainty; old source sessions remain
+generation-fenced. A lost or ignored reference command is never replayed.
+
+Dropping one controller lease does not halt another client's motion. Existing
+vendor worker retirement/fault cleanup may attempt a stop when the final worker
+is retired; that behavior is distinct from per-session command ownership. This
+increment does not enable rotator runtime/IPC, COM/virtual/simulation imports,
+shared setup or any frontend publication.

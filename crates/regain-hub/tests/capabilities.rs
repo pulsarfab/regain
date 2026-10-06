@@ -370,6 +370,7 @@ async fn real_alpaca_inspections_share_owned_connection_and_only_release_their_l
         &regain_hub::native::NativeRuntime {
             directory: "unused".into(),
             simulate: false,
+            references: None,
         },
         &regain_hub::factory::NoCredentials,
         clock.clone(),

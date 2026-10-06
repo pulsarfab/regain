@@ -127,6 +127,7 @@ fn build(config: HubConfig) -> Arc<HubRuntime> {
         &NativeRuntime {
             directory: "missing-and-unused-worker-directory".into(),
             simulate: false,
+            references: None,
         },
         &NoCredentials,
         Arc::new(MonotonicClock::default()),

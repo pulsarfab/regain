@@ -737,6 +737,7 @@ mod setup_tests {
                     &NativeRuntime {
                         directory: "unused-fixture".into(),
                         simulate: false,
+                        references: None,
                     },
                     &NoCredentials,
                     Arc::new(MonotonicClock::default()),

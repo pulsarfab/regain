@@ -96,6 +96,7 @@ async fn real_endpoint_serves_versioned_ipc_and_waits_only_for_bounded_startup()
         &NativeRuntime {
             directory: dir.path().into(),
             simulate: false,
+            references: None,
         },
         &NoCredentials,
         Arc::new(MonotonicClock::default()),

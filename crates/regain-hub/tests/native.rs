@@ -26,6 +26,7 @@ fn runtime() -> Option<NativeRuntime> {
     Some(NativeRuntime {
         directory,
         simulate: true,
+        references: None,
     })
 }
 fn config(device: NativeDevice, identity: &str) -> SourceConfig {
@@ -41,6 +42,480 @@ fn config(device: NativeDevice, identity: &str) -> SourceConfig {
             request_timeout_seconds: 5.0,
             ..PollPolicy::default()
         },
+    }
+}
+
+#[tokio::test]
+async fn typed_native_rotators_preserve_reference_across_actual_worker_recreation() {
+    use regain_hub::{
+        native_reference::NativeReferenceStore,
+        rotator::{RotatorController, RotatorProperty},
+    };
+    let Some(mut native) = runtime() else {
+        return;
+    };
+    let directory = tempfile::tempdir().unwrap();
+    native.references = Some(
+        NativeReferenceStore::at_directory(&directory.path().join("references"), &"c".repeat(64))
+            .unwrap(),
+    );
+    for (device, identity) in [
+        (NativeDevice::Caa, "0102030405060708"),
+        (NativeDevice::Falcon, "FALCON-SIMULATION"),
+    ] {
+        let config = config(device, identity);
+        let source = SourceHandle::spawn(
+            config.id,
+            Uuid::new_v4(),
+            config.polling.clone(),
+            Box::new(NativeAccessoryBackend::new(&config, native.clone()).unwrap()),
+            Arc::new(MonotonicClock::default()),
+        )
+        .unwrap();
+        let controller = RotatorController::new(source.clone(), Duration::from_secs(10)).unwrap();
+        let first = controller.connect().await.unwrap();
+        let second = controller.connect().await.unwrap();
+        assert_eq!(first.generation(), second.generation());
+        assert!(source.snapshot().simulated);
+        assert!(first.capabilities().await.unwrap().can_reverse);
+        assert_eq!(
+            first.property(RotatorProperty::StepSize).await.unwrap(),
+            if device == NativeDevice::Caa {
+                0.02
+            } else {
+                0.01
+            }
+        );
+        let mechanical = first
+            .property(RotatorProperty::MechanicalPosition)
+            .await
+            .unwrap();
+        first.sync(42.5).await.unwrap();
+        assert_eq!(
+            second.property(RotatorProperty::Position).await.unwrap(),
+            42.5
+        );
+        assert_eq!(
+            second
+                .property(RotatorProperty::TargetPosition)
+                .await
+                .unwrap(),
+            42.5
+        );
+        first.set_reverse(true).await.unwrap();
+        assert_eq!(
+            second.property(RotatorProperty::Position).await.unwrap(),
+            42.5
+        );
+        assert_eq!(
+            second.property(RotatorProperty::Reverse).await.unwrap(),
+            true
+        );
+        first.set_reverse(false).await.unwrap();
+        assert_eq!(
+            second
+                .property(RotatorProperty::MechanicalPosition)
+                .await
+                .unwrap(),
+            mechanical
+        );
+        drop(first);
+        assert_eq!(
+            second.property(RotatorProperty::Position).await.unwrap(),
+            42.5
+        );
+        drop(second);
+        source.shutdown().await.unwrap();
+        // New backend and worker, same saved source/hardware/simulation binding.
+        let mut fresh = NativeAccessoryBackend::new(&config, native.clone()).unwrap();
+        fresh.connect().await.unwrap();
+        assert_eq!(
+            fresh.read("position".into(), Values::new()).await.unwrap(),
+            42.5
+        );
+        assert_eq!(
+            fresh
+                .read("targetposition".into(), Values::new())
+                .await
+                .unwrap(),
+            42.5
+        );
+        assert_eq!(
+            fresh
+                .read("mechanicalposition".into(), Values::new())
+                .await
+                .unwrap(),
+            mechanical
+        );
+        assert_eq!(
+            fresh.read("reverse".into(), Values::new()).await.unwrap(),
+            false
+        );
+        fresh
+            .write(
+                "moveabsolute".into(),
+                Values::from([("Position".into(), json!(43.5))]),
+            )
+            .await
+            .unwrap();
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while fresh.read("ismoving".into(), Values::new()).await.unwrap() == true {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
+        let angle = fresh
+            .read("position".into(), Values::new())
+            .await
+            .unwrap()
+            .as_f64()
+            .unwrap();
+        assert!((angle - 43.5).abs() < 0.03);
+        fresh.disconnect().await.unwrap();
+    }
+}
+
+#[tokio::test]
+async fn hardware_direction_change_does_not_replay_reverse_or_trust_old_reference_on_connect() {
+    use regain_hub::native_reference::NativeReferenceStore;
+    let Some(mut native) = runtime() else {
+        return;
+    };
+    let directory = tempfile::tempdir().unwrap();
+    native.references = Some(
+        NativeReferenceStore::at_directory(&directory.path().join("references"), &"d".repeat(64))
+            .unwrap(),
+    );
+    for (device, identity) in [
+        (NativeDevice::Caa, "0102030405060708"),
+        (NativeDevice::Falcon, "FALCON-SIMULATION"),
+    ] {
+        let config = config(device, identity);
+        let mut backend = NativeAccessoryBackend::new(&config, native.clone()).unwrap();
+        backend.connect().await.unwrap();
+        let mechanical = backend
+            .read("mechanicalposition".into(), Values::new())
+            .await
+            .unwrap();
+        backend
+            .write(
+                "sync".into(),
+                Values::from([("Position".into(), json!(42.5))]),
+            )
+            .await
+            .unwrap();
+        backend
+            .write(
+                "reverse".into(),
+                Values::from([("Reverse".into(), json!(true))]),
+            )
+            .await
+            .unwrap();
+        backend.disconnect().await.unwrap();
+        // A fresh simulated device starts in its default direction. This is an
+        // explicit external change, not evidence of firmware persistence.
+        let mut fresh = NativeAccessoryBackend::new(&config, native.clone()).unwrap();
+        fresh.connect().await.unwrap();
+        assert_eq!(
+            fresh.read("reverse".into(), Values::new()).await.unwrap(),
+            false
+        );
+        assert_eq!(
+            fresh
+                .read("mechanicalposition".into(), Values::new())
+                .await
+                .unwrap(),
+            mechanical
+        );
+        for member in ["position", "targetposition"] {
+            assert_eq!(
+                fresh
+                    .read(member.into(), Values::new())
+                    .await
+                    .unwrap_err()
+                    .kind,
+                ErrorKind::Unavailable
+            );
+        }
+        assert_eq!(
+            fresh
+                .write(
+                    "moveabsolute".into(),
+                    Values::from([("Position".into(), json!(30.0))])
+                )
+                .await
+                .unwrap_err()
+                .kind,
+            ErrorKind::Unavailable
+        );
+        assert_eq!(
+            fresh
+                .write(
+                    "reverse".into(),
+                    Values::from([("Reverse".into(), json!(true))])
+                )
+                .await
+                .unwrap_err()
+                .kind,
+            ErrorKind::Unavailable
+        );
+        fresh
+            .write(
+                "sync".into(),
+                Values::from([("Position".into(), json!(95.0))]),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            fresh.read("position".into(), Values::new()).await.unwrap(),
+            95.0
+        );
+        assert_eq!(
+            fresh
+                .read("mechanicalposition".into(), Values::new())
+                .await
+                .unwrap(),
+            mechanical
+        );
+        fresh.disconnect().await.unwrap();
+        let mut last = NativeAccessoryBackend::new(&config, native.clone()).unwrap();
+        last.connect().await.unwrap();
+        assert_eq!(
+            last.read("position".into(), Values::new()).await.unwrap(),
+            95.0
+        );
+        last.disconnect().await.unwrap();
+    }
+}
+
+#[tokio::test]
+async fn native_reference_storage_failure_precedes_dispatch_and_never_falls_back() {
+    use regain_hub::native_reference::NativeReferenceStore;
+    let Some(mut native) = runtime() else {
+        return;
+    };
+    let config = config(NativeDevice::Caa, "0102030405060708");
+    let mut backend = NativeAccessoryBackend::new(&config, native.clone()).unwrap();
+    backend.connect().await.unwrap();
+    let initial = backend
+        .read("position".into(), Values::new())
+        .await
+        .unwrap();
+    assert_eq!(
+        backend
+            .write(
+                "sync".into(),
+                Values::from([("Position".into(), json!(42.5))])
+            )
+            .await
+            .unwrap_err()
+            .kind,
+        ErrorKind::Unavailable
+    );
+    assert_eq!(
+        backend
+            .read("position".into(), Values::new())
+            .await
+            .unwrap(),
+        initial
+    );
+    backend.disconnect().await.unwrap();
+    let directory = tempfile::tempdir().unwrap();
+    let base = directory.path().join("references");
+    std::fs::create_dir(&base).unwrap();
+    std::fs::write(base.join("e".repeat(64)), "invalid private directory").unwrap();
+    native.references = Some(NativeReferenceStore::at_directory(&base, &"e".repeat(64)).unwrap());
+    native.directory = directory.path().join("nonexistent-workers");
+    let mut backend = NativeAccessoryBackend::new(&config, native).unwrap();
+    assert_eq!(
+        backend.connect().await.unwrap_err().kind,
+        ErrorKind::Unavailable
+    );
+    assert_eq!(
+        backend
+            .read("identity".into(), Values::new())
+            .await
+            .unwrap_err()
+            .kind,
+        ErrorKind::Disconnected
+    );
+    assert_eq!(
+        std::fs::read_to_string(base.join("e".repeat(64))).unwrap(),
+        "invalid private directory"
+    );
+}
+
+#[tokio::test]
+async fn lost_reply_or_ignored_native_sync_retains_durable_uncertainty_after_source_recreation() {
+    use regain_hub::{
+        native_reference::NativeReferenceStore,
+        rotator::{RotatorController, RotatorProperty},
+    };
+    let directory = tempfile::tempdir().unwrap();
+    let fixture = directory.path().join("worker.rs");
+    std::fs::write(
+        &fixture,
+        include_str!("fixtures/native_rotator_reference.rs"),
+    )
+    .unwrap();
+    let executable = directory
+        .path()
+        .join(format!("regain-device{}", std::env::consts::EXE_SUFFIX));
+    let output = std::process::Command::new("rustc")
+        .args(["--edition=2021", "--crate-name", "native_reference_fixture"])
+        .arg(&fixture)
+        .arg("-o")
+        .arg(&executable)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    for mode in ["lost", "ignored"] {
+        std::fs::write(directory.path().join("commands.log"), "").unwrap();
+        std::fs::write(directory.path().join("mode"), mode).unwrap();
+        let native = NativeRuntime {
+            directory: directory.path().to_owned(),
+            simulate: true,
+            references: Some(
+                NativeReferenceStore::at_directory(
+                    &directory.path().join("references"),
+                    &"f".repeat(64),
+                )
+                .unwrap(),
+            ),
+        };
+        let config = config(NativeDevice::Caa, "PRIVATE-REFERENCE");
+        let source = SourceHandle::spawn(
+            config.id,
+            Uuid::new_v4(),
+            config.polling.clone(),
+            Box::new(NativeAccessoryBackend::new(&config, native.clone()).unwrap()),
+            Arc::new(MonotonicClock::default()),
+        )
+        .unwrap();
+        let controller = RotatorController::new(source.clone(), Duration::from_secs(10)).unwrap();
+        let first = controller.connect().await.unwrap();
+        let second = controller.connect().await.unwrap();
+        assert_eq!(
+            first.sync(42.5).await.unwrap_err().kind,
+            ErrorKind::Uncertain
+        );
+        assert_eq!(
+            std::fs::read_to_string(directory.path().join("applied-offset")).unwrap(),
+            if mode == "lost" { "-109.5" } else { "0" }
+        );
+        assert!(source.snapshot().write_uncertain);
+        assert!(!first.connected());
+        assert!(!second.connected());
+        assert_eq!(
+            second.sync(43.0).await.unwrap_err().kind,
+            ErrorKind::Uncertain
+        );
+        drop(first);
+        drop(second);
+        source.shutdown().await.unwrap();
+        std::fs::write(directory.path().join("mode"), "normal").unwrap();
+        let source = SourceHandle::spawn(
+            config.id,
+            Uuid::new_v4(),
+            config.polling.clone(),
+            Box::new(NativeAccessoryBackend::new(&config, native.clone()).unwrap()),
+            Arc::new(MonotonicClock::default()),
+        )
+        .unwrap();
+        let controller = RotatorController::new(source.clone(), Duration::from_secs(10)).unwrap();
+        let fresh = controller.connect().await.unwrap();
+        assert_eq!(
+            fresh
+                .property(RotatorProperty::Position)
+                .await
+                .unwrap_err()
+                .kind,
+            ErrorKind::Unavailable
+        );
+        assert_eq!(
+            fresh
+                .property(RotatorProperty::TargetPosition)
+                .await
+                .unwrap_err()
+                .kind,
+            ErrorKind::Unavailable
+        );
+        assert_eq!(
+            fresh
+                .property(RotatorProperty::MechanicalPosition)
+                .await
+                .unwrap(),
+            152.0
+        );
+        assert_eq!(
+            fresh.move_absolute(30.0).await.unwrap_err().kind,
+            ErrorKind::Unavailable
+        );
+        let trace = std::fs::read_to_string(directory.path().join("commands.log")).unwrap();
+        assert_eq!(
+            trace
+                .lines()
+                .filter(|line| line.contains("\"command\":\"sync\""))
+                .count(),
+            1
+        );
+        assert!(!trace.contains("restore-reference"));
+        fresh.sync(95.0).await.unwrap();
+        assert_eq!(
+            fresh.property(RotatorProperty::Position).await.unwrap(),
+            95.0
+        );
+        assert_eq!(
+            fresh
+                .property(RotatorProperty::MechanicalPosition)
+                .await
+                .unwrap(),
+            152.0
+        );
+        drop(fresh);
+        source.shutdown().await.unwrap();
+        let mut restored = NativeAccessoryBackend::new(&config, native).unwrap();
+        restored.connect().await.unwrap();
+        assert_eq!(
+            restored
+                .read("position".into(), Values::new())
+                .await
+                .unwrap(),
+            95.0
+        );
+        assert_eq!(
+            restored
+                .read("mechanicalposition".into(), Values::new())
+                .await
+                .unwrap(),
+            152.0
+        );
+        restored.disconnect().await.unwrap();
+        let trace = std::fs::read_to_string(directory.path().join("commands.log")).unwrap();
+        assert_eq!(
+            trace
+                .lines()
+                .filter(|line| line.contains("\"command\":\"sync\""))
+                .count(),
+            2
+        );
+        assert_eq!(
+            trace
+                .lines()
+                .filter(|line| line.contains("restore-reference"))
+                .count(),
+            1
+        );
+        assert!(
+            !trace.contains("move-")
+                && !trace.contains("\"command\":\"reverse\"")
+                && !trace.contains("\"command\":\"reference\"")
+        );
     }
 }
 
@@ -276,6 +751,7 @@ fn construction_does_no_io_and_cameras_require_their_supervisor() {
     let runtime = NativeRuntime {
         directory: PathBuf::from("nonexistent-worker-directory"),
         simulate: false,
+        references: None,
     };
     assert!(
         NativeAccessoryBackend::new(
@@ -466,6 +942,7 @@ async fn unavailable_identity_never_falls_back_to_another_device_or_simulator() 
     let runtime = NativeRuntime {
         directory: PathBuf::from("nonexistent-worker-directory"),
         simulate: false,
+        references: None,
     };
     let mut backend =
         NativeAccessoryBackend::new(&config(NativeDevice::Fc3, "selected serial"), runtime)

@@ -797,6 +797,7 @@ impl Fixture {
                     &NativeRuntime {
                         directory: directory.clone(),
                         simulate: false,
+                        references: None,
                     },
                     &*provider,
                     Arc::new(MonotonicClock::default()),

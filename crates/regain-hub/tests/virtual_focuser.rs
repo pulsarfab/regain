@@ -209,6 +209,7 @@ impl Fixture {
             &NativeRuntime {
                 directory: "no-workers".into(),
                 simulate: false,
+                references: None,
             },
             &NoCredentials,
             Arc::new(MonotonicClock::default()),
@@ -589,6 +590,7 @@ async fn native_worker_simulation_remains_explicit_through_nested_focuser_output
         &NativeRuntime {
             directory: directory.into(),
             simulate: true,
+            references: None,
         },
         &NoCredentials,
         Arc::new(MonotonicClock::default()),

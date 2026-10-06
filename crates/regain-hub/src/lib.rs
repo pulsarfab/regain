@@ -16,6 +16,7 @@ pub mod host;
 pub mod ipc;
 pub mod launch;
 pub mod native;
+pub mod native_reference;
 mod output;
 pub mod parameters;
 pub mod readout;

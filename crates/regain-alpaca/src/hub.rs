@@ -64,7 +64,7 @@ pub async fn attach(config: &Path, workers: &Path, executable: &Path) -> Result<
 
 pub async fn run(
     config: &Path,
-    native: NativeRuntime,
+    mut native: NativeRuntime,
     shutdown: impl Future<Output = ()>,
 ) -> Result<()> {
     let endpoint = Endpoint::for_config(config).context("Resolve private hub endpoint")?;
@@ -85,6 +85,10 @@ pub async fn run(
     // A headless account without a home directory can still host sources that
     // do not require credentials. References fail closed in that case.
     let credentials = CredentialStore::for_endpoint(&endpoint).ok().map(Arc::new);
+    if native.references.is_none() {
+        native.references =
+            regain_hub::native_reference::NativeReferenceStore::for_endpoint(&endpoint).ok();
+    }
     let provider = credentials.clone();
     let builder: Arc<regain_hub::service::RuntimeBuilder> = Arc::new(move |config| {
         HubRuntime::build(

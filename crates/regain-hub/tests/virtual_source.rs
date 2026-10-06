@@ -15,6 +15,7 @@ fn native() -> NativeRuntime {
     NativeRuntime {
         directory: "no-hardware-workers".into(),
         simulate: false,
+        references: None,
     }
 }
 fn config() -> HubConfig {

@@ -8,6 +8,12 @@ tagged or published. Changed cross-crate APIs require an unpublished version so
 Cargo package verification uses the new workspace packages.
 Last updated: 2026-10-06.
 
+Current position: milestones 0 and 1 are complete. The scalar source/output paths
+in milestones 2 and 3 are implemented; their remaining acceptance gates are open.
+Milestone 4 has complete focuser paths through all three frontends and is extending
+rotators next. Wheels, panels and camera proxies remain; milestone 5's coordinated
+groups are not yet implemented. PR #21 stays draft until the full plan passes.
+
 Completed increment: shared simulation controls in native NINA/ASCOM and web setup.
 The host describes field paths, labels, defaults, physical limits, fault choices
 and deadlines. Editors change only selected fields on saved, explicitly simulated
@@ -172,8 +178,21 @@ private actor/actual Alpaca V3/V4 transport tests pass, including an applied mov
 with a malformed acknowledgment and no replay. Full local hub/Alpaca regressions,
 Clippy, Rust 1.89, generated-contract, Node/schema, all 186 NINA tests and real
 net48 x86/x64 clients pass. This controller is not yet enabled in runtime/IPC,
-native source adapters, simulation, COM/virtual imports or any output frontend.
-Native reference persistence must be implemented before rotator publication.
+simulation, COM/virtual imports or any output frontend. Native source adapters
+and reference persistence are implemented in the following increment; runtime
+and frontend publication remain gated.
+
+Implemented increment: native CAA/Falcon typed properties and persistent reference
+handling. Sync/Reverse save an uncertainty marker before dispatch, verify the
+reported result and atomically commit the confirmed offset/direction. A lost reply
+or ignored Sync survives complete source recreation as an unknown logical
+reference; only explicit reconciliation can make logical movement available.
+Reconnect restores a matching saved transform through a local worker operation
+without changing hardware direction, origin or position. A direction mismatch
+leaves logical coordinates unavailable and requires explicit Sync. Records are
+scoped to the user/configuration, source, vendor, identity and simulation mode;
+malformed records fail closed rather than becoming zero offsets. Native relative
+movement retains its existing single-command +/-360 degree limit.
 
 Simulation checkpoint PR/push CI 37499571887/37499559138 passes all eight jobs.
 Shared-setup push CI 37501487430 fails Windows during an initial NINA focuser
@@ -181,10 +200,13 @@ connection, before the injected uncertain Move. Its cause is unproved. The fixtu
 now reports the structured remote error, source snapshot and private request
 timings without retries or deadline changes. Preserve this failure alongside the
 earlier COM timeout; passing local tests alone do not close either investigation.
-Shared-setup PR CI 37501496852 remains live at this observation.
+Shared-setup PR CI 37501496852 passes all eight jobs. Rotator-controller PR CI
+37503876752 also passes all eight jobs; push 37503869679 was cancelled after seven
+successes. These successes do not explain the retained initial-connection failure.
+The newer native-reference increment still requires its own CI.
 
-Next: complete native rotator reference persistence and typed source support,
-then runtime/IPC, all three frontends, COM/virtual/simulation imports and shared
+Next: integrate rotators into runtime/IPC, all three frontends,
+COM/virtual/simulation imports and shared
 setup. Continue the remaining typed accessory proxies.
 Retain the earlier COM fixture timeout
 investigation. Complete camera ownership, coordination and every original
@@ -804,9 +826,9 @@ gated until their interfaces are implemented and verified.
 
 Rotator controller increment: shared typed sessions and live property/command
 semantics are implemented with eleven private actor/Alpaca V3/V4 cases. Native
-CAA/Falcon reference persistence and adapter coverage remain required, followed by
-runtime/IPC, native NINA/ASCOM/Alpaca outputs, COM/virtual/simulation inputs and
-shared setup. No rotator publication gate is enabled by the controller alone.
+CAA/Falcon reference persistence and adapter coverage are implemented. Runtime/IPC,
+native NINA/ASCOM/Alpaca outputs, COM/virtual/simulation inputs and shared setup
+remain required. The remaining rotator publication gates stay open.
 
 - [ ] Specify camera buffer lifetime, image transport, capability passthrough, and
   acquisition ownership before enabling camera proxies.
@@ -908,3 +930,4 @@ Keep existing device profiles and registrations compatible throughout migration.
 | 2026-10-06 | Added and reviewed dedicated Focuser V4 simulation through shared actors/controllers and fifteen generated native/web controls. | Fifteen Rust simulation cases, full hub/Alpaca suites, Clippy/MSRV, Node/four schema checks, all 184 NINA tests and real net48 x86/x64 fixtures pass. Actual WPF screenshot is labelled simulation. COM push CI 37494616586 passes all eight jobs. Next: shared typed setup; all original later gates remain required. |
 | 2026-10-06 | Enabled shared class-gated Focuser setup, including Windows COM choices; fixed the browser tagged-type event closure found in actual acceptance. | Native review/apply creates two shared outputs without source leases. All 186 NINA tests, real net48 x86/x64 fixtures, Rust/Clippy/MSRV, Node form-event tests and Chrome creation/save/reload/sparse Int32 acceptance pass. New screenshot shows explicit simulation. Next: other typed accessory proxies and every original remaining gate. |
 | 2026-10-06 | Added typed rotator semantics and extracted shared accessory session ownership from the focuser controller. Reviewed generation, cancellation, independent angles, optional errors and no replay. Added evidence to a newly observed Windows initial focuser-connection failure without retries/deadline changes. | Eleven private actor/actual Alpaca V3/V4 cases, full hub/Alpaca regressions, Clippy/MSRV, contract/Node/four schema checks, 186 NINA tests and real net48 x86/x64 clients pass. Rotator publication remains gated. Next: native reference persistence and typed adapters, then runtime/IPC, all frontends/imports/setup and every original remaining gate. |
+| 2026-10-06 | Added and reviewed native CAA/Falcon typed properties and durable reference recovery. Uncertainty markers, strict readback and revision-fenced commits preserve unknown Sync outcomes; reconnect restores only local mappings. Fixed stale CAA direction observation and Sync target reporting. | Five Windows storage cases, thirteen native cases, eight CAA controller/fourteen protocol/eight Falcon tests, final Rust/Clippy/MSRV/contracts, Node/four schema checks, all 186 NINA tests and real net48 x86/x64 clients pass. Portable permissions coverage needs CI. Prior controller PR CI passes all eight jobs. Next: rotator runtime/IPC, all frontends/imports/setup and every original remaining gate. |

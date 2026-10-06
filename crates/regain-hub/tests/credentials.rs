@@ -128,6 +128,7 @@ fn builder(credentials: Arc<CredentialStore>) -> Arc<RuntimeBuilder> {
             &NativeRuntime {
                 directory: "unused-fixture-directory".into(),
                 simulate: false,
+                references: None,
             },
             &*credentials,
             Arc::new(MonotonicClock::default()),

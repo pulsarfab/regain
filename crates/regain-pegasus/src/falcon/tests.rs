@@ -57,6 +57,29 @@ fn near(a: f64, b: f64) {
 }
 
 #[test]
+fn persisted_offset_restore_never_moves_changes_direction_or_resets_origin() {
+    let mut d = device();
+    d.transport.position = 152.0;
+    d.transport.reverse = true;
+    d.transport.wire.clear();
+    d.request(&json!({"command":"restore-reference", "offset":250.5}))
+        .unwrap();
+    let state = d.status().unwrap();
+    near(state.logical_degrees, 42.5);
+    near(state.target_degrees, 42.5);
+    near(state.mechanical_degrees, 152.0);
+    assert!(state.reverse);
+    assert!(d.transport.wire.iter().all(|command| command == "FA"));
+    for offset in [json!(-1), json!(360), json!("0"), Value::Null] {
+        assert!(
+            d.request(&json!({"command":"restore-reference", "offset":offset}))
+                .is_err()
+        );
+    }
+    near(d.status().unwrap().logical_degrees, 42.5);
+}
+
+#[test]
 fn strict_status_rejects_wrong_model_partial_flags_and_nonfinite_angles() {
     for wire in [
         "FR:0:0:4500:4:0",

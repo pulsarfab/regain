@@ -34,6 +34,7 @@ impl Fixture {
         let native = NativeRuntime {
             directory: PathBuf::from(std::env::var_os("REGAIN_TEST_WORKERS").unwrap()),
             simulate: true,
+            references: None,
         };
         assert_eq!(available_architectures(&native).len(), 2);
         Some(Self {
@@ -170,6 +171,7 @@ fn preparation_checks_architecture_and_class_without_activation() {
     let missing = NativeRuntime {
         directory: PathBuf::from("nonexistent-com-helper-directory"),
         simulate: false,
+        references: None,
     };
     assert!(available_architectures(&missing).is_empty());
     assert!(

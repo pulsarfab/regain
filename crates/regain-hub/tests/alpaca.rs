@@ -315,6 +315,7 @@ async fn mixed_native_and_http_switch_shares_native_temperature_with_weather() {
     let runtime = NativeRuntime {
         directory: directory.into(),
         simulate: true,
+        references: None,
     };
     let server = Server::new(vec![Reply::value(json!(true)), Reply::value(json!(1))]).await;
     let mut config: HubConfig =
@@ -701,6 +702,7 @@ async fn configured_factory_resolves_one_credential_and_keeps_secrets_out_of_sou
         &NativeRuntime {
             directory: ".".into(),
             simulate: false,
+            references: None,
         },
         &credentials,
         Arc::new(MonotonicClock::default()),

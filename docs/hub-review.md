@@ -2503,3 +2503,54 @@ Ten separate local runs of the affected cold connection/uncertain-Move test pass
 without retries inside the test. This does not reproduce or explain the CI failure;
 the new evidence must be inspected if it recurs. Logs use
 artifacts/hub-focuser-connection-audit-1.log through -10.log.
+
+### Native rotator references and typed adapters (2026-10-06)
+
+CAA/Falcon adapters now expose CanReverse, Reverse and StepSize alongside separate
+logical/mechanical/target angles. Sync and Reverse use private durable reference
+records, an Uncertain marker before worker dispatch, strict accepted/readback
+confirmation and a revision-checked known commit. Reviewed marker/save failure,
+source recreation, corruption, identity/simulation separation, cancellation and
+cross-store races. Blocking filesystem work runs off the async executor; the OS
+lock and revision comparison prevent a late save from clearing a newer marker.
+No storage means reference writes fail before dispatch. Runtime binds the store
+to its private endpoint; an account without a usable data directory can still
+host other sources but cannot silently use transient native references.
+
+Reconnect checks actual direction and restores only worker-local offset/target.
+It does not move, change direction or reset the mechanical origin. A direction
+mismatch makes logical coordinates unavailable until explicit Sync. Unknown
+references still permit mechanical movement and Halt. Native relative commands
+retain their existing +/-360 degree limit. Final vendor-worker retirement/fault
+cleanup can attempt a stop; dropping one shared controller lease does not inject
+Halt or retire a worker still owned by another client.
+
+Five Windows storage tests pass: independent bindings, cancelled late commit,
+competing stores, malformed/oversized/foreign records and invalid inputs. A sixth
+Unix permissions/symlink case requires portable CI. All thirteen native cases
+pass with production workers in explicit simulation, including reference recovery
+and private inert-worker crashes after applied Sync. The fixture also returns
+accepted without applying Sync: readback retains uncertainty rather than saving
+a guessed offset. Both failure modes survive complete source/worker recreation;
+trace assertions prove no automatic Sync replay, direction or origin write.
+
+The new CAA local-restore test first failed with logical 346.5 instead of 42.5.
+Review found settings observed an external Reverse change without updating the
+cached direction unless the driver itself had initiated it. Settings now updates
+the direction; the hub samples settings before logical status and rejects a
+changed reference. Sync also updates CAA TargetPosition. Eight CAA controller,
+fourteen CAA protocol and eight Falcon tests pass, including wire-level proof
+that restoring offsets does not issue movement/direction/origin writes.
+
+After rebuilding both actual executables, full hub/Alpaca regressions, strict
+Clippy across hub/Alpaca/ZWO/Pegasus, Rust 1.89 all-target checks, generated-contract
+freshness, Node/four independent schema checks, all 186 warnings-denied NINA tests
+and real net48 x86/x64 clients pass. Evidence uses artifacts/hub-rotator-native-*.log;
+the final regression set uses the -final- prefix. No equipment or installed vendor
+driver was activated. Rotator runtime/IPC, imports, frontend publication, shared
+setup, conformance and all original remaining gates are still required.
+
+Shared-setup PR CI 37501496852 and controller PR CI 37503876752 pass all eight
+jobs. Controller push 37503869679 was cancelled after seven successes. Preserve
+the unexplained earlier initial-connection failure and COM timeout; later green
+runs do not establish their causes. This newer increment requires new CI.
