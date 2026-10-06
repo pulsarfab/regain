@@ -15,6 +15,58 @@ fn invalid(config: &HubConfig, code: &str) {
         config.validate()
     );
 }
+#[test]
+fn native_ascom_export_identities_match_cross_language_vectors_and_reject_canonical_self_proxies() {
+    use regain_hub::ascom_export::{class_id, prog_id};
+    let instance = "10000000-0000-0000-0000-000000000001".parse().unwrap();
+    let output = "20000000-0000-0000-0000-000000000002".parse().unwrap();
+    for (device, expected) in [
+        (DeviceType::Switch, "69a5917f-8d71-5a9d-b3e7-8d5a53f88e0b"),
+        (
+            DeviceType::SafetyMonitor,
+            "14421c22-3804-5450-91c1-211547b06944",
+        ),
+        (
+            DeviceType::ObservingConditions,
+            "f3d3f0d7-9c8d-5b4d-834c-04b0805a56ff",
+        ),
+    ] {
+        assert_eq!(class_id(instance, output, device).to_string(), expected);
+        assert_eq!(prog_id(instance, output, device).unwrap().len(), 39);
+    }
+    let mut config = safety();
+    let own = prog_id(
+        config.instance_id,
+        config.outputs[0].id,
+        DeviceType::SafetyMonitor,
+    )
+    .unwrap();
+    config.sources[0].backend = SourceBackend::Com {
+        prog_id: own.to_uppercase(),
+        device_type: DeviceType::SafetyMonitor,
+        bitness: Bitness::X64,
+        connection_policy: ConnectionPolicy::Managed,
+    };
+    invalid(&config, "cycle");
+    config.outputs[0].label = "Renamed".into();
+    config.outputs.reverse();
+    invalid(&config, "cycle");
+    if let SourceBackend::Com {
+        prog_id: source, ..
+    } = &mut config.sources[0].backend
+    {
+        *source = prog_id(
+            Uuid::new_v4(),
+            config.outputs[0].id,
+            DeviceType::SafetyMonitor,
+        )
+        .unwrap();
+    }
+    assert!(
+        config.validate().is_empty(),
+        "A different hub instance is not a local self-proxy"
+    );
+}
 
 #[test]
 fn examples_validate_and_preserve_ids_on_roundtrip_and_reorder() {

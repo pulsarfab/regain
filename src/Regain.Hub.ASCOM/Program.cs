@@ -75,11 +75,12 @@ internal sealed class Options {
     public string ProgId { get; private set; } = "";
     public string DeviceType { get; private set; } = "";
     public bool Managed { get; private set; }
+    public Guid[] DeniedClasses { get; private set; } = [];
     public static Options Parse(string[] args) {
-        if (args.Length != 9 || args[0] != "--import") throw new ArgumentException();
+        if (args.Length is not (9 or 11) || args[0] != "--import") throw new ArgumentException();
         var values = new Dictionary<string, string>(StringComparer.Ordinal);
         for (var i = 1; i < args.Length; i += 2) values.Add(args[i], args[i + 1]);
-        if (values.Count != 4 || !values.TryGetValue("--prog-id", out var progId)
+        if (values.Count != (args.Length - 1) / 2 || !values.TryGetValue("--prog-id", out var progId)
             || !values.TryGetValue("--device-type", out var type)
             || !values.TryGetValue("--connection-policy", out var policy)
             || !values.TryGetValue("--bitness", out var bitness)) throw new ArgumentException();
@@ -87,7 +88,15 @@ internal sealed class Options {
             || progId.Any(char.IsControl) || !new[] { "switch", "safetymonitor", "observingconditions" }.Contains(type)
             || !new[] { "managed", "externallyManaged" }.Contains(policy)
             || bitness != (Environment.Is64BitProcess ? "x64" : "x86")) throw new ArgumentException();
-        return new Options { ProgId = progId, DeviceType = type, Managed = policy == "managed" };
+        Guid[] denied = [];
+        if (args.Length == 11) {
+            if (!values.TryGetValue("--deny-clsids", out var text)) throw new ArgumentException();
+            var ids = text.Split(',');
+            if (ids.Length is 0 or > 256 || ids.Any(id => !Guid.TryParseExact(id, "D", out var parsed) || parsed == Guid.Empty)) throw new ArgumentException();
+            denied = ids.Select(Guid.Parse).ToArray();
+            if (denied.Distinct().Count() != denied.Length) throw new ArgumentException();
+        }
+        return new Options { ProgId = progId, DeviceType = type, Managed = policy == "managed", DeniedClasses = denied };
     }
 }
 

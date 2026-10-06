@@ -157,11 +157,11 @@ pub(crate) fn build_sources_bound(
                     authorization,
                 )?))
             }
-            SourceBackend::Com { .. } => Ok(Box::new(crate::com::ComBackend::new(
-                source,
-                native,
-                plan.samples,
-            )?)),
+            SourceBackend::Com { .. } => {
+                let mut backend = crate::com::ComBackend::new(source, native, plan.samples)?;
+                backend.exclude_exports(crate::ascom_export::classes(config));
+                Ok(Box::new(backend))
+            }
             SourceBackend::Virtual { output } => {
                 let binding = binding.clone().ok_or_else(|| {
                     SourceError::new(

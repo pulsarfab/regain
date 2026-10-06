@@ -3,6 +3,8 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Threading;
+using System.Security.Principal;
+using Microsoft.Win32;
 
 namespace Regain.Hub.ASCOM;
 
@@ -23,6 +25,18 @@ internal sealed class ImportDriver {
     private long lastId;
 
     public ImportDriver(Options options) { this.options = options; }
+    private static Guid RegisteredClass(string progId)
+    {
+        using var identity = WindowsIdentity.GetCurrent();
+        var elevated = new WindowsPrincipal(identity).IsInRole(WindowsBuiltInRole.Administrator);
+        // Elevated COM ignores per-user registrations, even though HKCR can
+        // show their merged values. Otherwise use the actual merged class view.
+        using var root = RegistryKey.OpenBaseKey(elevated ? RegistryHive.LocalMachine : RegistryHive.ClassesRoot, RegistryView.Default);
+        using var key = root.OpenSubKey((elevated ? "Software\\Classes\\" : "") + progId + "\\CLSID");
+        if (key?.GetValue(null) is not string text || !Guid.TryParse(text, out var clsid) || clsid == Guid.Empty)
+            throw new ConnectionFault();
+        return clsid;
+    }
 
     public object Execute(Request request) {
         AssertSta();
@@ -72,7 +86,12 @@ internal sealed class ImportDriver {
         if (phase == Phase.Failed || uncertain) throw new ConnectionFault();
         switch (phase) {
             case Phase.Activate:
-                var type = Type.GetTypeFromProgID(options.ProgId, throwOnError: true) ?? throw new ConnectionFault();
+                var classId = RegisteredClass(options.ProgId);
+                if (options.DeniedClasses.Contains(classId)) throw new InvalidInput();
+                // Activate the checked CLSID, not another lookup of a mutable
+                // ProgID. Managed Type.GUID may describe the managed class
+                // rather than the alias's actual registry binding.
+                var type = Type.GetTypeFromCLSID(classId, throwOnError: true) ?? throw new ConnectionFault();
                 driver = Activator.CreateInstance(type) ?? throw new ConnectionFault();
                 phase = Phase.Version; break;
             case Phase.Version:

@@ -1462,3 +1462,45 @@ Next: new CI and remaining production registration/removal, identifiable export
 self-proxy/alias checks, setup/SCM/conformance acceptance, then every original
 broader proxy, camera/acquisition, coordination, recovery, hardware and
 README/site/screenshots/final merge gate. PR #21 remains draft.
+
+## 2026-10-06: native export aliases and startup diagnostics
+
+1. Configuration rejects canonical native ASCOM self-proxy names case-insensitively.
+   Rust UUIDv5 and the existing .NET identity algorithm agree on fixed vectors for
+   all three scalar classes. Renames and output order do not retarget an identity;
+   different hub instances remain allowed. The .NET helper moved unchanged to the
+   common frontend assembly so registration can use the same implementation.
+2. The production factory supplies all configured output class IDs to the isolated
+   COM worker. Resolve the actual registry binding before activation and activate
+   the checked CLSID. Review/testing rejected Type.GUID: a registered managed alias
+   can expose its managed class GUID instead of the alias's registered CLSID.
+   Lookup follows bitness and elevation; no driver constructor or automatic ProgID
+   installation runs as part of self-proxy rejection. Rejected sources report an
+   invalid value and empty readings while scalar clients retain diagnostics.
+   This covers local aliases, not arbitrary cross-host dependency cycles.
+3. Both native-output CI runs for 779737f failed Windows export condition waits.
+   Existing logs hid the second client's failure. Collect both peer outputs and
+   name each wait without increasing the deadlines or swallowing COM exceptions.
+   The fixture passes locally; the runner-specific cause remains unresolved.
+4. Push CI also failed macOS Intel process startup at the strict socket permission
+   check. Inspection found bind exposed the public inode before chmod. Stage the
+   socket privately on the same filesystem and publish after mode 0600 is set,
+   retaining peer admission, stale-path checks and inode-based cleanup. Added an
+   actual renamed-socket exchange and rejection after broadening permissions.
+   This Unix test awaits portable CI; local cross-target checking could not proceed
+   because the Linux C compiler required by ring is absent. No security check was
+   weakened and no global umask was changed.
+
+Local evidence: `artifacts/hub-export-alias-tests.log` has 17 registered worker and
+11 Rust-parent cases passing in both architectures, including zero activation
+calls for a registered self alias and repeat connection. Cross-language config
+vectors pass (`hub-export-identity-tests.log`, `hub-export-identity-dotnet.log`).
+The hub/Alpaca suites pass (`hub-export-guard-rust-tests.log`), along with 117 NINA
+checks (`hub-export-guard-nina.log`), strict Clippy and Rust 1.89 checks. Real export
+fixtures pass after the diagnostic changes (`hub-export-guard-diagnostics.log`).
+Unsigned NINA and ASCOM packages validate (`hub-export-guard-package.log`,
+`hub-export-guard-ascom-package.log`). No installed equipment was activated.
+
+Next: verify portable publication and diagnose Windows using the new peer logs,
+then production registration/removal and every original remaining gate. This
+checkpoint does not close native ASCOM acceptance or the broader plan.

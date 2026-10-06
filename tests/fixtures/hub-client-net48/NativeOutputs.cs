@@ -12,6 +12,9 @@ internal static class NativeOutputs
             OutputId = config.GetProperty("outputs")[index].GetProperty("id").GetGuid(), DeviceType = type,
             Label = "ASCOM output fixture", Simulated = true };
         var binding = Binding(0, "switch");
+        var vector = new HubSelection { InstanceId = Guid.Parse("10000000-0000-0000-0000-000000000001"),
+            OutputId = Guid.Parse("20000000-0000-0000-0000-000000000002"), DeviceType = "switch" };
+        Require(OutputIdentity.ClassId(vector).ToString() == "69a5917f-8d71-5a9d-b3e7-8d5a53f88e0b", "Cross-language output identity vector mismatch");
         binding.Simulated = false; // Saved metadata can predate a config update.
         using var first = new SwitchOutput(binding, executable);
         using var sibling = new SwitchOutput(binding, executable);

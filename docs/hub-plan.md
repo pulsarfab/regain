@@ -8,17 +8,19 @@ tagged or published. Changed cross-crate APIs require an unpublished version so
 Cargo package verification uses the new workspace packages.
 Last updated: 2026-10-06.
 
-Current increment: typed native ASCOM Switch 3, SafetyMonitor 3 and
-ObservingConditions 2 adapters, with legacy interfaces, and bound COM factories
-in the existing import/export executable. Dynamic identities derive from the
-instance/output/class, using the same saved selections as NINA. The pumping STA,
-metadata preparation and object lifetime are shared with existing serial drivers.
-Private real-COM fixtures pass for four outputs against both server architectures
-and both client bitnesses. All 117 NINA checks and net48 x86/x64 adapter fixtures
-pass locally. Checkpoint 64178eb passed all eight jobs in both CI runs; a later
-run exposed a separate queued-writer fixture deadline, now corrected locally.
-Next: verify new CI, implement/review production registration and removal,
-self-proxy/alias checks for exports, conformance and interactive setup acceptance,
+Current increment: reject native ASCOM self-proxies by stable identity and by
+registered CLSID before activation, including aliases. Rust and .NET share fixed
+identity vectors; the .NET identity helper now lives in the common frontend
+assembly for registration reuse. The private registered playbook passes 17 worker
+and 11 parent cases in both architectures, with no self-proxy constructor calls.
+All 117 NINA checks and the exported COM fixture pass locally; unsigned packages
+validate. Native-output checkpoint 779737f failed Windows export waits in both
+CI runs, and push CI also found a macOS startup permission race. Socket publication
+now stages permissions before the public address appears; portable verification
+is pending. Export fixtures collect both peers and identify their failed step;
+the Windows timeout cause is still unresolved.
+Next: verify new CI and resolve these failures, implement/review production
+registration and removal, conformance and interactive setup acceptance,
 then every remaining original milestone gate. No production chooser entries have
 been registered by this increment.
 
@@ -679,3 +681,4 @@ Keep existing device profiles and registrations compatible throughout migration.
 | 2026-10-06 | Adopted scalar COM workers in the Rust factory; shared Alpaca/COM sampling, typed reply validation, process ownership, capability metadata and private Windows packaging. Reviewed cancellation, lost writes, connection/cleanup uncertainty and vendor helper isolation. | Ten real Rust-parent cases run in both bitnesses, plus 16 worker cases; Clippy, core/hub/Alpaca tests, Rust 1.89, 110 NINA tests and net48 x86/x64 fixtures pass locally. Both unsigned packages validate. Foundation CI failed Windows activation (0x80070002); loader diagnostics and updated CI remain required. Next: resolve that failure, native ASCOM outputs and shared setup refinements, then all original acceptance/coordination/documentation gates. |
 | 2026-10-06 | Diagnosed elevated runner COM activation after successful direct managed loads; selected private HKLM fixture keys explicitly only for elevated disposable GitHub runners. Added native saved-choice management using the common store/selector. | Adapter 9dfdb82 passed seven jobs in both CI runs but Windows still failed; the runner correction requires new CI. Local 16 worker and ten parent cases pass in both bitnesses; machine registration is rejected outside runner context. All 114 NINA checks, net48 x86/x64 removal/lease fixtures and warnings-denied shared builds pass. WPF render verified after correcting clipped identity/path text. Next: verify corrected CI, native ASCOM outputs and remaining original gates. |
 | 2026-10-06 | Added typed native ASCOM scalar adapters and bound export factories in the existing helper; shared the COM server with serial frontends. Reviewed capability admission, private leases, response epochs, typed errors and simulation metadata. | 117 NINA tests, net48 x86/x64 adapters, four private COM outputs against both server/client bitnesses, existing serial COM regressions and import-parent tests pass locally. Checkpoint 64178eb passed both complete CI runs; a newer queued-writer fixture deadline is corrected. Native chooser registration/removal, self-proxy aliases, SCM/setup/conformance and all original remaining gates stay open. |
+| 2026-10-06 | Rejected canonical and aliased native ASCOM self-proxies before activation; moved the stable .NET identity helper into the common frontend assembly. Reviewed actual registry binding versus managed Type.GUID. Investigated failed native-output CI and staged Unix socket permissions before publication; improved Windows peer diagnostics. | 17 worker and 11 Rust-parent cases pass in both bitnesses; 117 NINA checks, net48 fixtures, real exported COM and unsigned packages pass. Rust hub/Alpaca suites, Clippy and Rust 1.89 pass locally. Portable socket regression awaits CI (local cross-check lacks a Linux C compiler). Windows export timeout remains unresolved. Next: new CI, registration/removal, then every original remaining gate. |

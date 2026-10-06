@@ -99,15 +99,40 @@ pub fn bind(endpoint: &Endpoint) -> io::Result<Listener> {
         Err(error) if error.kind() == io::ErrorKind::NotFound => {}
         Err(error) => return Err(error),
     }
-    let socket = UnixListener::bind(&path)?;
-    fs::set_permissions(&path, fs::Permissions::from_mode(0o600))?;
-    let metadata = fs::symlink_metadata(&path)?;
+    // bind creates a socket with umask-derived permissions. Never expose that
+    // intermediate inode at the public address: a simultaneous verified client
+    // would correctly reject it before chmod completes. Stage on the same
+    // filesystem and publish only the fully private socket, without changing
+    // this multithreaded process's global umask.
+    let prepared = PreparedSocket::new(endpoint)?;
+    let metadata = fs::symlink_metadata(&prepared.path)?;
+    fs::rename(&prepared.path, &path)?;
     Ok(Listener {
-        socket,
+        socket: prepared.socket,
         path,
         device: metadata.dev(),
         inode: metadata.ino(),
     })
+}
+struct PreparedSocket {
+    socket: UnixListener,
+    path: PathBuf,
+    _directory: tempfile::TempDir,
+}
+impl PreparedSocket {
+    fn new(endpoint: &Endpoint) -> io::Result<Self> {
+        let directory = tempfile::Builder::new()
+            .prefix(".bind-")
+            .tempdir_in(&endpoint.root)?;
+        let path = directory.path().join("socket");
+        let socket = UnixListener::bind(&path)?;
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o600))?;
+        Ok(Self {
+            socket,
+            path,
+            _directory: directory,
+        })
+    }
 }
 pub async fn accept(listener: &mut Listener, _: &Endpoint) -> io::Result<Stream> {
     loop {
@@ -175,6 +200,40 @@ impl Drop for Listener {
 mod tests {
     use super::*;
     use std::os::unix::fs::symlink;
+
+    #[tokio::test]
+    async fn staged_socket_is_invisible_until_private_publication_and_renamed_socket_serves_clients()
+     {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let directory = tempfile::tempdir().unwrap();
+        let endpoint = Endpoint {
+            config: directory.path().join("config"),
+            key: "staged".into(),
+            root: directory.path().into(),
+            user: user().unwrap(),
+        };
+        let prepared = PreparedSocket::new(&endpoint).unwrap();
+        // A waiting client must see absence, not a permissive intermediate
+        // inode. No admission check or permission error is bypassed.
+        assert_eq!(
+            connect(&endpoint).await.unwrap_err().kind(),
+            io::ErrorKind::NotFound
+        );
+        assert_eq!(fs::metadata(&prepared.path).unwrap().mode() & 0o777, 0o600);
+        fs::rename(&prepared.path, address(&endpoint)).unwrap();
+        let (client, server) = tokio::join!(connect(&endpoint), prepared.socket.accept());
+        let mut client = client.unwrap();
+        let (mut server, _) = server.unwrap();
+        client.write_all(b"ready").await.unwrap();
+        let mut bytes = [0; 5];
+        server.read_exact(&mut bytes).await.unwrap();
+        assert_eq!(&bytes, b"ready");
+        fs::set_permissions(address(&endpoint), fs::Permissions::from_mode(0o666)).unwrap();
+        assert_eq!(
+            connect(&endpoint).await.unwrap_err().kind(),
+            io::ErrorKind::PermissionDenied
+        );
+    }
 
     #[test]
     fn private_storage_rejects_links_and_broad_permissions_without_repairing_them() {

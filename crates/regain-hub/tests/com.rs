@@ -178,6 +178,76 @@ fn preparation_checks_architecture_and_class_without_activation() {
 }
 
 #[tokio::test]
+async fn factory_passes_all_own_export_classes_and_rejects_a_registered_alias_before_activation() {
+    let Some(f) = Fixture::load() else {
+        return;
+    };
+    for architecture in [Bitness::X86, Bitness::X64] {
+        f.clear("Own", json!({}));
+        let source = f.source("Own", DeviceType::Switch, architecture);
+        let source_id = source.id;
+        let output = OutputConfig {
+            id: std::env::var("REGAIN_HUB_COM_SELF_OUTPUT")
+                .unwrap()
+                .parse()
+                .unwrap(),
+            ..switches(vec![gauge(
+                0,
+                Readout::Channel {
+                    source: source.id,
+                    channel: 0,
+                    unit: None,
+                },
+                false,
+            )])
+        };
+        let output_id = output.id;
+        let mut config = HubConfig::empty();
+        config.instance_id = std::env::var("REGAIN_HUB_COM_SELF_INSTANCE")
+            .unwrap()
+            .parse()
+            .unwrap();
+        config.sources.push(source);
+        config.outputs.push(output);
+        // This ordinary fixture alias is not recognisable from its ProgID;
+        // the worker must resolve its actual registered native-output CLSID.
+        assert!(config.validate().is_empty());
+        let hub = HubRuntime::build(
+            config,
+            &f.native,
+            &NoCredentials,
+            Arc::new(MonotonicClock::default()),
+        )
+        .unwrap();
+        let client = hub.client();
+        // A scalar output stays connected for diagnostics when its source is
+        // unavailable; the actor must reject activation and provide no reading.
+        client.connect(output_id).await.unwrap();
+        until(|| {
+            hub.source_snapshot(source_id)
+                .unwrap()
+                .error
+                .is_some_and(|error| error.kind == ErrorKind::InvalidValue)
+        })
+        .await;
+        assert_eq!(f.count("Own", "Activate"), 0);
+        assert!(hub.source_snapshot(source_id).unwrap().values.is_empty());
+        client.disconnect(output_id);
+        client.connect(output_id).await.unwrap();
+        until(|| {
+            hub.source_snapshot(source_id)
+                .unwrap()
+                .error
+                .is_some_and(|error| error.kind == ErrorKind::InvalidValue)
+        })
+        .await;
+        assert_eq!(f.count("Own", "Activate"), 0);
+        client.close();
+        hub.shutdown().await.unwrap();
+    }
+}
+
+#[tokio::test]
 async fn actual_parent_negotiates_connections_and_incremental_weather_without_dropping_other_sensors()
  {
     let Some(f) = Fixture::load() else {

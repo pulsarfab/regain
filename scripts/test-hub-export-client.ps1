@@ -3,7 +3,7 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'ComTestProperty.ps1')
 $ids = Get-Content -LiteralPath (Join-Path $Directory 'identities.json') -Raw | ConvertFrom-Json
 $objects = @()
-function Wait-Condition([scriptblock]$Condition) {
+function Wait-Condition([scriptblock]$Condition, [string]$Step) {
     $deadline = [DateTime]::UtcNow.AddSeconds(15)
     while ($true) {
         try { if (& $Condition) { return } }
@@ -14,11 +14,11 @@ function Wait-Condition([scriptblock]$Condition) {
             # command errors never count as successful data.
             if ($cause.HResult -ne -2147220478) { throw } # ASCOM 0x80040402
         }
-        if ([DateTime]::UtcNow -gt $deadline) { throw 'Hub export condition timed out' }
+        if ([DateTime]::UtcNow -gt $deadline) { throw "Hub export $Role condition timed out: $Step" }
         Start-Sleep -Milliseconds 25
     }
 }
-function Wait-Signal([string]$Name) { Wait-Condition { Test-Path -LiteralPath (Join-Path $Directory $Name) } }
+function Wait-Signal([string]$Name) { Wait-Condition { Test-Path -LiteralPath (Join-Path $Directory $Name) } "signal $Name" }
 function Value($Device, [string]$Name) { Get-ComTestProperty -Device $Device -Name $Name }
 try {
     foreach ($identity in $ids) {
@@ -35,31 +35,32 @@ try {
     }
     $primary = $objects[0]; $other = $objects[3]; $weather = $objects[2]; $safety = $objects[1]
     if ($Role -eq 'second') { Wait-Signal 'first-connected' }
-    $primary.Connect(); Wait-Condition { !(Value $primary 'Connecting') }
+    Write-Output "Hub export ${Role}: connect primary"
+    $primary.Connect(); Wait-Condition { !(Value $primary 'Connecting') } 'primary connect completion'
     if (!(Value $primary 'Connected')) { throw 'Modern connection did not acquire output' }
     $other.Connected = $true
     if ((Value $primary 'MaxSwitch') -ne 3) { throw 'Switch dispatch failed' }
     if ($Role -eq 'first') {
         $primary.SetSwitchValue(1, 46)
-        Wait-Condition { $other.GetSwitchValue(1) -eq 46 }
+        Wait-Condition { $other.GetSwitchValue(1) -eq 46 } 'shared value 46 on sibling output'
         'ready' | Set-Content -LiteralPath (Join-Path $Directory 'first-connected')
         Wait-Signal 'second-connected'
-        $primary.Disconnect(); Wait-Condition { !(Value $primary 'Connecting') }
+        $primary.Disconnect(); Wait-Condition { !(Value $primary 'Connecting') } 'primary disconnect completion'
         $other.Connected = $false
         'done' | Set-Content -LiteralPath (Join-Path $Directory 'first-disconnected')
         Wait-Signal 'second-finished'
     } else {
-        Wait-Condition { $primary.GetSwitchValue(1) -eq 46 }
+        Wait-Condition { $primary.GetSwitchValue(1) -eq 46 } 'shared value 46 on primary output'
         'ready' | Set-Content -LiteralPath (Join-Path $Directory 'second-connected')
         Wait-Signal 'first-disconnected'
         if (!(Value $primary 'Connected') -or $other.GetSwitchValue(1) -ne 46) { throw 'Client disconnect revoked sibling output' }
-        $other.SetSwitchValue(1, 72); Wait-Condition { $primary.GetSwitchValue(1) -eq 72 }
-        $weather.Connect(); Wait-Condition { !(Value $weather 'Connecting') }
-        Wait-Condition { $weather.GetType().InvokeMember('Temperature', [Reflection.BindingFlags]::GetProperty, $null, $weather, $null) -eq 12 }
+        $other.SetSwitchValue(1, 72); Wait-Condition { $primary.GetSwitchValue(1) -eq 72 } 'shared value 72'
+        $weather.Connect(); Wait-Condition { !(Value $weather 'Connecting') } 'weather connect completion'
+        Wait-Condition { $weather.GetType().InvokeMember('Temperature', [Reflection.BindingFlags]::GetProperty, $null, $weather, $null) -eq 12 } 'weather temperature 12'
         $safety.Connected = $true
         if ((Value $safety 'IsSafe')) { throw 'Simulation safety did not start unsafe' }
         if ((Value $safety 'DeviceState').Count -ne 1) { throw 'DeviceState collection did not cross COM boundary' }
-        $weather.Disconnect(); Wait-Condition { !(Value $weather 'Connecting') }
+        $weather.Disconnect(); Wait-Condition { !(Value $weather 'Connecting') } 'weather disconnect completion'
         $safety.Connected = $false; $primary.Connected = $false; $other.Connected = $false
         'done' | Set-Content -LiteralPath (Join-Path $Directory 'second-finished')
     }

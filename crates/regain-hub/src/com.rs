@@ -41,6 +41,7 @@ fn worker_path(runtime: &NativeRuntime, bitness: Bitness) -> PathBuf {
 pub struct ComBackend {
     path: PathBuf,
     prog_id: String,
+    denied_classes: Vec<uuid::Uuid>,
     device: DeviceType,
     bitness: Bitness,
     policy: ConnectionPolicy,
@@ -104,6 +105,7 @@ impl ComBackend {
         Ok(Self {
             path,
             prog_id: prog_id.clone(),
+            denied_classes: Vec::new(),
             device: *device_type,
             bitness: *bitness,
             policy: *connection_policy,
@@ -118,6 +120,9 @@ impl ComBackend {
             connection_uncertain: false,
             disconnecting: false,
         })
+    }
+    pub(crate) fn exclude_exports(&mut self, classes: Vec<uuid::Uuid>) {
+        self.denied_classes = classes;
     }
     fn start(&mut self) -> Result<(), SourceError> {
         if self.worker.is_some() {
@@ -145,6 +150,17 @@ impl ComBackend {
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .kill_on_drop(true);
+        if !self.denied_classes.is_empty() {
+            command.args([
+                "--deny-clsids",
+                &self
+                    .denied_classes
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(","),
+            ]);
+        }
         #[cfg(windows)]
         command.creation_flags(0x08000000);
         let child = command.spawn().map_err(|_| {

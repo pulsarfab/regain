@@ -703,6 +703,20 @@ impl HubConfig {
                             "Use a registered COM ProgID",
                         );
                     }
+                    if self.outputs.iter().any(|output| {
+                        crate::ascom_export::prog_id(
+                            self.instance_id,
+                            output.id,
+                            output.device.device_type(),
+                        )
+                        .is_some_and(|own| own.eq_ignore_ascii_case(prog_id))
+                    }) {
+                        error(
+                            format!("{p}.backend.progId"),
+                            "cycle",
+                            "Use a virtual source for an output of this hub",
+                        );
+                    }
                     Some(format!(
                         "com:{}:{device_type:?}",
                         prog_id.to_ascii_lowercase()

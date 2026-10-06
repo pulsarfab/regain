@@ -24,6 +24,9 @@ ARCHITECTURES = ("x86", "x64")
 WORKERS = ROOT / "target/debug"
 FIXTURE = ROOT / "artifacts/hub-com-fixture/Regain.Hub.COM.Fixture.dll"
 PROGID = "ASCOM.Rgn.F." + uuid.uuid4().hex[:16]
+SELF_INSTANCE, SELF_OUTPUT = uuid.uuid4(), uuid.uuid4()
+SELF_CLSID = "{" + str(uuid.uuid5(uuid.NAMESPACE_URL,
+    f"https://pulsarfab.com/regain/ascom-hub/output/{SELF_INSTANCE}/{SELF_OUTPUT}/switch")) + "}"
 FIXTURE_HIVE = winreg.HKEY_CURRENT_USER
 
 
@@ -43,8 +46,9 @@ def registered_fixture():
         "[Reflection.AssemblyName]::GetAssemblyName($env:REGAIN_COM_FIXTURE_DLL).FullName",
     ], env={**os.environ, "REGAIN_COM_FIXTURE_DLL": str(FIXTURE)}, text=True).strip()
     assert identity.startswith("Regain.Hub.COM.Fixture,")
-    progids = [PROGID] + [PROGID + "." + name for name in ("Switch", "Safety", "Weather", "Other")]
-    paths = [f"Software\\Classes\\{name}" for name in progids] + [f"Software\\Classes\\CLSID\\{CLSID}"]
+    progids = [PROGID] + [PROGID + "." + name for name in ("Switch", "Safety", "Weather", "Other", "Own")]
+    classids = [CLSID, SELF_CLSID]
+    paths = [f"Software\\Classes\\{name}" for name in progids] + [f"Software\\Classes\\CLSID\\{classid}" for classid in classids]
     views = (winreg.KEY_WOW64_32KEY, winreg.KEY_WOW64_64KEY)
     # Check both hives so a private test can never shadow a machine/user class.
     # Elevated COM ignores per-user class registrations even when HKCR's merged
@@ -67,11 +71,11 @@ def registered_fixture():
                 with winreg.CreateKeyEx(FIXTURE_HIVE, path, 0, winreg.KEY_WRITE | view):
                     pass
             entries = {
-                **{path + "\\CLSID": {"": CLSID} for path in paths[:-1]},
-                paths[-1] + "\\InprocServer32": {
+                **{f"Software\\Classes\\{name}\\CLSID": {"": SELF_CLSID if name.endswith(".Own") else CLSID} for name in progids},
+                **{f"Software\\Classes\\CLSID\\{classid}\\InprocServer32": {
                     "": "mscoree.dll", "ThreadingModel": "Both", "Class": CLASS,
                     "Assembly": identity, "RuntimeVersion": "v4.0.30319", "CodeBase": FIXTURE.as_uri(),
-                },
+                } for classid in classids},
             }
             for path, values in entries.items():
                 with winreg.CreateKeyEx(FIXTURE_HIVE, path, 0, winreg.KEY_WRITE | view) as key:
@@ -88,7 +92,7 @@ def registered_fixture():
 
 
 class Worker:
-    def __init__(self, architecture, device="switch", policy="managed", settings=None, progid=PROGID):
+    def __init__(self, architecture, device="switch", policy="managed", settings=None, progid=PROGID, denied=None):
         self.temporary = tempfile.TemporaryDirectory(prefix="hub-com-", dir=ROOT / "artifacts")
         self.state = Path(self.temporary.name) / "state.json"
         self.settings = settings or {}
@@ -97,7 +101,7 @@ class Worker:
             str(WORKERS / "hub-ascom" / architecture / "Regain.Hub.ASCOM.exe"),
             "--import", "--prog-id", progid, "--device-type", device,
             "--connection-policy", policy, "--bitness", architecture,
-        ], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        ] + (["--deny-clsids", ",".join(denied)] if denied else []), stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             env={**os.environ, "REGAIN_HUB_COM_FIXTURE_STATE": str(self.state)})
         self.responses = queue.Queue()
         self.id = 0
@@ -183,6 +187,14 @@ class Worker:
 
 
 class ImportTests(unittest.TestCase):
+    def test_registered_progid_alias_is_rejected_before_activation(self):
+        for architecture in self.each():
+            with self.subTest(architecture=architecture), Worker(architecture, progid=PROGID + ".Switch", denied=[CLSID.strip("{}")]) as worker:
+                response = worker.send("connectStep")
+                self.assertEqual(response["error"]["kind"], "invalidValue")
+                self.assertEqual(worker.count("Activate"), 0)
+                self.assertIsNotNone(worker.send("connectStep")["error"])
+                self.assertEqual(worker.count("Activate"), 0)
     def each(self):
         return ARCHITECTURES
 
@@ -461,6 +473,7 @@ if __name__ == "__main__":
         if result.wasSuccessful() and arguments.rust_tests:
             with tempfile.TemporaryDirectory(prefix="hub-com-rust-", dir=ROOT / "artifacts") as fixture_directory:
                 environment = {**os.environ, "REGAIN_TEST_WORKERS": str(WORKERS),
+                    "REGAIN_HUB_COM_SELF_INSTANCE": str(SELF_INSTANCE), "REGAIN_HUB_COM_SELF_OUTPUT": str(SELF_OUTPUT),
                     "REGAIN_HUB_COM_FIXTURE_DIRECTORY": fixture_directory, "REGAIN_HUB_COM_FIXTURE_PROGID": PROGID,
                     "REGAIN_HUB_COM_FIXTURE_HELPER": str(ROOT / "artifacts/hub-com-helper/Regain.Hub.Shared.Helper.Fixture.exe")}
                 environment.pop("REGAIN_HUB_COM_FIXTURE_STATE", None)

@@ -104,10 +104,14 @@ def main():
                     children.append(subprocess.Popen([str(powershell), "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(client),
                                                       "-Directory", str(folder), "-Role", role], creationflags=NO_WINDOW,
                                                       stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True))
+                results = []
                 for child in children:
                     output, _ = child.communicate(timeout=45)
                     print(output, flush=True)
-                    assert child.returncode == 0, "Export COM client failed"
+                    results.append(child.returncode)
+                # Always collect both peers: one client's signal timeout can
+                # otherwise hide the other client's actual COM failure.
+                assert all(result == 0 for result in results), "Export COM client failed"
                 assert server.poll() is None and host.poll() is None, "Clients stopped the shared server/host"
                 print(f"{architecture} server: four stable outputs, both client bitnesses, independent leases and COM DeviceState passed", flush=True)
             finally:

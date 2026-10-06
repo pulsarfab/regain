@@ -1014,4 +1014,21 @@ bitnesses to both server architectures, four outputs including two Switch output
 independent source leases and DeviceState collections. These fixtures do not
 prove production chooser registration, SCM launch, interactive setup, full ASCOM
 conformance or installed vendor/hardware acceptance. Those remain required before
-merge, alongside export self-proxy/alias checks and every broader plan gate.
+merge and every broader plan gate.
+
+Canonical native ASCOM ProgIDs for this instance's configured outputs are rejected
+during configuration validation. The source factory also sends all derived output
+CLSIDs to each isolated COM worker. Before activation, the worker reads the actual
+ProgID-to-CLSID registration in its process architecture and activation context
+(machine-only when elevated, otherwise merged HKCR), rejects any own class, and
+activates that checked CLSID. A managed Type.GUID is not evidence of the registry
+binding. Registered aliases are covered without invoking their constructor. A
+failed source remains visible through diagnostics; connecting a scalar output
+does not make the rejected source available. Different hub instances are permitted;
+indirect cycles involving other hosts still require explicit topology safeguards.
+
+Unix endpoint startup prepares the socket in a private temporary directory on
+the endpoint filesystem, sets mode 0600, then renames it to the public address.
+The process-wide umask is unchanged. Clients still reject public sockets with
+broad permissions or the wrong owner; no permission denial is treated as readiness.
+Portable execution of this publication regression remains pending.
