@@ -342,16 +342,23 @@ public sealed partial class HubNativeTests
         // The local native output already works with only a --hub-host process.
         var reservation = new TcpListener(IPAddress.Loopback, 0); reservation.Start();
         var port = ((IPEndPoint)reservation.LocalEndpoint).Port; reservation.Stop();
+        // Keep the HTTP fixture accessory-only and independent of installed
+        // user camera profiles, migration and hardware discovery.
+        var profiles = Path.Combine(host.DirectoryPath, "empty-camera-profiles.json");
+        await File.WriteAllTextAsync(profiles, "[]");
         using var publisher = new Process { StartInfo = new ProcessStartInfo(host.Executable) {
             UseShellExecute = false, CreateNoWindow = true, WindowStyle = ProcessWindowStyle.Hidden,
             RedirectStandardOutput = true, RedirectStandardError = true
         } };
         publisher.StartInfo.ArgumentList.Add("--hub-config"); publisher.StartInfo.ArgumentList.Add(host.ConfigPath);
+        publisher.StartInfo.ArgumentList.Add("--profiles"); publisher.StartInfo.ArgumentList.Add(profiles);
+        publisher.StartInfo.ArgumentList.Add("--simulate");
         publisher.StartInfo.ArgumentList.Add("--workers"); publisher.StartInfo.ArgumentList.Add(host.Workers);
         publisher.StartInfo.ArgumentList.Add("--no-discovery"); publisher.StartInfo.ArgumentList.Add("--port"); publisher.StartInfo.ArgumentList.Add(port.ToString());
         Assert.True(publisher.Start());
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         var output = publisher.StandardOutput.ReadToEndAsync(timeout.Token); var errors = publisher.StandardError.ReadToEndAsync(timeout.Token);
+        Exception? primaryFailure = null;
         try {
             using var http = new HttpClient { BaseAddress = new Uri("http://127.0.0.1:" + port), Timeout = TimeSpan.FromSeconds(3) };
             var transaction = 0;
@@ -374,6 +381,13 @@ public sealed partial class HubNativeTests
                 catch (HttpRequestException) { return false; }
             });
             await Put("connected", "Connected", "true");
+            using (var catalog = await http.GetAsync("/management/v1/configureddevices", timeout.Token)) {
+                catalog.EnsureSuccessStatusCode();
+                using var parsed = JsonDocument.Parse(await catalog.Content.ReadAsStringAsync(timeout.Token));
+                Assert.Equal(3, parsed.RootElement.GetProperty("Value").GetArrayLength());
+                Assert.DoesNotContain(parsed.RootElement.GetProperty("Value").EnumerateArray(),
+                    entry => entry.GetProperty("DeviceType").GetString() == "Camera");
+            }
             Assert.Equal(2, (await host.Status(0)).GetProperty("leaseCount").GetInt32());
             var level = Assert.IsAssignableFrom<IWritableSwitch>(device.Switches.Single(s => s.Id == 1));
             level.TargetValue = 29; level.SetValue();
@@ -387,9 +401,19 @@ public sealed partial class HubNativeTests
             await Eventually(async () => (await host.Status(0)).GetProperty("leaseCount").GetInt32() == 1);
             Assert.True(device.Connected); Assert.True(level.Poll()); Assert.Equal(77, level.Value);
             Assert.Equal("ready", (await host.Command(new { op = "hostStatus" })).GetProperty("phase").GetString());
-        } finally {
+        } catch (Exception error) { primaryFailure = error; throw; }
+        finally {
             if (!publisher.HasExited) { publisher.Kill(); await publisher.WaitForExitAsync(); }
-            await output; await errors;
+            try {
+                await Task.WhenAll(output, errors);
+                if (primaryFailure is not null) {
+                    Console.WriteLine("Private HTTP publisher stdout: " + await output);
+                    Console.WriteLine("Private HTTP publisher stderr: " + await errors);
+                }
+            }
+            catch (OperationCanceledException) when (primaryFailure is not null) {
+                Console.WriteLine("Publisher cleanup output exceeded its deadline; preserving the original test failure");
+            }
         }
     }
     private static Task Eventually(Func<bool> predicate) => Eventually(() => Task.FromResult(predicate()));

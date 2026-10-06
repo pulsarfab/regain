@@ -2770,15 +2770,29 @@ executable. That fixture completed (196 NINA tests and net48 clients passed);
 the sequential rebuild then succeeded. Those earlier managed checks used the
 previous executable and cannot certify the rebuilt-host checkpoint.
 
-The rebuilt-host NINA run remains live at this checkpoint and has reported three
+The rebuilt-host NINA run ended with 191 passes and five failures:
 failures: ActualAlpacaPublisherAndNativeNinaShareSwitchStateAndSeparateLeases
 (cancelled output read during cleanup), NativeEditorWindowEditsReviewsAppliesAndShowsSavedHealth
 (attachment closed), and UnknownCreationRetainsFilenameAndReadsCommittedFileWithoutReplay
-for malformed completion (read reported Missing rather than Existing). Preserve
+for malformed completion (read reported Missing rather than Existing),
+SharedNativeSelectorRetainsUnknownFilenameAndEnablesLoadingOnlyAfterRead (UI wait),
+and NativeCreationUsesProductionPersistenceAndPreservesExistingData (helper deadline). Preserve
 artifacts/hub-virtual-rotator-final-rebuilt-nina.log; their causes remain unproved.
-Do not restart a live run or treat its earlier passing counterpart as a fix.
-Rebuilt-host net48 checks are queued behind successful NINA completion and have
-not run. No production timeout or test requirement has been relaxed.
+The seven-case focused run passed six and reproduced publisher readiness timeout
+before connection. The other later passes do not establish their earlier causes.
+Rebuilt-host net48 checks did not run because the sequence stopped at NINA failure.
+No production timeout or test requirement has been relaxed.
+
+Publisher fixture review found it used the installed user profile path. It now
+supplies a private persisted empty camera list and --simulate, and asserts exactly
+three scalar hub catalog entries with no cameras. This removes user-profile
+migration/discovery from the fixture independently of the readiness failure.
+Cleanup no longer masks an earlier assertion with a cancelled stdout read, and
+prints private captured output on failure. Focused runs still reproduce failure
+before readiness; captured stdout/stderr are empty. Retain
+artifacts/hub-virtual-rotator-private-publisher-diagnostics.log and the focused TRX.
+A standalone private --hub-init probe succeeded in 5.87 seconds and created its
+file. That is timing evidence, not proof of the other helper failures' causes.
 
 Frontend checkpoint CI 37518077578/37518073024 is still live, with seven successful
 jobs and Windows incomplete. Keep the virtual checkpoint local while those jobs
