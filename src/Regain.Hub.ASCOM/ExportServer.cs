@@ -1,4 +1,5 @@
 using System.IO;
+using System.Security.Principal;
 using Regain.Rotator;
 using Regain.SerialServer;
 
@@ -11,14 +12,17 @@ internal static class ExportServer
         string? ready = null;
         void Progress(string state) { if (ready is not null) File.AppendAllText(ready + ".startup", state + Environment.NewLine); }
         try {
-            string? bindings = null, host = null;
+            string? bindings = null, host = null, owner = null;
             for (var i = 0; i < args.Length; i++) {
                 if (args[i] is "--export" or "/Embedding" or "-Embedding") continue;
                 if (args[i] == "--ready" && i + 1 < args.Length && ready is null) { ready = args[++i]; continue; }
                 if (args[i] == "--bindings" && i + 1 < args.Length && bindings is null) { bindings = AbsoluteFile(args[++i]); continue; }
                 if (args[i] == "--host" && i + 1 < args.Length && host is null) { host = AbsoluteFile(args[++i]); continue; }
+                if (args[i] == "--owner-sid" && i + 1 < args.Length && owner is null) { owner = new SecurityIdentifier(args[++i]).Value; continue; }
                 return 2;
             }
+            using var identity = WindowsIdentity.GetCurrent();
+            if (owner is not null && owner != identity.User?.Value) return 2;
             Progress("options accepted");
             var store = new HubSelectionStore(bindings ?? RegainPaths.EnvironmentVariable("REGAIN_HUB_BINDINGS") ?? RegainPaths.Profile("hub-frontends.json"));
             var root = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", ".."));

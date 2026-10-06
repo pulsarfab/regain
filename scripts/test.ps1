@@ -35,6 +35,10 @@ try {
     if ($env:GITHUB_ACTIONS -eq 'true' -and $env:RUNNER_OS -eq 'Windows') {
         python scripts/test-hub-exports.py --scm
         if ($LASTEXITCODE) { throw 'Hub bound COM launch tests failed' }
+        dotnet build src/Regain.ASCOM.Register -c Release -o target/debug -warnaserror
+        if ($LASTEXITCODE) { throw 'Hub registration helper build failed' }
+        python scripts/test-hub-exports.py --registered
+        if ($LASTEXITCODE) { throw 'Hub production registration tests failed' }
     }
     python scripts/test-native-camera.py
     if ($LASTEXITCODE) { throw 'Native camera IPC tests failed' }

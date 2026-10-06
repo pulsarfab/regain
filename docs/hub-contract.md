@@ -1041,6 +1041,28 @@ invalid. Duplicate options, missing files and relative paths fail before factori
 are published. Reading bindings/metadata still acquires no host/equipment lease.
 The optional fixture readiness path also records sanitized startup phases, with
 no driver arguments or exception text. Private SCM tests verify cold launch and
-shared factories against machine registration on disposable runners; that check
-is still pending. Production registration/removal and ownership inventory remain
-required; explicit launch arguments alone do not establish chooser support.
+shared factories against machine registration on disposable runners; d51abac
+passed both complete CI runs, including x86/x64 cold SCM launch. Explicit launch
+arguments alone do not establish production chooser support.
+
+Production registration uses the existing `Regain.ASCOM.Register.exe` with
+`/hubregister selections revision instance output ownerSid`, `/hubunregister
+clsid ownerSid`, and installer-only `/hubunregisterall`. The same-user elevated
+helper serializes machine edits and holds the saved-selection writer lock through
+revision validation and publication. Both registry views point to this install's
+x64 helper, explicit bindings/host paths and original user SID; the helper rejects
+a different Windows identity before publishing factories. Metadata and registry
+operations do not launch the host or acquire equipment.
+
+Each output has its own AppID, chooser entry and versioned ownership inventory.
+All views are checked before mutation, including collisions, user overlays,
+changed commands, different owners/installs and newer registrations. A pending
+inventory marks interrupted edits for explicit repair/removal; there is no
+automatic mutation replay. Removal reads inventory even if selections/executables
+are gone, preserving other installs. Caught failures attempt every rollback;
+partial restoration is reported explicitly. Snapshots preserve value kinds,
+owner/group/DACL and DACL protection, bounded to 512 keys, depth 16 and 1 MiB
+across the operation. They do not capture SACL/audit metadata or provide a crash
+transaction. Private-tree tests prove these behaviors. Actual production helper
+publication/removal on the disposable runner, interactive setup, installer
+lifecycle and conformance remain separate acceptance gates.

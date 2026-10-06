@@ -81,15 +81,7 @@ public sealed class HubSelectionStore(string path)
         });
     }
     private HubSelections Update(Guid expectedRevision, Func<HubSelections, HubSelection[]> change)
-    {
-        Directory.CreateDirectory(System.IO.Path.GetDirectoryName(Path)!);
-        // A persistent OS lock protects competing native frontends. It is not
-        // removed, and never establishes ownership of equipment or the hub.
-        using var file = new FileStream(Path + ".lock", FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.ReadWrite);
-        try { file.Lock(0, 1); } catch (IOException) { throw new InvalidOperationException("Another frontend is saving hub selections"); }
-        try {
-            var current = Load();
-            if (current.Revision != expectedRevision) throw new InvalidOperationException("Hub selections changed; reload before saving");
+        => WithRevision(expectedRevision, current => {
             var next = change(current);
             if (next.Length > 64) throw new InvalidOperationException("Hub selection limit reached");
             var result = new HubSelections { Revision = Guid.NewGuid(), Bindings = next };
@@ -103,6 +95,20 @@ public sealed class HubSelectionStore(string path)
                 if (File.Exists(Path)) File.Replace(temporary, Path, null); else File.Move(temporary, Path);
             } finally { if (File.Exists(temporary)) File.Delete(temporary); }
             return result;
+        });
+    // Registration shares the writer lock: a reviewed binding cannot disappear
+    // or change between its revision check and registry publication.
+    internal T WithRevision<T>(Guid expectedRevision, Func<HubSelections, T> operation)
+    {
+        Directory.CreateDirectory(System.IO.Path.GetDirectoryName(Path)!);
+        // A persistent OS lock protects competing native frontends. It is not
+        // removed, and never establishes ownership of equipment or the hub.
+        using var file = new FileStream(Path + ".lock", FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.ReadWrite);
+        try { file.Lock(0, 1); } catch (IOException) { throw new InvalidOperationException("Another frontend is saving hub selections"); }
+        try {
+            var current = Load();
+            if (current.Revision != expectedRevision) throw new InvalidOperationException("Hub selections changed; reload before saving");
+            return operation(current);
         } finally { file.Unlock(0, 1); }
     }
 }

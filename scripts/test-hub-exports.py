@@ -91,9 +91,16 @@ def find_scm_server(executable, folder):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--scm", action="store_true", help="Let COM launch the bound server from LocalServer32")
+    parser.add_argument("--registered", action="store_true", help="Exercise the production machine registration helper (disposable CI only)")
     options = parser.parse_args()
+    if options.registered:
+        options.scm = True
     workers = Path(os.environ.get("REGAIN_TEST_WORKERS", ROOT / "target/debug")).resolve()
     host_exe = workers / "regain-alpaca.exe"
+    powershell = Path(os.environ["WINDIR"]) / "System32/WindowsPowerShell/v1.0/powershell.exe"
+    owner = subprocess.check_output([str(powershell), "-NoProfile", "-Command",
+                                   "[Security.Principal.WindowsIdentity]::GetCurrent().User.Value"],
+                                   text=True, creationflags=NO_WINDOW, timeout=10).strip()
     with tempfile.TemporaryDirectory(prefix="hub-export-", dir=ROOT / "artifacts") as directory:
         folder = Path(directory)
         config = json.loads((ROOT / "crates/regain-hub/examples/simulated-observatory.json").read_text())
@@ -122,19 +129,37 @@ def main():
         saved = folder / "bindings.json"
         saved.write_text(json.dumps(dict(schemaVersion=1, revision=str(uuid.uuid4()), bindings=bindings)))
         elevated = bool(ctypes.windll.shell32.IsUserAnAdmin())
+        if options.registered and not (elevated and os.environ.get("GITHUB_ACTIONS") == "true" and os.environ.get("RUNNER_OS") == "Windows"):
+            raise RuntimeError("Production registration fixtures require an elevated disposable GitHub Windows runner")
         if elevated and not (os.environ.get("GITHUB_ACTIONS") == "true" and os.environ.get("RUNNER_OS") == "Windows"):
             raise RuntimeError("Elevated machine fixture registration is permitted only on disposable GitHub runners")
         hive = winreg.HKEY_LOCAL_MACHINE if elevated else winreg.HKEY_CURRENT_USER
         views = (winreg.KEY_WOW64_32KEY, winreg.KEY_WOW64_64KEY)
         client = ROOT / "scripts/test-hub-export-client.ps1"
-        for architecture in ("x86", "x64"):
+        for architecture in (("x64",) if options.registered else ("x86", "x64")):
             server_exe = workers / "hub-ascom" / architecture / "Regain.Hub.ASCOM.exe"
             paths = [item for identity in identities for item in
                      (f'Software\\Classes\\CLSID\\{{{identity["clsid"]}}}', f'Software\\Classes\\{identity["progid"]}')]
             app_id = "{" + str(uuid.uuid4()) + "}"
-            paths.append(f'Software\\Classes\\AppID\\{app_id}')
+            if options.registered:
+                for identity, binding in zip(identities, bindings):
+                    paths.extend((f'Software\\Classes\\AppID\\{{{identity["clsid"]}}}',
+                                  f'Software\\ASCOM\\{dict(switch="Switch", safetymonitor="SafetyMonitor", observingconditions="ObservingConditions")[binding["deviceType"]]} Drivers\\{identity["progid"]}',
+                                  f'Software\\PulsarFab\\Regain\\HubExports\\{{{identity["clsid"]}}}'))
+            else:
+                paths.append(f'Software\\Classes\\AppID\\{app_id}')
             for check_hive in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
-                for view in views:
+                if options.registered:
+                    # All paths were absent in both hives/views. Reserve exact
+                    # private paths for cleanup even if a helper write fails.
+                    created.extend((view, key_path) for view in views for key_path in paths)
+                    revision = json.loads(saved.read_text())["revision"]
+                    for binding in bindings:
+                        result = subprocess.run([str(workers / "Regain.ASCOM.Register.exe"), "/hubregister", str(saved), revision,
+                                                 binding["instanceId"], binding["outputId"], owner],
+                                                timeout=15, creationflags=NO_WINDOW)
+                        assert result.returncode == 0, "Production bound registration failed"
+                for view in (() if options.registered else views):
                     for key_path in paths:
                         try:
                             with winreg.OpenKey(check_hive, key_path, 0, winreg.KEY_READ | view):
@@ -147,7 +172,8 @@ def main():
             try:
                 for arguments in (("--bindings", "relative.json"), ("--bindings", str(folder / "missing.json")),
                                   ("--bindings", str(saved), "--bindings", str(saved)),
-                                  ("--bindings", str(saved), "--host", "relative.exe"), ("--unknown",)):
+                                  ("--bindings", str(saved), "--host", "relative.exe"), ("--unknown",),
+                                  ("--owner-sid", "not-a-sid"), ("--owner-sid", "S-1-5-18")):
                     invalid = subprocess.run([str(server_exe), "--export", *arguments],
                                              timeout=5, creationflags=NO_WINDOW)
                     assert invalid.returncode == 2, "Invalid bound launch must fail before publishing factories"
@@ -160,7 +186,7 @@ def main():
                         entries = {
                             f'Software\\Classes\\CLSID\\{{{identity["clsid"]}}}': "Regain private hub fixture",
                             f'Software\\Classes\\CLSID\\{{{identity["clsid"]}}}\\LocalServer32':
-                                f'"{server_exe}" /Embedding --ready "{ready}" --bindings "{saved}" --host "{host_exe}"',
+                                f'"{server_exe}" /Embedding --ready "{ready}" --owner-sid {owner} --bindings "{saved}" --host "{host_exe}"',
                             f'Software\\Classes\\CLSID\\{{{identity["clsid"]}}}\\ProgID': identity["progid"],
                             f'Software\\Classes\\{identity["progid"]}\\CLSID': "{" + identity["clsid"] + "}",
                         }
@@ -179,7 +205,7 @@ def main():
                                "REGAIN_HUB_HOST": str(folder / "wrong-host.exe")}
                 if not options.scm:
                     server = subprocess.Popen([str(server_exe), "--export", "--ready", str(ready),
-                                               "--bindings", str(saved), "--host", str(host_exe)], env=environment,
+                                               "--owner-sid", owner, "--bindings", str(saved), "--host", str(host_exe)], env=environment,
                                               creationflags=NO_WINDOW)
                     deadline = time.monotonic() + 15
                     while not ready.exists():
@@ -218,6 +244,20 @@ def main():
                 # otherwise hide the other client's actual COM failure.
                 assert all(result == 0 for result in results), "Export COM client failed"
                 assert server.poll() is None and host.poll() is None, "Clients stopped the shared server/host"
+                if options.registered:
+                    saved.unlink()  # Removal must use the inventory, not the chooser file.
+                    for identity in identities:
+                        result = subprocess.run([str(workers / "Regain.ASCOM.Register.exe"), "/hubunregister", identity["clsid"], owner],
+                                                timeout=15, creationflags=NO_WINDOW)
+                        assert result.returncode == 0, "Production inventory-based removal failed"
+                    for view in views:
+                        for key_path in paths:
+                            try:
+                                with winreg.OpenKey(hive, key_path, 0, winreg.KEY_READ | view):
+                                    raise AssertionError("Production removal left a registration key")
+                            except FileNotFoundError:
+                                pass
+                    assert server.poll() is None and host.poll() is None, "Registration removal stopped a shared server"
                 print(f"{architecture} {'SCM' if options.scm else 'manual'} server: four stable outputs, both client bitnesses, independent leases and COM DeviceState passed", flush=True)
             finally:
                 startup = folder / "ready.startup"
@@ -255,6 +295,8 @@ def main():
                             status = delete_tree(int(key), name)
                             if status not in (0, 2):
                                 raise OSError(status, "Cannot remove private export fixture registration")
+                    except FileNotFoundError:
+                        pass  # A failed registration may not have created its parent.
                     except Exception as error:
                         cleanup_errors.append(error)
                 for signal in ("ready", "first-connected", "second-connected", "first-disconnected", "second-finished"):

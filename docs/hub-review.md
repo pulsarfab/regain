@@ -1544,3 +1544,46 @@ hives/views. Local tests keep HKCU; they never attempt elevation or machine writ
 
 Next: corrected Windows CI and cold machine launch, then production ownership/
 registration/removal, interactive setup and every original remaining plan gate.
+
+## 2026-10-06: production registration and ownership foundation
+
+d51abac push CI 37449772668 and PR CI 37449781613 passed all eight jobs.
+Windows logs verify strict DeviceState values and cold SCM launch from both
+client bitnesses against both server architectures. Unix publication passes all
+four platforms. The collection wrapper and socket publication failures are
+resolved at that checkpoint; production registration is a new increment.
+
+Review of registration/removal addressed:
+
+1. Use the existing helper/shared identity rather than adding an executable or
+   duplicating GUID derivation. Both chooser views launch the installed x64
+   helper with explicit paths and original SID. Different-account elevation and
+   activation fail before factories/equipment acquisition.
+2. Hold the selection CAS writer lock and machine registration mutex through
+   preflight/publication. A second-view collision, user overlay, changed command,
+   foreign owner/install or newer version cannot authorize a first-view write.
+3. Persist pending ownership before keys and ready after publication. Explicit
+   retry can repair owned partial entries. Removal uses inventory after selection
+   deletion and installer removal is scoped to the exact installation.
+4. Capture registry kinds and custom owner/group/DACL/protection for rollback.
+   Ordinary read/write handles lack security-write rights; reopen only the same
+   key with required rights, enabling no privileges and broadening no ACL.
+   SACL/audit metadata and process-crash atomicity are not claimed. Attempt every
+   restoration and report partial rollback rather than hiding cleanup errors.
+5. Bound the whole snapshot to 512 keys, depth 16 and 1 MiB, before any mutation.
+   Oversized/deep trees leave both views untouched. Fixture cleanup also accepts
+   missing parents after a failed registration but still reports other failures.
+
+Local evidence: all 126 NINA tests pass, including nine private-registry cases
+(`artifacts/hub-registration-nina-tests.log`). net48 x86/x64 selection/editor/
+adapter fixtures pass (`hub-registration-net48-tests.log`); the registration
+helper builds with warnings denied (`hub-registration-build.log`) and unsigned
+ASCOM package validates (`hub-registration-package.log`). Owner-mismatch and
+manual COM fixtures passed earlier (`hub-registration-owner-tests.log`). No
+installed hardware driver was activated. A new disposable-runner-only fixture
+uses the actual helper for publication, cold SCM activation and inventory-based
+removal after deleting selections; its result is still pending new CI.
+
+Next: production fixture CI, themed registration manager, installer lifecycle,
+conformance and all original remaining plan gates. The backend/CLI alone does
+not complete milestone 4's native setup or wider proxy/coordination requirements.
