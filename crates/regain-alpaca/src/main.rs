@@ -21,6 +21,9 @@ async fn main() -> Result<()> {
             println!(
                 "  --hub-attach --hub-config ABSOLUTE_PATH\n                      Start/find the shared hub and print endpoint JSON"
             );
+            println!(
+                "  --hub-config ABSOLUTE_PATH\n                      Publish shared hub Switch, SafetyMonitor and Weather over HTTP"
+            );
             return Ok(());
         }
         ensure!(
@@ -74,8 +77,8 @@ async fn main() -> Result<()> {
         );
     } else {
         ensure!(
-            !options.contains_key("--hub-config"),
-            "--hub-config requires --hub-host or --hub-attach"
+            !(options.contains_key("--hub-config") && options.contains_key("--stdio")),
+            "--hub-config is unavailable in private camera stdio mode"
         );
     }
     let executable = std::env::current_exe()?;
@@ -162,7 +165,25 @@ async fn main() -> Result<()> {
             .unwrap_or(std::path::Path::new("."))
             .join("logs"),
     ));
-    let server = Server::new(Arc::new(Profiles::new(Some(path))?), runtime, log.clone());
+    let hub = if let Some(config) = options.get("--hub-config") {
+        let config = PathBuf::from(config);
+        let attached = regain_alpaca::hub::attach(&config, &runtime.directory, &executable).await?;
+        Some(
+            regain_alpaca::hub_output::Publisher::connect(
+                regain_hub::endpoint::Endpoint::for_config(&config)?,
+                attached.instance_id,
+            )
+            .await?,
+        )
+    } else {
+        None
+    };
+    let server = Server::with_hub(
+        Arc::new(Profiles::new(Some(path))?),
+        runtime,
+        log.clone(),
+        hub,
+    );
     let stop = CancellationToken::new();
     let poll = tokio::spawn(server.clone().poll(stop.clone()));
     let discovery = if !options.contains_key("--no-discovery") {

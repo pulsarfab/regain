@@ -18,5 +18,20 @@ For LAN access add `--listen <host-LAN-IPv4>` and allow the HTTP port plus
 UDP 32227 for discovery. See the
 [Alpaca guide](https://pulsarfab.com/docs/regain/alpaca.html).
 
+## Hub development preview
+
+On the hub development branch, add `--hub-config ABSOLUTE_PATH` to publish the
+configured Switch, SafetyMonitor, and ObservingConditions outputs through the
+same HTTP server. This starts or attaches to the shared local hub host. Output
+numbers and IDs come from the configuration; disconnecting an HTTP client does
+not disconnect other frontends. Stopping the HTTP server leaves the host running.
+
+For a hardware-free trial, copy the hub crate's `examples/simulated-observatory.json`
+and pass its absolute path. Discovery labels these devices as simulation and
+safety starts unsafe. This preview uses synchronous Connected interfaces; shared
+setup pages, modern interfaces, automatic recovery UI, and conformance are still
+being implemented. After host loss, explicitly restart the HTTP frontend; device
+commands are never replayed. See [the hub plan](../../docs/hub-plan.md).
+
 Part of [PulsarFab regain](https://github.com/pulsarfab/regain). Apache-2.0.
 This project is not affiliated with the hardware vendors it supports.

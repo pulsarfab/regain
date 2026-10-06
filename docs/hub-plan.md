@@ -273,7 +273,8 @@ uncertain writes. Poll attempts/cycles, connection generations, jitter, and
 Retry-After are connected to the safety engine. Each safety output owns its own
 policy and leases; shutdown, transport reset, and lost observations invalidate
 permission. A loopback HTTP fixture exercises Alpaca through this complete
-source-to-policy path; this is not yet a published Alpaca device.
+source-to-policy path. The initial HTTP output adapter is now implemented below;
+shared setup and final protocol/hardware acceptance remain pending.
 
 The Alpaca adapter has bounded scalar requests/responses, typed poll samples,
 sanitized errors, no redirects or automatic HTTP retries, and explicit external
@@ -441,9 +442,17 @@ automatic replacement. Local validation passes 177 hub tests plus the endpoint
 fixture, 18 Alpaca tests, Clippy, Rust 1.89.0, schema freshness, and fresh package
 verification. These APIs still need adoption in the actual frontends.
 
-Next: connect the first three virtual classes to the existing Alpaca server/setup
-UI and implement the native frontend client. Frontend error
-translation and protocol conformance remain unverified. Generic
+The existing HTTP executable now attaches to that shared host and publishes
+Switch, SafetyMonitor, and ObservingConditions with configured IDs/numbers. Each
+connected Alpaca ClientID has a separate bounded IPC session. Current tests cover
+scalar mapping, simulation labels, disconnect independence, failed source reads,
+uncertain writes, client capacity, and HTTP process death without host death.
+The adapter advertises synchronous interfaces (Switch 2, Safety/Weather 1);
+modern connection/state interfaces are an explicit remaining refinement.
+
+Next: shared Alpaca setup pages, modern connection/state/error conformance, and
+the native frontend client. Basic frontend error translation is tested; complete
+protocol conformance remains unverified. Generic
 scalar polling does not establish camera image or acquisition support. No complete
 milestone 2 or frontend/hardware gate is closed by these library controllers.
 
@@ -534,3 +543,4 @@ Keep existing device profiles and registrations compatible throughout migration.
 | 2026-10-05 | Added explicit simulated Switch, SafetyMonitor, and Weather sources, typed shared test controls, visible simulation status, and a runnable observatory example. Fixed the safety consumer startup generation race found by the new tests. | 160 Windows hub tests plus process fixtures and 15 Alpaca tests pass, including shared values, atomic validation, uncertain writes, stale/absent sensors, safety failures, and production-host restart. Clippy, Rust 1.89.0, schema freshness, and fresh package verification pass. Next: virtual sources and frontend attachment/publication; original milestones 2–5 and final acceptance remain open. |
 | 2026-10-05 | Added local virtual sources with shared typed operation dispatch, transitive simulation marking, retained scalar ages, and safety evidence timestamps. Fixed cached safe evidence seeding newly connected policies. | 169 hub tests plus process fixtures and 16 Alpaca tests pass, including nested commands/uncertainty, age/confirmation/expiry, cycle rejection, cancellation and reference cleanup, and production-host apply after internal lease drain. Clippy, Rust 1.89.0, contract freshness, and package verification pass. Next: frontend attachment and Alpaca publication; original milestones 2–5 and final acceptance remain open. |
 | 2026-10-05 | Added the bounded Rust frontend IPC client and shared-host attachment helper. Reviewed cancellation, uncertain writes, protocol limits, explicit reattachment, and launcher lifetime; corrected inherited Windows capture handles. | 177 Windows hub tests plus the endpoint fixture and 18 Alpaca tests pass, along with Clippy, Rust 1.89.0, schema freshness, and fresh package verification. Next: actual Alpaca/native frontend adoption, setup, and remaining original milestones. No frontend or hardware gate is closed by the client library alone. |
+| 2026-10-05 | Connected the first three hub output classes to ordinary Alpaca HTTP mode, with dynamic discovery, separate client leases, scalar/error mapping, negotiated weather metadata, and shared-host lifetime. Review bounded connection tasks before spawning and preserved uncertain outcomes. | Five router/private-endpoint tests and one production HTTP process test added. Prior full suite plus targeted changes pass; final validation recorded in hub-review.md. Shared setup, modern interfaces, conformance, native frontends, and all remaining original milestones stay open. |

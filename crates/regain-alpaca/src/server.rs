@@ -28,6 +28,7 @@ use std::{
 use tokio::net::UdpSocket;
 
 pub struct Server {
+    pub hub: Option<Arc<crate::hub_output::Publisher>>,
     pub profiles: Arc<Profiles>,
     pub runtime: Runtime,
     rotators: Mutex<HashMap<usize, Arc<crate::rotator::Rotator>>>,
@@ -102,7 +103,16 @@ impl Log {
 }
 impl Server {
     pub fn new(profiles: Arc<Profiles>, runtime: Runtime, log: Arc<Log>) -> Arc<Self> {
+        Self::with_hub(profiles, runtime, log, None)
+    }
+    pub fn with_hub(
+        profiles: Arc<Profiles>,
+        runtime: Runtime,
+        log: Arc<Log>,
+        hub: Option<Arc<crate::hub_output::Publisher>>,
+    ) -> Arc<Self> {
         Arc::new(Self {
+            hub,
             flatpanel: crate::flatpanel::FlatPanel::new(
                 profiles.accessory_path("ofp2"),
                 runtime.directory.clone(),
@@ -260,6 +270,9 @@ impl Server {
             .wrapping_add(1)
     }
     pub async fn shutdown(&self) {
+        if let Some(hub) = &self.hub {
+            hub.close();
+        }
         self.flatpanel.shutdown().await;
         let rotators: Vec<_> = self.rotators.lock().unwrap().values().cloned().collect();
         for rotator in rotators {
@@ -522,11 +535,60 @@ async fn management(
                 Ok(None) => (),
                 Err(e) => return Json(failure(e, id, s.next())).into_response(),
             }
+            if let Some(hub) = &s.hub {
+                match hub.configured().await {
+                    Ok(outputs) => devices.extend(outputs),
+                    Err(e) => return Json(failure(e, id, s.next())).into_response(),
+                }
+            }
             json!(devices)
         }
         _ => return StatusCode::NOT_FOUND.into_response(),
     };
     Json(envelope(value, id, s.next())).into_response()
+}
+async fn hub_request(
+    s: Arc<Server>,
+    kind: String,
+    slot: u32,
+    member: String,
+    put: bool,
+    params: Result<Params>,
+) -> Response {
+    let Some(hub) = &s.hub else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    if !matches!(
+        kind.as_str(),
+        "switch" | "safetymonitor" | "observingconditions"
+    ) || member != member.to_lowercase()
+    {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    let server = s.next();
+    let mut transaction = 0;
+    let result = async {
+        let params = params?;
+        transaction = params.optional_id("ClientTransactionID")?;
+        params.optional_id("ClientID")?;
+        let device = hub.devices().await?.into_iter().find(|d| {
+            d.number == slot && crate::hub_output::class_name(d.device_type).to_lowercase() == kind
+        });
+        let Some(device) = device else {
+            return Ok(StatusCode::NOT_FOUND.into_response());
+        };
+        Ok(Json(envelope(
+            hub.request(&device, &member, put, &params).await?,
+            transaction,
+            server,
+        ))
+        .into_response())
+    }
+    .await;
+    match result {
+        Ok(response) => response,
+        Err(e) => Json(failure(e, transaction, server)).into_response(),
+    }
 }
 async fn camera_get(
     State(s): State<Arc<Server>>,
@@ -963,6 +1025,15 @@ async fn accessory_request(
     put: bool,
     params: Result<Params>,
 ) -> Response {
+    if matches!(
+        kind.as_str(),
+        "switch" | "safetymonitor" | "observingconditions"
+    ) {
+        let Ok(slot) = u32::try_from(slot) else {
+            return StatusCode::NOT_FOUND.into_response();
+        };
+        return hub_request(s, kind, slot, member, put, params).await;
+    }
     if !((slot == 0 && kind != "focuser")
         || (kind == "focuser" && s.profiles.focusers.get(slot).is_some()))
         || member != member.to_lowercase()

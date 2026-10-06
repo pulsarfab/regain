@@ -14,8 +14,9 @@ not connect to hardware. Replace the example identities before eventual use.
 sources, polling, and policies without opening HTTP or UDP discovery. It accepts
 `--workers DIRECTORY` and explicit `--simulate`; ordinary HTTP/stdio options are
 rejected in this mode. It requires an existing valid configuration file and does
-not connect sources until clients request outputs. Native NINA/ASCOM and ordinary
-Alpaca attachment are still to be implemented against this same local host.
+not connect sources until clients request outputs. Ordinary Alpaca HTTP mode can
+now attach using `--hub-config ABSOLUTE_PATH`; native NINA/ASCOM adoption remains
+pending against this same local host.
 Existing direct camera/accessory frontend behavior remains compatible.
 
 Use one host per canonical configuration path and operating-system user. Windows
@@ -216,8 +217,44 @@ client closes both transport halves so stream-owned leases can drain.
 
 Explicit reattachment negotiates new host/client identities. A closed client
 cannot become connected again. Closing a client is not proof that server-side
-cleanup has completed. Native .NET clients, frontend reconnection policy, Alpaca
-HTTP adoption, and OS resume invalidation remain required.
+cleanup has completed. Native .NET clients, frontend reconnection policy, shared
+setup, and OS resume invalidation remain required.
+
+### Initial Alpaca output adapter
+
+Ordinary `regain-alpaca --hub-config ABSOLUTE_PATH` attaches or launches the local
+host and publishes its Switch, SafetyMonitor, and ObservingConditions alongside
+existing devices. Management discovery preserves output UUIDs and configured
+device numbers, including gaps. Simulation labels are explicit. No hub source
+actors or safety policies run inside the HTTP frontend.
+
+The catalog uses one private connection. Up to 24 distinct connected Alpaca
+ClientIDs each have a separate private session, leaving host capacity for native
+frontends and setup. These IDs are correlation/lease identities, not authentication.
+Disconnecting the last output retires that session and returns capacity. There is
+no implicit idle eviction of a connected device. Changes for one client are
+admitted before spawning a supervised task; overlapping changes return busy.
+Accepted changes survive loss of their HTTP waiter. Failed connection changes
+retire that client's entire session to avoid retaining uncertain leases.
+
+`Connected` reports a lease on the virtual output, not the health of every source.
+Safety remains false until its host policy permits operation; missing or failed
+switch/weather readings return errors. Each getter requests current host state;
+the frontend never caches safe permission. Weather IPC retains provenance and age,
+while its Alpaca measurement property returns the scalar value. SensorDescription
+uses a negotiated `weatherSensorDescription` capability so an older host is not
+sent an unknown typed request.
+
+This increment advertises Switch interface 2 and SafetyMonitor/ObservingConditions
+interface 1 with synchronous Connected. Modern asynchronous connection/state
+interfaces and conformance remain required refinements before final acceptance.
+Renaming channels uses configuration; SetSwitchName and arbitrary actions/commands
+are unsupported. Setup UI integration is still pending.
+
+Host loss fails requests and does not reconnect or replay mutations. Reattach the
+HTTP frontend explicitly to obtain a new catalog/session set. Server shutdown or
+process death closes its private streams; the shared host and other clients remain
+alive. Restart/configuration-edit UI and OS resume handling remain pending.
 
 ## Identities and configuration
 

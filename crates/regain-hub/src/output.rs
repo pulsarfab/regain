@@ -44,6 +44,9 @@ impl OutputConnection {
                 json!(self.weather()?.time_since_last_update(&sensor)?)
             }
             Get::AveragePeriod {} => json!(self.weather()?.average_period_hours()),
+            Get::SensorDescription { sensor } => {
+                json!(self.weather()?.sensor_description(&sensor)?)
+            }
         })
     }
     pub(crate) async fn put(&self, property: Put) -> Result<(), SourceError> {

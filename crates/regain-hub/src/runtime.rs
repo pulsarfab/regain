@@ -11,7 +11,7 @@ use crate::{
     switch::{SwitchOutput, SwitchSession},
     weather::{WeatherOutput, WeatherSession},
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::{
     collections::BTreeMap,
     sync::{
@@ -22,7 +22,7 @@ use std::{
 use tokio::sync::oneshot;
 use uuid::Uuid;
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OutputDescriptor {
     pub id: Uuid,

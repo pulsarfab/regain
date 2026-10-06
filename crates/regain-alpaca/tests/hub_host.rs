@@ -474,6 +474,111 @@ fn host(path: &Path) -> Command {
 }
 
 #[tokio::test]
+async fn ordinary_http_executable_attaches_to_existing_host_without_taking_ownership() {
+    use tokio::io::AsyncReadExt;
+    async fn http(port: u16, method: &str, path: &str, body: &str) -> Value {
+        let mut stream = tokio::net::TcpStream::connect(("127.0.0.1", port))
+            .await
+            .unwrap();
+        let request = format!(
+            "{method} {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\nContent-Type: application/x-www-form-urlencoded\r\nContent-Length: {}\r\n\r\n{body}",
+            body.len()
+        );
+        stream.write_all(request.as_bytes()).await.unwrap();
+        let mut response = Vec::new();
+        tokio::time::timeout(
+            Duration::from_secs(5),
+            stream.take(1024 * 1024).read_to_end(&mut response),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        let split = response.windows(4).position(|v| v == b"\r\n\r\n").unwrap() + 4;
+        assert!(response.starts_with(b"HTTP/1.1 200"));
+        let value: Value = serde_json::from_slice(&response[split..]).unwrap();
+        assert_eq!(value["ErrorNumber"], 0, "{value}");
+        value["Value"].clone()
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("hub.json");
+    let config: HubConfig = serde_json::from_str(include_str!(
+        "../../regain-hub/examples/simulated-observatory.json"
+    ))
+    .unwrap();
+    std::fs::write(&path, serde_json::to_vec(&config).unwrap()).unwrap();
+    let endpoint = Endpoint::for_config(&path).unwrap();
+    let mut owner = host(&path).spawn().unwrap();
+    let first = probe(&endpoint, config.instance_id, Duration::from_secs(5))
+        .await
+        .unwrap();
+    let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+        .await
+        .unwrap();
+    let port = listener.local_addr().unwrap().port();
+    drop(listener);
+    let mut http_server = command()
+        .args(["--hub-config"])
+        .arg(&path)
+        .arg("--profiles")
+        .arg(dir.path().join("profiles.json"))
+        .arg("--port")
+        .arg(port.to_string())
+        .arg("--no-discovery")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit())
+        .spawn()
+        .unwrap();
+    let mut lines = BufReader::new(http_server.stdout.take().unwrap()).lines();
+    let ready = tokio::time::timeout(Duration::from_secs(15), lines.next_line())
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    assert!(ready.contains("Alpaca listening"), "{ready}");
+    let devices = http(port, "GET", "/management/v1/configureddevices", "").await;
+    assert_eq!(devices.as_array().unwrap().len(), 3);
+    http(
+        port,
+        "PUT",
+        "/api/v1/safetymonitor/0/connected",
+        "ClientID=8&Connected=true",
+    )
+    .await;
+    assert_eq!(
+        http(port, "GET", "/api/v1/safetymonitor/0/issafe?ClientID=8", "").await,
+        false
+    );
+    http_server.kill().await.unwrap();
+    let after = probe(&endpoint, config.instance_id, Duration::from_secs(5))
+        .await
+        .unwrap();
+    assert_eq!(first.host_instance, after.host_instance);
+    // HTTP process death closes only its leases, not the shared host.
+    let mut stream = endpoint.connect(Duration::from_secs(5)).await.unwrap();
+    request(&mut stream, 1, json!({"op":"hello"})).await;
+    let mut id = 2;
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let status = request(
+                &mut stream,
+                id,
+                json!({"op":"sourceStatus","source":config.sources[1].id}),
+            )
+            .await;
+            id += 1;
+            if status["leaseCount"] == 0 {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap();
+    drop(stream);
+    owner.kill().await.unwrap();
+}
+
+#[tokio::test]
 async fn actual_hub_executable_shares_simulation_controls_and_restarts_safety_unsafe() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("simulated.json");

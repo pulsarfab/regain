@@ -852,3 +852,59 @@ push CI; virtual-source checkpoint 14abfc9 remains in progress at this review.
 Alpaca HTTP/setup adoption, native .NET attachment, reconnection/resume behavior,
 COM imports, broader proxies and coordination, conformance/hardware acceptance,
 documentation/screenshots, and final audit/merge remain required.
+
+## 2026-10-05: initial Alpaca HTTP outputs
+
+Ordinary HTTP mode now attaches to the shared host and publishes dynamic Switch,
+SafetyMonitor, and ObservingConditions outputs alongside existing equipment.
+The initial mapping was checked against the
+[Alpaca API](https://ascom-standards.org/api/) and
+[Switch interface](https://www.ascom-standards.org/library/html/T_ASCOM_Common_DeviceInterfaces_ISwitchV2.htm).
+It advertises the synchronous interface versions it implements. Modern interfaces,
+complete protocol/error conformance, and shared setup are explicitly still required.
+
+Review findings and corrections:
+
+1. The server already has a generic accessory route. A second generic hub route
+   conflicted at router construction. Route the three hub classes through the
+   existing dispatcher, leaving existing native class handlers in place.
+2. HTTP ClientIDs need independent private sessions, not one shared connection
+   whose disconnect would revoke every client. Preserve configured UUIDs/numbers;
+   cap sessions at 24, close the last-output session, and leave host capacity for
+   native clients. Standard IDs remain correlation values, not authentication.
+3. A per-client mutex alone would allow unlimited connection tasks to queue.
+   Admit connection changes with a nonblocking gate before spawning. Keep accepted
+   operations supervised through caller cancellation and retire the session after
+   connection uncertainty/failure. No global mutex spans source I/O.
+4. Hub Connected means a virtual-output lease. A stalled upstream must not turn
+   into a valid cached reading or prevent another safety output from responding.
+   The loopback upstream fixture verifies unavailable switch reads and independent
+   safety while a managed upstream connection is stalled.
+5. Weather properties need scalar values, while IPC retains age/provenance.
+   Add SensorDescription through shared typed dispatch and advertise its capability
+   so older hosts are not sent an unrecognized request. Missing sensors remain
+   unsupported; average period and Refresh use the shared controller.
+6. Forward uncertainty without raw driver text or retries. A simulated write
+   changes its value once, returns uncertainty, and blocks another client's write
+   after the injected fault clears. Neither HTTP nor the client resets that latch.
+7. HTTP shutdown/process death must release only its own leases. Router tests
+   retain a separate local client; the executable test kills its own HTTP child,
+   verifies the same host instance survives, and observes its leases drain.
+8. A successful write invalidates the old sample before the next poll. Correct
+   the test to await a new valid reading, rather than assuming an immediate cache
+   hit. Do not suppress the production unavailable error to satisfy the test.
+
+Validation: the full local hub/Alpaca suite passed, followed by all five current
+HTTP/private-endpoint tests and all eleven IPC tests after the capability addition.
+Coverage now totals 177 Windows hub tests plus the endpoint fixture and 24 Alpaca
+tests. The added production executable test uses a real loopback TCP listener.
+Clippy with warnings denied, Rust 1.89.0, schema freshness, formatting/diff checks,
+and fresh transport/core/hub/Alpaca package verification pass
+(`target/hub-http-package`). No hardware was actuated. Virtual-source commit
+14abfc9 passed both complete CI runs. Client/launcher commit 90037bb has passed
+all four portable platforms; its Windows job is still running at this review.
+
+Remaining: shared setup and configuration/reconnection UI, modern asynchronous
+interfaces and conformance, native .NET clients/providers, COM imports, broader
+proxies, camera/focuser coordination, OS resume, discovery, hardware acceptance,
+documentation/screenshots, and final audit/merge. Milestone 2 remains open.
