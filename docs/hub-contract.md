@@ -910,7 +910,7 @@ The store accepts at most 64 bindings and 512 KiB of strict JSON, rejects duplic
 keys/identities and unknown members, and serializes saves under a persistent OS
 lock file. Save checks the exact expected revision and writes a fresh revision by
 flushed atomic replacement. An unreadable file is not treated as an empty file
-and native setup cannot overwrite it. Selection removal/management remains pending.
+and native setup cannot overwrite it. Native ASCOM registration management remains pending.
 
 Saved-choice removal uses the same lock and revision-checked atomic persistence
 as selection save. It identifies the instance/output pair, preserves other
