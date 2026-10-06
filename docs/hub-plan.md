@@ -262,6 +262,30 @@ Review findings fixed in this checkpoint:
 Gate: one server publishes a working mixed-source switch hub, safety hub, and
 weather hub; unrelated devices remain responsive during an upstream failure.
 
+Current checkpoint: the shared source registry validates configuration before
+constructing adapters, returns one actor per source ID, and shares connection
+leases across outputs. Actors serialize commands through bounded queues, enforce
+I/O deadlines, expose cached status independently of I/O, and never replay
+uncertain writes. Poll attempts/cycles, connection generations, jitter, and
+Retry-After are connected to the safety engine. Each safety output owns its own
+policy and leases; shutdown, transport reset, and lost observations invalidate
+permission. A loopback HTTP fixture exercises Alpaca through this complete
+source-to-policy path; this is not yet a published Alpaca device.
+
+The Alpaca adapter has bounded scalar requests/responses, typed poll samples,
+sanitized errors, no redirects or automatic HTTP retries, and explicit external
+versus managed connection ownership. Current connection compatibility uses the
+legacy `Connected` property. Interface/capability discovery and modern per-client
+Connect/Disconnect negotiation still need implementation and conformance tests.
+The host's protected credential provider is also pending; the adapter only
+accepts resolved credentials and refuses an unresolved reference.
+
+Next: implement typed Switch/ObservingConditions controllers (including partial
+weather measurement failures), native worker adapters, and shared host IPC; then
+connect the first three virtual classes to the existing Alpaca server/setup UI.
+Generic scalar polling does not establish camera image or acquisition support.
+No milestone 2 checkbox or frontend/hardware gate is closed by this checkpoint.
+
 ### 3. Windows imports and native NINA — first useful release
 
 - [ ] Implement isolated COM import with timeouts, explicit connection ownership,
@@ -332,3 +356,4 @@ Keep existing device profiles and registrations compatible throughout migration.
 | 2026-10-05 | Milestone 0 gate passed; implemented and reviewed the shared configuration/safety foundation. | `cargo test -p regain-hub --locked`: 27 passed. `cargo clippy -p regain-hub --all-targets --locked -- -D warnings`: passed. Complete remaining milestone 1 metadata/contracts, then implement the shared source runtime and Alpaca vertical slice. All later milestones remain in scope. |
 | 2026-10-05 | Checked minimum Rust version and crate distribution independently of the application. | `cargo +1.89.0 check -p regain-hub --all-targets --locked`, `cargo package -p regain-hub --allow-dirty --locked`, formatting and diff checks passed. Package contains both executable config fixtures and its license. |
 | 2026-10-05 | Completed milestone 1's generated configuration description and shared setup readers. Corrected schema/backend Unicode label counting and locked existing device numbers in the readers. | 28 Rust tests, 4 independent schema tests, JavaScript contract tests, 2 native .NET contract tests, net48 build, Clippy, and Rust 1.89.0 check passed. Next: shared source registry, polling/transport adapters, then the Alpaca vertical slice. PR #21 remains draft; all later gates remain required. |
+| 2026-10-05 | Added shared source actors/registry, bounded Alpaca transport, and safety output subscriptions with independent leases and policies. Reviewed cancellation, connection ownership, retry delays, ambiguous writes, malformed responses, and event loss. | 50 Rust tests now cover the foundation plus actor/network/safety integration. Clippy, Rust 1.89.0 check, standalone package verification, and generated-contract freshness passed. Next: typed switch/weather controllers, native workers, host IPC, and Alpaca publication. Full original milestones 2–5 remain required. |

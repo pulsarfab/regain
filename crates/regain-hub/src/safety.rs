@@ -324,6 +324,15 @@ impl SafetyHub {
         self.aggregate_safe = false;
         Ok(())
     }
+    pub fn reset_source(&mut self, source: Uuid, fence: Fence) -> Result<(), Vec<FieldError>> {
+        let Some(previous) = self.endpoints.get(&source) else {
+            return Ok(());
+        };
+        let replacement = Endpoint::new(previous.policy.clone(), fence)?;
+        self.endpoints.insert(source, replacement);
+        self.aggregate_safe = false;
+        Ok(())
+    }
     pub fn observe(&mut self, source: Uuid, observation: Observation, now: Duration) -> bool {
         // Observe the previous aggregate before applying a result: a late safe
         // response must not hide expiry or restore an aggregate using grace.
@@ -420,18 +429,25 @@ impl SafetyRuntime {
         self.updates.send_replace(hub.snapshot(self.clock.now()));
         Ok(())
     }
+    pub fn reset_source(&self, source: Uuid, fence: Fence) -> Result<(), Vec<FieldError>> {
+        let mut hub = self.hub.lock().unwrap();
+        hub.reset_source(source, fence)?;
+        self.updates.send_replace(hub.snapshot(self.clock.now()));
+        Ok(())
+    }
+    /// Withdraw permission synchronously before asynchronous lease cleanup.
+    pub fn shutdown(&self) {
+        let mut hub = self.hub.lock().unwrap();
+        *hub = SafetyHub::new(BTreeMap::new());
+        self.updates.send_replace(hub.snapshot(self.clock.now()));
+    }
 }
 impl Drop for SafetyRuntime {
     fn drop(&mut self) {
         self.expiry.abort();
         // Receivers may outlive their publisher. Never leave them holding a
         // final safe snapshot after shutdown or configuration replacement.
-        let mut hub = self.hub.lock().unwrap();
-        *hub = SafetyHub::new(BTreeMap::new());
-        self.updates.send_replace(HubSnapshot {
-            is_safe: false,
-            endpoints: BTreeMap::new(),
-        });
+        self.shutdown();
     }
 }
 

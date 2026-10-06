@@ -73,3 +73,60 @@ independent schema/web tests; native tests are part of the existing NINA suite.
 This closes descriptor coverage at the library/reader layer. Actual setup windows,
 runtime capabilities, host IPC, source polling, and frontend acceptance remain
 milestones 2–4; the reader tests do not substitute for those gates.
+
+## 2026-10-05: shared source actors, Alpaca adapter, and safety binding
+
+Reviewed ownership and cancellation at the source boundary. One bounded actor
+serializes each source's I/O while cached snapshots remain independently readable.
+An immutable registry validates the complete graph before constructing adapters.
+Clients share connection leases but require exclusive control for writes. The
+safety output owns membership policy and leases; it does not duplicate polling.
+
+Findings fixed:
+
+1. Acquiring another lease could force an early poll, bypassing an upstream
+   Retry-After. Additional clients now reuse the existing schedule, and initial
+   connection failure also respects that delay. Unrepresentable deadlines suspend
+   automatic polling rather than shortening the server's requested delay.
+2. Timed-out reads could reuse a desynchronized transport. Reset retires its
+   generation, clears cached values, and invalidates safety before another poll.
+   Plain HTTP errors retain the generation so bounded communication grace works.
+3. A timed-out write could be replayed after reconnect or control transfer. The
+   actor latches uncertainty across both; an acknowledged rejection preserves its
+   upstream code and remains distinct from an ambiguous operation.
+4. A cancelled connection acquisition could leak a lease. Failed reply delivery
+   removes only the newly acquired lease; a cancelled repeated control claim
+   preserves the client's previous ownership.
+5. A lagging subscriber could miss unsafe and consume only a later safe tail.
+   The safety binding invalidates evidence, discards that tail, and waits for new
+   observations. A deterministic overflow test exercises this exact sequence.
+6. JSON map parsing would silently accept the last of duplicate `Value` fields.
+   Typed envelope parsing rejects duplicates and malformed present fields. The
+   explicit Field Kit compatibility allowance for omitted ErrorNumber remains;
+   a safety sample still requires a JSON Boolean. Arbitrary response/error text
+   never enters diagnostics.
+7. A source owner could accidentally disconnect an externally managed device.
+   Cleanup only writes disconnect after this adapter acknowledged opening the
+   connection. An ambiguous connection write is not retried or claimed as owned.
+8. Per-response limits alone did not bound a multi-sample text cache. Both the
+   streamed response and aggregate scalar text storage now have size limits.
+
+Verification:
+
+- 50 Rust tests: 19 unit tests, 10 configuration tests, 13 actor/safety integration
+  tests using virtual time, and 8 tests against a real loopback HTTP server.
+- Tests cover two clients/outputs sharing sources, independent recovery policies,
+  offline recovery, stalled unrelated sources, queue overload, cancelled requests,
+  final-lease cleanup, uncertain writes, retries/exhausted cycles, long and dated
+  Retry-After, streamed oversized replies, malformed/duplicate JSON, non-Boolean
+  safety, no redirect/retry, HTTP-to-safety transitions, and independent expiry.
+- `cargo clippy -p regain-hub --all-targets --locked -- -D warnings`, Rust 1.89.0
+  compatibility, standalone crate packaging, formatting/diff checks, and the
+  generated configuration freshness check passed.
+
+Remaining gates are unchanged: typed switch/weather behavior and partial sensor
+failures, capability discovery and modern connection negotiation, native worker
+adapters, protected credential resolution, process ownership/IPC and resume,
+Alpaca setup/publication, COM imports, NINA/ASCOM outputs, broader proxies and
+camera coordination, conformance, hardware trials, and user documentation. These
+tests use simulated devices and a local HTTP fixture, not attached hardware.
