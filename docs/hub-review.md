@@ -1082,3 +1082,70 @@ Next: native NINA Switch/SafetyMonitor/ObservingConditions providers and shared
 native setup, then isolated COM imports, native ASCOM outputs, broader proxies and
 coordination, reconnect/resume, conformance, hardware trials, documentation/site
 updates and final audit/merge. This checkpoint does not close those gates.
+
+## Native NINA scalar outputs and saved selections
+
+The native providers implement the interfaces shipped with NINA.Plugin
+3.2.0.9001. Reviewed the pinned NINA source at commit
+[`2393eae581145ed5b8114bf07c48ca2580540fd5`](https://github.com/isbeorn/nina/tree/2393eae581145ed5b8114bf07c48ca2580540fd5):
+ISwitchHub/ISwitch/IWritableSwitch, ISafetyMonitor, IWeatherData and their view
+models. This is interface/behavior research; no upstream implementation was copied.
+
+1. Equipment enumeration must read saved bindings only. No network/device discovery
+   or host launch occurs in GetEquipment. MEF exports use the three exact NINA
+   device interfaces. Choices retain instance/output UUIDs independently of labels,
+   file paths and list order; a configuration choice remains available for setup.
+2. Check a saved instance before launching the attachment helper, then check the
+   live catalog's output UUID/class before acquiring its private client lease.
+   Clone mutable caller selections before awaits. Missing/changed identities fail
+   instead of falling back to another output. Setup discovery intentionally has no
+   previously selected instance; saving is an explicit selection.
+3. Keep connection initialization private until metadata is ready. A disconnect
+   cancels the entire attempt, including the gap before session attachment. Reject
+   overlapping transitions. Cancellation callbacks must run outside lifecycle
+   locks; tolerate the attempt CTS being disposed after an already completed wait.
+   Dispose closes only this private client and never kills the shared host.
+4. Fence channel objects and getter contexts with the connection epoch. An object
+   retained by NINA across reconnect cannot read/write a newly mapped session.
+   Host tombstones preserve channel IDs after durable apply. Publish an immutable
+   collection, including removed slots, instead of compacting the NINA list.
+5. Read safety from the host on every getter; local failure/disconnection is unsafe.
+   Weather failures remain per metric and return NaN. A timeout injection resets
+   the source generation, so it cannot prove expiry alone. The strengthened test
+   uses actual HTTP 503 responses: generation remains unchanged, the failed-cycle
+   threshold is not reached, and the host policy becomes stale while weather works.
+6. NINA SwitchVM polls channels but ignores a false Poll result. Its completion loop
+   checks `Math.Abs(Value - TargetValue) > tolerance`, where NaN would wrongly look
+   complete. Writable Value therefore throws when readback is invalid. SetValue
+   invalidates the old sample and sends once; uncertainty remains an error and the
+   host latch prevents another command. Target rounding matches the configured
+   Rust grid, anchored at minimum with ties away from zero.
+7. Do not hold a channel lock across I/O. Version poll results against writes so a
+   pre-write response cannot restore an old value. Reject overlapping local writes;
+   the shared host remains the authority for control, permissions and source limits.
+   Capability failures create a read-only channel with a reconnect diagnostic;
+   unrelated Weather/Safety outputs remain available. Initial targets come from
+   cached readback and never send a command.
+8. Frontend bindings store identities only, with bounded strict JSON, unique IDs,
+   an OS file lock, revision compare-and-swap and flushed atomic replacement.
+   Do not serialize the computed NINA Id. Reject null/invalid selections and
+   unsupported fields. Native setup uses the existing theme, saves an explicitly
+   chosen output, acquires no equipment lease and cannot overwrite unreadable state.
+9. A first tombstone fixture asserted hostStatus's phase on an applyConfig result.
+   Correct it to the actual applied/ready outcome, then verify the persisted update,
+   renamed stable identity, removed slot and retired writable object after reconnect.
+
+Validation: all 88 NINA tests pass (`artifacts/hub-nina-native-all-tests.log`),
+including 15 native checks (`artifacts/hub-nina-native-tests.log`). Production
+process tests cover native adapters without HTTP, actual Alpaca publication sharing
+and independent EOF cleanup, safety/backoff, unavailable capabilities, uncertainty,
+weather ages, cancellation, retarget refusal, and tombstones after durable apply.
+Both shared library targets build with warnings denied
+(`artifacts/hub-nina-native-build.log`); real net48 x86/x64 attachment fixtures pass
+(`artifacts/hub-nina-native-net48-tests.log`). Both complete CI runs for client
+checkpoint 9006a99 passed all eight jobs. No hardware was actuated.
+
+The shared native output selector is implemented. Complete shared-descriptor native
+configuration editing, selection removal/management, diagnostics and interactive
+NINA acceptance remain required. Milestone 3 is not complete: COM imports and their
+hung-driver isolation are still pending. All broader original gates stay open.

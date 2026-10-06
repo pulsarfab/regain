@@ -752,7 +752,9 @@ There is no persisted "start safe" option.
 Use [simulated-observatory.json](../crates/regain-hub/examples/simulated-observatory.json)
 with `regain-alpaca --hub-host --hub-config ABSOLUTE_PATH` to run all three classes
 without attached equipment. This currently exposes private IPC; HTTP publication
-and shared frontend setup controls are separate pending steps.
+and native NINA outputs also use the same host. Ordinary HTTP mode publishes the
+configured classes; `--hub-host` opens no HTTP listener. Complete native setup
+editing and ASCOM output adoption remain pending.
 
 ### Native scalar adapters
 
@@ -807,3 +809,48 @@ Field Kit reference commit `8be3d38f0b04fa78d7ae36b460ed10656f259d0f` is
 Apache-2.0. Its endpoint state, aggregate, service, and integration tests supply
 behavioral cases; Regain adds cadence, generation, configuration, and multi-output
 ownership tests. Record attribution in the shared crate and third-party notices.
+
+## Native frontend bindings and sessions
+
+`Regain.Rotator` holds the shared .NET 8/net48 attachment client, output selector
+and selection store under `Regain.Hub`. The native NINA providers use those classes
+without an HTTP publisher or ASCOM output. ASCOM adoption remains milestone 4 work.
+
+The frontend selection file is separate from host configuration. Its format is
+`schemaVersion: 1`, a nonempty saved `revision` UUID, and a `bindings` array.
+Each binding contains `configPath`, `instanceId`, `outputId`, `deviceType`, `label`
+and `simulated`. Configuration paths are fully qualified; labels/markers are
+presentation snapshots refreshed from the live catalog at Connect. No source
+parameters, safety policy, secrets or live permission are copied into bindings.
+The computed NINA Id combines instance/output UUIDs and is not serialized.
+
+The store accepts at most 64 bindings and 512 KiB of strict JSON, rejects duplicate
+keys/identities and unknown members, and serializes saves under a persistent OS
+lock file. Save checks the exact expected revision and writes a fresh revision by
+flushed atomic replacement. An unreadable file is not treated as an empty file
+and native setup cannot overwrite it. Selection removal/management and descriptor
+configuration editing remain pending.
+
+Connect copies the selection, checks its instance before launching the helper,
+authenticates the live host, and matches the output UUID/class exactly. Metadata
+initialization is bounded by the native device's 45-second connection deadline.
+Each device has its own private client lease and connection epoch. Read requests
+normally have a three-second caller deadline; capability/command waits allow up
+to 35 seconds, surrounding the host's independent operation bound. These are
+frontend transport waits, not duplicate source retry or safety policy settings.
+
+Cancellation/disconnect during initialization cannot publish a ready device.
+Requests and Switch objects from retired epochs cannot operate a reconnected
+session. Remote/local-admission rejections preserve a healthy pipe; transport or
+caller deadline failure retires it. Getters never launch or replay. Explicit
+Connect is required after terminal transport loss, and closing the frontend never
+terminates the shared host. Ending a caller wait does not promise physical rollback.
+
+NINA Safety queries shared permission on every getter and returns false on local
+failure. Weather returns NaN for each unavailable/stale metric. Switch objects
+retain host slot numbers and retired gaps. Only confirmed writable capabilities
+produce IWritableSwitch; unavailable capabilities remain read-only until explicit
+reconnect. Writable targets use the host's exposed grid; the host checks source
+permission/grid on every command. Failed readback throws because NINA's NaN
+comparison would otherwise report successful completion. Poll/write versions
+prevent a pre-write response from restoring invalidated cached state.

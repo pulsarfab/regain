@@ -2,8 +2,9 @@
 
 Regain Hub combines source devices into shared Switch, SafetyMonitor, and
 ObservingConditions outputs. The current development branch can publish those
-outputs through Alpaca. Native NINA/ASCOM hub providers and broader proxy devices
-remain in progress; this is not a released feature.
+outputs through Alpaca or the native NINA providers. Native ASCOM hub outputs,
+the full native configuration editor and broader proxy devices remain in progress;
+this is not a released feature.
 
 To try the editor without equipment, copy
 [`simulated-observatory.json`](../crates/regain-hub/examples/simulated-observatory.json)
@@ -46,3 +47,40 @@ CanAsync=false. A failed asynchronous connection stays visible through Connectin
 until an explicit connect or disconnect; polling does not retry it. Connected
 means a lease on the virtual output, so use source diagnostics to assess upstream
 health. Conformance-tool and real-device acceptance checks remain pending.
+
+## Native NINA development preview
+
+The plugin exports Switch, SafetyMonitor and Weather choices using NINA's
+3.2.0.9001 interfaces. Each class includes a **configure** choice. Open its setup,
+browse to the saved hub configuration, select **Load hub outputs**, then save the
+desired output. Rescan equipment to see all saved choices, or connect the chosen
+device. Names identify simulation explicitly. UUIDs identify outputs, so renaming
+or reordering does not change the saved equipment selection.
+
+Setup uses the existing Regain theme and a private local connection. It starts or
+attaches to the shared host, without an HTTP listener or ASCOM output. Source and
+policy editing currently uses the web editor above; the shared-descriptor native
+editor remains on the plan. The native selector does not connect equipment.
+
+Selections are stored in `%LOCALAPPDATA%\Regain\hub-frontends.json`. They contain
+the configuration path, hub instance and output IDs, class, label and simulation
+marker. Source settings and policies remain in the host configuration. Competing
+selection saves fail with a revision conflict; an unreadable file is not overwritten.
+The development overrides are `REGAIN_HUB_HOST` for the host executable and
+`REGAIN_HUB_BINDINGS` for the selection file.
+
+Connecting a saved choice verifies its instance/output/class again. Changing the
+configuration path cannot silently select a different instance. NINA and Alpaca
+hold separate leases; disconnecting either frontend leaves the other available.
+Getters never launch or reconnect the host. Reconnect explicitly after transport
+loss; retired Switch objects cannot send commands in the new session.
+
+Safety reads the host's current decision and returns unsafe on local failure.
+Weather returns NaN for unavailable or stale measurements independently. Switch
+gauges are read-only. When a writable capability cannot be checked, reconnect
+after resolving the source failure to restore that control. Failed writable
+readback raises an error: NINA's completion loop must not treat NaN as success.
+No write is automatically replayed after an uncertain result.
+
+Production-host and NINA-interface tests cover these behaviors. Interactive NINA,
+conformance and real-device acceptance remain pending before release.

@@ -39,7 +39,7 @@ public sealed class HubAttachment
     /// Uses the existing Rust attachment helper once. Readiness failure never
     /// triggers another launch, kills an owner, or joins a device worker job.
     public static async Task<HubAttachment> AttachAsync(string executable, string configPath,
-        string? workerDirectory = null, CancellationToken cancellation = default)
+        string? workerDirectory = null, CancellationToken cancellation = default, Guid? expectedInstance = null)
     {
         AbsoluteFile(executable); AbsoluteFile(configPath);
         if (workerDirectory is not null && (!FullyQualified(workerDirectory) || !Directory.Exists(workerDirectory)))
@@ -55,6 +55,10 @@ public sealed class HubAttachment
             finally { Array.Clear(bytes, 0, bytes.Length); }
         } catch (OperationCanceledException) { throw; }
         catch (Exception) { throw new HubException(HubFailure.InvalidRequest); }
+
+        // A saved binding must reject a changed installation before it starts
+        // or attaches to any host. Setup discovery intentionally omits this ID.
+        if (expectedInstance.HasValue && instance != expectedInstance.Value) throw new HubException(HubFailure.Protocol);
 
         var arguments = "--hub-attach --hub-config " + Quote(configPath);
         if (workerDirectory is not null) arguments += " --workers " + Quote(workerDirectory);

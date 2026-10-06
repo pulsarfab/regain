@@ -6,7 +6,7 @@ milestone gates and the final completion audit pass.
 This branch uses development version `0.6.0` / Windows `0.6.0.0`; it has not been
 tagged or published. Changed cross-crate APIs require an unpublished version so
 Cargo package verification uses the new workspace packages.
-Last updated: 2026-10-05.
+Last updated: 2026-10-06.
 
 Use this document as the working checklist. Complete one reviewable milestone at
 a time, record its tests and remaining limitations, and update the next action
@@ -477,10 +477,28 @@ framing/admission, strict identity/reply validation, cancellation accounting and
 no replay. Tests cover a real shared host, separate leases, permissive-pipe denial,
 queued/dispatched cancellation and abandoned-client cleanup. Actual net48 x86/x64
 processes pass the same public attachment/connect/disconnect API. All 73 NINA
-regression/contract tests pass, including 32 hub-client checks. Native providers
-and setup adoption remain pending; this foundation does not close milestone 3.
+regression/contract tests passed at that checkpoint, including 32 hub-client checks.
 
-Next: native NINA providers and shared native setup, connection/state/error conformance,
+Native NINA Switch, SafetyMonitor and ObservingConditions providers now use the
+shared private host directly. The chooser reads saved identities without discovery;
+one common native selection window saves instance/output UUIDs with revision-checked
+atomic updates. It starts no HTTP publisher and acquires no equipment lease.
+The host owns source settings, safety decisions, measurement ages and write permissions.
+Retired Switch objects are fenced across reconnect; failed writable readback throws
+instead of allowing NINA's NaN comparison to report success. Missing capabilities
+produce read-only channels with a reconnect diagnostic.
+
+All 88 NINA regression/contract tests pass, including 15 new native checks. These
+exercise the production host, actual HTTP publisher sharing/disconnect, tombstones
+after durable apply, cancelled connections, uncertainty, per-metric failures and
+safe-evidence expiry through HTTP backoff without a source generation reset. Both
+native library targets build with warnings denied, and net48 x86/x64 attachment
+fixtures still pass. These interface tests are not interactive NINA acceptance.
+The native selector is implemented; a complete shared-descriptor configuration
+editor, selection management and frontend diagnostics are still required.
+
+Next: the shared-descriptor native configuration editor and interactive NINA acceptance,
+isolated COM imports, connection/state/error conformance,
 and the remaining shared setup refinements. Basic frontend error translation is tested; complete
 protocol conformance remains unverified. Generic
 scalar polling does not establish camera image or acquisition support. No complete
@@ -577,3 +595,4 @@ Keep existing device profiles and registrations compatible throughout migration.
 | 2026-10-05 | Added the first shared web editor, setup API, stable reference pickers, capability-aware choices, review/apply workflow, and explicit paged inspection. Corrected empty-string presence validation and LAN UUID generation during review. | 177 Windows hub tests plus the endpoint fixture and 26 Alpaca tests pass. JavaScript draft/contract checks, four Python schema tests, two .NET reader tests and net48 build pass. Chrome verified edit/review/apply and supplied a simulation screenshot. Complete setup refinements, modern interfaces, native frontends, and all original remaining gates before merge. |
 | 2026-10-05 | Added shared cached DeviceState and supervised asynchronous connection changes, then exposed Switch 3, SafetyMonitor 3 and ObservingConditions 2 through capability negotiation. Retained asynchronous failures until explicit reconciliation and preserved separate client leases. | 181 Windows hub tests plus the endpoint fixture and 29 Alpaca tests pass, with Clippy, Rust 1.89.0, schema freshness and fresh package verification. No hardware was actuated. Next: native frontend attachment, conformance and remaining setup refinements; original milestones 2–5 stay open. |
 | 2026-10-05 | Added the shared .NET attachment/IPC client for native NINA and ASCOM, using the existing frontend assembly and Rust host helper. Reviewed pipe permissions, cancellation, unknown operations, bounded buffers, terminal errors and finalizer lifetime. | 73 NINA regression/contract tests pass, including 32 new hub-client checks; real net48 x86/x64 attachment/lease tests and warnings-denied builds pass. Fixed a shared-intermediate bitness cache exposed by the runtime fixture. Scalar checkpoint bb55313 passed both complete CI runs. Next: actual native NINA providers/setup and all original remaining gates. |
+| 2026-10-06 | Added native NINA Switch, SafetyMonitor and ObservingConditions providers, saved output identities, and a shared native output selector. Reviewed cancellation, stale objects, write/readback uncertainty, capability failures and selection-store conflicts. | 88 NINA tests pass, including 15 new native production-host/fault cases and actual NINA-adapter/Alpaca-publisher sharing. net48 x86/x64 selection/session/reconnect fixtures and warnings-denied builds pass. Both CI runs for client checkpoint 9006a99 passed completely. Native descriptor editing, interactive NINA acceptance, COM imports and all original remaining gates stay open. |

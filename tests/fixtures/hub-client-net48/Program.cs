@@ -35,7 +35,25 @@ internal static class Program
             second.Dispose();
             using var probe = await HubClient.ConnectAsync(attached, cancellation: deadline.Token);
             if (probe.Hello.HostInstance != attachment.HostInstance) throw new InvalidOperationException("Frontend disconnect stopped the host");
-            Console.WriteLine($"net48 {IntPtr.Size * 8}-bit: shared identity, separate leases, disconnect and surviving host passed");
+            var binding = new HubSelection { ConfigPath = args[1], InstanceId = attached.InstanceId, OutputId = output,
+                DeviceType = "switch", Label = "net48 simulated output", Simulated = true };
+            var store = new HubSelectionStore(System.IO.Path.Combine(System.IO.Path.GetDirectoryName(args[1])!, "bindings.json"));
+            var bindings = store.Save(binding, Guid.Empty);
+            if (store.Load().Bindings.Single().Id != binding.Id) throw new InvalidOperationException("Selection identity changed on disk");
+            try { store.Save(binding, Guid.Empty); throw new Exception("Selection store accepted a stale revision"); }
+            catch (InvalidOperationException) { }
+            using var native = new HubNativeSession(args[0]);
+            await native.ConnectAsync(bindings.Bindings.Single(), deadline.Token);
+            var epoch = native.Epoch;
+            if (!(await native.RequestAsync(epoch, connected, cancellation: deadline.Token)).GetBoolean())
+                throw new InvalidOperationException("Native session did not acquire its output");
+            native.Disconnect();
+            try { await native.RequestAsync(epoch, connected, cancellation: deadline.Token); throw new Exception("Retired session accepted a getter"); }
+            catch (InvalidOperationException) { }
+            await native.ConnectAsync(binding, deadline.Token);
+            if (epoch == native.Epoch || !native.Connected) throw new InvalidOperationException("Explicit reconnect did not replace the session epoch");
+            native.Disconnect();
+            Console.WriteLine($"net48 {IntPtr.Size * 8}-bit: shared identity, independent leases, selection CAS, native session/reconnect and surviving host passed");
             return 0;
         } catch (Exception error) { Console.Error.WriteLine(error.GetType().Name + ": " + error.Message); return 1; }
         finally {
