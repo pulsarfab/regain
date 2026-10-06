@@ -132,7 +132,7 @@ function renderSimulation(box,source) {
     if (control.type === 'string') for (const option of control.enum) { const item = document.createElement('option'); item.value = option; item.textContent = option; input.append(item); }
     else {
       input.type = control.type === 'boolean' ? 'checkbox' : 'number';
-      if (control.type === 'number') { input.step = 'any'; if (control.minimum !== undefined) input.min = control.minimum; if (control.maximum !== undefined) input.max = control.maximum; }
+      if (control.type === 'number' || control.type === 'integer') { input.step = control.type === 'integer' ? '1' : 'any'; if (control.minimum !== undefined) input.min = control.minimum; if (control.maximum !== undefined) input.max = control.maximum; }
     }
     input.setAttribute('aria-label',control.label); row.append(input);
     let absent;
@@ -148,7 +148,7 @@ function renderSimulation(box,source) {
   read.onclick = () => action(async () => { show(await setup.read()); status(`Current simulation: ${source.label}. No equipment connection was opened.`); }); fields.append(read);
   const apply = document.createElement('button'); apply.type = 'button'; apply.textContent = 'Apply selected simulation changes';
   apply.onclick = () => action(async () => {
-    const selected = inputs.filter(i => i.include.checked).map(i => ({path:i.control.path,value:i.absent?.checked ? null : i.control.type === 'boolean' ? i.input.checked : i.control.type === 'number' ? i.input.valueAsNumber : i.input.value}));
+    const selected = inputs.filter(i => i.include.checked).map(i => ({path:i.control.path,value:i.absent?.checked ? null : i.control.type === 'boolean' ? i.input.checked : ['number','integer'].includes(i.control.type) ? i.input.valueAsNumber : i.input.value}));
     show(await setup.update(selected)); status(`Simulation updated: ${source.label}. Configuration is unchanged; normal safety polling and confirmation apply.`);
   },true); fields.append(apply);
 }

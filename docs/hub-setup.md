@@ -318,7 +318,7 @@ conformance and real-device acceptance remain pending before release.
 Open **Hub outputs setup** in the Regain ASCOM Start menu group, or run the
 installed `Regain.ASCOM.Register.exe /hubsetup`. The manager reads saved choices
 and machine registration inventory without attaching to the host or equipment.
-Choose a Switch, SafetyMonitor or ObservingConditions output using the same
+Choose a Switch, SafetyMonitor, ObservingConditions or Focuser output using the same
 selector and configuration editor as native NINA. Loading outputs and editing
 configuration explicitly attach to the local host without equipment leases.
 
@@ -347,3 +347,26 @@ Production-helper and installer lifecycle CI now pass, including installed
 metadata, in-use protection, conflict recovery, orphan cleanup and other-install
 preservation. Interactive frontend/vendor acceptance and conformance remain
 required before this development feature is released.
+
+## Focuser simulation controls (development)
+
+For a saved, explicitly simulated Focuser source, the shared **Simulation** tab
+offers integer Position/limits, absolute or relative motion, optional temperature,
+step size, compensation and Halt support, move duration and injected faults. Read
+current state, select only the fields to change, then apply. Coordinates must be
+whole Int32 steps within the displayed bounds. The host validates the complete
+candidate state, so incompatible combinations leave the previous state intact.
+
+Movement uses the normal typed output. A stall remains moving until explicit Halt
+or a test-state change; stopped-short motion makes NINA report a target error.
+Disconnect does not Halt. Clearing an uncertain-write fault cannot clear the shared
+latch: disconnect every source lease and reconnect explicitly before further
+commands. These controls change runtime test state, not saved configuration or
+native worker simulation settings.
+
+![Shared native focuser controls in an explicit simulation](images/hub-native-focuser-simulation.png)
+
+This is the actual WPF editor with a private simulated source, showing its Int32
+limits and a selected Position update. Native NINA and real net48 ASCOM fixtures
+verify timed motion and optional errors in both bitnesses. The browser consumes the
+same descriptors; acceptance of its new rendered focuser controls remains pending.

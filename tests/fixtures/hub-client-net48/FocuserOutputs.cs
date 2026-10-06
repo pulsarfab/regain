@@ -6,6 +6,32 @@ using Regain.TestFixtures;
 
 internal static partial class NativeOutputs
 {
+    internal static async Task SimulatedFocuserRun(string executable,string path,Guid instance,JsonElement config,
+        Guid source,HubEditorSession editor,CancellationToken token)
+    {
+        var binding = new HubSelection { ConfigPath=path,InstanceId=instance,
+            OutputId=config.GetProperty("outputs")[5].GetProperty("id").GetGuid(),DeviceType="focuser",Label="Explicit simulation focuser",Simulated=true };
+        using var driver = new FocuserOutput(binding,executable);
+        var controls=editor.SimulationControls(source); Require(controls.Count==15,"Focuser simulation descriptors");
+        var position=controls.Single(control=>control.Path.SequenceEqual(new[]{"focuser","position"}));
+        Require(position.Type=="integer" && position.Parse("50100").GetInt32()==50100,"Int32 simulation control");
+        Expect<InvalidOperationException>(()=>position.Parse("1.5")); Expect<InvalidOperationException>(()=>position.Parse("2147483648"));
+        await editor.UpdateSimulationAsync(source,JsonSerializer.SerializeToElement(new {focuser=new {position=50100}}),token);
+        driver.Connected=true;
+        Require(driver.Position==50100 && driver.MaxStep==100000 && driver.StepSize==1.25,"Simulator typed focuser properties");
+        driver.Move(50200); await Until(()=>!driver.IsMoving,token);
+        Require(driver.Position==50200,"Simulator did not complete ASCOM move");
+        driver.TempComp=true; Require(driver.TempComp,"Simulator TempComp");
+        await editor.UpdateSimulationAsync(source,JsonSerializer.SerializeToElement(new {
+            focuser=new {temperatureAvailable=false,stepSizeAvailable=false,haltAvailable=false}}),token);
+        Expect<global::ASCOM.PropertyNotImplementedException>(()=>_=driver.Temperature);
+        Expect<global::ASCOM.PropertyNotImplementedException>(()=>_=driver.StepSize);
+        Expect<global::ASCOM.MethodNotImplementedException>(()=>driver.Halt());
+        var status=await editor.SourceStatusAsync(source,token); Require(status.GetProperty("simulated").GetBoolean(),"Simulator lost its identity");
+        driver.Connected=false;
+        while ((await editor.SourceStatusAsync(source,token)).GetProperty("leaseCount").GetInt32()!=0) await Task.Delay(10,token);
+        Console.WriteLine($"ASCOM simulated focuser {IntPtr.Size*8}-bit: shared Int32 setup, timed motion, TempComp, optional errors and lease cleanup passed");
+    }
     internal static async Task FocuserRun(string executable, string path, Guid instance, JsonElement config, HubFocuserServer source, CancellationToken token)
     {
         HubSelection Binding(int index) => new() { ConfigPath = path, InstanceId = instance,

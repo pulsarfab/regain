@@ -7,6 +7,21 @@ using System.Text.Json.Nodes;
 
 namespace Regain.TestFixtures;
 
+internal static class HubFocuserSimulation
+{
+    internal static Guid AddTo(JsonObject config, params int[] numbers)
+    {
+        var source = Guid.NewGuid();
+        config["sources"]!.AsArray().Add(JsonSerializer.SerializeToNode(new {
+            id = source, label = "Explicit simulation focuser", backend = new { kind = "simulated", deviceType = "focuser" },
+            polling = new { pollSeconds = 0.1, requestTimeoutSeconds = 0.3 } }));
+        foreach (var number in numbers) config["outputs"]!.AsArray().Add(JsonSerializer.SerializeToNode(new {
+            id = Guid.NewGuid(), number, label = "Simulation focuser " + number,
+            device = new { kind = "proxy", source, deviceType = "focuser" } }));
+        return source;
+    }
+}
+
 // Private loopback-only upstream shared by net8 NINA and real net48 COM tests.
 internal sealed class HubFocuserServer : IDisposable
 {

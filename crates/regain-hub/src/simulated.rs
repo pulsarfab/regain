@@ -1,4 +1,4 @@
-//! Explicit scalar simulators. One actor owns all clients' state; never fallback
+//! Explicit simulators. One actor owns all clients' state; never fallback
 //! after hardware errors. Runtime replacement restarts safety as unsafe.
 use crate::{
     alpaca::SampleRequest,
@@ -21,6 +21,108 @@ pub enum Fault {
     Timeout,
     InvalidSafety,
     UncertainWrite,
+    InvalidMotion,
+    StalledMotion,
+    StoppedShort,
+}
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct FocuserState {
+    pub absolute: bool,
+    pub max_step: i32,
+    pub max_increment: i32,
+    pub position: i32,
+    pub is_moving: bool,
+    pub temp_comp_available: bool,
+    pub temp_comp: bool,
+    pub temperature: f64,
+    pub temperature_available: bool,
+    pub step_size: f64,
+    pub step_size_available: bool,
+    pub halt_available: bool,
+    pub move_duration_seconds: f64,
+}
+impl Default for FocuserState {
+    fn default() -> Self {
+        Self {
+            absolute: true,
+            max_step: 100000,
+            max_increment: 1000,
+            position: 50000,
+            is_moving: false,
+            temp_comp_available: true,
+            temp_comp: false,
+            temperature: 12.0,
+            temperature_available: true,
+            step_size: 1.25,
+            step_size_available: true,
+            halt_available: true,
+            move_duration_seconds: 0.2,
+        }
+    }
+}
+#[derive(Clone, Debug, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct FocuserUpdate {
+    pub absolute: Option<bool>,
+    #[schemars(range(min = 1, max = 2147483647))]
+    pub max_step: Option<i32>,
+    #[schemars(range(min = 1, max = 2147483647))]
+    pub max_increment: Option<i32>,
+    #[schemars(range(min = 0, max = 2147483647))]
+    pub position: Option<i32>,
+    pub is_moving: Option<bool>,
+    pub temp_comp_available: Option<bool>,
+    pub temp_comp: Option<bool>,
+    #[schemars(range(min = -273.15))]
+    pub temperature: Option<f64>,
+    pub temperature_available: Option<bool>,
+    pub step_size: Option<f64>,
+    pub step_size_available: Option<bool>,
+    pub halt_available: Option<bool>,
+    #[schemars(range(min = 0, max = 300))]
+    pub move_duration_seconds: Option<f64>,
+}
+impl FocuserUpdate {
+    fn replaces_motion(&self) -> bool {
+        self.absolute.is_some()
+            || self.max_step.is_some()
+            || self.max_increment.is_some()
+            || self.position.is_some()
+            || self.is_moving.is_some()
+    }
+    fn apply(self, state: &mut FocuserState) -> Result<(), SourceError> {
+        macro_rules! apply { ($($key:ident),*) => { $(if let Some(value) = self.$key { state.$key = value; })* }; }
+        apply!(
+            absolute,
+            max_step,
+            max_increment,
+            position,
+            is_moving,
+            temp_comp_available,
+            temp_comp,
+            temperature,
+            temperature_available,
+            step_size,
+            step_size_available,
+            halt_available,
+            move_duration_seconds
+        );
+        if state.max_step <= 0
+            || state.max_increment <= 0
+            || !(0..=state.max_step).contains(&state.position)
+            || state.temp_comp && !state.temp_comp_available
+            || !state.temperature.is_finite()
+            || state.temperature < -273.15
+            || !state.step_size.is_finite()
+            || state.step_size <= 0.0
+            || !state.move_duration_seconds.is_finite()
+            || !(0.0..=300.0).contains(&state.move_duration_seconds)
+        {
+            return Err(invalid("Invalid simulated focuser state"));
+        }
+        Ok(())
+    }
 }
 #[derive(Clone, Debug, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -43,6 +145,9 @@ pub struct SimulationUpdate {
     /// represents a fresh sensor acquisition and resets this to zero.
     #[schemars(range(min = 0, max = 86400))]
     pub sample_age_seconds: Option<f64>,
+    /// Sparse focuser test state. Injecting position/motion/limits replaces a
+    /// pending simulated movement; other fields do not stop it.
+    pub focuser: Option<FocuserUpdate>,
 }
 // Internally tagged commands deserialize through serde's captured content,
 // whose map keys do not perform JSON's string-to-integer conversion. Parse the
@@ -83,6 +188,8 @@ pub struct SimulationStatus {
     pub weather: BTreeMap<WeatherMetric, Option<f64>>,
     pub fault: Fault,
     pub sample_age_seconds: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub focuser: Option<FocuserState>,
 }
 pub fn description() -> Value {
     let mut controls = BTreeMap::new();
@@ -90,6 +197,7 @@ pub fn description() -> Value {
         DeviceType::Switch,
         DeviceType::SafetyMonitor,
         DeviceType::ObservingConditions,
+        DeviceType::Focuser,
     ] {
         let state = SimulatedBackend::new(device, Vec::new()).unwrap().state;
         let mut fields = Vec::new();
@@ -123,6 +231,32 @@ pub fn description() -> Value {
                 fields.push(field);
             }
         }
+        if let Some(focuser) = state.focuser.as_ref() {
+            let defaults = serde_json::to_value(focuser).unwrap();
+            for (key, label) in [
+                ("absolute", "Absolute coordinates"),
+                ("isMoving", "Moving"),
+                ("tempCompAvailable", "Temperature compensation available"),
+                ("tempComp", "Temperature compensation enabled"),
+                ("temperatureAvailable", "Temperature available"),
+                ("stepSizeAvailable", "Step size available"),
+                ("haltAvailable", "Halt supported"),
+            ] {
+                fields.push(json!({"path":["focuser",key],"type":"boolean","label":label,
+                    "description":"Inject explicit focuser test state. Motion/coordinate fields replace any pending simulated move.","default":defaults[key]}));
+            }
+            for (key, label, minimum) in [
+                ("maxStep", "Maximum position (steps)", 1),
+                ("maxIncrement", "Maximum move (steps)", 1),
+                ("position", "Position (steps)", 0),
+            ] {
+                fields.push(json!({"path":["focuser",key],"type":"integer","label":label,
+                    "description":"Int32 focuser coordinate or limit. Position must remain within MaxStep; changing a limit replaces pending test motion.","default":defaults[key],"minimum":minimum,"maximum":i32::MAX}));
+            }
+            fields.push(json!({"path":["focuser","temperature"],"type":"number","label":"Temperature (°C)","description":"Injected focuser temperature.","default":focuser.temperature,"minimum":-273.15}));
+            fields.push(json!({"path":["focuser","stepSize"],"type":"number","label":"Step size (µm)","description":"Injected physical step size.","default":focuser.step_size,"exclusiveMinimum":0.0}));
+            fields.push(json!({"path":["focuser","moveDurationSeconds"],"type":"number","label":"Move duration (s)","description":"Move acknowledges start and completes after this monotonic duration. Stalled motion requires an explicit Halt or simulation update.","default":focuser.move_duration_seconds,"minimum":0.0,"maximum":300.0}));
+        }
         let faults = match device {
             DeviceType::Switch => vec![
                 Fault::None,
@@ -135,6 +269,15 @@ pub fn description() -> Value {
                 Fault::ReadError,
                 Fault::Timeout,
                 Fault::InvalidSafety,
+            ],
+            DeviceType::Focuser => vec![
+                Fault::None,
+                Fault::ReadError,
+                Fault::Timeout,
+                Fault::UncertainWrite,
+                Fault::InvalidMotion,
+                Fault::StalledMotion,
+                Fault::StoppedShort,
             ],
             _ => vec![Fault::None, Fault::ReadError, Fault::Timeout],
         };
@@ -153,9 +296,9 @@ pub fn description() -> Value {
     }
     json!({"schema":schemars::schema_for!(SimulationUpdate), "apply":"immediate",
         "controlsByDeviceType":controls,"revisionCheckedUpdates":true,"deadlineSeconds":30,
-        "sourceKinds":["simulated"],"deviceTypes":["switch","safetymonitor","observingconditions"],
-        "fieldsByDeviceType":{"switch":["switchValues","fault","sampleAgeSeconds"],"safetymonitor":["safe","fault"],"observingconditions":["weather","fault","sampleAgeSeconds"]},
-        "faultsByDeviceType":{"switch":["none","readError","timeout","uncertainWrite"],"safetymonitor":["none","readError","timeout","invalidSafety"],"observingconditions":["none","readError","timeout"]},
+        "sourceKinds":["simulated"],"deviceTypes":["switch","safetymonitor","observingconditions","focuser"],
+        "fieldsByDeviceType":{"switch":["switchValues","fault","sampleAgeSeconds"],"safetymonitor":["safe","fault"],"observingconditions":["weather","fault","sampleAgeSeconds"],"focuser":["focuser","fault","sampleAgeSeconds"]},
+        "faultsByDeviceType":{"switch":["none","readError","timeout","uncertainWrite"],"safetymonitor":["none","readError","timeout","invalidSafety"],"observingconditions":["none","readError","timeout"],"focuser":["none","readError","timeout","uncertainWrite","invalidMotion","stalledMotion","stoppedShort"]},
         "persistence":"Test state is shared for this runtime only. A new runtime starts safety unsafe.",
         "uncertainWrites":"Changing a fault does not clear an uncertain-write latch. Disconnect every source lease before retrying commands."})
 }
@@ -163,12 +306,16 @@ pub struct SimulatedBackend {
     state: SimulationStatus,
     samples: Vec<SampleRequest>,
     connected: bool,
+    motion: Option<(tokio::time::Instant, Option<i32>)>,
 }
 impl SimulatedBackend {
     pub fn new(device_type: DeviceType, samples: Vec<SampleRequest>) -> Result<Self, SourceError> {
         if !matches!(
             device_type,
-            DeviceType::Switch | DeviceType::SafetyMonitor | DeviceType::ObservingConditions
+            DeviceType::Switch
+                | DeviceType::SafetyMonitor
+                | DeviceType::ObservingConditions
+                | DeviceType::Focuser
         ) {
             return Err(unsupported());
         }
@@ -199,17 +346,21 @@ impl SimulatedBackend {
                 weather,
                 fault: Fault::None,
                 sample_age_seconds: 0.0,
+                focuser: (device_type == DeviceType::Focuser).then(FocuserState::default),
             },
             samples,
             connected: false,
+            motion: None,
         })
     }
     fn patch(&mut self, update: SimulationUpdate) -> Result<SimulationStatus, SourceError> {
+        self.advance_motion();
         let mut next = self.state.clone();
         if update.safe.is_some() && next.device_type != DeviceType::SafetyMonitor
             || !update.switch_values.is_empty() && next.device_type != DeviceType::Switch
             || !update.weather.is_empty() && next.device_type != DeviceType::ObservingConditions
             || update.sample_age_seconds.is_some() && next.device_type == DeviceType::SafetyMonitor
+            || update.focuser.is_some() && next.device_type != DeviceType::Focuser
         {
             return Err(invalid("Simulator controls do not match this source class"));
         }
@@ -234,7 +385,12 @@ impl SimulatedBackend {
         }
         if let Some(fault) = update.fault {
             if fault == Fault::InvalidSafety && next.device_type != DeviceType::SafetyMonitor
-                || fault == Fault::UncertainWrite && next.device_type != DeviceType::Switch
+                || fault == Fault::UncertainWrite
+                    && !matches!(next.device_type, DeviceType::Switch | DeviceType::Focuser)
+                || matches!(
+                    fault,
+                    Fault::InvalidMotion | Fault::StalledMotion | Fault::StoppedShort
+                ) && next.device_type != DeviceType::Focuser
             {
                 return Err(invalid(
                     "Injected fault does not match the simulated source class",
@@ -242,8 +398,108 @@ impl SimulatedBackend {
             }
             next.fault = fault;
         }
+        let replaces_motion = update
+            .focuser
+            .as_ref()
+            .is_some_and(FocuserUpdate::replaces_motion);
+        if let Some(update) = update.focuser {
+            update.apply(next.focuser.as_mut().expect("Validated focuser source"))?;
+        }
         self.state = next;
-        Ok(self.state.clone())
+        if replaces_motion {
+            self.motion = None;
+        }
+        Ok(self.effective_state())
+    }
+    fn effective_state(&self) -> SimulationStatus {
+        let mut state = self.state.clone();
+        if let Some((completes, target)) = self.motion
+            && completes <= tokio::time::Instant::now()
+            && state.fault != Fault::StalledMotion
+            && let Some(focuser) = state.focuser.as_mut()
+        {
+            focuser.is_moving = false;
+            if let Some(target) = target {
+                focuser.position = if state.fault == Fault::StoppedShort {
+                    if target == 0 { 1 } else { target - 1 }
+                } else {
+                    target
+                };
+            }
+        }
+        state
+    }
+    fn advance_motion(&mut self) {
+        self.state = self.effective_state();
+        if self
+            .state
+            .focuser
+            .as_ref()
+            .is_some_and(|state| !state.is_moving)
+        {
+            self.motion = None;
+        }
+    }
+    fn write_focuser(&mut self, member: &str, args: &Values) -> Result<(), SourceError> {
+        let state = self.state.focuser.as_mut().expect("Focuser state");
+        match member {
+            "move" => {
+                if args.len() != 1 {
+                    return Err(invalid("Expected only Position"));
+                }
+                let position = args
+                    .get("Position")
+                    .and_then(Value::as_i64)
+                    .and_then(|value| i32::try_from(value).ok())
+                    .ok_or_else(|| invalid("Expected Int32 Position"))?;
+                let valid = if state.absolute {
+                    (0..=state.max_step).contains(&position)
+                        && state.position.abs_diff(position) <= state.max_increment as u32
+                } else {
+                    position.unsigned_abs() <= state.max_increment as u32
+                };
+                if !valid {
+                    return Err(invalid("Simulated move exceeds focuser limits"));
+                }
+                if state.is_moving {
+                    return Err(SourceError::new(
+                        ErrorKind::Busy,
+                        "Simulated focuser is moving",
+                    ));
+                }
+                state.is_moving = true;
+                self.motion = Some((
+                    tokio::time::Instant::now()
+                        + std::time::Duration::from_secs_f64(state.move_duration_seconds),
+                    state.absolute.then_some(position),
+                ));
+            }
+            "halt" => {
+                if !args.is_empty() {
+                    return Err(invalid("Unexpected Halt parameters"));
+                }
+                if !state.halt_available {
+                    return Err(unsupported());
+                }
+                state.is_moving = false;
+                self.motion = None;
+            }
+            "tempcomp" => {
+                if args.len() != 1 {
+                    return Err(invalid("Expected only TempComp"));
+                }
+                let enabled = args
+                    .get("TempComp")
+                    .and_then(Value::as_bool)
+                    .ok_or_else(|| invalid("Expected boolean TempComp"))?;
+                if !state.temp_comp_available {
+                    return Err(unsupported());
+                }
+                state.temp_comp = enabled;
+            }
+            _ => return Err(unsupported()),
+        }
+        Ok(())
     }
     async fn check_read(&self) -> Result<(), SourceError> {
         if !self.connected {
@@ -267,6 +523,8 @@ impl SimulatedBackend {
                 return Ok(json!(
                     if self.state.device_type == DeviceType::ObservingConditions {
                         2
+                    } else if self.state.device_type == DeviceType::Focuser {
+                        4
                     } else {
                         3
                     }
@@ -276,6 +534,25 @@ impl SimulatedBackend {
             _ => {}
         }
         match self.state.device_type {
+            DeviceType::Focuser => {
+                if !args.is_empty() {
+                    return Err(invalid("Unexpected focuser parameters"));
+                }
+                let state = self.state.focuser.as_ref().expect("Focuser state");
+                Ok(match member {
+                    "absolute" => json!(state.absolute),
+                    "maxstep" => json!(state.max_step),
+                    "maxincrement" => json!(state.max_increment),
+                    "tempcompavailable" => json!(state.temp_comp_available),
+                    "position" if state.absolute => json!(state.position),
+                    "ismoving" if self.state.fault == Fault::InvalidMotion => json!("false"),
+                    "ismoving" => json!(state.is_moving),
+                    "tempcomp" if state.temp_comp_available => json!(state.temp_comp),
+                    "temperature" if state.temperature_available => json!(state.temperature),
+                    "stepsize" if state.step_size_available => json!(state.step_size),
+                    _ => return Err(unsupported()),
+                })
+            }
             DeviceType::SafetyMonitor if member == "issafe" && args.is_empty() => {
                 Ok(if self.state.fault == Fault::InvalidSafety {
                     json!(1)
@@ -365,7 +642,7 @@ impl Backend for SimulatedBackend {
         true
     }
     fn simulation_status(&self) -> Option<SimulationStatus> {
-        Some(self.state.clone())
+        Some(self.effective_state())
     }
     fn update_simulation(
         &mut self,
@@ -390,13 +667,23 @@ impl Backend for SimulatedBackend {
     }
     fn read(&mut self, member: String, args: Values) -> BackendFuture<'_, Value> {
         Box::pin(async move {
+            self.advance_motion();
             self.check_read().await?;
             self.value(&member, &args)
         })
     }
     fn write(&mut self, member: String, args: Values) -> BackendFuture<'_, Value> {
         Box::pin(async move {
+            self.advance_motion();
             self.check_read().await?;
+            if self.state.device_type == DeviceType::Focuser {
+                self.write_focuser(&member, &args)?;
+                return if self.state.fault == Fault::UncertainWrite {
+                    Err(SourceError::uncertain())
+                } else {
+                    Ok(Value::Null)
+                };
+            }
             if self.state.device_type != DeviceType::Switch {
                 return Err(unsupported());
             }
@@ -438,6 +725,7 @@ impl Backend for SimulatedBackend {
     }
     fn sample(&mut self) -> BackendFuture<'_, SampleBatch> {
         Box::pin(async {
+            self.advance_motion();
             self.check_read().await?;
             let mut batch = SampleBatch::default();
             for sample in &self.samples {

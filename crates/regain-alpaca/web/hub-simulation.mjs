@@ -21,6 +21,7 @@ export function validateSimulationValue(control, value) {
     case 'boolean': valid = typeof value === 'boolean'; break;
     case 'string': valid = typeof value === 'string' && control.enum.includes(value); break;
     case 'number': valid = Number.isFinite(value) && typeof value === 'number' && (control.minimum === undefined || value >= control.minimum) && (control.maximum === undefined || value <= control.maximum) && (control.exclusiveMinimum === undefined || value > control.exclusiveMinimum); break;
+    case 'integer': valid = Number.isInteger(value) && value >= -2147483648 && value <= 2147483647 && (control.minimum === undefined || value >= control.minimum) && (control.maximum === undefined || value <= control.maximum); break;
     default: valid = false;
   }
   if (!valid) fail(`Invalid ${control.label}`); return value;
@@ -33,8 +34,11 @@ export class SimulationSetup {
   }
   statusValue(status) {
     try {
-      members(status,['deviceType','safe','switchValues','weather','fault','sampleAgeSeconds']);
+      members(status,this.source.backend.deviceType === 'focuser'
+        ? ['deviceType','safe','switchValues','weather','fault','sampleAgeSeconds','focuser']
+        : ['deviceType','safe','switchValues','weather','fault','sampleAgeSeconds']);
       if (status.deviceType !== this.source.backend.deviceType) protocol();
+      if (status.deviceType === 'focuser') members(status.focuser,this.controls.filter(control => control.path[0] === 'focuser').map(control => control.path[1]));
       for (const control of this.controls) {
         let value = status; for (const key of control.path) { if (!object(value) || !(key in value)) protocol(); value = value[key]; }
         validateSimulationValue(control,value);

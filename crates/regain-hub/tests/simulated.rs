@@ -4,7 +4,7 @@ use regain_hub::{
     native::NativeRuntime,
     runtime::HubRuntime,
     safety::MonotonicClock,
-    simulated::{Fault, SimulatedBackend, SimulationUpdate},
+    simulated::{Fault, FocuserUpdate, SimulatedBackend, SimulationUpdate},
     source::{Backend, ErrorKind, Values},
 };
 use serde_json::json;
@@ -18,6 +18,7 @@ fn setup_descriptors_share_backend_defaults_ranges_and_fault_choices() {
         DeviceType::Switch,
         DeviceType::SafetyMonitor,
         DeviceType::ObservingConditions,
+        DeviceType::Focuser,
     ] {
         let state = serde_json::to_value(
             SimulatedBackend::new(kind, vec![])
@@ -108,6 +109,7 @@ fn config(kind: DeviceType) -> HubConfig {
         DeviceType::ObservingConditions => json!({"kind":"weather","measurements":{
             "temperature":{"sources":[{"kind":"property","source":source,"property":"temperature"}],"maximumAgeSeconds":1.0,"averageSeconds":0.0}
         }}),
+        DeviceType::Focuser => json!({"kind":"proxy","source":source,"deviceType":"focuser"}),
         _ => unreachable!(),
     };
     config.outputs.push(
@@ -468,5 +470,423 @@ async fn simulator_updates_reject_real_sources_before_opening_their_transport() 
     );
     assert_eq!(hub.source_snapshot(source).unwrap().lease_count, 0);
     assert!(hub.source_snapshot(source).unwrap().error.is_none());
+    hub.shutdown().await.unwrap();
+}
+
+#[test]
+fn focuser_state_patches_are_atomic_strict_and_class_specific() {
+    let mut backend = SimulatedBackend::new(DeviceType::Focuser, vec![]).unwrap();
+    let before = serde_json::to_value(backend.simulation_status()).unwrap();
+    for focuser in [
+        FocuserUpdate {
+            max_step: Some(0),
+            ..Default::default()
+        },
+        FocuserUpdate {
+            max_step: Some(49999),
+            ..Default::default()
+        },
+        FocuserUpdate {
+            position: Some(-1),
+            ..Default::default()
+        },
+        FocuserUpdate {
+            temp_comp_available: Some(false),
+            temp_comp: Some(true),
+            ..Default::default()
+        },
+        FocuserUpdate {
+            temperature: Some(f64::NAN),
+            ..Default::default()
+        },
+        FocuserUpdate {
+            step_size: Some(0.0),
+            ..Default::default()
+        },
+        FocuserUpdate {
+            move_duration_seconds: Some(301.0),
+            ..Default::default()
+        },
+    ] {
+        assert_eq!(
+            backend
+                .update_simulation(SimulationUpdate {
+                    focuser: Some(focuser),
+                    ..Default::default()
+                })
+                .unwrap_err()
+                .kind,
+            ErrorKind::InvalidValue
+        );
+        assert_eq!(
+            serde_json::to_value(backend.simulation_status()).unwrap(),
+            before
+        );
+    }
+    assert!(
+        backend
+            .update_simulation(SimulationUpdate {
+                fault: Some(Fault::InvalidSafety),
+                ..Default::default()
+            })
+            .is_err()
+    );
+    for value in [
+        json!({"focuser":{"position":1.5}}),
+        json!({"focuser":{"position":2147483648i64}}),
+        json!({"focuser":{"isMoving":"false"}}),
+        json!({"focuser":{"unknown":1}}),
+    ] {
+        assert!(serde_json::from_value::<SimulationUpdate>(value).is_err());
+    }
+    let mut switch = SimulatedBackend::new(DeviceType::Switch, vec![]).unwrap();
+    for update in [
+        SimulationUpdate {
+            focuser: Some(FocuserUpdate::default()),
+            ..Default::default()
+        },
+        SimulationUpdate {
+            fault: Some(Fault::InvalidMotion),
+            ..Default::default()
+        },
+    ] {
+        assert_eq!(
+            switch.update_simulation(update).unwrap_err().kind,
+            ErrorKind::InvalidValue
+        );
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn simulated_move_acknowledges_start_and_completion_continues_after_disconnect() {
+    let mut backend = SimulatedBackend::new(DeviceType::Focuser, vec![]).unwrap();
+    backend.connect().await.unwrap();
+    for args in [
+        json!({"Position":1.5}),
+        json!({"Position":"50100"}),
+        json!({"Position":2147483648i64}),
+        json!({"Position":50100,"extra":true}),
+        json!({"Position":52000}),
+    ] {
+        assert_eq!(
+            backend
+                .write("move".into(), serde_json::from_value(args).unwrap())
+                .await
+                .unwrap_err()
+                .kind,
+            ErrorKind::InvalidValue
+        );
+    }
+    backend
+        .write(
+            "move".into(),
+            Values::from([("Position".into(), json!(50100))]),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        backend
+            .read("ismoving".into(), Values::new())
+            .await
+            .unwrap(),
+        true
+    );
+    assert_eq!(
+        backend
+            .read("position".into(), Values::new())
+            .await
+            .unwrap(),
+        50000
+    );
+    backend.disconnect().await.unwrap();
+    assert!(
+        backend
+            .simulation_status()
+            .unwrap()
+            .focuser
+            .unwrap()
+            .is_moving
+    );
+    tokio::time::advance(Duration::from_millis(250)).await;
+    let state = backend.simulation_status().unwrap().focuser.unwrap();
+    assert!(!state.is_moving);
+    assert_eq!(state.position, 50100);
+    backend.connect().await.unwrap();
+    assert_eq!(
+        backend
+            .read("position".into(), Values::new())
+            .await
+            .unwrap(),
+        50100
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn simulated_relative_focuser_preserves_optional_errors_and_signed_motion() {
+    let config = config(DeviceType::Focuser);
+    let source = config.sources[0].id;
+    let output = config.outputs[0].id;
+    let hub = build(config);
+    hub.update_simulation(
+        source,
+        SimulationUpdate {
+            focuser: Some(FocuserUpdate {
+                absolute: Some(false),
+                temperature_available: Some(false),
+                step_size_available: Some(false),
+                halt_available: Some(false),
+                temp_comp_available: Some(false),
+                ..Default::default()
+            }),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let client = hub.client();
+    client.connect(output).await.unwrap();
+    let connection = client.connection(output).unwrap();
+    let focuser = connection.focuser().unwrap();
+    assert!(!focuser.capabilities().await.unwrap().absolute);
+    for error in [
+        focuser.position().await.unwrap_err(),
+        focuser.temperature().await.unwrap_err(),
+        focuser.step_size().await.unwrap_err(),
+        focuser.halt().await.unwrap_err(),
+        focuser.set_temp_comp(true).await.unwrap_err(),
+    ] {
+        assert_eq!(error.kind, ErrorKind::Unsupported);
+    }
+    assert_eq!(
+        focuser.move_to(i32::MIN).await.unwrap_err().kind,
+        ErrorKind::InvalidValue
+    );
+    focuser.move_to(-30).await.unwrap();
+    assert!(focuser.is_moving().await.unwrap());
+    tokio::time::advance(Duration::from_millis(250)).await;
+    assert!(!focuser.is_moving().await.unwrap());
+    assert_eq!(
+        focuser.position().await.unwrap_err().kind,
+        ErrorKind::Unsupported
+    );
+    client.close();
+    drop(connection);
+    hub.shutdown().await.unwrap();
+}
+
+#[tokio::test(start_paused = true)]
+async fn shared_simulated_focuser_uncertainty_survives_fault_clear_without_replaying() {
+    let config = config(DeviceType::Focuser);
+    let source = config.sources[0].id;
+    let output = config.outputs[0].id;
+    let hub = build(config);
+    let a = hub.client();
+    let b = hub.client();
+    a.connect(output).await.unwrap();
+    b.connect(output).await.unwrap();
+    let first = a.connection(output).unwrap();
+    let second = b.connection(output).unwrap();
+    assert_eq!(hub.source_snapshot(source).unwrap().lease_count, 2);
+    hub.update_simulation(
+        source,
+        SimulationUpdate {
+            fault: Some(Fault::UncertainWrite),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        first
+            .focuser()
+            .unwrap()
+            .move_to(50100)
+            .await
+            .unwrap_err()
+            .kind,
+        ErrorKind::Uncertain
+    );
+    assert_eq!(
+        second
+            .focuser()
+            .unwrap()
+            .move_to(50200)
+            .await
+            .unwrap_err()
+            .kind,
+        ErrorKind::Uncertain
+    );
+    hub.update_simulation(
+        source,
+        SimulationUpdate {
+            fault: Some(Fault::None),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    assert!(hub.source_snapshot(source).unwrap().write_uncertain);
+    assert_eq!(
+        second.focuser().unwrap().halt().await.unwrap_err().kind,
+        ErrorKind::Uncertain
+    );
+    tokio::time::advance(Duration::from_millis(250)).await;
+    assert!(!second.focuser().unwrap().connected());
+    assert_eq!(
+        second.focuser().unwrap().position().await.unwrap_err().kind,
+        ErrorKind::Disconnected
+    );
+    let state = hub
+        .update_simulation(source, SimulationUpdate::default())
+        .await
+        .unwrap()
+        .focuser
+        .unwrap();
+    assert_eq!(state.position, 50100);
+    assert!(!state.is_moving);
+    a.close();
+    b.close();
+    drop(first);
+    drop(second);
+    hub.shutdown().await.unwrap();
+}
+
+#[tokio::test(start_paused = true)]
+async fn simulated_motion_faults_cover_stalls_stopped_short_and_invalid_idle_readings() {
+    let config = config(DeviceType::Focuser);
+    let source = config.sources[0].id;
+    let output = config.outputs[0].id;
+    let hub = build(config);
+    let client = hub.client();
+    client.connect(output).await.unwrap();
+    let connection = client.connection(output).unwrap();
+    let focuser = connection.focuser().unwrap();
+    hub.update_simulation(
+        source,
+        SimulationUpdate {
+            fault: Some(Fault::StalledMotion),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    focuser.move_to(50100).await.unwrap();
+    tokio::time::advance(Duration::from_secs(1)).await;
+    assert!(focuser.is_moving().await.unwrap());
+    assert_eq!(focuser.position().await.unwrap(), 50000);
+    assert_eq!(
+        focuser.move_to(50200).await.unwrap_err().kind,
+        ErrorKind::Busy
+    );
+    focuser.halt().await.unwrap();
+    assert!(!focuser.is_moving().await.unwrap());
+    hub.update_simulation(
+        source,
+        SimulationUpdate {
+            fault: Some(Fault::StoppedShort),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    focuser.move_to(50200).await.unwrap();
+    tokio::time::advance(Duration::from_millis(250)).await;
+    assert!(!focuser.is_moving().await.unwrap());
+    assert_eq!(focuser.position().await.unwrap(), 50199);
+    hub.update_simulation(
+        source,
+        SimulationUpdate {
+            fault: Some(Fault::InvalidMotion),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        focuser.is_moving().await.unwrap_err().kind,
+        ErrorKind::Unavailable
+    );
+    assert_eq!(
+        focuser.move_to(50200).await.unwrap_err().kind,
+        ErrorKind::Unavailable
+    );
+    assert_eq!(focuser.position().await.unwrap(), 50199);
+    client.close();
+    drop(connection);
+    hub.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn focuser_simulation_status_updates_without_leases_or_configuration_changes_and_composes() {
+    let mut config = config(DeviceType::Focuser);
+    let source = config.sources[0].id;
+    let base = config.outputs[0].id;
+    let virtual_source = Uuid::new_v4();
+    let output = Uuid::new_v4();
+    config.sources.push(
+        serde_json::from_value(json!({"id":virtual_source,"label":"Virtual simulator",
+        "backend":{"kind":"virtual","output":base},"polling":{"pollSeconds":0.1}}))
+        .unwrap(),
+    );
+    config.outputs.push(
+        serde_json::from_value(
+            json!({"id":output,"number":4,"label":"Simulation focuser alias",
+        "device":{"kind":"proxy","source":virtual_source,"deviceType":"focuser"}}),
+        )
+        .unwrap(),
+    );
+    let revision = config.revision;
+    let hub = build(config);
+    let update = hub
+        .update_simulation(
+            source,
+            SimulationUpdate {
+                sample_age_seconds: Some(70.0),
+                focuser: Some(FocuserUpdate {
+                    max_step: Some(i32::MAX),
+                    position: Some(100000),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(update.focuser.unwrap().position, 100000);
+    eventually(|| {
+        hub.source_snapshots()
+            .iter()
+            .all(|source| source.lease_count == 0)
+    })
+    .await;
+    assert_eq!(hub.source_snapshot(source).unwrap().revision, revision);
+    assert!(hub.outputs().iter().all(|output| output.simulated));
+    let client = hub.client();
+    client.connect(output).await.unwrap();
+    let connection = client.connection(output).unwrap();
+    assert_eq!(
+        connection.focuser().unwrap().position().await.unwrap(),
+        100000
+    );
+    assert_eq!(
+        connection
+            .focuser()
+            .unwrap()
+            .capabilities()
+            .await
+            .unwrap()
+            .max_step,
+        i32::MAX
+    );
+    eventually(|| {
+        hub.source_snapshot(virtual_source)
+            .unwrap()
+            .sample_ages_seconds
+            .get("position")
+            .is_some_and(|age| *age >= 70.0)
+    })
+    .await;
+    client.close();
+    drop(connection);
     hub.shutdown().await.unwrap();
 }

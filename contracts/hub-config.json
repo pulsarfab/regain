@@ -2267,7 +2267,6 @@
                     "camera": "broaderSimulation",
                     "covercalibrator": "broaderSimulation",
                     "filterwheel": "broaderSimulation",
-                    "focuser": "broaderSimulation",
                     "rotator": "broaderSimulation"
                   }
                 }
@@ -2773,6 +2772,177 @@
   "simulationControl": {
     "apply": "immediate",
     "controlsByDeviceType": {
+      "focuser": [
+        {
+          "default": true,
+          "description": "Inject explicit focuser test state. Motion/coordinate fields replace any pending simulated move.",
+          "label": "Absolute coordinates",
+          "path": [
+            "focuser",
+            "absolute"
+          ],
+          "type": "boolean"
+        },
+        {
+          "default": false,
+          "description": "Inject explicit focuser test state. Motion/coordinate fields replace any pending simulated move.",
+          "label": "Moving",
+          "path": [
+            "focuser",
+            "isMoving"
+          ],
+          "type": "boolean"
+        },
+        {
+          "default": true,
+          "description": "Inject explicit focuser test state. Motion/coordinate fields replace any pending simulated move.",
+          "label": "Temperature compensation available",
+          "path": [
+            "focuser",
+            "tempCompAvailable"
+          ],
+          "type": "boolean"
+        },
+        {
+          "default": false,
+          "description": "Inject explicit focuser test state. Motion/coordinate fields replace any pending simulated move.",
+          "label": "Temperature compensation enabled",
+          "path": [
+            "focuser",
+            "tempComp"
+          ],
+          "type": "boolean"
+        },
+        {
+          "default": true,
+          "description": "Inject explicit focuser test state. Motion/coordinate fields replace any pending simulated move.",
+          "label": "Temperature available",
+          "path": [
+            "focuser",
+            "temperatureAvailable"
+          ],
+          "type": "boolean"
+        },
+        {
+          "default": true,
+          "description": "Inject explicit focuser test state. Motion/coordinate fields replace any pending simulated move.",
+          "label": "Step size available",
+          "path": [
+            "focuser",
+            "stepSizeAvailable"
+          ],
+          "type": "boolean"
+        },
+        {
+          "default": true,
+          "description": "Inject explicit focuser test state. Motion/coordinate fields replace any pending simulated move.",
+          "label": "Halt supported",
+          "path": [
+            "focuser",
+            "haltAvailable"
+          ],
+          "type": "boolean"
+        },
+        {
+          "default": 100000,
+          "description": "Int32 focuser coordinate or limit. Position must remain within MaxStep; changing a limit replaces pending test motion.",
+          "label": "Maximum position (steps)",
+          "maximum": 2147483647,
+          "minimum": 1,
+          "path": [
+            "focuser",
+            "maxStep"
+          ],
+          "type": "integer"
+        },
+        {
+          "default": 1000,
+          "description": "Int32 focuser coordinate or limit. Position must remain within MaxStep; changing a limit replaces pending test motion.",
+          "label": "Maximum move (steps)",
+          "maximum": 2147483647,
+          "minimum": 1,
+          "path": [
+            "focuser",
+            "maxIncrement"
+          ],
+          "type": "integer"
+        },
+        {
+          "default": 50000,
+          "description": "Int32 focuser coordinate or limit. Position must remain within MaxStep; changing a limit replaces pending test motion.",
+          "label": "Position (steps)",
+          "maximum": 2147483647,
+          "minimum": 0,
+          "path": [
+            "focuser",
+            "position"
+          ],
+          "type": "integer"
+        },
+        {
+          "default": 12.0,
+          "description": "Injected focuser temperature.",
+          "label": "Temperature (°C)",
+          "minimum": -273.15,
+          "path": [
+            "focuser",
+            "temperature"
+          ],
+          "type": "number"
+        },
+        {
+          "default": 1.25,
+          "description": "Injected physical step size.",
+          "exclusiveMinimum": 0.0,
+          "label": "Step size (µm)",
+          "path": [
+            "focuser",
+            "stepSize"
+          ],
+          "type": "number"
+        },
+        {
+          "default": 0.2,
+          "description": "Move acknowledges start and completes after this monotonic duration. Stalled motion requires an explicit Halt or simulation update.",
+          "label": "Move duration (s)",
+          "maximum": 300.0,
+          "minimum": 0.0,
+          "path": [
+            "focuser",
+            "moveDurationSeconds"
+          ],
+          "type": "number"
+        },
+        {
+          "default": "none",
+          "description": "Select none to clear a fault. This does not clear an uncertain-write latch.",
+          "enum": [
+            "none",
+            "readError",
+            "timeout",
+            "uncertainWrite",
+            "invalidMotion",
+            "stalledMotion",
+            "stoppedShort"
+          ],
+          "label": "Injected fault",
+          "path": [
+            "fault"
+          ],
+          "type": "string"
+        },
+        {
+          "default": 0.0,
+          "description": "Age reported for each new simulated observation. Refresh resets it to zero.",
+          "label": "Sample age (s)",
+          "maximum": 86400.0,
+          "minimum": 0.0,
+          "path": [
+            "sampleAgeSeconds"
+          ],
+          "type": "number"
+        }
+      ],
       "observingconditions": [
         {
           "default": 0.0,
@@ -3056,9 +3226,19 @@
     "deviceTypes": [
       "switch",
       "safetymonitor",
-      "observingconditions"
+      "observingconditions",
+      "focuser"
     ],
     "faultsByDeviceType": {
+      "focuser": [
+        "none",
+        "readError",
+        "timeout",
+        "uncertainWrite",
+        "invalidMotion",
+        "stalledMotion",
+        "stoppedShort"
+      ],
       "observingconditions": [
         "none",
         "readError",
@@ -3078,6 +3258,11 @@
       ]
     },
     "fieldsByDeviceType": {
+      "focuser": [
+        "focuser",
+        "fault",
+        "sampleAgeSeconds"
+      ],
       "observingconditions": [
         "weather",
         "fault",
@@ -3103,9 +3288,111 @@
             "readError",
             "timeout",
             "invalidSafety",
-            "uncertainWrite"
+            "uncertainWrite",
+            "invalidMotion",
+            "stalledMotion",
+            "stoppedShort"
           ],
           "type": "string"
+        },
+        "FocuserUpdate": {
+          "additionalProperties": false,
+          "properties": {
+            "absolute": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "haltAvailable": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "isMoving": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "maxIncrement": {
+              "format": "int32",
+              "maximum": 2147483647,
+              "minimum": 1,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "maxStep": {
+              "format": "int32",
+              "maximum": 2147483647,
+              "minimum": 1,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "moveDurationSeconds": {
+              "format": "double",
+              "maximum": 300,
+              "minimum": 0,
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "position": {
+              "format": "int32",
+              "maximum": 2147483647,
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "stepSize": {
+              "format": "double",
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "stepSizeAvailable": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "tempComp": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "tempCompAvailable": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "temperature": {
+              "format": "double",
+              "minimum": -273.15,
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "temperatureAvailable": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          },
+          "type": "object"
         }
       },
       "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -3121,6 +3408,17 @@
             }
           ],
           "description": "Failure to inject. \"none\" clears a fault; omitted leaves it unchanged."
+        },
+        "focuser": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FocuserUpdate"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Sparse focuser test state. Injecting position/motion/limits replaces a\npending simulated movement; other fields do not stop it."
         },
         "safe": {
           "description": "Simulated raw safety reading. Starts false on each new runtime.",

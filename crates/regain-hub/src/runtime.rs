@@ -540,30 +540,6 @@ impl HubRuntime {
 fn validate_outputs(config: &HubConfig) -> Result<(), Vec<FieldError>> {
     let mut errors = config.validate();
     for (index, output) in config.outputs.iter().enumerate() {
-        if let VirtualDevice::Proxy {
-            source,
-            device_type: DeviceType::Focuser,
-        } = output.device
-            && config
-                .sources
-                .iter()
-                .find(|entry| entry.id == source)
-                .is_some_and(|entry| {
-                    !matches!(
-                        entry.backend,
-                        crate::config::SourceBackend::Native { .. }
-                            | crate::config::SourceBackend::Alpaca { .. }
-                            | crate::config::SourceBackend::Com { .. }
-                            | crate::config::SourceBackend::Virtual { .. }
-                    )
-                })
-        {
-            errors.push(FieldError::new(
-                format!("outputs[{index}].device.source"),
-                "unsupported",
-                "Focuser proxies require native, Alpaca, Windows COM or virtual sources",
-            ));
-        }
         if matches!(output.device, VirtualDevice::Proxy { device_type, .. } if device_type != DeviceType::Focuser)
         {
             errors.push(FieldError::new(

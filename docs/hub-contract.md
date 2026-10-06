@@ -1137,7 +1137,7 @@ broader live output/policy diagnostics and frontend recovery remain separate gat
 
 ### Shared simulation controls
 
-`DescribeConfig.simulationControl.controlsByDeviceType` supplies scalar field
+`DescribeConfig.simulationControl.controlsByDeviceType` supplies class-specific field
 paths, types, labels, descriptions, defaults, physical bounds, nullable weather
 readings and class-specific fault choices. Defaults derive from the actual
 simulated backend; weather bounds also validate real readings. Native NINA/ASCOM
@@ -1298,7 +1298,8 @@ one-micrometre coordinates; EAF/FC3 optical step size remains unsupported. ETA's
 unsupported Halt remains unsupported. No hardware or simulation fallback is
 introduced. The runtime now admits native/Alpaca/Windows COM focuser proxies and
 exposes them through private IPC. Virtual focuser inputs use the same typed
-controller; dedicated simulated focuser inputs remain pending. Hello advertises
+controller; dedicated simulated focuser inputs use the existing actor and shared
+test-state controls. Hello advertises
 `focuserOutputs`. Typed Get uses
 `{"member":"focuser","property":"isMoving"}` (or another described property).
 Typed Put uses `moveFocuser` with integer `position`, `haltFocuser` with no arguments,
@@ -1351,7 +1352,7 @@ delegate capability, motion and source-generation checks to the Rust controller.
 Cancellation releases only the caller's session as needed, with no command replay
 or automatic Halt; Halt remains explicit because another client may own later
 motion. Coordination policies and long-lived acquisition/motion ownership remain
-separate unfinished plan gates. Dedicated simulation focuser imports,
+separate unfinished plan gates. Shared typed configuration setup,
 conformance, interactive setup and hardware acceptance remain required.
 
 Windows COM focuser imports reuse the isolated x86/x64 STA worker, shared source
@@ -1377,3 +1378,24 @@ hardware or freshen an inner sample. A changed inner session retires the virtual
 transport. An existing outer session cannot adopt its replacement generation.
 No disconnect issues automatic Halt, and no uncertain command is replayed. The
 existing graph validation and transitive simulation marking apply to focusers.
+
+Dedicated simulated focusers expose V4 and the same nine typed properties through
+the shared controller. `SimulationStatus.focuser` appears only for this class;
+scalar status shapes remain unchanged. Its thirteen state fields and two shared
+fault/age controls come from the Rust description. Coordinates and limits are
+Int32; Position stays within MaxStep. Temperature, step size and duration must be
+finite and physically valid. Disabling compensation availability requires disabling
+compensation in the same sparse patch if it was enabled. Updates validate a private
+candidate before committing; unknown fields and mismatched class controls fail.
+
+Move acknowledges start, then IsMoving clears after a monotonic duration (0–300
+seconds). Absolute Position reaches the target; relative Position is unsupported
+and no absolute coordinate is fabricated. Injecting coordinate, motion or limit
+fields replaces pending test motion; other fields do not stop it. Disconnect does
+not issue Halt and timed motion continues in the retained simulator. Faults include
+read failure, timeout, malformed IsMoving, stalled motion, stopped-short completion
+and a write applied before an uncertain reply. A dispatched uncertain write fences
+the controller generation and retains the shared latch. Explicit simulation status
+can show its outcome, but clearing the fault cannot reconnect old sessions, clear
+that latch or authorize replay. Simulation state is runtime-only and never a
+fallback for native, Alpaca or COM failures.

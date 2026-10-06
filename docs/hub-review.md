@@ -2360,3 +2360,47 @@ active. Dedicated focuser simulation, shared typed setup, other device classes,
 cameras/acquisition, coordination and all original acceptance/final gates remain
 required. Current native/web source-choice gates are not evidence of completed
 typed setup; no general proxy capability is enabled by this increment.
+
+### Dedicated focuser simulation (2026-10-06)
+
+Added typed Focuser V4 simulation to the existing source actor. The same controller,
+leases, sampling and generation fences serve every frontend. Fifteen controls
+(thirteen state fields, fault and sample age) derive from Rust defaults/descriptors;
+native and web readers enforce strict Int32, numeric bounds, nested status members
+and sparse updates. Invalid patches validate a private candidate and leave current
+state unchanged. Existing scalar status shapes omit the new optional focuser field.
+
+Reviewed class admission, overflow, optional properties, relative coordinates,
+monotonic completion, teardown, fault mutation and uncertainty. Move acknowledges
+start; disconnect does not Halt and retained timed motion can complete without a
+lease. Relative moves never fabricate Position. Stalls, stopped-short completion
+and malformed IsMoving are explicit faults. Applying a write before an uncertain
+reply invalidates connected sessions and retains the actor's latch; clearing the
+injected fault does not replay, reconnect or clear it. Injecting coordinates,
+limits or motion replaces pending test motion; unrelated updates do not halt it.
+
+Six new Rust cases bring the simulation suite to fifteen. Full local hub/Alpaca
+suites (with production workers explicitly simulated), strict Clippy, Rust 1.89
+all-target checks, generated-contract freshness, Node and four independent schema
+checks pass. All 184 warning-denied NINA tests pass, including four new focuser
+simulation cases. Real net48 x86/x64 adapters prove shared integer controls, timed
+motion, compensation, optional errors and lease cleanup. Logs are
+`artifacts/hub-focuser-simulation-*.log`. The actual WPF capture is in the development
+setup guide and explicitly labelled simulation; new browser rendering still needs
+acceptance. No physical equipment or installed vendor driver was activated.
+
+Test review corrected an assertion that ignored source-generation invalidation
+following uncertainty; it now requires Disconnected and observes the outcome only
+through explicit simulation status. Temporary update leases are released
+asynchronously; cleanup assertions wait for that release instead of assuming it
+preceded the reply. The WPF capture waits for layout before scrolling to the changed
+integer field. Production policies and deadlines were not loosened.
+
+COM checkpoint 8c806d5 push CI 37494616586 passes all eight jobs, including actual
+worker/parent fixtures, cold SCM activation, production registration and installer
+checks. Its PR run 37494625707 was cancelled after seven successes. This closes the
+missing Focuser Chooser-path fixture correction, not the earlier unrelated COM
+response timeout or local HKCU SCM investigation. Virtual checkpoint 1af147b runs
+37496570309/37496563543 remain live at this observation. Next: shared typed setup,
+remaining accessories, camera acquisition/buffers, coordination and every original
+acceptance/final gate. PR21 remains draft.

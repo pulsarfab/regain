@@ -109,18 +109,38 @@ const simulatedSource = type => ({id:'11111111-1111-4111-8111-111111111111',back
 const simRevision = '22222222-2222-4222-8222-222222222222';
 function simulationState(type) {
   const state = {deviceType:type,safe:false,switchValues:{},weather:{},fault:'none',sampleAgeSeconds:0};
+  if (type === 'focuser') state.focuser = {};
   for (const control of simulationControls(simDescription,simulatedSource(type))) {
     if (control.path.length === 1) state[control.path[0]] = control.default;
     else state[control.path[0]][control.path[1]] = control.default;
   }
   return state;
 }
-for (const type of ['switch','safetymonitor','observingconditions']) {
+for (const type of ['switch','safetymonitor','observingconditions','focuser']) {
   const fields = simulationControls(simDescription,simulatedSource(type));
   assert.equal(fields.length,type==='switch'?5:type==='safetymonitor'?2:15);
   assert.deepEqual(fields.find(f=>f.path[0]==='fault').enum,simDescription.faultsByDeviceType[type]);
 }
 assert.deepEqual(simulationControls(simDescription,{backend:{kind:'native'}}),[]);
+const focuserFields = simulationControls(simDescription,simulatedSource('focuser'));
+const positionField = focuserFields.find(field => field.path[1] === 'position');
+assert.equal(positionField.type,'integer');
+for (const value of [1.5,'1',-1,2147483648,Infinity]) assert.throws(() => validateSimulationValue(positionField,value));
+assert.equal(validateSimulationValue(positionField,100000),100000);
+let focuserWrites = 0;
+const focuserState = simulationState('focuser');
+const focuserSetup = new SimulationSetup(async command => {
+  focuserWrites++; assert.deepEqual(command.update,{focuser:{position:100000}});
+  focuserState.focuser.position = 100000;
+  return {source:focuserSetup.source.id,configurationRevision:simRevision,simulation:focuserState};
+},()=>{});
+focuserSetup.load(simDescription,simulatedSource('focuser'),simRevision);
+await assert.rejects(focuserSetup.update([{path:['focuser','position'],value:1.5}])); assert.equal(focuserWrites,0);
+assert.equal((await focuserSetup.update([{path:['focuser','position'],value:100000}])).focuser.position,100000);
+const invalidFocuserState = structuredClone(focuserState); invalidFocuserState.focuser.extra = true;
+assert.throws(() => focuserSetup.statusValue(invalidFocuserState));
+delete invalidFocuserState.focuser.extra; invalidFocuserState.focuser.position = 1.5;
+assert.throws(() => focuserSetup.statusValue(invalidFocuserState));
 const weatherFields = simulationControls(simDescription,simulatedSource('observingconditions'));
 const pressure = weatherFields.find(f=>f.path[1]==='pressure');
 assert.throws(()=>validateSimulationValue(pressure,0)); assert.equal(validateSimulationValue(pressure,null),null);

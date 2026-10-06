@@ -22,7 +22,11 @@ public sealed class HubSimulationControl
     {
         JsonElement value;
         if (absent) value = JsonSerializer.SerializeToElement<object?>(null);
-        else if (Type == "number") {
+        else if (Type == "integer") {
+            if (!int.TryParse(text, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out var integer))
+                throw new InvalidOperationException("Invalid " + Label);
+            value = JsonSerializer.SerializeToElement(integer);
+        } else if (Type == "number") {
             if (!double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var number) || double.IsNaN(number) || double.IsInfinity(number))
                 throw new InvalidOperationException("Invalid " + Label);
             value = JsonSerializer.SerializeToElement(number);
@@ -38,6 +42,9 @@ public sealed class HubSimulationControl
         bool valid = Type switch {
             "boolean" => value.ValueKind is JsonValueKind.True or JsonValueKind.False,
             "string" => value.ValueKind == JsonValueKind.String && Descriptor.GetProperty("enum").EnumerateArray().Any(c => c.GetString() == value.GetString()),
+            "integer" => value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var integer) &&
+                (!Descriptor.TryGetProperty("minimum", out var minInteger) || integer >= minInteger.GetInt32()) &&
+                (!Descriptor.TryGetProperty("maximum", out var maxInteger) || integer <= maxInteger.GetInt32()),
             "number" => value.ValueKind == JsonValueKind.Number && value.TryGetDouble(out var number) && !double.IsNaN(number) && !double.IsInfinity(number) &&
                 (!Descriptor.TryGetProperty("minimum", out var minimum) || number >= minimum.GetDouble()) &&
                 (!Descriptor.TryGetProperty("maximum", out var maximum) || number <= maximum.GetDouble()) &&
@@ -115,8 +122,13 @@ public sealed partial class HubEditorSession
     }
     public void ValidateSimulationStatus(Guid source, JsonElement status)
     {
-        HubWire.Members(status, "deviceType", "safe", "switchValues", "weather", "fault", "sampleAgeSeconds");
+        var type = SavedSource(source).GetProperty("backend").GetProperty("deviceType").GetString();
+        HubWire.Members(status, type == "focuser"
+            ? ["deviceType", "safe", "switchValues", "weather", "fault", "sampleAgeSeconds", "focuser"]
+            : ["deviceType", "safe", "switchValues", "weather", "fault", "sampleAgeSeconds"]);
         if (status.GetProperty("deviceType").GetString() != SavedSource(source).GetProperty("backend").GetProperty("deviceType").GetString()) throw new HubException(HubFailure.Protocol);
+        if (type == "focuser") HubWire.Members(status.GetProperty("focuser"), SimulationControls(source)
+            .Where(control => control.Path.Length == 2 && control.Path[0] == "focuser").Select(control => control.Path[1]).ToArray());
         foreach (var control in SimulationControls(source)) control.Read(status);
     }
     internal static JsonElement SimulationPatch(IEnumerable<KeyValuePair<HubSimulationControl, JsonElement>> selected)
