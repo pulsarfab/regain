@@ -1223,3 +1223,66 @@ controls/selection management, interactive NINA acceptance, isolated COM imports
 native ASCOM outputs, broader proxies and camera/coordination contracts, recovery,
 conformance and real-device trials, README/site/screenshots and final audit/merge.
 The full original plan remains in scope; milestone 3's complete gate is still open.
+
+## Isolated Windows COM worker boundary, 2026-10-06
+
+Reviewed the first three import interfaces against the pinned
+ASCOM.DeviceInterfaces/Exception.Library 7.1.2 declarations. Use the existing
+bounded accessory response envelope; do not add an HTTP hop or per-class host.
+The one hub ASCOM project reserves future native-output server work and builds
+distinct x86/x64 workers with separate intermediate directories.
+
+Findings and corrections:
+
+1. Defer activation until the first connect step so the Rust parent can attach
+   its process ownership guard first. The input reader dispatches serial requests
+   to one STA with a WPF message pump; activation/calls/RCW release share that STA.
+   Real COM fixture traces verify thread/apartment/bitness and a queued callback.
+2. Do not let reflection turn a caller-supplied name into an arbitrary operation.
+   Whitelist and type-check members/parameters; connection changes belong only
+   to handshake operations. SetupDialog, Action/Command and Dispose cannot be
+   reached by ordinary imports. Ignore vendor Console output, but any native
+   stdout corruption must still retire the parent transport.
+3. Negotiate legacy versus modern ownership. Borrow legacy/global connections
+   that were already open; claim the modern private connection even if shared
+   hardware is connected. Never fall back from rejected modern Connect to a
+   Connected setter. EOF cleanup consumes owned Disconnect once, without replay.
+4. Initial review found failed verification blocked cleanup of an acknowledged
+   connection. Permit Disconnect after a definitive verification failure while
+   continuing to reject uncertain connection changes. A fixture verifies owned
+   cleanup runs once; uncertain Connect/Disconnect tests prove no replay.
+5. A generic failed mutation can follow a hardware change. Return uncertain and
+   latch later worker writes; permit diagnostic reads. The shared actor must
+   still enforce its existing control leases, uncertainty latch and generation
+   fences when it adopts this worker. The worker does not replace that policy.
+   Only internal pre-dispatch checks and the defined ASCOM InvalidValue HRESULT
+   prove rejection; an arbitrary vendor ArgumentException remains uncertain.
+6. Preserve known ASCOM HRESULTs, including missing/unsupported/not-connected
+   and per-sensor unavailable errors, without returning arbitrary messages or
+   stack traces. Invalid/nonfinite input is rejected before dispatch, and
+   non-Boolean safety data is unavailable rather than coerced to permission.
+7. Treat malformed frames, duplicate keys, non-increasing IDs and unsupported
+   protocol versions as terminal. Bound requests/response size and parser depth.
+   EOF releases only acknowledged ownership and never calls vendor Dispose,
+   which can disconnect globally shared equipment.
+8. Use real private HKCU COM registration, not a production fixture activation
+   hook. Fail if the private CLSID/ProgID already exists; remove only those exact
+   registrations in finally. Explicit pointer-sized Win32 arguments keep cleanup
+   correct in a 64-bit Python host. Test fixture configuration/hooks reside only
+   in the fixture assembly, and no installed hardware driver is activated.
+
+Validation: `scripts/test-hub-com.ps1` passes both warnings-denied worker builds,
+the AnyCPU fixture build, and 16 test cases exercised in both x86/x64, logged in
+`artifacts/hub-com-worker-tests.log`. Actual COM cases cover metadata, switch
+writes, legacy/modern ownership, safety types, weather ages/canonical names/
+per-sensor errors/Refresh/AveragePeriod, sanitized HRESULTs, command uncertainty,
+EOF cleanup, missing registration, wrong bitness, malformed frames and stalled
+worker isolation. Test registration is removed afterward. No hardware is moved
+or disconnected. The normal Windows playbook now runs these fixtures.
+
+Native-editor checkpoint 2171bec passed complete push CI 37432217328 and PR CI
+37432225426 (all eight jobs each). This worker increment requires its own CI.
+Rust factory/adapter adoption, process-guard/deadline/cancellation and generation
+tests, cached safety expiry during a COM stall, mixed COM/native/network outputs,
+private payload/signing, native ASCOM outputs and every original remaining gate
+remain required. The host still rejects COM sources and does not advertise them.

@@ -535,6 +535,28 @@ Gate: NINA sees combined channels and dependable safety/weather status; a stalle
 COM driver cannot prevent cached safety evidence from expiring. Document exact
 tested NINA/ASCOM versions and supported imports.
 
+COM worker checkpoint: `Regain.Hub.ASCOM` now builds x86 and x64 private import
+workers for Switch, SafetyMonitor and ObservingConditions. Driver activation,
+all calls and RCW release run on one message-pumping STA. The bounded versioned
+newline protocol uses the existing accessory transport's outer response shape;
+activation waits for the parent's first request. Connection steps distinguish
+legacy borrowed connections and modern owned client connections; uncertain
+mutations and connection changes cannot replay. Driver HRESULTs survive without
+raw exception messages. Ordinary imports cannot invoke SetupDialog, arbitrary
+Action/Command methods, connection setters, or Dispose.
+
+`scripts/test-hub-com.ps1` builds both architectures with warnings denied and
+runs 16 real HKCU COM-fixture cases in each architecture, including STA/pump,
+legacy/modern ownership, typed safety, weather ages and partial errors, switch
+writes, malformed frames, failed verification cleanup, uncertain writes, missing
+registration and hung-worker isolation. It uses private fail-if-present fixture
+registration and removes those keys afterward; no installed equipment driver is
+activated. This is the worker boundary only: Rust source-factory adoption,
+parent-owned cancellation/deadlines/generation tests, packaging/signing and COM
+inputs through the actual safety/output policies are the next increment. The
+host still rejects COM sources and does not advertise them; this does not close
+milestone 3's import or full frontend gate.
+
 ### 4. Native ASCOM outputs and broader republishing
 
 - [ ] Add native ASCOM hub outputs with the shared setup styling and descriptors.
@@ -612,3 +634,4 @@ Keep existing device profiles and registrations compatible throughout migration.
 | 2026-10-05 | Added the shared .NET attachment/IPC client for native NINA and ASCOM, using the existing frontend assembly and Rust host helper. Reviewed pipe permissions, cancellation, unknown operations, bounded buffers, terminal errors and finalizer lifetime. | 73 NINA regression/contract tests pass, including 32 new hub-client checks; real net48 x86/x64 attachment/lease tests and warnings-denied builds pass. Fixed a shared-intermediate bitness cache exposed by the runtime fixture. Scalar checkpoint bb55313 passed both complete CI runs. Next: actual native NINA providers/setup and all original remaining gates. |
 | 2026-10-06 | Added native NINA Switch, SafetyMonitor and ObservingConditions providers, saved output identities, and a shared native output selector. Reviewed cancellation, stale objects, write/readback uncertainty, capability failures and selection-store conflicts. | 88 NINA tests pass, including 15 new native production-host/fault cases and actual NINA-adapter/Alpaca-publisher sharing. net48 x86/x64 selection/session/reconnect fixtures and warnings-denied builds pass. Both CI runs for client checkpoint 9006a99 passed completely. Native descriptor editing, interactive NINA acceptance, COM imports and all original remaining gates stay open. |
 | 2026-10-06 | Added the shared native descriptor editor, review/apply/reconciliation session and cached health. Corrected described scalar choices in both frontend readers, preserved invalid input/identities, fenced disposed sessions and reviewed uncertain saves. | 109 NINA tests, real net48 x86/x64 editor fixtures, warnings-denied builds, 29 Alpaca tests, JavaScript and four independent schema checks pass. An automated WPF workflow supplies verified simulation renders; Chrome verified editing/reviewing Connection Policy without equipment leases. Native-provider PR CI passed; the push fixture timing correction and this editor require new CI. Next: shared setup refinements, interactive NINA, isolated COM imports, native ASCOM and all remaining original milestones. No complete milestone 2–5 gate is closed by this checkpoint. |
+| 2026-10-06 | Added the isolated x86/x64 Windows COM import-worker boundary for Switch, SafetyMonitor and ObservingConditions. Reviewed STA/pump, connection ownership, terminal framing, sanitized HRESULTs and uncertain command/cleanup behavior. | Both warnings-denied builds and 16 real registered-COM cases in each architecture pass. Fixture registration is removed; hardware remains untouched. Native-editor 2171bec passed all eight jobs in both CI runs. Next: Rust COM adapter/factory integration, parent process ownership/deadline/generation and actual shared-policy tests, private worker packaging/signing, then all original remaining gates. No COM capability is advertised yet. |

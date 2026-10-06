@@ -805,6 +805,55 @@ and CoverCalibrator V2. Imports negotiate capabilities with older interfaces;
 unsupported operations stay unsupported. Verify each implemented output against
 its actual interface and conformance tool before declaring support.
 
+### Import-worker protocol checkpoint
+
+The private executable accepts `--import --prog-id PROGID --device-type TYPE
+--connection-policy POLICY --bitness x86|x64`. TYPE currently admits `switch`,
+`safetymonitor`, and `observingconditions`; POLICY is `managed` or
+`externallyManaged`. Bitness must match the worker before activation. The helper
+is built under `hub-ascom/x86|x64/Regain.Hub.ASCOM.exe` alongside the Rust workers.
+This checkpoint is not wired to the Rust source factory or shipped payload yet.
+
+Requests are UTF-8 newline JSON, fewer than 4096 bytes before the newline, with
+`protocol: 1`, a positive strictly increasing signed-64-bit `id`, and `operation`.
+Operations are `connectStep`, `disconnectStep`, `read`, `write`, and `refresh`.
+Only read/write accept `member` and a parameter object. Unknown fields/operations,
+duplicate fields, invalid UTF-8/JSON, depth over 32, oversized/truncated frames,
+and replayed request IDs terminate the stream. Do not try to resynchronize it.
+
+An acknowledged response, including a sanitized vendor error, is
+`{ "ok": true, "result": { "protocol": 1, "id": ID, "value": VALUE,
+"error": null, "connection": INFO } }`. Error is instead `{ "kind": KIND,
+"code": HRESULT_OR_NULL }`; no vendor message or stack is returned. KIND is
+`unsupported`, `invalidValue`, `disconnected`, `unavailable`, `permanent`,
+`transient`, or `uncertain`. INFO contains `deviceType`, nullable
+`interfaceVersion`, `method` (`legacy`/`async`), `ownsConnection`, `uncertain`
+(connection ambiguity), and `ready`. Replies are bounded below 1 MiB. The parent
+must validate reply identity/types, retire corrupt streams and uncertain
+generations, and map errors without replaying dispatched mutations.
+
+Connect steps activate, discover version, inspect connection, claim an owned
+connection if needed, wait for modern Connecting, and verify Connected. A missing
+InterfaceVersion reported as NotImplemented selects legacy connection; a modern
+Connect rejection never falls back to a setter. Externally managed imports never
+change connections. Legacy managed imports borrow an already connected driver;
+modern managed imports call Connect to own their private driver/client connection
+even when shared hardware reports Connected. Each ownership/cleanup change is
+consumed before invocation. Failed verification can still release acknowledged
+ownership on graceful shutdown; uncertain changes cannot be repeated. A generic
+failed switch write latches further writes until the worker is retired; reads
+remain possible for diagnosis.
+
+Whitelist common metadata and typed members of these three interfaces. Convert
+weather sensor keys to canonical ASCOM spelling, retain upstream ages, reject
+nonfinite readings and non-Boolean IsSafe. The worker does not call Dispose on
+imported drivers: implementations may disconnect shared hardware there. Release
+the RCW on its STA; graceful EOF attempts only acknowledged owned cleanup.
+Terminate a hung Regain worker through parent ownership/deadlines, never a shared
+vendor COM server. Forced worker termination cannot prove upstream Disconnect
+completed. Parent integration, cached evidence expiry, source generations,
+packaging and output policy/conformance acceptance remain required.
+
 Field Kit reference commit `8be3d38f0b04fa78d7ae36b460ed10656f259d0f` is
 Apache-2.0. Its endpoint state, aggregate, service, and integration tests supply
 behavioral cases; Regain adds cadence, generation, configuration, and multi-output
