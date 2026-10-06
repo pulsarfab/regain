@@ -245,6 +245,17 @@ impl FocuserSession {
     pub fn connected(&self) -> bool {
         self.check_generation().is_ok()
     }
+    pub(crate) fn cached_sample(
+        &self,
+        property: FocuserProperty,
+        now: Duration,
+    ) -> Result<FocuserSample, SourceError> {
+        let state = self.lease.source.snapshot();
+        if state.generation != self.generation {
+            return Err(disconnected());
+        }
+        cached_property(&state, property, now)
+    }
     pub(crate) fn device_state(&self, now: Duration) -> Values {
         if !self.connected() {
             return Values::new();

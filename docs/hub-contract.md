@@ -1297,8 +1297,9 @@ absolute coordinates with no automatic temperature compensation. ETA reports
 one-micrometre coordinates; EAF/FC3 optical step size remains unsupported. ETA's
 unsupported Halt remains unsupported. No hardware or simulation fallback is
 introduced. The runtime now admits native/Alpaca/Windows COM focuser proxies and
-exposes them through private IPC; virtual and dedicated simulated focuser inputs
-remain pending. Hello advertises `focuserOutputs`. Typed Get uses
+exposes them through private IPC. Virtual focuser inputs use the same typed
+controller; dedicated simulated focuser inputs remain pending. Hello advertises
+`focuserOutputs`. Typed Get uses
 `{"member":"focuser","property":"isMoving"}` (or another described property).
 Typed Put uses `moveFocuser` with integer `position`, `haltFocuser` with no arguments,
 or `focuserTempComp` with boolean `enabled`. Unknown fields, types and enum values
@@ -1350,7 +1351,7 @@ delegate capability, motion and source-generation checks to the Rust controller.
 Cancellation releases only the caller's session as needed, with no command replay
 or automatic Halt; Halt remains explicit because another client may own later
 motion. Coordination policies and long-lived acquisition/motion ownership remain
-separate unfinished plan gates. Virtual/dedicated simulation focuser imports,
+separate unfinished plan gates. Dedicated simulation focuser imports,
 conformance, interactive setup and hardware acceptance remain required.
 
 Windows COM focuser imports reuse the isolated x86/x64 STA worker, shared source
@@ -1364,3 +1365,15 @@ latches across clients and cannot trigger replay or automatic Halt. Relative
 sources retain unsupported Position and signed moves. Construction never activates
 a COM object; source leases retain managed/external connection ownership. Other
 COM device classes and camera image transport remain separate implementation gates.
+
+Virtual focuser inputs reference a local output's stable ID and retain a private
+inner client. Connection starts one supervised inner operation and polls actual
+readiness in bounded steps, allowing the inner connection deadline to exceed one
+outer request step. Close/reset cancels pending inner clients and releases only
+their leases. Live typed reads and commands delegate through the same controller,
+preserving relative coordinates, limits, optional errors and source uncertainty.
+Polling copies typed cached samples and their observed ages; it does not reread
+hardware or freshen an inner sample. A changed inner session retires the virtual
+transport. An existing outer session cannot adopt its replacement generation.
+No disconnect issues automatic Halt, and no uncertain command is replayed. The
+existing graph validation and transitive simulation marking apply to focusers.

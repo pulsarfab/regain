@@ -2312,3 +2312,51 @@ and remaining accessory proxies. Camera buffers/acquisition, coordination,
 conformance, resume/recovery, interactive/vendor/hardware acceptance, main
 reconciliation, documentation/site/screenshots and all original final gates remain
 required before merging PR21.
+
+### Virtual focuser composition (2026-10-06)
+
+Extended the existing virtual backend to typed focuser reads and Move/Halt/TempComp
+dispatch through the shared controller. Strict signed Int32 and boolean parameters,
+live capability/motion preflight, optional errors, leases and shared uncertainty are
+preserved. Polling uses a generation-checked cached sample accessor; boolean/integer
+values retain their types, missing/invalid properties retain errors and sample ages
+are propagated rather than refreshed by virtual polling. An invalid inner focuser
+session retires the virtual transport, fencing the old outer session. Disconnect
+does not Halt and uncertain writes do not replay.
+
+Review found that awaiting a complete inner focuser connection in Backend::connect
+would consume the outer request deadline. Focuser connect_step now starts one
+supervised inner operation and observes readiness in bounded steps. Existing scalar
+virtual connection semantics remain unchanged. Cancellation closes the private
+inner client and releases pending leases; existing graph validation and transitive
+simulation marking are reused.
+
+Seven private loopback tests cover two nested layers and a concurrent leaf client,
+Int32 positions, absolute travel/busy limits, signed relative moves with unsupported
+Position, optional properties, preserved ages/errors, a handshake longer than the
+outer request step with exactly one upstream version probe/open, cancelled pending
+connection cleanup, invalid motion reads before dispatch, and one uncertain Move
+with no replay/automatic Halt/generation adoption. Existing nine scalar composition
+cases also pass. Full Rust hub/Alpaca suites with production workers in explicit
+simulation, strict Clippy and Rust 1.89 all-target checks pass. Logs use
+`artifacts/hub-focuser-virtual-*.log`; no physical equipment is activated.
+An eighth test uses the production EAF worker with explicit simulation and proves
+motion completion and transitive simulation marking through both virtual layers,
+with no loopback fallback. It requires REGAIN_TEST_WORKERS and was run with that
+environment. All 180 warnings-denied NINA regressions and real net48 x86/x64 clients
+pass against the rebuilt host. These regression fixtures do not establish new
+interactive or vendor/hardware acceptance.
+
+The initial fixture omitted managed connection policy; the backend correctly
+refused to connect its disconnected externally managed mock. It now explicitly
+owns that private connection. A later malformed-motion assertion expected the
+live controller's Unavailable classification in the cache; the sampling adapter
+classifies malformed Alpaca wire values as Permanent, and virtual samples correctly
+preserve that error. The assertion is corrected without changing production
+classification or increasing any deadline.
+
+COM import/registration checkpoint 8c806d5 CI 37494625707 and 37494616586 remain
+active. Dedicated focuser simulation, shared typed setup, other device classes,
+cameras/acquisition, coordination and all original acceptance/final gates remain
+required. Current native/web source-choice gates are not evidence of completed
+typed setup; no general proxy capability is enabled by this increment.

@@ -3,6 +3,7 @@
 use crate::{
     alpaca::SampleRequest,
     config::{DeviceType, WeatherMetric},
+    focuser::{FocuserProperty, FocuserValue},
     ipc::{Get, Put},
     readout::invalid,
     runtime::{ClientSession, HubRuntime, OutputConnection},
@@ -43,10 +44,20 @@ impl VirtualBackend {
         }
     }
     fn connection(&self) -> Result<Arc<OutputConnection>, SourceError> {
-        self.client
+        let connection = self
+            .client
             .as_ref()
             .ok_or_else(disconnected)?
-            .connection(self.output)
+            .connection(self.output)?;
+        if self.kind == DeviceType::Focuser && !connection.focuser()?.connected() {
+            // Retire this virtual transport instead of adopting another inner
+            // generation for an already-connected outer session.
+            return Err(SourceError {
+                transport_lost: true,
+                ..disconnected()
+            });
+        }
+        Ok(connection)
     }
     fn close(&mut self) {
         if let Some(client) = self.client.take() {
@@ -91,6 +102,12 @@ fn sensor(args: &Values) -> Result<String, SourceError> {
 fn metric(member: &str) -> Result<WeatherMetric, SourceError> {
     serde_json::from_value(json!(member)).map_err(|_| unsupported())
 }
+fn focuser_property(member: &str) -> Result<FocuserProperty, SourceError> {
+    FocuserProperty::ALL
+        .into_iter()
+        .find(|property| property.member() == member)
+        .ok_or_else(unsupported)
+}
 impl Backend for VirtualBackend {
     fn simulated(&self) -> bool {
         self.simulated
@@ -112,6 +129,32 @@ impl Backend for VirtualBackend {
                 .await
         })
     }
+    fn connect_step(&mut self) -> BackendFuture<'_, bool> {
+        Box::pin(async {
+            if self.kind != DeviceType::Focuser {
+                return self.connect().await.map(|()| true);
+            }
+            if self.client.is_none() {
+                let runtime = self
+                    .binding
+                    .get()
+                    .and_then(Weak::upgrade)
+                    .ok_or_else(disconnected)?;
+                let client = runtime.client();
+                self.client = Some(client.clone());
+                // Start exactly one supervised inner connection. Poll readiness
+                // in bounded steps rather than consuming the outer request
+                // deadline while the inner transport negotiates its connection.
+                client.change_connection(self.output, true, true).await?;
+            }
+            let client = self.client.as_ref().expect("Created client");
+            if client.connecting(self.output)? {
+                return Ok(false);
+            }
+            self.connection()?;
+            Ok(true)
+        })
+    }
     fn disconnect(&mut self) -> BackendFuture<'_, ()> {
         Box::pin(async {
             self.close();
@@ -126,10 +169,10 @@ impl Backend for VirtualBackend {
             let connection = self.connection()?;
             if member == "interfaceversion" {
                 no_args(&args)?;
-                return Ok(json!(if self.kind == DeviceType::ObservingConditions {
-                    2
-                } else {
-                    3
+                return Ok(json!(match self.kind {
+                    DeviceType::ObservingConditions => 2,
+                    DeviceType::Focuser => 4,
+                    _ => 3,
                 }));
             }
             if member == "connected" {
@@ -188,6 +231,12 @@ impl Backend for VirtualBackend {
                         return Ok(json!(connection.weather()?.read(metric(&member)?)?.value));
                     }
                 },
+                DeviceType::Focuser => {
+                    no_args(&args)?;
+                    Get::Focuser {
+                        property: focuser_property(&member)?,
+                    }
+                }
                 _ => return Err(unsupported()),
             };
             connection.get(get).await
@@ -197,6 +246,33 @@ impl Backend for VirtualBackend {
         Box::pin(async move {
             let connection = self.connection()?;
             let put = match (self.kind, member.as_str()) {
+                (DeviceType::Focuser, "move") => {
+                    if args.len() != 1 {
+                        return Err(invalid("Expected only Position"));
+                    }
+                    Put::MoveFocuser {
+                        position: args
+                            .get("Position")
+                            .and_then(Value::as_i64)
+                            .and_then(|value| i32::try_from(value).ok())
+                            .ok_or_else(|| invalid("Expected Int32 Position"))?,
+                    }
+                }
+                (DeviceType::Focuser, "halt") => {
+                    no_args(&args)?;
+                    Put::HaltFocuser {}
+                }
+                (DeviceType::Focuser, "tempcomp") => {
+                    if args.len() != 1 {
+                        return Err(invalid("Expected only TempComp"));
+                    }
+                    Put::FocuserTempComp {
+                        enabled: args
+                            .get("TempComp")
+                            .and_then(Value::as_bool)
+                            .ok_or_else(|| invalid("Expected boolean TempComp"))?,
+                    }
+                }
                 (DeviceType::Switch, "cancelasync") => Put::CancelAsync { id: id(&args, 1)? },
                 (DeviceType::Switch, "setswitchvalue") => Put::SetSwitchValue {
                     id: id(&args, 2)?,
@@ -263,6 +339,32 @@ impl Backend for VirtualBackend {
                 return Ok(batch);
             }
             for request in &self.samples {
+                if self.kind == DeviceType::Focuser {
+                    let result = no_args(&request.parameters)
+                        .and_then(|()| focuser_property(&request.member))
+                        .and_then(|property| {
+                            connection
+                                .focuser()?
+                                .cached_sample(property, self.clock.now())
+                        });
+                    match result {
+                        Ok(sample) => {
+                            let value = match sample.value {
+                                FocuserValue::Boolean { value } => json!(value),
+                                FocuserValue::Integer { value } => json!(value),
+                                FocuserValue::Number { value } => json!(value),
+                            };
+                            batch.values.insert(request.key.clone(), value);
+                            batch
+                                .ages_seconds
+                                .insert(request.key.clone(), sample.age_seconds);
+                        }
+                        Err(error) => {
+                            batch.errors.insert(request.key.clone(), error);
+                        }
+                    }
+                    continue;
+                }
                 let result = match self.kind {
                     DeviceType::Switch if request.member == "getswitchvalue" => connection
                         .switch()?
