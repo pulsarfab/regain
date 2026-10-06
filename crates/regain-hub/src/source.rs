@@ -27,6 +27,9 @@ pub struct SampleBatch {
     pub values: Values,
     pub errors: BTreeMap<String, SourceError>,
     pub ages_seconds: BTreeMap<String, f64>,
+    /// Local virtual safety sources retain the oldest contributing safe request.
+    /// None means this poll itself acquired new evidence.
+    pub safety_observed_at: Option<Duration>,
     /// Merge only the supplied keys; false replaces the complete sample set.
     pub partial: bool,
     /// Another bounded request is needed to finish this polling pass.
@@ -1013,6 +1016,10 @@ impl Actor {
             Ok(batch)
         });
         let received = self.clock.now();
+        let observed = result.as_ref().ok().and_then(|b| b.safety_observed_at);
+        // Local adapters use the same monotonic clock. Never allow a delegated
+        // observation to be newer than the enclosing request.
+        let event_started = observed.map_or(started, |at| at.min(started));
         let retry_error = result
             .as_ref()
             .err()
@@ -1048,7 +1055,7 @@ impl Actor {
             revision: self.state.revision,
             generation: self.state.generation,
             sequence: self.state.sequence,
-            started,
+            started: event_started,
             received,
             result: result.clone().map(|batch| batch.values),
             cycle_exhausted: exhausted,

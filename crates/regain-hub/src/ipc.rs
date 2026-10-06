@@ -405,6 +405,7 @@ async fn dispatch_service(
             let mut description = describe_config(&[
                 "nativeSources",
                 "alpacaSources",
+                "virtualSources",
                 "writeReadout",
                 "simulation",
             ]);
@@ -501,62 +502,9 @@ async fn dispatch(
             output,
             property: Get::Connected {},
         } => json!(client.connection(output).is_ok()),
-        Command::Get { output, property } => {
-            let connection = client.connection(output)?;
-            match property {
-                Get::Connected {} => unreachable!(),
-                Get::IsSafe {} => json!(connection.safety()?.snapshot().is_safe),
-                Get::SafetyStatus {} => json!(connection.safety()?.snapshot()),
-                Get::MaxSwitch {} => json!(connection.switch_definition()?.max_switch()),
-                Get::GetSwitch { id } => json!(connection.switch()?.state(id)?),
-                Get::GetSwitchValue { id } => json!(connection.switch()?.value(id)?),
-                Get::GetSwitchName { id } => json!(connection.switch_definition()?.name(id)?),
-                Get::GetSwitchDescription { id } => {
-                    let channel = connection.switch_definition()?.channel(id)?;
-                    json!(
-                        channel
-                            .map(|c| format!("{}; source {}", c.units, c.readout.source()))
-                            .unwrap_or_else(|| "Removed channel".into())
-                    )
-                }
-                Get::CanWrite { id } => json!(connection.switch()?.can_write(id).await?),
-                Get::MinSwitchValue { id } => json!(
-                    connection
-                        .switch_definition()?
-                        .channel(id)?
-                        .map_or(0.0, |c| c.minimum)
-                ),
-                Get::MaxSwitchValue { id } => json!(
-                    connection
-                        .switch_definition()?
-                        .channel(id)?
-                        .map_or(1.0, |c| c.maximum)
-                ),
-                Get::SwitchStep { id } => json!(
-                    connection
-                        .switch_definition()?
-                        .channel(id)?
-                        .map_or(1.0, |c| c.step)
-                ),
-                Get::Measurement { metric } => json!(connection.weather()?.read(metric)?),
-                Get::TimeSinceLastUpdate { sensor } => {
-                    json!(connection.weather()?.time_since_last_update(&sensor)?)
-                }
-                Get::AveragePeriod {} => json!(connection.weather()?.average_period_hours()),
-            }
-        }
+        Command::Get { output, property } => client.connection(output)?.get(property).await?,
         Command::Put { output, property } => {
-            let connection = client.connection(output)?;
-            match property {
-                Put::SetSwitch { id, state } => connection.switch()?.set_state(id, state).await?,
-                Put::SetSwitchValue { id, value } => {
-                    connection.switch()?.set_value(id, value).await?
-                }
-                Put::AveragePeriod { hours } => {
-                    connection.weather()?.set_average_period_hours(hours)?
-                }
-                Put::Refresh {} => connection.weather()?.refresh().await?,
-            }
+            client.connection(output)?.put(property).await?;
             Value::Null
         }
     })

@@ -480,6 +480,45 @@ No inferred permission or default value substitutes for an unsuccessful probe.
 References: [Switch interface](https://ascom-standards.org/newdocs/switch.html) and
 [ObservingConditions interface](https://ascom-standards.org/newdocs/observingconditions.html).
 
+### Local output sources
+
+A source with `{"kind":"virtual","output":"OUTPUT_UUID"}` reads a configured
+output in this same hub runtime. Switch, SafetyMonitor, and ObservingConditions
+outputs can feed another output without a loopback HTTP listener or a second
+device connection. The graph validator rejects direct and indirect cycles before
+actors start. Standalone source construction rejects virtual sources unless it is
+bound to a shared output runtime.
+
+Each virtual source holds an internal client lease while connected. Direct and
+nested clients share the underlying controllers and actors, so closing one path
+does not disconnect another. Source control, actual write permissions, value
+grids, generation fences, and uncertain-write handling still apply at each layer.
+An ambiguous nested write is not replayed. Other clients holding the leaf session
+continue to see its uncertain-write latch. Shutdown closes internal clients and
+drains all actors; pending and retained internal operations count toward apply
+quiescence. A weak runtime binding avoids retaining an idle graph indefinitely.
+
+Scalar sampling forwards the selected reading's age, including through multiple
+layers. Missing or stale measurements stay errors. Weather Refresh reaches the
+underlying sources; configured averaging applies at each weather output, so
+chaining two averaging outputs deliberately adds two processing stages.
+
+Safety carries the oldest contributing safe request timestamp through local
+composition. Repeated polls of an unchanged inner result cannot add confirmations
+or extend the outer maximum age. An inner output in communication grace supplies
+failed-read evidence, preserving the outer grace/expiry policy without allowing
+aggregate recovery from a cached success. A newly constructed or reconnected policy ignores
+safe evidence predating its freshness fence and waits for a new observation. Each
+output keeps its configured confirmation and unsafe-transition policies; nested
+policies can therefore add response latency. Getters and capability probes cannot
+create safe evidence.
+
+Simulation marking propagates through the dependency graph, including mixed
+outputs. Setup inspection and scalar IPC use the same typed output operation
+handlers as virtual sources. This implementation covers local composition of the
+first three classes; it does not provide COM imports, camera proxies, or completed
+NINA/ASCOM/HTTP publication.
+
 ### Explicit scalar simulation
 
 `simulated` sources currently implement Switch, SafetyMonitor, and

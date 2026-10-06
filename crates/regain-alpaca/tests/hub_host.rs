@@ -413,6 +413,111 @@ async fn actual_hub_executable_shares_simulation_controls_and_restarts_safety_un
 }
 
 #[tokio::test]
+async fn actual_hub_executable_composes_outputs_and_applies_after_nested_lease_cleanup() {
+    use uuid::Uuid;
+    let mut config = HubConfig::empty();
+    let leaf = Uuid::new_v4();
+    let virtual_source = Uuid::new_v4();
+    let base = Uuid::new_v4();
+    let output = Uuid::new_v4();
+    config.sources.push(
+        serde_json::from_value(json!({"id":leaf,"label":"Simulation switch",
+        "backend":{"kind":"simulated","deviceType":"switch"},"polling":{"pollSeconds":0.1}}))
+        .unwrap(),
+    );
+    config.sources.push(
+        serde_json::from_value(json!({"id":virtual_source,"label":"Local switch output",
+        "backend":{"kind":"virtual","output":base},"polling":{"pollSeconds":0.1}}))
+        .unwrap(),
+    );
+    for (id, number, source, channel) in [(base, 0, leaf, 1), (output, 1, virtual_source, 0)] {
+        config.outputs.push(
+            serde_json::from_value(json!({"id":id,"number":number,"label":"Composed switch",
+            "device":{"kind":"switch","channels":[{"id":Uuid::new_v4(),"number":0,"label":"Level",
+                "readout":{"kind":"channel","source":source,"channel":channel},"writable":true,
+                "minimum":0,"maximum":100,"step":1,"units":"%"}]}}))
+            .unwrap(),
+        );
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("hub.json");
+    std::fs::write(&path, serde_json::to_vec(&config).unwrap()).unwrap();
+    let endpoint = Endpoint::for_config(&path).unwrap();
+    let mut owner = host(&path).spawn().unwrap();
+    probe(&endpoint, config.instance_id, Duration::from_secs(5))
+        .await
+        .unwrap();
+    let mut stream = endpoint.connect(Duration::from_secs(5)).await.unwrap();
+    request(&mut stream, 1, json!({"op":"hello"})).await;
+    let metadata = request(&mut stream, 2, json!({"op":"describeConfig"})).await;
+    assert!(
+        metadata["capabilities"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("virtualSources"))
+    );
+    let mut candidate = request(&mut stream, 3, json!({"op":"getConfig"})).await;
+    let revision = candidate["revision"].clone();
+    candidate["outputs"][1]["label"] = json!("Renamed nested output");
+    request(&mut stream, 4, json!({"op":"connect","output":output})).await;
+    request(&mut stream, 5, json!({"op":"put","output":output,"property":{"member":"setSwitchValue","id":0,"value":42}})).await;
+    assert_eq!(
+        request(&mut stream, 6, json!({"op":"sourceStatus","source":leaf})).await["simulation"]["switchValues"]
+            ["1"],
+        42.0
+    );
+    assert_eq!(
+        reply(
+            &mut stream,
+            7,
+            json!({"op":"applyConfig","expectedRevision":revision,"candidate":candidate})
+        )
+        .await["error"]["code"],
+        "connected"
+    );
+    request(&mut stream, 8, json!({"op":"disconnect","output":output})).await;
+    let mut id = 9;
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let a = request(&mut stream, id, json!({"op":"sourceStatus","source":leaf})).await;
+            id += 1;
+            let b = request(
+                &mut stream,
+                id,
+                json!({"op":"sourceStatus","source":virtual_source}),
+            )
+            .await;
+            id += 1;
+            if a["leaseCount"] == 0 && b["leaseCount"] == 0 {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap();
+    let applied = request(
+        &mut stream,
+        id,
+        json!({"op":"applyConfig","expectedRevision":revision,"candidate":candidate}),
+    )
+    .await;
+    assert_eq!(applied["ready"], true);
+    id += 1;
+    request(&mut stream, id, json!({"op":"connect","output":output})).await;
+    id += 1;
+    request(&mut stream, id, json!({"op":"put","output":output,"property":{"member":"setSwitchValue","id":0,"value":27}})).await;
+    id += 1;
+    assert_eq!(
+        request(&mut stream, id, json!({"op":"sourceStatus","source":leaf})).await["simulation"]["switchValues"]
+            ["1"],
+        27.0
+    );
+    drop(stream);
+    owner.kill().await.unwrap();
+}
+
+#[tokio::test]
 async fn actual_hub_executable_probes_an_existing_owner_and_recovers_after_process_exit() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("hub.json");

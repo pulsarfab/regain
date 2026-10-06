@@ -299,6 +299,9 @@ impl Endpoint {
 pub struct HubSnapshot {
     pub is_safe: bool,
     pub endpoints: BTreeMap<Uuid, Snapshot>,
+    /// Internal evidence timestamp for local composition; never persisted.
+    #[serde(skip)]
+    pub(crate) safe_observed_at: Option<Duration>,
 }
 
 pub struct SafetyHub {
@@ -360,6 +363,15 @@ impl SafetyHub {
         HubSnapshot {
             is_safe: self.aggregate_safe,
             endpoints,
+            safe_observed_at: self
+                .aggregate_safe
+                .then(|| {
+                    self.endpoints
+                        .values()
+                        .filter_map(|s| s.last_safe_start)
+                        .min()
+                })
+                .flatten(),
         }
     }
 }
@@ -389,6 +401,9 @@ pub struct SafetyRuntime {
     expiry: tokio::task::JoinHandle<()>,
 }
 impl SafetyRuntime {
+    pub(crate) fn now(&self) -> Duration {
+        self.clock.now()
+    }
     pub fn new(mut hub: SafetyHub, clock: Arc<dyn Clock>) -> Self {
         let initial = hub.snapshot(clock.now());
         let hub = Arc::new(Mutex::new(hub));

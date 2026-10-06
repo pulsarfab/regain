@@ -120,12 +120,23 @@ pub fn build_sources(
     credentials: &dyn CredentialProvider,
     clock: Arc<dyn Clock>,
 ) -> Result<Arc<SourceRegistry>, Vec<FieldError>> {
+    build_sources_bound(config, native, credentials, clock, None)
+}
+
+pub(crate) fn build_sources_bound(
+    config: &HubConfig,
+    native: &NativeRuntime,
+    credentials: &dyn CredentialProvider,
+    clock: Arc<dyn Clock>,
+    binding: Option<crate::virtual_source::Binding>,
+) -> Result<Arc<SourceRegistry>, Vec<FieldError>> {
     let mut plans = source_plans(config)?;
+    let simulated = simulated_sources(config, native.simulate);
     let mut effective = config.clone();
     for source in &mut effective.sources {
         source.polling = plans[&source.id].source.polling.clone();
     }
-    SourceRegistry::build(&effective, clock, |source| {
+    SourceRegistry::build(&effective, clock.clone(), |source| {
         let plan = plans.remove(&source.id).expect("Validated source plan");
         match &source.backend {
             SourceBackend::Native { .. } => Ok(Box::new(NativeAccessoryBackend::new(
@@ -150,14 +161,61 @@ pub fn build_sources(
                 ErrorKind::Unsupported,
                 "The isolated COM source adapter is not available in this host yet",
             )),
-            SourceBackend::Virtual { .. } => Err(SourceError::new(
-                ErrorKind::Unsupported,
-                "Virtual source construction requires the shared output runtime",
-            )),
+            SourceBackend::Virtual { output } => {
+                let binding = binding.clone().ok_or_else(|| {
+                    SourceError::new(
+                        ErrorKind::Unsupported,
+                        "Virtual source construction requires the shared output runtime",
+                    )
+                })?;
+                Ok(Box::new(crate::virtual_source::VirtualBackend::new(
+                    binding,
+                    *output,
+                    config.source_type(source.id).expect("Validated type"),
+                    plan.samples,
+                    clock.clone(),
+                    simulated.contains(&source.id),
+                )))
+            }
             SourceBackend::Simulated { device_type } => Ok(Box::new(
                 crate::simulated::SimulatedBackend::new(*device_type, plan.samples)?,
             )),
         }
     })
     .map(Arc::new)
+}
+
+// Propagate once per graph level, rather than recursively traversing shared
+// subgraphs exponentially. Validation has already rejected cycles/missing nodes.
+fn simulated_sources(
+    config: &HubConfig,
+    native_simulated: bool,
+) -> std::collections::BTreeSet<Uuid> {
+    let mut marked: std::collections::BTreeSet<_> = config
+        .sources
+        .iter()
+        .filter(|s| {
+            matches!(s.backend, SourceBackend::Simulated { .. })
+                || native_simulated && matches!(s.backend, SourceBackend::Native { .. })
+        })
+        .map(|s| s.id)
+        .collect();
+    let dependencies: BTreeMap<_, _> = config
+        .outputs
+        .iter()
+        .map(|o| (o.id, o.device.sources()))
+        .collect();
+    loop {
+        let previous = marked.len();
+        for source in &config.sources {
+            if let SourceBackend::Virtual { output } = source.backend
+                && dependencies[&output].iter().any(|id| marked.contains(id))
+            {
+                marked.insert(source.id);
+            }
+        }
+        if marked.len() == previous {
+            return marked;
+        }
+    }
 }

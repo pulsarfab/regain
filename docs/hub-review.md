@@ -752,3 +752,58 @@ Intel/ARM64 CI; its Windows job is still running at this review.
 Virtual sources, frontend attachment/publication, OS resume, COM imports,
 NINA/ASCOM outputs, broader proxies and coordination, conformance/hardware checks,
 documentation/screenshots, and final merge remain open under the original plan.
+
+
+## 2026-10-05: local virtual sources
+
+Implemented in-process Switch/SafetyMonitor/ObservingConditions composition,
+bound once to the applied runtime through a weak reference. Internal clients use
+the same output controllers and source actors as frontend clients. Extracted typed
+scalar dispatch into shared handlers instead of duplicating IPC behavior.
+
+Review findings and corrections:
+
+1. Recursively recomputing simulation markers can revisit shared subgraphs
+   exponentially. Propagate markers in bounded graph passes after cycle validation.
+   Standalone factories reject unbound virtual sources before actors start.
+2. A virtual read must not refresh stale evidence. Switch/Weather samples carry
+   their existing ages through every layer. Weather metadata stays available when
+   the reading is stale; Refresh reaches the actual source. Averaging remains an
+   explicit per-output stage, including when multiple stages are chained.
+3. Polling an already-safe inner policy must not manufacture confirmations or a
+   longer lifetime. Propagate the oldest contributing safe request timestamp.
+   Tests prove three confirmations cannot arise from one cached inner observation
+   and a shorter outer safe deadline expires while the inner output is still safe.
+4. A newly connected policy could accept old inner evidence on its first virtual
+   poll. Capture a minimum evidence time at construction, generation transitions,
+   and event loss. Ignore earlier safe evidence; do not seed new permission from
+   a cache. Existing generation and lost-unsafe-event regressions remain passing.
+5. Connected internal clients temporarily retain the runtime. Close them on reset,
+   disconnect, and drop; retain the weak binding while idle. Tests prove complete
+   reference release after normal disconnect, active-graph shutdown, and cancelled
+   nested connection attempts against a stalled loopback source. Other direct
+   clients keep their source connection when a nested client disconnects.
+6. Preserve uncertainty and actual write permissions at every layer. A nested
+   ambiguous write changes the simulated leaf once, blocks subsequent commands,
+   and leaves another direct client's leaf uncertainty latch intact. No operation
+   is automatically replayed to recover the virtual adapter.
+7. Inner grace permission is not a new successful observation. A loopback HTTP
+   failure test verifies the virtual source conveys read failure through the outer
+   grace/expiry policy, clears recovery confirmation, and recovers only after fresh
+   upstream evidence resumes.
+8. Internal connections participate in apply quiescence. A production-executable
+   test rejects an edit while connected, drains nested leases after disconnect,
+   applies the edit, and uses the same IPC stream against the replacement graph.
+
+Validation: 169 hub tests plus the endpoint process fixture and 16 Alpaca tests
+pass locally, including nine new virtual-source cases and one new production-host
+case. Clippy with warnings denied, Rust 1.89.0, generated-contract freshness, and
+transport/core/hub/Alpaca package verification pass. The package check used the
+fresh target/hub-virtual-final-package directory. Simulation checkpoint 6a607e5 passes
+all four portable CI platforms; Windows remains in progress at this review.
+This new checkpoint still requires its own CI results.
+
+Frontend automatic attachment/reconnection, OS resume, unconfigured discovery,
+Alpaca publication/setup, COM imports, native NINA/ASCOM outputs, broader device
+proxies and camera/focuser coordination, conformance/hardware checks, documentation
+and screenshots, and final audit/merge remain required. Milestone 2 is not complete.

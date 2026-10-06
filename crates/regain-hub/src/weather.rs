@@ -470,6 +470,25 @@ pub struct WeatherSession {
     _leases: Vec<SourceLease>,
 }
 impl WeatherSession {
+    pub(crate) fn sensor_description(&self, property: &str) -> Result<String, SourceError> {
+        let metric: WeatherMetric =
+            serde_json::from_value(serde_json::Value::from(property.to_ascii_lowercase()))
+                .map_err(|_| invalid("Unknown weather property"))?;
+        if !self
+            .output
+            .engine
+            .lock()
+            .unwrap()
+            .measurements
+            .contains_key(&metric)
+        {
+            return Err(SourceError::new(
+                ErrorKind::Unsupported,
+                "Weather measurement is not configured",
+            ));
+        }
+        Ok(format!("Regain {} ({})", metric.property(), metric.unit()))
+    }
     pub async fn refresh(&self) -> Result<(), SourceError> {
         let mut requests = tokio::task::JoinSet::new();
         for lease in &self._leases {

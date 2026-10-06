@@ -41,7 +41,12 @@ impl SafetyOutput {
             // fall between establishing the lease and listening for its result.
             let events = source.subscribe();
             let status = source.status();
-            inputs.push((source, events, status, (fence(&state), state.sequence)));
+            inputs.push((
+                source,
+                events,
+                status,
+                (fence(&state), state.sequence, clock.now()),
+            ));
         }
         let runtime = Arc::new(SafetyRuntime::new(SafetyHub::new(endpoints), clock));
         let (stop, _) = watch::channel(false);
@@ -89,13 +94,13 @@ async fn consume(
     mut status: watch::Receiver<SourceSnapshot>,
     runtime: Arc<SafetyRuntime>,
     mut stop: watch::Receiver<bool>,
-    initial: (Fence, u64),
+    initial: (Fence, u64, std::time::Duration),
 ) {
     let lease = Uuid::new_v4();
     let id = source.snapshot().source;
     // Start at the policy's construction epoch. Another client may connect
     // before this task is polled; the loop must observe that transition too.
-    let (mut current, mut watermark) = initial;
+    let (mut current, mut watermark, mut not_before) = initial;
     // Always finish acquisition before releasing, including when output drop
     // races a stalled connect. The actor supplies a bounded connection deadline.
     if source.acquire(lease).await.is_err() {
@@ -109,6 +114,7 @@ async fn consume(
         if current != fence(&latest) {
             current = fence(&latest);
             watermark = 0;
+            not_before = runtime.now();
             if runtime.reset_source(id, current).is_err() {
                 break;
             }
@@ -126,6 +132,7 @@ async fn consume(
                     let latest = source.snapshot();
                     current = fence(&latest);
                     watermark = latest.sequence;
+                    not_before = runtime.now();
                     if runtime.reset_source(id, current).is_err() { break; }
                 }
                 Ok(event) => {
@@ -137,6 +144,7 @@ async fn consume(
                     if current != event_fence {
                         current = event_fence;
                         watermark = 0;
+                        not_before = runtime.now();
                         if runtime.reset_source(id, current).is_err() { break; }
                     }
                     if event.sequence <= watermark { continue; }
@@ -150,6 +158,9 @@ async fn consume(
                         }
                         Err(_) => Outcome::Fault,
                     };
+                    // A local virtual poll may expose still-valid evidence from
+                    // before this output existed. It cannot seed a new policy.
+                    if outcome == Outcome::Safe && event.started < not_before { continue; }
                     runtime.observe(id, Observation { fence: current, sequence: event.sequence,
                         request_started: event.started, received: event.received, outcome });
                 }
@@ -232,7 +243,7 @@ mod tests {
             source.status(),
             runtime.clone(),
             stopped,
-            (fence(&original), original.sequence),
+            (fence(&original), original.sequence, Duration::ZERO),
         ));
         settle().await;
         assert!(
@@ -313,7 +324,7 @@ mod tests {
             source.status(),
             runtime.clone(),
             stopped,
-            (fence(&state), state.sequence),
+            (fence(&state), state.sequence, Duration::ZERO),
         ));
         settle().await;
         assert!(

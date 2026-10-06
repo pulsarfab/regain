@@ -2,7 +2,7 @@
 //! and connection leases belong to the host, never to frontend-supplied IDs.
 use crate::{
     config::{DeviceType, HubConfig, SafetyMember, VirtualDevice},
-    factory::{CredentialProvider, build_sources},
+    factory::{CredentialProvider, build_sources_bound},
     native::NativeRuntime,
     parameters::FieldError,
     safety::Clock,
@@ -66,8 +66,19 @@ impl HubRuntime {
         clock: Arc<dyn Clock>,
     ) -> Result<Arc<Self>, Vec<FieldError>> {
         validate_outputs(&config)?;
-        let registry = build_sources(&config, native, credentials, clock.clone())?;
-        Self::from_registry(config, registry, clock)
+        let binding = Arc::new(std::sync::OnceLock::new());
+        let registry = build_sources_bound(
+            &config,
+            native,
+            credentials,
+            clock.clone(),
+            Some(binding.clone()),
+        )?;
+        let runtime = Self::from_registry(config, registry, clock)?;
+        binding
+            .set(Arc::downgrade(&runtime))
+            .expect("New runtime binding");
+        Ok(runtime)
     }
 
     /// Inject a registry for another host adapter or fault tests. The registry

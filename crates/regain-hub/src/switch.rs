@@ -1,7 +1,7 @@
 //! Stable switch slots and source-authorized writes. Scalar gauges are read-only.
 use crate::{
     config::{HubConfig, Readout, SwitchChannel, VirtualDevice},
-    readout::{SourceLease, invalid, scalar, unavailable},
+    readout::{ScalarSample, SourceLease, invalid, scalar, unavailable},
     safety::Clock,
     source::{ErrorKind, SourceError, SourceRegistry, Values},
 };
@@ -149,6 +149,9 @@ impl SwitchSession {
             .ok_or_else(|| unavailable("This channel was removed and its number is reserved"))
     }
     pub fn value(&self, number: u32) -> Result<f64, SourceError> {
+        Ok(self.sample(number)?.value)
+    }
+    pub(crate) fn sample(&self, number: u32) -> Result<ScalarSample, SourceError> {
         let channel = self.active(number)?;
         let sample = scalar(
             &self.leases[&channel.readout.source()].source.snapshot(),
@@ -161,7 +164,7 @@ impl SwitchSession {
         if sample.value < channel.minimum || sample.value > channel.maximum {
             return Err(unavailable("Switch reading is outside its declared bounds"));
         }
-        Ok(sample.value)
+        Ok(sample)
     }
     pub fn state(&self, number: u32) -> Result<bool, SourceError> {
         Ok(self.value(number)? != self.active(number)?.minimum)
