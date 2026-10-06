@@ -76,6 +76,8 @@ public sealed partial class HubConfigurationWindow
             lines.Add((d.GetProperty("isSafe").GetBoolean() ? "SAFE" : "UNSAFE") + " · " + (d.GetProperty("controllerActive").GetBoolean() ? "Controller active" : "Controller inactive"));
             foreach (var member in d.GetProperty("members").EnumerateArray()) {
                 var s = member.GetProperty("decision"); var policy = member.GetProperty("policy");
+                lines.Add(PollingSummary(member.GetProperty("health")));
+                if (member.GetProperty("health").GetProperty("writeUncertain").GetBoolean()) lines.Add("Retained uncertain write; reconcile equipment state before another command.");
                 if (!member.GetProperty("enabled").GetBoolean()) { lines.Add(member.GetProperty("source").GetString() + ": Disabled; no vote."); continue; }
                 var raw = s.GetProperty("rawIsSafe");
                 lines.Add(member.GetProperty("source").GetString() + ": " + s.GetProperty("phase").GetString() + " · raw " + (raw.ValueKind == JsonValueKind.Null ? "unknown" : raw.GetBoolean() ? "safe" : "unsafe") + " · effective " + (s.GetProperty("permitsSafe").GetBoolean() ? "safe" : "unsafe") + " · " + s.GetProperty("reason").GetString());
@@ -88,8 +90,19 @@ public sealed partial class HubConfigurationWindow
                 if (sample.GetProperty("state").GetString() == "available") { var reading = sample.GetProperty("reading"); lines.Add(label + ": " + reading.GetProperty("value") + " " + (kind == "switch" ? item.GetProperty("units").GetString() : reading.GetProperty("unit").GetString()) + " · age " + Number(reading.GetProperty("ageSeconds")) + " s"); }
                 else lines.Add(label + ": unavailable · " + sample.GetProperty("error").GetProperty("message").GetString());
                 if (kind == "switch") lines.Add("Configured " + (item.GetProperty("configuredWritable").GetBoolean() ? "writable" : "read-only") + "; operational write capability is checked separately." + (item.GetProperty("health").GetProperty("writeUncertain").GetBoolean() ? " Retained uncertain write." : ""));
+                if (kind == "switch") lines.Add(PollingSummary(item.GetProperty("health")));
+                else foreach (var health in item.GetProperty("sources").EnumerateArray()) lines.Add(PollingSummary(health));
             }
         }
         lines.Add("Observed cache only. No equipment connection or safety confirmation is started."); return string.Join("\n", lines);
+    }
+    private static string PollingSummary(JsonElement health)
+    {
+        var p = health.GetProperty("polling"); var reason = p.GetProperty("reason"); var next = p.GetProperty("nextPollAfterSeconds"); var exhausted = p.GetProperty("lastCycleExhausted");
+        string Number(JsonElement value, string format) => value.GetDouble().ToString(format, CultureInfo.InvariantCulture);
+        return "Source " + health.GetProperty("source").GetString() + ": polling " + p.GetProperty("phase").GetString() + (reason.ValueKind == JsonValueKind.Null ? "" : " · " + reason.GetString()) +
+            ". Host observation " + Number(p.GetProperty("observedSeconds"), "0.0") + " s; " + (next.ValueKind == JsonValueKind.Null ? "no scheduled wait reported" : "next poll scheduled in " + Number(next, "0.000") + " s at that observation; actor work may delay it") +
+            ". Read attempts started " + p.GetProperty("attemptsStarted") + "/" + p.GetProperty("attemptsPerCycle") + "; last " + p.GetProperty("lastAttempt") +
+            (exhausted.ValueKind == JsonValueKind.Null ? "" : exhausted.GetBoolean() ? " (cycle complete)" : " (cycle pending)") + "; backoff failures " + p.GetProperty("backoffFailures") + ".";
     }
 }

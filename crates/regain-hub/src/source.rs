@@ -163,6 +163,72 @@ pub trait Backend: Send {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub enum PollPhase {
+    Idle,
+    Connecting,
+    Sampling,
+    Waiting,
+    Suspended,
+    Stopped,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub enum PollReason {
+    Initial,
+    Connection,
+    Retry,
+    Periodic,
+    Continuation,
+    Refresh,
+    StateChanged,
+}
+
+/// An actor observation, not a live countdown or an equipment command retry.
+#[derive(Clone, Debug, Serialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PollingStatus {
+    pub phase: PollPhase,
+    /// Local monotonic time when the actor published this observation.
+    #[schemars(range(min = 0.0))]
+    pub observed_seconds: f64,
+    pub reason: Option<PollReason>,
+    /// Remaining wait at observedSeconds. Other actor work may delay dispatch.
+    /// Null while inactive/in flight, or if the deadline is unrepresentable.
+    #[schemars(range(min = 0.0))]
+    pub next_poll_after_seconds: Option<f64>,
+    /// Started attempts in the current cycle, including an in-flight request.
+    /// Zero after cycle completion or exhaustion.
+    pub attempts_started: u32,
+    #[schemars(range(min = 1, max = 10))]
+    pub attempts_per_cycle: u32,
+    pub last_attempt: u32,
+    pub last_cycle_exhausted: Option<bool>,
+    pub backoff_failures: u32,
+}
+impl PollingStatus {
+    fn idle(policy: &PollPolicy, now: Duration) -> Self {
+        Self {
+            phase: PollPhase::Idle,
+            observed_seconds: now.as_secs_f64(),
+            reason: None,
+            next_poll_after_seconds: None,
+            attempts_started: 0,
+            attempts_per_cycle: policy.attempts_per_cycle,
+            last_attempt: 0,
+            last_cycle_exhausted: None,
+            backoff_failures: 0,
+        }
+    }
+}
+impl Default for PollingStatus {
+    fn default() -> Self {
+        Self::idle(&PollPolicy::default(), Duration::ZERO)
+    }
+}
+
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SourceSnapshot {
@@ -185,6 +251,7 @@ pub struct SourceSnapshot {
     pub completed_passes: u64,
     pub sampled_at_seconds: Option<f64>,
     pub error: Option<SourceError>,
+    pub polling: PollingStatus,
 }
 impl SourceSnapshot {
     /// A cached scalar reader needs only its selected keys. Do not copy vendor
@@ -225,6 +292,7 @@ impl SourceSnapshot {
             completed_passes: self.completed_passes,
             sampled_at_seconds: self.sampled_at_seconds,
             error: self.error.clone(),
+            polling: self.polling.clone(),
         }
     }
 }
@@ -410,6 +478,7 @@ impl SourceHandle {
             completed_passes: 0,
             sampled_at_seconds: None,
             error: None,
+            polling: PollingStatus::idle(&policy, clock.now()),
         };
         let (commands, receiver) = mpsc::channel(16);
         let (snapshot, reader) = watch::channel(initial.clone());
@@ -436,6 +505,11 @@ impl SourceHandle {
                 attempt: 0,
                 backoff_failures: 0,
                 retrying: false,
+                poll_operation: None,
+                poll_reason: Some(PollReason::Initial),
+                last_attempt: 0,
+                last_cycle_exhausted: None,
+                stopped: false,
                 connection_started: None,
                 // Construction opens no device; an unused prepared runtime has
                 // no backend cleanup to dispatch when validation is abandoned.
@@ -595,6 +669,11 @@ struct Actor {
     attempt: u32,
     backoff_failures: u32,
     retrying: bool,
+    poll_operation: Option<PollPhase>,
+    poll_reason: Option<PollReason>,
+    last_attempt: u32,
+    last_cycle_exhausted: Option<bool>,
+    stopped: bool,
     connection_started: Option<Instant>,
     disconnect_result: Option<Result<(), SourceError>>,
     completion: watch::Sender<Option<Result<(), SourceError>>>,
@@ -608,6 +687,38 @@ impl Actor {
         self.state.simulation = self.backend.simulation_status();
         self.state.write_uncertain = self.write_uncertain;
         self.state.lease_count = self.leases.len();
+        let phase = if self.stopped {
+            PollPhase::Stopped
+        } else if let Some(operation) = self.poll_operation {
+            operation
+        } else if self.leases.is_empty() {
+            PollPhase::Idle
+        } else if self.next_poll.is_some() {
+            PollPhase::Waiting
+        } else {
+            PollPhase::Suspended
+        };
+        self.state.polling = PollingStatus {
+            phase,
+            observed_seconds: self.clock.now().as_secs_f64(),
+            reason: (!matches!(phase, PollPhase::Idle | PollPhase::Stopped))
+                .then_some(self.poll_reason)
+                .flatten(),
+            next_poll_after_seconds: (phase == PollPhase::Waiting)
+                .then(|| {
+                    self.next_poll.map(|deadline| {
+                        deadline
+                            .saturating_duration_since(Instant::now())
+                            .as_secs_f64()
+                    })
+                })
+                .flatten(),
+            attempts_started: self.attempt,
+            attempts_per_cycle: self.policy.attempts_per_cycle,
+            last_attempt: self.last_attempt,
+            last_cycle_exhausted: self.last_cycle_exhausted,
+            backoff_failures: self.backoff_failures,
+        };
         self.snapshot.send_replace(self.state.clone());
     }
     fn fault(&mut self, error: SourceError) {
@@ -632,6 +743,8 @@ impl Actor {
         let started = *self.connection_started.get_or_insert_with(Instant::now);
         let remaining = Duration::from_secs_f64(self.policy.connection_timeout_seconds)
             .saturating_sub(started.elapsed());
+        self.poll_operation = Some(PollPhase::Connecting);
+        self.publish();
         let result = if remaining.is_zero() {
             Err(SourceError::timeout())
         } else {
@@ -639,6 +752,7 @@ impl Actor {
                 .await
                 .unwrap_or_else(|_| Err(SourceError::timeout()))
         };
+        self.poll_operation = None;
         match result {
             Ok(false) => {
                 let error =
@@ -696,6 +810,10 @@ impl Actor {
         self.attempt = 0;
         self.backoff_failures = 0;
         self.retrying = false;
+        self.next_poll = None;
+        self.poll_reason = None;
+        self.last_attempt = 0;
+        self.last_cycle_exhausted = None;
         self.backend.restart_poll();
         self.state.error = result.as_ref().err().cloned();
         self.disconnect_result = Some(result.clone());
@@ -738,6 +856,7 @@ impl Actor {
         self.leases.clear();
         let result = self.disconnect().await;
         self.state.error = Some(result.as_ref().err().cloned().unwrap_or_else(closed));
+        self.stopped = true;
         self.publish();
         self.completion.send_replace(Some(result));
     }
@@ -771,6 +890,7 @@ impl Actor {
                     self.backoff_failures = 0;
                     self.backend.restart_poll();
                     self.next_poll = Some(Instant::now());
+                    self.poll_reason = Some(PollReason::StateChanged);
                     // Do not clear an uncertain-write latch through test controls.
                     self.publish();
                 }
@@ -812,6 +932,7 @@ impl Actor {
                     Ok(()) => {
                         self.backend.restart_poll();
                         self.next_poll = Some(Instant::now());
+                        self.poll_reason = Some(PollReason::Refresh);
                     }
                     Err(error) if error.kind != ErrorKind::Busy => {
                         if error.transport_lost {
@@ -822,6 +943,7 @@ impl Actor {
                             ErrorKind::Transient | ErrorKind::Disconnected | ErrorKind::Uncertain
                         ) {
                             self.retrying = true;
+                            self.poll_reason = Some(PollReason::Retry);
                             self.next_poll = Instant::now().checked_add(
                                 error
                                     .retry_after
@@ -834,6 +956,7 @@ impl Actor {
                     }
                     _ => {}
                 }
+                self.publish();
                 let _ = reply.send(result);
             }
             Command::Acquire { lease, reply } => {
@@ -875,6 +998,13 @@ impl Actor {
                         }
                     };
                     self.next_poll = Instant::now().checked_add(delay);
+                    self.poll_reason = Some(if self.connection_started.is_some() {
+                        PollReason::Connection
+                    } else if self.retrying {
+                        PollReason::Retry
+                    } else {
+                        PollReason::Initial
+                    });
                 }
                 // Offline sources retain their lease and are polled for recovery.
                 // A SafetyMonitor output can remain connected while unsafe.
@@ -1031,6 +1161,7 @@ impl Actor {
                     self.backend.restart_poll();
                     if !self.retrying {
                         self.next_poll = Some(Instant::now());
+                        self.poll_reason = Some(PollReason::StateChanged);
                     }
                     self.publish();
                 }
@@ -1046,10 +1177,18 @@ impl Actor {
             .is_err_and(|error| error.kind == ErrorKind::Connecting)
         {
             self.next_poll = Some(Instant::now() + Duration::from_millis(100));
+            self.poll_reason = Some(PollReason::Connection);
+            self.publish();
             return;
         }
         self.attempt += 1;
+        self.last_attempt = self.attempt;
+        self.last_cycle_exhausted = None;
         let sampled = connection.is_ok();
+        if sampled {
+            self.poll_operation = Some(PollPhase::Sampling);
+            self.publish();
+        }
         let result = match connection {
             Err(e) => Err(e),
             Ok(()) => timeout(self.deadline(), self.backend.sample())
@@ -1060,6 +1199,7 @@ impl Actor {
             validate_batch(&self.state, &batch)?;
             Ok(batch)
         });
+        self.poll_operation = None;
         let received = self.clock.now();
         let observed = result.as_ref().ok().and_then(|b| b.safety_observed_at);
         // Local adapters use the same monotonic clock. Never allow a delegated
@@ -1084,6 +1224,7 @@ impl Actor {
         let retryable = retry_error.is_some();
         let more = result.as_ref().is_ok_and(|batch| batch.more);
         let exhausted = !retryable || self.attempt >= self.policy.attempts_per_cycle;
+        self.last_cycle_exhausted = Some(exhausted && !more);
         if let Err(error) = &result
             && sampled
             && error.transport_lost
@@ -1146,8 +1287,6 @@ impl Actor {
             self.state.completed_passes = self.state.completed_passes.saturating_add(1);
         }
         self.retrying = retryable || result.is_err();
-        self.publish();
-        let _ = self.events.send(event);
         let delay = if retryable {
             self.backoff_failures = self.backoff_failures.saturating_add(1);
             let exponential = self.policy.initial_backoff_seconds
@@ -1183,6 +1322,15 @@ impl Actor {
         // automatic polling until the session is disconnected/reconfigured;
         // commands and cached state remain available.
         self.next_poll = Instant::now().checked_add(delay);
+        self.poll_reason = Some(if self.retrying {
+            PollReason::Retry
+        } else if more {
+            PollReason::Continuation
+        } else {
+            PollReason::Periodic
+        });
+        self.publish();
+        let _ = self.events.send(event);
     }
 }
 

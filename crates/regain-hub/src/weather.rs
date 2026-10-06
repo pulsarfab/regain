@@ -723,6 +723,7 @@ mod diagnostic_tests {
             completed_passes: 1,
             sampled_at_seconds: Some(0.0),
             error: None,
+            polling: Default::default(),
         };
         engine.observe(state, Duration::ZERO);
         let history_count = engine.history[&WeatherMetric::Temperature].points.len();

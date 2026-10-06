@@ -746,3 +746,180 @@ async fn fenced_read_rejects_an_old_generation_before_dispatching_the_backend() 
     assert_eq!(device.reads.load(SeqCst), 1);
     source.shutdown().await.unwrap();
 }
+
+#[tokio::test(start_paused = true)]
+async fn polling_diagnostics_track_retry_after_cycle_exhaustion_and_actual_dispatch() {
+    use regain_hub::source::{PollPhase, PollReason};
+    let device = Arc::new(Device::default());
+    let error = SourceError {
+        retry_after: Some(Duration::from_secs(8)),
+        ..SourceError::transient()
+    };
+    device
+        .outcomes
+        .lock()
+        .unwrap()
+        .extend([Err(error.clone()), Err(error)]);
+    let policy = PollPolicy {
+        attempts_per_cycle: 2,
+        poll_seconds: 20.0,
+        initial_backoff_seconds: 2.0,
+        backoff_cap_seconds: 4.0,
+        ..PollPolicy::default()
+    };
+    let source = SourceHandle::spawn(
+        Uuid::new_v4(),
+        Uuid::new_v4(),
+        policy,
+        Box::new(Mock(device.clone())),
+        Arc::new(MonotonicClock::default()),
+    )
+    .unwrap();
+    assert_eq!(source.snapshot().polling.phase, PollPhase::Idle);
+    assert_eq!(source.snapshot().polling.next_poll_after_seconds, None);
+    let lease = Uuid::new_v4();
+    source.acquire(lease).await.unwrap();
+    settle().await;
+    let first = source.snapshot().polling;
+    assert_eq!(first.phase, PollPhase::Waiting);
+    assert_eq!(first.reason, Some(PollReason::Retry));
+    assert_eq!(first.attempts_started, 1);
+    assert_eq!(first.attempts_per_cycle, 2);
+    assert_eq!(first.last_attempt, 1);
+    assert_eq!(first.last_cycle_exhausted, Some(false));
+    assert_eq!(first.backoff_failures, 1);
+    assert_eq!(first.next_poll_after_seconds, Some(8.0));
+    tokio::time::advance(Duration::from_secs(2)).await;
+    settle().await;
+    assert_eq!(device.polls.load(SeqCst), 1);
+    for _ in 0..10 {
+        let cached = source.snapshot().polling;
+        assert_eq!(cached.observed_seconds, first.observed_seconds);
+        assert_eq!(cached.next_poll_after_seconds, Some(8.0));
+    }
+    tokio::time::advance(Duration::from_secs(6)).await;
+    settle().await;
+    let second = source.snapshot().polling;
+    assert_eq!(device.polls.load(SeqCst), 2);
+    assert_eq!(second.attempts_started, 0);
+    assert_eq!(second.last_attempt, 2);
+    assert_eq!(second.last_cycle_exhausted, Some(true));
+    assert_eq!(second.backoff_failures, 2);
+    assert_eq!(second.next_poll_after_seconds, Some(20.0));
+    tokio::time::advance(Duration::from_secs(20)).await;
+    settle().await;
+    let success = source.snapshot().polling;
+    assert_eq!(device.polls.load(SeqCst), 3);
+    assert_eq!(success.reason, Some(PollReason::Periodic));
+    assert_eq!(success.backoff_failures, 0);
+    assert_eq!(success.last_attempt, 1);
+    source.release(lease).await.unwrap();
+    let idle = source.snapshot().polling;
+    assert_eq!(idle.phase, PollPhase::Idle);
+    assert_eq!(idle.reason, None);
+    assert_eq!(idle.next_poll_after_seconds, None);
+    assert_eq!(idle.last_attempt, 0);
+    source.shutdown().await.unwrap();
+    assert_eq!(source.snapshot().polling.phase, PollPhase::Stopped);
+}
+
+#[tokio::test(start_paused = true)]
+async fn polling_diagnostics_show_pending_connection_and_inflight_sampling() {
+    use regain_hub::source::{PollPhase, PollReason};
+    let device = Arc::new(Device::default());
+    device.pending_connect.store(true, SeqCst);
+    let source = spawn(&device);
+    let lease = Uuid::new_v4();
+    source.acquire(lease).await.unwrap();
+    let pending = source.snapshot().polling;
+    assert_eq!(pending.phase, PollPhase::Waiting);
+    assert_eq!(pending.reason, Some(PollReason::Connection));
+    assert_eq!(pending.next_poll_after_seconds, Some(0.1));
+    assert_eq!(pending.last_attempt, 0);
+    device.pending_connect.store(false, SeqCst);
+    device.hang_poll.store(true, SeqCst);
+    tokio::time::advance(Duration::from_millis(100)).await;
+    settle().await;
+    let sampling = source.snapshot().polling;
+    assert_eq!(sampling.phase, PollPhase::Sampling);
+    assert_eq!(sampling.next_poll_after_seconds, None);
+    assert_eq!(sampling.last_attempt, 1);
+    tokio::time::advance(Duration::from_secs(1)).await;
+    settle().await;
+    assert_eq!(source.snapshot().polling.phase, PollPhase::Waiting);
+    assert_eq!(source.snapshot().polling.reason, Some(PollReason::Retry));
+    assert_eq!(device.resets.load(SeqCst), 1);
+    source.release(lease).await.unwrap();
+    source.shutdown().await.unwrap();
+}
+
+#[tokio::test(start_paused = true)]
+async fn polling_diagnostics_preserve_suspended_retry_and_partial_pass_identity() {
+    use regain_hub::source::{PollPhase, PollReason};
+    let device = Arc::new(Device::default());
+    device.batches.lock().unwrap().push_back(SampleBatch {
+        values: Values::from([("value".into(), json!(1))]),
+        more: true,
+        ..SampleBatch::default()
+    });
+    device.outcomes.lock().unwrap().push_back(Err(SourceError {
+        retry_after: Some(Duration::MAX),
+        ..SourceError::transient()
+    }));
+    let source = spawn(&device);
+    let lease = Uuid::new_v4();
+    source.acquire(lease).await.unwrap();
+    settle().await;
+    let continuation = source.snapshot().polling;
+    assert_eq!(continuation.phase, PollPhase::Waiting);
+    assert_eq!(continuation.reason, Some(PollReason::Continuation));
+    assert_eq!(continuation.next_poll_after_seconds, Some(0.001));
+    assert_eq!(continuation.last_cycle_exhausted, Some(false));
+    tokio::time::advance(Duration::from_millis(1)).await;
+    settle().await;
+    let suspended = source.snapshot().polling;
+    assert_eq!(suspended.phase, PollPhase::Suspended);
+    assert_eq!(suspended.reason, Some(PollReason::Retry));
+    assert_eq!(suspended.next_poll_after_seconds, None);
+    tokio::time::advance(Duration::from_secs(60)).await;
+    settle().await;
+    assert_eq!(device.polls.load(SeqCst), 1);
+    assert_eq!(
+        source.snapshot().polling.observed_seconds,
+        suspended.observed_seconds
+    );
+    source.release(lease).await.unwrap();
+    source.shutdown().await.unwrap();
+}
+
+#[tokio::test(start_paused = true)]
+async fn polling_diagnostics_are_readable_during_a_stalled_initial_connection() {
+    use regain_hub::source::PollPhase;
+    let device = Arc::new(Device::default());
+    device.hang_connect.store(true, SeqCst);
+    let source = spawn(&device);
+    let lease = Uuid::new_v4();
+    let acquiring = tokio::spawn({
+        let source = source.clone();
+        async move { source.acquire(lease).await }
+    });
+    settle().await;
+    let connecting = source.snapshot().polling;
+    assert_eq!(connecting.phase, PollPhase::Connecting);
+    assert_eq!(connecting.next_poll_after_seconds, None);
+    assert_eq!(connecting.attempts_started, 0);
+    for _ in 0..10 {
+        assert_eq!(
+            source.snapshot().polling.observed_seconds,
+            connecting.observed_seconds
+        );
+    }
+    assert_eq!(device.connects.load(SeqCst), 1);
+    tokio::time::advance(Duration::from_secs(1)).await;
+    settle().await;
+    assert!(acquiring.await.unwrap().is_ok());
+    assert_eq!(source.snapshot().polling.phase, PollPhase::Waiting);
+    assert_eq!(device.resets.load(SeqCst), 1);
+    source.release(lease).await.unwrap();
+    source.shutdown().await.unwrap();
+}

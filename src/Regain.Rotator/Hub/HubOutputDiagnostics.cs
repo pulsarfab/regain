@@ -20,6 +20,16 @@ internal static class HubDiagnosticContract
     {
         if (!Valid(schema, schema, value, 0)) throw new HubException(HubFailure.Protocol);
     }
+    internal static void Polling(JsonElement description, JsonElement value)
+    {
+        var root = description.GetProperty("responseSchema");
+        if (!Valid(root, root.GetProperty("$defs").GetProperty("PollingStatus"), value, 0)) throw new HubException(HubFailure.Protocol);
+        var waiting = value.GetProperty("phase").GetString() == "waiting";
+        var next = value.GetProperty("nextPollAfterSeconds"); var reason = value.GetProperty("reason");
+        if ((waiting ? next.ValueKind == JsonValueKind.Null || reason.ValueKind == JsonValueKind.Null : next.ValueKind != JsonValueKind.Null) ||
+            value.GetProperty("attemptsStarted").GetUInt32() > value.GetProperty("attemptsPerCycle").GetUInt32() ||
+            value.GetProperty("lastAttempt").GetUInt32() > value.GetProperty("attemptsPerCycle").GetUInt32()) throw new HubException(HubFailure.Protocol);
+    }
     private static bool Valid(JsonElement root, JsonElement node, JsonElement value, int depth)
     {
         if (depth > 32) return false;
@@ -75,7 +85,7 @@ internal static class HubDiagnosticContract
         var total = result.GetProperty("total").GetInt32(); var end = Math.Min(start + limit, total); var diagnostics = result.GetProperty("diagnostics");
         Require(result.GetProperty("purpose").GetString() == "cachedDiagnostics" && result.GetProperty("output").GetGuid() == output.GetProperty("id").GetGuid() && result.GetProperty("configurationRevision").GetGuid() == revision && result.GetProperty("deviceType").GetString() == type && result.GetProperty("observedSeconds").GetDouble() >= 0 && result.GetProperty("start").GetInt32() == start && result.GetProperty("limit").GetInt32() == limit && total >= start && total <= 1024 && diagnostics.GetProperty("kind").GetString() == kind);
         Require(end < total ? result.GetProperty("nextStart").GetInt32() == end : result.GetProperty("nextStart").ValueKind == JsonValueKind.Null);
-        void Health(JsonElement health) => Require(health.GetProperty("revision").GetGuid() == revision && saved.GetProperty("sources").EnumerateArray().Any(s => s.GetProperty("id").GetGuid() == health.GetProperty("source").GetGuid()));
+        void Health(JsonElement health) { Require(health.GetProperty("revision").GetGuid() == revision && saved.GetProperty("sources").EnumerateArray().Any(s => s.GetProperty("id").GetGuid() == health.GetProperty("source").GetGuid())); Polling(description,health.GetProperty("polling")); }
         if (kind == "switch") {
             var active = device.GetProperty("channels").EnumerateArray().ToArray(); var numbers = active.Select(c => c.GetProperty("number").GetInt32()).ToList();
             if (saved.TryGetProperty("identities", out var ledger) && ledger.TryGetProperty("channels", out var channels)) foreach (var channel in channels.EnumerateObject().Select(p => p.Value)) if (channel.GetProperty("output").GetGuid() == output.GetProperty("id").GetGuid()) numbers.Add(channel.GetProperty("number").GetInt32());

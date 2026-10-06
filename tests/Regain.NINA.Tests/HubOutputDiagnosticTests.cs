@@ -34,11 +34,14 @@ public sealed partial class HubNativeTests
         var second = await editor.OutputStatusAsync(Output(0), 1, 32); Assert.Equal(2, second.GetProperty("diagnostics").GetProperty("channels").GetArrayLength());
         var safety = await editor.OutputStatusAsync(Output(1), 0, 32);
         Assert.False(safety.GetProperty("diagnostics").GetProperty("isSafe").GetBoolean()); Assert.Contains("raw unknown", HubConfigurationWindow.OutputDiagnosticSummary(safety));
+        Assert.Contains("polling idle", HubConfigurationWindow.OutputDiagnosticSummary(safety));
+        Assert.Equal("idle", safety.GetProperty("diagnostics").GetProperty("members")[0].GetProperty("health").GetProperty("polling").GetProperty("phase").GetString());
         await editor.OutputStatusAsync(Output(2), 0, 32);
         for (int i = 0; i < 3; i++) Assert.Equal(0, (await host.Status(i)).GetProperty("leaseCount").GetInt32());
         using var device = host.Switch(); await device.Connect(CancellationToken.None);
         var observed = await editor.OutputStatusAsync(Output(0), 0, 32);
         Assert.Equal(1, observed.GetProperty("diagnostics").GetProperty("channels")[0].GetProperty("health").GetProperty("leaseCount").GetInt32());
+        Assert.NotEqual("idle", observed.GetProperty("diagnostics").GetProperty("channels")[0].GetProperty("health").GetProperty("polling").GetProperty("phase").GetString());
         Assert.True(device.Connected); Assert.Equal(HubEditorState.Reviewed, editor.State);
         var export = editor.DiagnosticSnapshot(); Assert.Equal("cachedOutputHealth", export.GetProperty("outputObservation").GetProperty("kind").GetString());
         Assert.Equal(saved.GetProperty("revision").GetGuid(), export.GetProperty("outputObservation").GetProperty("configurationRevision").GetGuid());
@@ -55,6 +58,9 @@ public sealed partial class HubNativeTests
     [InlineData("secretHealth")]
     [InlineData("numberType")]
     [InlineData("missingError")]
+    [InlineData("missingPolling")]
+    [InlineData("negativeWait")]
+    [InlineData("impossibleWait")]
     public async Task CachedOutputRepliesAreStrictAndCannotAuthorizeReplayOrAnExport(string fault)
     {
         await using var host = await Host.Open(); using var original = await Editor(host); await original.ReloadAsync();
@@ -78,6 +84,9 @@ public sealed partial class HubNativeTests
                     if (fault == "secretHealth") reply["diagnostics"]!["channels"]![0]!["health"]!["authorization"] = "PRIVATE_FORBIDDEN_REPLY";
                     if (fault == "numberType") reply["diagnostics"]!["channels"]![0]!["minimum"] = "0";
                     if (fault == "missingError") reply["diagnostics"]!["channels"]![0]!["health"]!.AsObject().Remove("error");
+                    if (fault == "missingPolling") reply["diagnostics"]!["channels"]![0]!["health"]!.AsObject().Remove("polling");
+                    if (fault == "negativeWait") reply["diagnostics"]!["channels"]![0]!["health"]!["polling"]!["nextPollAfterSeconds"] = -1;
+                    if (fault == "impossibleWait") reply["diagnostics"]!["channels"]![0]!["health"]!["polling"]!["nextPollAfterSeconds"] = 10;
                     return JsonSerializer.SerializeToElement(reply);
                 default: throw new Exception("Unexpected request");
             }

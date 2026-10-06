@@ -65,7 +65,7 @@ export class OutputDiagnostics {
     const end=Math.min(start+limit,result.total);
     if (result.nextStart!==(end<result.total ? end : null)) protocol();
     const d=result.diagnostics;
-    const health = value => { if (value.revision!==this.saved.revision || !this.saved.sources.some(s=>s.id===value.source)) protocol(); };
+    const health = value => { if (value.revision!==this.saved.revision || !this.saved.sources.some(s=>s.id===value.source)) protocol(); validatePolling(value.polling); };
     if (d.kind==='switch') {
       const numbers=output.device.channels.map(c=>c.number);
       for (const entry of Object.values(this.saved.identities?.channels??{})) if (entry.output===output.id) numbers.push(entry.number);
@@ -121,6 +121,7 @@ export function diagnosticSummary(result) {
       const s=m.decision; lines.push(`${m.source}: ${!m.enabled?'Disabled; no vote':`${s.phase} · raw ${s.rawIsSafe===null?'unknown':s.rawIsSafe?'safe':'unsafe'} · effective ${s.permitsSafe?'safe':'unsafe'} · ${s.reason}`}`);
       if(s) lines.push(`Failed checks ${s.failedCycles}/${m.policy.failedCyclesToUnsafe}; unsafe readings ${s.unsafeReadings}/${m.policy.unsafeReadingsToUnsafe}; recovery ${s.safeReadings}/${m.policy.safeReadingsToSafe} safe readings, ${s.safeHoldSeconds.toFixed(1)}/${m.policy.returnToSafeHoldSeconds} s hold; safe age ${s.safeAgeSeconds===null?'unknown':s.safeAgeSeconds.toFixed(1)+' s'}/${m.policy.maximumSafeAgeSeconds} s.`);
       if(m.health.writeUncertain) lines.push('Source has an uncertain write; reconcile equipment state before another command.');
+      lines.push(pollingSummary(m.health));
     }
   } else {
     const items=d.kind==='switch'?d.channels:d.measurements;
@@ -129,7 +130,16 @@ export function diagnosticSummary(result) {
       const sample=item.sample, label=d.kind==='switch'?`Channel ${item.number}: ${item.label}`:item.metric;
       lines.push(sample.state==='available'?`${label}: ${sample.reading.value} ${d.kind==='switch'?item.units:sample.reading.unit} · age ${sample.reading.ageSeconds.toFixed(1)} s`:`${label}: unavailable · ${sample.error.message}`);
       if(d.kind==='switch') lines.push(`Configured ${item.configuredWritable?'writable':'read-only'}; operational write capability is checked separately.${item.health.writeUncertain?' Retained uncertain write.':''}`);
+      for (const health of d.kind==='switch'?[item.health]:item.sources) lines.push(pollingSummary(health));
     }
   }
   lines.push('Observed cache only. No equipment connection or safety confirmation is started.'); return lines.join('\n');
+}
+export function pollingSummary(health) {
+  const p=health.polling;
+  return `Source ${health.source}: polling ${p.phase}${p.reason===null?'':' · '+p.reason}. Host observation ${p.observedSeconds.toFixed(1)} s; ${p.nextPollAfterSeconds===null?'no scheduled wait reported':`next poll scheduled in ${p.nextPollAfterSeconds.toFixed(3)} s at that observation; actor work may delay it`}. Read attempts started ${p.attemptsStarted}/${p.attemptsPerCycle}; last ${p.lastAttempt}${p.lastCycleExhausted===null?'':p.lastCycleExhausted?' (cycle complete)':' (cycle pending)'}; backoff failures ${p.backoffFailures}.`;
+}
+export function validatePolling(p) {
+  if (p.phase==='waiting' ? p.nextPollAfterSeconds===null || p.reason===null : p.nextPollAfterSeconds!==null) protocol();
+  if (p.attemptsStarted>p.attemptsPerCycle || p.lastAttempt>p.attemptsPerCycle) protocol();
 }

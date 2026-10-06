@@ -170,7 +170,7 @@ for (const output of diagSaved.outputs) {
   }
 }
 const diagGeneration='77777777-7777-4777-8777-777777777777';
-const diagHealth=source=>({source,revision:diagSaved.revision,generation:diagGeneration,sequence:0,transportConnected:false,writeUncertain:false,leaseCount:0,error:null});
+const diagHealth=source=>({source,revision:diagSaved.revision,generation:diagGeneration,sequence:0,transportConnected:false,writeUncertain:false,leaseCount:0,error:null,polling:{phase:'idle',observedSeconds:0,reason:null,nextPollAfterSeconds:null,attemptsStarted:0,attemptsPerCycle:description.schema.$defs.PollPolicy.properties.attemptsPerCycle.default,lastAttempt:0,lastCycleExhausted:null,backoffFailures:0}});
 const diagUnavailable={state:'unavailable',error:{kind:'disconnected',message:'Source is disconnected',upstreamCode:null}};
 function diagReply(output,start=0,limit=1) {
   const device=output.device; let total, diagnostics;
@@ -199,7 +199,7 @@ for(const output of diagSaved.outputs) {
   if(output.device.kind==='safety') {assert.match(summary,/UNSAFE/);assert.match(summary,/raw unknown/);}
   else assert.match(summary,/unavailable/);
 }
-for(const fault of ['lost','revision','output','cursor','channel','secretRoot','secretHealth','type','emptyGeneration','missingError']) {
+for(const fault of ['lost','revision','output','cursor','channel','secretRoot','secretHealth','type','emptyGeneration','missingError','missingPolling','negativeWait','impossibleWait']) {
   let requests=0, review=true;
   const setup=new OutputDiagnostics(async command=>{
     requests++; if(fault==='lost') throw new Error('Lost reply');
@@ -213,6 +213,9 @@ for(const fault of ['lost','revision','output','cursor','channel','secretRoot','
     if(fault==='type') reply.diagnostics.channels[0].minimum='0';
     if(fault==='emptyGeneration') reply.diagnostics.channels[0].health.generation='00000000-0000-0000-0000-000000000000';
     if(fault==='missingError') delete reply.diagnostics.channels[0].health.error;
+    if(fault==='missingPolling') delete reply.diagnostics.channels[0].health.polling;
+    if(fault==='negativeWait') reply.diagnostics.channels[0].health.polling.nextPollAfterSeconds=-1;
+    if(fault==='impossibleWait') reply.diagnostics.channels[0].health.polling.nextPollAfterSeconds=10;
     return reply;
   },()=>review=false);
   setup.load(description,diagSaved);
@@ -237,4 +240,15 @@ console.log('Web output diagnostics passed: generated reply schema, saved identi
   validateDiagnosticSchema(schema,2);
   assert.throws(()=>validateDiagnosticSchema(schema,1));
   assert.throws(()=>validateDiagnosticSchema(schema,4));
+}
+// Presentation retains the actor's observed wait; it does not run a countdown.
+{
+  const reply=diagReply(diagSaved.outputs[0]);
+  const polling=reply.diagnostics.channels[0].health.polling;
+  Object.assign(polling,{phase:'waiting',reason:'retry',observedSeconds:30,nextPollAfterSeconds:8,attemptsStarted:1,lastAttempt:1,lastCycleExhausted:false,backoffFailures:1});
+  const setup=new OutputDiagnostics(async()=>reply); setup.load(description,diagSaved);
+  const observed=await setup.read(diagSaved.outputs[0].id,0,1);
+  assert.match(diagnosticSummary(observed),/next poll scheduled in 8.000 s at that observation; actor work may delay it/);
+  assert.match(diagnosticSummary(observed),/Read attempts started 1\/3/);
+  assert.equal(setup.observation.result.diagnostics.channels[0].health.polling.nextPollAfterSeconds,8);
 }

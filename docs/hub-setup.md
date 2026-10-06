@@ -87,7 +87,7 @@ empty and the configuration remains unchanged.
 ![Shared hub setup after saving a simulated output](images/hub-setup-simulation.jpg)
 
 This screenshot shows a hardware-free test. It is evidence of the editor workflow,
-not real-device acceptance. Actor retry diagnostics, interactive acceptance and
+not real-device acceptance. Interactive acceptance and
 conformance remain on
 the [hub plan](hub-plan.md).
 
@@ -163,8 +163,7 @@ do not acquire equipment leases.
 
 These are renders of the actual WPF window during an automated simulation test
 against the production host. They demonstrate setup; interactive NINA and
-real-device acceptance remain pending. Actor retry diagnostics and
-broader device support remain on the plan.
+real-device acceptance remain pending. Broader device support remains on the plan.
 
 ![Native setup inspection of simulated Switch channels](images/hub-native-inspection-simulation.png)
 
@@ -228,6 +227,20 @@ from configured polling or backoff.
 ![Native cached safety diagnostics during simulation](images/hub-native-output-diagnostics.png)
 
 ![Browser cached safety diagnostics during simulation](images/hub-web-output-diagnostics.jpg)
+
+Source health also shows the real polling phase, attempts and scheduled wait at
+the host's observation time. Cached reads do not advance that time. A waiting
+source can be delayed by other actor work; the value is not a live countdown.
+Connecting/sampling means I/O is in progress, idle means no source lease, and
+suspended means no representable automatic polling deadline. These observations
+never replay a control command or restore safety permission.
+
+![Browser polling diagnostics after a simulated read failure](images/hub-web-polling-diagnostics.jpg)
+
+This actual browser test injected a read failure into an explicitly simulated
+Switch source. Its independent output client remained connected while the editor
+read and exported the retry observation. The editor added no lease. The fixture
+subsequently disconnected that client and stopped its own host and publisher.
 
 These are the actual shared WPF editor and browser using the production host with
 private simulated sources. Safety remains unsafe and all source leases remain

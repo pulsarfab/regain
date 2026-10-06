@@ -85,6 +85,7 @@ pub struct SourceHealth {
     pub write_uncertain: bool,
     pub lease_count: usize,
     pub error: Option<SourceError>,
+    pub polling: crate::source::PollingStatus,
 }
 impl From<&SourceSnapshot> for SourceHealth {
     fn from(state: &SourceSnapshot) -> Self {
@@ -97,6 +98,7 @@ impl From<&SourceSnapshot> for SourceHealth {
             write_uncertain: state.write_uncertain,
             lease_count: state.lease_count,
             error: state.error.clone(),
+            polling: state.polling.clone(),
         }
     }
 }

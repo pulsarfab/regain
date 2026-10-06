@@ -2008,3 +2008,44 @@ run finishes Rust tests and reaches the device CLI. No failed or hung test is
 shown. The portable job budget is now 25 minutes; inner request/test deadlines
 remain fixed. Complete new CI is required, alongside actor retry diagnostics,
 typed proxies/cameras/coordination and every original remaining acceptance gate.
+
+### Real actor polling diagnostics
+
+Review traced publications through initial/pending connection, in-flight sampling,
+cycle completion, Retry-After, partial-pass continuation, explicit refresh,
+simulation/command state changes and disconnect/shutdown. The actor now publishes
+after scheduling the actual next deadline and updating backoff counters, before
+delivering its completed poll event. In-flight observations remain readable from
+the cache even while I/O is stalled. Reads add no lease or backend call. The new
+fields are observations only; scheduling policy and command replay rules remain
+unchanged. Review renamed the cycle counter to `attemptsStarted` because it
+includes the in-flight attempt, and retained nullable completion state rather
+than falsely reporting a finished cycle during sampling.
+
+Four paused-time actor cases prove dispatch at the observed deadline, exhausted
+cycles, Retry-After beyond the backoff cap, unchanged observations during cached
+reads, partial-pass identity, suspended unrepresentable deadlines, pending and
+stalled initial connections, sampling timeouts, lease release and stopped state.
+Native/web replies use the regenerated serialized schema and reject missing,
+negative or impossible scheduled waits. Summaries qualify the remaining wait as
+belonging to its observation time; actor work can delay it. Exports retain that
+typed observation rather than estimating a countdown in the frontend.
+
+Full Rust hub/Alpaca suites, strict Clippy, Rust 1.89.0, generated-contract checks,
+Node/four independent schema tests, all 171 warnings-denied NINA tests and actual
+net48 x86/x64 clients pass (`artifacts/hub-polling-*.log`). The actual WPF render
+was inspected. Browser verification proves a real retry observation/export,
+preservation of one independent simulated Switch lease, no console errors and
+no physical equipment activation. Evidence is in
+`artifacts/hub-polling-browser-verification.json`; cleanup disconnects only client
+701, confirms zero source leases/transport, and stops only the fixture's verified
+process identities. The temporary browser tab has already closed.
+
+Frontend 96ea4e3 CI runs 37475434423 and 37475427160 now pass seven jobs including
+Intel macOS; Windows remains live at this observation. The older COM fixture
+timeout is not explained by these successes. The browser fixture also found a
+production restriction: explicit empty camera profiles fail HTTP startup with
+`No camera slots in settings`, preventing accessory-only publication. Added that
+refinement to milestone 2; preserve ordinary new-install camera defaults while
+allowing a deliberately empty list. Broader proxies/cameras/coordination and all
+original remaining acceptance gates stay required.

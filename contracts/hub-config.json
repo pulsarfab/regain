@@ -186,6 +186,103 @@
           ],
           "type": "string"
         },
+        "PollPhase": {
+          "enum": [
+            "idle",
+            "connecting",
+            "sampling",
+            "waiting",
+            "suspended",
+            "stopped"
+          ],
+          "type": "string"
+        },
+        "PollReason": {
+          "enum": [
+            "initial",
+            "connection",
+            "retry",
+            "periodic",
+            "continuation",
+            "refresh",
+            "stateChanged"
+          ],
+          "type": "string"
+        },
+        "PollingStatus": {
+          "additionalProperties": false,
+          "description": "An actor observation, not a live countdown or an equipment command retry.",
+          "properties": {
+            "attemptsPerCycle": {
+              "format": "uint32",
+              "maximum": 10,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "attemptsStarted": {
+              "description": "Started attempts in the current cycle, including an in-flight request.\nZero after cycle completion or exhaustion.",
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "backoffFailures": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "lastAttempt": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "lastCycleExhausted": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "nextPollAfterSeconds": {
+              "description": "Remaining wait at observedSeconds. Other actor work may delay dispatch.\nNull while inactive/in flight, or if the deadline is unrepresentable.",
+              "format": "double",
+              "minimum": 0.0,
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "observedSeconds": {
+              "description": "Local monotonic time when the actor published this observation.",
+              "format": "double",
+              "minimum": 0.0,
+              "type": "number"
+            },
+            "phase": {
+              "$ref": "#/$defs/PollPhase"
+            },
+            "reason": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/PollReason"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "phase",
+            "observedSeconds",
+            "reason",
+            "nextPollAfterSeconds",
+            "attemptsStarted",
+            "attemptsPerCycle",
+            "lastAttempt",
+            "lastCycleExhausted",
+            "backoffFailures"
+          ],
+          "type": "object"
+        },
         "Reading": {
           "oneOf": [
             {
@@ -688,6 +785,9 @@
               "minimum": 0,
               "type": "integer"
             },
+            "polling": {
+              "$ref": "#/$defs/PollingStatus"
+            },
             "revision": {
               "format": "uuid",
               "type": "string"
@@ -716,7 +816,8 @@
             "transportConnected",
             "writeUncertain",
             "leaseCount",
-            "error"
+            "error",
+            "polling"
           ],
           "type": "object"
         },

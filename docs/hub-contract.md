@@ -1232,5 +1232,25 @@ and the completed output observation's UTC time, instance, revision and typed
 result. Exporting makes no new host or equipment request and excludes editable
 configuration, credentials and backend connection details. Different observation
 times remain explicit; the file is not an atomic equipment snapshot. Reload clears
-the previous output observation. Actual actor retry scheduling remains pending;
-clients must not invent a countdown from a configured delay.
+the previous output observation.
+
+Source snapshots and selected output source health include `polling`. Its
+`observedSeconds` is the actor's local monotonic publication time, independent of
+sample time and the frontend's UTC observation time. `phase` is idle, connecting,
+sampling, waiting, suspended or stopped. `reason` distinguishes initial connection,
+connection continuation, retry, periodic polling, partial-pass continuation,
+explicit refresh and changed state. In waiting phase, `nextPollAfterSeconds` is
+the remaining wait at that publication. Other actor work may delay dispatch.
+Cached reads do not update it, start polling or invent a live countdown.
+
+`attemptsStarted` counts attempts in the current cycle, including an in-flight
+sample; completion resets it to zero. `attemptsPerCycle` comes from the actual
+policy, `lastAttempt` retains the most recently started attempt, and
+`lastCycleExhausted` is null before/while an attempt completes, false for an
+unfinished cycle and true for a completed/exhausted cycle (including successful
+completion). `backoffFailures` is the actor's existing backoff counter, not a
+count of every kind of source error. Waiting phase requires a reason and finite
+nonnegative remaining wait. Inactive/in-flight phases have no wait; an
+unrepresentable Retry-After deadline is suspended with no automatic poll.
+Disconnect resets the cycle and schedule. These are read/connection observations;
+no write command is replayed or granted permission by these diagnostics.

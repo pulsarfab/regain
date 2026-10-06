@@ -143,10 +143,11 @@ public sealed partial class HubEditorSession : IDisposable
             try {
                 HubWire.Members(result, "source", "revision", "generation", "sequence", "transportConnected", "writeUncertain", "connectionInfo",
                     "simulated", "simulation", "leaseCount", "values", "sampleErrors", "sampleAgesSeconds", "sampleStartedSeconds", "sampleSequences",
-                    "completedPasses", "sampledAtSeconds", "error");
+                    "completedPasses", "sampledAtSeconds", "error", "polling");
                 if (result.GetProperty("source").GetGuid() != source || result.GetProperty("revision").GetGuid() != Draft!.Revision)
                     throw new FormatException();
                 if (result.TryGetProperty("simulation", out var simulation)) ValidateSimulationStatus(source, simulation);
+                HubDiagnosticContract.Polling(OutputDiagnosticDescription, result.GetProperty("polling"));
             } catch { throw new HubException(HubFailure.Protocol); }
             LastSourceObservation = Observation("cachedSourceHealth", result);
             return result;

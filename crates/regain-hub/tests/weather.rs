@@ -43,6 +43,7 @@ fn snapshot(source: Uuid, sequence: u64, seconds: u64, values: Values) -> Source
         completed_passes: 0,
         sampled_at_seconds: Some(seconds as f64),
         error: None,
+        polling: Default::default(),
     }
 }
 fn temperature(source: Uuid, sequence: u64, seconds: u64, value: f64) -> SourceSnapshot {

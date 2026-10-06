@@ -39,8 +39,17 @@ HTTP, native-client and real net48 checks pass. Native and web setup now present
 these observations and export them with time/revision, using the generated wire
 schema plus saved identity/page checks. Cache reads preserve review; lost,
 malformed or obsolete replies require explicit Reload. Actual WPF/browser
-screenshots document simulation, with no equipment leases. Actor retry scheduling
-remains the next diagnostics work.
+screenshots document simulation, with no equipment leases.
+
+Completed increment: real actor polling diagnostics in cached source/output health,
+the generated wire schema, native/web summaries and observed exports. Publications
+include connecting/sampling/waiting/suspended phases, started attempts, cycle
+completion and backoff counters. The remaining wait belongs to its monotonic
+observation time; it is not a live countdown or a command replay promise. Paused-
+time fixtures prove actual dispatch, Retry-After/exhaustion, partial passes and
+stalled I/O. Browser verification uses an explicitly simulated source and preserves
+the one independent output lease; cleanup releases it. Local Rust, 171 NINA tests,
+Node/schema and real net48 clients pass.
 
 Native-credential checkpoint 2a26281 passes all eight jobs in both PR CI
 37457955380 and push CI 37457946553. Windows logs prove installed metadata without
@@ -62,11 +71,14 @@ not yet proved. Diagnostic API de2691a PR 37471446346 and push 37471435465
 pass seven jobs, including Windows; Intel macOS exceeds the outer 15-minute job
 budget. Logs show passing Rust suites and cold build time, not a hung test. The
 portable CI job budget is now 25 minutes; test/transport deadlines are unchanged.
+Frontend checkpoint 96ea4e3 PR 37475434423 and push 37475427160 pass seven jobs,
+including Intel macOS; Windows remains in progress at this observation.
 New CI must verify the complete run. Interactive UAC/Chooser, conformance and
 vendor acceptance remain required.
 
-Next: expose real actor retry scheduling, verify complete diagnostics CI and
-investigate the earlier push COM fixture timeout. Then complete broader typed proxies, camera ownership,
+Next: allow explicit empty camera profiles for accessory-only HTTP publication,
+verify complete diagnostics CI and investigate the earlier push COM fixture timeout.
+Then complete broader typed proxies, camera ownership,
 coordination and every remaining
 original milestone gate. This increment does not close the full setup milestone.
 
@@ -321,6 +333,9 @@ Review findings fixed in this checkpoint:
 - [ ] Implement SafetyMonitor and ObservingConditions; define per-measurement
   freshness, fallback, units, and averaging semantics before exposing weather.
 - [ ] Expose these virtual devices through the existing Alpaca server and setup UI.
+- [ ] Permit an accessory-only HTTP server with zero camera profiles; retain normal
+  camera defaults for new ordinary installations. Verify startup, catalog, setup,
+  invalid camera requests and restart without dummy camera slots.
 - [ ] Test mixed native/network sources, disconnects, slow sources, restart mapping,
   uncertain writes, and two simultaneous clients.
 
@@ -753,3 +768,4 @@ Keep existing device profiles and registrations compatible throughout migration.
 | 2026-10-06 | Added common first-time persistence and explicit --hub-init in the existing executable: fresh empty identities, flushed no-clobber publication, existing-file preservation and committed durability uncertainty before any worker/SDK/host initialization. Reviewed CLI mode admission and the actual persistence implementation. | Eight-creator race and invalid/relative/missing-parent cases pass; production CLI verifies no live endpoint/host ownership and unchanged existing bytes. Full hub/Alpaca suites, strict Clippy and installed Rust 1.89.0 pass. Unix symlink/portable CI remains required. Next: native create-file UI using this path with retained filename/unknown-result reconciliation, broader diagnostics, and every original remaining milestone. |
 | 2026-10-06 | Adopted first-time creation in the shared native NINA/ASCOM selector via the existing bounded helper. Added retained copyable filename, serialized creation/read admission, unknown-result fencing and explicit file identity/absence reconciliation. Empty configurations load into the editor with no output selection. Reviewed two Windows CI fixture races without raising deadlines. | All 155 NINA checks, real net48 x86/x64 creation/reconciliation/ASCOM fixtures and warning-denied build pass; the actual WPF private lost-reply render was inspected. 6f36ff5 CI passes seven jobs but fails separate pipe fixtures; corrections need new CI. eeb9208 CI remains active. Next: verify CI, broader source/output/policy diagnostics, typed devices/cameras/coordination and every original remaining gate. |
 | 2026-10-06 | Added shared native/web output health and observed export using the host-generated serialized reply schema. Reviewed required nullable fields, reference constraints, decoded string equivalence, saved identities/paging, uncertainty and review preservation. | Full hub/Alpaca suites, strict Clippy, Rust 1.89, generated-contract freshness, Node/four schema tests, all 168 warnings-denied NINA checks and actual net48 x86/x64 clients pass. Browser proves all three output classes, pagination, preserved review, downloaded Reviewed export, zero leases/errors; WPF/browser screenshots inspected. de2691a CI passes seven jobs but Intel macOS hits the outer 15-minute budget during otherwise passing tests. Budget increased to 25 minutes; complete new CI remains required. Next: actual actor retry scheduling, previous COM fixture timeout, and every original remaining milestone/acceptance gate. |
+| 2026-10-06 | Added actual actor polling phases, observation-time waits, started attempts/cycle completion and backoff diagnostics to cached source/output health, generated schema, native/web summaries and exports. Reviewed in-flight visibility, delayed dispatch and command no-replay semantics. | Four paused-time scheduling cases, full Rust hub/Alpaca suites, strict Clippy, Rust 1.89, generated-contract/Node/four schema checks, all 171 NINA tests and real net48 x86/x64 clients pass. Actual WPF/browser simulation renders inspected; browser preserves one independent lease and cleanup confirms zero. 96ea4e3 CI passes seven jobs including Intel macOS; Windows still live. Next: accessory-only HTTP startup with explicit empty camera profiles, prior COM timeout and every original remaining gate. |
