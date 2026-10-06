@@ -338,7 +338,16 @@ Native/Alpaca adapters and credentials are prepared before actors start, with no
 device I/O during construction. The mixed-source test uses this factory. The
 credential-provider interface is present; OS-protected storage remains pending.
 
-Next: complete the shared output runtime, device capabilities, and host IPC, then connect the first
+The shared output runtime now owns Switch, SafetyMonitor, and Weather controllers
+and host-generated client sessions. Clients share safety recovery state and
+weather settings; closing one does not close another's sources. Pending connects
+are cancellable and fenced against replacement. In-flight commands retain their
+leases through client disconnect. Explicit shutdown revokes safety first, stops
+new clients, drains all source actors, and preserves uncertain cleanup results
+without replay. The mixed native/network test now uses the complete runtime
+builder and separate clients rather than constructing controllers itself.
+
+Next: implement host IPC/ownership, protected credentials, and device capabilities, then connect the first
 three virtual classes to the existing Alpaca server/setup UI. Frontend error
 translation and protocol conformance remain unverified. Generic
 scalar polling does not establish camera image or acquisition support. No complete
@@ -421,3 +430,4 @@ Keep existing device profiles and registrations compatible throughout migration.
 | 2026-10-05 | Added native hub accessory adapters on the shared transport, covering seven families, scalar telemetry, validated motion/light/calibration commands, explicit simulation identity, and source leases. Added a mixed native/network Switch plus shared Weather test. | 79 Rust hub tests pass with production workers in simulation, including EFW calibration and OFP2 movement/light controls. Clippy, Rust 1.89.0, and generated-contract freshness pass. Windows test entrypoint now supplies its built worker path, matching portable CI. Next: capability/connection negotiation, credentials, host IPC, and frontend publication; all later gates remain required. |
 | 2026-10-05 | Implemented version-negotiated Alpaca connections, bounded incremental handshakes, shared connection diagnostics, and a schema-described connection timeout. Review corrected repeated uncertain disconnects and duplicate actor resets on handshake failure. | 89 Rust hub tests pass, including cancellation, pending/slow handshakes, external ownership, and reconnect during asynchronous disconnect. Clippy, Rust 1.89.0, package verification, schema freshness, and web/Python/.NET configuration readers pass. Next: shared host/source construction, protected credentials, capabilities, IPC, and frontend publication. Milestones 2–5 and final acceptance remain open. |
 | 2026-10-05 | Added configuration-driven native/Alpaca source construction, unioned poll plans, enabled-membership polling cadence, bounded plan growth, and the credential-provider boundary. Mixed-source integration now uses the real factory. | 95 hub tests pass, including plan deduplication, weather ages, disabled memberships, combined limits, validation before credential access, authenticated requests, and shared leases without secret-bearing diagnostics. Next: shared output runtime, protected storage, virtual/simulated sources, host IPC, and publication. No later gate is closed by source construction alone. |
+| 2026-10-05 | Added shared output/client sessions, cancellation-safe connection reservations, and explicit runtime/registry shutdown. Safety policy and weather settings are shared per output; queued commands cannot revive a retired actor. Reviewed last-client cleanup, in-flight writes, and cancelled shutdown. | 104 local hub tests cover shared state, disconnect order, cancellation/replacement, source stalls with independent safety expiry, uncertain writes/cleanup, and resumed shutdown. Mixed native/network integration uses the runtime builder. Next: IPC framing, user-only endpoints, startup ownership, protected storage, and frontend publication; all remaining original gates stay open. |

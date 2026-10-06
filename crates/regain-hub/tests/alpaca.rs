@@ -303,11 +303,10 @@ async fn partial_poll_retry_after_blocks_refresh_and_resumes_the_failed_sample()
 async fn mixed_native_and_http_switch_shares_native_temperature_with_weather() {
     use regain_hub::{
         config::{HubConfig, Measurement, OutputConfig, Readout, VirtualDevice, WeatherMetric},
-        factory::{NoCredentials, build_sources},
+        factory::NoCredentials,
         native::NativeRuntime,
+        runtime::HubRuntime,
         safety::MonotonicClock,
-        switch::SwitchOutput,
-        weather::WeatherOutput,
     };
     let Some(directory) = std::env::var_os("REGAIN_TEST_WORKERS") else {
         eprintln!("Mixed native source test requires REGAIN_TEST_WORKERS");
@@ -355,21 +354,25 @@ async fn mixed_native_and_http_switch_shares_native_temperature_with_weather() {
         },
     });
     let clock = Arc::new(MonotonicClock::default());
-    let registry = build_sources(&config, &runtime, &NoCredentials, clock.clone()).unwrap();
-    let switches = SwitchOutput::new(
-        &config,
-        config.outputs[0].id,
-        registry.clone(),
-        clock.clone(),
-    )
-    .unwrap();
-    let weather =
-        WeatherOutput::new(&config, config.outputs[1].id, registry.clone(), clock).unwrap();
-    let first = switches.connect().await.unwrap();
-    let second = switches.connect().await.unwrap();
-    let weather = weather.connect().await.unwrap();
-    let native = registry.get(native_source).unwrap();
-    let generation = native.snapshot().generation;
+    let hub = HubRuntime::build(config.clone(), &runtime, &NoCredentials, clock).unwrap();
+    let first_client = hub.client();
+    let second_client = hub.client();
+    let weather_client = hub.client();
+    first_client.connect(config.outputs[0].id).await.unwrap();
+    second_client.connect(config.outputs[0].id).await.unwrap();
+    weather_client.connect(config.outputs[1].id).await.unwrap();
+    let first_connection = first_client.connection(config.outputs[0].id).unwrap();
+    let second_connection = second_client.connection(config.outputs[0].id).unwrap();
+    let weather_connection = weather_client.connection(config.outputs[1].id).unwrap();
+    let first = first_connection.switch().unwrap();
+    let weather = weather_connection.weather().unwrap();
+    let native = || {
+        hub.source_snapshots()
+            .into_iter()
+            .find(|s| s.source == native_source)
+            .unwrap()
+    };
+    let generation = native().generation;
     tokio::time::timeout(Duration::from_secs(5), async {
         loop {
             if first.value(0).is_ok()
@@ -389,7 +392,7 @@ async fn mixed_native_and_http_switch_shares_native_temperature_with_weather() {
         weather.read(WeatherMetric::Temperature).unwrap().value
     );
     assert!(!first.can_write(1).await.unwrap());
-    assert_eq!(native.snapshot().lease_count, 3);
+    assert_eq!(native().lease_count, 3);
     for value in [
         json!(true),
         json!(0),
@@ -408,16 +411,18 @@ async fn mixed_native_and_http_switch_shares_native_temperature_with_weather() {
     })
     .await
     .unwrap();
-    drop(first);
-    drop(second);
+    drop(first_connection);
+    drop(second_connection);
+    first_client.close();
+    second_client.close();
     tokio::time::timeout(Duration::from_secs(3), async {
-        while native.snapshot().lease_count != 1 {
+        while native().lease_count != 1 {
             tokio::task::yield_now().await;
         }
     })
     .await
     .unwrap();
-    assert_eq!(native.snapshot().generation, generation);
+    assert_eq!(native().generation, generation);
     assert!(weather.read(WeatherMetric::Temperature).is_ok());
     let requests = server.fixture.requests.lock().unwrap();
     let writes: Vec<_> = requests

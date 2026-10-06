@@ -38,6 +38,34 @@ outcome and do not blindly resend. Cancellation does not imply physical rollback
 
 ## IPC and errors
 
+The in-process output runtime now owns one controller set per configuration
+revision. Host-created client identities have separate output connection maps;
+another client's ID is never an input to connect/get/disconnect. Safety clients
+share one active policy per output. The last connection releases that policy,
+publishes unsafe to retained subscribers, and makes a later session require new
+observations. Weather averaging settings belong to the shared output controller.
+
+Connection setup reserves a per-client slot before awaiting source I/O. Duplicate
+pending connects return busy; reconnecting an already-ready slot is idempotent.
+Cancellation removes only its reservation, so it cannot remove a replacement
+connection. Closing a client cancels pending connects and releases ready guards.
+An in-flight command retains its output guard until it finishes; disconnect
+does not imply command cancellation or physical rollback. No client/output map
+lock is held across driver I/O, and cached safety expiry remains independent.
+
+Runtime shutdown permanently stops client admission and revokes safety before
+waiting for sources. Each source finishes bounded in-flight I/O, rejects queued
+and later commands, attempts owned-connection cleanup, clears cached values,
+and retains its terminal cleanup result. All sources drain concurrently; errors
+from one cannot skip the rest. Repeated or resumed shutdown returns the retained
+result without replaying Disconnect. An active-connection count of zero alone is
+not proof of worker teardown. Configuration replacement must drain the old
+registry before allowing the next runtime to open its sources.
+
+These runtime contracts have local lifecycle/fault tests. Cross-process framing,
+OS ownership, protected endpoints, configuration replacement, and resume handling
+still need to be connected to this runtime.
+
 Use the existing convention: little-endian 32-bit JSON length followed by UTF-8
 JSON; responses may carry separately bounded binary image data. Version the hub
 protocol independently (`version: 1`), correlate requests with IDs, bound frames,

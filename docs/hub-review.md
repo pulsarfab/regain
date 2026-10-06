@@ -362,3 +362,45 @@ Clippy, Rust 1.89.0, generated-contract freshness, and package checks pass.
 The runtime still needs output/session ownership, virtual and simulated sources,
 protected credential storage, IPC, and actual frontend publication. COM/native
 camera adapters and the remaining original milestone gates also remain open.
+
+## 2026-10-05: shared output sessions and explicit shutdown
+
+Added the per-revision output runtime for Switch, SafetyMonitor, and Weather,
+with host-generated client identities and independent connection maps. The
+mixed native/HTTP test now builds this runtime and connects three clients.
+Reviewed reservation ownership, lock scope, policy lifetime, and source teardown.
+
+1. Creating a safety policy per client would restart recovery and make clients
+   disagree. One active policy is shared per output. A weak cache releases it
+   after the last output guard, immediately invalidating retained subscribers;
+   reconnect starts without permission inherited from source caches.
+2. Weather clients share averaging settings and history. Source leases remain
+   independent across clients and output types, so removing Switch clients does
+   not interrupt Weather's source or change its connection generation.
+3. A pending connect cannot hold a global mutex during source I/O. Client maps
+   reserve a token, release the lock, then await construction. Cancellation and
+   EOF remove only that reservation; an old task cannot delete its replacement.
+   Duplicate ready connects are idempotent and duplicate pending ones are busy.
+4. Disconnect while a write is in flight is not rollback. The command's guard
+   retains its activity and source leases until its bounded result, including
+   an uncertain outcome. Another client's connection is unaffected.
+5. Dropping client references is insufficient evidence that workers have closed.
+   Runtime shutdown closes admission and revokes safety synchronously before
+   draining actors. Actors finish bounded I/O, reject queued/future commands,
+   clear caches, and retain terminal cleanup results. All source cleanup is
+   awaited even after a failure. A cancelled shutdown can resume without a new
+   Disconnect attempt; runtime admission remains closed.
+
+Verification: 104 hub tests pass, including eight runtime lifecycle/fault cases
+and a queued-command/source-shutdown case. The latter verifies that shutdown
+does not dispatch a queued read after an uncertain in-flight write. Runtime
+tests also cover retained safety subscribers, independent expiry during a source
+stall, cancelled connection replacement, an uncertain disconnect, resumed drain,
+and stale-registry rejection. The mixed runtime test uses a real loopback Alpaca
+server and production FocusCube3 worker in simulation. Clippy, Rust 1.89.0,
+generated-contract freshness, and package verification pass.
+
+This is still an in-process runtime. IPC framing/endpoints, OS ownership/resume,
+configuration replacement, protected credentials, virtual/simulated source
+adapters, frontend publication, conformance, and hardware acceptance remain open.
+No milestone 2 completion or later milestone completion is claimed.

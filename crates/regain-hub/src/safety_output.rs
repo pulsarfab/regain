@@ -62,13 +62,17 @@ impl SafetyOutput {
     pub fn subscribe(&self) -> watch::Receiver<HubSnapshot> {
         self.runtime.subscribe()
     }
+    /// Revoke permission synchronously before waiting for source cleanup.
+    pub fn shutdown(&self) {
+        self.runtime.shutdown();
+        self.stop.send_replace(true);
+    }
 }
 impl Drop for SafetyOutput {
     fn drop(&mut self) {
         // The lease cleanup tasks may outlive this object. Empty the endpoint
         // map first; even a concurrently finishing observation then stays unsafe.
-        self.runtime.shutdown();
-        self.stop.send_replace(true);
+        self.shutdown();
     }
 }
 fn fence(state: &SourceSnapshot) -> Fence {

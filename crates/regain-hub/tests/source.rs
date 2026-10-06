@@ -149,6 +149,52 @@ async fn pending_handshake_is_bounded_even_if_an_adapter_never_finishes() {
 }
 
 #[tokio::test(start_paused = true)]
+async fn shutdown_finishes_inflight_io_and_rejects_queued_and_future_commands() {
+    let device = Arc::new(Device::default());
+    let source = spawn(&device);
+    let lease = Uuid::new_v4();
+    source.acquire(lease).await.unwrap();
+    source.control(lease, true).await.unwrap();
+    device.hang_write.store(true, SeqCst);
+    let writing = tokio::spawn({
+        let source = source.clone();
+        async move { source.write(lease, "move", Values::new()).await }
+    });
+    settle().await;
+    assert_eq!(device.writes.load(SeqCst), 1);
+    let stopping = tokio::spawn({
+        let source = source.clone();
+        async move { source.shutdown().await }
+    });
+    settle().await;
+    let reading = tokio::spawn({
+        let source = source.clone();
+        async move { source.read(lease, "position", Values::new()).await }
+    });
+    settle().await;
+    tokio::time::advance(Duration::from_secs(2)).await;
+    assert_eq!(
+        writing.await.unwrap().unwrap_err().kind,
+        ErrorKind::Uncertain
+    );
+    stopping.await.unwrap().unwrap();
+    assert_eq!(
+        reading.await.unwrap().unwrap_err().kind,
+        ErrorKind::Disconnected
+    );
+    assert_eq!(device.reads.load(SeqCst), 0);
+    assert_eq!(
+        source.acquire(Uuid::new_v4()).await.unwrap_err().kind,
+        ErrorKind::Disconnected
+    );
+    assert!(!source.snapshot().transport_connected);
+    assert!(source.snapshot().values.is_empty());
+    assert_eq!(source.snapshot().lease_count, 0);
+    source.shutdown().await.unwrap();
+    assert_eq!(device.disconnects.load(SeqCst), 1);
+}
+
+#[tokio::test(start_paused = true)]
 async fn refresh_acknowledges_trigger_without_waiting_for_a_hung_sensor() {
     let device = Arc::new(Device::default());
     let source = spawn(&device);

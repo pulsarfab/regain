@@ -180,6 +180,7 @@ pub struct PollEvent {
 
 type Reply<T> = oneshot::Sender<Result<T, SourceError>>;
 enum Command {
+    Shutdown,
     Refresh {
         lease: Uuid,
         reply: Reply<()>,
@@ -216,6 +217,7 @@ pub struct SourceHandle {
     commands: mpsc::Sender<Command>,
     snapshot: watch::Receiver<SourceSnapshot>,
     events: broadcast::Sender<PollEvent>,
+    completion: watch::Receiver<Option<Result<(), SourceError>>>,
 }
 
 /// One immutable registry per applied configuration revision. Construction is
@@ -275,6 +277,30 @@ impl SourceRegistry {
             .map(|source| source.snapshot())
             .collect()
     }
+    /// Stop all actors concurrently, including actors still held by old output
+    /// guards. Collect every cleanup result; one failure cannot skip another.
+    pub async fn shutdown(&self) -> Result<(), Vec<(Uuid, SourceError)>> {
+        let mut tasks = tokio::task::JoinSet::new();
+        for (id, source) in &self.sources {
+            let id = *id;
+            let source = source.clone();
+            tasks.spawn(async move { (id, source.shutdown().await) });
+        }
+        let mut errors = Vec::new();
+        while let Some(result) = tasks.join_next().await {
+            match result {
+                Ok((id, Err(error))) => errors.push((id, error)),
+                Ok((_, Ok(()))) => {}
+                Err(_) => errors.push((Uuid::nil(), closed())),
+            }
+        }
+        errors.sort_by_key(|(id, _)| *id);
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(errors)
+        }
+    }
 }
 
 impl SourceHandle {
@@ -317,10 +343,12 @@ impl SourceHandle {
         let (commands, receiver) = mpsc::channel(16);
         let (snapshot, reader) = watch::channel(initial.clone());
         let (events, _) = broadcast::channel(64);
+        let (completion, completed) = watch::channel(None);
         let handle = Arc::new(Self {
             commands,
             snapshot: reader,
             events: events.clone(),
+            completion: completed,
         });
         tokio::spawn(
             Actor {
@@ -338,6 +366,7 @@ impl SourceHandle {
                 backoff_failures: 0,
                 retrying: false,
                 connection_started: None,
+                completion,
             }
             .run(receiver),
         );
@@ -345,6 +374,21 @@ impl SourceHandle {
     }
     pub fn snapshot(&self) -> SourceSnapshot {
         self.snapshot.borrow().clone()
+    }
+    /// The terminal cleanup result is retained, making concurrent/repeated
+    /// shutdown idempotent without replaying an upstream Disconnect.
+    pub async fn shutdown(&self) -> Result<(), SourceError> {
+        let mut completion = self.completion.clone();
+        if completion.borrow().is_none() {
+            // If already closing, wait for its terminal result below.
+            let _ = self.commands.send(Command::Shutdown).await;
+        }
+        loop {
+            if let Some(result) = completion.borrow_and_update().clone() {
+                return result;
+            }
+            completion.changed().await.map_err(|_| closed())?;
+        }
     }
     /// Generation changes invalidate observations even before a poll finishes.
     pub fn status(&self) -> watch::Receiver<SourceSnapshot> {
@@ -452,6 +496,7 @@ struct Actor {
     backoff_failures: u32,
     retrying: bool,
     connection_started: Option<Instant>,
+    completion: watch::Sender<Option<Result<(), SourceError>>>,
 }
 impl Actor {
     fn deadline(&self) -> Duration {
@@ -522,10 +567,12 @@ impl Actor {
             }
         }
     }
-    async fn disconnect(&mut self) {
+    async fn disconnect(&mut self) -> Result<(), SourceError> {
         self.connection_started = None;
-        let result = timeout(self.deadline(), self.backend.disconnect()).await;
-        if !matches!(result, Ok(Ok(()))) {
+        let result = timeout(self.deadline(), self.backend.disconnect())
+            .await
+            .unwrap_or_else(|_| Err(SourceError::uncertain()));
+        if result.is_err() {
             self.backend.reset();
         }
         self.state.transport_connected = false;
@@ -543,7 +590,9 @@ impl Actor {
         self.backoff_failures = 0;
         self.retrying = false;
         self.backend.restart_poll();
+        self.state.error = result.as_ref().err().cloned();
         self.publish();
+        result
     }
     fn authorized(&self, lease: Uuid, write: bool) -> Result<(), SourceError> {
         if !self.leases.contains(&lease) {
@@ -569,16 +618,24 @@ impl Actor {
                 // Due sampling cannot be starved by clients flooding the queue.
                 biased;
                 _=wait_until(self.next_poll), if !self.leases.is_empty() => self.poll().await,
-                command=commands.recv() => match command { Some(command)=>self.command(command).await, None=>break }
+                command=commands.recv() => match command {
+                    Some(Command::Shutdown) | None => break,
+                    Some(command)=>self.command(command).await,
+                }
             }
         }
+        commands.close();
+        // Release queued request/reply pairs before cleanup can wait on I/O.
+        while commands.try_recv().is_ok() {}
         self.leases.clear();
-        self.disconnect().await;
-        self.state.error = Some(closed());
+        let result = self.disconnect().await;
+        self.state.error = Some(result.as_ref().err().cloned().unwrap_or_else(closed));
         self.publish();
+        self.completion.send_replace(Some(result));
     }
     async fn command(&mut self, command: Command) {
         match command {
+            Command::Shutdown => unreachable!("Handled by the actor loop"),
             Command::Refresh { lease, reply } => {
                 if reply.is_closed() {
                     return;
@@ -683,7 +740,7 @@ impl Actor {
                 if reply.send(Ok(self.state.clone())).is_err() && inserted {
                     self.leases.remove(&lease);
                     if self.leases.is_empty() {
-                        self.disconnect().await;
+                        let _ = self.disconnect().await;
                     } else {
                         self.publish();
                     }
@@ -691,7 +748,7 @@ impl Actor {
             }
             Command::Release { lease, reply } => {
                 if self.leases.remove(&lease) && self.leases.is_empty() {
-                    self.disconnect().await;
+                    let _ = self.disconnect().await;
                 }
                 if self.controller == Some(lease) {
                     self.controller = None;
