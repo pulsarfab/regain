@@ -2794,9 +2794,11 @@ artifacts/hub-virtual-rotator-private-publisher-diagnostics.log and the focused 
 A standalone private --hub-init probe succeeded in 5.87 seconds and created its
 file. That is timing evidence, not proof of the other helper failures' causes.
 
-Frontend checkpoint CI 37518077578/37518073024 is still live, with seven successful
-jobs and Windows incomplete. Keep the virtual checkpoint local while those jobs
-finish, then resolve the managed failures and update the same draft PR. Review
+Frontend checkpoint 63e7ae4 CI 37518077578/37518073024 now passes all eight jobs,
+including Windows packaging and registered COM acceptance. This validates the
+outer job budget and pushed native frontend scope, not the newer local virtual
+increment. Keep the virtual checkpoint local while resolving managed failures,
+then update the same draft PR. Review
 also identified missing Focuser/Rotator ProgID generation in the Rust ASCOM identity
 helper; address and test it before enabling rotator COM imports. COM, dedicated
 simulation, shared creation and every original broader acceptance gate remain open.
