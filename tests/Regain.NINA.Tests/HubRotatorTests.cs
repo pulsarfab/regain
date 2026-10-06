@@ -74,9 +74,9 @@ public sealed partial class HubNativeTests
         using var sibling = new HubRotatorDevice(host.Selection(4, "rotator"), host.Executable, host.Workers);
         await first.Connect(CancellationToken.None); await sibling.Connect(CancellationToken.None);
         var lost = await Assert.ThrowsAsync<HubException>(() => first.Move(5f, CancellationToken.None));
-        Assert.Equal("uncertain", lost.Remote!.Code);
+        await AssertAccessoryFailure(host, source, lost, "uncertain", "first rotator output lost Move reply");
         var fenced = await Assert.ThrowsAsync<HubException>(() => sibling.MoveAbsolute(35f, CancellationToken.None));
-        Assert.Equal("uncertain", fenced.Remote!.Code);
+        await AssertAccessoryFailure(host, source, fenced, "uncertain", "second rotator output fenced Move");
         Assert.False(first.Connected); Assert.False(sibling.Connected);
         Assert.Equal(1, source.Moves); Assert.Equal(0, source.Halts);
         Assert.True((await host.Command(new { op = "sourceStatus", source = source.SourceId })).GetProperty("writeUncertain").GetBoolean());

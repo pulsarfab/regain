@@ -79,12 +79,27 @@ public sealed partial class HubNativeTests
         await ConnectWithEvidence(first, "first output initial connection");
         await ConnectWithEvidence(second, "second output initial connection");
         var lost = await Assert.ThrowsAsync<HubException>(() => first.Move(70, CancellationToken.None, 0));
-        Assert.Equal("uncertain", lost.Remote!.Code);
+        await AssertAccessoryFailure(host, server, lost, "uncertain", "first output lost Move reply");
         var refused = await Assert.ThrowsAsync<HubException>(() => second.Move(71, CancellationToken.None, 0));
-        Assert.Equal("uncertain", refused.Remote!.Code);
+        await AssertAccessoryFailure(host, server, refused, "uncertain", "second output fenced Move");
         Assert.False(first.Connected); Assert.False(second.Connected);
         Assert.Equal(1, server.Moves); Assert.Equal(0, server.Halts);
         Assert.True((await host.Command(new { op = "sourceStatus", source = server.SourceId })).GetProperty("writeUncertain").GetBoolean());
+    }
+    private static async Task AssertAccessoryFailure(Host host, HubAccessoryServer server, HubException error, string expected, string stage)
+    {
+        if (error.Remote?.Code == expected) return;
+        // Capture dispatch evidence before another diagnostic IPC round trip.
+        // Do not retry the command or weaken its expected uncertainty semantics.
+        var trace = server.RequestTrace;
+        var moves = server.Moves;
+        var halts = server.Halts;
+        string state;
+        try { state = (await host.Command(new { op = "sourceStatus", source = server.SourceId })).GetRawText(); }
+        catch (Exception diagnostic) { state = "unavailable: " + diagnostic.Message; }
+        throw new Xunit.Sdk.XunitException($"{stage}: expected={expected}, actual={error.Remote?.Code}, " +
+            $"failure={error.Failure}, message={error.Remote?.Message}, moves={moves}, halts={halts}, " +
+            $"source={state}, private request trace={trace}");
     }
     [Fact]
     public async Task NativeFocuserRejectsRelativeSourcesWithoutInventingPosition()

@@ -19,6 +19,15 @@ Rotator COM, virtual and dedicated simulation inputs and shared creation are
 implemented. Wheels, panels and camera proxies remain; milestone 5's coordinated
 groups are not yet implemented. PR #21 stays draft until the full plan passes.
 
+Current CI issue: simulator checkpoint d4050c1 PR run 37530345334 completes
+with seven successful jobs and a Windows failure. The focuser lost-Move-reply
+fixture expects `uncertain` but receives `transient`; that assertion alone does
+not prove the command was dispatched. Added failure-only request/dispatch and
+source-state evidence to both accessory fixtures without changing assertions,
+retries or deadlines. The focused cases and all 201 NINA tests pass locally.
+Root cause and new CI confirmation remain required; push run 37530337700 is
+still live at this observation.
+
 Completed increment: shared setup enables rotator proxy creation and installed COM
 rotator choices through the existing generated forms. Native NINA and real net48
 fixtures create two outputs for one simulated source, preserve saved IDs and
@@ -1016,3 +1025,4 @@ Keep existing device profiles and registrations compatible throughout migration.
 | 2026-10-06 | Confirmed exact-head virtual checkpoint 87ca1c1 CI before pushing the reviewed COM increment. | PR/push runs 37522869618/37522861252 both pass all eight jobs, including Windows packaging, registered imports and installer acceptance. COM commit 89fae59 has complete local checks and now proceeds to its own CI. Dedicated simulation is in local implementation; shared creation and all original remaining gates stay open. |
 | 2026-10-06 | Implemented and reviewed dedicated rotator simulation through the existing actor, typed controller, virtual graph and all three outputs. Shared setup derives twelve controls and strict nested/Single validation from host metadata. | Twenty-one simulation cases, full Rust hub/Alpaca suites, warning-denied Clippy, Rust 1.89, generated contracts, Node/four schema tests, rebuilt-host NINA 199/199 and real net48 x86/x64 pass. Actual WPF screenshot is explicitly labelled simulation. Retain the first temporary-lease assertion failure and Clippy enum-size diagnostic; fixes preserve deadlines and JSON. COM checkpoint PR/push CI 37526619358/37526612935 has seven successes with Windows installer acceptance live. Keep this increment local until that checkpoint finishes, then push to the same draft PR. Next: shared rotator creation, remaining typed devices/camera ownership/coordination and every original acceptance gate. |
 | 2026-10-06 | Enabled and reviewed shared rotator creation, reusing generated native/web forms and installed COM worker/bitness choices. | Full Rust hub/Alpaca suites, Clippy, Rust 1.89, contracts, Node/four schema checks, all 201 NINA tests and real net48 x86/x64 created-output fixtures pass. Actual WPF and in-app browser acceptance cover creation/reload, class mismatch, sparse Single controls and zero leases; screenshots label simulation. Retain the obsolete Rust gate assertion, original-source-list WPF failure and empty-tab/early-visibility capture evidence. Preceding simulator PR/push CI 37530345334/37530337700 has six successes with Intel macOS and Windows live. Keep this increment local until CI finishes, then publish to the same draft PR. Next: typed wheels and panels, camera ownership/transport, coordination and every original remaining acceptance/final gate. |
+| 2026-10-06 | Recorded simulator CI Windows lost-Move-reply failure and added shared failure-only dispatch/source evidence to focuser and rotator fixtures. | PR run 37530345334 ends with seven successes and one Windows failure; push 37530337700 remains live. Both focused cases and all 201 NINA tests pass locally. No assertions, retries, deadlines or production behavior changed; cause remains unproved. Next: new CI evidence, typed wheels/panels, cameras/coordination and every original remaining gate. |

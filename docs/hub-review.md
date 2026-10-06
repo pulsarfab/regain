@@ -2984,3 +2984,26 @@ still live in PR/push 37530345334/37530337700. Retain this creation checkpoint
 locally until that CI finishes, then push it to the same draft PR for its own CI.
 Broader conformance/vendor/interactive acceptance and all original remaining
 typed devices, camera ownership/transport, coordination and final gates stay open.
+
+### Accessory lost-reply CI evidence (2026-10-06)
+
+Simulator d4050c1 PR run 37530345334 completes with seven successful jobs but
+Windows fails NativeFocuserLostMoveReplyRetainsSharedUncertaintyAndNoReplay:
+expected `uncertain`, received `transient`. Retain the completed job log at
+artifacts/hub-rotator-sim-windows-failure.log. The test's connection diagnostics
+cannot explain this later failure. Review confirms FocuserSession performs live
+read-only limit/motion checks before dispatch; their transport failure can return
+Transient, whereas a dispatched timeout is retained as Uncertain by the actor.
+Existing paused-time coverage verifies that distinction. Neither a preflight
+failure nor a fixture scheduling cause is proved by the CI assertion.
+
+Added a shared failure-only helper to the focuser and rotator lost-reply tests.
+It captures write/Halt counts and private request trace before diagnostic IPC,
+then reports source health without replacing the original semantic failure if
+that diagnostic also fails. Successful assertions perform no additional I/O.
+There are no retries, deadline changes, production changes or relaxed expectations.
+The two focused cases and full warnings-denied NINA suite pass (201/201), recorded
+in artifacts/hub-accessory-move-evidence-{focused,nina}.log. These passes do not
+resolve the CI cause; push run 37530337700 remains live. Publish the evidence with
+the locally verified shared-creation increment for subsequent CI, retaining the
+failure and all original remaining gates.
