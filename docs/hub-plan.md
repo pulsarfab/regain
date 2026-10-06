@@ -277,9 +277,13 @@ source-to-policy path; this is not yet a published Alpaca device.
 
 The Alpaca adapter has bounded scalar requests/responses, typed poll samples,
 sanitized errors, no redirects or automatic HTTP retries, and explicit external
-versus managed connection ownership. Current connection compatibility uses the
-legacy `Connected` property. Interface/capability discovery and modern per-client
-Connect/Disconnect negotiation still need implementation and conformance tests.
+versus managed connection ownership. It discovers InterfaceVersion and selects
+legacy `Connected` or modern per-client Connect/Disconnect/Connecting. Each
+handshake step has a request deadline; the whole handshake has a separate
+30-second default deadline. Pending steps are not failed safety observations.
+Only acknowledged owned connections are released, and ambiguous connection
+writes are not replayed. Broader device capabilities and interface conformance
+still need implementation and verification.
 The host's protected credential provider is also pending; the adapter only
 accepts resolved credentials and refuses an unresolved reference.
 
@@ -326,7 +330,7 @@ remote switch write. Camera sources, persistent rotator reference settings, and
 the full proxy interface surface remain for milestone 4. Missing temperatures
 are per-measurement errors, not a reason to discard other valid telemetry.
 
-Next: complete capability/connection negotiation and shared host IPC, then connect the first
+Next: complete device capability discovery and shared host IPC, then connect the first
 three virtual classes to the existing Alpaca server/setup UI. Frontend error
 translation and protocol conformance remain unverified. Generic
 scalar polling does not establish camera image or acquisition support. No complete
@@ -407,3 +411,4 @@ Keep existing device profiles and registrations compatible throughout migration.
 | 2026-10-05 | Split Alpaca polling into bounded requests with per-key evidence, bounded incremental caches, same-key retries, and prompt weather Refresh. Corrected Refresh against the ASCOM interface during review. | 70 local Rust tests, Clippy, Rust 1.89.0, standalone package verification, and generated-contract freshness pass. Latency fixtures exercise command interleaving and Retry-After. Next: shared native accessory transport/adapters, capability negotiation, and host IPC. All frontend and later milestone gates remain open. |
 | 2026-10-05 | Extracted the shared accessory worker client into regain-core and adopted it in existing Alpaca accessories. Added cancellation-safe process retirement, framing limits, and process fixtures. Moved development versions to 0.6.0 / 0.6.0.0 after packaging exposed resolution of the published 0.5.10 dependency. | Core tests, Clippy, Rust 1.89.0 checks, and seven production-worker/Alpaca simulation suites pass. Native hub mapping, capabilities, host IPC, and all later gates remain pending. No release or tag was created. |
 | 2026-10-05 | Added native hub accessory adapters on the shared transport, covering seven families, scalar telemetry, validated motion/light/calibration commands, explicit simulation identity, and source leases. Added a mixed native/network Switch plus shared Weather test. | 79 Rust hub tests pass with production workers in simulation, including EFW calibration and OFP2 movement/light controls. Clippy, Rust 1.89.0, and generated-contract freshness pass. Windows test entrypoint now supplies its built worker path, matching portable CI. Next: capability/connection negotiation, credentials, host IPC, and frontend publication; all later gates remain required. |
+| 2026-10-05 | Implemented version-negotiated Alpaca connections, bounded incremental handshakes, shared connection diagnostics, and a schema-described connection timeout. Review corrected repeated uncertain disconnects and duplicate actor resets on handshake failure. | 89 Rust hub tests pass, including cancellation, pending/slow handshakes, external ownership, and reconnect during asynchronous disconnect. Clippy, Rust 1.89.0, package verification, schema freshness, and web/Python/.NET configuration readers pass. Next: shared host/source construction, protected credentials, capabilities, IPC, and frontend publication. Milestones 2–5 and final acceptance remain open. |

@@ -292,3 +292,40 @@ The host factory, capability/connection negotiation, protected credentials,
 cross-process ownership/IPC/resume, actual frontend devices, and all later
 conformance/hardware/documentation gates remain open. No hardware was moved by
 these tests, and this checkpoint does not close milestone 2.
+
+## 2026-10-05: bounded Alpaca connection negotiation
+
+Reviewed incremental connection state transitions against modern ASCOM interface
+declarations and the existing source actor. InterfaceVersion now selects modern
+Connect/Disconnect/Connecting or the legacy Connected property. Shared snapshots
+expose the negotiated method, version, ownership, and connection uncertainty.
+
+Corrections from review:
+
+1. Already-connected modern hardware may belong to another client. Managed mode
+   explicitly claims its own ClientID; externally managed mode sends no connection
+   writes. A legacy connection already open remains borrowed.
+2. Per-request timeouts alone cannot bound a driver reporting Connecting forever.
+   A separate schema-described connection deadline bounds all handshake steps,
+   including slow metadata. Pending steps admit queued commands and do not count
+   as failed safety polls or successful recovery observations.
+3. Disconnect previously could be retried after an ambiguous reply. Mark the
+   cleanup attempt before awaiting it and retain uncertainty across resets.
+   Cancelled Connect is likewise never retried or claimed for cleanup without
+   an acknowledgement. Reconnect waits for a preceding asynchronous Disconnect.
+4. A handshake failure was reset once by connect and again by poll/read/write.
+   Only operations actually dispatched after connection now perform their own
+   transport reset. The pending-adapter fixture verifies one reset at expiry.
+5. Legacy metadata fallback is limited to explicit absence. HTTP 404 is distinct
+   from an ASCOM ErrorNumber of 404. Unsupported modern Connect does not authorize
+   a second connection write through the legacy property.
+
+Verification: 89 hub tests pass (21 unit, 23 HTTP/mixed-source, 10 configuration,
+6 native-worker, 17 source/safety, 6 switch, 6 weather). New cases exercise modern
+and legacy ownership, cancellation, stalled/slow handshakes, uncertain cleanup,
+reconnect during disconnect, and source polling after an incremental handshake.
+Clippy, Rust 1.89.0, package verification for transport/core/hub, schema freshness,
+web and independent JSON Schema readers, and both .NET HubConfiguration tests
+pass. Production worker tests remain simulation only. Device-specific capability
+discovery, host construction/IPC, protected credentials, frontend conformance,
+hardware acceptance, and all later gates remain open.

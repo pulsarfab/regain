@@ -19,6 +19,7 @@ use std::{
 };
 use uuid::Uuid;
 
+#[derive(Clone)]
 struct Reply {
     status: u16,
     body: String,
@@ -145,6 +146,14 @@ async fn weather_refresh_triggers_upstream_without_waiting_for_polling_and_respe
     .unwrap();
     let lease = Uuid::new_v4();
     source.acquire(lease).await.unwrap();
+    let mut status = source.status();
+    tokio::time::timeout(Duration::from_secs(3), async {
+        while !status.borrow_and_update().transport_connected {
+            status.changed().await.unwrap();
+        }
+    })
+    .await
+    .unwrap();
     server.push(Reply::json(json!({"ErrorNumber":0})));
     source.refresh(lease).await.unwrap();
     assert_eq!(
@@ -439,6 +448,10 @@ async fn mixed_native_and_http_switch_shares_native_temperature_with_weather() {
 #[derive(Default)]
 struct Fixture {
     replies: Mutex<VecDeque<Reply>>,
+    interface_reply: Mutex<Option<Reply>>,
+    negotiation_requests: Mutex<Vec<(String, String, String)>>,
+    // Data/connection operations; version discovery is recorded separately so
+    // transport assertions do not depend on metadata negotiation order.
     requests: Mutex<Vec<(String, String, String)>>,
 }
 struct Server {
@@ -500,17 +513,42 @@ async fn handler(State(fixture): State<Arc<Fixture>>, request: Request) -> Respo
     let method = request.method().to_string();
     let uri = request.uri().to_string();
     let body = to_bytes(request.into_body(), 65536).await.unwrap();
-    fixture
-        .requests
-        .lock()
+    let metadata = uri
+        .split('?')
+        .next()
         .unwrap()
-        .push((method, uri, String::from_utf8(body.to_vec()).unwrap()));
-    let reply = fixture
-        .replies
-        .lock()
-        .unwrap()
-        .pop_front()
-        .unwrap_or_else(|| Reply::value(json!(true)));
+        .ends_with("/interfaceversion");
+    let requests = if metadata {
+        &fixture.negotiation_requests
+    } else {
+        &fixture.requests
+    };
+    requests.lock().unwrap().push((
+        method,
+        uri.clone(),
+        String::from_utf8(body.to_vec()).unwrap(),
+    ));
+    let reply = if metadata {
+        fixture
+            .interface_reply
+            .lock()
+            .unwrap()
+            .clone()
+            .unwrap_or_else(|| {
+                Reply::value(json!(if uri.contains("/observingconditions/") {
+                    1
+                } else {
+                    2
+                }))
+            })
+    } else {
+        fixture
+            .replies
+            .lock()
+            .unwrap()
+            .pop_front()
+            .unwrap_or_else(|| Reply::value(json!(true)))
+    };
     tokio::time::sleep(reply.delay).await;
     let mut response = Response::builder().status(reply.status);
     if let Some(delay) = reply.retry_after {
@@ -557,7 +595,7 @@ async fn external_connection_never_writes_and_form_parameters_preserve_identity(
             .1
             .starts_with("/prefix/api/v1/safetymonitor/7/connected?")
     );
-    assert!(requests[1].1.contains("ClientTransactionID=2"));
+    assert!(requests[1].1.contains("ClientTransactionID=3"));
     assert_eq!(requests[2].0, "PUT");
     let form = url::form_urlencoded::parse(requests[2].2.as_bytes())
         .collect::<std::collections::BTreeMap<_, _>>();
@@ -613,6 +651,312 @@ async fn uncertain_connection_is_not_replayed_or_claimed_for_cleanup() {
     );
     backend.disconnect().await.unwrap();
     assert_eq!(server.fixture.requests.lock().unwrap().len(), 2);
+}
+
+#[tokio::test]
+async fn modern_managed_connection_claims_its_client_and_waits_for_completion() {
+    use regain_hub::source::ConnectionMethod;
+    let mut server = Server::new(vec![
+        Reply::value(json!(true)),
+        Reply::json(json!({"ErrorNumber":0})),
+        Reply::value(json!(true)),
+        Reply::value(json!(false)),
+        Reply::value(json!(true)),
+        Reply::json(json!({"ErrorNumber":0})),
+    ])
+    .await;
+    server.managed();
+    *server.fixture.interface_reply.lock().unwrap() = Some(Reply::value(json!(3)));
+    let mut backend = server.backend();
+    backend.connect().await.unwrap();
+    let info = backend.connection_info().unwrap();
+    assert_eq!(info.interface_version, Some(3));
+    assert_eq!(info.method, ConnectionMethod::Async);
+    assert!(info.owns_connection);
+    backend.disconnect().await.unwrap();
+    assert!(!backend.connection_info().unwrap().owns_connection);
+    let requests = server.fixture.requests.lock().unwrap();
+    assert_eq!(requests.len(), 6);
+    assert!(requests[1].1.contains("/connect"));
+    assert!(requests[2].1.contains("/connecting"));
+    assert!(requests[3].1.contains("/connecting"));
+    assert!(requests[4].1.contains("/connected"));
+    assert!(requests[5].1.contains("/disconnect"));
+    let forms: Vec<_> = [1, 5]
+        .into_iter()
+        .map(|index| {
+            url::form_urlencoded::parse(requests[index].2.as_bytes())
+                .collect::<std::collections::BTreeMap<_, _>>()
+        })
+        .collect();
+    assert_eq!(forms[0]["ClientID"], forms[1]["ClientID"]);
+    assert!(!forms[0].contains_key("Connected"));
+}
+
+#[tokio::test]
+async fn modern_external_connection_does_not_claim_or_disconnect_the_device() {
+    let server = Server::new(vec![Reply::value(json!(true))]).await;
+    *server.fixture.interface_reply.lock().unwrap() = Some(Reply::value(json!(3)));
+    let mut backend = server.backend();
+    backend.connect().await.unwrap();
+    backend.disconnect().await.unwrap();
+    assert!(!backend.connection_info().unwrap().owns_connection);
+    let requests = server.fixture.requests.lock().unwrap();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].0, "GET");
+}
+
+#[tokio::test]
+async fn metadata_fallback_is_limited_to_explicitly_missing_interface_version() {
+    for reply in [
+        Reply::json(json!({"ErrorNumber":1024})),
+        Reply {
+            status: 404,
+            ..Reply::value(Value::Null)
+        },
+    ] {
+        let server = Server::new(vec![Reply::value(json!(true))]).await;
+        *server.fixture.interface_reply.lock().unwrap() = Some(reply);
+        let mut backend = server.backend();
+        backend.connect().await.unwrap();
+        assert_eq!(backend.connection_info().unwrap().interface_version, None);
+    }
+    for reply in [
+        Reply::value(json!(true)),
+        Reply::value(json!(0)),
+        Reply::value(json!(1.5)),
+        // An ASCOM error number is not an HTTP status code.
+        Reply::json(json!({"ErrorNumber":404})),
+        Reply {
+            status: 403,
+            ..Reply::value(Value::Null)
+        },
+    ] {
+        let server = Server::new(vec![]).await;
+        *server.fixture.interface_reply.lock().unwrap() = Some(reply);
+        assert_eq!(
+            server.backend().connect().await.unwrap_err().kind,
+            ErrorKind::Permanent
+        );
+        assert!(server.fixture.requests.lock().unwrap().is_empty());
+    }
+    let mut server = Server::new(vec![
+        Reply::value(json!(false)),
+        Reply::json(json!({"ErrorNumber":1024})),
+    ])
+    .await;
+    server.managed();
+    *server.fixture.interface_reply.lock().unwrap() = Some(Reply::value(json!(3)));
+    assert_eq!(
+        server.backend().connect().await.unwrap_err().kind,
+        ErrorKind::Unsupported
+    );
+    assert!(
+        server
+            .fixture
+            .requests
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(method, _, _)| method == "PUT")
+            .all(|(_, uri, _)| uri.split('?').next().unwrap().ends_with("/connect"))
+    );
+}
+
+#[tokio::test]
+async fn asynchronous_connection_has_an_overall_deadline_and_never_replays_connect() {
+    let mut server = Server::new(vec![
+        Reply::value(json!(false)),
+        Reply::json(json!({"ErrorNumber":0})),
+    ])
+    .await;
+    server.managed();
+    server.config.polling.connection_timeout_seconds = 1.0;
+    *server.fixture.interface_reply.lock().unwrap() = Some(Reply::value(json!(3)));
+    let mut backend = server.backend();
+    let started = tokio::time::Instant::now();
+    assert_eq!(
+        backend.connect().await.unwrap_err().kind,
+        ErrorKind::Permanent
+    );
+    assert!(started.elapsed() < Duration::from_secs(2));
+    let requests = server.fixture.requests.lock().unwrap().len();
+    backend.reset();
+    assert_eq!(
+        backend.connect().await.unwrap_err().kind,
+        ErrorKind::Permanent
+    );
+    assert_eq!(server.fixture.requests.lock().unwrap().len(), requests);
+    assert!(backend.connection_info().unwrap().owns_connection);
+    backend.disconnect().await.unwrap();
+    let requests = server.fixture.requests.lock().unwrap();
+    assert_eq!(
+        requests
+            .iter()
+            .filter(|(method, uri, _)| method == "PUT"
+                && uri.split('?').next().unwrap().ends_with("/connect"))
+            .count(),
+        1
+    );
+    assert_eq!(
+        requests
+            .iter()
+            .filter(|(method, uri, _)| method == "PUT"
+                && uri.split('?').next().unwrap().ends_with("/disconnect"))
+            .count(),
+        1
+    );
+}
+
+#[tokio::test]
+async fn uncertain_disconnect_is_not_replayed_during_reset_or_another_cleanup() {
+    let mut server = Server::new(vec![
+        Reply::value(json!(false)),
+        Reply::json(json!({"ErrorNumber":0})),
+        Reply::delayed(Value::Null, 500),
+    ])
+    .await;
+    server.managed();
+    server.config.polling.request_timeout_seconds = 0.1;
+    let mut backend = server.backend();
+    backend.connect().await.unwrap();
+    assert_eq!(
+        backend.disconnect().await.unwrap_err().kind,
+        ErrorKind::Uncertain
+    );
+    backend.reset();
+    assert_eq!(
+        backend.disconnect().await.unwrap_err().kind,
+        ErrorKind::Uncertain
+    );
+    assert_eq!(
+        backend.connect().await.unwrap_err().kind,
+        ErrorKind::Uncertain
+    );
+    assert_eq!(server.fixture.requests.lock().unwrap().len(), 3);
+}
+
+#[tokio::test]
+async fn cancelled_connection_write_is_not_replayed_or_disconnected_without_acknowledgement() {
+    let mut server = Server::new(vec![
+        Reply::value(json!(false)),
+        Reply::delayed(Value::Null, 500),
+    ])
+    .await;
+    server.managed();
+    *server.fixture.interface_reply.lock().unwrap() = Some(Reply::value(json!(3)));
+    let mut backend = server.backend();
+    assert!(!backend.connect_step().await.unwrap());
+    assert!(!backend.connect_step().await.unwrap());
+    assert!(
+        tokio::time::timeout(Duration::from_millis(100), backend.connect_step())
+            .await
+            .is_err()
+    );
+    backend.reset();
+    assert_eq!(
+        backend.connect().await.unwrap_err().kind,
+        ErrorKind::Uncertain
+    );
+    backend.disconnect().await.unwrap();
+    assert_eq!(server.fixture.requests.lock().unwrap().len(), 2);
+    assert!(backend.connection_info().unwrap().uncertain);
+    assert!(!backend.connection_info().unwrap().owns_connection);
+}
+
+#[tokio::test]
+async fn overall_connection_deadline_also_bounds_a_single_slow_metadata_request() {
+    let mut server = Server::new(vec![]).await;
+    server.config.polling.request_timeout_seconds = 5.0;
+    server.config.polling.connection_timeout_seconds = 1.0;
+    *server.fixture.interface_reply.lock().unwrap() = Some(Reply::delayed(json!(3), 3000));
+    let began = tokio::time::Instant::now();
+    assert_eq!(
+        server.backend().connect().await.unwrap_err().kind,
+        ErrorKind::Permanent
+    );
+    assert!(began.elapsed() < Duration::from_secs(2));
+    assert!(server.fixture.requests.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn reconnect_waits_for_previous_async_disconnect_before_claiming_a_new_lease() {
+    let mut server = Server::new(vec![
+        Reply::value(json!(false)),
+        Reply::value(Value::Null),
+        Reply::value(json!(false)),
+        Reply::value(json!(true)),
+        Reply::value(Value::Null),
+        Reply::value(json!(true)),
+        Reply::value(json!(false)),
+        Reply::value(json!(true)),
+        Reply::value(Value::Null),
+        Reply::value(json!(false)),
+        Reply::value(json!(true)),
+    ])
+    .await;
+    server.managed();
+    *server.fixture.interface_reply.lock().unwrap() = Some(Reply::value(json!(3)));
+    let mut backend = server.backend();
+    backend.connect().await.unwrap();
+    backend.disconnect().await.unwrap();
+    backend.connect().await.unwrap();
+    let requests = server.fixture.requests.lock().unwrap();
+    assert_eq!(requests.len(), 11);
+    for (index, suffix) in [
+        (4, "disconnect"),
+        (5, "connecting"),
+        (6, "connecting"),
+        (7, "connected"),
+        (8, "connect"),
+    ] {
+        assert!(
+            requests[index]
+                .1
+                .split('?')
+                .next()
+                .unwrap()
+                .ends_with(&format!("/{suffix}"))
+        );
+    }
+    assert_eq!(server.fixture.negotiation_requests.lock().unwrap().len(), 2);
+}
+
+#[tokio::test]
+async fn actor_handshake_uses_separate_deadlines_and_does_not_count_pending_as_failed_safety() {
+    use regain_hub::{safety::MonotonicClock, source::SourceHandle};
+    let mut server = Server::new(vec![
+        Reply::delayed(json!(false), 150),
+        Reply::delayed(Value::Null, 150),
+        Reply::delayed(json!(false), 150),
+        Reply::delayed(json!(true), 150),
+        Reply::delayed(json!(true), 150),
+    ])
+    .await;
+    server.managed();
+    server.config.polling.request_timeout_seconds = 0.3;
+    *server.fixture.interface_reply.lock().unwrap() = Some(Reply::delayed(json!(3), 150));
+    let source = SourceHandle::spawn(
+        server.config.id,
+        Uuid::new_v4(),
+        server.config.polling.clone(),
+        Box::new(server.backend()),
+        Arc::new(MonotonicClock::default()),
+    )
+    .unwrap();
+    let mut events = source.subscribe();
+    let lease = Uuid::new_v4();
+    let pending = source.acquire(lease).await.unwrap();
+    assert!(!pending.transport_connected);
+    assert_eq!(pending.error.unwrap().kind, ErrorKind::Connecting);
+    let first = tokio::time::timeout(Duration::from_secs(4), events.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(first.sequence, 1);
+    assert_eq!(first.result.unwrap()["issafe"], true);
+    assert!(source.snapshot().connection_info.unwrap().owns_connection);
+    source.release(lease).await.unwrap();
 }
 
 #[tokio::test]

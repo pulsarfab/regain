@@ -28,6 +28,7 @@ struct Device {
     resets: AtomicUsize,
     offline: AtomicBool,
     hang_connect: AtomicBool,
+    pending_connect: AtomicBool,
     hang_poll: AtomicBool,
     hang_read: AtomicBool,
     hang_write: AtomicBool,
@@ -37,6 +38,15 @@ struct Device {
 }
 struct Mock(Arc<Device>);
 impl Backend for Mock {
+    fn connect_step(&mut self) -> BackendFuture<'_, bool> {
+        Box::pin(async {
+            if self.0.pending_connect.load(SeqCst) {
+                Ok(false)
+            } else {
+                self.connect().await.map(|()| true)
+            }
+        })
+    }
     fn connect(&mut self) -> BackendFuture<'_, ()> {
         Box::pin(async {
             self.0.connects.fetch_add(1, SeqCst);
@@ -118,6 +128,24 @@ async fn settle() {
     for _ in 0..10 {
         tokio::task::yield_now().await;
     }
+}
+
+#[tokio::test(start_paused = true)]
+async fn pending_handshake_is_bounded_even_if_an_adapter_never_finishes() {
+    let device = Arc::new(Device::default());
+    device.pending_connect.store(true, SeqCst);
+    let source = spawn(&device);
+    let mut events = source.subscribe();
+    let pending = source.acquire(Uuid::new_v4()).await.unwrap();
+    assert_eq!(pending.error.unwrap().kind, ErrorKind::Connecting);
+    assert!(!pending.transport_connected);
+    assert!(events.try_recv().is_err());
+    tokio::time::advance(Duration::from_secs(31)).await;
+    settle().await;
+    let event = events.try_recv().unwrap();
+    assert_eq!(event.result.unwrap_err().kind, ErrorKind::Transient);
+    assert_eq!(device.resets.load(SeqCst), 1);
+    assert!(!source.snapshot().transport_connected);
 }
 
 #[tokio::test(start_paused = true)]

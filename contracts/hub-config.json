@@ -319,6 +319,28 @@
               "valueType": "number"
             }
           },
+          "connectionTimeoutSeconds": {
+            "default": 30.0,
+            "description": "Maximum time for a source connection handshake, including asynchronous connection completion.",
+            "maximum": 300.0,
+            "minimum": 1.0,
+            "title": "Connection timeout",
+            "type": "number",
+            "x-regain": {
+              "apply": "reconnect",
+              "default": 30.0,
+              "description": "Maximum time for a source connection handshake, including asynchronous connection completion.",
+              "group": "Source polling",
+              "key": "connectionTimeoutSeconds",
+              "label": "Connection timeout",
+              "maximum": 300.0,
+              "minimum": 1.0,
+              "sensitive": false,
+              "step": 1.0,
+              "units": "s",
+              "valueType": "number"
+            }
+          },
           "initialBackoffSeconds": {
             "default": 0.5,
             "description": "Initial exponential retry delay, before equal jitter.",
@@ -962,6 +984,7 @@
               "attemptsPerCycle": 3,
               "backoffCapSeconds": 30.0,
               "backoffMultiplier": 2.0,
+              "connectionTimeoutSeconds": 30.0,
               "initialBackoffSeconds": 0.5,
               "pollSeconds": 30.0,
               "requestTimeoutSeconds": 1.0

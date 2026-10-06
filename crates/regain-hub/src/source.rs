@@ -44,7 +44,24 @@ pub type BackendFuture<'a, T> = Pin<Box<dyn Future<Output = Result<T, SourceErro
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub enum ConnectionMethod {
+    Legacy,
+    Async,
+}
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConnectionInfo {
+    pub device_type: crate::config::DeviceType,
+    pub interface_version: Option<u16>,
+    pub method: ConnectionMethod,
+    pub owns_connection: bool,
+    pub uncertain: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub enum ErrorKind {
+    Connecting,
     Disconnected,
     Busy,
     Transient,
@@ -105,6 +122,13 @@ impl std::error::Error for SourceError {}
 /// not be disconnected, and a worker reset must stop any local in-flight I/O.
 pub trait Backend: Send {
     fn connect(&mut self) -> BackendFuture<'_, ()>;
+    /// One bounded handshake step. False means pending, not a failed poll cycle.
+    fn connect_step(&mut self) -> BackendFuture<'_, bool> {
+        Box::pin(async { self.connect().await.map(|()| true) })
+    }
+    fn connection_info(&self) -> Option<ConnectionInfo> {
+        None
+    }
     fn disconnect(&mut self) -> BackendFuture<'_, ()>;
     fn read(&mut self, member: String, parameters: Values) -> BackendFuture<'_, Value>;
     fn write(&mut self, member: String, parameters: Values) -> BackendFuture<'_, Value>;
@@ -130,6 +154,7 @@ pub struct SourceSnapshot {
     pub sequence: u64,
     pub transport_connected: bool,
     pub write_uncertain: bool,
+    pub connection_info: Option<ConnectionInfo>,
     pub lease_count: usize,
     pub values: Values,
     pub sample_errors: BTreeMap<String, SourceError>,
@@ -278,6 +303,7 @@ impl SourceHandle {
             sequence: 0,
             transport_connected: false,
             write_uncertain: false,
+            connection_info: None,
             lease_count: 0,
             values: Values::new(),
             sample_errors: BTreeMap::new(),
@@ -311,6 +337,7 @@ impl SourceHandle {
                 attempt: 0,
                 backoff_failures: 0,
                 retrying: false,
+                connection_started: None,
             }
             .run(receiver),
         );
@@ -424,17 +451,20 @@ struct Actor {
     attempt: u32,
     backoff_failures: u32,
     retrying: bool,
+    connection_started: Option<Instant>,
 }
 impl Actor {
     fn deadline(&self) -> Duration {
         Duration::from_secs_f64(self.policy.request_timeout_seconds)
     }
     fn publish(&mut self) {
+        self.state.connection_info = self.backend.connection_info();
         self.state.write_uncertain = self.write_uncertain;
         self.state.lease_count = self.leases.len();
         self.snapshot.send_replace(self.state.clone());
     }
     fn fault(&mut self, error: SourceError) {
+        self.connection_started = None;
         self.state.error = Some(error);
         self.state.transport_connected = false;
         self.state.generation = Uuid::new_v4();
@@ -452,11 +482,26 @@ impl Actor {
         if self.state.transport_connected {
             return Ok(());
         }
-        let result = timeout(self.deadline(), self.backend.connect())
-            .await
-            .unwrap_or_else(|_| Err(SourceError::timeout()));
+        let started = *self.connection_started.get_or_insert_with(Instant::now);
+        let remaining = Duration::from_secs_f64(self.policy.connection_timeout_seconds)
+            .saturating_sub(started.elapsed());
+        let result = if remaining.is_zero() {
+            Err(SourceError::timeout())
+        } else {
+            timeout(self.deadline().min(remaining), self.backend.connect_step())
+                .await
+                .unwrap_or_else(|_| Err(SourceError::timeout()))
+        };
         match result {
-            Ok(()) => {
+            Ok(false) => {
+                let error =
+                    SourceError::new(ErrorKind::Connecting, "Source connection is in progress");
+                self.state.error = Some(error.clone());
+                self.publish();
+                Err(error)
+            }
+            Ok(true) => {
+                self.connection_started = None;
                 self.state.transport_connected = true;
                 // New transport cannot inherit another worker's safe evidence.
                 self.state.generation = Uuid::new_v4();
@@ -478,6 +523,7 @@ impl Actor {
         }
     }
     async fn disconnect(&mut self) {
+        self.connection_started = None;
         let result = timeout(self.deadline(), self.backend.disconnect()).await;
         if !matches!(result, Ok(Ok(()))) {
             self.backend.reset();
@@ -610,19 +656,23 @@ impl Actor {
                         Ok(()) => Duration::ZERO,
                         Err(error) => {
                             self.retrying = true;
-                            error
-                                .retry_after
-                                .unwrap_or_default()
-                                .max(Duration::from_secs_f64(
-                                    if matches!(
-                                        error.kind,
-                                        ErrorKind::Transient | ErrorKind::Disconnected
-                                    ) {
-                                        self.policy.initial_backoff_seconds
-                                    } else {
-                                        self.policy.backoff_cap_seconds
-                                    },
-                                ))
+                            if error.kind == ErrorKind::Connecting {
+                                Duration::from_millis(100)
+                            } else {
+                                error
+                                    .retry_after
+                                    .unwrap_or_default()
+                                    .max(Duration::from_secs_f64(
+                                        if matches!(
+                                            error.kind,
+                                            ErrorKind::Transient | ErrorKind::Disconnected
+                                        ) {
+                                            self.policy.initial_backoff_seconds
+                                        } else {
+                                            self.policy.backoff_cap_seconds
+                                        },
+                                    ))
+                            }
                         }
                     };
                     self.next_poll = Instant::now().checked_add(delay);
@@ -686,16 +736,21 @@ impl Actor {
                 if reply.is_closed() {
                     return;
                 }
+                let mut dispatched = false;
                 let result = match self.authorized(lease, false) {
                     Err(e) => Err(e),
                     Ok(()) => match self.connect().await {
                         Err(e) => Err(e),
-                        Ok(()) => timeout(self.deadline(), self.backend.read(member, parameters))
-                            .await
-                            .unwrap_or_else(|_| Err(SourceError::timeout())),
+                        Ok(()) => {
+                            dispatched = true;
+                            timeout(self.deadline(), self.backend.read(member, parameters))
+                                .await
+                                .unwrap_or_else(|_| Err(SourceError::timeout()))
+                        }
                     },
                 };
                 if let Err(e) = &result
+                    && dispatched
                     && e.transport_lost
                 {
                     self.fault(e.clone());
@@ -748,6 +803,7 @@ impl Actor {
                     self.fault(error.clone());
                     result = Err(error);
                 } else if let Err(error) = &result
+                    && dispatched
                     && error.transport_lost
                 {
                     // A definitive rejection can retire the transport without
@@ -775,8 +831,17 @@ impl Actor {
     }
     async fn poll(&mut self) {
         let started = self.clock.now();
+        let connection = self.connect().await;
+        if connection
+            .as_ref()
+            .is_err_and(|error| error.kind == ErrorKind::Connecting)
+        {
+            self.next_poll = Some(Instant::now() + Duration::from_millis(100));
+            return;
+        }
         self.attempt += 1;
-        let result = match self.connect().await {
+        let sampled = connection.is_ok();
+        let result = match connection {
             Err(e) => Err(e),
             Ok(()) => timeout(self.deadline(), self.backend.sample())
                 .await
@@ -807,6 +872,7 @@ impl Actor {
         let more = result.as_ref().is_ok_and(|batch| batch.more);
         let exhausted = !retryable || self.attempt >= self.policy.attempts_per_cycle;
         if let Err(error) = &result
+            && sampled
             && error.transport_lost
         {
             self.fault(error.clone());

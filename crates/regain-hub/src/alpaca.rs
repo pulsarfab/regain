@@ -1,8 +1,11 @@
 //! Bounded upstream Alpaca transport. Typed output controllers choose the poll
 //! plan; this adapter never invents capabilities or retries a command itself.
 use crate::{
-    config::{ConnectionPolicy, Readout, SourceBackend, SourceConfig},
-    source::{Backend, BackendFuture, ErrorKind, SampleBatch, SourceError, Values},
+    config::{ConnectionPolicy, DeviceType, Readout, SourceBackend, SourceConfig},
+    source::{
+        Backend, BackendFuture, ConnectionInfo, ConnectionMethod, ErrorKind, SampleBatch,
+        SourceError, Values,
+    },
 };
 use reqwest::{
     Client, Method,
@@ -68,14 +71,32 @@ impl SampleRequest {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ConnectionPhase {
+    Discover,
+    Check,
+    Open,
+    WaitOpen,
+    Verify,
+    Ready,
+    WaitClose,
+    Failed,
+}
+
 pub struct AlpacaBackend {
     client: Client,
     root: Url,
     client_id: u32,
     transaction: u32,
     policy: ConnectionPolicy,
-    opened_connection: bool,
+    opened_connection: Option<ConnectionMethod>,
     connection_uncertain: bool,
+    device_type: DeviceType,
+    interface_version: Option<u16>,
+    connection_method: Option<ConnectionMethod>,
+    connection_phase: ConnectionPhase,
+    connection_started: Option<tokio::time::Instant>,
+    connection_deadline: Duration,
     samples: Vec<SampleRequest>,
     cursor: usize,
     pending_age: Option<(f64, tokio::time::Instant)>,
@@ -122,6 +143,7 @@ impl AlpacaBackend {
                 "Alpaca URL must be HTTP(S), without credentials, query or fragment",
             ));
         }
+        let source_device_type = *device_type;
         let device_type = serde_json::to_value(device_type).expect("Device type serializes");
         root.set_path(&format!(
             "{}/api/v1/{}/{device_number}/",
@@ -178,8 +200,14 @@ impl AlpacaBackend {
             client_id: (Uuid::new_v4().as_u128() as u32).max(1),
             transaction: 0,
             policy: *connection_policy,
-            opened_connection: false,
+            opened_connection: None,
             connection_uncertain: false,
+            device_type: source_device_type,
+            interface_version: None,
+            connection_method: None,
+            connection_phase: ConnectionPhase::Discover,
+            connection_started: None,
+            connection_deadline: Duration::from_secs_f64(config.polling.connection_timeout_seconds),
             samples,
             cursor: 0,
             pending_age: None,
@@ -216,7 +244,9 @@ impl AlpacaBackend {
         let status = response.status().as_u16();
         if status != 200 {
             let mut error = SourceError::new(
-                if matches!(status, 408 | 429 | 500 | 502 | 503 | 504) {
+                if status == 404 && member == "interfaceversion" {
+                    ErrorKind::Unsupported
+                } else if matches!(status, 408 | 429 | 500 | 502 | 503 | 504) {
                     ErrorKind::Transient
                 } else {
                     ErrorKind::Permanent
@@ -383,62 +413,188 @@ impl AlpacaBackend {
         batch.more = self.cursor != 0;
         Ok(batch)
     }
+    async fn connection_step(&mut self) -> Result<bool, SourceError> {
+        use ConnectionPhase::*;
+        if self.connection_uncertain {
+            return Err(SourceError::uncertain());
+        }
+        if self.connection_phase == Ready {
+            return Ok(true);
+        }
+        if self.connection_phase == Failed {
+            return Err(connection_expired());
+        }
+        let started = *self
+            .connection_started
+            .get_or_insert_with(tokio::time::Instant::now);
+        let Some(remaining) = self.connection_deadline.checked_sub(started.elapsed()) else {
+            self.connection_phase = Failed;
+            return Err(connection_expired());
+        };
+        match tokio::time::timeout(remaining, self.connection_operation()).await {
+            Ok(result) => result,
+            Err(_) => {
+                self.connection_phase = Failed;
+                Err(connection_expired())
+            }
+        }
+    }
+    async fn connection_operation(&mut self) -> Result<bool, SourceError> {
+        use ConnectionPhase::*;
+        match self.connection_phase {
+            Discover => {
+                let version = match self.request(false, "interfaceversion", Values::new()).await {
+                    Ok(value) => Some(
+                        value
+                            .as_u64()
+                            .filter(|v| (1..=i16::MAX as u64).contains(v))
+                            .ok_or_else(|| bad_response(false))? as u16,
+                    ),
+                    Err(error) if error.kind == ErrorKind::Unsupported => None,
+                    Err(error) => return Err(error),
+                };
+                self.interface_version = version;
+                self.connection_method = Some(
+                    if version.is_some_and(|v| v >= asynchronous_version(self.device_type)) {
+                        ConnectionMethod::Async
+                    } else {
+                        ConnectionMethod::Legacy
+                    },
+                );
+                self.connection_phase = Check;
+            }
+            Check => {
+                let connected = self.connection_boolean("connected").await?;
+                let modern_managed = self.policy == ConnectionPolicy::Managed
+                    && self.connection_method == Some(ConnectionMethod::Async);
+                if connected && !modern_managed {
+                    self.connection_phase = Ready;
+                } else if self.policy == ConnectionPolicy::ExternallyManaged {
+                    return Err(SourceError::new(
+                        ErrorKind::Transient,
+                        "Upstream device is disconnected; its owner must connect it",
+                    ));
+                } else {
+                    // Modern Connected can describe shared hardware. Claim this
+                    // client's connection even when another client already opened it.
+                    self.connection_phase = Open;
+                }
+            }
+            Open => {
+                let method = self.connection_method.unwrap();
+                self.connection_uncertain = true;
+                let result = self.connection_write(method, true).await;
+                match result {
+                    Ok(()) => {
+                        self.opened_connection = Some(method);
+                        self.connection_uncertain = false;
+                        self.connection_phase = if method == ConnectionMethod::Async {
+                            WaitOpen
+                        } else {
+                            Ready
+                        };
+                    }
+                    Err(error) => {
+                        if !matches!(error.kind, ErrorKind::Transient | ErrorKind::Uncertain) {
+                            self.connection_uncertain = false;
+                        }
+                        return Err(error);
+                    }
+                }
+            }
+            WaitOpen => {
+                if !self.connection_boolean("connecting").await? {
+                    self.connection_phase = Verify;
+                }
+            }
+            Verify => {
+                if self.connection_boolean("connected").await? {
+                    self.connection_phase = Ready;
+                } else {
+                    self.connection_phase = Failed;
+                    return Err(SourceError::new(
+                        ErrorKind::Permanent,
+                        "Upstream connection completed without connecting",
+                    ));
+                }
+            }
+            WaitClose => {
+                if !self.connection_boolean("connecting").await? {
+                    self.connection_phase = Discover;
+                }
+            }
+            Ready | Failed => unreachable!(),
+        }
+        Ok(self.connection_phase == Ready)
+    }
+    async fn connection_boolean(&mut self, member: &str) -> Result<bool, SourceError> {
+        self.request(false, member, Values::new())
+            .await?
+            .as_bool()
+            .ok_or_else(|| bad_response(false))
+    }
+    async fn connection_write(
+        &mut self,
+        method: ConnectionMethod,
+        connected: bool,
+    ) -> Result<(), SourceError> {
+        let (member, parameters) = match method {
+            ConnectionMethod::Legacy => (
+                "connected",
+                Values::from([("Connected".into(), Value::Bool(connected))]),
+            ),
+            ConnectionMethod::Async => (
+                if connected { "connect" } else { "disconnect" },
+                Values::new(),
+            ),
+        };
+        self.request(true, member, parameters).await.map(|_| ())
+    }
 }
 impl Backend for AlpacaBackend {
     fn connect(&mut self) -> BackendFuture<'_, ()> {
         Box::pin(async {
-            if self.connection_uncertain {
-                return Err(SourceError::uncertain());
+            // Direct callers get the complete handshake. Source actors invoke
+            // connect_step instead, admitting commands between HTTP requests.
+            while !self.connection_step().await? {
+                tokio::time::sleep(Duration::from_millis(100)).await;
             }
-            let connected = self
-                .request(false, "connected", Values::new())
-                .await?
-                .as_bool()
-                .ok_or_else(|| bad_response(false))?;
-            if connected {
-                return Ok(());
-            }
-            if self.policy == ConnectionPolicy::ExternallyManaged {
-                return Err(SourceError::new(
-                    ErrorKind::Transient,
-                    "Upstream device is disconnected; its owner must connect it",
-                ));
-            }
-            // Set before awaiting: cancellation must not silently replay this PUT.
-            self.connection_uncertain = true;
-            let result = self
-                .request(
-                    true,
-                    "connected",
-                    Values::from([("Connected".into(), Value::Bool(true))]),
-                )
-                .await;
-            match result {
-                Ok(_) => {
-                    self.opened_connection = true;
-                    self.connection_uncertain = false;
-                    Ok(())
-                }
-                Err(error) => {
-                    if !matches!(error.kind, ErrorKind::Transient | ErrorKind::Uncertain) {
-                        self.connection_uncertain = false;
-                    }
-                    Err(error)
-                }
-            }
+            Ok(())
+        })
+    }
+    fn connect_step(&mut self) -> BackendFuture<'_, bool> {
+        Box::pin(self.connection_step())
+    }
+    fn connection_info(&self) -> Option<ConnectionInfo> {
+        self.connection_method.map(|method| ConnectionInfo {
+            device_type: self.device_type,
+            interface_version: self.interface_version,
+            method,
+            owns_connection: self.opened_connection.is_some(),
+            uncertain: self.connection_uncertain,
         })
     }
     fn disconnect(&mut self) -> BackendFuture<'_, ()> {
         Box::pin(async {
-            if self.opened_connection {
-                // Only release a connection whose opening was acknowledged.
-                self.request(
-                    true,
-                    "connected",
-                    Values::from([("Connected".into(), Value::Bool(false))]),
-                )
-                .await?;
-                self.opened_connection = false;
+            if let Some(method) = self.opened_connection {
+                if self.connection_uncertain {
+                    return Err(SourceError::uncertain());
+                }
+                // Consume the cleanup attempt before awaiting. Cancellation or
+                // a lost reply must not replay Disconnect on a later shutdown.
+                self.connection_uncertain = true;
+                self.connection_write(method, false).await?;
+                self.opened_connection = None;
+                self.connection_uncertain = false;
+                self.connection_phase = if method == ConnectionMethod::Async {
+                    ConnectionPhase::WaitClose
+                } else {
+                    ConnectionPhase::Discover
+                };
+                self.connection_started = None;
+            } else if self.connection_phase != ConnectionPhase::WaitClose {
+                self.connection_phase = ConnectionPhase::Discover;
+                self.connection_started = None;
             }
             Ok(())
         })
@@ -470,6 +626,16 @@ impl Backend for AlpacaBackend {
         // Dropping a reqwest future cancels that local request; no serial stream
         // needs draining. Retain acknowledged connection ownership for cleanup.
         self.restart_poll();
+        if matches!(
+            self.connection_phase,
+            ConnectionPhase::Ready
+                | ConnectionPhase::Discover
+                | ConnectionPhase::Check
+                | ConnectionPhase::Open
+        ) {
+            self.connection_phase = ConnectionPhase::Discover;
+            self.connection_started = None;
+        }
     }
     fn restart_poll(&mut self) {
         self.cursor = 0;
@@ -488,6 +654,19 @@ impl Backend for AlpacaBackend {
 
 fn invalid(message: &'static str) -> SourceError {
     SourceError::new(ErrorKind::InvalidValue, message)
+}
+fn connection_expired() -> SourceError {
+    SourceError::new(
+        ErrorKind::Permanent,
+        "Source connection timed out; disconnect or reconfigure before trying again",
+    )
+}
+fn asynchronous_version(device: DeviceType) -> u16 {
+    match device {
+        DeviceType::Camera | DeviceType::Focuser | DeviceType::Rotator => 4,
+        DeviceType::Switch | DeviceType::SafetyMonitor | DeviceType::FilterWheel => 3,
+        DeviceType::ObservingConditions | DeviceType::CoverCalibrator => 2,
+    }
 }
 fn transport_error(write: bool) -> SourceError {
     if write {

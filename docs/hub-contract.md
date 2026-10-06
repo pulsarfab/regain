@@ -157,6 +157,34 @@ Clients observe TimeSinceLastUpdate to determine when measurements change.
 These are controller contracts with local latency/retry tests, not evidence of
 completed frontend interface conformance or hardware acceptance.
 
+## Alpaca connection negotiation
+
+Read InterfaceVersion before opening a source. Modern connection methods start
+at Camera/Focuser/Rotator V4, Switch/SafetyMonitor/FilterWheel V3, and
+ObservingConditions/CoverCalibrator V2. Older interfaces use Connected. Missing
+InterfaceVersion (NotImplemented or HTTP 404) permits legacy compatibility;
+malformed values, authentication failures, and other upstream errors do not.
+A claimed modern interface whose Connect fails does not silently fall back.
+
+Externally managed sources only read connection state. Managed modern sources
+call Connect with their stable ClientID even when shared hardware is already
+connected, poll Connecting until false, then verify Connected. Legacy sources
+already connected are borrowed and never disconnected by the hub. Only an
+acknowledged opening grants ownership for cleanup. A cancelled or uncertain
+Connect/Disconnect is not replayed, including on reset or shutdown.
+
+Each handshake step is one bounded request. `connectionTimeoutSeconds` defaults
+to 30 seconds (1–300), independently of `requestTimeoutSeconds`; asynchronous
+waiting cannot continue indefinitely. Pending steps do not emit poll failures
+or safe observations. Reopening after an acknowledged asynchronous Disconnect
+waits for its Connecting state to finish before claiming another connection.
+Snapshots report negotiated version/method, ownership, and uncertainty. These
+diagnostics do not imply broader device capabilities have been discovered.
+
+Interface references: [ASCOM common behavior through SafetyMonitor V3](https://ascom-standards.org/newdocs/safetymonitor.html),
+[Camera V4](https://ascom-standards.org/newdocs/camera.html),
+and [ObservingConditions V2](https://ascom-standards.org/newdocs/observingconditions.html).
+
 ## Native source adapter checkpoint
 
 Native accessory sources launch the existing `regain-device VENDOR DEVICE serve
