@@ -48,6 +48,13 @@ fn config(device: NativeDevice, identity: &str) -> SourceConfig {
 
 #[tokio::test]
 async fn runtime_native_wheel_preserves_metadata_cache_and_shared_worker_ownership() {
+    native_wheel_runtime(false).await;
+}
+#[tokio::test]
+async fn nested_native_wheel_preserves_explicit_simulation_metadata_motion_and_leases() {
+    native_wheel_runtime(true).await;
+}
+async fn native_wheel_runtime(nested: bool) {
     use regain_hub::{
         config::{DeviceType, HubConfig, OutputConfig, VirtualDevice},
         diagnostics::{Diagnostics, Reading},
@@ -83,6 +90,33 @@ async fn runtime_native_wheel_preserves_metadata_cache_and_shared_worker_ownersh
             },
         });
     }
+    if nested {
+        let mut previous = config.outputs[0].id;
+        for number in [42, 91] {
+            let virtual_source = Uuid::new_v4();
+            config.sources.push(SourceConfig {
+                id: virtual_source,
+                label: "Nested native wheel input".into(),
+                polling: source.polling.clone(),
+                backend: SourceBackend::Virtual { output: previous },
+            });
+            previous = Uuid::new_v4();
+            config.outputs.push(OutputConfig {
+                id: previous,
+                number,
+                label: "Nested native wheel output".into(),
+                device: VirtualDevice::Proxy {
+                    source: virtual_source,
+                    device_type: DeviceType::FilterWheel,
+                },
+            });
+        }
+    }
+    let selected = if nested {
+        config.outputs.last().unwrap().id
+    } else {
+        config.outputs[1].id
+    };
     let host = HubRuntime::build(
         config.clone(),
         &native,
@@ -91,6 +125,22 @@ async fn runtime_native_wheel_preserves_metadata_cache_and_shared_worker_ownersh
     )
     .unwrap();
     assert!(host.outputs().iter().all(|output| output.simulated));
+    assert!(
+        host.source_snapshots()
+            .iter()
+            .all(|state| state.simulated && state.lease_count == 0)
+    );
+    assert_eq!(
+        host.outputs()
+            .iter()
+            .map(|output| output.number)
+            .collect::<Vec<_>>(),
+        if nested {
+            vec![4, 17, 42, 91]
+        } else {
+            vec![4, 17]
+        }
+    );
     assert_eq!(host.active_connections(), 0);
     let Diagnostics::FilterWheel { health, properties } = host
         .output_status(config.outputs[0].id, 0, 32)
@@ -108,8 +158,8 @@ async fn runtime_native_wheel_preserves_metadata_cache_and_shared_worker_ownersh
     let first = host.client();
     let second = host.client();
     first.connect(config.outputs[0].id).await.unwrap();
-    second.connect(config.outputs[1].id).await.unwrap();
-    let connection = second.connection(config.outputs[1].id).unwrap();
+    second.connect(selected).await.unwrap();
+    let connection = second.connection(selected).unwrap();
     let wheel = connection.filterwheel().unwrap();
     assert_eq!(host.source_snapshot(source.id).unwrap().lease_count, 2);
     assert_eq!(
@@ -135,9 +185,9 @@ async fn runtime_native_wheel_preserves_metadata_cache_and_shared_worker_ownersh
     tokio::time::timeout(Duration::from_secs(3),async {
         loop {
             let Diagnostics::FilterWheel {health,properties} =
-                host.output_status(config.outputs[1].id,0,32).unwrap().diagnostics else {panic!()};
+                host.output_status(selected,0,32).unwrap().diagnostics else {panic!()};
             if serde_json::to_value(&properties[2].sample).unwrap()["reading"]["value"]["value"] == 6 {
-                assert!(host.source_snapshot(source.id).unwrap().simulated); assert_eq!(health.lease_count,2);
+                assert!(host.source_snapshots().iter().all(|state|state.simulated)); assert_eq!(health.lease_count,if nested {1}else{2});
                 assert_eq!(serde_json::to_value(&properties[0].sample).unwrap()["reading"]["value"]["value"],json!(metadata.names));
                 assert_eq!(serde_json::to_value(&properties[1].sample).unwrap()["reading"]["value"]["value"],json!(metadata.focus_offsets));
                 break;
@@ -165,8 +215,8 @@ async fn runtime_native_wheel_preserves_metadata_cache_and_shared_worker_ownersh
     .await
     .unwrap();
     let fresh = host.client();
-    fresh.connect(config.outputs[0].id).await.unwrap();
-    let connection = fresh.connection(config.outputs[0].id).unwrap();
+    fresh.connect(selected).await.unwrap();
+    let connection = fresh.connection(selected).unwrap();
     assert_eq!(
         connection
             .filterwheel()
@@ -188,6 +238,11 @@ async fn runtime_native_wheel_preserves_metadata_cache_and_shared_worker_ownersh
     drop(connection);
     fresh.close();
     host.shutdown().await.unwrap();
+    assert!(
+        host.source_snapshots()
+            .iter()
+            .all(|state| state.lease_count == 0 && !state.transport_connected)
+    );
 }
 
 #[tokio::test]

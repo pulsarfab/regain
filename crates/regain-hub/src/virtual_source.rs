@@ -3,6 +3,7 @@
 use crate::{
     alpaca::SampleRequest,
     config::{DeviceType, WeatherMetric},
+    filterwheel::{FilterWheelProperty, FilterWheelValue},
     focuser::{FocuserProperty, FocuserValue},
     ipc::{Get, Put},
     readout::invalid,
@@ -26,6 +27,12 @@ pub(crate) struct VirtualBackend {
     client: Option<Arc<ClientSession>>,
 }
 impl VirtualBackend {
+    fn typed_accessory(&self) -> bool {
+        matches!(
+            self.kind,
+            DeviceType::Focuser | DeviceType::Rotator | DeviceType::FilterWheel
+        )
+    }
     pub(crate) fn new(
         binding: Binding,
         output: Uuid,
@@ -50,8 +57,7 @@ impl VirtualBackend {
             .as_ref()
             .ok_or_else(disconnected)?
             .connection(self.output)?;
-        if matches!(self.kind, DeviceType::Focuser | DeviceType::Rotator) && !connection.connected()
-        {
+        if self.typed_accessory() && !connection.connected() {
             // Retire this virtual transport instead of adopting another inner
             // generation for an already-connected outer session.
             return Err(SourceError {
@@ -116,6 +122,21 @@ fn rotator_property(member: &str) -> Result<RotatorProperty, SourceError> {
         .find(|property| property.member() == member)
         .ok_or_else(unsupported)
 }
+fn filterwheel_property(member: &str) -> Result<FilterWheelProperty, SourceError> {
+    FilterWheelProperty::ALL
+        .into_iter()
+        .find(|property| property.member() == member)
+        .ok_or_else(unsupported)
+}
+fn position(args: &Values) -> Result<i32, SourceError> {
+    if args.len() != 1 {
+        return Err(invalid("Expected only Position"));
+    }
+    args.get("Position")
+        .and_then(Value::as_i64)
+        .and_then(|value| i32::try_from(value).ok())
+        .ok_or_else(|| invalid("Expected Int32 Position"))
+}
 fn number(args: &Values, key: &str) -> Result<f64, SourceError> {
     if args.len() != 1 {
         return Err(invalid("Expected one numeric parameter"));
@@ -147,7 +168,7 @@ impl Backend for VirtualBackend {
     }
     fn connect_step(&mut self) -> BackendFuture<'_, bool> {
         Box::pin(async {
-            if !matches!(self.kind, DeviceType::Focuser | DeviceType::Rotator) {
+            if !self.typed_accessory() {
                 return self.connect().await.map(|()| true);
             }
             if self.client.is_none() {
@@ -259,6 +280,12 @@ impl Backend for VirtualBackend {
                         property: rotator_property(&member)?,
                     }
                 }
+                DeviceType::FilterWheel => {
+                    no_args(&args)?;
+                    Get::FilterWheel {
+                        property: filterwheel_property(&member)?,
+                    }
+                }
                 _ => return Err(unsupported()),
             };
             connection.get(get).await
@@ -295,18 +322,12 @@ impl Backend for VirtualBackend {
                             .ok_or_else(|| invalid("Expected boolean Reverse"))?,
                     }
                 }
-                (DeviceType::Focuser, "move") => {
-                    if args.len() != 1 {
-                        return Err(invalid("Expected only Position"));
-                    }
-                    Put::MoveFocuser {
-                        position: args
-                            .get("Position")
-                            .and_then(Value::as_i64)
-                            .and_then(|value| i32::try_from(value).ok())
-                            .ok_or_else(|| invalid("Expected Int32 Position"))?,
-                    }
-                }
+                (DeviceType::Focuser, "move") => Put::MoveFocuser {
+                    position: position(&args)?,
+                },
+                (DeviceType::FilterWheel, "position") => Put::MoveFilterWheel {
+                    position: position(&args)?,
+                },
                 (DeviceType::Focuser, "halt") => {
                     no_args(&args)?;
                     Put::HaltFocuser {}
@@ -388,7 +409,7 @@ impl Backend for VirtualBackend {
                 return Ok(batch);
             }
             for request in &self.samples {
-                if matches!(self.kind, DeviceType::Focuser | DeviceType::Rotator) {
+                if self.typed_accessory() {
                     let result = if self.kind == DeviceType::Focuser {
                         no_args(&request.parameters)
                             .and_then(|()| focuser_property(&request.member))
@@ -405,7 +426,7 @@ impl Backend for VirtualBackend {
                                 };
                                 (value, sample.age_seconds)
                             })
-                    } else {
+                    } else if self.kind == DeviceType::Rotator {
                         no_args(&request.parameters)
                             .and_then(|()| rotator_property(&request.member))
                             .and_then(|property| {
@@ -417,6 +438,22 @@ impl Backend for VirtualBackend {
                                 let value = match sample.value {
                                     RotatorValue::Boolean { value } => json!(value),
                                     RotatorValue::Number { value } => json!(value),
+                                };
+                                (value, sample.age_seconds)
+                            })
+                    } else {
+                        no_args(&request.parameters)
+                            .and_then(|()| filterwheel_property(&request.member))
+                            .and_then(|property| {
+                                connection
+                                    .filterwheel()?
+                                    .cached_sample(property, self.clock.now())
+                            })
+                            .map(|sample| {
+                                let value = match sample.value {
+                                    FilterWheelValue::Strings { value } => json!(value),
+                                    FilterWheelValue::Integers { value } => json!(value),
+                                    FilterWheelValue::Integer { value } => json!(value),
                                 };
                                 (value, sample.age_seconds)
                             })

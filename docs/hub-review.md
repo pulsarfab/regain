@@ -3376,3 +3376,45 @@ PR/push CI 37541898392/37541893308 remains live. Runtime head 08913c8 PR CI
 Keep this import increment local until reviewed local checks and preceding CI
 finish. Virtual/dedicated wheel simulation/shared creation, panels, cameras,
 coordination and every original acceptance/final gate remain required.
+
+### Virtual wheel input review (2026-10-06, local increment)
+
+Virtual wheels reuse the supervised typed-accessory connection path and existing
+controllers instead of adding another worker or connection owner. Review covers
+bounded handshake readiness, cancellation, generation retirement, shared command
+leases, strict Position parameters and retained uncertainty. Cached forwarding
+uses the wheel controller's metadata pairing and oldest dependency age, preserving
+arrays and per-key errors without device I/O. The small Int32 parameter helper
+also preserves the existing focuser validation behavior and error messages.
+
+Six two-layer loopback cases exercise V2/V3 ownership, a deliberately slow
+handshake under shorter outer request budgets, cancellation, lost inner generation,
+unknown Position acknowledgment without replay, actual moving -1, metadata
+dependencies, original ages and cache recovery. The production EFW worker test is
+shared between direct and two-layer virtual cases in explicit simulation. It
+verifies saved metadata, movement, sparse output numbers, simulation diagnostics,
+independent lease release and reconnection without changing saved metadata.
+
+The first focused run passes 20/21 wheel cases. Its cache case expected
+Unavailable for malformed wire Position, although the Alpaca sampler reports
+Permanent and the virtual path correctly retains that error. The corrected
+assertion requires the original classification and intact metadata at every
+source layer, while the live getter retains its existing Unavailable result.
+All 21 wheel and 20 native cases then pass, as do Node and five schema checks.
+Evidence: artifacts/hub-wheel-virtual-{focused,cache-failure,
+focused-confirmed,node,schema}.log. Full Rust hub/Alpaca regressions, strict
+Clippy, Rust 1.89 all targets, generated-contract freshness, freshly rebuilt-host
+NINA 209/209 and real net48 x86/x64 clients pass. Managed builds have zero
+warnings. Evidence: artifacts/hub-wheel-virtual-{rust,clippy,msrv,contract,host,
+nina,net48}.log. No deadline, retry rule or production error was changed. No
+physical equipment or installed vendor driver was activated.
+
+Preceding head 0669339 PR/push CI 37541898392/37541893308 has seven successful
+jobs with Windows build/installer checks live. Both Windows test.ps1 steps have
+completed successfully, including private SCM/production wheel registration
+acceptance. Local HKCU SCM restrictions and the earlier unexplained transport
+failures remain recorded; later passes do not prove their causes resolved.
+
+Dedicated wheel simulation/shared creation, panels, cameras, coordination and
+every original acceptance/final gate remain required. Keep one draft PR #21;
+preceding publication CI must finish before these local increments are pushed.

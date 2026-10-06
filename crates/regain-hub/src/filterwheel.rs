@@ -297,6 +297,13 @@ pub struct FilterWheelSession {
     source: TypedSourceSession,
 }
 impl FilterWheelSession {
+    pub(crate) fn cached_sample(
+        &self,
+        property: FilterWheelProperty,
+        now: Duration,
+    ) -> Result<FilterWheelSample, SourceError> {
+        cached_property(&self.source.snapshot()?, property, now)
+    }
     pub(crate) fn device_state(&self, now: Duration) -> Values {
         self.source
             .snapshot()

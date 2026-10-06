@@ -1777,8 +1777,8 @@ focusers, rotators and wheels and preserves their existing local fallback pages.
 HTTP clients retain separate hub leases and share the source's metadata, Position
 and command control. The last disconnect releases only its source; failures with
 unknown command completion fence sibling clients and never replay Position or
-issue an invented stop/calibration. Virtual/dedicated simulation inputs and
-shared creation remain outstanding; Windows COM imports are described below.
+issue an invented stop/calibration. Virtual inputs and Windows COM imports are
+described below; dedicated wheel simulation and shared creation remain outstanding.
 
 ### Native wheel publication
 
@@ -1818,3 +1818,25 @@ slots or positions; ambiguous setter failures cannot trigger replay or an invent
 Halt. Registered aliases to the hub's own classes are denied before activation.
 COM wheel creation remains gated in generated setup pending the complete wheel
 creation increment. Other platforms can use an upstream Alpaca FilterWheel.
+
+### Virtual wheel inputs
+
+Validated acyclic graphs can reuse a FilterWheel output as a virtual source.
+Virtual wheels share the supervised typed-accessory connection path with focusers
+and rotators: one inner connection is started and readiness is polled in bounded
+steps. Cancellation closes that client's leases. Losing an inner generation
+retires the outer transport; an old session cannot adopt a replacement connection.
+
+The adapter advertises V3 and forwards only Names, FocusOffsets and Position,
+with strict integer Position writes through the existing typed controller. Every
+move still requires matching live metadata, a stationary wheel and a valid slot.
+Actual reads retain moving -1 and cannot substitute an accepted target. Unknown
+write completion fences sibling sessions without replay or invented commands.
+
+Polling reads the inner cache without additional device I/O, preserving array
+types, order, signed offsets, per-key errors and the oldest metadata dependency
+age. Mismatched arrays invalidate all three properties. A malformed Position
+leaves valid metadata available; its original polling error classification is
+preserved through every layer and clears when the source recovers. Explicit
+native-worker simulation propagates through nested outputs and diagnostics.
+Dedicated wheel simulation controls and shared creation remain separate gates.

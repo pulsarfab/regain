@@ -467,9 +467,11 @@ through Alpaca, native NINA and ASCOM FilterWheel V3. Select the saved wheel in
 the shared NINA selector, or register that output with the shared ASCOM manager.
 The hub owns source connection sharing; each frontend retains its own lease.
 Windows COM wheel imports use the existing isolated x86/x64 workers and preserve
-managed or borrowed connections. Wheel creation in the generated forms, including
-its COM source choice, virtual and dedicated simulated wheel sources remain under
-development.
+managed or borrowed connections. A saved virtual source can reuse another wheel
+output through the same leases and generation checks; its cached metadata keeps
+the original sample age and errors. Wheel creation in the generated forms,
+including its COM source choice, and dedicated simulated wheel controls remain
+under development.
 
 Names retain their order, Unicode and blank slots. FocusOffsets retain signed
 Int32 values and are metadata; the hub does not move a focuser automatically.

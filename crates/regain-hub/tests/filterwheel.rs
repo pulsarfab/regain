@@ -445,7 +445,15 @@ async fn concurrent_moves_share_control_and_cancelling_dispatch_retains_uncertai
     source.shutdown().await.unwrap();
 }
 
-async fn alpaca_wheel(version: u16, lose_reply: bool) {
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum WheelTransportCase {
+    Direct,
+    Nested,
+    CancelNested,
+    LoseNestedGeneration,
+    Cache,
+}
+async fn alpaca_wheel(version: u16, lose_reply: bool, case: WheelTransportCase) {
     use axum::{
         Json, Router,
         body::to_bytes,
@@ -527,13 +535,24 @@ async fn alpaca_wheel(version: u16, lose_reply: bool) {
             Value::Null
         } else {
             match member.as_str() {
-                "interfaceversion" => json!(state.version),
+                "interfaceversion" => {
+                    if state.device.pending.load(SeqCst) {
+                        tokio::time::sleep(Duration::from_millis(700)).await;
+                    }
+                    json!(state.version)
+                }
                 "connected" => json!(state.connected.load(SeqCst)),
                 "connecting" => {
                     assert_eq!(state.version, 3);
                     json!(false)
                 }
-                _ => state.device.values.lock().unwrap()[&member].clone(),
+                _ => {
+                    let hang = state.device.hang_read.lock().unwrap().as_ref() == Some(&member);
+                    if hang {
+                        tokio::time::sleep(Duration::from_secs(2)).await;
+                    }
+                    state.device.values.lock().unwrap()[&member].clone()
+                }
             }
         };
         Json(
@@ -570,6 +589,21 @@ async fn alpaca_wheel(version: u16, lose_reply: bool) {
             credential_reference: None,
         },
     };
+    if case != WheelTransportCase::Direct {
+        virtual_wheel::nested(
+            config,
+            fixture.device.clone(),
+            fixture.connected.clone(),
+            fixture.requests.clone(),
+            version,
+            lose_reply,
+            case,
+        )
+        .await;
+        server.abort();
+        assert!(server.await.unwrap_err().is_cancelled());
+        return;
+    }
     let backend = AlpacaBackend::new(&config, vec![], None).unwrap();
     let source = SourceHandle::spawn(
         config.id,
@@ -660,16 +694,19 @@ async fn alpaca_wheel(version: u16, lose_reply: bool) {
 }
 #[tokio::test]
 async fn actual_alpaca_v2_wheel_preserves_arrays_position_and_legacy_ownership() {
-    alpaca_wheel(2, false).await;
+    alpaca_wheel(2, false, WheelTransportCase::Direct).await;
 }
 #[tokio::test]
 async fn actual_alpaca_v3_wheel_preserves_arrays_position_and_async_ownership() {
-    alpaca_wheel(3, false).await;
+    alpaca_wheel(3, false, WheelTransportCase::Direct).await;
 }
 #[tokio::test]
 async fn actual_alpaca_wheel_lost_reply_never_replays_the_applied_position() {
-    alpaca_wheel(3, true).await;
+    alpaca_wheel(3, true, WheelTransportCase::Direct).await;
 }
 
 #[path = "support/filterwheel_runtime.rs"]
 mod runtime;
+
+#[path = "support/filterwheel_virtual.rs"]
+mod virtual_wheel;
