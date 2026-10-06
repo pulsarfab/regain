@@ -2724,3 +2724,65 @@ passing local checks explains the retained older COM/NINA connection failures.
 Rotator COM/virtual/dedicated simulation inputs, shared creation, interactive
 acceptance and conformance remain open. Wheels, panels, camera ownership/transport,
 coordination and all other original plan gates remain required before merge.
+
+### Virtual rotator composition (2026-10-06)
+
+Extended the existing virtual accessory transport rather than adding another
+host or controller. Focuser and rotator inputs now share supervised, bounded inner
+admission and immutable-generation checks. Rotator reads/commands still go through
+the inner typed controller, including all six mutations, signed relative distance,
+separate source-owned coordinates, modern reversal readiness and optional errors.
+Strict parameter shapes cannot select another command or supply a guessed offset.
+The cached typed sampling path shares age/error forwarding and batch insertion;
+the rotator session exposes its existing generation-fenced cached decoder.
+
+Five new real factory/loopback cases extend the existing V3/V4 transport fixture
+through two virtual graph levels. They cover all commands, independent clients,
+optional StepSize, malformed motion, Busy, negative -721.5-degree dispatch,
+source-coordinate sharing and complete lease cleanup. A 700-ms leaf handshake
+outlasts each virtual source's 100-ms request step without repeated interface
+negotiation. Faster outer polling preserves increasing age while the leaf sequence
+is unchanged. Pending cancellation releases supervised inner clients without a
+move/Halt; generation loss in preflight cannot dispatch and old sessions cannot
+adopt a freshly connected generation. Applied malformed move acknowledgment is
+dispatched once and fences siblings without replay or implicit Halt.
+
+Native-worker coverage reuses the existing runtime fixture for both CAA and
+Falcon in explicit simulation. Direct and nested clients observe the same verified
+Sync/target reference and cached health; closing one retains the other's source
+lease. Simulation labels propagate to every nested output/source. No physical
+equipment or installed vendor driver is activated. This establishes native graph
+integration, not dedicated rotator simulation or hardware acceptance.
+
+Fixture review corrected an invalid 50-ms poll interval to the existing 100-ms
+minimum, retained the saved outer UUID instead of exposing private configuration,
+and added the existing cached decoder accessor. An outer cached mechanical reading
+can arrive before the optional-property error; the test now waits for both actual
+observations and still requires Unsupported with no invented StepSize. Production
+timings, error classifications and validation were not relaxed.
+
+Full rebuilt-host Rust hub/Alpaca suites pass, including twenty-two rotator and
+fifteen native cases plus existing virtual focuser/scalar regression suites.
+Strict Clippy, Rust 1.89 all-target checks, generated-contract freshness, Node
+and four schema tests pass. Evidence uses artifacts/hub-virtual-rotator-final-*.log.
+An initial host rebuild hit OS5 while a private managed fixture owned the
+executable. That fixture completed (196 NINA tests and net48 clients passed);
+the sequential rebuild then succeeded. Those earlier managed checks used the
+previous executable and cannot certify the rebuilt-host checkpoint.
+
+The rebuilt-host NINA run remains live at this checkpoint and has reported three
+failures: ActualAlpacaPublisherAndNativeNinaShareSwitchStateAndSeparateLeases
+(cancelled output read during cleanup), NativeEditorWindowEditsReviewsAppliesAndShowsSavedHealth
+(attachment closed), and UnknownCreationRetainsFilenameAndReadsCommittedFileWithoutReplay
+for malformed completion (read reported Missing rather than Existing). Preserve
+artifacts/hub-virtual-rotator-final-rebuilt-nina.log; their causes remain unproved.
+Do not restart a live run or treat its earlier passing counterpart as a fix.
+Rebuilt-host net48 checks are queued behind successful NINA completion and have
+not run. No production timeout or test requirement has been relaxed.
+
+Frontend checkpoint CI 37518077578/37518073024 is still live, with seven successful
+jobs and Windows incomplete. Keep the virtual checkpoint local while those jobs
+finish, then resolve the managed failures and update the same draft PR. Review
+also identified missing Focuser/Rotator ProgID generation in the Rust ASCOM identity
+helper; address and test it before enabling rotator COM imports. COM, dedicated
+simulation, shared creation and every original broader acceptance gate remain open.

@@ -47,8 +47,15 @@ fn config(device: NativeDevice, identity: &str) -> SourceConfig {
 
 #[tokio::test]
 async fn runtime_native_rotator_proxies_share_verified_workers_and_cached_typed_health() {
+    native_rotator_runtime(false).await;
+}
+#[tokio::test]
+async fn nested_native_rotators_preserve_explicit_simulation_shared_reference_and_leases() {
+    native_rotator_runtime(true).await;
+}
+async fn native_rotator_runtime(nested: bool) {
     use regain_hub::{
-        config::{DeviceType, HubConfig, OutputConfig, VirtualDevice},
+        config::{DeviceType, HubConfig, OutputConfig, SourceConfig, VirtualDevice},
         diagnostics::Diagnostics,
         factory::NoCredentials,
         native_reference::NativeReferenceStore,
@@ -81,6 +88,21 @@ async fn runtime_native_rotator_proxies_share_verified_workers_and_cached_typed_
                 },
             });
         }
+        if nested {
+            let virtual_source = Uuid::new_v4();
+            config.sources.push(SourceConfig {
+                id: virtual_source,
+                label: "Nested native rotator input".into(),
+                polling: source.polling.clone(),
+                backend: SourceBackend::Virtual {
+                    output: config.outputs[0].id,
+                },
+            });
+            config.outputs[1].device = VirtualDevice::Proxy {
+                source: virtual_source,
+                device_type: DeviceType::Rotator,
+            };
+        }
         let host = HubRuntime::build(
             config.clone(),
             &native,
@@ -90,6 +112,7 @@ async fn runtime_native_rotator_proxies_share_verified_workers_and_cached_typed_
         .unwrap();
         assert_eq!(host.active_connections(), 0);
         assert!(host.outputs().iter().all(|item| item.simulated));
+        assert!(host.source_snapshots().iter().all(|item| item.simulated));
         assert_eq!(
             host.outputs()
                 .iter()

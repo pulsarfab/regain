@@ -1484,7 +1484,7 @@ Rotator DeviceState includes available IsMoving, MechanicalPosition and Position
 omits failed/unknown entries and reports no invented UTC measurement timestamp.
 Reverse and TargetPosition remain in typed reads/diagnostics; the standard read-all
 contract does not include those configuration entries. Native NINA/ASCOM
-publication is implemented as described below. COM/virtual/dedicated simulation
+publication is implemented as described below. COM/dedicated simulation
 inputs and shared rotator creation remain gated until their interfaces and
 acceptance tests are complete.
 
@@ -1544,3 +1544,27 @@ standard acknowledgment contract.
 NINA Synced records successful Sync only for that connection epoch. It is neither
 a second offset nor a claim about another client's calibration. Every client
 reads the source's shared coordinate mapping. Reconnect resets this indicator.
+
+### Virtual rotator inputs
+
+Validated acyclic output graphs may republish rotators as virtual sources. These
+sources use the existing in-process client and independent inner output lease;
+construction and cached diagnostics cannot open equipment. Connection starts one
+supervised inner admission and checks readiness in bounded steps, reusing the
+focuser path. It cannot equate a pending acknowledgment with a connection.
+
+The virtual transport advertises interface 4, forwards seven typed properties and
+all six commands through the inner controller, and preserves signed relative
+distance, source-owned logical/mechanical coordinates and optional errors. It
+adds no offset or normalization. The existing controller validates arguments,
+live motion/reversal readiness, control ownership and generation. An invalid
+inner generation retires the virtual transport rather than rebinding an old
+session to a replacement. Unknown dispatched mutation remains fenced without
+replay or implicit Halt.
+
+Polling forwards cached typed readings with their accumulated original age and
+individual property errors. Faster outer polls cannot make an old leaf reading
+fresh. Cancelling a pending connection, resetting the virtual transport or closing
+one client releases only owned inner leases. Explicit native simulation labels
+propagate through the graph; no hardware failure selects a simulator. COM import,
+dedicated rotator simulation and shared creation remain separate gates.

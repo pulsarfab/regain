@@ -513,7 +513,15 @@ async fn concurrent_calls_from_one_session_admit_only_one_motion_command() {
 
 // Exercise the actual transport, including V3 legacy Connected and V4 async
 // Connect/Connecting/Disconnect. These servers implement only private state.
-async fn alpaca_transport(version: u16, uncertain_reply: bool) {
+#[derive(Clone, Copy)]
+enum TransportCase {
+    Direct,
+    Nested,
+    CancelNested,
+    LoseNestedGeneration,
+}
+async fn alpaca_transport(version: u16, uncertain_reply: bool, case: TransportCase) {
+    let nested = !matches!(case, TransportCase::Direct);
     use axum::{
         Json, Router,
         body::to_bytes,
@@ -525,7 +533,7 @@ async fn alpaca_transport(version: u16, uncertain_reply: bool) {
             ConnectionPolicy, DeviceType, HubConfig, OutputConfig, SourceBackend, SourceConfig,
             VirtualDevice,
         },
-        factory::{NoCredentials, build_sources},
+        factory::NoCredentials,
         native::NativeRuntime,
         runtime::HubRuntime,
         source::ConnectionMethod,
@@ -613,6 +621,13 @@ async fn alpaca_transport(version: u16, uncertain_reply: bool) {
             }
             Value::Null
         } else {
+            if member == "interfaceversion" && state.device.pending.load(SeqCst) {
+                tokio::time::sleep(Duration::from_millis(700)).await;
+            }
+            let delayed = state.device.hang_read.lock().unwrap().as_ref() == Some(&member);
+            if delayed {
+                tokio::time::sleep(Duration::from_millis(700)).await;
+            }
             match member.as_str() {
                 "interfaceversion" => json!(state.version),
                 "connected" => json!(state.connected.load(SeqCst)),
@@ -665,7 +680,7 @@ async fn alpaca_transport(version: u16, uncertain_reply: bool) {
     };
     let mut hub_config = HubConfig::empty();
     hub_config.sources.push(config.clone());
-    let output = Uuid::new_v4();
+    let mut output = Uuid::new_v4();
     hub_config.outputs.push(OutputConfig {
         id: output,
         number: 23,
@@ -675,10 +690,40 @@ async fn alpaca_transport(version: u16, uncertain_reply: bool) {
             device_type: DeviceType::Rotator,
         },
     });
+    let leaf_output = output;
+    if nested {
+        fixture.device.pending.store(true, SeqCst);
+        hub_config.sources[0].polling.poll_seconds = 300.0;
+        for number in [42, 91] {
+            let virtual_source = Uuid::new_v4();
+            hub_config.sources.push(SourceConfig {
+                id: virtual_source,
+                label: "Nested rotator input".into(),
+                polling: PollPolicy {
+                    poll_seconds: 0.1,
+                    request_timeout_seconds: 0.1,
+                    connection_timeout_seconds: 4.0,
+                    ..Default::default()
+                },
+                backend: SourceBackend::Virtual { output },
+            });
+            output = Uuid::new_v4();
+            hub_config.outputs.push(OutputConfig {
+                id: output,
+                number,
+                label: "Nested rotator output".into(),
+                device: VirtualDevice::Proxy {
+                    source: virtual_source,
+                    device_type: DeviceType::Rotator,
+                },
+            });
+        }
+    }
     let clock = Arc::new(MonotonicClock::default());
     let directory = tempfile::tempdir().unwrap();
-    let registry = build_sources(
-        &hub_config,
+    let outer_source = hub_config.sources.last().unwrap().id;
+    let host = HubRuntime::build(
+        hub_config,
         &NativeRuntime {
             directory: directory.path().into(),
             simulate: false,
@@ -688,10 +733,57 @@ async fn alpaca_transport(version: u16, uncertain_reply: bool) {
         clock.clone(),
     )
     .unwrap();
-    let source = registry.get(config.id).unwrap();
-    let host = HubRuntime::from_registry(hub_config, registry, clock).unwrap();
+    assert!(
+        host.source_snapshots()
+            .iter()
+            .all(|source| source.lease_count == 0)
+    );
+    assert!(host.outputs().iter().all(|output| !output.simulated));
     let first_client = host.client();
     let second_client = host.client();
+    if matches!(case, TransportCase::CancelNested) {
+        let pending = tokio::spawn({
+            let client = first_client.clone();
+            async move { client.connect(output).await }
+        });
+        tokio::time::timeout(Duration::from_secs(3), async {
+            while !fixture
+                .requests
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|(_, member, _)| member == "interfaceversion")
+            {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .unwrap();
+        assert!(first_client.connection(output).is_err());
+        pending.abort();
+        assert!(pending.await.unwrap_err().is_cancelled());
+        first_client.close();
+        second_client.close();
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while host.active_connections() != 0
+                || host
+                    .source_snapshots()
+                    .iter()
+                    .any(|source| source.lease_count != 0)
+            {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .unwrap();
+        assert!(fixture.device.writes.lock().unwrap().is_empty());
+        assert!(!fixture.connected.load(SeqCst));
+        host.shutdown().await.unwrap();
+        server.abort();
+        assert!(server.await.unwrap_err().is_cancelled());
+        return;
+    }
+    let connected_at = tokio::time::Instant::now();
     first_client.connect(output).await.unwrap();
     second_client.connect(output).await.unwrap();
     let first_connection = first_client.connection(output).unwrap();
@@ -699,7 +791,11 @@ async fn alpaca_transport(version: u16, uncertain_reply: bool) {
     let first = first_connection.rotator().unwrap();
     let second = second_connection.rotator().unwrap();
     assert_eq!(first.generation(), second.generation());
-    let info = source.snapshot().connection_info.unwrap();
+    let info = host
+        .source_snapshot(config.id)
+        .unwrap()
+        .connection_info
+        .unwrap();
     assert_eq!(info.interface_version, Some(version));
     assert_eq!(
         info.method,
@@ -710,6 +806,107 @@ async fn alpaca_transport(version: u16, uncertain_reply: bool) {
         }
     );
     assert!(info.owns_connection);
+    if nested {
+        assert!(connected_at.elapsed() >= Duration::from_millis(700));
+        assert_eq!(
+            fixture
+                .requests
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|(_, member, _)| member == "interfaceversion")
+                .count(),
+            1
+        );
+        let leaf_sequence = host.source_snapshot(config.id).unwrap().sequence;
+        tokio::time::timeout(Duration::from_secs(3), async {
+            loop {
+                let state = host.source_snapshot(outer_source).unwrap();
+                if state
+                    .sample_errors
+                    .get("stepsize")
+                    .is_some_and(|error| error.kind == ErrorKind::Unsupported)
+                    && state
+                        .sample_ages_seconds
+                        .get("mechanicalposition")
+                        .is_some_and(|age| *age > 0.15)
+                {
+                    assert_eq!(state.values["mechanicalposition"], 350.0);
+                    assert_eq!(state.sample_errors["stepsize"].kind, ErrorKind::Unsupported);
+                    assert!(!state.values.contains_key("stepsize"));
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .unwrap();
+        assert_eq!(
+            host.source_snapshot(config.id).unwrap().sequence,
+            leaf_sequence
+        );
+        // One direct client shares the actual leaf mapping and transport with
+        // two nested clients, without changing their independently owned leases.
+        let direct = host.client();
+        direct.connect(leaf_output).await.unwrap();
+        let direct_connection = direct.connection(leaf_output).unwrap();
+        assert_eq!(
+            direct_connection
+                .rotator()
+                .unwrap()
+                .property(RotatorProperty::Position)
+                .await
+                .unwrap(),
+            20.0
+        );
+        direct.close();
+        drop(direct_connection);
+    }
+    if matches!(case, TransportCase::LoseNestedGeneration) {
+        let old_generation = first.generation();
+        *fixture.device.hang_read.lock().unwrap() = Some("ismoving".into());
+        assert!(first.move_absolute(25.0).await.is_err());
+        assert!(!first.connected());
+        assert!(fixture.device.writes.lock().unwrap().is_empty());
+        *fixture.device.hang_read.lock().unwrap() = None;
+        let fresh_client = host.client();
+        fresh_client.connect(output).await.unwrap();
+        let fresh_connection = fresh_client.connection(output).unwrap();
+        let fresh = fresh_connection.rotator().unwrap();
+        assert_ne!(fresh.generation(), old_generation);
+        assert_eq!(
+            fresh
+                .property(RotatorProperty::MechanicalPosition)
+                .await
+                .unwrap(),
+            350.0
+        );
+        assert_eq!(
+            first.sync(42.5).await.unwrap_err().kind,
+            ErrorKind::Disconnected
+        );
+        assert!(fixture.device.writes.lock().unwrap().is_empty());
+        assert!(
+            host.source_snapshots()
+                .iter()
+                .all(|source| !source.write_uncertain)
+        );
+        first_client.close();
+        second_client.close();
+        fresh_client.close();
+        drop(first_connection);
+        drop(second_connection);
+        drop(fresh_connection);
+        host.shutdown().await.unwrap();
+        assert!(
+            host.source_snapshots()
+                .iter()
+                .all(|source| source.lease_count == 0)
+        );
+        server.abort();
+        assert!(server.await.unwrap_err().is_cancelled());
+        return;
+    }
     if uncertain_reply {
         assert_eq!(
             first.move_absolute(25.0).await.unwrap_err().kind,
@@ -793,10 +990,13 @@ async fn alpaca_transport(version: u16, uncertain_reply: bool) {
     assert!(fixture.connected.load(SeqCst));
     drop(second_connection);
     second_client.close();
-    let mut status = source.status();
     tokio::time::timeout(Duration::from_secs(5), async {
-        while status.borrow_and_update().lease_count != 0 {
-            status.changed().await.unwrap();
+        while host
+            .source_snapshots()
+            .iter()
+            .any(|source| source.lease_count != 0)
+        {
+            tokio::time::sleep(Duration::from_millis(5)).await;
         }
     })
     .await
@@ -850,13 +1050,33 @@ async fn alpaca_transport(version: u16, uncertain_reply: bool) {
 }
 #[tokio::test]
 async fn actual_alpaca_v3_transport_preserves_rotator_parameters_and_errors() {
-    alpaca_transport(3, false).await;
+    alpaca_transport(3, false, TransportCase::Direct).await;
 }
 #[tokio::test]
 async fn actual_alpaca_v4_transport_negotiates_shared_async_connection() {
-    alpaca_transport(4, false).await;
+    alpaca_transport(4, false, TransportCase::Direct).await;
 }
 #[tokio::test]
 async fn actual_alpaca_applied_move_with_malformed_acknowledgment_is_not_replayed() {
-    alpaca_transport(4, true).await;
+    alpaca_transport(4, true, TransportCase::Direct).await;
+}
+#[tokio::test]
+async fn nested_rotator_v3_shares_coordinates_commands_optional_errors_ages_and_leases() {
+    alpaca_transport(3, false, TransportCase::Nested).await;
+}
+#[tokio::test]
+async fn nested_rotator_v4_shares_coordinates_commands_optional_errors_ages_and_leases() {
+    alpaca_transport(4, false, TransportCase::Nested).await;
+}
+#[tokio::test]
+async fn nested_rotator_unknown_move_is_not_replayed_or_implicitly_halted() {
+    alpaca_transport(4, true, TransportCase::Nested).await;
+}
+#[tokio::test]
+async fn cancelled_nested_rotator_connection_releases_supervised_inner_clients() {
+    alpaca_transport(4, false, TransportCase::CancelNested).await;
+}
+#[tokio::test]
+async fn nested_rotator_generation_loss_never_rebinds_an_old_session_or_dispatches_motion() {
+    alpaca_transport(4, false, TransportCase::LoseNestedGeneration).await;
 }

@@ -6,6 +6,7 @@ use crate::{
     focuser::{FocuserProperty, FocuserValue},
     ipc::{Get, Put},
     readout::invalid,
+    rotator::{RotatorProperty, RotatorValue},
     runtime::{ClientSession, HubRuntime, OutputConnection},
     safety::Clock,
     source::{Backend, BackendFuture, ErrorKind, SampleBatch, SourceError, Values},
@@ -49,7 +50,8 @@ impl VirtualBackend {
             .as_ref()
             .ok_or_else(disconnected)?
             .connection(self.output)?;
-        if self.kind == DeviceType::Focuser && !connection.focuser()?.connected() {
+        if matches!(self.kind, DeviceType::Focuser | DeviceType::Rotator) && !connection.connected()
+        {
             // Retire this virtual transport instead of adopting another inner
             // generation for an already-connected outer session.
             return Err(SourceError {
@@ -108,6 +110,20 @@ fn focuser_property(member: &str) -> Result<FocuserProperty, SourceError> {
         .find(|property| property.member() == member)
         .ok_or_else(unsupported)
 }
+fn rotator_property(member: &str) -> Result<RotatorProperty, SourceError> {
+    RotatorProperty::ALL
+        .into_iter()
+        .find(|property| property.member() == member)
+        .ok_or_else(unsupported)
+}
+fn number(args: &Values, key: &str) -> Result<f64, SourceError> {
+    if args.len() != 1 {
+        return Err(invalid("Expected one numeric parameter"));
+    }
+    args.get(key)
+        .and_then(Value::as_f64)
+        .ok_or_else(|| invalid("Expected numeric parameter"))
+}
 impl Backend for VirtualBackend {
     fn simulated(&self) -> bool {
         self.simulated
@@ -131,7 +147,7 @@ impl Backend for VirtualBackend {
     }
     fn connect_step(&mut self) -> BackendFuture<'_, bool> {
         Box::pin(async {
-            if self.kind != DeviceType::Focuser {
+            if !matches!(self.kind, DeviceType::Focuser | DeviceType::Rotator) {
                 return self.connect().await.map(|()| true);
             }
             if self.client.is_none() {
@@ -171,7 +187,7 @@ impl Backend for VirtualBackend {
                 no_args(&args)?;
                 return Ok(json!(match self.kind {
                     DeviceType::ObservingConditions => 2,
-                    DeviceType::Focuser => 4,
+                    DeviceType::Focuser | DeviceType::Rotator => 4,
                     _ => 3,
                 }));
             }
@@ -237,6 +253,12 @@ impl Backend for VirtualBackend {
                         property: focuser_property(&member)?,
                     }
                 }
+                DeviceType::Rotator => {
+                    no_args(&args)?;
+                    Get::Rotator {
+                        property: rotator_property(&member)?,
+                    }
+                }
                 _ => return Err(unsupported()),
             };
             connection.get(get).await
@@ -246,6 +268,33 @@ impl Backend for VirtualBackend {
         Box::pin(async move {
             let connection = self.connection()?;
             let put = match (self.kind, member.as_str()) {
+                (DeviceType::Rotator, "move") => Put::MoveRotator {
+                    degrees: number(&args, "Position")?,
+                },
+                (DeviceType::Rotator, "moveabsolute") => Put::MoveAbsoluteRotator {
+                    degrees: number(&args, "Position")?,
+                },
+                (DeviceType::Rotator, "movemechanical") => Put::MoveMechanicalRotator {
+                    degrees: number(&args, "Position")?,
+                },
+                (DeviceType::Rotator, "sync") => Put::SyncRotator {
+                    degrees: number(&args, "Position")?,
+                },
+                (DeviceType::Rotator, "halt") => {
+                    no_args(&args)?;
+                    Put::HaltRotator {}
+                }
+                (DeviceType::Rotator, "reverse") => {
+                    if args.len() != 1 {
+                        return Err(invalid("Expected only Reverse"));
+                    }
+                    Put::RotatorReverse {
+                        enabled: args
+                            .get("Reverse")
+                            .and_then(Value::as_bool)
+                            .ok_or_else(|| invalid("Expected boolean Reverse"))?,
+                    }
+                }
                 (DeviceType::Focuser, "move") => {
                     if args.len() != 1 {
                         return Err(invalid("Expected only Position"));
@@ -339,25 +388,43 @@ impl Backend for VirtualBackend {
                 return Ok(batch);
             }
             for request in &self.samples {
-                if self.kind == DeviceType::Focuser {
-                    let result = no_args(&request.parameters)
-                        .and_then(|()| focuser_property(&request.member))
-                        .and_then(|property| {
-                            connection
-                                .focuser()?
-                                .cached_sample(property, self.clock.now())
-                        });
+                if matches!(self.kind, DeviceType::Focuser | DeviceType::Rotator) {
+                    let result = if self.kind == DeviceType::Focuser {
+                        no_args(&request.parameters)
+                            .and_then(|()| focuser_property(&request.member))
+                            .and_then(|property| {
+                                connection
+                                    .focuser()?
+                                    .cached_sample(property, self.clock.now())
+                            })
+                            .map(|sample| {
+                                let value = match sample.value {
+                                    FocuserValue::Boolean { value } => json!(value),
+                                    FocuserValue::Integer { value } => json!(value),
+                                    FocuserValue::Number { value } => json!(value),
+                                };
+                                (value, sample.age_seconds)
+                            })
+                    } else {
+                        no_args(&request.parameters)
+                            .and_then(|()| rotator_property(&request.member))
+                            .and_then(|property| {
+                                connection
+                                    .rotator()?
+                                    .cached_sample(property, self.clock.now())
+                            })
+                            .map(|sample| {
+                                let value = match sample.value {
+                                    RotatorValue::Boolean { value } => json!(value),
+                                    RotatorValue::Number { value } => json!(value),
+                                };
+                                (value, sample.age_seconds)
+                            })
+                    };
                     match result {
-                        Ok(sample) => {
-                            let value = match sample.value {
-                                FocuserValue::Boolean { value } => json!(value),
-                                FocuserValue::Integer { value } => json!(value),
-                                FocuserValue::Number { value } => json!(value),
-                            };
+                        Ok((value, age)) => {
                             batch.values.insert(request.key.clone(), value);
-                            batch
-                                .ages_seconds
-                                .insert(request.key.clone(), sample.age_seconds);
+                            batch.ages_seconds.insert(request.key.clone(), age);
                         }
                         Err(error) => {
                             batch.errors.insert(request.key.clone(), error);

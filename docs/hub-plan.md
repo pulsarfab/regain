@@ -11,7 +11,8 @@ Last updated: 2026-10-06.
 Current position: milestones 0 and 1 are complete. The scalar source/output paths
 in milestones 2 and 3 are implemented; their remaining acceptance gates are open.
 Milestone 4 has focuser and rotator publication through all three frontends.
-Rotator imports, simulation and creation remain. Wheels, panels and camera proxies remain; milestone 5's coordinated
+Rotator COM imports, dedicated simulation and creation remain. Virtual rotator
+inputs are implemented. Wheels, panels and camera proxies remain; milestone 5's coordinated
 groups are not yet implemented. PR #21 stays draft until the full plan passes.
 
 Completed increment: shared simulation controls in native NINA/ASCOM and web setup.
@@ -857,7 +858,9 @@ semantics are implemented with eleven private actor/Alpaca V3/V4 cases. Native
 CAA/Falcon reference persistence, adapter coverage and native/Alpaca runtime/IPC
 are implemented. Alpaca, native NINA and native ASCOM publication are implemented
 and pass local private-fixture checks. NINA verifies accepted targets and completion
-without replay or implicit Halt. COM/virtual/dedicated simulation inputs and shared
+without replay or implicit Halt. Virtual inputs reuse bounded typed connection
+admission and preserve cached ages/errors through the validated graph.
+COM/dedicated simulation inputs and shared
 rotator creation remain required. Conformance and broader acceptance stay open.
 
 - [ ] Specify camera buffer lifetime, image transport, capability passthrough, and
@@ -965,3 +968,4 @@ Keep existing device profiles and registrations compatible throughout migration.
 
 | 2026-10-06 | Published rotators through the common Alpaca typed IPC adapter and reviewed modern reversal readiness, shared ownership, local-slot coexistence, command routing and sanitized errors. | Seven HTTP cases (including actual CAA/Falcon workers in explicit simulation), sixteen hub rotator cases, final rebuilt-worker/host Rust suites, Clippy/MSRV/contracts, Node/four schema checks, all 187 NINA tests and real net48 x86/x64 clients pass. Reference PR/push CI 37508673278/37508667983 passes all eight jobs. Runtime PR CI 37510990909 has seven successes with Windows live; push 37510983650 is still running. Next: native NINA/ASCOM rotators, imports/simulation/setup and all original remaining gates. |
 | 2026-10-06 | Published native NINA/ASCOM rotators through shared typed request/value helpers and stable registration. Reviewed command ownership through relative target receipt, ignored-move detection, strict completion, cancellation, optional values and standard Single DeviceState. | Final Rust hub/Alpaca suites, seventeen rotator cases, Clippy/MSRV/contracts, Node/four schema tests, all 196 warnings-denied NINA checks, real net48 x86/x64 clients, both-architecture staging and six-output manual COM exports pass. Retained parallel compilation resource failure; single-job retry passes. Alpaca PR/push CI 37513525462/37513518205 is cancelled at the proven outer Windows 25-minute limit; increased only that budget to 45. Runtime CI is also cancelled, exact cause unverified. New CI/registered SCM acceptance required. Next: rotator imports/simulation/shared creation, then all remaining typed devices/camera ownership/coordination and original acceptance gates. |
+| 2026-10-06 | Implemented virtual rotator inputs using shared typed admission, immutable generation checks and cached age/error forwarding. Extended existing loopback/native fixtures instead of duplicating them. | Final rebuilt-host Rust hub/Alpaca suites, twenty-two rotator cases, fifteen native cases, existing virtual regressions, Clippy/MSRV/contracts, Node/four schema checks pass. Rebuilt-host NINA run remains live with three reported failures; retain its log and investigate after terminal state. net48 is queued behind successful NINA completion. Frontend CI 37518077578/37518073024 has seven successes with Windows live. Keep this checkpoint local until CI completes and managed failures are resolved. Next: managed evidence, missing typed ASCOM ProgID coverage, then rotator COM/dedicated simulation/shared creation and every original remaining gate. |

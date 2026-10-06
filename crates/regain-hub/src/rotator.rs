@@ -235,6 +235,13 @@ pub struct RotatorSession {
     source: TypedSourceSession,
 }
 impl RotatorSession {
+    pub(crate) fn cached_sample(
+        &self,
+        property: RotatorProperty,
+        now: Duration,
+    ) -> Result<RotatorSample, SourceError> {
+        cached_property(&self.source.snapshot()?, property, now)
+    }
     pub(crate) fn device_state(&self, now: Duration) -> Values {
         let Ok(state) = self.source.snapshot() else {
             return Values::new();
