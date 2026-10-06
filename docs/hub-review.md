@@ -3007,3 +3007,59 @@ in artifacts/hub-accessory-move-evidence-{focused,nina}.log. These passes do not
 resolve the CI cause; push run 37530337700 remains live. Publish the evidence with
 the locally verified shared-creation increment for subsequent CI, retaining the
 failure and all original remaining gates.
+
+The preceding d4050c1 push run 37530337700 subsequently completed with all eight
+jobs successful, including Windows packaging, registration, installer and camera
+kit checks. This is retained alongside the failed PR run, not as proof of its
+cause. The creation and diagnostic increments can now proceed to their own CI.
+
+### Typed filter-wheel controller review (2026-10-06)
+
+Implemented the initial controller in the existing hub crate using the common
+TypedSourceSession, source actor and leases. Required metadata follows
+[IFilterWheelV3](https://ascom-standards.org/newdocs/filterwheel.html): ordered names,
+signed Int32 offsets with a zero reference, matching slot counts and Position -1
+during motion. Connection checks metadata/position within its configured deadline;
+moving is a valid initial state. Each move rechecks current metadata and stationary
+position while holding unique command control. Writes acknowledge start only.
+No automatic focuser offset adjustment, wheel calibration or invented Halt occurs.
+Generation loss and canceled/lost writes preserve the common fences.
+
+Resource limits are explicit Regain bounds: 1024 slots, one MiB of UTF-8 name data.
+Strict decoding rejects wrong types, mismatched arrays, overflow, missing reference
+and out-of-range readings. Duplicate, blank and Unicode source names are preserved.
+The host does not synthesize missing imported-driver metadata. Native sources and
+all wheel publication remain gated; this increment does not enable a wheel proxy.
+
+The first test compile referred to `connection` instead of `connection_info`;
+retain artifacts/hub-wheel-controller-focused.log. The first executed suite passed
+nine of ten cases but a fresh connection timed out after a failed preflight.
+Added source-state evidence reproduces the cause: the common cache rejected wheel
+arrays and scheduled its ordinary 30-second permanent-error backoff. Evidence:
+artifacts/hub-wheel-controller-{focused-confirmed,preflight-evidence}.log.
+The shared cache now accepts flat scalar metadata arrays, bounded to 1024 elements
+per array and 4096 across retained/new entries. Array/scalar strings share the
+existing one-MiB aggregate bound. Review verifies partial replacement/removal
+excludes old entries; nested arrays, objects and null remain rejected. Camera
+images are deliberately outside this cache and require the original buffer/transport
+work. No polling, connection or operation deadline changed to fix the failure.
+
+Eleven wheel cases cover independent leases, live limits, invalid/oversized data,
+pending/canceled connection, preflight cancellation versus dispatched uncertainty,
+concurrent control, generation loss, and actual loopback Alpaca V2/V3 connection
+negotiation, arrays and lost-reply no-replay behavior. Two additional source cases
+verify array bounds, partial aggregate limits and unchanged invalid-cache behavior.
+The cancellation fixture initially used unwrap_err with a non-Debug session;
+the corrected join-result match preserves the cancellation assertion. Retain
+artifacts/hub-wheel-controller-cancellation.log.
+
+Final full Rust hub/Alpaca suites pass, including all eleven wheel cases and
+twenty-six source actor cases. Clippy with warnings denied, Rust 1.89 all targets,
+generated contracts, Node and four schema tests pass. A freshly rebuilt production
+host passes all 201 warnings-denied NINA tests and real net48 clients in both
+Windows architectures. Evidence: artifacts/hub-wheel-controller-{rust,clippy,msrv,
+contract,node,schema,host,nina,net48}.log, plus focused cancellation confirmation.
+Review found no remaining controller/cache issue in this increment. New exact-head
+CI remains required. Next: native metadata/worker adapters, runtime/IPC and all
+wheel outputs, imports/virtual/simulation/setup, then panels, cameras/coordination
+and every original remaining acceptance gate.

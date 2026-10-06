@@ -20,6 +20,10 @@ use uuid::Uuid;
 pub type Values = BTreeMap<String, Value>;
 pub const MAX_SAMPLE_KEYS: usize = 1024;
 pub const MAX_SAMPLE_TEXT_BYTES: usize = 1024 * 1024;
+/// Flat typed metadata arrays share the cache's aggregate text bound. Camera
+/// image buffers are not source samples and must use their own owned transport.
+pub const MAX_SAMPLE_ARRAY_LENGTH: usize = 1024;
+pub const MAX_SAMPLE_ARRAY_ITEMS: usize = 4096;
 /// A failed measurement does not invalidate unrelated readings from the same
 /// device. Ages are upstream sensor ages at request time, not HTTP cache ages.
 #[derive(Clone, Debug, Default)]
@@ -1345,7 +1349,7 @@ fn validate_batch(state: &SourceSnapshot, batch: &SampleBatch) -> Result<(), Sou
     let invalid = || {
         SourceError::new(
             ErrorKind::Permanent,
-            "Invalid or oversized scalar sample cache",
+            "Invalid or oversized source sample cache",
         )
     };
     if batch.values.len() > MAX_SAMPLE_KEYS
@@ -1380,17 +1384,29 @@ fn validate_batch(state: &SourceSnapshot, batch: &SampleBatch) -> Result<(), Sou
         }
     }
     let mut text_bytes = 0usize;
+    let mut array_items = 0usize;
     let retained = state.values.iter().filter(|(key, _)| {
         batch.partial && !batch.values.contains_key(*key) && !batch.errors.contains_key(*key)
     });
     for (_, value) in retained.chain(batch.values.iter()) {
-        match value {
-            Value::String(value) => text_bytes = text_bytes.saturating_add(value.len()),
-            Value::Bool(_) | Value::Number(_) => {}
-            _ => return Err(invalid()),
-        }
-        if text_bytes > MAX_SAMPLE_TEXT_BYTES {
-            return Err(invalid());
+        let values = if let Value::Array(values) = value {
+            array_items = array_items.saturating_add(values.len());
+            if values.len() > MAX_SAMPLE_ARRAY_LENGTH || array_items > MAX_SAMPLE_ARRAY_ITEMS {
+                return Err(invalid());
+            }
+            values.as_slice()
+        } else {
+            std::slice::from_ref(value)
+        };
+        for value in values {
+            match value {
+                Value::String(value) => text_bytes = text_bytes.saturating_add(value.len()),
+                Value::Bool(_) | Value::Number(_) => {}
+                _ => return Err(invalid()),
+            }
+            if text_bytes > MAX_SAMPLE_TEXT_BYTES {
+                return Err(invalid());
+            }
         }
     }
     Ok(())

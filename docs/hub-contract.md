@@ -1648,3 +1648,42 @@ without connecting equipment. Apply remains revision-checked and requires all
 output leases to drain; Reload reconciles the saved result without replaying Apply.
 Saved IDs and numbers survive reload. Frontend choices guide editing; the Rust
 engine still validates the complete candidate before preparing or publishing it.
+
+### Typed filter-wheel controller
+
+The controller reuses TypedSourceSession for generation-fenced reads, independent
+source leases and exclusive command admission. Construction performs no I/O.
+Connection readiness includes required metadata and a valid stationary slot or
+moving Position `-1`, within the configured connection deadline. Dropping a
+session releases only that client's lease; it cannot send a wheel motion,
+calibration or an invented Halt command.
+
+Names retain source order, duplicate/blank names and Unicode. FocusOffsets retain
+signed Int32 values. Both nonempty arrays must contain the same number of slots,
+at most 1024; offsets must include a zero reference. These follow the required
+metadata and moving-position semantics in
+[IFilterWheelV3](https://ascom-standards.org/newdocs/filterwheel.html).
+The slot/resource limits belong to Regain, not a claim about physical wheel size.
+The hub does not fabricate metadata missing from imported drivers or trigger
+focuser movement when a filter changes.
+
+Position reads accept `-1` or a current slot index inside the live metadata bounds.
+Malformed arrays/positions remain errors. Each Position write reacquires exclusive
+command control and reads current arrays and position before dispatch. Invalid
+indices and moving/unknown state cannot authorize a write. A successful reply
+acknowledges start only; frontends must observe the requested position for actual
+completion. Source failures before dispatch cannot become uncertain writes;
+dispatched timeout or malformed replies retain the common uncertainty latch.
+No canceled/lost request is replayed and old sessions cannot adopt a new generation.
+
+The shared source cache now admits flat arrays of scalar metadata with at most
+1024 elements each and 4096 array elements across retained/new cache entries.
+The existing one-MiB aggregate UTF-8 text bound includes array strings and scalar
+strings. Partial replacement/error removal excludes replaced entries when checking
+the prospective cache. Nested arrays, objects and null entries remain invalid.
+This is metadata support; camera image buffers require separate ownership and
+transport. Existing scalar adapters/controllers still enforce their own types.
+
+The initial controller has private actor and actual loopback Alpaca V2/V3 coverage.
+Wheel source construction/publication remains gated pending native adapters,
+runtime/IPC, all frontends and remaining import/simulation/setup acceptance.

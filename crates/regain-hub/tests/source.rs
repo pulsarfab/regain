@@ -255,6 +255,115 @@ async fn partial_sample_cache_bounds_survive_incremental_updates() {
 }
 
 #[tokio::test(start_paused = true)]
+async fn flat_typed_arrays_keep_order_and_partial_cache_resource_bounds() {
+    use regain_hub::source::{MAX_SAMPLE_ARRAY_ITEMS, MAX_SAMPLE_ARRAY_LENGTH};
+    let device = Arc::new(Device::default());
+    let initial = Values::from([
+        ("names".into(), json!(["L", "Hα", ""])),
+        ("focusoffsets".into(), json!([-12, 0, 17])),
+        ("position".into(), json!(-1)),
+    ]);
+    device
+        .batches
+        .lock()
+        .unwrap()
+        .push_back(SampleBatch::from(initial.clone()));
+    let source = spawn(&device);
+    source.acquire(Uuid::new_v4()).await.unwrap();
+    settle().await;
+    assert_eq!(source.snapshot().values, initial);
+    assert!(source.snapshot().error.is_none());
+    source.shutdown().await.unwrap();
+
+    let device = Arc::new(Device::default());
+    let full: Values = (0..MAX_SAMPLE_ARRAY_ITEMS / MAX_SAMPLE_ARRAY_LENGTH)
+        .map(|i| {
+            (
+                format!("array{i}"),
+                json!(vec![true; MAX_SAMPLE_ARRAY_LENGTH]),
+            )
+        })
+        .collect();
+    device.batches.lock().unwrap().extend([
+        SampleBatch {
+            more: true,
+            ..SampleBatch::from(full.clone())
+        },
+        SampleBatch {
+            values: Values::from([("one-more".into(), json!([0]))]),
+            partial: true,
+            ..SampleBatch::default()
+        },
+    ]);
+    let source = spawn(&device);
+    source.acquire(Uuid::new_v4()).await.unwrap();
+    settle().await;
+    assert_eq!(source.snapshot().values, full);
+    tokio::time::advance(Duration::from_millis(1)).await;
+    settle().await;
+    assert_eq!(source.snapshot().error.unwrap().kind, ErrorKind::Permanent);
+    assert_eq!(source.snapshot().values, full);
+    source.shutdown().await.unwrap();
+}
+
+#[tokio::test(start_paused = true)]
+async fn typed_array_cache_rejects_nested_null_oversized_and_aggregate_text_payloads() {
+    use regain_hub::source::{MAX_SAMPLE_ARRAY_LENGTH, MAX_SAMPLE_TEXT_BYTES};
+    for value in [
+        json!([[1]]),
+        json!([null]),
+        json!([{"slot": 1}]),
+        json!(vec![0; MAX_SAMPLE_ARRAY_LENGTH + 1]),
+        json!([
+            "x".repeat(MAX_SAMPLE_TEXT_BYTES / 2 + 1),
+            "x".repeat(MAX_SAMPLE_TEXT_BYTES / 2 + 1)
+        ]),
+    ] {
+        let device = Arc::new(Device::default());
+        device
+            .batches
+            .lock()
+            .unwrap()
+            .push_back(SampleBatch::from(Values::from([("bad".into(), value)])));
+        let source = spawn(&device);
+        source.acquire(Uuid::new_v4()).await.unwrap();
+        settle().await;
+        assert_eq!(source.snapshot().error.unwrap().kind, ErrorKind::Permanent);
+        assert!(source.snapshot().values.is_empty());
+        source.shutdown().await.unwrap();
+    }
+    let device = Arc::new(Device::default());
+    device.batches.lock().unwrap().extend([
+        SampleBatch {
+            values: Values::from([(
+                "array".into(),
+                json!(["x".repeat(MAX_SAMPLE_TEXT_BYTES / 2 + 1)]),
+            )]),
+            more: true,
+            ..SampleBatch::default()
+        },
+        SampleBatch {
+            values: Values::from([(
+                "scalar".into(),
+                json!("x".repeat(MAX_SAMPLE_TEXT_BYTES / 2 + 1)),
+            )]),
+            partial: true,
+            ..SampleBatch::default()
+        },
+    ]);
+    let source = spawn(&device);
+    source.acquire(Uuid::new_v4()).await.unwrap();
+    settle().await;
+    assert_eq!(source.snapshot().values.len(), 1);
+    tokio::time::advance(Duration::from_millis(1)).await;
+    settle().await;
+    assert_eq!(source.snapshot().error.unwrap().kind, ErrorKind::Permanent);
+    assert_eq!(source.snapshot().values.len(), 1);
+    assert!(!source.snapshot().values.contains_key("scalar"));
+    source.shutdown().await.unwrap();
+}
+
+#[tokio::test(start_paused = true)]
 async fn rotating_complete_batches_cannot_accumulate_unbounded_sequence_keys() {
     use regain_hub::source::MAX_SAMPLE_KEYS;
     let device = Arc::new(Device::default());
