@@ -415,13 +415,7 @@ async fn dispatch_service(
 ) -> Result<Value, RpcError> {
     match command {
         Command::DescribeConfig {} => {
-            let mut description = describe_config(&[
-                "nativeSources",
-                "alpacaSources",
-                "virtualSources",
-                "writeReadout",
-                "simulation",
-            ]);
+            let mut description = describe_config(&service.configuration_capabilities());
             description["credentialStorage"] =
                 service.credential_description().unwrap_or(Value::Null);
             description["capabilityInspection"] = crate::capabilities::description();

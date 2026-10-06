@@ -3,6 +3,7 @@
 use crate::process::ProcessGuard;
 use anyhow::{Context, Result};
 use serde::Deserialize;
+use serde::de::DeserializeOwned;
 use serde_json::Value;
 use std::{fmt, time::Duration};
 use tokio::{
@@ -47,14 +48,26 @@ pub struct AccessoryWorker {
 impl AccessoryWorker {
     /// Adopt a child with piped stdin/stdout. Windows ownership also attaches a
     /// kill-on-close job so a dead parent cannot strand an exclusive device owner.
-    pub fn new(mut child: Child) -> Result<Self> {
+    pub fn new(child: Child) -> Result<Self> {
+        Self::adopt(child, false)
+    }
+    /// COM imports own the private Regain worker, not vendor helpers it launches.
+    pub fn new_independent(child: Child) -> Result<Self> {
+        Self::adopt(child, true)
+    }
+    fn adopt(mut child: Child, independent: bool) -> Result<Self> {
         let pipes = (|| {
             let input = child.stdin.take().context("Accessory stdin unavailable")?;
             let output = child
                 .stdout
                 .take()
                 .context("Accessory stdout unavailable")?;
-            let guard = ProcessGuard::attach(child.id().context("Accessory process exited")?)?;
+            let pid = child.id().context("Accessory process exited")?;
+            let guard = if independent {
+                ProcessGuard::attach_independent(pid)?
+            } else {
+                ProcessGuard::attach(pid)?
+            };
             Ok::<_, anyhow::Error>((input, output, guard))
         })();
         match pipes {
@@ -79,6 +92,15 @@ impl AccessoryWorker {
         request: Value,
         deadline: Duration,
     ) -> Result<Value> {
+        self.request_typed_with_timeout(request, deadline).await
+    }
+    /// Deserialize the inner reply directly from its frame. Typed protocols
+    /// must reject duplicate fields before conversion to a generic JSON map.
+    pub async fn request_typed_with_timeout<T: DeserializeOwned>(
+        &mut self,
+        request: Value,
+        deadline: Duration,
+    ) -> Result<T> {
         let bytes = encode_request(request)?;
         if self.input.is_none() {
             return Err(AccessoryError::Disconnected.into());
@@ -100,7 +122,7 @@ impl AccessoryWorker {
                 .await
                 .map_err(|_| AccessoryError::Transport)?;
             let bytes = read_response(&mut self.output).await?;
-            let result = decode_response(&bytes);
+            let result = decode_typed_response(&bytes);
             if result.is_ok() || matches!(result, Err(AccessoryError::CommandFailed(_))) {
                 guard.armed = false;
             }
@@ -178,19 +200,24 @@ async fn read_response(input: &mut (impl AsyncBufRead + Unpin)) -> Result<Vec<u8
     }
 }
 #[derive(Deserialize)]
-struct Reply {
+#[serde(bound(deserialize = "T: Deserialize<'de>"))]
+struct Reply<T> {
     ok: bool,
     #[serde(default, deserialize_with = "present_result")]
-    result: Option<Value>,
+    result: Option<T>,
     error: Option<String>,
 }
-fn present_result<'de, D: serde::Deserializer<'de>>(
+fn present_result<'de, T: Deserialize<'de>, D: serde::Deserializer<'de>>(
     deserializer: D,
-) -> Result<Option<Value>, D::Error> {
-    Value::deserialize(deserializer).map(Some)
+) -> Result<Option<T>, D::Error> {
+    T::deserialize(deserializer).map(Some)
 }
+#[cfg(test)]
 fn decode_response(bytes: &[u8]) -> Result<Value, AccessoryError> {
-    let reply: Reply = serde_json::from_slice(bytes).map_err(|_| AccessoryError::Transport)?;
+    decode_typed_response(bytes)
+}
+fn decode_typed_response<T: DeserializeOwned>(bytes: &[u8]) -> Result<T, AccessoryError> {
+    let reply: Reply<T> = serde_json::from_slice(bytes).map_err(|_| AccessoryError::Transport)?;
     if reply.ok {
         reply.result.ok_or(AccessoryError::Transport)
     } else {
@@ -206,6 +233,29 @@ fn decode_response(bytes: &[u8]) -> Result<Value, AccessoryError> {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn typed_reply_rejects_duplicate_inner_fields_and_keeps_null_values() {
+        #[derive(Deserialize)]
+        struct Typed {
+            id: u64,
+        }
+        assert_eq!(
+            decode_typed_response::<Typed>(br#"{"ok":true,"result":{"id":1}}"#)
+                .unwrap()
+                .id,
+            1
+        );
+        assert!(matches!(
+            decode_typed_response::<Typed>(br#"{"ok":true,"result":{"id":1,"id":2}}"#),
+            Err(AccessoryError::Transport)
+        ));
+        assert_eq!(
+            decode_response(br#"{"ok":true,"result":null}"#).unwrap(),
+            Value::Null
+        );
+        assert!(decode_response(br#"{"ok":true}"#).is_err());
+    }
 
     #[tokio::test]
     async fn framing_bounds_partial_eof_and_multiple_responses() {

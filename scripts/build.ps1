@@ -22,6 +22,7 @@ try {
     if ($LASTEXITCODE) { throw 'Plugin build failed' }
     if (Test-Path -LiteralPath $stage) { Remove-Item -LiteralPath $stage -Recurse -Force }
     New-Item -ItemType Directory -Force $stage | Out-Null
+    & (Join-Path $PSScriptRoot 'build-hub-ascom.ps1') -Destination $stage -WarningsAsErrors
     foreach ($file in @('Regain.NINA.dll','Regain.Core.dll','Regain.Rotator.dll')) {
         Copy-Item -LiteralPath (Join-Path $repo "src/Regain.NINA/bin/Release/net8.0-windows7.0/$file") -Destination $stage
     }

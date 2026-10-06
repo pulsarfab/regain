@@ -1286,3 +1286,77 @@ Rust factory/adapter adoption, process-guard/deadline/cancellation and generatio
 tests, cached safety expiry during a COM stall, mixed COM/native/network outputs,
 private payload/signing, native ASCOM outputs and every original remaining gate
 remain required. The host still rejects COM sources and does not advertise them.
+
+## Rust COM adoption and private payload, 2026-10-06
+
+Reviewed the Rust factory, parent transport, actor generations and shared scalar
+polling against the preceding worker contract. COM sources now use the same
+runtime and output policies as native/Alpaca sources. No installed equipment
+driver is activated by these tests.
+
+Findings and corrections:
+
+1. Deserialize typed inner replies directly from bounded frame bytes. Converting
+   first to a generic JSON object would discard duplicate fields. Retire corrupt
+   framing, wrong identity/types or contradictory connection ownership; preserve
+   null versus absent fields and complete signed HRESULT values.
+2. Attach worker ownership before activation. The existing kill-tree job is
+   correct for direct hardware workers, but a COM driver can spawn a shared vendor
+   helper. Add an explicit independent-worker policy with silent descendant
+   breakaway. The real child-process fixture proves parent cancellation kills
+   the private worker while its helper stays alive; the test ends that helper
+   through its own stop marker.
+3. Arm connection uncertainty before awaiting a managed handshake. Cancellation
+   must not permit a replacement worker to replay Connect or Disconnect. Bound
+   the total handshake as well as each RPC: a driver can return Connecting=true
+   forever without individually timing out. Incomplete cleanup also remains
+   uncertain after reset.
+4. A lost write retires the worker, but does not clear the actor's uncertainty
+   latch. A real fixture records one dispatch before stalling, then proves a
+   replacement generation cannot replay it or accept a later mutation. Normal
+   read faults may recover in a new private worker, without claiming confirmed
+   upstream cleanup or terminating a vendor server.
+5. Factor scalar plans, one-request polling, same-key retries, weather ages and
+   per-sensor failures into `sampling.rs`, shared with Alpaca. Safety retains its
+   single typed IsSafe observation rather than counting getters as evidence. A
+   COM stall test expires cached permission while the blocked worker is still
+   alive, without resetting its generation; unrelated weather remains usable.
+6. Capability metadata must reflect installed x86/x64 helpers and the three
+   supported COM classes. Both generic setup readers disable unimplemented
+   classes/architectures. Configuration preparation checks paths/types without
+   activation, discovery, simulation substitution or connecting equipment.
+7. Stage both helper architectures, all runtime DLLs/config and dependency
+   licenses. Reuse the existing .NET license extraction for ASCOM and COM
+   payloads. The ASCOM package refreshes the helper tree after signing; release
+   signing/verification lists both EXEs. ZIP validation checks worker presence,
+   assembly version and architecture. A local variable collision initially
+   broke the validator build and was corrected before package acceptance.
+8. Foundation CI 1bc1d7b failed Windows activation before any fixture trace with
+   HRESULT 0x80070002; all seven other jobs passed. Add fixture-only merged
+   registry/direct managed-load diagnostics after failures. Do not weaken the
+   production error boundary, add a production activation bypass or infer the
+   runner root cause from successful local tests. A local diagnostic invocation
+   initially hit Windows PowerShell execution policy; its test-only subprocess
+   now uses scoped Bypass, and both probes pass. Run fixture registration
+   playbooks sequentially: they intentionally share one private fail-if-present
+   CLSID, and overlapping probes can remove another test's registration. A clean
+   sequential staged run passes; registration is removed afterward.
+
+Validation: `artifacts/hub-com-parent-tests.log` and
+`artifacts/hub-com-staged-tests.log` pass 16 worker cases plus ten Rust-parent
+cases, each exercised in both architectures. Parent cases include modern/legacy
+ownership, weather ages/partial errors, factory sharing and last disconnect,
+cancelled reads, surviving vendor child, lost writes, uncertain connections,
+independent safety expiry, mixed native-simulation/loopback-Alpaca/COM gauges,
+corrupt stdout and permanently pending cleanup. Staged helpers use the actual
+package paths and dependencies. Clippy, full core/hub/Alpaca tests, Rust 1.89,
+110 NINA tests, JavaScript/schema checks and net48 x86/x64 fixtures pass locally.
+Unsigned NINA/ASCOM packages validate (`artifacts/hub-com-package-retry.log`,
+`artifacts/hub-com-ascom-package.log`). Both local loader probes pass
+(`artifacts/hub-com-loader-probe.log`). Updated CI and signed release validation
+remain required; local success does not resolve the observed runner failure.
+
+Next: resolve Windows fixture activation, complete native ASCOM outputs/setup,
+interactive NINA/vendor acceptance and shared setup refinements, then all original
+broader proxy, camera/acquisition, coordination, conformance, recovery, hardware,
+README/site/screenshots and final merge gates. PR #21 remains draft.

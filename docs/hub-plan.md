@@ -513,7 +513,7 @@ ordering fixture's short timeout, corrected without changing production deadline
 or the separate timeout tests. This increment requires its own CI results.
 
 Next: native setup refinements and interactive NINA acceptance,
-isolated COM imports, connection/state/error conformance,
+COM/vendor acceptance, connection/state/error conformance,
 and the remaining shared setup refinements. Basic frontend error translation is tested; complete
 protocol conformance remains unverified. Generic
 scalar polling does not establish camera image or acquisition support. No complete
@@ -521,11 +521,11 @@ milestone 2 or frontend/hardware gate is closed by these library controllers.
 
 ### 3. Windows imports and native NINA — first useful release
 
-- [ ] Implement isolated COM import with timeouts, explicit connection ownership,
+- [x] Implement isolated COM import with timeouts, explicit connection ownership,
   cached telemetry, and recovery from a hung driver host.
 - [x] Add native NINA Switch, SafetyMonitor, and ObservingConditions providers and
   configuration UI using shared descriptors and local IPC.
-- [ ] Exercise native, Alpaca, and COM inputs through the same policies.
+- [x] Exercise native, Alpaca, and COM inputs through the same policies.
 - [ ] Verify NINA operation with no Alpaca listener and, for native/network-only
   sources, no dependency on ASCOM Platform.
 - [ ] Verify source sharing between NINA and Alpaca clients, including disconnect
@@ -551,11 +551,22 @@ legacy/modern ownership, typed safety, weather ages and partial errors, switch
 writes, malformed frames, failed verification cleanup, uncertain writes, missing
 registration and hung-worker isolation. It uses private fail-if-present fixture
 registration and removes those keys afterward; no installed equipment driver is
-activated. This is the worker boundary only: Rust source-factory adoption,
-parent-owned cancellation/deadlines/generation tests, packaging/signing and COM
-inputs through the actual safety/output policies are the next increment. The
-host still rejects COM sources and does not advertise them; this does not close
-milestone 3's import or full frontend gate.
+activated. The Rust factory now adopts these workers through the existing bounded
+accessory transport. Parent-owned cancellation/deadlines, generation fencing,
+retained mutation/connection uncertainty, independent safety expiry and mixed
+native-simulation/Alpaca/COM outputs have ten real parent integration cases in
+both architectures. Alpaca and COM share the scalar sampling state; installed
+worker architecture and supported class choices use shared capability metadata.
+Both Windows payloads include private helpers, dependencies and licenses; the
+release workflow signs/verifies both EXEs. Local unsigned packaging passes;
+updated release signing and interactive frontend/vendor acceptance remain open.
+
+The worker foundation's push CI 37434827510 and PR CI 37434832440 failed Windows
+first activation with HRESULT 0x80070002; their seven other jobs passed. Do not
+call that checkpoint green. Fixture-only loader diagnostics are added, with no
+production activation bypass or raw vendor error text. Updated CI must pass
+before closing the import validation gate. This does not close milestone 3's
+complete frontend gate or the remaining original milestones.
 
 ### 4. Native ASCOM outputs and broader republishing
 
@@ -635,3 +646,4 @@ Keep existing device profiles and registrations compatible throughout migration.
 | 2026-10-06 | Added native NINA Switch, SafetyMonitor and ObservingConditions providers, saved output identities, and a shared native output selector. Reviewed cancellation, stale objects, write/readback uncertainty, capability failures and selection-store conflicts. | 88 NINA tests pass, including 15 new native production-host/fault cases and actual NINA-adapter/Alpaca-publisher sharing. net48 x86/x64 selection/session/reconnect fixtures and warnings-denied builds pass. Both CI runs for client checkpoint 9006a99 passed completely. Native descriptor editing, interactive NINA acceptance, COM imports and all original remaining gates stay open. |
 | 2026-10-06 | Added the shared native descriptor editor, review/apply/reconciliation session and cached health. Corrected described scalar choices in both frontend readers, preserved invalid input/identities, fenced disposed sessions and reviewed uncertain saves. | 109 NINA tests, real net48 x86/x64 editor fixtures, warnings-denied builds, 29 Alpaca tests, JavaScript and four independent schema checks pass. An automated WPF workflow supplies verified simulation renders; Chrome verified editing/reviewing Connection Policy without equipment leases. Native-provider PR CI passed; the push fixture timing correction and this editor require new CI. Next: shared setup refinements, interactive NINA, isolated COM imports, native ASCOM and all remaining original milestones. No complete milestone 2–5 gate is closed by this checkpoint. |
 | 2026-10-06 | Added the isolated x86/x64 Windows COM import-worker boundary for Switch, SafetyMonitor and ObservingConditions. Reviewed STA/pump, connection ownership, terminal framing, sanitized HRESULTs and uncertain command/cleanup behavior. | Both warnings-denied builds and 16 real registered-COM cases in each architecture pass. Fixture registration is removed; hardware remains untouched. Native-editor 2171bec passed all eight jobs in both CI runs. Next: Rust COM adapter/factory integration, parent process ownership/deadline/generation and actual shared-policy tests, private worker packaging/signing, then all original remaining gates. No COM capability is advertised yet. |
+| 2026-10-06 | Adopted scalar COM workers in the Rust factory; shared Alpaca/COM sampling, typed reply validation, process ownership, capability metadata and private Windows packaging. Reviewed cancellation, lost writes, connection/cleanup uncertainty and vendor helper isolation. | Ten real Rust-parent cases run in both bitnesses, plus 16 worker cases; Clippy, core/hub/Alpaca tests, Rust 1.89, 110 NINA tests and net48 x86/x64 fixtures pass locally. Both unsigned packages validate. Foundation CI failed Windows activation (0x80070002); loader diagnostics and updated CI remain required. Next: resolve that failure, native ASCOM outputs and shared setup refinements, then all original acceptance/coordination/documentation gates. |

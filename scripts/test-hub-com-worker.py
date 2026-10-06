@@ -41,7 +41,8 @@ def registered_fixture():
         "[Reflection.AssemblyName]::GetAssemblyName($env:REGAIN_COM_FIXTURE_DLL).FullName",
     ], env={**os.environ, "REGAIN_COM_FIXTURE_DLL": str(FIXTURE)}, text=True).strip()
     assert identity.startswith("Regain.Hub.COM.Fixture,")
-    paths = [f"Software\\Classes\\{PROGID}", f"Software\\Classes\\CLSID\\{CLSID}"]
+    progids = [PROGID] + [PROGID + "." + name for name in ("Switch", "Safety", "Weather", "Other")]
+    paths = [f"Software\\Classes\\{name}" for name in progids] + [f"Software\\Classes\\CLSID\\{CLSID}"]
     views = (winreg.KEY_WOW64_32KEY, winreg.KEY_WOW64_64KEY)
     for view in views:
         for path in paths:
@@ -60,8 +61,8 @@ def registered_fixture():
                 with winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER, path, 0, winreg.KEY_WRITE | view):
                     pass
             entries = {
-                paths[0] + "\\CLSID": {"": CLSID},
-                paths[1] + "\\InprocServer32": {
+                **{path + "\\CLSID": {"": CLSID} for path in paths[:-1]},
+                paths[-1] + "\\InprocServer32": {
                     "": "mscoree.dll", "ThreadingModel": "Both", "Class": CLASS,
                     "Assembly": identity, "RuntimeVersion": "v4.0.30319", "CodeBase": FIXTURE.as_uri(),
                 },
@@ -415,14 +416,42 @@ class ImportTests(unittest.TestCase):
             self.assertEqual(process.stdout, b"")
 
 
+def diagnose_fixture_activation():
+    # Run only after failed inert tests, while the exact private registration is
+    # still held. No production exception sanitization or activation path changes.
+    with tempfile.TemporaryDirectory(prefix="hub-com-probe-", dir=ROOT / "artifacts") as directory:
+        state = Path(directory) / "state.json"
+        state.write_text("{}", encoding="utf-8")
+        environment = {**os.environ, "REGAIN_HUB_COM_FIXTURE_STATE": str(state),
+            "REGAIN_HUB_COM_FIXTURE_PROGID": PROGID, "REGAIN_COM_FIXTURE_DLL": str(FIXTURE)}
+        for architecture, folder in (("x86", "SysWOW64"), ("x64", "System32")):
+            print(f"Diagnosing private {architecture} fixture registration", flush=True)
+            subprocess.run([str(Path(os.environ["SystemRoot"]) / folder / "WindowsPowerShell/v1.0/powershell.exe"),
+                "-NoProfile", "-STA", "-ExecutionPolicy", "Bypass", "-File", str(ROOT / "scripts/diagnose-hub-com-fixture.ps1")],
+                env=environment, timeout=20, check=True)
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--workers", type=Path, default=WORKERS)
     parser.add_argument("--fixture", type=Path, default=FIXTURE)
+    parser.add_argument("--rust-tests", action="store_true")
     arguments = parser.parse_args()
     WORKERS = arguments.workers.resolve()
     FIXTURE = arguments.fixture.resolve()
     with registered_fixture():
         suite = unittest.defaultTestLoader.loadTestsFromTestCase(ImportTests)
         result = unittest.TextTestRunner(verbosity=2).run(suite)
+        if not result.wasSuccessful():
+            diagnose_fixture_activation()
+        if result.wasSuccessful() and arguments.rust_tests:
+            with tempfile.TemporaryDirectory(prefix="hub-com-rust-", dir=ROOT / "artifacts") as fixture_directory:
+                environment = {**os.environ, "REGAIN_TEST_WORKERS": str(WORKERS),
+                    "REGAIN_HUB_COM_FIXTURE_DIRECTORY": fixture_directory, "REGAIN_HUB_COM_FIXTURE_PROGID": PROGID,
+                    "REGAIN_HUB_COM_FIXTURE_HELPER": str(ROOT / "artifacts/hub-com-helper/Regain.Hub.Shared.Helper.Fixture.exe")}
+                environment.pop("REGAIN_HUB_COM_FIXTURE_STATE", None)
+                tests = subprocess.run(["cargo", "test", "-p", "regain-hub", "--test", "com", "--locked", "--", "--test-threads=1"],
+                    cwd=ROOT, env=environment)
+                if tests.returncode:
+                    raise SystemExit(tests.returncode)
     raise SystemExit(0 if result.wasSuccessful() else 1)

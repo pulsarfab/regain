@@ -19,14 +19,28 @@ public sealed class Driver {
     private double average;
     private int pending;
     public Driver() {
-        state = Environment.GetEnvironmentVariable("REGAIN_HUB_COM_FIXTURE_STATE") ?? throw new InvalidOperationException();
+        var explicitState = Environment.GetEnvironmentVariable("REGAIN_HUB_COM_FIXTURE_STATE");
+        var arguments = Environment.GetCommandLineArgs();
+        var selected = Array.IndexOf(arguments, "--prog-id");
+        state = explicitState ?? Path.Combine(Environment.GetEnvironmentVariable("REGAIN_HUB_COM_FIXTURE_DIRECTORY")
+            ?? throw new InvalidOperationException(), arguments[selected + 1] + ".json");
         trace = state + ".trace";
         Record("Activate");
         connected = Setting("initialConnected", false);
+        var helper = Environment.GetEnvironmentVariable("REGAIN_HUB_COM_FIXTURE_HELPER");
+        if (helper != null && Setting("spawnHelper", false)) {
+            var process = Process.Start(new ProcessStartInfo {
+                FileName = helper, Arguments = "\"" + state + ".stop\"",
+                UseShellExecute = false, CreateNoWindow = true, WindowStyle = ProcessWindowStyle.Hidden
+            }) ?? throw new InvalidOperationException();
+            Record("SharedHelper", process.Id);
+            process.Dispose();
+        }
         Dispatcher.CurrentDispatcher.BeginInvoke(new Action(() => { pumped = true; Record("Pumped"); }));
     }
     private JsonElement Settings() {
-        using var doc = JsonDocument.Parse(File.ReadAllText(state));
+        using var stream = new FileStream(state, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        using var doc = JsonDocument.Parse(stream);
         return doc.RootElement.Clone();
     }
     private bool Setting(string name, bool fallback) => Settings().TryGetProperty(name, out var value) ? value.GetBoolean() : fallback;
@@ -39,6 +53,12 @@ public sealed class Driver {
     private void Before(string member, object? value = null) {
         Record(member, value);
         var settings = Settings();
+        if (settings.TryGetProperty("rawReplyMember", out var rawMember) && rawMember.GetString() == member) {
+            var bytes = System.Text.Encoding.UTF8.GetBytes(settings.GetProperty("rawFrame").GetString() + "\n");
+            using var output = Console.OpenStandardOutput();
+            output.Write(bytes, 0, bytes.Length);
+            output.Flush();
+        }
         if (settings.TryGetProperty("hangMember", out var hang) && hang.GetString() == member) Thread.Sleep(600000);
         if (settings.TryGetProperty("argumentFaultMember", out var argument) && argument.GetString() == member)
             throw new ArgumentException("PRIVATE_FIXTURE_SECRET_DO_NOT_ECHO");
@@ -51,7 +71,7 @@ public sealed class Driver {
         get {
             Before("Connecting");
             if (!pumped) throw new COMException("STA message pump did not run", unchecked((int)0x800404FF));
-            return pending-- > 0;
+            return Setting("connectingForever", false) || pending-- > 0;
         }
     }
     public void Connect() { Before("Connect"); connected = true; pending = 2; }

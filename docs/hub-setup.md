@@ -6,6 +6,24 @@ outputs through Alpaca or the native NINA providers. Both frontends can edit the
 shared configuration. Native ASCOM hub outputs and broader proxy devices remain in progress;
 this is not a released feature.
 
+Windows sources can import ASCOM Switch, SafetyMonitor and ObservingConditions
+drivers directly through private x86/x64 helpers. Add a **COM** source, enter the
+installed driver's ProgID and select its registration bitness. Available choices
+come from the host's installed helper capabilities. This does not connect through
+Alpaca or require a Regain native ASCOM output. Select **Managed** to let the hub
+own its client connection, or **Externally managed** to require an already open
+connection without changing it. A managed legacy driver that is already connected
+is borrowed; modern drivers acquire their own client connection.
+
+COM calls have bounded deadlines and run outside the host. A stalled driver
+cannot keep cached safety permission fresh or block other sources. Unknown write
+or connection outcomes require explicit reconciliation; do not blindly repeat
+them. Killing a private worker does not prove the upstream driver disconnected.
+Other platforms can import a driver's exported Alpaca endpoint. Registered
+fixture tests pass locally; installed vendor-driver and interactive frontend
+acceptance remain on the plan, alongside resolution of the Windows CI loader
+failure.
+
 To try the editor without equipment, copy
 [`simulated-observatory.json`](../crates/regain-hub/examples/simulated-observatory.json)
 to a local file and start the development executable with its absolute path:

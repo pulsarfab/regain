@@ -834,7 +834,10 @@
                 "description": "Match the architecture in which the source driver is registered.",
                 "title": "Bitness",
                 "x-regain": {
-                  "apply": "reconnect"
+                  "enumCapabilities": {
+                    "x64": "comX64Sources",
+                    "x86": "comX86Sources"
+                  }
                 }
               },
               "connectionPolicy": {
@@ -851,7 +854,13 @@
                 "description": "ASCOM interface exposed by this source.",
                 "title": "Device Type",
                 "x-regain": {
-                  "apply": "reconnect"
+                  "enumCapabilities": {
+                    "camera": "broaderComSources",
+                    "covercalibrator": "broaderComSources",
+                    "filterwheel": "broaderComSources",
+                    "focuser": "broaderComSources",
+                    "rotator": "broaderComSources"
+                  }
                 }
               },
               "kind": {

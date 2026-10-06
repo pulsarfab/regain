@@ -19,6 +19,10 @@ using (var archive = ZipFile.OpenRead(archivePath))
         "LICENSE", "THIRD_PARTY_NOTICES.md", "regain.png", "licenses/ZWO-ASI-SDK.txt", "licenses/Rust-Standard-Library.html"];
     foreach (string name in required)
         if (archive.GetEntry(name) is not { Length: > 0 }) throw new InvalidDataException($"Package missing {name}");
+    foreach (string architecture in new[] { "x86", "x64" })
+        foreach (string dependency in new[] { "Regain.Hub.ASCOM.exe", "Regain.Hub.ASCOM.exe.config", "ASCOM.DeviceInterfaces.dll", "ASCOM.Exceptions.dll", "System.Text.Json.dll" })
+            if (archive.GetEntry($"hub-ascom/{architecture}/{dependency}") is not { Length: > 0 })
+                throw new InvalidDataException($"Package missing {architecture} COM worker dependency {dependency}");
     foreach (var old in new[] { "regain-host.exe", "regain-direct.exe", "regain-caa.exe", "regain-accessories.exe", "regain-fc3.exe", "regain-ofp2.exe", "regain-eta.exe" })
         if (archive.GetEntry(old) is not null) throw new InvalidDataException($"Package contains obsolete worker {old}");
     foreach (var entry in archive.Entries)
@@ -31,7 +35,7 @@ using (var archive = ZipFile.OpenRead(archivePath))
     using var license = new StreamReader(archive.GetEntry("LICENSE")!.Open());
     if (!(await license.ReadToEndAsync()).Contains("Apache License")) throw new InvalidDataException("Missing Apache license text");
     // Check the assemblies inside the ZIP against the versions we actually built.
-    foreach (string name in new[] { "Regain.NINA.dll", "Regain.Core.dll", "Regain.Rotator.dll" })
+    foreach (string name in new[] { "Regain.NINA.dll", "Regain.Core.dll", "Regain.Rotator.dll", "hub-ascom/x86/Regain.Hub.ASCOM.exe", "hub-ascom/x64/Regain.Hub.ASCOM.exe" })
     {
         using var stream = archive.GetEntry(name)!.Open();
         using var copy = new MemoryStream();
@@ -41,6 +45,9 @@ using (var archive = ZipFile.OpenRead(archivePath))
         var metadata = System.Reflection.Metadata.PEReaderExtensions.GetMetadataReader(pe);
         if (metadata.GetAssemblyDefinition().Version.ToString() != version)
             throw new InvalidDataException($"Packaged {name} has a different version");
+        if (name.StartsWith("hub-ascom/x86/") && pe.PEHeaders.CoffHeader.Machine != System.Reflection.PortableExecutable.Machine.I386
+            || name.StartsWith("hub-ascom/x64/") && pe.PEHeaders.CoffHeader.Machine != System.Reflection.PortableExecutable.Machine.Amd64)
+            throw new InvalidDataException($"Packaged {name} has a different architecture");
     }
 }
 string baseUrl = $"{plugin.Repository}/releases/download/v{version}";

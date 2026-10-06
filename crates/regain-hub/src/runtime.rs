@@ -1,7 +1,7 @@
 //! One set of output controllers per applied configuration. Client identities
 //! and connection leases belong to the host, never to frontend-supplied IDs.
 use crate::{
-    config::{DeviceType, HubConfig, SafetyMember, VirtualDevice},
+    config::{Bitness, DeviceType, HubConfig, SafetyMember, VirtualDevice},
     factory::{CredentialProvider, build_sources_bound},
     native::NativeRuntime,
     parameters::FieldError,
@@ -42,6 +42,7 @@ enum Output {
 }
 
 pub struct HubRuntime {
+    com_architectures: Vec<Bitness>,
     runtime_id: Uuid,
     config: HubConfig,
     registry: Arc<SourceRegistry>,
@@ -74,7 +75,10 @@ impl HubRuntime {
             clock.clone(),
             Some(binding.clone()),
         )?;
-        let runtime = Self::from_registry(config, registry, clock)?;
+        let mut runtime = Self::from_registry(config, registry, clock)?;
+        Arc::get_mut(&mut runtime)
+            .expect("Unpublished runtime")
+            .com_architectures = crate::com::available_architectures(native);
         binding
             .set(Arc::downgrade(&runtime))
             .expect("New runtime binding");
@@ -134,6 +138,7 @@ impl HubRuntime {
             outputs.insert(output.id, mapped);
         }
         Ok(Arc::new(Self {
+            com_architectures: Vec::new(),
             runtime_id: Uuid::new_v4(),
             config,
             registry,
@@ -157,6 +162,25 @@ impl HubRuntime {
     }
     pub(crate) fn configuration(&self) -> &HubConfig {
         &self.config
+    }
+    pub(crate) fn configuration_capabilities(&self) -> Vec<&'static str> {
+        let mut capabilities = vec![
+            "nativeSources",
+            "alpacaSources",
+            "virtualSources",
+            "writeReadout",
+            "simulation",
+        ];
+        if !self.com_architectures.is_empty() {
+            capabilities.push("comSources");
+        }
+        if self.com_architectures.contains(&Bitness::X86) {
+            capabilities.push("comX86Sources");
+        }
+        if self.com_architectures.contains(&Bitness::X64) {
+            capabilities.push("comX64Sources");
+        }
+        capabilities
     }
     pub(crate) fn contains_output(&self, id: Uuid) -> bool {
         self.outputs.contains_key(&id)

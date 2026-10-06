@@ -139,6 +139,14 @@ impl HubService {
     pub fn can_apply(&self) -> bool {
         self.store.is_some()
     }
+    pub fn configuration_capabilities(&self) -> Vec<&'static str> {
+        // Setup metadata remains readable while apply/cleanup blocks operations.
+        self.state
+            .lock()
+            .unwrap()
+            .runtime
+            .configuration_capabilities()
+    }
     pub fn credential_description(&self) -> Option<serde_json::Value> {
         self.credentials.as_ref().map(|store| store.description())
     }

@@ -157,10 +157,11 @@ pub(crate) fn build_sources_bound(
                     authorization,
                 )?))
             }
-            SourceBackend::Com { .. } => Err(SourceError::new(
-                ErrorKind::Unsupported,
-                "The isolated COM source adapter is not available in this host yet",
-            )),
+            SourceBackend::Com { .. } => Ok(Box::new(crate::com::ComBackend::new(
+                source,
+                native,
+                plan.samples,
+            )?)),
             SourceBackend::Virtual { output } => {
                 let binding = binding.clone().ok_or_else(|| {
                     SourceError::new(

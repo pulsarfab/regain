@@ -43,6 +43,19 @@ public sealed class HubConfigurationTests
         Assert.Equal("source",reader.Fields(membership).Single(f=>f.Key=="source").Schema.GetProperty("x-regain").GetProperty("reference").GetString());
     }
     [Fact]
+    public void ComClassAndBitnessChoicesRespectTheInstalledHostCapabilities()
+    {
+        var reader=new HubConfiguration(Contract());
+        var source=reader.Root.GetProperty("$defs").GetProperty("SourceBackend");
+        var com=reader.Variants(source,["comSources"]).Single(v=>v.Kind=="com");
+        Assert.True(com.Enabled);
+        var properties=com.Schema.GetProperty("properties");
+        Assert.Equal(new[]{"switch","safetymonitor","observingconditions"},reader.Choices(properties.GetProperty("deviceType")).Where(c=>c.Enabled).Select(c=>c.Value));
+        var bitness=reader.Choices(properties.GetProperty("bitness"),["comX86Sources"]);
+        Assert.True(bitness.Single(c=>c.Value=="x86").Enabled);
+        Assert.False(bitness.Single(c=>c.Value=="x64").Enabled);
+    }
+    [Fact]
     public void UnknownContractsAndReferencesAreRejected()
     {
         Assert.Throws<InvalidOperationException>(()=>new HubConfiguration(JsonSerializer.SerializeToElement(new {contractVersion=2,schemaVersion=1})));

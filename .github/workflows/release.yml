@@ -82,6 +82,8 @@ jobs:
             ${{ github.workspace }}\artifacts\stage\regain-device.exe
             ${{ github.workspace }}\artifacts\stage\regain-alpaca.exe
             ${{ github.workspace }}\artifacts\stage\regain-camera.exe
+            ${{ github.workspace }}\artifacts\stage\hub-ascom\x86\Regain.Hub.ASCOM.exe
+            ${{ github.workspace }}\artifacts\stage\hub-ascom\x64\Regain.Hub.ASCOM.exe
             ${{ github.workspace }}\artifacts\ascom-stage\Regain.ASCOM.dll
             ${{ github.workspace }}\artifacts\ascom-stage\Regain.ASCOM.Register.exe
             ${{ github.workspace }}\artifacts\ascom-stage\Regain.Pegasus.ASCOM.exe
@@ -95,7 +97,7 @@ jobs:
       # to the wrong publisher, must not reach the archive.
       - name: Verify every signature
         run: |
-          foreach ($f in 'Regain.NINA.dll','Regain.Core.dll','Regain.Rotator.dll','regain-device.exe','regain-camera.exe','regain-alpaca.exe') {
+          foreach ($f in 'Regain.NINA.dll','Regain.Core.dll','Regain.Rotator.dll','regain-device.exe','regain-camera.exe','regain-alpaca.exe','hub-ascom/x86/Regain.Hub.ASCOM.exe','hub-ascom/x64/Regain.Hub.ASCOM.exe') {
             $sig = Get-AuthenticodeSignature -LiteralPath "artifacts/stage/$f"
             if ($sig.Status -ne 'Valid') { throw "$f signature is $($sig.Status)" }
             if ($sig.SignerCertificate.Subject -notmatch 'StackFoundry LLC') { throw "$f has unexpected signer: $($sig.SignerCertificate.Subject)" }

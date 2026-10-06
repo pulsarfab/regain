@@ -122,8 +122,10 @@ pub enum SourceBackend {
         #[schemars(title = "Driver ProgID", length(min = 1, max = MAX_LABEL_CHARS))]
         prog_id: String,
         /// ASCOM interface exposed by this source.
+        #[schemars(extend("x-regain" = {"enumCapabilities":{"camera":"broaderComSources","focuser":"broaderComSources","rotator":"broaderComSources","filterwheel":"broaderComSources","covercalibrator":"broaderComSources"}}))]
         device_type: DeviceType,
         /// Match the architecture in which the source driver is registered.
+        #[schemars(extend("x-regain" = {"enumCapabilities":{"x86":"comX86Sources","x64":"comX64Sources"}}))]
         bitness: Bitness,
         /// Whether the hub or another application manages the upstream connection.
         #[serde(default)]

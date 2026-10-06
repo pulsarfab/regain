@@ -541,8 +541,9 @@ before spawning any actors. It does not open devices or make network requests.
 Each source gets one actor regardless of the number of outputs. A host without
 a protected credential provider rejects credential-bearing source configuration.
 The executable supplies the user-scoped credential provider described below.
-COM, virtual-output, simulated-interface, and native-camera source construction
-remain explicit later implementation work, with no fallback to another backend.
+The factory also prepares Windows scalar COM imports, explicit simulation and
+local virtual-output sources. Native-camera and broader COM classes remain later
+implementation work; no unavailable backend falls back to another transport.
 
 Read InterfaceVersion before opening a source. Modern connection methods start
 at Camera/Focuser/Rotator V4, Switch/SafetyMonitor/FilterWheel V3, and
@@ -715,8 +716,8 @@ create safe evidence.
 Simulation marking propagates through the dependency graph, including mixed
 outputs. Setup inspection and scalar IPC use the same typed output operation
 handlers as virtual sources. This implementation covers local composition of the
-first three classes; it does not provide COM imports, camera proxies, or completed
-NINA/ASCOM/HTTP publication.
+first three classes. COM imports and NINA/HTTP publication now use these same
+controllers; camera proxies and native ASCOM output publication remain pending.
 
 ### Explicit scalar simulation
 
@@ -812,7 +813,11 @@ The private executable accepts `--import --prog-id PROGID --device-type TYPE
 `safetymonitor`, and `observingconditions`; POLICY is `managed` or
 `externallyManaged`. Bitness must match the worker before activation. The helper
 is built under `hub-ascom/x86|x64/Regain.Hub.ASCOM.exe` alongside the Rust workers.
-This checkpoint is not wired to the Rust source factory or shipped payload yet.
+The Rust source factory adopts these workers in the development branch. Windows
+NINA/ASCOM payloads include both private architectures and dependencies; these
+are import helpers, not registered native ASCOM hub outputs. Schema capability
+choices advertise only installed helper architectures and the three scalar
+classes. Other platforms offer exported Alpaca sources instead.
 
 Requests are UTF-8 newline JSON, fewer than 4096 bytes before the newline, with
 `protocol: 1`, a positive strictly increasing signed-64-bit `id`, and `operation`.
@@ -851,8 +856,30 @@ imported drivers: implementations may disconnect shared hardware there. Release
 the RCW on its STA; graceful EOF attempts only acknowledged owned cleanup.
 Terminate a hung Regain worker through parent ownership/deadlines, never a shared
 vendor COM server. Forced worker termination cannot prove upstream Disconnect
-completed. Parent integration, cached evidence expiry, source generations,
-packaging and output policy/conformance acceptance remain required.
+completed. The parent attaches its kill-on-close job before the first activation
+request, with silent breakaway for vendor descendants: ownership covers the
+private Regain worker, never a shared vendor server/helper. The existing bounded
+accessory transport now supports typed inner replies directly from frame bytes;
+duplicate fields cannot disappear through an intermediate JSON map. Invalid
+identity, types, framing or contradictory ownership retires that worker.
+
+Each RPC has a configured deadline; the complete connection and disconnect
+handshakes have independent total bounds. Cancellation retires a pending worker.
+The actor fences lost generations and retains write uncertainty; an ambiguous
+Connect/Disconnect cannot be repeated in a replacement worker. A read stall may
+recover through a new private worker without claiming that forced termination
+confirmed upstream cleanup. Shared scalar sampling preserves same-key retry
+budgets, independent weather failures and conservative source ages. Safety
+permission expires in the host independently of the blocked COM call.
+
+Registered fixture tests cover both architectures through the actual Rust
+factory, source actors and output policies, including mixed native simulation,
+loopback Alpaca and COM inputs. These establish transport/policy behavior, not
+interactive NINA, installed vendor-driver, conformance or real-device acceptance.
+Release signing includes both import executables, but remains unverified until
+a release job exercises the updated development payload. Windows CI for the
+worker foundation failed first activation with HRESULT 0x80070002; fixture-only
+loader diagnostics now distinguish registration and managed assembly loading.
 
 Field Kit reference commit `8be3d38f0b04fa78d7ae36b460ed10656f259d0f` is
 Apache-2.0. Its endpoint state, aggregate, service, and integration tests supply

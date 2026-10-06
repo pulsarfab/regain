@@ -3,6 +3,7 @@
 pub mod alpaca;
 pub mod capabilities;
 pub mod client;
+pub mod com;
 pub mod config;
 pub mod credentials;
 pub mod description;
@@ -18,6 +19,7 @@ pub mod readout;
 pub mod runtime;
 pub mod safety;
 pub mod safety_output;
+pub mod sampling;
 pub mod service;
 pub mod simulated;
 pub mod source;
