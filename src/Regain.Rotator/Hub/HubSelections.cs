@@ -67,6 +67,21 @@ public sealed class HubSelectionStore(string path)
     {
         selection = selection.Copy();
         selection.Validate();
+        return Update(expectedRevision, current => current.Bindings.Where(b => b.Id != selection.Id).Append(selection).ToArray());
+    }
+    /// Remove a saved native chooser entry, without touching the host config,
+    /// output identity or any connected client's private copy/lease.
+    public HubSelections Remove(Guid instance, Guid output, Guid expectedRevision)
+    {
+        if (instance == Guid.Empty || output == Guid.Empty) throw new ArgumentException("A saved output identity is required");
+        return Update(expectedRevision, current => {
+            var next = current.Bindings.Where(b => b.InstanceId != instance || b.OutputId != output).ToArray();
+            if (next.Length == current.Bindings.Length) throw new InvalidOperationException("The saved output no longer exists; reload selections");
+            return next;
+        });
+    }
+    private HubSelections Update(Guid expectedRevision, Func<HubSelections, HubSelection[]> change)
+    {
         Directory.CreateDirectory(System.IO.Path.GetDirectoryName(Path)!);
         // A persistent OS lock protects competing native frontends. It is not
         // removed, and never establishes ownership of equipment or the hub.
@@ -75,7 +90,7 @@ public sealed class HubSelectionStore(string path)
         try {
             var current = Load();
             if (current.Revision != expectedRevision) throw new InvalidOperationException("Hub selections changed; reload before saving");
-            var next = current.Bindings.Where(b => b.Id != selection.Id).Append(selection).ToArray();
+            var next = change(current);
             if (next.Length > 64) throw new InvalidOperationException("Hub selection limit reached");
             var result = new HubSelections { Revision = Guid.NewGuid(), Bindings = next };
             var bytes = JsonSerializer.SerializeToUtf8Bytes(result, options);

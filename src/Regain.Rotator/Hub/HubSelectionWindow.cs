@@ -12,8 +12,8 @@ public sealed class HubSelectionWindow : Window
 {
     private readonly string executable, type;
     private readonly HubSelectionStore store;
-    private readonly Guid expectedRevision;
-    private readonly bool selectionsReadable;
+    private Guid expectedRevision;
+    private bool selectionsReadable;
     private readonly CancellationTokenSource lifetime = new();
     private readonly TextBox path = new() { MinWidth = 450 };
     private readonly ComboBox outputs = new() { MinWidth = 450, DisplayMemberPath = nameof(Choice.Label) };
@@ -52,6 +52,18 @@ public sealed class HubSelectionWindow : Window
         panel.Children.Add(browse); panel.Children.Add(load); panel.Children.Add(edit);
         panel.Children.Add(new TextBlock { Text = "Output (stable UUID)", Margin = new Thickness(0, 16, 0, 0) });
         panel.Children.Add(outputs); panel.Children.Add(save);
+        var manage = new Button { Content = "Manage saved output choices", Padding = new Thickness(14, 8, 14, 8), HorizontalAlignment = HorizontalAlignment.Left };
+        panel.Children.Add(manage);
+        manage.Click += (_, _) => {
+            if (busy) return;
+            HubSelectionManagerWindow.Show(this, store, type);
+            // Management is explicit reconciliation of this same saved file.
+            // A race after this reload is still caught by Save's revision guard.
+            try {
+                expectedRevision = store.Load().Revision; selectionsReadable = true;
+                save.IsEnabled = loadedPath == path.Text && outputs.SelectedItem is Choice;
+            } catch { selectionsReadable = false; save.IsEnabled = false; status.Text = SelectionError; }
+        };
         panel.Children.Add(status);
         if (!selectionsReadable) status.Text = SelectionError;
         path.Text = current?.ConfigPath ?? "";

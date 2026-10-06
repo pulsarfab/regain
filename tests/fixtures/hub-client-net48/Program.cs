@@ -53,6 +53,15 @@ internal static class Program
             await native.ConnectAsync(binding, deadline.Token);
             if (epoch == native.Epoch || !native.Connected) throw new InvalidOperationException("Explicit reconnect did not replace the session epoch");
             native.Disconnect();
+            await native.ConnectAsync(binding, deadline.Token);
+            var removed = store.Remove(binding.InstanceId, binding.OutputId, bindings.Revision);
+            if (store.Load().Bindings.Length != 0 || !native.Connected ||
+                !(await native.RequestAsync(native.Epoch, connected, cancellation: deadline.Token)).GetBoolean())
+                throw new InvalidOperationException("Saved-choice removal changed a connected output");
+            try { store.Save(binding, bindings.Revision); throw new Exception("Removal accepted a stale selection save"); }
+            catch (InvalidOperationException) { }
+            store.Save(binding, removed.Revision);
+            native.Disconnect();
             using var editor = await HubEditorSession.AttachAsync(args[0], args[1], attached.InstanceId, deadline.Token);
             await editor.ReloadAsync(deadline.Token);
             var oldRevision = editor.Draft!.Revision;
@@ -73,7 +82,7 @@ internal static class Program
             await editor.ReloadAsync(deadline.Token);
             if (editor.Draft!.Revision == oldRevision || editor.Draft.Field("/outputs/0/label").Value!.Value.GetString() != "net48 edited simulation")
                 throw new InvalidOperationException("Native editor did not reconcile saved changes");
-            Console.WriteLine($"net48 {IntPtr.Size * 8}-bit: shared identity, independent leases, selection CAS, native session/reconnect, editor review/apply/reconcile and surviving host passed");
+            Console.WriteLine($"net48 {IntPtr.Size * 8}-bit: shared identity, independent leases, selection CAS/removal, native session/reconnect, editor review/apply/reconcile and surviving host passed");
             return 0;
         } catch (Exception error) { Console.Error.WriteLine(error.GetType().Name + ": " + error.Message); return 1; }
         finally {

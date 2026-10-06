@@ -1372,6 +1372,42 @@ machine option is rejected locally. Keep ProgIDs within the
 including fixture aliases. Production activation and error sanitization are
 unchanged. This correction still requires new CI evidence.
 
+## Common native saved-choice management, 2026-10-06
+
+Added removal to the shared selection store and the same themed selector used by
+native setup. This is a user-scoped chooser operation, not deletion of a hub
+output or source. Review focused on independent client leases, configuration
+identity, concurrent saves and uncertain outcomes.
+
+1. Save and Remove share one bounded, revision-checked atomic update path and
+   persistent OS lock. Remove identifies both instance and output UUID; missing
+   identities and stale revisions do not produce a new saved revision. Empty
+   chooser lists remain valid and retain their revision for subsequent saves.
+2. Never attach to a host or revoke equipment leases from the manager. Connected
+   native devices retain their private selection and session. Rescan enumerates
+   the reduced chooser list; explicitly saving the output restores the same ID.
+   Production-host and actual net48 tests verify connected leases survive removal.
+3. A failed/conflicting removal disables mutation until explicit reload. The
+   selector reconciles its own revision after returning from management; another
+   later save still fails CAS. An unreadable selection file cannot be overwritten.
+4. Show label, simulation marking, config path and both identities. The first
+   render clipped the long path/instance detail horizontally; reviewing it led
+   to wrapping row content and disabling the horizontal scrollbar. The verified
+   actual WPF render is `docs/images/hub-native-selections-simulation.png`, clearly
+   labeled automated simulation. No installed NINA/ASCOM acceptance is claimed.
+
+Validation: all 114 NINA checks pass (`artifacts/hub-selection-all-tests.log`),
+including four new store/live-lease/WPF cases. Tests cover competing saves,
+missing/empty identities, unreadable files, empty lists/restoration, actual chooser
+enumeration and continued production-host leases. net48 x86/x64 public fixtures
+exercise the same removal/CAS/retained-lease behavior
+(`artifacts/hub-selection-net48.log`); both native framework builds pass with
+warnings denied (`artifacts/hub-selection-build.log`). New CI remains required.
+
+Next: corrected COM runner validation, native ASCOM output/registration, remaining
+setup initialization, credentials, inspection/simulation/diagnostics, interactive
+acceptance and every original broader proxy, camera, coordination and release gate.
+
 Next: resolve Windows fixture activation, complete native ASCOM outputs/setup,
 interactive NINA/vendor acceptance and shared setup refinements, then all original
 broader proxy, camera/acquisition, coordination, conformance, recovery, hardware,

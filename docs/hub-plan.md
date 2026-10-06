@@ -500,8 +500,18 @@ review, one revision-checked Apply and explicit reconciliation without equipment
 leases or an HTTP listener. Saved IDs/numbers remain fixed, new records receive
 new IDs, invalid text survives collapsed sections, and collections load lazily
 in pages. Cached host/source health is available separately. Initialization,
-credential management, live inspection, simulation controls, richer diagnostics
-and selection removal/management remain required setup refinements.
+credential management, live inspection, simulation controls and richer diagnostics
+remain required setup refinements.
+
+The common native selector now includes saved-choice management, showing the
+configuration path, instance and output identity. Revision-checked removal shares
+the existing atomic save/lock path, preserves unrelated entries and never changes
+host configuration or connected leases. Unreadable files, stale revisions and
+missing identities fail without a write. An actual WPF workflow covers competing
+saves and explicit reload; its verified screenshot is labeled simulation. All
+114 NINA checks, net48 x86/x64 removal/lease fixtures and warning-denied shared
+builds pass locally. This completes basic native selection removal, not ASCOM
+registration management or interactive/frontend acceptance.
 
 This editor checkpoint adds 21 checks: draft/schema/control behavior, production
 host review/apply, competing revisions, connected-client rejection, lost committed
@@ -653,3 +663,4 @@ Keep existing device profiles and registrations compatible throughout migration.
 | 2026-10-06 | Added the shared native descriptor editor, review/apply/reconciliation session and cached health. Corrected described scalar choices in both frontend readers, preserved invalid input/identities, fenced disposed sessions and reviewed uncertain saves. | 109 NINA tests, real net48 x86/x64 editor fixtures, warnings-denied builds, 29 Alpaca tests, JavaScript and four independent schema checks pass. An automated WPF workflow supplies verified simulation renders; Chrome verified editing/reviewing Connection Policy without equipment leases. Native-provider PR CI passed; the push fixture timing correction and this editor require new CI. Next: shared setup refinements, interactive NINA, isolated COM imports, native ASCOM and all remaining original milestones. No complete milestone 2–5 gate is closed by this checkpoint. |
 | 2026-10-06 | Added the isolated x86/x64 Windows COM import-worker boundary for Switch, SafetyMonitor and ObservingConditions. Reviewed STA/pump, connection ownership, terminal framing, sanitized HRESULTs and uncertain command/cleanup behavior. | Both warnings-denied builds and 16 real registered-COM cases in each architecture pass. Fixture registration is removed; hardware remains untouched. Native-editor 2171bec passed all eight jobs in both CI runs. Next: Rust COM adapter/factory integration, parent process ownership/deadline/generation and actual shared-policy tests, private worker packaging/signing, then all original remaining gates. No COM capability is advertised yet. |
 | 2026-10-06 | Adopted scalar COM workers in the Rust factory; shared Alpaca/COM sampling, typed reply validation, process ownership, capability metadata and private Windows packaging. Reviewed cancellation, lost writes, connection/cleanup uncertainty and vendor helper isolation. | Ten real Rust-parent cases run in both bitnesses, plus 16 worker cases; Clippy, core/hub/Alpaca tests, Rust 1.89, 110 NINA tests and net48 x86/x64 fixtures pass locally. Both unsigned packages validate. Foundation CI failed Windows activation (0x80070002); loader diagnostics and updated CI remain required. Next: resolve that failure, native ASCOM outputs and shared setup refinements, then all original acceptance/coordination/documentation gates. |
+| 2026-10-06 | Diagnosed elevated runner COM activation after successful direct managed loads; selected private HKLM fixture keys explicitly only for elevated disposable GitHub runners. Added native saved-choice management using the common store/selector. | Adapter 9dfdb82 passed seven jobs in both CI runs but Windows still failed; the runner correction requires new CI. Local 16 worker and ten parent cases pass in both bitnesses; machine registration is rejected outside runner context. All 114 NINA checks, net48 x86/x64 removal/lease fixtures and warnings-denied shared builds pass. WPF render verified after correcting clipped identity/path text. Next: verify corrected CI, native ASCOM outputs and remaining original gates. |

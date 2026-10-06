@@ -912,6 +912,15 @@ lock file. Save checks the exact expected revision and writes a fresh revision b
 flushed atomic replacement. An unreadable file is not treated as an empty file
 and native setup cannot overwrite it. Selection removal/management remains pending.
 
+Saved-choice removal uses the same lock and revision-checked atomic persistence
+as selection save. It identifies the instance/output pair, preserves other
+entries and rejects stale revisions, unreadable storage or absent identities
+without writing. An empty saved list remains valid. The shared themed manager
+shows configuration path and immutable identities; it acquires no host or
+equipment lease. Removal affects later chooser enumeration, not the host's output
+configuration or connected clients' private selections. A failed/uncertain save
+requires explicit reload; neither removal nor restoration is automatically replayed.
+
 Connect copies the selection, checks its instance before launching the helper,
 authenticates the live host, and matches the output UUID/class exactly. Metadata
 initialization is bounded by the native device's 45-second connection deadline.

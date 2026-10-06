@@ -101,7 +101,16 @@ do not acquire equipment leases.
 These are renders of the actual WPF window during an automated simulation test
 against the production host. They demonstrate setup; interactive NINA and
 real-device acceptance remain pending. Initialization, credential management,
-inspection, simulation controls and selection removal remain on the plan.
+inspection and simulation controls remain on the plan.
+
+Select **Manage saved output choices** to view the saved choices for this class.
+Each entry identifies its configuration path, hub instance and output UUID.
+Removing an entry updates the native chooser list; it leaves the shared hub
+configuration and connected clients running. Rescan equipment afterward. To add
+it again, load its configuration and save that output. A competing save requires
+an explicit reload before another change; unreadable selection files are preserved.
+
+![Saved native output choices during an automated simulation](images/hub-native-selections-simulation.png)
 
 Selections are stored in `%LOCALAPPDATA%\Regain\hub-frontends.json`. They contain
 the configuration path, hub instance and output IDs, class, label and simulation
