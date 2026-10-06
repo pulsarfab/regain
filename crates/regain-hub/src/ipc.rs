@@ -121,7 +121,7 @@ pub enum Command {
             skip_serializing_if = "Option::is_none"
         )]
         expected_revision: Option<Uuid>,
-        update: crate::simulated::SimulationUpdate,
+        update: Box<crate::simulated::SimulationUpdate>,
     },
     Connect {
         output: Uuid,
@@ -570,7 +570,7 @@ async fn dispatch(
             if expected_revision.is_some_and(|revision| revision != runtime.revision()) {
                 return Err(UpdateError::Conflict.into());
             }
-            let status = runtime.update_simulation(source, update).await?;
+            let status = runtime.update_simulation(source, *update).await?;
             if expected_revision.is_some() {
                 json!({"source":source,"configurationRevision":runtime.revision(),"simulation":status})
             } else {

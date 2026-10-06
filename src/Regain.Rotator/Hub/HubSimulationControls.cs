@@ -46,13 +46,17 @@ public sealed class HubSimulationControl
                 (!Descriptor.TryGetProperty("minimum", out var minInteger) || integer >= minInteger.GetInt32()) &&
                 (!Descriptor.TryGetProperty("maximum", out var maxInteger) || integer <= maxInteger.GetInt32()),
             "number" => value.ValueKind == JsonValueKind.Number && value.TryGetDouble(out var number) && !double.IsNaN(number) && !double.IsInfinity(number) &&
-                (!Descriptor.TryGetProperty("minimum", out var minimum) || number >= minimum.GetDouble()) &&
-                (!Descriptor.TryGetProperty("maximum", out var maximum) || number <= maximum.GetDouble()) &&
-                (!Descriptor.TryGetProperty("exclusiveMinimum", out var exclusive) || number > exclusive.GetDouble()),
+                NumberBounds(number) && (!Descriptor.TryGetProperty("precision", out var precision)
+                    || precision.GetString() == "single" && NumberBounds((float)number)),
             _ => false
         };
         if (!valid) throw new InvalidOperationException("Invalid " + Label);
     }
+    private bool NumberBounds(double number) => !double.IsNaN(number) && !double.IsInfinity(number) &&
+        (!Descriptor.TryGetProperty("minimum", out var minimum) || number >= minimum.GetDouble()) &&
+        (!Descriptor.TryGetProperty("maximum", out var maximum) || number <= maximum.GetDouble()) &&
+        (!Descriptor.TryGetProperty("exclusiveMinimum", out var exclusiveMinimum) || number > exclusiveMinimum.GetDouble()) &&
+        (!Descriptor.TryGetProperty("exclusiveMaximum", out var exclusiveMaximum) || number < exclusiveMaximum.GetDouble());
     public JsonElement Read(JsonElement status)
     {
         var value = status;
@@ -123,13 +127,14 @@ public sealed partial class HubEditorSession
     public void ValidateSimulationStatus(Guid source, JsonElement status)
     {
         var type = SavedSource(source).GetProperty("backend").GetProperty("deviceType").GetString();
-        HubWire.Members(status, type == "focuser"
-            ? ["deviceType", "safe", "switchValues", "weather", "fault", "sampleAgeSeconds", "focuser"]
-            : ["deviceType", "safe", "switchValues", "weather", "fault", "sampleAgeSeconds"]);
-        if (status.GetProperty("deviceType").GetString() != SavedSource(source).GetProperty("backend").GetProperty("deviceType").GetString()) throw new HubException(HubFailure.Protocol);
-        if (type == "focuser") HubWire.Members(status.GetProperty("focuser"), SimulationControls(source)
-            .Where(control => control.Path.Length == 2 && control.Path[0] == "focuser").Select(control => control.Path[1]).ToArray());
-        foreach (var control in SimulationControls(source)) control.Read(status);
+        var controls = SimulationControls(source);
+        string[] baseline = ["deviceType", "safe", "switchValues", "weather", "fault", "sampleAgeSeconds"];
+        HubWire.Members(status, baseline.Concat(controls.Where(control => control.Path.Length == 2)
+            .Select(control => control.Path[0])).Distinct(StringComparer.Ordinal).ToArray());
+        if (status.GetProperty("deviceType").GetString() != type) throw new HubException(HubFailure.Protocol);
+        foreach (var group in controls.Where(control => control.Path.Length == 2).GroupBy(control => control.Path[0]))
+            HubWire.Members(status.GetProperty(group.Key), group.Select(control => control.Path[1]).ToArray());
+        foreach (var control in controls) control.Read(status);
     }
     internal static JsonElement SimulationPatch(IEnumerable<KeyValuePair<HubSimulationControl, JsonElement>> selected)
     {

@@ -2,14 +2,632 @@ use regain_hub::{
     config::{DeviceType, HubConfig, SourceBackend},
     factory::NoCredentials,
     native::NativeRuntime,
+    rotator::RotatorProperty,
     runtime::HubRuntime,
     safety::MonotonicClock,
-    simulated::{Fault, FocuserUpdate, SimulatedBackend, SimulationUpdate},
+    simulated::{Fault, FocuserUpdate, RotatorUpdate, SimulatedBackend, SimulationUpdate},
     source::{Backend, ErrorKind, Values},
 };
 use serde_json::json;
 use std::{collections::BTreeMap, sync::Arc, time::Duration};
 use uuid::Uuid;
+
+#[test]
+fn rotator_state_updates_are_atomic_strict_and_class_specific() {
+    let mut backend = SimulatedBackend::new(DeviceType::Rotator, vec![]).unwrap();
+    let before = serde_json::to_value(backend.simulation_status()).unwrap();
+    for rotator in [
+        RotatorUpdate {
+            position: Some(360.0),
+            ..Default::default()
+        },
+        RotatorUpdate {
+            mechanical_position: Some(-1.0),
+            ..Default::default()
+        },
+        RotatorUpdate {
+            target_position: Some(359.9999999),
+            ..Default::default()
+        },
+        RotatorUpdate {
+            step_size: Some(f64::MIN_POSITIVE),
+            ..Default::default()
+        },
+        RotatorUpdate {
+            step_size: Some(f64::MAX),
+            ..Default::default()
+        },
+        RotatorUpdate {
+            position: Some(20.0),
+            move_duration_seconds: Some(301.0),
+            ..Default::default()
+        },
+        RotatorUpdate {
+            can_reverse: Some(false),
+            reverse: Some(true),
+            ..Default::default()
+        },
+        RotatorUpdate {
+            position: Some(f64::NAN),
+            ..Default::default()
+        },
+    ] {
+        assert_eq!(
+            backend
+                .update_simulation(SimulationUpdate {
+                    rotator: Some(rotator),
+                    fault: Some(Fault::StoppedShort),
+                    ..Default::default()
+                })
+                .unwrap_err()
+                .kind,
+            ErrorKind::InvalidValue
+        );
+        assert_eq!(
+            serde_json::to_value(backend.simulation_status()).unwrap(),
+            before
+        );
+    }
+    for value in [
+        json!({"rotator":{"position":"20"}}),
+        json!({"rotator":{"isMoving":0}}),
+        json!({"rotator":{"extra":true}}),
+    ] {
+        assert!(serde_json::from_value::<SimulationUpdate>(value).is_err());
+    }
+    let mut focuser = SimulatedBackend::new(DeviceType::Focuser, vec![]).unwrap();
+    assert_eq!(
+        focuser
+            .update_simulation(SimulationUpdate {
+                rotator: Some(RotatorUpdate::default()),
+                ..Default::default()
+            })
+            .unwrap_err()
+            .kind,
+        ErrorKind::InvalidValue
+    );
+    assert_eq!(
+        backend
+            .update_simulation(SimulationUpdate {
+                focuser: Some(FocuserUpdate::default()),
+                ..Default::default()
+            })
+            .unwrap_err()
+            .kind,
+        ErrorKind::InvalidValue
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn simulated_rotator_keeps_sync_offset_timed_commands_and_motion_after_disconnect() {
+    let mut backend = SimulatedBackend::new(DeviceType::Rotator, vec![]).unwrap();
+    backend.connect().await.unwrap();
+    for (member, args) in [
+        ("move", json!({"Position":"1"})),
+        ("move", json!({"Position":1e39})),
+        ("moveabsolute", json!({"Position":359.9999999})),
+        ("movemechanical", json!({"Position":-1e-50})),
+        ("sync", json!({"Position":360})),
+        ("sync", json!({"position":10})),
+        ("move", json!({"Position":1,"extra":true})),
+        ("reverse", json!({"Reverse":1})),
+        ("halt", json!({"extra":true})),
+    ] {
+        assert_eq!(
+            backend
+                .write(member.into(), serde_json::from_value(args).unwrap())
+                .await
+                .unwrap_err()
+                .kind,
+            ErrorKind::InvalidValue
+        );
+    }
+    backend
+        .write(
+            "sync".into(),
+            Values::from([("Position".into(), json!(20))]),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        backend
+            .read("mechanicalposition".into(), Values::new())
+            .await
+            .unwrap()
+            .as_f64(),
+        Some(0.0)
+    );
+    backend
+        .write(
+            "move".into(),
+            Values::from([("Position".into(), json!(-721.5))]),
+        )
+        .await
+        .unwrap();
+    let state = backend.simulation_status().unwrap().rotator.unwrap();
+    assert!(state.is_moving);
+    assert_eq!(state.position, 20.0);
+    assert_eq!(state.target_position, 18.5);
+    backend.disconnect().await.unwrap();
+    tokio::time::advance(Duration::from_millis(250)).await;
+    let state = backend.simulation_status().unwrap().rotator.unwrap();
+    assert!(!state.is_moving);
+    assert_eq!(state.position, 18.5);
+    assert_eq!(state.mechanical_position, 358.5);
+    backend.connect().await.unwrap();
+    backend
+        .write(
+            "sync".into(),
+            Values::from([("Position".into(), json!(40))]),
+        )
+        .await
+        .unwrap();
+    backend
+        .write(
+            "moveabsolute".into(),
+            Values::from([("Position".into(), json!(50))]),
+        )
+        .await
+        .unwrap();
+    backend
+        .update_simulation(SimulationUpdate {
+            rotator: Some(RotatorUpdate {
+                step_size_available: Some(false),
+                move_duration_seconds: Some(2.0),
+                ..Default::default()
+            }),
+            ..Default::default()
+        })
+        .unwrap();
+    tokio::time::advance(Duration::from_millis(250)).await;
+    let state = backend.simulation_status().unwrap().rotator.unwrap();
+    assert_eq!((state.position, state.mechanical_position), (50.0, 8.5));
+    assert_eq!(
+        backend
+            .read("stepsize".into(), Values::new())
+            .await
+            .unwrap_err()
+            .kind,
+        ErrorKind::Unsupported
+    );
+    backend
+        .write(
+            "movemechanical".into(),
+            Values::from([("Position".into(), json!(355))]),
+        )
+        .await
+        .unwrap();
+    assert!(
+        backend
+            .simulation_status()
+            .unwrap()
+            .rotator
+            .unwrap()
+            .is_moving
+    );
+    backend.write("halt".into(), Values::new()).await.unwrap();
+    let halted = backend.simulation_status().unwrap().rotator.unwrap();
+    assert_eq!(
+        (
+            halted.position,
+            halted.mechanical_position,
+            halted.target_position
+        ),
+        (50.0, 8.5, 50.0)
+    );
+    backend
+        .write(
+            "reverse".into(),
+            Values::from([("Reverse".into(), json!(true))]),
+        )
+        .await
+        .unwrap();
+    assert!(
+        backend
+            .simulation_status()
+            .unwrap()
+            .rotator
+            .unwrap()
+            .reverse
+    );
+    backend
+        .write(
+            "movemechanical".into(),
+            Values::from([("Position".into(), json!(355))]),
+        )
+        .await
+        .unwrap();
+    tokio::time::advance(Duration::from_secs(3)).await;
+    let state = backend.simulation_status().unwrap().rotator.unwrap();
+    assert_eq!(
+        (
+            state.position,
+            state.mechanical_position,
+            state.target_position
+        ),
+        (36.5, 355.0, 36.5)
+    );
+    backend
+        .update_simulation(SimulationUpdate {
+            rotator: Some(RotatorUpdate {
+                is_moving: Some(false),
+                position: Some(1.0),
+                mechanical_position: Some(0.0),
+                target_position: Some(1.0),
+                ..Default::default()
+            }),
+            ..Default::default()
+        })
+        .unwrap();
+    backend
+        .write(
+            "move".into(),
+            Values::from([("Position".into(), json!(f32::MAX as f64))]),
+        )
+        .await
+        .unwrap();
+    assert!(
+        backend
+            .simulation_status()
+            .unwrap()
+            .rotator
+            .unwrap()
+            .target_position
+            < 360.0
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn shared_simulated_rotator_uncertainty_fences_every_command_after_fault_clear() {
+    let cfg = config(DeviceType::Rotator);
+    let source = cfg.sources[0].id;
+    let output = cfg.outputs[0].id;
+    let hub = build(cfg);
+    let a = hub.client();
+    let b = hub.client();
+    a.connect(output).await.unwrap();
+    b.connect(output).await.unwrap();
+    let first = a.connection(output).unwrap();
+    let second = b.connection(output).unwrap();
+    assert_eq!(hub.source_snapshot(source).unwrap().lease_count, 2);
+    hub.update_simulation(
+        source,
+        SimulationUpdate {
+            fault: Some(Fault::UncertainWrite),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        first
+            .rotator()
+            .unwrap()
+            .move_relative(12.5)
+            .await
+            .unwrap_err()
+            .kind,
+        ErrorKind::Uncertain
+    );
+    hub.update_simulation(
+        source,
+        SimulationUpdate {
+            fault: Some(Fault::None),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let rotator = second.rotator().unwrap();
+    for error in [
+        rotator.move_relative(12.5).await.unwrap_err(),
+        rotator.move_absolute(30.0).await.unwrap_err(),
+        rotator.move_mechanical(30.0).await.unwrap_err(),
+        rotator.sync(30.0).await.unwrap_err(),
+        rotator.set_reverse(true).await.unwrap_err(),
+        rotator.halt().await.unwrap_err(),
+    ] {
+        assert_eq!(error.kind, ErrorKind::Uncertain);
+    }
+    tokio::time::advance(Duration::from_millis(250)).await;
+    let state = hub
+        .update_simulation(source, SimulationUpdate::default())
+        .await
+        .unwrap()
+        .rotator
+        .unwrap();
+    assert_eq!(
+        (
+            state.position,
+            state.mechanical_position,
+            state.target_position
+        ),
+        (12.5, 12.5, 12.5)
+    );
+    assert!(!state.is_moving);
+    assert!(hub.source_snapshot(source).unwrap().write_uncertain);
+    assert!(!rotator.connected());
+    assert_eq!(
+        rotator
+            .property(RotatorProperty::Position)
+            .await
+            .unwrap_err()
+            .kind,
+        ErrorKind::Disconnected
+    );
+    a.close();
+    b.close();
+    drop(first);
+    drop(second);
+    hub.shutdown().await.unwrap();
+}
+
+#[tokio::test(start_paused = true)]
+async fn simulated_rotator_faults_and_optional_properties_remain_explicit() {
+    let cfg = config(DeviceType::Rotator);
+    let source = cfg.sources[0].id;
+    let output = cfg.outputs[0].id;
+    let hub = build(cfg);
+    let client = hub.client();
+    client.connect(output).await.unwrap();
+    let connection = client.connection(output).unwrap();
+    let rotator = connection.rotator().unwrap();
+    hub.update_simulation(
+        source,
+        SimulationUpdate {
+            fault: Some(Fault::StalledMotion),
+            rotator: Some(RotatorUpdate {
+                step_size_available: Some(false),
+                halt_available: Some(false),
+                ..Default::default()
+            }),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        rotator
+            .property(RotatorProperty::StepSize)
+            .await
+            .unwrap_err()
+            .kind,
+        ErrorKind::Unsupported
+    );
+    rotator.move_relative(20.0).await.unwrap();
+    tokio::time::advance(Duration::from_secs(1)).await;
+    assert!(rotator.is_moving().await.unwrap());
+    assert_eq!(rotator.sync(10.0).await.unwrap_err().kind, ErrorKind::Busy);
+    assert_eq!(
+        rotator.set_reverse(true).await.unwrap_err().kind,
+        ErrorKind::Busy
+    );
+    assert_eq!(
+        rotator.halt().await.unwrap_err().kind,
+        ErrorKind::Unsupported
+    );
+    hub.update_simulation(
+        source,
+        SimulationUpdate {
+            rotator: Some(RotatorUpdate {
+                halt_available: Some(true),
+                ..Default::default()
+            }),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    rotator.halt().await.unwrap();
+    hub.update_simulation(
+        source,
+        SimulationUpdate {
+            fault: Some(Fault::StoppedShort),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    rotator.move_absolute(0.5).await.unwrap();
+    tokio::time::advance(Duration::from_millis(250)).await;
+    assert!(!rotator.is_moving().await.unwrap());
+    assert_eq!(
+        rotator
+            .property(RotatorProperty::Position)
+            .await
+            .unwrap()
+            .as_f64(),
+        Some(359.5)
+    );
+    assert_eq!(
+        rotator
+            .property(RotatorProperty::TargetPosition)
+            .await
+            .unwrap()
+            .as_f64(),
+        Some(0.5)
+    );
+    hub.update_simulation(
+        source,
+        SimulationUpdate {
+            fault: Some(Fault::InvalidMotion),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        rotator.is_moving().await.unwrap_err().kind,
+        ErrorKind::Unavailable
+    );
+    assert_eq!(
+        rotator.move_relative(1.0).await.unwrap_err().kind,
+        ErrorKind::Unavailable
+    );
+    assert_eq!(
+        rotator
+            .property(RotatorProperty::TargetPosition)
+            .await
+            .unwrap()
+            .as_f64(),
+        Some(0.5)
+    );
+    client.close();
+    drop(connection);
+    hub.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn rotator_simulation_composes_nested_outputs_preserving_identity_age_and_no_implicit_leases()
+{
+    let mut cfg = config(DeviceType::Rotator);
+    let source = cfg.sources[0].id;
+    let revision = cfg.revision;
+    let mut output = cfg.outputs[0].id;
+    let mut outer_source = source;
+    for number in [7, 19] {
+        outer_source = Uuid::new_v4();
+        cfg.sources.push(
+            serde_json::from_value(
+                json!({"id":outer_source,"label":"Virtual rotator simulator",
+            "backend":{"kind":"virtual","output":output},"polling":{"pollSeconds":0.1}}),
+            )
+            .unwrap(),
+        );
+        output = Uuid::new_v4();
+        cfg.outputs.push(
+            serde_json::from_value(json!({"id":output,"number":number,"label":"Nested rotator",
+            "device":{"kind":"proxy","source":outer_source,"deviceType":"rotator"}}))
+            .unwrap(),
+        );
+    }
+    let hub = build(cfg);
+    hub.update_simulation(
+        source,
+        SimulationUpdate {
+            sample_age_seconds: Some(70.0),
+            rotator: Some(RotatorUpdate {
+                position: Some(20.0),
+                mechanical_position: Some(350.0),
+                target_position: Some(20.0),
+                step_size_available: Some(false),
+                ..Default::default()
+            }),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    assert!(hub.outputs().iter().all(|output| output.simulated));
+    // The shared update takes a temporary simulated-source control lease;
+    // its drop is processed by the actor after the acknowledged reply.
+    eventually(|| {
+        hub.source_snapshots()
+            .iter()
+            .all(|source| source.lease_count == 0)
+    })
+    .await;
+    assert!(
+        hub.source_snapshots()
+            .iter()
+            .all(|source| !source.transport_connected)
+    );
+    assert_eq!(hub.source_snapshot(source).unwrap().revision, revision);
+    let client = hub.client();
+    client.connect(output).await.unwrap();
+    let connection = client.connection(output).unwrap();
+    let rotator = connection.rotator().unwrap();
+    assert_eq!(
+        rotator
+            .property(RotatorProperty::Position)
+            .await
+            .unwrap()
+            .as_f64(),
+        Some(20.0)
+    );
+    assert_eq!(
+        rotator
+            .property(RotatorProperty::MechanicalPosition)
+            .await
+            .unwrap()
+            .as_f64(),
+        Some(350.0)
+    );
+    assert_eq!(
+        rotator
+            .property(RotatorProperty::StepSize)
+            .await
+            .unwrap_err()
+            .kind,
+        ErrorKind::Unsupported
+    );
+    rotator.move_relative(12.5).await.unwrap();
+    tokio::time::sleep(Duration::from_millis(250)).await;
+    assert!(!rotator.is_moving().await.unwrap());
+    assert_eq!(
+        rotator
+            .property(RotatorProperty::Position)
+            .await
+            .unwrap()
+            .as_f64(),
+        Some(32.5)
+    );
+    assert_eq!(
+        rotator
+            .property(RotatorProperty::MechanicalPosition)
+            .await
+            .unwrap()
+            .as_f64(),
+        Some(2.5)
+    );
+    eventually(|| {
+        hub.source_snapshot(outer_source)
+            .unwrap()
+            .sample_ages_seconds
+            .get("position")
+            .is_some_and(|age| *age >= 70.0)
+    })
+    .await;
+    client.close();
+    drop(connection);
+    hub.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn simulated_modern_rotator_rejects_missing_required_reversal_without_dispatch() {
+    let cfg = config(DeviceType::Rotator);
+    let source = cfg.sources[0].id;
+    let output = cfg.outputs[0].id;
+    let hub = build(cfg);
+    hub.update_simulation(
+        source,
+        SimulationUpdate {
+            rotator: Some(RotatorUpdate {
+                can_reverse: Some(false),
+                ..Default::default()
+            }),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let client = hub.client();
+    assert_eq!(
+        client.connect(output).await.unwrap_err().kind,
+        ErrorKind::Unavailable
+    );
+    assert!(client.connection(output).is_err());
+    let state = hub
+        .update_simulation(source, SimulationUpdate::default())
+        .await
+        .unwrap()
+        .rotator
+        .unwrap();
+    assert!(!state.is_moving);
+    assert_eq!(state.position, 0.0);
+    client.close();
+    hub.shutdown().await.unwrap();
+}
 
 #[test]
 fn setup_descriptors_share_backend_defaults_ranges_and_fault_choices() {
@@ -19,6 +637,7 @@ fn setup_descriptors_share_backend_defaults_ranges_and_fault_choices() {
         DeviceType::SafetyMonitor,
         DeviceType::ObservingConditions,
         DeviceType::Focuser,
+        DeviceType::Rotator,
     ] {
         let state = serde_json::to_value(
             SimulatedBackend::new(kind, vec![])
@@ -109,7 +728,9 @@ fn config(kind: DeviceType) -> HubConfig {
         DeviceType::ObservingConditions => json!({"kind":"weather","measurements":{
             "temperature":{"sources":[{"kind":"property","source":source,"property":"temperature"}],"maximumAgeSeconds":1.0,"averageSeconds":0.0}
         }}),
-        DeviceType::Focuser => json!({"kind":"proxy","source":source,"deviceType":"focuser"}),
+        DeviceType::Focuser | DeviceType::Rotator => {
+            json!({"kind":"proxy","source":source,"deviceType":kind})
+        }
         _ => unreachable!(),
     };
     config.outputs.push(

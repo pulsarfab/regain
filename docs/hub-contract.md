@@ -1566,8 +1566,8 @@ Polling forwards cached typed readings with their accumulated original age and
 individual property errors. Faster outer polls cannot make an old leaf reading
 fresh. Cancelling a pending connection, resetting the virtual transport or closing
 one client releases only owned inner leases. Explicit native simulation labels
-propagate through the graph; no hardware failure selects a simulator. Dedicated
-rotator simulation and shared creation remain separate gates.
+propagate through the graph; no hardware failure selects a simulator. Shared
+rotator creation and broader acceptance remain separate gates.
 
 ### Windows COM rotator imports
 
@@ -1600,3 +1600,35 @@ Dispatched vendor failures retain the existing shared uncertainty fence, with no
 replay or automatic Halt. Borrowed ownership, response framing, bounded hung calls
 and child-process lifetime retain the existing worker isolation contract. Shared
 creation and actual vendor acceptance are separate from import implementation.
+
+### Dedicated rotator simulation
+
+An explicitly simulated Rotator source uses the same actor, typed controller,
+polling and independent output leases as equipment sources. Its seven properties
+and six commands are available through Alpaca, native NINA and native ASCOM.
+Logical, mechanical and target angles remain separate. Sync changes the shared
+logical reference without moving the mechanical angle; other moves preserve that
+offset. Angles describe the configured optics' direction, not a raw motor encoder.
+Reverse changes the reported direction setting without moving or relabelling them.
+
+Moves acknowledge start and complete after a monotonic test duration. Disconnect
+does not Halt. Optional StepSize and Halt support, malformed motion, read failures,
+timeouts, stalls, stopped-short motion and uncertain dispatched mutations exercise
+the ordinary controller. Clearing an injected fault never clears its uncertainty
+fence or replays a command. Modern admission rejects missing required reversal
+support. Nested virtual outputs retain source coordinates, original sample age and
+simulation labels.
+
+The host describes twelve controls with shared paths, labels, defaults, choices
+and numeric limits. Native and browser editors derive nested state validation from
+those paths rather than maintaining separate per-device forms. Angles are in
+[0,360); StepSize must remain positive and finite as Single. Both editors check
+the original value and its Single conversion against host limits. The host checks
+the complete candidate state atomically. Coordinate, motion or Reverse patches
+replace pending test motion; optional-capability and duration patches do not.
+
+These controls change runtime test state only. Restart resets the simulator's
+coordinates and reference; it is not persistent equipment calibration or a model
+of motor mechanics. Actual source persistence, conformance and hardware acceptance
+remain separate gates. Boxing the larger IPC update payload changes its Rust
+representation only, preserving the existing JSON object and generated schema.

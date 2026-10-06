@@ -2490,8 +2490,7 @@
                   "enumCapabilities": {
                     "camera": "broaderSimulation",
                     "covercalibrator": "broaderSimulation",
-                    "filterwheel": "broaderSimulation",
-                    "rotator": "broaderSimulation"
+                    "filterwheel": "broaderSimulation"
                   }
                 }
               },
@@ -3361,6 +3360,150 @@
           "type": "number"
         }
       ],
+      "rotator": [
+        {
+          "default": true,
+          "description": "Inject explicit rotator test state. Coordinate, motion and reversal fields replace pending test motion.",
+          "label": "Reversal supported",
+          "path": [
+            "rotator",
+            "canReverse"
+          ],
+          "type": "boolean"
+        },
+        {
+          "default": false,
+          "description": "Inject explicit rotator test state. Coordinate, motion and reversal fields replace pending test motion.",
+          "label": "Moving",
+          "path": [
+            "rotator",
+            "isMoving"
+          ],
+          "type": "boolean"
+        },
+        {
+          "default": false,
+          "description": "Inject explicit rotator test state. Coordinate, motion and reversal fields replace pending test motion.",
+          "label": "Direction reversed",
+          "path": [
+            "rotator",
+            "reverse"
+          ],
+          "type": "boolean"
+        },
+        {
+          "default": true,
+          "description": "Inject explicit rotator test state. Coordinate, motion and reversal fields replace pending test motion.",
+          "label": "Step size available",
+          "path": [
+            "rotator",
+            "stepSizeAvailable"
+          ],
+          "type": "boolean"
+        },
+        {
+          "default": true,
+          "description": "Inject explicit rotator test state. Coordinate, motion and reversal fields replace pending test motion.",
+          "label": "Halt supported",
+          "path": [
+            "rotator",
+            "haltAvailable"
+          ],
+          "type": "boolean"
+        },
+        {
+          "default": 0.0,
+          "description": "Shared source coordinate in [0,360). Position minus mechanical position defines the simulated Sync offset.",
+          "exclusiveMaximum": 360.0,
+          "label": "Logical angle (°)",
+          "minimum": 0.0,
+          "path": [
+            "rotator",
+            "position"
+          ],
+          "precision": "single",
+          "type": "number"
+        },
+        {
+          "default": 0.0,
+          "description": "Shared source coordinate in [0,360). Position minus mechanical position defines the simulated Sync offset.",
+          "exclusiveMaximum": 360.0,
+          "label": "Mechanical angle (°)",
+          "minimum": 0.0,
+          "path": [
+            "rotator",
+            "mechanicalPosition"
+          ],
+          "precision": "single",
+          "type": "number"
+        },
+        {
+          "default": 0.0,
+          "description": "Shared source coordinate in [0,360). Position minus mechanical position defines the simulated Sync offset.",
+          "exclusiveMaximum": 360.0,
+          "label": "Target angle (°)",
+          "minimum": 0.0,
+          "path": [
+            "rotator",
+            "targetPosition"
+          ],
+          "precision": "single",
+          "type": "number"
+        },
+        {
+          "default": 0.02,
+          "description": "Positive Single-range angular resolution; optional availability is separate.",
+          "exclusiveMinimum": 0.0,
+          "label": "Step size (°)",
+          "path": [
+            "rotator",
+            "stepSize"
+          ],
+          "precision": "single",
+          "type": "number"
+        },
+        {
+          "default": 0.2,
+          "description": "Motion completes after this monotonic duration. Disconnect does not Halt. New runtimes reset test coordinates.",
+          "label": "Move duration (s)",
+          "maximum": 300.0,
+          "minimum": 0.0,
+          "path": [
+            "rotator",
+            "moveDurationSeconds"
+          ],
+          "type": "number"
+        },
+        {
+          "default": "none",
+          "description": "Select none to clear a fault. This does not clear an uncertain-write latch.",
+          "enum": [
+            "none",
+            "readError",
+            "timeout",
+            "uncertainWrite",
+            "invalidMotion",
+            "stalledMotion",
+            "stoppedShort"
+          ],
+          "label": "Injected fault",
+          "path": [
+            "fault"
+          ],
+          "type": "string"
+        },
+        {
+          "default": 0.0,
+          "description": "Age reported for each new simulated observation. Refresh resets it to zero.",
+          "label": "Sample age (s)",
+          "maximum": 86400.0,
+          "minimum": 0.0,
+          "path": [
+            "sampleAgeSeconds"
+          ],
+          "type": "number"
+        }
+      ],
       "safetymonitor": [
         {
           "default": false,
@@ -3460,7 +3603,8 @@
       "switch",
       "safetymonitor",
       "observingconditions",
-      "focuser"
+      "focuser",
+      "rotator"
     ],
     "faultsByDeviceType": {
       "focuser": [
@@ -3476,6 +3620,15 @@
         "none",
         "readError",
         "timeout"
+      ],
+      "rotator": [
+        "none",
+        "readError",
+        "timeout",
+        "uncertainWrite",
+        "invalidMotion",
+        "stalledMotion",
+        "stoppedShort"
       ],
       "safetymonitor": [
         "none",
@@ -3498,6 +3651,11 @@
       ],
       "observingconditions": [
         "weather",
+        "fault",
+        "sampleAgeSeconds"
+      ],
+      "rotator": [
+        "rotator",
         "fault",
         "sampleAgeSeconds"
       ],
@@ -3626,6 +3784,86 @@
             }
           },
           "type": "object"
+        },
+        "RotatorUpdate": {
+          "additionalProperties": false,
+          "properties": {
+            "canReverse": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "haltAvailable": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "isMoving": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "mechanicalPosition": {
+              "exclusiveMaximum": 360,
+              "format": "double",
+              "minimum": 0,
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "moveDurationSeconds": {
+              "format": "double",
+              "maximum": 300,
+              "minimum": 0,
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "position": {
+              "exclusiveMaximum": 360,
+              "format": "double",
+              "minimum": 0,
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "reverse": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "stepSize": {
+              "exclusiveMinimum": 0,
+              "format": "double",
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "stepSizeAvailable": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "targetPosition": {
+              "exclusiveMaximum": 360,
+              "format": "double",
+              "minimum": 0,
+              "type": [
+                "number",
+                "null"
+              ]
+            }
+          },
+          "type": "object"
         }
       },
       "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -3652,6 +3890,17 @@
             }
           ],
           "description": "Sparse focuser test state. Injecting position/motion/limits replaces a\npending simulated movement; other fields do not stop it."
+        },
+        "rotator": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RotatorUpdate"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Sparse rotator test state; coordinate/motion/reversal fields replace a\npending movement. Other controls do not stop it."
         },
         "safe": {
           "description": "Simulated raw safety reading. Starts false on each new runtime.",

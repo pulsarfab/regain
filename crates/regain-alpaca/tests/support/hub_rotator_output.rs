@@ -2,6 +2,153 @@ use super::*;
 use std::sync::atomic::Ordering::SeqCst;
 
 #[tokio::test]
+async fn dedicated_rotator_simulation_publishes_shared_typed_http_without_workers() {
+    use regain_hub::{
+        config::{DeviceType, OutputConfig, SourceBackend, SourceConfig},
+        simulated::{Fault, RotatorUpdate},
+    };
+    let mut config = HubConfig::empty();
+    let source = uuid::Uuid::new_v4();
+    config.sources.push(SourceConfig {
+        id: source,
+        label: "Explicit rotator simulation".into(),
+        backend: SourceBackend::Simulated {
+            device_type: DeviceType::Rotator,
+        },
+        polling: Default::default(),
+    });
+    for number in [4, 7] {
+        config.outputs.push(OutputConfig {
+            id: uuid::Uuid::new_v4(),
+            number,
+            label: format!("Simulator {number}"),
+            device: VirtualDevice::Proxy {
+                source,
+                device_type: DeviceType::Rotator,
+            },
+        });
+    }
+    let f = Fixture::from_config(config).await;
+    assert!(f.hub.outputs().iter().all(|output| output.simulated));
+    assert_eq!(f.hub.source_snapshot(source).unwrap().lease_count, 0);
+    for (number, client) in [(4, 1), (7, 2)] {
+        f.ok(
+            "PUT",
+            &format!("/api/v1/rotator/{number}/connected"),
+            &format!("ClientID={client}&Connected=true"),
+        )
+        .await;
+    }
+    f.ok("PUT", "/api/v1/rotator/4/sync", "ClientID=1&Position=42.5")
+        .await;
+    f.ok(
+        "PUT",
+        "/api/v1/rotator/7/reverse",
+        "ClientID=2&Reverse=true",
+    )
+    .await;
+    assert_eq!(
+        f.ok("GET", "/api/v1/rotator/4/reverse", "ClientID=1").await,
+        true
+    );
+    for (member, position, logical, mechanical) in [
+        ("move", -721.5, 41.0, 358.5),
+        ("moveabsolute", 50.0, 50.0, 7.5),
+        ("movemechanical", 355.0, 37.5, 355.0),
+    ] {
+        f.ok(
+            "PUT",
+            &format!("/api/v1/rotator/4/{member}"),
+            &format!("ClientID=1&Position={position}"),
+        )
+        .await;
+        tokio::time::timeout(Duration::from_secs(3), async {
+            while f
+                .ok("GET", "/api/v1/rotator/7/ismoving", "ClientID=2")
+                .await
+                == true
+            {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
+        assert_eq!(
+            f.ok("GET", "/api/v1/rotator/7/position", "ClientID=2")
+                .await
+                .as_f64(),
+            Some(logical)
+        );
+        assert_eq!(
+            f.ok("GET", "/api/v1/rotator/7/mechanicalposition", "ClientID=2")
+                .await
+                .as_f64(),
+            Some(mechanical)
+        );
+    }
+    f.hub
+        .update_simulation(
+            source,
+            SimulationUpdate {
+                rotator: Some(RotatorUpdate {
+                    step_size_available: Some(false),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        f.call("GET", "/api/v1/rotator/4/stepsize", "ClientID=1")
+            .await["ErrorNumber"],
+        1024
+    );
+    f.ok(
+        "PUT",
+        "/api/v1/rotator/4/connected",
+        "ClientID=1&Connected=false",
+    )
+    .await;
+    assert_eq!(
+        f.ok("GET", "/api/v1/rotator/7/connected", "ClientID=2")
+            .await,
+        true
+    );
+    f.hub
+        .update_simulation(
+            source,
+            SimulationUpdate {
+                fault: Some(Fault::UncertainWrite),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        f.call("PUT", "/api/v1/rotator/7/move", "ClientID=2&Position=5")
+            .await["ErrorNumber"],
+        1280
+    );
+    f.hub
+        .update_simulation(
+            source,
+            SimulationUpdate {
+                fault: Some(Fault::None),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        f.call("PUT", "/api/v1/rotator/7/halt", "ClientID=2").await["ErrorNumber"],
+        1280
+    );
+    assert!(f.hub.source_snapshot(source).unwrap().write_uncertain);
+    f.finish().await;
+}
+
+#[tokio::test]
 async fn rotator_local_slots_coexist_with_hub_outputs_without_opening_equipment() {
     let upstream = AccessoryUpstream::rotator(3).await;
     let f = Fixture::from_config(upstream.config(&[4])).await;

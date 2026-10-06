@@ -4,6 +4,7 @@ use crate::{
     alpaca::SampleRequest,
     config::{DeviceType, WeatherMetric},
     readout::invalid,
+    rotator::RotatorProperty,
     source::{Backend, BackendFuture, ErrorKind, SampleBatch, SourceError, Values},
     switch::Grid,
 };
@@ -126,6 +127,99 @@ impl FocuserUpdate {
 }
 #[derive(Clone, Debug, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RotatorUpdate {
+    pub can_reverse: Option<bool>,
+    pub is_moving: Option<bool>,
+    #[schemars(range(min = 0), extend("exclusiveMaximum" = 360))]
+    pub mechanical_position: Option<f64>,
+    #[schemars(range(min = 0), extend("exclusiveMaximum" = 360))]
+    pub position: Option<f64>,
+    #[schemars(range(min = 0), extend("exclusiveMaximum" = 360))]
+    pub target_position: Option<f64>,
+    pub reverse: Option<bool>,
+    #[schemars(extend("exclusiveMinimum" = 0))]
+    pub step_size: Option<f64>,
+    pub step_size_available: Option<bool>,
+    pub halt_available: Option<bool>,
+    #[schemars(range(min = 0, max = 300))]
+    pub move_duration_seconds: Option<f64>,
+}
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RotatorState {
+    pub can_reverse: bool,
+    pub is_moving: bool,
+    pub mechanical_position: f64,
+    pub position: f64,
+    pub target_position: f64,
+    pub reverse: bool,
+    pub step_size: f64,
+    pub step_size_available: bool,
+    pub halt_available: bool,
+    pub move_duration_seconds: f64,
+}
+impl Default for RotatorState {
+    fn default() -> Self {
+        Self {
+            can_reverse: true,
+            is_moving: false,
+            mechanical_position: 0.0,
+            position: 0.0,
+            target_position: 0.0,
+            reverse: false,
+            step_size: 0.02,
+            step_size_available: true,
+            halt_available: true,
+            move_duration_seconds: 0.2,
+        }
+    }
+}
+impl RotatorUpdate {
+    fn replaces_motion(&self) -> bool {
+        self.is_moving.is_some()
+            || self.mechanical_position.is_some()
+            || self.position.is_some()
+            || self.target_position.is_some()
+            || self.reverse.is_some()
+    }
+    fn apply(self, state: &mut RotatorState) -> Result<(), SourceError> {
+        macro_rules! apply { ($($key:ident),*) => { $(if let Some(value) = self.$key { state.$key = value; })* }; }
+        apply!(
+            can_reverse,
+            is_moving,
+            mechanical_position,
+            position,
+            target_position,
+            reverse,
+            step_size,
+            step_size_available,
+            halt_available,
+            move_duration_seconds
+        );
+        if !state.can_reverse && state.reverse
+            || !state.move_duration_seconds.is_finite()
+            || !(0.0..=300.0).contains(&state.move_duration_seconds)
+        {
+            return Err(invalid("Invalid simulated rotator state"));
+        }
+        for (property, value) in [
+            (
+                RotatorProperty::MechanicalPosition,
+                state.mechanical_position,
+            ),
+            (RotatorProperty::Position, state.position),
+            (RotatorProperty::TargetPosition, state.target_position),
+            (RotatorProperty::StepSize, state.step_size),
+        ] {
+            property
+                .decode(&json!(value))
+                .map_err(|_| invalid("Invalid simulated rotator state"))?;
+        }
+        Ok(())
+    }
+}
+#[derive(Clone, Debug, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SimulationUpdate {
     /// Simulated raw safety reading. Starts false on each new runtime.
     pub safe: Option<bool>,
@@ -148,6 +242,9 @@ pub struct SimulationUpdate {
     /// Sparse focuser test state. Injecting position/motion/limits replaces a
     /// pending simulated movement; other fields do not stop it.
     pub focuser: Option<FocuserUpdate>,
+    /// Sparse rotator test state; coordinate/motion/reversal fields replace a
+    /// pending movement. Other controls do not stop it.
+    pub rotator: Option<RotatorUpdate>,
 }
 // Internally tagged commands deserialize through serde's captured content,
 // whose map keys do not perform JSON's string-to-integer conversion. Parse the
@@ -190,6 +287,8 @@ pub struct SimulationStatus {
     pub sample_age_seconds: f64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub focuser: Option<FocuserState>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rotator: Option<RotatorState>,
 }
 pub fn description() -> Value {
     let mut controls = BTreeMap::new();
@@ -198,6 +297,7 @@ pub fn description() -> Value {
         DeviceType::SafetyMonitor,
         DeviceType::ObservingConditions,
         DeviceType::Focuser,
+        DeviceType::Rotator,
     ] {
         let state = SimulatedBackend::new(device, Vec::new()).unwrap().state;
         let mut fields = Vec::new();
@@ -257,6 +357,33 @@ pub fn description() -> Value {
             fields.push(json!({"path":["focuser","stepSize"],"type":"number","label":"Step size (µm)","description":"Injected physical step size.","default":focuser.step_size,"exclusiveMinimum":0.0}));
             fields.push(json!({"path":["focuser","moveDurationSeconds"],"type":"number","label":"Move duration (s)","description":"Move acknowledges start and completes after this monotonic duration. Stalled motion requires an explicit Halt or simulation update.","default":focuser.move_duration_seconds,"minimum":0.0,"maximum":300.0}));
         }
+        if let Some(rotator) = state.rotator.as_ref() {
+            let defaults = serde_json::to_value(rotator).unwrap();
+            for (key, label) in [
+                ("canReverse", "Reversal supported"),
+                ("isMoving", "Moving"),
+                ("reverse", "Direction reversed"),
+                ("stepSizeAvailable", "Step size available"),
+                ("haltAvailable", "Halt supported"),
+            ] {
+                fields.push(json!({"path":["rotator",key],"type":"boolean","label":label,
+                    "description":"Inject explicit rotator test state. Coordinate, motion and reversal fields replace pending test motion.","default":defaults[key]}));
+            }
+            for (key, label) in [
+                ("position", "Logical angle (°)"),
+                ("mechanicalPosition", "Mechanical angle (°)"),
+                ("targetPosition", "Target angle (°)"),
+            ] {
+                fields.push(json!({"path":["rotator",key],"type":"number","precision":"single","label":label,
+                    "description":"Shared source coordinate in [0,360). Position minus mechanical position defines the simulated Sync offset.",
+                    "default":defaults[key],"minimum":0.0,"exclusiveMaximum":360.0}));
+            }
+            fields.push(json!({"path":["rotator","stepSize"],"type":"number","precision":"single","label":"Step size (°)",
+                "description":"Positive Single-range angular resolution; optional availability is separate.","default":rotator.step_size,"exclusiveMinimum":0.0}));
+            fields.push(json!({"path":["rotator","moveDurationSeconds"],"type":"number","label":"Move duration (s)",
+                "description":"Motion completes after this monotonic duration. Disconnect does not Halt. New runtimes reset test coordinates.",
+                "default":rotator.move_duration_seconds,"minimum":0.0,"maximum":300.0}));
+        }
         let faults = match device {
             DeviceType::Switch => vec![
                 Fault::None,
@@ -270,7 +397,7 @@ pub fn description() -> Value {
                 Fault::Timeout,
                 Fault::InvalidSafety,
             ],
-            DeviceType::Focuser => vec![
+            DeviceType::Focuser | DeviceType::Rotator => vec![
                 Fault::None,
                 Fault::ReadError,
                 Fault::Timeout,
@@ -296,9 +423,9 @@ pub fn description() -> Value {
     }
     json!({"schema":schemars::schema_for!(SimulationUpdate), "apply":"immediate",
         "controlsByDeviceType":controls,"revisionCheckedUpdates":true,"deadlineSeconds":30,
-        "sourceKinds":["simulated"],"deviceTypes":["switch","safetymonitor","observingconditions","focuser"],
-        "fieldsByDeviceType":{"switch":["switchValues","fault","sampleAgeSeconds"],"safetymonitor":["safe","fault"],"observingconditions":["weather","fault","sampleAgeSeconds"],"focuser":["focuser","fault","sampleAgeSeconds"]},
-        "faultsByDeviceType":{"switch":["none","readError","timeout","uncertainWrite"],"safetymonitor":["none","readError","timeout","invalidSafety"],"observingconditions":["none","readError","timeout"],"focuser":["none","readError","timeout","uncertainWrite","invalidMotion","stalledMotion","stoppedShort"]},
+        "sourceKinds":["simulated"],"deviceTypes":["switch","safetymonitor","observingconditions","focuser","rotator"],
+        "fieldsByDeviceType":{"switch":["switchValues","fault","sampleAgeSeconds"],"safetymonitor":["safe","fault"],"observingconditions":["weather","fault","sampleAgeSeconds"],"focuser":["focuser","fault","sampleAgeSeconds"],"rotator":["rotator","fault","sampleAgeSeconds"]},
+        "faultsByDeviceType":{"switch":["none","readError","timeout","uncertainWrite"],"safetymonitor":["none","readError","timeout","invalidSafety"],"observingconditions":["none","readError","timeout"],"focuser":["none","readError","timeout","uncertainWrite","invalidMotion","stalledMotion","stoppedShort"],"rotator":["none","readError","timeout","uncertainWrite","invalidMotion","stalledMotion","stoppedShort"]},
         "persistence":"Test state is shared for this runtime only. A new runtime starts safety unsafe.",
         "uncertainWrites":"Changing a fault does not clear an uncertain-write latch. Disconnect every source lease before retrying commands."})
 }
@@ -306,7 +433,12 @@ pub struct SimulatedBackend {
     state: SimulationStatus,
     samples: Vec<SampleRequest>,
     connected: bool,
-    motion: Option<(tokio::time::Instant, Option<i32>)>,
+    motion: Option<(tokio::time::Instant, MotionTarget)>,
+}
+#[derive(Clone, Copy)]
+enum MotionTarget {
+    Focuser(Option<i32>),
+    Rotator { logical: f64, mechanical: f64 },
 }
 impl SimulatedBackend {
     pub fn new(device_type: DeviceType, samples: Vec<SampleRequest>) -> Result<Self, SourceError> {
@@ -316,6 +448,7 @@ impl SimulatedBackend {
                 | DeviceType::SafetyMonitor
                 | DeviceType::ObservingConditions
                 | DeviceType::Focuser
+                | DeviceType::Rotator
         ) {
             return Err(unsupported());
         }
@@ -347,6 +480,7 @@ impl SimulatedBackend {
                 fault: Fault::None,
                 sample_age_seconds: 0.0,
                 focuser: (device_type == DeviceType::Focuser).then(FocuserState::default),
+                rotator: (device_type == DeviceType::Rotator).then(RotatorState::default),
             },
             samples,
             connected: false,
@@ -361,6 +495,7 @@ impl SimulatedBackend {
             || !update.weather.is_empty() && next.device_type != DeviceType::ObservingConditions
             || update.sample_age_seconds.is_some() && next.device_type == DeviceType::SafetyMonitor
             || update.focuser.is_some() && next.device_type != DeviceType::Focuser
+            || update.rotator.is_some() && next.device_type != DeviceType::Rotator
         {
             return Err(invalid("Simulator controls do not match this source class"));
         }
@@ -386,11 +521,14 @@ impl SimulatedBackend {
         if let Some(fault) = update.fault {
             if fault == Fault::InvalidSafety && next.device_type != DeviceType::SafetyMonitor
                 || fault == Fault::UncertainWrite
-                    && !matches!(next.device_type, DeviceType::Switch | DeviceType::Focuser)
+                    && !matches!(
+                        next.device_type,
+                        DeviceType::Switch | DeviceType::Focuser | DeviceType::Rotator
+                    )
                 || matches!(
                     fault,
                     Fault::InvalidMotion | Fault::StalledMotion | Fault::StoppedShort
-                ) && next.device_type != DeviceType::Focuser
+                ) && !matches!(next.device_type, DeviceType::Focuser | DeviceType::Rotator)
             {
                 return Err(invalid(
                     "Injected fault does not match the simulated source class",
@@ -401,9 +539,16 @@ impl SimulatedBackend {
         let replaces_motion = update
             .focuser
             .as_ref()
-            .is_some_and(FocuserUpdate::replaces_motion);
+            .is_some_and(FocuserUpdate::replaces_motion)
+            || update
+                .rotator
+                .as_ref()
+                .is_some_and(RotatorUpdate::replaces_motion);
         if let Some(update) = update.focuser {
             update.apply(next.focuser.as_mut().expect("Validated focuser source"))?;
+        }
+        if let Some(update) = update.rotator {
+            update.apply(next.rotator.as_mut().expect("Validated rotator source"))?;
         }
         self.state = next;
         if replaces_motion {
@@ -416,15 +561,33 @@ impl SimulatedBackend {
         if let Some((completes, target)) = self.motion
             && completes <= tokio::time::Instant::now()
             && state.fault != Fault::StalledMotion
-            && let Some(focuser) = state.focuser.as_mut()
         {
-            focuser.is_moving = false;
-            if let Some(target) = target {
-                focuser.position = if state.fault == Fault::StoppedShort {
-                    if target == 0 { 1 } else { target - 1 }
-                } else {
-                    target
-                };
+            match target {
+                MotionTarget::Focuser(target) => {
+                    let focuser = state.focuser.as_mut().expect("Focuser motion");
+                    focuser.is_moving = false;
+                    if let Some(target) = target {
+                        focuser.position = if state.fault == Fault::StoppedShort {
+                            if target == 0 { 1 } else { target - 1 }
+                        } else {
+                            target
+                        };
+                    }
+                }
+                MotionTarget::Rotator {
+                    logical,
+                    mechanical,
+                } => {
+                    let rotator = state.rotator.as_mut().expect("Rotator motion");
+                    rotator.is_moving = false;
+                    let short = if state.fault == Fault::StoppedShort {
+                        1.0
+                    } else {
+                        0.0
+                    };
+                    rotator.position = wrap_angle(logical - short);
+                    rotator.mechanical_position = wrap_angle(mechanical - short);
+                }
             }
         }
         state
@@ -436,6 +599,11 @@ impl SimulatedBackend {
             .focuser
             .as_ref()
             .is_some_and(|state| !state.is_moving)
+            || self
+                .state
+                .rotator
+                .as_ref()
+                .is_some_and(|state| !state.is_moving)
         {
             self.motion = None;
         }
@@ -471,7 +639,7 @@ impl SimulatedBackend {
                 self.motion = Some((
                     tokio::time::Instant::now()
                         + std::time::Duration::from_secs_f64(state.move_duration_seconds),
-                    state.absolute.then_some(position),
+                    MotionTarget::Focuser(state.absolute.then_some(position)),
                 ));
             }
             "halt" => {
@@ -501,6 +669,93 @@ impl SimulatedBackend {
         }
         Ok(())
     }
+    fn write_rotator(&mut self, member: &str, args: &Values) -> Result<(), SourceError> {
+        let state = self.state.rotator.as_mut().expect("Rotator state");
+        match member {
+            "halt" => {
+                if !args.is_empty() {
+                    return Err(invalid("Unexpected Halt parameters"));
+                }
+                if !state.halt_available {
+                    return Err(unsupported());
+                }
+                state.is_moving = false;
+                state.target_position = state.position;
+                self.motion = None;
+            }
+            "reverse" => {
+                if args.len() != 1 {
+                    return Err(invalid("Expected only Reverse"));
+                }
+                let enabled = args
+                    .get("Reverse")
+                    .and_then(Value::as_bool)
+                    .ok_or_else(|| invalid("Expected boolean Reverse"))?;
+                if !state.can_reverse {
+                    return Err(unsupported());
+                }
+                if state.is_moving {
+                    return Err(SourceError::new(
+                        ErrorKind::Busy,
+                        "Simulated rotator is moving",
+                    ));
+                }
+                // Angles describe the configured optics' coordinate direction,
+                // not a raw motor encoder. Reversal does not move/relabel them.
+                state.reverse = enabled;
+            }
+            "move" | "moveabsolute" | "movemechanical" | "sync" => {
+                if args.len() != 1 {
+                    return Err(invalid("Expected only Position"));
+                }
+                let degrees = args
+                    .get("Position")
+                    .and_then(Value::as_f64)
+                    .filter(|value| value.is_finite() && value.abs() <= f32::MAX as f64)
+                    .ok_or_else(|| invalid("Expected Single-range Position"))?;
+                if member != "move" {
+                    RotatorProperty::Position
+                        .decode(&json!(degrees))
+                        .map_err(|_| invalid("Invalid simulated angle"))?;
+                }
+                if state.is_moving {
+                    return Err(SourceError::new(
+                        ErrorKind::Busy,
+                        "Simulated rotator is moving",
+                    ));
+                }
+                if member == "sync" {
+                    state.position = degrees;
+                    state.target_position = degrees;
+                    return Ok(());
+                }
+                let offset = state.position - state.mechanical_position;
+                let (logical, mechanical) = match member {
+                    "movemechanical" => (wrap_angle(degrees + offset), degrees),
+                    "moveabsolute" => (degrees, wrap_angle(degrees - offset)),
+                    _ => {
+                        let logical = wrap_angle(state.position + degrees.rem_euclid(360.0));
+                        (logical, wrap_angle(logical - offset))
+                    }
+                };
+                state.target_position = logical;
+                state.is_moving =
+                    logical != state.position || mechanical != state.mechanical_position;
+                self.motion = state.is_moving.then(|| {
+                    (
+                        tokio::time::Instant::now()
+                            + std::time::Duration::from_secs_f64(state.move_duration_seconds),
+                        MotionTarget::Rotator {
+                            logical,
+                            mechanical,
+                        },
+                    )
+                });
+            }
+            _ => return Err(unsupported()),
+        }
+        Ok(())
+    }
     async fn check_read(&self) -> Result<(), SourceError> {
         if !self.connected {
             return Err(SourceError::new(
@@ -523,7 +778,10 @@ impl SimulatedBackend {
                 return Ok(json!(
                     if self.state.device_type == DeviceType::ObservingConditions {
                         2
-                    } else if self.state.device_type == DeviceType::Focuser {
+                    } else if matches!(
+                        self.state.device_type,
+                        DeviceType::Focuser | DeviceType::Rotator
+                    ) {
                         4
                     } else {
                         3
@@ -549,6 +807,23 @@ impl SimulatedBackend {
                     "ismoving" => json!(state.is_moving),
                     "tempcomp" if state.temp_comp_available => json!(state.temp_comp),
                     "temperature" if state.temperature_available => json!(state.temperature),
+                    "stepsize" if state.step_size_available => json!(state.step_size),
+                    _ => return Err(unsupported()),
+                })
+            }
+            DeviceType::Rotator => {
+                if !args.is_empty() {
+                    return Err(invalid("Unexpected rotator parameters"));
+                }
+                let state = self.state.rotator.as_ref().expect("Rotator state");
+                Ok(match member {
+                    "canreverse" => json!(state.can_reverse),
+                    "ismoving" if self.state.fault == Fault::InvalidMotion => json!("false"),
+                    "ismoving" => json!(state.is_moving),
+                    "mechanicalposition" => json!(state.mechanical_position),
+                    "position" => json!(state.position),
+                    "targetposition" => json!(state.target_position),
+                    "reverse" => json!(state.reverse),
                     "stepsize" if state.step_size_available => json!(state.step_size),
                     _ => return Err(unsupported()),
                 })
@@ -612,6 +887,12 @@ fn unsupported() -> SourceError {
         ErrorKind::Unsupported,
         "This simulated interface member is not supported",
     )
+}
+// Computed simulator coordinates are canonical Single angles. Rounding just
+// below a turn to 360 is equivalent to zero; external readings are never repaired.
+fn wrap_angle(value: f64) -> f64 {
+    let angle = value.rem_euclid(360.0) as f32;
+    if angle == 360.0 { 0.0 } else { angle as f64 }
 }
 fn channel_grid(id: u32) -> Result<Grid, SourceError> {
     match id {
@@ -678,6 +959,14 @@ impl Backend for SimulatedBackend {
             self.check_read().await?;
             if self.state.device_type == DeviceType::Focuser {
                 self.write_focuser(&member, &args)?;
+                return if self.state.fault == Fault::UncertainWrite {
+                    Err(SourceError::uncertain())
+                } else {
+                    Ok(Value::Null)
+                };
+            }
+            if self.state.device_type == DeviceType::Rotator {
+                self.write_rotator(&member, &args)?;
                 return if self.state.fault == Fault::UncertainWrite {
                     Err(SourceError::uncertain())
                 } else {

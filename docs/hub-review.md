@@ -2883,3 +2883,47 @@ Both virtual-checkpoint CI runs subsequently completed successfully with all eig
 jobs, including Windows packaging, private COM imports and installer acceptance.
 This is exact-head evidence for 87ca1c1. The locally verified COM checkpoint
 89fae59 now proceeds into the same draft PR; dedicated simulation remains separate.
+
+### Dedicated rotator simulation review (2026-10-06)
+
+Added the simulator to the existing backend, actor, typed controller and output
+fixtures. A shared motion-target enum retains focuser behavior while completing
+rotator logical/mechanical angles after a monotonic duration. Sync changes only
+the source-owned logical reference; Disconnect cannot Halt. No raw motor encoder
+or persistence across new test runtimes is implied. Optional properties, modern
+reversal admission, stalled/stopped-short motion and malformed readings pass
+through ordinary controller validation. A dispatched uncertain mutation happens
+once and fences every subsequent command even after its injected fault is cleared.
+
+Simulation patches validate a cloned candidate before committing. Coordinate,
+motion and Reverse changes replace pending test motion; other fields do not.
+Source-class checks reject irrelevant controls and faults. Nested virtual fixtures
+verify source coordinates, original sample age and simulation labels. The first
+new Rust run passed twenty cases and failed an immediate zero-lease assertion:
+simulation update briefly owns a lease whose release is queued after its reply.
+The fixture now uses the existing bounded eventual assertion and then verifies
+disconnected transport. The retained failure is in
+artifacts/hub-rotator-sim-local.log; no deadline or production behavior changed.
+
+Both setup frontends consume twelve host-described controls. Shared numeric
+validation now checks exclusive upper bounds and Single representability;
+nested state groups derive from control paths instead of another device-specific
+branch. This also retains strict Switch/weather membership checks. The larger
+update exposed Clippy's large-enum warning at the IPC boundary. Boxing that payload
+preserves serialized JSON and schema while reducing the command enum's size.
+The original diagnostic remains in artifacts/hub-rotator-sim-final-clippy.log.
+
+Twenty-one simulation cases and the dedicated HTTP integration pass. The HTTP
+fixture uses actual private IPC and two independently owned published outputs.
+All 199 warnings-denied NINA tests and real net48 x86/x64 clients pass before the
+IPC representation refinement. Actual WPF acceptance selects and applies only
+Logical angle 42.5; its screenshot is explicitly labelled simulation. Runtime
+contract and final rebuilt-host confirmation for the boxed payload pass too.
+Evidence: artifacts/hub-rotator-sim-boxed-{rust,clippy,host-build,nina,net48}.log and
+artifacts/hub-rotator-sim-final-{msrv,contract,node,schema}.log. The final managed
+run again passes 199/199 NINA tests and both net48 architectures against the fresh
+production host. No test or transport deadlines changed. This increment needs its
+own CI; the preceding COM checkpoint has seven successful jobs with Windows
+installer acceptance still running in both PR/push runs. Browser interaction,
+shared rotator creation, conformance,
+equipment acceptance and every original remaining gate stay open.

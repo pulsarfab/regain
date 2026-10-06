@@ -21,6 +21,7 @@ internal static class Program
             var simulatedFocuser = HubFocuserSimulation.AddTo(fixtureConfig,8);
             using var rotatorServer = new HubRotatorServer();
             rotatorServer.AddTo(fixtureConfig, 4, 7);
+            var simulatedRotator = HubRotatorSimulation.AddTo(fixtureConfig,8,9);
             File.WriteAllText(args[1], fixtureConfig.ToJsonString());
             using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(75));
             var initializedPath = System.IO.Path.Combine(System.IO.Path.GetDirectoryName(args[1])!, "created empty configuration.json");
@@ -158,6 +159,7 @@ internal static class Program
             await NativeOutputs.FocuserRun(args[0], args[1], attached.InstanceId, saved, focuserServer, deadline.Token);
             await NativeOutputs.SimulatedFocuserRun(args[0],args[1],attached.InstanceId,saved,simulatedFocuser,editor,deadline.Token);
             await NativeOutputs.RotatorRun(args[0],args[1],attached.InstanceId,saved,rotatorServer,deadline.Token);
+            await NativeOutputs.SimulatedRotatorRun(args[0],args[1],attached.InstanceId,saved,simulatedRotator,editor,deadline.Token);
             Console.WriteLine($"net48 {IntPtr.Size * 8}-bit: shared identity, independent leases, selection CAS/removal, native session/reconnect, editor review/apply/reconcile, setup inspection/export/simulation, typed ASCOM outputs and surviving host passed");
             return 0;
         } catch (Exception error) { Console.Error.WriteLine(error.GetType().Name + ": " + error.Message); return 1; }

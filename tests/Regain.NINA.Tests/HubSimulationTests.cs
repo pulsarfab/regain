@@ -11,6 +11,90 @@ namespace Regain.NINA.Tests;
 public sealed partial class HubNativeTests
 {
     [Fact]
+    public async Task NativeRotatorSimulationSharesDescriptorsCoordinatesAndCompletesNinaMoves()
+    {
+        Guid source = default;
+        await using var host = await Host.Open(config => source = HubRotatorSimulation.AddTo(config,4,7));
+        using var editor = await Editor(host); await editor.ReloadAsync();
+        var controls = editor.SimulationControls(source); Assert.Equal(12,controls.Count);
+        var angle = controls.Single(control => control.Path.SequenceEqual(new[] {"rotator","position"}));
+        foreach (var value in new[] {"360","359.9999999","-1","1e39"}) Assert.Throws<InvalidOperationException>(()=>angle.Parse(value));
+        var step = controls.Single(control => control.Path.SequenceEqual(new[] {"rotator","stepSize"}));
+        Assert.Throws<InvalidOperationException>(()=>step.Parse("1e-300"));
+        await editor.UpdateSimulationAsync(source, JsonSerializer.SerializeToElement(new {rotator=new {
+            position=20.0,mechanicalPosition=350.0,targetPosition=20.0}}));
+        await Eventually(async ()=>(await host.Status(3)).GetProperty("leaseCount").GetInt32()==0);
+        using var first = new HubRotatorDevice(host.Selection(3,"rotator"),host.Executable,host.Workers);
+        using var second = new HubRotatorDevice(host.Selection(4,"rotator"),host.Executable,host.Workers);
+        await first.Connect(CancellationToken.None); await second.Connect(CancellationToken.None);
+        Assert.Equal(20f,first.Position); Assert.Equal(350f,second.MechanicalPosition);
+        first.Sync(42.5f); Assert.True(first.Synced); Assert.False(second.Synced);
+        Assert.Equal(42.5f,second.Position); Assert.Equal(350f,second.MechanicalPosition);
+        second.Reverse=true; Assert.True(first.Reverse);
+        Assert.True(await first.Move(-721.5f,CancellationToken.None));
+        Assert.Equal(41f,second.Position); Assert.Equal(348.5f,second.MechanicalPosition);
+        Assert.True(await first.MoveAbsolute(50f,CancellationToken.None));
+        Assert.Equal(357.5f,second.MechanicalPosition);
+        Assert.True(await second.MoveAbsoluteMechanical(12.25f,CancellationToken.None));
+        Assert.Equal(64.75f,first.Position);
+        await editor.UpdateSimulationAsync(source,JsonSerializer.SerializeToElement(new {rotator=new {stepSizeAvailable=false}}));
+        Assert.True(float.IsNaN(first.StepSize)); Assert.True(second.Connected);
+        var status=(await editor.SourceStatusAsync(source)).GetProperty("simulation");
+        var malformed=JsonNode.Parse(status.GetRawText())!.AsObject(); malformed["rotator"]!["position"]=359.9999999;
+        Assert.Throws<InvalidOperationException>(()=>editor.ValidateSimulationStatus(source,JsonSerializer.SerializeToElement(malformed)));
+        malformed=JsonNode.Parse(status.GetRawText())!.AsObject(); malformed["rotator"]!["extra"]=true;
+        Assert.Throws<HubException>(()=>editor.ValidateSimulationStatus(source,JsonSerializer.SerializeToElement(malformed)));
+        first.Disconnect(); Assert.True(second.Connected); Assert.Equal(64.75f,second.Position);
+        second.Disconnect(); await Eventually(async ()=>(await host.Status(3)).GetProperty("leaseCount").GetInt32()==0);
+    }
+    [Fact]
+    public async Task NativeRotatorSimulationCancellationStoppedShortAndUncertaintyRemainExplicit()
+    {
+        await using var host=await Host.Open(config=>HubRotatorSimulation.AddTo(config,4,7));
+        using var first=new HubRotatorDevice(host.Selection(3,"rotator"),host.Executable,host.Workers);
+        using var second=new HubRotatorDevice(host.Selection(4,"rotator"),host.Executable,host.Workers);
+        await first.Connect(CancellationToken.None); await second.Connect(CancellationToken.None);
+        await host.Update(3,new {fault="stalledMotion"});
+        using var cancellation=new CancellationTokenSource();
+        var move=first.MoveAbsolute(10f,cancellation.Token);
+        await Eventually(async ()=>(await host.Status(3)).GetProperty("simulation").GetProperty("rotator").GetProperty("isMoving").GetBoolean());
+        cancellation.Cancel(); await Assert.ThrowsAnyAsync<OperationCanceledException>(()=>move);
+        first.Disconnect(); Assert.True(second.IsMoving);
+        await host.Update(3,new {fault="stoppedShort",rotator=new {position=0.0,mechanicalPosition=0.0,isMoving=false}});
+        await Assert.ThrowsAsync<IOException>(()=>second.MoveAbsolute(0.5f,CancellationToken.None));
+        Assert.Equal(359.5f,second.Position); Assert.False(second.IsMoving);
+        await host.Update(3,new {fault="uncertainWrite"});
+        Assert.Equal("uncertain",(await Assert.ThrowsAsync<HubException>(()=>second.Move(5f,CancellationToken.None))).Remote!.Code);
+        await host.Update(3,new {fault="none"});
+        Assert.True((await host.Status(3)).GetProperty("writeUncertain").GetBoolean());
+        Assert.Equal("uncertain",Assert.Throws<HubException>(()=>second.Halt()).Remote!.Code);
+        await Eventually(async ()=>(await host.Status(3)).GetProperty("simulation").GetProperty("rotator").GetProperty("position").GetDouble()==4.5);
+    }
+    [Fact]
+    public async Task SharedNativeRotatorSimulationWindowUsesHostControlsAndSparseUpdates()
+    {
+        await Wpf(async ()=>{
+            await using var host=await Host.Open(config=>HubRotatorSimulation.AddTo(config,4));
+            var window=new HubConfigurationWindow(host.Executable,host.ConfigPath,host.Selection(0,"switch").InstanceId);
+            try {
+                window.Show(); var review=Controls<Button>(window).Single(button=>(string)button.Content=="Review changes");
+                await UiUntil(()=>review.IsEnabled); Controls<TabControl>(window).Single().SelectedIndex=4;
+                var sources=Controls<ComboBox>(window).Single(combo=>(string?)combo.Tag=="simulation-source");
+                sources.SelectedItem=sources.Items.OfType<ComboBoxItem>().Single(item=>(string)item.Content=="Explicit simulation rotator");
+                var include=Controls<CheckBox>(window).Single(box=>(string?)box.Tag=="simulation-change-rotator-position");
+                include.IsChecked=true; include.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                var value=Controls<TextBox>(window).Single(box=>(string?)box.Tag=="simulation-value-rotator-position"); value.Text="42.5";
+                await window.Dispatcher.InvokeAsync(()=>{},System.Windows.Threading.DispatcherPriority.ContextIdle);
+                window.UpdateLayout(); value.BringIntoView(); await Capture(window,"hub-native-rotator-simulation.png");
+                var apply=Controls<Button>(window).Single(button=>(string)button.Content=="Apply selected simulation changes");
+                apply.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); await UiUntil(()=>review.IsEnabled && !apply.IsEnabled);
+                var state=(await host.Status(3)).GetProperty("simulation").GetProperty("rotator");
+                Assert.Equal(42.5,state.GetProperty("position").GetDouble()); Assert.Equal(0,state.GetProperty("mechanicalPosition").GetDouble());
+                await Eventually(async ()=>(await host.Status(3)).GetProperty("leaseCount").GetInt32()==0);
+            } finally {window.Close();}
+        });
+    }
+    [Fact]
     public async Task NativeFocuserSimulationUsesSharedIntegerControlsAndCompletesNinaMoves()
     {
         Guid source = default;

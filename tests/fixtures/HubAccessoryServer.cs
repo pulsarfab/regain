@@ -9,15 +9,23 @@ namespace Regain.TestFixtures;
 
 internal static class HubFocuserSimulation
 {
-    internal static Guid AddTo(JsonObject config, params int[] numbers)
+    internal static Guid AddTo(JsonObject config, params int[] numbers) => HubAccessorySimulation.AddTo(config, "focuser", numbers);
+}
+internal static class HubRotatorSimulation
+{
+    internal static Guid AddTo(JsonObject config, params int[] numbers) => HubAccessorySimulation.AddTo(config, "rotator", numbers);
+}
+internal static class HubAccessorySimulation
+{
+    internal static Guid AddTo(JsonObject config, string type, params int[] numbers)
     {
         var source = Guid.NewGuid();
         config["sources"]!.AsArray().Add(JsonSerializer.SerializeToNode(new {
-            id = source, label = "Explicit simulation focuser", backend = new { kind = "simulated", deviceType = "focuser" },
+            id = source, label = "Explicit simulation " + type, backend = new { kind = "simulated", deviceType = type },
             polling = new { pollSeconds = 0.1, requestTimeoutSeconds = 0.3 } }));
         foreach (var number in numbers) config["outputs"]!.AsArray().Add(JsonSerializer.SerializeToNode(new {
-            id = Guid.NewGuid(), number, label = "Simulation focuser " + number,
-            device = new { kind = "proxy", source, deviceType = "focuser" } }));
+            id = Guid.NewGuid(), number, label = "Simulation " + type + " " + number,
+            device = new { kind = "proxy", source, deviceType = type } }));
         return source;
     }
 }
@@ -41,7 +49,7 @@ internal class HubAccessoryServer : IDisposable
     internal int Halts => Volatile.Read(ref halts);
     internal string RequestTrace => string.Join("; ", trace);
     internal volatile bool LoseMoveReply;
-    internal volatile bool IgnoreMove;
+    internal volatile bool IgnoreMove = false;
     internal string Url { get; }
     internal Guid SourceId { get; } = Guid.NewGuid();
     internal HubAccessoryServer(string kind)

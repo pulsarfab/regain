@@ -144,7 +144,7 @@ pub enum SourceBackend {
     #[schemars(extend("x-regain" = {"requiresCapability":"simulation"}))]
     Simulated {
         /// Simulated device interface.
-        #[schemars(extend("x-regain" = {"enumCapabilities":{"camera":"broaderSimulation","rotator":"broaderSimulation","filterwheel":"broaderSimulation","covercalibrator":"broaderSimulation"}}))]
+        #[schemars(extend("x-regain" = {"enumCapabilities":{"camera":"broaderSimulation","filterwheel":"broaderSimulation","covercalibrator":"broaderSimulation"}}))]
         device_type: DeviceType,
     },
 }

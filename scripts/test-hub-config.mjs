@@ -67,7 +67,7 @@ assert.equal(proxy.enabled,true);
 assert.deepEqual(typedEditor.choices(proxy.schema.properties.deviceType).filter(v => v.enabled).map(v => v.value),['focuser']);
 assert.deepEqual(initialValue(typedEditor,proxy.schema),{kind:'proxy',deviceType:'focuser',source:''});
 assert.equal(reader.choices(proxy.schema.properties.deviceType).every(v => !v.enabled),true);
-assert.deepEqual(typedEditor.choices(typedEditor.variants(typedEditor.root.$defs.SourceBackend).find(v => v.kind === 'simulated').schema.properties.deviceType).filter(v => v.enabled).map(v => v.value),['switch','safetymonitor','observingconditions','focuser']);
+assert.deepEqual(typedEditor.choices(typedEditor.variants(typedEditor.root.$defs.SourceBackend).find(v => v.kind === 'simulated').schema.properties.deviceType).filter(v => v.enabled).map(v => v.value),['switch','safetymonitor','observingconditions','focuser','rotator']);
 const simulatedSchema = editor.variants(editor.root.$defs.SourceBackend).find(v => v.kind === 'simulated').schema;
 assert.equal(initialValue(editor, simulatedSchema).deviceType,'switch');
 assert.equal(editor.choices(simulatedSchema.properties.deviceType).find(v=>v.value==='camera').enabled,false);
@@ -116,16 +116,15 @@ const simulatedSource = type => ({id:'11111111-1111-4111-8111-111111111111',back
 const simRevision = '22222222-2222-4222-8222-222222222222';
 function simulationState(type) {
   const state = {deviceType:type,safe:false,switchValues:{},weather:{},fault:'none',sampleAgeSeconds:0};
-  if (type === 'focuser') state.focuser = {};
   for (const control of simulationControls(simDescription,simulatedSource(type))) {
     if (control.path.length === 1) state[control.path[0]] = control.default;
-    else state[control.path[0]][control.path[1]] = control.default;
+    else { state[control.path[0]] ??= {}; state[control.path[0]][control.path[1]] = control.default; }
   }
   return state;
 }
-for (const type of ['switch','safetymonitor','observingconditions','focuser']) {
+for (const type of ['switch','safetymonitor','observingconditions','focuser','rotator']) {
   const fields = simulationControls(simDescription,simulatedSource(type));
-  assert.equal(fields.length,type==='switch'?5:type==='safetymonitor'?2:15);
+  assert.equal(fields.length,type==='switch'?5:type==='safetymonitor'?2:type==='rotator'?12:15);
   assert.deepEqual(fields.find(f=>f.path[0]==='fault').enum,simDescription.faultsByDeviceType[type]);
 }
 assert.deepEqual(simulationControls(simDescription,{backend:{kind:'native'}}),[]);
@@ -146,6 +145,27 @@ await assert.rejects(focuserSetup.update([{path:['focuser','position'],value:1.5
 assert.equal((await focuserSetup.update([{path:['focuser','position'],value:100000}])).focuser.position,100000);
 const invalidFocuserState = structuredClone(focuserState); invalidFocuserState.focuser.extra = true;
 assert.throws(() => focuserSetup.statusValue(invalidFocuserState));
+const rotatorFields = simulationControls(simDescription,simulatedSource('rotator'));
+const angleControl = rotatorFields.find(f=>f.path[1]==='position');
+for (const value of [-1,360,359.9999999,'30',1e39,Infinity]) assert.throws(()=>validateSimulationValue(angleControl,value));
+assert.equal(validateSimulationValue(angleControl,359.9999694824219),359.9999694824219);
+const stepControl = rotatorFields.find(f=>f.path[1]==='stepSize');
+for (const value of [0,1e-300,1e39]) assert.throws(()=>validateSimulationValue(stepControl,value));
+assert.equal(validateSimulationValue(stepControl,0.02),0.02);
+let rotatorWrites = 0;
+const rotatorState = simulationState('rotator');
+const rotatorSetup = new SimulationSetup(async command => {
+  rotatorWrites++; assert.deepEqual(command.update,{rotator:{position:20,mechanicalPosition:350}});
+  Object.assign(rotatorState.rotator,command.update.rotator);
+  return {source:rotatorSetup.source.id,configurationRevision:simRevision,simulation:rotatorState};
+},()=>{});
+rotatorSetup.load(simDescription,simulatedSource('rotator'),simRevision);
+await assert.rejects(rotatorSetup.update([{path:['rotator','position'],value:359.9999999}])); assert.equal(rotatorWrites,0);
+assert.equal((await rotatorSetup.update([{path:['rotator','position'],value:20},{path:['rotator','mechanicalPosition'],value:350}])).rotator.position,20);
+for (const mutate of [state=>state.rotator.position=360,state=>state.rotator.stepSize=1e-300,
+    state=>state.rotator.extra=true,state=>delete state.rotator.reverse,state=>state.focuser={}]) {
+  const state = structuredClone(rotatorState); mutate(state); assert.throws(()=>rotatorSetup.statusValue(state));
+}
 delete invalidFocuserState.focuser.extra; invalidFocuserState.focuser.position = 1.5;
 assert.throws(() => focuserSetup.statusValue(invalidFocuserState));
 const weatherFields = simulationControls(simDescription,simulatedSource('observingconditions'));

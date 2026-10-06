@@ -39,7 +39,7 @@ public sealed partial class HubConfigurationWindow : Window
         bottom.Children.Add(errors); bottom.Children.Add(actions); bottom.Children.Add(status);
         var heading = new StackPanel { Margin = new Thickness(8, 0, 8, 12) }; DockPanel.SetDock(heading, Dock.Top); panel.Children.Add(heading);
         heading.Children.Add(new TextBlock { Text = "Configure shared hub devices", FontSize = 24 });
-        heading.Children.Add(new TextBlock { Text = "Changes stay in this draft until reviewed and applied. Disconnect all output clients before Apply. Source settings and safety policies are shared across NINA, Alpaca and ASCOM.", TextWrapping = TextWrapping.Wrap });
+        heading.Children.Add(new TextBlock { Text = "Configuration changes stay in this draft until reviewed and applied. Disconnect all output clients before applying configuration. Source settings and safety policies are shared across NINA, Alpaca and ASCOM.", TextWrapping = TextWrapping.Wrap });
         tabs.Items.Add(new TabItem { Header = "Configuration", Content = new ScrollViewer { Content = configuration, VerticalScrollBarVisibility = ScrollBarVisibility.Auto } });
         tabs.Items.Add(new TabItem { Header = "Review", Content = preview });
         var health = new DockPanel();

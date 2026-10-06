@@ -375,8 +375,33 @@ coordinate rejection, sparse integer updates and zero source leases.
 ![Browser focuser controls during an explicit simulation](images/hub-web-focuser-simulation.jpg)
 
 This actual Chrome capture shows Position 100000 after a sparse update. Temperature
-remains 12 °C and the saved configuration revision is unchanged. No hardware is
+remains 12 Â°C and the saved configuration revision is unchanged. No hardware is
 connected; this is a private simulated source.
+
+## Rotator simulation controls (development)
+
+For a saved, explicitly simulated Rotator source, the shared **Simulation** tab
+offers logical, mechanical and target angles, reversal, optional StepSize/Halt
+support, move duration, sample age and injected faults. Read current state, select
+only the fields to change, then apply. Angles must remain below 360 after Single
+conversion; StepSize must remain positive. Invalid combinations leave the previous
+state intact.
+
+Use the normal typed output to test Sync and motion. Sync changes the logical
+reference while leaving the mechanical angle unchanged. Motion completes after
+the selected duration; a stall remains moving until an explicit Halt or test-state
+change. Disconnect does not Halt. Clearing an uncertain-write fault cannot clear
+the shared command fence. Disconnect every source lease before reconnecting.
+These controls change runtime test state; restarting resets test coordinates.
+
+![Shared native rotator controls in an explicit simulation](images/hub-native-rotator-simulation.png)
+
+This actual WPF capture shows a private simulated source with only Logical angle
+selected for a sparse 42.5-degree update. Native NINA and real net48 ASCOM fixtures
+verify shared coordinates, timed commands, optional errors and retained uncertainty
+in both Windows architectures. Browser descriptors and HTTP integration are tested;
+interactive browser acceptance for rotator setup remains open. Shared rotator
+output creation is still gated in this development checkpoint.
 
 ## Create a shared focuser output (development)
 

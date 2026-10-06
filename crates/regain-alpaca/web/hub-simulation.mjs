@@ -20,7 +20,10 @@ export function validateSimulationValue(control, value) {
   switch (control.type) {
     case 'boolean': valid = typeof value === 'boolean'; break;
     case 'string': valid = typeof value === 'string' && control.enum.includes(value); break;
-    case 'number': valid = Number.isFinite(value) && typeof value === 'number' && (control.minimum === undefined || value >= control.minimum) && (control.maximum === undefined || value <= control.maximum) && (control.exclusiveMinimum === undefined || value > control.exclusiveMinimum); break;
+    case 'number': {
+      const bounds = n => Number.isFinite(n) && (control.minimum === undefined || n >= control.minimum) && (control.maximum === undefined || n <= control.maximum) && (control.exclusiveMinimum === undefined || n > control.exclusiveMinimum) && (control.exclusiveMaximum === undefined || n < control.exclusiveMaximum);
+      valid = typeof value === 'number' && bounds(value) && (control.precision === undefined || control.precision === 'single' && bounds(Math.fround(value))); break;
+    }
     case 'integer': valid = Number.isInteger(value) && value >= -2147483648 && value <= 2147483647 && (control.minimum === undefined || value >= control.minimum) && (control.maximum === undefined || value <= control.maximum); break;
     default: valid = false;
   }
@@ -34,11 +37,14 @@ export class SimulationSetup {
   }
   statusValue(status) {
     try {
-      members(status,this.source.backend.deviceType === 'focuser'
-        ? ['deviceType','safe','switchValues','weather','fault','sampleAgeSeconds','focuser']
-        : ['deviceType','safe','switchValues','weather','fault','sampleAgeSeconds']);
+      const groups = new Map();
+      for (const control of this.controls.filter(c => c.path.length === 2)) {
+        if (!groups.has(control.path[0])) groups.set(control.path[0], []);
+        groups.get(control.path[0]).push(control.path[1]);
+      }
+      members(status,[...new Set(['deviceType','safe','switchValues','weather','fault','sampleAgeSeconds',...groups.keys()])]);
       if (status.deviceType !== this.source.backend.deviceType) protocol();
-      if (status.deviceType === 'focuser') members(status.focuser,this.controls.filter(control => control.path[0] === 'focuser').map(control => control.path[1]));
+      for (const [group,keys] of groups) members(status[group],keys);
       for (const control of this.controls) {
         let value = status; for (const key of control.path) { if (!object(value) || !(key in value)) protocol(); value = value[key]; }
         validateSimulationValue(control,value);
