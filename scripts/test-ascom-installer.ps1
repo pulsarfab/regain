@@ -160,6 +160,33 @@ try {
     Assert-EtaActivation
     try { Hub-Fixture 'prepare' }
     finally { $hubPrepared = Test-Path -LiteralPath (Join-Path $testDir 'Hub fixture/fixture.json') }
+    # Hold an actual installed hub COM object without Connect. Its nested EXE
+    # and DLL must block maintenance even though no Rust host is running.
+    $hubState = Get-Content -LiteralPath (Join-Path $testDir 'Hub fixture/fixture.json') -Raw | ConvertFrom-Json
+    $hubClient = $null
+    try {
+        $hubClient = [Activator]::CreateInstance([Type]::GetTypeFromCLSID([guid]$hubState[0].entries[0].clsid))
+        if (!$hubClient.Name) { throw 'Installed hub metadata was unavailable' }
+        Run-Setup 'busy-hub-upgrade' $false
+        Run-Uninstall 'busy-hub-uninstall' $false
+        Hub-Fixture 'assert'
+        $expectedHubHost = Join-Path $destination 'regain-alpaca.exe'
+        if (Get-CimInstance Win32_Process -Filter "Name='regain-alpaca.exe'" | Where-Object ExecutablePath -eq $expectedHubHost) {
+            throw 'Metadata or installer maintenance started the Rust host'
+        }
+    } finally {
+        if ($hubClient -and [Runtime.InteropServices.Marshal]::IsComObject($hubClient)) {
+            [Runtime.InteropServices.Marshal]::FinalReleaseComObject($hubClient) | Out-Null
+        }
+        $hubClient = $null
+    }
+    $hubServerPath = [IO.Path]::GetFullPath((Join-Path $destination 'hub-ascom/x64/Regain.Hub.ASCOM.exe'))
+    $deadline = [DateTime]::UtcNow.AddSeconds(45)
+    while (Get-CimInstance Win32_Process -Filter "Name='Regain.Hub.ASCOM.exe'" | Where-Object ExecutablePath -eq $hubServerPath) {
+        if ([DateTime]::UtcNow -gt $deadline) { throw 'Installed hub server did not retire after its metadata client released it' }
+        Start-Sleep -Milliseconds 500
+    }
+    Write-Output 'Installed hub metadata, nested helper busy guards and idle retirement passed without host/equipment activation.'
     $registered = Get-ItemPropertyValue 'HKLM:\SOFTWARE\Classes\CLSID\{D1DB6F94-5CC0-4752-A758-F849098874A1}\InprocServer32' -Name CodeBase
     if (([Uri]$registered).LocalPath -ne (Join-Path $destination 'Regain.ASCOM.dll')) { throw 'Wrong installed registration path' }
     foreach ($view in [Microsoft.Win32.RegistryView]::Registry32,[Microsoft.Win32.RegistryView]::Registry64) {

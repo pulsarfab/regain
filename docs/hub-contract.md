@@ -1087,4 +1087,7 @@ edits retain the 512-key/1-MiB bounds. Inventory enumeration admits 4096 entries
 Crash atomicity and audit metadata preservation remain unclaimed. The actual
 installer fixture covers upgrade preservation, conflicting commands preventing
 file deletion, cleanup after selection deletion and another install's preserved
-entries. Those machine cases require new disposable-runner CI before acceptance.
+entries. A private installed COM metadata object also holds the nested helper
+while upgrade/uninstall must refuse, without starting a Rust host or acquiring
+equipment. Only its own RCW is released and the helper retires naturally. Those
+machine cases require new disposable-runner CI before acceptance.

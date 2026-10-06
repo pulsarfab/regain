@@ -1656,8 +1656,9 @@ retained, removal after deleting the selection file, and preservation of the oth
 install/settings. Cleanup uses owned helpers, not raw key deletion. Paths stay
 inside the named installer fixture directory; manifests are written only after
 collision preflight. Even a partially failed preparation attempts cleanup, and
-cleanup errors do not skip restoring the existing test environment. Neither COM
-activation nor equipment acquisition occurs in this lifecycle fixture.
+cleanup errors do not skip restoring the existing test environment. The initial
+lifecycle fixture does not activate COM or acquire equipment. The extension below
+adds only private installed metadata activation, with no equipment connection.
 
 Local evidence: 131 NINA tests passed (`artifacts/hub-installer-batch-tests.log`);
 all 11 registry tests passed after final scope refinement
@@ -1672,3 +1673,11 @@ and every remaining original milestone still require evidence.
 
 Next: corrected production and installer CI, then remaining shared setup,
 broader typed proxies/camera acquisition, coordination and complete original gates.
+
+Installer acceptance now also holds one actual installed hub COM object in the
+PowerShell 7 parent without Connect. Its nested helper/shared DLL must block
+upgrade and uninstall; the fixture then checks inventories are intact and no
+Rust host started. After releasing only its own RCW, it waits for natural idle
+retirement before continuing maintenance. It never kills another client's helper.
+Python/PowerShell syntax checks pass; this extension needs new machine CI and is
+not evidence of a completed in-use/installed metadata gate yet.

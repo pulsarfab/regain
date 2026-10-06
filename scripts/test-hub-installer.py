@@ -62,7 +62,7 @@ def prepare_state(install, folder, owner, count):
     revision = str(uuid.uuid4())
     bindings_path.write_text(json.dumps(dict(schemaVersion=1, revision=revision, bindings=bindings)), encoding="utf-8")
     return dict(install=str(install), bindings=str(bindings_path), owner=owner, revision=revision,
-                entries=[dict(binding=binding) for binding in bindings])
+                entries=[dict(binding=binding, clsid=paths(binding)[0].rsplit("\\", 1)[1].strip("{}")) for binding in bindings])
 
 
 def register(state):
