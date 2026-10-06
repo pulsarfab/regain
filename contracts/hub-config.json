@@ -3285,6 +3285,105 @@
   "simulationControl": {
     "apply": "immediate",
     "controlsByDeviceType": {
+      "filterwheel": [
+        {
+          "default": [
+            "L",
+            "R",
+            "G",
+            "B",
+            "Hα",
+            "OIII",
+            "SII"
+          ],
+          "description": "Names in slot order, including blank names. Change names and offsets together when changing slot count. Metadata changes replace pending test motion.",
+          "label": "Filter names (JSON array)",
+          "maxItems": 1024,
+          "maxUtf8Bytes": 1048576,
+          "minItems": 1,
+          "path": [
+            "filterWheel",
+            "names"
+          ],
+          "type": "strings"
+        },
+        {
+          "contains": 0,
+          "default": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "description": "Signed Int32 offsets in slot order, with at least one zero reference. The wheel does not apply focuser offsets.",
+          "label": "Focus offsets (JSON array)",
+          "maxItems": 1024,
+          "maximum": 2147483647,
+          "minItems": 1,
+          "minimum": -2147483648,
+          "path": [
+            "filterWheel",
+            "focusOffsets"
+          ],
+          "type": "integers"
+        },
+        {
+          "default": 0,
+          "description": "Zero-based actual slot, or -1 while moving. Setting Position explicitly replaces pending test motion.",
+          "label": "Position (slot)",
+          "maximum": 1023,
+          "minimum": -1,
+          "path": [
+            "filterWheel",
+            "position"
+          ],
+          "type": "integer"
+        },
+        {
+          "default": 0.2,
+          "description": "Position returns -1 until this monotonic duration elapses. Stalled wheels require an explicit simulation Position update; no Halt is added.",
+          "label": "Move duration (s)",
+          "maximum": 300.0,
+          "minimum": 0.0,
+          "path": [
+            "filterWheel",
+            "moveDurationSeconds"
+          ],
+          "type": "number"
+        },
+        {
+          "default": "none",
+          "description": "Select none to clear a fault. This does not clear an uncertain-write latch.",
+          "enum": [
+            "none",
+            "readError",
+            "timeout",
+            "uncertainWrite",
+            "invalidMotion",
+            "stalledMotion",
+            "stoppedShort"
+          ],
+          "label": "Injected fault",
+          "path": [
+            "fault"
+          ],
+          "type": "string"
+        },
+        {
+          "default": 0.0,
+          "description": "Age reported for each new simulated observation. Refresh resets it to zero.",
+          "label": "Sample age (s)",
+          "maximum": 86400.0,
+          "minimum": 0.0,
+          "path": [
+            "sampleAgeSeconds"
+          ],
+          "type": "number"
+        }
+      ],
       "focuser": [
         {
           "default": true,
@@ -3885,9 +3984,19 @@
       "safetymonitor",
       "observingconditions",
       "focuser",
-      "rotator"
+      "rotator",
+      "filterwheel"
     ],
     "faultsByDeviceType": {
+      "filterwheel": [
+        "none",
+        "readError",
+        "timeout",
+        "uncertainWrite",
+        "invalidMotion",
+        "stalledMotion",
+        "stoppedShort"
+      ],
       "focuser": [
         "none",
         "readError",
@@ -3925,6 +4034,11 @@
       ]
     },
     "fieldsByDeviceType": {
+      "filterwheel": [
+        "filterWheel",
+        "fault",
+        "sampleAgeSeconds"
+      ],
       "focuser": [
         "focuser",
         "fault",
@@ -3966,6 +4080,64 @@
             "stoppedShort"
           ],
           "type": "string"
+        },
+        "FilterWheelUpdate": {
+          "additionalProperties": false,
+          "properties": {
+            "focusOffsets": {
+              "anyOf": [
+                {
+                  "contains": {
+                    "const": 0
+                  },
+                  "items": {
+                    "default": 0,
+                    "format": "int32",
+                    "maximum": 2147483647,
+                    "minimum": -2147483648,
+                    "type": "integer"
+                  },
+                  "maxItems": 1024,
+                  "minItems": 1,
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "moveDurationSeconds": {
+              "format": "double",
+              "maximum": 300,
+              "minimum": 0,
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "names": {
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 1024,
+              "minItems": 1,
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "position": {
+              "format": "int32",
+              "maximum": 1023,
+              "minimum": -1,
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          "type": "object"
         },
         "FocuserUpdate": {
           "additionalProperties": false,
@@ -4160,6 +4332,17 @@
             }
           ],
           "description": "Failure to inject. \"none\" clears a fault; omitted leaves it unchanged."
+        },
+        "filterWheel": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FilterWheelUpdate"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Sparse wheel state. Metadata or Position replaces a pending movement;\nduration and fault changes do not stop it. Arrays must remain aligned."
         },
         "focuser": {
           "anyOf": [

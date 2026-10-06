@@ -77,6 +77,9 @@ public sealed partial class HubConfigurationWindow
             if (control.Descriptor.TryGetProperty("exclusiveMinimum", out var exclusive)) bounds.Add("Greater than " + exclusive.GetRawText());
             if (control.Descriptor.TryGetProperty("maximum", out var maximum)) bounds.Add("Maximum " + maximum.GetRawText());
             if (control.Descriptor.TryGetProperty("step", out var step)) bounds.Add("Step " + step.GetRawText());
+            if (control.Descriptor.TryGetProperty("minItems", out var minItems)) bounds.Add("Minimum items " + minItems.GetRawText());
+            if (control.Descriptor.TryGetProperty("maxItems", out var maxItems)) bounds.Add("Maximum items " + maxItems.GetRawText());
+            if (control.Descriptor.TryGetProperty("maxUtf8Bytes", out var textBytes)) bounds.Add("Maximum UTF-8 bytes " + textBytes.GetRawText());
             if (bounds.Count > 0) panel.Children.Add(new TextBlock { Text = string.Join(" · ",bounds),TextWrapping = TextWrapping.Wrap });
             panel.Children.Add(input); if (absent is not null) panel.Children.Add(absent);
             simulationInputs.Add(new(control, include, input, absent)); simulationFields.Children.Add(panel);

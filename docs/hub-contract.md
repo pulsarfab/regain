@@ -1839,4 +1839,30 @@ age. Mismatched arrays invalidate all three properties. A malformed Position
 leaves valid metadata available; its original polling error classification is
 preserved through every layer and clears when the source recovers. Explicit
 native-worker simulation propagates through nested outputs and diagnostics.
-Dedicated wheel simulation controls and shared creation remain separate gates.
+Dedicated wheel simulation is described below; shared creation remains a separate
+gate.
+
+### Dedicated wheel simulation
+
+An explicitly simulated FilterWheel uses the common source actor and timed-motion
+path without a native worker, SDK or vendor COM driver. New runtimes default to
+seven named slots and zero offsets. Names/FocusOffsets remain bounded and aligned,
+with signed Int32 values and a zero reference. Sparse changes are validated on a
+copy before commit. Metadata or Position injection replaces pending motion;
+duration/age/fault changes do not stop it. State is shared for that runtime only.
+
+Position writes acknowledge acceptance and report -1 until the monotonic duration
+expires; disconnect releases a lease without stopping movement. StalledMotion
+keeps Position at -1. StoppedShort returns the prior slot rather than a fabricated
+target. InvalidMotion produces malformed Position; valid metadata stays readable.
+ReadError/Timeout use the same fault path as other simulators. UncertainWrite
+applies the command and retains the source fence after the injected fault clears.
+No Halt, calibration or automatic focuser action is added to a standard wheel.
+
+The Rust-generated controls describe bounded JSON arrays, strict Unicode byte
+limits, Int32 limits, the zero reference, Position and move duration. Both setup
+readers preserve those types and validate status metadata pairing. Simulation
+updates can apply before serialization reports responseTooLarge. Frontends revoke
+review and require reload after that response, without replay. The stream remains
+usable for an explicit smaller update; arrays are never truncated and frame
+limits are not enlarged. Shared wheel creation and broader acceptance remain open.

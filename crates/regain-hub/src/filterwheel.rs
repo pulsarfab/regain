@@ -197,7 +197,7 @@ pub struct NativeFilterWheelMetadata {
     #[schemars(schema_with = "offset_array_schema", length(min = 1, max = 1024), extend("contains" = {"const": 0}))]
     pub focus_offsets: Vec<i32>,
 }
-fn offset_array_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+pub(crate) fn offset_array_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
     let mut schema = <Vec<i32> as schemars::JsonSchema>::json_schema(generator);
     // New rows start at the required reference value, rather than the signed
     // Int32 minimum. Both editors consume this same item default and bounds.

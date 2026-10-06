@@ -3,6 +3,7 @@
 use crate::{
     alpaca::SampleRequest,
     config::{DeviceType, WeatherMetric},
+    filterwheel::{MAX_FILTER_SLOTS, NativeFilterWheelMetadata},
     readout::invalid,
     rotator::RotatorProperty,
     source::{Backend, BackendFuture, ErrorKind, SampleBatch, SourceError, Values},
@@ -218,6 +219,83 @@ impl RotatorUpdate {
         Ok(())
     }
 }
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct FilterWheelState {
+    pub names: Vec<String>,
+    pub focus_offsets: Vec<i32>,
+    pub position: i32,
+    pub move_duration_seconds: f64,
+}
+impl Default for FilterWheelState {
+    fn default() -> Self {
+        Self {
+            names: ["L", "R", "G", "B", "Hα", "OIII", "SII"]
+                .into_iter()
+                .map(String::from)
+                .collect(),
+            focus_offsets: vec![0; 7],
+            position: 0,
+            move_duration_seconds: 0.2,
+        }
+    }
+}
+#[derive(Clone, Debug, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct FilterWheelUpdate {
+    #[schemars(length(min = 1, max = 1024))]
+    pub names: Option<Vec<String>>,
+    #[schemars(schema_with = "wheel_offsets_update_schema")]
+    #[serde(default)]
+    pub focus_offsets: Option<Vec<i32>>,
+    #[schemars(range(min = -1, max = 1023))]
+    pub position: Option<i32>,
+    #[schemars(range(min = 0, max = 300))]
+    pub move_duration_seconds: Option<f64>,
+}
+fn wheel_offsets_update_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+    // Reuse the saved-wheel metadata schema, including explicit Int32 bounds
+    // and the zero reference, rather than maintaining a second array contract.
+    let mut array = crate::filterwheel::offset_array_schema(generator);
+    let object = array.as_object_mut().expect("Array schema");
+    object.insert("minItems".into(), json!(1));
+    object.insert("maxItems".into(), json!(MAX_FILTER_SLOTS));
+    object.insert("contains".into(), json!({"const":0}));
+    serde_json::from_value(json!({"anyOf":[array,{"type":"null"}]}))
+        .expect("Optional offsets schema")
+}
+impl FilterWheelUpdate {
+    fn replaces_motion(&self) -> bool {
+        self.names.is_some() || self.focus_offsets.is_some() || self.position.is_some()
+    }
+    fn apply(self, state: &mut FilterWheelState) -> Result<(), SourceError> {
+        if let Some(names) = self.names {
+            state.names = names;
+        }
+        if let Some(offsets) = self.focus_offsets {
+            state.focus_offsets = offsets;
+        }
+        if let Some(position) = self.position {
+            state.position = position;
+        }
+        if let Some(duration) = self.move_duration_seconds {
+            state.move_duration_seconds = duration;
+        }
+        let metadata = NativeFilterWheelMetadata {
+            names: state.names.clone(),
+            focus_offsets: state.focus_offsets.clone(),
+        };
+        if !metadata.validate().is_empty()
+            || state.position < -1
+            || state.position >= state.names.len() as i32
+            || !state.move_duration_seconds.is_finite()
+            || !(0.0..=300.0).contains(&state.move_duration_seconds)
+        {
+            return Err(invalid("Invalid simulated filter-wheel state"));
+        }
+        Ok(())
+    }
+}
 #[derive(Clone, Debug, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SimulationUpdate {
@@ -245,6 +323,9 @@ pub struct SimulationUpdate {
     /// Sparse rotator test state; coordinate/motion/reversal fields replace a
     /// pending movement. Other controls do not stop it.
     pub rotator: Option<RotatorUpdate>,
+    /// Sparse wheel state. Metadata or Position replaces a pending movement;
+    /// duration and fault changes do not stop it. Arrays must remain aligned.
+    pub filter_wheel: Option<FilterWheelUpdate>,
 }
 // Internally tagged commands deserialize through serde's captured content,
 // whose map keys do not perform JSON's string-to-integer conversion. Parse the
@@ -289,6 +370,8 @@ pub struct SimulationStatus {
     pub focuser: Option<FocuserState>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rotator: Option<RotatorState>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub filter_wheel: Option<FilterWheelState>,
 }
 pub fn description() -> Value {
     let mut controls = BTreeMap::new();
@@ -298,6 +381,7 @@ pub fn description() -> Value {
         DeviceType::ObservingConditions,
         DeviceType::Focuser,
         DeviceType::Rotator,
+        DeviceType::FilterWheel,
     ] {
         let state = SimulatedBackend::new(device, Vec::new()).unwrap().state;
         let mut fields = Vec::new();
@@ -384,6 +468,20 @@ pub fn description() -> Value {
                 "description":"Motion completes after this monotonic duration. Disconnect does not Halt. New runtimes reset test coordinates.",
                 "default":rotator.move_duration_seconds,"minimum":0.0,"maximum":300.0}));
         }
+        if let Some(wheel) = state.filter_wheel.as_ref() {
+            fields.push(json!({"path":["filterWheel","names"],"type":"strings","label":"Filter names (JSON array)",
+                "description":"Names in slot order, including blank names. Change names and offsets together when changing slot count. Metadata changes replace pending test motion.",
+                "default":wheel.names,"minItems":1,"maxItems":MAX_FILTER_SLOTS,"maxUtf8Bytes":crate::source::MAX_SAMPLE_TEXT_BYTES}));
+            fields.push(json!({"path":["filterWheel","focusOffsets"],"type":"integers","label":"Focus offsets (JSON array)",
+                "description":"Signed Int32 offsets in slot order, with at least one zero reference. The wheel does not apply focuser offsets.",
+                "default":wheel.focus_offsets,"minItems":1,"maxItems":MAX_FILTER_SLOTS,"minimum":i32::MIN,"maximum":i32::MAX,"contains":0}));
+            fields.push(json!({"path":["filterWheel","position"],"type":"integer","label":"Position (slot)",
+                "description":"Zero-based actual slot, or -1 while moving. Setting Position explicitly replaces pending test motion.",
+                "default":wheel.position,"minimum":-1,"maximum":MAX_FILTER_SLOTS-1}));
+            fields.push(json!({"path":["filterWheel","moveDurationSeconds"],"type":"number","label":"Move duration (s)",
+                "description":"Position returns -1 until this monotonic duration elapses. Stalled wheels require an explicit simulation Position update; no Halt is added.",
+                "default":wheel.move_duration_seconds,"minimum":0.0,"maximum":300.0}));
+        }
         let faults = match device {
             DeviceType::Switch => vec![
                 Fault::None,
@@ -397,7 +495,7 @@ pub fn description() -> Value {
                 Fault::Timeout,
                 Fault::InvalidSafety,
             ],
-            DeviceType::Focuser | DeviceType::Rotator => vec![
+            DeviceType::Focuser | DeviceType::Rotator | DeviceType::FilterWheel => vec![
                 Fault::None,
                 Fault::ReadError,
                 Fault::Timeout,
@@ -423,9 +521,9 @@ pub fn description() -> Value {
     }
     json!({"schema":schemars::schema_for!(SimulationUpdate), "apply":"immediate",
         "controlsByDeviceType":controls,"revisionCheckedUpdates":true,"deadlineSeconds":30,
-        "sourceKinds":["simulated"],"deviceTypes":["switch","safetymonitor","observingconditions","focuser","rotator"],
-        "fieldsByDeviceType":{"switch":["switchValues","fault","sampleAgeSeconds"],"safetymonitor":["safe","fault"],"observingconditions":["weather","fault","sampleAgeSeconds"],"focuser":["focuser","fault","sampleAgeSeconds"],"rotator":["rotator","fault","sampleAgeSeconds"]},
-        "faultsByDeviceType":{"switch":["none","readError","timeout","uncertainWrite"],"safetymonitor":["none","readError","timeout","invalidSafety"],"observingconditions":["none","readError","timeout"],"focuser":["none","readError","timeout","uncertainWrite","invalidMotion","stalledMotion","stoppedShort"],"rotator":["none","readError","timeout","uncertainWrite","invalidMotion","stalledMotion","stoppedShort"]},
+        "sourceKinds":["simulated"],"deviceTypes":["switch","safetymonitor","observingconditions","focuser","rotator","filterwheel"],
+        "fieldsByDeviceType":{"switch":["switchValues","fault","sampleAgeSeconds"],"safetymonitor":["safe","fault"],"observingconditions":["weather","fault","sampleAgeSeconds"],"focuser":["focuser","fault","sampleAgeSeconds"],"rotator":["rotator","fault","sampleAgeSeconds"],"filterwheel":["filterWheel","fault","sampleAgeSeconds"]},
+        "faultsByDeviceType":{"switch":["none","readError","timeout","uncertainWrite"],"safetymonitor":["none","readError","timeout","invalidSafety"],"observingconditions":["none","readError","timeout"],"focuser":["none","readError","timeout","uncertainWrite","invalidMotion","stalledMotion","stoppedShort"],"rotator":["none","readError","timeout","uncertainWrite","invalidMotion","stalledMotion","stoppedShort"],"filterwheel":["none","readError","timeout","uncertainWrite","invalidMotion","stalledMotion","stoppedShort"]},
         "persistence":"Test state is shared for this runtime only. A new runtime starts safety unsafe.",
         "uncertainWrites":"Changing a fault does not clear an uncertain-write latch. Disconnect every source lease before retrying commands."})
 }
@@ -439,6 +537,7 @@ pub struct SimulatedBackend {
 enum MotionTarget {
     Focuser(Option<i32>),
     Rotator { logical: f64, mechanical: f64 },
+    FilterWheel { position: i32, previous: i32 },
 }
 impl SimulatedBackend {
     pub fn new(device_type: DeviceType, samples: Vec<SampleRequest>) -> Result<Self, SourceError> {
@@ -449,6 +548,7 @@ impl SimulatedBackend {
                 | DeviceType::ObservingConditions
                 | DeviceType::Focuser
                 | DeviceType::Rotator
+                | DeviceType::FilterWheel
         ) {
             return Err(unsupported());
         }
@@ -481,6 +581,8 @@ impl SimulatedBackend {
                 sample_age_seconds: 0.0,
                 focuser: (device_type == DeviceType::Focuser).then(FocuserState::default),
                 rotator: (device_type == DeviceType::Rotator).then(RotatorState::default),
+                filter_wheel: (device_type == DeviceType::FilterWheel)
+                    .then(FilterWheelState::default),
             },
             samples,
             connected: false,
@@ -496,6 +598,7 @@ impl SimulatedBackend {
             || update.sample_age_seconds.is_some() && next.device_type == DeviceType::SafetyMonitor
             || update.focuser.is_some() && next.device_type != DeviceType::Focuser
             || update.rotator.is_some() && next.device_type != DeviceType::Rotator
+            || update.filter_wheel.is_some() && next.device_type != DeviceType::FilterWheel
         {
             return Err(invalid("Simulator controls do not match this source class"));
         }
@@ -523,12 +626,18 @@ impl SimulatedBackend {
                 || fault == Fault::UncertainWrite
                     && !matches!(
                         next.device_type,
-                        DeviceType::Switch | DeviceType::Focuser | DeviceType::Rotator
+                        DeviceType::Switch
+                            | DeviceType::Focuser
+                            | DeviceType::Rotator
+                            | DeviceType::FilterWheel
                     )
                 || matches!(
                     fault,
                     Fault::InvalidMotion | Fault::StalledMotion | Fault::StoppedShort
-                ) && !matches!(next.device_type, DeviceType::Focuser | DeviceType::Rotator)
+                ) && !matches!(
+                    next.device_type,
+                    DeviceType::Focuser | DeviceType::Rotator | DeviceType::FilterWheel
+                )
             {
                 return Err(invalid(
                     "Injected fault does not match the simulated source class",
@@ -543,12 +652,19 @@ impl SimulatedBackend {
             || update
                 .rotator
                 .as_ref()
-                .is_some_and(RotatorUpdate::replaces_motion);
+                .is_some_and(RotatorUpdate::replaces_motion)
+            || update
+                .filter_wheel
+                .as_ref()
+                .is_some_and(FilterWheelUpdate::replaces_motion);
         if let Some(update) = update.focuser {
             update.apply(next.focuser.as_mut().expect("Validated focuser source"))?;
         }
         if let Some(update) = update.rotator {
             update.apply(next.rotator.as_mut().expect("Validated rotator source"))?;
+        }
+        if let Some(update) = update.filter_wheel {
+            update.apply(next.filter_wheel.as_mut().expect("Validated wheel source"))?;
         }
         self.state = next;
         if replaces_motion {
@@ -563,6 +679,14 @@ impl SimulatedBackend {
             && state.fault != Fault::StalledMotion
         {
             match target {
+                MotionTarget::FilterWheel { position, previous } => {
+                    state.filter_wheel.as_mut().expect("Wheel motion").position =
+                        if state.fault == Fault::StoppedShort {
+                            previous
+                        } else {
+                            position
+                        };
+                }
                 MotionTarget::Focuser(target) => {
                     let focuser = state.focuser.as_mut().expect("Focuser motion");
                     focuser.is_moving = false;
@@ -604,9 +728,46 @@ impl SimulatedBackend {
                 .rotator
                 .as_ref()
                 .is_some_and(|state| !state.is_moving)
+            || self
+                .state
+                .filter_wheel
+                .as_ref()
+                .is_some_and(|state| state.position != -1)
         {
             self.motion = None;
         }
+    }
+    fn write_filterwheel(&mut self, member: &str, args: &Values) -> Result<(), SourceError> {
+        if member != "position" {
+            return Err(unsupported());
+        }
+        if args.len() != 1 {
+            return Err(invalid("Expected only Position"));
+        }
+        let state = self.state.filter_wheel.as_mut().expect("Wheel state");
+        let position = args
+            .get("Position")
+            .and_then(Value::as_i64)
+            .filter(|position| (0..state.names.len() as i64).contains(position))
+            .ok_or_else(|| invalid("Invalid simulated wheel slot"))? as i32;
+        if state.position == -1 {
+            return Err(SourceError::new(
+                ErrorKind::Busy,
+                "Simulated wheel is moving",
+            ));
+        }
+        if position != state.position {
+            self.motion = Some((
+                tokio::time::Instant::now()
+                    + std::time::Duration::from_secs_f64(state.move_duration_seconds),
+                MotionTarget::FilterWheel {
+                    position,
+                    previous: state.position,
+                },
+            ));
+            state.position = -1;
+        }
+        Ok(())
     }
     fn write_focuser(&mut self, member: &str, args: &Values) -> Result<(), SourceError> {
         let state = self.state.focuser.as_mut().expect("Focuser state");
@@ -792,6 +953,19 @@ impl SimulatedBackend {
             _ => {}
         }
         match self.state.device_type {
+            DeviceType::FilterWheel => {
+                if !args.is_empty() {
+                    return Err(invalid("Unexpected wheel parameters"));
+                }
+                let state = self.state.filter_wheel.as_ref().expect("Wheel state");
+                Ok(match member {
+                    "names" => json!(state.names),
+                    "focusoffsets" => json!(state.focus_offsets),
+                    "position" if self.state.fault == Fault::InvalidMotion => json!("-1"),
+                    "position" => json!(state.position),
+                    _ => return Err(unsupported()),
+                })
+            }
             DeviceType::Focuser => {
                 if !args.is_empty() {
                     return Err(invalid("Unexpected focuser parameters"));
@@ -957,16 +1131,16 @@ impl Backend for SimulatedBackend {
         Box::pin(async move {
             self.advance_motion();
             self.check_read().await?;
-            if self.state.device_type == DeviceType::Focuser {
-                self.write_focuser(&member, &args)?;
-                return if self.state.fault == Fault::UncertainWrite {
-                    Err(SourceError::uncertain())
-                } else {
-                    Ok(Value::Null)
-                };
-            }
-            if self.state.device_type == DeviceType::Rotator {
-                self.write_rotator(&member, &args)?;
+            if matches!(
+                self.state.device_type,
+                DeviceType::Focuser | DeviceType::Rotator | DeviceType::FilterWheel
+            ) {
+                match self.state.device_type {
+                    DeviceType::FilterWheel => self.write_filterwheel(&member, &args)?,
+                    DeviceType::Focuser => self.write_focuser(&member, &args)?,
+                    DeviceType::Rotator => self.write_rotator(&member, &args)?,
+                    _ => unreachable!(),
+                }
                 return if self.state.fault == Fault::UncertainWrite {
                     Err(SourceError::uncertain())
                 } else {

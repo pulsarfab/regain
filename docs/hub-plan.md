@@ -13,19 +13,21 @@ Native wheel metadata checkpoint 630b302 passes all eight jobs in both PR/push C
 installer acceptance. Reviewed wheel polling/runtime increments are pushed at
 08913c8. Push CI 37539201271 failed Windows initial focuser connection and an
 Intel macOS rotator cleanup assertion; PR 37539206029 passes all eight jobs.
-Verified Alpaca/native wheel publication is pushed at 0669339; new PR/push CI
-37541898392/37541893308 has seven successful jobs with Windows build/installer
-checks live. Both Windows test.ps1 steps pass, including private cold/production
-wheel registration checks; this does not establish interactive/hardware acceptance.
+Verified Alpaca/native wheel publication at 0669339 passes all eight jobs in both
+PR/push CI 37541898392/37541893308, including private cold/production wheel
+registration and packaging/installer checks. Reviewed COM/virtual wheel inputs
+are pushed at a586c76; new PR/push CI 37544747351/37544741219 is live. Private
+registered activation does not establish interactive/hardware acceptance.
 
 Current position: milestones 0 and 1 are complete. The scalar source/output paths
 in milestones 2 and 3 are implemented; their remaining acceptance gates are open.
 Milestone 4 has focuser and rotator publication through all three frontends.
 Rotator COM, virtual and dedicated simulation inputs and shared creation are
 implemented. Wheel publication through all three outputs is pushed. Windows COM
-wheel imports pass local worker/parent and full regression checks. Virtual wheel
-inputs pass focused private/network and native-worker simulation checks locally;
-dedicated wheel simulation/shared creation, panels and camera proxies remain.
+wheel imports and virtual wheel inputs pass local full regressions and are pushed.
+Dedicated wheel simulation passes local full Rust, NINA and both-architecture
+net48 confirmation, with a verified native setup capture. Shared wheel creation, panels and
+camera proxies remain.
 Milestone 5's coordinated groups are not yet
 implemented. PR #21 stays draft until the full plan passes.
 
@@ -42,7 +44,7 @@ Explicit metadata must match hardware slots, including on the low-level write
 path. Wheel runtime/IPC and cached diagnostics are implemented and verified
 locally. Alpaca publication is verified locally; native NINA/ASCOM publication
 passes managed checks. Windows COM imports pass private worker/parent checks;
-dedicated simulation and shared creation remain required before
+shared creation remains required before
 enabling wheel proxies in setup.
 
 Shared wheel polling increment is locally verified: the existing property poller supports
@@ -107,8 +109,22 @@ instead of the Alpaca sampler's Permanent error; the corrected assertion checks
 that every layer preserves the original error and valid metadata. Full Rust
 hub/Alpaca regressions, strict Clippy, Rust 1.89 all targets, generated contracts,
 Node/five schema checks, rebuilt-host NINA 209/209 and real net48 x86/x64 pass.
-This increment remains local while preceding publication CI finishes.
-Next: dedicated wheel simulation and shared creation, then all
+Reviewed COM/virtual increments are now pushed at a586c76 after preceding
+publication PR/push CI passes all eight jobs.
+
+Dedicated wheel simulation increment: the existing shared actor/timed-motion
+path now supports typed wheel metadata and Position, atomic sparse state updates,
+stalls/stopped-short/invalid motion and retained write uncertainty. Both setup
+frontends consume generated bounded string/Int32 array controls. Actual private
+IPC proves an update can apply before its reply exceeds the frame budget; both
+frontends now require reload rather than permit another mutation after that
+response. All 27 simulator cases, the new HTTP wheel case, full Rust hub/Alpaca
+suites, strict Clippy, Rust 1.89, generated contracts, Node/six schema checks,
+rebuilt-host NINA 212/212 and real net48 x86/x64 clients pass. The actual native
+capture is visually verified. Review corrected optional-array schema admission,
+boxed actor updates and local JSON error classification. This increment is local;
+preceding a586c76 CI is still running.
+Next: shared wheel creation, then all
 remaining typed devices/cameras/coordination and original acceptance/final gates.
 
 Runtime checkpoint push CI evidence: Windows initial focuser Connect receives
@@ -1150,3 +1166,4 @@ Keep existing device profiles and registrations compatible throughout migration.
 | 2026-10-06 | Added and reviewed native NINA/ASCOM wheel outputs using shared protocol validation, selections and registration. Preserved NINA filter settings and profile-change admission; verified nonblocking actual Position and no-replay fences. Corrected the asynchronous rotator cleanup assertion exposed on Intel macOS and expanded private transport failure evidence. | Full Rust hub/Alpaca, strict Clippy, Rust 1.89, contracts, Node/five schema checks, fresh-host NINA 209/209, real net48 x86/x64, both-architecture staging and seven-output manual COM exports pass. Retain first headless collection failure and cold HKCU SCM failure at existing Switch class; production/cold wheel registration needs CI. Runtime push 37539201271 fails Windows initial focuser Connect (cause unproved) and macOS cleanup assertion; PR 37539206029 has seven successes with Windows installer acceptance live. Keep verified wheel increments local until that run ends. Next: wheel COM imports, virtual/dedicated simulation/shared creation, then panels, cameras/coordination and every original final gate. |
 | 2026-10-06 | Verified preceding runtime PR CI and pushed reviewed wheel HTTP/native publication at 0669339 to draft PR #21. Implemented and reviewed Windows COM wheel imports using existing STA workers, typed polling/controllers and bounded array validation. | Runtime PR 37539206029 passes all eight jobs; its separate push failures remain retained. New publication PR/push CI 37541898392/37541893308 is live. COM import checks pass all 27 private worker and 16 actual registered parent cases, full Rust hub/Alpaca, strict Clippy, Rust 1.89, contracts, Node/five schema checks, fresh-host NINA 209/209 and real net48 x86/x64. Retain wrong fixture HRESULT and initial parent array-rejection failures; fixes preserve deadlines and error semantics. Keep imports local until preceding CI finishes. Next: wheel virtual/simulation/shared creation, panels, camera ownership/transport, coordination and every original remaining gate. |
 | 2026-10-06 | Added and reviewed virtual wheel inputs using shared typed connection supervision, controllers and cached metadata forwarding; extended actual EFW worker simulation through two nested outputs. | All 21 wheel and 20 native tests, full Rust hub/Alpaca suites, strict Clippy, Rust 1.89, generated contracts, Node/five schema checks, rebuilt-host NINA 209/209 and real net48 x86/x64 pass. Retain first cache classification failure; corrected assertions require original Permanent errors at every layer and valid metadata. Preceding 0669339 PR/push CI has seven successful jobs and successful Windows test.ps1 steps, including private SCM/production wheel registration; final build/installer checks remain live. Keep COM/virtual increments local until those runs finish. Next: dedicated wheel simulation/shared creation, panels, camera ownership/transport, coordination and every original remaining acceptance/final gate. |
+| 2026-10-06 | Added and reviewed dedicated wheel simulation using shared actors, timed motion, bounded array controls and atomic metadata. Actual IPC verifies applied updates with oversized replies; both frontends require reload without replay. | Full Rust hub/Alpaca suites, 27 simulator cases, strict Clippy, Rust 1.89, contracts, Node/six schema checks, fresh-host NINA 212/212 and real net48 x86/x64 pass. Actual WPF capture verified. Retain initial schema/test/Clippy failures and corrected evidence. Preceding a586c76 PR/push CI remains live; keep this increment local. Next: shared wheel creation, panels, cameras/coordination and every original acceptance/final gate. |

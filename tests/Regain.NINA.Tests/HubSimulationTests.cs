@@ -226,6 +226,7 @@ public sealed partial class HubNativeTests
     [InlineData("lost")]
     [InlineData("wrongRevision")]
     [InlineData("malformed")]
+    [InlineData("responseTooLarge")]
     public async Task NativeSimulationLostOrInvalidReplyRequiresReloadAndReadWithoutRepeatingChanges(string fault)
     {
         await using var host = await Host.Open(); using var attached = await Editor(host); await attached.ReloadAsync();
@@ -234,6 +235,9 @@ public sealed partial class HubNativeTests
             if (command.GetProperty("op").GetString() != "updateSimulation") return await host.Client.RequestAsync(command, token);
             writes++; var result = await host.Client.RequestAsync(command, token);
             if (fault == "lost") throw new HubException(HubFailure.Uncertain);
+            if (fault == "responseTooLarge") throw new HubException(HubFailure.Remote,new HubRemoteError(JsonSerializer.SerializeToElement(new {
+                code="responseTooLarge",message="Hub response exceeds the frame limit",upstreamCode=(int?)null,retryAfterSeconds=(double?)null,fields=Array.Empty<object>()
+            })));
             var reply = JsonNode.Parse(result.GetRawText())!;
             if (fault == "wrongRevision") reply["configurationRevision"] = Guid.NewGuid().ToString();
             if (fault == "malformed") reply["simulation"]!["fault"] = "not-a-fault";

@@ -80,5 +80,22 @@ class SchemaContractTests(unittest.TestCase):
         VALIDATOR.validate(config)
 
 
+    def test_wheel_simulation_update_contract(self):
+        schema = DESCRIPTION["simulationControl"]["schema"]
+        Draft202012Validator.check_schema(schema)
+        validator = Draft202012Validator(schema)
+        for patch in [{"filterWheel": {"position": -1}},
+                      {"filterWheel": {"names": ["L", "Hα", ""], "focusOffsets": [-2147483648, 0, 2147483647]}},
+                      {"filterWheel": {"moveDurationSeconds": 300}, "fault": "stalledMotion"}]:
+            validator.validate(patch)
+        for update in [{"names": []}, {"names": [0]}, {"names": [""] * 1025},
+                       {"focusOffsets": []}, {"focusOffsets": [1]}, {"focusOffsets": [0, 2147483648]},
+                       {"focusOffsets": [-2147483649, 0]}, {"focusOffsets": [0, 1.5]},
+                       {"position": -2}, {"position": 1024}, {"position": "0"},
+                       {"moveDurationSeconds": -1}, {"moveDurationSeconds": 301}, {"halt": True}]:
+            with self.subTest(update=update):
+                self.assertTrue(list(validator.iter_errors({"filterWheel": update})))
+
+
 if __name__ == "__main__":
     unittest.main()

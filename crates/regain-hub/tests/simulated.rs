@@ -728,7 +728,7 @@ fn config(kind: DeviceType) -> HubConfig {
         DeviceType::ObservingConditions => json!({"kind":"weather","measurements":{
             "temperature":{"sources":[{"kind":"property","source":source,"property":"temperature"}],"maximumAgeSeconds":1.0,"averageSeconds":0.0}
         }}),
-        DeviceType::Focuser | DeviceType::Rotator => {
+        DeviceType::Focuser | DeviceType::Rotator | DeviceType::FilterWheel => {
             json!({"kind":"proxy","source":source,"deviceType":kind})
         }
         _ => unreachable!(),
@@ -742,6 +742,8 @@ fn config(kind: DeviceType) -> HubConfig {
     assert!(config.validate().is_empty(), "{:?}", config.validate());
     config
 }
+#[path = "support/simulated_filterwheel.rs"]
+mod wheel;
 fn build(config: HubConfig) -> Arc<HubRuntime> {
     HubRuntime::build(
         config,

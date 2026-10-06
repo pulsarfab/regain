@@ -15,6 +15,10 @@ internal static class HubRotatorSimulation
 {
     internal static Guid AddTo(JsonObject config, params int[] numbers) => HubAccessorySimulation.AddTo(config, "rotator", numbers);
 }
+internal static class HubFilterWheelSimulation
+{
+    internal static Guid AddTo(JsonObject config, params int[] numbers) => HubAccessorySimulation.AddTo(config, "filterwheel", numbers);
+}
 internal static class HubAccessorySimulation
 {
     internal static Guid AddTo(JsonObject config, string type, params int[] numbers)

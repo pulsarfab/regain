@@ -3418,3 +3418,59 @@ failures remain recorded; later passes do not prove their causes resolved.
 Dedicated wheel simulation/shared creation, panels, cameras, coordination and
 every original acceptance/final gate remain required. Keep one draft PR #21;
 preceding publication CI must finish before these local increments are pushed.
+
+### Dedicated wheel simulation review (2026-10-06, local increment)
+
+The existing simulator now supports FilterWheel using the same actor, typed
+controller, timed motion, sampling ages, connection leases and uncertainty fence.
+Metadata validation reuses NativeFilterWheelMetadata; sparse updates validate a
+copy before assignment. Position/metadata injection replaces pending movement,
+while duration/age/fault patches retain it. Accepted moves report -1 until the
+monotonic deadline; disconnect cannot Halt or substitute a requested target.
+StoppedShort retains the prior slot, InvalidMotion corrupts only Position, and
+UncertainWrite applies once while retaining the shared fence after fault clear.
+No wheel Halt, calibration or focuser offset application was introduced.
+
+Both setup frontends consume generated bounded JSON-array controls. Validation
+retains strict Unicode byte limits, Int32 bounds, a zero offset reference, slot
+order and blank names. Status validation also checks array pairing and actual
+Position bounds. Review consolidated the typed simulator write/fault return path
+for focusers, rotators and wheels. Dedicated controls do not yet enable shared
+wheel creation in the generated forms.
+
+The first focused build failed on test-only json! repetition syntax; using Vec
+fixes it. All 26 simulator cases then pass. Independent JSON Schema validation
+finds that schema_with made optional FocusOffsets required; serde(default) now
+retains sparse patch semantics, and all six schema checks pass. The first HTTP
+case expected the generic driver code for busy; the existing adapter correctly
+maps it to 0x40b. Its corrected assertion and the HTTP case pass without changing
+production error mapping.
+
+Review also identifies an applied-but-oversized reply. A new actual framed IPC
+case proves a valid update can apply before responseTooLarge, without terminating
+the stream. Explicit smaller repair succeeds without truncation, replay or larger
+frame budgets. Both setup frontends now revoke review and require reload after
+that response. Existing no-replay frontend cases additionally exercise this error
+after one applied update. All 27 simulator cases, the HTTP case, six focused
+NINA/setup cases, Node and six schema checks pass. Evidence:
+artifacts/hub-wheel-simulation-{check,focused,focused-confirmed,contract-generate,
+schema,contract-confirmed,schema-confirmed,rpc,http,http-confirmed,host,
+node,node-confirmed,nina-focused}.log.
+
+Strict Clippy found that the larger inline simulation update inflated the actor
+command enum. Boxing that payload follows the IPC command design and avoids
+enlarging every queued command. Review also corrected local browser JSON parse
+errors to carry invalidValue; invalid input must not be presented as an unknown
+remote mutation. Full Rust hub/Alpaca suites, strict Clippy, Rust 1.89, generated
+contract freshness, Node/six schema checks, rebuilt-host NINA 212/212 and real
+net48 x86/x64 clients pass. Logs additionally include
+artifacts/hub-wheel-simulation-{clippy-confirmed,msrv,rust-confirmed,contract,
+host-final,node-final,nina,net48}.log. The actual WPF capture was visually checked;
+the workflow applies only selected Names, retains offsets/Position and verifies
+zero source leases. This is explicit simulation acceptance, not hardware proof.
+
+Preceding publication head 0669339 passes all eight jobs in both PR/push CI
+37541898392/37541893308. Reviewed COM/virtual increments are pushed at a586c76
+to the same draft PR #21; new PR/push CI 37544747351/37544741219 is live. Earlier
+unexplained Windows failures remain retained. Shared wheel creation, panels,
+cameras, coordination and every original acceptance/final gate remain required.

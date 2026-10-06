@@ -6,6 +6,44 @@ using Regain.TestFixtures;
 
 internal static partial class NativeOutputs
 {
+    internal static async Task SimulatedWheelRun(string executable,string path,Guid instance,JsonElement config,
+        Guid source,HubEditorSession editor,CancellationToken token)
+    {
+        HubSelection Binding(int number)=>new(){ConfigPath=path,InstanceId=instance,DeviceType="filterwheel",Simulated=true,
+            Label="Explicit simulation wheel",OutputId=config.GetProperty("outputs").EnumerateArray().Single(output=>
+                output.GetProperty("number").GetInt32()==number && output.GetProperty("device").GetProperty("deviceType").GetString()=="filterwheel").GetProperty("id").GetGuid()};
+        var controls=editor.SimulationControls(source); Require(controls.Count==6,"Wheel simulation descriptors");
+        var offsets=controls.Single(c=>c.Path.SequenceEqual(new[]{"filterWheel","focusOffsets"}));
+        Expect<InvalidOperationException>(()=>offsets.Parse("[1]")); Expect<InvalidOperationException>(()=>offsets.Parse("[0,2147483648]"));
+        await editor.UpdateSimulationAsync(source,JsonSerializer.SerializeToElement(new{filterWheel=new{
+            names=new[]{"L","Hα",""},focusOffsets=new[]{int.MinValue,0,int.MaxValue}}}),token);
+        using var first=new FilterWheelOutput(Binding(8),executable); using var second=new FilterWheelOutput(Binding(9),executable);
+        Query<IFilterWheelV3>(first); Query<IFilterWheelV2>(first);
+        first.Connected=true; second.Connect(); await Until(()=>!second.Connecting,token);
+        Require(first.Names.SequenceEqual(new[]{"L","Hα",""}) && second.FocusOffsets.SequenceEqual(new[]{int.MinValue,0,int.MaxValue}),"Wheel simulation metadata");
+        await editor.UpdateSimulationAsync(source,JsonSerializer.SerializeToElement(new{fault="stalledMotion"}),token);
+        first.Position=2; Require(second.Position==-1,"Wheel simulation nonblocking motion");
+        Expect<global::ASCOM.DriverException>(()=>second.Position=1);
+        first.Connected=false; Require(second.Connected && second.Position==-1,"Wheel disconnect changed sibling motion");
+        await editor.UpdateSimulationAsync(source,JsonSerializer.SerializeToElement(new{fault="none"}),token);
+        await Until(()=>second.Position==2,token);
+        await Until(()=>second.DeviceState.Count==1 && second.DeviceState[0].Value is short position && position==2,token);
+        await editor.UpdateSimulationAsync(source,JsonSerializer.SerializeToElement(new{fault="stoppedShort"}),token);
+        second.Position=1;
+        await Until(()=>second.Position!=-1,token); Require(second.Position==2,"Stopped-short wheel fabricated target");
+        await editor.UpdateSimulationAsync(source,JsonSerializer.SerializeToElement(new{fault="invalidMotion"}),token);
+        Expect<global::ASCOM.ValueNotSetException>(()=>_=second.Position);
+        Expect<global::ASCOM.ValueNotSetException>(()=>second.Position=0);
+        Require(second.Names.Length==3,"Invalid Position erased wheel metadata");
+        await editor.UpdateSimulationAsync(source,JsonSerializer.SerializeToElement(new{fault="uncertainWrite"}),token);
+        Expect<global::ASCOM.DriverException>(()=>second.Position=1);
+        await editor.UpdateSimulationAsync(source,JsonSerializer.SerializeToElement(new{fault="none"}),token);
+        Expect<global::ASCOM.DriverException>(()=>second.Position=0);
+        while((await editor.SourceStatusAsync(source,token)).GetProperty("simulation").GetProperty("filterWheel").GetProperty("position").GetInt32()!=1) await Task.Delay(10,token);
+        Require((await editor.SourceStatusAsync(source,token)).GetProperty("writeUncertain").GetBoolean(),"Fault clear removed wheel uncertainty");
+        second.Connected=false;
+        Console.WriteLine($"ASCOM simulated wheel {IntPtr.Size*8}-bit: shared array controls, current/legacy QI, timed Position, independent leases, stopped-short/malformed motion and retained uncertainty passed");
+    }
     internal static async Task WheelRun(string executable,string path,Guid instance,JsonElement config,
         HubFilterWheelServer source,CancellationToken token)
     {

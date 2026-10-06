@@ -1,6 +1,170 @@
 use super::*;
 use std::sync::atomic::Ordering::SeqCst;
 
+#[tokio::test]
+async fn dedicated_wheel_simulation_publishes_arrays_timed_position_and_shared_faults() {
+    let mut config = HubConfig::empty();
+    let source = uuid::Uuid::new_v4();
+    config.sources.push(
+        serde_json::from_value(json!({"id":source,"label":"Explicit simulated wheel",
+        "backend":{"kind":"simulated","deviceType":"filterwheel"},"polling":{"pollSeconds":0.1}}))
+        .unwrap(),
+    );
+    for number in [4, 17] {
+        config.outputs.push(
+            serde_json::from_value(
+                json!({"id":uuid::Uuid::new_v4(),"number":number,"label":"Simulated wheel",
+            "device":{"kind":"proxy","source":source,"deviceType":"filterwheel"}}),
+            )
+            .unwrap(),
+        );
+    }
+    let f = Fixture::from_config(config).await;
+    assert!(f.hub.outputs().iter().all(|output| output.simulated));
+    assert!(
+        f.ok("GET", "/api/v1/filterwheel/4/name", "")
+            .await
+            .as_str()
+            .unwrap()
+            .ends_with("(Simulation)")
+    );
+    f.hub.update_simulation(source,serde_json::from_value(json!({"filterWheel":{"names":["L","Hα",""],"focusOffsets":[-2147483648i64,0,2147483647]}})).unwrap()).await.unwrap();
+    tokio::time::timeout(Duration::from_secs(3), async {
+        while f.hub.source_snapshot(source).unwrap().lease_count != 0 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    for (number, client) in [(4, 1), (17, 2)] {
+        f.ok(
+            "PUT",
+            &format!("/api/v1/filterwheel/{number}/connected"),
+            &format!("ClientID={client}&Connected=true"),
+        )
+        .await;
+    }
+    assert_eq!(
+        f.ok("GET", "/api/v1/filterwheel/4/names", "ClientID=1")
+            .await,
+        json!(["L", "Hα", ""])
+    );
+    assert_eq!(
+        f.ok("GET", "/api/v1/filterwheel/17/focusoffsets", "ClientID=2")
+            .await,
+        json!([-2147483648i64, 0, 2147483647])
+    );
+    assert_eq!(
+        f.call(
+            "PUT",
+            "/api/v1/filterwheel/4/position",
+            "ClientID=1&Position=3"
+        )
+        .await["ErrorNumber"],
+        0x401
+    );
+    f.hub
+        .update_simulation(
+            source,
+            serde_json::from_value(json!({"fault":"stalledMotion"})).unwrap(),
+        )
+        .await
+        .unwrap();
+    f.ok(
+        "PUT",
+        "/api/v1/filterwheel/4/position",
+        "ClientID=1&Position=2",
+    )
+    .await;
+    assert_eq!(
+        f.ok("GET", "/api/v1/filterwheel/17/position", "ClientID=2")
+            .await,
+        -1
+    );
+    assert_eq!(
+        f.call(
+            "PUT",
+            "/api/v1/filterwheel/17/position",
+            "ClientID=2&Position=1"
+        )
+        .await["ErrorNumber"],
+        0x40b
+    );
+    f.ok(
+        "PUT",
+        "/api/v1/filterwheel/4/connected",
+        "ClientID=1&Connected=false",
+    )
+    .await;
+    assert_eq!(
+        f.ok("GET", "/api/v1/filterwheel/17/connected", "ClientID=2")
+            .await,
+        true
+    );
+    assert_eq!(
+        f.ok("GET", "/api/v1/filterwheel/17/position", "ClientID=2")
+            .await,
+        -1
+    );
+    f.hub
+        .update_simulation(
+            source,
+            serde_json::from_value(json!({"fault":"none"})).unwrap(),
+        )
+        .await
+        .unwrap();
+    tokio::time::timeout(Duration::from_secs(3), async {
+        while f
+            .ok("GET", "/api/v1/filterwheel/17/position", "ClientID=2")
+            .await
+            == -1
+        {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(
+        f.ok("GET", "/api/v1/filterwheel/17/position", "ClientID=2")
+            .await,
+        2
+    );
+    f.hub
+        .update_simulation(
+            source,
+            serde_json::from_value(json!({"fault":"uncertainWrite"})).unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        f.call(
+            "PUT",
+            "/api/v1/filterwheel/17/position",
+            "ClientID=2&Position=1"
+        )
+        .await["ErrorNumber"],
+        0x500
+    );
+    f.hub
+        .update_simulation(
+            source,
+            serde_json::from_value(json!({"fault":"none"})).unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        f.call(
+            "PUT",
+            "/api/v1/filterwheel/17/position",
+            "ClientID=2&Position=0"
+        )
+        .await["ErrorNumber"],
+        0x500
+    );
+    assert!(f.hub.source_snapshot(source).unwrap().write_uncertain);
+    f.finish().await;
+}
+
 fn moves(upstream: &AccessoryUpstream) -> Vec<AccessoryWrite> {
     upstream
         .writes

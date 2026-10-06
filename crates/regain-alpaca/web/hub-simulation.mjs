@@ -25,9 +25,36 @@ export function validateSimulationValue(control, value) {
       valid = typeof value === 'number' && bounds(value) && (control.precision === undefined || control.precision === 'single' && bounds(Math.fround(value))); break;
     }
     case 'integer': valid = Number.isInteger(value) && value >= -2147483648 && value <= 2147483647 && (control.minimum === undefined || value >= control.minimum) && (control.maximum === undefined || value <= control.maximum); break;
+    case 'strings':
+    case 'integers': {
+      valid = Array.isArray(value) && value.length >= control.minItems && value.length <= control.maxItems;
+      if (!valid) break;
+      let bytes = 0;
+      for (const item of value) {
+        if (control.type === 'integers') {
+          if (!Number.isInteger(item) || item < control.minimum || item > control.maximum) { valid = false; break; }
+        } else {
+          if (typeof item !== 'string' || item.length > control.maxUtf8Bytes) { valid = false; break; }
+          for (const character of item) {
+            const point = character.codePointAt(0);
+            if (point >= 0xd800 && point <= 0xdfff) { valid = false; break; }
+            bytes += point <= 0x7f ? 1 : point <= 0x7ff ? 2 : point <= 0xffff ? 3 : 4;
+          }
+          if (!valid || bytes > control.maxUtf8Bytes) { valid = false; break; }
+        }
+      }
+      if (control.contains !== undefined && !value.includes(control.contains)) valid = false;
+      break;
+    }
     default: valid = false;
   }
   if (!valid) fail(`Invalid ${control.label}`); return value;
+}
+export function parseSimulationArray(control,text) {
+  if (!['strings','integers'].includes(control.type)) fail(`Invalid ${control.label}`);
+  let value;
+  try { value=JSON.parse(text); } catch { fail(`Invalid ${control.label}: enter a JSON array`); }
+  return validateSimulationValue(control,value);
 }
 export class SimulationSetup {
   constructor(rpc,revokeReview) { this.rpc = rpc; this.revokeReview = revokeReview; this.busy = false; this.uncertain = false; }
@@ -49,6 +76,7 @@ export class SimulationSetup {
         let value = status; for (const key of control.path) { if (!object(value) || !(key in value)) protocol(); value = value[key]; }
         validateSimulationValue(control,value);
       }
+      if (status.filterWheel && (status.filterWheel.names.length !== status.filterWheel.focusOffsets.length || status.filterWheel.position >= status.filterWheel.names.length)) protocol();
       return status;
     } catch { protocol(); }
   }
@@ -83,7 +111,7 @@ export class SimulationSetup {
     this.busy = true;
     try { return await work(); }
     catch (error) {
-      if (!error.detail || ['uncertain','revisionConflict','disconnected','unavailable','timeout','transient'].includes(error.detail.code)) {
+      if (!error.detail || ['uncertain','revisionConflict','disconnected','unavailable','timeout','transient','responseTooLarge'].includes(error.detail.code)) {
         this.uncertain = true; error.uncertain = true;
         this.revokeReview();
       }

@@ -1,7 +1,7 @@
 import { configurationContract } from './hub-config.mjs';
 import { renderConfiguration, previewValue } from './hub-form.mjs';
 import { CredentialSetup } from './hub-credentials.mjs';
-import { SimulationSetup } from './hub-simulation.mjs';
+import { SimulationSetup, parseSimulationArray } from './hub-simulation.mjs';
 import { OutputDiagnostics, diagnosticSummary } from './hub-diagnostics.mjs';
 const $ = id => document.getElementById(id);
 let base, draft, reader, description, reviewed, dirty = false, busy = false, uncertain = false;
@@ -126,12 +126,12 @@ function renderSimulation(box,source) {
   const inputs = setup.controls.map(control => {
     const row = document.createElement('div'); const label = document.createElement('label'); const include = document.createElement('input'); include.type = 'checkbox'; label.append(include,`Change ${control.label}`); row.append(label);
     const hint = document.createElement('p'); hint.className = 'hint'; hint.textContent = control.description; row.append(hint);
-    const bounds = [['minimum','Minimum'],['exclusiveMinimum','Greater than'],['maximum','Maximum'],['step','Step']].filter(([key])=>control[key]!==undefined).map(([key,label])=>`${label} ${control[key]}`);
+    const bounds = [['minimum','Minimum'],['exclusiveMinimum','Greater than'],['maximum','Maximum'],['step','Step'],['minItems','Minimum items'],['maxItems','Maximum items'],['maxUtf8Bytes','Maximum UTF-8 bytes']].filter(([key])=>control[key]!==undefined).map(([key,label])=>`${label} ${control[key]}`);
     if (bounds.length) { const note = document.createElement('p'); note.className='hint'; note.textContent=bounds.join(' · '); row.append(note); }
     const input = document.createElement(control.type === 'string' ? 'select' : 'input'); input.dataset.simulationPath = control.path.join('/');
     if (control.type === 'string') for (const option of control.enum) { const item = document.createElement('option'); item.value = option; item.textContent = option; input.append(item); }
     else {
-      input.type = control.type === 'boolean' ? 'checkbox' : 'number';
+      input.type = control.type === 'boolean' ? 'checkbox' : ['strings','integers'].includes(control.type) ? 'text' : 'number';
       if (control.type === 'number' || control.type === 'integer') { input.step = control.type === 'integer' ? '1' : 'any'; if (control.minimum !== undefined) input.min = control.minimum; if (control.maximum !== undefined) input.max = control.maximum; }
     }
     input.setAttribute('aria-label',control.label); row.append(input);
@@ -139,7 +139,7 @@ function renderSimulation(box,source) {
     if (control.nullable) { const label = document.createElement('label'); absent = document.createElement('input'); absent.type = 'checkbox'; label.append(absent,'Sensor absent'); row.append(label); }
     function enabled() { input.disabled = !include.checked || absent?.checked === true; if (absent) absent.disabled = !include.checked; }
     include.onchange = enabled; if (absent) absent.onchange = enabled;
-    function set(value) { include.checked = false; if (absent) absent.checked = value === null; if (control.type === 'boolean') input.checked = value === true; else input.value = value ?? ''; enabled(); }
+    function set(value) { include.checked = false; if (absent) absent.checked = value === null; if (control.type === 'boolean') input.checked = value === true; else input.value = ['strings','integers'].includes(control.type) ? JSON.stringify(value) : value ?? ''; enabled(); }
     set(control.default); fields.append(row);
     return {control,include,input,absent,set};
   });
@@ -148,7 +148,7 @@ function renderSimulation(box,source) {
   read.onclick = () => action(async () => { show(await setup.read()); status(`Current simulation: ${source.label}. No equipment connection was opened.`); }); fields.append(read);
   const apply = document.createElement('button'); apply.type = 'button'; apply.textContent = 'Apply selected simulation changes';
   apply.onclick = () => action(async () => {
-    const selected = inputs.filter(i => i.include.checked).map(i => ({path:i.control.path,value:i.absent?.checked ? null : i.control.type === 'boolean' ? i.input.checked : ['number','integer'].includes(i.control.type) ? i.input.valueAsNumber : i.input.value}));
+    const selected = inputs.filter(i => i.include.checked).map(i => ({path:i.control.path,value:i.absent?.checked ? null : i.control.type === 'boolean' ? i.input.checked : ['number','integer'].includes(i.control.type) ? i.input.valueAsNumber : ['strings','integers'].includes(i.control.type) ? parseSimulationArray(i.control,i.input.value) : i.input.value}));
     show(await setup.update(selected)); status(`Simulation updated: ${source.label}. Configuration is unchanged; normal safety polling and confirmation apply.`);
   },true); fields.append(apply);
 }

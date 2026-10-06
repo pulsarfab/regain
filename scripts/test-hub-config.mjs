@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { configurationContract } from '../crates/regain-alpaca/web/hub-config.mjs';
 import { initialValue, newIdentity, previewValue, renderConfiguration } from '../crates/regain-alpaca/web/hub-form.mjs';
 import { CredentialSetup, credentialContract } from '../crates/regain-alpaca/web/hub-credentials.mjs';
-import { SimulationSetup, simulationControls, validateSimulationValue } from '../crates/regain-alpaca/web/hub-simulation.mjs';
+import { SimulationSetup, simulationControls, validateSimulationValue, parseSimulationArray } from '../crates/regain-alpaca/web/hub-simulation.mjs';
 import { OutputDiagnostics, diagnosticSummary, validateDiagnosticSchema } from '../crates/regain-alpaca/web/hub-diagnostics.mjs';
 
 const description = JSON.parse(readFileSync(new URL('../contracts/hub-config.json', import.meta.url), 'utf8'));
@@ -138,12 +138,36 @@ function simulationState(type) {
   }
   return state;
 }
-for (const type of ['switch','safetymonitor','observingconditions','focuser','rotator']) {
+for (const type of ['switch','safetymonitor','observingconditions','focuser','rotator','filterwheel']) {
   const fields = simulationControls(simDescription,simulatedSource(type));
-  assert.equal(fields.length,type==='switch'?5:type==='safetymonitor'?2:type==='rotator'?12:15);
+  assert.equal(fields.length,type==='switch'?5:type==='safetymonitor'?2:type==='rotator'?12:type==='filterwheel'?6:15);
   assert.deepEqual(fields.find(f=>f.path[0]==='fault').enum,simDescription.faultsByDeviceType[type]);
 }
 assert.deepEqual(simulationControls(simDescription,{backend:{kind:'native'}}),[]);
+{
+  const fields = simulationControls(simDescription,simulatedSource('filterwheel'));
+  const names = fields.find(f=>f.path[1]==='names'), offsets = fields.find(f=>f.path[1]==='focusOffsets');
+  for(const value of [[],[0],['\ud800'],['x'.repeat(names.maxUtf8Bytes+1)],Array(1025).fill('')]) assert.throws(()=>validateSimulationValue(names,value));
+  for(const value of [[],[1],['0'],[0,1.5],[0,2147483648],[0,-2147483649],Array(1025).fill(0)]) assert.throws(()=>validateSimulationValue(offsets,value));
+  assert.deepEqual(validateSimulationValue(names,['L','Hα','😀','']),['L','Hα','😀','']);
+  assert.deepEqual(validateSimulationValue(offsets,[-2147483648,0,2147483647]),[-2147483648,0,2147483647]);
+  for(const text of ['', '[', 'L,R', '{}','null','[0]']) assert.throws(()=>parseSimulationArray(names,text),error=>error.detail.code==='invalidValue');
+  assert.deepEqual(parseSimulationArray(names,'["L","Hα",""]'),['L','Hα','']);
+  assert.deepEqual(parseSimulationArray(offsets,'[-12,0,17]'),[-12,0,17]);
+  let requests=0; const state=simulationState('filterwheel');
+  const setup=new SimulationSetup(async command=>{
+    requests++; assert.deepEqual(command.update,{filterWheel:{names:['L','Hα',''],focusOffsets:[-12,0,17]}});
+    Object.assign(state.filterWheel,command.update.filterWheel);
+    return {source:setup.source.id,configurationRevision:simRevision,simulation:state};
+  },()=>{});
+  setup.load(simDescription,simulatedSource('filterwheel'),simRevision);
+  await assert.rejects(setup.update([{path:['filterWheel','focusOffsets'],value:[1]}])); assert.equal(requests,0);
+  assert.deepEqual((await setup.update([{path:['filterWheel','names'],value:['L','Hα','']},{path:['filterWheel','focusOffsets'],value:[-12,0,17]}])).filterWheel.focusOffsets,[-12,0,17]);
+  for(const mutate of [s=>s.filterWheel.names=[],s=>s.filterWheel.focusOffsets=[0],s=>s.filterWheel.position=3,
+    s=>s.filterWheel.position=-2,s=>s.filterWheel.focusOffsets=[0,2147483648,17],s=>s.filterWheel.extra=0,s=>delete s.filterWheel.names]) {
+    const malformed=structuredClone(state); mutate(malformed); assert.throws(()=>setup.statusValue(malformed));
+  }
+}
 const focuserFields = simulationControls(simDescription,simulatedSource('focuser'));
 const positionField = focuserFields.find(field => field.path[1] === 'position');
 assert.equal(positionField.type,'integer');
@@ -188,7 +212,7 @@ const weatherFields = simulationControls(simDescription,simulatedSource('observi
 const pressure = weatherFields.find(f=>f.path[1]==='pressure');
 assert.throws(()=>validateSimulationValue(pressure,0)); assert.equal(validateSimulationValue(pressure,null),null);
 assert.throws(()=>validateSimulationValue(weatherFields.find(f=>f.path[1]==='temperature'),-273.16));
-for (const failure of ['lost','wrongRevision','wrongSource','malformed','unavailable']) {
+for (const failure of ['lost','wrongRevision','wrongSource','malformed','unavailable','responseTooLarge']) {
   let requests = 0, review = true; const state = simulationState('switch');
   const source = simulatedSource('switch');
   const setup = new SimulationSetup(async command => {
@@ -196,7 +220,7 @@ for (const failure of ['lost','wrongRevision','wrongSource','malformed','unavail
     requests++; assert.equal(command.expectedRevision,simRevision); assert.deepEqual(command.update,{switchValues:{1:42}});
     state.switchValues[1]=42;
     if (failure==='lost') throw new Error('Lost reply');
-    if (failure==='unavailable') { const error = new Error('Unavailable'); error.detail={code:'unavailable'}; throw error; }
+    if (failure==='unavailable' || failure==='responseTooLarge') { const error = new Error('Unavailable reply'); error.detail={code:failure}; throw error; }
     const result = {source:source.id,configurationRevision:simRevision,simulation:structuredClone(state)};
     if (failure==='wrongRevision') result.configurationRevision=source.id;
     if (failure==='wrongSource') result.source=simRevision;

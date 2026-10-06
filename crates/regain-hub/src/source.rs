@@ -350,7 +350,7 @@ type Reply<T> = oneshot::Sender<Result<T, SourceError>>;
 enum Command {
     UpdateSimulation {
         lease: Uuid,
-        update: crate::simulated::SimulationUpdate,
+        update: Box<crate::simulated::SimulationUpdate>,
         reply: Reply<crate::simulated::SimulationStatus>,
     },
     Shutdown,
@@ -618,7 +618,7 @@ impl SourceHandle {
         let (reply, response) = oneshot::channel();
         self.enqueue(Command::UpdateSimulation {
             lease,
-            update,
+            update: Box::new(update),
             reply,
         })?;
         response.await.map_err(|_| closed())?
@@ -914,7 +914,7 @@ impl Actor {
                             "Acquire source control before changing simulation",
                         ));
                     }
-                    self.backend.update_simulation(update)
+                    self.backend.update_simulation(*update)
                 });
                 if result.is_ok() {
                     self.state.sampled_at_seconds = None;

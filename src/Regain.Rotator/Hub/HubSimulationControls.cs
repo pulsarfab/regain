@@ -4,7 +4,7 @@ using System.Text.Json.Nodes;
 
 namespace Regain.Hub;
 
-/// Scalar controls are described by the host, including sparse nested updates.
+/// Test controls are described by the host, including sparse nested updates.
 public sealed class HubSimulationControl
 {
     public JsonElement Descriptor { get; }
@@ -33,6 +33,9 @@ public sealed class HubSimulationControl
         } else if (Type == "boolean") {
             if (!bool.TryParse(text, out var flag)) throw new InvalidOperationException("Invalid " + Label);
             value = JsonSerializer.SerializeToElement(flag);
+        } else if (Type is "strings" or "integers") {
+            try { using var document = JsonDocument.Parse(text); value = document.RootElement.Clone(); }
+            catch (JsonException) { throw new InvalidOperationException("Invalid " + Label); }
         } else value = JsonSerializer.SerializeToElement(text);
         Validate(value); return value;
     }
@@ -48,9 +51,29 @@ public sealed class HubSimulationControl
             "number" => value.ValueKind == JsonValueKind.Number && value.TryGetDouble(out var number) && !double.IsNaN(number) && !double.IsInfinity(number) &&
                 NumberBounds(number) && (!Descriptor.TryGetProperty("precision", out var precision)
                     || precision.GetString() == "single" && NumberBounds((float)number)),
+            "strings" or "integers" => ArrayBounds(value),
             _ => false
         };
         if (!valid) throw new InvalidOperationException("Invalid " + Label);
+    }
+    private bool ArrayBounds(JsonElement value)
+    {
+        if (value.ValueKind != JsonValueKind.Array || value.GetArrayLength() < Descriptor.GetProperty("minItems").GetInt32()
+            || value.GetArrayLength() > Descriptor.GetProperty("maxItems").GetInt32()) return false;
+        try {
+            long bytes = 0; var reference = false;
+            foreach (var item in value.EnumerateArray()) {
+                if (Type == "integers") {
+                    if (item.ValueKind != JsonValueKind.Number || !item.TryGetInt32(out var integer) || !NumberBounds(integer)) return false;
+                    reference |= Descriptor.TryGetProperty("contains", out var required) && integer == required.GetInt32();
+                } else {
+                    if (item.ValueKind != JsonValueKind.String) return false;
+                    bytes += new System.Text.UTF8Encoding(false,true).GetByteCount(item.GetString()!);
+                    if (bytes > Descriptor.GetProperty("maxUtf8Bytes").GetInt32()) return false;
+                }
+            }
+            return !Descriptor.TryGetProperty("contains",out _) || reference;
+        } catch (ArgumentException) { return false; }
     }
     private bool NumberBounds(double number) => !double.IsNaN(number) && !double.IsInfinity(number) &&
         (!Descriptor.TryGetProperty("minimum", out var minimum) || number >= minimum.GetDouble()) &&
@@ -118,7 +141,7 @@ public sealed partial class HubEditorSession
             LastSourceObservation = Observation("simulationUpdate", result); return result.Clone();
         } catch (HubException error) {
             if (started && (error.Failure is not (HubFailure.Remote or HubFailure.Busy or HubFailure.InvalidRequest) ||
-                error.Remote?.Code is "uncertain" or "revisionConflict" or "disconnected" or "unavailable" or "timeout" or "transient")) {
+                error.Remote?.Code is "uncertain" or "revisionConflict" or "disconnected" or "unavailable" or "timeout" or "transient" or "responseTooLarge")) {
                 reviewed = null; State = HubEditorState.Uncertain;
             } throw;
         } catch (OperationCanceledException) { if (started) { reviewed = null; State = HubEditorState.Uncertain; } throw; }
@@ -135,6 +158,10 @@ public sealed partial class HubEditorSession
         foreach (var group in controls.Where(control => control.Path.Length == 2).GroupBy(control => control.Path[0]))
             HubWire.Members(status.GetProperty(group.Key), group.Select(control => control.Path[1]).ToArray());
         foreach (var control in controls) control.Read(status);
+        if (status.TryGetProperty("filterWheel",out var wheel)) {
+            var metadata = HubFilterWheelProtocol.Metadata(wheel.GetProperty("names"),wheel.GetProperty("focusOffsets"));
+            if (wheel.GetProperty("position").GetInt32() >= metadata.Names.Length) throw new HubException(HubFailure.Protocol);
+        }
     }
     internal static JsonElement SimulationPatch(IEnumerable<KeyValuePair<HubSimulationControl, JsonElement>> selected)
     {

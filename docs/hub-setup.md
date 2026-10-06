@@ -470,8 +470,7 @@ Windows COM wheel imports use the existing isolated x86/x64 workers and preserve
 managed or borrowed connections. A saved virtual source can reuse another wheel
 output through the same leases and generation checks; its cached metadata keeps
 the original sample age and errors. Wheel creation in the generated forms,
-including its COM source choice, and dedicated simulated wheel controls remain
-under development.
+including its COM source choice, remains under development.
 
 Names retain their order, Unicode and blank slots. FocusOffsets retain signed
 Int32 values and are metadata; the hub does not move a focuser automatically.
@@ -483,3 +482,20 @@ reconciled. Standard wheel outputs do not offer calibration or a fabricated Halt
 Private loopback and explicit production-worker simulation provide development
 test evidence. Wheel hardware, interactive setup and conformance acceptance are
 still required by the plan.
+
+### Test a simulated wheel
+
+For a saved explicit simulated wheel source, open **Simulation** in shared setup.
+Read its current state, select only the fields to change, and apply the selected
+changes. Names and signed focus offsets use JSON arrays in slot order. Change
+both arrays together when changing the slot count; at least one offset must be
+zero. Position is zero-based, with -1 representing movement.
+
+![Shared wheel simulation controls](images/hub-native-wheel-simulation.png)
+
+This actual WPF capture selects only Names. The verified workflow retains
+Position and offsets and acquires no equipment leases. Metadata or explicit
+Position injection replaces pending test movement; duration and fault changes
+retain it. Clearing a fault does not clear an uncertain-write fence. If an update
+reply is lost or too large, reload and read the applied state before changing it
+again; setup never repeats the update automatically.
