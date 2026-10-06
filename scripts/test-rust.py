@@ -384,6 +384,10 @@ def continuous(binary_dir):
                 assert status["mode"] == expected
                 first, pixels = worker.call("stream-download")
                 assert len(pixels) == 128 * 128 * 2
+                timing = first["exposureTiming"]
+                assert timing["basis"] == "host-receipt-estimate"
+                assert timing["receivedUnixMilliseconds"] - timing["estimatedStartUnixMilliseconds"] == 1
+                assert timing["freshnessMarginMilliseconds"] >= 1
                 worker.call("stream-download", error=True)
                 advanced = wait_for_acquired_frames(worker, status["acquiredFrames"] + 1)
                 assert advanced["acquiredFrames"] > status["acquiredFrames"]

@@ -5,10 +5,36 @@ use serde_json::{Value, json};
 use std::{
     io::{Read, Write},
     sync::{Arc, Mutex, mpsc},
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 type Frame = (Value, Vec<u8>);
+
+/// Host-side estimate, NOT a sensor timestamp or guaranteed lower bound.
+/// Include a full exposure/raw-cadence margin for consumers choosing a
+/// conservative post-event frame. Native buffering/readout remain uncertain.
+fn exposure_timing(
+    received_ms: u64,
+    exposure_us: u64,
+    raw_interval: Option<Duration>,
+    settled: bool,
+) -> Value {
+    if !settled || exposure_us == 0 || received_ms == 0 {
+        return Value::Null;
+    }
+    let exposure_ms = exposure_us.div_ceil(1000);
+    let margin_ms = exposure_ms.max(raw_interval.map_or(0, |d| {
+        u64::try_from(d.as_millis())
+            .unwrap_or(u64::MAX)
+            .saturating_add(1)
+    }));
+    json!({
+        "basis":"host-receipt-estimate",
+        "receivedUnixMilliseconds":received_ms,
+        "estimatedStartUnixMilliseconds":received_ms.saturating_sub(exposure_ms),
+        "freshnessMarginMilliseconds":margin_ms
+    })
+}
 
 /// Published camera-independent state. Never hold this lock across a backend
 /// call or pipe write: SDK reads can block, and clients can stop reading.
@@ -384,6 +410,11 @@ impl Stream {
             }
             let mut frame = command("download", Value::Null)?;
             let raw_at = Instant::now();
+            let received_ms = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .ok()
+                .and_then(|d| u64::try_from(d.as_millis()).ok())
+                .unwrap_or(0);
             self.raw_interval = self.last_raw_at.map(|t| raw_at.duration_since(t));
             self.last_raw_at = Some(raw_at);
             self.raw_frames += 1;
@@ -468,6 +499,12 @@ impl Stream {
             frame.0["acquisitionSequence"] = json!(self.acquired);
             frame.0["settingsGeneration"] = json!(self.generation);
             frame.0["settingsSettled"] = json!(!transitional);
+            frame.0["exposureTiming"] = exposure_timing(
+                received_ms,
+                params["microseconds"].as_u64().unwrap_or(0),
+                self.raw_interval,
+                !transitional,
+            );
             frame.0["rawSequence"] = json!(self.raw_frames);
             frame.0["rawFrameIntervalMilliseconds"] =
                 json!(self.raw_interval.map(|d| d.as_millis()));
@@ -632,6 +669,29 @@ pub(super) fn serve(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn exposure_estimate_keeps_long_inflight_and_buffer_margin_explicit() {
+        for seconds in [30, 60] {
+            let timing = exposure_timing(
+                1_000_000,
+                seconds * 1_000_000,
+                Some(Duration::from_secs(seconds)),
+                true,
+            );
+            assert_eq!(timing["basis"], "host-receipt-estimate");
+            assert_eq!(
+                timing["estimatedStartUnixMilliseconds"],
+                1_000_000 - seconds * 1000
+            );
+            assert_eq!(timing["freshnessMarginMilliseconds"], seconds * 1000 + 1);
+        }
+        assert!(exposure_timing(1000, 1_000_000, None, false).is_null());
+        assert!(exposure_timing(1000, 0, None, true).is_null());
+        assert!(exposure_timing(0, 1000, None, true).is_null());
+        let delayed = exposure_timing(1_000_000, 30_000_000, Some(Duration::from_secs(90)), true);
+        assert_eq!(delayed["freshnessMarginMilliseconds"], 90_001);
+    }
     fn backend(method: &str, p: Value) -> Result<Frame> {
         Ok((
             match method {
@@ -665,6 +725,7 @@ mod tests {
             .command("stream-download", Value::Null, &mut backend)
             .unwrap();
         assert_eq!(frame.0["acquisitionSequence"], 200);
+        assert_eq!(frame.0["exposureTiming"]["basis"], "host-receipt-estimate");
         assert_eq!(frame.1, vec![42; 8]);
         for _ in 0..200 {
             s.tick(&mut backend);
@@ -702,6 +763,7 @@ mod tests {
                 .command("stream-download", Value::Null, &mut backend)
                 .unwrap();
             assert_eq!(frame.0["settingsSettled"], false);
+            assert!(frame.0["exposureTiming"].is_null());
             assert_eq!(frame.0["rawSequence"], sequence);
             assert_eq!(frame.0["settingsGeneration"], generation);
         }
@@ -712,6 +774,7 @@ mod tests {
             .command("stream-download", Value::Null, &mut backend)
             .unwrap();
         assert_eq!(frame.0["settingsSettled"], true);
+        assert_eq!(frame.0["exposureTiming"]["basis"], "host-receipt-estimate");
         assert_eq!(s.raw_frames, 5);
         assert_eq!(s.transition_frames, 2);
         assert_eq!(s.delivered, 3);
