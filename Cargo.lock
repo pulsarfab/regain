@@ -974,9 +974,11 @@ dependencies = [
 name = "regain-hub"
 version = "0.6.0"
 dependencies = [
+ "anyhow",
  "axum",
  "futures-util",
  "httpdate",
+ "regain-core",
  "reqwest",
  "schemars",
  "serde",

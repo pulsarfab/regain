@@ -3,6 +3,7 @@
 pub mod alpaca;
 pub mod config;
 pub mod description;
+pub mod native;
 pub mod parameters;
 pub mod readout;
 pub mod safety;

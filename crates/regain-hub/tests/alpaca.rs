@@ -289,6 +289,153 @@ async fn partial_poll_retry_after_blocks_refresh_and_resumes_the_failed_sample()
     assert!(requests[2].1.contains("Id=0"));
     assert!(requests[3].1.contains("Id=1"));
 }
+
+#[tokio::test]
+async fn mixed_native_and_http_switch_shares_native_temperature_with_weather() {
+    use regain_hub::{
+        config::{HubConfig, Measurement, OutputConfig, Readout, VirtualDevice, WeatherMetric},
+        native::{NativeAccessoryBackend, NativeRuntime},
+        safety::MonotonicClock,
+        source::SourceRegistry,
+        switch::SwitchOutput,
+        weather::WeatherOutput,
+    };
+    let Some(directory) = std::env::var_os("REGAIN_TEST_WORKERS") else {
+        eprintln!("Mixed native source test requires REGAIN_TEST_WORKERS");
+        return;
+    };
+    let runtime = NativeRuntime {
+        directory: directory.into(),
+        simulate: true,
+    };
+    let server = Server::new(vec![Reply::value(json!(true)), Reply::value(json!(1))]).await;
+    let mut config: HubConfig =
+        serde_json::from_str(include_str!("../examples/mixed-switch.json")).unwrap();
+    let SourceBackend::Alpaca { base_url, .. } = &server.config.backend else {
+        unreachable!()
+    };
+    let SourceBackend::Alpaca {
+        base_url: target, ..
+    } = &mut config.sources[0].backend
+    else {
+        unreachable!()
+    };
+    *target = base_url.clone();
+    let SourceBackend::Native { identity, .. } = &mut config.sources[1].backend else {
+        unreachable!()
+    };
+    *identity = "00:00:00:00:00:03".into();
+    let VirtualDevice::Switch { channels } = &config.outputs[0].device else {
+        unreachable!()
+    };
+    let switch_readout = channels[0].readout.clone();
+    let native_source = config.sources[1].id;
+    config.outputs.push(OutputConfig {
+        id: Uuid::new_v4(),
+        number: 0,
+        label: "Shared native temperature".into(),
+        device: VirtualDevice::Weather {
+            measurements: std::collections::BTreeMap::from([(
+                WeatherMetric::Temperature,
+                Measurement {
+                    sources: vec![Readout::Property {
+                        source: native_source,
+                        property: "temperature".into(),
+                        unit: None,
+                    }],
+                    maximum_age_seconds: 60.0,
+                    average_seconds: 0.0,
+                },
+            )]),
+        },
+    });
+    let clock = Arc::new(MonotonicClock::default());
+    let registry = Arc::new(
+        SourceRegistry::build(&config, clock.clone(), |source| match &source.backend {
+            SourceBackend::Native { .. } => Ok(Box::new(NativeAccessoryBackend::new(
+                source,
+                runtime.clone(),
+            )?)),
+            SourceBackend::Alpaca { .. } => Ok(Box::new(AlpacaBackend::new(
+                source,
+                vec![SampleRequest::readout(&switch_readout, false)],
+                None,
+            )?)),
+            _ => unreachable!(),
+        })
+        .unwrap(),
+    );
+    let switches = SwitchOutput::new(
+        &config,
+        config.outputs[0].id,
+        registry.clone(),
+        clock.clone(),
+    )
+    .unwrap();
+    let weather =
+        WeatherOutput::new(&config, config.outputs[1].id, registry.clone(), clock).unwrap();
+    let first = switches.connect().await.unwrap();
+    let second = switches.connect().await.unwrap();
+    let weather = weather.connect().await.unwrap();
+    let native = registry.get(native_source).unwrap();
+    let generation = native.snapshot().generation;
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            if first.value(0).is_ok()
+                && first.value(1).is_ok()
+                && weather.read(WeatherMetric::Temperature).is_ok()
+            {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(first.value(0).unwrap(), 1.0);
+    assert_eq!(
+        first.value(1).unwrap(),
+        weather.read(WeatherMetric::Temperature).unwrap().value
+    );
+    assert!(!first.can_write(1).await.unwrap());
+    assert_eq!(native.snapshot().lease_count, 3);
+    for value in [
+        json!(true),
+        json!(0),
+        json!(1),
+        json!(1),
+        Value::Null,
+        json!(0),
+    ] {
+        server.push(Reply::value(value));
+    }
+    first.set_value(0, 0.0).await.unwrap();
+    tokio::time::timeout(Duration::from_secs(3), async {
+        while first.value(0).ok() != Some(0.0) {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap();
+    drop(first);
+    drop(second);
+    tokio::time::timeout(Duration::from_secs(3), async {
+        while native.snapshot().lease_count != 1 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(native.snapshot().generation, generation);
+    assert!(weather.read(WeatherMetric::Temperature).is_ok());
+    let requests = server.fixture.requests.lock().unwrap();
+    let writes: Vec<_> = requests
+        .iter()
+        .filter(|(method, _, _)| method == "PUT")
+        .collect();
+    assert_eq!(writes.len(), 1);
+    assert!(writes[0].1.contains("/setswitchvalue"));
+}
 #[derive(Default)]
 struct Fixture {
     replies: Mutex<VecDeque<Reply>>,

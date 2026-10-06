@@ -313,12 +313,20 @@ The shared accessory worker client now lives in `regain-core`; existing Alpaca
 CAA/Falcon, EFW/EAF/FocusCube3/ETA, and OFP2 endpoints use it. The common client
 bounds messages and retires a child after timeout, cancellation, or invalid
 framing. Process fixtures and all seven existing accessory/Alpaca simulation
-suites pass. This extraction prepares the hub adapters; it does not expose native
-sources in the hub yet. A framed worker error may still follow a dispatched USB
-command and must not authorize replay.
+suites pass. A framed worker error may still follow a dispatched USB command and
+must not authorize replay.
 
-Next: add native worker adapters using this shared accessory worker client, complete
-capability/connection negotiation and shared host IPC, then connect the first
+The native hub adapter now uses that client for CAA, EFW, EAF, FocusCube3, Falcon,
+OFP2, and ETA. It verifies the selected identity, maps scalar telemetry, validates
+movement/light parameters before dispatch, and preserves worker motion and
+calibration behavior. It does not substitute simulation after hardware failure.
+Native temperature can feed Switch gauges and Weather using the same source
+leases. A mixed loopback-Alpaca/native-worker test verifies this sharing and a
+remote switch write. Camera sources, persistent rotator reference settings, and
+the full proxy interface surface remain for milestone 4. Missing temperatures
+are per-measurement errors, not a reason to discard other valid telemetry.
+
+Next: complete capability/connection negotiation and shared host IPC, then connect the first
 three virtual classes to the existing Alpaca server/setup UI. Frontend error
 translation and protocol conformance remain unverified. Generic
 scalar polling does not establish camera image or acquisition support. No complete
@@ -398,3 +406,4 @@ Keep existing device profiles and registrations compatible throughout migration.
 | 2026-10-05 | Added typed switch/weather controllers, scalar sample status, unit assertions, cancellation-safe leases, partial sensor failures, and dispatch generation checks. Refined stable slots and weather averaging against the ASCOM interfaces. | 63 Rust tests pass, including mixed switch controls/gauges, cancellation, step/permission checks, tombstones, weather freshness/fallback/averaging, and HTTP weather source sharing. Updated schema passes web, independent JSON Schema, and native .NET readers. Next: poll scheduling/budgets, capability negotiation, native adapters, and host IPC before frontend/conformance gates. |
 | 2026-10-05 | Split Alpaca polling into bounded requests with per-key evidence, bounded incremental caches, same-key retries, and prompt weather Refresh. Corrected Refresh against the ASCOM interface during review. | 70 local Rust tests, Clippy, Rust 1.89.0, standalone package verification, and generated-contract freshness pass. Latency fixtures exercise command interleaving and Retry-After. Next: shared native accessory transport/adapters, capability negotiation, and host IPC. All frontend and later milestone gates remain open. |
 | 2026-10-05 | Extracted the shared accessory worker client into regain-core and adopted it in existing Alpaca accessories. Added cancellation-safe process retirement, framing limits, and process fixtures. Moved development versions to 0.6.0 / 0.6.0.0 after packaging exposed resolution of the published 0.5.10 dependency. | Core tests, Clippy, Rust 1.89.0 checks, and seven production-worker/Alpaca simulation suites pass. Native hub mapping, capabilities, host IPC, and all later gates remain pending. No release or tag was created. |
+| 2026-10-05 | Added native hub accessory adapters on the shared transport, covering seven families, scalar telemetry, validated motion/light/calibration commands, explicit simulation identity, and source leases. Added a mixed native/network Switch plus shared Weather test. | 79 Rust hub tests pass with production workers in simulation, including EFW calibration and OFP2 movement/light controls. Clippy, Rust 1.89.0, and generated-contract freshness pass. Windows test entrypoint now supplies its built worker path, matching portable CI. Next: capability/connection negotiation, credentials, host IPC, and frontend publication; all later gates remain required. |

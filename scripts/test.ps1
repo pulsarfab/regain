@@ -13,8 +13,12 @@ try {
     if ($LASTEXITCODE) { throw 'Test host build failed' }
     python scripts/test-device.py
     if ($LASTEXITCODE) { throw 'Unified device CLI tests failed' }
-    cargo test --locked
-    if ($LASTEXITCODE) { throw 'Rust tests failed' }
+    $previousWorkerDirectory = $env:REGAIN_TEST_WORKERS
+    try {
+        $env:REGAIN_TEST_WORKERS = (Resolve-Path target/debug).Path
+        cargo test --locked
+        if ($LASTEXITCODE) { throw 'Rust tests failed' }
+    } finally { $env:REGAIN_TEST_WORKERS = $previousWorkerDirectory }
     rustc --crate-type cdylib tests/fixtures/selection_sdk.rs -o target/debug/selection_sdk.dll
     if ($LASTEXITCODE) { throw 'SDK selection fixture build failed' }
     dotnet test tests/Regain.Tests -c Release

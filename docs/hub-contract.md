@@ -157,6 +157,38 @@ Clients observe TimeSinceLastUpdate to determine when measurements change.
 These are controller contracts with local latency/retry tests, not evidence of
 completed frontend interface conformance or hardware acceptance.
 
+## Native source adapter checkpoint
+
+Native accessory sources launch the existing `regain-device VENDOR DEVICE serve
+--serial ID` worker through `regain-core::accessory`. Construction does no I/O;
+connection verifies the returned serial before exposing the source. The host's
+explicit simulation setting is retained in identity diagnostics for every vendor
+and is never enabled as a fallback after a connection failure. Requested source
+deadlines apply to worker I/O as well as the enclosing source actor.
+
+| Source | Initial scalar readings | Initial commands |
+| --- | --- | --- |
+| EAF / FocusCube3 | Position, movement, temperature, travel limits | Move, halt |
+| ETA | Position, movement, travel limits | Move; no hardware halt capability |
+| EFW | Position and stable slot count during calibration | Select position, calibrate |
+| CAA / Falcon | Logical/mechanical/target position, movement; CAA temperature, Falcon reverse | Relative/absolute/mechanical move, halt |
+| OFP2 | Brightness, maximum brightness, cover and calibrator state | Cover open/close/halt, calibrator on/off |
+
+Properties become read-only Switch gauges or Weather measurements where their
+units/type permit. Sources retain independent connection/control leases; native
+commands pass through the same source actor and uncertainty latch as Alpaca.
+An `ok:false` worker reply may follow a dispatched USB command, so writes report
+uncertainty rather than promising no motion occurred. Only locally validated
+bad parameters/unsupported members are rejected before worker dispatch.
+
+This table describes the current library adapter, not a completed proxy driver.
+Camera sources still require regain-core Session and its acquisition/recovery
+contract. Rotator sync/reference persistence, complete capabilities, custom
+actions/settings, and frontend interface mappings remain milestone 4 work.
+Existing CAA/EAF/EFW workers may enumerate/open matching HID candidates to locate
+their serial; this adapter reuses that selection behavior and does not claim
+target-only USB opening. Serial workers filter their selected identity first.
+
 ## Windows COM and interface baseline
 
 Use one `Regain.Hub.ASCOM` project/executable with import-worker and output-server

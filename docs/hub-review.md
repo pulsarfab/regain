@@ -249,3 +249,46 @@ coordinate persistence, and error paths. Native hub source mapping is next.
 After the version correction, `cargo package --workspace --allow-dirty --locked`
 verified all ten package archives against the unpublished workspace dependencies;
 `cargo +1.89.0 check --workspace --all-targets --locked` also passed.
+
+## 2026-10-05: native accessory sources and mixed-source controller integration
+
+Implemented a single native adapter over the common worker client for CAA, EFW,
+EAF, FocusCube3, Falcon, OFP2, and ETA. Hardware protocol and motion/calibration
+coordination stay in their existing workers. Reviewed against those workers and
+the current Alpaca property/command mappings.
+
+Corrections and deliberate boundaries:
+
+1. Connect verifies the selected identity. Failed identity requests must retire
+   their worker slot; otherwise a second connect could mistake a partially opened
+   session for a verified connection. No implicit selection or simulation fallback
+   is permitted. Simulation is explicit in returned identity for every vendor.
+2. Missing temperature is a per-field error; position/motion remains usable.
+   Whole-device fault/error fields stop publication of normal telemetry. Cached
+   values and freshness still belong to the shared source actor.
+3. Movement and brightness parameters are validated before dispatch. Focuser and
+   wheel targets also use current hardware limits. Worker failures after a write
+   map to uncertain, including framed worker errors; arbitrary worker exception
+   text never enters hub diagnostics. Transport loss retires the generation.
+4. ETA and EFW have no supported hardware halt command. Rotator sync/reference
+   and related settings require persistent coordinate state before enablement;
+   camera backends require Session rather than this scalar accessory adapter.
+   These remain explicit later gates, not silently approximated capabilities.
+5. Worker requests use the configured deadline, rather than the legacy client's
+   fixed default. Windows local/CI test orchestration supplies the built worker
+   directory so native integration tests do not silently skip there.
+
+Verification: 79 Rust hub tests (21 unit, 14 HTTP/mixed-source, 10 configuration,
+6 native-worker integration, 16 source/safety, 6 switch, 6 weather) pass locally
+with `REGAIN_TEST_WORKERS` selecting the built production workers in simulation.
+The native matrix checks all seven families, short moves, local validation,
+identity mismatch, no fallback, illumination including zero, full cover motion
+and halt, EFW calibration/provisional slot count, shared leases, and independent
+client disconnect. A mixed source test writes a remote Alpaca switch while two
+Switch clients and one Weather client share native FocusCube3 temperature.
+Clippy, Rust 1.89.0, schema freshness, and formatting/diff checks pass.
+
+The host factory, capability/connection negotiation, protected credentials,
+cross-process ownership/IPC/resume, actual frontend devices, and all later
+conformance/hardware/documentation gates remain open. No hardware was moved by
+these tests, and this checkpoint does not close milestone 2.
