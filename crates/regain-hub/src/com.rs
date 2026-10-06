@@ -80,7 +80,10 @@ impl ComBackend {
         }
         if !matches!(
             device_type,
-            DeviceType::Switch | DeviceType::SafetyMonitor | DeviceType::ObservingConditions
+            DeviceType::Switch
+                | DeviceType::SafetyMonitor
+                | DeviceType::ObservingConditions
+                | DeviceType::Focuser
         ) {
             return Err(unsupported(
                 "This COM worker does not support the selected device class yet",
@@ -231,10 +234,10 @@ impl ComBackend {
             ConnectionMethod::Legacy
         };
         let expected_method = if reply.connection.interface_version.is_some_and(|v| {
-            v >= if self.device == DeviceType::ObservingConditions {
-                2
-            } else {
-                3
+            v >= match self.device {
+                DeviceType::ObservingConditions => 2,
+                DeviceType::Focuser => 4,
+                _ => 3,
             }
         }) {
             ConnectionMethod::Async

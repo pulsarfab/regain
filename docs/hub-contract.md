@@ -1296,9 +1296,9 @@ Native EAF, FocusCube3 and ETA reuse their production workers. All provide
 absolute coordinates with no automatic temperature compensation. ETA reports
 one-micrometre coordinates; EAF/FC3 optical step size remains unsupported. ETA's
 unsupported Halt remains unsupported. No hardware or simulation fallback is
-introduced. The runtime now admits native/Alpaca focuser proxies and exposes them
-through private IPC; COM, virtual and dedicated simulated focuser inputs remain
-pending. Hello advertises `focuserOutputs`. Typed Get uses
+introduced. The runtime now admits native/Alpaca/Windows COM focuser proxies and
+exposes them through private IPC; virtual and dedicated simulated focuser inputs
+remain pending. Hello advertises `focuserOutputs`. Typed Get uses
 `{"member":"focuser","property":"isMoving"}` (or another described property).
 Typed Put uses `moveFocuser` with integer `position`, `haltFocuser` with no arguments,
 or `focuserTempComp` with boolean `enabled`. Unknown fields, types and enum values
@@ -1350,5 +1350,17 @@ delegate capability, motion and source-generation checks to the Rust controller.
 Cancellation releases only the caller's session as needed, with no command replay
 or automatic Halt; Halt remains explicit because another client may own later
 motion. Coordination policies and long-lived acquisition/motion ownership remain
-separate unfinished plan gates. Broad COM/virtual/dedicated simulation focuser
-imports, conformance, interactive setup and hardware acceptance remain required.
+separate unfinished plan gates. Virtual/dedicated simulation focuser imports,
+conformance, interactive setup and hardware acceptance remain required.
+
+Windows COM focuser imports reuse the isolated x86/x64 STA worker, shared source
+actor and typed controller. Focuser V3 uses legacy Connected; asynchronous
+Connect/Disconnect/Connecting starts at V4. Both parent and worker enforce that
+boundary. The nine property reads validate their declared boolean, Int32 or
+finite numeric shape; positions and limits are not narrowed to Int16. Only typed
+Move(Position), Halt and TempComp writes are admitted. Shared controller preflight
+enforces motion and travel limits before dispatch. An uncertain dispatched write
+latches across clients and cannot trigger replay or automatic Halt. Relative
+sources retain unsupported Position and signed moves. Construction never activates
+a COM object; source leases retain managed/external connection ownership. Other
+COM device classes and camera image transport remain separate implementation gates.

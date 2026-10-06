@@ -206,7 +206,7 @@ def main():
             if options.registered:
                 for identity, binding in zip(identities, bindings):
                     paths.extend((f'Software\\Classes\\AppID\\{{{identity["clsid"]}}}',
-                                  f'Software\\ASCOM\\{dict(switch="Switch", safetymonitor="SafetyMonitor", observingconditions="ObservingConditions")[binding["deviceType"]]} Drivers\\{identity["progid"]}',
+                                  f'Software\\ASCOM\\{dict(switch="Switch", safetymonitor="SafetyMonitor", observingconditions="ObservingConditions", focuser="Focuser")[binding["deviceType"]]} Drivers\\{identity["progid"]}',
                                   f'Software\\PulsarFab\\Regain\\HubExports\\{{{identity["clsid"]}}}'))
             else:
                 paths.append(f'Software\\Classes\\AppID\\{app_id}')

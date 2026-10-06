@@ -10,7 +10,7 @@ namespace Regain.Hub.ASCOM;
 
 /// One object, exclusively called on the worker's message-pumping STA. No driver
 /// reflection member is accepted directly from a caller; tables below whitelist
-/// the first three imported classes. Camera arrays require a separate protocol.
+/// supported typed members. Camera arrays require a separate protocol.
 internal sealed class ImportDriver {
     private enum Phase { Activate, Version, Check, Open, WaitOpen, Verify, Ready, WaitClose, Closed, Failed }
     private readonly Options options;
@@ -97,7 +97,7 @@ internal sealed class ImportDriver {
             case Phase.Version:
                 try { version = Integer(Get("InterfaceVersion"), 1, short.MaxValue); }
                 catch (Exception error) when (Classify(Unwrap(error), false) == "unsupported") { version = null; }
-                modern = version >= (options.DeviceType == "observingconditions" ? 2 : 3);
+                modern = version >= (options.DeviceType switch { "observingconditions" => 2, "focuser" => 4, _ => 3 });
                 phase = Phase.Check; break;
             case Phase.Check:
                 var connected = Boolean(Get("Connected"));
@@ -175,6 +175,21 @@ internal sealed class ImportDriver {
         if (member == "connected") { Fields(parameters); return Boolean(Get("Connected")); }
         if (member == "interfaceversion") { Fields(parameters); return Integer(Get("InterfaceVersion"), 1, short.MaxValue); }
         if (member == "connecting" && modern) { Fields(parameters); return Boolean(Get("Connecting")); }
+        if (options.DeviceType == "focuser") {
+            foreach (HubFocuserProperty property in Enum.GetValues(typeof(HubFocuserProperty))) {
+                if (HubFocuserProtocol.Key(property).ToLowerInvariant() != member) continue;
+                Fields(parameters);
+                var result = Get(property.ToString());
+                object scalar = property switch {
+                    HubFocuserProperty.Absolute or HubFocuserProperty.TempCompAvailable or HubFocuserProperty.IsMoving or HubFocuserProperty.TempComp => Boolean(result),
+                    HubFocuserProperty.MaxStep or HubFocuserProperty.MaxIncrement or HubFocuserProperty.Position => Int32(result),
+                    _ => Number(result)
+                };
+                try { HubFocuserProtocol.Validate(property, JsonSerializer.SerializeToElement(scalar)); }
+                catch (HubException) { throw new BadValue(); }
+                return scalar;
+            }
+        }
         if (options.DeviceType == "safetymonitor" && member == "issafe") { Fields(parameters); return Boolean(Get("IsSafe")); }
         if (options.DeviceType == "switch") {
             if (member == "maxswitch") { Fields(parameters); return Integer(Get("MaxSwitch"), 0, short.MaxValue); }
@@ -216,6 +231,21 @@ internal sealed class ImportDriver {
     }
 
     private object? Write(string member, JsonElement parameters) {
+        if (options.DeviceType == "focuser") {
+            if (member == "move") {
+                Fields(parameters, "Position");
+                var item = Parameter(parameters, "Position");
+                if (item.ValueKind != JsonValueKind.Number || !item.TryGetInt32(out var position)) throw new InvalidInput();
+                Call("Move", position); return null;
+            }
+            if (member == "halt") { Fields(parameters); Call("Halt"); return null; }
+            if (member == "tempcomp") {
+                Fields(parameters, "TempComp");
+                var item = Parameter(parameters, "TempComp");
+                if (item.ValueKind is not (JsonValueKind.True or JsonValueKind.False)) throw new InvalidInput();
+                Set("TempComp", item.GetBoolean()); return null;
+            }
+        }
         if (options.DeviceType == "switch" && member is "setswitch" or "setswitchvalue") {
             var key = member == "setswitch" ? "State" : "Value";
             Fields(parameters, "Id", key);
@@ -257,6 +287,7 @@ internal sealed class ImportDriver {
         return number;
     }
     private static bool Boolean(object? value) => value is bool boolean ? boolean : throw new BadValue();
+    private static int Int32(object? value) => value is int integer ? integer : value is short small ? small : throw new BadValue();
     private static short Integer(object? value, int min, int max) {
         if (value is not (short or int)) throw new BadValue();
         var number = Convert.ToInt32(value, CultureInfo.InvariantCulture);

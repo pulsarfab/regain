@@ -2270,3 +2270,45 @@ cancelled after seven successes. Alpaca publication PR 37488895245 passes seven
 with Windows still live. New CI remains required. Typed focuser COM/virtual/
 dedicated simulation imports, general typed setup, conformance, interactive and
 vendor/hardware acceptance and every original remaining milestone remain open.
+
+### Windows COM focuser imports (2026-10-06)
+
+Extended the existing isolated STA import worker and Rust factory to focusers.
+The shared focuser controller, sampling plans, leases and generation fences are
+reused. Reads cover all nine typed properties; integer positions and limits retain
+Int32. Only Move(Position), Halt and TempComp are writable. Strict parameter and
+return-value validation occurs before dispatch or publication; errors remain
+sanitized. Relative Position stays unsupported. The existing uncertain-write latch
+prevents subsequent mutations, replay and automatic Halt after unknown completion.
+
+Reviewed interface version negotiation, managed/external ownership, required and
+optional property shapes, class admission, source sharing and cleanup. Focuser's
+asynchronous interface begins at V4. The initial actual parent test exposed a
+second version threshold in Rust that still expected asynchronous connection at
+V3; both sides now agree, without increasing deadlines. The test initially used a
+nonexistent fixture helper and ignored shutdown's Result; both are corrected.
+
+`scripts/test-hub-com.ps1` passes warning-denied x86/x64 worker/fixture builds,
+20 worker tests (including V3/V4 in both architectures) and 12 actual registered
+Rust parent cases. The new parent case proves shared activation/leases, limits
+above Int16, live motion/control, last-client retention and one dispatched
+uncertain vendor Move without replay. Full local Rust hub/Alpaca suites, strict
+Clippy, Rust 1.89 all-target checks, 180 warning-denied NINA tests and real net48
+x86/x64 frontend fixtures pass. Logs use `artifacts/hub-focuser-com-*.log`.
+COM parent tests require the private-registration harness; ordinary cargo runs
+without its environment do not prove those cases. Physical equipment is untouched.
+
+Native frontend PR CI 37492070586 and push CI 37492059703 each pass seven jobs,
+but Windows fails production registration before activation with KeyError:
+focuser. Both logs first prove actual cold SCM launch, five output classes and both
+client/server architectures. The production-registration fixture omitted Focuser
+from its Chooser-path collision/cleanup mapping; that mapping is corrected. Python
+syntax and diff checks pass. The actual machine-registration check requires new
+disposable Windows CI; local machine-fixture guards remain intact. Failure logs
+are `artifacts/hub-focuser-frontends-{pr,push}-ci-failure.log`.
+
+Next: dedicated typed simulation and virtual focuser inputs, general typed setup
+and remaining accessory proxies. Camera buffers/acquisition, coordination,
+conformance, resume/recovery, interactive/vendor/hardware acceptance, main
+reconciliation, documentation/site/screenshots and all original final gates remain
+required before merging PR21.

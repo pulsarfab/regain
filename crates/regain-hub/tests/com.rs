@@ -178,6 +178,98 @@ fn preparation_checks_architecture_and_class_without_activation() {
 }
 
 #[tokio::test]
+async fn typed_focuser_com_factory_keeps_int32_limits_shared_leases_and_generation_fences() {
+    let Some(f) = Fixture::load() else {
+        return;
+    };
+    for (bitness, version) in [(Bitness::X86, 3), (Bitness::X64, 4)] {
+        f.clear("Focuser", json!({"version":version}));
+        let source = f.source("Focuser", DeviceType::Focuser, bitness);
+        let source_id = source.id;
+        let mut config = HubConfig::empty();
+        config.sources.push(source);
+        for number in [4, 7] {
+            config.outputs.push(OutputConfig {
+                id: Uuid::new_v4(),
+                number,
+                label: format!("Private COM focuser {number}"),
+                device: VirtualDevice::Proxy {
+                    source: source_id,
+                    device_type: DeviceType::Focuser,
+                },
+            });
+        }
+        let hub = HubRuntime::build(
+            config.clone(),
+            &f.native,
+            &NoCredentials,
+            Arc::new(MonotonicClock::default()),
+        )
+        .unwrap();
+        assert_eq!(f.count("Focuser", "Activate"), 0);
+        let first = hub.client();
+        let second = hub.client();
+        first.connect(config.outputs[0].id).await.unwrap();
+        second.connect(config.outputs[1].id).await.unwrap();
+        let a = first.connection(config.outputs[0].id).unwrap();
+        let b = second.connection(config.outputs[1].id).unwrap();
+        assert_eq!(
+            a.focuser().unwrap().generation(),
+            b.focuser().unwrap().generation()
+        );
+        assert_eq!(
+            a.focuser().unwrap().capabilities().await.unwrap().max_step,
+            100000
+        );
+        assert_eq!(a.focuser().unwrap().temperature().await.unwrap(), 12.5);
+        assert_eq!(a.focuser().unwrap().step_size().await.unwrap(), 1.25);
+        assert_eq!(f.count("Focuser", "Activate"), 1);
+        assert_eq!(f.count("Focuser", "Connect"), usize::from(version == 4));
+        assert_eq!(
+            f.count("Focuser", "Connected.set"),
+            usize::from(version == 3)
+        );
+        assert_eq!(
+            a.focuser().unwrap().move_to(70000).await.unwrap_err().kind,
+            ErrorKind::InvalidValue
+        );
+        assert_eq!(f.count("Focuser", "Move"), 0);
+        a.focuser().unwrap().move_to(70).await.unwrap();
+        assert!(b.focuser().unwrap().is_moving().await.unwrap());
+        assert_eq!(
+            b.focuser().unwrap().move_to(80).await.unwrap_err().kind,
+            ErrorKind::Busy
+        );
+        b.focuser().unwrap().halt().await.unwrap();
+        b.focuser().unwrap().set_temp_comp(true).await.unwrap();
+        assert!(a.focuser().unwrap().temp_comp().await.unwrap());
+        first.disconnect(config.outputs[0].id);
+        drop(a);
+        until(|| hub.source_snapshot(source_id).unwrap().lease_count == 1).await;
+        assert_eq!(b.focuser().unwrap().position().await.unwrap(), 70);
+        assert_eq!(f.count("Focuser", "Disconnect"), 0);
+        // A dispatched vendor failure remains uncertain for both output clients.
+        f.state(
+            "Focuser",
+            json!({"version":version, "faultMember":"Move", "faultCode":-2147220225i32}),
+        );
+        assert_eq!(
+            b.focuser().unwrap().move_to(80).await.unwrap_err().kind,
+            ErrorKind::Uncertain
+        );
+        assert_eq!(
+            b.focuser().unwrap().move_to(90).await.unwrap_err().kind,
+            ErrorKind::Uncertain
+        );
+        assert_eq!(f.count("Focuser", "Move"), 2);
+        assert!(hub.source_snapshot(source_id).unwrap().write_uncertain);
+        second.disconnect(config.outputs[1].id);
+        drop(b);
+        hub.shutdown().await.unwrap();
+    }
+}
+
+#[tokio::test]
 async fn factory_passes_all_own_export_classes_and_rejects_a_registered_alias_before_activation() {
     let Some(f) = Fixture::load() else {
         return;

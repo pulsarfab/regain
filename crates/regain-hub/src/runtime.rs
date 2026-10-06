@@ -553,13 +553,14 @@ fn validate_outputs(config: &HubConfig) -> Result<(), Vec<FieldError>> {
                         entry.backend,
                         crate::config::SourceBackend::Native { .. }
                             | crate::config::SourceBackend::Alpaca { .. }
+                            | crate::config::SourceBackend::Com { .. }
                     )
                 })
         {
             errors.push(FieldError::new(
                 format!("outputs[{index}].device.source"),
                 "unsupported",
-                "Focuser proxies currently require native or Alpaca sources",
+                "Focuser proxies currently require native, Alpaca or Windows COM sources",
             ));
         }
         if matches!(output.device, VirtualDevice::Proxy { device_type, .. } if device_type != DeviceType::Focuser)

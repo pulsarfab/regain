@@ -85,7 +85,7 @@ internal sealed class Options {
             || !values.TryGetValue("--connection-policy", out var policy)
             || !values.TryGetValue("--bitness", out var bitness)) throw new ArgumentException();
         if (string.IsNullOrWhiteSpace(progId) || progId.Length > 200 || progId != progId.Trim()
-            || progId.Any(char.IsControl) || !new[] { "switch", "safetymonitor", "observingconditions" }.Contains(type)
+            || progId.Any(char.IsControl) || !new[] { "switch", "safetymonitor", "observingconditions", "focuser" }.Contains(type)
             || !new[] { "managed", "externallyManaged" }.Contains(policy)
             || bitness != (Environment.Is64BitProcess ? "x64" : "x86")) throw new ArgumentException();
         Guid[] denied = [];

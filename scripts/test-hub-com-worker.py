@@ -46,7 +46,7 @@ def registered_fixture():
         "[Reflection.AssemblyName]::GetAssemblyName($env:REGAIN_COM_FIXTURE_DLL).FullName",
     ], env={**os.environ, "REGAIN_COM_FIXTURE_DLL": str(FIXTURE)}, text=True).strip()
     assert identity.startswith("Regain.Hub.COM.Fixture,")
-    progids = [PROGID] + [PROGID + "." + name for name in ("Switch", "Safety", "Weather", "Other", "Own")]
+    progids = [PROGID] + [PROGID + "." + name for name in ("Switch", "Safety", "Weather", "Other", "Own", "Focuser")]
     classids = [CLSID, SELF_CLSID]
     paths = [f"Software\\Classes\\{name}" for name in progids] + [f"Software\\Classes\\CLSID\\{classid}" for classid in classids]
     views = (winreg.KEY_WOW64_32KEY, winreg.KEY_WOW64_64KEY)
@@ -187,6 +187,63 @@ class Worker:
 
 
 class ImportTests(unittest.TestCase):
+    def test_focuser_legacy_modern_connections_and_typed_members(self):
+        for architecture in self.each():
+            for version in (3, 4):
+                with self.subTest(architecture=architecture, version=version), Worker(architecture, device="focuser", settings={"version": version}) as worker:
+                    info = worker.connect()
+                    self.assertEqual(info["method"], "async" if version == 4 else "legacy")
+                    self.assertEqual(worker.count("Connect"), 1 if version == 4 else 0)
+                    self.assertEqual(worker.count("Connected.set"), 0 if version == 4 else 1)
+                    for member, value in [("absolute", True), ("maxstep", 100000), ("maxincrement", 1000),
+                                          ("position", 50), ("ismoving", False), ("tempcompavailable", True),
+                                          ("tempcomp", False), ("stepsize", 1.25), ("temperature", 12.5)]:
+                        response = worker.send("read", member)
+                        self.assertIsNone(response["error"], response)
+                        self.assertEqual(response["value"], value)
+                    self.assertIsNone(worker.send("write", "move", {"Position": 70000})["error"])
+                    self.assertEqual(worker.send("read", "position")["value"], 70000)
+                    self.assertTrue(worker.send("read", "ismoving")["value"])
+                    self.assertIsNone(worker.send("write", "halt")["error"])
+                    self.assertIsNone(worker.send("write", "tempcomp", {"TempComp": True})["error"])
+                    self.assertTrue(worker.send("read", "tempcomp")["value"])
+                    worker.set(relative=True)
+                    self.assertFalse(worker.send("read", "absolute")["value"])
+                    self.assertEqual(worker.send("read", "position")["error"]["kind"], "unsupported")
+                    self.assertIsNone(worker.send("write", "move", {"Position": -30})["error"])
+                    self.assertEqual(worker.count("Move"), 2)
+                    worker.disconnect()
+                    self.assertEqual(worker.count("Disconnect"), 1 if version == 4 else 0)
+
+    def test_focuser_strict_readings_and_parameters_fail_before_dispatch(self):
+        for architecture in self.each():
+            with self.subTest(architecture=architecture), Worker(architecture, device="focuser", settings={"version": 4}) as worker:
+                worker.connect()
+                for member, setting in [("maxstep", "badMaxStep"), ("ismoving", "badMoving"), ("stepsize", "badStepSize")]:
+                    worker.set(**{setting: True})
+                    self.assertEqual(worker.send("read", member)["error"]["kind"], "unavailable")
+                    worker.set(**{setting: False})
+                for member, args in [("move", {"Position": 1.5}), ("move", {"Position": 2147483648}),
+                                     ("move", {"Position": "1"}), ("move", {"position": 1}),
+                                     ("move", {"Position": 1, "extra": True}), ("halt", {"extra": True}),
+                                     ("tempcomp", {"TempComp": 1})]:
+                    self.assertEqual(worker.send("write", member, args)["error"]["kind"], "invalidValue")
+                self.assertEqual(worker.count("Move"), 0)
+                self.assertEqual(worker.count("Halt"), 0)
+                self.assertEqual(worker.count("TempComp.set"), 0)
+
+    def test_focuser_uncertain_move_is_never_replayed_or_followed_by_automatic_halt(self):
+        for architecture in self.each():
+            with self.subTest(architecture=architecture), Worker(architecture, device="focuser", settings={"version": 4, "faultMember": "Move", "faultCode": hresult(0x800404FF)}) as worker:
+                worker.connect()
+                self.assertEqual(worker.send("write", "move", {"Position": 70})["error"]["kind"], "uncertain")
+                worker.set(faultMember="")
+                for member, args in [("move", {"Position": 80}), ("halt", {}), ("tempcomp", {"TempComp": True})]:
+                    self.assertEqual(worker.send("write", member, args)["error"]["kind"], "uncertain")
+                self.assertEqual(worker.count("Move"), 1)
+                self.assertEqual(worker.count("Halt"), 0)
+                self.assertEqual(worker.count("TempComp.set"), 0)
+
     def test_registered_progid_alias_is_rejected_before_activation(self):
         for architecture in self.each():
             with self.subTest(architecture=architecture), Worker(architecture, progid=PROGID + ".Switch", denied=[CLSID.strip("{}")]) as worker:

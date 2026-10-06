@@ -18,6 +18,8 @@ public sealed class Driver {
     private double level;
     private double average;
     private int pending;
+    private int position = 50;
+    private bool moving, tempComp;
     public Driver() {
         var explicitState = Environment.GetEnvironmentVariable("REGAIN_HUB_COM_FIXTURE_STATE");
         var arguments = Environment.GetCommandLineArgs();
@@ -82,6 +84,16 @@ public sealed class Driver {
     public string DriverVersion => "1.0";
     public object IsSafe { get { Before("IsSafe"); return Setting("badSafe", false) ? "true" : (object)Setting("safe", true); } }
     public short MaxSwitch { get { Before("MaxSwitch"); return 2; } }
+    public bool Absolute { get { Before("Absolute"); return !Setting("relative", false); } }
+    public object MaxStep { get { Before("MaxStep"); return Setting("badMaxStep", false) ? (object)1.5 : 100000; } }
+    public int MaxIncrement { get { Before("MaxIncrement"); return 1000; } }
+    public int Position { get { Before("Position"); if (Setting("relative", false)) throw new COMException("relative", unchecked((int)0x80040400)); return position; } }
+    public object IsMoving { get { Before("IsMoving"); return Setting("badMoving", false) ? (object)"false" : moving; } }
+    public bool TempCompAvailable { get { Before("TempCompAvailable"); return true; } }
+    public bool TempComp { get { Before("TempComp.get"); return tempComp; } set { Before("TempComp.set", value); tempComp = value; } }
+    public double StepSize { get { Before("StepSize"); return Setting("badStepSize", false) ? 0 : 1.25; } }
+    public void Move(int target) { Before("Move", target); position = target; moving = true; }
+    public void Halt() { Before("Halt"); moving = false; }
     public bool GetSwitch(short id) { Before("GetSwitch", id); return level != 0; }
     public double GetSwitchValue(short id) { Before("GetSwitchValue", id); return level; }
     public string GetSwitchName(short id) { Before("GetSwitchName", id); return "Fixture level"; }
