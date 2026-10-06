@@ -1431,12 +1431,91 @@ async fn native_panel_cover_moves_and_halts_through_the_existing_coordinator() {
         .write("opencover".into(), Values::new())
         .await
         .unwrap();
+    let moving = backend.sample().await.unwrap();
+    assert_eq!(moving.values["coverstate"], 2);
+    assert_eq!(moving.values["covermoving"], true);
+    assert_eq!(moving.values["calibratorchanging"], false);
+    assert_eq!(
+        backend
+            .write("closecover".into(), Values::new())
+            .await
+            .unwrap_err()
+            .kind,
+        ErrorKind::Busy
+    );
     backend
         .write("haltcover".into(), Values::new())
         .await
         .unwrap();
-    assert_ne!(backend.sample().await.unwrap().values["coverstate"], 2);
+    let stopped = backend.sample().await.unwrap();
+    assert_eq!(stopped.values["coverstate"], 4);
+    assert_eq!(stopped.values["covermoving"], false);
     backend.disconnect().await.unwrap();
+}
+
+#[tokio::test]
+async fn native_panel_controller_shares_motion_and_zero_on_without_disconnect_actuation() {
+    use regain_hub::covercalibrator::{
+        CoverCalibratorController, CoverCalibratorProperty as Property,
+    };
+    let Some(native) = runtime() else {
+        return;
+    };
+    let cfg = config(NativeDevice::Ofp2, "SIM-OFP2");
+    let backend = NativeAccessoryBackend::new(&cfg, native).unwrap();
+    let source = SourceHandle::spawn(
+        cfg.id,
+        Uuid::new_v4(),
+        cfg.polling,
+        Box::new(backend),
+        Arc::new(MonotonicClock::default()),
+    )
+    .unwrap();
+    let controller =
+        CoverCalibratorController::new(source.clone(), Duration::from_secs(10)).unwrap();
+    assert_eq!(source.snapshot().lease_count, 0);
+    let first = controller.connect().await.unwrap();
+    let second = controller.connect().await.unwrap();
+    assert!(source.snapshot().simulated);
+    assert_eq!(source.snapshot().lease_count, 2);
+    assert_eq!(first.generation(), second.generation());
+    assert_eq!(first.property(Property::MaxBrightness).await.unwrap(), 4096);
+    assert_eq!(
+        first.calibrator_on(4097).await.unwrap_err().kind,
+        ErrorKind::InvalidValue
+    );
+    first.calibrator_on(0).await.unwrap();
+    assert_eq!(second.property(Property::Brightness).await.unwrap(), 0);
+    assert_eq!(second.property(Property::CalibratorState).await.unwrap(), 3);
+    assert_eq!(
+        second.property(Property::CalibratorChanging).await.unwrap(),
+        false
+    );
+    first.close_cover().await.unwrap();
+    assert_eq!(second.property(Property::CoverState).await.unwrap(), 2);
+    assert_eq!(second.property(Property::CoverMoving).await.unwrap(), true);
+    assert_eq!(second.open_cover().await.unwrap_err().kind, ErrorKind::Busy);
+    assert!(!source.snapshot().write_uncertain);
+    second.halt_cover().await.unwrap();
+    assert_eq!(second.property(Property::CoverState).await.unwrap(), 4);
+    assert_eq!(second.property(Property::CoverMoving).await.unwrap(), false);
+    first.calibrator_on(17).await.unwrap();
+    drop(first);
+    tokio::time::timeout(Duration::from_secs(3), async {
+        while source.snapshot().lease_count != 1 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    assert!(second.connected());
+    assert_eq!(second.property(Property::Brightness).await.unwrap(), 17);
+    assert_eq!(second.property(Property::CalibratorState).await.unwrap(), 3);
+    second.calibrator_off().await.unwrap();
+    assert_eq!(second.property(Property::CalibratorState).await.unwrap(), 1);
+    assert_eq!(second.property(Property::Brightness).await.unwrap(), 0);
+    drop(second);
+    source.shutdown().await.unwrap();
 }
 
 #[tokio::test]

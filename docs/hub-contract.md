@@ -1876,3 +1876,41 @@ outputs may reference one source. Review rejects class mismatches without openin
 equipment. Applying configuration requires all client leases to be released;
 reload reconciles saved identities and never repeats an uncertain mutation.
 The native selector and ASCOM manager reuse those saved output identities.
+
+### Typed cover/calibrator controller
+
+The panel controller reuses typed accessory sessions, source actors and unique
+command leases. Construction is inert; the connection deadline covers admission
+and initial property reads. Cover and light presence are independent, including
+panels that report both components absent. Absent light does not trigger maximum
+or brightness requests. State enums retain NotPresent, moving/not-ready, endpoint,
+Unknown and Error without inventing completion or blocking explicit commands
+merely because an endpoint is unknown.
+
+Brightness is a nonnegative Int32, bounded by the live positive Int32 maximum.
+Off requires brightness zero; CalibratorOn(0) remains logically on. Cover and
+illumination commands acknowledge acceptance only. Independent siblings observe
+actual source state, including warm-up and motion. A negotiated V1 source derives
+CoverMoving/CalibratorChanging only from known enum states: Unknown/Error remains
+unavailable. Modern and unversioned sources must supply valid Boolean completion
+properties; missing or malformed values cannot fall back to inferred completion.
+
+Disconnect releases that client's lease without closing, halting or darkening
+equipment. Generation loss retires old sessions. Commands with unknown completion
+retain the common write fence across siblings; cancellation after dispatch cannot
+cause replay or an automatic cleanup mutation. A new connection after all leases
+are released requires explicit state reconciliation before another command.
+
+Native OFP2 status retains motion evidence separately from cover endpoints. The
+observed GOPS=1 with intermediate GPOS after STOP establishes stopped motion,
+not Open. Unknown firmware motion codes establish neither true nor false. The
+explicit simulator preserves that distinction. Native Open/Close rejects a known
+ongoing movement before sending another actuator command; Halt and light commands
+remain independently available. Imported drivers keep their own motion policies.
+
+This controller/native increment does not enable panel runtime IPC, publication,
+COM imports, virtual inputs, dedicated simulation controls or shared creation;
+those paths remain required before opening the panel setup gate.
+Reference: [ASCOM CoverCalibrator](https://ascom-standards.org/newdocs/covercalibrator.html),
+with the installed ASCOM 7.1.2 enum/interface declarations and captured
+[OFP2 protocol evidence](ofp2.md).

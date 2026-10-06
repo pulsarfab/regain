@@ -16,7 +16,9 @@ Intel macOS rotator cleanup assertion; PR 37539206029 passes all eight jobs.
 Verified Alpaca/native wheel publication at 0669339 passes all eight jobs in both
 PR/push CI 37541898392/37541893308, including private cold/production wheel
 registration and packaging/installer checks. Reviewed COM/virtual wheel inputs
-are pushed at a586c76; new PR/push CI 37544747351/37544741219 is live. Private
+are pushed at a586c76; all eight jobs pass in both PR/push CI
+37544747351/37544741219. Wheel simulation/shared creation are pushed at 5d0ed34;
+PR/push CI 37547703480/37547695748 is running. Private
 registered activation does not establish interactive/hardware acceptance.
 
 Current position: milestones 0 and 1 are complete. The scalar source/output paths
@@ -27,8 +29,10 @@ implemented. Wheel publication through all three outputs is pushed. Windows COM
 wheel imports and virtual wheel inputs pass local full regressions and are pushed.
 Dedicated wheel simulation passes local full Rust, NINA and both-architecture
 net48 confirmation, with a verified native setup capture. Shared wheel creation is
-verified locally in both setup frontends and real net48 clients. Panels and
-camera proxies remain.
+verified locally in both setup frontends and real net48 clients, and pushed.
+The panel typed controller and native OFP2 motion evidence pass local full Rust,
+NINA 213/213 and both-architecture net48 checks. Panel runtime/publication/setup
+and camera proxies remain.
 Milestone 5's coordinated groups are not yet
 implemented. PR #21 stays draft until the full plan passes.
 
@@ -122,8 +126,8 @@ response. All 27 simulator cases, the new HTTP wheel case, full Rust hub/Alpaca
 suites, strict Clippy, Rust 1.89, generated contracts, Node/six schema checks,
 rebuilt-host NINA 212/212 and real net48 x86/x64 clients pass. The actual native
 capture is visually verified. Review corrected optional-array schema admission,
-boxed actor updates and local JSON error classification. This increment is local;
-preceding a586c76 CI is still running. The simulation increment is committed at
+boxed actor updates and local JSON error classification. This increment is pushed
+after preceding a586c76 CI passed all eight jobs in both runs. It is committed at
 04ae046. Shared wheel creation now uses the existing schema-driven editors:
 FilterWheel has its own output capability, with COM/simulation input choices
 enabled. Full Rust hub/Alpaca, strict Clippy, Rust 1.89, generated contracts,
@@ -1091,6 +1095,19 @@ Publishing installers, plugin feeds, and releases follows the existing
 Keep existing device profiles and registrations compatible throughout migration.
 
 ## Progress log
+
+Latest checkpoint (2026-10-06): the panel controller reuses shared typed sessions
+and operation leases. Fifteen controller tests, including real loopback Alpaca
+V1/V2, cover absent components, strict live brightness, zero-on, actual warm-up,
+known/unknown completion, cancellation, independent leases and uncertain applied
+commands without replay. Both native panel cases pass with SIM-OFP2. Ten vendor
+protocol cases and the timeout unit test pass. Full Rust hub/Alpaca, strict Clippy,
+Rust 1.89, generated contracts, Node/six schema checks, fresh-host NINA 213/213,
+real net48 x86/x64 and standalone OFP2 worker/HTTP simulation pass. Review and
+logs are recorded in hub-review.md. This panel increment is local while preceding
+5d0ed34 PR/push CI 37547703480/37547695748 runs. Next: panel runtime/IPC/cache,
+all publications, COM/virtual inputs, dedicated simulation and shared creation;
+then cameras/coordination and every original remaining acceptance/final gate.
 
 | Date | Work | Evidence / next action |
 | --- | --- | --- |

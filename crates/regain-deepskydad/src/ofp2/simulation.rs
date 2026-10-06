@@ -10,6 +10,7 @@ pub struct Simulation {
     end: Option<Instant>,
     brightness: u16,
     light: bool,
+    stopped: bool,
 }
 impl Default for Simulation {
     fn default() -> Self {
@@ -19,6 +20,7 @@ impl Default for Simulation {
             end: None,
             brightness: 0,
             light: false,
+            stopped: false,
         }
     }
 }
@@ -27,14 +29,16 @@ impl Transport for Simulation {
         if self.end.is_some_and(|t| Instant::now() >= t) {
             self.cover = self.target;
             self.end = None;
+            self.stopped = false;
         }
         Ok(match command {
             "GFRM" => "Board=DeepSkyDad.FP2, Version=SIMULATION".into(),
             "GPRD" => "3".into(),
             "GOPS" => self.cover.to_string(),
-            "GPOS" => match self.cover {
-                0 => "270",
-                1 => "0",
+            "GPOS" => match (self.stopped, self.cover) {
+                (true, _) => "135",
+                (false, 0) => "270",
+                (false, 1) => "0",
                 _ => "135",
             }
             .into(),
@@ -50,12 +54,16 @@ impl Transport for Simulation {
             }
             "SMOV" => {
                 self.cover = 2;
+                self.stopped = false;
                 self.end = Some(Instant::now() + Duration::from_secs(3));
                 "OK".into()
             }
             "STOP" => {
                 if self.cover == 2 {
-                    self.cover = 3;
+                    // Observed firmware reports an idle open flag after STOP
+                    // even between endpoints. Position still prevents claiming Open.
+                    self.cover = 1;
+                    self.stopped = true;
                 }
                 self.end = None;
                 "OK".into()

@@ -176,6 +176,10 @@ impl NativeAccessoryBackend {
                     }
                 }
                 ("brightness", NativeDevice::Ofp2) if status["calibrator_on"] == false => json!(0),
+                ("calibratorchanging", NativeDevice::Ofp2) => status["calibrator_on"]
+                    .as_bool()
+                    .map(|_| json!(false))
+                    .unwrap_or(Value::Null),
                 _ => status[*field].clone(),
             };
             let value = if matches!(
@@ -382,6 +386,17 @@ impl Backend for NativeAccessoryBackend {
     fn write(&mut self, member: String, parameters: Values) -> BackendFuture<'_, Value> {
         Box::pin(async move {
             let request = command_request(self.device, &member, &parameters)?;
+            if self.device == NativeDevice::Ofp2
+                && matches!(member.as_str(), "opencover" | "closecover")
+            {
+                let status = self.status().await?;
+                if status["cover_moving"].as_bool().ok_or_else(bad_status)? {
+                    return Err(SourceError::new(
+                        ErrorKind::Busy,
+                        "Native panel cover is moving",
+                    ));
+                }
+            }
             if self.device_type() == DeviceType::Rotator {
                 let reference_change = matches!(member.as_str(), "sync" | "reverse");
                 let preflight = if member != "halt" {
@@ -583,6 +598,8 @@ pub(crate) fn properties(device: NativeDevice) -> &'static [(&'static str, &'sta
             ("maxbrightness", "max_brightness", false),
             ("coverstate", "cover", false),
             ("calibratorstate", "calibrator_on", false),
+            ("covermoving", "cover_moving", true),
+            ("calibratorchanging", "calibrator_on", true),
         ],
         CameraDirect | CameraSdk => &[],
     }

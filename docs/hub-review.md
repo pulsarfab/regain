@@ -3508,3 +3508,55 @@ msrv,host,contract-final,node-final,schema-final,nina,net48,ipc-final}.log;
 artifacts/hub-wheel-creation-browser-{saved,verification}.json; actual captures
 in docs/images. Preceding a586c76 CI remains live. Panels, cameras, coordination
 and all original remaining acceptance/final gates stay required.
+
+### Typed panel controller review (2026-10-06, local increment)
+
+Reviewed the CoverCalibrator V1/V2 interface against installed ASCOM 7.1.2
+declarations and the canonical interface, then reused TypedSourceSession instead
+of adding another actor or command arbiter. Cover and light presence are separate.
+Brightness validates live positive Int32 MaxBrightness; Off requires zero and
+On(0) retains a logical Ready/NotReady state. Acknowledged movement and warm-up
+never substitute a target or Ready state. Unknown/Error retains valid presence
+and explicit command access without inventing completion.
+
+Only negotiated V1 sources derive completion from enum states. Unknown/Error
+cannot become false. Modern/unversioned sources require actual Boolean completion
+properties; missing or malformed mandatory properties reject readiness. Failed
+second handshakes release only their own leases. Source-generation changes retire
+old sessions. Concurrent calls use the existing unique operation lease. Cancelled
+preflight never dispatches; cancelled or lost-ack dispatch retains the shared
+uncertainty fence without replay, automatic Halt, Close or Off.
+
+Native OFP2 status now retains independent motion evidence from the already-read
+GOPS reply. Captured GOPS=1/GPOS=232 after STOP means stopped at an unknown endpoint.
+GOPS=3 has no captured completion meaning and remains unavailable. The explicit
+simulator models the observed stopped intermediate position. Native Open/Close
+checks movement before dispatch and returns Busy without claiming an uncertain
+mutation; imported drivers keep their own preemption policy. Native illumination
+has no reported warm-up stage, so its completion property follows the existing
+Ready/Off interpretation without a fabricated timer.
+
+Fifteen controller cases pass, including actual loopback Alpaca V1/V2 connection
+negotiation, shared clients, zero-on, warm-up and an applied-once command with a
+malformed acknowledgement. Both production-worker panel cases pass with explicit
+SIM-OFP2, including typed sibling clients, live maximum, known stopped/unknown
+endpoint and no darkening on sibling disconnect. All ten vendor protocol cases
+and the movement-timeout unit test pass. Full Rust hub/Alpaca regressions, strict
+Clippy, Rust 1.89 all targets, generated-contract freshness, Node contract/event
+checks and six independent schema cases pass. The default Python lacked
+jsonschema; the existing artifacts/hub-schema-venv passes without installing or
+changing dependencies. Fresh-host NINA 213/213 and real net48 x86/x64 regressions
+pass. The standalone OFP2 worker/HTTP simulation also passes brightness, full
+open/close, mid-travel halt/resume, discovery, persistent identity, independent
+clients, reconnect, invalid values and origin checks.
+
+Evidence: artifacts/hub-panel-{vendor,workers,native-focused}.log and
+artifacts/hub-panel-controller-{focused,rust,clippy,msrv,contract,node,
+schema,schema-confirmed,host,nina,net48,ofp2}.log. Panel runtime/IPC/diagnostics, every publication,
+COM/virtual inputs, dedicated controls and shared creation remain open. No panel
+setup gate is enabled by this checkpoint. All later plan requirements remain.
+
+Preceding a586c76 PR/push CI 37544747351/37544741219 now passes all eight jobs.
+Verified wheel simulation/shared creation is pushed at 5d0ed34; new PR/push
+CI 37547703480/37547695748 is running. Draft PR #21's body describes that pushed
+head and does not claim local panel changes are published or hardware accepted.

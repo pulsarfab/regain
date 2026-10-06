@@ -128,11 +128,35 @@ fn movement_is_polled_and_halt_is_distinct_from_an_endpoint() {
     ]);
     p.move_cover(false).unwrap();
     assert!(p.has_pending_motion());
-    assert_eq!(p.status().unwrap().cover, CoverState::Moving);
+    let moving = p.status().unwrap();
+    assert_eq!(moving.cover, CoverState::Moving);
+    assert_eq!(moving.cover_moving, Some(true));
     p.halt().unwrap();
     assert!(!p.has_pending_motion());
-    assert_eq!(p.status().unwrap().cover, CoverState::Unknown);
+    let stopped = p.status().unwrap();
+    assert_eq!(stopped.cover, CoverState::Unknown);
+    assert_eq!(stopped.cover_moving, Some(false));
     assert_eq!(&writes.lock().unwrap()[10..12], ["STRG270", "SMOV"]);
+}
+#[test]
+fn unknown_firmware_motion_report_does_not_invent_stopped_evidence() {
+    let (mut p, _) = panel(&["3", "135", "0", "0"]);
+    let status = p.status().unwrap();
+    assert_eq!(status.cover, CoverState::Unknown);
+    assert_eq!(status.cover_moving, None);
+}
+#[test]
+fn explicit_simulator_halt_preserves_intermediate_position_and_known_stopped_motion() {
+    let mut p = Panel::new(regain_deepskydad::ofp2::simulation::Simulation::default()).unwrap();
+    p.move_cover(false).unwrap();
+    assert_eq!(p.status().unwrap().cover_moving, Some(true));
+    p.halt().unwrap();
+    let status = p.status().unwrap();
+    assert_eq!(status.cover, CoverState::Unknown);
+    assert_eq!(status.cover_moving, Some(false));
+    assert_eq!(status.position_degrees, 135);
+    p.move_cover(true).unwrap();
+    assert_eq!(p.status().unwrap().cover, CoverState::Moving);
 }
 #[test]
 fn premature_idle_does_not_claim_success() {
