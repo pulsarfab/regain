@@ -99,6 +99,11 @@ pub enum Command {
     SourceStatus {
         source: Uuid,
     },
+    InspectSource {
+        source: Uuid,
+        start: u32,
+        limit: u32,
+    },
     Connect {
         output: Uuid,
     },
@@ -149,6 +154,8 @@ pub struct RpcError {
     pub message: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub upstream_code: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub retry_after_seconds: Option<f64>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub fields: Vec<crate::parameters::FieldError>,
 }
@@ -168,6 +175,7 @@ impl From<SourceError> for RpcError {
             },
             message: error.message,
             upstream_code: error.upstream_code,
+            retry_after_seconds: error.retry_after.map(|delay| delay.as_secs_f64()),
             fields: Vec::new(),
         }
     }
@@ -206,6 +214,7 @@ impl From<UpdateError> for RpcError {
             code,
             message,
             upstream_code: None,
+            retry_after_seconds: None,
             fields: match error {
                 UpdateError::Invalid(fields) => fields,
                 _ => Vec::new(),
@@ -242,6 +251,7 @@ impl From<CredentialError> for RpcError {
             code,
             message,
             upstream_code: None,
+            retry_after_seconds: None,
             fields: Vec::new(),
         }
     }
@@ -336,7 +346,7 @@ where
                 if !greeted {
                     if !matches!(request.command, Command::Hello {}) { return Err(ProtocolError::Handshake); }
                     greeted = true;
-                    let mut operations = vec!["describeConfig","getConfig","validateConfig","listDevices","sourceStatus","connect","disconnect","get","put","hostStatus"];
+                    let mut operations = vec!["describeConfig","getConfig","validateConfig","listDevices","sourceStatus","inspectSource","connect","disconnect","get","put","hostStatus"];
                     if service.can_apply() { operations.push("applyConfig"); }
                     if service.credential_description().is_some() { operations.extend(["createCredential", "credentialStatus", "deleteCredential"]); }
                     let hello = json!({"protocolVersion":VERSION, "instanceId":service.instance_id(),
@@ -355,7 +365,7 @@ where
                     let write = matches!(request.command, Command::Put { .. } | Command::ApplyConfig { .. } | Command::CreateCredential { .. } | Command::DeleteCredential { .. });
                     let result = timeout(limits.operation_timeout, dispatch_service(&service, &client, request.command)).await
                         .unwrap_or_else(|_| Err(if write { SourceError::uncertain().into() } else {
-                            RpcError { code:"timeout", message:"Hub operation deadline expired", upstream_code:None, fields:Vec::new() }
+                            RpcError { code:"timeout", message:"Hub operation deadline expired", upstream_code:None, retry_after_seconds:None, fields:Vec::new() }
                         }));
                     Response::new(request.id, result)
                 });
@@ -392,6 +402,7 @@ async fn dispatch_service(
                 describe_config(&["nativeSources", "alpacaSources", "writeReadout"]);
             description["credentialStorage"] =
                 service.credential_description().unwrap_or(Value::Null);
+            description["capabilityInspection"] = crate::capabilities::description();
             Ok(description)
         }
         Command::CreateCredential { authorization } => {
@@ -446,6 +457,7 @@ async fn dispatch(
                 code: "invalidRequest",
                 message: "Hello is only valid as the first request",
                 upstream_code: None,
+                retry_after_seconds: None,
                 fields: Vec::new(),
             });
         }
@@ -460,6 +472,11 @@ async fn dispatch(
         }
         Command::ListDevices {} => json!(runtime.outputs()),
         Command::SourceStatus { source } => json!(runtime.source_snapshot(source)?),
+        Command::InspectSource {
+            source,
+            start,
+            limit,
+        } => json!(runtime.inspect_source(source, start, limit).await?),
         Command::Connect { output } => {
             client.connect(output).await?;
             Value::Null
@@ -598,6 +615,7 @@ async fn write_response<W: AsyncWrite + Unpin>(
                 code: "responseTooLarge",
                 message: "Hub response exceeds the frame limit",
                 upstream_code: None,
+                retry_after_seconds: None,
                 fields: Vec::new(),
             }),
         );

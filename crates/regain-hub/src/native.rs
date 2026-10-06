@@ -276,7 +276,7 @@ fn worker_arguments(device: NativeDevice) -> Result<(&'static str, &'static str)
         }
     })
 }
-fn properties(device: NativeDevice) -> &'static [(&'static str, &'static str, bool)] {
+pub(crate) fn properties(device: NativeDevice) -> &'static [(&'static str, &'static str, bool)] {
     use NativeDevice::*;
     match device {
         Eaf | Fc3 => &[

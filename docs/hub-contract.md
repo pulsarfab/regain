@@ -425,6 +425,63 @@ executor. Storage tests and private IPC tests do not establish frontend UI suppo
 
 ## Native source adapter checkpoint
 
+### Setup capability inspection
+
+`inspectSource` takes a configured source UUID, `start`, and `limit`. It acquires
+a temporary source lease through the same actor used by outputs. It may open
+and close a connection under the configured ownership policy, but sends no
+equipment control commands. `describeConfig.capabilityInspection` supplies shared
+parameter keys, labels, limits, defaults, and the 20-second overall deadline.
+Construction and ordinary config validation still perform no device probing.
+
+The initial inspection supports Alpaca Switch, SafetyMonitor, and
+ObservingConditions sources, plus the seven native accessory families below.
+It reports `purpose:setupOnly`, source/configuration/generation identities,
+negotiated connection information, and host-clock start/completion times. Native
+simulation is explicit. Other network device classes remain unsupported here
+until their broader proxy/capability contracts are implemented in milestone 4.
+
+- Switch pages contain at most eight real upstream channel IDs, names,
+  descriptions, CanWrite, bounds, steps, and a next-start index. MaxSwitch must be
+  a valid nonnegative ASCOM Int16 count. Range validation reuses the exact grid
+  validator used by writes. Unknown/invalid bounds cannot suggest a writable
+  mapping. No unit is inferred from a Switch label or description.
+- Weather inspection reports all thirteen standard measurements, canonical units,
+  SensorDescription, TimeSinceLastUpdate, and a numeric reading as separate
+  observations. Failure of one field does not invent support or erase another.
+- Safety inspection accepts only a Boolean IsSafe. This diagnostic read is not
+  a policy observation or permission to operate equipment; only the safety engine
+  produces the combined decision and advances confirmation counters.
+- Native inspection reuses each adapter's property map. Numeric readings can be
+  offered as scalar mappings; Boolean accessory properties are currently marked
+  ineligible because the scalar controllers do not consume them. An absent optional
+  temperature sensor is unavailable, not a fabricated reading or capability.
+
+Probe states are `observed`, `unsupported`, and `unavailable`. Only a definitive
+NotImplemented response produces unsupported; authentication/transport failures,
+invalid values, and temporary sensor failures remain unavailable. Strings are
+bounded to 1024 Unicode characters without controls; numbers must be finite.
+Metadata strings are untrusted device text and must be escaped by UI renderers.
+
+Requests are sequential through the source actor, so polling and other commands
+can interleave. Each read is fenced against the initial generation at dispatch,
+and the scan rejects any detected connection change instead of combining epochs.
+Pages carry their own generation; they do not promise an atomic device snapshot.
+Writes continue to revalidate live permissions and bounds. Inspection never
+updates cached telemetry, sensor ages, or safety evidence from its getter results.
+
+An active inspection participates in configuration quiescence. Cancellation or
+deadline expiration drops its temporary lease; an already-dispatched read may
+finish within the source's request deadline before queued cleanup runs. Runtime
+replacement still drains the old registry. A Retry-After response stops the scan
+without replay; IPC errors expose `retryAfterSeconds` for the requesting frontend.
+No inferred permission or default value substitutes for an unsuccessful probe.
+
+References: [Switch interface](https://ascom-standards.org/newdocs/switch.html) and
+[ObservingConditions interface](https://ascom-standards.org/newdocs/observingconditions.html).
+
+### Native scalar adapters
+
 Native accessory sources launch the existing `regain-device VENDOR DEVICE serve
 --serial ID` worker through `regain-core::accessory`. Construction does no I/O;
 connection verifies the returned serial before exposing the source. The host's

@@ -717,3 +717,32 @@ async fn safety_invalidates_on_transport_reset_before_another_poll_completes() {
         "reset must invalidate without awaiting next scheduled poll"
     );
 }
+
+#[tokio::test(start_paused = true)]
+async fn fenced_read_rejects_an_old_generation_before_dispatching_the_backend() {
+    let device = Arc::new(Device::default());
+    let source = spawn(&device);
+    let lease = Uuid::new_v4();
+    source.acquire(lease).await.unwrap();
+    let old = source.snapshot().generation;
+    source.release(lease).await.unwrap();
+    source.acquire(lease).await.unwrap();
+    assert_ne!(old, source.snapshot().generation);
+    let error = source
+        .read_fenced(lease, "maxswitch", Values::new(), Some(old))
+        .await
+        .unwrap_err();
+    assert_eq!(error.kind, ErrorKind::Unavailable);
+    assert_eq!(device.reads.load(SeqCst), 0);
+    source
+        .read_fenced(
+            lease,
+            "maxswitch",
+            Values::new(),
+            Some(source.snapshot().generation),
+        )
+        .await
+        .unwrap();
+    assert_eq!(device.reads.load(SeqCst), 1);
+    source.shutdown().await.unwrap();
+}

@@ -394,10 +394,20 @@ and OS user. Rotation creates a new reference, applies it, then deletes the old
 reference. Deletion and apply share one update gate, retained through cancelled
 requests and shutdown. Configured references cannot be deleted. A real executable
 test creates a credential, authenticates loopback Alpaca requests, restarts the
-host, authenticates again, and removes the unused record. Shared UI integration
-and portable CI for this storage implementation remain required.
+host, authenticates again, and removes the unused record. Credential storage now
+passes Linux x64/ARM64 and macOS Intel/ARM64 CI; shared UI integration remains required.
 
-Next: implement device capabilities and virtual/simulated sources, then connect the first
+Setup capability inspection is now available over private IPC for Alpaca
+Switch/SafetyMonitor/ObservingConditions and native accessories. It uses temporary
+leases on the existing actor, bounded Switch pages, strict typed probe results,
+shared range/unit/property definitions, and generation-fenced reads. Inspection
+participates in apply quiescence and never feeds getter results into safety
+confirmation or freshness. Mock faults, real loopback managed connection sharing,
+IPC dispatch, and all seven simulated production workers are covered locally.
+Broader proxy capabilities, discovery of unconfigured devices, and UI adoption
+remain required; this is a setup inspection path, not completed frontend support.
+
+Next: implement virtual/simulated sources and frontend attachment, then connect the first
 three virtual classes to the existing Alpaca server/setup UI. Frontend error
 translation and protocol conformance remain unverified. Generic
 scalar polling does not establish camera image or acquisition support. No complete
@@ -486,3 +496,4 @@ Keep existing device profiles and registrations compatible throughout migration.
 | 2026-10-05 | Integrated the private host into regain-alpaca, bounded admission/readiness, and cancellation-safe supervisor cleanup. Fixed repeated actor cleanup and Windows pipe exhaustion exposed by host tests. | 124 hub tests plus process fixtures and 14 Alpaca tests pass locally, including three production-executable tests. Clippy, Rust 1.89.0, transport/core/hub/Alpaca packaging and existing standalone camera/HTTP simulation checks pass. Endpoint CI verifies Linux x64/ARM64 and macOS ARM64. Next: durable apply, protected credentials, capabilities, frontend IPC attachment and Alpaca publication; all remaining original gates stay open. |
 | 2026-10-05 | Added supervised configuration apply through IPC, staged compare-and-swap persistence, atomic connection quiescence, client rebinding, and explicit post-commit blocked/warning outcomes. Addressed macOS peer-admission failure from the previous checkpoint. | 132 Windows hub tests plus process fixtures and 14 Alpaca tests pass locally, including file/constructor failures, competing editors, retained operations, cancellation/deadline uncertainty, panic recovery, and production-executable apply/restart. Clippy, Rust 1.89.0, package verification, and contract freshness pass. Portable CI remains required for this checkpoint. Next: protected credentials, capabilities, frontend attachment/publication, and all remaining original gates. |
 | 2026-10-05 | Added user-scoped credential storage, shared write-only descriptors/IPC, immutable rotation through configuration apply, and deletion protected by the update gate. Reused private file checks; moved credential resolution off the async executor. | 141 Windows hub tests plus process fixtures and 14 Alpaca tests pass, including DPAPI/ACL checks, corruption/isolation, cancelled apply versus deletion, and production-host authenticated polling before/after restart. Clippy, Rust 1.89.0, contract freshness, and package verification pass. The previous checkpoint now passes all four portable CI platforms; new storage checks await CI. Next: capabilities and virtual/simulated sources, frontend attachment/publication, and remaining milestones 2–5. |
+| 2026-10-05 | Added bounded setup inspection through shared source leases, Switch pagination and range validation, weather/safety probes, native property reuse, generation-fenced reads, shared request metadata, and IPC retry-delay reporting. | 152 Windows hub tests plus process fixtures and 14 Alpaca tests pass, including faults/cancellation/deadlines, apply exclusion, real managed Alpaca connection sharing, IPC, and seven simulated production workers. Clippy, Rust 1.89.0, contract freshness, and package verification pass. Credential storage passed all four portable CI platforms; setup inspection still awaits CI. Next: virtual/simulated sources, frontend attachment/publication, broader capability contracts, and all remaining original milestones. |

@@ -654,3 +654,56 @@ CI is still required for the new credential permission/link checks. Device
 capabilities, virtual/simulated sources, frontend attachment/publication, COM,
 native NINA/ASCOM outputs, broader proxies, coordination, conformance, hardware,
 docs/screenshots, and the final merge audit remain open.
+
+## 2026-10-05: bounded setup inspection on shared sources
+
+Added explicit inspectSource IPC for Switch/SafetyMonitor/ObservingConditions
+network sources and native accessories, with shared request metadata. Inspection
+uses the source actor and temporary lease rather than opening another transport.
+It is an observation for setup; it does not authorize commands or seed safety.
+
+Review findings and corrections:
+
+1. A large switch bank cannot produce unlimited requests or metadata. Pages allow
+   at most eight channels under one 20-second overall deadline, with the source's
+   individual deadlines still enforced. Preserve upstream IDs and next-start;
+   reject bad counts/pages. Bounded text and strict value types prevent malformed
+   metadata from appearing as supported capabilities.
+2. A failed read is not evidence of unsupported hardware. Keep observed,
+   unsupported, and unavailable states distinct; only definitive NotImplemented
+   maps to unsupported. Weather descriptions, ages, and values remain independent.
+   Retry-After ends the scan without retry and reaches IPC as retryAfterSeconds.
+3. An initial permissive range check differed from the write path. Inspection now
+   reuses Switch Grid validation, including whole, representable step counts.
+   Weather units and native property lists also use existing definitions. Native
+   Boolean properties are not suggested as scalar mappings until those consumers
+   support them. Do not infer Switch units from text.
+4. Inspection reads can straddle a reconnect. Added an optional read generation
+   fence at actor dispatch; the inspector also checks before/after every read and
+   at completion. A changed connection invalidates the whole report. This does
+   not promise an atomic snapshot of equipment values or across separate pages.
+5. Temporary setup leases must count toward configuration quiescence, including
+   pending connection attempts. Runtime activity is reserved under the same
+   lifecycle mutex as apply/connect. Cancellation releases the temporary lease;
+   already-dispatched reads retain their source deadline and registry drain rules.
+6. Setup must preserve ownership. A real loopback modern Switch fixture runs two
+   inspections while another lease remains, proves one Connect and no early
+   Disconnect, then verifies exactly one owned cleanup. No motion or switch-write
+   commands are dispatched by discovery. All native worker trials are explicit
+   simulation and retain that fact in the result.
+
+Local tests: 152 hub tests plus the endpoint process fixture and 14 Alpaca tests
+pass. New cases cover Switch IDs/pagination/grid checks, strict safety values,
+partial weather support, connection changes, Retry-After, cancellation versus
+apply, the total deadline, fenced reads, private IPC dispatch/metadata, managed
+HTTP sharing, and inspection of all seven simulated native accessory families.
+Clippy with warnings denied, Rust 1.89.0, generated-contract freshness, and
+transport/core/hub/Alpaca package verification pass. Packaging used the fresh
+`target/hub-capabilities-package` registry. Credential checkpoint `c472922` now
+passes Linux x64/ARM64 and macOS Intel/ARM64 CI, including private-file/link checks.
+Setup inspection requires its own portable CI result.
+
+Inspection of unconfigured devices, virtual/simulated source implementation,
+frontend attachment/publication, complete proxy capabilities, COM/NINA/ASCOM
+integration, coordination, conformance, hardware trials, documentation/screenshots,
+and final merge remain open. This checkpoint does not close milestone 2.

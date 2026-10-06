@@ -78,6 +78,40 @@ fn connect(output: Uuid) -> Value {
     json!({"op":"connect","output":output})
 }
 
+#[tokio::test]
+async fn setup_inspection_is_advertised_and_available_without_connecting_an_output() {
+    let f = fixture();
+    let mut peer = Peer::start(f.runtime.clone(), Limits::default()).await;
+    assert!(
+        peer.hello["operations"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("inspectSource"))
+    );
+    let source = f.config.sources[0].id;
+    let metadata = peer.call(json!({"op":"describeConfig"})).await;
+    assert_eq!(
+        metadata["result"]["capabilityInspection"]["parameters"]["limit"]["maximum"],
+        regain_hub::capabilities::MAX_CHANNEL_PAGE
+    );
+    let response = peer
+        .call(json!({"op":"inspectSource","source":source,"start":0,"limit":1}))
+        .await;
+    assert_eq!(response["result"]["source"], source.to_string());
+    assert_eq!(response["result"]["capabilities"]["kind"], "switch");
+    assert_eq!(
+        response["result"]["capabilities"]["channels"][0]["canWrite"]["value"],
+        true
+    );
+    assert_eq!(
+        peer.call(get(f.switch, json!({"member":"connected"})))
+            .await["result"],
+        false
+    );
+    assert_eq!(f.runtime.active_connections(), 0);
+    f.runtime.shutdown().await.unwrap();
+}
+
 #[tokio::test(start_paused = true)]
 async fn protocol_routes_shared_switch_safety_weather_and_configuration() {
     let f = fixture();

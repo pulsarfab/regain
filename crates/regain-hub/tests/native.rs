@@ -43,6 +43,58 @@ fn config(device: NativeDevice, identity: &str) -> SourceConfig {
         },
     }
 }
+
+#[tokio::test]
+async fn setup_inspection_reuses_native_property_maps_and_marks_simulation() {
+    let Some(native) = runtime() else {
+        return;
+    };
+    for (device, serial) in [
+        (NativeDevice::Caa, "0102030405060708"),
+        (NativeDevice::Efw, "0102030405060708"),
+        (NativeDevice::Eaf, "0102030405060709"),
+        (NativeDevice::Fc3, "00:00:00:00:00:03"),
+        (NativeDevice::Falcon, "FALCON-SIMULATION"),
+        (NativeDevice::Ofp2, "SIM-OFP2"),
+        (NativeDevice::Eta, "SIMULATION"),
+    ] {
+        let mut cfg = regain_hub::config::HubConfig::empty();
+        cfg.sources.push(config(device, serial));
+        let source = cfg.sources[0].id;
+        let hub = regain_hub::runtime::HubRuntime::build(
+            cfg,
+            &native,
+            &regain_hub::factory::NoCredentials,
+            Arc::new(MonotonicClock::default()),
+        )
+        .unwrap();
+        let report = hub.inspect_source(source, 0, 4).await.unwrap();
+        assert_eq!(report.simulation, Some(true));
+        let regain_hub::capabilities::Capabilities::Native { properties } = report.capabilities
+        else {
+            panic!("Expected native capability map")
+        };
+        assert!(!properties.is_empty());
+        for property in &properties {
+            if property.property != "temperature" {
+                assert!(
+                    matches!(
+                        property.reading,
+                        regain_hub::capabilities::Probe::Observed { .. }
+                    ),
+                    "{device:?}: {property:?}"
+                );
+            }
+            if property.property == "ismoving" {
+                assert!(!property.scalar_mapping);
+            }
+        }
+        if device == NativeDevice::Eta {
+            assert!(!properties.iter().any(|p| p.property == "temperature"));
+        }
+        hub.shutdown().await.unwrap();
+    }
+}
 #[test]
 fn construction_does_no_io_and_cameras_require_their_supervisor() {
     let runtime = NativeRuntime {

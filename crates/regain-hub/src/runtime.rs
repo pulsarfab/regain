@@ -152,6 +152,43 @@ impl HubRuntime {
     pub fn source_snapshot(&self, source: Uuid) -> Result<SourceSnapshot, SourceError> {
         self.registry.get(source).map(|source| source.snapshot())
     }
+    /// Setup probing owns a temporary connection and participates in apply's
+    /// quiescence check just like a pending output connection.
+    pub async fn inspect_source(
+        &self,
+        source: Uuid,
+        start: u32,
+        limit: u32,
+    ) -> Result<crate::capabilities::Inspection, SourceError> {
+        let config = self
+            .config
+            .sources
+            .iter()
+            .find(|entry| entry.id == source)
+            .ok_or_else(|| SourceError::new(ErrorKind::InvalidValue, "Unknown source ID"))?;
+        let _activity = {
+            let lifecycle = self.lifecycle.lock().unwrap();
+            if lifecycle.closed {
+                return Err(disconnected());
+            }
+            if lifecycle.frozen {
+                return Err(SourceError::new(
+                    ErrorKind::Busy,
+                    "Configuration is being applied",
+                ));
+            }
+            Activity::new(self.activity.clone())
+        };
+        crate::capabilities::inspect(
+            config,
+            self.config.source_type(source).expect("Validated source"),
+            self.registry.get(source)?,
+            &*self.clock,
+            start,
+            limit,
+        )
+        .await
+    }
     pub fn revision(&self) -> Uuid {
         self.config.revision
     }
@@ -171,7 +208,7 @@ impl HubRuntime {
         self.registry.snapshots()
     }
 
-    /// Counts pending connections and connections still retained by in-flight
+    /// Counts setup inspections, pending connections and connections still retained by in-flight
     /// commands after client disconnect. Zero does not prove worker teardown;
     /// configuration replacement must separately drain the old registry.
     pub fn active_connections(&self) -> usize {

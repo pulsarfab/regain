@@ -200,6 +200,7 @@ enum Command {
     },
     Read {
         lease: Uuid,
+        expected_generation: Option<Uuid>,
         member: String,
         parameters: Values,
         reply: Reply<Value>,
@@ -437,9 +438,19 @@ impl SourceHandle {
         member: &str,
         parameters: Values,
     ) -> Result<Value, SourceError> {
+        self.read_fenced(lease, member, parameters, None).await
+    }
+    pub async fn read_fenced(
+        &self,
+        lease: Uuid,
+        member: &str,
+        parameters: Values,
+        expected_generation: Option<Uuid>,
+    ) -> Result<Value, SourceError> {
         let (reply, response) = oneshot::channel();
         self.enqueue(Command::Read {
             lease,
+            expected_generation,
             member: member.into(),
             parameters,
             reply,
@@ -797,6 +808,7 @@ impl Actor {
             }
             Command::Read {
                 lease,
+                expected_generation,
                 member,
                 parameters,
                 reply,
@@ -810,6 +822,15 @@ impl Actor {
                     Ok(()) => match self.connect().await {
                         Err(e) => Err(e),
                         Ok(()) => {
+                            if expected_generation
+                                .is_some_and(|generation| generation != self.state.generation)
+                            {
+                                let _ = reply.send(Err(SourceError::new(
+                                    ErrorKind::Unavailable,
+                                    "Source generation changed before dispatch",
+                                )));
+                                return;
+                            }
                             dispatched = true;
                             timeout(self.deadline(), self.backend.read(member, parameters))
                                 .await
