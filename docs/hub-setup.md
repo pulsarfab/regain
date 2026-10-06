@@ -20,9 +20,8 @@ cannot keep cached safety permission fresh or block other sources. Unknown write
 or connection outcomes require explicit reconciliation; do not blindly repeat
 them. Killing a private worker does not prove the upstream driver disconnected.
 Other platforms can import a driver's exported Alpaca endpoint. Registered
-fixture tests pass locally; installed vendor-driver and interactive frontend
-acceptance remain on the plan, alongside resolution of the Windows CI loader
-failure.
+fixture tests and both-bit machine SCM activation pass; installed vendor-driver
+and interactive frontend acceptance remain on the plan.
 
 To try the editor without equipment, copy
 [`simulated-observatory.json`](../crates/regain-hub/examples/simulated-observatory.json)
@@ -46,14 +45,37 @@ configuration initialization for a new installation is still being implemented.
    The host checks the saved revision and writes the update atomically. Another
    editor's change causes a conflict instead of silently overwriting it.
 
-If the outcome is uncertain, reload the saved configuration and host status before
-trying another change. Do not repeat Apply blindly. Stopping the HTTP frontend
-leaves the shared host running; reconnect/resume controls are still in development.
+If the outcome is uncertain, select **Reload saved configuration** before another
+change. Reload explicitly opens a new setup connection and reads the saved
+configuration and host status. It never repeats Apply, connects equipment or
+starts the host. Other clients retain their leases. After host loss, equipment
+clients still need explicit reconnect or HTTP frontend restart; broader
+reconnect/resume controls remain in development. Stopping the HTTP frontend
+leaves the shared host running.
+
+Select **Manage upstream credentials** to save a complete Authorization header.
+The masked input is cleared before sending; configuration holds only the resulting
+reference. Protection, labels, descriptions and limits come from the same host
+descriptors as native setup. Copy the reference into a source, review and apply.
+For rotation, create a new reference, apply it, then remove the unused old one.
+Saved configuration references are protected from deletion.
+
+The editor retains the reference before sending, including if the reply is lost.
+Reload and select **Read credential status** before another change. Status returns
+busy while storage work is pending; no creation/removal is repeated automatically.
+Retain the reference separately before navigating away or closing the page.
+Neither browser nor managed string copies are claimed to be securely erased.
+
+![Web credential setup against a simulated observatory](images/hub-web-credentials-simulation.jpg)
+
+This is the actual browser editor against the production host with simulated
+equipment. Its disposable credential was subsequently removed; the input is
+empty and the configuration remains unchanged.
 
 ![Shared hub setup after saving a simulated output](images/hub-setup-simulation.jpg)
 
 This screenshot shows a hardware-free test. It is evidence of the editor workflow,
-not real-device acceptance. Credential management, simulation controls, richer
+not real-device acceptance. Simulation controls, richer
 safety diagnostics, initialization, and conformance remain on
 the [hub plan](hub-plan.md).
 
@@ -119,7 +141,7 @@ reload and select **Read credential status** for that reference before another
 change; do not repeat creation. Status reports busy while a configuration or
 credential operation is still running. The native editor keeps the reference
 across reloads during this window; retain it separately before closing the window.
-Web credential controls remain pending.
+The web editor offers the same credential operations under **Manage upstream credentials**.
 
 ![Native credential setup against a simulated observatory](images/hub-native-credentials-simulation.png)
 
@@ -188,5 +210,7 @@ This is an actual WPF render with private test registry roots and non-executable
 fixture paths; no installed hardware driver was activated. Uninstall now removes
 owned dynamic entries before deleting application files, preserving other installs
 and settings. A cleanup failure retains the installation for explicit recovery.
-Production-helper and installer lifecycle CI, interactive frontend acceptance and
-conformance remain required before this development feature is released.
+Production-helper and installer lifecycle CI now pass, including installed
+metadata, in-use protection, conflict recovery, orphan cleanup and other-install
+preservation. Interactive frontend/vendor acceptance and conformance remain
+required before this development feature is released.

@@ -63,6 +63,8 @@ pub struct Publisher {
     endpoint: Endpoint,
     instance: Uuid,
     catalog: Client,
+    setup_client: Mutex<Client>,
+    setup_gate: AsyncMutex<()>,
     state: Mutex<State>,
 }
 impl Publisher {
@@ -79,10 +81,42 @@ impl Publisher {
                 | Command::ValidateConfig { .. }
                 | Command::ApplyConfig { .. }
                 | Command::UpdateSimulation { .. }
+                | Command::CreateCredential { .. }
+                | Command::CredentialStatus { .. }
+                | Command::DeleteCredential { .. }
         ) {
             return Err(ClientError::InvalidRequest);
         }
-        self.catalog.request(command).await
+        let _gate = self.setup_gate.try_lock().map_err(|_| ClientError::Busy)?;
+        if self.state.lock().unwrap().closed {
+            return Err(ClientError::Disconnected);
+        }
+        let client = self.setup_client.lock().unwrap().clone();
+        client.request(command).await
+    }
+    /// Explicit setup reattachment only. Never replace the catalog, reacquire
+    /// output leases, start a host or replay a previous setup request.
+    pub(crate) async fn reload_setup(&self) -> Result<Value, ClientError> {
+        let _gate = self.setup_gate.try_lock().map_err(|_| ClientError::Busy)?;
+        if self.state.lock().unwrap().closed {
+            return Err(ClientError::Disconnected);
+        }
+        let client = Client::connect(
+            &self.endpoint,
+            self.instance,
+            Duration::from_secs(10),
+            ClientLimits::default(),
+        )
+        .await?;
+        let state = self.state.lock().unwrap();
+        if state.closed {
+            client.close();
+            return Err(ClientError::Disconnected);
+        }
+        let result = json!({"instanceId":client.hello().instance_id,"hostInstance":client.hello().host_instance});
+        let old = std::mem::replace(&mut *self.setup_client.lock().unwrap(), client);
+        old.close();
+        Ok(result)
     }
     /// The shared host must already be attached. No automatic restart/replay.
     pub async fn connect(endpoint: Endpoint, instance: Uuid) -> Result<Arc<Self>> {
@@ -94,10 +128,24 @@ impl Publisher {
         )
         .await
         .map_err(translate)?;
+        let setup_client = Client::connect(
+            &endpoint,
+            instance,
+            Duration::from_secs(10),
+            ClientLimits::default(),
+        )
+        .await
+        .map_err(translate)?;
+        ensure!(
+            setup_client.hello().host_instance == catalog.hello().host_instance,
+            "Hub changed during publisher initialization; start again"
+        );
         Ok(Arc::new(Self {
             endpoint,
             instance,
             catalog,
+            setup_client: Mutex::new(setup_client),
+            setup_gate: AsyncMutex::new(()),
             state: Mutex::new(State {
                 closed: false,
                 clients: HashMap::new(),
@@ -111,6 +159,7 @@ impl Publisher {
             session.close();
         }
         self.catalog.close();
+        self.setup_client.lock().unwrap().close();
     }
     pub async fn devices(&self) -> Result<Vec<OutputDescriptor>> {
         let value = self
@@ -613,4 +662,93 @@ fn translate(failure: ClientError) -> anyhow::Error {
         _ => failure.to_string(),
     };
     error(code, message)
+}
+
+#[cfg(test)]
+mod setup_tests {
+    use super::*;
+    #[tokio::test]
+    async fn explicit_setup_reload_recovers_only_setup_and_respects_admission_and_shutdown() {
+        use regain_hub::{
+            config::{ConfigStore, HubConfig},
+            factory::NoCredentials,
+            host,
+            ipc::Limits,
+            native::NativeRuntime,
+            runtime::HubRuntime,
+            safety::MonotonicClock,
+            service::HubService,
+        };
+        let directory = tempfile::tempdir().unwrap();
+        let config = HubConfig::empty();
+        let path = directory.path().join("hub.json");
+        std::fs::write(&path, serde_json::to_vec(&config).unwrap()).unwrap();
+        let endpoint = Endpoint::for_config(&path).unwrap();
+        let listener = endpoint.try_lock().unwrap().unwrap().bind().unwrap();
+        let service = HubService::persistent(
+            ConfigStore::load(&path).unwrap(),
+            Arc::new(|config| {
+                HubRuntime::build(
+                    config,
+                    &NativeRuntime {
+                        directory: "unused-fixture".into(),
+                        simulate: false,
+                    },
+                    &NoCredentials,
+                    Arc::new(MonotonicClock::default()),
+                )
+            }),
+        )
+        .unwrap();
+        let stop = regain_core::CancellationToken::new();
+        let host = tokio::spawn(host::serve_service(
+            listener,
+            service,
+            Limits::default(),
+            stop.clone(),
+        ));
+        let publisher = Publisher::connect(endpoint, config.instance_id)
+            .await
+            .unwrap();
+        let host_id = publisher.catalog.hello().host_instance;
+        publisher.setup_client.lock().unwrap().close();
+        assert!(matches!(
+            publisher.setup(Command::GetConfig {}).await,
+            Err(ClientError::Disconnected)
+        ));
+        assert!(publisher.devices().await.unwrap().is_empty()); // Catalog survived.
+        let gate = publisher.setup_gate.lock().await;
+        assert!(matches!(
+            publisher.reload_setup().await,
+            Err(ClientError::Busy)
+        ));
+        assert!(matches!(
+            publisher.setup(Command::GetConfig {}).await,
+            Err(ClientError::Busy)
+        ));
+        drop(gate);
+        assert_eq!(
+            publisher.reload_setup().await.unwrap()["hostInstance"],
+            json!(host_id)
+        );
+        assert_eq!(
+            publisher.setup(Command::GetConfig {}).await.unwrap()["revision"],
+            json!(config.revision)
+        );
+        publisher.close();
+        assert!(matches!(
+            publisher.reload_setup().await,
+            Err(ClientError::Disconnected)
+        ));
+        assert!(matches!(
+            publisher.setup(Command::GetConfig {}).await,
+            Err(ClientError::Disconnected)
+        ));
+        stop.cancel();
+        tokio::time::timeout(Duration::from_secs(5), host)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+    }
 }

@@ -8,13 +8,15 @@ tagged or published. Changed cross-crate APIs require an unpublished version so
 Cargo package verification uses the new workspace packages.
 Last updated: 2026-10-06.
 
-Current increment: shared native credential setup and recoverable creation. NINA
-and ASCOM use the same descriptor-driven credential tab, with a masked write-only
-input, explicit protection description, retained reference, status and unused
-reference removal. Clients choose an ID before dispatch; lost replies require
-explicit reload/status rather than repeating the write. Review found that status
-could race an in-flight storage transaction; it now shares the transaction gate.
-Credential changes revoke an earlier configuration review.
+Current increment: web credential setup using the same host descriptors as NINA
+and ASCOM. All three frontends now provide a masked write-only input, protection
+description, retained reference, status and unused-reference removal. Creation
+retains a caller-chosen ID before sending; unknown replies require explicit
+reload/status without mutation replay. Credential changes revoke prior review.
+Review found web Reload could not recover the catalog's dead connection. Setup
+now has a separate private connection and an explicit, bounded same-origin Reload
+endpoint. It never replaces the equipment catalog, reacquires leases or starts a
+host. Broader frontend recovery remains a separate original-plan gate.
 
 The scalar COM output checkpoint d51abac passed both full CI runs, including cold
 machine SCM activation in both architectures and strict DeviceState collections.
@@ -28,10 +30,15 @@ tests/packaging, including actual helper publication, both-bit client SCM and
 removal after deleting bindings. Its installer fixture fails at the same initial
 version read. Actual installer lifecycle,
 installed metadata/in-use acceptance, interactive UAC/Chooser and conformance
-remain unproven.
+remain separate acceptance gates. Native-credential checkpoint 2a26281 now passes
+all eight jobs in PR CI 37457955380. Windows logs prove installed metadata without
+host/equipment activation, nested helper busy guards and natural retirement,
+upgrade preservation, failed uninstall with conflict, orphan removal after
+deleting bindings, preservation of another installation/settings and cleanup.
+Interactive UAC/Chooser, conformance and vendor acceptance remain required.
 
-Next: verify updated credential and installer CI, add the same credential controls
-to web setup, complete native initialization/inspection/simulation/diagnostics,
+Next: verify web-credential and installer CI, complete native
+initialization/inspection/simulation/diagnostics,
 then broader typed proxies, camera ownership, coordination and every remaining
 original milestone gate. This increment does not close the full setup milestone.
 
@@ -528,7 +535,8 @@ leases or an HTTP listener. Saved IDs/numbers remain fixed, new records receive
 new IDs, invalid text survives collapsed sections, and collections load lazily
 in pages. Cached host/source health is available separately. The shared native
 credential tab now supports write-only creation, retained-reference reconciliation,
-status and unused-reference removal. Web credential controls, initialization,
+status and unused-reference removal; web setup supports the same operations.
+Initialization,
 live inspection, simulation controls and richer diagnostics remain required setup
 refinements.
 
@@ -701,3 +709,4 @@ Keep existing device profiles and registrations compatible throughout migration.
 | 2026-10-06 | Corrected registered-export fixture ordering after CI proved an uninitialized cleanup list; restored preflight and finally coverage. Wired Inno pre-uninstall inventory cleanup before file removal, added whole-install preflight/batch rollback and future foreign-schema preservation, and added actual installer lifecycle fixtures with private identities and a second helper install. | 131 NINA tests pass; final 11 registry checks, net48 x86/x64 fixtures, unsigned package and hooked installer compilation pass. Python/PowerShell syntax and local machine-fixture rejection pass. b76d2fc CI fails Windows fixture before publication; seven other jobs pass. New production/lifecycle CI remains required, alongside all original remaining gates. |
 | 2026-10-06 | Extended installer acceptance to hold a private installed COM metadata object in PowerShell 7, verify nested helper busy guards and intact inventories without host startup, then release only its own RCW and await natural retirement before maintenance. | Python/PowerShell syntax pass. The new installed metadata/in-use case awaits machine CI; it does not actuate equipment or close the broader frontend acceptance gates. |
 | 2026-10-06 | Added shared native credential setup, host-described protection/input/reference fields, caller-chosen immutable references and explicit lost-reply reconciliation. Review added transaction admission to status reads and revoked stale configuration reviews after credential mutations. Fixed installer prerequisite fixture handling of absent values and preserved original value kinds through explicit writable handles. | 136 NINA tests, full Rust hub/Alpaca suites, strict Clippy, Rust 1.89 compatibility, net48 build and x86/x64 fixtures pass. Actual WPF credential render inspected. CI e728f55 proves helper publication/SCM/removal but fails the initial installer platform-value read; the corrected lifecycle fixture needs new CI. Next: web credentials and native setup refinements, then all original remaining gates. |
+| 2026-10-06 | Added web credential controls using shared host descriptors and strict public response shapes. Implemented separate setup connection and explicit same-origin Reload, preserving the catalog and output leases with bounded admission and shutdown fencing. Corrected the host-capacity fixture to account for both private streams. | JavaScript credential state tests, full Alpaca suites, strict Clippy, Rust 1.89 checks and 136 NINA regressions pass. Browser proves secret clearing, review invalidation, retained reference, status after own host restart, removal, no console errors and no equipment leases; actual screenshot inspected. 2a26281 PR CI passes all eight jobs, including actual installer lifecycle/installed metadata/in-use checks; interactive/conformance/vendor acceptance remains required. Next: shared native setup refinements and every remaining original milestone gate. |

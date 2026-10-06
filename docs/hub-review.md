@@ -1726,3 +1726,52 @@ explicit writable handles. Parser/local pre-mutation rejection pass; actual
 installer lifecycle and nested helper in-use behavior still await CI. A temporary
 local registry-value probe was rejected by automatic approval review with
 "blocked by policy"; no result from that probe is used as validation.
+
+### Web credentials and independent setup reattachment
+
+Web setup now uses the host's write-only authorization and reference descriptors,
+including accurate protection text. It retains a chosen reference before dispatch,
+clears the masked input and never puts values into draft/review/diagnostics. Public
+response shapes are checked before consumption. Lost/malformed/unavailable replies
+invalidate write admission until explicit Reload/status; pending requests refuse
+competing changes. Local validation errors send no request. Unicode reference
+limits count scalars and reject unpaired surrogates. Secret JS/JSON/OS copies are
+not claimed to be securely erased or stored in browser persistence.
+
+Review found the permanent HTTP catalog stream also served setup, so Reload could
+not recover a failed transport without restarting the whole frontend. Setup now
+owns a separate private stream and explicit POST Reload with an empty object and
+128-byte limit. It uses the same same-origin/JSON/Fetch-Metadata checks as ordinary
+setup, shares bounded request admission, fences shutdown and replaces only its
+own stream. It never starts the host, touches equipment leases, replaces the
+catalog or replays an unknown write. Startup checks that both streams identify the
+same host. Host replacement remains an explicit equipment recovery concern.
+The existing host-capacity test needed to reserve both catalog and setup streams;
+its expected rejection/retained failure/reuse checks still pass.
+
+Local evidence: full Alpaca tests pass (`artifacts/hub-web-credentials-rust.log`),
+with final library/HTTP checks after review in `hub-web-credential-final-rust.log`.
+They prove closed setup recovery with a surviving catalog, busy/shutdown admission,
+cross-origin/Fetch-Metadata/media rejection, strict empty Reload bodies, shared
+credential storage/configured-reference protection and surviving equipment leases.
+JavaScript tests in `scripts/test-hub-config.mjs` cover lost/malformed/storage errors,
+reference retention, no replay, invalid-input admission, review invalidation,
+pending changes and scalar limits. Clippy and Rust 1.89 checks pass; 136 NINA
+regressions pass (`hub-web-credential-nina-regressions.log`).
+
+The actual browser against a copied production executable proves password clearing,
+revoked review, retained reference through Reload, protected status after an own
+fixture host restart, explicit removal/absence, zero console errors and zero
+equipment leases with unchanged configuration. Recorded evidence is
+`artifacts/hub-web-browser-verification.json`; the actual screenshot is documented
+as simulation. Both own fixture processes were stopped after identity checks, and
+the disposable credential was removed. No installed equipment was activated.
+
+Native-credential checkpoint 2a26281 passes all eight jobs in PR run 37457955380.
+`artifacts/hub-credentials-ci-windows.log` proves the actual installer phases:
+prepare/assert, installed metadata without host startup, nested helper busy guards
+and idle retirement, upgrade preservation, break/failed uninstall/repair/assert,
+deleted bindings, removed inventories preserving the second install/settings and
+owned cleanup. This closes those automated fixture checks, not interactive UAC,
+Chooser, conformance, vendor hardware or the original broader milestones. The new
+web increment still requires its own CI.

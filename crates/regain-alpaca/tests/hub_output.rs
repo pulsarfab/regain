@@ -13,8 +13,8 @@ use regain_alpaca::{
 use regain_core::{CancellationToken, Runtime};
 use regain_hub::{
     config::{HubConfig, VirtualDevice},
+    credentials::CredentialStore,
     endpoint::Endpoint,
-    factory::NoCredentials,
     host,
     ipc::Limits,
     native::NativeRuntime,
@@ -32,6 +32,7 @@ struct Fixture {
     hub: Arc<HubRuntime>,
     server: Arc<Server>,
     router: Router,
+    credentials: Arc<CredentialStore>,
     stop: CancellationToken,
     host: tokio::task::JoinHandle<Result<(), host::HostError>>,
 }
@@ -61,7 +62,10 @@ impl Fixture {
         let endpoint = Endpoint::for_config(&path).unwrap();
         let listener = endpoint.try_lock().unwrap().unwrap().bind().unwrap();
         let directory = dir.path().to_path_buf();
-        let service = regain_hub::service::HubService::persistent(
+        let credentials =
+            Arc::new(CredentialStore::at_directory(dir.path(), endpoint.key()).unwrap());
+        let provider = credentials.clone();
+        let service = regain_hub::service::HubService::persistent_with_credentials(
             regain_hub::config::ConfigStore::load(&path).unwrap(),
             Arc::new(move |config| {
                 HubRuntime::build(
@@ -70,10 +74,11 @@ impl Fixture {
                         directory: directory.clone(),
                         simulate: false,
                     },
-                    &NoCredentials,
+                    &*provider,
                     Arc::new(MonotonicClock::default()),
                 )
             }),
+            credentials.clone(),
         )
         .unwrap();
         let hub = service.runtime().unwrap();
@@ -105,6 +110,7 @@ impl Fixture {
             hub,
             server,
             router,
+            credentials,
             stop,
             host,
         }
@@ -167,12 +173,21 @@ async fn setup(
     content_type: &str,
     origin: &str,
 ) -> (StatusCode, Value) {
+    setup_at(router, "/setup/api/hub", command, content_type, origin).await
+}
+async fn setup_at(
+    router: &Router,
+    path: &str,
+    command: Value,
+    content_type: &str,
+    origin: &str,
+) -> (StatusCode, Value) {
     let response = router
         .clone()
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/setup/api/hub")
+                .uri(path)
                 .header("Content-Type", content_type)
                 .header("Host", "127.0.0.1:11111")
                 .header("Origin", origin)
@@ -263,6 +278,168 @@ async fn setup_routes_share_metadata_validate_and_apply_with_revision_and_connec
 }
 
 #[tokio::test]
+async fn web_credentials_share_private_storage_and_reject_cross_site_mutations() {
+    let f = Fixture::new().await;
+    let id = uuid::Uuid::new_v4();
+    let reference = format!("credential-{id}");
+    let secret = "Bearer private-web-fixture";
+    let create = json!({"op":"createCredential","referenceId":id,"authorization":secret});
+    for (media, origin) in [
+        ("application/json", "http://untrusted.example"),
+        ("text/plain", "http://127.0.0.1:11111"),
+    ] {
+        assert_eq!(
+            setup(&f.router, create.clone(), media, origin).await.0,
+            StatusCode::FORBIDDEN
+        );
+        assert!(!f.credentials.status(&reference).unwrap().present);
+        assert_eq!(
+            setup_at(&f.router, "/setup/api/hub/reload", json!({}), media, origin)
+                .await
+                .0,
+            StatusCode::FORBIDDEN
+        );
+    }
+    for path in ["/setup/api/hub", "/setup/api/hub/reload"] {
+        let response = f
+            .router
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(path)
+                    .header("Content-Type", "application/json")
+                    .header("Host", "127.0.0.1:11111")
+                    .header("Origin", "http://127.0.0.1:11111")
+                    .header("Sec-Fetch-Site", "cross-site")
+                    .body(Body::from(serde_json::to_vec(&create).unwrap()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        assert!(!f.credentials.status(&reference).unwrap().present);
+    }
+    let invoke = async |command| {
+        setup(
+            &f.router,
+            command,
+            "application/json",
+            "http://127.0.0.1:11111",
+        )
+        .await
+    };
+    let (status, description) = invoke(json!({"op":"describeConfig"})).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        description["result"]["credentialStorage"]["clientChosenReferences"],
+        true
+    );
+    let (status, result) = invoke(create).await;
+    assert_eq!(status, StatusCode::OK, "{result}");
+    assert_eq!(result["result"]["reference"], reference);
+    assert!(!result.to_string().contains(secret));
+    assert_eq!(
+        invoke(json!({"op":"credentialStatus","reference":reference}))
+            .await
+            .1["result"]["present"],
+        true
+    );
+    let (status, reload) = setup_at(
+        &f.router,
+        "/setup/api/hub/reload",
+        json!({}),
+        "application/json",
+        "http://127.0.0.1:11111",
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(reload["result"]["instanceId"], json!(f.config.instance_id));
+    assert_eq!(
+        invoke(json!({"op":"credentialStatus","reference":reference}))
+            .await
+            .1["result"]["present"],
+        true
+    );
+    assert_eq!(
+        setup_at(
+            &f.router,
+            "/setup/api/hub/reload",
+            json!({"authorization":secret}),
+            "application/json",
+            "http://127.0.0.1:11111"
+        )
+        .await
+        .0,
+        StatusCode::BAD_REQUEST
+    );
+    for value in [json!([]), Value::Null, json!("")] {
+        assert_eq!(
+            setup_at(
+                &f.router,
+                "/setup/api/hub/reload",
+                value,
+                "application/json",
+                "http://127.0.0.1:11111"
+            )
+            .await
+            .0,
+            StatusCode::BAD_REQUEST
+        );
+    }
+    let (_, original) = invoke(json!({"op":"getConfig"})).await;
+    let mut candidate = original["result"].clone();
+    candidate["sources"].as_array_mut().unwrap().push(json!({"id":uuid::Uuid::new_v4(),"label":"Unused authenticated source",
+        "backend":{"kind":"alpaca","baseUrl":"http://127.0.0.1:1","deviceType":"safetymonitor","deviceNumber":0,"credentialReference":reference}}));
+    assert_eq!(invoke(json!({"op":"applyConfig","expectedRevision":candidate["revision"],"candidate":candidate})).await.1["result"]["ready"],true);
+    let (_, deletion) = invoke(json!({"op":"deleteCredential","reference":reference})).await;
+    assert_eq!(deletion["error"]["code"], "inUse");
+    assert!(!deletion.to_string().contains(secret));
+    let (_, current) = invoke(json!({"op":"getConfig"})).await;
+    assert!(!current.to_string().contains(secret));
+    let mut candidate = current["result"].clone();
+    candidate["sources"].as_array_mut().unwrap().pop();
+    assert_eq!(invoke(json!({"op":"applyConfig","expectedRevision":candidate["revision"],"candidate":candidate})).await.1["result"]["ready"],true);
+    assert_eq!(
+        invoke(json!({"op":"deleteCredential","reference":reference}))
+            .await
+            .1["result"]["removed"],
+        true
+    );
+    assert_eq!(
+        invoke(json!({"op":"credentialStatus","reference":reference}))
+            .await
+            .1["result"]["present"],
+        false
+    );
+    assert_eq!(f.hub.active_connections(), 0);
+    f.ok(
+        "PUT",
+        "/api/v1/switch/7/connected",
+        "ClientID=84&Connected=true",
+    )
+    .await;
+    assert_eq!(
+        setup_at(
+            &f.router,
+            "/setup/api/hub/reload",
+            json!({}),
+            "application/json",
+            "http://127.0.0.1:11111"
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    assert_eq!(
+        f.ok("GET", "/api/v1/switch/7/connected", "ClientID=84")
+            .await,
+        true
+    );
+    f.finish().await;
+}
+
+#[tokio::test]
 async fn setup_rejects_cross_origin_wrong_media_type_and_device_commands_without_side_effects() {
     let f = Fixture::new().await;
     for (media, origin) in [
@@ -315,6 +492,7 @@ async fn setup_rejects_cross_origin_wrong_media_type_and_device_commands_without
         "/hub.mjs",
         "/hub-config.mjs",
         "/hub-form.mjs",
+        "/hub-credentials.mjs",
         "/hub.css",
         "/setup/v1/switch/7/setup",
         "/setup/v1/safetymonitor/3/setup",
@@ -1119,10 +1297,11 @@ async fn asynchronous_open_failure_is_visible_until_explicit_disconnect_and_does
     use regain_hub::client::{Client, ClientLimits};
     let f = Fixture::new().await;
     let endpoint = Endpoint::for_config(&f._dir.path().join("hub.json")).unwrap();
-    // Occupy the remaining host streams without output/source leases. Catalog
+    // Catalog and setup own two distinct streams. Occupy the remainder without
+    // output/source leases. Catalog
     // reads still work, but HTTP's new private session is rejected.
     let mut clients = Vec::new();
-    for _ in 1..host::MAX_CLIENTS {
+    for _ in 2..host::MAX_CLIENTS {
         clients.push(
             Client::connect(
                 &endpoint,

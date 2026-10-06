@@ -600,6 +600,18 @@ Configuration and diagnostic responses contain no credential values. Raw IPC
 frame buffers and owned secret serialization buffers are cleared on drop; this
 is not a guarantee that every OS, JSON parser, or HTTP-library copy is erased.
 
+The same credential commands are admitted by the JSON-only, same-origin web
+setup route, with `no-store` responses. Setup has its own private connection,
+separate from the HTTP equipment catalog and output-client streams. Explicit
+`POST /setup/api/hub/reload` accepts only an empty JSON object (128-byte body
+limit), reconnects setup to the configured instance and returns instance/host
+identity. It shares setup admission, fails busy during a pending operation,
+checks shutdown before publishing the new client, and closes only the old setup
+client. It never starts the host, replaces the catalog, reconnects an output or
+replays a request. Publisher initialization requires both connections to refer
+to the same host. Setup reattachment after host loss does not itself recover the
+HTTP equipment catalog; that frontend requires explicit restart/reconnect work.
+
 | Platform | Reported protection | Storage |
 | --- | --- | --- |
 | Windows | `windowsDpapiUser` | User DPAPI encryption plus explicit user-only protected ACLs; LocalAppData/Regain/Hub/Credentials |

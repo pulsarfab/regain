@@ -46,6 +46,15 @@ pub fn routes() -> Router<Arc<Server>> {
             }),
         )
         .route(
+            "/hub-credentials.mjs",
+            get(|| async {
+                (
+                    [("Content-Type", "application/javascript")],
+                    include_str!("../web/hub-credentials.mjs"),
+                )
+            }),
+        )
+        .route(
             "/hub.css",
             get(|| async {
                 (
@@ -59,6 +68,10 @@ pub fn routes() -> Router<Arc<Server>> {
         .route(
             "/setup/api/hub",
             post(request).layer(DefaultBodyLimit::max(regain_hub::ipc::MAX_FRAME_BYTES)),
+        )
+        .route(
+            "/setup/api/hub/reload",
+            post(reload).layer(DefaultBodyLimit::max(128)),
         )
 }
 async fn device_page(
@@ -87,13 +100,9 @@ async fn device_page(
         Err(_) => StatusCode::SERVICE_UNAVAILABLE.into_response(),
     }
 }
-async fn request(
-    State(server): State<Arc<Server>>,
-    headers: HeaderMap,
-    body: axum::body::Bytes,
-) -> Response {
-    if !crate::server::setup_allowed(&headers)
-        || !headers
+fn allowed(headers: &HeaderMap) -> bool {
+    crate::server::setup_allowed(headers)
+        && headers
             .get("content-type")
             .and_then(|v| v.to_str().ok())
             .is_some_and(|v| {
@@ -101,10 +110,39 @@ async fn request(
                     .next()
                     .is_some_and(|v| v.trim().eq_ignore_ascii_case("application/json"))
             })
-        || headers
+        && !headers
             .get("sec-fetch-site")
             .is_some_and(|v| v == "cross-site")
+}
+async fn reload(
+    State(server): State<Arc<Server>>,
+    headers: HeaderMap,
+    body: axum::body::Bytes,
+) -> Response {
+    if !allowed(&headers) {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    if !matches!(serde_json::from_slice::<Value>(&body), Ok(Value::Object(values)) if values.is_empty())
     {
+        return response(
+            StatusCode::BAD_REQUEST,
+            json!({"error":{"code":"invalidRequest","message":"Reload accepts an empty JSON object"}}),
+        );
+    }
+    let Some(hub) = &server.hub else {
+        return response(
+            StatusCode::SERVICE_UNAVAILABLE,
+            json!({"error":{"code":"notConfigured","message":"No hub configured"}}),
+        );
+    };
+    setup_response(hub.reload_setup().await)
+}
+async fn request(
+    State(server): State<Arc<Server>>,
+    headers: HeaderMap,
+    body: axum::body::Bytes,
+) -> Response {
+    if !allowed(&headers) {
         return StatusCode::FORBIDDEN.into_response();
     }
     let Some(hub) = &server.hub else {
@@ -122,7 +160,10 @@ async fn request(
             );
         }
     };
-    match hub.setup(command).await {
+    setup_response(hub.setup(command).await)
+}
+fn setup_response(result: Result<Value, ClientError>) -> Response {
+    match result {
         Ok(result) => response(StatusCode::OK, json!({"result":result})),
         Err(ClientError::Remote(remote)) => response(
             StatusCode::BAD_REQUEST,

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { configurationContract } from '../crates/regain-alpaca/web/hub-config.mjs';
 import { initialValue, newIdentity, previewValue } from '../crates/regain-alpaca/web/hub-form.mjs';
+import { CredentialSetup, credentialContract } from '../crates/regain-alpaca/web/hub-credentials.mjs';
 
 const description = JSON.parse(readFileSync(new URL('../contracts/hub-config.json', import.meta.url), 'utf8'));
 const reader = configurationContract(description);
@@ -62,3 +63,41 @@ const simulatedSchema = editor.variants(editor.root.$defs.SourceBackend).find(v 
 assert.equal(initialValue(editor, simulatedSchema).deviceType,'switch');
 assert.equal(editor.choices(simulatedSchema.properties.deviceType).find(v=>v.value==='camera').enabled,false);
 console.log('Web hub draft helpers passed: identities, capability choices, shared defaults, non-mutating metadata-driven redaction.');
+
+const storage = {protection:'userFilePermissions',protectionDescription:'Private files; not encrypted',clientChosenReferences:true,referencePrefix:'credential-',rotation:'Create, apply, remove',
+  reference:{type:'string',label:'Reference',description:'Separate storage handle',maxLength:200},
+  input:{authorization:{type:'string',label:'Authorization',description:'Complete header',maxLength:8192,writeOnly:true,sensitive:true}}};
+assert.equal(credentialContract(null),null);
+assert.throws(() => credentialContract({...storage,input:{authorization:{...storage.input.authorization,writeOnly:false}}}));
+const id = '11111111-1111-4111-8111-111111111111';
+for (const failure of ['lost','malformed','unavailable']) {
+  let writes = 0, stored, visible, review = true;
+  const setup = new CredentialSetup(async command => {
+    if (command.op === 'createCredential') {
+      writes++; assert.equal(visible, 'credential-' + id); stored = visible;
+      if (failure === 'lost') throw new Error('Reply lost');
+      if (failure === 'unavailable') { const error = new Error('Storage unavailable'); error.detail = {code:'unavailable'}; throw error; }
+      return {reference:stored,present:true,protection:storage.protection,authorization:'forbidden-value'};
+    }
+    assert.equal(command.op,'credentialStatus'); return {reference:stored,present:true,protection:storage.protection};
+  }, value => visible = value, () => review = false, () => id);
+  setup.load(storage);
+  await assert.rejects(setup.create('Bearer private-js-fixture'), error => !error.message.includes('private-js-fixture') && !error.message.includes('forbidden-value'));
+  assert.equal(review,false); assert.equal(setup.uncertain,true); assert.equal(setup.reference,stored);
+  await assert.rejects(setup.create('Bearer another-value')); await assert.rejects(setup.remove()); assert.equal(writes,1);
+  setup.load(storage); assert.equal(setup.reference,stored); assert.equal((await setup.status()).present,true); assert.equal(writes,1);
+  assert.equal(JSON.stringify(setup).includes('private-js-fixture'),false);
+}
+let writes = 0, release;
+const pending = new CredentialSetup(async () => { writes++; return await new Promise(resolve => release = resolve); },()=>{},()=>{},()=>id);
+pending.load(storage);
+await assert.rejects(pending.create('Bearer invalid\r\nvalue')); assert.equal(writes,0); assert.equal(pending.uncertain,false);
+const writing = pending.create('Bearer pending-fixture');
+await assert.rejects(pending.create('Bearer competing-fixture')); await assert.rejects(pending.status());
+assert.throws(() => pending.load(storage)); assert.throws(() => pending.setReference('different')); assert.equal(writes,1);
+release({reference:'credential-' + id,present:true,protection:storage.protection}); await writing;
+pending.setReference('😀'.repeat(200)); pending.validateReference();
+pending.setReference('😀'.repeat(201)); assert.throws(() => pending.validateReference());
+pending.setReference('\ud800'); assert.throws(() => pending.validateReference());
+pending.load({...storage,clientChosenReferences:false}); await assert.rejects(pending.create('Bearer unsupported-fixture')); assert.equal(writes,1);
+console.log('Web credentials passed: retained references, lost/malformed/storage failures, strict replies, no replay, review invalidation, admission and scalar limits.');
