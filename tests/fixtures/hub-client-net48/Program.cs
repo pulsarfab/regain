@@ -62,6 +62,16 @@ internal static class Program
             catch (InvalidOperationException) { }
             store.Save(binding, removed.Revision);
             native.Disconnect();
+            using (var attachedOnly = new HubNativeSession(args[0])) {
+                await attachedOnly.AttachAsync(binding, deadline.Token);
+                if (!attachedOnly.IsAttached || attachedOnly.Connected ||
+                    (await attachedOnly.RequestAsync(attachedOnly.Epoch, connected, cancellation: deadline.Token)).GetBoolean())
+                    throw new InvalidOperationException("Attach acquired equipment without an explicit connection request");
+                await attachedOnly.RequestAsync(attachedOnly.Epoch, connect, TimeSpan.FromSeconds(35), deadline.Token);
+                if (!(await attachedOnly.RequestAsync(attachedOnly.Epoch, connected, cancellation: deadline.Token)).GetBoolean())
+                    throw new InvalidOperationException("Attached client could not change its connection explicitly");
+                attachedOnly.Disconnect();
+            }
             using var editor = await HubEditorSession.AttachAsync(args[0], args[1], attached.InstanceId, deadline.Token);
             await editor.ReloadAsync(deadline.Token);
             var oldRevision = editor.Draft!.Revision;

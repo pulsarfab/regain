@@ -8,6 +8,14 @@ tagged or published. Changed cross-crate APIs require an unpublished version so
 Cargo package verification uses the new workspace packages.
 Last updated: 2026-10-06.
 
+Current increment: native ASCOM output adapters and dynamic registration. The
+shared native session can now attach without an equipment lease, leaving modern
+connection initiation/completion to the host. Corrected runner CI also exposed a
+loopback safety fixture abort race; the fixture now continues after a cancelled
+client disconnects. All 116 NINA checks and actual net48 x86/x64 attachment,
+lease and editor fixtures pass locally. New CI is required; native ASCOM exports
+and all remaining original milestone gates are still pending.
+
 Use this document as the working checklist. Complete one reviewable milestone at
 a time, record its tests and remaining limitations, and update the next action
 before moving on. Keep shipped documentation distinct from planned capabilities.

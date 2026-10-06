@@ -12,8 +12,13 @@ public sealed class HubNativeSession(string executable, string? workers = null) 
     private bool leased, disposed;
     private Guid epoch = Guid.NewGuid();
     public Guid Epoch { get { lock (gate) return epoch; } }
+    public bool IsAttached { get { lock (gate) return client?.IsConnected == true; } }
     public bool Connected { get { lock (gate) return leased && client?.IsConnected == true; } }
-    public async Task<JsonElement> ConnectAsync(HubSelection selection, CancellationToken cancellation)
+    public Task<JsonElement> ConnectAsync(HubSelection selection, CancellationToken cancellation) => OpenAsync(selection, true, cancellation);
+    /// Attach to a verified output without acquiring equipment. Native ASCOM
+    /// uses the host's changeConnection operation and completion state directly.
+    public Task<JsonElement> AttachAsync(HubSelection selection, CancellationToken cancellation) => OpenAsync(selection, false, cancellation);
+    private async Task<JsonElement> OpenAsync(HubSelection selection, bool acquire, CancellationToken cancellation)
     {
         selection = selection.Copy();
         selection.Validate();
@@ -21,7 +26,7 @@ public sealed class HubNativeSession(string executable, string? workers = null) 
         Guid token;
         lock (gate) {
             if (disposed) throw new ObjectDisposedException(nameof(HubNativeSession));
-            if (pending is not null || leased) throw new InvalidOperationException("This native hub output is already connected or connecting");
+            if (pending is not null || client is not null) throw new InvalidOperationException("This native hub output is already attached or attaching");
             pending = operation = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
             operation.CancelAfter(TimeSpan.FromSeconds(45)); token = epoch = Guid.NewGuid();
         }
@@ -38,11 +43,11 @@ public sealed class HubNativeSession(string executable, string? workers = null) 
                 if (token != epoch || operation.IsCancellationRequested || disposed) throw new OperationCanceledException(operation.Token);
                 client = opened;
             }
-            await opened.RequestAsync(JsonSerializer.SerializeToElement(new { op = "changeConnection", output = selection.OutputId,
+            if (acquire) await opened.RequestAsync(JsonSerializer.SerializeToElement(new { op = "changeConnection", output = selection.OutputId,
                 connected = true, asynchronous = false }), operation.Token).ConfigureAwait(false);
             lock (gate) {
                 if (token != epoch || operation.IsCancellationRequested || disposed) throw new OperationCanceledException(operation.Token);
-                leased = true;
+                leased = acquire;
             }
             return matches[0].Clone();
         } catch {
@@ -59,7 +64,7 @@ public sealed class HubNativeSession(string executable, string? workers = null) 
     {
         HubClient current;
         lock (gate) {
-            if (expectedEpoch != epoch || !leased || client?.IsConnected != true) throw new InvalidOperationException("This native hub output is disconnected or belongs to a retired session");
+            if (expectedEpoch != epoch || client?.IsConnected != true) throw new InvalidOperationException("This native hub output is disconnected or belongs to a retired session");
             current = client;
         }
         using var timer = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
@@ -67,7 +72,7 @@ public sealed class HubNativeSession(string executable, string? workers = null) 
         try {
             var value = await current.RequestAsync(command, timer.Token).ConfigureAwait(false);
             lock (gate) {
-                if (expectedEpoch != epoch || !ReferenceEquals(current, client) || !leased || !current.IsConnected)
+                if (expectedEpoch != epoch || !ReferenceEquals(current, client) || !current.IsConnected)
                     throw new InvalidOperationException("This native hub response belongs to a retired session");
             }
             return value;

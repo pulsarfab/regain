@@ -13,10 +13,53 @@ namespace Regain.NINA.Tests;
 
 public sealed partial class HubNativeTests
 {
+    [Fact]
+    public async Task SafetyFixtureContinuesAfterAnAbortedPoll()
+    {
+        await using var server = new SafetyServer();
+        var endpoint = new Uri(server.Url);
+        using (var aborted = new TcpClient()) {
+            await aborted.ConnectAsync(endpoint.Host, endpoint.Port);
+            await aborted.GetStream().WriteAsync(Encoding.ASCII.GetBytes("GET /issafe HTTP/1.1\r\nHost: fixture\r\n"));
+            aborted.Client.LingerState = new LingerOption(true, 0);
+        }
+        using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
+        using var response = await http.GetAsync(server.Url + "/issafe");
+        response.EnsureSuccessStatusCode();
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.True(body.RootElement.GetProperty("Value").GetBoolean());
+    }
     private static HubSelection Binding(string directory, string type = "switch") => new() {
         ConfigPath = Path.Combine(directory, "configuration.json"), InstanceId = Guid.NewGuid(), OutputId = Guid.NewGuid(),
         DeviceType = type, Label = "Saved simulation", Simulated = true
     };
+    [Fact]
+    public async Task NativeAttachmentHasNoEquipmentLeaseAndKeepsClientsIndependent()
+    {
+        await using var host = await Host.Open();
+        var binding = host.Selection(0, "switch");
+        using var attached = new HubNativeSession(host.Executable, host.Workers);
+        using var sibling = new HubNativeSession(host.Executable, host.Workers);
+        await attached.AttachAsync(binding, CancellationToken.None);
+        Assert.True(attached.IsAttached); Assert.False(attached.Connected);
+        Assert.Equal(0, (await host.Status(0)).GetProperty("leaseCount").GetInt32());
+        var query = JsonSerializer.SerializeToElement(new { op = "get", output = binding.OutputId, property = new { member = "connected" } });
+        Assert.False((await attached.RequestAsync(attached.Epoch, query)).GetBoolean());
+        await Assert.ThrowsAsync<InvalidOperationException>(() => attached.ConnectAsync(binding, CancellationToken.None));
+        var change = JsonSerializer.SerializeToElement(new { op = "changeConnection", output = binding.OutputId, connected = true, asynchronous = false });
+        await attached.RequestAsync(attached.Epoch, change, TimeSpan.FromSeconds(35));
+        await sibling.ConnectAsync(binding, CancellationToken.None);
+        Assert.Equal(2, (await host.Status(0)).GetProperty("leaseCount").GetInt32());
+        var retired = attached.Epoch;
+        attached.Disconnect();
+        await Eventually(async () => (await host.Status(0)).GetProperty("leaseCount").GetInt32() == 1);
+        Assert.True(sibling.Connected);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => attached.RequestAsync(retired, query));
+        await attached.AttachAsync(binding, CancellationToken.None);
+        Assert.NotEqual(retired, attached.Epoch);
+        Assert.False((await attached.RequestAsync(attached.Epoch, query)).GetBoolean());
+        Assert.True((await sibling.RequestAsync(sibling.Epoch, query)).GetBoolean());
+    }
     [Fact]
     public void SelectionsPersistOnlyIdentitiesAndRejectCompetingEditors()
     {
@@ -395,11 +438,25 @@ public sealed partial class HubNativeTests
             try {
                 while (!stopping.IsCancellationRequested) {
                     using var socket = await listener.AcceptTcpClientAsync(stopping.Token);
+                    try { await Reply(socket); }
+                    // The production caller has bounded request deadlines. A
+                    // cancelled/timed-out request may close its socket before
+                    // the fixture writes. Keep serving subsequent polls.
+                    catch (IOException error) when (error.InnerException is SocketException socketError &&
+                        socketError.SocketErrorCode is SocketError.ConnectionAborted or SocketError.ConnectionReset or SocketError.Shutdown) { }
+                }
+            } catch (OperationCanceledException) when (stopping.IsCancellationRequested) { }
+            catch (SocketException) when (stopping.IsCancellationRequested) { }
+        }
+        private async Task Reply(TcpClient socket)
+        {
                     using var stream = socket.GetStream();
                     using var reader = new StreamReader(stream, Encoding.ASCII, false, 4096, leaveOpen: true);
                     var first = await reader.ReadLineAsync(stopping.Token);
-                    while (!string.IsNullOrEmpty(await reader.ReadLineAsync(stopping.Token))) { }
-                    var target = first!.Split(' ')[1];
+                    if (first is null) return;
+                    string? line;
+                    do { line = await reader.ReadLineAsync(stopping.Token); if (line is null) return; } while (line.Length != 0);
+                    var target = first.Split(' ')[1];
                     var path = new Uri(Url + target).AbsolutePath;
                     var failed = path.EndsWith("/issafe", StringComparison.Ordinal) && Failing;
                     object value = path.EndsWith("/interfaceversion", StringComparison.Ordinal) ? 3 :
@@ -408,9 +465,6 @@ public sealed partial class HubNativeTests
                     var header = Encoding.ASCII.GetBytes("HTTP/1.1 " + (failed ? "503 Service Unavailable" : "200 OK") +
                         "\r\nContent-Type: application/json\r\nContent-Length: " + body.Length + "\r\nConnection: close\r\n\r\n");
                     await stream.WriteAsync(header, stopping.Token); await stream.WriteAsync(body, stopping.Token);
-                }
-            } catch (OperationCanceledException) when (stopping.IsCancellationRequested) { }
-            catch (SocketException) when (stopping.IsCancellationRequested) { }
         }
         public async ValueTask DisposeAsync() { stopping.Cancel(); listener.Stop(); await serving; stopping.Dispose(); }
     }
