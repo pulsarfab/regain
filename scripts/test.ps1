@@ -29,6 +29,13 @@ try {
     & (Join-Path $PSScriptRoot 'test-hub-com.ps1')
     python scripts/test-hub-exports.py
     if ($LASTEXITCODE) { throw 'Hub native COM output tests failed' }
+    # Production chooser registration is machine-wide. Cold SCM launch is
+    # checked with private HKLM entries only on the disposable Windows runner;
+    # local fixtures retain HKCU and never alter the installed ASCOM entries.
+    if ($env:GITHUB_ACTIONS -eq 'true' -and $env:RUNNER_OS -eq 'Windows') {
+        python scripts/test-hub-exports.py --scm
+        if ($LASTEXITCODE) { throw 'Hub bound COM launch tests failed' }
+    }
     python scripts/test-native-camera.py
     if ($LASTEXITCODE) { throw 'Native camera IPC tests failed' }
     python scripts/test-usb-recovery.py

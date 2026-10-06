@@ -1504,3 +1504,43 @@ Unsigned NINA and ASCOM packages validate (`hub-export-guard-package.log`,
 Next: verify portable publication and diagnose Windows using the new peer logs,
 then production registration/removal and every original remaining gate. This
 checkpoint does not close native ASCOM acceptance or the broader plan.
+
+## 2026-10-06: explicit bound launch and strict collection checks
+
+f94c85c push CI 37447788480 and PR CI 37447794795 passed all four portable platforms,
+packages, research and COM activation. Both Windows jobs failed the export test.
+The new peer logs show the second client failed DeviceState, while the first only
+timed out waiting for its completion signal. This is not a connection deadline
+failure and increasing waits would not address it.
+
+Review found the PowerShell property helper returned enumerable properties through
+the pipeline, losing the collection wrapper. Preserve the original value with a
+non-enumerating return, including through the export fixture's wrapper. Actual COM
+tests now use reflection for Count and Item, and verify IsSafe's name and boolean
+false value. Both framework client bitnesses pass locally; helper regressions also
+preserve empty and single-item arrays. New CI must confirm the original failure is
+resolved; local installed ASCOM metadata alone cannot establish a runner result.
+
+The export helper accepts explicit absolute binding and host paths for SCM commands,
+validates file presence/duplicates/relative paths before factory publication and
+ignores inherited binding/host values for an explicit registered launch. Manual
+bound fixtures prove metadata does not start a host, then exercise four outputs
+with both client/server bitnesses and independent leases. Warnings-denied helper
+builds pass (`artifacts/hub-bound-launch-build.log`), and the actual exchanges,
+collection members, invalid-argument cases and CIM/OS-handle process identity
+checks pass (`artifacts/hub-bound-manual-tests.log`).
+
+Cold SCM activation using private HKCU entries fails locally with 0x80040154 before
+any startup phase is written, despite a matching merged registry entry. Native
+CoGetClassObject also failed during diagnosis; no activation bypass is retained.
+The production machine-registration case remains unverified. Add a private HKLM
+SCM variant on the disposable runner, following the existing elevated fixture
+guard, AppID/Interactive User model and ServerExecutable registration. That test
+does not activate installed equipment entries. It discovers only the unique fixture
+binding command, verifies creation time and executable through an opened process
+handle before termination, and attempts every exact-key cleanup even when a child
+or diagnostic operation fails. All entries still have collision preflight in both
+hives/views. Local tests keep HKCU; they never attempt elevation or machine writes.
+
+Next: corrected Windows CI and cold machine launch, then production ownership/
+registration/removal, interactive setup and every original remaining plan gate.

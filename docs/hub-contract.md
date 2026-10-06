@@ -1031,4 +1031,16 @@ Unix endpoint startup prepares the socket in a private temporary directory on
 the endpoint filesystem, sets mode 0600, then renames it to the public address.
 The process-wide umask is unchanged. Clients still reject public sockets with
 broad permissions or the wrong owner; no permission denial is treated as readiness.
-Portable execution of this publication regression remains pending.
+The publication regression passes on Linux x64/ARM64 and macOS Intel/ARM64 CI.
+
+Registered export commands can specify `--bindings` with an existing absolute
+saved-selection file and `--host` with an existing absolute host executable.
+Explicit bindings suppress inherited host overrides; the host comes from the
+registered command or this install. Neither argument silently falls back when
+invalid. Duplicate options, missing files and relative paths fail before factories
+are published. Reading bindings/metadata still acquires no host/equipment lease.
+The optional fixture readiness path also records sanitized startup phases, with
+no driver arguments or exception text. Private SCM tests verify cold launch and
+shared factories against machine registration on disposable runners; that check
+is still pending. Production registration/removal and ownership inventory remain
+required; explicit launch arguments alone do not establish chooser support.

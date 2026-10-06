@@ -15,11 +15,15 @@ assembly for registration reuse. The private registered playbook passes 17 worke
 and 11 parent cases in both architectures, with no self-proxy constructor calls.
 All 117 NINA checks and the exported COM fixture pass locally; unsigned packages
 validate. Native-output checkpoint 779737f failed Windows export waits in both
-CI runs, and push CI also found a macOS startup permission race. Socket publication
-now stages permissions before the public address appears; portable verification
-is pending. Export fixtures collect both peers and identify their failed step;
-the Windows timeout cause is still unresolved.
-Next: verify new CI and resolve these failures, implement/review production
+CI runs, and push CI also found a macOS startup permission race. Checkpoint f94c85c
+passes all four portable platforms and three ancillary jobs in both CI runs;
+Windows still fails the safety DeviceState collection assertion. Review fixed
+PowerShell property-helper enumeration and now strictly checks collection Count,
+item name and boolean value. New CI must verify this correction. Explicit bound
+COM launch arguments and invalid-argument cases pass locally; cold HKCU SCM launch
+fails before server startup (0x80040154). Private machine-registration SCM tests
+are required on the disposable runner; no cold-launch gate is closed yet.
+Next: verify new CI and SCM launch, implement/review production
 registration and removal, conformance and interactive setup acceptance,
 then every remaining original milestone gate. No production chooser entries have
 been registered by this increment.
@@ -682,3 +686,4 @@ Keep existing device profiles and registrations compatible throughout migration.
 | 2026-10-06 | Diagnosed elevated runner COM activation after successful direct managed loads; selected private HKLM fixture keys explicitly only for elevated disposable GitHub runners. Added native saved-choice management using the common store/selector. | Adapter 9dfdb82 passed seven jobs in both CI runs but Windows still failed; the runner correction requires new CI. Local 16 worker and ten parent cases pass in both bitnesses; machine registration is rejected outside runner context. All 114 NINA checks, net48 x86/x64 removal/lease fixtures and warnings-denied shared builds pass. WPF render verified after correcting clipped identity/path text. Next: verify corrected CI, native ASCOM outputs and remaining original gates. |
 | 2026-10-06 | Added typed native ASCOM scalar adapters and bound export factories in the existing helper; shared the COM server with serial frontends. Reviewed capability admission, private leases, response epochs, typed errors and simulation metadata. | 117 NINA tests, net48 x86/x64 adapters, four private COM outputs against both server/client bitnesses, existing serial COM regressions and import-parent tests pass locally. Checkpoint 64178eb passed both complete CI runs; a newer queued-writer fixture deadline is corrected. Native chooser registration/removal, self-proxy aliases, SCM/setup/conformance and all original remaining gates stay open. |
 | 2026-10-06 | Rejected canonical and aliased native ASCOM self-proxies before activation; moved the stable .NET identity helper into the common frontend assembly. Reviewed actual registry binding versus managed Type.GUID. Investigated failed native-output CI and staged Unix socket permissions before publication; improved Windows peer diagnostics. | 17 worker and 11 Rust-parent cases pass in both bitnesses; 117 NINA checks, net48 fixtures, real exported COM and unsigned packages pass. Rust hub/Alpaca suites, Clippy and Rust 1.89 pass locally. Portable socket regression awaits CI (local cross-check lacks a Linux C compiler). Windows export timeout remains unresolved. Next: new CI, registration/removal, then every original remaining gate. |
+| 2026-10-06 | Verified private socket publication on all four portable CI platforms; collected both Windows peer failures and fixed property-helper collection enumeration. Added explicit binding/host launch paths, startup phase diagnostics and private cold SCM fixtures, with process creation-time/image verification and exact cleanup. | f94c85c push 37447788480 and PR 37447794795 pass seven jobs but fail Windows DeviceState assertion. Both local property-helper bitnesses and bound COM exchange/Count/item tests now pass, with invalid paths/duplicates rejected and inherited paths ignored. Cold per-user activation still fails before startup; disposable-runner machine activation is pending. Next: verify corrected CI and SCM, registration/removal, then all original remaining gates. |

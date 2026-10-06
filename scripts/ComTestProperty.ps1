@@ -9,7 +9,10 @@ function Get-ComTestProperty {
     $elapsed = [Diagnostics.Stopwatch]::StartNew()
     while ($true) {
         try {
-            return $Device.GetType().InvokeMember($Name, [Reflection.BindingFlags]::GetProperty, $null, $Device, $null)
+            # Preserve the property itself, including COM collections. Pipeline
+            # enumeration can replace DeviceState with its sole StateValue or
+            # discard an empty collection entirely.
+            return ,($Device.GetType().InvokeMember($Name, [Reflection.BindingFlags]::GetProperty, $null, $Device, $null))
         } catch {
             $cause = $_.Exception
             while ($cause.InnerException) { $cause = $cause.InnerException }

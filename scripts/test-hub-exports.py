@@ -1,4 +1,5 @@
 """Private real COM exports, simulation only; no installed driver activation."""
+import argparse
 import copy
 import ctypes
 import json
@@ -14,7 +15,83 @@ ROOT = Path(__file__).resolve().parents[1]
 NO_WINDOW = subprocess.CREATE_NO_WINDOW
 
 
+class ScmProcess:
+    """Hold an OS handle to the verified private fixture process, not a reusable PID."""
+    def __init__(self, pid, created, executable):
+        self.api = ctypes.WinDLL("kernel32", use_last_error=True)
+        self.api.OpenProcess.argtypes = (ctypes.c_ulong, ctypes.c_bool, ctypes.c_ulong)
+        self.api.OpenProcess.restype = ctypes.c_void_p
+        self.api.GetExitCodeProcess.argtypes = (ctypes.c_void_p, ctypes.POINTER(ctypes.c_ulong))
+        self.api.TerminateProcess.argtypes = (ctypes.c_void_p, ctypes.c_uint)
+        self.api.WaitForSingleObject.argtypes = (ctypes.c_void_p, ctypes.c_ulong)
+        self.api.CloseHandle.argtypes = (ctypes.c_void_p,)
+        self.api.GetProcessTimes.argtypes = (ctypes.c_void_p,) + (ctypes.POINTER(ctypes.c_ulonglong),) * 4
+        self.api.QueryFullProcessImageNameW.argtypes = (ctypes.c_void_p, ctypes.c_ulong, ctypes.c_wchar_p,
+                                                       ctypes.POINTER(ctypes.c_ulong))
+        self.handle = self.api.OpenProcess(0x1000 | 0x100000 | 0x1, False, pid)
+        if not self.handle:
+            raise ctypes.WinError(ctypes.get_last_error())
+        try:
+            times = [ctypes.c_ulonglong() for _ in range(4)]
+            image = ctypes.create_unicode_buffer(32768)
+            length = ctypes.c_ulong(len(image))
+            if not self.api.GetProcessTimes(self.handle, *(ctypes.byref(value) for value in times)):
+                raise ctypes.WinError(ctypes.get_last_error())
+            if not self.api.QueryFullProcessImageNameW(self.handle, 0, image, ctypes.byref(length)):
+                raise ctypes.WinError(ctypes.get_last_error())
+            # CIM CreationDate has microsecond precision; compare FILETIME at
+            # the same precision. A reused PID must never authorize termination.
+            if times[0].value // 10 != created // 10 or image.value.casefold() != str(executable).casefold():
+                raise RuntimeError("Private SCM process identity changed before handle acquisition")
+        except Exception:
+            self.api.CloseHandle(self.handle)
+            self.handle = None
+            raise
+
+    def poll(self):
+        code = ctypes.c_ulong()
+        if not self.api.GetExitCodeProcess(self.handle, ctypes.byref(code)):
+            raise ctypes.WinError(ctypes.get_last_error())
+        return None if code.value == 259 else code.value
+
+    def kill(self):
+        if not self.api.TerminateProcess(self.handle, 1):
+            raise ctypes.WinError(ctypes.get_last_error())
+
+    def wait(self, timeout):
+        if self.api.WaitForSingleObject(self.handle, int(timeout * 1000)) != 0:
+            raise RuntimeError("Private SCM server did not exit")
+        code = self.poll()
+        self.close()
+        return code
+
+    def close(self):
+        self.api.CloseHandle(self.handle)
+        self.handle = None
+
+
+def find_scm_server(executable, folder):
+    powershell = Path(os.environ["WINDIR"]) / "System32/WindowsPowerShell/v1.0/powershell.exe"
+    # Paths are data in environment variables, never interpolated shell code.
+    query = """ConvertTo-Json -Compress -InputObject @((Get-CimInstance Win32_Process -Filter "Name='Regain.Hub.ASCOM.exe'" |
+        Where-Object { $_.ExecutablePath -eq $env:REGAIN_EXPORT_FIXTURE_EXE -and
+            $_.CommandLine.Contains('--bindings') -and
+            $_.CommandLine.Contains($env:REGAIN_EXPORT_FIXTURE_PATH) } |
+        ForEach-Object { @{ pid=$_.ProcessId; created=$_.CreationDate.ToUniversalTime().ToFileTimeUtc() } }))"""
+    result = subprocess.run([str(powershell), "-NoProfile", "-Command", query],
+                            env={**os.environ, "REGAIN_EXPORT_FIXTURE_EXE": str(executable),
+                                 "REGAIN_EXPORT_FIXTURE_PATH": str(folder / "bindings.json")},
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                            timeout=15, creationflags=NO_WINDOW, check=True)
+    ids = json.loads(result.stdout or "[]")
+    assert len(ids) <= 1, "COM launched more than one server for the same bound fixture"
+    return ScmProcess(ids[0]["pid"], ids[0]["created"], executable) if ids else None
+
+
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--scm", action="store_true", help="Let COM launch the bound server from LocalServer32")
+    options = parser.parse_args()
     workers = Path(os.environ.get("REGAIN_TEST_WORKERS", ROOT / "target/debug")).resolve()
     host_exe = workers / "regain-alpaca.exe"
     with tempfile.TemporaryDirectory(prefix="hub-export-", dir=ROOT / "artifacts") as directory:
@@ -54,6 +131,8 @@ def main():
             server_exe = workers / "hub-ascom" / architecture / "Regain.Hub.ASCOM.exe"
             paths = [item for identity in identities for item in
                      (f'Software\\Classes\\CLSID\\{{{identity["clsid"]}}}', f'Software\\Classes\\{identity["progid"]}')]
+            app_id = "{" + str(uuid.uuid4()) + "}"
+            paths.append(f'Software\\Classes\\AppID\\{app_id}')
             for check_hive in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
                 for view in views:
                     for key_path in paths:
@@ -66,6 +145,12 @@ def main():
             server = host = None
             ready = folder / "ready"
             try:
+                for arguments in (("--bindings", "relative.json"), ("--bindings", str(folder / "missing.json")),
+                                  ("--bindings", str(saved), "--bindings", str(saved)),
+                                  ("--bindings", str(saved), "--host", "relative.exe"), ("--unknown",)):
+                    invalid = subprocess.run([str(server_exe), "--export", *arguments],
+                                             timeout=5, creationflags=NO_WINDOW)
+                    assert invalid.returncode == 2, "Invalid bound launch must fail before publishing factories"
                 for view in views:
                     for key_path in paths:
                         created.append((view, key_path))
@@ -73,28 +158,48 @@ def main():
                             pass
                     for identity in identities:
                         entries = {
-                            f'Software\\Classes\\CLSID\\{{{identity["clsid"]}}}\\LocalServer32': f'"{server_exe}" /Embedding',
+                            f'Software\\Classes\\CLSID\\{{{identity["clsid"]}}}': "Regain private hub fixture",
+                            f'Software\\Classes\\CLSID\\{{{identity["clsid"]}}}\\LocalServer32':
+                                f'"{server_exe}" /Embedding --ready "{ready}" --bindings "{saved}" --host "{host_exe}"',
                             f'Software\\Classes\\CLSID\\{{{identity["clsid"]}}}\\ProgID': identity["progid"],
                             f'Software\\Classes\\{identity["progid"]}\\CLSID': "{" + identity["clsid"] + "}",
                         }
                         for key_path, value in entries.items():
                             with winreg.CreateKeyEx(hive, key_path, 0, winreg.KEY_WRITE | view) as key:
                                 winreg.SetValueEx(key, "", 0, winreg.REG_SZ, value)
-                environment = {**os.environ, "REGAIN_HUB_BINDINGS": str(saved), "REGAIN_HUB_HOST": str(host_exe)}
-                server = subprocess.Popen([str(server_exe), "--export", "--ready", str(ready)], env=environment,
-                                          creationflags=NO_WINDOW)
-                deadline = time.monotonic() + 15
-                while not ready.exists():
-                    assert server.poll() is None, "Export server exited before publishing factories"
-                    assert time.monotonic() < deadline, "Export factories did not become ready"
-                    time.sleep(0.025)
+                                if key_path.endswith("\\LocalServer32"):
+                                    winreg.SetValueEx(key, "ServerExecutable", 0, winreg.REG_SZ, str(server_exe))
+                        with winreg.OpenKey(hive, f'Software\\Classes\\CLSID\\{{{identity["clsid"]}}}', 0, winreg.KEY_WRITE | view) as key:
+                            winreg.SetValueEx(key, "AppID", 0, winreg.REG_SZ, app_id)
+                    with winreg.OpenKey(hive, f'Software\\Classes\\AppID\\{app_id}', 0, winreg.KEY_WRITE | view) as key:
+                        winreg.SetValueEx(key, "", 0, winreg.REG_SZ, "Regain private bound hub server")
+                        if elevated:
+                            winreg.SetValueEx(key, "RunAs", 0, winreg.REG_SZ, "Interactive User")
+                environment = {**os.environ, "REGAIN_HUB_BINDINGS": str(folder / "wrong-bindings.json"),
+                               "REGAIN_HUB_HOST": str(folder / "wrong-host.exe")}
+                if not options.scm:
+                    server = subprocess.Popen([str(server_exe), "--export", "--ready", str(ready),
+                                               "--bindings", str(saved), "--host", str(host_exe)], env=environment,
+                                              creationflags=NO_WINDOW)
+                    deadline = time.monotonic() + 15
+                    while not ready.exists():
+                        assert server.poll() is None, "Export server exited before publishing factories"
+                        assert time.monotonic() < deadline, "Export factories did not become ready"
+                        time.sleep(0.025)
                 for bitness in ("System32", "SysWOW64"):
                     powershell = Path(os.environ["WINDIR"]) / bitness / "WindowsPowerShell/v1.0/powershell.exe"
                     metadata = subprocess.run([str(powershell), "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(client),
-                                    "-Directory", str(folder), "-Role", "metadata", "-MetadataOnly"],
+                                    "-Directory", str(folder), "-Role", "metadata", "-MetadataOnly", "-TraceLaunch"],
                                    timeout=20, creationflags=NO_WINDOW, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
                     print(metadata.stdout, flush=True)
+                    if options.scm and server is None:
+                        server = find_scm_server(server_exe, folder)
+                    if not options.scm:
+                        observed = find_scm_server(server_exe, folder)
+                        assert observed is not None and observed.poll() is None, "Bound server identity was not verified"
+                        observed.close()
                     metadata.check_returncode()
+                    assert server is not None and server.poll() is None, "Private bound COM server is not running"
                 # The only host for this fresh config is started after metadata
                 # checks. All output calls below reach the production Rust host.
                 host = subprocess.Popen([str(host_exe), "--hub-host", "--hub-config", str(path)],
@@ -113,28 +218,49 @@ def main():
                 # otherwise hide the other client's actual COM failure.
                 assert all(result == 0 for result in results), "Export COM client failed"
                 assert server.poll() is None and host.poll() is None, "Clients stopped the shared server/host"
-                print(f"{architecture} server: four stable outputs, both client bitnesses, independent leases and COM DeviceState passed", flush=True)
+                print(f"{architecture} {'SCM' if options.scm else 'manual'} server: four stable outputs, both client bitnesses, independent leases and COM DeviceState passed", flush=True)
             finally:
+                startup = folder / "ready.startup"
+                if startup.exists():
+                    print("Private export startup:", startup.read_text(), flush=True)
+                    startup.unlink()
+                cleanup_errors = []
+                if options.scm and server is None:
+                    try:
+                        server = find_scm_server(server_exe, folder)
+                    except Exception as error:
+                        cleanup_errors.append(error)
                 for process in children + [server, host]:
                     if process is not None:
-                        if process.poll() is None:
-                            process.kill()
-                        process.wait(timeout=5)
+                        try:
+                            if process.poll() is None:
+                                process.kill()
+                            process.wait(timeout=5)
+                        except Exception as error:
+                            cleanup_errors.append(error)
                 if host is not None:
-                    output, errors = host.communicate(timeout=5)
-                    if output or errors:
-                        print("Simulation host diagnostics:", output, errors, flush=True)
+                    try:
+                        output, errors = host.communicate(timeout=5)
+                        if output or errors:
+                            print("Simulation host diagnostics:", output, errors, flush=True)
+                    except Exception as error:
+                        cleanup_errors.append(error)
                 delete_tree = ctypes.windll.advapi32.RegDeleteTreeW
                 delete_tree.argtypes = (ctypes.c_void_p, ctypes.c_wchar_p)
                 delete_tree.restype = ctypes.c_long
                 for view, key_path in reversed(created):
-                    parent, name = key_path.rsplit("\\", 1)
-                    with winreg.OpenKey(hive, parent, 0, winreg.KEY_ALL_ACCESS | view) as key:
-                        status = delete_tree(int(key), name)
-                        if status not in (0, 2):
-                            raise OSError(status, "Cannot remove private export fixture registration")
+                    try:
+                        parent, name = key_path.rsplit("\\", 1)
+                        with winreg.OpenKey(hive, parent, 0, winreg.KEY_ALL_ACCESS | view) as key:
+                            status = delete_tree(int(key), name)
+                            if status not in (0, 2):
+                                raise OSError(status, "Cannot remove private export fixture registration")
+                    except Exception as error:
+                        cleanup_errors.append(error)
                 for signal in ("ready", "first-connected", "second-connected", "first-disconnected", "second-finished"):
                     (folder / signal).unlink(missing_ok=True)
+                if cleanup_errors:
+                    raise RuntimeError("Private COM export fixture cleanup failed") from cleanup_errors[0]
 
 
 if __name__ == "__main__":

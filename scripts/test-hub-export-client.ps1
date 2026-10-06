@@ -1,4 +1,4 @@
-param([Parameter(Mandatory)][string]$Directory, [Parameter(Mandatory)][string]$Role, [switch]$MetadataOnly)
+param([Parameter(Mandatory)][string]$Directory, [Parameter(Mandatory)][string]$Role, [switch]$MetadataOnly, [switch]$TraceLaunch)
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'ComTestProperty.ps1')
 $ids = Get-Content -LiteralPath (Join-Path $Directory 'identities.json') -Raw | ConvertFrom-Json
@@ -19,9 +19,18 @@ function Wait-Condition([scriptblock]$Condition, [string]$Step) {
     }
 }
 function Wait-Signal([string]$Name) { Wait-Condition { Test-Path -LiteralPath (Join-Path $Directory $Name) } "signal $Name" }
-function Value($Device, [string]$Name) { Get-ComTestProperty -Device $Device -Name $Name }
+function Value($Device, [string]$Name) { return ,(Get-ComTestProperty -Device $Device -Name $Name) }
 try {
     foreach ($identity in $ids) {
+        if ($TraceLaunch -and $identity.clsid -eq $ids[0].clsid) {
+            $principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
+            $root = [Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::ClassesRoot, [Microsoft.Win32.RegistryView]::Default)
+            try {
+                $key = $root.OpenSubKey("CLSID\{$($identity.clsid)}\LocalServer32")
+                try { Write-Output "Private COM launch: elevated=$($principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)); $($key.GetValue(''))" }
+                finally { if ($key) { $key.Dispose() } }
+            } finally { $root.Dispose() }
+        }
         $device = [Activator]::CreateInstance([type]::GetTypeFromCLSID([guid]$identity.clsid))
         $objects += $device
         if ((Value $device 'InterfaceVersion') -ne $identity.version) { throw 'Incorrect interface version over COM' }
@@ -59,7 +68,13 @@ try {
         Wait-Condition { $weather.GetType().InvokeMember('Temperature', [Reflection.BindingFlags]::GetProperty, $null, $weather, $null) -eq 12 } 'weather temperature 12'
         $safety.Connected = $true
         if ((Value $safety 'IsSafe')) { throw 'Simulation safety did not start unsafe' }
-        if ((Value $safety 'DeviceState').Count -ne 1) { throw 'DeviceState collection did not cross COM boundary' }
+        $states = Value $safety 'DeviceState'
+        if ((Value $states 'Count') -ne 1) { throw 'DeviceState collection did not cross COM boundary' }
+        $state = $states.GetType().InvokeMember('Item', [Reflection.BindingFlags]::GetProperty, $null, $states, [object[]]@(0))
+        $safeState = Value $state 'Value'
+        if ((Value $state 'Name') -ne 'IsSafe' -or $safeState -isnot [bool] -or $safeState) {
+            throw 'DeviceState item lost its name or boolean value across COM'
+        }
         $weather.Disconnect(); Wait-Condition { !(Value $weather 'Connecting') } 'weather disconnect completion'
         $safety.Connected = $false; $primary.Connected = $false; $other.Connected = $false
         'done' | Set-Content -LiteralPath (Join-Path $Directory 'second-finished')
