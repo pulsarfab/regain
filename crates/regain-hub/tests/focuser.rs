@@ -713,6 +713,7 @@ fn runtime_setup(
         backend: SourceBackend::Native {
             device: NativeDevice::Fc3,
             identity: "PRIVATE-TEST".into(),
+            filter_wheel: None,
         },
     });
     for number in [4, 7] {

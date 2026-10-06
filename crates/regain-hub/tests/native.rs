@@ -36,6 +36,7 @@ fn config(device: NativeDevice, identity: &str) -> SourceConfig {
         backend: SourceBackend::Native {
             device,
             identity: identity.into(),
+            filter_wheel: None,
         },
         polling: PollPolicy {
             poll_seconds: 0.2,
@@ -1171,9 +1172,16 @@ async fn native_efw_calibration_preserves_provisional_slots_until_complete() {
     let Some(runtime) = runtime() else {
         return;
     };
-    let mut backend =
-        NativeAccessoryBackend::new(&config(NativeDevice::Efw, "0102030405060708"), runtime)
-            .unwrap();
+    let mut cfg = config(NativeDevice::Efw, "0102030405060708");
+    let metadata = regain_hub::filterwheel::NativeFilterWheelMetadata {
+        names: (1..=7).map(|slot| format!("Saved filter {slot}")).collect(),
+        focus_offsets: vec![0, -12, 17, 30, 45, 52, 67],
+    };
+    let SourceBackend::Native { filter_wheel, .. } = &mut cfg.backend else {
+        unreachable!()
+    };
+    *filter_wheel = Some(metadata.clone());
+    let mut backend = NativeAccessoryBackend::new(&cfg, runtime).unwrap();
     backend.connect().await.unwrap();
     let slots = backend.sample().await.unwrap().values["slots"].clone();
     backend
@@ -1183,10 +1191,14 @@ async fn native_efw_calibration_preserves_provisional_slots_until_complete() {
     let active = backend.sample().await.unwrap();
     assert_eq!(active.values["position"], -1);
     assert_eq!(active.values["slots"], slots);
+    assert_eq!(active.values["names"], json!(metadata.names));
+    assert_eq!(active.values["focusoffsets"], json!(metadata.focus_offsets));
     tokio::time::timeout(Duration::from_secs(5), async {
         loop {
             let sample = backend.sample().await.unwrap();
             assert_eq!(sample.values["slots"], slots);
+            assert_eq!(sample.values["names"], json!(metadata.names));
+            assert_eq!(sample.values["focusoffsets"], json!(metadata.focus_offsets));
             if sample.values["position"] == 0 {
                 break;
             }
@@ -1226,4 +1238,191 @@ async fn native_panel_cover_moves_and_halts_through_the_existing_coordinator() {
         .unwrap();
     assert_ne!(backend.sample().await.unwrap().values["coverstate"], 2);
     backend.disconnect().await.unwrap();
+}
+
+#[tokio::test]
+async fn native_efw_controller_uses_saved_or_standard_metadata_and_independent_worker_leases() {
+    use regain_hub::filterwheel::{
+        FilterWheelController, FilterWheelProperty, NativeFilterWheelMetadata,
+    };
+    let Some(native) = runtime() else {
+        return;
+    };
+    for custom in [false, true] {
+        let mut cfg = config(NativeDevice::Efw, "0102030405060708");
+        let metadata = NativeFilterWheelMetadata {
+            names: vec!["L", "R", "G", "B", "Hα", "OIII", "SII"]
+                .into_iter()
+                .map(String::from)
+                .collect(),
+            focus_offsets: vec![0, -12, 17, 30, 45, 52, 67],
+        };
+        if custom {
+            let SourceBackend::Native { filter_wheel, .. } = &mut cfg.backend else {
+                unreachable!()
+            };
+            *filter_wheel = Some(metadata.clone());
+        }
+        let expected_names = if custom {
+            json!(metadata.names)
+        } else {
+            json!(
+                (1..=7)
+                    .map(|slot| format!("Filter {slot}"))
+                    .collect::<Vec<_>>()
+            )
+        };
+        let expected_offsets = if custom {
+            json!(metadata.focus_offsets)
+        } else {
+            json!(vec![0; 7])
+        };
+        let restored: SourceConfig =
+            serde_json::from_value(serde_json::to_value(&cfg).unwrap()).unwrap();
+        let backend = NativeAccessoryBackend::new(&restored, native.clone()).unwrap();
+        let source = SourceHandle::spawn(
+            cfg.id,
+            Uuid::new_v4(),
+            cfg.polling.clone(),
+            Box::new(backend),
+            Arc::new(MonotonicClock::default()),
+        )
+        .unwrap();
+        let controller =
+            FilterWheelController::new(source.clone(), Duration::from_secs(10)).unwrap();
+        assert_eq!(source.snapshot().lease_count, 0);
+        let first = controller.connect().await.unwrap();
+        let second = controller.connect().await.unwrap();
+        assert!(source.snapshot().simulated);
+        assert_eq!(source.snapshot().lease_count, 2);
+        assert_eq!(
+            first.property(FilterWheelProperty::Names).await.unwrap(),
+            expected_names
+        );
+        assert_eq!(
+            second
+                .property(FilterWheelProperty::FocusOffsets)
+                .await
+                .unwrap(),
+            expected_offsets
+        );
+        first.move_to(6).await.unwrap();
+        // The production EFW protocol simulator applies ordinary moves
+        // immediately. Its timed calibration separately proves moving -1.
+        assert_eq!(second.position().await.unwrap(), 6);
+        drop(first);
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while second.position().await.unwrap() == -1 {
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        })
+        .await
+        .unwrap();
+        assert_eq!(second.position().await.unwrap(), 6);
+        assert_eq!(source.snapshot().lease_count, 1);
+        assert_eq!(
+            second.property(FilterWheelProperty::Names).await.unwrap(),
+            expected_names
+        );
+        assert_eq!(
+            second
+                .property(FilterWheelProperty::FocusOffsets)
+                .await
+                .unwrap(),
+            expected_offsets
+        );
+        drop(second);
+        source.shutdown().await.unwrap();
+        let mut fresh = NativeAccessoryBackend::new(&restored, native.clone()).unwrap();
+        fresh.connect().await.unwrap();
+        assert_eq!(
+            fresh.read("names".into(), Values::new()).await.unwrap(),
+            expected_names
+        );
+        assert_eq!(
+            fresh
+                .read("focusoffsets".into(), Values::new())
+                .await
+                .unwrap(),
+            expected_offsets
+        );
+        fresh.disconnect().await.unwrap();
+    }
+}
+
+#[tokio::test]
+async fn native_efw_mismatched_saved_slots_remain_an_error_instead_of_defaulting_or_authorizing_move()
+ {
+    use regain_hub::filterwheel::NativeFilterWheelMetadata;
+    let Some(native) = runtime() else {
+        return;
+    };
+    let mut cfg = config(NativeDevice::Efw, "0102030405060708");
+    let SourceBackend::Native { filter_wheel, .. } = &mut cfg.backend else {
+        unreachable!()
+    };
+    *filter_wheel = Some(NativeFilterWheelMetadata {
+        names: vec!["L".into()],
+        focus_offsets: vec![0],
+    });
+    let before = serde_json::to_value(&cfg).unwrap();
+    let mut backend = NativeAccessoryBackend::new(&cfg, native).unwrap();
+    backend.connect().await.unwrap();
+    for member in ["names", "focusoffsets", "position"] {
+        assert_eq!(
+            backend
+                .read(member.into(), Values::new())
+                .await
+                .unwrap_err()
+                .kind,
+            ErrorKind::Unavailable
+        );
+    }
+    assert_eq!(
+        backend
+            .write(
+                "position".into(),
+                Values::from([("Position".into(), json!(0))])
+            )
+            .await
+            .unwrap_err()
+            .kind,
+        ErrorKind::Unavailable
+    );
+    assert_eq!(serde_json::to_value(&cfg).unwrap(), before);
+    backend.disconnect().await.unwrap();
+}
+
+#[test]
+fn invalid_native_filter_metadata_cannot_launch_a_worker_or_open_another_class() {
+    use regain_hub::filterwheel::NativeFilterWheelMetadata;
+    let native = NativeRuntime {
+        directory: PathBuf::from("missing-private-worker"),
+        simulate: true,
+        references: None,
+    };
+    let mut cfg = config(NativeDevice::Eaf, "PRIVATE");
+    let SourceBackend::Native { filter_wheel, .. } = &mut cfg.backend else {
+        unreachable!()
+    };
+    *filter_wheel = Some(NativeFilterWheelMetadata {
+        names: vec!["L".into()],
+        focus_offsets: vec![0],
+    });
+    assert!(
+        matches!(NativeAccessoryBackend::new(&cfg, native.clone()), Err(error) if error.kind == ErrorKind::InvalidValue)
+    );
+    let SourceBackend::Native {
+        device,
+        filter_wheel,
+        ..
+    } = &mut cfg.backend
+    else {
+        unreachable!()
+    };
+    *device = NativeDevice::Efw;
+    filter_wheel.as_mut().unwrap().focus_offsets = vec![10];
+    assert!(
+        matches!(NativeAccessoryBackend::new(&cfg, native), Err(error) if error.kind == ErrorKind::InvalidValue)
+    );
 }

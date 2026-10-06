@@ -493,9 +493,118 @@ fn source_identity_cannot_be_retargeted_and_direct_sdk_share_claim() {
             backend: SourceBackend::Native {
                 device,
                 identity: "ONE-CAMERA".into(),
+                filter_wheel: None,
             },
             polling: Default::default(),
         });
     }
     invalid(&config, "duplicate");
+}
+
+#[test]
+fn native_wheel_metadata_round_trips_without_retargeting_the_hardware_or_replacing_other_settings()
+{
+    use regain_hub::filterwheel::NativeFilterWheelMetadata;
+    let mut config = HubConfig::empty();
+    let source =
+        serde_json::from_value(serde_json::json!({"id":Uuid::new_v4(),"label":"Direct EFW",
+        "backend":{"kind":"native","device":"efw","identity":"PRIVATE-WHEEL"}}))
+        .unwrap();
+    config.sources.push(source);
+    let absent = serde_json::to_value(&config).unwrap();
+    assert!(absent["sources"][0]["backend"].get("filterWheel").is_none());
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("hub.json");
+    let store = ConfigStore::new(Some(path.clone()), config).unwrap();
+    let mut next = store.snapshot();
+    let prior = next.clone();
+    let metadata = NativeFilterWheelMetadata {
+        names: vec!["L".into(), "Hα".into(), "".into()],
+        focus_offsets: vec![0, -12, 17],
+    };
+    let SourceBackend::Native { filter_wheel, .. } = &mut next.sources[0].backend else {
+        unreachable!()
+    };
+    *filter_wheel = Some(metadata.clone());
+    let saved = store.apply(next.revision, next, false).unwrap();
+    let loaded = ConfigStore::load(&path).unwrap().snapshot();
+    assert_eq!(loaded, saved);
+    assert_eq!(loaded.instance_id, prior.instance_id);
+    assert_eq!(loaded.sources[0].id, prior.sources[0].id);
+    assert_eq!(loaded.sources[0].polling, prior.sources[0].polling);
+    assert_eq!(loaded.identities, prior.identities);
+    let SourceBackend::Native { filter_wheel, .. } = &loaded.sources[0].backend else {
+        unreachable!()
+    };
+    assert_eq!(filter_wheel.as_ref(), Some(&metadata));
+    let mut invalid = loaded.clone();
+    let SourceBackend::Native { identity, .. } = &mut invalid.sources[0].backend else {
+        unreachable!()
+    };
+    *identity = "DIFFERENT-WHEEL".into();
+    assert!(matches!(
+        store.apply(invalid.revision, invalid, false),
+        Err(ApplyError::Invalid(_))
+    ));
+}
+
+#[test]
+fn native_metadata_is_class_specific_and_semantic_errors_keep_shared_field_paths() {
+    use regain_hub::filterwheel::NativeFilterWheelMetadata;
+    let mut config = HubConfig::empty();
+    config.sources.push(SourceConfig {
+        id: Uuid::new_v4(),
+        label: "Direct wheel".into(),
+        polling: PollPolicy::default(),
+        backend: SourceBackend::Native {
+            device: NativeDevice::Efw,
+            identity: "PRIVATE".into(),
+            filter_wheel: Some(NativeFilterWheelMetadata {
+                names: vec!["L".into(), "R".into()],
+                focus_offsets: vec![0, 10],
+            }),
+        },
+    });
+    assert!(config.validate().is_empty());
+    let SourceBackend::Native { device, .. } = &mut config.sources[0].backend else {
+        unreachable!()
+    };
+    *device = NativeDevice::Eaf;
+    assert!(
+        config
+            .validate()
+            .iter()
+            .any(|e| e.path == "sources[0].backend.filterWheel" && e.code == "type")
+    );
+    let SourceBackend::Native {
+        device,
+        filter_wheel,
+        ..
+    } = &mut config.sources[0].backend
+    else {
+        unreachable!()
+    };
+    *device = NativeDevice::Efw;
+    filter_wheel.as_mut().unwrap().focus_offsets = vec![1, 2];
+    assert!(
+        config
+            .validate()
+            .iter()
+            .any(|e| e.path == "sources[0].backend.filterWheel.focusOffsets")
+    );
+    let SourceBackend::Native { filter_wheel, .. } = &mut config.sources[0].backend else {
+        unreachable!()
+    };
+    filter_wheel.as_mut().unwrap().focus_offsets = vec![0];
+    invalid(&config, "filterMetadata");
+    let SourceBackend::Native { filter_wheel, .. } = &mut config.sources[0].backend else {
+        unreachable!()
+    };
+    filter_wheel.as_mut().unwrap().names.clear();
+    assert!(
+        config
+            .validate()
+            .iter()
+            .any(|e| e.path == "sources[0].backend.filterWheel.names")
+    );
 }

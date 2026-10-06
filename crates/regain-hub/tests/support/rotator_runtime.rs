@@ -95,6 +95,7 @@ fn runtime_setup_with_request_timeout(
         backend: SourceBackend::Native {
             device: NativeDevice::Caa,
             identity: "0102030405060708".into(),
+            filter_wheel: None,
         },
     });
     for number in [17, 42] {

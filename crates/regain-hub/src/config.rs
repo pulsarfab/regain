@@ -94,6 +94,12 @@ pub enum SourceBackend {
         /// Stable hardware serial or device identity; never a discovery-list index.
         #[schemars(length(min = 1, max = MAX_LABEL_CHARS))]
         identity: String,
+        /// Optional metadata for a direct EFW only. Leave absent to use numbered
+        /// filter names and zero offsets. Explicit arrays must match hardware
+        /// slots; calibration/reconnect never silently replace saved metadata.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[schemars(title = "Direct EFW filter metadata")]
+        filter_wheel: Option<crate::filterwheel::NativeFilterWheelMetadata>,
     },
     /// # Remote Alpaca
     /// Read or control an ASCOM Alpaca device over HTTP or HTTPS.
@@ -421,7 +427,9 @@ impl SourceConfig {
                 "alpaca:{}:{device_type:?}:{device_number}",
                 normalized_url(base_url)?
             ),
-            SourceBackend::Native { device, identity } => {
+            SourceBackend::Native {
+                device, identity, ..
+            } => {
                 let device =
                     if matches!(device, NativeDevice::CameraDirect | NativeDevice::CameraSdk) {
                         "Camera".into()
@@ -675,13 +683,33 @@ impl HubConfig {
                         }
                     }
                 }
-                SourceBackend::Native { device, identity } => {
+                SourceBackend::Native {
+                    device,
+                    identity,
+                    filter_wheel,
+                } => {
                     if identity.trim().is_empty() || identity.chars().count() > MAX_LABEL_CHARS {
                         error(
                             format!("{p}.backend.identity"),
                             "identity",
                             "Select a physical device identity",
                         );
+                    }
+                    if let Some(metadata) = filter_wheel {
+                        if *device != NativeDevice::Efw {
+                            error(
+                                format!("{p}.backend.filterWheel"),
+                                "type",
+                                "Filter metadata is only supported by direct EFW sources",
+                            );
+                        }
+                        for field in metadata.validate() {
+                            error(
+                                format!("{p}.backend.filterWheel.{}", field.path),
+                                &field.code,
+                                &field.message,
+                            );
+                        }
                     }
                     // Direct and SDK camera paths must not claim the same camera twice.
                     let _ = device;

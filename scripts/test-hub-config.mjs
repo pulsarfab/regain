@@ -9,6 +9,20 @@ import { OutputDiagnostics, diagnosticSummary, validateDiagnosticSchema } from '
 const description = JSON.parse(readFileSync(new URL('../contracts/hub-config.json', import.meta.url), 'utf8'));
 const reader = configurationContract(description);
 const source = reader.root.$defs.SourceBackend;
+const nativeWheel = reader.variants(source, ['nativeSources']).find(v => v.kind === 'native');
+const nativeFields = reader.fields(nativeWheel.schema, {kind:'native', device:'efw', identity:'PRIVATE-WHEEL'});
+const filterField = nativeFields.find(field => field.key === 'filterWheel');
+assert.equal(filterField.required, false);
+const filterSchema = reader.resolve(filterField.schema.anyOf.find(schema => schema.type !== 'null'));
+const wheelNames = reader.resolve(filterSchema.properties.names);
+const wheelOffsets = reader.resolve(filterSchema.properties.focusOffsets);
+assert.deepEqual([wheelNames.minItems,wheelNames.maxItems], [1,1024]);
+assert.deepEqual([wheelOffsets.minItems,wheelOffsets.maxItems], [1,1024]);
+assert.equal(initialValue(reader, wheelOffsets.items), 0);
+assert.deepEqual([wheelOffsets.items.minimum,wheelOffsets.items.maximum], [-2147483648,2147483647]);
+assert.deepEqual(wheelOffsets.contains, {const:0});
+assert.deepEqual(previewValue(reader, nativeWheel.schema, {kind:'native',device:'efw',identity:'PRIVATE-WHEEL',
+  filterWheel:{names:['L','Hα',''],focusOffsets:[0,-12,17]}}).filterWheel, {names:['L','Hα',''],focusOffsets:[0,-12,17]});
 const variants = reader.variants(source, ['alpacaSources']);
 assert.equal(variants.find(v => v.kind === 'alpaca').enabled, true);
 assert.equal(variants.find(v => v.kind === 'com').enabled, false);

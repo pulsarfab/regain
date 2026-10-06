@@ -57,6 +57,28 @@ class SchemaContractTests(unittest.TestCase):
         config["outputs"][0]["device"]["members"][0]["policy"] = {"maximumSafeAgeSeconds": 1}
         VALIDATOR.validate(config)
 
+    def test_native_filter_metadata_uses_shared_arrays_reference_and_int32_bounds(self):
+        config = example("two-source-safety")
+        backend = {"kind": "native", "device": "efw", "identity": "PRIVATE-WHEEL"}
+        config["sources"][0]["backend"] = backend
+        VALIDATOR.validate(config)
+        backend["filterWheel"] = {"names": ["L", "Hα", ""], "focusOffsets": [0, -12, 17]}
+        VALIDATOR.validate(config)
+        for changes in [
+            {"names": []}, {"names": [1]}, {"names": ["L"] * 1025},
+            {"focusOffsets": []}, {"focusOffsets": [1, 2]},
+            {"focusOffsets": [0, 1.5]}, {"focusOffsets": [0, "1"]},
+            {"focusOffsets": [0, 2147483648]}, {"focusOffsets": [-2147483649, 0]},
+        ]:
+            changed = copy.deepcopy(config)
+            changed["sources"][0]["backend"]["filterWheel"].update(changes)
+            with self.subTest(changes=changes):
+                self.assertTrue(list(VALIDATOR.iter_errors(changed)))
+        backend["filterWheel"]["focusOffsets"] = [0]
+        # Cross-array slot counts and native class still belong to semantic
+        # review; structural acceptance cannot authorize Apply.
+        VALIDATOR.validate(config)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -25,8 +25,12 @@ implemented locally. Names/offsets must have matching bounded lengths and a zero
 reference offset. Shared cache validation now admits bounded flat metadata arrays
 while retaining aggregate text/item limits across partial updates. Private actors
 and actual loopback Alpaca V2/V3 cases cover ownership, motion and uncertainty.
-Native adapters, runtime/IPC, all three publications, COM/virtual/simulation and
-shared creation remain required before enabling wheel proxies.
+Native EFW adapters now expose ordered metadata through the existing worker.
+Optional saved `filterWheel` arrays retain names and signed offsets across
+calibration/reconnect; absent metadata uses numbered names and zero offsets.
+Explicit metadata must match hardware slots, including on the low-level write
+path. Runtime/IPC, all three publications, COM/virtual/simulation and shared
+creation remain required before enabling wheel proxies.
 
 Current CI issue: simulator checkpoint d4050c1 PR run 37530345334 completes
 with seven successful jobs and a Windows failure. The focuser lost-Move-reply
@@ -38,6 +42,15 @@ Root cause and new CI confirmation remain required; push run 37530337700 is
 now complete with all eight jobs successful. That pass does not explain the PR
 failure. Shared creation and diagnostic commits proceed with the locally checked
 wheel controller into the same draft PR.
+
+New exact-head CI evidence at bf15ced: PR run 37533746765 completes seven jobs
+successfully but Windows fails the real net48 x86 rotator fixture at a Sync
+operation with `uncertain`. Its 201 NINA tests pass. The existing short failure
+message does not identify loopback versus simulated Sync or the dispatch/reply
+history; the cause remains unproved. Failure-only checkpoint, source-health,
+request-timing and full-stack diagnostics are added locally without changing
+production behavior, retries, assertions or deadlines. Push run 37533737225
+remains live and must be observed to terminal state.
 
 Completed increment: shared setup enables rotator proxy creation and installed COM
 rotator choices through the existing generated forms. Native NINA and real net48
@@ -1038,3 +1051,4 @@ Keep existing device profiles and registrations compatible throughout migration.
 | 2026-10-06 | Enabled and reviewed shared rotator creation, reusing generated native/web forms and installed COM worker/bitness choices. | Full Rust hub/Alpaca suites, Clippy, Rust 1.89, contracts, Node/four schema checks, all 201 NINA tests and real net48 x86/x64 created-output fixtures pass. Actual WPF and in-app browser acceptance cover creation/reload, class mismatch, sparse Single controls and zero leases; screenshots label simulation. Retain the obsolete Rust gate assertion, original-source-list WPF failure and empty-tab/early-visibility capture evidence. Preceding simulator PR/push CI 37530345334/37530337700 has six successes with Intel macOS and Windows live. Keep this increment local until CI finishes, then publish to the same draft PR. Next: typed wheels and panels, camera ownership/transport, coordination and every original remaining acceptance/final gate. |
 | 2026-10-06 | Recorded simulator CI Windows lost-Move-reply failure and added shared failure-only dispatch/source evidence to focuser and rotator fixtures. | PR run 37530345334 ends with seven successes and one Windows failure; push 37530337700 remains live. Both focused cases and all 201 NINA tests pass locally. No assertions, retries, deadlines or production behavior changed; cause remains unproved. Next: new CI evidence, typed wheels/panels, cameras/coordination and every original remaining gate. |
 | 2026-10-06 | Implemented and reviewed the typed wheel controller using shared sessions/leases; added bounded flat metadata arrays to the source cache after a reproduced array rejection. | All eleven private actor/actual Alpaca V2/V3 wheel cases, twenty-six actor cases, full Rust hub/Alpaca suites, Clippy/MSRV/contracts, Node/four schema checks, rebuilt-host NINA 201/201 and real net48 x86/x64 pass. Retain initial compile/preflight/cancellation failures; no deadlines changed. Simulator push CI 37530337700 passes all eight jobs; its PR failure cause remains open. Next: native wheel metadata/adapters, runtime/IPC and all outputs/imports/setup, then panels, cameras/coordination and every original remaining gate. |
+| 2026-10-06 | Added native EFW metadata through existing workers and shared config descriptors; reviewed calibration, saved identity and low-level move admission. Fixed independently reproduced Int32 schema overflow and kept slot mismatch explicit. | Eighteen native and sixteen config cases, full Rust hub/Alpaca suites, Clippy, Rust 1.89, contract freshness, Node/five schema checks, all 202 NINA tests and real net48 x86/x64 pass. Retain wrong simulator-motion expectation, schema overflow and editor-label/unsaved-inspection failures. Exact bf15ced PR CI has seven successes but Windows x86 rotator Sync fails uncertain; cause unproved. Added failure-only stage/request/state/stack evidence, without deadline or behavior changes; its push remains live. Next: wheel poll plans/runtime/IPC, all three publications/imports/virtual/simulation/setup, then panels, cameras/coordination and every original final gate. |

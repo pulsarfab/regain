@@ -92,6 +92,77 @@ pub struct FilterWheelCapabilities {
     pub focus_offsets: Vec<i32>,
 }
 
+/// Saved metadata for a direct wheel whose USB protocol has no filter names or
+/// optical offsets. Imported ASCOM/Alpaca drivers continue to own their arrays.
+#[derive(
+    Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct NativeFilterWheelMetadata {
+    /// Filter names in zero-based slot order. Keep this array aligned with offsets.
+    #[schemars(length(min = 1, max = 1024))]
+    pub names: Vec<String>,
+    /// Signed focuser offsets in slot order; at least one must be zero. The hub
+    /// reports these values and does not move a focuser when the filter changes.
+    #[schemars(schema_with = "offset_array_schema", length(min = 1, max = 1024), extend("contains" = {"const": 0}))]
+    pub focus_offsets: Vec<i32>,
+}
+fn offset_array_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+    let mut schema = <Vec<i32> as schemars::JsonSchema>::json_schema(generator);
+    // New rows start at the required reference value, rather than the signed
+    // Int32 minimum. Both editors consume this same item default and bounds.
+    let item = schema.get_mut("items").unwrap().as_object_mut().unwrap();
+    item.insert("default".into(), json!(0));
+    // `format: int32` is only an annotation in JSON Schema. Explicit bounds
+    // enforce the same wire range in independent validators and both editors.
+    item.insert("minimum".into(), json!(i32::MIN));
+    item.insert("maximum".into(), json!(i32::MAX));
+    schema
+}
+impl NativeFilterWheelMetadata {
+    pub fn validate(&self) -> Vec<crate::parameters::FieldError> {
+        use crate::parameters::FieldError;
+        let mut errors = Vec::new();
+        if FilterWheelProperty::Names
+            .decode(&json!(self.names))
+            .is_err()
+        {
+            errors.push(FieldError::new(
+                "names",
+                "filterMetadata",
+                "Use 1–1024 names with at most one MiB of UTF-8 text",
+            ));
+        }
+        if FilterWheelProperty::FocusOffsets
+            .decode(&json!(self.focus_offsets))
+            .is_err()
+        {
+            errors.push(FieldError::new(
+                "focusOffsets",
+                "filterMetadata",
+                "Use 1–1024 signed Int32 offsets with at least one zero reference",
+            ));
+        }
+        if self.names.len() != self.focus_offsets.len() {
+            errors.push(FieldError::new(
+                "focusOffsets",
+                "filterMetadata",
+                "Names and focus offsets must have matching slot counts",
+            ));
+        }
+        errors
+    }
+    pub(crate) fn arrays(&self, slots: usize) -> Result<(Value, Value), SourceError> {
+        if self.names.len() != slots || !self.validate().is_empty() {
+            return Err(SourceError::new(
+                ErrorKind::Unavailable,
+                "Saved filter metadata does not match the wheel slots",
+            ));
+        }
+        Ok((json!(self.names), json!(self.focus_offsets)))
+    }
+}
+
 pub struct FilterWheelController {
     source: Arc<SourceHandle>,
     connection_timeout: Duration,

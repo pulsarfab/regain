@@ -247,6 +247,7 @@ async fn rotator_native_workers_publish_verified_motion_and_reference_through_ac
             backend: SourceBackend::Native {
                 device,
                 identity: identity.into(),
+                filter_wheel: None,
             },
             polling: regain_hub::parameters::PollPolicy {
                 request_timeout_seconds: 5.0,

@@ -1727,6 +1727,50 @@
         ],
         "type": "string"
       },
+      "NativeFilterWheelMetadata": {
+        "additionalProperties": false,
+        "description": "Saved metadata for a direct wheel whose USB protocol has no filter names or\noptical offsets. Imported ASCOM/Alpaca drivers continue to own their arrays.",
+        "properties": {
+          "focusOffsets": {
+            "contains": {
+              "const": 0
+            },
+            "description": "Signed focuser offsets in slot order; at least one must be zero. The hub\nreports these values and does not move a focuser when the filter changes.",
+            "items": {
+              "default": 0,
+              "format": "int32",
+              "maximum": 2147483647,
+              "minimum": -2147483648,
+              "type": "integer"
+            },
+            "maxItems": 1024,
+            "minItems": 1,
+            "title": "Focus Offsets",
+            "type": "array",
+            "x-regain": {
+              "apply": "reconnect"
+            }
+          },
+          "names": {
+            "description": "Filter names in zero-based slot order. Keep this array aligned with offsets.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 1024,
+            "minItems": 1,
+            "title": "Names",
+            "type": "array",
+            "x-regain": {
+              "apply": "reconnect"
+            }
+          }
+        },
+        "required": [
+          "names",
+          "focusOffsets"
+        ],
+        "type": "object"
+      },
       "OutputConfig": {
         "additionalProperties": false,
         "properties": {
@@ -2270,6 +2314,21 @@
                     "camera-direct": "nativeCameraSources",
                     "camera-sdk": "nativeCameraSources"
                   }
+                }
+              },
+              "filterWheel": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/NativeFilterWheelMetadata"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Optional metadata for a direct EFW only. Leave absent to use numbered\nfilter names and zero offsets. Explicit arrays must match hardware\nslots; calibration/reconnect never silently replace saved metadata.",
+                "title": "Direct EFW filter metadata",
+                "x-regain": {
+                  "apply": "reconnect"
                 }
               },
               "identity": {

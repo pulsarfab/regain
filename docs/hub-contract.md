@@ -1684,6 +1684,29 @@ the prospective cache. Nested arrays, objects and null entries remain invalid.
 This is metadata support; camera image buffers require separate ownership and
 transport. Existing scalar adapters/controllers still enforce their own types.
 
-The initial controller has private actor and actual loopback Alpaca V2/V3 coverage.
-Wheel source construction/publication remains gated pending native adapters,
-runtime/IPC, all frontends and remaining import/simulation/setup acceptance.
+The controller has private actor and actual loopback Alpaca V2/V3 coverage.
+Wheel publication remains gated pending runtime/IPC, all frontends and remaining
+import/simulation/setup acceptance.
+
+### Direct EFW metadata
+
+Native EFW sources reuse the existing production worker, with optional
+`backend.filterWheel = {names, focusOffsets}` in the shared configuration. The
+USB protocol has no optical names or offsets. When this field is absent, Regain
+reports `Filter 1` through `Filter N` and zero offsets for the actual hardware
+slots. Explicit metadata is source-owned configuration: it survives calibration
+and worker recreation, and does not change physical source identity or output IDs.
+Imported Alpaca/ASCOM arrays remain owned by their drivers.
+
+The common schema describes both arrays, limits, item default zero and explicit
+Int32 bounds. Independent JSON Schema validators enforce those bounds; the
+`int32` format alone is only an annotation. Engine review also verifies matching
+counts, a zero reference and the aggregate UTF-8 bound. Optional metadata is only
+valid for direct EFW sources. An explicit slot mismatch is an unavailable state,
+never permission to substitute defaults or issue a Position write. Both the typed
+controller and low-level native write path enforce this rule. Setup review,
+save/reload and removal of the optional field perform no equipment I/O.
+
+Calibration remains an explicit worker operation. Its provisional slot count and
+moving Position `-1` preserve the same saved metadata. The hub never automatically
+calibrates, changes a focuser offset or imports installed legacy-driver settings.

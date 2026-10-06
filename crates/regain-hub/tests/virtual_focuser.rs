@@ -580,6 +580,7 @@ async fn native_worker_simulation_remains_explicit_through_nested_focuser_output
     fixture.config.sources[0].backend = SourceBackend::Native {
         device: regain_hub::config::NativeDevice::Eaf,
         identity: "0102030405060709".into(),
+        filter_wheel: None,
     };
     for source in &mut fixture.config.sources {
         source.polling.request_timeout_seconds = 5.0;

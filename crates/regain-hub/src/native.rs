@@ -21,6 +21,7 @@ pub struct NativeAccessoryBackend {
     runtime: NativeRuntime,
     device: NativeDevice,
     identity: String,
+    filter_wheel: Option<crate::filterwheel::NativeFilterWheelMetadata>,
     deadline: Duration,
     worker: Option<AccessoryWorker>,
     verified_identity: Option<Value>,
@@ -33,10 +34,21 @@ impl NativeAccessoryBackend {
     /// Validates configuration without discovery, process launch, or device I/O.
     /// Camera sources must use regain-core's camera Session instead.
     pub fn new(config: &SourceConfig, runtime: NativeRuntime) -> Result<Self, SourceError> {
-        let SourceBackend::Native { device, identity } = &config.backend else {
+        let SourceBackend::Native {
+            device,
+            identity,
+            filter_wheel,
+        } = &config.backend
+        else {
             return Err(invalid("Expected a native source"));
         };
         worker_arguments(*device)?;
+        if filter_wheel
+            .as_ref()
+            .is_some_and(|metadata| *device != NativeDevice::Efw || !metadata.validate().is_empty())
+        {
+            return Err(invalid("Invalid direct EFW filter metadata"));
+        }
         if identity.trim().is_empty()
             || identity.chars().count() > 200
             || identity.chars().any(char::is_control)
@@ -48,6 +60,7 @@ impl NativeAccessoryBackend {
             runtime: runtime.clone(),
             device: *device,
             identity: identity.clone(),
+            filter_wheel: filter_wheel.clone(),
             deadline: Duration::from_secs_f64(config.polling.request_timeout_seconds),
             worker: None,
             verified_identity: None,
@@ -116,6 +129,27 @@ impl NativeAccessoryBackend {
         };
         let status = self.status().await?;
         let mut batch = SampleBatch::default();
+        if self.device == NativeDevice::Efw {
+            let slots = status["slots"]
+                .as_u64()
+                .and_then(|slots| usize::try_from(slots).ok())
+                .filter(|slots| (1..=crate::filterwheel::MAX_FILTER_SLOTS).contains(slots))
+                .ok_or_else(bad_status)?;
+            let (names, offsets) = if let Some(metadata) = &self.filter_wheel {
+                metadata.arrays(slots)?
+            } else {
+                (
+                    json!(
+                        (1..=slots)
+                            .map(|slot| format!("Filter {slot}"))
+                            .collect::<Vec<_>>()
+                    ),
+                    json!(vec![0i32; slots]),
+                )
+            };
+            batch.values.insert("names".into(), names);
+            batch.values.insert("focusoffsets".into(), offsets);
+        }
         for (member, field, boolean) in properties(self.device) {
             if self.reference_uncertain && matches!(*member, "position" | "targetposition") {
                 batch.errors.insert((*member).into(), unknown_reference());
@@ -333,6 +367,8 @@ impl Backend for NativeAccessoryBackend {
             if !properties(self.device)
                 .iter()
                 .any(|(name, _, _)| *name == member)
+                && !(self.device == NativeDevice::Efw
+                    && matches!(member.as_str(), "names" | "focusoffsets"))
             {
                 return Err(unsupported());
             }
@@ -448,6 +484,16 @@ impl Backend for NativeAccessoryBackend {
             }
             if request["command"] == "move" {
                 let status = self.status().await?;
+                if self.device == NativeDevice::Efw {
+                    let slots = status["slots"]
+                        .as_u64()
+                        .and_then(|slots| usize::try_from(slots).ok())
+                        .filter(|slots| (1..=crate::filterwheel::MAX_FILTER_SLOTS).contains(slots))
+                        .ok_or_else(bad_status)?;
+                    if let Some(metadata) = &self.filter_wheel {
+                        metadata.arrays(slots)?;
+                    }
+                }
                 let maximum = if self.device == NativeDevice::Efw {
                     status["slots"]
                         .as_i64()

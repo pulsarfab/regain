@@ -8,6 +8,52 @@ namespace Regain.NINA.Tests;
 public sealed partial class HubNativeTests
 {
     private static Task<HubEditorSession> Editor(Host host) => HubEditorSession.AttachAsync(host.Executable, host.ConfigPath, host.Selection(0, "switch").InstanceId);
+    [Fact]
+    public async Task NativeEditorUsesSharedOptionalWheelMetadataWithoutOpeningEquipment()
+    {
+        await using var host = await Host.Open(); using var editor = await Editor(host); await editor.ReloadAsync();
+        var draft = editor.Draft!;
+        draft.AddItem("/sources"); draft.SelectVariant("/sources/3/backend", "native");
+        draft.SetValue("/sources/3/label", JsonSerializer.SerializeToElement("Private direct wheel metadata"));
+        draft.SetValue("/sources/3/backend/device", draft.ParseScalar(draft.Field("/sources/3/backend/device").Schema, "efw"));
+        draft.SetValue("/sources/3/backend/identity", JsonSerializer.SerializeToElement("0102030405060708"));
+        var source = draft.Field("/sources/3/id").Value!.Value.GetGuid();
+        var path = "/sources/3/backend/filterWheel";
+        draft.AddOptional(path, replaceNull: true);
+        foreach (var (name, offset) in new[] { ("L", 0), ("Hα", -12), ("", 17) }) {
+            var index = draft.Field(path + "/names").Value!.Value.GetArrayLength();
+            draft.AddItem(path + "/names"); draft.AddItem(path + "/focusOffsets");
+            Assert.Equal(0, draft.Field(path + $"/focusOffsets/{index}").Value!.Value.GetInt32());
+            draft.SetValue(path + $"/names/{index}", JsonSerializer.SerializeToElement(name));
+            draft.SetValue(path + $"/focusOffsets/{index}", draft.ParseScalar(draft.Field(path + $"/focusOffsets/{index}").Schema, offset.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+        }
+        var offsetSchema = draft.Field(path + "/focusOffsets/1").Schema;
+        foreach (var outside in new[] { "2147483648", "-2147483649" })
+            Assert.Throws<FormatException>(() => draft.ParseScalar(offsetSchema, outside));
+        Assert.Equal(int.MinValue, draft.ParseScalar(offsetSchema, "-2147483648").GetInt32());
+        Assert.Equal(int.MaxValue, draft.ParseScalar(offsetSchema, "2147483647").GetInt32());
+        draft.SetValue("/sources/3/backend/device", JsonSerializer.SerializeToElement("eaf")); editor.Changed();
+        Assert.False(await editor.ReviewAsync());
+        Assert.Contains("sources[3].backend.filterWheel", editor.Errors.GetRawText());
+        draft.SetValue("/sources/3/backend/device", JsonSerializer.SerializeToElement("efw"));
+        draft.SetValue(path + "/focusOffsets/0", JsonSerializer.SerializeToElement(10)); editor.Changed();
+        Assert.False(await editor.ReviewAsync());
+        Assert.Contains("sources[3].backend.filterWheel.focusOffsets", editor.Errors.GetRawText());
+        draft.SetValue(path + "/focusOffsets/0", JsonSerializer.SerializeToElement(0)); editor.Changed();
+        Assert.True(await editor.ReviewAsync(), editor.Errors.GetRawText());
+        // Draft sources have no runtime entry until apply; review must not create one.
+        await Assert.ThrowsAsync<InvalidOperationException>(() => editor.SourceStatusAsync(source));
+        await editor.ApplyAsync(); await editor.ReloadAsync();
+        Assert.Equal(source, editor.Draft!.Field("/sources/3/id").Value!.Value.GetGuid());
+        Assert.Equal("Hα", editor.Draft.Field(path + "/names/1").Value!.Value.GetString());
+        Assert.Equal(-12, editor.Draft.Field(path + "/focusOffsets/1").Value!.Value.GetInt32());
+        Assert.False((await editor.SourceStatusAsync(source)).GetProperty("transportConnected").GetBoolean());
+        draft = editor.Draft;
+        draft.RemoveOptional(path); editor.Changed(); Assert.True(await editor.ReviewAsync());
+        await editor.ApplyAsync(); await editor.ReloadAsync();
+        Assert.False(editor.Draft!.Field(path).Value.HasValue);
+        Assert.Equal(0, (await editor.SourceStatusAsync(source)).GetProperty("leaseCount").GetInt32());
+    }
     [Theory]
     [InlineData("focuser")]
     [InlineData("rotator")]

@@ -3063,3 +3063,64 @@ Review found no remaining controller/cache issue in this increment. New exact-he
 CI remains required. Next: native metadata/worker adapters, runtime/IPC and all
 wheel outputs, imports/virtual/simulation/setup, then panels, cameras/coordination
 and every original remaining acceptance gate.
+
+### Native filter-wheel metadata review (2026-10-06)
+
+Direct EFW sources now supply Names and FocusOffsets through the existing native
+worker adapter. Optional shared configuration preserves Unicode/blank names and
+signed offsets in slot order. Absent metadata uses numbered filter names and zero
+offsets for the actual slot count. Explicit arrays must pass common validation
+and match the hardware count; they cannot silently fall back to those defaults.
+Metadata edits preserve physical source identity, saved IDs and unrelated settings.
+Imports retain their driver-owned metadata. No new crate, worker or frontend form
+is introduced, and wheel proxy publication remains gated.
+
+Review found a bypass in the low-level native Position write path: the typed
+controller checked saved metadata, but direct writes needed the same slot-count
+check. Both now reject mismatched explicit metadata before the worker Move request.
+Constructor validation rejects metadata for other device classes or malformed
+offsets before launching a worker. Calibration and worker recreation preserve the
+saved arrays; calibration remains explicit and does not adjust a focuser.
+
+Independent schema tests reproduced acceptance of Int32 overflow because the
+generated `format: int32` is only an annotation. The common item schema now emits
+explicit minimum/maximum and default zero. Both editors and independent validators
+consume those same bounds. Retain artifacts/hub-wheel-native-schema.log and the
+successful schema-bounds/Node-bounds confirmations. Semantic class/count/text
+validation still belongs to engine review.
+
+Retain the first native focused failure at artifacts/hub-wheel-native-focused.log:
+the test incorrectly expected timed ordinary motion from the production EFW USB
+simulator, whose ordinary moves apply immediately. The corrected exact stationary
+position assertion matches that simulator; the separate two-second calibration
+case still requires moving -1, provisional slots and unchanged arrays until done.
+No timing or production behavior was changed. All eighteen native tests and
+sixteen config tests pass, including actual production workers in explicit
+simulation, independent leases, metadata reload, calibration and rejected mismatch.
+
+The first editor test had an empty source label; captured engine errors prove
+that rejection. The corrected fixture supplies a label and explicitly checks
+filterWheel field paths for class/reference failures. Pre-Apply source inspection
+is locally rejected until the source is saved; its exact exception expectation
+now follows the existing client contract. Retain the focused/review-evidence/
+focused-confirmed logs. The final focused test and all 202 warnings-denied NINA
+tests pass, including defaults, Int32 boundaries, review/apply/reload/removal,
+stable identities and zero equipment connections. Actual net48 x86/x64 regressions
+pass with zero build warnings. Full Rust hub/Alpaca suites, strict Clippy, Rust
+1.89 all-target checks, generated-contract freshness, Node and all five independent
+schema tests pass. Final evidence: artifacts/hub-wheel-native-{rust-final,clippy,
+msrv,contract-final,node-bounds,schema-bounds,nina-final,net48}.log.
+
+Exact bf15ced PR CI 37533746765 has seven successful jobs but fails Windows net48
+x86 at a rotator Sync with `uncertain`, after all 201 NINA tests pass. The short
+original message omits which of the two Sync paths failed. Retain
+artifacts/hub-wheel-controller-ci-windows-failure.log. Failure-only checkpoints now
+capture loopback versus simulated stage, private request/reply timings, dispatch
+counts, source health and full exception stack without masking diagnostic IPC
+failure or adding successful-path reads. No retry, assertion, deadline or production
+change is made. Local x86/x64 passes do not prove its cause; push CI 37533737225
+must finish, and later exact-head confirmation remains required.
+
+Next: shared wheel poll plans, runtime/IPC, all three outputs, COM/virtual/simulation
+and creation; then panels, camera ownership/transport, coordination and every
+original acceptance/final gate. This checkpoint does not close those requirements.
