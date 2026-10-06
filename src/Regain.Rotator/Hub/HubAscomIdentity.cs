@@ -23,6 +23,6 @@ public static class OutputIdentity
     private static void NetworkOrder(byte[] bytes)
     { Array.Reverse(bytes, 0, 4); Array.Reverse(bytes, 4, 2); Array.Reverse(bytes, 6, 2); }
     public static string ProgId(HubSelection binding) => "Rgn.H" + (binding.DeviceType switch {
-        "switch" => "S", "safetymonitor" => "M", "observingconditions" => "W", _ => throw new ArgumentException("Unknown hub output class")
+        "switch" => "S", "safetymonitor" => "M", "observingconditions" => "W", "focuser" => "F", _ => throw new ArgumentException("Unknown hub output class")
     }) + "." + ClassId(binding).ToString("N"); // 39 characters: COM's maximum.
 }

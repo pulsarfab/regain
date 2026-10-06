@@ -15,7 +15,7 @@ public sealed class HubRegistrationTests
         internal HubSelection Binding;
         internal HubSelections Saved;
         internal string Class => @"Software\Classes\CLSID\" + OutputIdentity.ClassId(Binding).ToString("B");
-        internal Fixture()
+        internal Fixture(string deviceType = "switch")
         {
             System.IO.Directory.CreateDirectory(Path.Combine(Directory, "hub-ascom", "x64"));
             File.WriteAllText(Path.Combine(Directory, "hub-ascom", "x64", "Regain.Hub.ASCOM.exe"), "fixture, never executed");
@@ -24,7 +24,7 @@ public sealed class HubRegistrationTests
             Roots = [Parent.CreateSubKey("view32"), Parent.CreateSubKey("view64")];
             Store = new HubSelectionStore(Path.Combine(Directory, "selections.json"));
             Binding = new HubSelection { ConfigPath = Path.Combine(Directory, "hub.json"), InstanceId = Guid.NewGuid(),
-                OutputId = Guid.NewGuid(), DeviceType = "switch", Label = "Observatory controls", Simulated = true };
+                OutputId = Guid.NewGuid(), DeviceType = deviceType, Label = "Observatory controls", Simulated = true };
             Saved = Store.Save(Binding, Guid.Empty);
         }
         internal Guid Register(Guid? revision = null) => HubAscomRegistration.RegisterSaved(Roots, Directory, Store.Path,
@@ -40,6 +40,20 @@ public sealed class HubRegistrationTests
         }
     }
 
+    [Fact]
+    public void FocuserRegistrationUsesBothChooserViewsAndStableIdentity()
+    {
+        using var f = new Fixture("focuser");
+        var id = f.Register();
+        Assert.Equal(OutputIdentity.ClassId(f.Binding), id);
+        Assert.StartsWith("Rgn.HF.", OutputIdentity.ProgId(f.Binding));
+        Assert.Equal(39, OutputIdentity.ProgId(f.Binding).Length);
+        for (var view = 0; view < 2; view++)
+            Assert.Contains("SIMULATION", Assert.IsType<string>(f.Read(view, @"Software\ASCOM\Focuser Drivers\" + OutputIdentity.ProgId(f.Binding))));
+        f.Remove();
+        for (var view = 0; view < 2; view++) Assert.Null(f.Read(view, @"Software\ASCOM\Focuser Drivers\" + OutputIdentity.ProgId(f.Binding)));
+        Assert.Equal(f.Saved.Revision, f.Store.Load().Revision);
+    }
     [Fact]
     public void ActualRegistryValuesBindBothViewsToOneOwnerAndIdentityWithoutChangingSelections()
     {

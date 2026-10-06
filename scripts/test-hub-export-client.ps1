@@ -43,6 +43,17 @@ try {
         Write-Output "Hub exported metadata $([IntPtr]::Size * 8)-bit passed"; return
     }
     $primary = $objects[0]; $other = $objects[3]; $weather = $objects[2]; $safety = $objects[1]
+    if ($Role -eq 'first') {
+        $focuser = $objects[4]
+        $focuser.Connect(); Wait-Condition { !(Value $focuser 'Connecting') } 'focuser connect completion'
+        if (!(Value $focuser 'Absolute') -or (Value $focuser 'Position') -ne 50 -or (Value $focuser 'MaxIncrement') -ne 100) { throw 'COM focuser typed properties' }
+        $focuser.Move(70)
+        if ((Value $focuser 'Position') -ne 70) { throw 'COM focuser Move' }
+        $focuser.Halt()
+        $focuser.TempComp = $true
+        if (!(Value $focuser 'TempComp')) { throw 'COM focuser TempComp' }
+        $focuser.Disconnect(); Wait-Condition { !(Value $focuser 'Connecting') } 'focuser disconnect completion'
+    }
     if ($Role -eq 'second') { Wait-Signal 'first-connected' }
     Write-Output "Hub export ${Role}: connect primary"
     $primary.Connect(); Wait-Condition { !(Value $primary 'Connecting') } 'primary connect completion'

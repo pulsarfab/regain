@@ -100,13 +100,24 @@ shared uncertainty latch without command replay or silent generation adoption.
 Local focuser slots coexist at distinct numbers; collisions fail explicitly before
 equipment connection. Per-output setup opens the shared editor. Private loopback
 tests exercise the production adapter, host, IPC and HTTP router; no physical
-equipment is actuated. Native NINA/ASCOM publication and conformance remain open.
+equipment is actuated. Conformance and broader frontend acceptance remain open.
 
-Next: finish native NINA/ASCOM focuser publication, typed imports/simulation and
-the remaining accessory proxies. Retain the earlier COM fixture timeout
+Completed increment: native NINA and ASCOM focuser outputs use shared typed request
+builders/value validation, immutable saved choices, the existing themed selector
+and stable Focuser Chooser registration. NINA waits for absolute motion completion
+and verifies the target; relative sources stay available through ASCOM/Alpaca.
+ASCOM exposes V4/legacy interfaces and integer Position in DeviceState. Both retain
+independent leases, source-generation fences and shared uncertainty; cancellation
+does not replay a command or issue an automatic Halt. Private NINA and real net48
+x86/x64 adapter/COM export fixtures pass. SCM/production registration requires the
+new disposable-runner CI; local HKCU SCM activation failed on the first existing
+Switch class. General proxy setup remains gated pending typed imports/simulation.
+
+Next: typed focuser imports/simulation and the remaining accessory proxies.
+Retain the earlier COM fixture timeout
 investigation. Complete camera ownership, coordination and every original
-remaining milestone and acceptance gate. General proxy setup stays gated until
-frontend publication is complete.
+remaining milestone and acceptance gate. General proxy setup stays gated pending
+broader typed configuration support.
 
 Use this document as the working checklist. Complete one reviewable milestone at
 a time, record its tests and remaining limitations, and update the next action
@@ -811,3 +822,4 @@ Keep existing device profiles and registrations compatible throughout migration.
 | 2026-10-06 | Added and reviewed the typed focuser controller over shared source actors. Live capability/range checks, actual readiness, generation fences and unique command control preserve ownership and uncertainty. Native EAF/FC3/ETA adapters reuse existing workers and known units. | 13 private actor/HTTP cases plus eight production-worker simulation cases pass; full hub/Alpaca suites, strict Clippy and Rust 1.89 checks pass. Review corrected absolute per-move travel and retained ETA's known 1 µm coordinate. Empty-profile push CI passes all eight jobs; safety-correction push/PR each pass seven with Windows still live. Next: focuser runtime/IPC/diagnostics and all three frontends/imports, then the remaining typed devices/cameras/coordination and every original acceptance gate. No typed proxy is advertised yet. |
 | 2026-10-06 | Integrated focuser outputs into native/Alpaca source runtime and typed private IPC. Added deduplicated typed polling, inert paged diagnostics, host-described property types/ranges, strict web/native readers and cached DeviceState. Reviewed generation races, pending admission, EOF, class dispatch and unsupported frontend publication. | 18 focuser actor/HTTP/runtime/IPC cases and nine native cases pass; full hub/Alpaca suites, strict Clippy, Rust 1.89, generated contract, Node/four schema tests, 173 NINA checks and real net48 x86/x64 clients pass. Final focused checks pass after fixture refinements. Safety-correction CI passes all eight jobs in both runs; a83e577 CI each pass seven with Windows live. Next: Alpaca and native NINA/ASCOM focuser publication, typed imports/simulation and every original remaining gate. Setup's general proxy capability stays unavailable. |
 | 2026-10-06 | Published typed focuser outputs through Alpaca with sparse identities, modern interfaces and shared IPC; reviewed class-local collisions, private lease ownership, strict parameters and lost-write no-replay behavior. Local slots coexist at distinct numbers and per-device setup selects the shared editor. | Four production-adapter/host/HTTP loopback cases, full local Rust hub/Alpaca suites, strict Clippy and Rust 1.89 pass. No physical hardware is actuated. Controller push CI passes all eight jobs; its PR was cancelled. Runtime/IPC push/PR each pass seven with Windows live. Next: native NINA/ASCOM focuser publication and broader imports/simulation, then every original remaining typed-device/camera/coordination and acceptance gate. General proxy setup remains gated. |
+| 2026-10-06 | Added native NINA/ASCOM focuser outputs using shared typed request/value helpers, immutable selection and Focuser Chooser registration. Reviewed cancellation, generation checks, typed DeviceState and export mapping. | 180 NINA tests, warnings-denied builds, real net48 x86/x64 adapters and manual COM exports pass. Local SCM fails on the first existing Switch class; updated SCM/production registration requires disposable CI. Runtime/IPC PR CI passes all eight jobs. Next: typed imports/simulation and general typed setup, then remaining devices, camera ownership/coordination and every original acceptance gate. |

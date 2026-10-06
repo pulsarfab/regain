@@ -2221,3 +2221,52 @@ alter native frontend code or generated configuration. Controller push CI
 cancelled. Runtime/IPC PR 37486781939 and push 37486773101 each pass seven jobs
 with Windows still live. Native NINA/ASCOM publication, imports/simulation,
 conformance and all original remaining milestone gates remain open.
+
+### Native focuser outputs (2026-10-06)
+
+Added a shared typed focuser request/value contract in the existing common .NET
+assembly, native NINA provider/device and ASCOM V4 adapter with V3/V2 QI. Attachment
+requires focuser/modern-connection/DeviceState capabilities before leasing
+equipment. Selection enumeration remains file-only; the common themed selector,
+manager and registration backend now admit Focuser with a stable 39-character
+`Rgn.HF.<uuid>` ProgID and both Chooser views. ASCOM returns after Move starts and
+uses explicit Halt; Position retains Int32 in DeviceState. Optional-property
+errors and native ASCOM translation reuse the existing implementation.
+
+NINA's interface requires absolute Position. Preparation rejects relative sources
+without inventing a coordinate or actuating a move. NINA waits for motion to stop,
+checks the exact target, then uses the requested settling delay. Failed IsMoving
+reads are errors, never fabricated idle states. Unsupported optional readings
+become NaN without falsely reporting a source failure. Cancellation does not
+automatically Halt a source that another client may now control. Source-generation
+checks and uncertain writes remain in the Rust controller; native Connected reads
+the actual generation-bound output state. Longer-lived coordinated ownership
+remains an original unfinished gate.
+
+Reviewed binding/capability admission, request epoch capture, disconnect/Dispose,
+no automatic replay, shared source uncertainty, integer state conversion and
+registration/export factory mapping. The private loopback fixture is shared by
+net8 and net48 tests and joins owned request tasks before teardown. Review
+strengthened cancellation to require OperationCanceledException and added private
+Focuser Chooser registration/removal checks. The initial net48 fixture used LINQ
+on a COM collection without IEnumerable; indexed COM access fixes it without
+changing a production deadline.
+
+All 180 warnings-denied NINA tests pass, including malformed motion reads and cancellation.
+Real net48 x86/x64 clients prove current/legacy QI, absolute/relative motion,
+typed state, independent leases, Link/asynchronous connection and lost-reply
+fencing. Warning-denied NINA/ASCOM builds and both staged worker bitnesses pass.
+Actual manual COM exports pass with five outputs and both client/server bitnesses,
+including metadata without host activation and Focuser properties/Move/Halt/TempComp.
+Logs are `artifacts/hub-focuser-frontends-*.log` and
+`artifacts/hub-focuser-nina-focused.log`. Local HKCU SCM activation fails at the
+first existing Switch class with REGDB_E_CLASSNOTREG; its cause remains unproved,
+and the fixture removes all private registrations/processes. The updated SCM and
+production-registration cases must run in disposable Windows CI. No installed
+vendor driver or physical equipment is activated.
+
+Runtime/IPC PR CI 37486781939 passes all eight jobs; its push run 37486773101 is
+cancelled after seven successes. Alpaca publication PR 37488895245 passes seven
+with Windows still live. New CI remains required. Typed focuser COM/virtual/
+dedicated simulation imports, general typed setup, conformance, interactive and
+vendor/hardware acceptance and every original remaining milestone remain open.

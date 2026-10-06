@@ -65,7 +65,7 @@ public abstract class HubDevice : BaseINPC, IDevice, IDisposable
     public string DriverInfo => "PulsarFab regain shared Rust hub; native NINA output";
     public string DriverVersion => typeof(HubDevice).Assembly.GetName().Version!.ToString();
     public bool HasSetupDialog => true;
-    public bool Connected { get { lock (gate) return ready && !disposed && Session.Connected; } }
+    public virtual bool Connected { get { lock (gate) return ready && !disposed && Session.Connected; } }
     public string LastError { get; private set; } = "";
     protected void Failed() { LastError = "Hub value unavailable; inspect source health in hub setup."; }
     protected JsonElement Get(Guid epoch, Guid output, object property) => Session.RequestAsync(epoch,

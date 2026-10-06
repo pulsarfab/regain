@@ -35,10 +35,10 @@ internal static class ExportServer
             var classes = store.Load().Bindings.Select(binding => {
                 var saved = binding.Copy();
                 Type type = saved.DeviceType switch { "switch" => typeof(SwitchOutput), "safetymonitor" => typeof(SafetyOutput),
-                    "observingconditions" => typeof(WeatherOutput), _ => throw new ArgumentException() };
+                    "observingconditions" => typeof(WeatherOutput), "focuser" => typeof(FocuserOutput), _ => throw new ArgumentException() };
                 return new ServerClass(OutputIdentity.ClassId(saved), type, () => saved.DeviceType switch {
                     "switch" => new SwitchOutput(saved, executable, workers), "safetymonitor" => new SafetyOutput(saved, executable, workers),
-                    "observingconditions" => new WeatherOutput(saved, executable, workers), _ => throw new ArgumentException()
+                    "observingconditions" => new WeatherOutput(saved, executable, workers), "focuser" => new FocuserOutput(saved, executable, workers), _ => throw new ArgumentException()
                 });
             }).ToArray();
             Progress("bindings loaded");

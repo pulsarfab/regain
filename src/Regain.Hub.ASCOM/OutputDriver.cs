@@ -150,6 +150,7 @@ public abstract class OutputDriver : IDisposable
                 var value = state.GetProperty("Value");
                 object scalar = value.ValueKind switch {
                     JsonValueKind.True => true, JsonValueKind.False => false,
+                    JsonValueKind.Number when selection.DeviceType == "focuser" && state.GetProperty("Name").GetString() == "Position" => value.GetInt32(),
                     JsonValueKind.Number => value.GetDouble(),
                     _ => throw new global::ASCOM.DriverException("Hub DeviceState contained an invalid scalar")
                 };

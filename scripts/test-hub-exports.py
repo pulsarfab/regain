@@ -10,9 +10,64 @@ import tempfile
 import time
 import uuid
 import winreg
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from threading import Thread
+from urllib.parse import parse_qs
 
 ROOT = Path(__file__).resolve().parents[1]
 NO_WINDOW = subprocess.CREATE_NO_WINDOW
+
+
+class FocuserFixture:
+    """Always loopback, never an installed/vendor driver or physical worker."""
+    def __enter__(self):
+        values = dict(absolute=True, maxstep=1000, maxincrement=100, tempcompavailable=True,
+                      position=50, ismoving=False, tempcomp=False, temperature=-5.0, connected=False,
+                      interfaceversion=3)
+
+        class Handler(BaseHTTPRequestHandler):
+            def log_message(self, *_args):
+                pass
+
+            def respond(self, value=None, code=0):
+                body = json.dumps(dict(Value=value, ErrorNumber=code, ErrorMessage="")).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def do_GET(self):
+                member = self.path.split("?", 1)[0].rsplit("/", 1)[-1]
+                self.respond(values.get(member), 0 if member in values else 1024)
+
+            def do_PUT(self):
+                member = self.path.rsplit("/", 1)[-1]
+                args = parse_qs(self.rfile.read(int(self.headers["Content-Length"])).decode())
+                if member == "connected":
+                    values["connected"] = args["Connected"][0].lower() == "true"
+                elif member == "move":
+                    values["position"] = int(args["Position"][0])
+                elif member == "halt":
+                    values["ismoving"] = False
+                elif member == "tempcomp":
+                    values["tempcomp"] = args["TempComp"][0].lower() == "true"
+                else:
+                    self.respond(code=1024)
+                    return
+                self.respond()
+
+        self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.thread = Thread(target=self.server.serve_forever)
+        self.thread.start()
+        self.values = values
+        self.url = f"http://127.0.0.1:{self.server.server_port}"
+        return self
+
+    def __exit__(self, *_args):
+        self.server.shutdown()
+        self.server.server_close()
+        self.thread.join()
 
 
 class ScmProcess:
@@ -101,7 +156,7 @@ def main():
     owner = subprocess.check_output([str(powershell), "-NoProfile", "-Command",
                                    "[Security.Principal.WindowsIdentity]::GetCurrent().User.Value"],
                                    text=True, creationflags=NO_WINDOW, timeout=10).strip()
-    with tempfile.TemporaryDirectory(prefix="hub-export-", dir=ROOT / "artifacts") as directory:
+    with FocuserFixture() as focuser, tempfile.TemporaryDirectory(prefix="hub-export-", dir=ROOT / "artifacts") as directory:
         folder = Path(directory)
         config = json.loads((ROOT / "crates/regain-hub/examples/simulated-observatory.json").read_text())
         config["instanceId"], config["revision"] = str(uuid.uuid4()), str(uuid.uuid4())
@@ -110,6 +165,12 @@ def main():
         for channel in additional["device"]["channels"]:
             channel["id"] = str(uuid.uuid4())
         config["outputs"].append(additional)
+        source_id = str(uuid.uuid4())
+        config["sources"].append(dict(id=source_id, label="Private loopback focuser simulation",
+                                     backend=dict(kind="alpaca", baseUrl=focuser.url, deviceType="focuser",
+                                                  deviceNumber=19, connectionPolicy="managed")))
+        config["outputs"].append(dict(id=str(uuid.uuid4()), number=4, label="Private focuser simulation",
+                                      device=dict(kind="proxy", source=source_id, deviceType="focuser")))
         for source in config["sources"]:
             source["polling"] = dict(pollSeconds=0.1, requestTimeoutSeconds=0.3, attemptsPerCycle=1,
                                      initialBackoffSeconds=0.05, backoffCapSeconds=0.05)
@@ -117,12 +178,12 @@ def main():
         path.write_text(json.dumps(config), encoding="utf-8")
         bindings, identities = [], []
         for output in config["outputs"]:
-            kind = dict(switch="switch", safety="safetymonitor", weather="observingconditions")[output["device"]["kind"]]
+            kind = output["device"].get("deviceType") or dict(switch="switch", safety="safetymonitor", weather="observingconditions")[output["device"]["kind"]]
             name = f'https://pulsarfab.com/regain/ascom-hub/output/{config["instanceId"]}/{output["id"]}/{kind}'
             clsid = uuid.uuid5(uuid.NAMESPACE_URL, name)  # Independent identity derivation.
-            progid = "Rgn.H" + dict(switch="S", safetymonitor="M", observingconditions="W")[kind] + "." + clsid.hex
+            progid = "Rgn.H" + dict(switch="S", safetymonitor="M", observingconditions="W", focuser="F")[kind] + "." + clsid.hex
             assert len(progid) == 39
-            identities.append(dict(clsid=str(clsid), progid=progid, version=2 if kind == "observingconditions" else 3))
+            identities.append(dict(clsid=str(clsid), progid=progid, version=4 if kind == "focuser" else 2 if kind == "observingconditions" else 3))
             bindings.append(dict(configPath=str(path), instanceId=config["instanceId"], outputId=output["id"],
                                  deviceType=kind, label=output["label"], simulated=True))
         (folder / "identities.json").write_text(json.dumps(identities))
@@ -137,6 +198,7 @@ def main():
         views = (winreg.KEY_WOW64_32KEY, winreg.KEY_WOW64_64KEY)
         client = ROOT / "scripts/test-hub-export-client.ps1"
         for architecture in (("x64",) if options.registered else ("x86", "x64")):
+            focuser.values.update(position=50, tempcomp=False, connected=False)
             server_exe = workers / "hub-ascom" / architecture / "Regain.Hub.ASCOM.exe"
             paths = [item for identity in identities for item in
                      (f'Software\\Classes\\CLSID\\{{{identity["clsid"]}}}', f'Software\\Classes\\{identity["progid"]}')]
@@ -258,7 +320,7 @@ def main():
                             except FileNotFoundError:
                                 pass
                     assert server.poll() is None and host.poll() is None, "Registration removal stopped a shared server"
-                print(f"{architecture} {'SCM' if options.scm else 'manual'} server: four stable outputs, both client bitnesses, independent leases and COM DeviceState passed", flush=True)
+                print(f"{architecture} {'SCM' if options.scm else 'manual'} server: five stable outputs, both client bitnesses, independent leases and COM focuser/DeviceState passed", flush=True)
             finally:
                 startup = folder / "ready.startup"
                 if startup.exists():

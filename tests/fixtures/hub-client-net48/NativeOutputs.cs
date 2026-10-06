@@ -4,7 +4,7 @@ using ASCOM.DeviceInterface;
 using Regain.Hub;
 using Regain.Hub.ASCOM;
 
-internal static class NativeOutputs
+internal static partial class NativeOutputs
 {
     internal static async Task Run(string executable, string path, Guid instance, JsonElement config, HubClient inspector, CancellationToken token)
     {

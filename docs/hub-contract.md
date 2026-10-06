@@ -1329,5 +1329,26 @@ for reconciliation. Local focuser slots and hub outputs must have distinct devic
 numbers, including unconfigured reserved local slots. Conflicts fail catalog and
 hub routing explicitly rather than silently choosing a device. The per-device
 setup URL opens shared hub setup for a hub output, retaining ordinary local setup
-for other slots. Native NINA/ASCOM focuser publication, broader imports/simulation
-and conformance remain required.
+for other slots.
+
+Native NINA and ASCOM focuser outputs use shared typed request builders and value
+validation over the existing private session. Saved selection enumeration,
+registration and COM metadata do not acquire equipment. Attachment checks the
+host's focuser/connection/DeviceState capabilities before acquiring a lease.
+ASCOM exposes Focuser V4 and the legacy V3/V2 interfaces, including Link, with
+nonblocking Move, strict integer Position (also in DeviceState), optional errors
+and per-object leases. Bound exports use stable `Rgn.HF.<uuid>` identities and
+the shared Focuser Chooser registration, manager and themed setup.
+
+NINA requires an absolute Position: relative sources are explicitly rejected
+during preparation rather than receiving an invented position. Move waits for
+IsMoving to clear, verifies the requested target and applies NINA's requested
+settling delay. A stopped-short move is an error. Unsupported StepSize/Temperature
+produce NINA's absent-value NaN; unavailable or malformed readings remain errors,
+and IsMoving never becomes false merely because a read failed. Both adapters
+delegate capability, motion and source-generation checks to the Rust controller.
+Cancellation releases only the caller's session as needed, with no command replay
+or automatic Halt; Halt remains explicit because another client may own later
+motion. Coordination policies and long-lived acquisition/motion ownership remain
+separate unfinished plan gates. Broad COM/virtual/dedicated simulation focuser
+imports, conformance, interactive setup and hardware acceptance remain required.

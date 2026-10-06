@@ -2,7 +2,9 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Regain.Hub;
+using Regain.TestFixtures;
 
 // This executable runs the same public attachment/client API in real net48
 // x86/x64 processes. Its caller creates a unique simulated configuration.
@@ -13,6 +15,10 @@ internal static class Program
         uint? candidate = null;
         try {
             if (args.Length != 3 || IntPtr.Size * 8 != int.Parse(args[2])) throw new InvalidOperationException("Wrong fixture bitness");
+            using var focuserServer = new HubFocuserServer();
+            var fixtureConfig = JsonNode.Parse(File.ReadAllText(args[1]))!.AsObject();
+            focuserServer.AddTo(fixtureConfig, 4, 7);
+            File.WriteAllText(args[1], fixtureConfig.ToJsonString());
             using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(75));
             var initializedPath = System.IO.Path.Combine(System.IO.Path.GetDirectoryName(args[1])!, "created empty configuration.json");
             var initialization = new HubInitialization(args[0]);
@@ -141,6 +147,7 @@ internal static class Program
             while ((await editor.SourceStatusAsync(inspectedSource, deadline.Token)).GetProperty("leaseCount").GetInt32() != 0)
                 await Task.Delay(25, deadline.Token);
             await NativeOutputs.Run(args[0], args[1], attached.InstanceId, saved, probe, deadline.Token);
+            await NativeOutputs.FocuserRun(args[0], args[1], attached.InstanceId, saved, focuserServer, deadline.Token);
             Console.WriteLine($"net48 {IntPtr.Size * 8}-bit: shared identity, independent leases, selection CAS/removal, native session/reconnect, editor review/apply/reconcile, setup inspection/export/simulation, typed ASCOM outputs and surviving host passed");
             return 0;
         } catch (Exception error) { Console.Error.WriteLine(error.GetType().Name + ": " + error.Message); return 1; }
