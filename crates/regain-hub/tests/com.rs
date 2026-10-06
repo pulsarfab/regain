@@ -10,6 +10,7 @@ use regain_hub::{
     factory::NoCredentials,
     native::NativeRuntime,
     parameters::{PollPolicy, SafetyPolicy},
+    rotator::RotatorProperty,
     runtime::HubRuntime,
     safety::MonotonicClock,
     sampling::SampleRequest,
@@ -177,6 +178,228 @@ fn preparation_checks_architecture_and_class_without_activation() {
     assert!(
         matches!(ComBackend::new(&source, &missing, Vec::new()), Err(e) if e.kind == ErrorKind::Unsupported)
     );
+}
+
+#[tokio::test]
+async fn typed_rotator_com_factory_shares_leases_and_preserves_source_coordinates_and_failures() {
+    let Some(f) = Fixture::load() else {
+        return;
+    };
+    for (bitness, version) in [(Bitness::X86, 3), (Bitness::X64, 4)] {
+        f.clear("Rotator", json!({"version":version}));
+        let source = f.source("Rotator", DeviceType::Rotator, bitness);
+        let source_id = source.id;
+        let mut config = HubConfig::empty();
+        config.sources.push(source);
+        for number in [2, 17] {
+            config.outputs.push(OutputConfig {
+                id: Uuid::new_v4(),
+                number,
+                label: format!("Private COM rotator {number}"),
+                device: VirtualDevice::Proxy {
+                    source: source_id,
+                    device_type: DeviceType::Rotator,
+                },
+            });
+        }
+        let hub = HubRuntime::build(
+            config.clone(),
+            &f.native,
+            &NoCredentials,
+            Arc::new(MonotonicClock::default()),
+        )
+        .unwrap();
+        assert_eq!(f.count("Rotator", "Activate"), 0);
+        let first = hub.client();
+        let second = hub.client();
+        first.connect(config.outputs[0].id).await.unwrap();
+        second.connect(config.outputs[1].id).await.unwrap();
+        let a = first.connection(config.outputs[0].id).unwrap();
+        let b = second.connection(config.outputs[1].id).unwrap();
+        let ar = a.rotator().unwrap();
+        let br = b.rotator().unwrap();
+        assert_eq!(ar.generation(), br.generation());
+        for (property, expected) in [
+            (RotatorProperty::Position, json!(20.0)),
+            (RotatorProperty::MechanicalPosition, json!(350.0)),
+            (RotatorProperty::TargetPosition, json!(20.0)),
+            (RotatorProperty::IsMoving, json!(false)),
+            (RotatorProperty::Reverse, json!(false)),
+            (RotatorProperty::CanReverse, json!(true)),
+            (RotatorProperty::StepSize, json!(0.02)),
+        ] {
+            let actual = ar.property(property).await.unwrap();
+            if expected.is_boolean() {
+                assert_eq!(actual.as_bool(), expected.as_bool());
+            } else {
+                assert_eq!(actual.as_f64(), expected.as_f64());
+            }
+        }
+        assert_eq!(f.count("Rotator", "Activate"), 1);
+        assert_eq!(f.count("Rotator", "Connect"), usize::from(version == 4));
+        assert_eq!(
+            f.count("Rotator", "Connected.set"),
+            usize::from(version == 3)
+        );
+        assert_eq!(
+            ar.move_absolute(360.0).await.unwrap_err().kind,
+            ErrorKind::InvalidValue
+        );
+        assert_eq!(f.count("Rotator", "MoveAbsolute"), 0);
+        ar.move_relative(-721.5).await.unwrap();
+        assert_eq!(
+            br.property(RotatorProperty::TargetPosition)
+                .await
+                .unwrap()
+                .as_f64(),
+            Some(18.5)
+        );
+        assert_eq!(
+            br.move_absolute(40.0).await.unwrap_err().kind,
+            ErrorKind::Busy
+        );
+        br.halt().await.unwrap();
+        br.sync(15.0).await.unwrap();
+        assert_eq!(
+            ar.property(RotatorProperty::Position)
+                .await
+                .unwrap()
+                .as_f64(),
+            Some(15.0)
+        );
+        assert_eq!(
+            ar.property(RotatorProperty::MechanicalPosition)
+                .await
+                .unwrap()
+                .as_f64(),
+            Some(350.0)
+        );
+        ar.move_absolute(42.5).await.unwrap();
+        assert_eq!(
+            br.property(RotatorProperty::TargetPosition)
+                .await
+                .unwrap()
+                .as_f64(),
+            Some(42.5)
+        );
+        br.halt().await.unwrap();
+        br.move_mechanical(355.0).await.unwrap();
+        assert_eq!(
+            ar.property(RotatorProperty::MechanicalPosition)
+                .await
+                .unwrap()
+                .as_f64(),
+            Some(355.0)
+        );
+        assert_eq!(
+            ar.property(RotatorProperty::TargetPosition)
+                .await
+                .unwrap()
+                .as_f64(),
+            Some(20.0)
+        );
+        ar.halt().await.unwrap();
+        ar.set_reverse(true).await.unwrap();
+        assert_eq!(
+            br.property(RotatorProperty::Reverse).await.unwrap(),
+            json!(true)
+        );
+        f.state(
+            "Rotator",
+            json!({"version":version, "faultMember":"StepSize", "faultCode":-2147220480i32}),
+        );
+        assert_eq!(
+            ar.property(RotatorProperty::StepSize)
+                .await
+                .unwrap_err()
+                .kind,
+            ErrorKind::Unsupported
+        );
+        assert_eq!(
+            ar.property(RotatorProperty::Position)
+                .await
+                .unwrap()
+                .as_f64(),
+            Some(15.0)
+        );
+        f.state("Rotator", json!({"version":version,"badMoving":true}));
+        let moves = f.count("Rotator", "Move");
+        assert_eq!(
+            ar.move_relative(1.0).await.unwrap_err().kind,
+            ErrorKind::Unavailable
+        );
+        assert_eq!(f.count("Rotator", "Move"), moves);
+        f.state("Rotator", json!({"version":version}));
+        first.disconnect(config.outputs[0].id);
+        drop(a);
+        until(|| hub.source_snapshot(source_id).unwrap().lease_count == 1).await;
+        assert_eq!(f.count("Rotator", "Disconnect"), 0);
+        assert!(br.connected());
+        f.state(
+            "Rotator",
+            json!({"version":version,"faultMember":"Move","faultCode":-2147220225i32}),
+        );
+        assert_eq!(
+            br.move_relative(5.0).await.unwrap_err().kind,
+            ErrorKind::Uncertain
+        );
+        f.state("Rotator", json!({"version":version}));
+        let halts = f.count("Rotator", "Halt");
+        assert_eq!(br.halt().await.unwrap_err().kind, ErrorKind::Uncertain);
+        assert_eq!(
+            br.set_reverse(false).await.unwrap_err().kind,
+            ErrorKind::Uncertain
+        );
+        assert_eq!(f.count("Rotator", "Move"), moves + 1);
+        assert_eq!(f.count("Rotator", "Halt"), halts);
+        assert!(hub.source_snapshot(source_id).unwrap().write_uncertain);
+        second.disconnect(config.outputs[1].id);
+        drop(b);
+        hub.shutdown().await.unwrap();
+        assert_eq!(f.count("Rotator", "SetupDialog"), 0);
+    }
+}
+
+#[tokio::test]
+async fn modern_com_rotator_cannot_connect_without_required_reversal() {
+    let Some(f) = Fixture::load() else {
+        return;
+    };
+    for bitness in [Bitness::X86, Bitness::X64] {
+        for version in [3, 4] {
+            f.clear("Rotator", json!({"version":version,"noReverse":true}));
+            let source = f.source("Rotator", DeviceType::Rotator, bitness);
+            let source_id = source.id;
+            let mut config = HubConfig::empty();
+            config.sources.push(source);
+            config.outputs.push(OutputConfig {
+                id: Uuid::new_v4(),
+                number: 5,
+                label: "Invalid modern rotator".into(),
+                device: VirtualDevice::Proxy {
+                    source: source_id,
+                    device_type: DeviceType::Rotator,
+                },
+            });
+            let output = config.outputs[0].id;
+            let hub = HubRuntime::build(
+                config,
+                &f.native,
+                &NoCredentials,
+                Arc::new(MonotonicClock::default()),
+            )
+            .unwrap();
+            let client = hub.client();
+            assert_eq!(
+                client.connect(output).await.unwrap_err().kind,
+                ErrorKind::Unavailable
+            );
+            assert!(client.connection(output).is_err());
+            assert_eq!(f.count("Rotator", "Move"), 0);
+            client.close();
+            hub.shutdown().await.unwrap();
+        }
+    }
 }
 
 #[tokio::test]

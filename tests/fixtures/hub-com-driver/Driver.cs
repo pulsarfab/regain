@@ -20,9 +20,14 @@ public sealed class Driver {
     private int pending;
     private int position = 50;
     private bool moving, tempComp;
+    private readonly bool rotator;
+    private double logical = 20, mechanical = 350, target = 20;
+    private bool reverse;
     public Driver() {
         var explicitState = Environment.GetEnvironmentVariable("REGAIN_HUB_COM_FIXTURE_STATE");
         var arguments = Environment.GetCommandLineArgs();
+        var type = Array.IndexOf(arguments, "--device-type");
+        rotator = type >= 0 && arguments[type + 1] == "rotator";
         var selected = Array.IndexOf(arguments, "--prog-id");
         state = explicitState ?? Path.Combine(Environment.GetEnvironmentVariable("REGAIN_HUB_COM_FIXTURE_DIRECTORY")
             ?? throw new InvalidOperationException(), arguments[selected + 1] + ".json");
@@ -87,12 +92,25 @@ public sealed class Driver {
     public bool Absolute { get { Before("Absolute"); return !Setting("relative", false); } }
     public object MaxStep { get { Before("MaxStep"); return Setting("badMaxStep", false) ? (object)1.5 : 100000; } }
     public int MaxIncrement { get { Before("MaxIncrement"); return 1000; } }
-    public int Position { get { Before("Position"); if (Setting("relative", false)) throw new COMException("relative", unchecked((int)0x80040400)); return position; } }
+    public object Position { get { Before("Position"); if (rotator) return Setting("badAngle", false) ? 360.0 : logical; if (Setting("relative", false)) throw new COMException("relative", unchecked((int)0x80040400)); return position; } }
     public object IsMoving { get { Before("IsMoving"); return Setting("badMoving", false) ? (object)"false" : moving; } }
     public bool TempCompAvailable { get { Before("TempCompAvailable"); return true; } }
     public bool TempComp { get { Before("TempComp.get"); return tempComp; } set { Before("TempComp.set", value); tempComp = value; } }
-    public double StepSize { get { Before("StepSize"); return Setting("badStepSize", false) ? 0 : 1.25; } }
-    public void Move(int target) { Before("Move", target); position = target; moving = true; }
+    public double StepSize { get { Before("StepSize"); return Setting("badStepSize", false) ? 0 : Setting("tinyStepSize", false) ? double.Epsilon : rotator ? 0.02 : 1.25; } }
+    public void Move(object value) {
+        Before("Move", value);
+        if (rotator) target = Wrap(logical + Convert.ToDouble(value));
+        else position = Convert.ToInt32(value);
+        moving = true;
+    }
+    private static double Wrap(double value) => (value % 360 + 360) % 360;
+    public object CanReverse { get { Before("CanReverse"); return Setting("badReverse", false) ? (object)"true" : !Setting("noReverse", false); } }
+    public object Reverse { get { Before("Reverse.get"); return Setting("badReverse", false) ? (object)"false" : reverse; } set { Before("Reverse.set", value); reverse = (bool)value; } }
+    public double MechanicalPosition { get { Before("MechanicalPosition"); return mechanical; } }
+    public double TargetPosition { get { Before("TargetPosition"); return target; } }
+    public void MoveAbsolute(float value) { Before("MoveAbsolute", value); target = value; moving = true; }
+    public void MoveMechanical(float value) { Before("MoveMechanical", value); target = Wrap(logical + value - mechanical); mechanical = value; moving = true; }
+    public void Sync(float value) { Before("Sync", value); logical = target = value; }
     public void Halt() { Before("Halt"); moving = false; }
     public bool GetSwitch(short id) { Before("GetSwitch", id); return level != 0; }
     public double GetSwitchValue(short id) { Before("GetSwitchValue", id); return level; }

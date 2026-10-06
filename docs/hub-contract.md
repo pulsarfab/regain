@@ -1484,9 +1484,9 @@ Rotator DeviceState includes available IsMoving, MechanicalPosition and Position
 omits failed/unknown entries and reports no invented UTC measurement timestamp.
 Reverse and TargetPosition remain in typed reads/diagnostics; the standard read-all
 contract does not include those configuration entries. Native NINA/ASCOM
-publication is implemented as described below. COM/dedicated simulation
-inputs and shared rotator creation remain gated until their interfaces and
-acceptance tests are complete.
+publication and COM imports are implemented as described below. Dedicated
+simulation inputs and shared rotator creation remain gated until their interfaces
+and acceptance tests are complete.
 
 Alpaca publishes configured rotators through the same private IPC publisher as
 scalar outputs and focusers. Saved UUIDs and class-specific sparse device numbers
@@ -1566,5 +1566,37 @@ Polling forwards cached typed readings with their accumulated original age and
 individual property errors. Faster outer polls cannot make an old leaf reading
 fresh. Cancelling a pending connection, resetting the virtual transport or closing
 one client releases only owned inner leases. Explicit native simulation labels
-propagate through the graph; no hardware failure selects a simulator. COM import,
-dedicated rotator simulation and shared creation remain separate gates.
+propagate through the graph; no hardware failure selects a simulator. Dedicated
+rotator simulation and shared creation remain separate gates.
+
+### Windows COM rotator imports
+
+Rotator imports reuse the existing bitness-selected, message-pumping STA worker,
+source actor, polling and typed controller. The worker resolves the registered
+CLSID and rejects every own output class before activation. Canonical Focuser and
+Rotator ProgIDs now participate in configuration cycle validation too; their
+UUID-derived identities match native registration and survive renaming.
+
+V2/V3 sources use legacy Connected; V4 sources use asynchronous Connect/Disconnect,
+as defined by [IRotatorV4](https://ascom-standards.org/help/html/T_ASCOM_DeviceInterface_IRotatorV4.htm).
+Externally managed connections remain borrowed and are never disconnected or
+disposed by the import worker. Outputs still enforce their modern reversal
+admission requirements; negotiating a legacy connection does not invent newer
+properties or motion support.
+
+Seven exact typed property names and six mutations are whitelisted. Boolean
+readings cannot be strings/numbers. Numeric properties use the shared Single-range
+validator; angles cannot wrap invalid source readings into plausible data.
+Commands validate original numeric ranges before Single conversion and check the
+converted value too, rejecting negative absolute underflow and rounding to 360.
+The common Rust decoder/controller enforces these Single boundaries for every
+source path too; positive StepSize must remain positive after conversion.
+Relative signed distance and upstream logical/mechanical/target coordinates remain
+source-owned. Missing optional members retain Unsupported. SetupDialog, arbitrary
+Action/Command and connection setters cannot bypass source ownership.
+
+Private tests register only a collision-checked fixture in both architectures.
+Dispatched vendor failures retain the existing shared uncertainty fence, with no
+replay or automatic Halt. Borrowed ownership, response framing, bounded hung calls
+and child-process lifetime retain the existing worker isolation contract. Shared
+creation and actual vendor acceptance are separate from import implementation.

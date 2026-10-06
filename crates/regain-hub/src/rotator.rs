@@ -71,9 +71,9 @@ impl RotatorProperty {
                 .filter(|value| {
                     finite_single(*value)
                         && if self == Self::StepSize {
-                            *value > 0.0
+                            *value > 0.0 && (*value as f32) > 0.0
                         } else {
-                            (0.0..360.0).contains(value)
+                            (0.0..360.0).contains(value) && (*value as f32) < 360.0
                         }
                 })
                 .map(|value| RotatorValue::Number { value }),
@@ -306,7 +306,9 @@ impl RotatorSession {
         absolute: bool,
         report_target: bool,
     ) -> Result<Option<RotatorMotionReceipt>, SourceError> {
-        if !finite_single(degrees) || absolute && !(0.0..360.0).contains(&degrees) {
+        if !finite_single(degrees)
+            || absolute && (!(0.0..360.0).contains(&degrees) || (degrees as f32) >= 360.0)
+        {
             return Err(invalid("Invalid rotator angle"));
         }
         let operation = self.source.operation().await?;

@@ -1,4 +1,5 @@
 use regain_hub::config::*;
+use regain_hub::parameters::PollPolicy;
 use std::sync::{Arc, Barrier};
 use uuid::Uuid;
 
@@ -78,19 +79,38 @@ fn native_ascom_export_identities_match_cross_language_vectors_and_reject_canoni
     use regain_hub::ascom_export::{class_id, prog_id};
     let instance = "10000000-0000-0000-0000-000000000001".parse().unwrap();
     let output = "20000000-0000-0000-0000-000000000002".parse().unwrap();
-    for (device, expected) in [
-        (DeviceType::Switch, "69a5917f-8d71-5a9d-b3e7-8d5a53f88e0b"),
+    for (device, prefix, expected) in [
+        (
+            DeviceType::Switch,
+            "Rgn.HS.",
+            "69a5917f-8d71-5a9d-b3e7-8d5a53f88e0b",
+        ),
         (
             DeviceType::SafetyMonitor,
+            "Rgn.HM.",
             "14421c22-3804-5450-91c1-211547b06944",
         ),
         (
             DeviceType::ObservingConditions,
+            "Rgn.HW.",
             "f3d3f0d7-9c8d-5b4d-834c-04b0805a56ff",
+        ),
+        (
+            DeviceType::Focuser,
+            "Rgn.HF.",
+            "e8862a89-95df-5b67-8555-142cfcdc810f",
+        ),
+        (
+            DeviceType::Rotator,
+            "Rgn.HR.",
+            "7c9d3910-2aa2-5ef1-addd-f2db0c7dd14f",
         ),
     ] {
         assert_eq!(class_id(instance, output, device).to_string(), expected);
-        assert_eq!(prog_id(instance, output, device).unwrap().len(), 39);
+        assert_eq!(
+            prog_id(instance, output, device).unwrap(),
+            format!("{prefix}{}", expected.replace('-', ""))
+        );
     }
     let mut config = safety();
     let own = prog_id(
@@ -124,6 +144,39 @@ fn native_ascom_export_identities_match_cross_language_vectors_and_reject_canoni
         config.validate().is_empty(),
         "A different hub instance is not a local self-proxy"
     );
+    for device_type in [DeviceType::Focuser, DeviceType::Rotator] {
+        let source = Uuid::new_v4();
+        let mut typed = HubConfig::empty();
+        typed.outputs.push(OutputConfig {
+            id: output,
+            number: 42,
+            label: "Typed output".into(),
+            device: VirtualDevice::Proxy {
+                source,
+                device_type,
+            },
+        });
+        typed.sources.push(SourceConfig {
+            id: source,
+            label: "Typed self-proxy".into(),
+            polling: PollPolicy::default(),
+            backend: SourceBackend::Com {
+                prog_id: prog_id(typed.instance_id, output, device_type)
+                    .unwrap()
+                    .to_uppercase(),
+                device_type,
+                bitness: Bitness::X64,
+                connection_policy: ConnectionPolicy::Managed,
+            },
+        });
+        invalid(&typed, "cycle");
+        typed.outputs[0].label = "Renamed typed output".into();
+        invalid(&typed, "cycle");
+        if let SourceBackend::Com { prog_id: value, .. } = &mut typed.sources[0].backend {
+            *value = prog_id(Uuid::new_v4(), output, device_type).unwrap();
+        }
+        assert!(typed.validate().is_empty());
+    }
 }
 
 #[test]

@@ -97,7 +97,7 @@ internal sealed class ImportDriver {
             case Phase.Version:
                 try { version = Integer(Get("InterfaceVersion"), 1, short.MaxValue); }
                 catch (Exception error) when (Classify(Unwrap(error), false) == "unsupported") { version = null; }
-                modern = version >= (options.DeviceType switch { "observingconditions" => 2, "focuser" => 4, _ => 3 });
+                modern = version >= (options.DeviceType switch { "observingconditions" => 2, "focuser" or "rotator" => 4, _ => 3 });
                 phase = Phase.Check; break;
             case Phase.Check:
                 var connected = Boolean(Get("Connected"));
@@ -190,6 +190,18 @@ internal sealed class ImportDriver {
                 return scalar;
             }
         }
+        if (options.DeviceType == "rotator") {
+            foreach (HubRotatorProperty property in Enum.GetValues(typeof(HubRotatorProperty))) {
+                if (HubRotatorProtocol.Key(property).ToLowerInvariant() != member) continue;
+                Fields(parameters);
+                var result = Get(property.ToString());
+                object scalar = property is HubRotatorProperty.CanReverse or HubRotatorProperty.IsMoving or HubRotatorProperty.Reverse
+                    ? Boolean(result) : Number(result);
+                try { HubRotatorProtocol.Validate(property, JsonSerializer.SerializeToElement(scalar)); }
+                catch (HubException) { throw new BadValue(); }
+                return scalar;
+            }
+        }
         if (options.DeviceType == "safetymonitor" && member == "issafe") { Fields(parameters); return Boolean(Get("IsSafe")); }
         if (options.DeviceType == "switch") {
             if (member == "maxswitch") { Fields(parameters); return Integer(Get("MaxSwitch"), 0, short.MaxValue); }
@@ -231,6 +243,26 @@ internal sealed class ImportDriver {
     }
 
     private object? Write(string member, JsonElement parameters) {
+        if (options.DeviceType == "rotator") {
+            var method = member switch { "move" => "Move", "moveabsolute" => "MoveAbsolute",
+                "movemechanical" => "MoveMechanical", "sync" => "Sync", _ => null };
+            if (method is not null) {
+                Fields(parameters, "Position");
+                var number = InputNumber(Parameter(parameters, "Position"));
+                if (Math.Abs(number) > float.MaxValue || member != "move" && (number < 0 || number >= 360)) throw new InvalidInput();
+                var position = (float)number;
+                try { HubRotatorProtocol.ValidateCommand(position, member != "move"); }
+                catch (ArgumentOutOfRangeException) { throw new InvalidInput(); }
+                Call(method, position); return null;
+            }
+            if (member == "halt") { Fields(parameters); Call("Halt"); return null; }
+            if (member == "reverse") {
+                Fields(parameters, "Reverse");
+                var item = Parameter(parameters, "Reverse");
+                if (item.ValueKind is not (JsonValueKind.True or JsonValueKind.False)) throw new InvalidInput();
+                Set("Reverse", item.GetBoolean()); return null;
+            }
+        }
         if (options.DeviceType == "focuser") {
             if (member == "move") {
                 Fields(parameters, "Position");

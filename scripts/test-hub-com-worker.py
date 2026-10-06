@@ -46,7 +46,7 @@ def registered_fixture():
         "[Reflection.AssemblyName]::GetAssemblyName($env:REGAIN_COM_FIXTURE_DLL).FullName",
     ], env={**os.environ, "REGAIN_COM_FIXTURE_DLL": str(FIXTURE)}, text=True).strip()
     assert identity.startswith("Regain.Hub.COM.Fixture,")
-    progids = [PROGID] + [PROGID + "." + name for name in ("Switch", "Safety", "Weather", "Other", "Own", "Focuser")]
+    progids = [PROGID] + [PROGID + "." + name for name in ("Switch", "Safety", "Weather", "Other", "Own", "Focuser", "Rotator")]
     classids = [CLSID, SELF_CLSID]
     paths = [f"Software\\Classes\\{name}" for name in progids] + [f"Software\\Classes\\CLSID\\{classid}" for classid in classids]
     views = (winreg.KEY_WOW64_32KEY, winreg.KEY_WOW64_64KEY)
@@ -187,6 +187,95 @@ class Worker:
 
 
 class ImportTests(unittest.TestCase):
+    def test_rotator_legacy_modern_connections_and_source_coordinates(self):
+        for architecture in self.each():
+            for version in (2, 3, 4):
+                with self.subTest(architecture=architecture, version=version), Worker(architecture, device="rotator", settings={"version": version}) as worker:
+                    info = worker.connect()
+                    self.assertEqual(info["method"], "async" if version == 4 else "legacy")
+                    self.assertEqual(worker.count("Connect"), int(version == 4))
+                    self.assertEqual(worker.count("Connected.set"), int(version != 4))
+                    for member, value in [("canreverse", True), ("ismoving", False), ("position", 20),
+                                          ("mechanicalposition", 350), ("targetposition", 20), ("reverse", False), ("stepsize", 0.02)]:
+                        response = worker.send("read", member)
+                        self.assertIsNone(response["error"], response)
+                        self.assertEqual(response["value"], value)
+                    self.assertIsNone(worker.send("write", "move", {"Position": -721.5})["error"])
+                    self.assertEqual(worker.send("read", "targetposition")["value"], 18.5)
+                    self.assertEqual(worker.send("read", "position")["value"], 20)
+                    self.assertTrue(worker.send("read", "ismoving")["value"])
+                    self.assertIsNone(worker.send("write", "halt")["error"])
+                    self.assertIsNone(worker.send("write", "sync", {"Position": 15})["error"])
+                    self.assertEqual(worker.send("read", "position")["value"], 15)
+                    self.assertEqual(worker.send("read", "mechanicalposition")["value"], 350)
+                    self.assertIsNone(worker.send("write", "moveabsolute", {"Position": 42.5})["error"])
+                    self.assertEqual(worker.send("read", "targetposition")["value"], 42.5)
+                    self.assertIsNone(worker.send("write", "halt")["error"])
+                    self.assertIsNone(worker.send("write", "movemechanical", {"Position": 355})["error"])
+                    self.assertEqual(worker.send("read", "mechanicalposition")["value"], 355)
+                    self.assertEqual(worker.send("read", "targetposition")["value"], 20)
+                    self.assertIsNone(worker.send("write", "reverse", {"Reverse": True})["error"])
+                    self.assertTrue(worker.send("read", "reverse")["value"])
+                    self.assertEqual([t["value"] for t in worker.trace() if t["member"] == "Move"], [-721.5])
+                    worker.disconnect()
+                    self.assertEqual(worker.count("Disconnect"), int(version == 4))
+                    self.assertEqual(worker.count("SetupDialog"), 0)
+                    self.assertEqual({t["apartment"] for t in worker.trace()}, {"STA"})
+                    self.assertEqual(len({t["thread"] for t in worker.trace()}), 1)
+
+    def test_rotator_strict_readings_and_single_conversion_boundaries(self):
+        for architecture in self.each():
+            with self.subTest(architecture=architecture), Worker(architecture, device="rotator", settings={"version": 4}) as worker:
+                worker.connect()
+                for member, setting in [("position", "badAngle"), ("ismoving", "badMoving"),
+                                        ("canreverse", "badReverse"), ("reverse", "badReverse"),
+                                        ("stepsize", "badStepSize"), ("stepsize", "tinyStepSize")]:
+                    worker.set(**{setting: True})
+                    self.assertEqual(worker.send("read", member)["error"]["kind"], "unavailable")
+                    worker.set(**{setting: False})
+                for member, args in [("move", {"Position": 1e39}), ("move", {"Position": "1"}),
+                                     ("move", {"position": 1}), ("move", {"Position": 1, "extra": True}),
+                                     ("moveabsolute", {"Position": 359.9999999}), ("moveabsolute", {"Position": -1e-50}),
+                                     ("movemechanical", {"Position": 360}), ("sync", {"Position": -1}),
+                                     ("reverse", {"Reverse": 1}), ("halt", {"extra": True})]:
+                    response = worker.send("write", member, args)
+                    self.assertEqual(response["error"]["kind"], "invalidValue", response)
+                for member in ("Move", "MoveAbsolute", "MoveMechanical", "Sync", "Reverse.set", "Halt"):
+                    self.assertEqual(worker.count(member), 0)
+                worker.set(faultMember="StepSize", faultCode=hresult(0x80040400))
+                self.assertEqual(worker.send("read", "stepsize")["error"]["kind"], "unsupported")
+                worker.set(faultMember="MoveMechanical")
+                self.assertEqual(worker.send("write", "movemechanical", {"Position": 10})["error"]["kind"], "unsupported")
+                worker.set(faultMember="")
+                self.assertIsNone(worker.send("write", "sync", {"Position": 10})["error"])
+
+    def test_rotator_uncertainty_fences_all_commands_without_replay_or_halt(self):
+        for architecture in self.each():
+            for failing, args, dispatched in [("move", {"Position": -20}, "Move"), ("reverse", {"Reverse": True}, "Reverse.set")]:
+                with self.subTest(architecture=architecture, failing=failing), Worker(architecture, device="rotator", settings={"version": 4, "argumentFaultMember": dispatched}) as worker:
+                    worker.connect()
+                    self.assertEqual(worker.send("write", failing, args)["error"]["kind"], "uncertain")
+                    worker.set(argumentFaultMember="")
+                    for member, parameters in [("move", {"Position": 1}), ("moveabsolute", {"Position": 1}),
+                                               ("movemechanical", {"Position": 1}), ("sync", {"Position": 1}),
+                                               ("reverse", {"Reverse": False}), ("halt", {})]:
+                        self.assertEqual(worker.send("write", member, parameters)["error"]["kind"], "uncertain")
+                    self.assertEqual(worker.count(dispatched), 1)
+                    self.assertEqual(worker.count("Halt"), 0)
+
+    def test_rotator_borrowed_connections_and_alias_denial(self):
+        for architecture in self.each():
+            for version in (3, 4):
+                with self.subTest(architecture=architecture, version=version), Worker(architecture, device="rotator", policy="externallyManaged", settings={"version": version, "initialConnected": True}) as worker:
+                    self.assertFalse(worker.connect()["ownsConnection"])
+                    worker.disconnect()
+                    worker.close()
+                    for member in ("Connect", "Disconnect", "Connected.set", "Dispose"):
+                        self.assertEqual(worker.count(member), 0)
+            with Worker(architecture, device="rotator", progid=PROGID + ".Rotator", denied=[CLSID.strip("{}")]) as worker:
+                self.assertEqual(worker.send("connectStep")["error"]["kind"], "invalidValue")
+                self.assertEqual(worker.count("Activate"), 0)
+
     def test_focuser_legacy_modern_connections_and_typed_members(self):
         for architecture in self.each():
             for version in (3, 4):

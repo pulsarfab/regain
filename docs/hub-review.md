@@ -2816,3 +2816,65 @@ fixture deadline was increased. These are new passing observations, not proof of
 the earlier startup/initialization failures' causes; retain those logs and the
 broader reliability/acceptance gate. The virtual implementation checkpoint can
 now proceed to its own CI while the remaining original plan stays in scope.
+
+### Rotator COM import review
+
+Extended the existing Windows import worker and Rust backend whitelist instead of
+adding another executable or controller. Both negotiate V2/V3 legacy Connected and
+V4 asynchronous ownership consistently. All driver access remains on one pumped
+STA, with the existing process/job isolation, connection-change uncertainty,
+sanitized HRESULT handling and bounded transport. Externally managed ownership
+never changes connection or invokes Dispose. No installed vendor class is used.
+
+The seven property readers share the existing rotator Boolean/Single-range
+validator. Six exact mutations reject unknown fields, wrong casing/types and
+out-of-range input before driver dispatch. Review caught negative absolute angles
+underflowing to zero during Single conversion; validation now checks the original
+Double and converted Single, including rounding upward to 360. Signed relative
+distance and source-owned logical/mechanical/target coordinates are preserved.
+Optional missing members stay Unsupported rather than guessed values. Dispatched
+vendor ArgumentException/COM failures remain uncertain; clearing the fixture fault
+cannot replay a move, Reverse or implicit Halt.
+
+Corrected the Rust ASCOM identity helper's missing Focuser/Rotator ProgIDs. Explicit
+cross-language class/prefix vectors and canonical case-insensitive self-cycle tests
+cover renaming and separate hub instances. Actual worker alias-denial rejects a
+registered class before activation, retaining the existing whole-output CLSID
+deny list. Shared creation remains gated until its own implementation is ready.
+
+The private fixture now selects its device class from --device-type. One VARIANT
+Move method preserves existing Int32 focuser testing and Single rotator inputs,
+without AutoDual overload aliases. Source coordinates stay separate, Sync does not
+move mechanical position, and trace records prove signed dispatch. Twenty-four
+worker tests pass across x86/x64. Fourteen actual registered Rust parent tests pass,
+including existing scalar/focuser ownership and new rotator shared leases,
+all commands, optional/malformed data, modern reversal admission and uncertainty.
+Evidence: artifacts/hub-rotator-com-local-confirmed.log. The first parent run's
+13-pass/1-fail log is retained in artifacts/hub-rotator-com-local.log: its assertion
+compared JSON 20 with 20.0. The assertion now compares strict numeric values without
+requiring a lexical representation; no production validation/deadline was relaxed.
+Broad regression/compiler checks and exact-head CI are recorded after completion.
+Vendor, conformance and all remaining original milestone gates stay open.
+
+Cross-path review also found the Rust property decoder accepted an angle that
+rounds to 360 and a positive StepSize that underflows to zero as Single, while the
+shared C# validator rejected both. Rust now checks converted representability as
+well as original ranges; absolute commands reject rounding to 360 before dispatch.
+Existing real actor regressions cover all three coordinate properties, all three
+absolute/reference commands, tiny positive StepSize, oversized values and the
+nearest valid Single below 360. Signed relative semantics are unchanged. Final
+checks use the refined code, not the preceding pre-refinement passing binaries.
+
+Refined-code acceptance passes all twenty-four worker and fourteen actual registered
+parent cases in artifacts/hub-rotator-com-single-confirmed.log. Full Rust hub/Alpaca
+regressions (including twenty-two rotator cases), warnings-denied Clippy, Rust 1.89
+all-target checks and generated-contract freshness pass in
+artifacts/hub-rotator-com-final-{rust,clippy,msrv,contract}.log. Registered proof comes
+from the script-owned COM run; ordinary Cargo COM cases without its environment
+return without activation. The production host is rebuilt before managed checks.
+Rebuilt-host managed confirmation passes all 196 warnings-denied NINA tests and
+real net48 x86/x64 clients in artifacts/hub-rotator-com-final-{nina,net48}.log.
+No source, production or fixture deadline changed. These new passes do not prove
+the causes of the previously retained intermittent failures. At this observation,
+virtual checkpoint 87ca1c1 has seven successful jobs in both PR/push CI
+37522869618/37522861252; Windows installer acceptance is still running.

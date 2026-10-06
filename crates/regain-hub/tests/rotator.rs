@@ -268,6 +268,8 @@ async fn invalid_angles_and_malformed_motion_do_not_dispatch_or_become_idle() {
     for value in [
         -0.01,
         360.0,
+        359.9999999,
+        -1e-50,
         f64::NAN,
         f64::INFINITY,
         f64::NEG_INFINITY,
@@ -324,7 +326,13 @@ async fn strict_properties_optional_errors_and_live_reverse_capability_are_prese
         RotatorProperty::MechanicalPosition,
         RotatorProperty::TargetPosition,
     ] {
-        for value in [json!(-1), json!(360), json!("30"), Value::Null] {
+        for value in [
+            json!(-1),
+            json!(360),
+            json!(359.9999999),
+            json!("30"),
+            Value::Null,
+        ] {
             device.set(property.member(), value);
             assert_eq!(
                 session.property(property).await.unwrap_err().kind,
@@ -332,14 +340,35 @@ async fn strict_properties_optional_errors_and_live_reverse_capability_are_prese
             );
         }
     }
-    device.set("stepsize", json!(0));
+    for value in [0.0, f64::MIN_POSITIVE, f64::MAX] {
+        device.set("stepsize", json!(value));
+        assert_eq!(
+            session
+                .property(RotatorProperty::StepSize)
+                .await
+                .unwrap_err()
+                .kind,
+            ErrorKind::Unavailable
+        );
+    }
+    device.set("stepsize", json!(f32::MIN_POSITIVE as f64));
     assert_eq!(
         session
             .property(RotatorProperty::StepSize)
             .await
-            .unwrap_err()
-            .kind,
-        ErrorKind::Unavailable
+            .unwrap()
+            .as_f64(),
+        Some(f32::MIN_POSITIVE as f64)
+    );
+    let upper_angle = f32::from_bits(360.0_f32.to_bits() - 1) as f64;
+    device.set("position", json!(upper_angle));
+    assert_eq!(
+        session
+            .property(RotatorProperty::Position)
+            .await
+            .unwrap()
+            .as_f64(),
+        Some(upper_angle)
     );
     device.errors.lock().unwrap().insert(
         "stepsize".into(),

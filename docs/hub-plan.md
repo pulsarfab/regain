@@ -11,9 +11,22 @@ Last updated: 2026-10-06.
 Current position: milestones 0 and 1 are complete. The scalar source/output paths
 in milestones 2 and 3 are implemented; their remaining acceptance gates are open.
 Milestone 4 has focuser and rotator publication through all three frontends.
-Rotator COM imports, dedicated simulation and creation remain. Virtual rotator
-inputs are implemented. Wheels, panels and camera proxies remain; milestone 5's coordinated
+Rotator COM and virtual inputs are implemented; dedicated simulation and creation
+remain. Wheels, panels and camera proxies remain; milestone 5's coordinated
 groups are not yet implemented. PR #21 stays draft until the full plan passes.
+
+Completed increment: Windows COM rotator imports use the same isolated STA workers,
+typed controller, polling and connection leases. V2/V3 negotiate legacy Connected;
+V4 uses asynchronous ownership. Strict Single boundaries reject invalid readings
+and commands before dispatch, including rounding to 360 and step-size underflow.
+Source-owned coordinates and signed relative distance remain separate. Shared
+uncertainty cannot replay commands or invoke an automatic Halt. Canonical typed
+ASCOM identities now reject self-proxies during config validation too. Twenty-four
+private worker and fourteen actual registered parent tests pass on both Windows
+architectures, alongside final Rust hub/Alpaca, Clippy, Rust 1.89 and contract checks.
+Rebuilt-host managed confirmation passes all 196 NINA tests and real net48 clients
+on both architectures. Exact-head CI is recorded in the progress log. Dedicated
+rotator simulation/shared creation and every original broader gate remain open.
 
 Completed increment: shared simulation controls in native NINA/ASCOM and web setup.
 The host describes field paths, labels, defaults, physical limits, fault choices
@@ -860,8 +873,10 @@ are implemented. Alpaca, native NINA and native ASCOM publication are implemente
 and pass local private-fixture checks. NINA verifies accepted targets and completion
 without replay or implicit Halt. Virtual inputs reuse bounded typed connection
 admission and preserve cached ages/errors through the validated graph.
-COM/dedicated simulation inputs and shared
-rotator creation remain required. Conformance and broader acceptance stay open.
+Windows COM imports reuse the existing isolated STA worker and typed polling,
+with V2/V3 legacy and V4 asynchronous ownership. Both-architecture private worker
+and registered parent tests pass. Dedicated simulation inputs and shared rotator
+creation remain required. Conformance and broader acceptance stay open.
 
 - [ ] Specify camera buffer lifetime, image transport, capability passthrough, and
   acquisition ownership before enabling camera proxies.
@@ -972,3 +987,4 @@ Keep existing device profiles and registrations compatible throughout migration.
 | 2026-10-06 | Recorded terminal managed failure and corrected HTTP fixture isolation/cleanup reporting. | Rebuilt-host NINA ended 191/196 passed, five failed. A seven-case focused run passed six but reproduced publisher readiness failure. Publisher now uses private empty profiles and explicit simulation; compile passes but focused readiness still fails with empty captured output. No deadlines relaxed. Standalone private initialization succeeds in 5.87 s; other original failure causes remain unproved. net48 did not run. Next: diagnose publisher startup and helper timing, then resume all original remaining gates; keep checkpoints local while prior CI remains live. |
 | 2026-10-06 | Verified terminal native-rotator frontend CI at pushed 63e7ae4. | PR/push 37518077578/37518073024 both pass all eight jobs, including Windows packaging/registered COM validation with the 45-minute outer budget. Local 632f612/6b298f5 virtual/fixture checkpoints still need managed acceptance before push. Next: reproduce and diagnose private publisher startup, then all original remaining gates. |
 | 2026-10-06 | Confirmed virtual checkpoint managed tests after isolated CLI timing probes, preserving earlier failure evidence. | Worktree/Unicode temporary/helper-launched hosts with two IPC clients report publisher startup near 47 ms; isolated NINA publisher case passes in 820 ms. Full rebuilt-host NINA 196/196 and real net48 x86/x64 confirmation pass. No deadlines increased; earlier intermittent causes remain unproved and broader reliability acceptance stays open. Virtual checkpoint is ready for its own CI. Next: typed ASCOM ProgID coverage, rotator COM imports, dedicated simulation/shared creation and every original remaining gate. |
+| 2026-10-06 | Implemented and reviewed Windows COM rotator imports through existing STA workers, typed controllers and leases. Corrected typed ASCOM identity cycle validation and aligned Rust/C# Single boundary checks. | Twenty-four private worker and fourteen actual registered parent cases pass, including existing scalar/focuser regressions; final Rust hub/Alpaca, Clippy, Rust 1.89, contract freshness, rebuilt-host NINA 196/196 and real net48 x86/x64 pass. Retain the first parent numeric-representation assertion failure; the corrected test compares strict numeric values. Prior virtual CI has seven successes with Windows installer tests live; let it finish before pushing. Next: dedicated rotator simulation, shared creation and every original remaining gate. |
