@@ -2183,3 +2183,41 @@ packaging still active. New CI remains required. Setup does not advertise genera
 proxy support, and the existing Alpaca catalog explicitly rejects classes whose
 routes are not implemented. Alpaca/NINA/ASCOM focuser publication, imports,
 conformance and every original remaining milestone remain required.
+
+### Alpaca focuser publication (2026-10-06)
+
+Reviewed publication against the [ASCOM Focuser V4 contract](https://ascom-standards.org/newdocs/focuser.html)
+and the shared controller/IPC implementation. HTTP maps all nine property names
+through the Rust enum instead of duplicating typed definitions. Move parses a
+signed Int32 and delegates live motion/range/generation checks to the controller;
+Halt and TempComp use the same command ownership. V4 advertisement requires the
+host's modern connection/DeviceState capabilities, while the catalog requires
+`focuserOutputs`. Optional unsupported readings retain a standard error and
+sanitized text. COM-only Link is not published as an Alpaca member.
+
+Review identified class-local number collisions between existing local slots and
+hub outputs. A shared server catalog check rejects collisions, including reserved
+unconfigured slots, before dispatch or setup selection. UUIDs/numbers are never
+silently rewritten. Distinct local slots retain their routes and setup pages;
+hub focuser setup opens the existing shared editor. Diagnostics and DeviceState
+remain cached and cannot initiate motion. The general proxy setup capability
+stays gated pending native frontend publication.
+
+Four private loopback HTTP cases pass through the production source adapter,
+shared host, IPC and router. They cover sparse identities, two independent sources,
+two outputs sharing one source, legacy/asynchronous connections, independent
+ClientID leases, absolute travel/relative signed limits, busy motion, strict
+types and duplicate parameters, optional errors, cached DeviceState, local slot
+coexistence/collisions and retained uncertainty after an acknowledged move's reply
+is lost. That move is dispatched exactly once; another client cannot replay it,
+and Connected=true cannot silently adopt a replacement generation. No physical
+equipment is activated. Review added the explicit non-colliding local-slot case.
+
+Full local Rust hub/Alpaca suites pass; the final four focused cases, strict Clippy,
+Rust 1.89.0 and formatting/diff checks pass. Logs are
+`artifacts/hub-focuser-alpaca-{rust,focused,clippy,msrv}.log`. These changes do not
+alter native frontend code or generated configuration. Controller push CI
+37483341547 passes all eight jobs; its PR run 37483351644 was subsequently
+cancelled. Runtime/IPC PR 37486781939 and push 37486773101 each pass seven jobs
+with Windows still live. Native NINA/ASCOM publication, imports/simulation,
+conformance and all original remaining milestone gates remain open.

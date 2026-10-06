@@ -1,10 +1,11 @@
-//! Alpaca scalar outputs over private hub IPC. HTTP never owns source actors.
+//! Alpaca outputs over private hub IPC. HTTP never owns source actors.
 use crate::device::{Params, error, unsupported};
 use anyhow::{Result, ensure};
 use regain_hub::{
     client::{Client, ClientError, ClientLimits},
     config::DeviceType,
     endpoint::Endpoint,
+    focuser::FocuserProperty,
     ipc::{Command, Get, Put},
     runtime::OutputDescriptor,
 };
@@ -171,10 +172,18 @@ impl Publisher {
         let devices: Vec<OutputDescriptor> = serde_json::from_value(value)
             .map_err(|_| error(0x500, "Invalid hub device catalog"))?;
         ensure!(
-            devices.iter().all(|d| matches!(
-                d.device_type,
-                DeviceType::Switch | DeviceType::SafetyMonitor | DeviceType::ObservingConditions
-            )),
+            devices.iter().all(|d| match d.device_type {
+                DeviceType::Switch
+                | DeviceType::SafetyMonitor
+                | DeviceType::ObservingConditions => true,
+                DeviceType::Focuser => self
+                    .catalog
+                    .hello()
+                    .capabilities
+                    .iter()
+                    .any(|c| c == "focuserOutputs"),
+                _ => false,
+            }),
             error(
                 0x400,
                 "Hub output class is not yet supported by this frontend"
@@ -183,7 +192,12 @@ impl Publisher {
         Ok(devices)
     }
     pub async fn configured(&self) -> Result<Vec<Value>> {
-        Ok(self.devices().await?.iter().map(|d| json!({"DeviceName":label(d),"DeviceType":class_name(d.device_type),"DeviceNumber":d.number,"UniqueID":d.id})).collect())
+        Ok(self
+            .devices()
+            .await?
+            .iter()
+            .map(configured_device)
+            .collect())
     }
     fn existing(&self, id: u32) -> Option<Arc<Session>> {
         self.state.lock().unwrap().clients.get(&id).cloned()
@@ -432,6 +446,8 @@ impl Publisher {
                         DeviceType::Switch => 2,
                         DeviceType::SafetyMonitor if modern => 3,
                         DeviceType::ObservingConditions if modern => 2,
+                        DeviceType::Focuser if modern => 4,
+                        DeviceType::Focuser => 3,
                         _ => 1,
                     }));
                 }
@@ -458,6 +474,15 @@ impl Publisher {
             .get()
             .ok_or_else(|| error(0x407, "Hub client is not connected"))?;
         let capability = match &command {
+            Command::Get {
+                property: Get::Focuser { .. },
+                ..
+            }
+            | Command::Put {
+                property:
+                    Put::MoveFocuser { .. } | Put::HaltFocuser {} | Put::FocuserTempComp { .. },
+                ..
+            } => Some("focuserOutputs"),
             Command::Get {
                 property: Get::SensorDescription { .. },
                 ..
@@ -558,8 +583,12 @@ pub fn class_name(kind: DeviceType) -> &'static str {
         DeviceType::Switch => "Switch",
         DeviceType::SafetyMonitor => "SafetyMonitor",
         DeviceType::ObservingConditions => "ObservingConditions",
+        DeviceType::Focuser => "Focuser",
         _ => "Unsupported",
     }
+}
+pub(crate) fn configured_device(device: &OutputDescriptor) -> Value {
+    json!({"DeviceName":label(device),"DeviceType":class_name(device.device_type),"DeviceNumber":device.number,"UniqueID":device.id})
 }
 fn label(device: &OutputDescriptor) -> String {
     if device.simulated {
@@ -575,6 +604,14 @@ fn operation(device: &OutputDescriptor, member: &str, put: bool, p: &Params) -> 
     let output = device.id;
     if put {
         let property = match (device.device_type, member) {
+            (DeviceType::Focuser, "move") => Put::MoveFocuser {
+                position: i32::try_from(p.integer("Position")?)
+                    .map_err(|_| error(0x401, "Invalid focuser position"))?,
+            },
+            (DeviceType::Focuser, "halt") => Put::HaltFocuser {},
+            (DeviceType::Focuser, "tempcomp") => Put::FocuserTempComp {
+                enabled: p.boolean("TempComp")?,
+            },
             (DeviceType::Switch, "setswitch") => Put::SetSwitch {
                 id: channel(p)?,
                 state: p.boolean("State")?,
@@ -602,6 +639,12 @@ fn operation(device: &OutputDescriptor, member: &str, put: bool, p: &Params) -> 
     }
     let property = match (device.device_type, member) {
         (_, "devicestate") => Get::DeviceState {},
+        (DeviceType::Focuser, _) => Get::Focuser {
+            property: FocuserProperty::ALL
+                .into_iter()
+                .find(|property| property.member() == member)
+                .ok_or_else(|| unsupported(member))?,
+        },
         (DeviceType::SafetyMonitor, "issafe") => Get::IsSafe {},
         (DeviceType::Switch, "maxswitch") => Get::MaxSwitch {},
         (DeviceType::Switch, "getswitch") => Get::GetSwitch { id: channel(p)? },

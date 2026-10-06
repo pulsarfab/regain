@@ -1313,5 +1313,21 @@ IsMoving, Position and Temperature without I/O and omits unavailable readings.
 No single UTC measurement time is invented. Neither diagnostic reads nor
 DeviceState accelerate polling or authorize motion. Setup's general proxy
 capability remains unavailable until frontend publication is complete; the
-current Alpaca publisher explicitly rejects unsupported output classes. Alpaca,
-native NINA/ASCOM publication and conformance remain required.
+Alpaca publisher now admits Focuser outputs only when the attached host advertises
+`focuserOutputs`. It publishes the configured UUID and class-local device number
+without renumbering. Focuser V4 exposes the typed properties, Move, Halt, TempComp,
+asynchronous Connect/Disconnect/Connecting and cached DeviceState through private
+IPC. Move returns after acknowledgement of starting motion; IsMoving reports the
+subsequent state. Unsupported optional properties remain errors, and upstream
+diagnostic strings are not exported. Link is COM-only and is not added to HTTP.
+
+Each Alpaca ClientID retains its own output leases. Disconnecting one client does
+not halt motion or disconnect another client's source. A lost move reply retains
+the shared uncertain-write latch; the publisher never retries it or adopts a new
+source generation for an existing client. Explicit disconnect/connect is required
+for reconciliation. Local focuser slots and hub outputs must have distinct device
+numbers, including unconfigured reserved local slots. Conflicts fail catalog and
+hub routing explicitly rather than silently choosing a device. The per-device
+setup URL opens shared hub setup for a hub output, retaining ordinary local setup
+for other slots. Native NINA/ASCOM focuser publication, broader imports/simulation
+and conformance remain required.

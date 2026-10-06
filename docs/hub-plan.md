@@ -91,10 +91,22 @@ Real executable startup/restart, catalog, invalid-camera requests, profile
 persistence, first-slot setup and actual browser acceptance pass without equipment
 activation. This does not close broader setup, discovery or frontend acceptance.
 
-Next: verify corrected safety-backoff CI and begin broader typed accessory proxies,
-retaining the earlier push COM fixture timeout investigation. Complete camera ownership,
-coordination and every remaining
-original milestone gate. This increment does not close the full setup milestone.
+Completed increment: Alpaca focuser publication through the shared typed IPC.
+Configured UUIDs and sparse numbers survive discovery and routing, including
+multiple independent sources and outputs sharing one source. The V4 interface
+exposes typed properties, bounded absolute/signed-relative moves, optional errors,
+cached DeviceState and asynchronous connections. Lost move replies retain the
+shared uncertainty latch without command replay or silent generation adoption.
+Local focuser slots coexist at distinct numbers; collisions fail explicitly before
+equipment connection. Per-output setup opens the shared editor. Private loopback
+tests exercise the production adapter, host, IPC and HTTP router; no physical
+equipment is actuated. Native NINA/ASCOM publication and conformance remain open.
+
+Next: finish native NINA/ASCOM focuser publication, typed imports/simulation and
+the remaining accessory proxies. Retain the earlier COM fixture timeout
+investigation. Complete camera ownership, coordination and every original
+remaining milestone and acceptance gate. General proxy setup stays gated until
+frontend publication is complete.
 
 Use this document as the working checklist. Complete one reviewable milestone at
 a time, record its tests and remaining limitations, and update the next action
@@ -798,3 +810,4 @@ Keep existing device profiles and registrations compatible throughout migration.
 | 2026-10-06 | Reviewed polling CI Windows failure at native safety-expiry unchanged-generation assertion. Changed the fixture to establish a completed 503 with Retry-After longer than the safe lifetime before checking expiry, retaining generation, stale state, weather, timing and recovery assertions. | All 172 NINA tests and five focused expiry repeats pass. Production deadlines/policies unchanged; exact old reset cause remains unproved. New CI required. Next: corrected CI and broader typed accessory proxies, retaining COM timeout and all original remaining acceptance gates. |
 | 2026-10-06 | Added and reviewed the typed focuser controller over shared source actors. Live capability/range checks, actual readiness, generation fences and unique command control preserve ownership and uncertainty. Native EAF/FC3/ETA adapters reuse existing workers and known units. | 13 private actor/HTTP cases plus eight production-worker simulation cases pass; full hub/Alpaca suites, strict Clippy and Rust 1.89 checks pass. Review corrected absolute per-move travel and retained ETA's known 1 µm coordinate. Empty-profile push CI passes all eight jobs; safety-correction push/PR each pass seven with Windows still live. Next: focuser runtime/IPC/diagnostics and all three frontends/imports, then the remaining typed devices/cameras/coordination and every original acceptance gate. No typed proxy is advertised yet. |
 | 2026-10-06 | Integrated focuser outputs into native/Alpaca source runtime and typed private IPC. Added deduplicated typed polling, inert paged diagnostics, host-described property types/ranges, strict web/native readers and cached DeviceState. Reviewed generation races, pending admission, EOF, class dispatch and unsupported frontend publication. | 18 focuser actor/HTTP/runtime/IPC cases and nine native cases pass; full hub/Alpaca suites, strict Clippy, Rust 1.89, generated contract, Node/four schema tests, 173 NINA checks and real net48 x86/x64 clients pass. Final focused checks pass after fixture refinements. Safety-correction CI passes all eight jobs in both runs; a83e577 CI each pass seven with Windows live. Next: Alpaca and native NINA/ASCOM focuser publication, typed imports/simulation and every original remaining gate. Setup's general proxy capability stays unavailable. |
+| 2026-10-06 | Published typed focuser outputs through Alpaca with sparse identities, modern interfaces and shared IPC; reviewed class-local collisions, private lease ownership, strict parameters and lost-write no-replay behavior. Local slots coexist at distinct numbers and per-device setup selects the shared editor. | Four production-adapter/host/HTTP loopback cases, full local Rust hub/Alpaca suites, strict Clippy and Rust 1.89 pass. No physical hardware is actuated. Controller push CI passes all eight jobs; its PR was cancelled. Runtime/IPC push/PR each pass seven with Windows live. Next: native NINA/ASCOM focuser publication and broader imports/simulation, then every original remaining typed-device/camera/coordination and acceptance gate. General proxy setup remains gated. |

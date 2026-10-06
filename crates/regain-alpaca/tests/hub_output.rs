@@ -37,6 +37,568 @@ struct Fixture {
     host: tokio::task::JoinHandle<Result<(), host::HostError>>,
 }
 
+// A private upstream exercises the production Alpaca adapter, shared host and
+// HTTP publisher without opening SDKs, COM drivers or physical serial ports.
+type FocuserWrite = (String, std::collections::BTreeMap<String, String>);
+struct FocuserUpstream {
+    values: Arc<std::sync::Mutex<std::collections::BTreeMap<String, Value>>>,
+    writes: Arc<std::sync::Mutex<Vec<FocuserWrite>>>,
+    connected: Arc<std::sync::atomic::AtomicBool>,
+    lose_move_reply: Arc<std::sync::atomic::AtomicBool>,
+    task: tokio::task::JoinHandle<()>,
+    source: regain_hub::config::SourceConfig,
+}
+impl FocuserUpstream {
+    async fn new() -> Self {
+        use regain_hub::config::{ConnectionPolicy, DeviceType, SourceBackend, SourceConfig};
+        use regain_hub::parameters::PollPolicy;
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let source = SourceConfig {
+            id: uuid::Uuid::new_v4(),
+            label: "Private loopback focuser".into(),
+            polling: PollPolicy {
+                request_timeout_seconds: 0.1,
+                poll_seconds: 1.0,
+                ..PollPolicy::default()
+            },
+            backend: SourceBackend::Alpaca {
+                base_url: format!("http://{}/", listener.local_addr().unwrap()),
+                device_type: DeviceType::Focuser,
+                device_number: 19,
+                connection_policy: ConnectionPolicy::Managed,
+                credential_reference: None,
+            },
+        };
+        let values = Arc::new(std::sync::Mutex::new(std::collections::BTreeMap::from([
+            ("absolute".into(), json!(true)),
+            ("maxstep".into(), json!(1000)),
+            ("maxincrement".into(), json!(100)),
+            ("tempcompavailable".into(), json!(true)),
+            ("position".into(), json!(50)),
+            ("ismoving".into(), json!(false)),
+            ("tempcomp".into(), json!(true)),
+            ("temperature".into(), json!(-5.0)),
+        ])));
+        let writes = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let connected = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let lose_move_reply = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let state = (
+            values.clone(),
+            writes.clone(),
+            connected.clone(),
+            lose_move_reply.clone(),
+        );
+        let router = Router::new().fallback(axum::routing::any(
+            move |uri: axum::http::Uri, method: axum::http::Method, body: axum::body::Bytes| {
+                let (values, writes, connected, lose_move_reply) = state.clone();
+                async move {
+                    use std::sync::atomic::Ordering::SeqCst;
+                    assert!(uri.path().starts_with("/api/v1/focuser/19/"));
+                    let member = uri.path().rsplit('/').next().unwrap();
+                    let args: std::collections::BTreeMap<String, String> = serde_urlencoded::from_str(
+                        if method == "PUT" { std::str::from_utf8(&body).unwrap() } else { uri.query().unwrap_or("") }
+                    ).unwrap();
+                    assert!(args["ClientID"].parse::<u32>().unwrap() > 0);
+                    assert!(args["ClientTransactionID"].parse::<u32>().unwrap() > 0);
+                    let value = if method == "PUT" {
+                        writes.lock().unwrap().push((member.into(), args.clone()));
+                        match member {
+                            "connected" => connected.store(args["Connected"] == "true", SeqCst),
+                            "move" => {
+                                values.lock().unwrap().insert("position".into(), json!(args["Position"].parse::<i32>().unwrap()));
+                                values.lock().unwrap().insert("ismoving".into(), json!(true));
+                                if lose_move_reply.load(SeqCst) { tokio::time::sleep(Duration::from_secs(1)).await; }
+                            }
+                            "halt" => { values.lock().unwrap().insert("ismoving".into(), json!(false)); }
+                            "tempcomp" => { values.lock().unwrap().insert("tempcomp".into(), json!(args["TempComp"] == "true")); }
+                            _ => panic!("Unexpected focuser write: {member}"),
+                        }
+                        Value::Null
+                    } else {
+                        match member {
+                            "interfaceversion" => json!(3),
+                            "connected" => json!(connected.load(SeqCst)),
+                            "stepsize" => return axum::Json(json!({"ErrorNumber":1024,"ErrorMessage":"private detail must not escape"})),
+                            _ => values.lock().unwrap()[member].clone(),
+                        }
+                    };
+                    axum::Json(json!({"ErrorNumber":0,"Value":value}))
+                }
+            }
+        ));
+        let task = tokio::spawn(async move {
+            axum::serve(listener, router).await.unwrap();
+        });
+        Self {
+            values,
+            writes,
+            connected,
+            lose_move_reply,
+            task,
+            source,
+        }
+    }
+    fn config(&self, numbers: &[u32]) -> HubConfig {
+        let mut config = HubConfig::empty();
+        config.sources.push(self.source.clone());
+        for &number in numbers {
+            config.outputs.push(regain_hub::config::OutputConfig {
+                id: uuid::Uuid::new_v4(),
+                number,
+                label: format!("Private focuser {number}"),
+                device: VirtualDevice::Proxy {
+                    source: self.source.id,
+                    device_type: regain_hub::config::DeviceType::Focuser,
+                },
+            });
+        }
+        config
+    }
+    fn moves(&self) -> usize {
+        self.writes
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(member, _)| member == "move")
+            .count()
+    }
+    async fn finish(self) {
+        self.task.abort();
+        assert!(self.task.await.unwrap_err().is_cancelled());
+    }
+}
+
+#[tokio::test]
+async fn focuser_publication_preserves_dynamic_identity_and_shared_client_ownership() {
+    let upstream = FocuserUpstream::new().await;
+    let other = FocuserUpstream::new().await;
+    let mut config = upstream.config(&[4, 7]);
+    let second = other.config(&[12]);
+    config.sources.extend(second.sources);
+    config.outputs.extend(second.outputs);
+    let f = Fixture::from_config(config).await;
+    let devices = f
+        .ok(
+            "GET",
+            "/management/v1/configureddevices",
+            "ClientTransactionID=31",
+        )
+        .await;
+    assert_eq!(devices.as_array().unwrap().len(), 3);
+    for output in &f.config.outputs {
+        let device = devices
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|device| device["UniqueID"] == json!(output.id))
+            .unwrap();
+        assert_eq!(device["DeviceNumber"], output.number);
+        assert_eq!(device["DeviceType"], "Focuser");
+        assert_eq!(device["DeviceName"], output.label);
+    }
+    assert!(upstream.writes.lock().unwrap().is_empty());
+    assert!(other.writes.lock().unwrap().is_empty());
+    assert_eq!(
+        f.ok("GET", "/api/v1/focuser/4/interfaceversion", "").await,
+        4
+    );
+    assert_eq!(
+        f.call("GET", "/api/v1/focuser/4/position", "ClientID=1")
+            .await["ErrorNumber"],
+        0x407
+    );
+    for slot in [0, 5, 19] {
+        assert_eq!(
+            request(
+                &f.router,
+                "GET",
+                &format!("/api/v1/focuser/{slot}/connected"),
+                ""
+            )
+            .await
+            .0,
+            StatusCode::NOT_FOUND
+        );
+    }
+    // Local slots retain their own routes when their numbers do not collide.
+    assert_eq!(
+        f.server
+            .profiles
+            .focusers
+            .add(regain_alpaca::slots::Kind::Fc3)
+            .unwrap(),
+        0
+    );
+    assert_eq!(
+        f.ok("GET", "/api/v1/focuser/0/connected", "ClientID=90")
+            .await,
+        false
+    );
+    assert!(
+        f.ok("GET", "/api/v1/focuser/0/name", "")
+            .await
+            .as_str()
+            .unwrap()
+            .contains("FocusCube")
+    );
+    assert_eq!(
+        f.ok("GET", "/management/v1/configureddevices", "")
+            .await
+            .as_array()
+            .unwrap()
+            .len(),
+        3
+    );
+    let response = f
+        .router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/setup/v1/focuser/4/setup")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let page = response.into_body().collect().await.unwrap().to_bytes();
+    assert!(std::str::from_utf8(&page).unwrap().contains("hub.mjs"));
+    f.ok(
+        "PUT",
+        "/api/v1/focuser/4/connected",
+        "ClientID=1&Connected=true",
+    )
+    .await;
+    f.ok("PUT", "/api/v1/focuser/7/connect", "ClientID=2").await;
+    eventually(async || {
+        f.ok("GET", "/api/v1/focuser/7/connecting", "ClientID=2")
+            .await
+            == false
+    })
+    .await;
+    assert_eq!(
+        f.ok("GET", "/api/v1/focuser/7/connected", "ClientID=2")
+            .await,
+        true
+    );
+    for (member, value) in [
+        ("absolute", json!(true)),
+        ("maxstep", json!(1000)),
+        ("maxincrement", json!(100)),
+        ("tempcompavailable", json!(true)),
+        ("tempcomp", json!(true)),
+        ("ismoving", json!(false)),
+        ("position", json!(50)),
+        ("temperature", json!(-5.0)),
+    ] {
+        assert_eq!(
+            f.ok("GET", &format!("/api/v1/focuser/4/{member}"), "ClientID=1")
+                .await,
+            value
+        );
+    }
+    let optional = f
+        .call("GET", "/api/v1/focuser/4/stepsize", "ClientID=1")
+        .await;
+    assert_eq!(optional["ErrorNumber"], 0x400);
+    assert!(!optional.to_string().contains("private detail"));
+    for value in ["-1", "1001", "200", "2147483648", "1.5", "bogus"] {
+        let rejected = f
+            .call(
+                "PUT",
+                "/api/v1/focuser/4/move",
+                &format!("ClientID=1&Position={value}"),
+            )
+            .await;
+        assert_eq!(rejected["ErrorNumber"], 0x401, "{rejected}");
+    }
+    assert_eq!(upstream.moves(), 0);
+    let moved = f
+        .call(
+            "PUT",
+            "/api/v1/focuser/4/move",
+            "ClientID=1&ClientTransactionID=87&Position=123",
+        )
+        .await;
+    assert_eq!(moved["ErrorNumber"], 0);
+    assert_eq!(moved["ClientTransactionID"], 87);
+    assert_eq!(
+        f.ok("GET", "/api/v1/focuser/7/ismoving", "ClientID=2")
+            .await,
+        true
+    );
+    assert_eq!(
+        f.call("PUT", "/api/v1/focuser/7/move", "ClientID=2&Position=130")
+            .await["ErrorNumber"],
+        0x40b
+    );
+    f.ok("PUT", "/api/v1/focuser/7/halt", "ClientID=2").await;
+    f.ok(
+        "PUT",
+        "/api/v1/focuser/7/tempcomp",
+        "ClientID=2&TempComp=false",
+    )
+    .await;
+    assert_eq!(
+        f.ok("GET", "/api/v1/focuser/4/tempcomp", "ClientID=1")
+            .await,
+        false
+    );
+    eventually(async || {
+        f.hub
+            .source_snapshot(upstream.source.id)
+            .unwrap()
+            .values
+            .get("position")
+            == Some(&json!(123))
+    })
+    .await;
+    let state = f
+        .ok("GET", "/api/v1/focuser/4/devicestate", "ClientID=1")
+        .await;
+    assert!(
+        state
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|entry| entry["Name"] == "Position" && entry["Value"] == 123)
+    );
+    assert!(
+        state
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|entry| entry["Name"] != "TimeStamp" && entry["Name"] != "StepSize")
+    );
+    f.ok(
+        "PUT",
+        "/api/v1/focuser/12/connected",
+        "ClientID=3&Connected=true",
+    )
+    .await;
+    assert_eq!(
+        f.ok("GET", "/api/v1/focuser/12/position", "ClientID=3")
+            .await,
+        50
+    );
+    f.ok(
+        "PUT",
+        "/api/v1/focuser/4/connected",
+        "ClientID=1&Connected=false",
+    )
+    .await;
+    assert!(upstream.connected.load(std::sync::atomic::Ordering::SeqCst));
+    assert_eq!(
+        f.ok("GET", "/api/v1/focuser/7/position", "ClientID=2")
+            .await,
+        123
+    );
+    f.ok("PUT", "/api/v1/focuser/7/disconnect", "ClientID=2")
+        .await;
+    eventually(async || !upstream.connected.load(std::sync::atomic::Ordering::SeqCst)).await;
+    let writes = upstream.writes.lock().unwrap().clone();
+    assert_eq!(
+        writes
+            .iter()
+            .map(|(member, _)| member.as_str())
+            .collect::<Vec<_>>(),
+        ["connected", "move", "halt", "tempcomp", "connected"]
+    );
+    assert!(
+        writes
+            .iter()
+            .all(|(_, args)| args["ClientID"] == writes[0].1["ClientID"])
+    );
+    f.finish().await;
+    upstream.finish().await;
+    other.finish().await;
+}
+
+#[tokio::test]
+async fn focuser_lost_move_reply_is_not_replayed_and_stale_clients_must_reconnect() {
+    let upstream = FocuserUpstream::new().await;
+    let f = Fixture::from_config(upstream.config(&[4, 7])).await;
+    for (slot, client) in [(4, 1), (7, 2)] {
+        f.ok(
+            "PUT",
+            &format!("/api/v1/focuser/{slot}/connected"),
+            &format!("ClientID={client}&Connected=true"),
+        )
+        .await;
+    }
+    upstream
+        .lose_move_reply
+        .store(true, std::sync::atomic::Ordering::SeqCst);
+    let result = f
+        .call("PUT", "/api/v1/focuser/4/move", "ClientID=1&Position=123")
+        .await;
+    assert_eq!(result["ErrorNumber"], 0x500, "{result}");
+    assert_eq!(upstream.moves(), 1);
+    assert!(
+        f.hub
+            .source_snapshot(upstream.source.id)
+            .unwrap()
+            .write_uncertain
+    );
+    let result = f
+        .call("PUT", "/api/v1/focuser/7/move", "ClientID=2&Position=124")
+        .await;
+    assert_eq!(result["ErrorNumber"], 0x500);
+    assert!(
+        result["ErrorMessage"]
+            .as_str()
+            .unwrap()
+            .contains("do not replay")
+    );
+    assert_eq!(upstream.moves(), 1);
+    assert_eq!(
+        f.ok("GET", "/api/v1/focuser/4/connected", "ClientID=1")
+            .await,
+        false
+    );
+    // Idempotent Connected=true never silently adopts the replacement generation.
+    f.ok(
+        "PUT",
+        "/api/v1/focuser/4/connected",
+        "ClientID=1&Connected=true",
+    )
+    .await;
+    assert_eq!(
+        f.ok("GET", "/api/v1/focuser/4/connected", "ClientID=1")
+            .await,
+        false
+    );
+    f.finish().await;
+    upstream.finish().await;
+}
+
+#[tokio::test]
+async fn focuser_publication_rejects_slot_collisions_before_any_equipment_connection() {
+    let upstream = FocuserUpstream::new().await;
+    let f = Fixture::from_config(upstream.config(&[0])).await;
+    assert_eq!(
+        f.server
+            .profiles
+            .focusers
+            .add(regain_alpaca::slots::Kind::Fc3)
+            .unwrap(),
+        0
+    );
+    assert_eq!(
+        f.call("GET", "/management/v1/configureddevices", "").await["ErrorNumber"],
+        0x401
+    );
+    for member in ["connected", "position"] {
+        let reply = f
+            .call(
+                "GET",
+                &format!("/api/v1/focuser/0/{member}"),
+                "ClientID=1&ClientTransactionID=92",
+            )
+            .await;
+        assert_eq!(reply["ErrorNumber"], 0x401);
+        assert_eq!(reply["ClientTransactionID"], 92);
+    }
+    assert_eq!(
+        f.router
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/setup/v1/focuser/0/setup")
+                    .body(Body::empty())
+                    .unwrap()
+            )
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::SERVICE_UNAVAILABLE
+    );
+    assert!(upstream.writes.lock().unwrap().is_empty());
+    assert_eq!(f.hub.active_connections(), 0);
+    f.finish().await;
+    upstream.finish().await;
+}
+
+#[tokio::test]
+async fn relative_focuser_rejects_position_and_preserves_signed_moves_and_strict_values() {
+    let upstream = FocuserUpstream::new().await;
+    upstream
+        .values
+        .lock()
+        .unwrap()
+        .insert("absolute".into(), json!(false));
+    let f = Fixture::from_config(upstream.config(&[4])).await;
+    f.ok(
+        "PUT",
+        "/api/v1/focuser/4/connected",
+        "ClientID=1&Connected=true",
+    )
+    .await;
+    assert_eq!(
+        f.call("GET", "/api/v1/focuser/4/position", "ClientID=1")
+            .await["ErrorNumber"],
+        0x400
+    );
+    for value in ["-101", "101", "-2147483648"] {
+        assert_eq!(
+            f.call(
+                "PUT",
+                "/api/v1/focuser/4/move",
+                &format!("ClientID=1&Position={value}")
+            )
+            .await["ErrorNumber"],
+            0x401
+        );
+    }
+    f.ok("PUT", "/api/v1/focuser/4/move", "ClientID=1&Position=-30")
+        .await;
+    f.ok("PUT", "/api/v1/focuser/4/halt", "ClientID=1").await;
+    assert_eq!(upstream.moves(), 1);
+    assert_eq!(
+        upstream
+            .writes
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|(member, _)| member == "move")
+            .unwrap()
+            .1["Position"],
+        "-30"
+    );
+    for (member, value) in [
+        ("ismoving", json!("false")),
+        ("maxstep", json!(1.5)),
+        ("temperature", json!("NaN")),
+    ] {
+        upstream.values.lock().unwrap().insert(member.into(), value);
+        let reply = f
+            .call("GET", &format!("/api/v1/focuser/4/{member}"), "ClientID=1")
+            .await;
+        assert_eq!(reply["ErrorNumber"], 0x402, "{reply}");
+    }
+    assert_eq!(
+        f.call("PUT", "/api/v1/focuser/4/tempcomp", "ClientID=1&TempComp=1")
+            .await["ErrorNumber"],
+        0x401
+    );
+    assert_eq!(
+        f.call("GET", "/api/v1/focuser/4/getswitch", "ClientID=1&Id=0")
+            .await["ErrorNumber"],
+        0x400
+    );
+    assert_eq!(
+        f.call(
+            "PUT",
+            "/api/v1/focuser/4/move",
+            "ClientID=1&Position=1&position=2"
+        )
+        .await["ErrorNumber"],
+        0x401
+    );
+    f.finish().await;
+    upstream.finish().await;
+}
+
 #[tokio::test]
 async fn setup_output_diagnostics_are_same_origin_revision_checked_and_inert() {
     let f = Fixture::new().await;

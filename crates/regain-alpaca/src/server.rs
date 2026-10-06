@@ -295,6 +295,22 @@ impl Server {
     fn state(&self) -> Value {
         json!({"simulation":self.runtime.simulate,"version":env!("CARGO_PKG_VERSION"),"cameras":self.profiles.all().into_iter().enumerate().map(|(slot,profile)|json!({"slot":slot,"profile":profile,"connected":self.device(slot).is_ok_and(|d|d.in_use())})).collect::<Vec<_>>(),"logs":self.log.events()})
     }
+    pub(crate) async fn hub_devices(&self) -> Result<Vec<regain_hub::runtime::OutputDescriptor>> {
+        let Some(hub) = &self.hub else {
+            return Ok(Vec::new());
+        };
+        let devices = hub.devices().await?;
+        anyhow::ensure!(
+            devices.iter().all(|device| device.device_type
+                != regain_hub::config::DeviceType::Focuser
+                || self.profiles.focusers.get(device.number as usize).is_none()),
+            error(
+                0x401,
+                "Hub focuser number conflicts with a local focuser slot; choose distinct device numbers"
+            )
+        );
+        Ok(devices)
+    }
     pub fn router(self: &Arc<Self>) -> Router {
         Router::new()
             .merge(crate::hub_setup::routes())
@@ -536,9 +552,11 @@ async fn management(
                 Ok(None) => (),
                 Err(e) => return Json(failure(e, id, s.next())).into_response(),
             }
-            if let Some(hub) = &s.hub {
-                match hub.configured().await {
-                    Ok(outputs) => devices.extend(outputs),
+            if s.hub.is_some() {
+                match s.hub_devices().await {
+                    Ok(outputs) => {
+                        devices.extend(outputs.iter().map(crate::hub_output::configured_device))
+                    }
                     Err(e) => return Json(failure(e, id, s.next())).into_response(),
                 }
             }
@@ -561,7 +579,7 @@ async fn hub_request(
     };
     if !matches!(
         kind.as_str(),
-        "switch" | "safetymonitor" | "observingconditions"
+        "switch" | "safetymonitor" | "observingconditions" | "focuser"
     ) || member != member.to_lowercase()
     {
         return StatusCode::NOT_FOUND.into_response();
@@ -572,7 +590,7 @@ async fn hub_request(
         let params = params?;
         transaction = params.optional_id("ClientTransactionID")?;
         params.optional_id("ClientID")?;
-        let device = hub.devices().await?.into_iter().find(|d| {
+        let device = s.hub_devices().await?.into_iter().find(|d| {
             d.number == slot && crate::hub_output::class_name(d.device_type).to_lowercase() == kind
         });
         let Some(device) = device else {
@@ -1026,6 +1044,27 @@ async fn accessory_request(
     put: bool,
     params: Result<Params>,
 ) -> Response {
+    if kind == "focuser" && s.hub.is_some() {
+        match s.hub_devices().await {
+            Ok(devices)
+                if devices.iter().any(|device| {
+                    device.device_type == regain_hub::config::DeviceType::Focuser
+                        && device.number as usize == slot
+                }) =>
+            {
+                return hub_request(s, kind, slot as u32, member, put, params).await;
+            }
+            Ok(_) => (),
+            Err(e) => {
+                let transaction = params
+                    .as_ref()
+                    .ok()
+                    .and_then(|p| p.optional_id("ClientTransactionID").ok())
+                    .unwrap_or(0);
+                return Json(failure(e, transaction, s.next())).into_response();
+            }
+        }
+    }
     if matches!(
         kind.as_str(),
         "switch" | "safetymonitor" | "observingconditions"
@@ -1147,6 +1186,20 @@ async fn accessory_settings(
 }
 
 async fn focuser_page(State(s): State<Arc<Server>>, Path(slot): Path<usize>) -> Response {
+    if s.hub.is_some() {
+        match s.hub_devices().await {
+            Ok(devices)
+                if devices.iter().any(|device| {
+                    device.device_type == regain_hub::config::DeviceType::Focuser
+                        && device.number as usize == slot
+                }) =>
+            {
+                return axum::response::Html(include_str!("../web/hub.html")).into_response();
+            }
+            Ok(_) => (),
+            Err(_) => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
+        }
+    }
     if s.profiles.focusers.get(slot).is_none() {
         return StatusCode::NOT_FOUND.into_response();
     }
