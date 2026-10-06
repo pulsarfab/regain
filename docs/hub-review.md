@@ -1356,6 +1356,22 @@ Unsigned NINA/ASCOM packages validate (`artifacts/hub-com-package-retry.log`,
 (`artifacts/hub-com-loader-probe.log`). Updated CI and signed release validation
 remain required; local success does not resolve the observed runner failure.
 
+Runner follow-up: adapter 9dfdb82 failed Windows in push 37438671971 and PR
+37438682468; the other seven jobs passed in each run. The probes show both direct
+managed loads succeed, with failed COM class-factory activation in elevated
+32/64-bit PowerShell. HKCR displays the correct private keys and codebase, so
+its merged view does not prove elevated COM can load them.
+[Microsoft's elevated COM guidance](https://learn.microsoft.com/en-us/windows/win32/com/the-com-elevation-moniker)
+explains why per-user registration is insufficient. The test playbook now
+explicitly selects private HKLM registration only on elevated disposable GitHub
+Windows runners; Python verifies both environment and elevation. Preflight checks
+both hives and architectures, and finally removes only the exact private keys
+created. Local HKCU runs still cover both worker/parent architectures, and the
+machine option is rejected locally. Keep ProgIDs within the
+[documented 39-character bound](https://learn.microsoft.com/en-us/windows/win32/com/-progid--key),
+including fixture aliases. Production activation and error sanitization are
+unchanged. This correction still requires new CI evidence.
+
 Next: resolve Windows fixture activation, complete native ASCOM outputs/setup,
 interactive NINA/vendor acceptance and shared setup refinements, then all original
 broader proxy, camera/acquisition, coordination, conformance, recovery, hardware,

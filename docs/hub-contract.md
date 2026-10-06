@@ -878,8 +878,14 @@ loopback Alpaca and COM inputs. These establish transport/policy behavior, not
 interactive NINA, installed vendor-driver, conformance or real-device acceptance.
 Release signing includes both import executables, but remains unverified until
 a release job exercises the updated development payload. Windows CI for the
-worker foundation failed first activation with HRESULT 0x80070002; fixture-only
-loader diagnostics now distinguish registration and managed assembly loading.
+worker foundation and adapter failed first activation with HRESULT 0x80070002.
+Fixture-only probes show successful direct managed loading and failed COM
+activation in both elevated runner processes. Elevated COM does not load
+per-user classes ([Microsoft guidance](https://learn.microsoft.com/en-us/windows/win32/com/the-com-elevation-moniker)).
+Local tests retain private HKCU registration. The script explicitly selects HKLM
+only on an elevated disposable GitHub Windows runner; Python verifies that
+context, checks both hives for collisions and removes only the private keys it
+created. Updated runner validation remains required, without a production bypass.
 
 Field Kit reference commit `8be3d38f0b04fa78d7ae36b460ed10656f259d0f` is
 Apache-2.0. Its endpoint state, aggregate, service, and integration tests supply

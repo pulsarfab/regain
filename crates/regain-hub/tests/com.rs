@@ -1,4 +1,4 @@
-//! Real registered COM fixtures; script-owned HKCU registration, never hardware.
+//! Real registered COM fixtures; script-owned private registration, never hardware.
 #![cfg(windows)]
 use regain_hub::{
     com::{ComBackend, available_architectures},

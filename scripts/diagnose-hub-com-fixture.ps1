@@ -1,6 +1,6 @@
 # Fixture-only loader diagnostics. Never accepts an installed driver ProgID.
 $ErrorActionPreference = 'Stop'
-if ($env:REGAIN_HUB_COM_FIXTURE_PROGID -notmatch '^ASCOM\.Regain\.HubFixture\.[a-f0-9]{32}$') { throw 'Not a private COM fixture' }
+if ($env:REGAIN_HUB_COM_FIXTURE_PROGID -notmatch '^ASCOM\.Rgn\.F\.[a-f0-9]{16}$') { throw 'Not a private COM fixture' }
 if (!(Test-Path -LiteralPath $env:REGAIN_COM_FIXTURE_DLL -PathType Leaf)) { throw 'Missing fixture assembly' }
 Write-Output "Fixture probe: bitness=$([IntPtr]::Size * 8) elevated=$(([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator))"
 Get-ChildItem -LiteralPath (Split-Path $env:REGAIN_COM_FIXTURE_DLL) -Filter '*.dll' | ForEach-Object { Write-Output "Fixture DLL: $($_.Name)" }

@@ -564,7 +564,13 @@ updated release signing and interactive frontend/vendor acceptance remain open.
 The worker foundation's push CI 37434827510 and PR CI 37434832440 failed Windows
 first activation with HRESULT 0x80070002; their seven other jobs passed. Do not
 call that checkpoint green. Fixture-only loader diagnostics are added, with no
-production activation bypass or raw vendor error text. Updated CI must pass
+production activation bypass or raw vendor error text. Adapter 9dfdb82 also failed Windows
+activation in push 37438671971 and PR 37438682468. Its fixture probes establish
+successful direct managed loads and failed elevated COM activation in both
+architectures. Elevated COM ignores per-user classes; the playbook now explicitly
+uses private HKLM keys only on elevated disposable GitHub Windows runners, with
+collision checks in both hives, context verification and exact cleanup. Local
+tests remain HKCU; unsupported machine-fixture invocation is rejected. Updated CI must pass
 before closing the import validation gate. This does not close milestone 3's
 complete frontend gate or the remaining original milestones.
 

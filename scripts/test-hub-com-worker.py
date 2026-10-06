@@ -1,7 +1,8 @@
-"""Real HKCU COM activation in both bitnesses; never installed hardware drivers.
+"""Real COM activation in both bitnesses; never installed hardware drivers.
 
 The private fixture CLSID is fail-if-present, removed in finally. Workers use
-their production protocol/STA path without a test activation bypass.
+their production protocol/STA path without a test activation bypass. Local tests
+use HKCU; elevated disposable GitHub runners explicitly use private HKLM keys.
 """
 import argparse
 import contextlib
@@ -22,7 +23,8 @@ CLASS = "Regain.Hub.COM.Fixture.Driver"
 ARCHITECTURES = ("x86", "x64")
 WORKERS = ROOT / "target/debug"
 FIXTURE = ROOT / "artifacts/hub-com-fixture/Regain.Hub.COM.Fixture.dll"
-PROGID = "ASCOM.Regain.HubFixture." + uuid.uuid4().hex
+PROGID = "ASCOM.Rgn.F." + uuid.uuid4().hex[:16]
+FIXTURE_HIVE = winreg.HKEY_CURRENT_USER
 
 
 def hresult(value):
@@ -44,13 +46,17 @@ def registered_fixture():
     progids = [PROGID] + [PROGID + "." + name for name in ("Switch", "Safety", "Weather", "Other")]
     paths = [f"Software\\Classes\\{name}" for name in progids] + [f"Software\\Classes\\CLSID\\{CLSID}"]
     views = (winreg.KEY_WOW64_32KEY, winreg.KEY_WOW64_64KEY)
-    for view in views:
-        for path in paths:
-            try:
-                with winreg.OpenKey(winreg.HKEY_CURRENT_USER, path, 0, winreg.KEY_READ | view):
-                    raise RuntimeError(f"Refusing to replace existing fixture key: {path}")
-            except FileNotFoundError:
-                pass
+    # Check both hives so a private test can never shadow a machine/user class.
+    # Elevated COM ignores per-user class registrations even when HKCR's merged
+    # view displays them. Machine registration is explicit and CI-only below.
+    for hive in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
+        for view in views:
+            for path in paths:
+                try:
+                    with winreg.OpenKey(hive, path, 0, winreg.KEY_READ | view):
+                        raise RuntimeError(f"Refusing to replace existing fixture key: {path}")
+                except FileNotFoundError:
+                    pass
     # Delete only these exact, preflighted private fixture keys. RegDeleteTreeW
     # avoids moving registry keys between views or touching other registrations.
     created = []
@@ -58,7 +64,7 @@ def registered_fixture():
         for view in views:
             for path in paths:
                 created.append((view, path))
-                with winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER, path, 0, winreg.KEY_WRITE | view):
+                with winreg.CreateKeyEx(FIXTURE_HIVE, path, 0, winreg.KEY_WRITE | view):
                     pass
             entries = {
                 **{path + "\\CLSID": {"": CLSID} for path in paths[:-1]},
@@ -68,14 +74,14 @@ def registered_fixture():
                 },
             }
             for path, values in entries.items():
-                with winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER, path, 0, winreg.KEY_WRITE | view) as key:
+                with winreg.CreateKeyEx(FIXTURE_HIVE, path, 0, winreg.KEY_WRITE | view) as key:
                     for name, value in values.items():
                         winreg.SetValueEx(key, name, 0, winreg.REG_SZ, value)
         yield
     finally:
         for view, path in reversed(created):
             parent, name = path.rsplit("\\", 1)
-            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, parent, 0, winreg.KEY_ALL_ACCESS | view) as key:
+            with winreg.OpenKey(FIXTURE_HIVE, parent, 0, winreg.KEY_ALL_ACCESS | view) as key:
                 status = delete_tree(int(key), name)
                 if status not in (0, 2):
                     raise OSError(status, f"Failed to remove private fixture key {path}")
@@ -436,7 +442,15 @@ if __name__ == "__main__":
     parser.add_argument("--workers", type=Path, default=WORKERS)
     parser.add_argument("--fixture", type=Path, default=FIXTURE)
     parser.add_argument("--rust-tests", action="store_true")
+    parser.add_argument("--machine-fixture", action="store_true",
+        help="Private machine registration on elevated disposable GitHub Windows runners only")
     arguments = parser.parse_args()
+    if arguments.machine_fixture:
+        import ctypes
+        if os.environ.get("GITHUB_ACTIONS") != "true" or os.environ.get("RUNNER_OS") != "Windows" or not ctypes.windll.shell32.IsUserAnAdmin():
+            parser.error("--machine-fixture requires an elevated disposable GitHub Windows runner")
+        FIXTURE_HIVE = winreg.HKEY_LOCAL_MACHINE
+    print("Private COM fixture registration: " + ("HKLM (disposable elevated runner)" if arguments.machine_fixture else "HKCU"), flush=True)
     WORKERS = arguments.workers.resolve()
     FIXTURE = arguments.fixture.resolve()
     with registered_fixture():
