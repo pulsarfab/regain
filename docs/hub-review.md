@@ -1775,3 +1775,35 @@ deleted bindings, removed inventories preserving the second install/settings and
 owned cleanup. This closes those automated fixture checks, not interactive UAC,
 Chooser, conformance, vendor hardware or the original broader milestones. The new
 web increment still requires its own CI.
+
+### Shared native inspection and diagnostics export
+
+The native editor now uses explicit paged inspection through the existing host
+path. Parameters and deadlines come from the same descriptors as web setup. Its
+saved-source selector cannot silently target a new unsaved draft source. Inspection
+revokes review before dispatch, preserves sibling connection leases, rejects stale
+source/revision/generation and malformed cursors, and never replays after a lost
+reply. Cancellation invalidates further writes; disposal cannot restore session
+state. Per-property unavailable/unsupported results remain visible. No standalone
+probe establishes live safety permission.
+
+Review found clearing the preview before session admission could leave an accepted
+review enabled after local invalid input. The window now clears only after review
+is actually revoked; the WPF regression verifies invalid input preserves review
+and valid inspection revokes it. Export uses public saved host status and the last
+completed source observation with explicit time/revision. It excludes the draft,
+configuration, credential values and credential calls. The production credential
+test verifies its disposable secret/reference cannot enter this export. Reload
+clears prior observations. File selection remains an explicit user action.
+
+Local evidence: all 144 NINA checks pass in
+`artifacts/hub-native-inspection-final-nina.log`, including production Switch
+pagination, safety/weather inspection, sibling-lease preservation, lost/obsolete/
+malformed replies, local descriptor limits, cancellation and the actual WPF flow.
+The shared net48 warnings-denied build and actual x86/x64 inspection/export and
+ASCOM client fixtures pass (`hub-native-inspection-net48.log` and
+`hub-native-inspection-net48-fixtures.log`). The actual WPF simulation render was
+inspected. Broader diagnostics, initialization, simulation controls, interactive
+acceptance and every remaining original milestone stay required. Checkpoint
+2a26281 now passes both complete eight-job CI runs; web/native-inspection CI must
+still be checked to terminal completion.

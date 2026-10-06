@@ -92,8 +92,18 @@ internal static class Program
             await editor.ReloadAsync(deadline.Token);
             if (editor.Draft!.Revision == oldRevision || editor.Draft.Field("/outputs/0/label").Value!.Value.GetString() != "net48 edited simulation")
                 throw new InvalidOperationException("Native editor did not reconcile saved changes");
+            var inspectedSource = saved.GetProperty("sources")[0].GetProperty("id").GetGuid();
+            var inspection = await editor.InspectSourceAsync(inspectedSource, 0, 2, deadline.Token);
+            if (!inspection.GetProperty("simulation").GetBoolean() || inspection.GetProperty("capabilities").GetProperty("nextStart").GetInt32() != 2)
+                throw new InvalidOperationException("Native setup inspection lost simulation or pagination");
+            inspection = await editor.InspectSourceAsync(inspectedSource, 2, 2, deadline.Token);
+            if (inspection.GetProperty("capabilities").GetProperty("channels").GetArrayLength() != 1 ||
+                editor.DiagnosticSnapshot().GetProperty("observation").GetProperty("kind").GetString() != "setupInspection")
+                throw new InvalidOperationException("Native setup inspection/export failed");
+            while ((await editor.SourceStatusAsync(inspectedSource, deadline.Token)).GetProperty("leaseCount").GetInt32() != 0)
+                await Task.Delay(25, deadline.Token);
             await NativeOutputs.Run(args[0], args[1], attached.InstanceId, saved, probe, deadline.Token);
-            Console.WriteLine($"net48 {IntPtr.Size * 8}-bit: shared identity, independent leases, selection CAS/removal, native session/reconnect, editor review/apply/reconcile, typed ASCOM outputs and surviving host passed");
+            Console.WriteLine($"net48 {IntPtr.Size * 8}-bit: shared identity, independent leases, selection CAS/removal, native session/reconnect, editor review/apply/reconcile, setup inspection/export, typed ASCOM outputs and surviving host passed");
             return 0;
         } catch (Exception error) { Console.Error.WriteLine(error.GetType().Name + ": " + error.Message); return 1; }
         finally {

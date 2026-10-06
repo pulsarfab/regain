@@ -1114,3 +1114,23 @@ entries. A private installed COM metadata object also holds the nested helper
 while upgrade/uninstall must refuse, without starting a Rust host or acquiring
 equipment. Only its own RCW is released and the helper retires naturally. Those
 machine cases require new disposable-runner CI before acceptance.
+
+### Native setup inspection and observed diagnostics
+
+The shared NINA/ASCOM editor selects sources from the last saved configuration,
+independently of its draft. Explicit `inspectSource` uses host-described integer
+page defaults/bounds and the host inspection deadline plus five seconds for the
+reply. It revokes review before dispatch and owns only the host's temporary lease.
+The response must identify the selected source, saved revision, non-nil generation
+and setup purpose, with finite ordered observation times. A Switch next cursor
+must advance by the page size and fit the described start bounds. Obsolete,
+malformed or lost replies are rejected without replay; reload is required before
+another probe after a local transport/protocol failure. Source failures returned
+by the host do not authorize writes or restore safety permission.
+
+Cached source health is checked against the saved source/revision. Diagnostics
+export captures public host status from Reload and the last completed cached
+health or setup inspection, with instance/revision and UTC observation time. It
+does not refresh sources or include editable configuration or credential calls.
+Reload clears the previous source observation. This is an observed setup snapshot;
+broader live output/policy diagnostics and frontend recovery remain separate gates.

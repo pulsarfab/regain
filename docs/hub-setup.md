@@ -113,7 +113,16 @@ do not acquire equipment leases.
    The editor sends one revision-checked request and reloads the saved result.
    A conflict or uncertain outcome requires reloading; Apply is never replayed.
 4. Use **Source health** for saved host status or cached source diagnostics.
-   Reading health does not open an equipment connection. Close the editor and
+   Reading health does not open an equipment connection. **Inspect saved source**
+   explicitly opens a shared connection and releases only its temporary lease.
+   Choose the first channel and page size; **Inspect next channels** advances a
+   Switch result. The host supplies their labels, defaults and limits. Inspection
+   uses saved settings, reports simulation and individual property failures, and
+   never establishes live safety permission. Review again before Apply.
+   **Export setup diagnostics** saves public host status from the last reload and
+   the last completed source observation with its revision and observation time.
+   It excludes the configuration and credential values. It does not refresh data.
+   Close the editor and
    select **Load hub outputs** again to refresh the output choices.
 
 ![Native hub configuration draft with a simulated output](images/hub-native-editor-simulation.png)
@@ -122,8 +131,17 @@ do not acquire equipment leases.
 
 These are renders of the actual WPF window during an automated simulation test
 against the production host. They demonstrate setup; interactive NINA and
-real-device acceptance remain pending. Initialization, live inspection and
-simulation controls remain on the plan.
+real-device acceptance remain pending. Initialization, simulation controls and
+broader diagnostics remain on the plan.
+
+![Native setup inspection of simulated Switch channels](images/hub-native-inspection-simulation.png)
+
+This is the shared NINA/ASCOM window against the production host in simulation.
+Inspection works through a temporary source lease; another connected frontend's
+lease is preserved. Changing the selected source or page input clears the next
+cursor. Obsolete revisions and lost replies require explicit reload; inspection
+is never replayed automatically. New sources must be applied and reloaded before
+they can be inspected.
 
 Use **Credentials** to save an upstream Authorization header in the host's
 separate user storage. Its labels, descriptions, length limits and protection

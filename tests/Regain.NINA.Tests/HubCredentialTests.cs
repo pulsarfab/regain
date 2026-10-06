@@ -26,6 +26,8 @@ public sealed partial class HubNativeTests
             var unchanged = await host.Command(new { op = "getConfig" });
             Assert.Equal(editor.Draft!.Revision, unchanged.GetProperty("revision").GetGuid());
             Assert.DoesNotContain(reference, unchanged.GetRawText());
+            var diagnostics = editor.DiagnosticSnapshot().GetRawText();
+            Assert.DoesNotContain("native-private-fixture", diagnostics); Assert.DoesNotContain(reference, diagnostics);
             for (int i = 0; i < 3; i++) Assert.Equal(0, (await host.Status(i)).GetProperty("leaseCount").GetInt32());
             Assert.True((await editor.DeleteCredentialAsync(reference)).GetProperty("removed").GetBoolean());
             Assert.False((await editor.CredentialStatusAsync(reference)).GetProperty("present").GetBoolean());

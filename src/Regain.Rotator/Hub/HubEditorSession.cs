@@ -26,6 +26,7 @@ public sealed partial class HubEditorSession : IDisposable
     }
     public JsonElement? HostStatus { get; private set; }
     public JsonElement? Description { get; private set; }
+    public JsonElement? SavedConfiguration { get; private set; }
     public JsonElement? LastApply { get; private set; }
     public JsonElement Errors { get; private set; } = JsonSerializer.SerializeToElement(Array.Empty<object>());
     internal HubEditorSession(Guid instance, Func<JsonElement, CancellationToken, Task<JsonElement>> request, Action close)
@@ -45,7 +46,7 @@ public sealed partial class HubEditorSession : IDisposable
         try {
             Alive(); using var timer = CancellationTokenSource.CreateLinkedTokenSource(cancellation, lifetime.Token);
             timer.CancelAfter(TimeSpan.FromSeconds(15));
-            reviewed = null; State = HubEditorState.Loading;
+            reviewed = null; LastSourceObservation = null; State = HubEditorState.Loading;
             var description = await Rpc(new { op = "describeConfig" }, timer.Token).ConfigureAwait(false);
             var saved = await Rpc(new { op = "getConfig" }, timer.Token).ConfigureAwait(false);
             var status = await Rpc(new { op = "hostStatus" }, timer.Token).ConfigureAwait(false);
@@ -54,7 +55,7 @@ public sealed partial class HubEditorSession : IDisposable
                 status.GetProperty("configurationRevision").GetGuid() != saved.GetProperty("revision").GetGuid())
                 throw new InvalidOperationException("The saved configuration changed during reload; reload again");
             var draft = new HubConfigurationDraft(description, saved);
-            Draft = draft; Description = description.Clone(); HostStatus = status.Clone(); Errors = JsonSerializer.SerializeToElement(Array.Empty<object>());
+            Draft = draft; SavedConfiguration = saved.Clone(); Description = description.Clone(); HostStatus = status.Clone(); Errors = JsonSerializer.SerializeToElement(Array.Empty<object>());
             State = status.GetProperty("phase").GetString() == "ready" ? HubEditorState.Editing : HubEditorState.Blocked;
         } catch { if (!disposed) State = HubEditorState.Uncertain; throw; }
         finally { operations.Release(); }
@@ -134,10 +135,20 @@ public sealed partial class HubEditorSession : IDisposable
         using var operation = Borrow();
         await operations.WaitAsync(cancellation).ConfigureAwait(false);
         try {
-            Alive(); using var timer = CancellationTokenSource.CreateLinkedTokenSource(cancellation, lifetime.Token);
+            Alive(); SavedSource(source); LastSourceObservation = null;
+            using var timer = CancellationTokenSource.CreateLinkedTokenSource(cancellation, lifetime.Token);
             timer.CancelAfter(TimeSpan.FromSeconds(3));
             var result = await Rpc(new { op = "sourceStatus", source }, timer.Token).ConfigureAwait(false);
-            Alive(); return result;
+            Alive();
+            try {
+                HubWire.Members(result, "source", "revision", "generation", "sequence", "transportConnected", "writeUncertain", "connectionInfo",
+                    "simulated", "simulation", "leaseCount", "values", "sampleErrors", "sampleAgesSeconds", "sampleStartedSeconds", "sampleSequences",
+                    "completedPasses", "sampledAtSeconds", "error");
+                if (result.GetProperty("source").GetGuid() != source || result.GetProperty("revision").GetGuid() != Draft!.Revision)
+                    throw new FormatException();
+            } catch { throw new HubException(HubFailure.Protocol); }
+            LastSourceObservation = Observation("cachedSourceHealth", result);
+            return result;
         } catch (HubException error) when (error.Failure is not (HubFailure.Remote or HubFailure.Busy or HubFailure.InvalidRequest)) {
             reviewed = null; State = HubEditorState.Uncertain; throw;
         } catch (OperationCanceledException) { reviewed = null; State = HubEditorState.Uncertain; throw; }

@@ -42,7 +42,9 @@ public sealed partial class HubConfigurationWindow : Window
         heading.Children.Add(new TextBlock { Text = "Changes stay in this draft until reviewed and applied. Disconnect all output clients before Apply. Source settings and safety policies are shared across NINA, Alpaca and ASCOM.", TextWrapping = TextWrapping.Wrap });
         tabs.Items.Add(new TabItem { Header = "Configuration", Content = new ScrollViewer { Content = configuration, VerticalScrollBarVisibility = ScrollBarVisibility.Auto } });
         tabs.Items.Add(new TabItem { Header = "Review", Content = preview });
-        var health = new DockPanel(); DockPanel.SetDock(sources, Dock.Top); health.Children.Add(sources); health.Children.Add(diagnostics);
+        var health = new DockPanel();
+        var sourceScroll = new ScrollViewer { Content = sources, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, MaxHeight = 310 };
+        DockPanel.SetDock(sourceScroll, Dock.Top); health.Children.Add(sourceScroll); health.Children.Add(diagnostics);
         tabs.Items.Add(new TabItem { Header = "Source health", Content = health }); panel.Children.Add(tabs);
         tabs.Items.Add(new TabItem { Header = "Credentials", Content = new ScrollViewer { Content = credentials, VerticalScrollBarVisibility = ScrollBarVisibility.Auto } });
         reload.Click += async (_, _) => {
@@ -88,20 +90,7 @@ public sealed partial class HubConfigurationWindow : Window
             session.Changed(); preview.Clear(); errors.Text = ""; status.Text = "Unsaved changes. Review before applying."; Controls();
         }, message => status.Text = message);
         form.Render(); configuration.Content = form.Root; preview.Clear(); diagnostics.Clear(); errors.Text = "";
-        sources.Children.Clear();
-        var host = new Button { Content = "Saved host status", Margin = new Thickness(4), HorizontalAlignment = HorizontalAlignment.Left };
-        host.Click += (_, _) => diagnostics.Text = Pretty(session.HostStatus!.Value); sources.Children.Add(host);
-        var choices = new ComboBox { MinWidth = 300, MaxWidth = 650, Margin = new Thickness(4), HorizontalAlignment = HorizontalAlignment.Left };
-        foreach (var source in session.Draft!.Candidate.GetProperty("sources").EnumerateArray())
-            choices.Items.Add(new ComboBoxItem { Content = source.GetProperty("label").GetString() + " (" + source.GetProperty("id").GetString() + ")", Tag = source.GetProperty("id").GetGuid() });
-        choices.SelectedIndex = choices.Items.Count == 0 ? -1 : 0; sources.Children.Add(choices);
-        var read = new Button { Content = "Read cached source health", Margin = new Thickness(4), Padding = new Thickness(10, 6, 10, 6),
-            HorizontalAlignment = HorizontalAlignment.Left, IsEnabled = choices.Items.Count != 0 };
-        read.Click += async (_, _) => {
-            if (choices.SelectedItem is ComboBoxItem selected)
-                await Run(async () => { diagnostics.Text = Pretty(await session.SourceStatusAsync((Guid)selected.Tag, lifetime.Token)); status.Text = "Cached source health. This does not open an equipment connection."; });
-        };
-        sources.Children.Add(read);
+        RenderInspection();
         RenderCredentials();
     }
     private async Task Run(Func<Task> action)
@@ -134,6 +123,7 @@ public sealed partial class HubConfigurationWindow : Window
         reload.IsEnabled = !busy; review.IsEnabled = !busy && editable && form?.Errors.Count == 0;
         apply.IsEnabled = !busy && session?.State == HubEditorState.Reviewed && form?.Errors.Count == 0;
         CredentialControls(editable);
+        InspectionControls(editable);
     }
     private void ShowErrors(JsonElement fields) => errors.Text = string.Join("\n", fields.EnumerateArray().Select(field => field.GetProperty("path").GetString() + ": " + field.GetProperty("message").GetString()));
     private static string Pretty(JsonElement value) => JsonSerializer.Serialize(value, new JsonSerializerOptions { WriteIndented = true });
