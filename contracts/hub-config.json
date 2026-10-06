@@ -118,7 +118,7 @@
         "additionalProperties": false,
         "properties": {
           "averageSeconds": {
-            "description": "Averaging interval; zero returns the latest fresh sample. Changing source clears history.",
+            "description": "Averaging interval; zero returns the latest fresh sample. All non-gust metrics\nin an output use the same interval. Source changes clear history; wind gust\npreserves the upstream three-second peak over two minutes without re-averaging.",
             "format": "double",
             "maximum": 3600.0,
             "minimum": 0.0,
@@ -420,6 +420,19 @@
                 "x-regain": {
                   "apply": "reconnect"
                 }
+              },
+              "unit": {
+                "default": null,
+                "description": "Explicit unit of an upstream channel, needed for weather mappings.\nNo conversion is performed; use the target metric's canonical unit.",
+                "maxLength": 80,
+                "title": "Unit",
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "x-regain": {
+                  "apply": "reconnect"
+                }
               }
             },
             "required": [
@@ -458,6 +471,19 @@
                 "format": "uuid",
                 "title": "Source",
                 "type": "string",
+                "x-regain": {
+                  "apply": "reconnect"
+                }
+              },
+              "unit": {
+                "default": null,
+                "description": "Unit assertion for a property without standard unit metadata.\nA standard property's known unit cannot be overridden.",
+                "maxLength": 80,
+                "title": "Unit",
+                "type": [
+                  "string",
+                  "null"
+                ],
                 "x-regain": {
                   "apply": "reconnect"
                 }
@@ -998,6 +1024,7 @@
           "number": {
             "description": "Persisted output channel number. It does not change when channels are reordered.",
             "format": "uint32",
+            "maximum": 1023,
             "minimum": 0,
             "title": "Number",
             "type": "integer",

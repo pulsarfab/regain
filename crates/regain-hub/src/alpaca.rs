@@ -1,8 +1,8 @@
 //! Bounded upstream Alpaca transport. Typed output controllers choose the poll
 //! plan; this adapter never invents capabilities or retries a command itself.
 use crate::{
-    config::{ConnectionPolicy, SourceBackend, SourceConfig},
-    source::{Backend, BackendFuture, ErrorKind, SourceError, Values},
+    config::{ConnectionPolicy, Readout, SourceBackend, SourceConfig},
+    source::{Backend, BackendFuture, ErrorKind, SampleBatch, SourceError, Values},
 };
 use reqwest::{
     Client, Method,
@@ -32,6 +32,7 @@ pub struct SampleRequest {
     pub member: String,
     pub parameters: Values,
     pub value_type: SampleType,
+    pub sensor_age: Option<String>,
 }
 impl SampleRequest {
     pub fn safety() -> Self {
@@ -40,6 +41,29 @@ impl SampleRequest {
             member: "issafe".into(),
             parameters: Values::new(),
             value_type: SampleType::Boolean,
+            sensor_age: None,
+        }
+    }
+    pub fn readout(readout: &Readout, observing_conditions: bool) -> Self {
+        match readout {
+            Readout::Channel { channel, .. } => Self {
+                key: readout.sample_key(),
+                member: "getswitchvalue".into(),
+                parameters: Values::from([("Id".into(), Value::from(*channel))]),
+                value_type: SampleType::Number,
+                sensor_age: None,
+            },
+            Readout::Property { property, .. } => Self {
+                key: readout.sample_key(),
+                member: property.clone(),
+                parameters: Values::new(),
+                value_type: if property == "issafe" {
+                    SampleType::Boolean
+                } else {
+                    SampleType::Number
+                },
+                sensor_age: observing_conditions.then(|| property.clone()),
+            },
         }
     }
 }
@@ -107,6 +131,9 @@ impl AlpacaBackend {
                 return Err(invalid("Poll sample keys must be unique and bounded"));
             }
             validate_member(&sample.member)?;
+            if let Some(property) = &sample.sensor_age {
+                validate_member(property)?;
+            }
             encode_parameters(&sample.parameters)?;
         }
         let mut headers = reqwest::header::HeaderMap::new();
@@ -193,6 +220,65 @@ impl AlpacaBackend {
         }
         parse_response(&body, self.transaction, write)
     }
+    async fn read_sample(&mut self, sample: &SampleRequest) -> Result<(Value, f64), SourceError> {
+        // Query age first. If the sensor updates between requests, attributing
+        // the earlier age to the new value is conservative, never rejuvenating.
+        let age = if let Some(property) = &sample.sensor_age {
+            self.request(
+                false,
+                "timesincelastupdate",
+                Values::from([("SensorName".into(), Value::from(property.clone()))]),
+            )
+            .await?
+            .as_f64()
+            .filter(|age| age.is_finite() && *age >= 0.0)
+            .ok_or_else(|| {
+                SourceError::new(ErrorKind::Unavailable, "Sensor has no valid update time")
+            })?
+        } else {
+            0.0
+        };
+        let value = self
+            .request(false, &sample.member, sample.parameters.clone())
+            .await?;
+        let valid = match sample.value_type {
+            SampleType::Boolean => value.is_boolean(),
+            SampleType::Number => value.as_f64().is_some_and(f64::is_finite),
+            SampleType::Text => value.is_string(),
+        };
+        if !valid {
+            return Err(bad_response(false));
+        }
+        Ok((value, age))
+    }
+    async fn collect_samples(&mut self) -> Result<SampleBatch, SourceError> {
+        let mut batch = SampleBatch::default();
+        let mut text_bytes = 0usize;
+        for sample in self.samples.clone() {
+            match self.read_sample(&sample).await {
+                Ok((value, age)) => {
+                    text_bytes += value.as_str().map_or(0, str::len);
+                    if text_bytes > MAX_RESPONSE_BYTES {
+                        return Err(bad_response(false));
+                    }
+                    batch.ages_seconds.insert(sample.key.clone(), age);
+                    batch.values.insert(sample.key, value);
+                }
+                Err(error) => {
+                    // Transport outages and Retry-After apply to the source.
+                    // A rejected sensor/property only removes that measurement.
+                    if self.samples.len() == 1
+                        || error.transport_lost
+                        || matches!(error.kind, ErrorKind::Transient | ErrorKind::Disconnected)
+                    {
+                        return Err(error);
+                    }
+                    batch.errors.insert(sample.key, error);
+                }
+            }
+        }
+        Ok(batch)
+    }
 }
 impl Backend for AlpacaBackend {
     fn connect(&mut self) -> BackendFuture<'_, ()> {
@@ -266,30 +352,15 @@ impl Backend for AlpacaBackend {
     }
     fn poll(&mut self) -> BackendFuture<'_, Values> {
         Box::pin(async {
-            let mut values = Values::new();
-            let mut text_bytes = 0usize;
-            for sample in self.samples.clone() {
-                let value = self
-                    .request(false, &sample.member, sample.parameters)
-                    .await?;
-                let valid = match sample.value_type {
-                    SampleType::Boolean => value.is_boolean(),
-                    SampleType::Number => value.as_f64().is_some_and(f64::is_finite),
-                    SampleType::Text => value.is_string(),
-                };
-                if !valid {
-                    return Err(bad_response(false));
-                }
-                // The scalar polling cache has a total bound too. Camera image
-                // transport will use its separately owned binary buffers.
-                text_bytes += value.as_str().map_or(0, str::len);
-                if text_bytes > MAX_RESPONSE_BYTES {
-                    return Err(bad_response(false));
-                }
-                values.insert(sample.key, value);
+            let batch = self.collect_samples().await?;
+            if let Some(error) = batch.errors.into_values().next() {
+                return Err(error);
             }
-            Ok(values)
+            Ok(batch.values)
         })
+    }
+    fn sample(&mut self) -> BackendFuture<'_, SampleBatch> {
+        Box::pin(self.collect_samples())
     }
     fn reset(&mut self) {
         // Dropping a reqwest future cancels that local request; no serial stream
@@ -397,6 +468,7 @@ fn parse_response(body: &[u8], transaction: u32, write: bool) -> Result<Value, S
         let kind = match number {
             0x400 | 0x40c => ErrorKind::Unsupported,
             0x401 => ErrorKind::InvalidValue,
+            0x402 => ErrorKind::Unavailable,
             0x407 => ErrorKind::Disconnected,
             _ => ErrorKind::Permanent,
         };

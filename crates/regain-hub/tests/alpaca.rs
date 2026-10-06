@@ -421,3 +421,108 @@ async fn actual_http_observations_drive_the_shared_safety_output() {
     drop(output);
     assert!(!status.borrow().is_safe);
 }
+
+#[tokio::test]
+async fn weather_sensor_ages_and_partial_errors_survive_the_http_source_and_output() {
+    use regain_hub::{
+        config::{HubConfig, Measurement, Readout, VirtualDevice, WeatherMetric},
+        safety::MonotonicClock,
+        source::SourceRegistry,
+        weather::WeatherOutput,
+    };
+    let mut server = Server::new(vec![
+        Reply::value(json!(true)),
+        Reply::value(json!(5.0)),
+        Reply::value(json!(12.5)),
+        Reply::json(json!({"ErrorNumber":1024,"ErrorMessage":"pressure missing"})),
+    ])
+    .await;
+    if let SourceBackend::Alpaca { device_type, .. } = &mut server.config.backend {
+        *device_type = DeviceType::ObservingConditions;
+    }
+    let temperature = Readout::Property {
+        source: server.config.id,
+        property: "temperature".into(),
+        unit: None,
+    };
+    let pressure = Readout::Property {
+        source: server.config.id,
+        property: "pressure".into(),
+        unit: None,
+    };
+    let mut config: HubConfig =
+        serde_json::from_str(include_str!("../examples/two-source-safety.json")).unwrap();
+    config.sources = vec![server.config.clone()];
+    config.outputs[0].device = VirtualDevice::Weather {
+        measurements: std::collections::BTreeMap::from([
+            (
+                WeatherMetric::Temperature,
+                Measurement {
+                    sources: vec![temperature.clone()],
+                    maximum_age_seconds: 60.0,
+                    average_seconds: 0.0,
+                },
+            ),
+            (
+                WeatherMetric::Pressure,
+                Measurement {
+                    sources: vec![pressure.clone()],
+                    maximum_age_seconds: 60.0,
+                    average_seconds: 0.0,
+                },
+            ),
+        ]),
+    };
+    let clock = Arc::new(MonotonicClock::default());
+    let registry = Arc::new(
+        SourceRegistry::build(&config, clock.clone(), |source| {
+            Ok(Box::new(AlpacaBackend::new(
+                source,
+                vec![
+                    SampleRequest::readout(&temperature, true),
+                    SampleRequest::readout(&pressure, true),
+                ],
+                None,
+            )?))
+        })
+        .unwrap(),
+    );
+    let output =
+        WeatherOutput::new(&config, config.outputs[0].id, registry.clone(), clock).unwrap();
+    let first = output.connect().await.unwrap();
+    let second = output.connect().await.unwrap();
+    let source = registry.get(server.config.id).unwrap();
+    let mut status = source.status();
+    tokio::time::timeout(Duration::from_secs(3), async {
+        while status.borrow_and_update().sequence == 0 {
+            status.changed().await.unwrap();
+        }
+    })
+    .await
+    .unwrap();
+    for _ in 0..20 {
+        tokio::task::yield_now().await;
+    }
+    let reading = first.read(WeatherMetric::Temperature).unwrap();
+    assert_eq!(reading.value, 12.5);
+    assert!(reading.age_seconds >= 5.0);
+    assert_eq!(
+        first.read(WeatherMetric::Pressure).unwrap_err().kind,
+        ErrorKind::Unavailable
+    );
+    assert_eq!(
+        source.snapshot().sample_errors["pressure"].upstream_code,
+        Some(1024)
+    );
+    assert_eq!(source.snapshot().lease_count, 2);
+    drop(first);
+    for _ in 0..10 {
+        tokio::task::yield_now().await;
+    }
+    assert_eq!(source.snapshot().lease_count, 1);
+    assert_eq!(second.read(WeatherMetric::Temperature).unwrap().value, 12.5);
+    let requests = server.fixture.requests.lock().unwrap();
+    assert_eq!(requests.len(), 4);
+    assert!(requests[1].1.contains("SensorName=temperature"));
+    assert!(requests[3].1.contains("SensorName=pressure"));
+}

@@ -169,6 +169,11 @@ pub enum Readout {
         source: Uuid,
         /// Upstream channel number, not this output's channel number.
         channel: u32,
+        /// Explicit unit of an upstream channel, needed for weather mappings.
+        /// No conversion is performed; use the target metric's canonical unit.
+        #[serde(default)]
+        #[schemars(length(max = 80))]
+        unit: Option<String>,
     },
     /// # Device property
     /// Read a scalar property such as temperature from a compatible source.
@@ -178,6 +183,11 @@ pub enum Readout {
         /// Lowercase property name advertised by the source, for example temperature.
         #[schemars(length(min = 1, max = 80), regex(pattern = "^[a-z]+$"))]
         property: String,
+        /// Unit assertion for a property without standard unit metadata.
+        /// A standard property's known unit cannot be overridden.
+        #[serde(default)]
+        #[schemars(length(max = 80))]
+        unit: Option<String>,
     },
 }
 impl Readout {
@@ -207,6 +217,7 @@ pub struct SwitchChannel {
     #[schemars(extend("readOnly" = true))]
     pub id: Uuid,
     /// Persisted output channel number. It does not change when channels are reordered.
+    #[schemars(range(max = 1023))]
     #[schemars(extend("x-regain" = {"immutableAfterCreate":true}))]
     pub number: u32,
     /// Name shown to clients for this channel.
@@ -258,7 +269,9 @@ pub struct Measurement {
     /// Hard sample age limit. An expired sample is unavailable and may trigger fallback.
     #[schemars(range(min = 0.1, max = MAX_HISTORY_SECONDS), extend("x-regain" = {"units":"s"}))]
     pub maximum_age_seconds: f64,
-    /// Averaging interval; zero returns the latest fresh sample. Changing source clears history.
+    /// Averaging interval; zero returns the latest fresh sample. All non-gust metrics
+    /// in an output use the same interval. Source changes clear history; wind gust
+    /// preserves the upstream three-second peak over two minutes without re-averaging.
     #[schemars(range(min = 0.0, max = MAX_HISTORY_SECONDS), extend("x-regain" = {"units":"s"}))]
     pub average_seconds: f64,
 }
@@ -516,6 +529,32 @@ pub fn normalized_url(input: &str) -> Result<String, &'static str> {
 }
 
 impl HubConfig {
+    /// Include retired slots so clients never shift channel identities after an
+    /// edit. Gaps are exposed as unavailable, read-only tombstones.
+    pub fn switch_slot_count(&self, output: Uuid) -> u32 {
+        let active = self
+            .outputs
+            .iter()
+            .find(|item| item.id == output)
+            .into_iter()
+            .flat_map(|item| match &item.device {
+                VirtualDevice::Switch { channels } => channels
+                    .iter()
+                    .map(|channel| channel.number)
+                    .collect::<Vec<_>>(),
+                _ => vec![],
+            });
+        active
+            .chain(
+                self.identities
+                    .channels
+                    .values()
+                    .filter(|channel| channel.output == output)
+                    .map(|channel| channel.number),
+            )
+            .max()
+            .map_or(0, |number| number.saturating_add(1))
+    }
     pub fn empty() -> Self {
         Self {
             schema_version: SCHEMA_VERSION,
@@ -556,6 +595,18 @@ impl HubConfig {
         }
         if self.instance_id.is_nil() {
             error("instanceId".into(), "identity", "Instance ID cannot be nil");
+        }
+        if self
+            .identities
+            .channels
+            .values()
+            .any(|channel| channel.number >= MAX_SWITCH_CHANNELS as u32)
+        {
+            error(
+                "identities.channels".into(),
+                "range",
+                "Retired switch slots must stay within the supported channel range",
+            );
         }
         if self.sources.len() > MAX_DEVICES || self.outputs.len() > MAX_DEVICES {
             error(
@@ -742,6 +793,7 @@ impl HubConfig {
                         if channel.id.is_nil()
                             || !ids.insert(channel.id)
                             || !channel_numbers.insert(channel.number)
+                            || channel.number >= MAX_SWITCH_CHANNELS as u32
                         {
                             error(
                                 format!("{path}.id"),
@@ -759,24 +811,31 @@ impl HubConfig {
                                 "Channel label/units are missing or too long",
                             );
                         }
-                        if !channel.minimum.is_finite()
-                            || !channel.maximum.is_finite()
-                            || !channel.step.is_finite()
-                            || channel.minimum > channel.maximum
-                            || channel.step <= 0.0
+                        if crate::switch::Grid::new(channel.minimum, channel.maximum, channel.step)
+                            .is_err()
                         {
                             error(
                                 path.clone(),
                                 "range",
-                                "Use finite ordered bounds and a positive step",
+                                "Use finite increasing bounds spanning whole positive steps",
                             );
                         }
                         for e in self.validate_readout(&channel.readout) {
                             error(format!("{path}.readout"), &e.code, &e.message);
                         }
+                        if channel.writable && matches!(channel.readout, Readout::Property { .. }) {
+                            error(
+                                format!("{path}.writable"),
+                                "capability",
+                                "Scalar property gauges are read-only",
+                            );
+                        }
                     }
                 }
                 VirtualDevice::Weather { measurements } => {
+                    for e in crate::weather::validate_measurements(self, measurements) {
+                        error(format!("{p}.device.{}", e.path), &e.code, &e.message);
+                    }
                     if measurements.is_empty() {
                         error(
                             format!("{p}.device.measurements"),
@@ -883,7 +942,22 @@ impl HubConfig {
         errors
     }
     fn validate_readout(&self, readout: &Readout) -> Vec<FieldError> {
+        let unit = match readout {
+            Readout::Channel { unit, .. } | Readout::Property { unit, .. } => unit,
+        };
+        if unit.as_ref().is_some_and(|unit| unit.chars().count() > 80) {
+            return vec![FieldError::new(
+                "unit",
+                "range",
+                "Unit labels are limited to 80 characters",
+            )];
+        }
         match readout {
+            Readout::Channel { channel, .. } if *channel > 32766 => vec![FieldError::new(
+                "",
+                "range",
+                "ASCOM channel IDs must fit the Switch interface range",
+            )],
             Readout::Channel { source, .. }
                 if self.source_type(*source) != Some(DeviceType::Switch) =>
             {
@@ -893,7 +967,9 @@ impl HubConfig {
                     "Channel readouts require a Switch source",
                 )]
             }
-            Readout::Property { source, property } => {
+            Readout::Property {
+                source, property, ..
+            } => {
                 if self.source_type(*source).is_none()
                     || property.is_empty()
                     || property.len() > 80

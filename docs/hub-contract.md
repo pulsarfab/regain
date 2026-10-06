@@ -102,6 +102,48 @@ the maximum safe age. Recovery requires both count and hold, and only a new
 eligible safe observation can establish permission. Aggregation is AND with no
 additional hidden debounce. See the plan for defaults and failure behavior.
 
+## Switch and weather controller semantics
+
+Switch numbers are bounded stable slots, not positions in the active channel list.
+MaxSwitch includes retired slots; a removed slot has a placeholder name, is
+read-only, and returns unavailable for its value. Numeric writes must be inside
+the configured range, are rounded to the nearest configured step as ASCOM
+specifies, and must also fit the source's live range/step and CanWrite response.
+Property gauges cannot be made writable. Boolean false maps to the channel
+minimum; true maps to its maximum. A source generation check at dispatch prevents
+using capability evidence from a retired connection. Every command has a distinct
+control owner, even when two calls originate from one frontend session.
+
+Weather freshness includes upstream TimeSinceLastUpdate for ObservingConditions
+inputs, measured conservatively from the local batch request start. Other scalar
+sources report the age of Regain's read; this does not imply an unavailable
+upstream sensor timestamp. Each metric chooses its first fresh valid source.
+Sensor-specific failures are independent; a transport failure still affects the
+source. Last-update diagnostics retain elapsed age after expiry; unavailable data
+is never silently reported as a fresh value.
+
+Known property units cannot be overridden. For channels or unknown properties,
+the readout must declare a canonical unit before use as weather. Temperature is
+°C, pressure hPa, rain rate mm/h, sky brightness lux, sky quality mag/arcsec²,
+star FWHM arcsec, direction deg, wind speeds m/s, and cloud/humidity percent.
+No implicit conversions or dew-point derivation occur. Humidity/dew point are a
+pair; direction requires wind speed so calm returns zero. WindGust currently
+requires an ObservingConditions windgust source, preserving its three-second
+peak over two minutes instead of pretending an arbitrary gauge has that meaning.
+
+ASCOM has one AveragePeriod (hours) per output. Configured non-gust measurement
+intervals must agree; runtime changes are shared by that output's clients and
+restart restores its configured value. Zero is instantaneous. Nonzero averages
+are time-weighted over a bounded history, with a circular mean for direction and
+an explicit unavailable result for an undefined circular mean. Early averages use
+the available observations; getters never insert duplicate samples. Fallback,
+generation changes, and observation gaps clear history. WindGust passes through
+its source statistic without a second averaging step.
+
+These are controller contracts, not evidence of completed interface conformance.
+Source polling budgets, Refresh, frontend translations, and large/slow-source
+acceptance must be verified when wiring the actual frontends.
+
 ## Windows COM and interface baseline
 
 Use one `Regain.Hub.ASCOM` project/executable with import-worker and output-server

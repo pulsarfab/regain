@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "revision": "30000000-0000-0000-0000-000000000001",
+  "instanceId": "30000000-0000-0000-0000-000000000002",
+  "sources": [
+    {
+      "id": "30000000-0000-0000-0000-000000000011",
+      "label": "Example weather station",
+      "backend": {
+        "kind": "alpaca", "baseUrl": "http://127.0.0.1:32301/",
+        "deviceType": "observingconditions", "deviceNumber": 0
+      }
+    },
+    {
+      "id": "30000000-0000-0000-0000-000000000012",
+      "label": "Example backup temperature sensor",
+      "backend": { "kind": "native", "device": "fc3", "identity": "EXAMPLE-FOCUSER-SERIAL" }
+    }
+  ],
+  "outputs": [
+    {
+      "id": "30000000-0000-0000-0000-000000000101",
+      "number": 0, "label": "Example combined weather",
+      "device": {
+        "kind": "weather",
+        "measurements": {
+          "temperature": {
+            "sources": [
+              { "kind": "property", "source": "30000000-0000-0000-0000-000000000011", "property": "temperature" },
+              { "kind": "property", "source": "30000000-0000-0000-0000-000000000012", "property": "temperature", "unit": "°C" }
+            ],
+            "maximumAgeSeconds": 90,
+            "averageSeconds": 30
+          },
+          "pressure": {
+            "sources": [
+              { "kind": "property", "source": "30000000-0000-0000-0000-000000000011", "property": "pressure" }
+            ],
+            "maximumAgeSeconds": 90,
+            "averageSeconds": 30
+          }
+        }
+      }
+    }
+  ]
+}

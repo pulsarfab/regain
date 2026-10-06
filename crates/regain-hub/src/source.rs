@@ -18,6 +18,22 @@ use tokio::{
 use uuid::Uuid;
 
 pub type Values = BTreeMap<String, Value>;
+/// A failed measurement does not invalidate unrelated readings from the same
+/// device. Ages are upstream sensor ages at request time, not HTTP cache ages.
+#[derive(Clone, Debug, Default)]
+pub struct SampleBatch {
+    pub values: Values,
+    pub errors: BTreeMap<String, SourceError>,
+    pub ages_seconds: BTreeMap<String, f64>,
+}
+impl From<Values> for SampleBatch {
+    fn from(values: Values) -> Self {
+        Self {
+            values,
+            ..Self::default()
+        }
+    }
+}
 pub type BackendFuture<'a, T> = Pin<Box<dyn Future<Output = Result<T, SourceError>> + Send + 'a>>;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -30,6 +46,7 @@ pub enum ErrorKind {
     Uncertain,
     Unsupported,
     InvalidValue,
+    Unavailable,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -86,6 +103,9 @@ pub trait Backend: Send {
     fn read(&mut self, member: String, parameters: Values) -> BackendFuture<'_, Value>;
     fn write(&mut self, member: String, parameters: Values) -> BackendFuture<'_, Value>;
     fn poll(&mut self) -> BackendFuture<'_, Values>;
+    fn sample(&mut self) -> BackendFuture<'_, SampleBatch> {
+        Box::pin(async { self.poll().await.map(SampleBatch::from) })
+    }
     fn reset(&mut self);
 }
 
@@ -97,8 +117,11 @@ pub struct SourceSnapshot {
     pub generation: Uuid,
     pub sequence: u64,
     pub transport_connected: bool,
+    pub write_uncertain: bool,
     pub lease_count: usize,
     pub values: Values,
+    pub sample_errors: BTreeMap<String, SourceError>,
+    pub sample_ages_seconds: BTreeMap<String, f64>,
     pub sampled_at_seconds: Option<f64>,
     pub error: Option<SourceError>,
 }
@@ -138,6 +161,7 @@ enum Command {
     },
     Write {
         lease: Uuid,
+        expected_generation: Option<Uuid>,
         member: String,
         parameters: Values,
         reply: Reply<Value>,
@@ -234,8 +258,11 @@ impl SourceHandle {
             generation: Uuid::new_v4(),
             sequence: 0,
             transport_connected: false,
+            write_uncertain: false,
             lease_count: 0,
             values: Values::new(),
+            sample_errors: BTreeMap::new(),
+            sample_ages_seconds: BTreeMap::new(),
             sampled_at_seconds: None,
             error: None,
         };
@@ -322,9 +349,19 @@ impl SourceHandle {
         member: &str,
         parameters: Values,
     ) -> Result<Value, SourceError> {
+        self.write_fenced(lease, member, parameters, None).await
+    }
+    pub async fn write_fenced(
+        &self,
+        lease: Uuid,
+        member: &str,
+        parameters: Values,
+        expected_generation: Option<Uuid>,
+    ) -> Result<Value, SourceError> {
         let (reply, response) = oneshot::channel();
         self.enqueue(Command::Write {
             lease,
+            expected_generation,
             member: member.into(),
             parameters,
             reply,
@@ -363,6 +400,7 @@ impl Actor {
         Duration::from_secs_f64(self.policy.request_timeout_seconds)
     }
     fn publish(&mut self) {
+        self.state.write_uncertain = self.write_uncertain;
         self.state.lease_count = self.leases.len();
         self.snapshot.send_replace(self.state.clone());
     }
@@ -372,6 +410,8 @@ impl Actor {
         self.state.generation = Uuid::new_v4();
         self.state.sequence = 0;
         self.state.values.clear();
+        self.state.sample_errors.clear();
+        self.state.sample_ages_seconds.clear();
         self.state.sampled_at_seconds = None;
         self.backend.reset();
         self.publish();
@@ -390,6 +430,8 @@ impl Actor {
                 self.state.generation = Uuid::new_v4();
                 self.state.sequence = 0;
                 self.state.values.clear();
+                self.state.sample_errors.clear();
+                self.state.sample_ages_seconds.clear();
                 self.state.sampled_at_seconds = None;
                 self.state.error = None;
                 self.publish();
@@ -408,6 +450,8 @@ impl Actor {
         }
         self.state.transport_connected = false;
         self.state.values.clear();
+        self.state.sample_errors.clear();
+        self.state.sample_ages_seconds.clear();
         self.state.sampled_at_seconds = None;
         self.state.generation = Uuid::new_v4();
         self.state.sequence = 0;
@@ -562,6 +606,7 @@ impl Actor {
             }
             Command::Write {
                 lease,
+                expected_generation,
                 member,
                 parameters,
                 reply,
@@ -575,6 +620,15 @@ impl Actor {
                     Ok(()) => match self.connect().await {
                         Err(e) => Err(e),
                         Ok(()) => {
+                            if expected_generation
+                                .is_some_and(|generation| generation != self.state.generation)
+                            {
+                                let _ = reply.send(Err(SourceError::new(
+                                    ErrorKind::Unavailable,
+                                    "Source generation changed before dispatch",
+                                )));
+                                return;
+                            }
                             dispatched = true;
                             timeout(self.deadline(), self.backend.write(member, parameters))
                                 .await
@@ -602,6 +656,14 @@ impl Actor {
                     // making the command ambiguous.
                     self.fault(error.clone());
                 }
+                if dispatched && result.is_ok() {
+                    // A successful command can change the cached device state.
+                    // Confirm with a new poll instead of reporting the old value
+                    // or inventing an optimistic value for an asynchronous device.
+                    self.state.sampled_at_seconds = None;
+                    self.next_poll = Some(Instant::now());
+                    self.publish();
+                }
                 let _ = reply.send(result);
             }
         }
@@ -611,7 +673,7 @@ impl Actor {
         self.attempt += 1;
         let result = match self.connect().await {
             Err(e) => Err(e),
-            Ok(()) => timeout(self.deadline(), self.backend.poll())
+            Ok(()) => timeout(self.deadline(), self.backend.sample())
                 .await
                 .unwrap_or_else(|_| Err(SourceError::timeout())),
         };
@@ -637,12 +699,14 @@ impl Actor {
             sequence: self.state.sequence,
             started,
             received,
-            result: result.clone(),
+            result: result.clone().map(|batch| batch.values),
             cycle_exhausted: exhausted,
         };
         match &result {
-            Ok(values) => {
-                self.state.values = values.clone();
+            Ok(batch) => {
+                self.state.values = batch.values.clone();
+                self.state.sample_errors = batch.errors.clone();
+                self.state.sample_ages_seconds = batch.ages_seconds.clone();
                 self.state.sampled_at_seconds = Some(started.as_secs_f64());
                 self.state.error = None;
                 self.backoff_failures = 0;

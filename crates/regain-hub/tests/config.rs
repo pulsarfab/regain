@@ -18,7 +18,11 @@ fn invalid(config: &HubConfig, code: &str) {
 
 #[test]
 fn examples_validate_and_preserve_ids_on_roundtrip_and_reorder() {
-    for config in [safety(), switches()] {
+    for config in [
+        safety(),
+        switches(),
+        serde_json::from_str(include_str!("../examples/mixed-weather.json")).unwrap(),
+    ] {
         assert!(config.validate().is_empty(), "{:?}", config.validate());
         let store = ConfigStore::new(None, config).unwrap();
         let before = store.snapshot();

@@ -280,11 +280,31 @@ Connect/Disconnect negotiation still need implementation and conformance tests.
 The host's protected credential provider is also pending; the adapter only
 accepts resolved credentials and refuses an unresolved reference.
 
-Next: implement typed Switch/ObservingConditions controllers (including partial
-weather measurement failures), native worker adapters, and shared host IPC; then
-connect the first three virtual classes to the existing Alpaca server/setup UI.
-Generic scalar polling does not establish camera image or acquisition support.
-No milestone 2 checkbox or frontend/hardware gate is closed by this checkpoint.
+Typed Switch and ObservingConditions controllers now have local tests. Switch
+slots include unavailable tombstones for removed channels, preserve provenance,
+and check source write permissions/bounds before dispatch. Writes are rounded to
+the ASCOM step, protected by exclusive control, fenced at actual dispatch, and
+followed by a fresh poll. Cancellation releases only that operation's lease.
+Weather selects/fails over per metric using explicit units and source ages;
+partial sensor errors do not erase unrelated measurements. Its bounded history
+uses time-weighted averages and circular wind direction; changing source or
+generation clears history. The shared schema includes optional source unit
+assertions, and the mixed-weather example passes configuration/round-trip tests.
+
+Refinements from interface review: one AveragePeriod applies to an entire weather
+output (excluding the already-defined upstream WindGust statistic); humidity and
+dew point must be configured together; wind direction requires wind speed for
+calm reporting. Unknown-unit channel mappings require an explicit canonical unit;
+there are no implicit conversions. Removed switch slots stay within a bounded
+0–1023 range, including the persisted identity history.
+
+Next: review polling budgets for multi-property sources under latency (the current
+actor deadline covers the whole poll batch), complete capability/connection
+negotiation, add native worker adapters and shared host IPC, then connect the
+first three virtual classes to the existing Alpaca server/setup UI. Refresh,
+frontend error translation, and protocol conformance remain unverified. Generic
+scalar polling does not establish camera image or acquisition support. No complete
+milestone 2 or frontend/hardware gate is closed by these library controllers.
 
 ### 3. Windows imports and native NINA — first useful release
 
@@ -357,3 +377,4 @@ Keep existing device profiles and registrations compatible throughout migration.
 | 2026-10-05 | Checked minimum Rust version and crate distribution independently of the application. | `cargo +1.89.0 check -p regain-hub --all-targets --locked`, `cargo package -p regain-hub --allow-dirty --locked`, formatting and diff checks passed. Package contains both executable config fixtures and its license. |
 | 2026-10-05 | Completed milestone 1's generated configuration description and shared setup readers. Corrected schema/backend Unicode label counting and locked existing device numbers in the readers. | 28 Rust tests, 4 independent schema tests, JavaScript contract tests, 2 native .NET contract tests, net48 build, Clippy, and Rust 1.89.0 check passed. Next: shared source registry, polling/transport adapters, then the Alpaca vertical slice. PR #21 remains draft; all later gates remain required. |
 | 2026-10-05 | Added shared source actors/registry, bounded Alpaca transport, and safety output subscriptions with independent leases and policies. Reviewed cancellation, connection ownership, retry delays, ambiguous writes, malformed responses, and event loss. | 50 Rust tests now cover the foundation plus actor/network/safety integration. Clippy, Rust 1.89.0 check, standalone package verification, and generated-contract freshness passed. Next: typed switch/weather controllers, native workers, host IPC, and Alpaca publication. Full original milestones 2–5 remain required. |
+| 2026-10-05 | Added typed switch/weather controllers, scalar sample status, unit assertions, cancellation-safe leases, partial sensor failures, and dispatch generation checks. Refined stable slots and weather averaging against the ASCOM interfaces. | 63 Rust tests pass, including mixed switch controls/gauges, cancellation, step/permission checks, tombstones, weather freshness/fallback/averaging, and HTTP weather source sharing. Updated schema passes web, independent JSON Schema, and native .NET readers. Next: poll scheduling/budgets, capability negotiation, native adapters, and host IPC before frontend/conformance gates. |

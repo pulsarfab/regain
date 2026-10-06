@@ -130,3 +130,50 @@ adapters, protected credential resolution, process ownership/IPC and resume,
 Alpaca setup/publication, COM imports, NINA/ASCOM outputs, broader proxies and
 camera coordination, conformance, hardware trials, and user documentation. These
 tests use simulated devices and a local HTTP fixture, not attached hardware.
+
+## 2026-10-05: typed switch/weather controllers and scalar sample status
+
+Reviewed against the ASCOM canonical [Switch](https://ascom-standards.org/newdocs/switch.html)
+and [ObservingConditions](https://ascom-standards.org/newdocs/observingconditions.html)
+interfaces. These are library controllers; frontend conformance is still pending.
+
+Corrections and refinements:
+
+1. Stable channel IDs cannot be represented by compacting an active channel list.
+   MaxSwitch now includes retired slots; removed slots are unavailable and never
+   target a different device. Active and historical slot numbers are bounded.
+2. An output's writable flag cannot confer source capability. Writes check
+   CanWrite and live limits/steps, round to the exposed step, and hold a unique
+   operation lease. Scalar properties remain read-only. Generation checks occur
+   inside the actor immediately before dispatch, not only in the caller.
+3. Cancelling a write must release its control/connection lease without replaying
+   it. Cancellation tests exposed that reconnect could hide uncertainty behind a
+   metadata error. The uncertainty latch is now explicit in source status and
+   survives successful reads/reconnects while any session remains connected.
+4. Successful writes invalidate cached state and schedule a confirmation poll;
+   they never publish an optimistic value or report pre-command state as current.
+5. A missing sensor previously failed a whole multi-property poll. Sample batches
+   now carry per-property errors/ages. An HTTP test verifies one failed pressure
+   sensor alongside a usable temperature and two shared weather clients.
+6. Treating every HTTP read as a new sensor update would rejuvenate stale weather.
+   ObservingConditions samples query sensor age before the value, reject unknown
+   ages, and add local elapsed time. Expiry/fallback preserve last-update age.
+7. Averaging incompatible units or two fallback sensors would fabricate a result.
+   Unit validation, history reset on source/generation changes, time weighting,
+   and circular wind averaging now have tests. WindGust retains its upstream peak
+   statistic. Humidity/dew point pairing and one output-wide averaging period are
+   validated before configuration apply. Boolean/nonfinite weather readings fail.
+8. Multiplying a large finite sample by its duration could overflow before division.
+   Normalize weights first, and reject any nonfinite result. Tests include large
+   finite values and confirm repeated getters do not grow history.
+
+Verification: 63 Rust tests (19 unit, 10 config, 13 source/safety, 9 HTTP,
+6 switch, 6 weather), Clippy with warnings denied, Rust 1.89 compatibility,
+generated schema freshness, 4 independent schema tests, JavaScript reader tests,
+and 2 native .NET reader tests. The mixed-weather example joins executable
+configuration fixtures. All device I/O here uses simulation or loopback HTTP.
+
+Outstanding review work: whole-batch polling budgets need latency/large-source
+testing before frontend exposure; capability/connection negotiation, Refresh,
+native worker transport, protected credential resolution, host IPC/resume,
+frontend error mappings, conformance and hardware acceptance remain open.
