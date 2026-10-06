@@ -431,8 +431,18 @@ shutdown, and apply quiescence. Production-host tests exercise nested switch wri
 and configuration replacement after all internal leases drain. Frontend and
 conformance gates remain open.
 
-Next: implement frontend attachment, then connect the first
-three virtual classes to the existing Alpaca server/setup UI. Frontend error
+The Rust frontend client and `--hub-attach` helper now provide bounded multiplexed
+requests and explicit shared-host attachment. Tests cover out-of-order replies,
+cancelled callers, uncertain writes, malformed frames, resource release, and
+production-process restart. Windows launch disables handle inheritance after a
+test exposed capture pipes surviving the launcher. Two clients share one host;
+host loss requires a new session, and a held ownership lock never causes an
+automatic replacement. Local validation passes 177 hub tests plus the endpoint
+fixture, 18 Alpaca tests, Clippy, Rust 1.89.0, schema freshness, and fresh package
+verification. These APIs still need adoption in the actual frontends.
+
+Next: connect the first three virtual classes to the existing Alpaca server/setup
+UI and implement the native frontend client. Frontend error
 translation and protocol conformance remain unverified. Generic
 scalar polling does not establish camera image or acquisition support. No complete
 milestone 2 or frontend/hardware gate is closed by these library controllers.
@@ -523,3 +533,4 @@ Keep existing device profiles and registrations compatible throughout migration.
 | 2026-10-05 | Added bounded setup inspection through shared source leases, Switch pagination and range validation, weather/safety probes, native property reuse, generation-fenced reads, shared request metadata, and IPC retry-delay reporting. | 152 Windows hub tests plus process fixtures and 14 Alpaca tests pass, including faults/cancellation/deadlines, apply exclusion, real managed Alpaca connection sharing, IPC, and seven simulated production workers. Clippy, Rust 1.89.0, contract freshness, and package verification pass. Credential storage passed all four portable CI platforms; setup inspection still awaits CI. Next: virtual/simulated sources, frontend attachment/publication, broader capability contracts, and all remaining original milestones. |
 | 2026-10-05 | Added explicit simulated Switch, SafetyMonitor, and Weather sources, typed shared test controls, visible simulation status, and a runnable observatory example. Fixed the safety consumer startup generation race found by the new tests. | 160 Windows hub tests plus process fixtures and 15 Alpaca tests pass, including shared values, atomic validation, uncertain writes, stale/absent sensors, safety failures, and production-host restart. Clippy, Rust 1.89.0, schema freshness, and fresh package verification pass. Next: virtual sources and frontend attachment/publication; original milestones 2–5 and final acceptance remain open. |
 | 2026-10-05 | Added local virtual sources with shared typed operation dispatch, transitive simulation marking, retained scalar ages, and safety evidence timestamps. Fixed cached safe evidence seeding newly connected policies. | 169 hub tests plus process fixtures and 16 Alpaca tests pass, including nested commands/uncertainty, age/confirmation/expiry, cycle rejection, cancellation and reference cleanup, and production-host apply after internal lease drain. Clippy, Rust 1.89.0, contract freshness, and package verification pass. Next: frontend attachment and Alpaca publication; original milestones 2–5 and final acceptance remain open. |
+| 2026-10-05 | Added the bounded Rust frontend IPC client and shared-host attachment helper. Reviewed cancellation, uncertain writes, protocol limits, explicit reattachment, and launcher lifetime; corrected inherited Windows capture handles. | 177 Windows hub tests plus the endpoint fixture and 18 Alpaca tests pass, along with Clippy, Rust 1.89.0, schema freshness, and fresh package verification. Next: actual Alpaca/native frontend adoption, setup, and remaining original milestones. No frontend or hardware gate is closed by the client library alone. |

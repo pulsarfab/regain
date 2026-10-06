@@ -15,6 +15,164 @@ fn command() -> Command {
     command
 }
 
+// This guard is only used for PIDs returned by this test's successful fresh
+// attachment launch. Production frontends must not kill the shared host.
+struct StartedHost(u32);
+impl Drop for StartedHost {
+    fn drop(&mut self) {
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            let _ = std::process::Command::new("taskkill")
+                .args(["/F", "/PID", &self.0.to_string()])
+                .creation_flags(0x08000000)
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status();
+        }
+        #[cfg(unix)]
+        {
+            let _ = std::process::Command::new("kill")
+                .args(["-TERM", &self.0.to_string()])
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status();
+        }
+    }
+}
+async fn attach(path: &Path) -> Value {
+    let result = tokio::time::timeout(
+        Duration::from_secs(15),
+        command()
+            .arg("--hub-attach")
+            .arg("--hub-config")
+            .arg(path)
+            .output(),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    serde_json::from_slice(&result.stdout).unwrap()
+}
+
+#[tokio::test]
+async fn frontend_attachment_launches_one_shared_host_and_explicit_reconnect_gets_a_new_session() {
+    use regain_hub::{
+        client::{Client, ClientError, ClientLimits},
+        ipc::Command as Rpc,
+    };
+    let dir = tempfile::Builder::new()
+        .prefix("regain hub \u{03bb} ")
+        .tempdir()
+        .unwrap();
+    let path = dir.path().join("hub.json");
+    let config = HubConfig::empty();
+    std::fs::write(&path, serde_json::to_vec(&config).unwrap()).unwrap();
+    let first = attach(&path).await;
+    let started = StartedHost(
+        first["startedProcessId"]
+            .as_u64()
+            .unwrap()
+            .try_into()
+            .unwrap(),
+    );
+    let endpoint = Endpoint::for_config(&path).unwrap();
+    assert_eq!(first["address"], endpoint.address().to_str().unwrap());
+    let a = Client::connect(
+        &endpoint,
+        config.instance_id,
+        Duration::from_secs(5),
+        ClientLimits::default(),
+    )
+    .await
+    .unwrap();
+    let b = Client::connect(
+        &endpoint,
+        config.instance_id,
+        Duration::from_secs(5),
+        ClientLimits::default(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(first["hostInstance"], a.hello().host_instance.to_string());
+    assert_eq!(a.hello().host_instance, b.hello().host_instance);
+    assert_ne!(a.hello().client_id, b.hello().client_id);
+    let next = attach(&path).await;
+    assert!(next["startedProcessId"].is_null());
+    assert_eq!(first["hostInstance"], next["hostInstance"]);
+    a.close();
+    drop(a);
+    assert_eq!({ b.request(Rpc::ListDevices {}) }.await.unwrap(), json!([]));
+    drop(started);
+    tokio::time::timeout(Duration::from_secs(5), b.closed())
+        .await
+        .unwrap();
+    // Unix closes clients before the graceful source drain releases ownership.
+    // A replacement may start only after that owner has actually exited.
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while endpoint.try_lock().unwrap().is_none() {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap();
+    assert!(matches!(
+        { b.request(Rpc::ListDevices {}) }.await,
+        Err(ClientError::Disconnected)
+    ));
+    let restarted = attach(&path).await;
+    let _started = StartedHost(
+        restarted["startedProcessId"]
+            .as_u64()
+            .unwrap()
+            .try_into()
+            .unwrap(),
+    );
+    assert_ne!(first["hostInstance"], restarted["hostInstance"]);
+    let c = Client::connect(
+        &endpoint,
+        config.instance_id,
+        Duration::from_secs(5),
+        ClientLimits::default(),
+    )
+    .await
+    .unwrap();
+    assert_ne!(b.hello().host_instance, c.hello().host_instance);
+    assert_ne!(b.hello().client_id, c.hello().client_id);
+    assert_eq!(c.request(Rpc::ListDevices {}).await.unwrap(), json!([]));
+    c.close();
+}
+
+#[tokio::test]
+async fn attachment_waits_for_a_held_owner_instead_of_starting_a_replacement() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("hub.json");
+    std::fs::write(&path, serde_json::to_vec(&HubConfig::empty()).unwrap()).unwrap();
+    let endpoint = Endpoint::for_config(&path).unwrap();
+    let owner = endpoint.try_lock().unwrap().unwrap();
+    let result = tokio::time::timeout(
+        Duration::from_secs(15),
+        command()
+            .arg("--hub-attach")
+            .arg("--hub-config")
+            .arg(&path)
+            .output(),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert!(!result.status.success());
+    assert!(String::from_utf8_lossy(&result.stderr).contains("no automatic restart was attempted"));
+    assert!(endpoint.try_lock().unwrap().is_none());
+    drop(owner);
+    assert!(endpoint.try_lock().unwrap().is_some());
+}
+
 async fn request(stream: &mut regain_hub::endpoint::LocalStream, id: u64, command: Value) -> Value {
     let reply = reply(stream, id, command).await;
     assert!(reply.get("error").is_none(), "{reply}");
@@ -560,6 +718,20 @@ async fn actual_hub_executable_probes_an_existing_owner_and_recovers_after_proce
 #[tokio::test]
 async fn hub_mode_rejects_ambiguous_options_and_invalid_configuration() {
     for args in [
+        vec!["--hub-attach"],
+        vec![
+            "--hub-attach",
+            "--hub-host",
+            "--hub-config",
+            "relative.json",
+        ],
+        vec![
+            "--hub-attach",
+            "--simulate",
+            "--hub-config",
+            "relative.json",
+        ],
+        vec!["--hub-attach", "--stdio", "--hub-config", "relative.json"],
         vec!["--hub-host"],
         vec!["--hub-config", "relative.json"],
         vec!["--hub-host", "--hub-config", "relative.json"],

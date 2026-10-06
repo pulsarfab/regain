@@ -67,8 +67,8 @@ registry before allowing the next runtime to open its sources.
 These runtime contracts have local lifecycle/fault tests. Scalar framing and
 dispatch now use this runtime through a host-supplied stream. Protected local
 endpoints and OS ownership locks are implemented separately below. The executable
-host and configuration replacement are integrated; frontend launch/attach and
-resume handling remain open.
+host and configuration replacement are integrated. A Rust client and attachment
+helper are implemented below; frontend adoption and resume handling remain open.
 
 Use the existing convention: little-endian 32-bit JSON length followed by UTF-8
 JSON; responses may carry separately bounded binary image data. Version the hub
@@ -172,13 +172,52 @@ Dropping a service waiter requests shutdown through an independent supervisor;
 the Tokio runtime must stay alive until its cleanup completes. Cleanup failures
 remain visible and are not replayed. Last-lease cleanup and later actor shutdown
 share one disconnect result; a genuinely new connection starts a new cleanup
-lifetime. Frontend automatic launch/attach and reconnection remain pending.
+lifetime. Frontends must explicitly attach and reacquire leases after connection
+loss; the client never replays commands.
 
 Windows tests cover anonymous denial,
 permissive-storage rejection, cross-process contention/crash recovery, and actual
 IPC. Endpoint commit `0c8bfe7` also passed Linux x64/ARM64 and macOS Intel/ARM64 CI,
 including Unix permission/link/socket-cleanup fixtures. The host integration's
 portable checks are separate and must pass before this checkpoint is complete.
+
+### Frontend attachment and Rust client
+
+`regain-alpaca --hub-attach --hub-config ABSOLUTE_PATH [--workers DIRECTORY]`
+finds or launches the shared host and prints one JSON attachment record. It
+requires an existing valid configuration and accepts no HTTP, stdio, or simulation
+options. Explicit simulated sources belong in the configuration. A held ownership
+lock causes a bounded readiness wait, never a replacement launch. Concurrent
+launch candidates arbitrate through the host's existing OS lock before creating
+source actors. Readiness failure does not trigger another launch or kill an owner.
+
+The record contains protocol, hub/host/revision identities, transport and endpoint
+address. Its optional `startedProcessId` identifies a candidate, not ownership:
+that process may have lost a startup race. Never kill it on frontend disconnect.
+The readiness connection ends before the helper exits. Each frontend opens its
+own private connection, checks OS ownership/permissions, and performs hello again.
+Endpoint metadata alone does not authenticate the peer.
+
+Windows launch uses a hidden process with handle inheritance disabled, including
+capture pipes unrelated to its standard handles. Arguments preserve spaces and
+Unicode without a shell. Unix uses null standard streams and a separate process
+group. The host outlives launchers and must not enter a frontend's kill-on-exit
+worker job. Application shutdown closes its own client, not the shared host.
+
+`regain_hub::client::Client` verifies hello identity and negotiated limits, bounds
+encoding and in-flight requests, and correlates out-of-order replies. Request
+deadlines include queue/write/reply time. Partial-frame and write deadlines are
+separate; idle established streams remain valid. Cancellation before dispatch
+skips the command; cancellation after dispatch retains its slot until reply or
+connection failure. Mutating requests handed to the writer report uncertainty
+after transport loss and are never replayed. Protocol failures, unknown/duplicate
+reply IDs, deadlines, and EOF make the connection terminal. Dropping the last
+client closes both transport halves so stream-owned leases can drain.
+
+Explicit reattachment negotiates new host/client identities. A closed client
+cannot become connected again. Closing a client is not proof that server-side
+cleanup has completed. Native .NET clients, frontend reconnection policy, Alpaca
+HTTP adoption, and OS resume invalidation remain required.
 
 ## Identities and configuration
 

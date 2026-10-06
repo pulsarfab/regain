@@ -807,3 +807,48 @@ Frontend automatic attachment/reconnection, OS resume, unconfigured discovery,
 Alpaca publication/setup, COM imports, native NINA/ASCOM outputs, broader device
 proxies and camera/focuser coordination, conformance/hardware checks, documentation
 and screenshots, and final audit/merge remain required. Milestone 2 is not complete.
+
+## 2026-10-05: frontend client and shared-host attachment
+
+Added a bounded Rust IPC client and an executable attachment helper. This is
+shared infrastructure for the actual frontends, whose adoption remains pending.
+
+Review findings and corrections:
+
+1. Cancelled callers must not free a dispatched request's capacity or replay it.
+   Retain permits through reply/deadline, skip unsent cancelled requests, and mark
+   dispatched mutations uncertain on transport failure. A failed client is terminal.
+2. A detached read task could retain leases after its client disappeared. Use an
+   abort-on-drop task set and close both transport halves; a real runtime test
+   verifies last-client drop releases the simulated source lease.
+3. JSON value parsing hides duplicate envelope keys. Parse the envelope strictly,
+   distinguish null results from absent results, reject unknown reply IDs, and
+   retain structured remote errors and Retry-After without logging request bytes.
+4. Bound encoding, negotiated concurrency, frame I/O, and total request lifetime.
+   Keep cancelled-but-dispatched operations within the same limit. Reject invalid
+   operations before writing and preserve zeroizing request buffers on failures.
+5. The first Windows process test hung after its helper exited: the shared child
+   inherited a capture pipe despite null standard handles. Use CreateProcessW
+   with handle inheritance disabled and CREATE_NO_WINDOW. Production tests now
+   prove the helper exits while its shared host survives, including paths with
+   spaces and Unicode. Argument quoting has a separate Windows unit test.
+6. A candidate PID cannot prove ownership. The attachment helper probes a held
+   lock instead of replacing its owner, launches at most one candidate, validates
+   hello, and never kills an owner on readiness failure or client disconnect.
+   Test-only cleanup terminates only the newly launched empty fixture host.
+7. Host loss requires explicit reattachment with a new host/client identity. Two
+   clients share one host, disconnect independently, and cannot reuse the failed
+   client after restart. Wait for the ownership lock to release before testing
+   restart; closed client streams alone do not prove host cleanup has finished.
+
+Validation: 177 Windows hub tests plus the endpoint process fixture and 18 Alpaca
+tests pass. This adds seven client integration tests, one Windows quoting test,
+and two production attachment tests. Clippy with warnings denied, Rust 1.89.0,
+generated-contract freshness, and fresh transport/core/hub/Alpaca packaging pass
+(`target/hub-client-package`). No test host processes remain. Unix launch behavior
+still requires portable CI. Simulation checkpoint 6a607e5 has completed successful
+push CI; virtual-source checkpoint 14abfc9 remains in progress at this review.
+
+Alpaca HTTP/setup adoption, native .NET attachment, reconnection/resume behavior,
+COM imports, broader proxies and coordination, conformance/hardware acceptance,
+documentation/screenshots, and final audit/merge remain required.

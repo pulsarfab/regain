@@ -18,6 +18,9 @@ async fn main() -> Result<()> {
             println!(
                 "  --hub-host --hub-config ABSOLUTE_PATH\n                      Shared local hub host (no HTTP listener)"
             );
+            println!(
+                "  --hub-attach --hub-config ABSOLUTE_PATH\n                      Start/find the shared hub and print endpoint JSON"
+            );
             return Ok(());
         }
         ensure!(
@@ -33,13 +36,14 @@ async fn main() -> Result<()> {
                     | "--stdio"
                     | "--backend"
                     | "--hub-host"
+                    | "--hub-attach"
                     | "--hub-config"
             ),
             "Unknown option: {arg}"
         );
         let value = if matches!(
             arg.as_str(),
-            "--simulate" | "--no-discovery" | "--stdio" | "--hub-host"
+            "--simulate" | "--no-discovery" | "--stdio" | "--hub-host" | "--hub-attach"
         ) {
             String::new()
         } else {
@@ -48,22 +52,30 @@ async fn main() -> Result<()> {
         };
         options.insert(arg, value);
     }
-    if options.contains_key("--hub-host") {
+    if options.contains_key("--hub-host") || options.contains_key("--hub-attach") {
+        ensure!(
+            !(options.contains_key("--hub-host") && options.contains_key("--hub-attach")),
+            "Choose hub host or attachment mode"
+        );
         ensure!(
             options.contains_key("--hub-config"),
-            "--hub-host requires --hub-config ABSOLUTE_PATH"
+            "Hub mode requires --hub-config ABSOLUTE_PATH"
         );
         ensure!(
             options.keys().all(|key| matches!(
                 key.as_str(),
-                "--hub-host" | "--hub-config" | "--workers" | "--simulate"
+                "--hub-host" | "--hub-attach" | "--hub-config" | "--workers" | "--simulate"
             )),
             "Hub host mode accepts only --hub-config, --workers and --simulate"
+        );
+        ensure!(
+            !(options.contains_key("--hub-attach") && options.contains_key("--simulate")),
+            "Attachment uses the existing host settings; configure explicit simulated sources for tests"
         );
     } else {
         ensure!(
             !options.contains_key("--hub-config"),
-            "--hub-config currently requires --hub-host"
+            "--hub-config requires --hub-host or --hub-attach"
         );
     }
     let executable = std::env::current_exe()?;
@@ -72,6 +84,16 @@ async fn main() -> Result<()> {
         .map(PathBuf::from)
         .unwrap_or(executable.parent().unwrap().to_path_buf())
         .canonicalize()?;
+    if options.contains_key("--hub-attach") {
+        let attached = regain_alpaca::hub::attach(
+            &PathBuf::from(&options["--hub-config"]),
+            &directory,
+            &executable,
+        )
+        .await?;
+        println!("{}", serde_json::to_string(&attached)?);
+        return Ok(());
+    }
     if options.contains_key("--hub-host") {
         return regain_alpaca::hub::run(
             &PathBuf::from(&options["--hub-config"]),

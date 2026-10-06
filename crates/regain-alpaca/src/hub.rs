@@ -8,6 +8,60 @@ use regain_hub::{
 };
 use std::{future::Future, path::Path, sync::Arc, time::Duration};
 
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Attachment {
+    pub protocol_version: u16,
+    pub instance_id: uuid::Uuid,
+    pub host_instance: uuid::Uuid,
+    pub configuration_revision: uuid::Uuid,
+    pub transport: &'static str,
+    pub address: std::path::PathBuf,
+    /// A launched candidate, not an ownership credential. Another launcher may
+    /// win the lock. Frontends must never kill this PID on disconnect.
+    pub started_process_id: Option<u32>,
+}
+
+/// Locate or launch the shared host. There is at most one launch attempt; a held
+/// ownership lock means wait for that owner, never start a replacement on timeout.
+pub async fn attach(config: &Path, workers: &Path, executable: &Path) -> Result<Attachment> {
+    let endpoint = Endpoint::for_config(config).context("Resolve private hub endpoint")?;
+    let store = ConfigStore::load(endpoint.config_path())
+        .map_err(|_| anyhow::anyhow!("Cannot load a valid hub configuration"))?;
+    let instance = store.snapshot().instance_id;
+    let available = endpoint.try_lock().context("Check hub ownership")?;
+    let started_process_id = if let Some(owner) = available {
+        // Release before launching; the host itself arbitrates the race. A
+        // simultaneous loser only probes and cannot start duplicate sources.
+        drop(owner);
+        Some(
+            regain_hub::launch::spawn_host(executable, endpoint.config_path(), workers)
+                .await
+                .context("Start the shared hub host")?,
+        )
+    } else {
+        None
+    };
+    let hello = host::probe(&endpoint, instance, Duration::from_secs(10))
+        .await
+        .context(
+            "Shared hub did not pass its readiness check; no automatic restart was attempted",
+        )?;
+    Ok(Attachment {
+        protocol_version: hello.protocol_version,
+        instance_id: hello.instance_id,
+        host_instance: hello.host_instance,
+        configuration_revision: hello.configuration_revision,
+        transport: if cfg!(windows) {
+            "namedPipe"
+        } else {
+            "unixSocket"
+        },
+        address: endpoint.address(),
+        started_process_id,
+    })
+}
+
 pub async fn run(
     config: &Path,
     native: NativeRuntime,

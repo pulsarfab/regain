@@ -10,9 +10,12 @@ use crate::{
     source::SourceError,
 };
 use regain_core::CancellationToken;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::{future::Future, io, sync::Arc, time::Duration};
-use tokio::{io::AsyncWriteExt, task::JoinSet};
+use tokio::{
+    io::{AsyncRead, AsyncWrite, AsyncWriteExt},
+    task::JoinSet,
+};
 use uuid::Uuid;
 
 pub const MAX_CLIENTS: usize = 32;
@@ -99,7 +102,7 @@ async fn supervise(
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Hello {
     pub protocol_version: u16,
@@ -125,6 +128,23 @@ struct HelloReply {
 pub async fn probe(endpoint: &Endpoint, instance: Uuid, deadline: Duration) -> io::Result<Hello> {
     tokio::time::timeout(deadline, async {
         let mut stream = endpoint.connect(deadline).await?;
+        handshake(&mut stream, instance, deadline).await
+    })
+    .await
+    .unwrap_or_else(|_| {
+        Err(io::Error::new(
+            io::ErrorKind::TimedOut,
+            "Hub readiness deadline expired",
+        ))
+    })
+}
+
+pub(crate) async fn handshake<T: AsyncRead + AsyncWrite + Unpin>(
+    stream: &mut T,
+    instance: Uuid,
+    deadline: Duration,
+) -> io::Result<Hello> {
+    tokio::time::timeout(deadline, async {
         let request = serde_json::to_vec(&Request {
             version: VERSION,
             id: 1,
@@ -135,7 +155,7 @@ pub async fn probe(endpoint: &Endpoint, instance: Uuid, deadline: Duration) -> i
             .write_all(&(request.len() as u32).to_le_bytes())
             .await?;
         stream.write_all(&request).await?;
-        let bytes = read_frame(&mut stream, deadline)
+        let bytes = read_frame(&mut *stream, deadline)
             .await
             .map_err(|error| match error {
                 ProtocolError::Timeout => {

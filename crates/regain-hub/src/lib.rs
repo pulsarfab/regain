@@ -2,6 +2,7 @@
 //! they must not reimplement safety decisions or invent source capabilities.
 pub mod alpaca;
 pub mod capabilities;
+pub mod client;
 pub mod config;
 pub mod credentials;
 pub mod description;
@@ -9,6 +10,7 @@ pub mod endpoint;
 pub mod factory;
 pub mod host;
 pub mod ipc;
+pub mod launch;
 pub mod native;
 mod output;
 pub mod parameters;
