@@ -120,6 +120,15 @@ public sealed class HubRegistrationTests
         Assert.Equal([otherId], HubAscomRegistration.RegisteredIds(f.Roots[0]));
         Assert.Throws<InvalidOperationException>(() => HubAscomRegistration.Remove(f.Roots, f.Directory, otherId, null));
         Assert.Equal([otherId], HubAscomRegistration.RegisteredIds(f.Roots[1]));
+        // A future schema owned by another install must not block this install's
+        // cleanup or be interpreted by the older helper.
+        File.WriteAllText(Path.Combine(f.Directory, "regain-alpaca.exe"), "fixture");
+        f.Saved = f.Store.Save(f.Binding, Guid.Empty);
+        f.Register();
+        f.Write(1, HubAscomRegistration.Inventory + "\\" + otherId.ToString("B"), "SchemaVersion", 99);
+        HubAscomRegistration.RemoveAll(f.Roots, f.Directory);
+        Assert.Null(f.Read(0, f.Class)); Assert.Null(f.Read(1, f.Class));
+        Assert.Equal(99, f.Read(1, HubAscomRegistration.Inventory + "\\" + otherId.ToString("B"), "SchemaVersion"));
     }
 
     [Fact]
@@ -179,6 +188,41 @@ public sealed class HubRegistrationTests
         Assert.Throws<InvalidOperationException>(f.Remove);
         Assert.DoesNotContain("Updated", Assert.IsType<string>(f.Read(0, f.Class)));
         Assert.Equal("fixture", f.Read(1, deep));
+    }
+
+    [Fact]
+    public void InstallerBatchPreflightsAllOutputsBeforeDeletingAnyRegistration()
+    {
+        using var f = new Fixture(); var firstId = f.Register();
+        var second = f.Binding.Copy(); second.OutputId = Guid.NewGuid();
+        f.Saved = f.Store.Save(second, f.Saved.Revision);
+        var secondId = HubAscomRegistration.RegisterSaved(f.Roots, f.Directory, f.Store.Path, f.Saved.Revision,
+            second.InstanceId, second.OutputId, HubAscomRegistration.CurrentOwner);
+        var secondCommand = @"Software\Classes\CLSID\" + secondId.ToString("B") + @"\LocalServer32";
+        f.Write(1, secondCommand, "", "changed command");
+        Assert.Throws<InvalidOperationException>(() => HubAscomRegistration.RemoveAll(f.Roots, f.Directory));
+        Assert.Equal(2, HubAscomRegistration.RegisteredIds(f.Roots[0]).Length);
+        Assert.NotNull(f.Read(0, f.Class)); Assert.Equal("changed command", f.Read(1, secondCommand));
+        Assert.Contains(firstId, HubAscomRegistration.RegisteredIds(f.Roots[1]));
+    }
+
+    [Fact]
+    public void InstallerBatchRestoresAllOutputsOnCaughtFailureAndThenRemovesWithoutSelections()
+    {
+        using var f = new Fixture(); f.Register();
+        var second = f.Binding.Copy(); second.OutputId = Guid.NewGuid();
+        f.Saved = f.Store.Save(second, f.Saved.Revision);
+        HubAscomRegistration.RegisterSaved(f.Roots, f.Directory, f.Store.Path, f.Saved.Revision,
+            second.InstanceId, second.OutputId, HubAscomRegistration.CurrentOwner);
+        File.Delete(f.Store.Path);
+        using var readOnly = f.Parent.OpenSubKey("view64", false)!;
+        Assert.Throws<InvalidOperationException>(() => HubAscomRegistration.RemoveAll([f.Roots[0], readOnly], f.Directory));
+        Assert.Equal(2, HubAscomRegistration.RegisteredIds(f.Roots[0]).Length);
+        Assert.Equal(2, HubAscomRegistration.RegisteredIds(f.Roots[1]).Length);
+        Assert.NotNull(f.Read(0, f.Class));
+        HubAscomRegistration.RemoveAll(f.Roots, f.Directory);
+        HubAscomRegistration.RemoveAll(f.Roots, f.Directory);
+        Assert.All(f.Roots, root => Assert.Empty(HubAscomRegistration.RegisteredIds(root)));
     }
 
     [Fact]

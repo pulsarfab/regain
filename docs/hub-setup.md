@@ -162,6 +162,8 @@ its elevated helper. Inventory status describes records, not a live device test.
 ![ASCOM hub registration manager during a private simulation test](images/hub-ascom-registration-simulation.png)
 
 This is an actual WPF render with private test registry roots and non-executable
-fixture paths; no installed hardware driver was activated. Production-helper CI,
-installer upgrade/uninstall lifecycle, interactive frontend acceptance and
+fixture paths; no installed hardware driver was activated. Uninstall now removes
+owned dynamic entries before deleting application files, preserving other installs
+and settings. A cleanup failure retains the installation for explicit recovery.
+Production-helper and installer lifecycle CI, interactive frontend acceptance and
 conformance remain required before this development feature is released.

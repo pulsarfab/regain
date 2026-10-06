@@ -19,8 +19,7 @@ internal static class HubRegistration
             } else if (args.Length == 3 && args[0].Equals("/hubunregister", StringComparison.OrdinalIgnoreCase)) {
                 HubAscomRegistration.Remove(roots, directory, Guid.ParseExact(args[1], "D"), args[2]);
             } else if (args.Length == 1 && args[0].Equals("/hubunregisterall", StringComparison.OrdinalIgnoreCase)) {
-                var ids = roots.SelectMany(root => HubAscomRegistration.RegisteredIds(root, directory)).Distinct().ToArray();
-                foreach (var id in ids) HubAscomRegistration.Remove(roots, directory, id, null);
+                HubAscomRegistration.RemoveAll(roots, directory);
             } else throw new ArgumentException("Unsupported hub registration command");
             return 0;
         } finally { if (held) mutex.ReleaseMutex(); }

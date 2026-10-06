@@ -149,17 +149,7 @@ def main():
             else:
                 paths.append(f'Software\\Classes\\AppID\\{app_id}')
             for check_hive in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
-                if options.registered:
-                    # All paths were absent in both hives/views. Reserve exact
-                    # private paths for cleanup even if a helper write fails.
-                    created.extend((view, key_path) for view in views for key_path in paths)
-                    revision = json.loads(saved.read_text())["revision"]
-                    for binding in bindings:
-                        result = subprocess.run([str(workers / "Regain.ASCOM.Register.exe"), "/hubregister", str(saved), revision,
-                                                 binding["instanceId"], binding["outputId"], owner],
-                                                timeout=15, creationflags=NO_WINDOW)
-                        assert result.returncode == 0, "Production bound registration failed"
-                for view in (() if options.registered else views):
+                for view in views:
                     for key_path in paths:
                         try:
                             with winreg.OpenKey(check_hive, key_path, 0, winreg.KEY_READ | view):
@@ -177,7 +167,17 @@ def main():
                     invalid = subprocess.run([str(server_exe), "--export", *arguments],
                                              timeout=5, creationflags=NO_WINDOW)
                     assert invalid.returncode == 2, "Invalid bound launch must fail before publishing factories"
-                for view in views:
+                if options.registered:
+                    # Collision checks above completed before cleanup ownership
+                    # or helper writes. All mutations stay inside this finally.
+                    created.extend((view, key_path) for view in views for key_path in paths)
+                    revision = json.loads(saved.read_text())["revision"]
+                    for binding in bindings:
+                        result = subprocess.run([str(workers / "Regain.ASCOM.Register.exe"), "/hubregister", str(saved), revision,
+                                                 binding["instanceId"], binding["outputId"], owner],
+                                                timeout=15, creationflags=NO_WINDOW)
+                        assert result.returncode == 0, "Production bound registration failed"
+                for view in (() if options.registered else views):
                     for key_path in paths:
                         created.append((view, key_path))
                         with winreg.CreateKeyEx(hive, key_path, 0, winreg.KEY_WRITE | view):

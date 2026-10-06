@@ -46,6 +46,23 @@ public static class HubAscomRegistration
     {
         directory = FullPath(directory);
         if (owner is not null && owner != CurrentOwner) throw new InvalidOperationException("Remove using the original user's Windows account");
+        var record = FindRemoval(roots, directory, id, owner);
+        if (record is not null) Mutate(roots, record, true);
+    }
+
+    /// Installer cleanup preflights the complete install before any deletion,
+    /// and caught mutation failures attempt restoration of every owned output.
+    public static void RemoveAll(IReadOnlyList<RegistryKey> roots, string directory)
+    {
+        directory = FullPath(directory);
+        var ids = roots.SelectMany(root => RegisteredIds(root, directory)).Distinct().ToArray();
+        if (ids.Length > 256) throw new InvalidOperationException("Installation inventory exceeds the batch removal limit");
+        var records = ids.Select(id => FindRemoval(roots, directory, id, null)).Where(record => record is not null).Cast<Record>().ToArray();
+        if (records.Length != 0) MutateMany(roots, records, true);
+    }
+
+    private static Record? FindRemoval(IReadOnlyList<RegistryKey> roots, string directory, Guid id, string? owner)
+    {
         Record? record = null;
         foreach (var root in roots) {
             using var key = root.OpenSubKey(Inventory + "\\" + id.ToString("B"));
@@ -56,7 +73,7 @@ public static class HubAscomRegistration
             if (record is not null && !record.SameIdentity(candidate)) throw new InvalidOperationException("Registry views disagree; inspect registration before removal");
             record = candidate;
         }
-        if (record is not null) Mutate(roots, record, true);
+        return record;
     }
 
     public static Guid[] RegisteredIds(RegistryKey root, string? directory = null)
@@ -64,15 +81,22 @@ public static class HubAscomRegistration
 
     public static HubRegisteredOutput[] RegisteredOutputs(RegistryKey root, string? directory = null)
     {
+        if (directory is not null) directory = FullPath(directory);
         using var inventory = root.OpenSubKey(Inventory);
         if (inventory is null) return [];
         var result = new List<HubRegisteredOutput>();
-        foreach (var name in inventory.GetSubKeyNames()) {
-            var id = Guid.ParseExact(name, "B");
+        var names = inventory.GetSubKeyNames();
+        if (names.Length > 4096) throw new InvalidOperationException("Hub registration inventory is too large");
+        foreach (var name in names) {
             using var key = inventory.OpenSubKey(name)!;
+            // A scoped installer must leave another installation's future
+            // schema alone, rather than attempting to interpret/remove it.
+            var installedDirectory = key.GetValue("InstallDirectory") as string;
+            if (directory is not null && installedDirectory is not null && !SamePath(FullPath(installedDirectory), directory)) continue;
+            var id = Guid.ParseExact(name, "B");
             var record = Record.Read(key);
             if (record.Id != id) throw new InvalidOperationException("Inventory key and output identity disagree");
-            if (directory is null || SamePath(record.Directory, FullPath(directory)))
+            if (directory is null || SamePath(record.Directory, directory))
                 result.Add(new HubRegisteredOutput(id, record.Selection, record.Directory, record.Selections,
                     record.Owner, record.Version, key.GetValue("Phase") as string ?? ""));
         }
@@ -80,43 +104,50 @@ public static class HubAscomRegistration
     }
 
     private static void Mutate(IReadOnlyList<RegistryKey> roots, Record record, bool remove)
+        => MutateMany(roots, [record], remove);
+
+    private static void MutateMany(IReadOnlyList<RegistryKey> roots, IReadOnlyList<Record> records, bool remove)
     {
         if (roots.Count != 2) throw new ArgumentException("Both registry views are required");
-        var entries = record.Entries();
-        var top = record.TopKeys();
         var backups = new List<(RegistryKey Root, string Path, Tree? Before)>();
-        var budget = new SnapshotBudget();
+        var budget = new SnapshotBudget(Math.Min(512 * records.Count, 4096), Math.Min(1024L * 1024 * records.Count, 8L * 1024 * 1024));
         // Preflight every view before writing anything, including a collision
         // hidden in the second view. Existing registrations must prove ownership.
         foreach (var root in roots) {
-            using var inventory = root.OpenSubKey(record.InventoryKey);
-            if (inventory is null) {
-                foreach (var path in top) { using var present = root.OpenSubKey(path); if (present is not null) throw new InvalidOperationException("An unowned registration already exists"); }
-            } else {
-                var installed = Record.Read(inventory);
-                if (!record.SameIdentity(installed) || installed.Version > version)
-                    throw new InvalidOperationException("Registration belongs to another user, install or newer version");
-                // Missing values allow explicit recovery of an owned pending
-                // registration; conflicting values never authorize overwrite.
-                foreach (var check in installed.CriticalValues()) {
-                    using var key = root.OpenSubKey(check.Path);
-                    var value = key?.GetValue(check.Name);
-                    if (value is not null && !Equals(value, check.Value)) throw new InvalidOperationException("Registered command or identity changed; inspect before editing");
+            foreach (var record in records) {
+                var top = record.TopKeys();
+                using var inventory = root.OpenSubKey(record.InventoryKey);
+                if (inventory is null) {
+                    foreach (var path in top) { using var present = root.OpenSubKey(path); if (present is not null) throw new InvalidOperationException("An unowned registration already exists"); }
+                } else {
+                    var installed = Record.Read(inventory);
+                    if (!record.SameIdentity(installed) || installed.Version > version)
+                        throw new InvalidOperationException("Registration belongs to another user, install or newer version");
+                    // Missing values allow explicit recovery of an owned pending
+                    // registration; conflicting values never authorize overwrite.
+                    foreach (var check in installed.CriticalValues()) {
+                        using var key = root.OpenSubKey(check.Path);
+                        var value = key?.GetValue(check.Name);
+                        if (value is not null && !Equals(value, check.Value)) throw new InvalidOperationException("Registered command or identity changed; inspect before editing");
+                    }
                 }
+                foreach (var path in top) { using var key = root.OpenSubKey(path); backups.Add((root, path, key is null ? null : Tree.Read(key, budget, 0))); }
             }
-            foreach (var path in top) { using var key = root.OpenSubKey(path); backups.Add((root, path, key is null ? null : Tree.Read(key, budget, 0))); }
         }
         try {
             foreach (var root in roots) {
-                if (remove) {
-                    foreach (var path in top.Where(path => path != record.InventoryKey)) root.DeleteSubKeyTree(path, false);
-                    root.DeleteSubKeyTree(record.InventoryKey, false);
-                } else {
-                    // Persist ownership first so an interrupted registry edit
-                    // is identifiable and explicitly repairable/removable.
-                    Write(root, record.InventoryKey, record.InventoryValues("pending"));
-                    foreach (var entry in entries) Write(root, entry.Key, entry.Value);
-                    Write(root, record.InventoryKey, record.InventoryValues("ready"));
+                foreach (var record in records) {
+                    var top = record.TopKeys();
+                    if (remove) {
+                        foreach (var path in top.Where(path => path != record.InventoryKey)) root.DeleteSubKeyTree(path, false);
+                        root.DeleteSubKeyTree(record.InventoryKey, false);
+                    } else {
+                        // Persist ownership first so an interrupted registry edit
+                        // is identifiable and explicitly repairable/removable.
+                        Write(root, record.InventoryKey, record.InventoryValues("pending"));
+                        foreach (var entry in record.Entries()) Write(root, entry.Key, entry.Value);
+                        Write(root, record.InventoryKey, record.InventoryValues("ready"));
+                    }
                 }
             }
         } catch (Exception error) {
@@ -192,12 +223,12 @@ public static class HubAscomRegistration
                 new SecurityIdentifier(Text("OwnerSid")).Value, System.Version.Parse(Text("Version")));
         }
     }
-    private sealed class SnapshotBudget
+    private sealed class SnapshotBudget(int maxKeys, long maxBytes)
     {
         private int keys;
         private long bytes;
         internal void Key(int depth) {
-            if (depth > 16 || ++keys > 512) throw new InvalidOperationException("Registration tree exceeds the rollback snapshot limit");
+            if (depth > 16 || ++keys > maxKeys) throw new InvalidOperationException("Registration tree exceeds the rollback snapshot limit");
         }
         internal void Value(string name, object value) {
             bytes += 2L * name.Length + (value switch {
@@ -207,7 +238,7 @@ public static class HubAscomRegistration
                 int => 4L, long => 8L,
                 _ => throw new InvalidOperationException("Registration contains an unsupported registry value")
             });
-            if (bytes > 1024 * 1024) throw new InvalidOperationException("Registration tree exceeds the rollback snapshot limit");
+            if (bytes > maxBytes) throw new InvalidOperationException("Registration tree exceeds the rollback snapshot limit");
         }
     }
     private sealed class Tree

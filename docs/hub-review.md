@@ -1622,3 +1622,53 @@ Unsigned installer compilation also passes using the existing pinned compiler
 
 Next: production fixture CI and installer lifecycle, then complete remaining
 setup, broader proxies/cameras/coordination and every original acceptance gate.
+
+## 2026-10-06: installer lifecycle and complete-install cleanup
+
+b76d2fc PR CI 37452667674 and push CI 37452661961 failed Windows; the other seven
+jobs passed. The PR log shows `UnboundLocalError` for `created` in the new
+registered-export fixture, before helper publication. Review found that block
+also skipped collision preflight and sat outside finally. Move registration
+inside the guarded cleanup after all hives/views are checked; reserve exact paths
+only then, skip raw fixture writes for this mode and retain collision refusals.
+Local manual COM exchanges still pass (`hub-registration-fixture-order-local.log`).
+Production helper activation/removal must be proved by new CI, not these manual
+tests. 434db2f inherits the fixture fault until this correction lands.
+
+Inno's pinned [6.7.3 uninstall source](https://github.com/jrsoftware/issrc/blob/is-6_7_3/Projects/Src/Setup.Uninstall.pas)
+calls `usUninstall` after confirmation and invokes it with fatal exception handling
+before `PerformUninstall`. Wire owned inventory cleanup into this event; nonzero
+helper completion aborts before file deletion. Do not unregister on initialization
+or cancellation. The existing in-use guard still runs first and never stops clients.
+
+Complete-install removal now preflights every output and both views before any
+deletion, with one bounded rollback batch. A later conflicting output cannot
+leave an earlier one removed. Caught failures attempt every restoration, including
+custom security. A foreign install's future schema is skipped by its installation
+marker; this helper must not interpret or remove it. Individual snapshot limits
+remain; batch limits are 256 outputs, 4096 keys and 8 MiB, and inventory enumeration
+admits 4096 entries. Partial restoration and crash limits remain explicit.
+
+The disposable-only actual installer fixture registers three scalar outputs plus
+a separate real helper/payload with another identity. It checks same-directory
+upgrade preservation, failed uninstall on a changed command with all files/entries
+retained, removal after deleting the selection file, and preservation of the other
+install/settings. Cleanup uses owned helpers, not raw key deletion. Paths stay
+inside the named installer fixture directory; manifests are written only after
+collision preflight. Even a partially failed preparation attempts cleanup, and
+cleanup errors do not skip restoring the existing test environment. Neither COM
+activation nor equipment acquisition occurs in this lifecycle fixture.
+
+Local evidence: 131 NINA tests passed (`artifacts/hub-installer-batch-tests.log`);
+all 11 registry tests passed after final scope refinement
+(`hub-installer-registry-review-tests.log`). net48 x86/x64 fixtures pass
+(`hub-installer-net48-tests.log`), unsigned packaging validates
+(`hub-installer-package.log`) and the hooked installer compiles
+(`hub-installer-build.log`). Python and PowerShell syntax checks pass. The new
+machine fixture refuses local invocation before filesystem/registry mutation
+(`hub-installer-local-guard.log`). No actual installer was run locally and no
+installed equipment was activated. Actual machine/UAC/conformance acceptance
+and every remaining original milestone still require evidence.
+
+Next: corrected production and installer CI, then remaining shared setup,
+broader typed proxies/camera acquisition, coordination and complete original gates.

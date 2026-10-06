@@ -155,6 +155,21 @@ begin
   if not Result then SuppressibleMsgBox(Problem, mbError, MB_OK, IDOK);
 end;
 
+// usUninstall runs after confirmation and before deleting files. Inno treats
+// exceptions in this step as fatal, retaining the install for explicit recovery.
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+var
+  ExitCode: Integer;
+begin
+  if CurUninstallStep = usUninstall then begin
+    if not Exec(ExpandConstant('{app}\Regain.ASCOM.Register.exe'), '/hubunregisterall', '',
+      SW_HIDE, ewWaitUntilTerminated, ExitCode) then
+      RaiseException('Could not remove hub registrations. No application files were removed. Repair the installation and retry uninstall.');
+    if ExitCode <> 0 then
+      RaiseException('Hub registration cleanup failed or may be partial. Application files were retained. Inspect registration.log and the hub inventory before retrying uninstall.');
+  end;
+end;
+
 // Remove renamed binaries only after the replacement files and registry entries succeed.
 procedure CurStepChanged(CurStep: TSetupStep);
 begin

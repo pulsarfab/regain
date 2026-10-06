@@ -1077,5 +1077,14 @@ observation timeout never terminates or retries the edit. Orphan registrations
 remain removable; foreign owner/install/file/newer-version entries are disabled.
 Saved-choice removal is disabled while registry inventory still owns that choice.
 Installer in-use checks also include both private hub helpers and shared DLLs.
-The dynamic inventory is not yet wired into Inno's uninstall lifecycle; that is
-required before installation/removal acceptance can pass.
+Inno's pre-uninstall event invokes `/hubunregisterall` after confirmation and
+in-use checks, before deleting files. Nonzero/unknown helper failure is fatal and
+leaves application files for explicit recovery. Complete-install removal validates
+all candidate outputs before any deletion and shares one rollback batch; other
+installs (including future schemas) are excluded by their installation marker.
+Batch removal admits at most 256 outputs, 4096 snapshot keys and 8 MiB; individual
+edits retain the 512-key/1-MiB bounds. Inventory enumeration admits 4096 entries.
+Crash atomicity and audit metadata preservation remain unclaimed. The actual
+installer fixture covers upgrade preservation, conflicting commands preventing
+file deletion, cleanup after selection deletion and another install's preserved
+entries. Those machine cases require new disposable-runner CI before acceptance.

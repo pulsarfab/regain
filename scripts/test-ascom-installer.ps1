@@ -1,6 +1,6 @@
 # Machine-wide registration and prerequisite fixtures: disposable CI only.
 $ErrorActionPreference = 'Stop'
-if (!$env:CI -or !([Security.Principal.WindowsPrincipal]::new([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw 'Run on a disposable, elevated CI runner.' }
+if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_OS -ne 'Windows' -or !([Security.Principal.WindowsPrincipal]::new([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw 'Run on a disposable, elevated GitHub Windows runner.' }
 $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $version = & (Join-Path $PSScriptRoot 'version.ps1')
 $installer = Join-Path $repo "artifacts/Regain-ASCOM-$version-win-x64-setup.exe"
@@ -57,6 +57,11 @@ $env:REGAIN_ASCOM_TEST_CLSIDS = $null
 $env:REGAIN_ASCOM_PROFILES = $testDir
 $env:REGAIN_ASCOM_SIMULATE = '1'
 $backend = $null
+$hubPrepared = $false
+function Hub-Fixture([string]$Phase) {
+    python (Join-Path $PSScriptRoot 'test-hub-installer.py') $Phase --install $destination --fixture (Join-Path $testDir 'Hub fixture')
+    if ($LASTEXITCODE) { throw "Hub installer fixture failed: $Phase" }
+}
 function Run-Setup([string]$Label, [bool]$Success = $true, [string]$Directory = $destination) {
     $p = Start-Process -FilePath $installer -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',('/DIR="' + $Directory + '"'),('/LOG="' + (Join-Path $testDir "$Label.log") + '"') -WindowStyle Hidden -Wait -PassThru
     if (($p.ExitCode -eq 0) -ne $Success) { throw "$Label returned $($p.ExitCode); see installer-test logs" }
@@ -153,6 +158,8 @@ try {
     Assert-FocusCubeActivation
     Assert-Ofp2Activation
     Assert-EtaActivation
+    try { Hub-Fixture 'prepare' }
+    finally { $hubPrepared = Test-Path -LiteralPath (Join-Path $testDir 'Hub fixture/fixture.json') }
     $registered = Get-ItemPropertyValue 'HKLM:\SOFTWARE\Classes\CLSID\{D1DB6F94-5CC0-4752-A758-F849098874A1}\InprocServer32' -Name CodeBase
     if (([Uri]$registered).LocalPath -ne (Join-Path $destination 'Regain.ASCOM.dll')) { throw 'Wrong installed registration path' }
     foreach ($view in [Microsoft.Win32.RegistryView]::Registry32,[Microsoft.Win32.RegistryView]::Registry64) {
@@ -218,6 +225,7 @@ try {
     $obsoleteWorkers = @('regain-host.exe','regain-direct.exe','regain-caa.exe','regain-accessories.exe','regain-ofp2.exe','regain-fc3.exe','regain-eta.exe')
     foreach ($name in $obsoleteWorkers) { Set-Content -LiteralPath (Join-Path $destination $name) -Value 'old worker fixture' }
     Run-Setup 'upgrade'
+    Hub-Fixture 'assert'
     foreach ($name in $obsoleteWorkers) { if (Test-Path -LiteralPath (Join-Path $destination $name)) { throw "Upgrade left $name" } }
     if (!(Test-Path -LiteralPath (Join-Path $destination 'regain-device.exe'))) { throw 'Unified device worker missing after upgrade' }
     if (Test-Path (Join-Path $destination 'zwogain-alpaca.exe')) { throw 'Upgrade left the obsolete worker executable' }
@@ -240,12 +248,24 @@ try {
             if ($LASTEXITCODE) { throw 'Upgraded COM activation failed' }
         }
     }
+    Hub-Fixture 'break'
+    try {
+        Run-Uninstall 'hub-conflict-uninstall' $false
+        if (!(Test-Path -LiteralPath (Join-Path $destination 'Regain.ASCOM.Register.exe')) -or !(Test-Path $uninstallKey)) {
+            throw 'Hub cleanup failure removed installation files or uninstall registration'
+        }
+    } finally { Hub-Fixture 'repair' }
+    Hub-Fixture 'assert'
+    Hub-Fixture 'delete-bindings'
     Run-Uninstall 'uninstall'
+    Hub-Fixture 'removed'
     if ((Test-Path $uninstallKey) -or (Test-Path (Join-Path $destination 'Regain.ASCOM.dll'))) { throw 'Uninstall left application files or entry' }
     Assert-NoCameraEntries
     if ((Get-FileHash (Join-Path $testDir 'camera-1.json')).Hash -ne $settingsHash -or (Get-FileHash $profiles).Hash -ne $profilesHash) { throw 'Setup changed user settings' }
     Write-Output 'Installer: prerequisites, 8 COM captures, busy guards, upgrade, downgrade guard, uninstall and settings preservation passed.'
 } finally {
+    $hubCleanupError = $null
+    if ($hubPrepared) { try { Hub-Fixture 'cleanup' } catch { $hubCleanupError = $_ } }
     if ($backend -and !$backend.HasExited) { $backend.Kill(); $backend.WaitForExit() }
     if ($platformBefore) { Set-ItemProperty $platformKey -Name PlatformVersion -Value $platformBefore }
     else { Remove-ItemProperty $platformKey -Name PlatformVersion -ErrorAction SilentlyContinue }
@@ -255,4 +275,5 @@ try {
     $env:REGAIN_ACCESSORY_SIMULATE = $oldAccessorySimulation
     $env:REGAIN_ACCESSORY_SETTINGS = $oldAccessorySettings
     $env:REGAIN_ACCESSORY_TEST_CLSID = $oldAccessoryIds
+    if ($hubCleanupError) { throw $hubCleanupError }
 }
