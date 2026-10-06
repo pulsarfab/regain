@@ -87,11 +87,33 @@ pub fn bind(endpoint: &Endpoint) -> io::Result<Listener> {
     })
 }
 pub async fn accept(listener: &mut Listener, _: &Endpoint) -> io::Result<Stream> {
-    let (stream, _) = listener.socket.accept().await?;
-    if stream.peer_cred()?.uid() != unsafe { libc::geteuid() } {
-        return Err(denied());
+    loop {
+        let stream = match listener.socket.accept().await {
+            Ok((stream, _)) => stream,
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    io::ErrorKind::ConnectionAborted
+                        | io::ErrorKind::ConnectionReset
+                        | io::ErrorKind::Interrupted
+                ) =>
+            {
+                tokio::task::yield_now().await;
+                continue;
+            }
+            Err(error) => return Err(error),
+        };
+        // A queued peer may have closed before admission. Failed credentials
+        // reject that connection; they do not retire the listening service.
+        if stream
+            .peer_cred()
+            .is_ok_and(|peer| peer.uid() == unsafe { libc::geteuid() })
+        {
+            return Ok(stream);
+        }
+        drop(stream);
+        tokio::task::yield_now().await;
     }
-    Ok(stream)
 }
 pub async fn connect(endpoint: &Endpoint) -> io::Result<Stream> {
     let path = address(endpoint);

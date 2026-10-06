@@ -533,3 +533,64 @@ integrated host still needs its own portable CI results.
 Frontend automatic launch/attach, durable applyConfig, protected credentials,
 capability discovery, resume handling, virtual/simulated source adapters, and
 Alpaca/NINA/ASCOM publication remain pending. No milestone 2 or later gate is closed.
+
+## 2026-10-05: supervised configuration apply and revisioned runtime publication
+
+The persistent service now handles applyConfig and hostStatus through IPC and the
+shared executable. A read-only embedded runtime advertises only its supported
+operations. Configuration errors retain field paths; disk/backend details and
+credential values are not exported as arbitrary exception text.
+
+Review findings and corrections:
+
+1. Checking connection counts without excluding a concurrent reservation races.
+   Quiescence and connect reservations now share the lifecycle mutex. Pending
+   connects and guards retained by in-flight commands count as active. The current
+   whole-runtime replacement affects all outputs, so all must be disconnected.
+2. Validation alone does not prove that adapters can be built. Stage the candidate
+   file, prepare the next runtime without device I/O, verify it matches the entire
+   candidate configuration, and recheck revision/store identity at atomic
+   replacement. Rejecting/dropping prepared values removes
+   their temporary files. Unused actors dispatch no Disconnect on retirement.
+3. Device cleanup must not precede a fallible replacement that promises to preserve
+   the old running configuration. After commit, drain the old runtime and only then
+   enable the new one. Uncertain cleanup retains the new persisted revision but
+   blocks device admission; this is an explicit applied/not-ready outcome.
+4. RPC timeout, EOF, and caller cancellation must not split commit from activation.
+   A supervised transaction retains the update gate until completion, and host
+   shutdown waits for it. Unexpected task failure closes the old runtime and blocks
+   admission. Clients inspect getConfig/hostStatus to resolve uncertain replies.
+5. Stream client IDs and the host process ID stay stable through apply; bindings
+   move to the new runtime on the next request. Retired runtime clients cannot
+   reopen sources. All new safety policy starts without cached safe permission.
+6. A flush failure after replacement is not rollback. Return a distinct committed
+   result from the store and a persistence warning from the service. The saved file
+   is flushed, as is its parent directory on Unix: file flush alone does not ensure
+   directory-entry persistence ([Linux fsync documentation](https://man7.org/linux/man-pages/man2/fsync.2.html)).
+   No hardware power-loss guarantee is inferred from these tests.
+7. Configuration reads now enforce the size bound while reading, rather than
+   relying on metadata that could become stale as a file grows. Staging happens
+   outside the configuration snapshot mutex; filesystem work runs off the async
+   executor and no service-state mutex is held during driver I/O.
+8. macOS CI for `e283472` failed admission recovery after a queued client had
+   disconnected. Unix accept now discards aborted connections and failed/mismatched
+   peer credentials per connection. Listener errors still stop the service. The
+   existing saturation/recovery test now reports the supervisor result on failure;
+   the correction needs its portable CI result before claiming macOS recovery.
+
+Local checks: 132 hub tests plus the endpoint process fixture, 14 Alpaca tests,
+Clippy with warnings denied, and Rust 1.89.0 checks pass. Tests cover pre-commit
+file/construction failures, competing editors, stale and foreign prepared updates,
+pending connections, retained writes, cancelled/deadline-expired applies, blocked
+cleanup, and an injected task panic. Production-executable tests apply a network
+safety edit through IPC, reuse that stream, reject stale edits, reconnect, and
+reload the committed revision after restart. A Unix permission fixture covers
+post-rename directory-flush failure and awaits portable CI. Transport/core/hub/Alpaca
+package verification and generated-contract freshness pass. Packaging used a fresh
+target directory after Cargo's temporary registry reused an older archive with
+the same unreleased 0.6.0 version.
+
+Protected credentials, capabilities, automatic frontend attachment, OS resume,
+virtual/simulated sources, publication/setup, COM/NINA/ASCOM integration, broader
+proxies, coordination, conformance, hardware checks, docs/screenshots, and final
+merge remain required by the original plan.

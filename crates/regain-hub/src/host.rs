@@ -3,9 +3,10 @@ use crate::{
     endpoint::{Endpoint, Listener},
     ipc::{
         Command, Limits, MAX_FRAME_BYTES, MAX_IN_FLIGHT, ProtocolError, Request, VERSION,
-        read_frame, serve_stream,
+        read_frame, serve_service_stream,
     },
     runtime::HubRuntime,
+    service::HubService,
     source::SourceError,
 };
 use regain_core::CancellationToken;
@@ -38,9 +39,17 @@ pub fn serve(
     limits: Limits,
     stop: CancellationToken,
 ) -> impl Future<Output = Result<(), HostError>> + Send {
+    serve_service(listener, HubService::read_only(runtime), limits, stop)
+}
+pub fn serve_service(
+    listener: Listener,
+    service: Arc<HubService>,
+    limits: Limits,
+    stop: CancellationToken,
+) -> impl Future<Output = Result<(), HostError>> + Send {
     let stop = stop.child_token();
     let guard = stop.clone().drop_guard();
-    let task = tokio::spawn(supervise(listener, runtime, limits, stop));
+    let task = tokio::spawn(supervise(listener, service, limits, stop));
     async move {
         let _guard = guard;
         task.await.map_err(|error| HostError {
@@ -53,7 +62,7 @@ pub fn serve(
 
 async fn supervise(
     mut listener: Listener,
-    runtime: Arc<HubRuntime>,
+    service: Arc<HubService>,
     limits: Limits,
     stop: CancellationToken,
 ) -> Result<(), HostError> {
@@ -67,11 +76,7 @@ async fn supervise(
             _ = clients.join_next(), if !clients.is_empty() => {},
             result = listener.accept(), if clients.len() < MAX_CLIENTS => {
                 match result {
-                    Ok(stream) => { clients.spawn(serve_stream(stream, runtime.clone(), limits)); }
-                    // Unix rejects an individual peer whose UID differs. A
-                    // Windows listener-creation failure is terminal, not a
-                    // rejected peer to retry in a busy loop.
-                    Err(error) if cfg!(unix) && error.kind() == io::ErrorKind::PermissionDenied => {},
+                    Ok(stream) => { clients.spawn(serve_service_stream(stream, service.clone(), limits)); }
                     Err(error) => break Some(error),
                 }
             }
@@ -79,7 +84,7 @@ async fn supervise(
     };
     clients.abort_all();
     while clients.join_next().await.is_some() {}
-    let cleanup = runtime.shutdown().await.err().unwrap_or_default();
+    let cleanup = service.shutdown().await.err().unwrap_or_default();
     // Keep ownership even after all IPC streams have gone away: source actors
     // may still be completing an uncertain write or closing an owned connection.
     drop(listener);

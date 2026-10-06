@@ -4,6 +4,7 @@ use crate::{
     config::{HubConfig, WeatherMetric},
     description::describe_config,
     runtime::{ClientSession, HubRuntime},
+    service::{HubService, ServiceClient, UpdateError},
     source::{ErrorKind, SourceError},
 };
 use serde::{Deserialize, Serialize};
@@ -75,13 +76,33 @@ pub enum Command {
     Hello {},
     DescribeConfig {},
     GetConfig {},
-    ValidateConfig { candidate: Box<HubConfig> },
+    ValidateConfig {
+        candidate: Box<HubConfig>,
+    },
+    ApplyConfig {
+        #[serde(rename = "expectedRevision")]
+        expected_revision: Uuid,
+        candidate: Box<HubConfig>,
+    },
+    HostStatus {},
     ListDevices {},
-    SourceStatus { source: Uuid },
-    Connect { output: Uuid },
-    Disconnect { output: Uuid },
-    Get { output: Uuid, property: Get },
-    Put { output: Uuid, property: Put },
+    SourceStatus {
+        source: Uuid,
+    },
+    Connect {
+        output: Uuid,
+    },
+    Disconnect {
+        output: Uuid,
+    },
+    Get {
+        output: Uuid,
+        property: Get,
+    },
+    Put {
+        output: Uuid,
+        property: Put,
+    },
 }
 #[derive(Deserialize, Serialize)]
 #[serde(tag = "member", rename_all = "camelCase", deny_unknown_fields)]
@@ -118,6 +139,8 @@ pub struct RpcError {
     pub message: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub upstream_code: Option<i32>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub fields: Vec<crate::parameters::FieldError>,
 }
 impl From<SourceError> for RpcError {
     fn from(error: SourceError) -> Self {
@@ -135,6 +158,48 @@ impl From<SourceError> for RpcError {
             },
             message: error.message,
             upstream_code: error.upstream_code,
+            fields: Vec::new(),
+        }
+    }
+}
+impl From<UpdateError> for RpcError {
+    fn from(error: UpdateError) -> Self {
+        let (code, message) = match &error {
+            UpdateError::Invalid(_) => ("invalidConfig", "Configuration cannot be applied"),
+            UpdateError::Conflict => (
+                "revisionConflict",
+                "Configuration revision changed; reload before editing",
+            ),
+            UpdateError::Connected => (
+                "connected",
+                "Disconnect all outputs and finish pending operations before applying configuration",
+            ),
+            UpdateError::Busy => ("busy", "Another configuration operation is in progress"),
+            UpdateError::Io => (
+                "persistence",
+                "Configuration file could not be replaced; previous configuration is retained",
+            ),
+            UpdateError::Unsupported => (
+                "unsupported",
+                "This runtime does not support configuration updates",
+            ),
+            UpdateError::Stopped => (
+                "unavailable",
+                "Hub is stopped or blocked; inspect hostStatus",
+            ),
+            UpdateError::Task => (
+                "uncertain",
+                "Configuration update outcome is uncertain; reload configuration and inspect hostStatus",
+            ),
+        };
+        Self {
+            code,
+            message,
+            upstream_code: None,
+            fields: match error {
+                UpdateError::Invalid(fields) => fields,
+                _ => Vec::new(),
+            },
         }
     }
 }
@@ -176,10 +241,20 @@ pub async fn serve_stream<T>(
 where
     T: AsyncRead + AsyncWrite + Unpin + Send + 'static,
 {
+    serve_service_stream(stream, HubService::read_only(runtime), limits).await
+}
+pub async fn serve_service_stream<T>(
+    stream: T,
+    service: Arc<HubService>,
+    limits: Limits,
+) -> Result<(), ProtocolError>
+where
+    T: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+{
     if limits.frame_timeout.is_zero() || limits.operation_timeout.is_zero() {
         return Err(ProtocolError::Timeout);
     }
-    let client = runtime.client();
+    let client = Arc::new(ServiceClient::default());
     let _close = CloseClient(client.clone());
     let (mut reader, mut writer) = tokio::io::split(stream);
     let (frames, mut incoming) = mpsc::channel(1);
@@ -218,23 +293,25 @@ where
                 if !greeted {
                     if !matches!(request.command, Command::Hello {}) { return Err(ProtocolError::Handshake); }
                     greeted = true;
-                    let hello = json!({"protocolVersion":VERSION, "instanceId":runtime.instance_id(),
-                        "hostInstance":runtime.runtime_id(), "configurationRevision":runtime.revision(), "clientId":client.id(),
+                    let mut operations = vec!["describeConfig","getConfig","validateConfig","listDevices","sourceStatus","connect","disconnect","get","put","hostStatus"];
+                    if service.can_apply() { operations.push("applyConfig"); }
+                    let hello = json!({"protocolVersion":VERSION, "instanceId":service.instance_id(),
+                        "hostInstance":service.host_id(), "configurationRevision":service.configuration().revision, "clientId":client.id(),
                         "maxFrameBytes":MAX_FRAME_BYTES, "maxInFlight":MAX_IN_FLIGHT,
-                        "operations":["describeConfig","getConfig","validateConfig","listDevices","sourceStatus","connect","disconnect","get","put"],
+                        "operations":operations,
                         "capabilities":["switchOutputs","safetyOutputs","weatherOutputs"]});
                     write_response(&mut writer, Response::new(request.id, Ok(hello)), limits.frame_timeout).await?;
                     continue;
                 }
                 if matches!(request.command, Command::Hello {}) { return Err(ProtocolError::Handshake); }
                 if tasks.len() >= MAX_IN_FLIGHT { return Err(ProtocolError::Overloaded); }
-                let runtime = runtime.clone();
+                let service = service.clone();
                 let client = client.clone();
                 let mut operation = Box::pin(async move {
-                    let write = matches!(request.command, Command::Put { .. });
-                    let result = timeout(limits.operation_timeout, dispatch(&runtime, &client, request.command)).await
+                    let write = matches!(request.command, Command::Put { .. } | Command::ApplyConfig { .. });
+                    let result = timeout(limits.operation_timeout, dispatch_service(&service, &client, request.command)).await
                         .unwrap_or_else(|_| Err(if write { SourceError::uncertain().into() } else {
-                            RpcError { code:"timeout", message:"Hub operation deadline expired", upstream_code:None }
+                            RpcError { code:"timeout", message:"Hub operation deadline expired", upstream_code:None, fields:Vec::new() }
                         }));
                     Response::new(request.id, result)
                 });
@@ -253,10 +330,30 @@ where
         }
     }
 }
-struct CloseClient(Arc<ClientSession>);
+struct CloseClient(Arc<ServiceClient>);
 impl Drop for CloseClient {
     fn drop(&mut self) {
         self.0.close();
+    }
+}
+
+async fn dispatch_service(
+    service: &Arc<HubService>,
+    client: &ServiceClient,
+    command: Command,
+) -> Result<Value, RpcError> {
+    match command {
+        Command::GetConfig {} => Ok(json!(service.configuration())),
+        Command::HostStatus {} => Ok(json!(service.status())),
+        Command::ApplyConfig {
+            expected_revision,
+            candidate,
+        } => Ok(json!(service.apply(expected_revision, *candidate).await?)),
+        command => {
+            let runtime = service.runtime()?;
+            let client = client.bind(&runtime)?;
+            dispatch(&runtime, &client, command).await
+        }
     }
 }
 
@@ -276,11 +373,15 @@ async fn dispatch(
         return Err(SourceError::new(ErrorKind::InvalidValue, "Unknown output ID").into());
     }
     Ok(match command {
+        Command::ApplyConfig { .. } | Command::HostStatus {} => {
+            unreachable!("Handled by service dispatcher")
+        }
         Command::Hello {} => {
             return Err(RpcError {
                 code: "invalidRequest",
                 message: "Hello is only valid as the first request",
                 upstream_code: None,
+                fields: Vec::new(),
             });
         }
         Command::DescribeConfig {} => {
@@ -433,6 +534,7 @@ async fn write_response<W: AsyncWrite + Unpin>(
                 code: "responseTooLarge",
                 message: "Hub response exceeds the frame limit",
                 upstream_code: None,
+                fields: Vec::new(),
             }),
         );
         serde_json::to_writer(&mut bytes, &error).map_err(|_| ProtocolError::FrameTooLarge)?;

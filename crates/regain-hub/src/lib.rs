@@ -13,6 +13,7 @@ pub mod readout;
 pub mod runtime;
 pub mod safety;
 pub mod safety_output;
+pub mod service;
 pub mod source;
 pub mod switch;
 pub mod weather;

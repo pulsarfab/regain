@@ -372,8 +372,21 @@ cover restart, duplicate launch, rejected options/configs, and a network safety
 source changing from safe to unsafe over local IPC. Frontend launch/attach and
 reconnection are still pending.
 
-Next: implement durable config
-apply, protected credentials, and device capabilities, then connect the first
+The host now applies configuration through revision-checked IPC: stage and validate
+before replacement, freeze connection reservations, preserve the old runtime on
+pre-commit failure, then drain it before activating the new generation. This
+whole-runtime replacement requires all outputs and retained operations to be
+disconnected. Existing streams retain their client IDs. Accepted applies survive
+RPC cancellation; post-commit uncertainty is visible through getConfig/hostStatus
+and blocks device admission when cleanup is uncertain. Production-executable tests
+exercise edits, stale revisions, same-stream use, and restart persistence.
+
+The previous host checkpoint's macOS admission-recovery test failed after a queued
+client disconnected. Unix acceptance now rejects aborted/unverifiable peers while
+preserving the listener; portable CI must verify this correction and the new
+directory-flush failure fixture.
+
+Next: implement protected credentials and device capabilities, then connect the first
 three virtual classes to the existing Alpaca server/setup UI. Frontend error
 translation and protocol conformance remain unverified. Generic
 scalar polling does not establish camera image or acquisition support. No complete
@@ -460,3 +473,4 @@ Keep existing device profiles and registrations compatible throughout migration.
 | 2026-10-05 | Added bounded scalar IPC framing, handshake, typed controller dispatch, configuration reads/validation, and per-stream clients. Review fixed request-start ordering and strict parsing of no-argument commands. | 114 local hub tests pass, including ten framed-stream integration/fault cases; Clippy, Rust 1.89.0, and package verification pass. Next: user-only named pipes/Unix sockets, startup ownership and process tests, durable applyConfig, and executable/frontend integration. No OS endpoint or hardware acceptance gate is closed by duplex-stream tests. |
 | 2026-10-05 | Added user-scoped local endpoints and OS ownership locks, with private-storage validation, bounded connection retries, accepted-stream ownership retention, and separate-process crash/IPC fixtures. | 120 local hub tests plus process fixtures, Clippy, Rust 1.89.0, package verification, and contract freshness pass. Windows checks include anonymous denial and permissive ACL rejection. Unix permission/link/cleanup checks await portable CI. Next: executable host startup/attach and shutdown integration, durable apply, protected credentials, and frontend publication. Milestones 2–5 remain open. |
 | 2026-10-05 | Integrated the private host into regain-alpaca, bounded admission/readiness, and cancellation-safe supervisor cleanup. Fixed repeated actor cleanup and Windows pipe exhaustion exposed by host tests. | 124 hub tests plus process fixtures and 14 Alpaca tests pass locally, including three production-executable tests. Clippy, Rust 1.89.0, transport/core/hub/Alpaca packaging and existing standalone camera/HTTP simulation checks pass. Endpoint CI verifies Linux x64/ARM64 and macOS ARM64. Next: durable apply, protected credentials, capabilities, frontend IPC attachment and Alpaca publication; all remaining original gates stay open. |
+| 2026-10-05 | Added supervised configuration apply through IPC, staged compare-and-swap persistence, atomic connection quiescence, client rebinding, and explicit post-commit blocked/warning outcomes. Addressed macOS peer-admission failure from the previous checkpoint. | 132 Windows hub tests plus process fixtures and 14 Alpaca tests pass locally, including file/constructor failures, competing editors, retained operations, cancellation/deadline uncertainty, panic recovery, and production-executable apply/restart. Clippy, Rust 1.89.0, package verification, and contract freshness pass. Portable CI remains required for this checkpoint. Next: protected credentials, capabilities, frontend attachment/publication, and all remaining original gates. |

@@ -91,6 +91,8 @@ impl Backend for Mock {
 mod host;
 #[path = "support/runtime_ipc.rs"]
 mod ipc;
+#[path = "support/runtime_service.rs"]
+mod service;
 
 struct Fixture {
     config: HubConfig,

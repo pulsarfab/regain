@@ -166,6 +166,71 @@ fn only_one_concurrent_editor_can_apply_a_revision() {
         1
     );
 }
+
+#[test]
+fn prepared_updates_are_unpublished_store_bound_and_revision_checked_again_at_commit() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("hub.json");
+    let store = ConfigStore::new(Some(path.clone()), safety()).unwrap();
+    let before = store.snapshot();
+    std::fs::write(&path, serde_json::to_vec(&before).unwrap()).unwrap();
+    let first = store
+        .prepare(before.revision, before.clone(), false)
+        .unwrap();
+    let stale = store
+        .prepare(before.revision, before.clone(), false)
+        .unwrap();
+    assert_eq!(ConfigStore::load(&path).unwrap().snapshot(), before);
+    assert_eq!(store.snapshot(), before);
+    let other = ConfigStore::new(None, before.clone()).unwrap();
+    let foreign = other
+        .prepare(before.revision, before.clone(), false)
+        .unwrap();
+    assert!(matches!(store.commit(foreign), Err(ApplyError::Conflict)));
+    let after = store.commit(first).unwrap();
+    assert!(matches!(store.commit(stale), Err(ApplyError::Conflict)));
+    assert_eq!(ConfigStore::load(&path).unwrap().snapshot(), after);
+    assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+}
+
+#[cfg(unix)]
+#[test]
+fn a_failed_directory_flush_reports_the_committed_revision_instead_of_rollback() {
+    use std::os::unix::fs::PermissionsExt;
+    if unsafe { libc::geteuid() } == 0 {
+        return;
+    } // Root bypasses this permission fault.
+    let dir = tempfile::tempdir().unwrap();
+    struct Restore(std::path::PathBuf);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            std::fs::set_permissions(&self.0, std::fs::Permissions::from_mode(0o700)).unwrap();
+        }
+    }
+    let _restore = Restore(dir.path().to_path_buf());
+    let path = dir.path().join("hub.json");
+    let store = ConfigStore::new(Some(path.clone()), safety()).unwrap();
+    let before = store.snapshot();
+    std::fs::write(&path, serde_json::to_vec(&before).unwrap()).unwrap();
+    let staged = store
+        .prepare(before.revision, before.clone(), false)
+        .unwrap();
+    // Rename remains permitted, but opening the directory to flush is denied.
+    std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o300)).unwrap();
+    let result = store.commit(staged);
+    match result {
+        Err(ApplyError::Committed {
+            configuration,
+            error,
+        }) => {
+            assert_eq!(error.kind(), std::io::ErrorKind::PermissionDenied);
+            assert_ne!(configuration.revision, before.revision);
+            assert_eq!(*configuration, store.snapshot());
+            assert_eq!(*configuration, ConfigStore::load(&path).unwrap().snapshot());
+        }
+        other => panic!("Expected committed durability warning: {other:?}"),
+    }
+}
 #[test]
 fn failed_validation_connection_or_disk_write_preserves_live_config() {
     let dir = tempfile::tempdir().unwrap();

@@ -16,6 +16,11 @@ fn command() -> Command {
 }
 
 async fn request(stream: &mut regain_hub::endpoint::LocalStream, id: u64, command: Value) -> Value {
+    let reply = reply(stream, id, command).await;
+    assert!(reply.get("error").is_none(), "{reply}");
+    reply["result"].clone()
+}
+async fn reply(stream: &mut regain_hub::endpoint::LocalStream, id: u64, command: Value) -> Value {
     let bytes = serde_json::to_vec(&json!({"version":1,"id":id,"command":command})).unwrap();
     stream
         .write_all(&(bytes.len() as u32).to_le_bytes())
@@ -32,8 +37,7 @@ async fn request(stream: &mut regain_hub::endpoint::LocalStream, id: u64, comman
     .unwrap();
     let reply: Value = serde_json::from_slice(&bytes).unwrap();
     assert_eq!(reply["id"], id);
-    assert!(reply.get("error").is_none(), "{reply}");
-    reply["result"].clone()
+    reply
 }
 
 #[tokio::test]
@@ -127,8 +131,77 @@ async fn actual_hub_executable_serves_network_safety_and_observes_unsafe_changes
         .await
         .unwrap();
     }
+    let mut candidate = request(&mut stream, id, json!({"op":"getConfig"})).await;
+    id += 1;
+    let old_revision = candidate["revision"].clone();
+    candidate["outputs"][0]["label"] = json!("Renamed safety output");
+    let connected = reply(
+        &mut stream,
+        id,
+        json!({"op":"applyConfig", "expectedRevision":old_revision, "candidate":candidate}),
+    )
+    .await;
+    id += 1;
+    assert_eq!(connected["error"]["code"], "connected");
+    request(&mut stream, id, json!({"op":"disconnect", "output":output})).await;
+    id += 1;
+    let applied = request(
+        &mut stream,
+        id,
+        json!({"op":"applyConfig", "expectedRevision":old_revision, "candidate":candidate}),
+    )
+    .await;
+    id += 1;
+    assert_eq!(applied["applied"], true);
+    assert_eq!(applied["ready"], true);
+    let current = request(&mut stream, id, json!({"op":"getConfig"})).await;
+    id += 1;
+    assert_ne!(current["revision"], old_revision);
+    assert_eq!(current["revision"], applied["configurationRevision"]);
+    assert_eq!(current["outputs"][0]["label"], "Renamed safety output");
+    let listed = request(&mut stream, id, json!({"op":"listDevices"})).await;
+    id += 1;
+    assert_eq!(listed[0]["label"], "Renamed safety output");
+    let stale = reply(
+        &mut stream,
+        id,
+        json!({"op":"applyConfig", "expectedRevision":old_revision, "candidate":candidate}),
+    )
+    .await;
+    id += 1;
+    assert_eq!(stale["error"]["code"], "revisionConflict");
+    request(&mut stream, id, json!({"op":"connect", "output":output})).await;
+    id += 1;
+    assert_eq!(
+        request(
+            &mut stream,
+            id,
+            json!({"op":"get", "output":output,"property":{"member":"isSafe"}})
+        )
+        .await,
+        false
+    );
     drop(stream);
     owner.kill().await.unwrap();
+    let saved = regain_hub::config::ConfigStore::load(&path)
+        .unwrap()
+        .snapshot();
+    assert_eq!(
+        serde_json::to_value(saved.revision).unwrap(),
+        current["revision"]
+    );
+    let mut restarted = host(&path).spawn().unwrap();
+    let hello = probe(&endpoint, config.instance_id, Duration::from_secs(5))
+        .await
+        .unwrap();
+    assert_eq!(hello.configuration_revision, saved.revision);
+    assert!(
+        hello
+            .operations
+            .iter()
+            .any(|operation| operation == "applyConfig")
+    );
+    restarted.kill().await.unwrap();
     upstream.abort();
     let _ = upstream.await;
 }

@@ -3,7 +3,7 @@ use anyhow::{Context, Result, bail};
 use regain_core::CancellationToken;
 use regain_hub::{
     config::ConfigStore, endpoint::Endpoint, factory::NoCredentials, host, ipc::Limits,
-    native::NativeRuntime, runtime::HubRuntime, safety::MonotonicClock,
+    native::NativeRuntime, runtime::HubRuntime, safety::MonotonicClock, service::HubService,
 };
 use std::{future::Future, path::Path, sync::Arc, time::Duration};
 
@@ -28,11 +28,16 @@ pub async fn run(
     };
     let listener = owner.bind().context("Bind private hub endpoint")?;
     // Credential references fail closed until the OS-protected provider lands.
-    let runtime = HubRuntime::build(
-        config,
-        &native,
-        &NoCredentials,
-        Arc::new(MonotonicClock::default()),
+    let state = HubService::persistent(
+        store,
+        Arc::new(move |config| {
+            HubRuntime::build(
+                config,
+                &native,
+                &NoCredentials,
+                Arc::new(MonotonicClock::default()),
+            )
+        }),
     )
     .map_err(|errors| {
         anyhow::anyhow!(
@@ -45,12 +50,9 @@ pub async fn run(
         )
     })?;
     let stop = CancellationToken::new();
-    let service = host::serve(listener, runtime.clone(), Limits::default(), stop.clone());
+    let service = host::serve_service(listener, state.clone(), Limits::default(), stop.clone());
     tokio::pin!(service);
-    println!(
-        "Regain hub ready: {} (local IPC only)",
-        runtime.runtime_id()
-    );
+    println!("Regain hub ready: {} (local IPC only)", state.host_id());
     let result = tokio::select! {
         result = &mut service => result,
         _ = shutdown => { stop.cancel(); service.await }

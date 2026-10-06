@@ -52,6 +52,7 @@ pub struct HubRuntime {
 }
 struct Lifecycle {
     closed: bool,
+    frozen: bool,
     clients: Vec<Weak<ClientSession>>,
 }
 impl HubRuntime {
@@ -129,6 +130,7 @@ impl HubRuntime {
             activity: Arc::new(AtomicUsize::new(0)),
             lifecycle: Mutex::new(Lifecycle {
                 closed: false,
+                frozen: false,
                 clients: Vec::new(),
             }),
             shutdown: tokio::sync::OnceCell::new(),
@@ -177,9 +179,12 @@ impl HubRuntime {
     }
 
     pub fn client(self: &Arc<Self>) -> Arc<ClientSession> {
+        self.client_with_id(Uuid::new_v4())
+    }
+    pub(crate) fn client_with_id(self: &Arc<Self>, id: Uuid) -> Arc<ClientSession> {
         let mut lifecycle = self.lifecycle.lock().unwrap();
         let client = Arc::new(ClientSession {
-            id: Uuid::new_v4(),
+            id,
             runtime: self.clone(),
             state: Mutex::new(ClientState {
                 closed: lifecycle.closed,
@@ -193,6 +198,23 @@ impl HubRuntime {
             lifecycle.clients.push(Arc::downgrade(&client));
         }
         client
+    }
+
+    /// Atomically exclude new connection reservations while proving no pending
+    /// or retained operation exists. No mutex is held during staging/device I/O.
+    pub(crate) fn quiesce(self: &Arc<Self>) -> Result<Quiescent, SourceError> {
+        let mut lifecycle = self.lifecycle.lock().unwrap();
+        if lifecycle.closed {
+            return Err(disconnected());
+        }
+        if lifecycle.frozen || self.active_connections() != 0 {
+            return Err(SourceError::new(
+                ErrorKind::Busy,
+                "Disconnect all outputs before applying configuration",
+            ));
+        }
+        lifecycle.frozen = true;
+        Ok(Quiescent(self.clone()))
     }
 
     /// Permanently stop admission, revoke safety, cancel pending clients, and
@@ -292,6 +314,12 @@ fn wrong_type() -> SourceError {
 }
 
 struct Activity(Arc<AtomicUsize>);
+pub(crate) struct Quiescent(Arc<HubRuntime>);
+impl Drop for Quiescent {
+    fn drop(&mut self) {
+        self.0.lifecycle.lock().unwrap().frozen = false;
+    }
+}
 impl Activity {
     fn new(counter: Arc<AtomicUsize>) -> Self {
         counter.fetch_add(1, Ordering::SeqCst);
@@ -362,6 +390,9 @@ pub struct ClientSession {
     state: Mutex<ClientState>,
 }
 impl ClientSession {
+    pub(crate) fn runtime_id(&self) -> Uuid {
+        self.runtime.runtime_id()
+    }
     pub fn id(&self) -> Uuid {
         self.id
     }
@@ -373,6 +404,16 @@ impl ClientSession {
         let token = Uuid::new_v4();
         let (cancel, cancelled) = oneshot::channel();
         let mut pending = {
+            let lifecycle = self.runtime.lifecycle.lock().unwrap();
+            if lifecycle.closed {
+                return Err(disconnected());
+            }
+            if lifecycle.frozen {
+                return Err(SourceError::new(
+                    ErrorKind::Busy,
+                    "Hub configuration is being applied",
+                ));
+            }
             let mut state = self.state.lock().unwrap();
             if state.closed {
                 return Err(disconnected());

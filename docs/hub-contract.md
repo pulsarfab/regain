@@ -67,8 +67,8 @@ registry before allowing the next runtime to open its sources.
 These runtime contracts have local lifecycle/fault tests. Scalar framing and
 dispatch now use this runtime through a host-supplied stream. Protected local
 endpoints and OS ownership locks are implemented separately below. The executable
-host is integrated; frontend launch/attach, configuration replacement, and resume
-handling remain open.
+host and configuration replacement are integrated; frontend launch/attach and
+resume handling remain open.
 
 Use the existing convention: little-endian 32-bit JSON length followed by UTF-8
 JSON; responses may carry separately bounded binary image data. Version the hub
@@ -100,18 +100,20 @@ ID reuse authorize replay: duplicate/older IDs close the connection.
 
 Successful responses have `version`, `id`, and `result`. Failed operations have
 `version`, `id`, and `error` containing a stable `code`, sanitized `message`, and
-optional `upstreamCode`. Hello returns stable `instanceId`, per-runtime
+optional `upstreamCode`; configuration failures may include field-addressable
+`fields`. Hello returns stable `instanceId`, per-host-process
 `hostInstance`, `configurationRevision`, connection-owned `clientId`, frame and
 concurrency limits, and the implemented operations/capabilities. Client IDs in
 requests are rejected, rather than interpreted as another client's authority.
 
 Currently implemented: describeConfig, getConfig, validateConfig, listDevices,
-sourceStatus, connect, disconnect, and typed get/put for Switch, SafetyMonitor,
+sourceStatus, hostStatus, connect, disconnect, and typed get/put for Switch, SafetyMonitor,
 and Weather. `validateConfig` reports persisted configuration/relationship errors
 with `scope: "configuration"`; it does not authorize durable apply or establish
 live hardware capabilities. `getConfig` retains credential references for local
-editing, but contains no credential values. Durable applyConfig and camera image
-transport are not advertised or implemented by this scalar dispatcher.
+editing, but contains no credential values. The executable's persistent service
+also advertises `applyConfig`. A read-only embedded runtime does not advertise it
+and returns unsupported. Camera image transport remains a separate pending feature.
 
 Requests start in arrival order but do not wait for earlier I/O to complete.
 This lets Disconnect cancel a pending Connect while cached safety reads remain
@@ -194,17 +196,58 @@ URLs. Credentials are references to local protected storage. Capability discover
 and live observations are separate from configuration.
 
 Apply configuration by validating a candidate, checking expected revision and
-active-operation constraints, durably replacing the file, then publishing the
-new immutable snapshot. An I/O error leaves the old running configuration intact.
+active-operation constraints, replacing the file, then draining the previous
+runtime before publishing a usable replacement. Validation, construction, staging,
+or replacement failures leave the old running configuration intact. Failures
+after replacement have distinct outcomes below; they must not claim rollback.
 Version 1 is the first hub schema; missing or future schema versions fail with an
 actionable error rather than guessed defaults. Existing camera profile migration
 is a distinct, tested adapter; it does not reinterpret a hub document as a profile.
 
-First implementation requires affected outputs to be disconnected before applying
-source/policy changes. Any applied change starts a new generation with no cached
+The current implementation rebuilds the whole runtime, so all its outputs are
+affected and must be disconnected before apply, including pending connects and
+commands retaining connection guards. The check and connection reservations share
+a short lifecycle lock; staging and device I/O hold no service-state mutex.
+Any applied change starts a new generation with no cached
 safe permission. Cosmetic-only live edits can be added later with proof that they
 cannot change source identity or policy. This intentionally differs from Field
 Kit's bounded retention across edits.
+
+### Applying through IPC
+
+Send `{"op":"applyConfig","expectedRevision":"UUID","candidate":{...}}` in
+the command envelope. Both expectedRevision and the candidate revision must match
+the current snapshot. Candidate identity history cannot be edited. Preparation
+registers new identities, assigns the next revision, and writes and flushes a temporary
+file beside the destination. The next runtime is constructed without device I/O.
+Commit rechecks the revision and originating store before atomic replacement.
+The saved file is flushed again, and Unix also flushes its containing directory.
+Configuration reads are bounded to 4 MiB; IPC retains its smaller frame limit.
+
+The normal result contains `applied: true`, `ready: true`, a new
+`configurationRevision`, and empty `cleanupErrors`. Existing local streams keep
+their client identity and bind to the new runtime on their next device request.
+The hostInstance stays fixed until process restart. Old runtime clients are closed
+and cannot reopen sources.
+
+If old-source cleanup is uncertain after commit, the result is `applied: true,
+ready: false` with source cleanup errors. The saved revision is retained, but
+device admission is blocked until the host is restarted after equipment checks.
+The host never activates replacement sources over unfinished old ownership.
+`hostStatus` reports ready/applying/blocked/stopped plus the persisted revision and
+cleanup errors. `getConfig` and `hostStatus` remain readable during apply or a
+blocked state. An unexpected update-task failure also blocks admission.
+
+A final filesystem flush failure after replacement adds `persistenceWarning` to
+the result/status; memory and disk still reflect the new revision. This is not a
+pre-commit I/O error and must not invite retry with the old revision. Flushes use
+the platform/filesystem's guarantees; no power-loss test is claimed here.
+
+Once accepted, apply runs under its own supervisor through commit and cleanup.
+RPC timeout returns uncertain; EOF or cancellation does not roll back or replay
+the transaction. Reload getConfig/hostStatus to resolve the outcome. Concurrent
+edits return busy or revisionConflict. Host shutdown waits for accepted apply
+before releasing endpoint ownership.
 
 ## Safety observations and time
 

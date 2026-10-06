@@ -366,7 +366,9 @@ impl SourceHandle {
                 backoff_failures: 0,
                 retrying: false,
                 connection_started: None,
-                disconnect_result: None,
+                // Construction opens no device; an unused prepared runtime has
+                // no backend cleanup to dispatch when validation is abandoned.
+                disconnect_result: Some(Ok(())),
                 completion,
             }
             .run(receiver),

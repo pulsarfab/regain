@@ -58,9 +58,13 @@ async fn host_bounds_clients_and_one_bad_client_does_not_stop_the_service() {
     // Retiring a malformed client frees a slot while the others remain usable.
     clients[0].write_all(&1u32.to_le_bytes()).await.unwrap();
     clients[0].write_all(b"{").await.unwrap();
-    let resumed = probe(&endpoint, f.config.instance_id, Duration::from_secs(2))
-        .await
-        .unwrap();
+    let resumed = probe(&endpoint, f.config.instance_id, Duration::from_secs(2)).await;
+    if let Err(error) = &resumed {
+        stop.cancel();
+        let stopped = tokio::time::timeout(Duration::from_secs(2), task).await;
+        panic!("Admission did not recover: {error}; host result: {stopped:?}");
+    }
+    let resumed = resumed.unwrap();
     assert_eq!(resumed.host_instance, f.runtime.runtime_id());
     assert!(endpoint.try_lock().unwrap().is_none());
     stop.cancel();

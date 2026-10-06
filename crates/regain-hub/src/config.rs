@@ -4,13 +4,14 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, BTreeSet},
-    io::Write,
+    io::{Read, Write},
     path::{Path, PathBuf},
     sync::Mutex,
 };
 use uuid::Uuid;
 
 pub const SCHEMA_VERSION: u32 = 1;
+pub const MAX_CONFIG_BYTES: usize = 4 * 1024 * 1024;
 pub const MAX_LABEL_CHARS: usize = 200;
 pub const MAX_DEVICES: usize = 256;
 pub const MAX_SAFETY_MEMBERS: usize = 64;
@@ -1009,13 +1010,33 @@ pub enum ApplyError {
     Conflict,
     Connected,
     Io(std::io::Error),
+    /// Replacement happened, but its final durability flush failed. Never
+    /// report this as rollback or retry with the old expected revision.
+    Committed {
+        configuration: Box<HubConfig>,
+        error: std::io::Error,
+    },
 }
 
 /// Callers must hold their operation/configuration gate around apply and lease
 /// changes. The store handles revisions, persistence and atomic publication.
 pub struct ConfigStore {
+    identity: Uuid,
     path: Option<PathBuf>,
     current: Mutex<HubConfig>,
+}
+/// Validated and flushed, but not yet published. Dropping this value removes
+/// its temporary file. Only its originating store can commit it.
+pub struct PreparedConfig {
+    store: Uuid,
+    expected: Uuid,
+    next: HubConfig,
+    staged: Option<tempfile::NamedTempFile>,
+}
+impl PreparedConfig {
+    pub fn configuration(&self) -> &HubConfig {
+        &self.next
+    }
 }
 impl ConfigStore {
     pub fn new(path: Option<PathBuf>, mut initial: HubConfig) -> Result<Self, ApplyError> {
@@ -1029,19 +1050,25 @@ impl ConfigStore {
             return Err(ApplyError::Invalid(errors));
         }
         Ok(Self {
+            identity: Uuid::new_v4(),
             path,
             current: Mutex::new(initial),
         })
     }
     pub fn load(path: &Path) -> Result<Self, ApplyError> {
-        if std::fs::metadata(path).map_err(ApplyError::Io)?.len() > 4 * 1024 * 1024 {
+        let mut bytes = Vec::new();
+        std::fs::File::open(path)
+            .map_err(ApplyError::Io)?
+            .take((MAX_CONFIG_BYTES + 1) as u64)
+            .read_to_end(&mut bytes)
+            .map_err(ApplyError::Io)?;
+        if bytes.len() > MAX_CONFIG_BYTES {
             return Err(ApplyError::Invalid(vec![FieldError::new(
                 "",
                 "limit",
                 "Hub configuration exceeds 4 MiB",
             )]));
         }
-        let bytes = std::fs::read(path).map_err(ApplyError::Io)?;
         let initial = serde_json::from_slice(&bytes).map_err(|_| {
             ApplyError::Invalid(vec![FieldError::new(
                 "",
@@ -1057,14 +1084,23 @@ impl ConfigStore {
     pub fn apply(
         &self,
         expected_revision: Uuid,
-        mut next: HubConfig,
+        next: HubConfig,
         connected: bool,
     ) -> Result<HubConfig, ApplyError> {
+        let prepared = self.prepare(expected_revision, next, connected)?;
+        self.commit(prepared)
+    }
+    pub fn prepare(
+        &self,
+        expected_revision: Uuid,
+        mut next: HubConfig,
+        connected: bool,
+    ) -> Result<PreparedConfig, ApplyError> {
         let errors = next.validate();
         if !errors.is_empty() {
             return Err(ApplyError::Invalid(errors));
         }
-        let mut current = self.current.lock().unwrap();
+        let current = self.current.lock().unwrap();
         if current.revision != expected_revision || next.revision != expected_revision {
             return Err(ApplyError::Conflict);
         }
@@ -1091,7 +1127,8 @@ impl ConfigStore {
             return Err(ApplyError::Invalid(errors));
         }
         next.revision = Uuid::new_v4();
-        if let Some(path) = &self.path {
+        drop(current);
+        let staged = if let Some(path) = &self.path {
             let parent = path
                 .parent()
                 .filter(|p| !p.as_os_str().is_empty())
@@ -1099,11 +1136,62 @@ impl ConfigStore {
             let mut temp = tempfile::NamedTempFile::new_in(parent).map_err(ApplyError::Io)?;
             let bytes = serde_json::to_vec_pretty(&next)
                 .map_err(|e| ApplyError::Io(std::io::Error::other(e)))?;
+            if bytes.len() > MAX_CONFIG_BYTES {
+                return Err(ApplyError::Invalid(vec![FieldError::new(
+                    "",
+                    "limit",
+                    "Hub configuration exceeds 4 MiB",
+                )]));
+            }
             temp.write_all(&bytes).map_err(ApplyError::Io)?;
             temp.as_file().sync_all().map_err(ApplyError::Io)?;
-            temp.persist(path).map_err(|e| ApplyError::Io(e.error))?;
+            Some(temp)
+        } else {
+            None
+        };
+        Ok(PreparedConfig {
+            store: self.identity,
+            expected: expected_revision,
+            next,
+            staged,
+        })
+    }
+    pub fn commit(&self, prepared: PreparedConfig) -> Result<HubConfig, ApplyError> {
+        let mut current = self.current.lock().unwrap();
+        if prepared.store != self.identity || current.revision != prepared.expected {
+            return Err(ApplyError::Conflict);
         }
-        *current = next.clone();
-        Ok(next)
+        let saved = match prepared.staged {
+            Some(temp) => Some(
+                temp.persist(self.path.as_ref().expect("Staged file has a destination"))
+                    .map_err(|e| ApplyError::Io(e.error))?,
+            ),
+            None => None,
+        };
+        *current = prepared.next;
+        let configuration = current.clone();
+        drop(current);
+        if let Some(file) = saved {
+            let durability = file.sync_all();
+            #[cfg(unix)]
+            let durability = durability.and_then(|()| {
+                std::fs::File::open(
+                    self.path
+                        .as_ref()
+                        .unwrap()
+                        .parent()
+                        .filter(|p| !p.as_os_str().is_empty())
+                        .unwrap_or(Path::new(".")),
+                )?
+                .sync_all()
+            });
+            if let Err(error) = durability {
+                return Err(ApplyError::Committed {
+                    configuration: Box::new(configuration),
+                    error,
+                });
+            }
+        }
+        Ok(configuration)
     }
 }
