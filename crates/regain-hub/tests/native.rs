@@ -45,6 +45,88 @@ fn config(device: NativeDevice, identity: &str) -> SourceConfig {
 }
 
 #[tokio::test]
+async fn typed_focusers_use_production_workers_with_shared_explicit_simulation_leases() {
+    let Some(native) = runtime() else {
+        return;
+    };
+    for (device, identity) in [
+        (NativeDevice::Eaf, "0102030405060709"),
+        (NativeDevice::Fc3, "00:00:00:00:00:03"),
+        (NativeDevice::Eta, "SIMULATION"),
+    ] {
+        let config = config(device, identity);
+        let source = SourceHandle::spawn(
+            config.id,
+            Uuid::new_v4(),
+            config.polling.clone(),
+            Box::new(NativeAccessoryBackend::new(&config, native.clone()).unwrap()),
+            Arc::new(MonotonicClock::default()),
+        )
+        .unwrap();
+        let controller =
+            regain_hub::focuser::FocuserController::new(source.clone(), Duration::from_secs(10))
+                .unwrap();
+        let first = controller.connect().await.unwrap();
+        let second = controller.connect().await.unwrap();
+        assert!(source.snapshot().simulated);
+        assert_eq!(first.generation(), second.generation());
+        let capabilities = first.capabilities().await.unwrap();
+        assert!(capabilities.absolute);
+        assert!(!capabilities.temp_comp_available);
+        assert!(!first.temp_comp().await.unwrap());
+        if device == NativeDevice::Eta {
+            assert_eq!(first.step_size().await.unwrap(), 1.0);
+        } else {
+            assert_eq!(
+                first.step_size().await.unwrap_err().kind,
+                ErrorKind::Unsupported
+            );
+        }
+        assert_eq!(
+            first.set_temp_comp(true).await.unwrap_err().kind,
+            ErrorKind::Unsupported
+        );
+        let initial = first.position().await.unwrap();
+        let target = initial
+            .checked_add(10)
+            .filter(|target| *target <= capabilities.max_step)
+            .unwrap_or(initial - 10);
+        first.move_to(target).await.unwrap();
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while second.is_moving().await.unwrap() {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
+        assert_eq!(second.position().await.unwrap(), target);
+        if device == NativeDevice::Eta {
+            assert_eq!(
+                second.halt().await.unwrap_err().kind,
+                ErrorKind::Unsupported
+            );
+        } else {
+            second.halt().await.unwrap();
+        }
+        assert!(!source.snapshot().write_uncertain);
+        drop(first);
+        tokio::task::yield_now().await;
+        assert!(second.position().await.is_ok());
+        drop(second);
+        let mut status = source.status();
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while status.borrow_and_update().lease_count != 0 {
+                status.changed().await.unwrap();
+            }
+        })
+        .await
+        .unwrap();
+        assert!(!source.snapshot().transport_connected);
+        source.shutdown().await.unwrap();
+    }
+}
+
+#[tokio::test]
 async fn setup_inspection_reuses_native_property_maps_and_marks_simulation() {
     let Some(native) = runtime() else {
         return;

@@ -11,6 +11,7 @@ pub mod description;
 pub mod diagnostics;
 pub mod endpoint;
 pub mod factory;
+pub mod focuser;
 pub mod host;
 pub mod ipc;
 pub mod launch;

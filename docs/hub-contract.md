@@ -1266,3 +1266,35 @@ its API request returns the existing HTTP 404. Root setup shows an empty state
 and can create its first slot at device number 0. A slot without a selected camera
 is not advertised in the configured-device catalog. Hub identities and leases
 are independent of camera-slot creation and HTTP publisher restart.
+
+### Typed focuser controller
+
+The shared Rust focuser controller performs no I/O at construction. Each session
+acquires its own source lease, waits for actual transport readiness within the
+configured connection deadline and validates required capabilities before it
+connects. The session remains bound to that generation. A reset invalidates its
+reads and commands; an explicit reconnect obtains a new session. Failed or
+cancelled setup releases only that session's lease.
+
+Commands claim unique temporary source control, including overlapping calls from
+one frontend. Preflight reads live, strictly typed capabilities and motion state;
+each read and the write is generation-fenced. Absolute targets respect MaxStep
+and travel respects MaxIncrement; relative distances retain their sign and use
+MaxIncrement. Invalid or unavailable preflight never dispatches a move. Move
+acknowledges start, with completion observed through IsMoving. Temperature
+compensation is never silently disabled. Optional property/command errors retain
+their upstream code. These semantics follow the
+[ASCOM focuser interface](https://ascom-standards.org/newdocs/focuser.html).
+
+Dropping a session releases its lease without halting motion. A dispatched
+uncertain command is not replayed and blocks further mutations through the
+existing source uncertainty latch. Other clients retain their leases. Source
+control coordinates hub operations, not other applications or physical changes;
+preflight is not an atomic hardware transaction and does not promise rollback.
+
+Native EAF, FocusCube3 and ETA reuse their production workers. All provide
+absolute coordinates with no automatic temperature compensation. ETA reports
+one-micrometre coordinates; EAF/FC3 optical step size remains unsupported. ETA's
+unsupported Halt remains unsupported. No hardware or simulation fallback is
+introduced. This controller is not yet exposed as a hub output: runtime/config
+admission, IPC, Alpaca/NINA/ASCOM publication and conformance remain required.

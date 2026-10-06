@@ -2106,3 +2106,39 @@ All 172 warnings-denied NINA tests pass locally
 The earlier empty-camera increment also passes all 171 then-current NINA checks.
 Broader typed proxies, camera ownership, coordination and every original
 remaining acceptance gate stay required.
+
+### Typed focuser controller over existing source ownership
+
+Reviewed the new controller separately from frontend admission. Construction opens
+no device. Connection waits on the actor's watch status before capturing a
+generation; strict required capability reads share the same fence. Failed setup,
+pending-connection cancellation and operation cancellation queue lease cleanup.
+All operations, including concurrent requests from one session, receive distinct
+control ownership. Existing actor deadlines, queued-request cancellation and
+mutation uncertainty remain authoritative.
+
+The review corrected two capability details before commit. Absolute MaxStep is a
+coordinate bound, while MaxIncrement limits travel for one move; relative moves
+retain signed distances and reject integer-minimum overflow without splitting or
+retrying motion. ETA's existing documented coordinate is micrometres, so its
+known 1 µm StepSize is retained; EAF/FC3 lack an optical travel conversion and
+remain unsupported. Temperature compensation is not silently changed for Move.
+Optional errors retain their source code, including unsupported ETA Halt.
+
+`cargo test -p regain-hub -p regain-alpaca --locked` passes with production workers
+provided through REGAIN_TEST_WORKERS. Thirteen new actor/actual HTTP cases cover
+independent leases, live limits, malformed capabilities, optional errors,
+asynchronous readiness/deadline, generation replacement, control conflicts,
+preflight cancellation, dispatched cancellation/uncertainty and no replay. The
+native suite now has eight cases, including the typed controller using three
+production workers in explicit simulation. Final focused checks pass after the
+ETA adjustment, as do strict Clippy, Rust 1.89 and generated-contract freshness
+checks. Logs: `artifacts/hub-focuser-{rust,integration,clippy,msrv,contract}.log`.
+
+The controller is not yet a published hub output. Current runtime still rejects
+Proxy and does not advertise proxyOutputs; no generated contract or frontend
+claim changes here. Next is runtime/IPC/typed diagnostics plus publication and
+imports. Conformance, hardware acceptance and the full original milestones remain
+required. Empty-profile push 37479602454 passes all eight CI jobs. Safety fixture
+correction 37480604743/37480593803 each pass seven jobs with Windows build/package
+still live at this checkpoint; do not call those runs fully green yet.

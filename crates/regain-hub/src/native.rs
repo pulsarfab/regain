@@ -216,6 +216,24 @@ impl Backend for NativeAccessoryBackend {
                     SourceError::new(ErrorKind::Disconnected, "Native source is disconnected")
                 });
             }
+            if self.device_type() == DeviceType::Focuser {
+                if self.verified_identity.is_none() {
+                    return Err(SourceError::new(
+                        ErrorKind::Disconnected,
+                        "Native source is disconnected",
+                    ));
+                }
+                // These native protocols provide absolute coordinates and no
+                // automatic temperature compensation. ETA coordinates are µm;
+                // EAF/FC3 motor steps have no known optical travel conversion.
+                match member.as_str() {
+                    "absolute" => return Ok(json!(true)),
+                    "tempcompavailable" | "tempcomp" => return Ok(json!(false)),
+                    "stepsize" if self.device == NativeDevice::Eta => return Ok(json!(1.0)),
+                    "stepsize" => return Err(unsupported()),
+                    _ => {}
+                }
+            }
             if !properties(self.device)
                 .iter()
                 .any(|(name, _, _)| *name == member)

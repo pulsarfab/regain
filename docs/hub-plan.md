@@ -694,6 +694,15 @@ complete frontend gate or the remaining original milestones.
 - [ ] Preserve dynamic output identity and selection across registration/upgrades.
 - [ ] Extend typed proxy coverage to focusers, rotators, filter wheels, flat panels,
   and cameras in separately reviewable increments.
+
+Focuser controller increment: shared leases, bounded connection readiness,
+generation-bound sessions, strict live capabilities, per-operation control,
+absolute/relative limits, motion/temperature properties and uncertainty/cancellation
+are implemented in Rust. Private actor/HTTP tests and EAF/FC3/ETA production-worker
+simulation pass. Runtime admission, IPC, all three publications, typed diagnostics,
+COM imports, broader simulation and conformance are still needed before focuser
+proxies are offered in setup. The proxy capability remains unavailable meanwhile.
+
 - [ ] Specify camera buffer lifetime, image transport, capability passthrough, and
   acquisition ownership before enabling camera proxies.
 - [ ] Run relevant ASCOM/Alpaca conformance checks and multi-client failure tests.
@@ -785,3 +794,4 @@ Keep existing device profiles and registrations compatible throughout migration.
 | 2026-10-06 | Added actual actor polling phases, observation-time waits, started attempts/cycle completion and backoff diagnostics to cached source/output health, generated schema, native/web summaries and exports. Reviewed in-flight visibility, delayed dispatch and command no-replay semantics. | Four paused-time scheduling cases, full Rust hub/Alpaca suites, strict Clippy, Rust 1.89, generated-contract/Node/four schema checks, all 171 NINA tests and real net48 x86/x64 clients pass. Actual WPF/browser simulation renders inspected; browser preserves one independent lease and cleanup confirms zero. 96ea4e3 CI passes seven jobs including Intel macOS; Windows still live. Next: accessory-only HTTP startup with explicit empty camera profiles, prior COM timeout and every original remaining gate. |
 | 2026-10-06 | Completed accessory-only HTTP refinement: explicit empty camera lists, ordinary missing-file defaults, common startup/reload identity checks and empty camera setup with first-slot creation. | 15 Alpaca unit, nine executable and 14 router tests pass; strict Clippy/Rust 1.89, formatting and JS syntax pass. Browser proves empty/add/save flow, unchanged hub catalog and zero leases/connections/errors; simulation screenshot inspected. Both 96ea4e3 CI runs pass all eight jobs. Next: polling CI, earlier COM timeout and broader typed proxies/camera ownership/coordination plus every original remaining acceptance gate. |
 | 2026-10-06 | Reviewed polling CI Windows failure at native safety-expiry unchanged-generation assertion. Changed the fixture to establish a completed 503 with Retry-After longer than the safe lifetime before checking expiry, retaining generation, stale state, weather, timing and recovery assertions. | All 172 NINA tests and five focused expiry repeats pass. Production deadlines/policies unchanged; exact old reset cause remains unproved. New CI required. Next: corrected CI and broader typed accessory proxies, retaining COM timeout and all original remaining acceptance gates. |
+| 2026-10-06 | Added and reviewed the typed focuser controller over shared source actors. Live capability/range checks, actual readiness, generation fences and unique command control preserve ownership and uncertainty. Native EAF/FC3/ETA adapters reuse existing workers and known units. | 13 private actor/HTTP cases plus eight production-worker simulation cases pass; full hub/Alpaca suites, strict Clippy and Rust 1.89 checks pass. Review corrected absolute per-move travel and retained ETA's known 1 µm coordinate. Empty-profile push CI passes all eight jobs; safety-correction push/PR each pass seven with Windows still live. Next: focuser runtime/IPC/diagnostics and all three frontends/imports, then the remaining typed devices/cameras/coordination and every original acceptance gate. No typed proxy is advertised yet. |
