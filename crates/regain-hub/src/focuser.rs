@@ -99,16 +99,7 @@ pub enum FocuserValue {
     Number { value: f64 },
 }
 
-#[derive(Debug, serde::Serialize, schemars::JsonSchema)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct FocuserSample {
-    pub value: FocuserValue,
-    pub age_seconds: f64,
-    pub source: Uuid,
-    pub generation: Uuid,
-    pub sequence: u64,
-    pub revision: Uuid,
-}
+pub type FocuserSample = crate::readout::TypedSample<FocuserValue>;
 pub(crate) fn cached_property(
     state: &crate::source::SourceSnapshot,
     property: FocuserProperty,
@@ -138,30 +129,7 @@ pub(crate) fn cached_property(
             .get(key)
             .ok_or_else(|| unavailable("No focuser sample has been received"))?,
     )?;
-    let sampled = state
-        .sample_started_seconds
-        .get(key)
-        .copied()
-        .or(state.sampled_at_seconds)
-        .ok_or_else(|| unavailable("No focuser sample has been received"))?;
-    let elapsed = now.as_secs_f64() - sampled;
-    let upstream_age = state.sample_ages_seconds.get(key).copied().unwrap_or(0.0);
-    let age_seconds = elapsed + upstream_age;
-    if elapsed < 0.0 || upstream_age < 0.0 || !age_seconds.is_finite() {
-        return Err(bad_reading());
-    }
-    Ok(FocuserSample {
-        value,
-        age_seconds,
-        source: state.source,
-        generation: state.generation,
-        sequence: state
-            .sample_sequences
-            .get(key)
-            .copied()
-            .unwrap_or(state.sequence),
-        revision: state.revision,
-    })
+    crate::readout::typed_sample(state, key, now, value)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

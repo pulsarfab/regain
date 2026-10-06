@@ -47,6 +47,150 @@ fn config(device: NativeDevice, identity: &str) -> SourceConfig {
 }
 
 #[tokio::test]
+async fn runtime_native_wheel_preserves_metadata_cache_and_shared_worker_ownership() {
+    use regain_hub::{
+        config::{DeviceType, HubConfig, OutputConfig, VirtualDevice},
+        diagnostics::{Diagnostics, Reading},
+        factory::NoCredentials,
+        filterwheel::{FilterWheelProperty, NativeFilterWheelMetadata},
+        runtime::HubRuntime,
+    };
+    let Some(native) = runtime() else {
+        return;
+    };
+    let mut source = config(NativeDevice::Efw, "0102030405060708");
+    let metadata = NativeFilterWheelMetadata {
+        names: ["L", "R", "G", "B", "Hα", "", "SII"]
+            .into_iter()
+            .map(String::from)
+            .collect(),
+        focus_offsets: vec![0, -12, 17, 30, 45, 52, 67],
+    };
+    let SourceBackend::Native { filter_wheel, .. } = &mut source.backend else {
+        unreachable!()
+    };
+    *filter_wheel = Some(metadata.clone());
+    let mut config = HubConfig::empty();
+    config.sources.push(source.clone());
+    for number in [4, 17] {
+        config.outputs.push(OutputConfig {
+            id: Uuid::new_v4(),
+            number,
+            label: format!("Simulated wheel {number}"),
+            device: VirtualDevice::Proxy {
+                source: source.id,
+                device_type: DeviceType::FilterWheel,
+            },
+        });
+    }
+    let host = HubRuntime::build(
+        config.clone(),
+        &native,
+        &NoCredentials,
+        Arc::new(MonotonicClock::default()),
+    )
+    .unwrap();
+    assert!(host.outputs().iter().all(|output| output.simulated));
+    assert_eq!(host.active_connections(), 0);
+    let Diagnostics::FilterWheel { health, properties } = host
+        .output_status(config.outputs[0].id, 0, 32)
+        .unwrap()
+        .diagnostics
+    else {
+        panic!()
+    };
+    assert_eq!(health.lease_count, 0);
+    assert!(
+        properties
+            .iter()
+            .all(|property| matches!(property.sample, Reading::Unavailable { .. }))
+    );
+    let first = host.client();
+    let second = host.client();
+    first.connect(config.outputs[0].id).await.unwrap();
+    second.connect(config.outputs[1].id).await.unwrap();
+    let connection = second.connection(config.outputs[1].id).unwrap();
+    let wheel = connection.filterwheel().unwrap();
+    assert_eq!(host.source_snapshot(source.id).unwrap().lease_count, 2);
+    assert_eq!(
+        wheel.property(FilterWheelProperty::Names).await.unwrap(),
+        json!(metadata.names)
+    );
+    assert_eq!(
+        wheel
+            .property(FilterWheelProperty::FocusOffsets)
+            .await
+            .unwrap(),
+        json!(metadata.focus_offsets)
+    );
+    first
+        .connection(config.outputs[0].id)
+        .unwrap()
+        .filterwheel()
+        .unwrap()
+        .move_to(6)
+        .await
+        .unwrap();
+    assert_eq!(wheel.position().await.unwrap(), 6);
+    tokio::time::timeout(Duration::from_secs(3),async {
+        loop {
+            let Diagnostics::FilterWheel {health,properties} =
+                host.output_status(config.outputs[1].id,0,32).unwrap().diagnostics else {panic!()};
+            if serde_json::to_value(&properties[2].sample).unwrap()["reading"]["value"]["value"] == 6 {
+                assert!(host.source_snapshot(source.id).unwrap().simulated); assert_eq!(health.lease_count,2);
+                assert_eq!(serde_json::to_value(&properties[0].sample).unwrap()["reading"]["value"]["value"],json!(metadata.names));
+                assert_eq!(serde_json::to_value(&properties[1].sample).unwrap()["reading"]["value"]["value"],json!(metadata.focus_offsets));
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    }).await.unwrap();
+    first.close();
+    tokio::time::timeout(Duration::from_secs(3), async {
+        while host.source_snapshot(source.id).unwrap().lease_count != 1 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    assert!(connection.connected());
+    assert_eq!(wheel.position().await.unwrap(), 6);
+    drop(connection);
+    second.close();
+    tokio::time::timeout(Duration::from_secs(3), async {
+        while host.source_snapshot(source.id).unwrap().transport_connected {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    let fresh = host.client();
+    fresh.connect(config.outputs[0].id).await.unwrap();
+    let connection = fresh.connection(config.outputs[0].id).unwrap();
+    assert_eq!(
+        connection
+            .filterwheel()
+            .unwrap()
+            .property(FilterWheelProperty::Names)
+            .await
+            .unwrap(),
+        json!(metadata.names)
+    );
+    assert_eq!(
+        connection
+            .filterwheel()
+            .unwrap()
+            .property(FilterWheelProperty::FocusOffsets)
+            .await
+            .unwrap(),
+        json!(metadata.focus_offsets)
+    );
+    drop(connection);
+    fresh.close();
+    host.shutdown().await.unwrap();
+}
+
+#[tokio::test]
 async fn runtime_native_rotator_proxies_share_verified_workers_and_cached_typed_health() {
     native_rotator_runtime(false).await;
 }

@@ -19,6 +19,9 @@ struct Device {
     values: Mutex<Values>,
     writes: Mutex<Vec<(String, Values)>>,
     reads: AtomicUsize,
+    polls: AtomicUsize,
+    errors: Mutex<std::collections::BTreeMap<String, SourceError>>,
+    ages: Mutex<std::collections::BTreeMap<String, f64>>,
     connects: AtomicUsize,
     disconnects: AtomicUsize,
     pending: AtomicBool,
@@ -36,6 +39,9 @@ impl Device {
             ])),
             writes: Mutex::default(),
             reads: AtomicUsize::new(0),
+            polls: AtomicUsize::new(0),
+            errors: Mutex::default(),
+            ages: Mutex::default(),
             connects: AtomicUsize::new(0),
             disconnects: AtomicUsize::new(0),
             pending: AtomicBool::new(false),
@@ -102,7 +108,27 @@ impl Backend for Mock {
         })
     }
     fn poll(&mut self) -> BackendFuture<'_, Values> {
-        Box::pin(async { Ok(self.0.values.lock().unwrap().clone()) })
+        Box::pin(async {
+            self.0.polls.fetch_add(1, SeqCst);
+            Ok(self.0.values.lock().unwrap().clone())
+        })
+    }
+    fn sample(&mut self) -> BackendFuture<'_, regain_hub::source::SampleBatch> {
+        Box::pin(async {
+            let mut values = self.poll().await?;
+            let errors = self.0.errors.lock().unwrap().clone();
+            let mut ages_seconds = self.0.ages.lock().unwrap().clone();
+            for key in errors.keys() {
+                values.remove(key);
+                ages_seconds.remove(key);
+            }
+            Ok(regain_hub::source::SampleBatch {
+                values,
+                errors,
+                ages_seconds,
+                ..Default::default()
+            })
+        })
     }
     fn reset(&mut self) {}
 }
@@ -644,3 +670,6 @@ async fn actual_alpaca_v3_wheel_preserves_arrays_position_and_async_ownership() 
 async fn actual_alpaca_wheel_lost_reply_never_replays_the_applied_position() {
     alpaca_wheel(3, true).await;
 }
+
+#[path = "support/filterwheel_runtime.rs"]
+mod runtime;

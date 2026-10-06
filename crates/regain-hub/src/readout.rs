@@ -25,6 +25,49 @@ pub struct ScalarSample {
     pub sequence: u64,
     pub revision: Uuid,
 }
+/// Shared observation envelope for typed accessory properties. Property
+/// decoding stays in each controller; clocks and source epochs use one rule.
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TypedSample<T> {
+    pub value: T,
+    pub age_seconds: f64,
+    pub source: Uuid,
+    pub generation: Uuid,
+    pub sequence: u64,
+    pub revision: Uuid,
+}
+pub(crate) fn typed_sample<T>(
+    state: &SourceSnapshot,
+    key: &str,
+    now: Duration,
+    value: T,
+) -> Result<TypedSample<T>, SourceError> {
+    let sampled = state
+        .sample_started_seconds
+        .get(key)
+        .copied()
+        .or(state.sampled_at_seconds)
+        .ok_or_else(|| unavailable("No typed sample has been received"))?;
+    let elapsed = now.as_secs_f64() - sampled;
+    let upstream_age = state.sample_ages_seconds.get(key).copied().unwrap_or(0.0);
+    let age_seconds = elapsed + upstream_age;
+    if elapsed < 0.0 || upstream_age < 0.0 || !age_seconds.is_finite() {
+        return Err(unavailable("Invalid typed sample age"));
+    }
+    Ok(TypedSample {
+        value,
+        age_seconds,
+        source: state.source,
+        generation: state.generation,
+        sequence: state
+            .sample_sequences
+            .get(key)
+            .copied()
+            .unwrap_or(state.sequence),
+        revision: state.revision,
+    })
+}
 pub fn scalar(
     state: &SourceSnapshot,
     readout: &Readout,

@@ -66,6 +66,67 @@ public sealed partial class HubNativeTests
         }
     }
     [Fact]
+    public async Task WheelDiagnosticsPreserveMetadataAndRejectMalformedArraysAndEpochs()
+    {
+        // The host uses its ordinary scalar fixture only to supply the current
+        // contract and health shape. This native wheel configuration is never
+        // applied or connected; all wheel responses below are private fixtures.
+        await using var host = await Host.Open(); using var editor = await Editor(host); await editor.ReloadAsync();
+        var saved = JsonNode.Parse(editor.SavedConfiguration!.Value.GetRawText())!.AsObject();
+        var output = saved["outputs"]![0]!.DeepClone().AsObject(); var sourceConfig = saved["sources"]![0]!.DeepClone().AsObject();
+        var source = sourceConfig["id"]!.GetValue<string>();
+        sourceConfig["backend"] = new JsonObject { ["kind"] = "native", ["device"] = "efw", ["identity"] = "0102030405060708" };
+        saved["sources"] = new JsonArray(sourceConfig);
+        output["device"] = new JsonObject { ["kind"] = "proxy", ["deviceType"] = "filterwheel", ["source"] = source };
+        saved["outputs"] = new JsonArray(output); saved["identities"] = new JsonObject { ["outputs"] = new JsonObject(), ["channels"] = new JsonObject() };
+        var original = await editor.OutputStatusAsync(Guid.Parse(output["id"]!.GetValue<string>()), 0, 1);
+        var health = JsonNode.Parse(original.GetProperty("diagnostics").GetProperty("channels")[0].GetProperty("health").GetRawText())!;
+        health["transportConnected"] = true; health["leaseCount"] = 1;
+        var fields = editor.OutputDiagnosticDescription.GetProperty("filterwheelProperties"); Assert.Equal(3, fields.GetArrayLength());
+        JsonObject Reply(int start, int limit) {
+            var properties = new JsonArray(); int end = Math.Min(start + limit, fields.GetArrayLength());
+            for (int i = start; i < end; i++) {
+                var field = fields[i]; JsonNode value = i switch { 0 => new JsonArray("L", "Hα", ""), 1 => new JsonArray(-12, 0, 17), _ => JsonValue.Create(-1)! };
+                properties.Add(new JsonObject { ["property"] = field.GetProperty("property").GetString(),
+                    ["sample"] = new JsonObject { ["state"] = "available", ["reading"] = new JsonObject {
+                        ["value"] = new JsonObject { ["type"] = field.GetProperty("valueType").GetString(), ["value"] = value },
+                        ["ageSeconds"] = 5, ["source"] = source, ["generation"] = health["generation"]!.DeepClone(),
+                        ["sequence"] = health["sequence"]!.DeepClone(), ["revision"] = saved["revision"]!.DeepClone() } } });
+            }
+            return new JsonObject { ["purpose"] = "cachedDiagnostics", ["output"] = output["id"]!.DeepClone(),
+                ["configurationRevision"] = saved["revision"]!.DeepClone(), ["observedSeconds"] = 6, ["deviceType"] = "filterwheel",
+                ["simulated"] = true, ["start"] = start, ["limit"] = limit, ["total"] = fields.GetArrayLength(),
+                ["nextStart"] = end < fields.GetArrayLength() ? JsonValue.Create(end) : null,
+                ["diagnostics"] = new JsonObject { ["kind"] = "filterwheel", ["health"] = health.DeepClone(), ["properties"] = properties } };
+        }
+        JsonElement Element(JsonNode node) => JsonSerializer.SerializeToElement(node);
+        void Validate(JsonObject reply, int start, int limit) => HubDiagnosticContract.Reply(editor.OutputDiagnosticDescription, Element(saved), Element(output), Element(reply), start, limit);
+        Validate(Reply(0, 2), 0, 2); Validate(Reply(2, 32), 2, 32); Validate(Reply(3, 1), 3, 1);
+        var summary = HubConfigurationWindow.OutputDiagnosticSummary(Element(Reply(0, 3)));
+        Assert.Contains(JsonSerializer.Serialize(new[] { "L", "Hα", "" }), summary);
+        Assert.Contains("[-12,0,17]", summary); Assert.Contains("position: -1", summary);
+        foreach (var (index, value) in new (int, string)[] {
+            (0,"[]"),(0,"[1]"),(0,"[[\"L\"]]"),(0,JsonSerializer.Serialize(Enumerable.Repeat("L",1025))),
+            (1,"[]"),(1,"[1,2]"),(1,"[0,1.5]"),(1,"[0,2147483648]"),(1,"[0,-2147483649]"),
+            (1,"[0,\"1\"]"),(1,"[0,[1]]"),(1,JsonSerializer.Serialize(Enumerable.Repeat(0,1025))),
+            (2,"-2"),(2,"1024"),(2,"0.5") }) {
+            var reply = Reply(index,1); reply["diagnostics"]!["properties"]![0]!["sample"]!["reading"]!["value"]!["value"] = JsonNode.Parse(value);
+            Assert.Throws<HubException>(() => Validate(reply,index,1));
+        }
+        foreach (var fault in new[] { "property", "source", "generation", "sequence", "type", "extra", "age" }) {
+            var reply = Reply(0,1); var item = reply["diagnostics"]!["properties"]![0]!; var reading = item["sample"]!["reading"]!;
+            if (fault == "property") item["property"] = "position";
+            if (fault == "source") reading["source"] = Guid.NewGuid().ToString();
+            if (fault == "generation") reading["generation"] = Guid.NewGuid().ToString();
+            if (fault == "sequence") reading["sequence"] = health["sequence"]!.GetValue<ulong>() + 1;
+            if (fault == "type") reading["value"] = new JsonObject { ["type"] = "integer", ["value"] = 0 };
+            if (fault == "extra") reading["authorization"] = "PRIVATE_FORBIDDEN_REPLY";
+            if (fault == "age") reading["ageSeconds"] = -1;
+            Assert.Throws<HubException>(() => Validate(reply,0,1));
+        }
+        Assert.Equal(0, (await host.Status(0)).GetProperty("leaseCount").GetInt32());
+    }
+    [Fact]
     public void DiagnosticSchemaReferencesRetainSiblingConstraintsAndDecodedStrings()
     {
         using var schema = JsonDocument.Parse("{\"$defs\":{\"value\":{\"type\":\"number\",\"minimum\":2}},\"$ref\":\"#/$defs/value\",\"maximum\":3}");

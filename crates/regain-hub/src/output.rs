@@ -1,4 +1,4 @@
-//! Shared typed scalar operations for local composition and frontend IPC.
+//! Shared typed output operations for local composition and frontend IPC.
 use crate::{
     ipc::{Get, Put},
     runtime::OutputConnection,
@@ -40,6 +40,10 @@ impl OutputConnection {
                     }
                 } else if let Ok(rotator) = self.rotator() {
                     for (name, value) in rotator.device_state(self.now()) {
+                        values.push(StateValue { name, value });
+                    }
+                } else if let Ok(wheel) = self.filterwheel() {
+                    for (name, value) in wheel.device_state(self.now()) {
                         values.push(StateValue { name, value });
                     }
                 } else {
@@ -107,6 +111,7 @@ impl OutputConnection {
                 json!(self.weather()?.sensor_description(&sensor)?)
             }
             Get::Focuser { property } => self.focuser()?.property(property).await?,
+            Get::FilterWheel { property } => self.filterwheel()?.property(property).await?,
             Get::Rotator { property } => {
                 let value = self.rotator()?.property(property).await?;
                 if property == crate::rotator::RotatorProperty::CanReverse && value == false {
@@ -148,6 +153,7 @@ impl OutputConnection {
             Put::SyncRotator { degrees } => self.rotator()?.sync(degrees).await?,
             Put::HaltRotator {} => self.rotator()?.halt().await?,
             Put::RotatorReverse { enabled } => self.rotator()?.set_reverse(enabled).await?,
+            Put::MoveFilterWheel { position } => self.filterwheel()?.move_to(position).await?,
         }
         Ok(Value::Null)
     }

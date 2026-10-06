@@ -1685,8 +1685,8 @@ This is metadata support; camera image buffers require separate ownership and
 transport. Existing scalar adapters/controllers still enforce their own types.
 
 The controller has private actor and actual loopback Alpaca V2/V3 coverage.
-Wheel publication remains gated pending runtime/IPC, all frontends and remaining
-import/simulation/setup acceptance.
+Wheel runtime/IPC is implemented. Publication remains gated pending all frontends
+and remaining import/simulation/setup acceptance.
 
 ### Direct EFW metadata
 
@@ -1728,3 +1728,28 @@ valid responses: collected results stop at the first aggregate text/item overflo
 before publication. Partial cache replacement continues to include retained keys
 and exclude replaced/errored ones. The poller remains shared with COM imports;
 this change alone does not enable additional COM classes or wheel outputs.
+
+### Wheel runtime and cached diagnostics
+
+The runtime admits FilterWheel proxies over native and network sources. Private
+IPC advertises `filterWheelOutputs`, reads `filterWheel` properties and accepts
+`moveFilterWheel` with a signed Int32 position. Unsupported-class operations
+remain errors. Existing connection leases, command admission, generation fencing,
+unknown-write latching and EOF cleanup are shared with other typed accessories.
+This does not yet advertise wheel creation or publication in any frontend.
+
+Cached wheel diagnostics expose Names, FocusOffsets and Position through the same
+typed observation envelope as focusers and rotators. The wire fields stay
+unchanged: value, ageSeconds, source, generation, sequence and revision. Both
+metadata arrays must be valid and have equal counts before any cached property
+claims availability. Position is `-1` or a slot inside those live bounds. Each
+property's reported age includes its oldest metadata dependency. Inspection never
+opens a source or repairs an invalid cache with a live read.
+
+Native and browser readers consume the generated array types/limits, Int32 bounds
+and zero-reference constraint. They preserve Unicode names, empty names, signed
+offsets, property order and observation identities. Standard DeviceState contains
+only cached Position, omitting it when unavailable; it does not add names, offsets
+or invented motion commands. Metadata whose escaped JSON exceeds the existing
+IPC frame limit returns `responseTooLarge`, without truncation, a larger frame
+budget, source mutation or termination of the client's connection.

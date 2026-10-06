@@ -8,9 +8,10 @@ tagged or published. Changed cross-crate APIs require an unpublished version so
 Cargo package verification uses the new workspace packages.
 Last updated: 2026-10-06.
 
-COM checkpoint 2ed2578 passes all eight jobs in both PR/push CI
-37526619358/37526612935, including registered imports, packaging and installer
-acceptance. The locally verified rotator simulator now proceeds into the same PR.
+Native wheel metadata checkpoint 630b302 passes all eight jobs in both PR/push CI
+37536023962/37536015902, including Windows registered imports, packaging and
+installer acceptance. Shared wheel polling and runtime work remain local pending
+their completed local validation and next push to the same draft PR.
 
 Current position: milestones 0 and 1 are complete. The scalar source/output paths
 in milestones 2 and 3 are implemented; their remaining acceptance gates are open.
@@ -29,8 +30,9 @@ Native EFW adapters now expose ordered metadata through the existing worker.
 Optional saved `filterWheel` arrays retain names and signed offsets across
 calibration/reconnect; absent metadata uses numbered names and zero offsets.
 Explicit metadata must match hardware slots, including on the low-level write
-path. Runtime/IPC, all three publications, COM/virtual/simulation and shared
-creation remain required before enabling wheel proxies.
+path. Wheel runtime/IPC and cached diagnostics are implemented and verified
+locally. All three publications, COM/virtual/simulation
+and shared creation remain required before enabling wheel proxies in setup.
 
 Shared wheel polling increment is locally verified: the existing property poller supports
 bounded string and Int32 arrays, and factory plans deduplicate wheel metadata and
@@ -39,10 +41,18 @@ in both the source cache and collected Alpaca results. Twenty-seven actual Alpac
 transport cases, seven factory cases, eleven wheel-controller and twenty-six
 source-actor cases pass, along with strict Clippy. Full Rust hub/Alpaca suites,
 Rust 1.89, contract freshness, rebuilt-host NINA 202/202 and real net48 x86/x64
-regressions also pass. Runtime/IPC and wheel publication
-remain gated; this is not a completed wheel frontend.
+regressions also pass. The current local runtime increment adds shared wheel
+sessions, typed IPC and cached diagnostics. Its fifteen wheel, eighteen focuser
+and twenty-two rotator tests pass, including oversized replies, cancellation,
+uncertain moves and independent leases. A new production EFW worker test in
+explicit simulation verifies runtime metadata/polling/reconnection; browser
+reader and five independent schema checks pass. Full Rust hub/Alpaca suites,
+strict Clippy, Rust 1.89, generated-contract freshness, rebuilt-host NINA 203/203
+and real net48 x86/x64 clients pass. Cache/IPC confirmation additionally verifies
+per-key error recovery, omitted unavailable Position and oversized diagnostic
+replies without stream loss. This is not a completed wheel frontend.
 
-Current CI issue: simulator checkpoint d4050c1 PR run 37530345334 completes
+Retained reliability issue: simulator checkpoint d4050c1 PR run 37530345334 completes
 with seven successful jobs and a Windows failure. The focuser lost-Move-reply
 fixture expects `uncertain` but receives `transient`; that assertion alone does
 not prove the command was dispatched. Added failure-only request/dispatch and
@@ -62,7 +72,8 @@ request-timing and full-stack diagnostics are added locally without changing
 production behavior, retries, assertions or deadlines. Push run 37533737225
 subsequently completes all eight jobs successfully, including Windows packaging,
 installer and camera kit acceptance. It does not explain the separate PR failure.
-Native metadata head 630b302 PR/push runs 37536023962/37536015902 are live.
+Native metadata head 630b302 PR/push runs 37536023962/37536015902 subsequently
+complete all eight jobs successfully. Their passes do not establish earlier causes.
 
 Completed increment: shared setup enables rotator proxy creation and installed COM
 rotator choices through the existing generated forms. Native NINA and real net48
@@ -1065,3 +1076,4 @@ Keep existing device profiles and registrations compatible throughout migration.
 | 2026-10-06 | Implemented and reviewed the typed wheel controller using shared sessions/leases; added bounded flat metadata arrays to the source cache after a reproduced array rejection. | All eleven private actor/actual Alpaca V2/V3 wheel cases, twenty-six actor cases, full Rust hub/Alpaca suites, Clippy/MSRV/contracts, Node/four schema checks, rebuilt-host NINA 201/201 and real net48 x86/x64 pass. Retain initial compile/preflight/cancellation failures; no deadlines changed. Simulator push CI 37530337700 passes all eight jobs; its PR failure cause remains open. Next: native wheel metadata/adapters, runtime/IPC and all outputs/imports/setup, then panels, cameras/coordination and every original remaining gate. |
 | 2026-10-06 | Added native EFW metadata through existing workers and shared config descriptors; reviewed calibration, saved identity and low-level move admission. Fixed independently reproduced Int32 schema overflow and kept slot mismatch explicit. | Eighteen native and sixteen config cases, full Rust hub/Alpaca suites, Clippy, Rust 1.89, contract freshness, Node/five schema checks, all 202 NINA tests and real net48 x86/x64 pass. Retain wrong simulator-motion expectation, schema overflow and editor-label/unsaved-inspection failures. Exact bf15ced PR CI has seven successes but Windows x86 rotator Sync fails uncertain; cause unproved. Added failure-only stage/request/state/stack evidence, without deadline or behavior changes; its push remains live. Next: wheel poll plans/runtime/IPC, all three publications/imports/virtual/simulation/setup, then panels, cameras/coordination and every original final gate. |
 | 2026-10-06 | Added shared typed array polling and deduplicated wheel plans. Factored cache/collected-result admission into SampleBudget after review identified aggregate array collection risk. | Twenty-seven Alpaca transport, seven factory, eleven wheel-controller and twenty-six actor cases pass; full Rust hub/Alpaca, strict Clippy, Rust 1.89, contract freshness, rebuilt-host NINA 202/202 and real net48 x86/x64 also pass. Strengthened collection tests verify one later request remains queued after the first over-budget value; focused confirmation passes. bf15ced push CI 37533737225 completes all eight jobs; its failed PR cause remains unproved. Native metadata head 630b302 is pushed and its PR/push CI remains active. Keep this verified polling increment local while continuing wheel runtime/IPC and all original remaining publication/acceptance/final gates. |
+| 2026-10-06 | Integrated wheel runtime/IPC and cached diagnostics, sharing typed observation envelopes with focusers/rotators. Reviewed cancellation, generation/uncertainty, array dependencies, escaped response limits and frontend contracts. | Fifteen wheel, nineteen native and full Rust hub/Alpaca suites pass; Clippy, Rust 1.89, contract freshness, Node/five schema checks, rebuilt-host NINA 203/203 and real net48 x86/x64 pass. Strengthened cache/IPC confirmation proves per-key recovery, Position omission and stream survival after oversized diagnostics. Native metadata 630b302 PR/push CI 37536023962/37536015902 both pass all eight jobs. Next: all three wheel publications, imports/virtual/simulation/setup, then panels, cameras/coordination and every original acceptance/final gate. |

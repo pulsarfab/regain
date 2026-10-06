@@ -5,6 +5,29 @@
   "outputDiagnostics": {
     "countsSafetyObservations": false,
     "deadlineSeconds": 5,
+    "filterwheelProperties": [
+      {
+        "exclusiveMinimum": null,
+        "maximum": null,
+        "minimum": null,
+        "property": "names",
+        "valueType": "strings"
+      },
+      {
+        "exclusiveMinimum": null,
+        "maximum": null,
+        "minimum": null,
+        "property": "focusOffsets",
+        "valueType": "integers"
+      },
+      {
+        "exclusiveMinimum": null,
+        "maximum": 1023,
+        "minimum": -1,
+        "property": "position",
+        "valueType": "integer"
+      }
+    ],
     "focuserProperties": [
       {
         "exclusiveMinimum": null,
@@ -220,6 +243,30 @@
                 "properties"
               ],
               "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "health": {
+                  "$ref": "#/$defs/SourceHealth"
+                },
+                "kind": {
+                  "const": "filterwheel",
+                  "type": "string"
+                },
+                "properties": {
+                  "items": {
+                    "$ref": "#/$defs/FilterWheelProperty"
+                  },
+                  "type": "array"
+                }
+              },
+              "required": [
+                "kind",
+                "health",
+                "properties"
+              ],
+              "type": "object"
             }
           ]
         },
@@ -236,6 +283,103 @@
             "unavailable"
           ],
           "type": "string"
+        },
+        "FilterWheelProperty": {
+          "additionalProperties": false,
+          "properties": {
+            "property": {
+              "$ref": "#/$defs/FilterWheelProperty2"
+            },
+            "sample": {
+              "$ref": "#/$defs/Reading5"
+            }
+          },
+          "required": [
+            "property",
+            "sample"
+          ],
+          "type": "object"
+        },
+        "FilterWheelProperty2": {
+          "enum": [
+            "names",
+            "focusOffsets",
+            "position"
+          ],
+          "type": "string"
+        },
+        "FilterWheelValue": {
+          "oneOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "type": {
+                  "const": "integer",
+                  "type": "string"
+                },
+                "value": {
+                  "format": "int32",
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "type",
+                "value"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "type": {
+                  "const": "strings",
+                  "type": "string"
+                },
+                "value": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "maxItems": 1024,
+                  "minItems": 1,
+                  "type": "array"
+                }
+              },
+              "required": [
+                "type",
+                "value"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "type": {
+                  "const": "integers",
+                  "type": "string"
+                },
+                "value": {
+                  "contains": {
+                    "const": 0
+                  },
+                  "items": {
+                    "default": 0,
+                    "format": "int32",
+                    "maximum": 2147483647,
+                    "minimum": -2147483648,
+                    "type": "integer"
+                  },
+                  "maxItems": 1024,
+                  "minItems": 1,
+                  "type": "array"
+                }
+              },
+              "required": [
+                "type",
+                "value"
+              ],
+              "type": "object"
+            }
+          ]
         },
         "FocuserProperty": {
           "additionalProperties": false,
@@ -266,44 +410,6 @@
             "stepSize"
           ],
           "type": "string"
-        },
-        "FocuserSample": {
-          "additionalProperties": false,
-          "properties": {
-            "ageSeconds": {
-              "format": "double",
-              "type": "number"
-            },
-            "generation": {
-              "format": "uuid",
-              "type": "string"
-            },
-            "revision": {
-              "format": "uuid",
-              "type": "string"
-            },
-            "sequence": {
-              "format": "uint64",
-              "minimum": 0,
-              "type": "integer"
-            },
-            "source": {
-              "format": "uuid",
-              "type": "string"
-            },
-            "value": {
-              "$ref": "#/$defs/FocuserValue"
-            }
-          },
-          "required": [
-            "value",
-            "ageSeconds",
-            "source",
-            "generation",
-            "sequence",
-            "revision"
-          ],
-          "type": "object"
         },
         "FocuserValue": {
           "oneOf": [
@@ -594,7 +700,7 @@
               "additionalProperties": false,
               "properties": {
                 "reading": {
-                  "$ref": "#/$defs/FocuserSample"
+                  "$ref": "#/$defs/TypedSample"
                 },
                 "state": {
                   "const": "available",
@@ -632,7 +738,45 @@
               "additionalProperties": false,
               "properties": {
                 "reading": {
-                  "$ref": "#/$defs/RotatorSample"
+                  "$ref": "#/$defs/TypedSample2"
+                },
+                "state": {
+                  "const": "available",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "state",
+                "reading"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "error": {
+                  "$ref": "#/$defs/SourceError"
+                },
+                "state": {
+                  "const": "unavailable",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "state",
+                "error"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "Reading5": {
+          "oneOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "reading": {
+                  "$ref": "#/$defs/TypedSample3"
                 },
                 "state": {
                   "const": "available",
@@ -778,44 +922,6 @@
             "targetPosition"
           ],
           "type": "string"
-        },
-        "RotatorSample": {
-          "additionalProperties": false,
-          "properties": {
-            "ageSeconds": {
-              "format": "double",
-              "type": "number"
-            },
-            "generation": {
-              "format": "uuid",
-              "type": "string"
-            },
-            "revision": {
-              "format": "uuid",
-              "type": "string"
-            },
-            "sequence": {
-              "format": "uint64",
-              "minimum": 0,
-              "type": "integer"
-            },
-            "source": {
-              "format": "uuid",
-              "type": "string"
-            },
-            "value": {
-              "$ref": "#/$defs/RotatorValue"
-            }
-          },
-          "required": [
-            "value",
-            "ageSeconds",
-            "source",
-            "generation",
-            "sequence",
-            "revision"
-          ],
-          "type": "object"
         },
         "RotatorValue": {
           "oneOf": [
@@ -1322,6 +1428,123 @@
               "type": "object"
             }
           ]
+        },
+        "TypedSample": {
+          "additionalProperties": false,
+          "description": "Shared observation envelope for typed accessory properties. Property\ndecoding stays in each controller; clocks and source epochs use one rule.",
+          "properties": {
+            "ageSeconds": {
+              "format": "double",
+              "type": "number"
+            },
+            "generation": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "revision": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "sequence": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "source": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/FocuserValue"
+            }
+          },
+          "required": [
+            "value",
+            "ageSeconds",
+            "source",
+            "generation",
+            "sequence",
+            "revision"
+          ],
+          "type": "object"
+        },
+        "TypedSample2": {
+          "additionalProperties": false,
+          "description": "Shared observation envelope for typed accessory properties. Property\ndecoding stays in each controller; clocks and source epochs use one rule.",
+          "properties": {
+            "ageSeconds": {
+              "format": "double",
+              "type": "number"
+            },
+            "generation": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "revision": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "sequence": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "source": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/RotatorValue"
+            }
+          },
+          "required": [
+            "value",
+            "ageSeconds",
+            "source",
+            "generation",
+            "sequence",
+            "revision"
+          ],
+          "type": "object"
+        },
+        "TypedSample3": {
+          "additionalProperties": false,
+          "description": "Shared observation envelope for typed accessory properties. Property\ndecoding stays in each controller; clocks and source epochs use one rule.",
+          "properties": {
+            "ageSeconds": {
+              "format": "double",
+              "type": "number"
+            },
+            "generation": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "revision": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "sequence": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "source": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/FilterWheelValue"
+            }
+          },
+          "required": [
+            "value",
+            "ageSeconds",
+            "source",
+            "generation",
+            "sequence",
+            "revision"
+          ],
+          "type": "object"
         },
         "WeatherMeasurement": {
           "additionalProperties": false,

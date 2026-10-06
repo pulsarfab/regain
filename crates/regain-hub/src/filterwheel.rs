@@ -28,6 +28,13 @@ pub enum FilterWheelProperty {
 }
 impl FilterWheelProperty {
     pub const ALL: [Self; 3] = [Self::Names, Self::FocusOffsets, Self::Position];
+    pub fn value_type(self) -> &'static str {
+        match self {
+            Self::Names => "strings",
+            Self::FocusOffsets => "integers",
+            Self::Position => "integer",
+        }
+    }
     pub fn sample_request(self) -> crate::sampling::SampleRequest {
         use crate::sampling::{SampleRequest, SampleType};
         SampleRequest {
@@ -96,9 +103,78 @@ impl FilterWheelProperty {
 #[derive(Debug, serde::Serialize, schemars::JsonSchema)]
 #[serde(tag = "type", rename_all = "camelCase", deny_unknown_fields)]
 pub enum FilterWheelValue {
-    Integer { value: i32 },
-    Strings { value: Vec<String> },
-    Integers { value: Vec<i32> },
+    Integer {
+        value: i32,
+    },
+    Strings {
+        #[schemars(length(min = 1, max = 1024))]
+        value: Vec<String>,
+    },
+    Integers {
+        #[schemars(schema_with = "offset_array_schema", length(min = 1, max = 1024), extend("contains" = {"const": 0}))]
+        value: Vec<i32>,
+    },
+}
+pub type FilterWheelSample = crate::readout::TypedSample<FilterWheelValue>;
+
+pub(crate) fn cached_property(
+    state: &crate::source::SourceSnapshot,
+    property: FilterWheelProperty,
+    now: Duration,
+) -> Result<FilterWheelSample, SourceError> {
+    if !state.transport_connected {
+        return Err(SourceError::new(
+            ErrorKind::Disconnected,
+            "Source is disconnected",
+        ));
+    }
+    if let Some(error) = &state.error {
+        return Err(error.clone());
+    }
+    let read = |property: FilterWheelProperty| {
+        let key = property.member();
+        if let Some(error) = state.sample_errors.get(key) {
+            return Err(error.clone());
+        }
+        let value = property.decode(state.values.get(key).ok_or_else(bad_reading)?)?;
+        crate::readout::typed_sample(state, key, now, value)
+    };
+    // Match live property reads: all metadata must agree before any property
+    // claims a valid wheel. Keep the oldest dependency age, never rejuvenate it.
+    let names = read(FilterWheelProperty::Names)?;
+    let offsets = read(FilterWheelProperty::FocusOffsets)?;
+    let FilterWheelValue::Strings {
+        value: ref names_value,
+    } = names.value
+    else {
+        unreachable!()
+    };
+    let FilterWheelValue::Integers {
+        value: ref offsets_value,
+    } = offsets.value
+    else {
+        unreachable!()
+    };
+    if names_value.len() != offsets_value.len() {
+        return Err(bad_reading());
+    }
+    let age = names.age_seconds.max(offsets.age_seconds);
+    let mut sample = match property {
+        FilterWheelProperty::Names => names,
+        FilterWheelProperty::FocusOffsets => offsets,
+        FilterWheelProperty::Position => {
+            let position = read(property)?;
+            let FilterWheelValue::Integer { value } = position.value else {
+                unreachable!()
+            };
+            if value >= names_value.len() as i32 {
+                return Err(bad_reading());
+            }
+            position
+        }
+    };
+    sample.age_seconds = sample.age_seconds.max(age);
+    Ok(sample)
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FilterWheelCapabilities {
@@ -182,6 +258,9 @@ pub struct FilterWheelController {
     connection_timeout: Duration,
 }
 impl FilterWheelController {
+    pub(crate) fn source(&self) -> &Arc<SourceHandle> {
+        &self.source
+    }
     /// Construction performs no I/O. Bound initial source readiness and the
     /// required array/position reads with the source's connection deadline.
     pub fn new(
@@ -218,6 +297,19 @@ pub struct FilterWheelSession {
     source: TypedSourceSession,
 }
 impl FilterWheelSession {
+    pub(crate) fn device_state(&self, now: Duration) -> Values {
+        self.source
+            .snapshot()
+            .ok()
+            .and_then(|state| cached_property(&state, FilterWheelProperty::Position, now).ok())
+            .map(|sample| match sample.value {
+                FilterWheelValue::Integer { value } => {
+                    Values::from([("Position".into(), json!(value))])
+                }
+                _ => unreachable!(),
+            })
+            .unwrap_or_default()
+    }
     pub fn connected(&self) -> bool {
         self.source.connected()
     }

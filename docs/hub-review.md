@@ -3171,3 +3171,62 @@ artifacts/hub-wheel-polling-{focused,factory-confirmed,budget-confirmed,clippy,r
 msrv,contract,host,nina,net48}.log. This verified increment remains local while
 native metadata head 630b302 runs its own CI. The original runtime/IPC, publication,
 import/simulation/setup and later milestone gates remain required.
+
+### Wheel runtime/IPC review (2026-10-06, local increment)
+
+The common runtime now builds typed FilterWheel sessions, deduplicates polling
+through the existing factory, and routes private get/move operations. No raw
+vendor command, calibration or fabricated Halt is added. Setup creation and all
+three publications stay gated until their adapters and acceptance are complete.
+The controller continues to own command preflight and generation/uncertainty
+semantics; runtime wiring does not duplicate them.
+
+The typed sample envelope is shared with focusers and rotators, preserving wire
+fields, per-key sequences and clock/epoch semantics. Their health and value
+decoders still run first. Wheel cached reads validate matching metadata and live
+slot bounds before availability, and retain the oldest dependency age. Diagnostics
+and standard Position-only DeviceState do no I/O. Array descriptors and generated
+schema drive both frontend diagnostic readers, including zero-reference and
+signed Int32 bounds. Summaries preserve array boundaries and empty/Unicode names.
+
+Four private runtime/IPC cases cover inert cached paging, mismatched metadata,
+dependency age, cancelled connection admission, preflight generation loss,
+sparse output identities, sibling/EOF leases, unknown Move fencing and escaped
+metadata response overflow without stream loss. All fifteen wheel, eighteen
+focuser and twenty-two rotator cases pass. A new runtime test runs the actual
+production EFW worker explicitly in simulation; it verifies saved arrays,
+cached polling, shared leases, last-client cleanup and metadata after reconnection.
+Browser reader and five independent schema checks pass. Full Rust hub/Alpaca
+regressions, strict Clippy, Rust 1.89, generated-contract freshness, freshly
+rebuilt-host NINA 203/203 and actual net48 x86/x64 clients pass. Managed builds
+have zero warnings. The new managed diagnostic case uses synthetic wheel replies
+and never applies/connects a native wheel source. Both frontend readers reject
+malformed/oversized arrays, missing zero, Int32 overflow, invalid Position and
+wrong observation identities while preserving empty/Unicode names and offsets.
+
+Retain artifacts/hub-wheel-runtime-focused.log: the first new private fixture
+used a nonexistent SourceHandle::id; source identity is read from its snapshot.
+Retain artifacts/hub-wheel-runtime-native.log: the first new native fixture
+looked for the simulation flag on SourceHealth instead of SourceSnapshot. Both
+are corrected test API references; focused confirmation passes. No production
+deadlines, assertions or retry policies were weakened. Original publication,
+import/simulation/setup, conformance and later milestone gates remain open.
+
+Review strengthened the cache/IPC case with Position-only sample failure and
+recovery: metadata remains available, standard DeviceState omits Position without
+I/O, and valid polling restores availability. Overflow now checks outputStatus
+as well as a direct Names read, then verifies Position and the session survive.
+Retain artifacts/hub-wheel-runtime-cache-confirmed.log: the first added
+DeviceState assertion attempted a crate-private method from an integration test.
+The corrected fixture exercises public framed IPC instead of widening production
+visibility. All fifteen wheel cases pass in cache-final.log. Other final evidence:
+artifacts/hub-wheel-runtime-{focused-confirmed,native-confirmed,rust,clippy,msrv,
+contract-final,node,schema,managed-build,host,nina,net48}.log.
+
+Exact native-metadata head 630b302 PR/push CI 37536023962/37536015902 both complete
+all eight jobs successfully. The earlier two Windows reliability failure causes
+remain unproved; this success is not a claim to have fixed them. The reviewed
+polling and runtime increments can now proceed to their own CI in the same draft
+PR. Next: wheel Alpaca/native NINA/native ASCOM publication, then imports, virtual
+and dedicated simulation inputs/shared creation, panels, cameras/coordination and
+every original acceptance/final gate.

@@ -36,6 +36,12 @@ pub fn description() -> Value {
             "exclusiveMaximum": if matches!(property, crate::rotator::RotatorProperty::MechanicalPosition
                 | crate::rotator::RotatorProperty::Position | crate::rotator::RotatorProperty::TargetPosition) { Some(360.0) } else { None },
         })).collect::<Vec<_>>(),
+    "filterwheelProperties": crate::filterwheel::FilterWheelProperty::ALL.iter().map(|property|
+        json!({"property":property,"valueType":property.value_type(),
+            "minimum": if *property == crate::filterwheel::FilterWheelProperty::Position { Some(-1) } else { None },
+            "exclusiveMinimum": Option::<i32>::None,
+            "maximum": if *property == crate::filterwheel::FilterWheelProperty::Position { Some(crate::filterwheel::MAX_FILTER_SLOTS as i32 - 1) } else { None },
+        })).collect::<Vec<_>>(),
     "responseSchema": schemars::generate::SchemaSettings::default()
         .for_serialize().into_generator().into_root_schema_for::<OutputStatus>()})
 }
@@ -93,6 +99,11 @@ pub enum Diagnostics {
         health: SourceHealth,
         properties: Vec<RotatorProperty>,
     },
+    #[serde(rename = "filterwheel")]
+    FilterWheel {
+        health: SourceHealth,
+        properties: Vec<FilterWheelProperty>,
+    },
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
@@ -107,6 +118,13 @@ pub struct FocuserProperty {
 pub struct RotatorProperty {
     pub property: crate::rotator::RotatorProperty,
     pub sample: Reading<crate::rotator::RotatorSample>,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct FilterWheelProperty {
+    pub property: crate::filterwheel::FilterWheelProperty,
+    pub sample: Reading<crate::filterwheel::FilterWheelSample>,
 }
 
 /// Selected fields only: no backend configuration, connection strings, cached

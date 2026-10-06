@@ -63,6 +63,7 @@ internal static class HubDiagnosticContract
         if (value.ValueKind == JsonValueKind.Array) {
             if (value.GetArrayLength() > 4096 || node.TryGetProperty("minItems", out var min) && value.GetArrayLength() < min.GetInt32() || node.TryGetProperty("maxItems", out var max) && value.GetArrayLength() > max.GetInt32()) return false;
             if (node.TryGetProperty("items", out var items) && !value.EnumerateArray().All(v => Valid(root, items, v, depth + 1))) return false;
+            if (node.TryGetProperty("contains", out var contains) && !value.EnumerateArray().Any(v => Valid(root, contains, v, depth + 1))) return false;
         }
         if (value.ValueKind == JsonValueKind.Object) {
             if (value.EnumerateObject().Select(p => p.Name).Distinct(StringComparer.Ordinal).Count() != value.EnumerateObject().Count()) return false;
@@ -82,7 +83,7 @@ internal static class HubDiagnosticContract
         void Require(bool condition) { if (!condition) throw new HubException(HubFailure.Protocol); }
         var revision = saved.GetProperty("revision").GetGuid(); var device = output.GetProperty("device"); var kind = device.GetProperty("kind").GetString();
         if (kind == "proxy") kind = device.GetProperty("deviceType").GetString();
-        var type = kind switch { "safety" => "safetymonitor", "switch" => "switch", "weather" => "observingconditions", "focuser" => "focuser", "rotator" => "rotator", _ => "unsupported" };
+        var type = kind switch { "safety" => "safetymonitor", "switch" => "switch", "weather" => "observingconditions", "focuser" => "focuser", "rotator" => "rotator", "filterwheel" => "filterwheel", _ => "unsupported" };
         var total = result.GetProperty("total").GetInt32(); var end = Math.Min(start + limit, total); var diagnostics = result.GetProperty("diagnostics");
         Require(result.GetProperty("purpose").GetString() == "cachedDiagnostics" && result.GetProperty("output").GetGuid() == output.GetProperty("id").GetGuid() && result.GetProperty("configurationRevision").GetGuid() == revision && result.GetProperty("deviceType").GetString() == type && result.GetProperty("observedSeconds").GetDouble() >= 0 && result.GetProperty("start").GetInt32() == start && result.GetProperty("limit").GetInt32() == limit && total >= start && total <= 1024 && diagnostics.GetProperty("kind").GetString() == kind);
         Require(end < total ? result.GetProperty("nextStart").GetInt32() == end : result.GetProperty("nextStart").ValueKind == JsonValueKind.Null);
@@ -108,7 +109,7 @@ internal static class HubDiagnosticContract
                 Health(item.GetProperty("health")); Require(item.GetProperty("health").GetProperty("source").GetGuid() == item.GetProperty("source").GetGuid());
                 if (decision.ValueKind != JsonValueKind.Null) Require(decision.GetProperty("configurationRevision").GetGuid() == revision && (active || !decision.GetProperty("permitsSafe").GetBoolean() && decision.GetProperty("rawIsSafe").ValueKind == JsonValueKind.Null));
             }
-        } else if (kind == "focuser" || kind == "rotator") {
+        } else if (kind == "focuser" || kind == "rotator" || kind == "filterwheel") {
             var fields = description.GetProperty(kind + "Properties"); var items = diagnostics.GetProperty("properties"); var health = diagnostics.GetProperty("health");
             Health(health); Require(total == fields.GetArrayLength() && items.GetArrayLength() == end - start && health.GetProperty("source").GetGuid() == device.GetProperty("source").GetGuid());
             for (int i = 0; i < items.GetArrayLength(); i++) {

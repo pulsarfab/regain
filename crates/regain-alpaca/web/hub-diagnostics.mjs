@@ -32,6 +32,7 @@ export function validateDiagnosticSchema(schema,value) {
     if (Array.isArray(value)) {
       if (value.length>4096 || node.maxItems!==undefined && value.length>node.maxItems || node.minItems!==undefined && value.length<node.minItems) return false;
       if (node.items && !value.every(v=>valid(node.items,v,depth+1))) return false;
+      if (node.contains && !value.some(v=>valid(node.contains,v,depth+1))) return false;
     }
     if (object(value)) {
       if ((node.required??[]).some(k=>!Object.hasOwn(value,k))) return false;
@@ -61,7 +62,7 @@ export class OutputDiagnostics {
   validate(result,output,start,limit) {
     validateDiagnosticSchema(this.description.responseSchema,result);
     const kind=output.device.kind==='proxy' ? output.device.deviceType : output.device.kind;
-    const type={switch:'switch',safety:'safetymonitor',weather:'observingconditions',focuser:'focuser',rotator:'rotator'}[kind];
+    const type={switch:'switch',safety:'safetymonitor',weather:'observingconditions',focuser:'focuser',rotator:'rotator',filterwheel:'filterwheel'}[kind];
     if (result.purpose!=='cachedDiagnostics' || result.output!==output.id || result.configurationRevision!==this.saved.revision || result.deviceType!==type || result.observedSeconds<0 || result.start!==start || result.limit!==limit || result.total<start || result.total>1024 || result.diagnostics.kind!==kind) protocol();
     const end=Math.min(start+limit,result.total);
     if (result.nextStart!==(end<result.total ? end : null)) protocol();
@@ -87,7 +88,7 @@ export class OutputDiagnostics {
         if (item.source!==saved.source || item.enabled!==saved.enabled || saved.policy && !equalDiagnosticValue(item.policy,saved.policy) || item.enabled!==(item.decision!==null)) protocol();
         health(item.health); if (item.health.source!==item.source || item.decision && (item.decision.configurationRevision!==this.saved.revision || !d.controllerActive && (item.decision.permitsSafe || item.decision.rawIsSafe!==null))) protocol();
       });
-    } else if (d.kind==='focuser' || d.kind==='rotator') {
+    } else if (d.kind==='focuser' || d.kind==='rotator' || d.kind==='filterwheel') {
       const properties=this.description[`${d.kind}Properties`];
       if (!Array.isArray(properties) || properties.length!==result.total || d.properties.length!==end-start || d.health.source!==output.device.source) protocol();
       health(d.health);
@@ -135,9 +136,9 @@ export function diagnosticSummary(result) {
       if(m.health.writeUncertain) lines.push('Source has an uncertain write; reconcile equipment state before another command.');
       lines.push(pollingSummary(m.health));
     }
-  } else if (d.kind==='focuser' || d.kind==='rotator') {
+  } else if (d.kind==='focuser' || d.kind==='rotator' || d.kind==='filterwheel') {
     for (const item of d.properties) lines.push(item.sample.state==='available'
-      ? `${item.property}: ${item.sample.reading.value.value} · age ${item.sample.reading.ageSeconds.toFixed(1)} s`
+      ? `${item.property}: ${Array.isArray(item.sample.reading.value.value)?JSON.stringify(item.sample.reading.value.value):item.sample.reading.value.value} · age ${item.sample.reading.ageSeconds.toFixed(1)} s`
       : `${item.property}: unavailable · ${item.sample.error.message}`);
     if(d.health.writeUncertain) lines.push('Source has an uncertain write; reconcile equipment state before another command.');
     lines.push(pollingSummary(d.health));

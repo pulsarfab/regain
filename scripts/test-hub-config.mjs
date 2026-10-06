@@ -441,3 +441,59 @@ for (const fault of ['property','source','generation','sequence','type','minimum
   setup.load(description,rotatorSaved); await assert.rejects(setup.read(rotatorOutput.id,index,1));
   assert.equal(revoked,true); assert.equal(setup.observation,null);
 }
+
+// Wheel metadata remains ordered, signed and typed through the same reader.
+const wheelSaved=structuredClone(focuserSaved);
+wheelSaved.sources[0].backend={kind:'native',device:'efw',identity:'0102030405060708'};
+wheelSaved.outputs[0].device.deviceType='filterwheel';
+const wheelOutput=wheelSaved.outputs[0];
+function wheelReply(start=0,limit=3) {
+  const fields=description.outputDiagnostics.filterwheelProperties, health=diagHealth(wheelSaved.sources[0].id);
+  health.transportConnected=true; health.leaseCount=1;
+  const values={names:['L','Hα',''],focusOffsets:[-12,0,17],position:-1};
+  const properties=fields.slice(start,start+limit).map(field=>({property:field.property,sample:{state:'available',reading:{
+    value:{type:field.valueType,value:values[field.property]},ageSeconds:5,source:health.source,
+    generation:health.generation,sequence:0,revision:wheelSaved.revision}}}));
+  const end=Math.min(start+limit,fields.length);
+  return {purpose:'cachedDiagnostics',output:wheelOutput.id,configurationRevision:wheelSaved.revision,observedSeconds:6,
+    deviceType:'filterwheel',simulated:true,start,limit,total:fields.length,nextStart:end<fields.length?end:null,
+    diagnostics:{kind:'filterwheel',health,properties}};
+}
+{
+  const setup=new OutputDiagnostics(async command=>wheelReply(command.start,command.limit),()=>assert.fail('Review revoked'));
+  setup.load(description,wheelSaved);
+  const first=await setup.read(wheelOutput.id,0,2); assert.equal(first.nextStart,2);
+  const summary=diagnosticSummary(first);
+  assert.match(summary,/names: \["L","Hα",""\]/); assert.match(summary,/focusOffsets: \[-12,0,17\]/);
+  const last=await setup.read(wheelOutput.id,2,32); assert.equal(last.nextStart,null); assert.match(diagnosticSummary(last),/position: -1/);
+  assert.equal((await setup.read(wheelOutput.id,3,1)).diagnostics.properties.length,0);
+}
+for (const [index,value] of [
+  [0,[]],[0,[1]],[0,[['L']]],[0,Array(1025).fill('L')],
+  [1,[]],[1,[1,2]],[1,[0,1.5]],[1,[0,2147483648]],[1,[0,-2147483649]],
+  [1,[0,'1']],[1,[0,[1]]],[1,Array(1025).fill(0)], [2,-2],[2,1024],[2,0.5]
+]) {
+  let revoked=false;
+  const setup=new OutputDiagnostics(async()=>{
+    const reply=wheelReply(index,1); reply.diagnostics.properties[0].sample.reading.value.value=value; return reply;
+  },()=>revoked=true);
+  setup.load(description,wheelSaved); await assert.rejects(setup.read(wheelOutput.id,index,1));
+  assert.equal(revoked,true); assert.equal(setup.observation,null);
+}
+for (const fault of ['property','source','generation','sequence','type','extra','age']) {
+  let revoked=false;
+  const setup=new OutputDiagnostics(async()=>{
+    const reply=wheelReply(0,1), item=reply.diagnostics.properties[0], reading=item.sample.reading;
+    if(fault==='property') item.property='position';
+    if(fault==='source') reading.source='88888888-8888-4888-8888-888888888888';
+    if(fault==='generation') reading.generation='88888888-8888-4888-8888-888888888888';
+    if(fault==='sequence') reading.sequence=1;
+    if(fault==='type') reading.value={type:'integer',value:0};
+    if(fault==='extra') reading.authorization='PRIVATE_FORBIDDEN_REPLY';
+    if(fault==='age') reading.ageSeconds=-1;
+    return reply;
+  },()=>revoked=true);
+  setup.load(description,wheelSaved); await assert.rejects(setup.read(wheelOutput.id,0,1));
+  assert.equal(revoked,true); assert.equal(setup.observation,null);
+}
+console.log('Wheel diagnostic metadata, paging, identity and signed Int32 bounds passed.');

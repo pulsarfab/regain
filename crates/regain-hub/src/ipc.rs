@@ -198,6 +198,9 @@ pub enum Get {
     Rotator {
         property: crate::rotator::RotatorProperty,
     },
+    FilterWheel {
+        property: crate::filterwheel::FilterWheelProperty,
+    },
 }
 #[derive(Deserialize, Serialize)]
 #[serde(tag = "member", rename_all = "camelCase", deny_unknown_fields)]
@@ -219,6 +222,7 @@ pub enum Put {
     SyncRotator { degrees: f64 },
     HaltRotator {},
     RotatorReverse { enabled: bool },
+    MoveFilterWheel { position: i32 },
 }
 
 #[derive(Serialize)]
@@ -427,7 +431,7 @@ where
                         "hostInstance":service.host_id(), "configurationRevision":service.configuration().revision, "clientId":client.id(),
                         "maxFrameBytes":MAX_FRAME_BYTES, "maxInFlight":MAX_IN_FLIGHT,
                         "operations":operations,
-                        "capabilities":["switchOutputs","safetyOutputs","weatherOutputs","focuserOutputs","rotatorOutputs","rotatorMotionReceipt","weatherSensorDescription","scalarDeviceState","asyncOutputConnection","switchAsyncContract"]});
+                        "capabilities":["switchOutputs","safetyOutputs","weatherOutputs","focuserOutputs","rotatorOutputs","filterWheelOutputs","rotatorMotionReceipt","weatherSensorDescription","scalarDeviceState","asyncOutputConnection","switchAsyncContract"]});
                     write_response(&mut writer, Response::new(request.id, Ok(hello)), limits.frame_timeout).await?;
                     continue;
                 }

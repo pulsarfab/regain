@@ -3,6 +3,7 @@
 use crate::{
     config::{Bitness, DeviceType, HubConfig, SafetyMember, VirtualDevice},
     factory::{CredentialProvider, build_sources_bound},
+    filterwheel::{FilterWheelController, FilterWheelSession},
     focuser::{FocuserController, FocuserSession},
     native::NativeRuntime,
     parameters::FieldError,
@@ -43,6 +44,7 @@ enum Output {
     Weather(Arc<WeatherOutput>),
     Focuser(FocuserController),
     Rotator(RotatorController),
+    FilterWheel(FilterWheelController),
 }
 
 pub struct HubRuntime {
@@ -174,6 +176,24 @@ impl HubRuntime {
                     )
                     .expect("Validated connection deadline"),
                 ),
+                VirtualDevice::Proxy {
+                    source,
+                    device_type: DeviceType::FilterWheel,
+                } => Output::FilterWheel(
+                    FilterWheelController::new(
+                        registry.get(*source).unwrap(),
+                        std::time::Duration::from_secs_f64(
+                            config
+                                .sources
+                                .iter()
+                                .find(|entry| entry.id == *source)
+                                .unwrap()
+                                .polling
+                                .connection_timeout_seconds,
+                        ),
+                    )
+                    .expect("Validated connection deadline"),
+                ),
                 VirtualDevice::Proxy { .. } => unreachable!("Validated output implementation"),
             };
             outputs.insert(output.id, mapped);
@@ -260,6 +280,7 @@ impl HubRuntime {
             },
             Output::Focuser(_) => crate::focuser::FocuserProperty::ALL.len() as u32,
             Output::Rotator(_) => crate::rotator::RotatorProperty::ALL.len() as u32,
+            Output::FilterWheel(_) => crate::filterwheel::FilterWheelProperty::ALL.len() as u32,
         };
         let end = page(start, limit, total)?;
         let now = self.clock.now();
@@ -346,6 +367,22 @@ impl HubRuntime {
                         .map(|property| crate::diagnostics::RotatorProperty {
                             property: *property,
                             sample: crate::rotator::cached_property(&state, *property, now).into(),
+                        })
+                        .collect(),
+                }
+            }
+            Output::FilterWheel(wheel) => {
+                let state = wheel.source().snapshot();
+                Diagnostics::FilterWheel {
+                    health: SourceHealth::from(&state),
+                    properties: crate::filterwheel::FilterWheelProperty::ALL
+                        .iter()
+                        .skip(start as usize)
+                        .take((end - start) as usize)
+                        .map(|property| crate::diagnostics::FilterWheelProperty {
+                            property: *property,
+                            sample: crate::filterwheel::cached_property(&state, *property, now)
+                                .into(),
                         })
                         .collect(),
                 }
@@ -573,6 +610,9 @@ impl HubRuntime {
             Output::Weather(output) => Ok(ConnectedDevice::Weather(output.connect().await?)),
             Output::Focuser(output) => Ok(ConnectedDevice::Focuser(output.connect().await?)),
             Output::Rotator(output) => Ok(ConnectedDevice::Rotator(output.connect_modern().await?)),
+            Output::FilterWheel(output) => {
+                Ok(ConnectedDevice::FilterWheel(output.connect().await?))
+            }
         }
     }
 }
@@ -580,7 +620,7 @@ impl HubRuntime {
 fn validate_outputs(config: &HubConfig) -> Result<(), Vec<FieldError>> {
     let mut errors = config.validate();
     for (index, output) in config.outputs.iter().enumerate() {
-        if matches!(output.device, VirtualDevice::Proxy { device_type, .. } if !matches!(device_type, DeviceType::Focuser | DeviceType::Rotator))
+        if matches!(output.device, VirtualDevice::Proxy { device_type, .. } if !matches!(device_type, DeviceType::Focuser | DeviceType::Rotator | DeviceType::FilterWheel))
         {
             errors.push(FieldError::new(
                 format!("outputs[{index}].device"),
@@ -639,6 +679,7 @@ enum ConnectedDevice {
     Weather(WeatherSession),
     Focuser(FocuserSession),
     Rotator(RotatorSession),
+    FilterWheel(FilterWheelSession),
 }
 /// Hold this guard throughout a command. Its leases outlive a simultaneous
 /// frontend disconnect; dropping a client does not imply motion rollback.
@@ -653,12 +694,19 @@ impl OutputConnection {
         match &self.device {
             ConnectedDevice::Focuser(session) => session.connected(),
             ConnectedDevice::Rotator(session) => session.connected(),
+            ConnectedDevice::FilterWheel(session) => session.connected(),
             _ => true,
         }
     }
     pub fn rotator(&self) -> Result<&RotatorSession, SourceError> {
         match &self.device {
             ConnectedDevice::Rotator(value) => Ok(value),
+            _ => Err(wrong_type()),
+        }
+    }
+    pub fn filterwheel(&self) -> Result<&FilterWheelSession, SourceError> {
+        match &self.device {
+            ConnectedDevice::FilterWheel(value) => Ok(value),
             _ => Err(wrong_type()),
         }
     }
