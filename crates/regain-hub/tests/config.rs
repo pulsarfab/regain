@@ -16,6 +16,64 @@ fn invalid(config: &HubConfig, code: &str) {
     );
 }
 #[test]
+fn initialization_publishes_one_empty_identity_and_never_overwrites() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = Arc::new(directory.path().join("hub.json"));
+    let barrier = Arc::new(Barrier::new(8));
+    let workers: Vec<_> = (0..8)
+        .map(|_| {
+            let path = path.clone();
+            let barrier = barrier.clone();
+            std::thread::spawn(move || {
+                barrier.wait();
+                ConfigStore::create(&path)
+            })
+        })
+        .collect();
+    let results: Vec<_> = workers
+        .into_iter()
+        .map(|worker| worker.join().unwrap())
+        .collect();
+    let successful: Vec<_> = results
+        .iter()
+        .filter_map(|result| result.as_ref().ok())
+        .collect();
+    assert_eq!(successful.len(), 1);
+    let saved = ConfigStore::load(&path).unwrap().snapshot();
+    assert_eq!(successful[0].snapshot(), saved);
+    assert!(saved.sources.is_empty() && saved.outputs.is_empty());
+    assert!(!saved.instance_id.is_nil() && !saved.revision.is_nil());
+    let bytes = std::fs::read(&*path).unwrap();
+    assert!(ConfigStore::create(&path).is_err());
+    assert_eq!(std::fs::read(&*path).unwrap(), bytes);
+    // Initialization's store uses the same durable editing path as a loaded one.
+    let created = successful[0];
+    let changed = created.apply(saved.revision, saved.clone(), false).unwrap();
+    assert_ne!(changed.revision, saved.revision);
+    assert_eq!(changed.instance_id, saved.instance_id);
+    assert_eq!(ConfigStore::load(&path).unwrap().snapshot(), changed);
+}
+
+#[test]
+fn initialization_preserves_invalid_documents_and_requires_an_existing_parent() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("invalid.json");
+    std::fs::write(&path, b"keep invalid data intact").unwrap();
+    assert!(ConfigStore::create(&path).is_err());
+    assert_eq!(std::fs::read(&path).unwrap(), b"keep invalid data intact");
+    assert!(ConfigStore::create(directory.path()).is_err());
+    assert!(ConfigStore::create(&directory.path().join("missing/hub.json")).is_err());
+    assert!(!directory.path().join("missing").exists());
+    assert!(ConfigStore::create(std::path::Path::new("relative-hub.json")).is_err());
+    #[cfg(unix)]
+    {
+        let alias = directory.path().join("alias.json");
+        std::os::unix::fs::symlink(&path, &alias).unwrap();
+        assert!(ConfigStore::create(&alias).is_err());
+        assert_eq!(std::fs::read(&path).unwrap(), b"keep invalid data intact");
+    }
+}
+#[test]
 fn native_ascom_export_identities_match_cross_language_vectors_and_reject_canonical_self_proxies() {
     use regain_hub::ascom_export::{class_id, prog_id};
     let instance = "10000000-0000-0000-0000-000000000001".parse().unwrap();

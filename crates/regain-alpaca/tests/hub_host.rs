@@ -15,6 +15,71 @@ fn command() -> Command {
     command
 }
 
+#[tokio::test]
+async fn explicit_initialization_is_inert_and_cannot_replace_existing_configuration() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("new-hub.json");
+    let initialize = || {
+        let mut child = command();
+        child.arg("--hub-init").arg("--hub-config").arg(&path);
+        child
+    };
+    let result = tokio::time::timeout(Duration::from_secs(10), initialize().output())
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let configuration: HubConfig = serde_json::from_slice(&result.stdout).unwrap();
+    assert!(configuration.validate().is_empty());
+    assert!(configuration.sources.is_empty() && configuration.outputs.is_empty());
+    let bytes = std::fs::read(&path).unwrap();
+    assert_eq!(
+        serde_json::from_slice::<HubConfig>(&bytes).unwrap(),
+        configuration
+    );
+    let endpoint = Endpoint::for_config(&path).unwrap();
+    let ownership = endpoint.try_lock().unwrap().unwrap();
+    assert!(
+        tokio::time::timeout(
+            Duration::from_secs(5),
+            probe(
+                &endpoint,
+                configuration.instance_id,
+                Duration::from_millis(50)
+            )
+        )
+        .await
+        .unwrap()
+        .is_err()
+    );
+    // A held host lock and incompatible flags cannot turn initialization into
+    // attachment, a publisher, implicit simulation or an overwrite.
+    for extra in [
+        None,
+        Some("--hub-host"),
+        Some("--hub-attach"),
+        Some("--simulate"),
+        Some("--stdio"),
+    ] {
+        let mut child = initialize();
+        if let Some(flag) = extra {
+            child.arg(flag);
+        }
+        let failure = tokio::time::timeout(Duration::from_secs(10), child.output())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(!failure.status.success());
+        assert!(failure.stdout.is_empty());
+        assert_eq!(std::fs::read(&path).unwrap(), bytes);
+    }
+    drop(ownership);
+}
+
 // This guard is only used for PIDs returned by this test's successful fresh
 // attachment launch. Production frontends must not kill the shared host.
 struct StartedHost(u32);

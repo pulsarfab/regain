@@ -32,8 +32,20 @@ regain-alpaca --hub-config ABSOLUTE_PATH --port 11111
 ```
 
 Open `http://127.0.0.1:11111/setup/hub`. These example sources are explicitly
-simulated, and safety starts unsafe. The example identities are for testing;
-configuration initialization for a new installation is still being implemented.
+simulated, and safety starts unsafe. The example identities are for testing.
+For a new installation, create an empty configuration with fresh identities:
+
+```text
+regain-alpaca --hub-init --hub-config ABSOLUTE_NEW_FILE_PATH
+```
+
+Choose a new filename in an existing writable directory. Creation never replaces
+an existing file and starts no host, HTTP listener or equipment connection. The
+result has no sources or outputs. Then start `regain-alpaca --hub-config` with
+that file and use the shared editor to add them, review and apply. Native setup
+can load the created file; a native create-file flow is still being implemented.
+If creation times out or reports uncertain durability, inspect the selected file
+before another action. Never treat an unknown result as proof that creation failed.
 
 1. Expand a source or output to edit its fields. Available choices and parameter
    descriptions come from the host. Saved IDs and device numbers stay fixed.

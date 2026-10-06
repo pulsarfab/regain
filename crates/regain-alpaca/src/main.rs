@@ -16,6 +16,9 @@ async fn main() -> Result<()> {
                 "PulsarFab regain ASCOM Alpaca (Rust)\n  --listen 127.0.0.1   IPv4 address (0.0.0.0 for LAN)\n  --port 11111\n  --profiles PATH     Saved equipment profiles\n  --workers DIRECTORY Rust workers and SDK\n  --sdk PATH          SDK library override\n  --simulate          Simulated equipment\n  --no-discovery      Disable UDP discovery\n  --stdio             Private pipe frontend\n  --backend sdk|direct Backend for private pipe frontend\nOpen http://127.0.0.1:11111/setup to configure equipment."
             );
             println!(
+                "  --hub-init --hub-config ABSOLUTE_PATH\n                      Create an empty hub configuration without starting equipment"
+            );
+            println!(
                 "  --hub-host --hub-config ABSOLUTE_PATH\n                      Shared local hub host (no HTTP listener)"
             );
             println!(
@@ -39,6 +42,7 @@ async fn main() -> Result<()> {
                     | "--stdio"
                     | "--backend"
                     | "--hub-host"
+                    | "--hub-init"
                     | "--hub-attach"
                     | "--hub-config"
             ),
@@ -46,7 +50,12 @@ async fn main() -> Result<()> {
         );
         let value = if matches!(
             arg.as_str(),
-            "--simulate" | "--no-discovery" | "--stdio" | "--hub-host" | "--hub-attach"
+            "--simulate"
+                | "--no-discovery"
+                | "--stdio"
+                | "--hub-host"
+                | "--hub-attach"
+                | "--hub-init"
         ) {
             String::new()
         } else {
@@ -54,6 +63,24 @@ async fn main() -> Result<()> {
                 .with_context(|| format!("Missing value for {arg}"))?
         };
         options.insert(arg, value);
+    }
+    if options.contains_key("--hub-init") {
+        ensure!(
+            options.len() == 2 && options.contains_key("--hub-config"),
+            "Hub initialization accepts only --hub-init --hub-config ABSOLUTE_PATH"
+        );
+        let configuration = regain_hub::config::ConfigStore::create(
+            &PathBuf::from(&options["--hub-config"]),
+        ).map_err(|error| match error {
+            regain_hub::config::ApplyError::Committed { .. } => anyhow::anyhow!(
+                "Hub configuration was created but durability is uncertain; inspect the file before any further action"
+            ),
+            _ => anyhow::anyhow!(
+                "Cannot create hub configuration; choose an absolute new filename in an existing writable directory. Existing files are never replaced"
+            ),
+        })?.snapshot();
+        println!("{}", serde_json::to_string(&configuration)?);
+        return Ok(());
     }
     if options.contains_key("--hub-host") || options.contains_key("--hub-attach") {
         ensure!(

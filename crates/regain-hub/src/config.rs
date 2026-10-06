@@ -1063,6 +1063,43 @@ impl PreparedConfig {
     }
 }
 impl ConfigStore {
+    /// Explicit first-time setup. Publish a flushed empty configuration without
+    /// replacing any existing file, directory or symlink. This starts no host
+    /// and configures no equipment, output or implicit simulated fallback.
+    pub fn create(path: &Path) -> Result<Self, ApplyError> {
+        if !path.is_absolute() || path.file_name().is_none() {
+            return Err(ApplyError::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "New hub configuration path must be an absolute file path",
+            )));
+        }
+        let parent = path
+            .parent()
+            .unwrap()
+            .canonicalize()
+            .map_err(ApplyError::Io)?;
+        let path = parent.join(path.file_name().unwrap());
+        let store = Self::new(Some(path.clone()), HubConfig::empty())?;
+        let configuration = store.snapshot();
+        let mut staged = tempfile::NamedTempFile::new_in(&parent).map_err(ApplyError::Io)?;
+        let bytes = serde_json::to_vec_pretty(&configuration)
+            .map_err(|error| ApplyError::Io(std::io::Error::other(error)))?;
+        staged.write_all(&bytes).map_err(ApplyError::Io)?;
+        staged.as_file().sync_all().map_err(ApplyError::Io)?;
+        let saved = staged
+            .persist_noclobber(&path)
+            .map_err(|error| ApplyError::Io(error.error))?;
+        let durability = saved.sync_all();
+        #[cfg(unix)]
+        let durability = durability.and_then(|()| std::fs::File::open(&parent)?.sync_all());
+        if let Err(error) = durability {
+            return Err(ApplyError::Committed {
+                configuration: Box::new(configuration),
+                error,
+            });
+        }
+        Ok(store)
+    }
     pub fn new(path: Option<PathBuf>, mut initial: HubConfig) -> Result<Self, ApplyError> {
         let mut errors = initial.validate();
         errors.extend(

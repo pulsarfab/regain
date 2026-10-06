@@ -1849,3 +1849,24 @@ jobs in PR 37462088304 and push 37462081747. Simulation CI is required after pus
 Shared initialization, broader diagnostics, typed proxies/cameras/coordination,
 interactive/conformance/hardware acceptance and every original remaining milestone
 stay open; this increment does not close the entire setup milestone.
+
+### First-time persistence and inert initialization mode
+
+Added the common Rust `ConfigStore::create` path and explicit `--hub-init` mode
+before workers/SDK/host startup. Review checked absolute paths, existing-parent
+resolution, same-directory flushed staging, no-clobber publication, fresh empty
+identity, post-publication durability uncertainty and rejection of mixed modes.
+Existing invalid files are preserved instead of treated as initialization targets.
+The returned store shares the regular revision-checked durable editing path.
+
+Tests race eight creators, verify exactly one winner and matching persisted
+identity, preserve existing invalid bytes and missing-parent state, reject relative
+paths and (on Unix) existing symlinks. The production executable test verifies
+no live endpoint/host ownership, unchanged bytes after repeated/mixed-mode calls
+and no stdout on failure. Its observation timeout is independent of the inner
+probe deadline so runner scheduling cannot imply a host started. Full Rust suites,
+strict Clippy and the installed Rust 1.89.0 check pass in
+`artifacts/hub-initialization-rust.log`, `hub-initialization-clippy.log` and
+`hub-initialization-msrv-1.89.0.log`. The Unix symlink case awaits portable CI.
+Native UI adoption and broader
+diagnostics remain next, alongside all original remaining milestones.

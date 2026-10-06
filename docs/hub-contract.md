@@ -1160,3 +1160,20 @@ of granting permission. Clearing an injected fault cannot reset a retained
 uncertain-write latch. A new runtime resets simulated readings; these changes are
 not persisted, silently substituted for hardware or applied to native worker
 simulation settings.
+
+### Explicit configuration initialization
+
+`ConfigStore::create` is the common first-time persistence path, exposed by the
+existing executable as `--hub-init --hub-config ABSOLUTE_NEW_FILE_PATH`. It creates
+an empty schema-1 configuration with fresh instance/revision identities and no
+sources/outputs. The parent must already exist. The file is staged and flushed in
+that parent, then published with no-clobber semantics; existing regular files,
+invalid documents, directories and symlinks are never overwritten. Concurrent
+creators have at most one successful publication. A post-publication durability
+failure uses the existing committed/uncertain error boundary, not rollback.
+
+Creation happens before worker, SDK, endpoint or host initialization. Incompatible
+CLI modes are rejected. The operation prints the created configuration on success;
+lost output or timeout requires inspecting the selected file rather than replaying
+creation. Native create-file UI adoption remains required; it must use this same
+persistence path, retain the selected filename and reconcile unknown completion.
