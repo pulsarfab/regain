@@ -330,7 +330,15 @@ remote switch write. Camera sources, persistent rotator reference settings, and
 the full proxy interface surface remain for milestone 4. Missing temperatures
 are per-measurement errors, not a reason to discard other valid telemetry.
 
-Next: complete device capability discovery and shared host IPC, then connect the first
+The configuration-driven source factory now derives one deduplicated polling
+plan per source from all outputs, retains weather sensor ages, enforces the
+combined sample limit during construction, and uses the fastest enabled safety
+confirmation interval without changing persisted settings or output policy.
+Native/Alpaca adapters and credentials are prepared before actors start, with no
+device I/O during construction. The mixed-source test uses this factory. The
+credential-provider interface is present; OS-protected storage remains pending.
+
+Next: complete the shared output runtime, device capabilities, and host IPC, then connect the first
 three virtual classes to the existing Alpaca server/setup UI. Frontend error
 translation and protocol conformance remain unverified. Generic
 scalar polling does not establish camera image or acquisition support. No complete
@@ -412,3 +420,4 @@ Keep existing device profiles and registrations compatible throughout migration.
 | 2026-10-05 | Extracted the shared accessory worker client into regain-core and adopted it in existing Alpaca accessories. Added cancellation-safe process retirement, framing limits, and process fixtures. Moved development versions to 0.6.0 / 0.6.0.0 after packaging exposed resolution of the published 0.5.10 dependency. | Core tests, Clippy, Rust 1.89.0 checks, and seven production-worker/Alpaca simulation suites pass. Native hub mapping, capabilities, host IPC, and all later gates remain pending. No release or tag was created. |
 | 2026-10-05 | Added native hub accessory adapters on the shared transport, covering seven families, scalar telemetry, validated motion/light/calibration commands, explicit simulation identity, and source leases. Added a mixed native/network Switch plus shared Weather test. | 79 Rust hub tests pass with production workers in simulation, including EFW calibration and OFP2 movement/light controls. Clippy, Rust 1.89.0, and generated-contract freshness pass. Windows test entrypoint now supplies its built worker path, matching portable CI. Next: capability/connection negotiation, credentials, host IPC, and frontend publication; all later gates remain required. |
 | 2026-10-05 | Implemented version-negotiated Alpaca connections, bounded incremental handshakes, shared connection diagnostics, and a schema-described connection timeout. Review corrected repeated uncertain disconnects and duplicate actor resets on handshake failure. | 89 Rust hub tests pass, including cancellation, pending/slow handshakes, external ownership, and reconnect during asynchronous disconnect. Clippy, Rust 1.89.0, package verification, schema freshness, and web/Python/.NET configuration readers pass. Next: shared host/source construction, protected credentials, capabilities, IPC, and frontend publication. Milestones 2–5 and final acceptance remain open. |
+| 2026-10-05 | Added configuration-driven native/Alpaca source construction, unioned poll plans, enabled-membership polling cadence, bounded plan growth, and the credential-provider boundary. Mixed-source integration now uses the real factory. | 95 hub tests pass, including plan deduplication, weather ages, disabled memberships, combined limits, validation before credential access, authenticated requests, and shared leases without secret-bearing diagnostics. Next: shared output runtime, protected storage, virtual/simulated sources, host IPC, and publication. No later gate is closed by source construction alone. |

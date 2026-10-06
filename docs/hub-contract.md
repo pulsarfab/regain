@@ -159,6 +159,23 @@ completed frontend interface conformance or hardware acceptance.
 
 ## Alpaca connection negotiation
 
+Source construction first validates the complete configuration and derives the
+union of readouts needed by its outputs. Duplicate readouts share one sample;
+ObservingConditions properties retain their sensor-age request even when used
+as Switch gauges. The 1024-sample limit applies to the union, and construction
+stops as soon as that limit is exceeded. SafetyMonitor plans contain only one
+strict IsSafe observation per attempt. Enabled safety memberships can shorten
+the effective source interval to their fastest confirmation interval; persisted
+settings and each membership's own confirmation policy remain unchanged.
+
+The factory prepares native/Alpaca adapters and resolves credential references
+before spawning any actors. It does not open devices or make network requests.
+Each source gets one actor regardless of the number of outputs. A host without
+a protected credential provider rejects credential-bearing source configuration.
+The provider interface is implemented; protected storage itself is still pending.
+COM, virtual-output, simulated-interface, and native-camera source construction
+remain explicit later implementation work, with no fallback to another backend.
+
 Read InterfaceVersion before opening a source. Modern connection methods start
 at Camera/Focuser/Rotator V4, Switch/SafetyMonitor/FilterWheel V3, and
 ObservingConditions/CoverCalibrator V2. Older interfaces use Connected. Missing

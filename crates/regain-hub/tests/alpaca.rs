@@ -303,9 +303,9 @@ async fn partial_poll_retry_after_blocks_refresh_and_resumes_the_failed_sample()
 async fn mixed_native_and_http_switch_shares_native_temperature_with_weather() {
     use regain_hub::{
         config::{HubConfig, Measurement, OutputConfig, Readout, VirtualDevice, WeatherMetric},
-        native::{NativeAccessoryBackend, NativeRuntime},
+        factory::{NoCredentials, build_sources},
+        native::NativeRuntime,
         safety::MonotonicClock,
-        source::SourceRegistry,
         switch::SwitchOutput,
         weather::WeatherOutput,
     };
@@ -334,10 +334,6 @@ async fn mixed_native_and_http_switch_shares_native_temperature_with_weather() {
         unreachable!()
     };
     *identity = "00:00:00:00:00:03".into();
-    let VirtualDevice::Switch { channels } = &config.outputs[0].device else {
-        unreachable!()
-    };
-    let switch_readout = channels[0].readout.clone();
     let native_source = config.sources[1].id;
     config.outputs.push(OutputConfig {
         id: Uuid::new_v4(),
@@ -359,21 +355,7 @@ async fn mixed_native_and_http_switch_shares_native_temperature_with_weather() {
         },
     });
     let clock = Arc::new(MonotonicClock::default());
-    let registry = Arc::new(
-        SourceRegistry::build(&config, clock.clone(), |source| match &source.backend {
-            SourceBackend::Native { .. } => Ok(Box::new(NativeAccessoryBackend::new(
-                source,
-                runtime.clone(),
-            )?)),
-            SourceBackend::Alpaca { .. } => Ok(Box::new(AlpacaBackend::new(
-                source,
-                vec![SampleRequest::readout(&switch_readout, false)],
-                None,
-            )?)),
-            _ => unreachable!(),
-        })
-        .unwrap(),
-    );
+    let registry = build_sources(&config, &runtime, &NoCredentials, clock.clone()).unwrap();
     let switches = SwitchOutput::new(
         &config,
         config.outputs[0].id,
@@ -450,6 +432,7 @@ struct Fixture {
     replies: Mutex<VecDeque<Reply>>,
     interface_reply: Mutex<Option<Reply>>,
     negotiation_requests: Mutex<Vec<(String, String, String)>>,
+    authenticated_requests: std::sync::atomic::AtomicUsize,
     // Data/connection operations; version discovery is recorded separately so
     // transport assertions do not depend on metadata negotiation order.
     requests: Mutex<Vec<(String, String, String)>>,
@@ -510,6 +493,16 @@ impl Server {
     }
 }
 async fn handler(State(fixture): State<Arc<Fixture>>, request: Request) -> Response {
+    if request
+        .headers()
+        .get("authorization")
+        .and_then(|h| h.to_str().ok())
+        == Some("Bearer fixture-secret")
+    {
+        fixture
+            .authenticated_requests
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
     let method = request.method().to_string();
     let uri = request.uri().to_string();
     let body = to_bytes(request.into_body(), 65536).await.unwrap();
@@ -651,6 +644,98 @@ async fn uncertain_connection_is_not_replayed_or_claimed_for_cleanup() {
     );
     backend.disconnect().await.unwrap();
     assert_eq!(server.fixture.requests.lock().unwrap().len(), 2);
+}
+
+#[tokio::test]
+async fn configured_factory_resolves_one_credential_and_keeps_secrets_out_of_source_status() {
+    use regain_hub::{
+        config::{HubConfig, SafetyMember, VirtualDevice},
+        factory::{CredentialProvider, build_sources},
+        native::NativeRuntime,
+        parameters::SafetyPolicy,
+        readout::SourceLease,
+        safety::MonotonicClock,
+        source::SourceError,
+    };
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    struct Credentials(AtomicUsize);
+    impl CredentialProvider for Credentials {
+        fn authorization(
+            &self,
+            reference: &str,
+        ) -> Result<reqwest::header::HeaderValue, SourceError> {
+            assert_eq!(reference, "fixture-reference");
+            self.0.fetch_add(1, Ordering::Relaxed);
+            Ok(reqwest::header::HeaderValue::from_static(
+                "Bearer fixture-secret",
+            ))
+        }
+    }
+    let mut server = Server::new(vec![Reply::value(json!(true)), Reply::value(json!(true))]).await;
+    let SourceBackend::Alpaca {
+        credential_reference,
+        ..
+    } = &mut server.config.backend
+    else {
+        unreachable!()
+    };
+    *credential_reference = Some("fixture-reference".into());
+    let mut config: HubConfig =
+        serde_json::from_str(include_str!("../examples/two-source-safety.json")).unwrap();
+    config.sources = vec![server.config.clone()];
+    config.outputs[0].device = VirtualDevice::Safety {
+        members: vec![SafetyMember {
+            source: server.config.id,
+            enabled: true,
+            policy: SafetyPolicy::default(),
+        }],
+    };
+    let credentials = Credentials(AtomicUsize::new(0));
+    let registry = build_sources(
+        &config,
+        &NativeRuntime {
+            directory: ".".into(),
+            simulate: false,
+        },
+        &credentials,
+        Arc::new(MonotonicClock::default()),
+    )
+    .unwrap();
+    assert_eq!(credentials.0.load(Ordering::Relaxed), 1);
+    assert!(server.fixture.requests.lock().unwrap().is_empty());
+    assert!(
+        server
+            .fixture
+            .negotiation_requests
+            .lock()
+            .unwrap()
+            .is_empty()
+    );
+    let source = registry.get(server.config.id).unwrap();
+    let first = SourceLease::acquire(source.clone()).await.unwrap();
+    let second = SourceLease::acquire(source.clone()).await.unwrap();
+    let mut status = source.status();
+    tokio::time::timeout(Duration::from_secs(3), async {
+        while status.borrow_and_update().values.get("issafe") != Some(&json!(true)) {
+            status.changed().await.unwrap();
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(source.snapshot().lease_count, 2);
+    assert_eq!(credentials.0.load(Ordering::Relaxed), 1);
+    assert_eq!(
+        server
+            .fixture
+            .authenticated_requests
+            .load(Ordering::Relaxed),
+        3
+    );
+    let diagnostic = serde_json::to_string(&source.snapshot()).unwrap();
+    assert!(!diagnostic.contains("fixture-secret"));
+    assert!(!diagnostic.contains("fixture-reference"));
+    drop(first);
+    drop(second);
 }
 
 #[tokio::test]

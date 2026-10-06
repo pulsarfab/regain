@@ -329,3 +329,36 @@ web and independent JSON Schema readers, and both .NET HubConfiguration tests
 pass. Production worker tests remain simulation only. Device-specific capability
 discovery, host construction/IPC, protected credentials, frontend conformance,
 hardware acceptance, and all later gates remain open.
+
+## 2026-10-05: configuration-driven source construction
+
+The source factory now derives a single polling plan from every output mapping
+and prepares the existing native/Alpaca adapters before starting the registry.
+The mixed native/HTTP controller test uses this path instead of hand-written
+backend selection. Reviewed construction order, cadence, sample limits, and
+credential handling.
+
+1. Shared output mappings must not multiply polls or safe confirmation counts.
+   Readouts are deduplicated by canonical sample key, while every SafetyMonitor
+   plan contains exactly one strict IsSafe observation per attempt. Unrelated
+   properties on a SafetyMonitor are rejected instead of mixed into safety polls.
+2. A weather property used as a Switch gauge still needs its upstream sensor age.
+   Age requests follow source type, not the frontend consuming the reading.
+3. Enabled safety memberships select the fastest required shared cadence.
+   Disabled memberships cannot speed up polling. Each output retains its own
+   confirmation interval, and the persisted configuration is not rewritten.
+4. Individually valid outputs can jointly exceed a source's sample limit. The
+   limit applies to the union, and insertion stops at the first excess sample
+   rather than allocating an unbounded temporary plan before rejecting it.
+5. Invalid configuration is rejected before credential resolution. Adapters are
+   prepared without hardware/network I/O, and credentials are resolved once per
+   source. Missing providers fail closed; protected OS storage is not yet present.
+   Actual HTTP requests carry the resolved header while source diagnostics omit
+   both the secret and the reference. No backend failure enables simulation.
+
+Verification: 95 hub tests (including five factory tests and one authenticated
+loopback integration) pass with production accessory workers in simulation.
+Clippy, Rust 1.89.0, generated-contract freshness, and package checks pass.
+The runtime still needs output/session ownership, virtual and simulated sources,
+protected credential storage, IPC, and actual frontend publication. COM/native
+camera adapters and the remaining original milestone gates also remain open.
