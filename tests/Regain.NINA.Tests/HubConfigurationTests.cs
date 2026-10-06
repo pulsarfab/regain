@@ -50,10 +50,22 @@ public sealed class HubConfigurationTests
         var com=reader.Variants(source,["comSources"]).Single(v=>v.Kind=="com");
         Assert.True(com.Enabled);
         var properties=com.Schema.GetProperty("properties");
-        Assert.Equal(new[]{"switch","safetymonitor","observingconditions"},reader.Choices(properties.GetProperty("deviceType")).Where(c=>c.Enabled).Select(c=>c.Value));
+        Assert.Equal(new[]{"switch","safetymonitor","observingconditions","focuser"},reader.Choices(properties.GetProperty("deviceType")).Where(c=>c.Enabled).Select(c=>c.Value));
         var bitness=reader.Choices(properties.GetProperty("bitness"),["comX86Sources"]);
         Assert.True(bitness.Single(c=>c.Value=="x86").Enabled);
         Assert.False(bitness.Single(c=>c.Value=="x64").Enabled);
+    }
+    [Fact]
+    public void TypedProxyChoicesExposeOnlyPublishedClasses()
+    {
+        var reader = new HubConfiguration(Contract());
+        var device = reader.Root.GetProperty("$defs").GetProperty("VirtualDevice");
+        Assert.False(reader.Variants(device).Single(v => v.Kind == "proxy").Enabled);
+        var proxy = reader.Variants(device, ["proxyOutputs", "focuserOutputs"]).Single(v => v.Kind == "proxy");
+        Assert.True(proxy.Enabled);
+        var classes = proxy.Schema.GetProperty("properties").GetProperty("deviceType");
+        Assert.Equal(new[] { "focuser" }, reader.Choices(classes, ["focuserOutputs"]).Where(c => c.Enabled).Select(c => c.Value));
+        Assert.All(reader.Choices(classes), c => Assert.False(c.Enabled));
     }
     [Fact]
     public void UnknownContractsAndReferencesAreRejected()

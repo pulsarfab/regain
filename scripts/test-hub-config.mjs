@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { configurationContract } from '../crates/regain-alpaca/web/hub-config.mjs';
-import { initialValue, newIdentity, previewValue } from '../crates/regain-alpaca/web/hub-form.mjs';
+import { initialValue, newIdentity, previewValue, renderConfiguration } from '../crates/regain-alpaca/web/hub-form.mjs';
 import { CredentialSetup, credentialContract } from '../crates/regain-alpaca/web/hub-credentials.mjs';
 import { SimulationSetup, simulationControls, validateSimulationValue } from '../crates/regain-alpaca/web/hub-simulation.mjs';
 import { OutputDiagnostics, diagnosticSummary, validateDiagnosticSchema } from '../crates/regain-alpaca/web/hub-diagnostics.mjs';
@@ -14,7 +14,7 @@ assert.equal(variants.find(v => v.kind === 'alpaca').enabled, true);
 assert.equal(variants.find(v => v.kind === 'com').enabled, false);
 const com = reader.variants(source, ['comSources']).find(v => v.kind === 'com');
 assert.equal(com.enabled, true);
-assert.deepEqual(reader.choices(com.schema.properties.deviceType).filter(c => c.enabled).map(c => c.value), ['switch','safetymonitor','observingconditions']);
+assert.deepEqual(reader.choices(com.schema.properties.deviceType).filter(c => c.enabled).map(c => c.value), ['switch','safetymonitor','observingconditions','focuser']);
 assert.equal(reader.choices(com.schema.properties.bitness, ['comX86Sources']).find(c => c.value === 'x86').enabled, true);
 assert.equal(reader.choices(com.schema.properties.bitness, ['comX86Sources']).find(c => c.value === 'x64').enabled, false);
 const fields = reader.fields(source, { kind: 'alpaca', baseUrl: 'http://localhost:11111', deviceNumber: 0 });
@@ -61,6 +61,13 @@ assert.equal(preview.sources.find(source => source.backend.kind === 'alpaca').ba
 assert.equal(privateSource.backend.credentialReference, 'private-reference');
 assert.deepEqual(preview.outputs, saved.outputs);
 assert.equal(editor.variants(editor.root.$defs.VirtualDevice).find(v => v.kind === 'proxy').enabled, false);
+const typedEditor = configurationContract({...description, capabilities:['simulation','proxyOutputs','focuserOutputs']});
+const proxy = typedEditor.variants(typedEditor.root.$defs.VirtualDevice).find(v => v.kind === 'proxy');
+assert.equal(proxy.enabled,true);
+assert.deepEqual(typedEditor.choices(proxy.schema.properties.deviceType).filter(v => v.enabled).map(v => v.value),['focuser']);
+assert.deepEqual(initialValue(typedEditor,proxy.schema),{kind:'proxy',deviceType:'focuser',source:''});
+assert.equal(reader.choices(proxy.schema.properties.deviceType).every(v => !v.enabled),true);
+assert.deepEqual(typedEditor.choices(typedEditor.variants(typedEditor.root.$defs.SourceBackend).find(v => v.kind === 'simulated').schema.properties.deviceType).filter(v => v.enabled).map(v => v.value),['switch','safetymonitor','observingconditions','focuser']);
 const simulatedSchema = editor.variants(editor.root.$defs.SourceBackend).find(v => v.kind === 'simulated').schema;
 assert.equal(initialValue(editor, simulatedSchema).deviceType,'switch');
 assert.equal(editor.choices(simulatedSchema.properties.deviceType).find(v=>v.value==='camera').enabled,false);
@@ -310,3 +317,42 @@ console.log('Web output diagnostics passed: generated reply schema, saved identi
   assert.match(diagnosticSummary(observed),/Read attempts started 1\/3/);
   assert.equal(setup.observation.result.diagnostics.channels[0].health.polling.nextPollAfterSeconds,8);
 }
+
+// Exercise the actual form's event closures. This small DOM adapter supplies only
+// the element/tree operations used by the renderer; browser acceptance checks
+// native controls and layout separately.
+class FormElement {
+  constructor(tag) { this.tagName=tag.toUpperCase(); this.children=[]; this.dataset={}; this.attributes={}; }
+  append(...children) { this.children.push(...children); }
+  replaceChildren(...children) { this.children=children; }
+  setAttribute(key,value) { this.attributes[key]=value; }
+  setCustomValidity(value) { this.validityMessage=value; }
+  descendants() { return this.children.flatMap(child => [child,...child.descendants()]); }
+  querySelectorAll(selector) { assert.equal(selector,'details[open]'); return this.descendants().filter(child=>child.tagName==='DETAILS' && child.open); }
+}
+const priorDocument=globalThis.document;
+try {
+  globalThis.document={createElement:tag=>new FormElement(tag)};
+  const container=new FormElement('div');
+  const formReader=configurationContract({...description,capabilities:['alpacaSources','simulation','comSources','comX64Sources','proxyOutputs','focuserOutputs']});
+  const baseline=JSON.parse(readFileSync(new URL('../crates/regain-hub/examples/two-source-safety.json',import.meta.url),'utf8'));
+  const draft=structuredClone(baseline); let changes=0;
+  const field=path=>container.descendants().find(child=>child.dataset.path===path);
+  const taggedChoice=path=>field(path).descendants().find(child=>child.tagName==='SELECT');
+  renderConfiguration(container,formReader,draft,baseline,()=>changes++);
+  let transport=taggedChoice('sources[0].backend'); transport.value='simulated'; transport.onchange();
+  assert.deepEqual(draft.sources[0].backend,{kind:'simulated',deviceType:'switch'});
+  assert.equal(field('sources[0].backend.baseUrl'),undefined);
+  assert.notEqual(field('sources[0].backend.deviceType'),undefined);
+  transport=taggedChoice('sources[0].backend'); transport.value='com'; transport.onchange();
+  assert.equal(draft.sources[0].backend.kind,'com'); assert.equal(draft.sources[0].backend.bitness,'x64');
+  assert.notEqual(field('sources[0].backend.progId'),undefined);
+  const outputChoice=taggedChoice('outputs[0].device'); outputChoice.value='proxy'; outputChoice.onchange();
+  assert.deepEqual(draft.outputs[0].device,{kind:'proxy',source:'',deviceType:'focuser'});
+  const classes=taggedChoice('outputs[0].device.deviceType').children.filter(child=>child.value);
+  assert.deepEqual(classes.filter(child=>!child.disabled).map(child=>child.value),['focuser']);
+  assert.equal(changes,3); assert.equal(baseline.outputs[0].device.kind,'safety');
+} finally {
+  if (priorDocument===undefined) delete globalThis.document; else globalThis.document=priorDocument;
+}
+console.log('Web form transitions passed: actual event handlers change transports and proxy kinds, replace conditional fields and restrict typed classes.');

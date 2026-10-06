@@ -2186,7 +2186,6 @@
                     "camera": "broaderComSources",
                     "covercalibrator": "broaderComSources",
                     "filterwheel": "broaderComSources",
-                    "focuser": "broaderComSources",
                     "rotator": "broaderComSources"
                   }
                 }
@@ -2649,7 +2648,16 @@
                 "description": "Must match the upstream device class.",
                 "title": "Device Type",
                 "x-regain": {
-                  "apply": "reconnect"
+                  "enumCapabilities": {
+                    "camera": "broaderProxyOutputs",
+                    "covercalibrator": "broaderProxyOutputs",
+                    "filterwheel": "broaderProxyOutputs",
+                    "focuser": "focuserOutputs",
+                    "observingconditions": "broaderProxyOutputs",
+                    "rotator": "broaderProxyOutputs",
+                    "safetymonitor": "broaderProxyOutputs",
+                    "switch": "broaderProxyOutputs"
+                  }
                 }
               },
               "kind": {

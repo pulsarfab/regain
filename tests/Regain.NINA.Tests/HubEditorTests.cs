@@ -9,6 +9,45 @@ public sealed partial class HubNativeTests
 {
     private static Task<HubEditorSession> Editor(Host host) => HubEditorSession.AttachAsync(host.Executable, host.ConfigPath, host.Selection(0, "switch").InstanceId);
     [Fact]
+    public async Task NativeEditorCreatesSharedFocuserOutputsFromHostDescriptorsWithoutOpeningEquipment()
+    {
+        await using var host = await Host.Open(); using var editor = await Editor(host); await editor.ReloadAsync();
+        var draft = editor.Draft!;
+        draft.AddItem("/sources"); draft.SelectVariant("/sources/3/backend", "simulated");
+        draft.SetValue("/sources/3/backend/deviceType", draft.ParseScalar(draft.Field("/sources/3/backend/deviceType").Schema, "focuser"));
+        draft.SetValue("/sources/3/label", JsonSerializer.SerializeToElement("Shared simulated focuser"));
+        var source = draft.Field("/sources/3/id").Value!.Value.GetGuid();
+        var ids = new List<Guid>();
+        for (int index = 3; index < 5; index++) {
+            draft.AddItem("/outputs"); draft.SelectVariant($"/outputs/{index}/device", "proxy");
+            Assert.Equal("focuser", draft.Field($"/outputs/{index}/device/deviceType").Value!.Value.GetString());
+            Assert.Throws<FormatException>(() => draft.ParseScalar(draft.Field($"/outputs/{index}/device/deviceType").Schema, "camera"));
+            draft.SetValue($"/outputs/{index}/device/source", JsonSerializer.SerializeToElement(source));
+            draft.SetValue($"/outputs/{index}/label", JsonSerializer.SerializeToElement($"Shared focuser {index}"));
+            draft.SetValue($"/outputs/{index}/number", JsonSerializer.SerializeToElement(index == 3 ? 4 : 7));
+            ids.Add(draft.Field($"/outputs/{index}/id").Value!.Value.GetGuid());
+        }
+        // Schema choices guide setup; the engine still authorizes the candidate.
+        draft.SetValue("/outputs/3/device/deviceType", JsonSerializer.SerializeToElement("camera")); editor.Changed();
+        Assert.False(await editor.ReviewAsync()); Assert.NotEmpty(editor.Errors.EnumerateArray());
+        draft.SetValue("/outputs/3/device/deviceType", JsonSerializer.SerializeToElement("focuser")); editor.Changed();
+        Assert.True(await editor.ReviewAsync());
+        for (int index = 0; index < 3; index++) Assert.Equal(0, (await editor.SourceStatusAsync(Guid.Parse(host.Config["sources"]![index]!["id"]!.GetValue<string>()))).GetProperty("leaseCount").GetInt32());
+        await editor.ApplyAsync(); await editor.ReloadAsync();
+        Assert.Equal(0, (await editor.SourceStatusAsync(source)).GetProperty("leaseCount").GetInt32());
+        Assert.Equal(ids[0], editor.Draft!.Field("/outputs/3/id").Value!.Value.GetGuid());
+        Assert.Equal(ids[1], editor.Draft.Field("/outputs/4/id").Value!.Value.GetGuid());
+        HubSelection Selection(int index) => new() { ConfigPath = host.ConfigPath, InstanceId = host.Selection(0,"switch").InstanceId,
+            OutputId = ids[index], DeviceType = "focuser", Label = $"Shared focuser {index + 3}", Simulated = true };
+        using var first = new HubFocuserDevice(Selection(0),host.Executable,host.Workers);
+        using var second = new HubFocuserDevice(Selection(1),host.Executable,host.Workers);
+        await first.Connect(CancellationToken.None); await second.Connect(CancellationToken.None);
+        await Eventually(async () => (await editor.SourceStatusAsync(source)).GetProperty("leaseCount").GetInt32() == 2);
+        await first.Move(50100,CancellationToken.None,0); Assert.Equal(50100,second.Position);
+        first.Disconnect(); Assert.True(second.Connected); second.Disconnect();
+        await Eventually(async () => (await editor.SourceStatusAsync(source)).GetProperty("leaseCount").GetInt32() == 0);
+    }
+    [Fact]
     public async Task NativeEditorReviewsAndAppliesWithoutOpeningEquipment()
     {
         await using var host = await Host.Open(); using var editor = await Editor(host); await editor.ReloadAsync();

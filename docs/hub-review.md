@@ -2404,3 +2404,47 @@ response timeout or local HKCU SCM investigation. Virtual checkpoint 1af147b run
 37496570309/37496563543 remain live at this observation. Next: shared typed setup,
 remaining accessories, camera acquisition/buffers, coordination and every original
 acceptance/final gate. PR21 remains draft.
+
+### Shared focuser configuration setup (2026-10-06)
+
+Enabled proxy creation through shared descriptors with explicit per-class gates.
+The host advertises proxyOutputs/focuserOutputs; only Focuser can be selected.
+Camera and other unfinished proxy classes require unadvertised broaderProxyOutputs.
+COM class choices now include the implemented Focuser import, while transport and
+bitness admission still depend on actual staged workers. No frontend device list
+or second schema was added. Initial proxy values select Focuser instead of Camera.
+
+Reviewed metadata/runtime agreement, default generation, stable IDs/numbers,
+source matching and no-I/O configuration semantics. Actual native editor creation
+adds one explicit simulator and two outputs, rejects an unsupported camera candidate
+in host Review, applies/reloads without equipment leases and preserves both IDs.
+The two NINA clients then share position/motion and release independent leases.
+The net48 fixture verifies the same host choices/defaults on both architectures.
+All 186 warning-denied NINA tests and real net48 x86/x64 suites pass. Full local
+hub/Alpaca suites with explicitly simulated production workers, Clippy and Rust 1.89
+checks pass; logs use artifacts/hub-focuser-setup-*.log.
+
+Actual browser acceptance found an existing tagged-choice closure reading the
+schema variable after rendering had replaced it with the selected variant. Changing
+source transport or output kind threw a TypeError. The handler now captures the
+original described choice list and refuses unavailable choices. A small DOM adapter
+runs the actual renderer/event handlers to regress transport changes, conditional
+field replacement and Focuser-only proxy defaults; it is not evidence of layout.
+Chrome acceptance separately proves simulator/output creation, review/apply/reload,
+rejected fractional Position, a sparse Position 100000 update preserving temperature
+12, unchanged revision, zero source leases and no console errors. Actual screenshots
+are in the development setup guide. In-app browser input timed out; Chrome completed
+the flow against the same private server. A default Python lacked jsonschema; the
+independent schema checks now pass all four cases in a private test environment.
+Generated-contract freshness, formatting and diff checks also pass.
+
+Automatic approval review rejected a combined background fixture launch with
+blocked by policy. The test used an inspectable foreground session instead. All
+private publisher/host processes were identified by their unique executable and
+configuration paths and stopped after verification. No physical equipment or
+installed vendor driver was activated. Virtual checkpoint push CI 37496563543
+passes all eight jobs; PR 37496570309 was cancelled. Simulation checkpoint runs
+37499571887/37499559138 remain live at this observation. All original camera,
+coordination, remaining typed interfaces, conformance, interactive/vendor/hardware,
+resume/recovery, discovery, main reconciliation and documentation/final gates remain
+required before PR21 can merge.

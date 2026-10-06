@@ -369,4 +369,31 @@ native worker simulation settings.
 This is the actual WPF editor with a private simulated source, showing its Int32
 limits and a selected Position update. Native NINA and real net48 ASCOM fixtures
 verify timed motion and optional errors in both bitnesses. The browser consumes the
-same descriptors; acceptance of its new rendered focuser controls remains pending.
+same descriptors; Chrome acceptance also verifies creation, save/reload, fractional
+coordinate rejection, sparse integer updates and zero source leases.
+
+![Browser focuser controls during an explicit simulation](images/hub-web-focuser-simulation.jpg)
+
+This actual Chrome capture shows Position 100000 after a sparse update. Temperature
+remains 12 °C and the saved configuration revision is unchanged. No hardware is
+connected; this is a private simulated source.
+
+## Create a shared focuser output (development)
+
+In the configuration editor, add a source and choose its transport. For a test,
+choose **Simulation** and device type **focuser**. For installed Windows ASCOM
+imports, choose **Windows ASCOM driver**, the focuser class, ProgID and an available
+worker bitness. Give the source a clear label.
+
+Add an output, choose **Republish a device**, select **focuser** and its source,
+then give it a label and an unused focuser number. Review, apply and reload. Saved
+IDs and numbers are retained; adding another output referencing the same source
+shares its connection while each frontend keeps its own lease. Review reports
+mismatched source classes rather than opening equipment. Other proxy classes stay
+unavailable until their interfaces are implemented. Select/save the output in the
+native selector or register it through the ASCOM manager before connecting a client.
+
+![Browser-created focuser output backed by explicit simulation](images/hub-web-focuser-setup.jpg)
+
+This is the actual saved Chrome form, with a simulated focuser source and output
+number 7. Creation and configuration changes leave source lease counts at zero.

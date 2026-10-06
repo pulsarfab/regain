@@ -86,13 +86,18 @@ export function renderConfiguration(container, reader, draft, base, changed) {
     }
     if (schema.anyOf) schema = reader.resolve(schema.anyOf.find(v => v.type !== 'null'));
     if (schema.oneOf && reader.variants(schema).length) {
+      const variants = reader.variants(schema);
       const select = el('select'); heading.append(select);
-      for (const variant of reader.variants(schema)) {
+      for (const variant of variants) {
         const option = el('option', variant.title + (variant.enabled ? '' : ' (not available)'));
         option.value = variant.kind; option.disabled = !variant.enabled; select.append(option);
       }
       select.value = value?.kind ?? '';
-      select.onchange = () => { set(initialValue(reader, reader.variants(schema).find(v => v.kind === select.value).schema)); redraw(); };
+      select.onchange = () => {
+        const variant = variants.find(v => v.kind === select.value && v.enabled);
+        if (!variant) throw new Error('Choose an available configuration type');
+        set(initialValue(reader, variant.schema)); redraw();
+      };
       const selected = schema.oneOf.find(v => v.properties?.kind?.const === value?.kind);
       if (!selected) { group.append(el('p', 'Choose a supported type.')); return group; }
       schema = reader.resolve(selected);

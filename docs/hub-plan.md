@@ -113,7 +113,8 @@ x86/x64 adapter/COM export fixtures pass. Disposable Windows CI now proves cold
 SCM activation for all five output types on both architectures. Both frontend CI
 runs fail the production-registration fixture's missing Focuser Chooser mapping;
 the mapping is corrected and needs new CI. Local HKCU SCM activation failed on
-the first existing Switch class. General proxy setup remains gated.
+the first existing Switch class. Proxy setup was gated at this checkpoint; current
+focuser setup is recorded below.
 
 Completed increment: Windows COM focuser imports reuse isolated STA workers,
 typed source polling and shared controller leases. V3 uses legacy Connected and
@@ -142,18 +143,30 @@ and dispatched uncertain moves remain explicit. Clearing a fault cannot clear
 the shared uncertainty latch or reconnect an obsolete session. Fifteen Rust
 simulation tests, all 184 NINA tests, real net48 x86/x64 clients, shared Node/schema
 checks, strict Clippy and Rust 1.89 checks pass. An actual WPF screenshot is labelled
-simulation; browser rendering of these new controls remains to be accepted.
+simulation; browser rendering is accepted in the next setup increment below.
 COM checkpoint 8c806d5 push CI 37494616586 passes all eight jobs; its PR run
 37494625707 was cancelled after seven successes. This verifies the corrected
 Focuser Chooser mapping in disposable Windows CI. Virtual checkpoint 1af147b
 PR/push runs 37496570309/37496563543 remain live at this observation.
 
-Next: general typed setup and the remaining
-accessory proxies.
+Completed increment: shared native/web setup can create Focuser proxies. The host
+advertises proxy creation with class-specific capability rules: only Focuser is
+enabled; unfinished classes remain unavailable. Windows COM setup now exposes its
+implemented Focuser class while respecting installed worker bitness. Actual native
+creation preserves IDs, validates relationships without leases and connects two
+outputs to one simulator after Apply. Chrome acceptance proves source/output
+creation, reviewed save/reload, rejection of fractional coordinates, sparse integer
+updates and zero source leases with no console errors. It exposed a tagged-choice
+handler capturing a mutated schema; the handler now retains its original choices
+and has an actual form-event regression. All 186 NINA tests and real net48 x86/x64
+clients pass. Virtual checkpoint push CI 37496563543 passes all eight jobs; its PR
+run 37496570309 was cancelled. Simulation checkpoint CI is still running.
+
+Next: the remaining typed accessory proxies and their shared setup.
 Retain the earlier COM fixture timeout
 investigation. Complete camera ownership, coordination and every original
-remaining milestone and acceptance gate. General proxy setup stays gated pending
-broader typed configuration support.
+remaining milestone and acceptance gate. Proxy setup enables only implemented classes; broader typed configuration and
+publication remain required.
 
 Use this document as the working checklist. Complete one reviewable milestone at
 a time, record its tests and remaining limitations, and update the next action
@@ -763,7 +776,8 @@ deduplicated polling and cached typed diagnostics/DeviceState are implemented.
 All three frontend publications, Windows COM imports and virtual inputs are
 implemented. Dedicated focuser simulation is implemented. Broader simulation, general typed
 setup and conformance remain required.
-The general setup proxy capability remains unavailable meanwhile.
+Shared setup now enables Focuser proxy creation, with all other proxy classes
+gated until their interfaces are implemented and verified.
 
 - [ ] Specify camera buffer lifetime, image transport, capability passthrough, and
   acquisition ownership before enabling camera proxies.
@@ -863,3 +877,4 @@ Keep existing device profiles and registrations compatible throughout migration.
 | 2026-10-06 | Added Windows COM focuser imports through the existing isolated STA workers and shared typed controller. Review corrected both sides of the V3 legacy/V4 asynchronous boundary, preserved Int32 limits, shared leases and uncertain-write fencing. Corrected the production-registration fixture's missing Focuser Chooser path. | 20 actual worker tests, 12 registered Rust parent cases, full Rust hub/Alpaca suites with production workers in explicit simulation, strict Clippy, Rust 1.89, 180 NINA tests and real net48 x86/x64 clients pass. Native frontend CI proves cold SCM activation for all five classes but fails the now-corrected registration mapping; new CI required. Next: typed virtual/simulated focuser inputs and general typed setup, then every original remaining gate. |
 | 2026-10-06 | Added virtual focuser composition through the shared typed controller, generation-checked cached polling and incremental supervised inner connections. Reviewed ages, types, optional errors, ownership, pending cancellation and no replay/automatic Halt. | Seven private loopback cases and one explicitly simulated production EAF worker case pass, alongside full Rust hub/Alpaca suites, strict Clippy, Rust 1.89, 180 NINA tests and real net48 x86/x64 regressions. COM checkpoint CI is still active. Next: dedicated focuser simulation and shared typed setup, other accessory proxies, cameras/coordination and every original acceptance/final gate. |
 | 2026-10-06 | Added and reviewed dedicated Focuser V4 simulation through shared actors/controllers and fifteen generated native/web controls. | Fifteen Rust simulation cases, full hub/Alpaca suites, Clippy/MSRV, Node/four schema checks, all 184 NINA tests and real net48 x86/x64 fixtures pass. Actual WPF screenshot is labelled simulation. COM push CI 37494616586 passes all eight jobs. Next: shared typed setup; all original later gates remain required. |
+| 2026-10-06 | Enabled shared class-gated Focuser setup, including Windows COM choices; fixed the browser tagged-type event closure found in actual acceptance. | Native review/apply creates two shared outputs without source leases. All 186 NINA tests, real net48 x86/x64 fixtures, Rust/Clippy/MSRV, Node form-event tests and Chrome creation/save/reload/sparse Int32 acceptance pass. New screenshot shows explicit simulation. Next: other typed accessory proxies and every original remaining gate. |

@@ -191,6 +191,8 @@ impl HubRuntime {
             "virtualSources",
             "writeReadout",
             "simulation",
+            "proxyOutputs",
+            "focuserOutputs",
         ];
         if !self.com_architectures.is_empty() {
             capabilities.push("comSources");

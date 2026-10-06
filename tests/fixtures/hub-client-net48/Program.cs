@@ -125,6 +125,11 @@ internal static class Program
             try { await editor.ApplyAsync(deadline.Token); throw new Exception("Editor replayed an unreconciled Apply"); }
             catch (InvalidOperationException) { }
             await editor.ReloadAsync(deadline.Token);
+            var deviceChoices = editor.Draft!.Description.Root.GetProperty("$defs").GetProperty("VirtualDevice");
+            var proxyChoice = editor.Draft.Description.Variants(deviceChoices).Single(v => v.Kind == "proxy");
+            if (!proxyChoice.Enabled || editor.Draft.InitialValue(proxyChoice.Schema).GetProperty("deviceType").GetString() != "focuser" ||
+                editor.Draft.Description.Choices(proxyChoice.Schema.GetProperty("properties").GetProperty("deviceType")).Where(v => v.Enabled).Any(v => v.Value != "focuser"))
+                throw new InvalidOperationException("Typed proxy setup did not restrict creation to the published focuser class");
             if (editor.Draft!.Revision == oldRevision || editor.Draft.Field("/outputs/0/label").Value!.Value.GetString() != "net48 edited simulation")
                 throw new InvalidOperationException("Native editor did not reconcile saved changes");
             var inspectedSource = saved.GetProperty("sources")[0].GetProperty("id").GetGuid();

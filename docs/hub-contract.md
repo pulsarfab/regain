@@ -1313,8 +1313,9 @@ source/generation/revision/sequence and observed ages. Native/web readers enforc
 that contract and its identities, types and ranges. DeviceState reads cached
 IsMoving, Position and Temperature without I/O and omits unavailable readings.
 No single UTC measurement time is invented. Neither diagnostic reads nor
-DeviceState accelerate polling or authorize motion. Setup's general proxy
-capability remains unavailable until frontend publication is complete; the
+DeviceState accelerate polling or authorize motion. Setup advertises `proxyOutputs`
+and `focuserOutputs`, with per-class schema gates enabling only Focuser proxies.
+Other classes require the unadvertised `broaderProxyOutputs` capability. The
 Alpaca publisher now admits Focuser outputs only when the attached host advertises
 `focuserOutputs`. It publishes the configured UUID and class-local device number
 without renumbering. Focuser V4 exposes the typed properties, Move, Halt, TempComp,
@@ -1399,3 +1400,13 @@ the controller generation and retains the shared latch. Explicit simulation stat
 can show its outcome, but clearing the fault cannot reconnect old sessions, clear
 that latch or authorize replay. Simulation state is runtime-only and never a
 fallback for native, Alpaca or COM failures.
+
+Shared configuration setup admits Focuser sources through native, Alpaca, Windows
+COM, virtual and explicit simulation transports. COM source availability and
+bitness still come from the actual staged import workers. Frontends consume the
+same tagged choices and class capability annotations; they do not duplicate a
+list of supported proxy classes. Proxy initialization chooses the first available
+class, currently Focuser, rather than defaulting to an unsupported Camera. Source
+references and matching device classes remain subject to host validation before
+Apply; schema choices alone cannot authorize a configuration. Creation, review
+and persistence do not acquire equipment leases.
