@@ -2049,3 +2049,33 @@ production restriction: explicit empty camera profiles fail HTTP startup with
 refinement to milestone 2; preserve ordinary new-install camera defaults while
 allowing a deliberately empty list. Broader proxies/cameras/coordination and all
 original remaining acceptance gates stay required.
+
+### Accessory-only HTTP publication and empty setup
+
+Removed the unconditional nonempty-camera requirement for explicitly persisted
+profiles. Missing files still use the ordinary two-camera defaults; no hub setting
+silently rewrites an existing installation's camera choices. The same validation
+now covers startup and reload, rejecting duplicate IDs before replacing live
+settings. The root camera editor handles no selected row, hides its unavailable
+settings/tabs/save action, retains accessory navigation and supports adding slot 0.
+Periodic status refresh also handles an empty list without an exception.
+
+Three profile cases cover empty/restart/add-first persistence, ordinary defaults,
+and invalid/duplicate reload preservation. All hub router fixtures now use empty
+profiles; a new API case proves catalog identity, rejection of absent-camera
+GET/PUT, first-slot setup, persistence and zero equipment leases. The first test
+run incorrectly expected an Alpaca JSON error for the absent slot; production
+uses HTTP 404, so the assertion now checks that existing contract. The real HTTP
+executable fixture starts and restarts on the same empty list while preserving
+its existing shared host and catalog.
+
+All 15 Alpaca unit tests, nine executable tests and 14 router tests pass. Strict
+Clippy, Rust 1.89.0, formatting and JavaScript syntax pass
+(`artifacts/hub-empty-cameras-*.log`). Actual browser verification proves the empty
+state and add/save-first-slot flow, no console errors, no advertised unselected
+camera and zero source leases/connections. Evidence is in
+`artifacts/hub-empty-camera-browser-verification.json`; the actual screenshot is
+documented as simulation. Only the fixture's verified host/publisher were stopped,
+and its browser tab was closed. Both 96ea4e3 CI runs now pass all eight jobs;
+400a74d polling CI is still live. Original remaining gates, including the earlier
+COM timeout investigation and broader proxies/cameras/coordination, stay open.

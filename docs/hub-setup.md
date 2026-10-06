@@ -33,6 +33,18 @@ regain-alpaca --hub-config ABSOLUTE_PATH --port 11111
 
 Open `http://127.0.0.1:11111/setup/hub`. These example sources are explicitly
 simulated, and safety starts unsafe. The example identities are for testing.
+For an accessory-only server, create a separate camera-profile file containing
+`[]` and pass it with `--profiles ABSOLUTE_PROFILES_PATH` on that command. An
+explicit empty list creates no camera slots; a missing profile file retains the
+normal main/guide defaults. The root `/setup` remains usable and **Add camera
+slot** can create the first slot later without changing the hub's devices.
+
+![Accessory-only setup during a private simulation test](images/hub-accessory-only-setup.jpg)
+
+This actual browser render uses an empty camera-profile file and explicitly
+simulated hub sources. The fixture verified first-slot creation/save afterward,
+with no camera selected, equipment connection or console errors.
+
 For a new installation, create an empty configuration with fresh identities:
 
 ```text

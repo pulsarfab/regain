@@ -1246,7 +1246,7 @@ Cached reads do not update it, start polling or invent a live countdown.
 `attemptsStarted` counts attempts in the current cycle, including an in-flight
 sample; completion resets it to zero. `attemptsPerCycle` comes from the actual
 policy, `lastAttempt` retains the most recently started attempt, and
-`lastCycleExhausted` is null before/while an attempt completes, false for an
+`lastCycleExhausted` is null before the first attempt or while one is in progress, false for an
 unfinished cycle and true for a completed/exhausted cycle (including successful
 completion). `backoffFailures` is the actor's existing backoff counter, not a
 count of every kind of source error. Waiting phase requires a reason and finite
@@ -1254,3 +1254,15 @@ nonnegative remaining wait. Inactive/in-flight phases have no wait; an
 unrepresentable Retry-After deadline is suspended with no automatic poll.
 Disconnect resets the cycle and schedule. These are read/connection observations;
 no write command is replayed or granted permission by these diagnostics.
+
+### Accessory-only HTTP publication
+
+An explicit camera-profile file containing `[]` is a valid empty list, independent
+of hub configuration. New/missing ordinary camera settings retain the existing
+main/guide defaults. Loading/reloading validates all profiles and unique IDs
+before replacement, including for an empty list. Invalid files preserve the
+current in-memory settings. No camera device is instantiated for an unknown slot;
+its API request returns the existing HTTP 404. Root setup shows an empty state
+and can create its first slot at device number 0. A slot without a selected camera
+is not advertised in the configured-device catalog. Hub identities and leases
+are independent of camera-slot creation and HTTP publisher restart.

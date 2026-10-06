@@ -581,11 +581,14 @@ async fn ordinary_http_executable_attaches_to_existing_host_without_taking_owner
         .unwrap();
     let port = listener.local_addr().unwrap().port();
     drop(listener);
+    // An explicitly empty camera file must start without placeholder slots.
+    let profiles = dir.path().join("profiles.json");
+    std::fs::write(&profiles, b"[]").unwrap();
     let mut http_server = command()
         .args(["--hub-config"])
         .arg(&path)
         .arg("--profiles")
-        .arg(dir.path().join("profiles.json"))
+        .arg(&profiles)
         .arg("--port")
         .arg(port.to_string())
         .arg("--no-discovery")
@@ -600,6 +603,12 @@ async fn ordinary_http_executable_attaches_to_existing_host_without_taking_owner
         .unwrap()
         .unwrap();
     assert!(ready.contains("Alpaca listening"), "{ready}");
+    assert!(
+        regain_alpaca::profile::Profiles::new(Some(profiles.clone()))
+            .unwrap()
+            .all()
+            .is_empty()
+    );
     let devices = http(port, "GET", "/management/v1/configureddevices", "").await;
     assert_eq!(devices.as_array().unwrap().len(), 3);
     http(
@@ -614,6 +623,37 @@ async fn ordinary_http_executable_attaches_to_existing_host_without_taking_owner
         false
     );
     http_server.kill().await.unwrap();
+    // Restart the real publisher on the same persisted empty list and host.
+    let mut restarted = command()
+        .arg("--hub-config")
+        .arg(&path)
+        .arg("--profiles")
+        .arg(&profiles)
+        .arg("--port")
+        .arg(port.to_string())
+        .arg("--no-discovery")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit())
+        .spawn()
+        .unwrap();
+    let mut restarted_lines = BufReader::new(restarted.stdout.take().unwrap()).lines();
+    let ready = tokio::time::timeout(Duration::from_secs(15), restarted_lines.next_line())
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    assert!(ready.contains("Alpaca listening"), "{ready}");
+    assert_eq!(
+        http(port, "GET", "/management/v1/configureddevices", "").await,
+        devices
+    );
+    assert!(
+        regain_alpaca::profile::Profiles::new(Some(profiles))
+            .unwrap()
+            .all()
+            .is_empty()
+    );
+    restarted.kill().await.unwrap();
     let after = probe(&endpoint, config.instance_id, Duration::from_secs(5))
         .await
         .unwrap();

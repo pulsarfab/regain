@@ -254,8 +254,10 @@ impl Fixture {
         let publisher = Publisher::connect(endpoint, config.instance_id)
             .await
             .unwrap();
+        let profiles = dir.path().join("profiles.json");
+        std::fs::write(&profiles, b"[]").unwrap();
         let server = Server::with_hub(
-            Arc::new(Profiles::new(None).unwrap()),
+            Arc::new(Profiles::new(Some(profiles)).unwrap()),
             Runtime {
                 directory: dir.path().into(),
                 sdk: dir.path().join("unused"),
@@ -296,6 +298,71 @@ impl Fixture {
         assert_eq!(body["ErrorNumber"], 0, "{path}: {body}");
         body["Value"].clone()
     }
+}
+
+#[tokio::test]
+async fn accessory_only_setup_has_no_dummy_cameras_and_can_add_its_first_slot() {
+    let f = Fixture::new().await;
+    assert_eq!(
+        request(&f.router, "GET", "/setup/api/state", "").await.1["cameras"],
+        json!([])
+    );
+    let devices = f.ok("GET", "/management/v1/configureddevices", "").await;
+    assert_eq!(devices.as_array().unwrap().len(), 3);
+    assert!(
+        devices
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|device| device["DeviceType"] != "Camera")
+    );
+    for method in ["GET", "PUT"] {
+        let reply = request(
+            &f.router,
+            method,
+            "/api/v1/camera/0/connected",
+            "ClientID=90&Connected=true",
+        )
+        .await;
+        assert_eq!(reply.0, StatusCode::NOT_FOUND);
+    }
+    let response = f
+        .router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/setup/api/slots")
+                .header("Content-Type", "application/json")
+                .body(Body::from("{}"))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let added: Value =
+        serde_json::from_slice(&response.into_body().collect().await.unwrap().to_bytes()).unwrap();
+    assert_eq!(added["slot"], 0);
+    let state = request(&f.router, "GET", "/setup/api/state", "").await.1;
+    assert_eq!(state["cameras"].as_array().unwrap().len(), 1);
+    assert_eq!(state["cameras"][0]["slot"], 0);
+    assert_eq!(state["cameras"][0]["connected"], false);
+    let reopened = Profiles::new(Some(f._dir.path().join("profiles.json"))).unwrap();
+    assert_eq!(
+        json!(reopened.get(0).unwrap().unique_id),
+        state["cameras"][0]["profile"]["uniqueId"]
+    );
+    assert_eq!(
+        f.ok("GET", "/management/v1/configureddevices", "").await,
+        devices
+    );
+    assert!(
+        f.hub
+            .source_snapshots()
+            .iter()
+            .all(|source| source.lease_count == 0 && !source.transport_connected)
+    );
+    f.finish().await;
 }
 async fn request(router: &Router, method: &str, path: &str, data: &str) -> (StatusCode, Value) {
     let uri = if method == "GET" && !data.is_empty() {

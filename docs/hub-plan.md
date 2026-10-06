@@ -71,14 +71,22 @@ not yet proved. Diagnostic API de2691a PR 37471446346 and push 37471435465
 pass seven jobs, including Windows; Intel macOS exceeds the outer 15-minute job
 budget. Logs show passing Rust suites and cold build time, not a hung test. The
 portable CI job budget is now 25 minutes; test/transport deadlines are unchanged.
-Frontend checkpoint 96ea4e3 PR 37475434423 and push 37475427160 pass seven jobs,
-including Intel macOS; Windows remains in progress at this observation.
-New CI must verify the complete run. Interactive UAC/Chooser, conformance and
+Frontend checkpoint 96ea4e3 PR 37475434423 and push 37475427160 both pass all
+eight jobs, including Windows and Intel macOS. Polling checkpoint 400a74d PR
+37478747826 and push 37478744401 are in progress at this observation.
+Interactive UAC/Chooser, conformance and
 vendor acceptance remain required.
 
-Next: allow explicit empty camera profiles for accessory-only HTTP publication,
-verify complete diagnostics CI and investigate the earlier push COM fixture timeout.
-Then complete broader typed proxies, camera ownership,
+Completed refinement: accessory-only HTTP publication accepts an explicitly empty
+camera-profile list. Missing settings retain the ordinary main/guide defaults.
+The root setup shows an empty state and can add/save the first slot. Reload uses
+the same profile/unique-ID checks as startup before replacing in-memory settings.
+Real executable startup/restart, catalog, invalid-camera requests, profile
+persistence, first-slot setup and actual browser acceptance pass without equipment
+activation. This does not close broader setup, discovery or frontend acceptance.
+
+Next: verify complete diagnostics CI and investigate the earlier push COM fixture
+timeout. Then complete broader typed proxies, camera ownership,
 coordination and every remaining
 original milestone gate. This increment does not close the full setup milestone.
 
@@ -333,7 +341,7 @@ Review findings fixed in this checkpoint:
 - [ ] Implement SafetyMonitor and ObservingConditions; define per-measurement
   freshness, fallback, units, and averaging semantics before exposing weather.
 - [ ] Expose these virtual devices through the existing Alpaca server and setup UI.
-- [ ] Permit an accessory-only HTTP server with zero camera profiles; retain normal
+- [x] Permit an accessory-only HTTP server with zero camera profiles; retain normal
   camera defaults for new ordinary installations. Verify startup, catalog, setup,
   invalid camera requests and restart without dummy camera slots.
 - [ ] Test mixed native/network sources, disconnects, slow sources, restart mapping,
@@ -769,3 +777,4 @@ Keep existing device profiles and registrations compatible throughout migration.
 | 2026-10-06 | Adopted first-time creation in the shared native NINA/ASCOM selector via the existing bounded helper. Added retained copyable filename, serialized creation/read admission, unknown-result fencing and explicit file identity/absence reconciliation. Empty configurations load into the editor with no output selection. Reviewed two Windows CI fixture races without raising deadlines. | All 155 NINA checks, real net48 x86/x64 creation/reconciliation/ASCOM fixtures and warning-denied build pass; the actual WPF private lost-reply render was inspected. 6f36ff5 CI passes seven jobs but fails separate pipe fixtures; corrections need new CI. eeb9208 CI remains active. Next: verify CI, broader source/output/policy diagnostics, typed devices/cameras/coordination and every original remaining gate. |
 | 2026-10-06 | Added shared native/web output health and observed export using the host-generated serialized reply schema. Reviewed required nullable fields, reference constraints, decoded string equivalence, saved identities/paging, uncertainty and review preservation. | Full hub/Alpaca suites, strict Clippy, Rust 1.89, generated-contract freshness, Node/four schema tests, all 168 warnings-denied NINA checks and actual net48 x86/x64 clients pass. Browser proves all three output classes, pagination, preserved review, downloaded Reviewed export, zero leases/errors; WPF/browser screenshots inspected. de2691a CI passes seven jobs but Intel macOS hits the outer 15-minute budget during otherwise passing tests. Budget increased to 25 minutes; complete new CI remains required. Next: actual actor retry scheduling, previous COM fixture timeout, and every original remaining milestone/acceptance gate. |
 | 2026-10-06 | Added actual actor polling phases, observation-time waits, started attempts/cycle completion and backoff diagnostics to cached source/output health, generated schema, native/web summaries and exports. Reviewed in-flight visibility, delayed dispatch and command no-replay semantics. | Four paused-time scheduling cases, full Rust hub/Alpaca suites, strict Clippy, Rust 1.89, generated-contract/Node/four schema checks, all 171 NINA tests and real net48 x86/x64 clients pass. Actual WPF/browser simulation renders inspected; browser preserves one independent lease and cleanup confirms zero. 96ea4e3 CI passes seven jobs including Intel macOS; Windows still live. Next: accessory-only HTTP startup with explicit empty camera profiles, prior COM timeout and every original remaining gate. |
+| 2026-10-06 | Completed accessory-only HTTP refinement: explicit empty camera lists, ordinary missing-file defaults, common startup/reload identity checks and empty camera setup with first-slot creation. | 15 Alpaca unit, nine executable and 14 router tests pass; strict Clippy/Rust 1.89, formatting and JS syntax pass. Browser proves empty/add/save flow, unchanged hub catalog and zero leases/connections/errors; simulation screenshot inspected. Both 96ea4e3 CI runs pass all eight jobs. Next: polling CI, earlier COM timeout and broader typed proxies/camera ownership/coordination plus every original remaining acceptance gate. |
