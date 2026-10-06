@@ -21,6 +21,8 @@ public sealed class Driver {
     private int position = 50;
     private bool moving, tempComp;
     private readonly bool rotator;
+    private readonly bool wheel;
+    private short wheelPosition;
     private double logical = 20, mechanical = 350, target = 20;
     private bool reverse;
     public Driver() {
@@ -28,6 +30,7 @@ public sealed class Driver {
         var arguments = Environment.GetCommandLineArgs();
         var type = Array.IndexOf(arguments, "--device-type");
         rotator = type >= 0 && arguments[type + 1] == "rotator";
+        wheel = type >= 0 && arguments[type + 1] == "filterwheel";
         var selected = Array.IndexOf(arguments, "--prog-id");
         state = explicitState ?? Path.Combine(Environment.GetEnvironmentVariable("REGAIN_HUB_COM_FIXTURE_DIRECTORY")
             ?? throw new InvalidOperationException(), arguments[selected + 1] + ".json");
@@ -92,7 +95,43 @@ public sealed class Driver {
     public bool Absolute { get { Before("Absolute"); return !Setting("relative", false); } }
     public object MaxStep { get { Before("MaxStep"); return Setting("badMaxStep", false) ? (object)1.5 : 100000; } }
     public int MaxIncrement { get { Before("MaxIncrement"); return 1000; } }
-    public object Position { get { Before("Position"); if (rotator) return Setting("badAngle", false) ? 360.0 : logical; if (Setting("relative", false)) throw new COMException("relative", unchecked((int)0x80040400)); return position; } }
+    public object Position {
+        get {
+            Before("Position");
+            if (wheel) return Setting("badWheelPosition",false) ? (object)1.5 : wheelPosition;
+            if (rotator) return Setting("badAngle", false) ? 360.0 : logical;
+            if (Setting("relative", false)) throw new COMException("relative", unchecked((int)0x80040400));
+            return position;
+        }
+        set {
+            Before("Position.set",value);
+            if (!wheel || value is not short slot) throw new ArgumentException("Wheel setter requires Short");
+            if (slot >= 3) throw new COMException("slot",unchecked((int)0x80040401));
+            wheelPosition = Setting("wheelMoving",false) ? (short)-1 : slot;
+        }
+    }
+    public object Names {
+        get {
+            Before("Names"); var settings = Settings();
+            if (settings.TryGetProperty("wheelNamesCase",out var choice)) return choice.GetString() switch {
+                "empty" => Array.Empty<string>(), "nested" => new string[1,1], "wrong" => new object[]{1},
+                "many" => Enumerable.Repeat("L",1025).ToArray(), "large" => new[]{new string('α',524289)},
+                "unicode" => new[]{"\uD800"}, _ => new[]{"L","Hα",""}
+            };
+            return new[]{"L","Hα",""};
+        }
+    }
+    public object FocusOffsets {
+        get {
+            Before("FocusOffsets"); var settings = Settings();
+            if (settings.TryGetProperty("wheelOffsetsCase",out var choice)) return choice.GetString() switch {
+                "empty" => Array.Empty<int>(), "noZero" => new[]{1,2,3}, "fraction" => new object[]{0,1.5},
+                "string" => new object[]{0,"1"}, "overflow" => new object[]{0,2147483648L},
+                "mismatch" => new[]{0}, "boundaries" => new[]{int.MinValue,0,int.MaxValue}, _ => new[]{-12,0,17}
+            };
+            return new[]{-12,0,17};
+        }
+    }
     public object IsMoving { get { Before("IsMoving"); return Setting("badMoving", false) ? (object)"false" : moving; } }
     public bool TempCompAvailable { get { Before("TempCompAvailable"); return true; } }
     public bool TempComp { get { Before("TempComp.get"); return tempComp; } set { Before("TempComp.set", value); tempComp = value; } }

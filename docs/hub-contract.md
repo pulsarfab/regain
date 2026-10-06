@@ -833,14 +833,17 @@ its actual interface and conformance tool before declaring support.
 
 The private executable accepts `--import --prog-id PROGID --device-type TYPE
 --connection-policy POLICY --bitness x86|x64`. TYPE currently admits `switch`,
-`safetymonitor`, and `observingconditions`; POLICY is `managed` or
+`safetymonitor`, `observingconditions`, `focuser`, `rotator` and `filterwheel`;
+POLICY is `managed` or
 `externallyManaged`. Bitness must match the worker before activation. The helper
 is built under `hub-ascom/x86|x64/Regain.Hub.ASCOM.exe` alongside the Rust workers.
 The Rust source factory adopts these workers in the development branch. Windows
 NINA/ASCOM payloads include both private architectures and dependencies; these
 are import helpers, not registered native ASCOM hub outputs. Schema capability
-choices advertise only installed helper architectures and the three scalar
-classes. Other platforms offer exported Alpaca sources instead.
+choices advertise only installed helper architectures and completed creation
+classes. Wheel COM imports are implemented in the runtime; their generated-form
+choice remains gated until shared wheel creation is complete. Other platforms
+offer exported Alpaca sources instead.
 
 Requests are UTF-8 newline JSON, fewer than 4096 bytes before the newline, with
 `protocol: 1`, a positive strictly increasing signed-64-bit `id`, and `operation`.
@@ -1774,8 +1777,8 @@ focusers, rotators and wheels and preserves their existing local fallback pages.
 HTTP clients retain separate hub leases and share the source's metadata, Position
 and command control. The last disconnect releases only its source; failures with
 unknown command completion fence sibling clients and never replay Position or
-issue an invented stop/calibration. COM/virtual/dedicated simulation inputs and
-shared creation remain outstanding.
+issue an invented stop/calibration. Virtual/dedicated simulation inputs and
+shared creation remain outstanding; Windows COM imports are described below.
 
 ### Native wheel publication
 
@@ -1796,3 +1799,22 @@ frontend applies focuser offsets or adds calibration, Halt or raw commands.
 Malformed metadata/positions remain errors, and lost Position replies retain the
 shared source uncertainty fence. Standard interface publication does not enable
 unfinished wheel source kinds or shared creation choices.
+
+### Windows COM wheel imports
+
+Wheel sources use the existing isolated x86/x64 STA worker and managed/borrowed
+connection policies. V2 uses Connected; V3 uses Connect/Disconnect/Connecting.
+Only Names, FocusOffsets and Position reads, and a Short Position setter, are
+whitelisted. Driver arrays must be one dimensional and bounded before copying or
+serialization. Unicode names are measured with strict UTF-8 encoding; offsets
+remain integers with a zero reference. The shared native validator and Rust
+controller decoder retain the same limits. The parent admits arrays only for
+these two metadata reads, rejecting unexpected arrays/objects and corrupt frames.
+
+The shared typed controller validates matching live metadata and actual slot
+bounds before motion. It owns source/command leases, deduplicated polling and
+generation/uncertainty fences across all frontends. Read errors never fabricate
+slots or positions; ambiguous setter failures cannot trigger replay or an invented
+Halt. Registered aliases to the hub's own classes are denied before activation.
+COM wheel creation remains gated in generated setup pending the complete wheel
+creation increment. Other platforms can use an upstream Alpaca FilterWheel.

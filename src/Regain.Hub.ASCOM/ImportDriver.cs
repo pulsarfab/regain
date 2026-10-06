@@ -175,6 +175,40 @@ internal sealed class ImportDriver {
         if (member == "connected") { Fields(parameters); return Boolean(Get("Connected")); }
         if (member == "interfaceversion") { Fields(parameters); return Integer(Get("InterfaceVersion"), 1, short.MaxValue); }
         if (member == "connecting" && modern) { Fields(parameters); return Boolean(Get("Connecting")); }
+        if (options.DeviceType == "filterwheel") {
+            foreach (HubFilterWheelProperty property in Enum.GetValues(typeof(HubFilterWheelProperty))) {
+                if (HubFilterWheelProtocol.Key(property).ToLowerInvariant() != member) continue;
+                Fields(parameters);
+                var result = Get(property.ToString());
+                object value;
+                if (property == HubFilterWheelProperty.Position) value = Integer(result,-1,HubFilterWheelProtocol.MaximumSlots-1);
+                else {
+                    // Reject shape/resource violations before enumerating or
+                    // serializing a vendor SAFEARRAY. Never coerce string or
+                    // floating values into signed offsets.
+                    if (result is not Array array || array.Rank != 1 || array.Length is < 1 or > HubFilterWheelProtocol.MaximumSlots) throw new BadValue();
+                    if (property == HubFilterWheelProperty.Names) {
+                        var names = new List<string>(array.Length); long bytes = 0;
+                        var encoding = new System.Text.UTF8Encoding(false,true);
+                        foreach (var item in array) {
+                            if (item is not string name) throw new BadValue();
+                            try {bytes += encoding.GetByteCount(name);}
+                            catch (System.Text.EncoderFallbackException) {throw new BadValue();}
+                            if (bytes > HubFilterWheelProtocol.MaximumTextBytes) throw new BadValue();
+                            names.Add(name);
+                        }
+                        value = names.ToArray();
+                    } else {
+                        var offsets = new List<int>(array.Length);
+                        foreach (var item in array) offsets.Add(Int32(item));
+                        value = offsets.ToArray();
+                    }
+                }
+                try {HubFilterWheelProtocol.Validate(property,JsonSerializer.SerializeToElement(value));}
+                catch (HubException) {throw new BadValue();}
+                return value;
+            }
+        }
         if (options.DeviceType == "focuser") {
             foreach (HubFocuserProperty property in Enum.GetValues(typeof(HubFocuserProperty))) {
                 if (HubFocuserProtocol.Key(property).ToLowerInvariant() != member) continue;
@@ -243,6 +277,13 @@ internal sealed class ImportDriver {
     }
 
     private object? Write(string member, JsonElement parameters) {
+        if (options.DeviceType == "filterwheel" && member == "position") {
+            Fields(parameters,"Position");
+            var item = Parameter(parameters,"Position");
+            if (item.ValueKind != JsonValueKind.Number || !item.TryGetInt16(out var position)
+                || position < 0 || position >= HubFilterWheelProtocol.MaximumSlots) throw new InvalidInput();
+            Set("Position",position); return null;
+        }
         if (options.DeviceType == "rotator") {
             var method = member switch { "move" => "Move", "moveabsolute" => "MoveAbsolute",
                 "movemechanical" => "MoveMechanical", "sync" => "Sync", _ => null };

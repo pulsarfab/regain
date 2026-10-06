@@ -85,6 +85,7 @@ impl ComBackend {
                 | DeviceType::ObservingConditions
                 | DeviceType::Focuser
                 | DeviceType::Rotator
+                | DeviceType::FilterWheel
         ) {
             return Err(unsupported(
                 "This COM worker does not support the selected device class yet",
@@ -273,6 +274,19 @@ impl ComBackend {
                 && matches!(operation, "write" | "refresh")
                 && !reply.value.is_null()
             || reply.value.is_array()
+                && !(self.device == DeviceType::FilterWheel
+                    && operation == "read"
+                    && match member {
+                        Some("names") => crate::filterwheel::FilterWheelProperty::Names
+                            .decode(&reply.value)
+                            .is_ok(),
+                        Some("focusoffsets") => {
+                            crate::filterwheel::FilterWheelProperty::FocusOffsets
+                                .decode(&reply.value)
+                                .is_ok()
+                        }
+                        _ => false,
+                    })
             || reply.value.is_object()
         {
             self.reset();
@@ -352,7 +366,7 @@ impl ComBackend {
             result,
             SourceError::new(
                 ErrorKind::Unavailable,
-                "COM driver returned an invalid scalar value",
+                "COM driver returned an invalid typed value",
             ),
         )
     }

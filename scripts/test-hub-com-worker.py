@@ -46,7 +46,7 @@ def registered_fixture():
         "[Reflection.AssemblyName]::GetAssemblyName($env:REGAIN_COM_FIXTURE_DLL).FullName",
     ], env={**os.environ, "REGAIN_COM_FIXTURE_DLL": str(FIXTURE)}, text=True).strip()
     assert identity.startswith("Regain.Hub.COM.Fixture,")
-    progids = [PROGID] + [PROGID + "." + name for name in ("Switch", "Safety", "Weather", "Other", "Own", "Focuser", "Rotator")]
+    progids = [PROGID] + [PROGID + "." + name for name in ("Switch", "Safety", "Weather", "Other", "Own", "Focuser", "Rotator", "Wheel")]
     classids = [CLSID, SELF_CLSID]
     paths = [f"Software\\Classes\\{name}" for name in progids] + [f"Software\\Classes\\CLSID\\{classid}" for classid in classids]
     views = (winreg.KEY_WOW64_32KEY, winreg.KEY_WOW64_64KEY)
@@ -187,6 +187,69 @@ class Worker:
 
 
 class ImportTests(unittest.TestCase):
+    def test_wheel_metadata_short_setter_and_class_specific_connection_versions(self):
+        for architecture in self.each():
+            for version in (2, 3):
+                with self.subTest(architecture=architecture, version=version), Worker(architecture, device="filterwheel", settings={"version": version}) as worker:
+                    info = worker.connect()
+                    self.assertEqual(info["method"], "async" if version == 3 else "legacy")
+                    self.assertEqual(worker.count("Connect"), int(version == 3))
+                    self.assertEqual(worker.count("Connected.set"), int(version == 2))
+                    for member, value in [("names", ["L", "Hα", ""]), ("focusoffsets", [-12, 0, 17]), ("position", 0)]:
+                        reply = worker.send("read", member)
+                        self.assertIsNone(reply["error"], reply)
+                        self.assertEqual(reply["value"], value)
+                    self.assertIsNone(worker.send("write", "position", {"Position": 2})["error"])
+                    self.assertEqual(worker.send("read", "position")["value"], 2)
+                    worker.set(wheelMoving=True, wheelOffsetsCase="boundaries")
+                    self.assertIsNone(worker.send("write", "position", {"Position": 1})["error"])
+                    self.assertEqual(worker.send("read", "position")["value"], -1)
+                    self.assertEqual(worker.send("read", "focusoffsets")["value"], [-2147483648, 0, 2147483647])
+                    worker.disconnect()
+                    self.assertEqual(worker.count("Disconnect"), int(version == 3))
+                    self.assertEqual(worker.count("SetupDialog"), 0)
+                    self.assertEqual({t["apartment"] for t in worker.trace()}, {"STA"})
+                    self.assertEqual(len({t["thread"] for t in worker.trace()}), 1)
+
+    def test_wheel_bounded_safearrays_strict_types_and_setter_rejections(self):
+        for architecture in self.each():
+            with self.subTest(architecture=architecture), Worker(architecture, device="filterwheel") as worker:
+                worker.connect()
+                for case in ("empty", "nested", "wrong", "many", "large", "unicode"):
+                    worker.set(wheelNamesCase=case)
+                    reply = worker.send("read", "names")
+                    self.assertEqual(reply["error"]["kind"], "unavailable", (case, reply))
+                worker.set(wheelNamesCase="default")
+                for case in ("empty", "noZero", "fraction", "string", "overflow"):
+                    worker.set(wheelOffsetsCase=case)
+                    reply = worker.send("read", "focusoffsets")
+                    self.assertEqual(reply["error"]["kind"], "unavailable", (case, reply))
+                worker.set(wheelOffsetsCase="default", badWheelPosition=True)
+                self.assertEqual(worker.send("read", "position")["error"]["kind"], "unavailable")
+                worker.set(badWheelPosition=False)
+                for args in ({"Position": -1}, {"Position": 1024}, {"Position": 1.5}, {"Position": "1"}, {"position": 1}, {"Position": 1, "extra": True}):
+                    self.assertEqual(worker.send("write", "position", args)["error"]["kind"], "invalidValue")
+                self.assertEqual(worker.count("Position.set"), 0)
+                self.assertEqual(worker.send("write", "position", {"Position": 3})["error"]["kind"], "invalidValue")
+                self.assertIsNone(worker.send("write", "position", {"Position": 2})["error"])
+                self.assertEqual(worker.send("read", "position")["value"], 2)
+                for member in ("move", "halt", "calibrate", "action", "commandblind"):
+                    self.assertEqual(worker.send("write", member)["error"]["kind"], "unsupported")
+                self.assertEqual(worker.count("Halt"), 0)
+
+    def test_wheel_unknown_setter_result_fences_subsequent_commands_without_replay(self):
+        for architecture in self.each():
+            with self.subTest(architecture=architecture), Worker(architecture, device="filterwheel") as worker:
+                worker.connect()
+                worker.set(argumentFaultMember="Position.set")
+                reply = worker.send("write", "position", {"Position": 2})
+                self.assertEqual(reply["error"]["kind"], "uncertain")
+                self.assertNotIn("PRIVATE_FIXTURE_SECRET", json.dumps(reply))
+                worker.set(argumentFaultMember="")
+                self.assertEqual(worker.send("write", "position", {"Position": 1})["error"]["kind"], "uncertain")
+                self.assertEqual(worker.count("Position.set"), 1)
+                self.assertEqual(worker.count("Halt"), 0)
+
     def test_rotator_legacy_modern_connections_and_source_coordinates(self):
         for architecture in self.each():
             for version in (2, 3, 4):
@@ -263,18 +326,19 @@ class ImportTests(unittest.TestCase):
                     self.assertEqual(worker.count(dispatched), 1)
                     self.assertEqual(worker.count("Halt"), 0)
 
-    def test_rotator_borrowed_connections_and_alias_denial(self):
+    def test_typed_accessory_borrowed_connections_and_alias_denial(self):
         for architecture in self.each():
-            for version in (3, 4):
-                with self.subTest(architecture=architecture, version=version), Worker(architecture, device="rotator", policy="externallyManaged", settings={"version": version, "initialConnected": True}) as worker:
-                    self.assertFalse(worker.connect()["ownsConnection"])
-                    worker.disconnect()
-                    worker.close()
-                    for member in ("Connect", "Disconnect", "Connected.set", "Dispose"):
-                        self.assertEqual(worker.count(member), 0)
-            with Worker(architecture, device="rotator", progid=PROGID + ".Rotator", denied=[CLSID.strip("{}")]) as worker:
-                self.assertEqual(worker.send("connectStep")["error"]["kind"], "invalidValue")
-                self.assertEqual(worker.count("Activate"), 0)
+            for device, versions, suffix in (("rotator", (3, 4), "Rotator"), ("filterwheel", (2, 3), "Wheel")):
+                for version in versions:
+                    with self.subTest(architecture=architecture, device=device, version=version), Worker(architecture, device=device, policy="externallyManaged", settings={"version": version, "initialConnected": True}) as worker:
+                        self.assertFalse(worker.connect()["ownsConnection"])
+                        worker.disconnect()
+                        worker.close()
+                        for member in ("Connect", "Disconnect", "Connected.set", "Dispose"):
+                            self.assertEqual(worker.count(member), 0)
+                with Worker(architecture, device=device, progid=PROGID + "." + suffix, denied=[CLSID.strip("{}")]) as worker:
+                    self.assertEqual(worker.send("connectStep")["error"]["kind"], "invalidValue")
+                    self.assertEqual(worker.count("Activate"), 0)
 
     def test_focuser_legacy_modern_connections_and_typed_members(self):
         for architecture in self.each():

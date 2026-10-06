@@ -8,6 +8,7 @@ use regain_hub::{
         WeatherMetric,
     },
     factory::NoCredentials,
+    filterwheel::FilterWheelProperty,
     native::NativeRuntime,
     parameters::{PollPolicy, SafetyPolicy},
     rotator::RotatorProperty,
@@ -178,6 +179,140 @@ fn preparation_checks_architecture_and_class_without_activation() {
     assert!(
         matches!(ComBackend::new(&source, &missing, Vec::new()), Err(e) if e.kind == ErrorKind::Unsupported)
     );
+}
+
+fn wheel_config(source: SourceConfig) -> HubConfig {
+    let mut config = HubConfig::empty();
+    for number in [2, 17] {
+        config.outputs.push(OutputConfig {
+            id: Uuid::new_v4(),
+            number,
+            label: format!("Private COM wheel {number}"),
+            device: VirtualDevice::Proxy {
+                source: source.id,
+                device_type: DeviceType::FilterWheel,
+            },
+        });
+    }
+    config.sources.push(source);
+    config
+}
+
+#[tokio::test]
+async fn typed_wheel_com_factory_preserves_metadata_shared_leases_and_unknown_setter_fences() {
+    let Some(f) = Fixture::load() else {
+        return;
+    };
+    for (bitness, version) in [(Bitness::X86, 2), (Bitness::X64, 3)] {
+        f.clear("Wheel", json!({"version":version}));
+        let source = f.source("Wheel", DeviceType::FilterWheel, bitness);
+        let id = source.id;
+        let config = wheel_config(source);
+        let hub = HubRuntime::build(
+            config.clone(),
+            &f.native,
+            &NoCredentials,
+            Arc::new(MonotonicClock::default()),
+        )
+        .unwrap();
+        assert_eq!(f.count("Wheel", "Activate"), 0);
+        let first = hub.client();
+        let second = hub.client();
+        first.connect(config.outputs[0].id).await.unwrap();
+        second.connect(config.outputs[1].id).await.unwrap();
+        let a = first.connection(config.outputs[0].id).unwrap();
+        let b = second.connection(config.outputs[1].id).unwrap();
+        let aw = a.filterwheel().unwrap();
+        let bw = b.filterwheel().unwrap();
+        assert_eq!(aw.generation(), bw.generation());
+        assert_eq!(
+            aw.property(FilterWheelProperty::Names).await.unwrap(),
+            json!(["L", "Hα", ""])
+        );
+        assert_eq!(
+            bw.property(FilterWheelProperty::FocusOffsets)
+                .await
+                .unwrap(),
+            json!([-12, 0, 17])
+        );
+        until(|| {
+            let state = hub.source_snapshot(id).unwrap();
+            state.values.get("names") == Some(&json!(["L", "Hα", ""]))
+                && state.values.get("focusoffsets") == Some(&json!([-12, 0, 17]))
+        })
+        .await;
+        assert_eq!(f.count("Wheel", "Activate"), 1);
+        assert_eq!(f.count("Wheel", "Connect"), usize::from(version == 3));
+        assert_eq!(f.count("Wheel", "Connected.set"), usize::from(version == 2));
+        assert_eq!(
+            aw.move_to(3).await.unwrap_err().kind,
+            ErrorKind::InvalidValue
+        );
+        assert_eq!(f.count("Wheel", "Position.set"), 0);
+        aw.move_to(2).await.unwrap();
+        assert_eq!(bw.position().await.unwrap(), 2);
+        f.state(
+            "Wheel",
+            json!({"version":version,"wheelOffsetsCase":"boundaries"}),
+        );
+        assert_eq!(
+            bw.property(FilterWheelProperty::FocusOffsets)
+                .await
+                .unwrap(),
+            json!([i32::MIN, 0, i32::MAX])
+        );
+        f.state("Wheel", json!({"version":version,"badWheelPosition":true}));
+        assert_eq!(
+            bw.move_to(0).await.unwrap_err().kind,
+            ErrorKind::Unavailable
+        );
+        assert_eq!(f.count("Wheel", "Position.set"), 1);
+        f.state("Wheel", json!({"version":version}));
+        first.disconnect(config.outputs[0].id);
+        drop(a);
+        until(|| hub.source_snapshot(id).unwrap().lease_count == 1).await;
+        assert!(bw.connected());
+        assert_eq!(f.count("Wheel", "Disconnect"), 0);
+        f.state(
+            "Wheel",
+            json!({"version":version,"argumentFaultMember":"Position.set"}),
+        );
+        assert_eq!(bw.move_to(0).await.unwrap_err().kind, ErrorKind::Uncertain);
+        f.state("Wheel", json!({"version":version}));
+        assert_eq!(bw.move_to(1).await.unwrap_err().kind, ErrorKind::Uncertain);
+        assert_eq!(f.count("Wheel", "Position.set"), 2);
+        assert_eq!(f.count("Wheel", "Halt"), 0);
+        assert!(hub.source_snapshot(id).unwrap().write_uncertain);
+        second.disconnect(config.outputs[1].id);
+        drop(b);
+        hub.shutdown().await.unwrap();
+        assert_eq!(f.count("Wheel", "SetupDialog"), 0);
+    }
+}
+
+#[tokio::test]
+async fn typed_wheel_com_rejects_mismatched_metadata_before_accepting_motion() {
+    let Some(f) = Fixture::load() else {
+        return;
+    };
+    for bitness in [Bitness::X86, Bitness::X64] {
+        f.clear("Wheel", json!({"version":3,"wheelOffsetsCase":"mismatch"}));
+        let config = wheel_config(f.source("Wheel", DeviceType::FilterWheel, bitness));
+        let hub = HubRuntime::build(
+            config.clone(),
+            &f.native,
+            &NoCredentials,
+            Arc::new(MonotonicClock::default()),
+        )
+        .unwrap();
+        let client = hub.client();
+        assert_eq!(
+            client.connect(config.outputs[0].id).await.unwrap_err().kind,
+            ErrorKind::Unavailable
+        );
+        assert_eq!(f.count("Wheel", "Position.set"), 0);
+        hub.shutdown().await.unwrap();
+    }
 }
 
 #[tokio::test]

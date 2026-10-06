@@ -466,8 +466,10 @@ Saved wheel proxies can publish a native EFW or an Alpaca FilterWheel source
 through Alpaca, native NINA and ASCOM FilterWheel V3. Select the saved wheel in
 the shared NINA selector, or register that output with the shared ASCOM manager.
 The hub owns source connection sharing; each frontend retains its own lease.
-Wheel creation in the generated forms, Windows COM wheel imports, virtual and
-dedicated simulated wheel sources remain under development.
+Windows COM wheel imports use the existing isolated x86/x64 workers and preserve
+managed or borrowed connections. Wheel creation in the generated forms, including
+its COM source choice, virtual and dedicated simulated wheel sources remain under
+development.
 
 Names retain their order, Unicode and blank slots. FocusOffsets retain signed
 Int32 values and are metadata; the hub does not move a focuser automatically.

@@ -10,7 +10,7 @@ public enum HubFilterWheelProperty { Names, FocusOffsets, Position }
 public static class HubFilterWheelProtocol
 {
     public const int MaximumSlots = 1024;
-    private const int MaximumTextBytes = 1024 * 1024;
+    public const int MaximumTextBytes = 1024 * 1024;
     public static string Key(HubFilterWheelProperty property) => property switch {
         HubFilterWheelProperty.Names => "names", HubFilterWheelProperty.FocusOffsets => "focusOffsets",
         HubFilterWheelProperty.Position => "position", _ => throw new ArgumentOutOfRangeException(nameof(property))

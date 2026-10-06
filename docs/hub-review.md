@@ -3329,3 +3329,50 @@ PR 37539206029 has seven passing jobs with Windows installer acceptance live.
 Keep this reviewed increment local until it finishes, then publish into the same
 draft PR. Wheel COM/virtual/simulation/shared creation and all original remaining
 milestones and final acceptance gates remain required.
+
+### Windows COM wheel import review (2026-10-06, local increment)
+
+The existing isolated worker now whitelists FilterWheel Names, FocusOffsets,
+Position and the Short Position setter. V2/V3 retain the common legacy/modern
+connection state machine, borrowed ownership, strict parameters and sanitized
+errors. Before serializing vendor SAFEARRAYs, the worker bounds rank/count,
+checks every element type and counts strict UTF-8 bytes, rejecting malformed
+surrogates. It then uses the shared native validator, including a zero reference
+offset. Rust admits arrays only on wheel Names/FocusOffsets reads and applies
+the existing bounded controller decoder; unexpected arrays/objects still retire
+the corrupt transport. Shared polling, typed controller slot/metadata validation,
+leases, generations and no-replay uncertainty are reused without new processes.
+Generated wheel COM choices remain gated until shared wheel creation is complete.
+
+Private driver extensions preserve existing scalar/focuser/rotator fixtures and
+require Short wheel setters. Three new worker cases cover V2/V3 in both bitnesses,
+Unicode/blank names, signed offsets, moving -1, type/rank/count/text bounds,
+unsupported commands, strict parameters and ambiguous setter errors. Borrowed
+ownership/alias-denial coverage is shared with rotators. Two registered Rust
+parent cases prove one worker for sibling outputs, actual typed array polling,
+signed boundaries, failed admission, independent disconnects and retained source
+uncertainty without replay/Halt. No installed vendor driver was activated.
+
+The first 27-case worker run fails the wheel invalid-slot assertion in both
+architectures: the fixture used 0x80040405 instead of ASCOM InvalidValue 0x80040401.
+The worker correctly returned uncertain for that unrecognized setter failure.
+After correcting the fixture constant, all 27 worker cases pass. The first actual
+parent run then passes 14/16, with both wheel cases receiving Connecting. Review
+finds the old unconditional array rejection retires the worker at metadata reads;
+the narrowed, bounded array admission above fixes the production gap. Final
+private worker/registered parent confirmation passes 27/27 and 16/16, including
+existing timeout, cancellation, safety, corruption, alias and ownership cases.
+Evidence: artifacts/hub-wheel-com-{focused,focused-confirmed,parent-confirmed}.log.
+Full Rust hub/Alpaca, strict Clippy, Rust 1.89 all targets, generated-contract
+freshness, Node/five independent schema checks, freshly rebuilt-host NINA 209/209
+and real net48 x86/x64 clients pass. Evidence: artifacts/hub-wheel-com-{rust,
+clippy,msrv,contract,node,schema,host,nina,net48}.log. The worker/fixture and both
+managed architecture builds have zero warnings. No production/test deadlines,
+retry rules or assertions were weakened.
+
+The preceding wheel publication head 0669339 is pushed to draft PR #21. Its
+PR/push CI 37541898392/37541893308 remains live. Runtime head 08913c8 PR CI
+37539206029 passes all eight jobs; its separate push failures remain retained.
+Keep this import increment local until reviewed local checks and preceding CI
+finish. Virtual/dedicated wheel simulation/shared creation, panels, cameras,
+coordination and every original acceptance/final gate remain required.
