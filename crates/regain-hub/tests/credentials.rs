@@ -13,6 +13,114 @@ use std::{sync::Arc, time::Duration};
 use tokio::io::{AsyncWriteExt, DuplexStream};
 const FAKE: &str = "Bearer private-ipc-fixture-value";
 
+#[tokio::test]
+async fn chosen_reference_survives_a_lost_reply_and_cannot_replace_a_secret() {
+    use regain_hub::factory::CredentialProvider;
+    let dir = tempfile::tempdir().unwrap();
+    let credentials = Arc::new(CredentialStore::at_directory(dir.path(), &"a".repeat(64)).unwrap());
+    let service = HubService::persistent_with_credentials(
+        ConfigStore::new(None, HubConfig::empty()).unwrap(),
+        builder(credentials.clone()),
+        credentials.clone(),
+    )
+    .unwrap();
+    let id = uuid::Uuid::new_v4();
+    let reference = format!("credential-{id}");
+    let (mut stream, server) = tokio::io::duplex(65536);
+    let task = tokio::spawn(serve_service_stream(
+        server,
+        service.clone(),
+        Limits::default(),
+    ));
+    rpc(&mut stream, 1, json!({"op":"hello"})).await;
+    let bytes = serde_json::to_vec(&json!({"version":1,"id":2,"command":{
+        "op":"createCredential","referenceId":id,"authorization":FAKE}}))
+    .unwrap();
+    stream
+        .write_all(&(bytes.len() as u32).to_le_bytes())
+        .await
+        .unwrap();
+    stream.write_all(&bytes).await.unwrap();
+    // Wait for the actual commit, then abandon the connection without reading
+    // its response. The new setup client already knows which reference to check.
+    tokio::time::timeout(Duration::from_secs(5), async {
+        // Observe the store without taking the service gate before the queued
+        // create has been admitted. The exclusive Windows file handle can
+        // briefly make direct reads unavailable during the flush.
+        loop {
+            match credentials.status(&reference) {
+                Ok(status) if status.present => break,
+                Ok(_) | Err(CredentialError::Unavailable) => {
+                    tokio::time::sleep(Duration::from_millis(1)).await
+                }
+                Err(error) => panic!("Unexpected status during credential commit: {error:?}"),
+            }
+        }
+        while matches!(
+            service.credential_status(reference.clone()).await,
+            Err(CredentialError::Busy)
+        ) {
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+    })
+    .await
+    .unwrap();
+    drop(stream);
+    let _ = task.await.unwrap(); // A dropped peer can fail the response write.
+    let (mut stream, server) = tokio::io::duplex(65536);
+    let task = tokio::spawn(serve_service_stream(
+        server,
+        service.clone(),
+        Limits::default(),
+    ));
+    rpc(&mut stream, 1, json!({"op":"hello"})).await;
+    let description = rpc(&mut stream, 2, json!({"op":"describeConfig"})).await;
+    assert_eq!(
+        description["result"]["credentialStorage"]["clientChosenReferences"],
+        true
+    );
+    assert_eq!(
+        rpc(
+            &mut stream,
+            3,
+            json!({"op":"credentialStatus","reference":reference})
+        )
+        .await["result"]["present"],
+        true
+    );
+    assert_eq!(
+        rpc(
+            &mut stream,
+            4,
+            json!({"op":"createCredential","referenceId":id,"authorization":"Bearer replacement"})
+        )
+        .await["error"]["code"],
+        "unavailable"
+    );
+    assert_eq!(credentials.authorization(&reference).unwrap(), FAKE);
+    assert_eq!(
+        rpc(
+            &mut stream,
+            5,
+            json!({"op":"createCredential","referenceId":uuid::Uuid::nil(),"authorization":FAKE})
+        )
+        .await["error"]["code"],
+        "invalidValue"
+    );
+    assert_eq!(
+        rpc(
+            &mut stream,
+            6,
+            json!({"op":"deleteCredential","reference":reference})
+        )
+        .await["result"]["removed"],
+        true
+    );
+    drop(stream);
+    task.await.unwrap().unwrap();
+    service.shutdown().await.unwrap();
+}
+
 fn builder(credentials: Arc<CredentialStore>) -> Arc<RuntimeBuilder> {
     Arc::new(move |config| {
         HubRuntime::build(
@@ -222,6 +330,10 @@ async fn credential_deletion_cannot_race_an_accepted_configuration_update() {
         .unwrap();
     assert!(matches!(
         service.delete_credential(reference.clone()).await,
+        Err(CredentialError::Busy)
+    ));
+    assert!(matches!(
+        service.credential_status(reference.clone()).await,
         Err(CredentialError::Busy)
     ));
     // Dropping the apply waiter cannot release the transaction's gate early.

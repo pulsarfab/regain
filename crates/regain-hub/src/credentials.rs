@@ -21,6 +21,7 @@ use zeroize::{Zeroize, Zeroizing};
 #[path = "credentials/windows.rs"]
 mod crypto;
 pub const MAX_AUTHORIZATION_BYTES: usize = 8192;
+pub const REFERENCE_PREFIX: &str = "credential-";
 const MAX_RECORD_BYTES: usize = 65536;
 
 #[derive(Deserialize, Serialize)]
@@ -130,7 +131,20 @@ impl CredentialStore {
         }
     }
     pub fn description(&self) -> serde_json::Value {
+        let protection_description = match self.protection() {
+            Protection::WindowsDpapiUser => {
+                "Encrypted for the current Windows user, with private file permissions"
+            }
+            Protection::UserFilePermissions => {
+                "Private user file permissions; contents are not encrypted"
+            }
+        };
         serde_json::json!({"protection":self.protection(),"immutableReferences":true,
+            "protectionDescription":protection_description,
+            "clientChosenReferences":true,"referencePrefix":REFERENCE_PREFIX,
+            "reference":{"type":"string","label":"Credential reference",
+                "description":"A handle in this user's storage for this hub. Read status before removing an unused reference.",
+                "minLength":1,"maxLength":crate::config::MAX_LABEL_CHARS},
             "input":{"authorization":{"type":"string","label":"Authorization header",
                 "description":"Complete upstream HTTP Authorization value, such as Bearer followed by a token. Saved separately from configuration; never returned by the host.",
                 "maxLength":MAX_AUTHORIZATION_BYTES,"writeOnly":true,"sensitive":true}},
@@ -146,7 +160,7 @@ impl CredentialStore {
     }
     fn key(&self, reference: &str) -> Result<String, CredentialError> {
         if reference.trim().is_empty()
-            || reference.chars().count() > 200
+            || reference.chars().count() > crate::config::MAX_LABEL_CHARS
             || reference.chars().any(char::is_control)
         {
             return Err(CredentialError::Invalid);
@@ -164,9 +178,21 @@ impl CredentialStore {
         &self,
         authorization: SecretAuthorization,
     ) -> Result<CredentialStatus, CredentialError> {
+        self.create_identified(authorization, Uuid::new_v4())
+    }
+    /// A caller retains the ID before dispatch, so a lost response can be
+    /// reconciled through status. Creation never overwrites or replays a record.
+    pub fn create_identified(
+        &self,
+        authorization: SecretAuthorization,
+        reference_id: Uuid,
+    ) -> Result<CredentialStatus, CredentialError> {
+        if reference_id.is_nil() {
+            return Err(CredentialError::Invalid);
+        }
         authorization.header()?;
         self.directory(true)?;
-        let reference = format!("credential-{}", Uuid::new_v4());
+        let reference = format!("{REFERENCE_PREFIX}{reference_id}");
         #[cfg(windows)]
         let key = self.key(&reference)?;
         let record = Record {
@@ -191,8 +217,9 @@ impl CredentialStore {
         let file = file
             .persist_noclobber(self.path(&reference)?)
             .map_err(|_| CredentialError::Unavailable)?;
-        // A failed flush must not return a usable reference. The immutable orphan
-        // remains private and cannot silently replace an existing credential.
+        // A failed flush reports an unknown durable outcome. A caller that chose
+        // the ID can check status, but must not replay creation. The private
+        // record cannot silently replace an existing credential.
         file.sync_all().map_err(storage_error)?;
         self.flush_directory().map_err(storage_error)?;
         Ok(CredentialStatus {

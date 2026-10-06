@@ -100,8 +100,31 @@ do not acquire equipment leases.
 
 These are renders of the actual WPF window during an automated simulation test
 against the production host. They demonstrate setup; interactive NINA and
-real-device acceptance remain pending. Initialization, credential management,
-inspection and simulation controls remain on the plan.
+real-device acceptance remain pending. Initialization, live inspection and
+simulation controls remain on the plan.
+
+Use **Credentials** to save an upstream Authorization header in the host's
+separate user storage. Its labels, descriptions, length limits and protection
+description come from the host. The masked input is cleared before dispatch and
+on reload/close; values are never returned or inserted into the configuration.
+This does not promise erasure of every managed-string or OS copy.
+
+Copy the resulting **Credential reference** into the source's settings, then
+review and apply. For rotation, save a new credential, apply its reference, then
+**Remove unused credential** for the old one. The host refuses removal while the
+saved configuration uses it. Credential changes invalidate an earlier review.
+
+The reference is chosen and retained before sending. If the reply is lost,
+reload and select **Read credential status** for that reference before another
+change; do not repeat creation. Status reports busy while a configuration or
+credential operation is still running. The native editor keeps the reference
+across reloads during this window; retain it separately before closing the window.
+Web credential controls remain pending.
+
+![Native credential setup against a simulated observatory](images/hub-native-credentials-simulation.png)
+
+This is the actual shared WPF editor against the production host with simulated
+equipment. The reference is a temporary fixture and the secret field is empty.
 
 Select **Manage saved output choices** to view the saved choices for this class.
 Each entry identifies its configuration path, hub instance and output UUID.

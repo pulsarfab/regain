@@ -42,7 +42,27 @@ function Assert-NoCameraEntries {
     }
 }
 Assert-NoCameraEntries
-$platformBefore = Get-ItemPropertyValue $platformKey -Name PlatformVersion -ErrorAction SilentlyContinue
+$platformBefore = $null
+$platformKind = $null
+function Open-FixturePlatformKey([bool]$Writable = $false) {
+    $root = [Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::LocalMachine, [Microsoft.Win32.RegistryView]::Registry32)
+    try { $root.OpenSubKey('Software\ASCOM', $Writable) } finally { $root.Dispose() }
+}
+$platform = Open-FixturePlatformKey
+if ($null -ne $platform) {
+    try {
+        if ($platform.GetValueNames() -contains 'PlatformVersion') {
+            $platformBefore = $platform.GetValue('PlatformVersion', $null, [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+            $platformKind = $platform.GetValueKind('PlatformVersion')
+        }
+    } finally { $platform.Dispose() }
+}
+function Remove-FixturePlatformVersion {
+    $platform = Open-FixturePlatformKey $true
+    if ($null -ne $platform) {
+        try { $platform.DeleteValue('PlatformVersion', $false) } finally { $platform.Dispose() }
+    }
+}
 New-Item -ItemType Directory -Path $testDir -Force | Out-Null
 $oldSettings = $env:REGAIN_ASCOM_PROFILES
 $oldSimulation = $env:REGAIN_ASCOM_SIMULATE
@@ -120,7 +140,7 @@ function Assert-EtaActivation {
 try {
     # ASCOM is not needed for these self-contained COM classes. Its registry
     # version is a fixture so the production prerequisite gate is exercised.
-    Remove-ItemProperty $platformKey -Name PlatformVersion -ErrorAction SilentlyContinue
+    Remove-FixturePlatformVersion
     Run-Setup 'missing-platform' $false
     if (Test-Path (Join-Path $destination 'Regain.ASCOM.dll')) { throw 'Prerequisite failure installed files' }
     New-Item $platformKey -Force | Out-Null
@@ -294,8 +314,10 @@ try {
     $hubCleanupError = $null
     if ($hubPrepared) { try { Hub-Fixture 'cleanup' } catch { $hubCleanupError = $_ } }
     if ($backend -and !$backend.HasExited) { $backend.Kill(); $backend.WaitForExit() }
-    if ($platformBefore) { Set-ItemProperty $platformKey -Name PlatformVersion -Value $platformBefore }
-    else { Remove-ItemProperty $platformKey -Name PlatformVersion -ErrorAction SilentlyContinue }
+    if ($null -ne $platformKind) {
+        $platform = Open-FixturePlatformKey $true
+        try { $platform.SetValue('PlatformVersion', $platformBefore, $platformKind) } finally { $platform.Dispose() }
+    } else { Remove-FixturePlatformVersion }
     $env:REGAIN_ASCOM_PROFILES = $oldSettings
     $env:REGAIN_ASCOM_SIMULATE = $oldSimulation
     $env:REGAIN_ASCOM_TEST_CLSIDS = $oldIds

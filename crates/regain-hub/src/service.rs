@@ -158,13 +158,30 @@ impl HubService {
             .credentials
             .clone()
             .ok_or(CredentialError::Unsupported)?;
-        tokio::task::spawn_blocking(move || store.status(&reference))
-            .await
-            .map_err(|_| CredentialError::Unavailable)?
+        // Reconciliation must not report absence while an earlier abandoned
+        // create/delete waiter still owns an in-flight storage transaction.
+        let guard = self
+            .update
+            .clone()
+            .try_lock_owned()
+            .map_err(|_| CredentialError::Busy)?;
+        tokio::task::spawn_blocking(move || {
+            let _guard = guard;
+            store.status(&reference)
+        })
+        .await
+        .map_err(|_| CredentialError::Unavailable)?
     }
     pub async fn create_credential(
         &self,
         authorization: SecretAuthorization,
+    ) -> Result<CredentialStatus, CredentialError> {
+        self.create_credential_identified(authorization, None).await
+    }
+    pub async fn create_credential_identified(
+        &self,
+        authorization: SecretAuthorization,
+        reference_id: Option<Uuid>,
     ) -> Result<CredentialStatus, CredentialError> {
         let store = self
             .credentials
@@ -180,7 +197,10 @@ impl HubService {
         // Shutdown and configuration activation wait until storage finishes.
         tokio::task::spawn_blocking(move || {
             let _guard = guard;
-            store.create(authorization)
+            match reference_id {
+                Some(id) => store.create_identified(authorization, id),
+                None => store.create(authorization),
+            }
         })
         .await
         .map_err(|_| CredentialError::Unavailable)?

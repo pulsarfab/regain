@@ -1681,3 +1681,48 @@ Rust host started. After releasing only its own RCW, it waits for natural idle
 retirement before continuing maintenance. It never kills another client's helper.
 Python/PowerShell syntax checks pass; this extension needs new machine CI and is
 not evidence of a completed in-use/installed metadata gate yet.
+
+### Shared native credentials and known-reference reconciliation
+
+NINA and ASCOM share one credential tab in the existing native editor. Labels,
+descriptions, lengths, protection text and reference prefix come from the host.
+The password input is never prefilled or placed in configuration/review. It is
+cleared before dispatch and on reload/close; managed strings and JSON/OS copies
+are not claimed to be securely erased. Returned shapes are checked strictly;
+an unexpected secret-bearing member fails protocol validation without exposing
+that response through the editor API.
+
+Creation accepts an optional caller-chosen non-nil UUID. The frontend retains
+its reference before dispatch, and old callers omitting the ID remain supported.
+Persistence never overwrites a record and never interprets a duplicate as replay
+permission. Unknown transport, malformed reply or unavailable storage outcomes
+disable further mutation until explicit reload/status. The window preserves the
+reference across reloads, but not across closing the window. Credential mutations
+invalidate a prior configuration review; apply still validates through the host.
+
+Review found that status could race a pending create/delete and report absence
+before an abandoned write completed. Status now acquires the same transaction
+gate, returning busy while storage or configuration work is pending. The blocking
+task retains that gate if the request waiter disappears. No automatic polling,
+recreation, deletion or Apply is introduced by setup.
+
+Local evidence: four Rust credential integration cases, including abandoned reply,
+read-only reconciliation, duplicate/no-overwrite, nil rejection and transaction
+admission, pass (`artifacts/hub-known-credential-rust.log`). Full Rust hub/Alpaca
+suites pass (`hub-credentials-rust-suite.log`), as do Clippy and Rust 1.89 checks.
+All 136 NINA checks pass (`hub-credential-full-nina.log`), including production
+host storage without equipment leases, uncertain/malformed/remote-unavailable
+response reconciliation, review invalidation and the actual WPF secret-clear/
+reload/removal workflow. net48 builds and x86/x64 client fixtures pass. The actual
+credential render was inspected; documentation marks simulated equipment.
+Web credential setup and interactive frontend acceptance remain required.
+
+CI checkpoint e728f55's Windows test step proves actual owned-helper publication,
+both-bit SCM clients and removal with deleted bindings; seven other jobs pass.
+The installer phase fails before setup at a registry key with no PlatformVersion
+(`artifacts/hub-metadata-ci-failure.log`). The fixture now tests value presence,
+deletes missing values without throwing and restores original kinds, using
+explicit writable handles. Parser/local pre-mutation rejection pass; actual
+installer lifecycle and nested helper in-use behavior still await CI. A temporary
+local registry-value probe was rejected by automatic approval review with
+"blocked by policy"; no result from that probe is used as validation.

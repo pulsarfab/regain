@@ -88,6 +88,8 @@ pub enum Command {
     HostStatus {},
     CreateCredential {
         authorization: SecretAuthorization,
+        #[serde(default, rename = "referenceId")]
+        reference_id: Option<Uuid>,
     },
     CredentialStatus {
         reference: String,
@@ -422,9 +424,14 @@ async fn dispatch_service(
             description["simulationControl"] = crate::simulated::description();
             Ok(description)
         }
-        Command::CreateCredential { authorization } => {
-            Ok(json!(service.create_credential(authorization).await?))
-        }
+        Command::CreateCredential {
+            authorization,
+            reference_id,
+        } => Ok(json!(
+            service
+                .create_credential_identified(authorization, reference_id)
+                .await?
+        )),
         Command::CredentialStatus { reference } => {
             Ok(json!(service.credential_status(reference).await?))
         }

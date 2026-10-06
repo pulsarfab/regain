@@ -8,25 +8,32 @@ tagged or published. Changed cross-crate APIs require an unpublished version so
 Cargo package verification uses the new workspace packages.
 Last updated: 2026-10-06.
 
-Current increment: reject native ASCOM self-proxies by stable identity and by
-registered CLSID before activation, including aliases. Rust and .NET share fixed
-identity vectors; the .NET identity helper now lives in the common frontend
-assembly for registration reuse. The private registered playbook passes 17 worker
-and 11 parent cases in both architectures, with no self-proxy constructor calls.
-All 117 NINA checks and the exported COM fixture pass locally; unsigned packages
-validate. Native-output checkpoint 779737f failed Windows export waits in both
-CI runs, and push CI also found a macOS startup permission race. Checkpoint f94c85c
-passes all four portable platforms and three ancillary jobs in both CI runs;
-Windows still fails the safety DeviceState collection assertion. Review fixed
-PowerShell property-helper enumeration and now strictly checks collection Count,
-item name and boolean value. New CI must verify this correction. Explicit bound
-COM launch arguments and invalid-argument cases pass locally; cold HKCU SCM launch
-fails before server startup (0x80040154). Private machine-registration SCM tests
-are required on the disposable runner; no cold-launch gate is closed yet.
-Next: verify new CI and SCM launch, implement/review production
-registration and removal, conformance and interactive setup acceptance,
-then every remaining original milestone gate. No production chooser entries have
-been registered by this increment.
+Current increment: shared native credential setup and recoverable creation. NINA
+and ASCOM use the same descriptor-driven credential tab, with a masked write-only
+input, explicit protection description, retained reference, status and unused
+reference removal. Clients choose an ID before dispatch; lost replies require
+explicit reload/status rather than repeating the write. Review found that status
+could race an in-flight storage transaction; it now shares the transaction gate.
+Credential changes revoke an earlier configuration review.
+
+The scalar COM output checkpoint d51abac passed both full CI runs, including cold
+machine SCM activation in both architectures and strict DeviceState collections.
+Registration, themed management, batch rollback and the pre-file-removal uninstall
+hook are implemented, with private local tests. Checkpoint 9654b72 passed seven
+CI jobs and all Windows tests/builds but failed at the installer fixture's initial
+platform-version read: a prior fixture left an ASCOM key without that value. The
+read/removal now handles absent values explicitly and preserves any original
+value kind. Checkpoint e728f55 likewise passes seven jobs and Windows
+tests/packaging, including actual helper publication, both-bit client SCM and
+removal after deleting bindings. Its installer fixture fails at the same initial
+version read. Actual installer lifecycle,
+installed metadata/in-use acceptance, interactive UAC/Chooser and conformance
+remain unproven.
+
+Next: verify updated credential and installer CI, add the same credential controls
+to web setup, complete native initialization/inspection/simulation/diagnostics,
+then broader typed proxies, camera ownership, coordination and every remaining
+original milestone gate. This increment does not close the full setup milestone.
 
 Use this document as the working checklist. Complete one reviewable milestone at
 a time, record its tests and remaining limitations, and update the next action
@@ -519,9 +526,11 @@ safety policies and weather settings. A private setup session performs redacted
 review, one revision-checked Apply and explicit reconciliation without equipment
 leases or an HTTP listener. Saved IDs/numbers remain fixed, new records receive
 new IDs, invalid text survives collapsed sections, and collections load lazily
-in pages. Cached host/source health is available separately. Initialization,
-credential management, live inspection, simulation controls and richer diagnostics
-remain required setup refinements.
+in pages. Cached host/source health is available separately. The shared native
+credential tab now supports write-only creation, retained-reference reconciliation,
+status and unused-reference removal. Web credential controls, initialization,
+live inspection, simulation controls and richer diagnostics remain required setup
+refinements.
 
 The common native selector now includes saved-choice management, showing the
 configuration path, instance and output identity. Revision-checked removal shares
@@ -691,3 +700,4 @@ Keep existing device profiles and registrations compatible throughout migration.
 | 2026-10-06 | Added themed ASCOM registration manager through the existing setup executable and Start menu, shared native selector/editor, immutable elevation requests, orphan inventory removal, owner/install/version protection and explicit reconciliation after failed/unknown edits. Expanded nested helper in-use checks; identified the missing Inno dynamic-inventory uninstall hook. | 129 NINA tests including three WPF registration workflows, net48 x86/x64 fixtures, warnings-denied helper build and unsigned ASCOM package pass. Actual simulation render inspected and documented. Installer compilation/lifecycle and real UAC/Chooser/conformance acceptance remain pending; implement the uninstall hook before closing that gate. All original broader milestones remain required. |
 | 2026-10-06 | Corrected registered-export fixture ordering after CI proved an uninitialized cleanup list; restored preflight and finally coverage. Wired Inno pre-uninstall inventory cleanup before file removal, added whole-install preflight/batch rollback and future foreign-schema preservation, and added actual installer lifecycle fixtures with private identities and a second helper install. | 131 NINA tests pass; final 11 registry checks, net48 x86/x64 fixtures, unsigned package and hooked installer compilation pass. Python/PowerShell syntax and local machine-fixture rejection pass. b76d2fc CI fails Windows fixture before publication; seven other jobs pass. New production/lifecycle CI remains required, alongside all original remaining gates. |
 | 2026-10-06 | Extended installer acceptance to hold a private installed COM metadata object in PowerShell 7, verify nested helper busy guards and intact inventories without host startup, then release only its own RCW and await natural retirement before maintenance. | Python/PowerShell syntax pass. The new installed metadata/in-use case awaits machine CI; it does not actuate equipment or close the broader frontend acceptance gates. |
+| 2026-10-06 | Added shared native credential setup, host-described protection/input/reference fields, caller-chosen immutable references and explicit lost-reply reconciliation. Review added transaction admission to status reads and revoked stale configuration reviews after credential mutations. Fixed installer prerequisite fixture handling of absent values and preserved original value kinds through explicit writable handles. | 136 NINA tests, full Rust hub/Alpaca suites, strict Clippy, Rust 1.89 compatibility, net48 build and x86/x64 fixtures pass. Actual WPF credential render inspected. CI e728f55 proves helper publication/SCM/removal but fails the initial installer platform-value read; the corrected lifecycle fixture needs new CI. Next: web credentials and native setup refinements, then all original remaining gates. |

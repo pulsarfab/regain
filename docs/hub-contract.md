@@ -585,6 +585,17 @@ characters, at most 8192 bytes. The reply contains a new opaque `reference`,
 `present`, and `protection`; there is no operation to retrieve the value.
 `credentialStatus` takes `reference` and returns the same status shape. Missing
 records report `present:false`; invalid storage/ciphertext reports an error.
+Hosts advertising `clientChosenReferences:true` also accept an optional non-nil
+UUID `referenceId` on creation. The reference is `referencePrefix` plus its
+canonical UUID. Setup retains it before dispatch, then explicitly reads status
+after an unknown outcome. Creation refuses an existing record, including a repeat
+with the same value; this is reconciliation, not an idempotent mutation/replay.
+Older callers may omit the ID and receive a host-generated reference.
+Status shares the configuration/credential transaction gate and returns `busy`
+while a storage operation is pending, so absence cannot authorize another write
+before an abandoned waiter finishes. A status read is explicit, never a hidden
+retry. Descriptors include a human-readable protection description and reference
+field metadata alongside the write-only authorization input.
 Configuration and diagnostic responses contain no credential values. Raw IPC
 frame buffers and owned secret serialization buffers are cleared on drop; this
 is not a guarantee that every OS, JSON parser, or HTTP-library copy is erased.

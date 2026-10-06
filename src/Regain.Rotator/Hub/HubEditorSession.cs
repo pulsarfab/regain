@@ -6,7 +6,7 @@ public enum HubEditorState { Unloaded, Loading, Editing, Reviewing, Reviewed, Ap
 
 /// A private setup client has no output leases. Review never connects sources;
 /// Apply is a single revision-checked request to the shared host supervisor.
-public sealed class HubEditorSession : IDisposable
+public sealed partial class HubEditorSession : IDisposable
 {
     private readonly Func<JsonElement, CancellationToken, Task<JsonElement>> request;
     private readonly Action close;
@@ -25,6 +25,7 @@ public sealed class HubEditorSession : IDisposable
         private set { lock (lifecycle) { if (!disposed) state = value; } }
     }
     public JsonElement? HostStatus { get; private set; }
+    public JsonElement? Description { get; private set; }
     public JsonElement? LastApply { get; private set; }
     public JsonElement Errors { get; private set; } = JsonSerializer.SerializeToElement(Array.Empty<object>());
     internal HubEditorSession(Guid instance, Func<JsonElement, CancellationToken, Task<JsonElement>> request, Action close)
@@ -53,7 +54,7 @@ public sealed class HubEditorSession : IDisposable
                 status.GetProperty("configurationRevision").GetGuid() != saved.GetProperty("revision").GetGuid())
                 throw new InvalidOperationException("The saved configuration changed during reload; reload again");
             var draft = new HubConfigurationDraft(description, saved);
-            Draft = draft; HostStatus = status.Clone(); Errors = JsonSerializer.SerializeToElement(Array.Empty<object>());
+            Draft = draft; Description = description.Clone(); HostStatus = status.Clone(); Errors = JsonSerializer.SerializeToElement(Array.Empty<object>());
             State = status.GetProperty("phase").GetString() == "ready" ? HubEditorState.Editing : HubEditorState.Blocked;
         } catch { if (!disposed) State = HubEditorState.Uncertain; throw; }
         finally { operations.Release(); }

@@ -8,7 +8,7 @@ namespace Regain.Hub;
 
 /// Shared native editor for NINA and ASCOM. A setup client has no equipment
 /// lease, and all durable validation/commit decisions remain in the Rust host.
-public sealed class HubConfigurationWindow : Window
+public sealed partial class HubConfigurationWindow : Window
 {
     private readonly string executable, configPath;
     private readonly Guid instance;
@@ -44,6 +44,7 @@ public sealed class HubConfigurationWindow : Window
         tabs.Items.Add(new TabItem { Header = "Review", Content = preview });
         var health = new DockPanel(); DockPanel.SetDock(sources, Dock.Top); health.Children.Add(sources); health.Children.Add(diagnostics);
         tabs.Items.Add(new TabItem { Header = "Source health", Content = health }); panel.Children.Add(tabs);
+        tabs.Items.Add(new TabItem { Header = "Credentials", Content = new ScrollViewer { Content = credentials, VerticalScrollBarVisibility = ScrollBarVisibility.Auto } });
         reload.Click += async (_, _) => {
             if ((session?.Draft?.Dirty == true || form?.Errors.Count > 0) && MessageBox.Show(this, "Discard the unsaved draft and reload?", "Reload hub configuration", MessageBoxButton.YesNo) != MessageBoxResult.Yes) return;
             await Run(Load);
@@ -67,10 +68,11 @@ public sealed class HubConfigurationWindow : Window
                 "The configuration was saved, but source cleanup blocked the host. Inspect host status before connecting equipment.";
         });
         Loaded += async (_, _) => await Run(Load);
-        Closed += (_, _) => { closed = true; lifetime.Cancel(); session?.Dispose(); if (!busy) lifetime.Dispose(); };
+        Closed += (_, _) => { closed = true; authorization?.Clear(); lifetime.Cancel(); session?.Dispose(); if (!busy) lifetime.Dispose(); };
     }
     private async Task Load()
     {
+        authorization?.Clear();
         // Reload uses a freshly authenticated client: a lost transport never
         // causes a hidden retry of Apply, and a replacement host is explicit.
         session?.Dispose(); session = null;
@@ -100,6 +102,7 @@ public sealed class HubConfigurationWindow : Window
                 await Run(async () => { diagnostics.Text = Pretty(await session.SourceStatusAsync((Guid)selected.Tag, lifetime.Token)); status.Text = "Cached source health. This does not open an equipment connection."; });
         };
         sources.Children.Add(read);
+        RenderCredentials();
     }
     private async Task Run(Func<Task> action)
     {
@@ -130,9 +133,10 @@ public sealed class HubConfigurationWindow : Window
         configuration.IsEnabled = !busy && editable; sources.IsEnabled = !busy && session is not null;
         reload.IsEnabled = !busy; review.IsEnabled = !busy && editable && form?.Errors.Count == 0;
         apply.IsEnabled = !busy && session?.State == HubEditorState.Reviewed && form?.Errors.Count == 0;
+        CredentialControls(editable);
     }
     private void ShowErrors(JsonElement fields) => errors.Text = string.Join("\n", fields.EnumerateArray().Select(field => field.GetProperty("path").GetString() + ": " + field.GetProperty("message").GetString()));
     private static string Pretty(JsonElement value) => JsonSerializer.Serialize(value, new JsonSerializerOptions { WriteIndented = true });
-    private static string Uncertain() => "The outcome is unknown or the host changed. Reload the saved configuration and inspect host status before another change. Do not repeat Apply.";
+    private static string Uncertain() => "The outcome is unknown or the host changed. Reload the saved configuration and inspect host status before another change. Check a retained credential reference with Read credential status. Do not repeat the write.";
     public static void Show(Window? owner, string executable, string configPath, Guid instance) => new HubConfigurationWindow(executable, configPath, instance) { Owner = owner }.ShowDialog();
 }
