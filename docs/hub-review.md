@@ -707,3 +707,48 @@ Inspection of unconfigured devices, virtual/simulated source implementation,
 frontend attachment/publication, complete proxy capabilities, COM/NINA/ASCOM
 integration, coordination, conformance, hardware trials, documentation/screenshots,
 and final merge remain open. This checkpoint does not close milestone 2.
+
+## 2026-10-05: explicit scalar simulators and safety startup fencing
+
+Implemented simulated Switch, SafetyMonitor, and ObservingConditions sources on
+the shared source actor/runtime. Typed updateSimulation IPC and describeConfig
+metadata supply common controls for future frontends; production executable tests
+exercise their actual private endpoint. No physical device was used in this step.
+
+Review findings and corrections:
+
+1. A simulator must retain the production connection/control rules. Updates use
+   temporary source leases and exclusive command control, participate in apply
+   quiescence, and reject native sources before opening their transports. Patches
+   validate a cloned state before replacement, preventing partial updates.
+2. Injected uncertain writes change the simulated device once, then return an
+   uncertain result. Clearing the injected fault leaves the actor latch intact;
+   new commands remain blocked until every source lease is disconnected.
+3. Simulation must remain visible and deliberate. Source/output diagnostics and
+   capability inspection mark it, including native workers explicitly launched
+   in simulation. No error path switches real hardware to a simulator.
+4. Safety injection changes the raw source, not the policy result. Invalid types,
+   read failures, and timeouts cannot count as safe; normal confirmation is still
+   required. Restart/configuration replacement starts unsafe. Weather injection
+   exercises actual age/fallback rules and represents missing sensors as errors.
+5. Fast simulated connections exposed a real safety startup race. The policy was
+   initialized from the construction generation, while its delayed consumer began
+   from the latest generation and could reject every future observation. Carry
+   the construction fence/sequence into the consumer so its normal transition
+   handling synchronizes the policy. Regression tests cover the intervening
+   connection and retain the earlier lost-unsafe-event/tail-discard test.
+
+Local validation: 160 hub tests plus the endpoint process fixture and 15 Alpaca
+tests pass. Seven simulator integration cases cover shared clients, safety
+faults/recovery, stale/absent weather, atomic validation, read-only channels, and
+rejection of real sources. The executable test verifies descriptor exposure,
+updates, shared safety polling, and unsafe state after restart. The checked-in
+simulated observatory example passes validation, identity, and round-trip checks.
+Clippy with warnings denied, Rust 1.89.0 checks, and generated-contract freshness
+pass. Transport/core/hub/Alpaca package verification passes using the fresh
+`target/hub-simulation-package` registry. Setup inspection checkpoint 9ae966e now passes Linux x64/ARM64 and macOS
+Intel/ARM64 CI; its Windows job is still running at this review.
+
+Virtual sources, frontend attachment/publication, OS resume, COM imports,
+NINA/ASCOM outputs, broader proxies and coordination, conformance/hardware checks,
+documentation/screenshots, and final merge remain open under the original plan.

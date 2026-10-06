@@ -154,9 +154,8 @@ pub fn build_sources(
                 ErrorKind::Unsupported,
                 "Virtual source construction requires the shared output runtime",
             )),
-            SourceBackend::Simulated { .. } => Err(SourceError::new(
-                ErrorKind::Unsupported,
-                "The simulated interface source adapter is not available in this host yet",
+            SourceBackend::Simulated { device_type } => Ok(Box::new(
+                crate::simulated::SimulatedBackend::new(*device_type, plan.samples)?,
             )),
         }
     })

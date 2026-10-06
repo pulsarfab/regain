@@ -316,6 +316,103 @@ fn host(path: &Path) -> Command {
 }
 
 #[tokio::test]
+async fn actual_hub_executable_shares_simulation_controls_and_restarts_safety_unsafe() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("simulated.json");
+    let mut config = HubConfig::empty();
+    let source = uuid::Uuid::new_v4();
+    let output = uuid::Uuid::new_v4();
+    config.sources.push(
+        serde_json::from_value(json!({"id":source,"label":"Simulation fixture",
+        "backend":{"kind":"simulated","deviceType":"safetymonitor"},"polling":{"pollSeconds":0.1}}))
+        .unwrap(),
+    );
+    config.outputs.push(serde_json::from_value(json!({"id":output,"number":0,"label":"Simulation safety",
+        "device":{"kind":"safety","members":[{"source":source,"enabled":true,
+            "policy":{"safeReadingsToSafe":1,"returnToSafeHoldSeconds":0,"confirmationSeconds":0.1}}]}})).unwrap());
+    std::fs::write(&path, serde_json::to_vec(&config).unwrap()).unwrap();
+    let endpoint = Endpoint::for_config(&path).unwrap();
+    let mut owner = host(&path).spawn().unwrap();
+    probe(&endpoint, config.instance_id, Duration::from_secs(5))
+        .await
+        .unwrap();
+    let mut stream = endpoint.connect(Duration::from_secs(5)).await.unwrap();
+    request(&mut stream, 1, json!({"op":"hello"})).await;
+    let metadata = request(&mut stream, 2, json!({"op":"describeConfig"})).await;
+    assert!(
+        metadata["capabilities"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("simulation"))
+    );
+    assert_eq!(
+        metadata["simulationControl"]["schema"]["properties"]["safe"]["description"],
+        "Simulated raw safety reading. Starts false on each new runtime."
+    );
+    assert_eq!(
+        request(&mut stream, 3, json!({"op":"listDevices"})).await[0]["simulated"],
+        true
+    );
+    request(&mut stream, 4, json!({"op":"connect","output":output})).await;
+    request(
+        &mut stream,
+        5,
+        json!({"op":"updateSimulation","source":source,"update":{"safe":true}}),
+    )
+    .await;
+    let mut id = 6;
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let safe = request(
+                &mut stream,
+                id,
+                json!({"op":"get","output":output,"property":{"member":"isSafe"}}),
+            )
+            .await;
+            id += 1;
+            if safe == true {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .unwrap();
+    let status = request(
+        &mut stream,
+        id,
+        json!({"op":"sourceStatus","source":source}),
+    )
+    .await;
+    assert_eq!(status["simulated"], true);
+    assert_eq!(status["simulation"]["safe"], true);
+    drop(stream);
+    owner.kill().await.unwrap();
+    let mut restarted = host(&path).spawn().unwrap();
+    probe(&endpoint, config.instance_id, Duration::from_secs(5))
+        .await
+        .unwrap();
+    let mut stream = endpoint.connect(Duration::from_secs(5)).await.unwrap();
+    request(&mut stream, 1, json!({"op":"hello"})).await;
+    assert_eq!(
+        request(&mut stream, 2, json!({"op":"sourceStatus","source":source})).await["simulation"]["safe"],
+        false
+    );
+    request(&mut stream, 3, json!({"op":"connect","output":output})).await;
+    assert_eq!(
+        request(
+            &mut stream,
+            4,
+            json!({"op":"get","output":output,"property":{"member":"isSafe"}})
+        )
+        .await,
+        false
+    );
+    drop(stream);
+    restarted.kill().await.unwrap();
+}
+
+#[tokio::test]
 async fn actual_hub_executable_probes_an_existing_owner_and_recovers_after_process_exit() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("hub.json");

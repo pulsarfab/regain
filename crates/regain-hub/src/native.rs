@@ -137,6 +137,9 @@ impl NativeAccessoryBackend {
     }
 }
 impl Backend for NativeAccessoryBackend {
+    fn simulated(&self) -> bool {
+        self.runtime.simulate
+    }
     fn connect(&mut self) -> BackendFuture<'_, ()> {
         Box::pin(async {
             if self.worker.is_some() && self.verified_identity.is_some() {

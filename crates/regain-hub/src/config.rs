@@ -324,7 +324,7 @@ impl VirtualDevice {
             Self::Proxy { device_type, .. } => *device_type,
         }
     }
-    fn sources(&self) -> Vec<Uuid> {
+    pub(crate) fn sources(&self) -> Vec<Uuid> {
         match self {
             Self::Safety { members } => members.iter().map(|s| s.source).collect(),
             Self::Switch { channels } => channels.iter().map(|c| c.readout.source()).collect(),

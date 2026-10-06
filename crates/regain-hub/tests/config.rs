@@ -22,6 +22,7 @@ fn examples_validate_and_preserve_ids_on_roundtrip_and_reorder() {
         safety(),
         switches(),
         serde_json::from_str(include_str!("../examples/mixed-weather.json")).unwrap(),
+        serde_json::from_str(include_str!("../examples/simulated-observatory.json")).unwrap(),
     ] {
         assert!(config.validate().is_empty(), "{:?}", config.validate());
         let store = ConfigStore::new(None, config).unwrap();

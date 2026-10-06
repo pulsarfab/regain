@@ -407,7 +407,21 @@ IPC dispatch, and all seven simulated production workers are covered locally.
 Broader proxy capabilities, discovery of unconfigured devices, and UI adoption
 remain required; this is a setup inspection path, not completed frontend support.
 
-Next: implement virtual/simulated sources and frontend attachment, then connect the first
+Explicit simulated Switch, SafetyMonitor, and Weather sources now use the same
+actors and controllers as real sources, with typed private IPC controls and shared
+configuration descriptions. Tests cover shared switch state, read-only sensors,
+uncertain writes, stale/absent weather readings, and invalid or timed-out safety.
+Source/output diagnostics mark simulation; process restart starts safety unsafe.
+Review fixed a safety consumer startup generation race without weakening its
+event-loss handling. The executable accepts a checked-in simulated observatory
+example without launching hardware workers. Virtual sources remain pending.
+
+Local validation for simulation: 160 hub tests plus the endpoint process fixture,
+15 Alpaca tests, Clippy, Rust 1.89.0, generated-contract freshness, and fresh
+transport/core/hub/Alpaca package verification pass. Setup inspection checkpoint
+`9ae966e` passed all four portable CI platforms; this new checkpoint awaits CI.
+
+Next: implement virtual sources and frontend attachment, then connect the first
 three virtual classes to the existing Alpaca server/setup UI. Frontend error
 translation and protocol conformance remain unverified. Generic
 scalar polling does not establish camera image or acquisition support. No complete
@@ -497,3 +511,4 @@ Keep existing device profiles and registrations compatible throughout migration.
 | 2026-10-05 | Added supervised configuration apply through IPC, staged compare-and-swap persistence, atomic connection quiescence, client rebinding, and explicit post-commit blocked/warning outcomes. Addressed macOS peer-admission failure from the previous checkpoint. | 132 Windows hub tests plus process fixtures and 14 Alpaca tests pass locally, including file/constructor failures, competing editors, retained operations, cancellation/deadline uncertainty, panic recovery, and production-executable apply/restart. Clippy, Rust 1.89.0, package verification, and contract freshness pass. Portable CI remains required for this checkpoint. Next: protected credentials, capabilities, frontend attachment/publication, and all remaining original gates. |
 | 2026-10-05 | Added user-scoped credential storage, shared write-only descriptors/IPC, immutable rotation through configuration apply, and deletion protected by the update gate. Reused private file checks; moved credential resolution off the async executor. | 141 Windows hub tests plus process fixtures and 14 Alpaca tests pass, including DPAPI/ACL checks, corruption/isolation, cancelled apply versus deletion, and production-host authenticated polling before/after restart. Clippy, Rust 1.89.0, contract freshness, and package verification pass. The previous checkpoint now passes all four portable CI platforms; new storage checks await CI. Next: capabilities and virtual/simulated sources, frontend attachment/publication, and remaining milestones 2–5. |
 | 2026-10-05 | Added bounded setup inspection through shared source leases, Switch pagination and range validation, weather/safety probes, native property reuse, generation-fenced reads, shared request metadata, and IPC retry-delay reporting. | 152 Windows hub tests plus process fixtures and 14 Alpaca tests pass, including faults/cancellation/deadlines, apply exclusion, real managed Alpaca connection sharing, IPC, and seven simulated production workers. Clippy, Rust 1.89.0, contract freshness, and package verification pass. Credential storage passed all four portable CI platforms; setup inspection still awaits CI. Next: virtual/simulated sources, frontend attachment/publication, broader capability contracts, and all remaining original milestones. |
+| 2026-10-05 | Added explicit simulated Switch, SafetyMonitor, and Weather sources, typed shared test controls, visible simulation status, and a runnable observatory example. Fixed the safety consumer startup generation race found by the new tests. | 160 Windows hub tests plus process fixtures and 15 Alpaca tests pass, including shared values, atomic validation, uncertain writes, stale/absent sensors, safety failures, and production-host restart. Clippy, Rust 1.89.0, schema freshness, and fresh package verification pass. Next: virtual sources and frontend attachment/publication; original milestones 2–5 and final acceptance remain open. |

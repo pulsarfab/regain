@@ -328,7 +328,7 @@ pub(crate) async fn inspect(
             lease,
             generation: connected.generation,
         };
-        let mut simulation = None;
+        let mut simulation = connected.simulated.then_some(true);
         let capabilities = if let SourceBackend::Native { device, .. } = config.backend {
             let identity = reader
                 .lease

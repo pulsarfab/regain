@@ -121,6 +121,21 @@ impl std::error::Error for SourceError {}
 /// Implementations own their connection policy. Externally managed sources must
 /// not be disconnected, and a worker reset must stop any local in-flight I/O.
 pub trait Backend: Send {
+    fn simulated(&self) -> bool {
+        false
+    }
+    fn simulation_status(&self) -> Option<crate::simulated::SimulationStatus> {
+        None
+    }
+    fn update_simulation(
+        &mut self,
+        _: crate::simulated::SimulationUpdate,
+    ) -> Result<crate::simulated::SimulationStatus, SourceError> {
+        Err(SourceError::new(
+            ErrorKind::Unsupported,
+            "This source is not an adjustable simulator",
+        ))
+    }
     fn connect(&mut self) -> BackendFuture<'_, ()>;
     /// One bounded handshake step. False means pending, not a failed poll cycle.
     fn connect_step(&mut self) -> BackendFuture<'_, bool> {
@@ -155,6 +170,9 @@ pub struct SourceSnapshot {
     pub transport_connected: bool,
     pub write_uncertain: bool,
     pub connection_info: Option<ConnectionInfo>,
+    pub simulated: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub simulation: Option<crate::simulated::SimulationStatus>,
     pub lease_count: usize,
     pub values: Values,
     pub sample_errors: BTreeMap<String, SourceError>,
@@ -180,6 +198,11 @@ pub struct PollEvent {
 
 type Reply<T> = oneshot::Sender<Result<T, SourceError>>;
 enum Command {
+    UpdateSimulation {
+        lease: Uuid,
+        update: crate::simulated::SimulationUpdate,
+        reply: Reply<crate::simulated::SimulationStatus>,
+    },
     Shutdown,
     Refresh {
         lease: Uuid,
@@ -331,6 +354,8 @@ impl SourceHandle {
             transport_connected: false,
             write_uncertain: false,
             connection_info: None,
+            simulated: backend.simulated(),
+            simulation: backend.simulation_status(),
             lease_count: 0,
             values: Values::new(),
             sample_errors: BTreeMap::new(),
@@ -422,6 +447,19 @@ impl SourceHandle {
         self.enqueue(Command::Control {
             lease,
             acquire,
+            reply,
+        })?;
+        response.await.map_err(|_| closed())?
+    }
+    pub async fn update_simulation(
+        &self,
+        lease: Uuid,
+        update: crate::simulated::SimulationUpdate,
+    ) -> Result<crate::simulated::SimulationStatus, SourceError> {
+        let (reply, response) = oneshot::channel();
+        self.enqueue(Command::UpdateSimulation {
+            lease,
+            update,
             reply,
         })?;
         response.await.map_err(|_| closed())?
@@ -519,6 +557,7 @@ impl Actor {
     }
     fn publish(&mut self) {
         self.state.connection_info = self.backend.connection_info();
+        self.state.simulation = self.backend.simulation_status();
         self.state.write_uncertain = self.write_uncertain;
         self.state.lease_count = self.leases.len();
         self.snapshot.send_replace(self.state.clone());
@@ -656,6 +695,39 @@ impl Actor {
     }
     async fn command(&mut self, command: Command) {
         match command {
+            Command::UpdateSimulation {
+                lease,
+                update,
+                reply,
+            } => {
+                if reply.is_closed() {
+                    return;
+                }
+                let result = self.authorized(lease, false).and_then(|()| {
+                    if self.controller != Some(lease) {
+                        return Err(SourceError::new(
+                            ErrorKind::Busy,
+                            "Acquire source control before changing simulation",
+                        ));
+                    }
+                    self.backend.update_simulation(update)
+                });
+                if result.is_ok() {
+                    self.state.sampled_at_seconds = None;
+                    self.state.values.clear();
+                    self.state.sample_errors.clear();
+                    self.state.sample_ages_seconds.clear();
+                    self.state.sample_started_seconds.clear();
+                    self.retrying = false;
+                    self.attempt = 0;
+                    self.backoff_failures = 0;
+                    self.backend.restart_poll();
+                    self.next_poll = Some(Instant::now());
+                    // Do not clear an uncertain-write latch through test controls.
+                    self.publish();
+                }
+                let _ = reply.send(result);
+            }
             Command::Shutdown => unreachable!("Handled by the actor loop"),
             Command::Refresh { lease, reply } => {
                 if reply.is_closed() {

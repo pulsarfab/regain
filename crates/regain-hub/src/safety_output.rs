@@ -41,17 +41,18 @@ impl SafetyOutput {
             // fall between establishing the lease and listening for its result.
             let events = source.subscribe();
             let status = source.status();
-            inputs.push((source, events, status));
+            inputs.push((source, events, status, (fence(&state), state.sequence)));
         }
         let runtime = Arc::new(SafetyRuntime::new(SafetyHub::new(endpoints), clock));
         let (stop, _) = watch::channel(false);
-        for (source, events, status) in inputs {
+        for (source, events, status, initial) in inputs {
             tokio::spawn(consume(
                 source,
                 events,
                 status,
                 runtime.clone(),
                 stop.subscribe(),
+                initial,
             ));
         }
         Ok(Self { runtime, stop })
@@ -88,11 +89,13 @@ async fn consume(
     mut status: watch::Receiver<SourceSnapshot>,
     runtime: Arc<SafetyRuntime>,
     mut stop: watch::Receiver<bool>,
+    initial: (Fence, u64),
 ) {
     let lease = Uuid::new_v4();
     let id = source.snapshot().source;
-    let mut current = fence(&status.borrow());
-    let mut watermark = status.borrow().sequence;
+    // Start at the policy's construction epoch. Another client may connect
+    // before this task is polled; the loop must observe that transition too.
+    let (mut current, mut watermark) = initial;
     // Always finish acquisition before releasing, including when output drop
     // races a stalled connect. The actor supplies a bounded connection deadline.
     if source.acquire(lease).await.is_err() {
@@ -194,6 +197,61 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
+    async fn consumer_started_after_another_client_connects_synchronizes_its_policy_fence() {
+        let clock = Arc::new(MonotonicClock::default());
+        let id = Uuid::new_v4();
+        let source = SourceHandle::spawn(
+            id,
+            Uuid::new_v4(),
+            PollPolicy::default(),
+            Box::new(SafeBackend),
+            clock.clone(),
+        )
+        .unwrap();
+        let original = source.snapshot();
+        let policy = SafetyPolicy {
+            safe_readings_to_safe: 1,
+            return_to_safe_hold_seconds: 0.0,
+            ..Default::default()
+        };
+        let runtime = Arc::new(SafetyRuntime::new(
+            SafetyHub::new(BTreeMap::from([(
+                id,
+                Endpoint::new(policy, fence(&original)).unwrap(),
+            )])),
+            clock,
+        ));
+        let other = Uuid::new_v4();
+        source.acquire(other).await.unwrap();
+        settle().await;
+        assert_ne!(original.generation, source.snapshot().generation);
+        let (stop, stopped) = watch::channel(false);
+        let task = tokio::spawn(consume(
+            source.clone(),
+            source.subscribe(),
+            source.status(),
+            runtime.clone(),
+            stopped,
+            (fence(&original), original.sequence),
+        ));
+        settle().await;
+        assert!(
+            !runtime.snapshot().is_safe,
+            "The old cached safe value cannot seed the new consumer"
+        );
+        tokio::time::advance(Duration::from_secs(30)).await;
+        settle().await;
+        assert!(
+            runtime.snapshot().is_safe,
+            "A new observation must be accepted after synchronizing generations"
+        );
+        stop.send_replace(true);
+        task.await.unwrap();
+        source.release(other).await.unwrap();
+        source.shutdown().await.unwrap();
+    }
+
+    #[tokio::test(start_paused = true)]
     async fn a_lagging_consumer_discards_safe_tail_after_losing_unsafe_event() {
         let clock = Arc::new(MonotonicClock::default());
         let id = Uuid::new_v4();
@@ -255,6 +313,7 @@ mod tests {
             source.status(),
             runtime.clone(),
             stopped,
+            (fence(&state), state.sequence),
         ));
         settle().await;
         assert!(

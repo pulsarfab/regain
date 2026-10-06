@@ -104,6 +104,10 @@ pub enum Command {
         start: u32,
         limit: u32,
     },
+    UpdateSimulation {
+        source: Uuid,
+        update: crate::simulated::SimulationUpdate,
+    },
     Connect {
         output: Uuid,
     },
@@ -346,7 +350,7 @@ where
                 if !greeted {
                     if !matches!(request.command, Command::Hello {}) { return Err(ProtocolError::Handshake); }
                     greeted = true;
-                    let mut operations = vec!["describeConfig","getConfig","validateConfig","listDevices","sourceStatus","inspectSource","connect","disconnect","get","put","hostStatus"];
+                    let mut operations = vec!["describeConfig","getConfig","validateConfig","listDevices","sourceStatus","inspectSource","updateSimulation","connect","disconnect","get","put","hostStatus"];
                     if service.can_apply() { operations.push("applyConfig"); }
                     if service.credential_description().is_some() { operations.extend(["createCredential", "credentialStatus", "deleteCredential"]); }
                     let hello = json!({"protocolVersion":VERSION, "instanceId":service.instance_id(),
@@ -362,7 +366,7 @@ where
                 let service = service.clone();
                 let client = client.clone();
                 let mut operation = Box::pin(async move {
-                    let write = matches!(request.command, Command::Put { .. } | Command::ApplyConfig { .. } | Command::CreateCredential { .. } | Command::DeleteCredential { .. });
+                    let write = matches!(request.command, Command::Put { .. } | Command::ApplyConfig { .. } | Command::CreateCredential { .. } | Command::DeleteCredential { .. } | Command::UpdateSimulation { .. });
                     let result = timeout(limits.operation_timeout, dispatch_service(&service, &client, request.command)).await
                         .unwrap_or_else(|_| Err(if write { SourceError::uncertain().into() } else {
                             RpcError { code:"timeout", message:"Hub operation deadline expired", upstream_code:None, retry_after_seconds:None, fields:Vec::new() }
@@ -398,11 +402,16 @@ async fn dispatch_service(
 ) -> Result<Value, RpcError> {
     match command {
         Command::DescribeConfig {} => {
-            let mut description =
-                describe_config(&["nativeSources", "alpacaSources", "writeReadout"]);
+            let mut description = describe_config(&[
+                "nativeSources",
+                "alpacaSources",
+                "writeReadout",
+                "simulation",
+            ]);
             description["credentialStorage"] =
                 service.credential_description().unwrap_or(Value::Null);
             description["capabilityInspection"] = crate::capabilities::description();
+            description["simulationControl"] = crate::simulated::description();
             Ok(description)
         }
         Command::CreateCredential { authorization } => {
@@ -472,6 +481,9 @@ async fn dispatch(
         }
         Command::ListDevices {} => json!(runtime.outputs()),
         Command::SourceStatus { source } => json!(runtime.source_snapshot(source)?),
+        Command::UpdateSimulation { source, update } => {
+            json!(runtime.update_simulation(source, update).await?)
+        }
         Command::InspectSource {
             source,
             start,

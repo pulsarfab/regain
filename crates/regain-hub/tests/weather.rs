@@ -32,6 +32,8 @@ fn snapshot(source: Uuid, sequence: u64, seconds: u64, values: Values) -> Source
         transport_connected: true,
         write_uncertain: false,
         connection_info: None,
+        simulated: false,
+        simulation: None,
         lease_count: 1,
         values,
         sample_errors: BTreeMap::new(),

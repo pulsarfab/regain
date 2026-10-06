@@ -33,7 +33,7 @@ impl WeatherMetric {
             Self::WindGust | Self::WindSpeed => "m/s",
         }
     }
-    fn accepts(self, value: f64) -> bool {
+    pub(crate) fn accepts(self, value: f64) -> bool {
         value.is_finite()
             && match self {
                 Self::CloudCover | Self::Humidity => (0.0..=100.0).contains(&value),

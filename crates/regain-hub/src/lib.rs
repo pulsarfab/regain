@@ -16,6 +16,7 @@ pub mod runtime;
 pub mod safety;
 pub mod safety_output;
 pub mod service;
+pub mod simulated;
 pub mod source;
 pub mod switch;
 pub mod weather;

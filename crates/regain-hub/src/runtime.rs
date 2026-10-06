@@ -29,6 +29,7 @@ pub struct OutputDescriptor {
     pub number: u32,
     pub label: String,
     pub device_type: DeviceType,
+    pub simulated: bool,
 }
 
 enum Output {
@@ -192,6 +193,40 @@ impl HubRuntime {
     pub fn revision(&self) -> Uuid {
         self.config.revision
     }
+    pub async fn update_simulation(
+        &self,
+        source: Uuid,
+        update: crate::simulated::SimulationUpdate,
+    ) -> Result<crate::simulated::SimulationStatus, SourceError> {
+        if !self.config.sources.iter().any(|entry| {
+            entry.id == source
+                && matches!(
+                    entry.backend,
+                    crate::config::SourceBackend::Simulated { .. }
+                )
+        }) {
+            return Err(SourceError::new(
+                ErrorKind::Unsupported,
+                "Select an explicitly simulated source",
+            ));
+        }
+        let _activity = {
+            let lifecycle = self.lifecycle.lock().unwrap();
+            if lifecycle.closed {
+                return Err(disconnected());
+            }
+            if lifecycle.frozen {
+                return Err(SourceError::new(
+                    ErrorKind::Busy,
+                    "Configuration is being applied",
+                ));
+            }
+            Activity::new(self.activity.clone())
+        };
+        let lease = crate::readout::SourceLease::acquire(self.registry.get(source)?).await?;
+        lease.source.control(lease.id, true).await?;
+        lease.source.update_simulation(lease.id, update).await
+    }
     pub fn outputs(&self) -> Vec<OutputDescriptor> {
         self.config
             .outputs
@@ -201,6 +236,11 @@ impl HubRuntime {
                 number: output.number,
                 label: output.label.clone(),
                 device_type: output.device.device_type(),
+                simulated: output.device.sources().iter().any(|source| {
+                    self.registry
+                        .get(*source)
+                        .is_ok_and(|source| source.snapshot().simulated)
+                }),
             })
             .collect()
     }

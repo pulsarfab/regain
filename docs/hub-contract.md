@@ -480,6 +480,42 @@ No inferred permission or default value substitutes for an unsuccessful probe.
 References: [Switch interface](https://ascom-standards.org/newdocs/switch.html) and
 [ObservingConditions interface](https://ascom-standards.org/newdocs/observingconditions.html).
 
+### Explicit scalar simulation
+
+`simulated` sources currently implement Switch, SafetyMonitor, and
+ObservingConditions through the same actors, leases, polling, and output policies
+as native/network sources. Other classes remain unsupported until their proxy
+contracts are implemented. Simulation is never a fallback for a failed device.
+Source status, output listings, and setup inspection mark simulated data. An
+output with any simulated dependency is marked simulated, including mixed outputs.
+
+Private IPC `updateSimulation` takes a source UUID and a typed `update` object.
+`describeConfig.simulationControl` supplies its JSON Schema, field descriptions,
+class-specific controls, and supported faults. Updates are atomic, require the
+source control lease, and participate in configuration quiescence. They invalidate
+cached samples and schedule a new poll; they do not directly grant safety
+permission. Ordinary device commands retain the production permission/range checks.
+
+Switch channels are a writable relay (0, range 0–1), a writable level (1, range
+0–100), and a read-only temperature sensor (2, range −40–80 °C). Test controls can
+inject sensor readings, but ordinary switch writes cannot change read-only sensors.
+Weather supports the thirteen standard metrics; a null injected reading removes
+that sensor. `sampleAgeSeconds` injects stale evidence, while Refresh resets its
+age to zero. Safety starts false in every new runtime and requires normal policy
+confirmation after a true raw reading is injected.
+
+Faults include read failure, timeout, invalid safety values, and switch writes
+that change state but return an uncertain result. Clearing a fault does not clear
+the actor's uncertain-write latch; all source leases must disconnect first.
+Injected state lives only in the runtime: connection reset preserves the test
+scenario, while configuration replacement or process restart restores defaults.
+There is no persisted "start safe" option.
+
+Use [simulated-observatory.json](../crates/regain-hub/examples/simulated-observatory.json)
+with `regain-alpaca --hub-host --hub-config ABSOLUTE_PATH` to run all three classes
+without attached equipment. This currently exposes private IPC; HTTP publication
+and shared frontend setup controls are separate pending steps.
+
 ### Native scalar adapters
 
 Native accessory sources launch the existing `regain-device VENDOR DEVICE serve
