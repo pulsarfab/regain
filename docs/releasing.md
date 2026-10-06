@@ -22,6 +22,42 @@ the versioned PNG release asset for users browsing available plugins.
 The PNG is rendered by `scripts/render-brand.cjs` using `sharp` from the SVG;
 it is checked in, so builds need no image renderer or Node dependency.
 
+## Release branches
+
+`release/0.5` maintains the 0.5 release train, starting at `v0.5.10.0`.
+Keep maintenance fixes and release version updates on this branch while `main`
+develops the next train. Open maintenance PRs against `release/0.5`; forward-port
+applicable fixes to `main`. New maintenance branches use `release/MAJOR.MINOR`.
+
+**Build and test** runs on every branch push and pull request, including release
+branches. **Release** can be dispatched on `main` or a maintenance branch to
+build and sign artifacts without publishing a release. Tag pushes still create
+draft releases. A tag must match the source version and be contained in its
+`release/MAJOR.MINOR` branch when that branch exists, or `main` otherwise.
+Maintenance builds must match the branch's major/minor version.
+
+For example, before preparing the next 0.5 patch:
+
+```sh
+git fetch origin --tags
+git switch release/0.5
+git pull --ff-only origin release/0.5
+gh workflow run release.yml --ref release/0.5
+```
+
+Run **Publish to NINA registry** on the same maintenance branch after publishing
+its stable release. The supplied tag must be part of that branch and match its
+train. The shared registry keeps its downgrade protection: once a newer train is
+published there, an older maintenance release cannot replace it.
+
+```sh
+gh workflow run publish-registry.yml --ref release/0.5 -f tag=v0.5.10.0
+```
+
+All release branches use the existing `release` environment for Azure signing;
+the OIDC identity does not change with the branch. Environment deployment rules
+must permit these branches and version tags if restrictions are added later.
+
 ## Version and draft release
 
 `Directory.Build.props` is the four-part .NET/NINA version source of truth.
@@ -35,10 +71,12 @@ the camera's displayed driver version use the same version.
 
 1. Update the version in `Directory.Build.props`, `[workspace.package]` and
    `[workspace.dependencies]`, run `cargo check` to refresh `Cargo.lock`, and
-   replace `docs/release-notes.md`. Merge to main.
+   replace `docs/release-notes.md`. Merge to the target release branch, or `main`
+   for a new train without a maintenance branch.
 2. Run `scripts/test.ps1`, `scripts/build.ps1`, and `scripts/test-release.ps1`.
-   A manual **Release** workflow run on `main` does the same build and validation
-   and uploads artifacts without creating a tag or GitHub release.
+   A manual **Release** workflow run on `main` or `release/MAJOR.MINOR` does the
+   same build and validation and uploads artifacts without creating a tag or
+   GitHub release.
 3. Push a matching tag, such as `v0.5.10.0`. The **Release** workflow reruns all
    checks and creates a **draft** GitHub release with ten assets:
    `Regain-0.5.10.0.zip`, `Regain-0.5.10.0.manifest.json`, `regain.png`,
@@ -140,7 +178,8 @@ The source repository's `GITHUB_TOKEN` cannot write to the other repository.
 The publication job uses the secret only for the registry checkout and push;
 release lookup uses the source repository token.
 
-Run **Publish to NINA registry** from `main`, supplying a published stable tag.
+Run **Publish to NINA registry** from `main` or the matching maintenance branch,
+supplying a published stable tag contained in that branch.
 It checks identity/version, rejects draft/prerelease/channel manifests,
 downloads the plugin ZIP and logo **without authentication**, verifies the ZIP
 SHA-256 and logo consistency, prevents downgrades/version replacement, and only
@@ -169,4 +208,4 @@ GitHub workflow; it is not needed when the local publisher uses existing
 publisher checks anonymous access to the actual ZIP and logo before writing
 the registry entry.
 
-No public release or registry entry is created by ordinary pushes to main.
+No public release or registry entry is created by ordinary branch pushes.
