@@ -3,6 +3,7 @@
 use crate::{
     config::{Bitness, DeviceType, HubConfig, SafetyMember, VirtualDevice},
     factory::{CredentialProvider, build_sources_bound},
+    focuser::{FocuserController, FocuserSession},
     native::NativeRuntime,
     parameters::FieldError,
     safety::Clock,
@@ -39,6 +40,7 @@ enum Output {
     },
     Switch(Arc<SwitchOutput>),
     Weather(Arc<WeatherOutput>),
+    Focuser(FocuserController),
 }
 
 pub struct HubRuntime {
@@ -133,6 +135,25 @@ impl HubRuntime {
                             )]
                         })?,
                 ),
+                VirtualDevice::Proxy {
+                    source,
+                    device_type: DeviceType::Focuser,
+                } => {
+                    let source_config = config
+                        .sources
+                        .iter()
+                        .find(|entry| entry.id == *source)
+                        .unwrap();
+                    Output::Focuser(
+                        FocuserController::new(
+                            registry.get(*source).unwrap(),
+                            std::time::Duration::from_secs_f64(
+                                source_config.polling.connection_timeout_seconds,
+                            ),
+                        )
+                        .expect("Validated connection deadline"),
+                    )
+                }
                 VirtualDevice::Proxy { .. } => unreachable!("Validated output implementation"),
             };
             outputs.insert(output.id, mapped);
@@ -214,6 +235,7 @@ impl HubRuntime {
                 VirtualDevice::Weather { measurements } => measurements.len() as u32,
                 _ => unreachable!("Validated weather controller"),
             },
+            Output::Focuser(_) => crate::focuser::FocuserProperty::ALL.len() as u32,
         };
         let end = page(start, limit, total)?;
         let now = self.clock.now();
@@ -272,6 +294,21 @@ impl HubRuntime {
                 Diagnostics::Weather {
                     average_period_hours,
                     measurements,
+                }
+            }
+            Output::Focuser(focuser) => {
+                let state = focuser.source().snapshot();
+                Diagnostics::Focuser {
+                    health: SourceHealth::from(&state),
+                    properties: crate::focuser::FocuserProperty::ALL
+                        .iter()
+                        .skip(start as usize)
+                        .take((end - start) as usize)
+                        .map(|property| crate::diagnostics::FocuserProperty {
+                            property: *property,
+                            sample: crate::focuser::cached_property(&state, *property, now).into(),
+                        })
+                        .collect(),
                 }
             }
         };
@@ -495,6 +532,7 @@ impl HubRuntime {
                 session: output.connect().await?,
             }),
             Output::Weather(output) => Ok(ConnectedDevice::Weather(output.connect().await?)),
+            Output::Focuser(output) => Ok(ConnectedDevice::Focuser(output.connect().await?)),
         }
     }
 }
@@ -502,11 +540,34 @@ impl HubRuntime {
 fn validate_outputs(config: &HubConfig) -> Result<(), Vec<FieldError>> {
     let mut errors = config.validate();
     for (index, output) in config.outputs.iter().enumerate() {
-        if matches!(output.device, VirtualDevice::Proxy { .. }) {
+        if let VirtualDevice::Proxy {
+            source,
+            device_type: DeviceType::Focuser,
+        } = output.device
+            && config
+                .sources
+                .iter()
+                .find(|entry| entry.id == source)
+                .is_some_and(|entry| {
+                    !matches!(
+                        entry.backend,
+                        crate::config::SourceBackend::Native { .. }
+                            | crate::config::SourceBackend::Alpaca { .. }
+                    )
+                })
+        {
+            errors.push(FieldError::new(
+                format!("outputs[{index}].device.source"),
+                "unsupported",
+                "Focuser proxies currently require native or Alpaca sources",
+            ));
+        }
+        if matches!(output.device, VirtualDevice::Proxy { device_type, .. } if device_type != DeviceType::Focuser)
+        {
             errors.push(FieldError::new(
                 format!("outputs[{index}].device"),
                 "unsupported",
-                "Proxy output controllers are not available in this runtime yet",
+                "This proxy device class is not available in this runtime yet",
             ));
         }
     }
@@ -558,14 +619,26 @@ enum ConnectedDevice {
         session: SwitchSession,
     },
     Weather(WeatherSession),
+    Focuser(FocuserSession),
 }
 /// Hold this guard throughout a command. Its leases outlive a simultaneous
 /// frontend disconnect; dropping a client does not imply motion rollback.
 pub struct OutputConnection {
     device: ConnectedDevice,
     _activity: Activity,
+    // DeviceState uses the same monotonic clock as the source observations.
+    clock: Arc<dyn Clock>,
 }
 impl OutputConnection {
+    pub fn focuser(&self) -> Result<&FocuserSession, SourceError> {
+        match &self.device {
+            ConnectedDevice::Focuser(value) => Ok(value),
+            _ => Err(wrong_type()),
+        }
+    }
+    pub(crate) fn now(&self) -> std::time::Duration {
+        self.clock.now()
+    }
     pub fn safety(&self) -> Result<&SafetyOutput, SourceError> {
         match &self.device {
             ConnectedDevice::Safety(value) => Ok(value),
@@ -694,6 +767,7 @@ impl ClientSession {
             ClientConnection::Ready(Arc::new(OutputConnection {
                 device,
                 _activity: pending.activity.take().expect("Connection reservation"),
+                clock: self.runtime.clock.clone(),
             })),
         );
         pending.armed = false;

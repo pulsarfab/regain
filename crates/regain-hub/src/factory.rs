@@ -88,6 +88,13 @@ pub fn source_plans(config: &HubConfig) -> Result<BTreeMap<Uuid, SourcePlan>, Ve
                 VirtualDevice::Proxy { .. } => {}
             }
         }
+        if config.outputs.iter().any(|output| matches!(output.device,
+            VirtualDevice::Proxy { source: id, device_type: DeviceType::Focuser } if id == source.id)) {
+            for property in crate::focuser::FocuserProperty::ALL {
+                let sample = property.sample_request();
+                samples.insert(sample.key.clone(), sample);
+            }
+        }
         if device_type == DeviceType::SafetyMonitor {
             // Safety events must contain exactly one strict boolean IsSafe.
             // Never bundle unrelated properties into a safety attempt.

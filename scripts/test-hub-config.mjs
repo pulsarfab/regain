@@ -172,6 +172,44 @@ for (const output of diagSaved.outputs) {
 const diagGeneration='77777777-7777-4777-8777-777777777777';
 const diagHealth=source=>({source,revision:diagSaved.revision,generation:diagGeneration,sequence:0,transportConnected:false,writeUncertain:false,leaseCount:0,error:null,polling:{phase:'idle',observedSeconds:0,reason:null,nextPollAfterSeconds:null,attemptsStarted:0,attemptsPerCycle:description.schema.$defs.PollPolicy.properties.attemptsPerCycle.default,lastAttempt:0,lastCycleExhausted:null,backoffFailures:0}});
 const diagUnavailable={state:'unavailable',error:{kind:'disconnected',message:'Source is disconnected',upstreamCode:null}};
+const focuserSaved=structuredClone(diagSaved);
+focuserSaved.sources=[{...focuserSaved.sources[0],backend:{kind:'native',device:'fc3',identity:'00:00:00:00:00:03'}}];
+focuserSaved.identities={outputs:{},channels:{}};
+focuserSaved.outputs=[{...focuserSaved.outputs[0],device:{kind:'proxy',deviceType:'focuser',source:focuserSaved.sources[0].id}}];
+const focuserOutput=focuserSaved.outputs[0];
+function focuserReply(start=0,limit=1) {
+  const fields=description.outputDiagnostics.focuserProperties, total=fields.length, health=diagHealth(focuserSaved.sources[0].id);
+  health.transportConnected=true; health.leaseCount=1;
+  const properties=fields.slice(start,start+limit).map(field=>({property:field.property,sample:{state:'available',reading:{
+    value:{type:field.valueType,value:field.valueType==='boolean'?true:1},ageSeconds:0.5,source:health.source,generation:health.generation,sequence:0,revision:focuserSaved.revision}}}));
+  const end=Math.min(start+limit,total);
+  return {purpose:'cachedDiagnostics',output:focuserOutput.id,configurationRevision:focuserSaved.revision,observedSeconds:1,
+    deviceType:'focuser',simulated:true,start,limit,total,nextStart:end<total?end:null,diagnostics:{kind:'focuser',health,properties}};
+}
+{
+  const setup=new OutputDiagnostics(async command=>focuserReply(command.start,command.limit),()=>assert.fail('Review revoked'));
+  setup.load(description,focuserSaved);
+  assert.equal((await setup.read(focuserOutput.id,0,4)).diagnostics.properties.length,4);
+  const result=await setup.read(focuserOutput.id,4,32); assert.equal(result.nextStart,null);
+  assert.match(diagnosticSummary(result),/position: 1/); assert.match(diagnosticSummary(result),/age 0.5 s/);
+}
+for (const fault of ['property','source','generation','sequence','type','minimum','extra','age']) {
+  let revoked=false;
+  const setup=new OutputDiagnostics(async()=>{
+    const reply=focuserReply(4,1), item=reply.diagnostics.properties[0], reading=item.sample.reading;
+    if(fault==='property') item.property='isMoving';
+    if(fault==='source') reading.source='88888888-8888-4888-8888-888888888888';
+    if(fault==='generation') reading.generation='88888888-8888-4888-8888-888888888888';
+    if(fault==='sequence') reading.sequence=1;
+    if(fault==='type') reading.value={type:'number',value:1};
+    if(fault==='minimum') reading.value.value=-1;
+    if(fault==='extra') reading.authorization='PRIVATE_FORBIDDEN_REPLY';
+    if(fault==='age') reading.ageSeconds=-1;
+    return reply;
+  },()=>revoked=true);
+  setup.load(description,focuserSaved); await assert.rejects(setup.read(focuserOutput.id,4,1));
+  assert.equal(revoked,true); assert.equal(setup.observation,null);
+}
 function diagReply(output,start=0,limit=1) {
   const device=output.device; let total, diagnostics;
   if(device.kind==='switch') {

@@ -26,7 +26,7 @@ public sealed partial class HubConfigurationWindow
     private void RenderOutputDiagnostics()
     {
         outputControls.Children.Clear(); diagnosticParameters.Clear(); nextOutputItem = null; outputSummary.Text = ""; outputResult.Clear();
-        outputControls.Children.Add(new TextBlock { Text = "Read cached output health to see the host's safety decisions, switch channels and weather readings. This does not connect equipment, refresh sensors or count a safety observation. Saved settings are used.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(4) });
+        outputControls.Children.Add(new TextBlock { Text = "Read cached output health to see safety decisions, switch channels, weather readings and typed device properties. This does not connect equipment, refresh sensors or count a safety observation. Saved settings are used.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(4) });
         diagnosticOutput = new ComboBox { MinWidth = 300, MaxWidth = 650, Margin = new Thickness(4), HorizontalAlignment = HorizontalAlignment.Left, Tag = "diagnostic-output" };
         foreach (var output in session!.SavedConfiguration!.Value.GetProperty("outputs").EnumerateArray()) diagnosticOutput.Items.Add(new ComboBoxItem { Content = output.GetProperty("label").GetString(), Tag = output.GetProperty("id").GetGuid() });
         diagnosticOutput.SelectedIndex = diagnosticOutput.Items.Count == 0 ? -1 : 0;
@@ -83,6 +83,15 @@ public sealed partial class HubConfigurationWindow
                 lines.Add(member.GetProperty("source").GetString() + ": " + s.GetProperty("phase").GetString() + " · raw " + (raw.ValueKind == JsonValueKind.Null ? "unknown" : raw.GetBoolean() ? "safe" : "unsafe") + " · effective " + (s.GetProperty("permitsSafe").GetBoolean() ? "safe" : "unsafe") + " · " + s.GetProperty("reason").GetString());
                 lines.Add("Failed checks " + s.GetProperty("failedCycles") + "/" + policy.GetProperty("failedCyclesToUnsafe") + "; unsafe readings " + s.GetProperty("unsafeReadings") + "/" + policy.GetProperty("unsafeReadingsToUnsafe") + "; recovery " + s.GetProperty("safeReadings") + "/" + policy.GetProperty("safeReadingsToSafe") + " safe readings, " + Number(s.GetProperty("safeHoldSeconds")) + "/" + policy.GetProperty("returnToSafeHoldSeconds") + " s hold; safe age " + (s.GetProperty("safeAgeSeconds").ValueKind == JsonValueKind.Null ? "unknown" : Number(s.GetProperty("safeAgeSeconds")) + " s") + "/" + policy.GetProperty("maximumSafeAgeSeconds") + " s.");
             }
+        } else if (kind == "focuser") {
+            foreach (var item in d.GetProperty("properties").EnumerateArray()) {
+                var sample = item.GetProperty("sample"); var label = item.GetProperty("property").GetString();
+                if (sample.GetProperty("state").GetString() == "available") {
+                    var reading = sample.GetProperty("reading"); lines.Add(label + ": " + reading.GetProperty("value").GetProperty("value") + " · age " + Number(reading.GetProperty("ageSeconds")) + " s");
+                } else lines.Add(label + ": unavailable · " + sample.GetProperty("error").GetProperty("message").GetString());
+            }
+            if (d.GetProperty("health").GetProperty("writeUncertain").GetBoolean()) lines.Add("Retained uncertain write; reconcile equipment state before another command.");
+            lines.Add(PollingSummary(d.GetProperty("health")));
         } else {
             foreach (var item in d.GetProperty(kind == "switch" ? "channels" : "measurements").EnumerateArray()) {
                 if (kind == "switch" && item.GetProperty("state").GetString() == "removed") { lines.Add("Channel " + item.GetProperty("number") + ": removed; number reserved."); continue; }

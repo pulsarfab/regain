@@ -177,6 +177,100 @@ async fn setup_inspection_reuses_native_property_maps_and_marks_simulation() {
         hub.shutdown().await.unwrap();
     }
 }
+
+#[tokio::test]
+async fn runtime_native_focuser_proxies_keep_stable_numbers_and_one_simulated_worker() {
+    use regain_hub::{
+        config::{DeviceType, HubConfig, OutputConfig, VirtualDevice},
+        runtime::HubRuntime,
+    };
+    let Some(native) = runtime() else {
+        return;
+    };
+    let mut config = HubConfig::empty();
+    config
+        .sources
+        .push(self::config(NativeDevice::Fc3, "00:00:00:00:00:03"));
+    let source_id = config.sources[0].id;
+    for number in [4, 7] {
+        config.outputs.push(OutputConfig {
+            id: Uuid::new_v4(),
+            number,
+            label: format!("Simulated focuser {number}"),
+            device: VirtualDevice::Proxy {
+                source: source_id,
+                device_type: DeviceType::Focuser,
+            },
+        });
+    }
+    let runtime = HubRuntime::build(
+        config.clone(),
+        &native,
+        &regain_hub::factory::NoCredentials,
+        Arc::new(MonotonicClock::default()),
+    )
+    .unwrap();
+    assert_eq!(
+        runtime
+            .outputs()
+            .iter()
+            .map(|output| output.number)
+            .collect::<Vec<_>>(),
+        vec![4, 7]
+    );
+    assert!(runtime.outputs().iter().all(|output| output.simulated));
+    let first = runtime.client();
+    let second = runtime.client();
+    first.connect(config.outputs[0].id).await.unwrap();
+    second.connect(config.outputs[1].id).await.unwrap();
+    assert_eq!(runtime.source_snapshot(source_id).unwrap().lease_count, 2);
+    let connection = first.connection(config.outputs[0].id).unwrap();
+    let initial = connection.focuser().unwrap().position().await.unwrap();
+    connection
+        .focuser()
+        .unwrap()
+        .move_to(initial + 10)
+        .await
+        .unwrap();
+    drop(connection);
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while second
+            .connection(config.outputs[1].id)
+            .unwrap()
+            .focuser()
+            .unwrap()
+            .is_moving()
+            .await
+            .unwrap()
+        {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(
+        second
+            .connection(config.outputs[1].id)
+            .unwrap()
+            .focuser()
+            .unwrap()
+            .position()
+            .await
+            .unwrap(),
+        initial + 10
+    );
+    first.close();
+    assert!(
+        second
+            .connection(config.outputs[1].id)
+            .unwrap()
+            .focuser()
+            .unwrap()
+            .connected()
+    );
+    second.close();
+    runtime.shutdown().await.unwrap();
+}
 #[test]
 fn construction_does_no_io_and_cameras_require_their_supervisor() {
     let runtime = NativeRuntime {
@@ -237,7 +331,10 @@ async fn all_native_accessories_verify_identity_map_samples_and_validate_motion(
         let initial = backend.sample().await.unwrap();
         assert!(!initial.values.is_empty(), "{device:?}");
         assert!(
-            initial.errors.keys().all(|key| key == "temperature"),
+            initial
+                .errors
+                .keys()
+                .all(|key| key == "temperature" || key == "stepsize"),
             "{device:?}: {:?}",
             initial.errors
         );

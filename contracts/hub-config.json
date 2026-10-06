@@ -5,6 +5,62 @@
   "outputDiagnostics": {
     "countsSafetyObservations": false,
     "deadlineSeconds": 5,
+    "focuserProperties": [
+      {
+        "exclusiveMinimum": null,
+        "minimum": null,
+        "property": "absolute",
+        "valueType": "boolean"
+      },
+      {
+        "exclusiveMinimum": null,
+        "minimum": 1,
+        "property": "maxStep",
+        "valueType": "integer"
+      },
+      {
+        "exclusiveMinimum": null,
+        "minimum": 1,
+        "property": "maxIncrement",
+        "valueType": "integer"
+      },
+      {
+        "exclusiveMinimum": null,
+        "minimum": null,
+        "property": "tempCompAvailable",
+        "valueType": "boolean"
+      },
+      {
+        "exclusiveMinimum": null,
+        "minimum": 0,
+        "property": "position",
+        "valueType": "integer"
+      },
+      {
+        "exclusiveMinimum": null,
+        "minimum": null,
+        "property": "isMoving",
+        "valueType": "boolean"
+      },
+      {
+        "exclusiveMinimum": null,
+        "minimum": null,
+        "property": "tempComp",
+        "valueType": "boolean"
+      },
+      {
+        "exclusiveMinimum": null,
+        "minimum": null,
+        "property": "temperature",
+        "valueType": "number"
+      },
+      {
+        "exclusiveMinimum": 0,
+        "minimum": null,
+        "property": "stepSize",
+        "valueType": "number"
+      }
+    ],
     "opensSource": false,
     "parameters": {
       "limit": {
@@ -17,7 +73,7 @@
       },
       "start": {
         "default": 0,
-        "description": "Saved membership, channel slot or weather metric index.",
+        "description": "Saved membership, channel slot, weather metric or typed property index.",
         "label": "First output item",
         "maximum": 1024,
         "minimum": 0,
@@ -116,6 +172,30 @@
                 "measurements"
               ],
               "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "health": {
+                  "$ref": "#/$defs/SourceHealth"
+                },
+                "kind": {
+                  "const": "focuser",
+                  "type": "string"
+                },
+                "properties": {
+                  "items": {
+                    "$ref": "#/$defs/FocuserProperty"
+                  },
+                  "type": "array"
+                }
+              },
+              "required": [
+                "kind",
+                "health",
+                "properties"
+              ],
+              "type": "object"
             }
           ]
         },
@@ -132,6 +212,131 @@
             "unavailable"
           ],
           "type": "string"
+        },
+        "FocuserProperty": {
+          "additionalProperties": false,
+          "properties": {
+            "property": {
+              "$ref": "#/$defs/FocuserProperty2"
+            },
+            "sample": {
+              "$ref": "#/$defs/Reading3"
+            }
+          },
+          "required": [
+            "property",
+            "sample"
+          ],
+          "type": "object"
+        },
+        "FocuserProperty2": {
+          "enum": [
+            "absolute",
+            "maxStep",
+            "maxIncrement",
+            "tempCompAvailable",
+            "position",
+            "isMoving",
+            "tempComp",
+            "temperature",
+            "stepSize"
+          ],
+          "type": "string"
+        },
+        "FocuserSample": {
+          "additionalProperties": false,
+          "properties": {
+            "ageSeconds": {
+              "format": "double",
+              "type": "number"
+            },
+            "generation": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "revision": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "sequence": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "source": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/FocuserValue"
+            }
+          },
+          "required": [
+            "value",
+            "ageSeconds",
+            "source",
+            "generation",
+            "sequence",
+            "revision"
+          ],
+          "type": "object"
+        },
+        "FocuserValue": {
+          "oneOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "type": {
+                  "const": "boolean",
+                  "type": "string"
+                },
+                "value": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "type",
+                "value"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "type": {
+                  "const": "integer",
+                  "type": "string"
+                },
+                "value": {
+                  "format": "int32",
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "type",
+                "value"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "type": {
+                  "const": "number",
+                  "type": "string"
+                },
+                "value": {
+                  "format": "double",
+                  "type": "number"
+                }
+              },
+              "required": [
+                "type",
+                "value"
+              ],
+              "type": "object"
+            }
+          ]
         },
         "Measurement": {
           "additionalProperties": false,
@@ -328,6 +533,44 @@
               "properties": {
                 "reading": {
                   "$ref": "#/$defs/WeatherReading"
+                },
+                "state": {
+                  "const": "available",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "state",
+                "reading"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "error": {
+                  "$ref": "#/$defs/SourceError"
+                },
+                "state": {
+                  "const": "unavailable",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "state",
+                "error"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "Reading3": {
+          "oneOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "reading": {
+                  "$ref": "#/$defs/FocuserSample"
                 },
                 "state": {
                   "const": "available",

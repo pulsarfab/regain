@@ -133,6 +133,21 @@ impl NativeAccessoryBackend {
                 );
             }
         }
+        if self.device_type() == DeviceType::Focuser {
+            for (member, value) in [
+                ("absolute", true),
+                ("tempcompavailable", false),
+                ("tempcomp", false),
+            ] {
+                batch.values.insert(member.into(), json!(value));
+            }
+            if self.device == NativeDevice::Eta {
+                batch.values.insert("stepsize".into(), json!(1.0));
+                batch.errors.insert("temperature".into(), unsupported());
+            } else {
+                batch.errors.insert("stepsize".into(), unsupported());
+            }
+        }
         Ok(batch)
     }
 }

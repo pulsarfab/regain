@@ -22,6 +22,7 @@ struct Device {
     pending: AtomicBool,
     hang_read: Mutex<Option<String>>,
     reads: AtomicUsize,
+    polls: AtomicUsize,
     connects: AtomicUsize,
     disconnects: AtomicUsize,
     uncertain: AtomicBool,
@@ -46,6 +47,7 @@ impl Device {
             pending: AtomicBool::new(false),
             hang_read: Mutex::default(),
             reads: AtomicUsize::new(0),
+            polls: AtomicUsize::new(0),
             connects: AtomicUsize::new(0),
             disconnects: AtomicUsize::new(0),
             uncertain: AtomicBool::new(false),
@@ -119,7 +121,10 @@ impl Backend for Mock {
         })
     }
     fn poll(&mut self) -> BackendFuture<'_, Values> {
-        Box::pin(async { Ok(Values::new()) })
+        Box::pin(async {
+            self.0.polls.fetch_add(1, SeqCst);
+            Ok(self.0.values.lock().unwrap().clone())
+        })
     }
     fn reset(&mut self) {}
 }
@@ -611,7 +616,17 @@ async fn actual_alpaca_transport_preserves_shared_connection_command_parameters_
         config.id,
         Uuid::new_v4(),
         config.polling.clone(),
-        Box::new(AlpacaBackend::new(&config, Vec::new(), None).unwrap()),
+        Box::new(
+            AlpacaBackend::new(
+                &config,
+                regain_hub::focuser::FocuserProperty::ALL
+                    .into_iter()
+                    .map(|property| property.sample_request())
+                    .collect(),
+                None,
+            )
+            .unwrap(),
+        ),
         Arc::new(MonotonicClock::default()),
     )
     .unwrap();
@@ -619,6 +634,8 @@ async fn actual_alpaca_transport_preserves_shared_connection_command_parameters_
     let first = controller.connect().await.unwrap();
     let second = controller.connect().await.unwrap();
     assert_eq!(first.generation(), second.generation());
+    wait_samples(&source).await;
+    assert!(source.snapshot().values["ismoving"].is_boolean());
     let error = first.step_size().await.unwrap_err();
     assert_eq!(error.kind, ErrorKind::Unsupported);
     assert_eq!(error.upstream_code, Some(1024));
@@ -666,4 +683,360 @@ async fn actual_alpaca_transport_preserves_shared_connection_command_parameters_
     source.shutdown().await.unwrap();
     server.abort();
     assert!(server.await.unwrap_err().is_cancelled());
+}
+
+fn runtime_setup(
+    device: &Arc<Device>,
+) -> (
+    regain_hub::config::HubConfig,
+    Arc<regain_hub::runtime::HubRuntime>,
+    Arc<SourceHandle>,
+) {
+    use regain_hub::{
+        config::{
+            DeviceType, HubConfig, NativeDevice, OutputConfig, SourceBackend, SourceConfig,
+            VirtualDevice,
+        },
+        runtime::HubRuntime,
+        source::SourceRegistry,
+    };
+    let mut config = HubConfig::empty();
+    let source_id = Uuid::new_v4();
+    config.sources.push(SourceConfig {
+        id: source_id,
+        label: "Injected focuser".into(),
+        polling: PollPolicy {
+            request_timeout_seconds: 0.1,
+            poll_seconds: 1.0,
+            ..PollPolicy::default()
+        },
+        backend: SourceBackend::Native {
+            device: NativeDevice::Fc3,
+            identity: "PRIVATE-TEST".into(),
+        },
+    });
+    for number in [4, 7] {
+        config.outputs.push(OutputConfig {
+            id: Uuid::new_v4(),
+            number,
+            label: format!("Focuser {number}"),
+            device: VirtualDevice::Proxy {
+                source: source_id,
+                device_type: DeviceType::Focuser,
+            },
+        });
+    }
+    let clock = Arc::new(MonotonicClock::default());
+    let registry = Arc::new(
+        SourceRegistry::build(&config, clock.clone(), |_| {
+            Ok(Box::new(Mock(device.clone())))
+        })
+        .unwrap(),
+    );
+    let source = registry.get(source_id).unwrap();
+    let runtime = HubRuntime::from_registry(config.clone(), registry, clock).unwrap();
+    (config, runtime, source)
+}
+async fn wait_samples(source: &SourceHandle) {
+    let mut status = source.status();
+    tokio::time::timeout(Duration::from_secs(3), async {
+        while {
+            let state = status.borrow_and_update();
+            !state.values.contains_key("position") || !state.values.contains_key("ismoving")
+        } {
+            status.changed().await.unwrap();
+        }
+    })
+    .await
+    .unwrap();
+}
+
+#[tokio::test(start_paused = true)]
+async fn runtime_diagnostics_are_inert_paged_and_preserve_typed_errors_and_sample_ages() {
+    use regain_hub::diagnostics::{Diagnostics, Reading};
+    let device = Device::new();
+    let (config, runtime, source) = runtime_setup(&device);
+    let output = config.outputs[0].id;
+    let inactive = runtime.output_status(output, 0, 4).unwrap();
+    assert_eq!(inactive.total, 9);
+    assert_eq!(inactive.next_start, Some(4));
+    assert_eq!(device.connects.load(SeqCst), 0);
+    assert_eq!(device.reads.load(SeqCst), 0);
+    assert_eq!(device.polls.load(SeqCst), 0);
+    assert_eq!(runtime.active_connections(), 0);
+    assert_eq!(source.snapshot().lease_count, 0);
+    let client = runtime.client();
+    client.connect(output).await.unwrap();
+    wait_samples(&source).await;
+    let before_reads = device.reads.load(SeqCst);
+    let before_polls = device.polls.load(SeqCst);
+    let first = runtime.output_status(output, 0, 4).unwrap();
+    let Diagnostics::Focuser { health, properties } = first.diagnostics else {
+        panic!("Expected focuser diagnostics")
+    };
+    assert_eq!(
+        health.generation,
+        client
+            .connection(output)
+            .unwrap()
+            .focuser()
+            .unwrap()
+            .generation()
+    );
+    assert_eq!(properties.len(), 4);
+    assert!(
+        properties
+            .iter()
+            .all(|item| matches!(item.sample, Reading::Available { .. }))
+    );
+    tokio::time::advance(Duration::from_millis(100)).await;
+    let second = runtime.output_status(output, 4, 32).unwrap();
+    assert_eq!(second.next_start, None);
+    let Diagnostics::Focuser { properties, .. } = second.diagnostics else {
+        panic!()
+    };
+    let Reading::Available { reading } = &properties[0].sample else {
+        panic!()
+    };
+    assert!(reading.age_seconds >= 0.1);
+    assert_eq!(device.reads.load(SeqCst), before_reads);
+    assert_eq!(device.polls.load(SeqCst), before_polls);
+    assert_eq!(source.snapshot().lease_count, 1);
+    assert!(runtime.output_status(output, 10, 1).is_err());
+    device.set("ismoving", json!(1));
+    source.refresh(Uuid::nil()).await.unwrap_err();
+    tokio::time::advance(Duration::from_secs(1)).await;
+    settle().await;
+    let Diagnostics::Focuser { properties, .. } =
+        runtime.output_status(output, 5, 1).unwrap().diagnostics
+    else {
+        panic!()
+    };
+    assert!(matches!(properties[0].sample, Reading::Unavailable { .. }));
+    client.close();
+    runtime.shutdown().await.unwrap();
+}
+
+#[tokio::test(start_paused = true)]
+async fn runtime_pending_connect_cancellation_and_generation_replacement_keep_admission_honest() {
+    let device = Device::new();
+    device.pending.store(true, SeqCst);
+    let (config, runtime, source) = runtime_setup(&device);
+    let client = runtime.client();
+    let output = config.outputs[0].id;
+    let pending = tokio::spawn({
+        let client = client.clone();
+        async move { client.connect(output).await }
+    });
+    settle().await;
+    assert_eq!(runtime.active_connections(), 1);
+    assert!(client.connecting(output).unwrap());
+    pending.abort();
+    assert!(pending.await.unwrap_err().is_cancelled());
+    settle().await;
+    assert_eq!(runtime.active_connections(), 0);
+    assert_eq!(source.snapshot().lease_count, 0);
+    device.pending.store(false, SeqCst);
+    client.connect(output).await.unwrap();
+    let connection = client.connection(output).unwrap();
+    let old_generation = connection.focuser().unwrap().generation();
+    *device.hang_read.lock().unwrap() = Some("maxincrement".into());
+    assert_eq!(
+        connection
+            .focuser()
+            .unwrap()
+            .move_to(100)
+            .await
+            .unwrap_err()
+            .kind,
+        ErrorKind::Transient
+    );
+    assert!(!connection.focuser().unwrap().connected());
+    assert_ne!(source.snapshot().generation, old_generation);
+    *device.hang_read.lock().unwrap() = None;
+    drop(connection);
+    client.disconnect(output);
+    settle().await;
+    client.connect(output).await.unwrap();
+    client
+        .connection(output)
+        .unwrap()
+        .focuser()
+        .unwrap()
+        .move_to(100)
+        .await
+        .unwrap();
+    assert_eq!(device.writes.lock().unwrap().len(), 1);
+    client.close();
+    runtime.shutdown().await.unwrap();
+}
+
+#[tokio::test(start_paused = true)]
+async fn actual_ipc_focuser_dispatch_preserves_class_ownership_eof_and_uncertainty() {
+    use regain_hub::ipc::{Limits, read_frame, serve_stream};
+    use tokio::io::{AsyncWriteExt, DuplexStream};
+    async fn call(stream: &mut DuplexStream, id: u64, command: Value) -> Value {
+        let bytes = serde_json::to_vec(&json!({"version":1,"id":id,"command":command})).unwrap();
+        stream
+            .write_all(&(bytes.len() as u32).to_le_bytes())
+            .await
+            .unwrap();
+        stream.write_all(&bytes).await.unwrap();
+        serde_json::from_slice(
+            &read_frame(stream, Duration::from_secs(2))
+                .await
+                .unwrap()
+                .unwrap(),
+        )
+        .unwrap()
+    }
+    let device = Device::new();
+    let (config, runtime, source) = runtime_setup(&device);
+    let output = config.outputs[0].id;
+    let sibling = runtime.client();
+    sibling.connect(config.outputs[1].id).await.unwrap();
+    let (mut stream, server) = tokio::io::duplex(1024 * 1024);
+    let server = tokio::spawn(serve_stream(server, runtime.clone(), Limits::default()));
+    assert!(
+        call(&mut stream, 1, json!({"op":"hello"}))
+            .await
+            .get("result")
+            .is_some()
+    );
+    assert!(
+        call(&mut stream, 2, json!({"op":"connect","output":output})).await["result"].is_null()
+    );
+    wait_samples(&source).await;
+    assert_eq!(runtime.active_connections(), 2);
+    let get = |property| json!({"op":"get","output":output,"property":property});
+    assert_eq!(
+        call(
+            &mut stream,
+            3,
+            get(json!({"member":"focuser","property":"position"}))
+        )
+        .await["result"],
+        50
+    );
+    assert_eq!(
+        call(&mut stream, 4, get(json!({"member":"isSafe"}))).await["error"]["code"],
+        "unsupported"
+    );
+    let before_reads = device.reads.load(SeqCst);
+    let state = call(&mut stream, 5, get(json!({"member":"deviceState"}))).await;
+    assert_eq!(state["result"].as_array().unwrap().len(), 3);
+    assert_eq!(device.reads.load(SeqCst), before_reads);
+    let put = |property| json!({"op":"put","output":output,"property":property});
+    assert_eq!(
+        call(
+            &mut stream,
+            6,
+            put(json!({"member":"moveFocuser","position":1001}))
+        )
+        .await["error"]["code"],
+        "invalidValue"
+    );
+    assert!(device.writes.lock().unwrap().is_empty());
+    assert!(
+        call(
+            &mut stream,
+            7,
+            put(json!({"member":"moveFocuser","position":123}))
+        )
+        .await
+        .get("result")
+        .is_some()
+    );
+    assert!(
+        sibling
+            .connection(config.outputs[1].id)
+            .unwrap()
+            .focuser()
+            .unwrap()
+            .is_moving()
+            .await
+            .unwrap()
+    );
+    assert!(
+        call(&mut stream, 8, put(json!({"member":"haltFocuser"})))
+            .await
+            .get("result")
+            .is_some()
+    );
+    device.uncertain.store(true, SeqCst);
+    assert_eq!(
+        call(
+            &mut stream,
+            9,
+            put(json!({"member":"moveFocuser","position":200}))
+        )
+        .await["error"]["code"],
+        "uncertain"
+    );
+    assert_eq!(
+        call(&mut stream, 10, get(json!({"member":"connected"}))).await["result"],
+        false
+    );
+    assert_eq!(
+        call(&mut stream, 11, put(json!({"member":"haltFocuser"}))).await["error"]["code"],
+        "uncertain"
+    );
+    drop(stream);
+    assert!(server.await.unwrap().is_ok());
+    settle().await;
+    assert_eq!(source.snapshot().lease_count, 1);
+    assert_eq!(runtime.active_connections(), 1);
+    assert!(source.snapshot().write_uncertain);
+    assert_eq!(device.writes.lock().unwrap().len(), 3);
+    sibling.close();
+    runtime.shutdown().await.unwrap();
+}
+
+#[test]
+fn typed_ipc_rejects_extra_keys_wrong_types_and_out_of_range_positions() {
+    for property in [
+        json!({"member":"focuser","property":"position","extra":1}),
+        json!({"member":"focuser","property":"commandBlind"}),
+    ] {
+        assert!(serde_json::from_value::<regain_hub::ipc::Get>(property).is_err());
+    }
+    for property in [
+        json!({"member":"moveFocuser","position":2147483648_u64}),
+        json!({"member":"moveFocuser","position":1.5}),
+        json!({"member":"haltFocuser","position":1}),
+        json!({"member":"focuserTempComp","enabled":"true"}),
+    ] {
+        assert!(serde_json::from_value::<regain_hub::ipc::Put>(property).is_err());
+    }
+}
+
+#[test]
+fn focuser_poll_plans_deduplicate_properties_across_multiple_outputs_without_io() {
+    let device = Device::new();
+    // Registry construction requires a runtime, so use a local executor solely
+    // for this preparation check; no source lease or worker is acquired.
+    let executor = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    executor.block_on(async {
+        let (config, runtime, _) = runtime_setup(&device);
+        let before = config.clone();
+        let plans = regain_hub::factory::source_plans(&config).unwrap();
+        let samples = &plans[&config.sources[0].id].samples;
+        assert_eq!(samples.len(), 9);
+        assert_eq!(config, before);
+        for sample in samples {
+            assert!(sample.parameters.is_empty());
+            assert!(sample.sensor_age.is_none());
+            let is_boolean = ["absolute", "ismoving", "tempcomp", "tempcompavailable"]
+                .contains(&sample.member.as_str());
+            assert_eq!(
+                matches!(sample.value_type, regain_hub::sampling::SampleType::Boolean),
+                is_boolean
+            );
+        }
+        assert_eq!(device.connects.load(SeqCst), 0);
+        runtime.shutdown().await.unwrap();
+    });
 }

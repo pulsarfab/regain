@@ -152,20 +152,49 @@ pub enum Get {
     IsSafe {},
     SafetyStatus {},
     MaxSwitch {},
-    GetSwitch { id: u32 },
-    GetSwitchValue { id: u32 },
-    GetSwitchName { id: u32 },
-    GetSwitchDescription { id: u32 },
-    CanWrite { id: u32 },
-    CanAsync { id: u32 },
-    StateChangeComplete { id: u32 },
-    MinSwitchValue { id: u32 },
-    MaxSwitchValue { id: u32 },
-    SwitchStep { id: u32 },
-    Measurement { metric: WeatherMetric },
-    TimeSinceLastUpdate { sensor: String },
-    SensorDescription { sensor: String },
+    GetSwitch {
+        id: u32,
+    },
+    GetSwitchValue {
+        id: u32,
+    },
+    GetSwitchName {
+        id: u32,
+    },
+    GetSwitchDescription {
+        id: u32,
+    },
+    CanWrite {
+        id: u32,
+    },
+    CanAsync {
+        id: u32,
+    },
+    StateChangeComplete {
+        id: u32,
+    },
+    MinSwitchValue {
+        id: u32,
+    },
+    MaxSwitchValue {
+        id: u32,
+    },
+    SwitchStep {
+        id: u32,
+    },
+    Measurement {
+        metric: WeatherMetric,
+    },
+    TimeSinceLastUpdate {
+        sensor: String,
+    },
+    SensorDescription {
+        sensor: String,
+    },
     AveragePeriod {},
+    Focuser {
+        property: crate::focuser::FocuserProperty,
+    },
 }
 #[derive(Deserialize, Serialize)]
 #[serde(tag = "member", rename_all = "camelCase", deny_unknown_fields)]
@@ -177,6 +206,9 @@ pub enum Put {
     SetAsync { id: u32, state: bool },
     SetAsyncValue { id: u32, value: f64 },
     CancelAsync { id: u32 },
+    MoveFocuser { position: i32 },
+    HaltFocuser {},
+    FocuserTempComp { enabled: bool },
 }
 
 #[derive(Serialize)]
@@ -385,7 +417,7 @@ where
                         "hostInstance":service.host_id(), "configurationRevision":service.configuration().revision, "clientId":client.id(),
                         "maxFrameBytes":MAX_FRAME_BYTES, "maxInFlight":MAX_IN_FLIGHT,
                         "operations":operations,
-                        "capabilities":["switchOutputs","safetyOutputs","weatherOutputs","weatherSensorDescription","scalarDeviceState","asyncOutputConnection","switchAsyncContract"]});
+                        "capabilities":["switchOutputs","safetyOutputs","weatherOutputs","focuserOutputs","weatherSensorDescription","scalarDeviceState","asyncOutputConnection","switchAsyncContract"]});
                     write_response(&mut writer, Response::new(request.id, Ok(hello)), limits.frame_timeout).await?;
                     continue;
                 }
@@ -561,7 +593,11 @@ async fn dispatch(
         Command::Get {
             output,
             property: Get::Connected {},
-        } => json!(client.connection(output).is_ok()),
+        } => json!(client.connection(output).is_ok_and(|connection| {
+            connection
+                .focuser()
+                .map_or(true, |focuser| focuser.connected())
+        })),
         Command::Get {
             output,
             property: Get::Connecting {},

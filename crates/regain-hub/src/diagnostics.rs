@@ -19,9 +19,15 @@ pub fn description() -> Value {
     json!({"purpose":"cachedDiagnostics","opensSource":false,"writesEquipment":false,
     "countsSafetyObservations":false,"requiresRevision":true,"deadlineSeconds":5,
     "parameters":{
-        "start":{"type":"integer","label":"First output item","description":"Saved membership, channel slot or weather metric index.","default":0,"minimum":0,"maximum":1024},
+        "start":{"type":"integer","label":"First output item","description":"Saved membership, channel slot, weather metric or typed property index.","default":0,"minimum":0,"maximum":1024},
         "limit":{"type":"integer","label":"Items per page","description":"Maximum cached output items returned in one request.","default":16,"minimum":1,"maximum":MAX_PAGE}
-    }, "responseSchema": schemars::generate::SchemaSettings::default()
+    }, "focuserProperties": crate::focuser::FocuserProperty::ALL.iter().map(|property|
+        json!({"property":property,"valueType":property.value_type(),
+            "minimum": match property { crate::focuser::FocuserProperty::Position => Some(0),
+                crate::focuser::FocuserProperty::MaxStep | crate::focuser::FocuserProperty::MaxIncrement => Some(1), _ => None },
+            "exclusiveMinimum": if *property == crate::focuser::FocuserProperty::StepSize { Some(0) } else { None }
+        })).collect::<Vec<_>>(),
+    "responseSchema": schemars::generate::SchemaSettings::default()
         .for_serialize().into_generator().into_root_schema_for::<OutputStatus>()})
 }
 
@@ -70,6 +76,17 @@ pub enum Diagnostics {
         average_period_hours: f64,
         measurements: Vec<WeatherMeasurement>,
     },
+    Focuser {
+        health: SourceHealth,
+        properties: Vec<FocuserProperty>,
+    },
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct FocuserProperty {
+    pub property: crate::focuser::FocuserProperty,
+    pub sample: Reading<crate::focuser::FocuserSample>,
 }
 
 /// Selected fields only: no backend configuration, connection strings, cached

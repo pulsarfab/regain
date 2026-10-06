@@ -14,7 +14,7 @@ struct StateValue {
 impl OutputConnection {
     pub(crate) async fn get(&self, property: Get) -> Result<Value, SourceError> {
         Ok(match property {
-            Get::Connected {} => json!(true),
+            Get::Connected {} => json!(self.focuser().map_or(true, |focuser| focuser.connected())),
             Get::Connecting {} => json!(false),
             Get::DeviceState {} => {
                 let mut values = Vec::new();
@@ -33,6 +33,10 @@ impl OutputConnection {
                             name: format!("GetSwitchValue{number}"),
                             value: json!(value),
                         });
+                    }
+                } else if let Ok(focuser) = self.focuser() {
+                    for (name, value) in focuser.device_state(self.now()) {
+                        values.push(StateValue { name, value });
                     }
                 } else {
                     for (metric, value) in self.weather()?.device_state() {
@@ -98,6 +102,7 @@ impl OutputConnection {
             Get::SensorDescription { sensor } => {
                 json!(self.weather()?.sensor_description(&sensor)?)
             }
+            Get::Focuser { property } => self.focuser()?.property(property).await?,
         })
     }
     pub(crate) async fn put(&self, property: Put) -> Result<(), SourceError> {
@@ -118,6 +123,9 @@ impl OutputConnection {
                 // Mandatory method. CanAsync is false, so no asynchronous
                 // switch change can have been started and nothing is cancelled.
             }
+            Put::MoveFocuser { position } => self.focuser()?.move_to(position).await?,
+            Put::HaltFocuser {} => self.focuser()?.halt().await?,
+            Put::FocuserTempComp { enabled } => self.focuser()?.set_temp_comp(enabled).await?,
         }
         Ok(())
     }

@@ -2142,3 +2142,44 @@ imports. Conformance, hardware acceptance and the full original milestones remai
 required. Empty-profile push 37479602454 passes all eight CI jobs. Safety fixture
 correction 37480604743/37480593803 each pass seven jobs with Windows build/package
 still live at this checkpoint; do not call those runs fully green yet.
+
+### Focuser runtime, private IPC and observed typed diagnostics
+
+Runtime admission now accepts native/Alpaca focuser proxies, retaining independent
+output sessions over one source actor. Unsupported proxy classes and unsupported
+focuser source adapters fail explicitly. Pending sessions participate in apply
+admission; cancelled connection/EOF releases only that client's leases. Private
+IPC has typed property enums and strict command fields. It preserves the same
+control/generation checks as direct controller calls and rejects class mismatch.
+After source reset, Connected is false for the old session and commands cannot
+adopt its replacement; explicit disconnect/connect is required.
+
+Reviewed cache generation races: DeviceState rechecks the captured snapshot's
+generation and projects only known IsMoving/Position/Temperature observations.
+Neither DeviceState nor paged diagnostics starts I/O. Typed samples retain local
+ages and source identity/generation/revision/sequence; relative focusers cannot
+invent an absolute cached coordinate. Poll plans deduplicate all nine properties,
+using strict boolean requests and numeric requests with typed decoding. Native
+workers provide their known constants and explicit optional-property errors.
+Diagnostics use generated schema and host-described order/types/ranges. Both web
+and native readers reject wrong property/source/generation/sequence/type/range,
+negative ages and unexpected fields. Their summaries/exports retain observation
+ages and uncertainty without permitting a command.
+
+Full hub/Alpaca suites, strict Clippy, Rust 1.89 and generated-contract freshness
+pass. The final focuser suite has 18 cases and the native suite nine, including
+actual HTTP incremental polling, private duplex IPC and a production-worker
+runtime in explicit simulation. Node and four independent schema tests pass.
+All 173 warnings-denied NINA checks pass; the final typed fixture refinement
+also passes independently. Warning-denied net48 build and real x86/x64 client
+fixtures pass. Logs are `artifacts/hub-focuser-runtime-*.log`. Initial concurrent
+Rust/.NET checks hit Windows executable replacement denial; serialized checks
+pass. The HTTP fixture now waits for both required partial samples instead of
+assuming Position arrival means IsMoving has also arrived. Deadlines unchanged.
+
+Both safety-correction runs 37480604743/37480593803 pass all eight CI jobs.
+Focuser-controller runs 37483351644/37483341547 each pass seven with Windows build/
+packaging still active. New CI remains required. Setup does not advertise general
+proxy support, and the existing Alpaca catalog explicitly rejects classes whose
+routes are not implemented. Alpaca/NINA/ASCOM focuser publication, imports,
+conformance and every original remaining milestone remain required.

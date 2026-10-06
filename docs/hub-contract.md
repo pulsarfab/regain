@@ -1296,5 +1296,22 @@ Native EAF, FocusCube3 and ETA reuse their production workers. All provide
 absolute coordinates with no automatic temperature compensation. ETA reports
 one-micrometre coordinates; EAF/FC3 optical step size remains unsupported. ETA's
 unsupported Halt remains unsupported. No hardware or simulation fallback is
-introduced. This controller is not yet exposed as a hub output: runtime/config
-admission, IPC, Alpaca/NINA/ASCOM publication and conformance remain required.
+introduced. The runtime now admits native/Alpaca focuser proxies and exposes them
+through private IPC; COM, virtual and dedicated simulated focuser inputs remain
+pending. Hello advertises `focuserOutputs`. Typed Get uses
+`{"member":"focuser","property":"isMoving"}` (or another described property).
+Typed Put uses `moveFocuser` with integer `position`, `haltFocuser` with no arguments,
+or `focuserTempComp` with boolean `enabled`. Unknown fields, types and enum values
+are rejected. Connected becomes false after the session generation is invalidated;
+explicit disconnect/connect is needed to adopt another generation.
+
+Focuser polling deduplicates nine typed properties across outputs. Diagnostics
+page them in the host's described order, with tagged values, per-property errors,
+source/generation/revision/sequence and observed ages. Native/web readers enforce
+that contract and its identities, types and ranges. DeviceState reads cached
+IsMoving, Position and Temperature without I/O and omits unavailable readings.
+No single UTC measurement time is invented. Neither diagnostic reads nor
+DeviceState accelerate polling or authorize motion. Setup's general proxy
+capability remains unavailable until frontend publication is complete; the
+current Alpaca publisher explicitly rejects unsupported output classes. Alpaca,
+native NINA/ASCOM publication and conformance remain required.

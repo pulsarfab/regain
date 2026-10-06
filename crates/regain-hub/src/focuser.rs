@@ -8,6 +8,161 @@ use serde_json::{Value, json};
 use std::{sync::Arc, time::Duration};
 use uuid::Uuid;
 
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "camelCase")]
+pub enum FocuserProperty {
+    Absolute,
+    MaxStep,
+    MaxIncrement,
+    TempCompAvailable,
+    Position,
+    IsMoving,
+    TempComp,
+    Temperature,
+    StepSize,
+}
+impl FocuserProperty {
+    pub const ALL: [Self; 9] = [
+        Self::Absolute,
+        Self::MaxStep,
+        Self::MaxIncrement,
+        Self::TempCompAvailable,
+        Self::Position,
+        Self::IsMoving,
+        Self::TempComp,
+        Self::Temperature,
+        Self::StepSize,
+    ];
+    pub fn member(self) -> &'static str {
+        match self {
+            Self::Absolute => "absolute",
+            Self::MaxStep => "maxstep",
+            Self::MaxIncrement => "maxincrement",
+            Self::TempCompAvailable => "tempcompavailable",
+            Self::Position => "position",
+            Self::IsMoving => "ismoving",
+            Self::TempComp => "tempcomp",
+            Self::Temperature => "temperature",
+            Self::StepSize => "stepsize",
+        }
+    }
+    pub fn value_type(self) -> &'static str {
+        match self {
+            Self::Absolute | Self::TempCompAvailable | Self::IsMoving | Self::TempComp => "boolean",
+            Self::MaxStep | Self::MaxIncrement | Self::Position => "integer",
+            _ => "number",
+        }
+    }
+    pub fn sample_request(self) -> crate::sampling::SampleRequest {
+        crate::sampling::SampleRequest {
+            key: self.member().into(),
+            member: self.member().into(),
+            parameters: Values::new(),
+            value_type: if self.value_type() == "boolean" {
+                crate::sampling::SampleType::Boolean
+            } else {
+                crate::sampling::SampleType::Number
+            },
+            sensor_age: None,
+        }
+    }
+    pub fn decode(self, value: &Value) -> Result<FocuserValue, SourceError> {
+        let decoded = match self.value_type() {
+            "boolean" => value.as_bool().map(|value| FocuserValue::Boolean { value }),
+            "integer" => value
+                .as_i64()
+                .and_then(|value| i32::try_from(value).ok())
+                .filter(|value| {
+                    if self == Self::Position {
+                        *value >= 0
+                    } else {
+                        *value > 0
+                    }
+                })
+                .map(|value| FocuserValue::Integer { value }),
+            _ => value
+                .as_f64()
+                .filter(|value| value.is_finite() && (self != Self::StepSize || *value > 0.0))
+                .map(|value| FocuserValue::Number { value }),
+        };
+        decoded.ok_or_else(bad_reading)
+    }
+}
+#[derive(Debug, serde::Serialize, schemars::JsonSchema)]
+#[serde(tag = "type", rename_all = "camelCase", deny_unknown_fields)]
+pub enum FocuserValue {
+    Boolean { value: bool },
+    Integer { value: i32 },
+    Number { value: f64 },
+}
+
+#[derive(Debug, serde::Serialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct FocuserSample {
+    pub value: FocuserValue,
+    pub age_seconds: f64,
+    pub source: Uuid,
+    pub generation: Uuid,
+    pub sequence: u64,
+    pub revision: Uuid,
+}
+pub(crate) fn cached_property(
+    state: &crate::source::SourceSnapshot,
+    property: FocuserProperty,
+    now: Duration,
+) -> Result<FocuserSample, SourceError> {
+    if !state.transport_connected {
+        return Err(disconnected());
+    }
+    if let Some(error) = &state.error {
+        return Err(error.clone());
+    }
+    let key = property.member();
+    if property == FocuserProperty::Position
+        && state.values.get("absolute").and_then(Value::as_bool) == Some(false)
+    {
+        return Err(SourceError::new(
+            ErrorKind::Unsupported,
+            "Relative focusers do not report absolute position",
+        ));
+    }
+    if let Some(error) = state.sample_errors.get(key) {
+        return Err(error.clone());
+    }
+    let value = property.decode(
+        state
+            .values
+            .get(key)
+            .ok_or_else(|| unavailable("No focuser sample has been received"))?,
+    )?;
+    let sampled = state
+        .sample_started_seconds
+        .get(key)
+        .copied()
+        .or(state.sampled_at_seconds)
+        .ok_or_else(|| unavailable("No focuser sample has been received"))?;
+    let elapsed = now.as_secs_f64() - sampled;
+    let upstream_age = state.sample_ages_seconds.get(key).copied().unwrap_or(0.0);
+    let age_seconds = elapsed + upstream_age;
+    if elapsed < 0.0 || upstream_age < 0.0 || !age_seconds.is_finite() {
+        return Err(bad_reading());
+    }
+    Ok(FocuserSample {
+        value,
+        age_seconds,
+        source: state.source,
+        generation: state.generation,
+        sequence: state
+            .sample_sequences
+            .get(key)
+            .copied()
+            .unwrap_or(state.sequence),
+        revision: state.revision,
+    })
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct FocuserCapabilities {
     pub absolute: bool,
@@ -21,6 +176,9 @@ pub struct FocuserController {
     connection_timeout: Duration,
 }
 impl FocuserController {
+    pub(crate) fn source(&self) -> &Arc<SourceHandle> {
+        &self.source
+    }
     /// Construction performs no I/O. The runtime supplies the source's configured
     /// connection deadline after validating its device class.
     pub fn new(
@@ -76,6 +234,43 @@ pub struct FocuserSession {
     generation: Uuid,
 }
 impl FocuserSession {
+    pub async fn property(&self, property: FocuserProperty) -> Result<Value, SourceError> {
+        if property == FocuserProperty::Position {
+            return Ok(json!(self.position().await?));
+        }
+        let value = self.read(property.member()).await?;
+        property.decode(&value)?;
+        Ok(value)
+    }
+    pub fn connected(&self) -> bool {
+        self.check_generation().is_ok()
+    }
+    pub(crate) fn device_state(&self, now: Duration) -> Values {
+        if !self.connected() {
+            return Values::new();
+        }
+        let state = self.lease.source.snapshot();
+        if state.generation != self.generation {
+            return Values::new();
+        }
+        [
+            (FocuserProperty::IsMoving, "IsMoving"),
+            (FocuserProperty::Position, "Position"),
+            (FocuserProperty::Temperature, "Temperature"),
+        ]
+        .into_iter()
+        .filter_map(|(property, name)| {
+            cached_property(&state, property, now).ok().map(|sample| {
+                let value = match sample.value {
+                    FocuserValue::Boolean { value } => json!(value),
+                    FocuserValue::Integer { value } => json!(value),
+                    FocuserValue::Number { value } => json!(value),
+                };
+                (name.into(), value)
+            })
+        })
+        .collect()
+    }
     pub fn generation(&self) -> Uuid {
         self.generation
     }
