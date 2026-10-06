@@ -5,7 +5,7 @@ using Xunit;
 
 public sealed class HubRegistrationTests
 {
-    private sealed class Fixture : IDisposable
+    internal sealed class Fixture : IDisposable
     {
         internal readonly string Directory = Path.Combine(Path.GetTempPath(), "regain registration " + Guid.NewGuid().ToString("N"));
         private readonly string key = @"Software\PulsarFab\Regain\Tests\" + Guid.NewGuid().ToString("N");

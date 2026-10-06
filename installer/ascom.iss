@@ -52,6 +52,7 @@ Source: "{#Stage}\Regain.ASCOM.Register.exe*"; DestDir: "{tmp}\preflight"; Flags
 #include RegistryEntries
 
 [Icons]
+Name: "{group}\Hub outputs setup"; Filename: "{app}\Regain.ASCOM.Register.exe"; Parameters: "/hubsetup"
 Name: "{group}\ETA tilt and back-focus setup"; Filename: "{app}\Regain.Eta.ASCOM.exe"; Parameters: "/setup"
 Name: "{group}\Camera setup"; Filename: "{app}\Regain.ASCOM.Register.exe"
 Name: "{group}\CAA rotator setup"; Filename: "{app}\Regain.ASCOM.Register.exe"; Parameters: "/rotator"

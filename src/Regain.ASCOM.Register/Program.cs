@@ -9,6 +9,11 @@ internal static class Program
     {
         string logDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Regain", "ASCOM");
         try {
+            if (args.Length == 1 && args[0].Equals("/hubsetup", StringComparison.OrdinalIgnoreCase)) {
+                Regain.Hub.ASCOM.HubAscomManagerWindow.Show(Path.GetDirectoryName(typeof(Camera1).Assembly.Location)!,
+                    new Regain.Hub.HubSelectionStore(Regain.Rotator.RegainPaths.Profile("hub-frontends.json")));
+                return 0;
+            }
             if (args.Length > 0 && args[0].StartsWith("/hub", StringComparison.OrdinalIgnoreCase))
                 return HubRegistration.Run(args, Path.GetDirectoryName(typeof(Camera1).Assembly.Location)!);
             if (args.Length == 2 && args[0].Equals("/checkinuse", StringComparison.OrdinalIgnoreCase)) {

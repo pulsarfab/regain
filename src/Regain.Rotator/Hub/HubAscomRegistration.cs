@@ -60,16 +60,21 @@ public static class HubAscomRegistration
     }
 
     public static Guid[] RegisteredIds(RegistryKey root, string? directory = null)
+        => RegisteredOutputs(root, directory).Select(output => output.ClassId).ToArray();
+
+    public static HubRegisteredOutput[] RegisteredOutputs(RegistryKey root, string? directory = null)
     {
         using var inventory = root.OpenSubKey(Inventory);
         if (inventory is null) return [];
-        var result = new List<Guid>();
+        var result = new List<HubRegisteredOutput>();
         foreach (var name in inventory.GetSubKeyNames()) {
             var id = Guid.ParseExact(name, "B");
             using var key = inventory.OpenSubKey(name)!;
             var record = Record.Read(key);
             if (record.Id != id) throw new InvalidOperationException("Inventory key and output identity disagree");
-            if (directory is null || SamePath(record.Directory, FullPath(directory))) result.Add(id);
+            if (directory is null || SamePath(record.Directory, FullPath(directory)))
+                result.Add(new HubRegisteredOutput(id, record.Selection, record.Directory, record.Selections,
+                    record.Owner, record.Version, key.GetValue("Phase") as string ?? ""));
         }
         return result.ToArray();
     }
@@ -142,6 +147,7 @@ public static class HubAscomRegistration
         internal readonly string Directory = directory, Selections = selections, Owner = owner;
         internal readonly Version Version = build;
         private readonly HubSelection binding = binding.Copy();
+        internal HubSelection Selection => binding.Copy();
         private string Clsid => Id.ToString("B");
         private string ProgId => OutputIdentity.ProgId(binding);
         private string ClassKey => @"Software\Classes\CLSID\" + Clsid;

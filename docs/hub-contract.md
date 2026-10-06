@@ -1066,3 +1066,16 @@ across the operation. They do not capture SACL/audit metadata or provide a crash
 transaction. Private-tree tests prove these behaviors. Actual production helper
 publication/removal on the disposable runner, interactive setup, installer
 lifecycle and conformance remain separate acceptance gates.
+
+The existing setup executable's `/hubsetup` and Start menu entry open the shared
+themed ASCOM manager. Its initial load reads saved choices and both machine
+inventories; only explicit selector/editor actions attach to the host. Registration
+requests are immutable, bind the observed selection revision, and invoke the
+installed helper through same-account Windows elevation. UI blocks overlapping
+actions and requires reload after errors/unknown completion. A 60-second helper
+observation timeout never terminates or retries the edit. Orphan registrations
+remain removable; foreign owner/install/file/newer-version entries are disabled.
+Saved-choice removal is disabled while registry inventory still owns that choice.
+Installer in-use checks also include both private hub helpers and shared DLLs.
+The dynamic inventory is not yet wired into Inno's uninstall lifecycle; that is
+required before installation/removal acceptance can pass.

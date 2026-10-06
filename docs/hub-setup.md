@@ -134,3 +134,34 @@ No write is automatically replayed after an uncertain result.
 
 Production-host and NINA-interface tests cover these behaviors. Interactive NINA,
 conformance and real-device acceptance remain pending before release.
+
+## Native ASCOM hub setup (development)
+
+Open **Hub outputs setup** in the Regain ASCOM Start menu group, or run the
+installed `Regain.ASCOM.Register.exe /hubsetup`. The manager reads saved choices
+and machine registration inventory without attaching to the host or equipment.
+Choose a Switch, SafetyMonitor or ObservingConditions output using the same
+selector and configuration editor as native NINA. Loading outputs and editing
+configuration explicitly attach to the local host without equipment leases.
+
+Select a saved choice and **Register / refresh in ASCOM**. Windows requests
+administrator approval; use the same Windows account. Both ASCOM Chooser views
+receive the output, bound to this installation, selection file and user. Hub and
+output UUIDs determine identity, so changing a label preserves its CLSID/ProgID.
+Simulation remains visible in the Chooser name. Registering a choice does not
+connect equipment; the ASCOM client's explicit connection does that.
+
+Use **Remove ASCOM registration** before **Remove saved choice**. Registration
+removal leaves connected clients running and can remove an owned orphan after
+its selection file disappears. Entries belonging to another owner/install/file
+or newer version are protected. After a failure or unknown completion, **Reload
+inventory** and inspect `%LOCALAPPDATA%\Regain\ASCOM\registration.log` before
+another action. The manager never repeats an uncertain registry edit or kills
+its elevated helper. Inventory status describes records, not a live device test.
+
+![ASCOM hub registration manager during a private simulation test](images/hub-ascom-registration-simulation.png)
+
+This is an actual WPF render with private test registry roots and non-executable
+fixture paths; no installed hardware driver was activated. Production-helper CI,
+installer upgrade/uninstall lifecycle, interactive frontend acceptance and
+conformance remain required before this development feature is released.

@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net48</TargetFramework>
+    <UseWPF>true</UseWPF>
     <OutputType>WinExe</OutputType>
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
@@ -8,6 +9,7 @@
     <Prefer32Bit>false</Prefer32Bit>
     <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
   </PropertyGroup>
+  <ItemGroup><Using Include="System.IO" /></ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../Regain.ASCOM/Regain.ASCOM.csproj" />
   </ItemGroup>

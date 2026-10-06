@@ -38,7 +38,10 @@ internal static class InUseCheck
     {
         var files = new[] { "Regain.ASCOM.dll", "Regain.Rotator.dll", "regain-device.exe", "Regain.Pegasus.ASCOM.exe", "Regain.FocusCube.ASCOM.exe", "Regain.Ofp2.ASCOM.exe","Regain.Eta.ASCOM.exe", "regain-camera.exe", "regain-alpaca.exe", "regain-host.exe", "regain-direct.exe", "regain-caa.exe", "regain-accessories.exe", "regain-ofp2.exe", "regain-fc3.exe", "regain-eta.exe" }
             .SelectMany(name => new[] { name, name.Replace("Regain", "ZwoGain").Replace("regain", "zwogain") })
-            .Select(name => Path.Combine(Path.GetFullPath(directory), name)).Where(File.Exists).ToArray();
+            .Select(name => Path.Combine(Path.GetFullPath(directory), name))
+            .Concat(new[] { "x86", "x64" }.SelectMany(architecture => new[] { "Regain.Hub.ASCOM.exe", "Regain.Rotator.dll" }
+                .Select(name => Path.Combine(Path.GetFullPath(directory), "hub-ascom", architecture, name))))
+            .Where(File.Exists).ToArray();
         if (files.Length == 0) return Array.Empty<string>();
         int error = RmStartSession(out uint session, 0, new StringBuilder(33));
         if (error != 0) throw new Win32Exception(error);

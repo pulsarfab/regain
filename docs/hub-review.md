@@ -1587,3 +1587,38 @@ removal after deleting selections; its result is still pending new CI.
 Next: production fixture CI, themed registration manager, installer lifecycle,
 conformance and all original remaining plan gates. The backend/CLI alone does
 not complete milestone 4's native setup or wider proxy/coordination requirements.
+
+## 2026-10-06: themed ASCOM registration manager
+
+The existing setup executable now opens the shared themed manager with `/hubsetup`
+and a Start menu shortcut. It reconciles saved choices against both registry
+inventories, including orphaned entries. The existing native selector/editor
+serve all scalar classes; initial manager load never opens equipment or a host.
+Immutable registration requests carry the observed selection revision and original
+SID to the installed helper through Windows elevation. Foreign ownership, install,
+selection file or newer version disables register/remove. Removing a saved choice
+requires registration removal first. While waiting, all competing actions are
+disabled; errors and unknown completion require reload, with no replay or helper
+termination. Closing the window cannot revive controls or start another operation.
+
+Review expanded installer in-use checks to cover nested hub executables/DLLs.
+It also found dynamic registrations are not included in Inno's generated registry
+table, and `/unregserver` is not the installer uninstall path. The backend's manual
+inventory-removal command therefore does not prove installer cleanup. Add the
+proper uninstall lifecycle hook and failure/preservation tests before that gate.
+
+All 129 NINA tests pass (`artifacts/hub-registration-ui-tests.log`), including
+three actual WPF workflows using private registry roots and no real elevation.
+They cover registration, orphan removal, foreign-owner protection, unreadable
+settings, busy admission, timeout/no-replay and explicit reload. Actual rendered
+simulation screenshot is `docs/images/hub-ascom-registration-simulation.png`;
+it was visually inspected for theme, controls, wrapping and simulation marking.
+net48 x86/x64 fixtures pass (`hub-registration-ui-net48.log`), the existing setup
+helper builds with warnings denied (`hub-registration-ui-build.log`), and unsigned
+ASCOM packaging validates (`hub-registration-ui-package.log`). These do not prove
+interactive UAC, installed Chooser, installer lifecycle or conformance acceptance.
+Unsigned installer compilation also passes using the existing pinned compiler
+(`hub-registration-ui-installer-build.log`); no installer was run on this machine.
+
+Next: production fixture CI and installer lifecycle, then complete remaining
+setup, broader proxies/cameras/coordination and every original acceptance gate.
