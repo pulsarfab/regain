@@ -2,6 +2,7 @@
 //! they must not reimplement safety decisions or invent source capabilities.
 pub mod alpaca;
 pub mod config;
+pub mod credentials;
 pub mod description;
 pub mod endpoint;
 pub mod factory;

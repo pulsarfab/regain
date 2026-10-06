@@ -49,12 +49,18 @@ async fn actual_hub_executable_serves_network_safety_and_observes_unsafe_changes
     };
     use std::sync::{
         Arc,
-        atomic::{AtomicBool, Ordering::SeqCst},
+        atomic::{AtomicBool, AtomicUsize, Ordering::SeqCst},
     };
     async fn upstream(
-        State(safe): State<Arc<AtomicBool>>,
+        State((safe, requests)): State<(Arc<AtomicBool>, Arc<AtomicUsize>)>,
         RoutePath(member): RoutePath<String>,
+        headers: axum::http::HeaderMap,
     ) -> Json<Value> {
+        assert_eq!(
+            headers.get("authorization").unwrap(),
+            "Bearer production-fixture-only"
+        );
+        requests.fetch_add(1, SeqCst);
         let value = match member.as_str() {
             "interfaceversion" => json!(3),
             "connected" => json!(true),
@@ -64,11 +70,12 @@ async fn actual_hub_executable_serves_network_safety_and_observes_unsafe_changes
         Json(json!({"ErrorNumber":0,"ErrorMessage":"","Value":value}))
     }
     let safe = Arc::new(AtomicBool::new(true));
+    let requests = Arc::new(AtomicUsize::new(0));
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
     let router = Router::new()
         .route("/api/v1/safetymonitor/0/{member}", get(upstream))
-        .with_state(safe.clone());
+        .with_state((safe.clone(), requests.clone()));
     let upstream = tokio::spawn(async move {
         axum::serve(listener, router).await.unwrap();
     });
@@ -108,9 +115,44 @@ async fn actual_hub_executable_serves_network_safety_and_observes_unsafe_changes
         .unwrap();
     let mut stream = endpoint.connect(Duration::from_secs(5)).await.unwrap();
     request(&mut stream, 1, json!({"op":"hello"})).await;
+    let credential = request(
+        &mut stream,
+        2,
+        json!({"op":"createCredential", "authorization":"Bearer production-fixture-only"}),
+    )
+    .await;
+    let reference = credential["reference"].as_str().unwrap().to_string();
+    // Clean only the fake record created by this test, including panic paths.
+    struct Cleanup(regain_hub::credentials::CredentialStore, String);
+    impl Drop for Cleanup {
+        fn drop(&mut self) {
+            let _ = self.0.delete(&self.1);
+        }
+    }
+    let _cleanup = Cleanup(
+        regain_hub::credentials::CredentialStore::for_endpoint(&endpoint).unwrap(),
+        reference.clone(),
+    );
+    let mut authenticated = request(&mut stream, 3, json!({"op":"getConfig"})).await;
+    authenticated["sources"][0]["backend"]["credentialReference"] = json!(reference);
+    request(
+        &mut stream,
+        4,
+        json!({"op":"applyConfig", "expectedRevision":config.revision, "candidate":authenticated}),
+    )
+    .await;
+    assert_eq!(
+        reply(
+            &mut stream,
+            5,
+            json!({"op":"deleteCredential", "reference":reference})
+        )
+        .await["error"]["code"],
+        "inUse"
+    );
     let output = config.outputs[0].id;
-    request(&mut stream, 2, json!({"op":"connect","output":output})).await;
-    let mut id = 3;
+    request(&mut stream, 6, json!({"op":"connect","output":output})).await;
+    let mut id = 7;
     for expected in [true, false] {
         safe.store(expected, SeqCst);
         tokio::time::timeout(Duration::from_secs(5), async {
@@ -132,6 +174,7 @@ async fn actual_hub_executable_serves_network_safety_and_observes_unsafe_changes
         .unwrap();
     }
     let mut candidate = request(&mut stream, id, json!({"op":"getConfig"})).await;
+    assert!(!candidate.to_string().contains("production-fixture-only"));
     id += 1;
     let old_revision = candidate["revision"].clone();
     candidate["outputs"][0]["label"] = json!("Renamed safety output");
@@ -201,6 +244,62 @@ async fn actual_hub_executable_serves_network_safety_and_observes_unsafe_changes
             .iter()
             .any(|operation| operation == "applyConfig")
     );
+    let mut stream = endpoint.connect(Duration::from_secs(5)).await.unwrap();
+    request(&mut stream, 1, json!({"op":"hello"})).await;
+    let status = request(
+        &mut stream,
+        2,
+        json!({"op":"credentialStatus", "reference":reference}),
+    )
+    .await;
+    assert_eq!(status["present"], true);
+    let description = request(&mut stream, 3, json!({"op":"describeConfig"})).await;
+    assert_eq!(
+        description["credentialStorage"]["input"]["authorization"]["writeOnly"],
+        true
+    );
+    for response in [status, description] {
+        assert!(!response.to_string().contains("production-fixture-only"));
+    }
+    // Reopened storage must authenticate a newly constructed source after restart.
+    let before = requests.load(SeqCst);
+    request(&mut stream, 4, json!({"op":"connect", "output":output})).await;
+    tokio::time::timeout(Duration::from_secs(3), async {
+        while requests.load(SeqCst) == before {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap();
+    request(&mut stream, 5, json!({"op":"disconnect", "output":output})).await;
+    let mut candidate = request(&mut stream, 6, json!({"op":"getConfig"})).await;
+    let revision = candidate["revision"].clone();
+    candidate["sources"][0]["backend"]["credentialReference"] = Value::Null;
+    request(
+        &mut stream,
+        7,
+        json!({"op":"applyConfig", "expectedRevision":revision, "candidate":candidate}),
+    )
+    .await;
+    assert_eq!(
+        request(
+            &mut stream,
+            8,
+            json!({"op":"deleteCredential", "reference":reference})
+        )
+        .await["removed"],
+        true
+    );
+    assert_eq!(
+        request(
+            &mut stream,
+            9,
+            json!({"op":"credentialStatus", "reference":reference})
+        )
+        .await["present"],
+        false
+    );
+    drop(stream);
     restarted.kill().await.unwrap();
     upstream.abort();
     let _ = upstream.await;

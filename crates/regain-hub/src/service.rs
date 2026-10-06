@@ -1,7 +1,10 @@
 //! Revisioned runtime publication. Filesystem work and device drain never hold
 //! the service state mutex; accepted apply operations outlive their RPC waiter.
 use crate::{
-    config::{ApplyError, ConfigStore, HubConfig},
+    config::{ApplyError, ConfigStore, HubConfig, SourceBackend},
+    credentials::{
+        CredentialError, CredentialStatus, CredentialStore, DeleteOutcome, SecretAuthorization,
+    },
     parameters::FieldError,
     runtime::{ClientSession, HubRuntime},
     source::{ErrorKind, SourceError},
@@ -74,23 +77,43 @@ pub struct HubService {
     state: Mutex<State>,
     store: Option<Arc<ConfigStore>>,
     builder: Option<Arc<RuntimeBuilder>>,
+    credentials: Option<Arc<CredentialStore>>,
     update: Arc<tokio::sync::Mutex<()>>,
 }
 impl HubService {
     pub fn read_only(runtime: Arc<HubRuntime>) -> Arc<Self> {
-        Self::new(runtime, None, None)
+        Self::new(runtime, None, None, None)
     }
     pub fn persistent(
         store: ConfigStore,
         builder: Arc<RuntimeBuilder>,
     ) -> Result<Arc<Self>, Vec<FieldError>> {
         let runtime = build_checked(&builder, &store.snapshot())?;
-        Ok(Self::new(runtime, Some(Arc::new(store)), Some(builder)))
+        Ok(Self::new(
+            runtime,
+            Some(Arc::new(store)),
+            Some(builder),
+            None,
+        ))
+    }
+    pub fn persistent_with_credentials(
+        store: ConfigStore,
+        builder: Arc<RuntimeBuilder>,
+        credentials: Arc<CredentialStore>,
+    ) -> Result<Arc<Self>, Vec<FieldError>> {
+        let runtime = build_checked(&builder, &store.snapshot())?;
+        Ok(Self::new(
+            runtime,
+            Some(Arc::new(store)),
+            Some(builder),
+            Some(credentials),
+        ))
     }
     fn new(
         runtime: Arc<HubRuntime>,
         store: Option<Arc<ConfigStore>>,
         builder: Option<Arc<RuntimeBuilder>>,
+        credentials: Option<Arc<CredentialStore>>,
     ) -> Arc<Self> {
         Arc::new(Self {
             instance: runtime.instance_id(),
@@ -103,6 +126,7 @@ impl HubService {
             }),
             store,
             builder,
+            credentials,
             update: Arc::new(tokio::sync::Mutex::new(())),
         })
     }
@@ -114,6 +138,71 @@ impl HubService {
     }
     pub fn can_apply(&self) -> bool {
         self.store.is_some()
+    }
+    pub fn credential_description(&self) -> Option<serde_json::Value> {
+        self.credentials.as_ref().map(|store| store.description())
+    }
+    pub async fn credential_status(
+        &self,
+        reference: String,
+    ) -> Result<CredentialStatus, CredentialError> {
+        let store = self
+            .credentials
+            .clone()
+            .ok_or(CredentialError::Unsupported)?;
+        tokio::task::spawn_blocking(move || store.status(&reference))
+            .await
+            .map_err(|_| CredentialError::Unavailable)?
+    }
+    pub async fn create_credential(
+        &self,
+        authorization: SecretAuthorization,
+    ) -> Result<CredentialStatus, CredentialError> {
+        let store = self
+            .credentials
+            .clone()
+            .ok_or(CredentialError::Unsupported)?;
+        let guard = self
+            .update
+            .clone()
+            .try_lock_owned()
+            .map_err(|_| CredentialError::Busy)?;
+        self.runtime().map_err(|_| CredentialError::Unavailable)?;
+        // The blocking task retains the update gate if its RPC waiter goes away.
+        // Shutdown and configuration activation wait until storage finishes.
+        tokio::task::spawn_blocking(move || {
+            let _guard = guard;
+            store.create(authorization)
+        })
+        .await
+        .map_err(|_| CredentialError::Unavailable)?
+    }
+    pub async fn delete_credential(
+        &self,
+        reference: String,
+    ) -> Result<DeleteOutcome, CredentialError> {
+        let store = self
+            .credentials
+            .clone()
+            .ok_or(CredentialError::Unsupported)?;
+        let guard = self
+            .update
+            .clone()
+            .try_lock_owned()
+            .map_err(|_| CredentialError::Busy)?;
+        self.runtime().map_err(|_| CredentialError::Unavailable)?;
+        if self.configuration().sources.iter().any(|source| {
+            matches!(&source.backend,
+            SourceBackend::Alpaca { credential_reference: Some(value), .. } if value == &reference)
+        }) {
+            return Err(CredentialError::InUse);
+        }
+        tokio::task::spawn_blocking(move || {
+            let _guard = guard;
+            store.delete(&reference)
+        })
+        .await
+        .map_err(|_| CredentialError::Unavailable)?
     }
     pub fn configuration(&self) -> HubConfig {
         match &self.store {
@@ -238,12 +327,14 @@ impl HubService {
             tokio::task::spawn_blocking(move || store.prepare(expected, candidate, false))
                 .await
                 .map_err(|_| UpdateError::Task)??;
-        // Builders validate and prepare adapters without connecting any device.
-        let next = build_checked(
-            self.builder.as_ref().expect("Writable service"),
-            prepared.configuration(),
-        )
-        .map_err(UpdateError::Invalid)?;
+        // Credential resolution may touch disk/DPAPI. Keep preparation off the
+        // async executor, while still constructing actors in this Tokio runtime.
+        let builder = self.builder.as_ref().expect("Writable service").clone();
+        let candidate = prepared.configuration().clone();
+        let next = tokio::task::spawn_blocking(move || build_checked(&builder, &candidate))
+            .await
+            .map_err(|_| UpdateError::Task)?
+            .map_err(UpdateError::Invalid)?;
         let store = self.store.as_ref().unwrap().clone();
         let committed = tokio::task::spawn_blocking(move || store.commit(prepared)).await;
         match committed {

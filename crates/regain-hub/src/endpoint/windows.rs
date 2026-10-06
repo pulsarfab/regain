@@ -33,9 +33,9 @@ use windows_sys::Win32::{
         TOKEN_USER, TokenUser,
     },
     Storage::FileSystem::{
-        CreateDirectoryW, CreateFileW, FILE_ATTRIBUTE_REPARSE_POINT, FILE_FLAG_BACKUP_SEMANTICS,
-        FILE_FLAG_OPEN_REPARSE_POINT, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_ALWAYS, READ_CONTROL,
-        SECURITY_IDENTIFICATION,
+        CREATE_NEW, CreateDirectoryW, CreateFileW, FILE_ATTRIBUTE_REPARSE_POINT,
+        FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_SHARE_DELETE,
+        FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_ALWAYS, READ_CONTROL, SECURITY_IDENTIFICATION,
     },
     System::{
         Com::CoTaskMemFree,
@@ -228,15 +228,36 @@ pub fn prepare_root(path: &Path, user: &str) -> io::Result<()> {
     verify_private(file.as_raw_handle(), user)
 }
 pub fn lock_file(path: &Path, user: &str) -> io::Result<File> {
+    create_file(path, user, OPEN_ALWAYS, FILE_SHARE_READ | FILE_SHARE_WRITE)
+}
+pub fn create_private(path: &Path, user: &str) -> io::Result<File> {
+    create_file(
+        path,
+        user,
+        CREATE_NEW,
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+    )
+}
+pub fn read_private(path: &Path, user: &str) -> io::Result<File> {
+    let file = OpenOptions::new()
+        .read(true)
+        .access_mode(GENERIC_READ | READ_CONTROL)
+        .share_mode(FILE_SHARE_READ | FILE_SHARE_DELETE)
+        .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
+        .open(path)?;
+    verify_file(&file, user)?;
+    Ok(file)
+}
+fn create_file(path: &Path, user: &str, disposition: u32, sharing: u32) -> io::Result<File> {
     let descriptor = descriptor(user)?;
     let attributes = attributes(&descriptor);
     let handle = unsafe {
         CreateFileW(
             wide(path.as_os_str()).as_ptr(),
             GENERIC_READ | GENERIC_WRITE | READ_CONTROL,
-            FILE_SHARE_READ | FILE_SHARE_WRITE,
+            sharing,
             &attributes,
-            OPEN_ALWAYS,
+            disposition,
             FILE_FLAG_OPEN_REPARSE_POINT,
             null_mut(),
         )
@@ -245,12 +266,15 @@ pub fn lock_file(path: &Path, user: &str) -> io::Result<File> {
         return Err(io::Error::last_os_error());
     }
     let file = unsafe { File::from_raw_handle(handle) };
+    verify_file(&file, user)?;
+    Ok(file)
+}
+fn verify_file(file: &File, user: &str) -> io::Result<()> {
     let metadata = file.metadata()?;
     if !metadata.is_file() || metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
         return Err(denied());
     }
-    verify_private(file.as_raw_handle(), user)?;
-    Ok(file)
+    verify_private(file.as_raw_handle(), user)
 }
 pub fn address(endpoint: &Endpoint) -> PathBuf {
     PathBuf::from(format!(r"\\.\pipe\PulsarFab.Regain.Hub.{}", endpoint.key))

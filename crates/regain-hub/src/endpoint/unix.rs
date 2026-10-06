@@ -50,6 +50,29 @@ pub fn lock_file(path: &Path, _: &str) -> io::Result<File> {
         .mode(0o600)
         .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC)
         .open(path)?;
+    verify_file(&file)?;
+    Ok(file)
+}
+pub fn create_private(path: &Path, _: &str) -> io::Result<File> {
+    let file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC)
+        .open(path)?;
+    verify_file(&file)?;
+    Ok(file)
+}
+pub fn read_private(path: &Path, _: &str) -> io::Result<File> {
+    let file = OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC | libc::O_NONBLOCK)
+        .open(path)?;
+    verify_file(&file)?;
+    Ok(file)
+}
+fn verify_file(file: &File) -> io::Result<()> {
     let metadata = file.metadata()?;
     if !metadata.is_file()
         || metadata.uid() != unsafe { libc::geteuid() }
@@ -58,7 +81,7 @@ pub fn lock_file(path: &Path, _: &str) -> io::Result<File> {
     {
         return Err(denied());
     }
-    Ok(file)
+    Ok(())
 }
 pub fn address(endpoint: &Endpoint) -> PathBuf {
     endpoint.root.join(format!("{}.sock", endpoint.key))

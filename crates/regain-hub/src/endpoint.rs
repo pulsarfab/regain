@@ -14,10 +14,10 @@ use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
 #[cfg(unix)]
 #[path = "endpoint/unix.rs"]
-mod platform;
+pub(crate) mod platform;
 #[cfg(windows)]
 #[path = "endpoint/windows.rs"]
-mod platform;
+pub(crate) mod platform;
 
 #[derive(Clone)]
 pub struct Endpoint {

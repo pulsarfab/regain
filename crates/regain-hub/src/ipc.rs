@@ -2,6 +2,7 @@
 //! No listener is opened here. Camera images require their separate contract.
 use crate::{
     config::{HubConfig, WeatherMetric},
+    credentials::{CredentialError, SecretAuthorization},
     description::describe_config,
     runtime::{ClientSession, HubRuntime},
     service::{HubService, ServiceClient, UpdateError},
@@ -85,6 +86,15 @@ pub enum Command {
         candidate: Box<HubConfig>,
     },
     HostStatus {},
+    CreateCredential {
+        authorization: SecretAuthorization,
+    },
+    CredentialStatus {
+        reference: String,
+    },
+    DeleteCredential {
+        reference: String,
+    },
     ListDevices {},
     SourceStatus {
         source: Uuid,
@@ -203,6 +213,39 @@ impl From<UpdateError> for RpcError {
         }
     }
 }
+impl From<CredentialError> for RpcError {
+    fn from(error: CredentialError) -> Self {
+        let (code, message) = match error {
+            CredentialError::Invalid => (
+                "invalidValue",
+                "Invalid authorization value or credential reference",
+            ),
+            CredentialError::Missing => ("unavailable", "Credential is missing"),
+            CredentialError::Unavailable => (
+                "unavailable",
+                "Protected credential storage is unavailable or invalid",
+            ),
+            CredentialError::InUse => (
+                "inUse",
+                "Remove this credential reference from configuration before deleting it",
+            ),
+            CredentialError::Busy => (
+                "busy",
+                "Another configuration or credential operation is in progress",
+            ),
+            CredentialError::Unsupported => (
+                "unsupported",
+                "This host has no credential storage provider",
+            ),
+        };
+        Self {
+            code,
+            message,
+            upstream_code: None,
+            fields: Vec::new(),
+        }
+    }
+}
 #[derive(Serialize)]
 struct Response {
     version: u16,
@@ -295,6 +338,7 @@ where
                     greeted = true;
                     let mut operations = vec!["describeConfig","getConfig","validateConfig","listDevices","sourceStatus","connect","disconnect","get","put","hostStatus"];
                     if service.can_apply() { operations.push("applyConfig"); }
+                    if service.credential_description().is_some() { operations.extend(["createCredential", "credentialStatus", "deleteCredential"]); }
                     let hello = json!({"protocolVersion":VERSION, "instanceId":service.instance_id(),
                         "hostInstance":service.host_id(), "configurationRevision":service.configuration().revision, "clientId":client.id(),
                         "maxFrameBytes":MAX_FRAME_BYTES, "maxInFlight":MAX_IN_FLIGHT,
@@ -308,7 +352,7 @@ where
                 let service = service.clone();
                 let client = client.clone();
                 let mut operation = Box::pin(async move {
-                    let write = matches!(request.command, Command::Put { .. } | Command::ApplyConfig { .. });
+                    let write = matches!(request.command, Command::Put { .. } | Command::ApplyConfig { .. } | Command::CreateCredential { .. } | Command::DeleteCredential { .. });
                     let result = timeout(limits.operation_timeout, dispatch_service(&service, &client, request.command)).await
                         .unwrap_or_else(|_| Err(if write { SourceError::uncertain().into() } else {
                             RpcError { code:"timeout", message:"Hub operation deadline expired", upstream_code:None, fields:Vec::new() }
@@ -343,6 +387,22 @@ async fn dispatch_service(
     command: Command,
 ) -> Result<Value, RpcError> {
     match command {
+        Command::DescribeConfig {} => {
+            let mut description =
+                describe_config(&["nativeSources", "alpacaSources", "writeReadout"]);
+            description["credentialStorage"] =
+                service.credential_description().unwrap_or(Value::Null);
+            Ok(description)
+        }
+        Command::CreateCredential { authorization } => {
+            Ok(json!(service.create_credential(authorization).await?))
+        }
+        Command::CredentialStatus { reference } => {
+            Ok(json!(service.credential_status(reference).await?))
+        }
+        Command::DeleteCredential { reference } => {
+            Ok(json!(service.delete_credential(reference).await?))
+        }
         Command::GetConfig {} => Ok(json!(service.configuration())),
         Command::HostStatus {} => Ok(json!(service.status())),
         Command::ApplyConfig {
@@ -373,7 +433,12 @@ async fn dispatch(
         return Err(SourceError::new(ErrorKind::InvalidValue, "Unknown output ID").into());
     }
     Ok(match command {
-        Command::ApplyConfig { .. } | Command::HostStatus {} => {
+        Command::ApplyConfig { .. }
+        | Command::HostStatus {}
+        | Command::DescribeConfig {}
+        | Command::CreateCredential { .. }
+        | Command::CredentialStatus { .. }
+        | Command::DeleteCredential { .. } => {
             unreachable!("Handled by service dispatcher")
         }
         Command::Hello {} => {
@@ -383,9 +448,6 @@ async fn dispatch(
                 upstream_code: None,
                 fields: Vec::new(),
             });
-        }
-        Command::DescribeConfig {} => {
-            describe_config(&["nativeSources", "alpacaSources", "writeReadout"])
         }
         Command::GetConfig {} => json!(runtime.configuration()),
         Command::ValidateConfig { candidate } => {
@@ -474,7 +536,7 @@ async fn dispatch(
 pub async fn read_frame<R: AsyncRead + Unpin>(
     reader: &mut R,
     deadline: Duration,
-) -> Result<Option<Vec<u8>>, ProtocolError> {
+) -> Result<Option<zeroize::Zeroizing<Vec<u8>>>, ProtocolError> {
     let mut header = [0u8; 4];
     if reader
         .read(&mut header[..1])
@@ -496,7 +558,9 @@ pub async fn read_frame<R: AsyncRead + Unpin>(
         if size > MAX_FRAME_BYTES {
             return Err(ProtocolError::FrameTooLarge);
         }
-        let mut bytes = vec![0; size];
+        // Clear complete, queued and partially read secret-bearing frames when
+        // the stream closes, parsing fails, or a frame deadline expires.
+        let mut bytes = zeroize::Zeroizing::new(vec![0; size]);
         reader
             .read_exact(&mut bytes)
             .await

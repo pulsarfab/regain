@@ -594,3 +594,63 @@ Protected credentials, capabilities, automatic frontend attachment, OS resume,
 virtual/simulated sources, publication/setup, COM/NINA/ASCOM integration, broader
 proxies, coordination, conformance, hardware checks, docs/screenshots, and final
 merge remain required by the original plan.
+
+## 2026-10-05: user-scoped credentials and shared-host rotation
+
+The shared executable now resolves credentials through user storage and exposes
+write-only creation, status, and deletion over its existing private IPC. Metadata
+includes common input keys/descriptions and the actual protection method.
+Windows uses user DPAPI and protected user-only ACLs. Unix deliberately uses
+private plaintext files (0600 under 0700), without requiring a desktop keyring.
+This distinction is part of the frontend contract, not an encryption claim for Unix.
+
+Review findings and corrections:
+
+1. An in-place secret update would leave existing adapters using the old header
+   while config still identified the same reference. References are immutable:
+   create, revision-checked apply, then delete the unused old record. Existing
+   adapters keep their resolved value until their runtime is replaced.
+2. Deletion must not race configuration preparation or remove a credential still
+   used by an old draining runtime. Mutations share the service update gate,
+   inspect every configured source, and retain the gate in the blocking task even
+   after cancellation. Shutdown also waits for it. A paused-builder test cancels
+   the apply waiter and proves deletion remains busy, then becomes in-use.
+3. Configuration files can be copied, and separate hosts can use the same reference
+   text. Storage is scoped by canonical config path and OS user; record contents
+   bind scope/reference, with matching DPAPI entropy on Windows. Copied records
+   cannot resolve under another reference or scope. Moved configs need new records.
+4. Private endpoint file checks are reused for storage. Windows checks the opened
+   handle's owner/protected ACL and rejects reparse points. Unix checks owner,
+   mode, regular-file type, and link count, uses O_NOFOLLOW, and opens nonblocking
+   so an invalid FIFO cannot stall before type validation. Reads are bounded.
+5. Secrets and raw frame buffers use clearing wrappers; HTTP headers are marked
+   sensitive. Responses/errors contain no secret values. This does not promise
+   complete erasure of third-party parser/HTTP or OS copies. No secret-read IPC
+   operation exists. Invalid inputs fail before storage creation.
+6. Disk and DPAPI operations run off the async executor, including adapter
+   preparation during apply. Constructor errors/panics retain the existing
+   transaction failure rules. A missing user storage location does not prevent
+   credential-free hosting; authenticated sources fail closed without a provider.
+7. Creation uses private staged files with no-clobber publication and flushes.
+   A lost/failed creation response can leave a private orphan, never an in-place
+   rotation. Deletion reports post-delete directory-flush uncertainty separately;
+   neither operation promises forensic deletion or power-loss durability.
+
+Local validation: 141 Windows hub tests plus the separate endpoint-process fixture
+and 14 Alpaca tests pass. Added tests cover DPAPI round trips/wrong entropy,
+anonymous denial and unprotected replacement rejection, immutable references,
+corruption/oversize/scope/rebinding, IPC rotation/redaction, unavailable providers,
+and cancellation during a competing apply. The production executable creates a
+credential through IPC, authenticates a real loopback HTTP source, restarts and
+authenticates again, then rejects in-use deletion and removes an unused record.
+All values are explicit fake fixtures. Clippy with warnings denied, Rust 1.89.0,
+generated-contract freshness, and transport/core/hub/Alpaca package verification
+pass. Packaging used `target/hub-credentials-package` to avoid stale archives of
+the same unreleased version. No config schema change was needed.
+
+Prior checkpoint `d8ab064` now passes Linux x64/ARM64 and macOS Intel/ARM64 CI,
+verifying the aborted-peer correction and Unix directory-flush fixture. Portable
+CI is still required for the new credential permission/link checks. Device
+capabilities, virtual/simulated sources, frontend attachment/publication, COM,
+native NINA/ASCOM outputs, broader proxies, coordination, conformance, hardware,
+docs/screenshots, and the final merge audit remain open.

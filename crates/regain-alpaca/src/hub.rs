@@ -2,8 +2,9 @@
 use anyhow::{Context, Result, bail};
 use regain_core::CancellationToken;
 use regain_hub::{
-    config::ConfigStore, endpoint::Endpoint, factory::NoCredentials, host, ipc::Limits,
-    native::NativeRuntime, runtime::HubRuntime, safety::MonotonicClock, service::HubService,
+    config::ConfigStore, credentials::CredentialStore, endpoint::Endpoint, factory::NoCredentials,
+    host, ipc::Limits, native::NativeRuntime, runtime::HubRuntime, safety::MonotonicClock,
+    service::HubService,
 };
 use std::{future::Future, path::Path, sync::Arc, time::Duration};
 
@@ -27,18 +28,25 @@ pub async fn run(
         return Ok(());
     };
     let listener = owner.bind().context("Bind private hub endpoint")?;
-    // Credential references fail closed until the OS-protected provider lands.
-    let state = HubService::persistent(
-        store,
-        Arc::new(move |config| {
-            HubRuntime::build(
-                config,
-                &native,
-                &NoCredentials,
-                Arc::new(MonotonicClock::default()),
-            )
-        }),
-    )
+    // A headless account without a home directory can still host sources that
+    // do not require credentials. References fail closed in that case.
+    let credentials = CredentialStore::for_endpoint(&endpoint).ok().map(Arc::new);
+    let provider = credentials.clone();
+    let builder: Arc<regain_hub::service::RuntimeBuilder> = Arc::new(move |config| {
+        HubRuntime::build(
+            config,
+            &native,
+            provider
+                .as_deref()
+                .map(|store| store as &dyn regain_hub::factory::CredentialProvider)
+                .unwrap_or(&NoCredentials),
+            Arc::new(MonotonicClock::default()),
+        )
+    });
+    let state = match credentials {
+        Some(credentials) => HubService::persistent_with_credentials(store, builder, credentials),
+        None => HubService::persistent(store, builder),
+    }
     .map_err(|errors| {
         anyhow::anyhow!(
             "Hub configuration cannot be hosted: {}",

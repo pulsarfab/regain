@@ -341,7 +341,7 @@ The factory prepares native/Alpaca adapters and resolves credential references
 before spawning any actors. It does not open devices or make network requests.
 Each source gets one actor regardless of the number of outputs. A host without
 a protected credential provider rejects credential-bearing source configuration.
-The provider interface is implemented; protected storage itself is still pending.
+The executable supplies the user-scoped credential provider described below.
 COM, virtual-output, simulated-interface, and native-camera source construction
 remain explicit later implementation work, with no fallback to another backend.
 
@@ -370,6 +370,58 @@ diagnostics do not imply broader device capabilities have been discovered.
 Interface references: [ASCOM common behavior through SafetyMonitor V3](https://ascom-standards.org/newdocs/safetymonitor.html),
 [Camera V4](https://ascom-standards.org/newdocs/camera.html),
 and [ObservingConditions V2](https://ascom-standards.org/newdocs/observingconditions.html).
+
+## Credential storage and rotation
+
+The private host advertises `createCredential`, `credentialStatus`, and
+`deleteCredential` only when it has a storage provider. `describeConfig` supplies
+`credentialStorage` with the protection method and the shared authorization input
+key, label, description, length limit, and write-only/sensitive flags. An absent
+provider reports null and refuses credential-bearing source construction.
+
+`createCredential` takes `authorization`, the complete HTTP Authorization header
+value (for example a Bearer token). Values must be nonempty ASCII without control
+characters, at most 8192 bytes. The reply contains a new opaque `reference`,
+`present`, and `protection`; there is no operation to retrieve the value.
+`credentialStatus` takes `reference` and returns the same status shape. Missing
+records report `present:false`; invalid storage/ciphertext reports an error.
+Configuration and diagnostic responses contain no credential values. Raw IPC
+frame buffers and owned secret serialization buffers are cleared on drop; this
+is not a guarantee that every OS, JSON parser, or HTTP-library copy is erased.
+
+| Platform | Reported protection | Storage |
+| --- | --- | --- |
+| Windows | `windowsDpapiUser` | User DPAPI encryption plus explicit user-only protected ACLs; LocalAppData/Regain/Hub/Credentials |
+| Linux/other Unix | `userFilePermissions` | Plaintext in mode 0600 files under a mode 0700 scope directory; absolute XDG_DATA_HOME or HOME/.local/share, then regain/hub-credentials |
+| macOS | `userFilePermissions` | Same private plaintext format; absolute XDG_DATA_HOME or HOME/Library/Application Support, then regain/hub-credentials |
+
+Windows uses DPAPI with UI forbidden and without machine-wide protection. There
+is no plaintext fallback. See [CryptProtectData](https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-cryptprotectdata).
+Unix needs no desktop keyring, which permits headless service accounts. Frontends
+must identify private plaintext storage accurately. A host with no resolvable user
+storage location can still run sources that do not use credentials.
+
+Each scope is keyed by canonical configuration path and OS user; copied/moved
+configurations require newly created references. File names hash the scope and
+reference. Records verify both values and their format version; Windows also
+binds them into DPAPI entropy. Reads are bounded to 64 KiB and reject inappropriate
+permissions, nonregular files, and final symlinks/reparse points. Unix also rejects
+hard links. Never export these records with configuration or support bundles.
+
+References are immutable. Rotate by creating a new reference, applying it through
+revision-checked configuration, then deleting the now-unused old reference.
+`deleteCredential` refuses any reference still present in configuration, even in
+an unused source. It returns `removed`, plus a persistence warning if deletion
+succeeded but final directory flushing failed. Deleting a missing record is a
+successful no-op. It does not promise forensic erasure of filesystem backups.
+
+Creation/deletion and configuration apply share the update gate. Accepted storage
+mutations run off the async executor and retain that gate after RPC cancellation;
+host shutdown waits for completion. A timed-out mutation has an uncertain result
+and is not automatically replayed. A failed/lost creation reply can leave a private
+unreferenced record; it cannot overwrite an existing reference or rotate a live
+source. Credential resolution during runtime preparation also runs off the async
+executor. Storage tests and private IPC tests do not establish frontend UI support.
 
 ## Native source adapter checkpoint
 
