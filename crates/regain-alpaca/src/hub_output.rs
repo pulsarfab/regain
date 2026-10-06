@@ -5,6 +5,7 @@ use regain_hub::{
     client::{Client, ClientError, ClientLimits},
     config::DeviceType,
     endpoint::Endpoint,
+    filterwheel::FilterWheelProperty,
     focuser::FocuserProperty,
     ipc::{Command, Get, Put},
     rotator::RotatorProperty,
@@ -189,6 +190,12 @@ impl Publisher {
                     .capabilities
                     .iter()
                     .any(|c| c == "rotatorOutputs"),
+                DeviceType::FilterWheel => self
+                    .catalog
+                    .hello()
+                    .capabilities
+                    .iter()
+                    .any(|c| c == "filterWheelOutputs"),
                 _ => false,
             }),
             error(
@@ -457,6 +464,8 @@ impl Publisher {
                         DeviceType::Focuser => 3,
                         DeviceType::Rotator if modern => 4,
                         DeviceType::Rotator => 3,
+                        DeviceType::FilterWheel if modern => 3,
+                        DeviceType::FilterWheel => 2,
                         _ => 1,
                     }));
                 }
@@ -507,6 +516,14 @@ impl Publisher {
                     | Put::RotatorReverse { .. },
                 ..
             } => Some("rotatorOutputs"),
+            Command::Get {
+                property: Get::FilterWheel { .. },
+                ..
+            }
+            | Command::Put {
+                property: Put::MoveFilterWheel { .. },
+                ..
+            } => Some("filterWheelOutputs"),
             Command::Get {
                 property: Get::SensorDescription { .. },
                 ..
@@ -609,6 +626,7 @@ pub fn class_name(kind: DeviceType) -> &'static str {
         DeviceType::ObservingConditions => "ObservingConditions",
         DeviceType::Focuser => "Focuser",
         DeviceType::Rotator => "Rotator",
+        DeviceType::FilterWheel => "FilterWheel",
         _ => "Unsupported",
     }
 }
@@ -629,6 +647,10 @@ fn operation(device: &OutputDescriptor, member: &str, put: bool, p: &Params) -> 
     let output = device.id;
     if put {
         let property = match (device.device_type, member) {
+            (DeviceType::FilterWheel, "position") => Put::MoveFilterWheel {
+                position: i32::try_from(p.integer("Position")?)
+                    .map_err(|_| error(0x401, "Invalid filter wheel position"))?,
+            },
             (DeviceType::Rotator, "move") => Put::MoveRotator {
                 degrees: p.number("Position")?,
             },
@@ -680,6 +702,12 @@ fn operation(device: &OutputDescriptor, member: &str, put: bool, p: &Params) -> 
     }
     let property = match (device.device_type, member) {
         (_, "devicestate") => Get::DeviceState {},
+        (DeviceType::FilterWheel, _) => Get::FilterWheel {
+            property: FilterWheelProperty::ALL
+                .into_iter()
+                .find(|property| property.member() == member)
+                .ok_or_else(|| unsupported(member))?,
+        },
         (DeviceType::Focuser, _) => Get::Focuser {
             property: FocuserProperty::ALL
                 .into_iter()

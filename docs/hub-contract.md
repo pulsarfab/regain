@@ -1736,7 +1736,7 @@ IPC advertises `filterWheelOutputs`, reads `filterWheel` properties and accepts
 `moveFilterWheel` with a signed Int32 position. Unsupported-class operations
 remain errors. Existing connection leases, command admission, generation fencing,
 unknown-write latching and EOF cleanup are shared with other typed accessories.
-This does not yet advertise wheel creation or publication in any frontend.
+Wheel creation remains gated until all frontend interfaces are verified.
 
 Cached wheel diagnostics expose Names, FocusOffsets and Position through the same
 typed observation envelope as focusers and rotators. The wire fields stay
@@ -1753,3 +1753,26 @@ only cached Position, omitting it when unavailable; it does not add names, offse
 or invented motion commands. Metadata whose escaped JSON exceeds the existing
 IPC frame limit returns `responseTooLarge`, without truncation, a larger frame
 budget, source mutation or termination of the client's connection.
+
+### Wheel Alpaca publication
+
+The HTTP publisher routes FilterWheel through the shared typed IPC adapter and
+requires the host `filterWheelOutputs` capability. Modern hosts publish V3 with
+the existing asynchronous connection and cached DeviceState contracts; older
+compatible hosts report V2. Names and signed FocusOffsets retain source order
+and values. A Position write acknowledges command acceptance, while reads expose
+moving `-1` until the actual target is reached. No calibration, Halt, focuser
+offset application or raw command is added to the standard interface.
+
+Output UUIDs and configured numbers drive discovery and routes. The existing
+local wheel retains number 0 and its setup when configured. A hub wheel may use
+0 only while that local profile is unselected; collisions reject the catalog and
+hub routing before any equipment connection. Distinct local and hub numbers can
+coexist. The common setup-page dispatcher serves the shared hub editor for
+focusers, rotators and wheels and preserves their existing local fallback pages.
+
+HTTP clients retain separate hub leases and share the source's metadata, Position
+and command control. The last disconnect releases only its source; failures with
+unknown command completion fence sibling clients and never replay Position or
+issue an invented stop/calibration. Native NINA/ASCOM wheel publication,
+COM/virtual/dedicated simulation inputs and shared creation remain outstanding.

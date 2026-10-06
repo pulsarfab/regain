@@ -308,6 +308,9 @@ impl Server {
                 regain_hub::config::DeviceType::Rotator => {
                     self.profiles.rotators.get(device.number as usize).is_some()
                 }
+                regain_hub::config::DeviceType::FilterWheel => {
+                    device.number == 0 && self.filterwheel.configured().await?.is_some()
+                }
                 _ => false,
             };
             anyhow::ensure!(
@@ -423,7 +426,7 @@ impl Server {
                 "/api/v1/{accessory}/{slot}/{member}",
                 get(accessory_get).put(accessory_put),
             )
-            .route("/setup/v1/filterwheel/0/setup", get(accessory_page))
+            .route("/setup/v1/filterwheel/{slot}/setup", get(filterwheel_page))
             .route("/setup/v1/focuser/{slot}/setup", get(focuser_page))
             .route(
                 "/setup/focusers",
@@ -588,7 +591,7 @@ async fn hub_request(
     };
     if !matches!(
         kind.as_str(),
-        "switch" | "safetymonitor" | "observingconditions" | "focuser" | "rotator"
+        "switch" | "safetymonitor" | "observingconditions" | "focuser" | "rotator" | "filterwheel"
     ) || member != member.to_lowercase()
     {
         return StatusCode::NOT_FOUND.into_response();
@@ -942,19 +945,8 @@ async fn rotator_request(
     .into_response()
 }
 async fn rotator_page(State(s): State<Arc<Server>>, Path(slot): Path<usize>) -> Response {
-    if s.hub.is_some() {
-        match s.hub_devices().await {
-            Ok(devices)
-                if devices.iter().any(|device| {
-                    device.device_type == regain_hub::config::DeviceType::Rotator
-                        && device.number as usize == slot
-                }) =>
-            {
-                return axum::response::Html(include_str!("../web/hub.html")).into_response();
-            }
-            Ok(_) => (),
-            Err(_) => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
-        }
+    if let Some(page) = hub_device_page(&s, regain_hub::config::DeviceType::Rotator, slot).await {
+        return page;
     }
     if s.profiles.rotators.get(slot).is_none() {
         return StatusCode::NOT_FOUND.into_response();
@@ -1056,6 +1048,34 @@ async fn rotator_discover_slot(
 async fn accessory_page() -> axum::response::Html<&'static str> {
     axum::response::Html(include_str!("../web/accessory.html"))
 }
+async fn hub_device_page(
+    s: &Server,
+    kind: regain_hub::config::DeviceType,
+    slot: usize,
+) -> Option<Response> {
+    s.hub.as_ref()?;
+    match s.hub_devices().await {
+        Ok(devices)
+            if devices
+                .iter()
+                .any(|device| device.device_type == kind && device.number as usize == slot) =>
+        {
+            Some(axum::response::Html(include_str!("../web/hub.html")).into_response())
+        }
+        Ok(_) => None,
+        Err(_) => Some(StatusCode::SERVICE_UNAVAILABLE.into_response()),
+    }
+}
+async fn filterwheel_page(State(s): State<Arc<Server>>, Path(slot): Path<usize>) -> Response {
+    if let Some(page) = hub_device_page(&s, regain_hub::config::DeviceType::FilterWheel, slot).await
+    {
+        return page;
+    }
+    if slot != 0 {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    accessory_page().await.into_response()
+}
 async fn accessory_get(
     State(s): State<Arc<Server>>,
     Path((kind, slot, member)): Path<(String, usize, String)>,
@@ -1094,11 +1114,11 @@ async fn accessory_request(
     put: bool,
     params: Result<Params>,
 ) -> Response {
-    if kind == "focuser" && s.hub.is_some() {
+    if matches!(kind.as_str(), "focuser" | "filterwheel") && s.hub.is_some() {
         match s.hub_devices().await {
             Ok(devices)
                 if devices.iter().any(|device| {
-                    device.device_type == regain_hub::config::DeviceType::Focuser
+                    crate::hub_output::class_name(device.device_type).to_lowercase() == kind
                         && device.number as usize == slot
                 }) =>
             {
@@ -1236,19 +1256,8 @@ async fn accessory_settings(
 }
 
 async fn focuser_page(State(s): State<Arc<Server>>, Path(slot): Path<usize>) -> Response {
-    if s.hub.is_some() {
-        match s.hub_devices().await {
-            Ok(devices)
-                if devices.iter().any(|device| {
-                    device.device_type == regain_hub::config::DeviceType::Focuser
-                        && device.number as usize == slot
-                }) =>
-            {
-                return axum::response::Html(include_str!("../web/hub.html")).into_response();
-            }
-            Ok(_) => (),
-            Err(_) => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
-        }
+    if let Some(page) = hub_device_page(&s, regain_hub::config::DeviceType::Focuser, slot).await {
+        return page;
     }
     if s.profiles.focusers.get(slot).is_none() {
         return StatusCode::NOT_FOUND.into_response();

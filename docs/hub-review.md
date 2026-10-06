@@ -3230,3 +3230,44 @@ polling and runtime increments can now proceed to their own CI in the same draft
 PR. Next: wheel Alpaca/native NINA/native ASCOM publication, then imports, virtual
 and dedicated simulation inputs/shared creation, panels, cameras/coordination and
 every original acceptance/final gate.
+
+### Wheel Alpaca publication review (2026-10-06, local increment)
+
+FilterWheel joins the existing Publisher capability gates, class naming and typed
+get/put translation. The three source properties reuse their controller
+descriptors; Position uses strict signed Int32 parsing and live controller
+preflight. Modern connection/DeviceState negotiation stays shared with other
+outputs. No vendor passthrough, calibration or fabricated Halt is exposed.
+
+Review covers route identity and coexistence: dynamic wheel numbers resolve from
+the host catalog, local wheel 0 remains available when separately configured,
+and a selected local 0 rejects a hub 0 collision before opening equipment. The
+hub can use 0 when the local profile is unselected. Setup-page routing for all
+three typed classes now shares one helper, preserving native fallback/404/503
+behavior and preventing a fixed local setup route from shadowing a hub wheel.
+This does not enable unfinished shared wheel creation.
+
+The existing private accessory upstream fixture now supports wheel V2/V3, using
+the class-specific modern connection boundary while retaining focuser/rotator
+behavior. Five new actual HTTP/private-endpoint cases cover two sources, sparse
+output identities, ordered Unicode/blank names and signed offsets, independent
+leases, modern and legacy connection methods, exact Position parameter routing,
+moving state, malformed metadata/values, sanitized upstream errors, no writes
+on failed preflight, local coexistence/collision and unknown Position replies
+without replay or extra commands. One case runs the production EFW worker in
+explicit simulation and preserves metadata/shared position through HTTP.
+
+The first four focused wheel cases pass. After factoring setup routing and
+strengthening malformed-metadata coverage, all 31 HTTP router cases pass,
+including five wheel cases and existing focuser/rotator/scalar regressions.
+Final full Rust hub/Alpaca regressions, strict Clippy, Rust 1.89, generated
+contract freshness, Node/five independent schema checks, freshly rebuilt-host
+NINA 203/203 and real net48 x86/x64 clients pass. Both managed fixture builds
+have zero warnings. Evidence: artifacts/hub-wheel-http-{focused,router,rust,
+clippy,msrv,contract,node,schema,host,nina,net48}.log. No new failures, deadline
+changes, weaker assertions or retry changes were introduced. The preceding
+runtime PR CI 37539206029 has six successes with Intel macOS and Windows live;
+push 37539201271 remains live. Keep this local increment until they finish, then
+publish into the same draft PR. The original native publication, imports,
+virtual/dedicated simulation, shared creation, conformance and later milestones
+remain required.

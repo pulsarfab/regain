@@ -1,4 +1,6 @@
 //! Real private endpoint and production HTTP router, using explicit simulation.
+#[path = "support/hub_filterwheel_output.rs"]
+mod filterwheel;
 #[path = "support/hub_rotator_output.rs"]
 mod rotator;
 use axum::{
@@ -57,6 +59,9 @@ impl AccessoryUpstream {
     async fn rotator(version: u16) -> Self {
         Self::start(regain_hub::config::DeviceType::Rotator, version).await
     }
+    async fn filterwheel(version: u16) -> Self {
+        Self::start(regain_hub::config::DeviceType::FilterWheel, version).await
+    }
     async fn start(kind: regain_hub::config::DeviceType, version: u16) -> Self {
         use regain_hub::config::{ConnectionPolicy, DeviceType, SourceBackend, SourceConfig};
         use regain_hub::parameters::PollPolicy;
@@ -80,7 +85,19 @@ impl AccessoryUpstream {
                 credential_reference: None,
             },
         };
-        let initial = if kind == DeviceType::Focuser {
+        let modern = version
+            >= if kind == DeviceType::FilterWheel {
+                3
+            } else {
+                4
+            };
+        let initial = if kind == DeviceType::FilterWheel {
+            vec![
+                ("names".into(), json!(["L", "Hα", ""])),
+                ("focusoffsets".into(), json!([-12, 0, 17])),
+                ("position".into(), json!(0)),
+            ]
+        } else if kind == DeviceType::Focuser {
             vec![
                 ("absolute".into(), json!(true)),
                 ("maxstep".into(), json!(1000)),
@@ -130,8 +147,13 @@ impl AccessoryUpstream {
                     let value = if method == "PUT" {
                         writes.lock().unwrap().push((member.into(), args.clone()));
                         match member {
-                            "connected" => { assert!(version < 4); connected.store(args["Connected"] == "true", SeqCst); },
-                            "connect" | "disconnect" => { assert_eq!(version, 4); connected.store(member == "connect", SeqCst); },
+                            "connected" => { assert!(!modern); connected.store(args["Connected"] == "true", SeqCst); },
+                            "connect" | "disconnect" => { assert!(modern); connected.store(member == "connect", SeqCst); },
+                            "position" if kind == DeviceType::FilterWheel => {
+                                assert!(args["Position"].parse::<i32>().unwrap() >= 0);
+                                values.lock().unwrap().insert("position".into(),json!(-1));
+                                if lose_move_reply.load(SeqCst) {tokio::time::sleep(Duration::from_secs(1)).await;}
+                            },
                             "move" | "moveabsolute" | "movemechanical" if kind == DeviceType::Rotator => {
                                 let degrees = args["Position"].parse::<f64>().unwrap();
                                 {
@@ -162,7 +184,7 @@ impl AccessoryUpstream {
                         match member {
                             "interfaceversion" => json!(version),
                             "connected" => json!(connected.load(SeqCst)),
-                            "connecting" => { assert_eq!(version, 4); json!(false) },
+                            "connecting" => { assert!(modern); json!(false) },
                             _ => match values.lock().unwrap().get(member) {
                                 Some(value) => value.clone(),
                                 None => return axum::Json(json!({"ErrorNumber":1024,"ErrorMessage":"private detail must not escape"})),
