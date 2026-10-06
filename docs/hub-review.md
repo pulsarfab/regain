@@ -1870,3 +1870,35 @@ strict Clippy and the installed Rust 1.89.0 check pass in
 `hub-initialization-msrv-1.89.0.log`. The Unix symlink case awaits portable CI.
 Native UI adoption and broader
 diagnostics remain next, alongside all original remaining milestones.
+
+### Shared native configuration creation and CI fixture review
+
+NINA and ASCOM now create files through the same selector and Rust CLI path.
+Attachment and creation share the bounded, hidden helper runner; neither frontend
+kills a shared host. Review checked filename retention before dispatch, serialized
+admission, blocked replay after lost/malformed/cancelled replies, buffer clearing,
+bounded file reads and no equipment activation. Reconciliation only identifies
+schema/instance/revision; normal host loading still validates settings. An empty
+catalog enables editing while keeping Save disabled. The retained filename is
+read-only but selectable/copyable after uncertainty; explicit read restores that
+target if an ordinary later Browse selected another file.
+
+All 155 NINA tests pass in `artifacts/hub-native-initialization-nina.log` after final
+review, including production creation, existing-data preservation, all three lost
+reply cases, pending-operation admission, explicit absence and an actual WPF
+creation/read/load/empty-editor flow. Both real net48 bitness fixtures execute
+creation and file reconciliation and preserve identity; their shared ASCOM/host
+regressions pass in `hub-native-initialization-net48-fixtures.log`. The warnings-denied
+net48 build passes. The actual WPF render was inspected and documented as a private
+lost-reply fixture, rather than hardware acceptance.
+
+Simulation CI 37465679424 and 37465673033 each pass seven jobs but fail Windows in
+different existing pipe fixtures. The PR failure occurs when the partial-frame
+deadline closes a pipe before its sender completion runs. That deadline test now
+uses a known delivered byte and stalled reader directly, while the real pipe still
+proves idle connections remain open. The push failure is a cold handshake timeout
+before the queued-cancellation case begins; its server read is now armed directly
+instead of through a cold Task.Run queue. Production behavior and the 200-ms/two-
+second fixture deadlines are unchanged. New disposable-runner CI must verify these
+corrections. CLI eeb9208 CI is still active; broader diagnostics and every original
+remaining milestone/acceptance gate remain required.

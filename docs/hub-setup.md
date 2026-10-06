@@ -43,7 +43,7 @@ Choose a new filename in an existing writable directory. Creation never replaces
 an existing file and starts no host, HTTP listener or equipment connection. The
 result has no sources or outputs. Then start `regain-alpaca --hub-config` with
 that file and use the shared editor to add them, review and apply. Native setup
-can load the created file; a native create-file flow is still being implemented.
+can also create a file through the shared selector as described below.
 If creation times out or reports uncertain durability, inspect the selected file
 before another action. Never treat an unknown result as proof that creation failed.
 
@@ -101,6 +101,26 @@ means a lease on the virtual output, so use source diagnostics to assess upstrea
 health. Conformance-tool and real-device acceptance checks remain pending.
 
 ## Native NINA development preview
+
+The shared native selector used by NINA and ASCOM also offers **Create new
+configuration…**. Choose a new filename in an existing directory. Creation
+delegates once to the Rust CLI and retains the filename before sending; it creates
+fresh empty identities without starting a host or equipment. Then select **Load
+hub outputs** and **Edit shared configuration** to add sources and outputs. An
+empty configuration has nothing to select/save yet, but remains editable.
+
+If creation cannot be confirmed, **Create**, **Browse** and **Load** stay blocked.
+The retained filename remains read-only and copyable. Select **Read retained
+configuration file** to identify the existing file or its absence. An unreadable,
+malformed or unsupported file keeps that guard in place. This read starts no host
+and does not validate equipment settings; normal host loading performs validation.
+It never repeats creation. Retain the filename before closing the window.
+
+![Native configuration creation after an injected lost reply](images/hub-native-initialization.png)
+
+This is the actual WPF selector in a private automated fixture. The production
+executable created an empty file; the fixture discarded its reply to verify the
+reconciliation flow. No equipment was activated by creation or file reading.
 
 The plugin exports Switch, SafetyMonitor and Weather choices using NINA's
 3.2.0.9001 interfaces. Each class includes a **configure** choice. Open its setup,

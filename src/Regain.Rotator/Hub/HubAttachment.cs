@@ -62,6 +62,15 @@ public sealed class HubAttachment
 
         var arguments = "--hub-attach --hub-config " + Quote(configPath);
         if (workerDirectory is not null) arguments += " --workers " + Quote(workerDirectory);
+        var replyBytes = await RunHelperAsync(executable, arguments, cancellation).ConfigureAwait(false);
+        try { return new HubAttachment(HubWire.Parse(replyBytes), instance); }
+        finally { Array.Clear(replyBytes, 0, replyBytes.Length); }
+    }
+    // Shared bounded runner for explicit attachment and first-time creation.
+    // Stops only the invoked helper, never the shared host or equipment workers.
+    internal static async Task<byte[]> RunHelperAsync(string executable, string arguments, CancellationToken cancellation)
+    {
+        AbsoluteFile(executable); cancellation.ThrowIfCancellationRequested();
         using var process = new Process { StartInfo = new ProcessStartInfo(executable, arguments) {
             UseShellExecute = false, CreateNoWindow = true, WindowStyle = ProcessWindowStyle.Hidden,
             RedirectStandardOutput = true, RedirectStandardError = true,
@@ -82,8 +91,7 @@ public sealed class HubAttachment
             cancellation.ThrowIfCancellationRequested();
             if (timer.IsCancellationRequested) throw new HubException(HubFailure.Timeout);
             if (process.ExitCode != 0) throw new HubException(HubFailure.Disconnected);
-            try { return new HubAttachment(HubWire.Parse(output.Result), instance); }
-            finally { Array.Clear(output.Result, 0, output.Result.Length); }
+            return (byte[])output.Result.Clone();
         } catch (Exception e) {
             StopHelper(process);
             cancellation.ThrowIfCancellationRequested();
@@ -108,7 +116,7 @@ public sealed class HubAttachment
         try { process.StandardOutput.Dispose(); } catch { }
         try { process.StandardError.Dispose(); } catch { }
     }
-    private static async Task<byte[]> ReadBounded(Stream stream, int maximum, CancellationToken token)
+    internal static async Task<byte[]> ReadBounded(Stream stream, int maximum, CancellationToken token)
     {
         using var memory = new MemoryStream();
         var chunk = new byte[4096];

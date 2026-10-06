@@ -38,7 +38,9 @@ public sealed class HubClientTests
                 var accepting = peer.server.WaitForConnectionAsync();
                 await peer.stream.ConnectAsync(2000);
                 await accepting.WaitAsync(TimeSpan.FromSeconds(2));
-                var serving = Task.Run(async () => {
+                // Arm the server read before starting the client handshake;
+                // fixture readiness must not depend on a cold Task.Run worker.
+                async Task ServeHello() {
                     var request = await peer.Read();
                     Assert.Equal(1ul, request.GetProperty("id").GetUInt64());
                     Assert.Equal("hello", request.GetProperty("command").GetProperty("op").GetString());
@@ -51,7 +53,8 @@ public sealed class HubClientTests
                     };
                     alter?.Invoke(hello);
                     await peer.Raw(JsonSerializer.SerializeToUtf8Bytes(new { version = 1, id = 1, result = hello }));
-                });
+                }
+                var serving = ServeHello();
                 peer.Client = await HubClient.FromStreamAsync(peer.stream, peer.Instance, TimeSpan.FromSeconds(2), limits);
                 await serving; return peer;
             } catch { peer.Dispose(); throw; }
@@ -303,8 +306,33 @@ public sealed class HubClientTests
     {
         using var peer = await Peer.Open(limits: new HubClientLimits(TimeSpan.FromMilliseconds(200), TimeSpan.FromSeconds(3)));
         await Task.Delay(450); Assert.True(peer.Client.IsConnected);
-        var request = peer.Client.RequestAsync(Command()); await peer.Read();
-        await peer.Partial(); await Fails(HubFailure.Timeout, () => request);
+        // The deliberately broken frame can retire a pipe before the sender's
+        // own completion is scheduled. Test its deadline at the reader boundary
+        // with a known delivered byte, independently of sender/IO scheduling.
+        using var fragment = new StalledFrame();
+        await Fails(HubFailure.Timeout, () => HubWire.ReadFrame(fragment, HubWire.MaxFrame,
+            TimeSpan.FromMilliseconds(200), CancellationToken.None));
+        Assert.True(fragment.Delivered); Assert.True(fragment.Disposed);
+    }
+    private sealed class StalledFrame : Stream
+    {
+        internal bool Delivered, Disposed;
+        public override bool CanRead => true;
+        public override bool CanWrite => false;
+        public override bool CanSeek => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+        public override async Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellation)
+        {
+            if (!Delivered) { buffer[offset] = 42; Delivered = true; return 1; }
+            await Task.Delay(Timeout.Infinite, cancellation); throw new InvalidOperationException("Unreachable");
+        }
+        protected override void Dispose(bool disposing) { Disposed = true; base.Dispose(disposing); }
+        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override void Flush() => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
     }
 
     [Fact]

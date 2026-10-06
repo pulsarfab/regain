@@ -1175,5 +1175,12 @@ failure uses the existing committed/uncertain error boundary, not rollback.
 Creation happens before worker, SDK, endpoint or host initialization. Incompatible
 CLI modes are rejected. The operation prints the created configuration on success;
 lost output or timeout requires inspecting the selected file rather than replaying
-creation. Native create-file UI adoption remains required; it must use this same
-persistence path, retain the selected filename and reconcile unknown completion.
+creation. The shared native selector uses this same persistence path through the
+bounded helper runner already used for attachment. Creation retains the filename
+before dispatch and blocks overlapping operations or replay after an unknown
+result. File reconciliation reads at most 4 MiB with a 15-second cancellation
+deadline and checks schema/root members/identities without host or equipment
+startup. It reports an identified existing file or explicit absence; malformed,
+unsupported and unreadable files remain uncertain. Identification does not claim
+full configuration validation or ownership of another creator's file. Loading
+then validates through the regular host and permits editing an empty configuration.

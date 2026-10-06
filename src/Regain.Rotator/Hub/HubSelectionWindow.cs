@@ -12,6 +12,8 @@ public sealed class HubSelectionWindow : Window
 {
     private readonly string executable, type;
     private readonly HubSelectionStore store;
+    private readonly HubInitialization initialization;
+    internal Func<string?> ChooseNewConfigurationPath { get; set; }
     private Guid expectedRevision;
     private bool selectionsReadable;
     private readonly CancellationTokenSource lifetime = new();
@@ -21,6 +23,8 @@ public sealed class HubSelectionWindow : Window
     private readonly Button load = new() { Content = "Load hub outputs", Padding = new Thickness(14, 8, 14, 8) };
     private readonly Button save = new() { Content = "Save selected output", Padding = new Thickness(14, 8, 14, 8), IsEnabled = false };
     private readonly Button edit = new() { Content = "Edit shared configuration", Padding = new Thickness(14, 8, 14, 8), IsEnabled = false };
+    private readonly Button create = new() { Content = "Create new configuration…", Padding = new Thickness(14, 8, 14, 8) };
+    private readonly Button readCreated = new() { Content = "Read retained configuration file", Padding = new Thickness(14, 8, 14, 8), IsEnabled = false };
     private HubSelection? result;
     private string? loadedPath;
     private Guid loadedInstance;
@@ -31,12 +35,18 @@ public sealed class HubSelectionWindow : Window
         internal HubSelection Binding { get; } = binding;
         public string Label => Binding.Label + (Binding.Simulated ? " [SIMULATION]" : "") + " — " + Binding.OutputId.ToString("D");
     }
-    private HubSelectionWindow(string executable, HubSelectionStore store, string type, HubSelection? current)
+    internal HubSelectionWindow(string executable, HubSelectionStore store, string type, HubSelection? current, HubInitialization? initialization = null)
     {
         this.executable = executable; this.store = store; this.type = type;
+        this.initialization = initialization ?? new HubInitialization(executable);
+        ChooseNewConfigurationPath = () => {
+            var dialog = new SaveFileDialog { Filter = "Hub configuration (*.json)|*.json", DefaultExt = ".json", AddExtension = true,
+                FileName = "regain-hub.json", CheckPathExists = true, OverwritePrompt = false };
+            return dialog.ShowDialog(this) == true ? dialog.FileName : null;
+        };
         try { expectedRevision = store.Load().Revision; selectionsReadable = true; }
         catch { selectionsReadable = false; }
-        Title = "PulsarFab regain — hub " + type; Width = 760; Height = 520; MinWidth = 620;
+        Title = "PulsarFab regain — hub " + type; Width = 760; Height = 650; MinWidth = 620;
         WindowStartupLocation = WindowStartupLocation.CenterScreen; SetupTheme.Apply(this);
         var panel = new StackPanel { Margin = new Thickness(24) };
         Content = new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
@@ -46,10 +56,51 @@ public sealed class HubSelectionWindow : Window
         panel.Children.Add(path);
         var browse = new Button { Content = "Browse…", Padding = new Thickness(14, 8, 14, 8), HorizontalAlignment = HorizontalAlignment.Left };
         browse.Click += (_, _) => {
+            if (busy || closed || this.initialization.RequiresReconciliation) return;
             var dialog = new OpenFileDialog { Filter = "Hub configuration (*.json)|*.json", CheckFileExists = true };
             if (dialog.ShowDialog(this) == true) path.Text = dialog.FileName;
         };
-        panel.Children.Add(browse); panel.Children.Add(load); panel.Children.Add(edit);
+        panel.Children.Add(browse); panel.Children.Add(create); panel.Children.Add(readCreated); panel.Children.Add(load); panel.Children.Add(edit);
+        panel.Children.Add(new TextBlock { Text = "Create writes an empty configuration with fresh identities. It never replaces an existing file or starts equipment. If the outcome is unknown, read the retained filename before another creation. Keep this filename before closing setup.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 8) });
+        void FileControls() {
+            var ready = !busy && !closed;
+            // Keep the retained filename selectable/copyable after uncertainty.
+            path.IsEnabled = ready; path.IsReadOnly = this.initialization.RequiresReconciliation;
+            browse.IsEnabled = create.IsEnabled = ready && !this.initialization.RequiresReconciliation;
+            load.IsEnabled = ready && !this.initialization.RequiresReconciliation;
+            readCreated.IsEnabled = ready && this.initialization.Path is not null;
+        }
+        async Task Initialize(bool reconcile) {
+            if (busy || closed) return;
+            if (reconcile) {
+                if (this.initialization.Path is null) return;
+                // Reading always names the retained creation target, even if a
+                // later ordinary Browse changed the editable selection field.
+                path.Text = this.initialization.Path;
+            } else {
+                if (this.initialization.RequiresReconciliation) return;
+                var chosen = ChooseNewConfigurationPath(); if (chosen is null) return;
+                try { HubInitialization.ValidatePath(chosen); }
+                catch { status.Text = "Choose an absolute new filename in an existing directory."; return; }
+                path.Text = chosen; // Retain before dispatch, including lost replies.
+            }
+            busy = true; FileControls(); save.IsEnabled = edit.IsEnabled = false;
+            outputs.ItemsSource = null; loadedPath = null;
+            status.Text = reconcile ? "Reading the retained file without starting a host…" : "Creating the new empty configuration…";
+            try {
+                if (reconcile) await this.initialization.ReadAsync(lifetime.Token);
+                else await this.initialization.CreateAsync(path.Text, lifetime.Token);
+                if (closed) return;
+                status.Text = this.initialization.State == HubInitializationState.Missing
+                    ? "The retained filename is absent. Choose Create explicitly if you still want a new configuration."
+                    : (reconcile ? "Existing configuration identified" : "Empty configuration created") + " — " + this.initialization.InstanceId +
+                        ". No host or equipment was started. Load hub outputs, then edit shared configuration to add sources and outputs.";
+            } catch {
+                if (!closed) status.Text = "Creation or file read could not be confirmed. The filename is retained. Read the retained file before another creation; existing files are never replaced.";
+            } finally { busy = false; FileControls(); if (closed) lifetime.Dispose(); }
+        }
+        create.Click += async (_, _) => await Initialize(false);
+        readCreated.Click += async (_, _) => await Initialize(true);
         panel.Children.Add(new TextBlock { Text = "Output (stable UUID)", Margin = new Thickness(0, 16, 0, 0) });
         panel.Children.Add(outputs); panel.Children.Add(save);
         var manage = new Button { Content = "Manage saved output choices", Padding = new Thickness(14, 8, 14, 8), HorizontalAlignment = HorizontalAlignment.Left };
@@ -67,11 +118,13 @@ public sealed class HubSelectionWindow : Window
         panel.Children.Add(status);
         if (!selectionsReadable) status.Text = SelectionError;
         path.Text = current?.ConfigPath ?? "";
-        path.TextChanged += (_, _) => { save.IsEnabled = false; edit.IsEnabled = false; outputs.ItemsSource = null; loadedPath = null; };
+        path.TextChanged += (_, _) => { path.ToolTip = path.Text; save.IsEnabled = false; edit.IsEnabled = false; outputs.ItemsSource = null; loadedPath = null; };
         outputs.SelectionChanged += (_, _) => save.IsEnabled = selectionsReadable && !busy && loadedPath == path.Text && outputs.SelectedItem is Choice;
         load.Click += async (_, _) => {
             if (busy) return;
+            if (this.initialization.RequiresReconciliation) return;
             busy = true; load.IsEnabled = false; save.IsEnabled = false; edit.IsEnabled = false; path.IsEnabled = false; browse.IsEnabled = false;
+            FileControls();
             outputs.ItemsSource = null; loadedPath = null; status.Text = "Attaching to the shared hub…";
             try {
                 var selectedPath = path.Text;
@@ -91,7 +144,7 @@ public sealed class HubSelectionWindow : Window
             } catch (OperationCanceledException) { if (!lifetime.IsCancellationRequested) status.Text = "Hub attachment timed out. Check the host and configuration before trying again."; }
             catch { status.Text = "Could not load hub outputs. Check the configuration file and Regain host installation."; }
             finally {
-                busy = false; load.IsEnabled = true; path.IsEnabled = true; browse.IsEnabled = true;
+                busy = false; FileControls();
                 save.IsEnabled = selectionsReadable && !closed && loadedPath == path.Text && outputs.SelectedItem is Choice;
                 edit.IsEnabled = !closed && loadedPath == path.Text;
                 if (closed) lifetime.Dispose();

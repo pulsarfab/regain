@@ -14,6 +14,18 @@ internal static class Program
         try {
             if (args.Length != 3 || IntPtr.Size * 8 != int.Parse(args[2])) throw new InvalidOperationException("Wrong fixture bitness");
             using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(75));
+            var initializedPath = System.IO.Path.Combine(System.IO.Path.GetDirectoryName(args[1])!, "created empty configuration.json");
+            var initialization = new HubInitialization(args[0]);
+            await initialization.CreateAsync(initializedPath, deadline.Token);
+            if (initialization.State != HubInitializationState.Created || initialization.InstanceId is null)
+                throw new InvalidOperationException("Native initialization did not identify its empty file");
+            var originalInstance = initialization.InstanceId;
+            try { await initialization.CreateAsync(initializedPath, deadline.Token); throw new Exception("Initialization replaced an existing file"); }
+            catch (HubException) { }
+            if (!initialization.RequiresReconciliation) throw new InvalidOperationException("Creation error did not require file reconciliation");
+            await initialization.ReadAsync(deadline.Token);
+            if (initialization.State != HubInitializationState.Existing || initialization.InstanceId != originalInstance)
+                throw new InvalidOperationException("File reconciliation changed initialized identity");
             var attachment = await HubAttachment.AttachAsync(args[0], args[1], cancellation: deadline.Token);
             candidate = attachment.StartedProcessId;
             if (candidate is null) throw new InvalidOperationException("Fixture expected to launch its unique test host");

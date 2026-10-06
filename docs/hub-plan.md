@@ -18,11 +18,13 @@ injected fault never clears a retained uncertain-write latch. Actual WPF/browser
 screenshots are documented as simulation. Numeric Switch wire keys now decode
 through internally tagged commands and reject duplicate/noncanonical keys.
 
-Current increment: explicit first-time configuration persistence and CLI. The
-common Rust path creates an empty configuration with fresh identities, flushes
-before no-clobber publication, preserves existing files and starts no equipment
-or host. Native create-file UI adoption remains required; do not treat this CLI
-foundation as the whole initialization/setup milestone.
+Current increment: first-time creation in the shared native NINA/ASCOM selector.
+It uses the same Rust no-clobber path as CLI setup, retains a selected filename
+before dispatch and blocks another creation after unknown completion. Explicit
+bounded file read reconciles identity/absence without starting a host. The filename
+stays copyable while protected from editing. Loading an empty file enables the
+common editor even with no selectable outputs. Local tests prove those flows;
+broader diagnostics and interactive setup acceptance remain required.
 
 Native-credential checkpoint 2a26281 passes all eight jobs in both PR CI
 37457955380 and push CI 37457946553. Windows logs prove installed metadata without
@@ -31,13 +33,16 @@ upgrade preservation, failed uninstall with conflict, orphan removal after
 deleting bindings, preservation of another installation/settings and cleanup.
 Web-credential checkpoint a2cad0a passes both complete CI runs 37460531169 and
 37460523532. Native-inspection checkpoint 94b9adc passes PR CI 37462088304 and
-push CI 37462081747, including all eight jobs. This simulation increment still
-requires its own CI. Interactive UAC/Chooser, conformance and vendor acceptance
-remain required.
+push CI 37462081747, including all eight jobs. Simulation checkpoint 6f36ff5
+passes seven jobs in both runs, but Windows fails separate pipe fixtures: a
+partial-frame sender race and cold handshake scheduling. This increment removes
+the test scheduling races without raising production/test deadlines; new CI is
+required. CLI checkpoint eeb9208 CI remains active; seven PR jobs pass and Windows
+is running. Interactive UAC/Chooser, conformance and vendor acceptance remain required.
 
-Next: verify simulation/initialization CI, adopt creation in shared native setup
-with retained filename and explicit reconciliation, then complete broader diagnostics,
-then broader typed proxies, camera ownership, coordination and every remaining
+Next: verify corrected native-creation CI and previous CLI CI, complete broader
+source/output/policy diagnostics, then broader typed proxies, camera ownership,
+coordination and every remaining
 original milestone gate. This increment does not close the full setup milestone.
 
 Use this document as the working checklist. Complete one reviewable milestone at
@@ -721,3 +726,4 @@ Keep existing device profiles and registrations compatible throughout migration.
 | 2026-10-06 | Added shared native explicit inspection with host-described page parameters/deadline, saved-source selection, temporary lease ownership, checked revisions/cursors, no probe replay, and observed diagnostics export excluding configuration/credentials. Review preserved the preview when local invalid input sends no request. | 144 NINA checks, warnings-denied shared builds and real net48 x86/x64 inspection/export fixtures pass; the actual WPF render was inspected. Both 2a26281 CI runs pass all eight jobs. a2cad0a CI is still active. Next: shared initialization/simulation controls and broader diagnostics, then every original remaining milestone and acceptance gate. |
 | 2026-10-06 | Added shared native/web simulation controls from host descriptors, sparse saved-source updates, revision fencing, current-state reset, absent weather sensors and class-specific faults. Fixed numeric Switch decoding through tagged IPC and reviewed malformed replies as uncertain without replay. | Full hub/Alpaca tests, strict Clippy, Rust 1.89, generated-contract freshness, JavaScript/four schema checks, all 149 NINA tests, warning-denied net48 and real x86/x64 clients pass. Actual WPF/browser renders are documented as simulation; browser verifies preserved sibling readings, unchanged config, no leases/errors. Both a2cad0a and 94b9adc CI runs pass. Next: simulation CI, initialization and broader diagnostics, followed by all original remaining gates. |
 | 2026-10-06 | Added common first-time persistence and explicit --hub-init in the existing executable: fresh empty identities, flushed no-clobber publication, existing-file preservation and committed durability uncertainty before any worker/SDK/host initialization. Reviewed CLI mode admission and the actual persistence implementation. | Eight-creator race and invalid/relative/missing-parent cases pass; production CLI verifies no live endpoint/host ownership and unchanged existing bytes. Full hub/Alpaca suites, strict Clippy and installed Rust 1.89.0 pass. Unix symlink/portable CI remains required. Next: native create-file UI using this path with retained filename/unknown-result reconciliation, broader diagnostics, and every original remaining milestone. |
+| 2026-10-06 | Adopted first-time creation in the shared native NINA/ASCOM selector via the existing bounded helper. Added retained copyable filename, serialized creation/read admission, unknown-result fencing and explicit file identity/absence reconciliation. Empty configurations load into the editor with no output selection. Reviewed two Windows CI fixture races without raising deadlines. | All 155 NINA checks, real net48 x86/x64 creation/reconciliation/ASCOM fixtures and warning-denied build pass; the actual WPF private lost-reply render was inspected. 6f36ff5 CI passes seven jobs but fails separate pipe fixtures; corrections need new CI. eeb9208 CI remains active. Next: verify CI, broader source/output/policy diagnostics, typed devices/cameras/coordination and every original remaining gate. |
