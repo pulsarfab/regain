@@ -47,6 +47,128 @@ impl Reply {
 }
 
 #[tokio::test]
+async fn wheel_polling_preserves_arrays_and_recovers_only_the_invalid_property() {
+    use regain_hub::filterwheel::FilterWheelProperty;
+    for invalid in [
+        json!([0, 2147483648i64]),
+        json!([0, 1.5]),
+        json!([0, "1"]),
+        json!([[0]]),
+        json!([null]),
+    ] {
+        let names = json!(["L", "Hα", ""]);
+        let offsets = json!([i32::MIN, 0, i32::MAX]);
+        let mut server = Server::new(vec![
+            Reply::value(json!(true)),
+            Reply::value(names.clone()),
+            Reply::value(invalid),
+            Reply::value(json!(-1)),
+            Reply::value(names.clone()),
+            Reply::value(offsets.clone()),
+            Reply::value(json!(2)),
+        ])
+        .await;
+        if let SourceBackend::Alpaca { device_type, .. } = &mut server.config.backend {
+            *device_type = DeviceType::FilterWheel;
+        }
+        let samples = FilterWheelProperty::ALL
+            .into_iter()
+            .map(FilterWheelProperty::sample_request)
+            .collect();
+        let mut backend = AlpacaBackend::new(&server.config, samples, None).unwrap();
+        backend.connect().await.unwrap();
+        let first = backend.sample().await.unwrap();
+        assert!(first.partial && first.more);
+        assert_eq!(first.values["names"], names);
+        let invalid = backend.sample().await.unwrap();
+        assert!(invalid.partial && invalid.more);
+        assert!(invalid.values.is_empty());
+        assert_eq!(invalid.errors.len(), 1);
+        assert_eq!(invalid.errors["focusoffsets"].kind, ErrorKind::Permanent);
+        let moving = backend.sample().await.unwrap();
+        assert!(!moving.more);
+        assert_eq!(moving.values["position"], -1);
+        assert_eq!(backend.sample().await.unwrap().values["names"], names);
+        assert_eq!(
+            backend.sample().await.unwrap().values["focusoffsets"],
+            offsets
+        );
+        assert_eq!(backend.sample().await.unwrap().values["position"], 2);
+        assert!(
+            server
+                .fixture
+                .requests
+                .lock()
+                .unwrap()
+                .iter()
+                .all(|(method, _, _)| method == "GET")
+        );
+    }
+}
+
+#[tokio::test]
+async fn array_polling_enforces_element_types_and_per_array_limits() {
+    use regain_hub::alpaca::SampleType;
+    for (value_type, invalid) in [
+        (SampleType::Strings, json!([1])),
+        (SampleType::Strings, json!([["nested"]])),
+        (SampleType::Strings, json!(vec!["name"; 1025])),
+        (SampleType::Int32s, json!(vec![0; 1025])),
+    ] {
+        let mut server = Server::new(vec![Reply::value(invalid)]).await;
+        if let SourceBackend::Alpaca { device_type, .. } = &mut server.config.backend {
+            *device_type = DeviceType::FilterWheel;
+        }
+        let mut backend = AlpacaBackend::new(
+            &server.config,
+            vec![SampleRequest {
+                key: "array".into(),
+                member: "names".into(),
+                parameters: Values::new(),
+                value_type,
+                sensor_age: None,
+            }],
+            None,
+        )
+        .unwrap();
+        let batch = backend.sample().await.unwrap();
+        assert!(batch.values.is_empty());
+        assert_eq!(batch.errors["array"].kind, ErrorKind::Permanent);
+        assert!(!batch.more);
+    }
+}
+
+#[tokio::test]
+async fn collected_arrays_share_the_cache_text_and_item_budgets_before_publication() {
+    use regain_hub::alpaca::SampleType;
+    for (value_type, value, count, accepted) in [
+        (SampleType::Strings, json!(["α".repeat(300 * 1024)]), 3, 1),
+        (SampleType::Int32s, json!(vec![0; 1024]), 6, 4),
+    ] {
+        let mut server =
+            Server::new((0..count).map(|_| Reply::value(value.clone())).collect()).await;
+        if let SourceBackend::Alpaca { device_type, .. } = &mut server.config.backend {
+            *device_type = DeviceType::FilterWheel;
+        }
+        let samples = (0..count)
+            .map(|index| SampleRequest {
+                key: format!("array{index}"),
+                member: format!("array{index}"),
+                parameters: Values::new(),
+                value_type,
+                sensor_age: None,
+            })
+            .collect();
+        let mut backend = AlpacaBackend::new(&server.config, samples, None).unwrap();
+        assert_eq!(backend.poll().await.unwrap_err().kind, ErrorKind::Permanent);
+        // Admission rejects the first over-budget result, before any subsequent
+        // requests or an unbounded collected map can be published.
+        assert_eq!(server.fixture.requests.lock().unwrap().len(), accepted + 1);
+        assert_eq!(server.fixture.replies.lock().unwrap().len(), 1);
+    }
+}
+
+#[tokio::test]
 async fn polling_budget_is_per_request_and_commands_interleave_without_rejuvenating_samples() {
     use regain_hub::{config::Readout, safety::MonotonicClock, source::SourceHandle};
     let mut server = Server::new(vec![Reply::value(json!(true))]).await;

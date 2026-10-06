@@ -24,6 +24,39 @@ pub const MAX_SAMPLE_TEXT_BYTES: usize = 1024 * 1024;
 /// image buffers are not source samples and must use their own owned transport.
 pub const MAX_SAMPLE_ARRAY_LENGTH: usize = 1024;
 pub const MAX_SAMPLE_ARRAY_ITEMS: usize = 4096;
+/// Shared admission for an entire cache or collected transport result. A
+/// rejected budget is discarded; callers never publish a partially admitted set.
+#[derive(Default)]
+pub(crate) struct SampleBudget {
+    text_bytes: usize,
+    array_items: usize,
+}
+impl SampleBudget {
+    pub(crate) fn admit(&mut self, value: &Value) -> bool {
+        let values = if let Value::Array(values) = value {
+            self.array_items = self.array_items.saturating_add(values.len());
+            if values.len() > MAX_SAMPLE_ARRAY_LENGTH || self.array_items > MAX_SAMPLE_ARRAY_ITEMS {
+                return false;
+            }
+            values.as_slice()
+        } else {
+            std::slice::from_ref(value)
+        };
+        for value in values {
+            match value {
+                Value::String(value) => {
+                    self.text_bytes = self.text_bytes.saturating_add(value.len())
+                }
+                Value::Bool(_) | Value::Number(_) => {}
+                _ => return false,
+            }
+            if self.text_bytes > MAX_SAMPLE_TEXT_BYTES {
+                return false;
+            }
+        }
+        true
+    }
+}
 /// A failed measurement does not invalidate unrelated readings from the same
 /// device. Ages are upstream sensor ages at request time, not HTTP cache ages.
 #[derive(Clone, Debug, Default)]
@@ -1383,30 +1416,13 @@ fn validate_batch(state: &SourceSnapshot, batch: &SampleBatch) -> Result<(), Sou
             return Err(invalid());
         }
     }
-    let mut text_bytes = 0usize;
-    let mut array_items = 0usize;
+    let mut budget = SampleBudget::default();
     let retained = state.values.iter().filter(|(key, _)| {
         batch.partial && !batch.values.contains_key(*key) && !batch.errors.contains_key(*key)
     });
     for (_, value) in retained.chain(batch.values.iter()) {
-        let values = if let Value::Array(values) = value {
-            array_items = array_items.saturating_add(values.len());
-            if values.len() > MAX_SAMPLE_ARRAY_LENGTH || array_items > MAX_SAMPLE_ARRAY_ITEMS {
-                return Err(invalid());
-            }
-            values.as_slice()
-        } else {
-            std::slice::from_ref(value)
-        };
-        for value in values {
-            match value {
-                Value::String(value) => text_bytes = text_bytes.saturating_add(value.len()),
-                Value::Bool(_) | Value::Number(_) => {}
-                _ => return Err(invalid()),
-            }
-            if text_bytes > MAX_SAMPLE_TEXT_BYTES {
-                return Err(invalid());
-            }
+        if !budget.admit(value) {
+            return Err(invalid());
         }
     }
     Ok(())

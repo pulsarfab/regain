@@ -1710,3 +1710,21 @@ save/reload and removal of the optional field perform no equipment I/O.
 Calibration remains an explicit worker operation. Its provisional slot count and
 moving Position `-1` preserve the same saved metadata. The hub never automatically
 calibrates, changes a focuser offset or imports installed legacy-driver settings.
+
+### Shared wheel polling
+
+The existing common property poller accepts bounded string and Int32 arrays.
+Typed wheel outputs contribute Names, FocusOffsets and Position to a single
+deduplicated source plan, including when another output maps scalar Position.
+Those three keys count toward the combined source limit. Incremental transport
+polling retains per-key errors and ages; one malformed offset array cannot erase
+unrelated names or position, and a later valid sample replaces only that error.
+Wheel-specific matching slot counts and zero-reference semantics remain enforced
+by the typed controller, rather than a second device model inside the transport.
+
+One shared SampleBudget admits values into both the source cache and complete
+Alpaca poll results. Per-array limits do not permit an unbounded sum of otherwise
+valid responses: collected results stop at the first aggregate text/item overflow
+before publication. Partial cache replacement continues to include retained keys
+and exclude replaced/errored ones. The poller remains shared with COM imports;
+this change alone does not enable additional COM classes or wheel outputs.

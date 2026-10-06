@@ -42,9 +42,83 @@ fn switch(number: u32, channels: Vec<SwitchChannel>) -> OutputConfig {
 }
 
 #[test]
+fn wheel_outputs_share_one_typed_metadata_plan_with_scalar_position_readouts() {
+    use regain_hub::config::DeviceType;
+    let mut config = HubConfig::empty();
+    let mut source = weather().sources[0].clone();
+    let SourceBackend::Alpaca { device_type, .. } = &mut source.backend else {
+        panic!()
+    };
+    *device_type = DeviceType::FilterWheel;
+    let source_id = source.id;
+    config.sources.push(source);
+    for number in [4, 9] {
+        config.outputs.push(OutputConfig {
+            id: Uuid::new_v4(),
+            number,
+            label: format!("Wheel {number}"),
+            device: VirtualDevice::Proxy {
+                source: source_id,
+                device_type: DeviceType::FilterWheel,
+            },
+        });
+    }
+    config.outputs.push(switch(
+        0,
+        vec![gauge(
+            0,
+            Readout::Property {
+                source: source_id,
+                property: "position".into(),
+                unit: None,
+            },
+        )],
+    ));
+    let saved = config.clone();
+    let plans = source_plans(&config).unwrap();
+    assert_eq!(plans.len(), 1);
+    let samples = &plans[&source_id].samples;
+    assert_eq!(samples.len(), 3);
+    assert!(matches!(
+        samples
+            .iter()
+            .find(|sample| sample.key == "names")
+            .unwrap()
+            .value_type,
+        SampleType::Strings
+    ));
+    assert!(matches!(
+        samples
+            .iter()
+            .find(|sample| sample.key == "focusoffsets")
+            .unwrap()
+            .value_type,
+        SampleType::Int32s
+    ));
+    assert!(matches!(
+        samples
+            .iter()
+            .find(|sample| sample.key == "position")
+            .unwrap()
+            .value_type,
+        SampleType::Number
+    ));
+    assert!(
+        samples
+            .iter()
+            .all(|sample| sample.parameters.is_empty() && sample.sensor_age.is_none())
+    );
+    assert_eq!(config, saved);
+}
+
+#[test]
 fn typed_properties_count_toward_the_combined_poll_limit_after_deduplication() {
     use regain_hub::config::DeviceType;
-    for (device_type, typed_count) in [(DeviceType::Focuser, 9), (DeviceType::Rotator, 7)] {
+    for (device_type, typed_count) in [
+        (DeviceType::Focuser, 9),
+        (DeviceType::Rotator, 7),
+        (DeviceType::FilterWheel, 3),
+    ] {
         let mut config = HubConfig::empty();
         let mut source = weather().sources[0].clone();
         let SourceBackend::Alpaca {

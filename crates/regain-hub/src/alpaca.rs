@@ -4,7 +4,7 @@ use crate::{
     config::{ConnectionPolicy, DeviceType, SourceBackend, SourceConfig},
     source::{
         Backend, BackendFuture, ConnectionInfo, ConnectionMethod, ErrorKind, SampleBatch,
-        SourceError, Values,
+        SampleBudget, SourceError, Values,
     },
 };
 use reqwest::{
@@ -21,7 +21,7 @@ use url::Url;
 use uuid::Uuid;
 
 pub const MAX_RESPONSE_BYTES: usize = 1024 * 1024;
-use crate::sampling::ScalarPoll;
+use crate::sampling::PropertyPoll;
 pub use crate::sampling::{SampleRequest, SampleType};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -50,7 +50,7 @@ pub struct AlpacaBackend {
     connection_phase: ConnectionPhase,
     connection_started: Option<tokio::time::Instant>,
     connection_deadline: Duration,
-    polling: ScalarPoll,
+    polling: PropertyPoll,
     weather_source: bool,
 }
 impl AlpacaBackend {
@@ -102,7 +102,7 @@ impl AlpacaBackend {
         for sample in &samples {
             encode_parameters(&sample.parameters)?;
         }
-        let polling = ScalarPoll::new(
+        let polling = PropertyPoll::new(
             source_device_type,
             samples,
             config.polling.attempts_per_cycle,
@@ -221,24 +221,18 @@ impl AlpacaBackend {
         let value = self
             .request(false, &sample.member, sample.parameters.clone())
             .await?;
-        let valid = match sample.value_type {
-            SampleType::Boolean => value.is_boolean(),
-            SampleType::Number => value.as_f64().is_some_and(f64::is_finite),
-            SampleType::Text => value.is_string(),
-        };
-        if !valid {
+        if !sample.valid_value(&value) {
             return Err(bad_response(false));
         }
         Ok((value, age))
     }
     async fn collect_samples(&mut self) -> Result<SampleBatch, SourceError> {
         let mut batch = SampleBatch::default();
-        let mut text_bytes = 0usize;
+        let mut budget = SampleBudget::default();
         for sample in self.polling.samples().to_vec() {
             match self.read_sample(&sample).await {
                 Ok((value, age)) => {
-                    text_bytes += value.as_str().map_or(0, str::len);
-                    if text_bytes > MAX_RESPONSE_BYTES {
+                    if !budget.admit(&value) {
                         return Err(bad_response(false));
                     }
                     batch.ages_seconds.insert(sample.key.clone(), age);

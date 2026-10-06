@@ -3,7 +3,7 @@
 use crate::{
     config::{Bitness, ConnectionPolicy, DeviceType, SourceBackend, SourceConfig},
     native::NativeRuntime,
-    sampling::{SampleRequest, ScalarPoll},
+    sampling::{PropertyPoll, SampleRequest},
     source::{
         Backend, BackendFuture, ConnectionInfo, ConnectionMethod, ErrorKind, SampleBatch,
         SourceError, Values,
@@ -48,7 +48,7 @@ pub struct ComBackend {
     deadline: Duration,
     connection_deadline: Duration,
     connecting_since: Option<Instant>,
-    polling: ScalarPoll,
+    polling: PropertyPoll,
     worker: Option<AccessoryWorker>,
     request_id: i64,
     info: Option<ConnectionInfo>,
@@ -116,7 +116,7 @@ impl ComBackend {
             deadline: Duration::from_secs_f64(config.polling.request_timeout_seconds),
             connection_deadline: Duration::from_secs_f64(config.polling.connection_timeout_seconds),
             connecting_since: None,
-            polling: ScalarPoll::new(*device_type, samples, config.polling.attempts_per_cycle)?,
+            polling: PropertyPoll::new(*device_type, samples, config.polling.attempts_per_cycle)?,
             worker: None,
             request_id: 0,
             info: None,

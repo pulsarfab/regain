@@ -1,9 +1,9 @@
-//! Scalar sample plans and incremental polling shared by Alpaca and COM imports.
+//! Typed property plans and incremental polling shared by Alpaca and COM imports.
 //! Transport adapters issue one request at a time; this state owns type checks,
 //! conservative sensor ages and same-key retry accounting, not source ownership.
 use crate::{
     config::{DeviceType, Readout},
-    source::{ErrorKind, MAX_SAMPLE_KEYS, SampleBatch, SourceError, Values},
+    source::{ErrorKind, MAX_SAMPLE_KEYS, SampleBatch, SampleBudget, SourceError, Values},
 };
 use serde_json::{Value, json};
 use std::collections::BTreeSet;
@@ -14,6 +14,8 @@ pub enum SampleType {
     Boolean,
     Number,
     Text,
+    Strings,
+    Int32s,
 }
 #[derive(Clone)]
 pub struct SampleRequest {
@@ -56,15 +58,26 @@ impl SampleRequest {
         }
     }
     pub(crate) fn valid_value(&self, value: &Value) -> bool {
-        match self.value_type {
+        let typed = match self.value_type {
             SampleType::Boolean => value.is_boolean(),
             SampleType::Number => value.as_f64().is_some_and(f64::is_finite),
-            SampleType::Text => value.as_str().is_some_and(|s| s.len() <= 1024 * 1024),
-        }
+            SampleType::Text => value.is_string(),
+            SampleType::Strings => value
+                .as_array()
+                .is_some_and(|values| values.iter().all(Value::is_string)),
+            SampleType::Int32s => value.as_array().is_some_and(|values| {
+                values.iter().all(|value| {
+                    value
+                        .as_i64()
+                        .is_some_and(|value| i32::try_from(value).is_ok())
+                })
+            }),
+        };
+        typed && SampleBudget::default().admit(value)
     }
 }
 
-pub(crate) struct ScalarPoll {
+pub(crate) struct PropertyPoll {
     samples: Vec<SampleRequest>,
     cursor: usize,
     pending_age: Option<(f64, Instant)>,
@@ -80,13 +93,13 @@ pub(crate) struct PreparedSample {
     age: f64,
     pub began: Instant,
 }
-impl ScalarPoll {
+impl PropertyPoll {
     pub fn new(
         device: DeviceType,
         samples: Vec<SampleRequest>,
         attempts: u32,
     ) -> Result<Self, SourceError> {
-        let invalid = || SourceError::new(ErrorKind::InvalidValue, "Invalid scalar sample plan");
+        let invalid = || SourceError::new(ErrorKind::InvalidValue, "Invalid property sample plan");
         let safety = device == DeviceType::SafetyMonitor;
         let mut keys = BTreeSet::new();
         if samples.len() > MAX_SAMPLE_KEYS

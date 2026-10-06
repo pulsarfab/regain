@@ -3121,6 +3121,53 @@ failure or adding successful-path reads. No retry, assertion, deadline or produc
 change is made. Local x86/x64 passes do not prove its cause; push CI 37533737225
 must finish, and later exact-head confirmation remains required.
 
+Push 37533737225 subsequently completes all eight jobs successfully, including
+Windows packaging, installer acceptance and camera-kit checks. Retain this beside
+the failed PR run; it does not establish a cause. Native metadata commits 0c3e22b
+and 630b302 are pushed into draft PR #21; exact-head PR/push CI
+37536023962/37536015902 is now live.
+
 Next: shared wheel poll plans, runtime/IPC, all three outputs, COM/virtual/simulation
 and creation; then panels, camera ownership/transport, coordination and every
 original acceptance/final gate. This checkpoint does not close those requirements.
+
+### Shared wheel polling review (2026-10-06, local increment)
+
+The common PropertyPoll replaces the scalar-only name and accepts bounded
+Strings/Int32s alongside existing scalar types. Wheel property descriptors build
+the poll requests; factory construction deduplicates their three keys across
+multiple proxy outputs and scalar Position mappings. Typed keys still count
+toward the union limit. Factory construction does not connect equipment or mutate
+saved config. This does not enable a wheel runtime/output or another COM class.
+
+Review identified a collection-bound issue in the proposed array path: complete
+Alpaca polling counted only scalar text, so many individually bounded arrays could
+accumulate before the source cache rejected them. SampleBudget now holds the
+existing flat-array/text admission in one place, reused for prospective cache
+contents, individual typed values and complete collected poll results. Array
+length, aggregate items and aggregate UTF-8 bounds retain saturating arithmetic;
+nested arrays/objects/null remain invalid. Partial cache validation still includes
+retained values and excludes replacements/error removals. The complete transport
+collector rejects before publishing an over-budget set. Safety/number semantics,
+per-request polling, retry accounting, ownership and deadlines are unchanged.
+
+The incremental and complete Alpaca paths now call the same typed value check.
+Malformed offset arrays produce per-key errors while names/position continue;
+the next valid sample replaces that error. Signed Int32 endpoints, Unicode/blank
+names and moving -1 are preserved. Slot-count/reference semantics stay in the
+wheel controller; generic transport array types do not invent device behavior.
+
+Focused verification passes 27 actual Alpaca transport cases, seven factory
+cases, eleven wheel-controller cases and twenty-six source-actor cases. Three new
+transport cases cover per-key recovery, element/length rejection and collected
+text/item overflow. A factory case checks two wheel outputs plus scalar Position
+share exactly three typed keys; the existing union-limit case now covers wheels.
+Strict Clippy passes. Review strengthened the collection test to leave one later
+response queued, proving admission stops at the first overflow rather than only
+rejecting after reading the whole pass; focused confirmation passes. Full Rust
+hub/Alpaca suites, Rust 1.89 all targets, contract freshness, freshly rebuilt-host
+NINA 202/202 and real net48 x86/x64 regressions pass. Evidence:
+artifacts/hub-wheel-polling-{focused,factory-confirmed,budget-confirmed,clippy,rust,
+msrv,contract,host,nina,net48}.log. This verified increment remains local while
+native metadata head 630b302 runs its own CI. The original runtime/IPC, publication,
+import/simulation/setup and later milestone gates remain required.

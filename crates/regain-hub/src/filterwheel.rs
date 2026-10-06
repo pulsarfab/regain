@@ -28,6 +28,20 @@ pub enum FilterWheelProperty {
 }
 impl FilterWheelProperty {
     pub const ALL: [Self; 3] = [Self::Names, Self::FocusOffsets, Self::Position];
+    pub fn sample_request(self) -> crate::sampling::SampleRequest {
+        use crate::sampling::{SampleRequest, SampleType};
+        SampleRequest {
+            key: self.member().into(),
+            member: self.member().into(),
+            parameters: Values::new(),
+            value_type: match self {
+                Self::Names => SampleType::Strings,
+                Self::FocusOffsets => SampleType::Int32s,
+                Self::Position => SampleType::Number,
+            },
+            sensor_age: None,
+        }
+    }
     pub fn member(self) -> &'static str {
         match self {
             Self::Names => "names",
