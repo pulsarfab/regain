@@ -2802,3 +2802,17 @@ then update the same draft PR. Review
 also identified missing Focuser/Rotator ProgID generation in the Rust ASCOM identity
 helper; address and test it before enabling rotator COM imports. COM, dedicated
 simulation, shared creation and every original broader acceptance gate remain open.
+
+Follow-up private CLI probes cover worktree and Unicode temporary paths, direct
+and helper-launched hosts, and two simultaneous IPC clients with a Switch lease.
+Each publisher reports readiness about 47 ms after spawn and lists exactly three
+simulated scalar devices with zero cameras. Every newly created private host and
+publisher is retired by the probe; no vendor source or installed profile is used.
+Evidence: artifacts/hub-publisher-startup-*-probe.log. A subsequent focused native
+publisher test passes in 820 ms. Full rebuilt-host managed confirmation now passes
+all 196 NINA cases and real net48 x86/x64 clients, using
+artifacts/hub-virtual-rotator-final-confirmed-{nina,net48}.log. No production or
+fixture deadline was increased. These are new passing observations, not proof of
+the earlier startup/initialization failures' causes; retain those logs and the
+broader reliability/acceptance gate. The virtual implementation checkpoint can
+now proceed to its own CI while the remaining original plan stays in scope.
