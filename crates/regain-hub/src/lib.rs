@@ -4,6 +4,7 @@ pub mod alpaca;
 pub mod config;
 pub mod description;
 pub mod factory;
+pub mod ipc;
 pub mod native;
 pub mod parameters;
 pub mod readout;

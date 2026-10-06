@@ -25,6 +25,8 @@ struct Device {
     hang_disconnect: AtomicBool,
     hang_write: AtomicBool,
     hang_poll: AtomicBool,
+    hang_read: AtomicBool,
+    large_sample: AtomicBool,
 }
 struct Mock {
     device: Arc<Device>,
@@ -51,6 +53,9 @@ impl Backend for Mock {
     }
     fn read(&mut self, member: String, _: Values) -> BackendFuture<'_, Value> {
         Box::pin(async move {
+            if self.device.hang_read.load(SeqCst) {
+                std::future::pending::<()>().await;
+            }
             Ok(match member.as_str() {
                 "canwrite" => json!(true),
                 "minswitchvalue" => json!(0),
@@ -72,11 +77,18 @@ impl Backend for Mock {
             if self.device.hang_poll.load(SeqCst) {
                 std::future::pending::<()>().await;
             }
-            Ok(self.values.clone())
+            let mut values = self.values.clone();
+            if self.device.large_sample.load(SeqCst) {
+                values.insert("fixturetext".into(), json!("\"".repeat(600_000)));
+            }
+            Ok(values)
         })
     }
     fn reset(&mut self) {}
 }
+
+#[path = "support/runtime_ipc.rs"]
+mod ipc;
 
 struct Fixture {
     config: HubConfig,

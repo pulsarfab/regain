@@ -347,7 +347,16 @@ new clients, drains all source actors, and preserves uncertain cleanup results
 without replay. The mixed native/network test now uses the complete runtime
 builder and separate clients rather than constructing controllers itself.
 
-Next: implement host IPC/ownership, protected credentials, and device capabilities, then connect the first
+The scalar IPC dispatcher now uses the shared runtime, with a versioned hello,
+bounded framing, typed device operations, configuration description/read/validation,
+and connection-owned client identities. Requests start in order but can finish
+out of order; slow source I/O does not block cached safety reads or EOF cleanup.
+Tests cover unknown fields, spoofed client IDs, replayed request IDs, deadlines,
+overload, oversized replies, and clients that stop reading. This is a stream
+implementation, not yet a protected OS endpoint or a published frontend service.
+
+Next: implement protected IPC endpoints and host startup ownership, durable config
+apply, protected credentials, and device capabilities, then connect the first
 three virtual classes to the existing Alpaca server/setup UI. Frontend error
 translation and protocol conformance remain unverified. Generic
 scalar polling does not establish camera image or acquisition support. No complete
@@ -431,3 +440,4 @@ Keep existing device profiles and registrations compatible throughout migration.
 | 2026-10-05 | Implemented version-negotiated Alpaca connections, bounded incremental handshakes, shared connection diagnostics, and a schema-described connection timeout. Review corrected repeated uncertain disconnects and duplicate actor resets on handshake failure. | 89 Rust hub tests pass, including cancellation, pending/slow handshakes, external ownership, and reconnect during asynchronous disconnect. Clippy, Rust 1.89.0, package verification, schema freshness, and web/Python/.NET configuration readers pass. Next: shared host/source construction, protected credentials, capabilities, IPC, and frontend publication. Milestones 2–5 and final acceptance remain open. |
 | 2026-10-05 | Added configuration-driven native/Alpaca source construction, unioned poll plans, enabled-membership polling cadence, bounded plan growth, and the credential-provider boundary. Mixed-source integration now uses the real factory. | 95 hub tests pass, including plan deduplication, weather ages, disabled memberships, combined limits, validation before credential access, authenticated requests, and shared leases without secret-bearing diagnostics. Next: shared output runtime, protected storage, virtual/simulated sources, host IPC, and publication. No later gate is closed by source construction alone. |
 | 2026-10-05 | Added shared output/client sessions, cancellation-safe connection reservations, and explicit runtime/registry shutdown. Safety policy and weather settings are shared per output; queued commands cannot revive a retired actor. Reviewed last-client cleanup, in-flight writes, and cancelled shutdown. | 104 local hub tests cover shared state, disconnect order, cancellation/replacement, source stalls with independent safety expiry, uncertain writes/cleanup, and resumed shutdown. Mixed native/network integration uses the runtime builder. Next: IPC framing, user-only endpoints, startup ownership, protected storage, and frontend publication; all remaining original gates stay open. |
+| 2026-10-05 | Added bounded scalar IPC framing, handshake, typed controller dispatch, configuration reads/validation, and per-stream clients. Review fixed request-start ordering and strict parsing of no-argument commands. | 114 local hub tests pass, including ten framed-stream integration/fault cases; Clippy, Rust 1.89.0, and package verification pass. Next: user-only named pipes/Unix sockets, startup ownership and process tests, durable applyConfig, and executable/frontend integration. No OS endpoint or hardware acceptance gate is closed by duplex-stream tests. |

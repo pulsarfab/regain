@@ -62,9 +62,9 @@ result without replaying Disconnect. An active-connection count of zero alone is
 not proof of worker teardown. Configuration replacement must drain the old
 registry before allowing the next runtime to open its sources.
 
-These runtime contracts have local lifecycle/fault tests. Cross-process framing,
-OS ownership, protected endpoints, configuration replacement, and resume handling
-still need to be connected to this runtime.
+These runtime contracts have local lifecycle/fault tests. Scalar framing and
+dispatch now use this runtime through a host-supplied stream. OS ownership,
+protected endpoints, configuration replacement, and resume handling remain open.
 
 Use the existing convention: little-endian 32-bit JSON length followed by UTF-8
 JSON; responses may carry separately bounded binary image data. Version the hub
@@ -79,6 +79,55 @@ include an expected revision. Errors contain a stable code, safe message, and
 optional field path/source ID. Do not include credentials or arbitrary driver
 exception text in exported diagnostics. Standard outputs translate these errors
 to their interface's error conventions.
+
+### Implemented scalar wire protocol
+
+Each JSON message is prefixed by its unsigned 32-bit little-endian byte length.
+Frames are limited to 1 MiB. The first request must be `hello`; request IDs are
+positive unsigned integers and must strictly increase on that connection.
+Responses may arrive out of order and carry the matching ID. Neither retries nor
+ID reuse authorize replay: duplicate/older IDs close the connection.
+
+```json
+{"version":1,"id":1,"command":{"op":"hello"}}
+{"version":1,"id":2,"command":{"op":"connect","output":"10000000-0000-0000-0000-000000000101"}}
+{"version":1,"id":3,"command":{"op":"get","output":"10000000-0000-0000-0000-000000000101","property":{"member":"isSafe"}}}
+```
+
+Successful responses have `version`, `id`, and `result`. Failed operations have
+`version`, `id`, and `error` containing a stable `code`, sanitized `message`, and
+optional `upstreamCode`. Hello returns stable `instanceId`, per-runtime
+`hostInstance`, `configurationRevision`, connection-owned `clientId`, frame and
+concurrency limits, and the implemented operations/capabilities. Client IDs in
+requests are rejected, rather than interpreted as another client's authority.
+
+Currently implemented: describeConfig, getConfig, validateConfig, listDevices,
+sourceStatus, connect, disconnect, and typed get/put for Switch, SafetyMonitor,
+and Weather. `validateConfig` reports persisted configuration/relationship errors
+with `scope: "configuration"`; it does not authorize durable apply or establish
+live hardware capabilities. `getConfig` retains credential references for local
+editing, but contains no credential values. Durable applyConfig and camera image
+transport are not advertised or implemented by this scalar dispatcher.
+
+Requests start in arrival order but do not wait for earlier I/O to complete.
+This lets Disconnect cancel a pending Connect while cached safety reads remain
+responsive during another request. There are at most eight in-flight operations
+and one buffered input frame per stream. Overload, malformed/unknown fields,
+unsupported protocol versions, and invalid request order close the stream.
+No-argument commands also reject unknown fields. Invalid typed device operations
+return errors while preserving the connection.
+
+Default deadlines are five seconds for hello, a partial frame, or writing a
+response, and thirty seconds for an operation. The host supplies these limits.
+Idle established connections are allowed. A dedicated reader detects EOF during
+in-flight operations; closing/cancelling the server task releases that client's
+leases. A timed-out put reports uncertain and is never replayed. Serialization
+has a bounded output buffer; an oversized response returns `responseTooLarge`
+without corrupting the next frame. Protocol failures never echo request content.
+
+These checks use in-memory duplex streams and the full runtime. Named-pipe ACLs,
+Unix socket permissions, process startup locks, and separate-process client tests
+remain required before exposing the service in the shared executable.
 
 ## Identities and configuration
 

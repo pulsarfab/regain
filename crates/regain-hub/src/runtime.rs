@@ -41,6 +41,7 @@ enum Output {
 }
 
 pub struct HubRuntime {
+    runtime_id: Uuid,
     config: HubConfig,
     registry: Arc<SourceRegistry>,
     clock: Arc<dyn Clock>,
@@ -120,6 +121,7 @@ impl HubRuntime {
             outputs.insert(output.id, mapped);
         }
         Ok(Arc::new(Self {
+            runtime_id: Uuid::new_v4(),
             config,
             registry,
             clock,
@@ -135,6 +137,18 @@ impl HubRuntime {
 
     pub fn instance_id(&self) -> Uuid {
         self.config.instance_id
+    }
+    pub fn runtime_id(&self) -> Uuid {
+        self.runtime_id
+    }
+    pub(crate) fn configuration(&self) -> &HubConfig {
+        &self.config
+    }
+    pub(crate) fn contains_output(&self, id: Uuid) -> bool {
+        self.outputs.contains_key(&id)
+    }
+    pub fn source_snapshot(&self, source: Uuid) -> Result<SourceSnapshot, SourceError> {
+        self.registry.get(source).map(|source| source.snapshot())
     }
     pub fn revision(&self) -> Uuid {
         self.config.revision

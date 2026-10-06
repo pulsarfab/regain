@@ -404,3 +404,47 @@ This is still an in-process runtime. IPC framing/endpoints, OS ownership/resume,
 configuration replacement, protected credentials, virtual/simulated source
 adapters, frontend publication, conformance, and hardware acceptance remain open.
 No milestone 2 completion or later milestone completion is claimed.
+
+## 2026-10-05: bounded scalar IPC and typed dispatch
+
+Added the versioned hello, bounded length-prefixed JSON transport, and controller
+dispatch over a host-supplied stream. Each stream creates its own runtime client.
+Configuration descriptions, local configuration reads, schema/relationship
+validation, device/source status, and typed Switch/Safety/Weather operations use
+the existing engine. Durable apply is not advertised by this dispatcher.
+
+Review findings and corrections:
+
+1. A source request must not block detection of EOF or another cached getter.
+   A dedicated reader, bounded input buffer, and at most eight operation futures
+   let cached safety results overtake stalled source capability reads. A slow
+   reader still has a bounded response-write deadline and releases its leases.
+2. Spawning requests in order does not prove their tasks start in order. Each
+   operation is polled once before the next request is accepted. Disconnect thus
+   sees a preceding Connect reservation, without waiting for its driver I/O.
+3. Strict enum deserialization did not reject extra fields on no-argument unit
+   variants. A malformed-message test exposed the gap. Empty struct variants now
+   enforce unknown-field rejection, including nested get/put members. The test
+   has its own deadline so a parser regression cannot leave the suite waiting.
+4. Request IDs strictly increase; a repeated ID closes the stream without
+   dispatching another write. Client identity fields are rejected. Unknown
+   versions/commands and malformed typed values cannot reach a backend.
+5. Frame reads and response serialization enforce the same 1 MiB bound. Escaped
+   strings can make a valid source snapshot too large when encoded; a bounded
+   serializer returns responseTooLarge while preserving framing and usability.
+6. Put deadlines return uncertain rather than inviting retry. EOF/server-task
+   cancellation closes only that stream's client, including pending connections.
+   Validated configuration is not confused with successful runtime preparation
+   or durable apply; validation explicitly reports its configuration-only scope.
+
+Verification: 114 hub tests pass, including ten duplex-stream integration/fault
+tests using the complete runtime and fault-injected sources. Tests exercise all
+three output types, shared settings, configuration reads, unknown IDs/classes,
+out-of-order responses, pending-connect cancellation, timed-out writes, request
+replay, malformed/oversized/partial frames, overload, and a stalled reader.
+Clippy, Rust 1.89.0, and package verification for transport/core/hub pass.
+
+No listener is opened by this module. User-only OS endpoints, startup ownership,
+separate-process tests, durable configuration replacement, protected credentials,
+resume handling, executable integration, and all frontend/conformance/hardware
+gates remain open. Camera buffers/images retain their separate planned contract.
