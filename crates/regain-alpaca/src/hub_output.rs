@@ -499,6 +499,7 @@ impl Publisher {
             | Command::Put {
                 property:
                     Put::MoveRotator { .. }
+                    | Put::MoveRotatorTracked { .. }
                     | Put::MoveAbsoluteRotator { .. }
                     | Put::MoveMechanicalRotator { .. }
                     | Put::SyncRotator { .. }

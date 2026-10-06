@@ -148,9 +148,19 @@ public abstract class OutputDriver : IDisposable
             var values = new List<StateValue>();
             foreach (var state in states.EnumerateArray()) {
                 var value = state.GetProperty("Value");
+                if (selection.DeviceType == "rotator") {
+                    var property = state.GetProperty("Name").GetString() switch {
+                        "IsMoving" => HubRotatorProperty.IsMoving, "Position" => HubRotatorProperty.Position,
+                        "MechanicalPosition" => HubRotatorProperty.MechanicalPosition,
+                        _ => throw new global::ASCOM.DriverException("Hub DeviceState contained an unknown rotator member")
+                    };
+                    try { HubRotatorProtocol.Validate(property, value); }
+                    catch (HubException) { throw new global::ASCOM.DriverException("Hub DeviceState contained an invalid rotator reading"); }
+                }
                 object scalar = value.ValueKind switch {
                     JsonValueKind.True => true, JsonValueKind.False => false,
                     JsonValueKind.Number when selection.DeviceType == "focuser" && state.GetProperty("Name").GetString() == "Position" => value.GetInt32(),
+                    JsonValueKind.Number when selection.DeviceType == "rotator" => value.GetSingle(),
                     JsonValueKind.Number => value.GetDouble(),
                     _ => throw new global::ASCOM.DriverException("Hub DeviceState contained an invalid scalar")
                 };

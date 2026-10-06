@@ -297,23 +297,7 @@ async fn pending_rotator_connection_and_read_generation_loss_do_not_leave_admiss
 #[tokio::test(start_paused = true)]
 async fn actual_rotator_ipc_dispatch_preserves_sparse_identity_shared_leases_and_uncertain_no_replay()
  {
-    use regain_hub::ipc::{Limits, read_frame, serve_stream};
-    use tokio::io::{AsyncWriteExt, DuplexStream};
-    async fn call(stream: &mut DuplexStream, id: u64, command: Value) -> Value {
-        let bytes = serde_json::to_vec(&json!({"version":1,"id":id,"command":command})).unwrap();
-        stream
-            .write_all(&(bytes.len() as u32).to_le_bytes())
-            .await
-            .unwrap();
-        stream.write_all(&bytes).await.unwrap();
-        serde_json::from_slice(
-            &read_frame(stream, Duration::from_secs(2))
-                .await
-                .unwrap()
-                .unwrap(),
-        )
-        .unwrap()
-    }
+    use regain_hub::ipc::{Limits, serve_stream};
     let device = Device::new();
     let (config, runtime, source) = runtime_setup(&device);
     let output = config.outputs[0].id;
@@ -513,4 +497,122 @@ async fn device_state(runtime: &Arc<HubRuntime>, output: Uuid, device: &Arc<Devi
     task.await.unwrap().unwrap();
     settle().await;
     result
+}
+
+async fn call(stream: &mut tokio::io::DuplexStream, id: u64, command: Value) -> Value {
+    use regain_hub::ipc::read_frame;
+    use tokio::io::AsyncWriteExt;
+    let bytes = serde_json::to_vec(&json!({"version":1,"id":id,"command":command})).unwrap();
+    stream
+        .write_all(&(bytes.len() as u32).to_le_bytes())
+        .await
+        .unwrap();
+    stream.write_all(&bytes).await.unwrap();
+    serde_json::from_slice(
+        &read_frame(stream, Duration::from_secs(2))
+            .await
+            .unwrap()
+            .unwrap(),
+    )
+    .unwrap()
+}
+
+#[tokio::test]
+async fn tracked_relative_receipt_holds_command_ownership_until_target_read_and_never_replays_failed_readback()
+ {
+    use regain_hub::ipc::{Limits, serve_stream};
+    let device = Device::new();
+    let (config, runtime, source) = runtime_setup_with_request_timeout(&device, 5.0);
+    let output = config.outputs[0].id;
+    let sibling = config.outputs[1].id;
+    let (mut first, server) = tokio::io::duplex(65536);
+    let a = tokio::spawn(serve_stream(server, runtime.clone(), Limits::default()));
+    let (mut second, server) = tokio::io::duplex(65536);
+    let b = tokio::spawn(serve_stream(server, runtime.clone(), Limits::default()));
+    let hello = call(&mut first, 1, json!({"op":"hello"})).await;
+    assert!(
+        hello["result"]["capabilities"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|item| item == "rotatorMotionReceipt")
+    );
+    call(&mut second, 1, json!({"op":"hello"})).await;
+    for (stream, output) in [(&mut first, output), (&mut second, sibling)] {
+        let reply = call(stream, 2, json!({"op":"connect","output":output})).await;
+        assert!(reply.get("error").is_none(), "{reply}");
+    }
+    device.hold_target.store(true, SeqCst);
+    let moving = tokio::spawn(async move {
+        let reply = call(&mut first, 3, json!({"op":"put","output":output,"property":{"member":"moveRotatorTracked","degrees":-721.5}})).await;
+        (first, reply)
+    });
+    tokio::time::timeout(Duration::from_secs(1), async {
+        while !device.target_reading.load(SeqCst) {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    // Two connected outputs plus the still-owned exclusive command lease.
+    // Releasing control before receipt would leave only two leases here.
+    assert_eq!(source.snapshot().lease_count, 3);
+    device.set("ismoving", json!(false));
+    let other = tokio::spawn(async move {
+        let reply = call(
+            &mut second,
+            3,
+            json!({"op":"put","output":sibling,"property":{"member":"syncRotator","degrees":84.0}}),
+        )
+        .await;
+        (second, reply)
+    });
+    settle().await;
+    assert_eq!(device.writes.lock().unwrap().len(), 1);
+    device.release_target.notify_one();
+    let (mut first, receipt) = moving.await.unwrap();
+    assert_eq!(
+        receipt["result"],
+        json!({"expectedTarget":18.5,"targetPosition":18.5})
+    );
+    let (mut second, other_reply) = other.await.unwrap();
+    if other_reply.get("error").is_some() {
+        assert_eq!(other_reply["error"]["code"], "busy");
+        settle().await;
+        let reply = call(
+            &mut second,
+            4,
+            json!({"op":"put","output":sibling,"property":{"member":"syncRotator","degrees":84.0}}),
+        )
+        .await;
+        assert!(reply.get("error").is_none(), "{reply}");
+    }
+    assert_eq!(device.values.lock().unwrap()["position"], 84.0);
+    device.hold_target.store(false, SeqCst);
+    device.errors.lock().unwrap().insert(
+        "targetposition".into(),
+        SourceError::new(ErrorKind::Unsupported, "No target readback"),
+    );
+    let failed = call(&mut first, 4, json!({"op":"put","output":output,"property":{"member":"moveRotatorTracked","degrees":5.0}})).await;
+    assert_eq!(failed["error"]["code"], "unavailable");
+    assert!(
+        failed["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("move was accepted")
+    );
+    assert!(!source.snapshot().write_uncertain); // The write ACK was unambiguous.
+    {
+        let writes = device.writes.lock().unwrap();
+        assert_eq!(
+            writes.iter().filter(|(member, _)| member == "move").count(),
+            2
+        );
+        assert!(writes.iter().all(|(member, _)| member != "halt"));
+    }
+    drop(first);
+    drop(second);
+    a.await.unwrap().unwrap();
+    b.await.unwrap().unwrap();
+    runtime.shutdown().await.unwrap();
 }

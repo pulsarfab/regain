@@ -185,7 +185,7 @@ public static class HubAscomRegistration
         private string ProgKey => @"Software\Classes\" + ProgId;
         private string AppKey => @"Software\Classes\AppID\" + Clsid;
         private string ChooserKey => @"Software\ASCOM\" + (binding.DeviceType switch {
-            "switch" => "Switch", "safetymonitor" => "SafetyMonitor", "observingconditions" => "ObservingConditions", "focuser" => "Focuser", _ => throw new InvalidOperationException()
+            "switch" => "Switch", "safetymonitor" => "SafetyMonitor", "observingconditions" => "ObservingConditions", "focuser" => "Focuser", "rotator" => "Rotator", _ => throw new InvalidOperationException()
         }) + @" Drivers\" + ProgId;
         internal string InventoryKey => Inventory + "\\" + Clsid;
         private string Server => Path.Combine(Directory, "hub-ascom", "x64", "Regain.Hub.ASCOM.exe");

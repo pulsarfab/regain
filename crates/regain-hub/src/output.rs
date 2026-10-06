@@ -116,7 +116,7 @@ impl OutputConnection {
             }
         })
     }
-    pub(crate) async fn put(&self, property: Put) -> Result<(), SourceError> {
+    pub(crate) async fn put(&self, property: Put) -> Result<Value, SourceError> {
         match property {
             Put::SetSwitch { id, state } => self.switch()?.set_state(id, state).await?,
             Put::SetSwitchValue { id, value } => self.switch()?.set_value(id, value).await?,
@@ -138,6 +138,9 @@ impl OutputConnection {
             Put::HaltFocuser {} => self.focuser()?.halt().await?,
             Put::FocuserTempComp { enabled } => self.focuser()?.set_temp_comp(enabled).await?,
             Put::MoveRotator { degrees } => self.rotator()?.move_relative(degrees).await?,
+            Put::MoveRotatorTracked { degrees } => {
+                return Ok(json!(self.rotator()?.move_relative_target(degrees).await?));
+            }
             Put::MoveAbsoluteRotator { degrees } => self.rotator()?.move_absolute(degrees).await?,
             Put::MoveMechanicalRotator { degrees } => {
                 self.rotator()?.move_mechanical(degrees).await?
@@ -146,6 +149,6 @@ impl OutputConnection {
             Put::HaltRotator {} => self.rotator()?.halt().await?,
             Put::RotatorReverse { enabled } => self.rotator()?.set_reverse(enabled).await?,
         }
-        Ok(())
+        Ok(Value::Null)
     }
 }

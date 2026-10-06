@@ -128,7 +128,9 @@ jobs:
         shell: pwsh
   windows:
     runs-on: windows-latest
-    timeout-minutes: 25
+    # Cold builds, both COM architectures, installer checks and camera-kit setup
+    # exceeded 25 minutes. Device and test deadlines remain independently bounded.
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4

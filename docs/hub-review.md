@@ -2666,3 +2666,61 @@ artifacts/hub-rotator-alpaca-final-*.log. Reference PR/push CI
 seven successes with Windows still running; push 37510983650 also remains live.
 Neither later passing tests nor pending jobs explain the retained earlier COM
 and NINA initial-connection failures. This Alpaca increment requires new CI.
+
+### Native NINA/ASCOM rotators and relative completion (2026-10-06)
+
+Reviewed publication through the existing shared native session and COM export
+server. Rotators reuse saved identities, the themed selector, isolated host
+attachment and shared source/control ownership. Common typed NINA request handling
+now serves focusers and rotators. Strict rotator keys/value validation is shared
+between NINA and ASCOM. Private HTTP accessory fixtures also share their framing
+and connection machinery rather than duplicating the focuser fixture.
+
+NINA requires the receipt capability before connecting equipment. Review found
+that reading TargetPosition after releasing command control could observe a
+sibling's Sync, and accepting only the reported target could certify an ignored
+relative move. The host now holds control across pre-position, signed dispatch,
+ACK and target readback; the receipt includes expected and accepted targets.
+An actual two-client IPC fixture pauses that read, proves the control lease is
+retained and verifies sibling writes cannot replace it. Failed readback after
+an unambiguous ACK remains unavailable, not a fabricated uncertain-write latch.
+NINA verifies receipt agreement and actual completion with circular error and
+resolution tolerance. Cancellation/stopped-short/ignored/lost-reply cases never
+replay or implicitly Halt. Optional StepSize is read after mutation admission to
+preserve uncertainty priority. Per-connection Synced remains only an indication
+of successful Sync for that epoch; source coordinate mapping is shared.
+
+Review corrected Sync indicator lock ordering, Single rounding at 360 degrees,
+underflowed positive StepSize, ASCOM nonfinite-command exception classification
+and standard DeviceState boxing as Single. ASCOM V4/V3/V2 moves retain their
+acknowledged-start contract. Stable UUID-derived Rotator registration is covered
+alongside Focuser registration. Six private exported outputs now exercise rotator
+metadata, both server architectures and both client bitnesses. No installed vendor
+driver or physical equipment is activated.
+
+Final full Rust hub/Alpaca suites pass, including seventeen rotator cases, rebuilt
+production-worker simulation and endpoint process fixtures. Strict Clippy,
+Rust 1.89 all-target checks, contract freshness, Node/four schema checks, all 196
+warnings-denied NINA tests, real net48 x86/x64 clients, both-architecture staging
+and manual private COM exports pass. Evidence uses
+artifacts/hub-rotator-frontends-final-*.log. The first parallel Rust compilation
+failed with Windows OS1455 (paging-file exhaustion); the retained log is
+artifacts/hub-rotator-frontends-final-rust.log. Serial build retry passed without
+changing tests. A test MutexGuard's explicit drop still triggered Clippy;
+lexical scope now ends the guard before await.
+
+Alpaca checkpoint PR/push runs 37513525462/37513518205 ended cancelled after seven
+successful jobs. The Windows check annotation explicitly says the job exceeded
+25 minutes. Its retained log, artifacts/hub-rotator-alpaca-cancelled-windows.log,
+shows builds, tests, packaging and installer uploads completed before cancellation
+during standalone camera-kit dependency installation. The outer Windows workflow
+budget is now 45 minutes; device, operation and test deadlines are unchanged.
+Runtime runs 37510990909/37510983650 also ended cancelled; their exact cancellation
+cause has not been independently established here. Reference runs
+37508673278/37508667983 passed all eight jobs. New CI, including registered SCM
+exports on disposable runners, remains required. Neither this timeout finding nor
+passing local checks explains the retained older COM/NINA connection failures.
+
+Rotator COM/virtual/dedicated simulation inputs, shared creation, interactive
+acceptance and conformance remain open. Wheels, panels, camera ownership/transport,
+coordination and all other original plan gates remain required before merge.

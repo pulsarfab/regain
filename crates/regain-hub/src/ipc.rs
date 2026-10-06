@@ -213,6 +213,7 @@ pub enum Put {
     HaltFocuser {},
     FocuserTempComp { enabled: bool },
     MoveRotator { degrees: f64 },
+    MoveRotatorTracked { degrees: f64 },
     MoveAbsoluteRotator { degrees: f64 },
     MoveMechanicalRotator { degrees: f64 },
     SyncRotator { degrees: f64 },
@@ -426,7 +427,7 @@ where
                         "hostInstance":service.host_id(), "configurationRevision":service.configuration().revision, "clientId":client.id(),
                         "maxFrameBytes":MAX_FRAME_BYTES, "maxInFlight":MAX_IN_FLIGHT,
                         "operations":operations,
-                        "capabilities":["switchOutputs","safetyOutputs","weatherOutputs","focuserOutputs","rotatorOutputs","weatherSensorDescription","scalarDeviceState","asyncOutputConnection","switchAsyncContract"]});
+                        "capabilities":["switchOutputs","safetyOutputs","weatherOutputs","focuserOutputs","rotatorOutputs","rotatorMotionReceipt","weatherSensorDescription","scalarDeviceState","asyncOutputConnection","switchAsyncContract"]});
                     write_response(&mut writer, Response::new(request.id, Ok(hello)), limits.frame_timeout).await?;
                     continue;
                 }
@@ -612,10 +613,7 @@ async fn dispatch(
             property: Get::Connecting {},
         } => json!(client.connecting(output)?),
         Command::Get { output, property } => client.connection(output)?.get(property).await?,
-        Command::Put { output, property } => {
-            client.connection(output)?.put(property).await?;
-            Value::Null
-        }
+        Command::Put { output, property } => client.connection(output)?.put(property).await?,
     })
 }
 

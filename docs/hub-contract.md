@@ -1484,8 +1484,9 @@ Rotator DeviceState includes available IsMoving, MechanicalPosition and Position
 omits failed/unknown entries and reports no invented UTC measurement timestamp.
 Reverse and TargetPosition remain in typed reads/diagnostics; the standard read-all
 contract does not include those configuration entries. Native NINA/ASCOM
-publication, COM/virtual/dedicated simulation inputs and shared rotator creation
-remain gated until their respective interfaces and acceptance tests are complete.
+publication is implemented as described below. COM/virtual/dedicated simulation
+inputs and shared rotator creation remain gated until their interfaces and
+acceptance tests are complete.
 
 Alpaca publishes configured rotators through the same private IPC publisher as
 scalar outputs and focusers. Saved UUIDs and class-specific sparse device numbers
@@ -1510,3 +1511,36 @@ its failure until explicit disconnect; StepSize is not an admission requirement.
 Cancelled handshake leases are released after any already-dispatched bounded
 actor read finishes; the frontend deadline does not promise immediate actor I/O
 cancellation or replay.
+
+### Native rotator frontend publication
+
+Native NINA and ASCOM use the same saved output selection, host attachment,
+typed property/command keys, strict Single-range validation and Rust ownership.
+NINA and ASCOM share request/value helpers with existing accessory paths rather
+than creating another source controller. Registration derives stable Rotator
+Chooser identities from saved output UUIDs, using the existing themed selector.
+ASCOM implements IRotator V4/V3/V2; moves acknowledge start and DeviceState boxes
+Position/MechanicalPosition as Single. Missing optional StepSize remains an
+explicit ASCOM property error; NINA represents it as unavailable (NaN).
+
+NINA moves wait for strict IsMoving=false and verify the appropriate logical or
+mechanical endpoint with circular angular error. Resolution tolerance is half
+StepSize with a 0.01-degree floor, or 0.01 when StepSize is unsupported. Metadata
+is read after command admission so an uncertain source cannot bypass its mutation
+fence through optional reads. Cancellation, lost replies and failed completion
+do not replay the move or Halt another client's equipment.
+
+Relative completion requires the private rotatorMotionReceipt capability before
+equipment connection. The Rust host retains exclusive command control across
+idle/pre-position reads, signed relative dispatch, ACK and target readback. Its
+receipt reports expectedTarget and targetPosition; NINA checks both before waiting
+for completion, so an acknowledged but ignored move cannot appear successful.
+The original signed distance is forwarded unchanged. A failed target read after
+an unambiguous ACK returns unavailable with a do-not-replay explanation. It does
+not invent an uncertain-write latch; equipment may still be moving and requires
+explicit reconciliation. Ordinary ASCOM/Alpaca relative commands retain their
+standard acknowledgment contract.
+
+NINA Synced records successful Sync only for that connection epoch. It is neither
+a second offset nor a claim about another client's calibration. Every client
+reads the source's shared coordinate mapping. Reconnect resets this indicator.

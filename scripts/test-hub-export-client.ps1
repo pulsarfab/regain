@@ -53,8 +53,35 @@ try {
         $focuser.TempComp = $true
         if (!(Value $focuser 'TempComp')) { throw 'COM focuser TempComp' }
         $focuser.Disconnect(); Wait-Condition { !(Value $focuser 'Connecting') } 'focuser disconnect completion'
+        $rotator = $objects[5]
+        $rotator.Connect(); Wait-Condition { !(Value $rotator 'Connecting') } 'rotator connect completion'
+        if (!(Value $rotator 'CanReverse') -or (Value $rotator 'MechanicalPosition') -ne 350) { throw 'COM rotator typed properties' }
+        $rotator.Sync([single]42.5)
+        $rotator.Reverse = $true
+        if (!(Value $rotator 'Reverse') -or (Value $rotator 'Position') -ne 42.5 -or (Value $rotator 'MechanicalPosition') -ne 350) { throw 'COM rotator shared Sync/Reverse' }
+        $rotator.MoveAbsolute([single]43.5)
+        $rotator.MoveMechanical([single]0)
+        $rotator.Move([single]-1)
+        if ((Value $rotator 'Position') -ne 51.5 -or (Value $rotator 'TargetPosition') -ne 51.5) { throw 'COM rotator commands or coordinates' }
+        $rotator.Halt()
+        Wait-Condition { (Value (Value $rotator 'DeviceState') 'Count') -eq 3 } 'rotator cached DeviceState'
+        $states = Value $rotator 'DeviceState'
+        for ($index = 0; $index -lt 3; $index++) {
+            $item = $states.GetType().InvokeMember('Item', [Reflection.BindingFlags]::GetProperty, $null, $states, [object[]]@($index))
+            $name = Value $item 'Name'; $value = Value $item 'Value'
+            if ($name -eq 'IsMoving') { if ($value -isnot [bool]) { throw 'Rotator DeviceState motion lost Boolean type' } }
+            elseif ($name -in 'Position','MechanicalPosition') { if ($value -isnot [single]) { throw 'Rotator DeviceState angle lost Single type' } }
+            else { throw 'Unexpected rotator DeviceState entry' }
+        }
+        $rotator.Disconnect(); Wait-Condition { !(Value $rotator 'Connecting') } 'rotator disconnect completion'
     }
-    if ($Role -eq 'second') { Wait-Signal 'first-connected' }
+    if ($Role -eq 'second') {
+        Wait-Signal 'first-connected'
+        $rotator = $objects[5]; $rotator.Connected = $true
+        $rotator.MoveAbsolute([single]51.5)
+        if ((Value $rotator 'Position') -ne 51.5 -or !(Value $rotator 'Reverse')) { throw 'Second COM bitness lost rotator state' }
+        $rotator.Connected = $false
+    }
     Write-Output "Hub export ${Role}: connect primary"
     $primary.Connect(); Wait-Condition { !(Value $primary 'Connecting') } 'primary connect completion'
     if (!(Value $primary 'Connected')) { throw 'Modern connection did not acquire output' }

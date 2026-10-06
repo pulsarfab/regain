@@ -40,18 +40,20 @@ public sealed class HubRegistrationTests
         }
     }
 
-    [Fact]
-    public void FocuserRegistrationUsesBothChooserViewsAndStableIdentity()
+    [Theory]
+    [InlineData("focuser", "Focuser", "F")]
+    [InlineData("rotator", "Rotator", "R")]
+    public void TypedRegistrationUsesBothChooserViewsAndStableIdentity(string kind, string chooser, string prefix)
     {
-        using var f = new Fixture("focuser");
+        using var f = new Fixture(kind);
         var id = f.Register();
         Assert.Equal(OutputIdentity.ClassId(f.Binding), id);
-        Assert.StartsWith("Rgn.HF.", OutputIdentity.ProgId(f.Binding));
+        Assert.StartsWith("Rgn.H" + prefix + ".", OutputIdentity.ProgId(f.Binding));
         Assert.Equal(39, OutputIdentity.ProgId(f.Binding).Length);
         for (var view = 0; view < 2; view++)
-            Assert.Contains("SIMULATION", Assert.IsType<string>(f.Read(view, @"Software\ASCOM\Focuser Drivers\" + OutputIdentity.ProgId(f.Binding))));
+            Assert.Contains("SIMULATION", Assert.IsType<string>(f.Read(view, @"Software\ASCOM\" + chooser + @" Drivers\" + OutputIdentity.ProgId(f.Binding))));
         f.Remove();
-        for (var view = 0; view < 2; view++) Assert.Null(f.Read(view, @"Software\ASCOM\Focuser Drivers\" + OutputIdentity.ProgId(f.Binding)));
+        for (var view = 0; view < 2; view++) Assert.Null(f.Read(view, @"Software\ASCOM\" + chooser + @" Drivers\" + OutputIdentity.ProgId(f.Binding)));
         Assert.Equal(f.Saved.Revision, f.Store.Load().Revision);
     }
     [Fact]

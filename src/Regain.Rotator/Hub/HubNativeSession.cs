@@ -47,6 +47,10 @@ public sealed class HubNativeSession(string executable, string? workers = null) 
                 d.GetProperty("deviceType").GetString() == selection.DeviceType).ToArray();
             if (matches.Length != 1) throw new InvalidOperationException("The saved output is missing or has a different class; select it explicitly");
             if (selection.DeviceType == "focuser") opened.RequireCapabilities("focuserOutputs", "scalarDeviceState", "asyncOutputConnection");
+            if (selection.DeviceType == "rotator") {
+                opened.RequireCapabilities("rotatorOutputs", "scalarDeviceState", "asyncOutputConnection");
+                if (acquire) opened.RequireCapabilities("rotatorMotionReceipt");
+            }
             lock (gate) {
                 if (token != epoch || operation.IsCancellationRequested || disposed) throw new OperationCanceledException(operation.Token);
                 client = opened;

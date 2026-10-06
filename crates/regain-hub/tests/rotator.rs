@@ -29,6 +29,9 @@ struct Device {
     uncertain: AtomicBool,
     hang_write: AtomicBool,
     hang_read: Mutex<Option<String>>,
+    hold_target: AtomicBool,
+    target_reading: AtomicBool,
+    release_target: tokio::sync::Notify,
 }
 impl Device {
     fn new() -> Arc<Self> {
@@ -52,6 +55,9 @@ impl Device {
             uncertain: AtomicBool::new(false),
             hang_write: AtomicBool::new(false),
             hang_read: Mutex::default(),
+            hold_target: AtomicBool::new(false),
+            target_reading: AtomicBool::new(false),
+            release_target: tokio::sync::Notify::new(),
         })
     }
     fn set(&self, member: &str, value: Value) {
@@ -113,6 +119,10 @@ impl Backend for Mock {
             let hang = self.0.hang_read.lock().unwrap().as_ref() == Some(&member);
             if hang {
                 std::future::pending::<()>().await;
+            }
+            if member == "targetposition" && self.0.hold_target.load(SeqCst) {
+                self.0.target_reading.store(true, SeqCst);
+                self.0.release_target.notified().await;
             }
             if let Some(error) = self.0.errors.lock().unwrap().get(&member) {
                 return Err(error.clone());

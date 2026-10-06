@@ -10,7 +10,7 @@
     <GenerateBindingRedirectsOutputType>true</GenerateBindingRedirectsOutputType>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="../HubFocuserServer.cs" Link="HubFocuserServer.cs" />
+    <Compile Include="../HubAccessoryServer.cs" Link="HubAccessoryServer.cs" />
     <ProjectReference Include="../../../src/Regain.Rotator/Regain.Rotator.csproj" />
     <ProjectReference Include="../../../src/Regain.Hub.ASCOM/Regain.Hub.ASCOM.csproj" />
   </ItemGroup>

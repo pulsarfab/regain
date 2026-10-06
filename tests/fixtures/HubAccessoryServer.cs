@@ -23,8 +23,12 @@ internal static class HubFocuserSimulation
 }
 
 // Private loopback-only upstream shared by net8 NINA and real net48 COM tests.
-internal sealed class HubFocuserServer : IDisposable
+internal sealed class HubFocuserServer : HubAccessoryServer { internal HubFocuserServer() : base("focuser") { } }
+internal sealed class HubRotatorServer : HubAccessoryServer { internal HubRotatorServer() : base("rotator") { } }
+
+internal class HubAccessoryServer : IDisposable
 {
+    private readonly string kind;
     private readonly TcpListener listener = new(IPAddress.Loopback, 0);
     private readonly CancellationTokenSource stopping = new();
     private readonly ConcurrentDictionary<TcpClient, byte> clients = new();
@@ -37,28 +41,36 @@ internal sealed class HubFocuserServer : IDisposable
     internal int Halts => Volatile.Read(ref halts);
     internal string RequestTrace => string.Join("; ", trace);
     internal volatile bool LoseMoveReply;
+    internal volatile bool IgnoreMove;
     internal string Url { get; }
     internal Guid SourceId { get; } = Guid.NewGuid();
-    internal HubFocuserServer()
+    internal HubAccessoryServer(string kind)
     {
-        Values["absolute"] = true; Values["maxstep"] = 1000; Values["maxincrement"] = 100;
-        Values["tempcompavailable"] = true; Values["tempcomp"] = true; Values["position"] = 50;
-        Values["ismoving"] = false; Values["temperature"] = -5.0;
+        this.kind = kind;
+        if (kind == "focuser") {
+            Values["absolute"] = true; Values["maxstep"] = 1000; Values["maxincrement"] = 100;
+            Values["tempcompavailable"] = true; Values["tempcomp"] = true; Values["position"] = 50;
+            Values["temperature"] = -5.0;
+        } else {
+            Values["canreverse"] = true; Values["reverse"] = false; Values["position"] = 20.0;
+            Values["mechanicalposition"] = 350.0; Values["targetposition"] = 20.0; Values["stepsize"] = 0.02;
+        }
+        Values["ismoving"] = false;
         listener.Start(); Url = "http://127.0.0.1:" + ((IPEndPoint)listener.LocalEndpoint).Port;
         serving = Serve();
     }
     internal void AddTo(JsonObject config, params uint[] numbers)
     {
         config["sources"]!.AsArray().Add(JsonSerializer.SerializeToNode(new {
-            id = SourceId, label = "Private loopback focuser",
+            id = SourceId, label = "Private loopback " + kind,
             polling = new { pollSeconds = 0.1, requestTimeoutSeconds = 0.3, attemptsPerCycle = 1,
                 initialBackoffSeconds = 0.05, backoffCapSeconds = 0.05 },
-            backend = new { kind = "alpaca", baseUrl = Url, deviceType = "focuser", deviceNumber = 19,
+            backend = new { kind = "alpaca", baseUrl = Url, deviceType = kind, deviceNumber = 19,
                 connectionPolicy = "managed" }
         }));
         foreach (var number in numbers) config["outputs"]!.AsArray().Add(JsonSerializer.SerializeToNode(new {
-            id = Guid.NewGuid(), number, label = "Private focuser " + number,
-            device = new { kind = "proxy", source = SourceId, deviceType = "focuser" }
+            id = Guid.NewGuid(), number, label = "Private " + kind + " " + number,
+            device = new { kind = "proxy", source = SourceId, deviceType = kind }
         }));
     }
     private async Task Serve()
@@ -93,19 +105,35 @@ internal sealed class HubFocuserServer : IDisposable
             var text = first[0] == "PUT" ? new string(chars) : uri.Query.TrimStart('?');
             var args = text.Split('&').Where(part => part.Length > 0).Select(part => part.Split(new[] { '=' }, 2))
                 .ToDictionary(pair => Uri.UnescapeDataString(pair[0]), pair => Uri.UnescapeDataString(pair[1]));
-            if (!uri.AbsolutePath.StartsWith("/api/v1/focuser/19/", StringComparison.Ordinal) ||
+            if (!uri.AbsolutePath.StartsWith("/api/v1/" + kind + "/19/", StringComparison.Ordinal) ||
                 uint.Parse(args["ClientID"]) == 0 || uint.Parse(args["ClientTransactionID"]) == 0)
                 throw new InvalidOperationException("Invalid private upstream request");
             var member = uri.Segments.Last(); object? value = null; var code = 0;
             operation = first[0] + " " + member + " transaction=" + args["ClientTransactionID"];
             trace.Enqueue(operation + " started");
             if (first[0] == "PUT") {
+                trace.Enqueue("write " + member + (args.TryGetValue("Position", out var position) ? " position=" + position : ""));
                 switch (member) {
                     case "connected": Volatile.Write(ref connected, bool.Parse(args["Connected"]) ? 1 : 0); break;
-                    case "move":
+                    case "move" when kind == "focuser":
                         Values["position"] = int.Parse(args["Position"]); Values["ismoving"] = true; Interlocked.Increment(ref moves);
                         if (LoseMoveReply) await Task.Delay(1000, stopping.Token).ConfigureAwait(false);
                         break;
+                    case "move": case "moveabsolute": case "movemechanical":
+                        if (IgnoreMove) { Interlocked.Increment(ref moves); break; }
+                        var angle = double.Parse(args["Position"], System.Globalization.CultureInfo.InvariantCulture);
+                        var logical = Convert.ToDouble(Values["position"]); var mechanical = Convert.ToDouble(Values["mechanicalposition"]);
+                        var target = member == "move" ? logical + angle : member == "movemechanical" ? angle + logical - mechanical : angle;
+                        target = (target % 360 + 360) % 360;
+                        Values["mechanicalposition"] = ((mechanical + target - logical) % 360 + 360) % 360;
+                        Values["position"] = target; Values["targetposition"] = target; Values["ismoving"] = true;
+                        Interlocked.Increment(ref moves);
+                        if (LoseMoveReply) await Task.Delay(1000, stopping.Token).ConfigureAwait(false);
+                        break;
+                    case "sync":
+                        Values["position"] = double.Parse(args["Position"], System.Globalization.CultureInfo.InvariantCulture);
+                        Values["targetposition"] = Values["position"]; break;
+                    case "reverse": Values["reverse"] = bool.Parse(args["Reverse"]); break;
                     case "halt": Interlocked.Increment(ref halts); Values["ismoving"] = false; break;
                     case "tempcomp": Values["tempcomp"] = bool.Parse(args["TempComp"]); break;
                     default: throw new InvalidOperationException("Unexpected private upstream write");

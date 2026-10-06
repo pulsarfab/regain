@@ -10,8 +10,8 @@ Last updated: 2026-10-06.
 
 Current position: milestones 0 and 1 are complete. The scalar source/output paths
 in milestones 2 and 3 are implemented; their remaining acceptance gates are open.
-Milestone 4 has complete focuser paths through all three frontends and is extending
-rotators next. Wheels, panels and camera proxies remain; milestone 5's coordinated
+Milestone 4 has focuser and rotator publication through all three frontends.
+Rotator imports, simulation and creation remain. Wheels, panels and camera proxies remain; milestone 5's coordinated
 groups are not yet implemented. PR #21 stays draft until the full plan passes.
 
 Completed increment: shared simulation controls in native NINA/ASCOM and web setup.
@@ -855,8 +855,10 @@ gated until their interfaces are implemented and verified.
 Rotator controller increment: shared typed sessions and live property/command
 semantics are implemented with eleven private actor/Alpaca V3/V4 cases. Native
 CAA/Falcon reference persistence, adapter coverage and native/Alpaca runtime/IPC
-are implemented. Native NINA/ASCOM/Alpaca publication, COM/virtual/simulation inputs and shared setup
-remain required. The remaining rotator publication gates stay open.
+are implemented. Alpaca, native NINA and native ASCOM publication are implemented
+and pass local private-fixture checks. NINA verifies accepted targets and completion
+without replay or implicit Halt. COM/virtual/dedicated simulation inputs and shared
+rotator creation remain required. Conformance and broader acceptance stay open.
 
 - [ ] Specify camera buffer lifetime, image transport, capability passthrough, and
   acquisition ownership before enabling camera proxies.
@@ -962,3 +964,4 @@ Keep existing device profiles and registrations compatible throughout migration.
 | 2026-10-06 | Integrated native/Alpaca rotators into shared runtime, typed IPC, deduplicated polling and cached diagnostic contracts. Reviewed generation/cancellation/EOF, standard DeviceState membership and combined typed/scalar sample limits. Native/web readers share host fields and bounds. | Fifteen rotator cases, fourteen native cases, exact-limit factory regression, full final Rust/Clippy/MSRV/contracts, Node/four schema tests, all 187 NINA tests and real net48 x86/x64 clients pass. Reference checkpoint PR CI has seven successes with Windows live. Next: Alpaca/native NINA/ASCOM rotator publication, imports/simulation/setup and every original remaining gate. |
 
 | 2026-10-06 | Published rotators through the common Alpaca typed IPC adapter and reviewed modern reversal readiness, shared ownership, local-slot coexistence, command routing and sanitized errors. | Seven HTTP cases (including actual CAA/Falcon workers in explicit simulation), sixteen hub rotator cases, final rebuilt-worker/host Rust suites, Clippy/MSRV/contracts, Node/four schema checks, all 187 NINA tests and real net48 x86/x64 clients pass. Reference PR/push CI 37508673278/37508667983 passes all eight jobs. Runtime PR CI 37510990909 has seven successes with Windows live; push 37510983650 is still running. Next: native NINA/ASCOM rotators, imports/simulation/setup and all original remaining gates. |
+| 2026-10-06 | Published native NINA/ASCOM rotators through shared typed request/value helpers and stable registration. Reviewed command ownership through relative target receipt, ignored-move detection, strict completion, cancellation, optional values and standard Single DeviceState. | Final Rust hub/Alpaca suites, seventeen rotator cases, Clippy/MSRV/contracts, Node/four schema tests, all 196 warnings-denied NINA checks, real net48 x86/x64 clients, both-architecture staging and six-output manual COM exports pass. Retained parallel compilation resource failure; single-job retry passes. Alpaca PR/push CI 37513525462/37513518205 is cancelled at the proven outer Windows 25-minute limit; increased only that budget to 45. Runtime CI is also cancelled, exact cause unverified. New CI/registered SCM acceptance required. Next: rotator imports/simulation/shared creation, then all remaining typed devices/camera ownership/coordination and original acceptance gates. |

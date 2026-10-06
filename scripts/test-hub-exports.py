@@ -18,12 +18,19 @@ ROOT = Path(__file__).resolve().parents[1]
 NO_WINDOW = subprocess.CREATE_NO_WINDOW
 
 
-class FocuserFixture:
+class AccessoryFixture:
     """Always loopback, never an installed/vendor driver or physical worker."""
+    def __init__(self, kind="focuser"):
+        self.kind = kind
+
     def __enter__(self):
         values = dict(absolute=True, maxstep=1000, maxincrement=100, tempcompavailable=True,
                       position=50, ismoving=False, tempcomp=False, temperature=-5.0, connected=False,
                       interfaceversion=3)
+        if self.kind == "rotator":
+            values = dict(canreverse=True, reverse=False, mechanicalposition=350.0, position=20.0,
+                          targetposition=20.0, stepsize=0.02, ismoving=False, connected=False, interfaceversion=3)
+        kind = self.kind
 
         class Handler(BaseHTTPRequestHandler):
             def log_message(self, *_args):
@@ -46,8 +53,17 @@ class FocuserFixture:
                 args = parse_qs(self.rfile.read(int(self.headers["Content-Length"])).decode())
                 if member == "connected":
                     values["connected"] = args["Connected"][0].lower() == "true"
-                elif member == "move":
+                elif member == "move" and kind == "focuser":
                     values["position"] = int(args["Position"][0])
+                elif member in ("move", "moveabsolute", "movemechanical") and kind == "rotator":
+                    angle = float(args["Position"][0])
+                    logical, physical = values["position"], values["mechanicalposition"]
+                    target = (logical + angle if member == "move" else angle + logical - physical if member == "movemechanical" else angle) % 360
+                    values.update(targetposition=target, position=target, mechanicalposition=(physical + target - logical) % 360)
+                elif member == "sync" and kind == "rotator":
+                    values.update(position=float(args["Position"][0]), targetposition=float(args["Position"][0]))
+                elif member == "reverse" and kind == "rotator":
+                    values["reverse"] = args["Reverse"][0].lower() == "true"
                 elif member == "halt":
                     values["ismoving"] = False
                 elif member == "tempcomp":
@@ -156,7 +172,7 @@ def main():
     owner = subprocess.check_output([str(powershell), "-NoProfile", "-Command",
                                    "[Security.Principal.WindowsIdentity]::GetCurrent().User.Value"],
                                    text=True, creationflags=NO_WINDOW, timeout=10).strip()
-    with FocuserFixture() as focuser, tempfile.TemporaryDirectory(prefix="hub-export-", dir=ROOT / "artifacts") as directory:
+    with AccessoryFixture() as focuser, AccessoryFixture("rotator") as rotator, tempfile.TemporaryDirectory(prefix="hub-export-", dir=ROOT / "artifacts") as directory:
         folder = Path(directory)
         config = json.loads((ROOT / "crates/regain-hub/examples/simulated-observatory.json").read_text())
         config["instanceId"], config["revision"] = str(uuid.uuid4()), str(uuid.uuid4())
@@ -171,6 +187,12 @@ def main():
                                                   deviceNumber=19, connectionPolicy="managed")))
         config["outputs"].append(dict(id=str(uuid.uuid4()), number=4, label="Private focuser simulation",
                                       device=dict(kind="proxy", source=source_id, deviceType="focuser")))
+        rotator_id = str(uuid.uuid4())
+        config["sources"].append(dict(id=rotator_id, label="Private loopback rotator",
+                                      polling=dict(pollSeconds=0.1, requestTimeoutSeconds=1.0),
+                                      backend=dict(kind="alpaca", baseUrl=rotator.url, deviceType="rotator", deviceNumber=19, connectionPolicy="managed")))
+        config["outputs"].append(dict(id=str(uuid.uuid4()), number=4, label="Private rotator simulation",
+                                      device=dict(kind="proxy", source=rotator_id, deviceType="rotator")))
         for source in config["sources"]:
             source["polling"] = dict(pollSeconds=0.1, requestTimeoutSeconds=0.3, attemptsPerCycle=1,
                                      initialBackoffSeconds=0.05, backoffCapSeconds=0.05)
@@ -181,9 +203,9 @@ def main():
             kind = output["device"].get("deviceType") or dict(switch="switch", safety="safetymonitor", weather="observingconditions")[output["device"]["kind"]]
             name = f'https://pulsarfab.com/regain/ascom-hub/output/{config["instanceId"]}/{output["id"]}/{kind}'
             clsid = uuid.uuid5(uuid.NAMESPACE_URL, name)  # Independent identity derivation.
-            progid = "Rgn.H" + dict(switch="S", safetymonitor="M", observingconditions="W", focuser="F")[kind] + "." + clsid.hex
+            progid = "Rgn.H" + dict(switch="S", safetymonitor="M", observingconditions="W", focuser="F", rotator="R")[kind] + "." + clsid.hex
             assert len(progid) == 39
-            identities.append(dict(clsid=str(clsid), progid=progid, version=4 if kind == "focuser" else 2 if kind == "observingconditions" else 3))
+            identities.append(dict(clsid=str(clsid), progid=progid, version=4 if kind in ("focuser", "rotator") else 2 if kind == "observingconditions" else 3))
             bindings.append(dict(configPath=str(path), instanceId=config["instanceId"], outputId=output["id"],
                                  deviceType=kind, label=output["label"], simulated=True))
         (folder / "identities.json").write_text(json.dumps(identities))
@@ -199,6 +221,7 @@ def main():
         client = ROOT / "scripts/test-hub-export-client.ps1"
         for architecture in (("x64",) if options.registered else ("x86", "x64")):
             focuser.values.update(position=50, tempcomp=False, connected=False)
+            rotator.values.update(position=20.0, mechanicalposition=350.0, targetposition=20.0, reverse=False, connected=False)
             server_exe = workers / "hub-ascom" / architecture / "Regain.Hub.ASCOM.exe"
             paths = [item for identity in identities for item in
                      (f'Software\\Classes\\CLSID\\{{{identity["clsid"]}}}', f'Software\\Classes\\{identity["progid"]}')]
@@ -206,7 +229,7 @@ def main():
             if options.registered:
                 for identity, binding in zip(identities, bindings):
                     paths.extend((f'Software\\Classes\\AppID\\{{{identity["clsid"]}}}',
-                                  f'Software\\ASCOM\\{dict(switch="Switch", safetymonitor="SafetyMonitor", observingconditions="ObservingConditions", focuser="Focuser")[binding["deviceType"]]} Drivers\\{identity["progid"]}',
+                                  f'Software\\ASCOM\\{dict(switch="Switch", safetymonitor="SafetyMonitor", observingconditions="ObservingConditions", focuser="Focuser", rotator="Rotator")[binding["deviceType"]]} Drivers\\{identity["progid"]}',
                                   f'Software\\PulsarFab\\Regain\\HubExports\\{{{identity["clsid"]}}}'))
             else:
                 paths.append(f'Software\\Classes\\AppID\\{app_id}')
@@ -320,7 +343,7 @@ def main():
                             except FileNotFoundError:
                                 pass
                     assert server.poll() is None and host.poll() is None, "Registration removal stopped a shared server"
-                print(f"{architecture} {'SCM' if options.scm else 'manual'} server: five stable outputs, both client bitnesses, independent leases and COM focuser/DeviceState passed", flush=True)
+                print(f"{architecture} {'SCM' if options.scm else 'manual'} server: six stable outputs, both client bitnesses, independent leases and typed focuser/rotator DeviceState passed", flush=True)
             finally:
                 startup = folder / "ready.startup"
                 if startup.exists():

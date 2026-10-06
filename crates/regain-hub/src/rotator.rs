@@ -161,6 +161,12 @@ pub(crate) fn cached_property(
 pub struct RotatorCapabilities {
     pub can_reverse: bool,
 }
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct RotatorMotionReceipt {
+    pub expected_target: f64,
+    pub target_position: f64,
+}
 
 pub struct RotatorController {
     source: Arc<SourceHandle>,
@@ -291,35 +297,78 @@ impl RotatorSession {
         member: &str,
         degrees: f64,
         absolute: bool,
-    ) -> Result<(), SourceError> {
+        report_target: bool,
+    ) -> Result<Option<RotatorMotionReceipt>, SourceError> {
         if !finite_single(degrees) || absolute && !(0.0..360.0).contains(&degrees) {
             return Err(invalid("Invalid rotator angle"));
         }
         let operation = self.source.operation().await?;
         self.idle().await?;
+        let expected_target = if report_target {
+            let position = self
+                .property(RotatorProperty::Position)
+                .await?
+                .as_f64()
+                .unwrap();
+            // Reduce before adding so a large Single distance cannot erase
+            // the starting angle's low bits. Preserve its signed wire value.
+            Some((position + degrees.rem_euclid(360.0)).rem_euclid(360.0))
+        } else {
+            None
+        };
         self.source
             .write(
                 &operation,
                 member,
                 Values::from([("Position".into(), json!(degrees))]),
             )
-            .await
+            .await?;
+        if report_target {
+            // Read while holding the same exclusive command lease: a sibling
+            // cannot replace the accepted relative target between ACK and read.
+            let target = self.property(RotatorProperty::TargetPosition).await.map_err(|_| {
+                SourceError::new(ErrorKind::Unavailable, "Rotator move was accepted but its target could not be verified; do not replay")
+            })?;
+            Ok(Some(RotatorMotionReceipt {
+                expected_target: expected_target.unwrap(),
+                target_position: target.as_f64().unwrap(),
+            }))
+        } else {
+            Ok(None)
+        }
     }
     /// Preserve the requested signed relative angle. The source handles wrapping
     /// and any hardware limit; never turn it into a guessed absolute target.
     pub async fn move_relative(&self, degrees: f64) -> Result<(), SourceError> {
-        self.position_command("move", degrees, false).await
+        self.position_command("move", degrees, false, false)
+            .await
+            .map(|_| ())
+    }
+    pub(crate) async fn move_relative_target(
+        &self,
+        degrees: f64,
+    ) -> Result<RotatorMotionReceipt, SourceError> {
+        Ok(self
+            .position_command("move", degrees, false, true)
+            .await?
+            .unwrap())
     }
     pub async fn move_absolute(&self, degrees: f64) -> Result<(), SourceError> {
-        self.position_command("moveabsolute", degrees, true).await
+        self.position_command("moveabsolute", degrees, true, false)
+            .await
+            .map(|_| ())
     }
     pub async fn move_mechanical(&self, degrees: f64) -> Result<(), SourceError> {
-        self.position_command("movemechanical", degrees, true).await
+        self.position_command("movemechanical", degrees, true, false)
+            .await
+            .map(|_| ())
     }
     /// Dispatch the upstream reference operation without synthesizing motion.
     /// Persistent offset storage belongs to the source adapter/driver.
     pub async fn sync(&self, degrees: f64) -> Result<(), SourceError> {
-        self.position_command("sync", degrees, true).await
+        self.position_command("sync", degrees, true, false)
+            .await
+            .map(|_| ())
     }
     pub async fn set_reverse(&self, enabled: bool) -> Result<(), SourceError> {
         let operation = self.source.operation().await?;
