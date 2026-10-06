@@ -1483,6 +1483,30 @@ StepSize. Cache observation does not start a connection, probe or safety policy.
 Rotator DeviceState includes available IsMoving, MechanicalPosition and Position,
 omits failed/unknown entries and reports no invented UTC measurement timestamp.
 Reverse and TargetPosition remain in typed reads/diagnostics; the standard read-all
-contract does not include those configuration entries. Native NINA/ASCOM/Alpaca
+contract does not include those configuration entries. Native NINA/ASCOM
 publication, COM/virtual/dedicated simulation inputs and shared rotator creation
 remain gated until their respective interfaces and acceptance tests are complete.
+
+Alpaca publishes configured rotators through the same private IPC publisher as
+scalar outputs and focusers. Saved UUIDs and class-specific sparse device numbers
+determine catalog/routing; connection owners remain independent by ClientID.
+Local rotator slots coexist at distinct numbers. A collision rejects catalog,
+reads, writes and setup before connection; it cannot select one device by accident.
+Seven properties, all six commands, cached standard DeviceState and V4 asynchronous
+connection reuse typed validation and generation/uncertainty fencing. Optional
+StepSize errors remain explicit. HTTP never retries a dispatched move or halts
+motion merely because one client disconnects. Per-output setup serves the common
+editor, whose proxy creation capability still enables only completed classes.
+
+Modern rotator outputs require reversal support, as specified by
+[IRotator V3/V4](https://ascom-standards.org/newdocs/rotator.html).
+Admission reads CanReverse and Reverse under the whole configured connection
+deadline. CanReverse=false, unsupported Reverse, malformed readings and hung
+readiness cannot become a successful connection. The generic controller retains
+legacy capability inspection. An unavailable modern output uses the existing
+0x402 mapping; the specific reversal admission failure has a fixed public Regain
+explanation. Arbitrary upstream text remains excluded. Async connection retains
+its failure until explicit disconnect; StepSize is not an admission requirement.
+Cancelled handshake leases are released after any already-dispatched bounded
+actor read finishes; the frontend deadline does not promise immediate actor I/O
+cancellation or replay.

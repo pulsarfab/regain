@@ -1,4 +1,6 @@
 //! Real private endpoint and production HTTP router, using explicit simulation.
+#[path = "support/hub_rotator_output.rs"]
+mod rotator;
 use axum::{
     Router,
     body::Body,
@@ -39,23 +41,32 @@ struct Fixture {
 
 // A private upstream exercises the production Alpaca adapter, shared host and
 // HTTP publisher without opening SDKs, COM drivers or physical serial ports.
-type FocuserWrite = (String, std::collections::BTreeMap<String, String>);
-struct FocuserUpstream {
+type AccessoryWrite = (String, std::collections::BTreeMap<String, String>);
+struct AccessoryUpstream {
     values: Arc<std::sync::Mutex<std::collections::BTreeMap<String, Value>>>,
-    writes: Arc<std::sync::Mutex<Vec<FocuserWrite>>>,
+    writes: Arc<std::sync::Mutex<Vec<AccessoryWrite>>>,
     connected: Arc<std::sync::atomic::AtomicBool>,
     lose_move_reply: Arc<std::sync::atomic::AtomicBool>,
     task: tokio::task::JoinHandle<()>,
     source: regain_hub::config::SourceConfig,
 }
-impl FocuserUpstream {
-    async fn new() -> Self {
+impl AccessoryUpstream {
+    async fn focuser() -> Self {
+        Self::start(regain_hub::config::DeviceType::Focuser, 3).await
+    }
+    async fn rotator(version: u16) -> Self {
+        Self::start(regain_hub::config::DeviceType::Rotator, version).await
+    }
+    async fn start(kind: regain_hub::config::DeviceType, version: u16) -> Self {
         use regain_hub::config::{ConnectionPolicy, DeviceType, SourceBackend, SourceConfig};
         use regain_hub::parameters::PollPolicy;
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let source = SourceConfig {
             id: uuid::Uuid::new_v4(),
-            label: "Private loopback focuser".into(),
+            label: format!(
+                "Private loopback {}",
+                regain_alpaca::hub_output::class_name(kind)
+            ),
             polling: PollPolicy {
                 request_timeout_seconds: 0.1,
                 poll_seconds: 1.0,
@@ -63,22 +74,38 @@ impl FocuserUpstream {
             },
             backend: SourceBackend::Alpaca {
                 base_url: format!("http://{}/", listener.local_addr().unwrap()),
-                device_type: DeviceType::Focuser,
+                device_type: kind,
                 device_number: 19,
                 connection_policy: ConnectionPolicy::Managed,
                 credential_reference: None,
             },
         };
-        let values = Arc::new(std::sync::Mutex::new(std::collections::BTreeMap::from([
-            ("absolute".into(), json!(true)),
-            ("maxstep".into(), json!(1000)),
-            ("maxincrement".into(), json!(100)),
-            ("tempcompavailable".into(), json!(true)),
-            ("position".into(), json!(50)),
-            ("ismoving".into(), json!(false)),
-            ("tempcomp".into(), json!(true)),
-            ("temperature".into(), json!(-5.0)),
-        ])));
+        let initial = if kind == DeviceType::Focuser {
+            vec![
+                ("absolute".into(), json!(true)),
+                ("maxstep".into(), json!(1000)),
+                ("maxincrement".into(), json!(100)),
+                ("tempcompavailable".into(), json!(true)),
+                ("position".into(), json!(50)),
+                ("ismoving".into(), json!(false)),
+                ("tempcomp".into(), json!(true)),
+                ("temperature".into(), json!(-5.0)),
+            ]
+        } else {
+            vec![
+                ("canreverse".into(), json!(true)),
+                ("ismoving".into(), json!(false)),
+                ("mechanicalposition".into(), json!(350.0)),
+                ("position".into(), json!(20.0)),
+                ("reverse".into(), json!(false)),
+                ("stepsize".into(), json!(0.02)),
+                ("targetposition".into(), json!(20.0)),
+            ]
+        };
+        let values = Arc::new(std::sync::Mutex::new(std::collections::BTreeMap::<
+            String,
+            Value,
+        >::from_iter(initial)));
         let writes = Arc::new(std::sync::Mutex::new(Vec::new()));
         let connected = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let lose_move_reply = Arc::new(std::sync::atomic::AtomicBool::new(false));
@@ -93,7 +120,7 @@ impl FocuserUpstream {
                 let (values, writes, connected, lose_move_reply) = state.clone();
                 async move {
                     use std::sync::atomic::Ordering::SeqCst;
-                    assert!(uri.path().starts_with("/api/v1/focuser/19/"));
+                    assert!(uri.path().starts_with(&format!("/api/v1/{}/19/", regain_alpaca::hub_output::class_name(kind).to_lowercase())));
                     let member = uri.path().rsplit('/').next().unwrap();
                     let args: std::collections::BTreeMap<String, String> = serde_urlencoded::from_str(
                         if method == "PUT" { std::str::from_utf8(&body).unwrap() } else { uri.query().unwrap_or("") }
@@ -103,7 +130,24 @@ impl FocuserUpstream {
                     let value = if method == "PUT" {
                         writes.lock().unwrap().push((member.into(), args.clone()));
                         match member {
-                            "connected" => connected.store(args["Connected"] == "true", SeqCst),
+                            "connected" => { assert!(version < 4); connected.store(args["Connected"] == "true", SeqCst); },
+                            "connect" | "disconnect" => { assert_eq!(version, 4); connected.store(member == "connect", SeqCst); },
+                            "move" | "moveabsolute" | "movemechanical" if kind == DeviceType::Rotator => {
+                                let degrees = args["Position"].parse::<f64>().unwrap();
+                                {
+                                    let mut state = values.lock().unwrap();
+                                    let logical = state["position"].as_f64().unwrap(); let mechanical = state["mechanicalposition"].as_f64().unwrap();
+                                    let target = match member { "move" => logical + degrees, "movemechanical" => degrees + logical - mechanical, _ => degrees };
+                                    state.insert("targetposition".into(), json!(target.rem_euclid(360.0)));
+                                    state.insert("ismoving".into(), json!(true));
+                                }
+                                if lose_move_reply.load(SeqCst) { tokio::time::sleep(Duration::from_secs(1)).await; }
+                            },
+                            "sync" if kind == DeviceType::Rotator => {
+                                let degrees = args["Position"].parse::<f64>().unwrap(); let mut state = values.lock().unwrap();
+                                state.insert("position".into(), json!(degrees)); state.insert("targetposition".into(), json!(degrees));
+                            },
+                            "reverse" if kind == DeviceType::Rotator => { values.lock().unwrap().insert("reverse".into(), json!(args["Reverse"] == "true")); },
                             "move" => {
                                 values.lock().unwrap().insert("position".into(), json!(args["Position"].parse::<i32>().unwrap()));
                                 values.lock().unwrap().insert("ismoving".into(), json!(true));
@@ -116,10 +160,13 @@ impl FocuserUpstream {
                         Value::Null
                     } else {
                         match member {
-                            "interfaceversion" => json!(3),
+                            "interfaceversion" => json!(version),
                             "connected" => json!(connected.load(SeqCst)),
-                            "stepsize" => return axum::Json(json!({"ErrorNumber":1024,"ErrorMessage":"private detail must not escape"})),
-                            _ => values.lock().unwrap()[member].clone(),
+                            "connecting" => { assert_eq!(version, 4); json!(false) },
+                            _ => match values.lock().unwrap().get(member) {
+                                Some(value) => value.clone(),
+                                None => return axum::Json(json!({"ErrorNumber":1024,"ErrorMessage":"private detail must not escape"})),
+                            },
                         }
                     };
                     axum::Json(json!({"ErrorNumber":0,"Value":value}))
@@ -145,10 +192,15 @@ impl FocuserUpstream {
             config.outputs.push(regain_hub::config::OutputConfig {
                 id: uuid::Uuid::new_v4(),
                 number,
-                label: format!("Private focuser {number}"),
+                label: format!("Private accessory {number}"),
                 device: VirtualDevice::Proxy {
                     source: self.source.id,
-                    device_type: regain_hub::config::DeviceType::Focuser,
+                    device_type: match self.source.backend {
+                        regain_hub::config::SourceBackend::Alpaca { device_type, .. } => {
+                            device_type
+                        }
+                        _ => unreachable!(),
+                    },
                 },
             });
         }
@@ -170,8 +222,8 @@ impl FocuserUpstream {
 
 #[tokio::test]
 async fn focuser_publication_preserves_dynamic_identity_and_shared_client_ownership() {
-    let upstream = FocuserUpstream::new().await;
-    let other = FocuserUpstream::new().await;
+    let upstream = AccessoryUpstream::focuser().await;
+    let other = AccessoryUpstream::focuser().await;
     let mut config = upstream.config(&[4, 7]);
     let second = other.config(&[12]);
     config.sources.extend(second.sources);
@@ -416,7 +468,7 @@ async fn focuser_publication_preserves_dynamic_identity_and_shared_client_owners
 
 #[tokio::test]
 async fn focuser_lost_move_reply_is_not_replayed_and_stale_clients_must_reconnect() {
-    let upstream = FocuserUpstream::new().await;
+    let upstream = AccessoryUpstream::focuser().await;
     let f = Fixture::from_config(upstream.config(&[4, 7])).await;
     for (slot, client) in [(4, 1), (7, 2)] {
         f.ok(
@@ -474,7 +526,7 @@ async fn focuser_lost_move_reply_is_not_replayed_and_stale_clients_must_reconnec
 
 #[tokio::test]
 async fn focuser_publication_rejects_slot_collisions_before_any_equipment_connection() {
-    let upstream = FocuserUpstream::new().await;
+    let upstream = AccessoryUpstream::focuser().await;
     let f = Fixture::from_config(upstream.config(&[0])).await;
     assert_eq!(
         f.server
@@ -521,7 +573,7 @@ async fn focuser_publication_rejects_slot_collisions_before_any_equipment_connec
 
 #[tokio::test]
 async fn relative_focuser_rejects_position_and_preserves_signed_moves_and_strict_values() {
-    let upstream = FocuserUpstream::new().await;
+    let upstream = AccessoryUpstream::focuser().await;
     upstream
         .values
         .lock()
@@ -780,12 +832,41 @@ impl Fixture {
         Self::from_config(config).await
     }
     async fn from_config(config: HubConfig) -> Self {
+        Self::from_config_with_workers(config, None).await
+    }
+    async fn from_config_with_workers(
+        config: HubConfig,
+        workers: Option<std::path::PathBuf>,
+    ) -> Self {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("hub.json");
         std::fs::write(&path, serde_json::to_vec(&config).unwrap()).unwrap();
         let endpoint = Endpoint::for_config(&path).unwrap();
         let listener = endpoint.try_lock().unwrap().unwrap().bind().unwrap();
-        let directory = dir.path().to_path_buf();
+        let native = if let Some(directory) = workers {
+            assert!(
+                directory
+                    .join(format!("regain-device{}", std::env::consts::EXE_SUFFIX))
+                    .is_file()
+            );
+            NativeRuntime {
+                directory,
+                simulate: true,
+                references: Some(
+                    regain_hub::native_reference::NativeReferenceStore::at_directory(
+                        &dir.path().join("references"),
+                        endpoint.key(),
+                    )
+                    .unwrap(),
+                ),
+            }
+        } else {
+            NativeRuntime {
+                directory: dir.path().into(),
+                simulate: false,
+                references: None,
+            }
+        };
         let credentials =
             Arc::new(CredentialStore::at_directory(dir.path(), endpoint.key()).unwrap());
         let provider = credentials.clone();
@@ -794,11 +875,7 @@ impl Fixture {
             Arc::new(move |config| {
                 HubRuntime::build(
                     config,
-                    &NativeRuntime {
-                        directory: directory.clone(),
-                        simulate: false,
-                        references: None,
-                    },
+                    &native,
                     &*provider,
                     Arc::new(MonotonicClock::default()),
                 )

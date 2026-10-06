@@ -571,7 +571,7 @@ impl HubRuntime {
             }),
             Output::Weather(output) => Ok(ConnectedDevice::Weather(output.connect().await?)),
             Output::Focuser(output) => Ok(ConnectedDevice::Focuser(output.connect().await?)),
-            Output::Rotator(output) => Ok(ConnectedDevice::Rotator(output.connect().await?)),
+            Output::Rotator(output) => Ok(ConnectedDevice::Rotator(output.connect_modern().await?)),
         }
     }
 }

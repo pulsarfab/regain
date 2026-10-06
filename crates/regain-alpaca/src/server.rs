@@ -300,15 +300,27 @@ impl Server {
             return Ok(Vec::new());
         };
         let devices = hub.devices().await?;
-        anyhow::ensure!(
-            devices.iter().all(|device| device.device_type
-                != regain_hub::config::DeviceType::Focuser
-                || self.profiles.focusers.get(device.number as usize).is_none()),
-            error(
-                0x401,
-                "Hub focuser number conflicts with a local focuser slot; choose distinct device numbers"
-            )
-        );
+        for device in &devices {
+            let conflict = match device.device_type {
+                regain_hub::config::DeviceType::Focuser => {
+                    self.profiles.focusers.get(device.number as usize).is_some()
+                }
+                regain_hub::config::DeviceType::Rotator => {
+                    self.profiles.rotators.get(device.number as usize).is_some()
+                }
+                _ => false,
+            };
+            anyhow::ensure!(
+                !conflict,
+                error(
+                    0x401,
+                    format!(
+                        "Hub {} number conflicts with a local slot; choose distinct device numbers",
+                        crate::hub_output::class_name(device.device_type).to_lowercase()
+                    )
+                )
+            );
+        }
         Ok(devices)
     }
     pub fn router(self: &Arc<Self>) -> Router {
@@ -370,10 +382,7 @@ impl Server {
                 "/api/v1/rotator/{slot}/{member}",
                 get(rotator_get).put(rotator_put),
             )
-            .route(
-                "/setup/v1/rotator/{slot}/setup",
-                get(|| async { axum::response::Html(include_str!("../web/rotator.html")) }),
-            )
+            .route("/setup/v1/rotator/{slot}/setup", get(rotator_page))
             .route(
                 "/rotator.js",
                 get(|| async {
@@ -579,7 +588,7 @@ async fn hub_request(
     };
     if !matches!(
         kind.as_str(),
-        "switch" | "safetymonitor" | "observingconditions" | "focuser"
+        "switch" | "safetymonitor" | "observingconditions" | "focuser" | "rotator"
     ) || member != member.to_lowercase()
     {
         return StatusCode::NOT_FOUND.into_response();
@@ -888,6 +897,27 @@ async fn rotator_request(
     put: bool,
     params: Result<Params>,
 ) -> Response {
+    if s.hub.is_some() {
+        match s.hub_devices().await {
+            Ok(devices)
+                if devices.iter().any(|device| {
+                    device.device_type == regain_hub::config::DeviceType::Rotator
+                        && device.number as usize == slot
+                }) =>
+            {
+                return hub_request(s, "rotator".into(), slot as u32, member, put, params).await;
+            }
+            Ok(_) => (),
+            Err(e) => {
+                let transaction = params
+                    .as_ref()
+                    .ok()
+                    .and_then(|p| p.optional_id("ClientTransactionID").ok())
+                    .unwrap_or(0);
+                return Json(failure(e, transaction, s.next())).into_response();
+            }
+        }
+    }
     if s.profiles.rotators.get(slot).is_none() || member != member.to_lowercase() {
         return StatusCode::NOT_FOUND.into_response();
     }
@@ -910,6 +940,26 @@ async fn rotator_request(
         Err(e) => failure(e, id, s.next()),
     })
     .into_response()
+}
+async fn rotator_page(State(s): State<Arc<Server>>, Path(slot): Path<usize>) -> Response {
+    if s.hub.is_some() {
+        match s.hub_devices().await {
+            Ok(devices)
+                if devices.iter().any(|device| {
+                    device.device_type == regain_hub::config::DeviceType::Rotator
+                        && device.number as usize == slot
+                }) =>
+            {
+                return axum::response::Html(include_str!("../web/hub.html")).into_response();
+            }
+            Ok(_) => (),
+            Err(_) => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
+        }
+    }
+    if s.profiles.rotators.get(slot).is_none() {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    axum::response::Html(include_str!("../web/rotator.html")).into_response()
 }
 async fn rotators_setup(State(s): State<Arc<Server>>) -> Response {
     setup_result(

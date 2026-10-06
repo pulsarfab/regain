@@ -107,7 +107,13 @@ impl OutputConnection {
                 json!(self.weather()?.sensor_description(&sensor)?)
             }
             Get::Focuser { property } => self.focuser()?.property(property).await?,
-            Get::Rotator { property } => self.rotator()?.property(property).await?,
+            Get::Rotator { property } => {
+                let value = self.rotator()?.property(property).await?;
+                if property == crate::rotator::RotatorProperty::CanReverse && value == false {
+                    return Err(crate::rotator::required_reversal());
+                }
+                value
+            }
         })
     }
     pub(crate) async fn put(&self, property: Put) -> Result<(), SourceError> {

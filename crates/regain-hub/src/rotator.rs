@@ -185,11 +185,35 @@ impl RotatorController {
         })
     }
     pub async fn connect(&self) -> Result<RotatorSession, SourceError> {
+        self.connect_required(false).await
+    }
+    pub(crate) async fn connect_modern(&self) -> Result<RotatorSession, SourceError> {
+        self.connect_required(true).await
+    }
+    async fn connect_required(&self, modern: bool) -> Result<RotatorSession, SourceError> {
         tokio::time::timeout(self.connection_timeout, async {
             let session = RotatorSession {
                 source: TypedSourceSession::connect(self.source.clone()).await?,
             };
-            session.capabilities().await?;
+            let capabilities = session.capabilities().await?;
+            if modern {
+                if !capabilities.can_reverse {
+                    return Err(required_reversal());
+                }
+                session
+                    .property(RotatorProperty::Reverse)
+                    .await
+                    .map_err(|error| {
+                        if error.kind == ErrorKind::Unsupported {
+                            SourceError {
+                                upstream_code: error.upstream_code,
+                                ..required_reversal()
+                            }
+                        } else {
+                            error
+                        }
+                    })?;
+            }
             Ok(session)
         })
         .await
@@ -323,4 +347,10 @@ impl RotatorSession {
 }
 fn finite_single(value: f64) -> bool {
     value.is_finite() && value.abs() <= f32::MAX as f64
+}
+pub(crate) fn required_reversal() -> SourceError {
+    SourceError::new(
+        ErrorKind::Unavailable,
+        "Source cannot provide required rotator reversal",
+    )
 }

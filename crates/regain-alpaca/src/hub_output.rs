@@ -7,6 +7,7 @@ use regain_hub::{
     endpoint::Endpoint,
     focuser::FocuserProperty,
     ipc::{Command, Get, Put},
+    rotator::RotatorProperty,
     runtime::OutputDescriptor,
 };
 use serde_json::{Value, json};
@@ -182,6 +183,12 @@ impl Publisher {
                     .capabilities
                     .iter()
                     .any(|c| c == "focuserOutputs"),
+                DeviceType::Rotator => self
+                    .catalog
+                    .hello()
+                    .capabilities
+                    .iter()
+                    .any(|c| c == "rotatorOutputs"),
                 _ => false,
             }),
             error(
@@ -448,6 +455,8 @@ impl Publisher {
                         DeviceType::ObservingConditions if modern => 2,
                         DeviceType::Focuser if modern => 4,
                         DeviceType::Focuser => 3,
+                        DeviceType::Rotator if modern => 4,
+                        DeviceType::Rotator => 3,
                         _ => 1,
                     }));
                 }
@@ -483,6 +492,20 @@ impl Publisher {
                     Put::MoveFocuser { .. } | Put::HaltFocuser {} | Put::FocuserTempComp { .. },
                 ..
             } => Some("focuserOutputs"),
+            Command::Get {
+                property: Get::Rotator { .. },
+                ..
+            }
+            | Command::Put {
+                property:
+                    Put::MoveRotator { .. }
+                    | Put::MoveAbsoluteRotator { .. }
+                    | Put::MoveMechanicalRotator { .. }
+                    | Put::SyncRotator { .. }
+                    | Put::HaltRotator {}
+                    | Put::RotatorReverse { .. },
+                ..
+            } => Some("rotatorOutputs"),
             Command::Get {
                 property: Get::SensorDescription { .. },
                 ..
@@ -584,6 +607,7 @@ pub fn class_name(kind: DeviceType) -> &'static str {
         DeviceType::SafetyMonitor => "SafetyMonitor",
         DeviceType::ObservingConditions => "ObservingConditions",
         DeviceType::Focuser => "Focuser",
+        DeviceType::Rotator => "Rotator",
         _ => "Unsupported",
     }
 }
@@ -604,6 +628,22 @@ fn operation(device: &OutputDescriptor, member: &str, put: bool, p: &Params) -> 
     let output = device.id;
     if put {
         let property = match (device.device_type, member) {
+            (DeviceType::Rotator, "move") => Put::MoveRotator {
+                degrees: p.number("Position")?,
+            },
+            (DeviceType::Rotator, "moveabsolute") => Put::MoveAbsoluteRotator {
+                degrees: p.number("Position")?,
+            },
+            (DeviceType::Rotator, "movemechanical") => Put::MoveMechanicalRotator {
+                degrees: p.number("Position")?,
+            },
+            (DeviceType::Rotator, "sync") => Put::SyncRotator {
+                degrees: p.number("Position")?,
+            },
+            (DeviceType::Rotator, "halt") => Put::HaltRotator {},
+            (DeviceType::Rotator, "reverse") => Put::RotatorReverse {
+                enabled: p.boolean("Reverse")?,
+            },
             (DeviceType::Focuser, "move") => Put::MoveFocuser {
                 position: i32::try_from(p.integer("Position")?)
                     .map_err(|_| error(0x401, "Invalid focuser position"))?,
@@ -641,6 +681,12 @@ fn operation(device: &OutputDescriptor, member: &str, put: bool, p: &Params) -> 
         (_, "devicestate") => Get::DeviceState {},
         (DeviceType::Focuser, _) => Get::Focuser {
             property: FocuserProperty::ALL
+                .into_iter()
+                .find(|property| property.member() == member)
+                .ok_or_else(|| unsupported(member))?,
+        },
+        (DeviceType::Rotator, _) => Get::Rotator {
+            property: RotatorProperty::ALL
                 .into_iter()
                 .find(|property| property.member() == member)
                 .ok_or_else(|| unsupported(member))?,
@@ -690,6 +736,12 @@ fn translate(failure: ClientError) -> anyhow::Error {
     };
     // Export only Regain-controlled diagnostic text, not upstream driver strings.
     let message = match &failure {
+        ClientError::Remote(remote)
+            if remote.code == "unavailable"
+                && remote.message == "Source cannot provide required rotator reversal" =>
+        {
+            "Hub rotator requires a source that supports and reports reversal".into()
+        }
         ClientError::Remote(remote) => format!(
             "Hub request failed ({})",
             match remote.code.as_str() {

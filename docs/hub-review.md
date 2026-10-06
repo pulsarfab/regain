@@ -2611,3 +2611,58 @@ artifacts/hub-rotator-runtime-focused.log. Native-reference PR CI 37508673278
 has seven successes and Windows still running; push 37508667983 also remains live
 at this observation. This newer runtime increment needs its own CI. All original
 remaining milestone and acceptance gates stay required before PR #21 can merge.
+
+### Alpaca rotator publication and modern readiness (2026-10-06)
+
+Reviewed the existing publisher/router rather than introducing another host or
+connection owner. Rotator catalog entries require the typed IPC capability and
+retain saved UUIDs/sparse numbers. The existing independent ClientID sessions,
+asynchronous progress, immutable source generations, uncertainty fences and
+client capacity bounds remain in use. Every typed property/command maps through
+the common IPC; the hub preserves signed relative distance and delegates source
+coordinates/reference operations. Local slots coexist at distinct numbers.
+Collisions reject reads, connection/movement writes, catalog and setup before
+opening a source. Setup serves the common editor without falsely enabling
+unfinished rotator creation. Wrong class/member/casing and malformed/range-invalid
+parameters cannot dispatch. DeviceState preserves valid mechanical data while
+omitting invalid logical/motion readings; it neither invents success nor a timestamp.
+
+Review against [IRotator V4](https://ascom-standards.org/newdocs/rotator.html)
+found that modern reversal support is required, while StepSize remains optional.
+Modern runtime admission therefore checks CanReverse=true and a strict Reverse
+reading inside the existing whole-handshake deadline. A paused-time test uses
+a 30-second source request and proves failure at the two-second connection deadline,
+then eventual lease cleanup behind the bounded actor read. No production deadline
+was increased. Generic controller capability inspection still supports legacy
+sources. Unsupported/missing reversal cannot be advertised as connected. Sync and
+async HTTP fixtures check the retained failure and fixed Regain explanation;
+arbitrary backend strings remain excluded by the existing sanitization policy.
+
+Shared private HTTP fixtures now parameterize accessory type/version instead of
+duplicating the focuser upstream. Seven rotator cases cover V3/V4 negotiation,
+dynamic identity, two shared outputs plus an independent source, all six commands,
+busy admission, optional/malformed data, cache, local coexistence/collision and
+an applied lost-reply move without replay or per-client automatic Halt. One uses
+the actual CAA and Falcon executables in explicit simulation through the complete
+factory/host/IPC/publisher/router path. It verifies acknowledged motion completion,
+shared ownership and saved logical reference after complete worker recreation.
+No physical device or installed vendor driver is activated.
+
+The first focused run passed 20 of 23 HTTP cases. Three assertions were wrong:
+the page loads hub.mjs, and unavailable values/admission already map to 0x402,
+not 0x500. The fixtures now assert those actual contracts without weakening
+production errors or deadlines. Review also strengthened catalog length, valid
+mechanical cache preservation and mutation rejection on a colliding slot.
+The expanded focused run passes all seven rotator HTTP cases; the hub rotator
+suite passes sixteen cases including modern readiness. Final evidence and CI
+status are recorded in the plan. Native NINA/ASCOM rotators, COM/virtual/simulation
+imports, shared creation and all original broader acceptance gates remain open.
+
+Final rebuilt-worker/host Rust hub/Alpaca suites, strict Clippy, Rust 1.89 all-target
+checks, generated-contract freshness, Node/four schema checks, all 187 warnings-
+denied NINA tests and real net48 x86/x64 clients pass. Evidence uses
+artifacts/hub-rotator-alpaca-final-*.log. Reference PR/push CI
+37508673278/37508667983 now passes all eight jobs. Runtime PR CI 37510990909 has
+seven successes with Windows still running; push 37510983650 also remains live.
+Neither later passing tests nor pending jobs explain the retained earlier COM
+and NINA initial-connection failures. This Alpaca increment requires new CI.

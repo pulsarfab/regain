@@ -9,14 +9,85 @@ use regain_hub::{
     source::SourceRegistry,
 };
 
+#[tokio::test(start_paused = true)]
+async fn modern_rotator_admission_requires_reversal_and_bounds_the_whole_readiness_check() {
+    for case in [
+        "cannotreverse",
+        "missingreverse",
+        "invalidreverse",
+        "hungreverse",
+    ] {
+        let device = Device::new();
+        // A request longer than the handshake proves that the outer deadline
+        // also covers required property reads, not just transport connection.
+        let (config, host, source) = runtime_setup_with_request_timeout(
+            &device,
+            if case == "hungreverse" { 30.0 } else { 0.1 },
+        );
+        match case {
+            "cannotreverse" => {
+                device.set("canreverse", json!(false));
+                let controller =
+                    RotatorController::new(source.clone(), Duration::from_secs(2)).unwrap();
+                let legacy = controller.connect().await.unwrap();
+                assert!(!legacy.capabilities().await.unwrap().can_reverse);
+                drop(legacy);
+                settle().await;
+            }
+            "missingreverse" => {
+                device.errors.lock().unwrap().insert(
+                    "reverse".into(),
+                    SourceError::new(ErrorKind::Unsupported, "Source cannot report direction"),
+                );
+            }
+            "invalidreverse" => device.set("reverse", json!(1)),
+            "hungreverse" => {
+                *device.hang_read.lock().unwrap() = Some("reverse".into());
+            }
+            _ => unreachable!(),
+        }
+        let client = host.client();
+        let started = tokio::time::Instant::now();
+        let result =
+            tokio::time::timeout(Duration::from_secs(3), client.connect(config.outputs[0].id))
+                .await
+                .unwrap();
+        assert!(result.is_err(), "{case}");
+        if case == "hungreverse" {
+            assert_eq!(started.elapsed(), Duration::from_secs(2));
+        }
+        settle().await;
+        assert_eq!(host.active_connections(), 0, "{case}");
+        // Dropping a session queues its release behind the bounded actor read.
+        let mut status = source.status();
+        tokio::time::timeout(Duration::from_secs(31), async {
+            while status.borrow_and_update().lease_count != 0 {
+                status.changed().await.unwrap();
+            }
+        })
+        .await
+        .unwrap();
+        assert_eq!(source.snapshot().lease_count, 0, "{case}");
+        assert!(device.writes.lock().unwrap().is_empty());
+        client.close();
+        host.shutdown().await.unwrap();
+    }
+}
+
 fn runtime_setup(device: &Arc<Device>) -> (HubConfig, Arc<HubRuntime>, Arc<SourceHandle>) {
+    runtime_setup_with_request_timeout(device, 0.1)
+}
+fn runtime_setup_with_request_timeout(
+    device: &Arc<Device>,
+    request_timeout_seconds: f64,
+) -> (HubConfig, Arc<HubRuntime>, Arc<SourceHandle>) {
     let mut config = HubConfig::empty();
     let source_id = Uuid::new_v4();
     config.sources.push(SourceConfig {
         id: source_id,
         label: "Private rotator".into(),
         polling: PollPolicy {
-            request_timeout_seconds: 0.1,
+            request_timeout_seconds,
             poll_seconds: 1.0,
             connection_timeout_seconds: 2.0,
             ..PollPolicy::default()
