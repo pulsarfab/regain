@@ -33,6 +33,7 @@ internal static class HubAccessorySimulation
 // Private loopback-only upstream shared by net8 NINA and real net48 COM tests.
 internal sealed class HubFocuserServer : HubAccessoryServer { internal HubFocuserServer() : base("focuser") { } }
 internal sealed class HubRotatorServer : HubAccessoryServer { internal HubRotatorServer() : base("rotator") { } }
+internal sealed class HubFilterWheelServer : HubAccessoryServer { internal HubFilterWheelServer() : base("filterwheel") { } }
 
 internal class HubAccessoryServer : IDisposable
 {
@@ -55,7 +56,9 @@ internal class HubAccessoryServer : IDisposable
     internal HubAccessoryServer(string kind)
     {
         this.kind = kind;
-        if (kind == "focuser") {
+        if (kind == "filterwheel") {
+            Values["names"] = new[] {"L","Hα",""}; Values["focusoffsets"] = new[] {-12,0,17}; Values["position"] = 0;
+        } else if (kind == "focuser") {
             Values["absolute"] = true; Values["maxstep"] = 1000; Values["maxincrement"] = 100;
             Values["tempcompavailable"] = true; Values["tempcomp"] = true; Values["position"] = 50;
             Values["temperature"] = -5.0;
@@ -123,6 +126,12 @@ internal class HubAccessoryServer : IDisposable
                 trace.Enqueue("write " + member + (args.TryGetValue("Position", out var position) ? " position=" + position : ""));
                 switch (member) {
                     case "connected": Volatile.Write(ref connected, bool.Parse(args["Connected"]) ? 1 : 0); break;
+                    case "connect" when kind == "filterwheel": Volatile.Write(ref connected,1); break;
+                    case "disconnect" when kind == "filterwheel": Volatile.Write(ref connected,0); break;
+                    case "position" when kind == "filterwheel":
+                        Values["position"] = -1; Interlocked.Increment(ref moves);
+                        if (LoseMoveReply) await Task.Delay(1000,stopping.Token).ConfigureAwait(false);
+                        break;
                     case "move" when kind == "focuser":
                         Values["position"] = int.Parse(args["Position"]); Values["ismoving"] = true; Interlocked.Increment(ref moves);
                         if (LoseMoveReply) await Task.Delay(1000, stopping.Token).ConfigureAwait(false);
@@ -147,6 +156,7 @@ internal class HubAccessoryServer : IDisposable
                     default: throw new InvalidOperationException("Unexpected private upstream write");
                 }
             } else if (member == "connected") value = Volatile.Read(ref connected) != 0;
+            else if (member == "connecting" && kind == "filterwheel") value = false;
             else if (member == "interfaceversion") value = 3;
             else if (!Values.TryGetValue(member, out value)) code = 1024;
             var body = JsonSerializer.SerializeToUtf8Bytes(new { ErrorNumber = code, ErrorMessage = code == 0 ? "" : "private upstream detail", Value = value });
@@ -154,7 +164,9 @@ internal class HubAccessoryServer : IDisposable
             await stream.WriteAsync(header, 0, header.Length, stopping.Token).ConfigureAwait(false);
             await stream.WriteAsync(body, 0, body.Length, stopping.Token).ConfigureAwait(false);
             trace.Enqueue(operation + " replied code=" + code + " elapsedMs=" + started.ElapsedMilliseconds);
-        } catch (Exception error) when (error is IOException or SocketException or ObjectDisposedException or OperationCanceledException) { }
+        } catch (Exception error) when (error is IOException or SocketException or ObjectDisposedException or OperationCanceledException) {
+            trace.Enqueue(operation + " failed " + error);
+        }
         finally {
             trace.Enqueue(operation + " closed elapsedMs=" + started.ElapsedMilliseconds);
             clients.TryRemove(client, out _); client.Dispose();

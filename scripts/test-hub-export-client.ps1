@@ -3,6 +3,7 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'ComTestProperty.ps1')
 $ids = Get-Content -LiteralPath (Join-Path $Directory 'identities.json') -Raw | ConvertFrom-Json
 $objects = @()
+$wheelNames = 'L|H' + [char]0x03B1 + '|'
 function Wait-Condition([scriptblock]$Condition, [string]$Step) {
     $deadline = [DateTime]::UtcNow.AddSeconds(15)
     while ($true) {
@@ -74,6 +75,19 @@ try {
             else { throw 'Unexpected rotator DeviceState entry' }
         }
         $rotator.Disconnect(); Wait-Condition { !(Value $rotator 'Connecting') } 'rotator disconnect completion'
+        $wheel = $objects[6]
+        $wheel.Connect(); Wait-Condition { !(Value $wheel 'Connecting') } 'wheel connect completion'
+        if (((Value $wheel 'Names') -join '|') -cne $wheelNames -or ((Value $wheel 'FocusOffsets') -join ',') -ne '-12,0,17') { throw 'COM wheel arrays lost type, Unicode, blank slot or signed offsets' }
+        $wheel.Position = [int16]2
+        if ((Value $wheel 'Position') -ne 2) { throw 'COM wheel position write' }
+        Wait-Condition {
+            $states = Value $wheel 'DeviceState'
+            if ((Value $states 'Count') -ne 1) { return $false }
+            $item = $states.GetType().InvokeMember('Item', [Reflection.BindingFlags]::GetProperty, $null, $states, [object[]]@(0))
+            $value = Value $item 'Value'
+            return (Value $item 'Name') -eq 'Position' -and $value -is [int16] -and $value -eq 2
+        } 'wheel cached short DeviceState'
+        $wheel.Disconnect(); Wait-Condition { !(Value $wheel 'Connecting') } 'wheel disconnect completion'
     }
     if ($Role -eq 'second') {
         Wait-Signal 'first-connected'
@@ -81,6 +95,9 @@ try {
         $rotator.MoveAbsolute([single]51.5)
         if ((Value $rotator 'Position') -ne 51.5 -or !(Value $rotator 'Reverse')) { throw 'Second COM bitness lost rotator state' }
         $rotator.Connected = $false
+        $wheel = $objects[6]; $wheel.Connected = $true
+        if ((Value $wheel 'Position') -ne 2 -or ((Value $wheel 'Names') -join '|') -cne $wheelNames) { throw 'Second COM bitness lost wheel state or arrays' }
+        $wheel.Connected = $false
     }
     Write-Output "Hub export ${Role}: connect primary"
     $primary.Connect(); Wait-Condition { !(Value $primary 'Connecting') } 'primary connect completion'

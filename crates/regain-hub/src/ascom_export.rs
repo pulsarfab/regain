@@ -20,6 +20,7 @@ pub fn prog_id(instance: Uuid, output: Uuid, device: DeviceType) -> Option<Strin
         DeviceType::ObservingConditions => "Rgn.HW.",
         DeviceType::Focuser => "Rgn.HF.",
         DeviceType::Rotator => "Rgn.HR.",
+        DeviceType::FilterWheel => "Rgn.HL.",
         _ => return None,
     };
     Some(format!(

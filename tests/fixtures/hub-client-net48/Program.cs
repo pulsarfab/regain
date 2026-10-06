@@ -22,6 +22,8 @@ internal static class Program
             using var rotatorServer = new HubRotatorServer();
             rotatorServer.AddTo(fixtureConfig, 4, 7);
             var simulatedRotator = HubRotatorSimulation.AddTo(fixtureConfig,8,9);
+            using var wheelServer = new HubFilterWheelServer();
+            wheelServer.AddTo(fixtureConfig,4,17);
             File.WriteAllText(args[1], fixtureConfig.ToJsonString());
             using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(75));
             var initializedPath = System.IO.Path.Combine(System.IO.Path.GetDirectoryName(args[1])!, "created empty configuration.json");
@@ -180,6 +182,7 @@ internal static class Program
             await RotatorCheckpoint("ASCOM simulated rotator", simulatedRotator,
                 () => NativeOutputs.SimulatedRotatorRun(args[0],args[1],attached.InstanceId,saved,simulatedRotator,editor,deadline.Token));
             await NativeOutputs.CreatedRotatorRun(args[0],args[1],attached.InstanceId,editor,deadline.Token);
+            await NativeOutputs.WheelRun(args[0],args[1],attached.InstanceId,saved,wheelServer,deadline.Token);
             Console.WriteLine($"net48 {IntPtr.Size * 8}-bit: shared identity, independent leases, selection CAS/removal, native session/reconnect, editor review/apply/reconcile, setup inspection/export/simulation, typed ASCOM outputs and surviving host passed");
             return 0;
         } catch (Exception error) { Console.Error.WriteLine(error.ToString()); return 1; }

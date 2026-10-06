@@ -23,7 +23,7 @@ public sealed class HubSelection
     }
     public HubSelection Copy() => new() { ConfigPath = ConfigPath, InstanceId = InstanceId, OutputId = OutputId,
         DeviceType = DeviceType, Label = Label, Simulated = Simulated };
-    public static IReadOnlyList<string> Types { get; } = Array.AsReadOnly(new[] { "switch", "safetymonitor", "observingconditions", "focuser", "rotator" });
+    public static IReadOnlyList<string> Types { get; } = Array.AsReadOnly(new[] { "switch", "safetymonitor", "observingconditions", "focuser", "rotator", "filterwheel" });
 }
 public sealed class HubSelections
 {

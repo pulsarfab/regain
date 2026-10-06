@@ -30,6 +30,9 @@ class AccessoryFixture:
         if self.kind == "rotator":
             values = dict(canreverse=True, reverse=False, mechanicalposition=350.0, position=20.0,
                           targetposition=20.0, stepsize=0.02, ismoving=False, connected=False, interfaceversion=3)
+        elif self.kind == "filterwheel":
+            values = dict(names=["L", "Hα", ""], focusoffsets=[-12, 0, 17], position=0,
+                          connected=False, connecting=False, interfaceversion=3)
         kind = self.kind
 
         class Handler(BaseHTTPRequestHandler):
@@ -53,6 +56,10 @@ class AccessoryFixture:
                 args = parse_qs(self.rfile.read(int(self.headers["Content-Length"])).decode())
                 if member == "connected":
                     values["connected"] = args["Connected"][0].lower() == "true"
+                elif member in ("connect", "disconnect") and kind == "filterwheel":
+                    values["connected"] = member == "connect"
+                elif member == "position" and kind == "filterwheel":
+                    values["position"] = int(args["Position"][0])
                 elif member == "move" and kind == "focuser":
                     values["position"] = int(args["Position"][0])
                 elif member in ("move", "moveabsolute", "movemechanical") and kind == "rotator":
@@ -172,7 +179,7 @@ def main():
     owner = subprocess.check_output([str(powershell), "-NoProfile", "-Command",
                                    "[Security.Principal.WindowsIdentity]::GetCurrent().User.Value"],
                                    text=True, creationflags=NO_WINDOW, timeout=10).strip()
-    with AccessoryFixture() as focuser, AccessoryFixture("rotator") as rotator, tempfile.TemporaryDirectory(prefix="hub-export-", dir=ROOT / "artifacts") as directory:
+    with AccessoryFixture() as focuser, AccessoryFixture("rotator") as rotator, AccessoryFixture("filterwheel") as wheel, tempfile.TemporaryDirectory(prefix="hub-export-", dir=ROOT / "artifacts") as directory:
         folder = Path(directory)
         config = json.loads((ROOT / "crates/regain-hub/examples/simulated-observatory.json").read_text())
         config["instanceId"], config["revision"] = str(uuid.uuid4()), str(uuid.uuid4())
@@ -193,6 +200,11 @@ def main():
                                       backend=dict(kind="alpaca", baseUrl=rotator.url, deviceType="rotator", deviceNumber=19, connectionPolicy="managed")))
         config["outputs"].append(dict(id=str(uuid.uuid4()), number=4, label="Private rotator simulation",
                                       device=dict(kind="proxy", source=rotator_id, deviceType="rotator")))
+        wheel_id = str(uuid.uuid4())
+        config["sources"].append(dict(id=wheel_id, label="Private loopback wheel",
+                                     backend=dict(kind="alpaca", baseUrl=wheel.url, deviceType="filterwheel", deviceNumber=19, connectionPolicy="managed")))
+        config["outputs"].append(dict(id=str(uuid.uuid4()), number=4, label="Private wheel simulation",
+                                      device=dict(kind="proxy", source=wheel_id, deviceType="filterwheel")))
         for source in config["sources"]:
             source["polling"] = dict(pollSeconds=0.1, requestTimeoutSeconds=0.3, attemptsPerCycle=1,
                                      initialBackoffSeconds=0.05, backoffCapSeconds=0.05)
@@ -203,7 +215,7 @@ def main():
             kind = output["device"].get("deviceType") or dict(switch="switch", safety="safetymonitor", weather="observingconditions")[output["device"]["kind"]]
             name = f'https://pulsarfab.com/regain/ascom-hub/output/{config["instanceId"]}/{output["id"]}/{kind}'
             clsid = uuid.uuid5(uuid.NAMESPACE_URL, name)  # Independent identity derivation.
-            progid = "Rgn.H" + dict(switch="S", safetymonitor="M", observingconditions="W", focuser="F", rotator="R")[kind] + "." + clsid.hex
+            progid = "Rgn.H" + dict(switch="S", safetymonitor="M", observingconditions="W", focuser="F", rotator="R", filterwheel="L")[kind] + "." + clsid.hex
             assert len(progid) == 39
             identities.append(dict(clsid=str(clsid), progid=progid, version=4 if kind in ("focuser", "rotator") else 2 if kind == "observingconditions" else 3))
             bindings.append(dict(configPath=str(path), instanceId=config["instanceId"], outputId=output["id"],
@@ -222,6 +234,7 @@ def main():
         for architecture in (("x64",) if options.registered else ("x86", "x64")):
             focuser.values.update(position=50, tempcomp=False, connected=False)
             rotator.values.update(position=20.0, mechanicalposition=350.0, targetposition=20.0, reverse=False, connected=False)
+            wheel.values.update(position=0, connected=False)
             server_exe = workers / "hub-ascom" / architecture / "Regain.Hub.ASCOM.exe"
             paths = [item for identity in identities for item in
                      (f'Software\\Classes\\CLSID\\{{{identity["clsid"]}}}', f'Software\\Classes\\{identity["progid"]}')]
@@ -229,7 +242,7 @@ def main():
             if options.registered:
                 for identity, binding in zip(identities, bindings):
                     paths.extend((f'Software\\Classes\\AppID\\{{{identity["clsid"]}}}',
-                                  f'Software\\ASCOM\\{dict(switch="Switch", safetymonitor="SafetyMonitor", observingconditions="ObservingConditions", focuser="Focuser", rotator="Rotator")[binding["deviceType"]]} Drivers\\{identity["progid"]}',
+                                  f'Software\\ASCOM\\{dict(switch="Switch", safetymonitor="SafetyMonitor", observingconditions="ObservingConditions", focuser="Focuser", rotator="Rotator", filterwheel="FilterWheel")[binding["deviceType"]]} Drivers\\{identity["progid"]}',
                                   f'Software\\PulsarFab\\Regain\\HubExports\\{{{identity["clsid"]}}}'))
             else:
                 paths.append(f'Software\\Classes\\AppID\\{app_id}')
@@ -343,7 +356,7 @@ def main():
                             except FileNotFoundError:
                                 pass
                     assert server.poll() is None and host.poll() is None, "Registration removal stopped a shared server"
-                print(f"{architecture} {'SCM' if options.scm else 'manual'} server: six stable outputs, both client bitnesses, independent leases and typed focuser/rotator DeviceState passed", flush=True)
+                print(f"{architecture} {'SCM' if options.scm else 'manual'} server: seven stable outputs, both client bitnesses, independent leases and typed focuser/rotator/wheel DeviceState passed", flush=True)
             finally:
                 startup = folder / "ready.startup"
                 if startup.exists():

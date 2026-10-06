@@ -1,12 +1,12 @@
 # Hub setup development preview
 
-Regain Hub combines source devices into shared Switch, SafetyMonitor, and
-ObservingConditions outputs. The current development branch can publish those
+Regain Hub combines source devices into shared Switch, SafetyMonitor,
+ObservingConditions, Focuser, Rotator and FilterWheel outputs. The development branch publishes those
 outputs through Alpaca, native NINA providers and native ASCOM. Their setup uses
 the shared configuration. Broader proxy devices and acceptance remain in progress;
 this is not a released feature.
 
-Windows sources can import ASCOM Switch, SafetyMonitor and ObservingConditions
+Windows sources can import ASCOM Switch, SafetyMonitor, ObservingConditions, Focuser and Rotator
 drivers directly through private x86/x64 helpers. Add a **COM** source, enter the
 installed driver's ProgID and select its registration bitness. Available choices
 come from the host's installed helper capabilities. This does not connect through
@@ -443,7 +443,7 @@ the others. Saved IDs and numbers remain stable across reload.
 Review rejects mismatched source classes without opening equipment. Modern
 rotator publication requires upstream reversal support. For native NINA, select
 and save the new output in the shared selector; for ASCOM, register it with the
-shared manager. Wheels, panels and camera proxies remain under development.
+shared manager. Wheel creation, panels and camera proxies remain under development.
 
 ![Shared native rotator output backed by explicit simulation](images/hub-native-rotator-setup-simulation.png)
 
@@ -459,3 +459,23 @@ focuser class, then applied only Logical angle 42.5. Mechanical angle and StepSi
 remained unchanged. Cached health confirms zero leases and disconnected transport;
 no equipment or installed vendor driver was opened. This is simulation acceptance,
 not hardware or conformance evidence.
+
+## Wheel outputs (development)
+
+Saved wheel proxies can publish a native EFW or an Alpaca FilterWheel source
+through Alpaca, native NINA and ASCOM FilterWheel V3. Select the saved wheel in
+the shared NINA selector, or register that output with the shared ASCOM manager.
+The hub owns source connection sharing; each frontend retains its own lease.
+Wheel creation in the generated forms, Windows COM wheel imports, virtual and
+dedicated simulated wheel sources remain under development.
+
+Names retain their order, Unicode and blank slots. FocusOffsets retain signed
+Int32 values and are metadata; the hub does not move a focuser automatically.
+NINA preserves existing profile filter settings and initializes missing slots
+from the source. Position writes acknowledge acceptance; Position -1 means the
+wheel is still moving. A lost reply blocks further commands until state is
+reconciled. Standard wheel outputs do not offer calibration or a fabricated Halt.
+
+Private loopback and explicit production-worker simulation provide development
+test evidence. Wheel hardware, interactive setup and conformance acceptance are
+still required by the plan.

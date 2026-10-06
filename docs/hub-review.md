@@ -3271,3 +3271,61 @@ push 37539201271 remains live. Keep this local increment until they finish, then
 publish into the same draft PR. The original native publication, imports,
 virtual/dedicated simulation, shared creation, conformance and later milestones
 remain required.
+
+### Native wheel publication review (2026-10-06, local increment)
+
+NINA and ASCOM share a bounded wheel request/value validator in the existing
+native hub library. Strict JSON types, 1..1024 slots, aggregate UTF-8 bounds,
+signed Int32 offsets with a zero reference, and Position -1..1023 match Rust.
+Rust remains the authority for live pairing, slot bounds, command control and
+generation fences. Existing sessions, saved choices, metadata-only factories
+and registration implement the new class without a parallel server or worker.
+Rust/C# stable identities use wheel prefix Rgn.HL.; Weather retains Rgn.HW.
+Independent UUID vectors and self-proxy checks cover wheel exports.
+
+NINA preserves existing FilterInfo objects, adds source defaults for missing
+slots and trims absent slots. Metadata is validated before publication, and a
+changed active profile rejects publication into either collection. The short
+Position setter returns on acceptance; actual reads retain -1 while moving and
+never substitute the requested target. ASCOM exports V3/V2 with actual COM QI
+coverage and Short Position in cached standard DeviceState. Neither frontend
+applies offsets, introduces calibration/Halt, nor silently retries motion.
+
+Five private NINA wheel cases and the wheel registration theory cover saved
+choices, wire/resource boundaries, profile preservation/change, malformed live
+state, nonblocking sibling motion and unknown Position replies. Real net48
+x86/x64 clients exercise both interfaces, signed metadata boundaries, actual
+Position, standard state types, independent disconnects and no-replay fencing.
+Seven-output manual export tests independently derive identities and exercise
+both server and client bitnesses, array marshaling and cached Short state. The
+PowerShell test constructs Unicode expectations from code points so Windows
+PowerShell's script encoding cannot corrupt them.
+
+The first focused run passes six of seven cases; one fails before its assertions
+because NINA's collection captures xUnit's headless synchronization context. The
+test now uses the same context-free Task.Run pattern as the runtime wheel cases.
+All seven focused cases pass; the added profile-change case passes in both full
+209-test runs. Final Rust hub/Alpaca suites, strict Clippy, Rust 1.89 all targets,
+generated-contract freshness, Node/five schema checks, freshly rebuilt-host NINA
+209/209 and real net48 x86/x64 clients pass. Both-architecture ASCOM staging has
+zero warnings. Logs: artifacts/hub-wheel-native-output-{focused,
+focused-confirmed,rust,clippy,msrv,contract,node,schema,host,nina,nina-final,
+net48,net48-final,stage,exports}.log. Cold HKCU SCM activation fails at the first
+existing Switch class before wheel activation, matching the retained local
+limitation; artifacts/hub-wheel-native-output-scm.log preserves the failure.
+Disposable registered/cold wheel CI and interactive/conformance acceptance remain
+open. No vendor driver or physical equipment was activated.
+
+Runtime push CI 37539201271 completes with two failures. Windows initial focuser
+Connect returns uncertain before the lost-Move assertion: PUT connected closes
+without a reply. Its cause is unproved; existing private failure-only traces now
+include caught transport exceptions. Intel macOS asserts final upstream cleanup
+immediately after local Connecting=false. SourceLease::drop explicitly schedules
+cleanup asynchronously, so the test now observes upstream disconnection within
+the existing three-second budget, retaining the assertion and checking the
+independent source stays connected while waiting. Full local Rust suites pass;
+portable CI must confirm. Evidence: artifacts/hub-wheel-runtime-ci-failure.log.
+PR 37539206029 has seven passing jobs with Windows installer acceptance live.
+Keep this reviewed increment local until it finishes, then publish into the same
+draft PR. Wheel COM/virtual/simulation/shared creation and all original remaining
+milestones and final acceptance gates remain required.

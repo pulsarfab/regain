@@ -105,6 +105,11 @@ fn native_ascom_export_identities_match_cross_language_vectors_and_reject_canoni
             "Rgn.HR.",
             "7c9d3910-2aa2-5ef1-addd-f2db0c7dd14f",
         ),
+        (
+            DeviceType::FilterWheel,
+            "Rgn.HL.",
+            "1419052d-9e99-5c56-b922-ea0157112e83",
+        ),
     ] {
         assert_eq!(class_id(instance, output, device).to_string(), expected);
         assert_eq!(
@@ -144,7 +149,11 @@ fn native_ascom_export_identities_match_cross_language_vectors_and_reject_canoni
         config.validate().is_empty(),
         "A different hub instance is not a local self-proxy"
     );
-    for device_type in [DeviceType::Focuser, DeviceType::Rotator] {
+    for device_type in [
+        DeviceType::Focuser,
+        DeviceType::Rotator,
+        DeviceType::FilterWheel,
+    ] {
         let source = Uuid::new_v4();
         let mut typed = HubConfig::empty();
         typed.outputs.push(OutputConfig {

@@ -1774,5 +1774,25 @@ focusers, rotators and wheels and preserves their existing local fallback pages.
 HTTP clients retain separate hub leases and share the source's metadata, Position
 and command control. The last disconnect releases only its source; failures with
 unknown command completion fence sibling clients and never replay Position or
-issue an invented stop/calibration. Native NINA/ASCOM wheel publication,
-COM/virtual/dedicated simulation inputs and shared creation remain outstanding.
+issue an invented stop/calibration. COM/virtual/dedicated simulation inputs and
+shared creation remain outstanding.
+
+### Native wheel publication
+
+Native NINA and ASCOM use the same wheel property/request validator and the
+existing private IPC session. Attachment requires `filterWheelOutputs`,
+`scalarDeviceState` and `asyncOutputConnection`. ASCOM exports FilterWheel V3
+with V2 QueryInterface compatibility; cached DeviceState contains only Position
+as a signed Short. Stable wheel ProgIDs use `Rgn.HL.`; `Rgn.HW.` remains Weather.
+The shared registration manager publishes the FilterWheel chooser entry in both
+registry views. Metadata and factory publication do not acquire equipment.
+
+NINA initializes missing filter slots from live Names/FocusOffsets, preserving
+existing profile filter objects and their exposure/autofocus settings. A profile
+change during connection rejects publication and releases the connection. The
+IFilterWheel Position setter acknowledges acceptance without blocking for motion
+completion; reads return the actual position, including -1 while moving. Neither
+frontend applies focuser offsets or adds calibration, Halt or raw commands.
+Malformed metadata/positions remain errors, and lost Position replies retain the
+shared source uncertainty fence. Standard interface publication does not enable
+unfinished wheel source kinds or shared creation choices.

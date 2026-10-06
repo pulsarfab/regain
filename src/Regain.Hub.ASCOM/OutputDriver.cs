@@ -157,10 +157,16 @@ public abstract class OutputDriver : IDisposable
                     try { HubRotatorProtocol.Validate(property, value); }
                     catch (HubException) { throw new global::ASCOM.DriverException("Hub DeviceState contained an invalid rotator reading"); }
                 }
+                if (selection.DeviceType == "filterwheel") {
+                    if (state.GetProperty("Name").GetString() != "Position") throw new global::ASCOM.DriverException("Hub DeviceState contained an unknown filter wheel member");
+                    try {HubFilterWheelProtocol.Validate(HubFilterWheelProperty.Position,value);}
+                    catch (HubException) {throw new global::ASCOM.DriverException("Hub DeviceState contained an invalid filter wheel reading");}
+                }
                 object scalar = value.ValueKind switch {
                     JsonValueKind.True => true, JsonValueKind.False => false,
                     JsonValueKind.Number when selection.DeviceType == "focuser" && state.GetProperty("Name").GetString() == "Position" => value.GetInt32(),
                     JsonValueKind.Number when selection.DeviceType == "rotator" => value.GetSingle(),
+                    JsonValueKind.Number when selection.DeviceType == "filterwheel" => value.GetInt16(),
                     JsonValueKind.Number => value.GetDouble(),
                     _ => throw new global::ASCOM.DriverException("Hub DeviceState contained an invalid scalar")
                 };

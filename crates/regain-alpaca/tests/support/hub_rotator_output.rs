@@ -599,6 +599,16 @@ async fn rotator_publication_routes_dynamic_identity_all_commands_and_shared_own
     f.ok("PUT", "/api/v1/rotator/7/disconnect", "ClientID=2")
         .await;
     await_connection(&f, 7, 2).await;
+    // Client disconnection retires its output immediately. SourceLease::drop
+    // schedules last-owner cleanup; Connecting=false does not await that task.
+    tokio::time::timeout(Duration::from_secs(3), async {
+        while upstream.connected.load(SeqCst) {
+            assert!(other.connected.load(SeqCst));
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .unwrap();
     assert!(!upstream.connected.load(SeqCst));
     assert!(other.connected.load(SeqCst));
     f.finish().await;

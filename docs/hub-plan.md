@@ -11,15 +11,18 @@ Last updated: 2026-10-06.
 Native wheel metadata checkpoint 630b302 passes all eight jobs in both PR/push CI
 37536023962/37536015902, including Windows registered imports, packaging and
 installer acceptance. Reviewed wheel polling/runtime increments are pushed at
-08913c8; their PR/push CI 37539206029/37539201271 is live. Wheel Alpaca
-publication is implemented and verified locally; NINA/ASCOM publication is next.
+08913c8. Push CI 37539201271 failed Windows initial focuser connection and an
+Intel macOS rotator cleanup assertion; PR 37539206029 still has Windows live.
+Wheel Alpaca publication is locally verified. Native NINA/ASCOM wheel outputs
+pass all local Rust/managed checks. Cold registered activation needs new CI.
 
 Current position: milestones 0 and 1 are complete. The scalar source/output paths
 in milestones 2 and 3 are implemented; their remaining acceptance gates are open.
 Milestone 4 has focuser and rotator publication through all three frontends.
 Rotator COM, virtual and dedicated simulation inputs and shared creation are
-implemented. Wheel Alpaca publication is locally verified; native wheel outputs,
-panels and camera proxies remain. Milestone 5's coordinated groups are not yet
+implemented. Wheel publication through all three outputs is implemented locally;
+wheel imports/virtual/simulation/shared creation, panels and camera proxies remain.
+Milestone 5's coordinated groups are not yet
 implemented. PR #21 stays draft until the full plan passes.
 
 Filter-wheel controller increment: shared typed sessions, live ordered names and
@@ -33,8 +36,8 @@ Optional saved `filterWheel` arrays retain names and signed offsets across
 calibration/reconnect; absent metadata uses numbered names and zero offsets.
 Explicit metadata must match hardware slots, including on the low-level write
 path. Wheel runtime/IPC and cached diagnostics are implemented and verified
-locally. Alpaca publication is verified locally; native NINA/ASCOM
-publication, COM/virtual/simulation and shared creation remain required before
+locally. Alpaca publication is verified locally; native NINA/ASCOM publication
+passes managed checks. COM/virtual/simulation and shared creation remain required before
 enabling wheel proxies in setup.
 
 Shared wheel polling increment is locally verified: the existing property poller supports
@@ -53,8 +56,8 @@ reader and five independent schema checks pass. Full Rust hub/Alpaca suites,
 strict Clippy, Rust 1.89, generated-contract freshness, rebuilt-host NINA 203/203
 and real net48 x86/x64 clients pass. Cache/IPC confirmation additionally verifies
 per-key error recovery, omitted unavailable Position and oversized diagnostic
-replies without stream loss. Native wheel publication and shared creation remain
-required.
+replies without stream loss. Native wheel publication verification and shared
+creation remain required.
 
 Wheel Alpaca increment: the existing typed HTTP adapter publishes V3 with shared
 connection/DeviceState negotiation and source-owned Names, FocusOffsets and
@@ -65,7 +68,29 @@ All 31 router cases, full Rust hub/Alpaca suites, Clippy, Rust 1.89, generated
 contracts, Node/five schema checks, rebuilt-host NINA 203/203 and real net48
 x86/x64 clients pass. Common setup-page routing is shared with focusers and
 rotators. Keep this increment local while preceding CI finishes; native wheel
-publication and every original later gate remain required.
+publication verification and every original later gate remain required.
+
+Native wheel output increment: NINA and ASCOM share request/value validation,
+saved selections and existing setup/registration. NINA preserves profile filter
+settings, rejects profile changes during connection and exposes nonblocking
+Position. ASCOM exports V3/V2 and signed Short Position in DeviceState. Both
+retain actual source state, independent leases and uncertain-write fencing.
+All 209 NINA checks, real net48 x86/x64 clients, both-architecture warning-denied
+staging, seven-output manual COM exports, Node and five schema checks pass.
+Cold HKCU SCM activation fails at the first existing Switch class, as previously
+observed; wheel cold/production registration acceptance still needs CI.
+Full Rust hub/Alpaca regressions, strict Clippy, Rust 1.89, generated contracts,
+fresh-host NINA 209/209 and real net48 x86/x64 confirmation pass.
+
+Runtime checkpoint push CI evidence: Windows initial focuser Connect receives
+uncertain before the lost-Move test dispatches motion. Its loopback PUT connected
+trace closes without a reply; cause is unproved. The fixture now records caught
+transport exceptions in its existing failure-only trace. Intel macOS asserts
+upstream disconnection immediately after client Connecting=false, although
+SourceLease::drop schedules cleanup asynchronously. The test now awaits that
+observable cleanup within its existing three-second budget, retaining both the
+disconnect assertion and independent other-source connection assertion. The
+full local Rust suites pass; portable CI must verify the correction.
 
 Retained reliability issue: simulator checkpoint d4050c1 PR run 37530345334 completes
 with seven successful jobs and a Windows failure. The focuser lost-Move-reply
@@ -1093,3 +1118,4 @@ Keep existing device profiles and registrations compatible throughout migration.
 | 2026-10-06 | Added shared typed array polling and deduplicated wheel plans. Factored cache/collected-result admission into SampleBudget after review identified aggregate array collection risk. | Twenty-seven Alpaca transport, seven factory, eleven wheel-controller and twenty-six actor cases pass; full Rust hub/Alpaca, strict Clippy, Rust 1.89, contract freshness, rebuilt-host NINA 202/202 and real net48 x86/x64 also pass. Strengthened collection tests verify one later request remains queued after the first over-budget value; focused confirmation passes. bf15ced push CI 37533737225 completes all eight jobs; its failed PR cause remains unproved. Native metadata head 630b302 is pushed and its PR/push CI remains active. Keep this verified polling increment local while continuing wheel runtime/IPC and all original remaining publication/acceptance/final gates. |
 | 2026-10-06 | Integrated wheel runtime/IPC and cached diagnostics, sharing typed observation envelopes with focusers/rotators. Reviewed cancellation, generation/uncertainty, array dependencies, escaped response limits and frontend contracts. | Fifteen wheel, nineteen native and full Rust hub/Alpaca suites pass; Clippy, Rust 1.89, contract freshness, Node/five schema checks, rebuilt-host NINA 203/203 and real net48 x86/x64 pass. Strengthened cache/IPC confirmation proves per-key recovery, Position omission and stream survival after oversized diagnostics. Native metadata 630b302 PR/push CI 37536023962/37536015902 both pass all eight jobs. Next: all three wheel publications, imports/virtual/simulation/setup, then panels, cameras/coordination and every original acceptance/final gate. |
 | 2026-10-06 | Published wheels through the common typed Alpaca adapter; factored setup-page routing with focusers/rotators. Reviewed dynamic identities, local slot coexistence/collisions, metadata/Position bounds and unknown-write fences. | Five new wheel and all 31 router cases pass, including production EFW simulation; full Rust hub/Alpaca, strict Clippy, Rust 1.89, contracts, Node/five schema checks, rebuilt-host NINA 203/203 and actual net48 x86/x64 pass. Runtime PR CI 37539206029 has six successes with Intel macOS/Windows live; push remains live. Keep this locally verified increment until CI completes, then push to the same draft PR. Next: native NINA/ASCOM wheel outputs, imports/virtual/simulation/setup, then panels, cameras/coordination and all original acceptance/final gates. |
+| 2026-10-06 | Added and reviewed native NINA/ASCOM wheel outputs using shared protocol validation, selections and registration. Preserved NINA filter settings and profile-change admission; verified nonblocking actual Position and no-replay fences. Corrected the asynchronous rotator cleanup assertion exposed on Intel macOS and expanded private transport failure evidence. | Full Rust hub/Alpaca, strict Clippy, Rust 1.89, contracts, Node/five schema checks, fresh-host NINA 209/209, real net48 x86/x64, both-architecture staging and seven-output manual COM exports pass. Retain first headless collection failure and cold HKCU SCM failure at existing Switch class; production/cold wheel registration needs CI. Runtime push 37539201271 fails Windows initial focuser Connect (cause unproved) and macOS cleanup assertion; PR 37539206029 has seven successes with Windows installer acceptance live. Keep verified wheel increments local until that run ends. Next: wheel COM imports, virtual/dedicated simulation/shared creation, then panels, cameras/coordination and every original final gate. |
