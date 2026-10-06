@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/regain-device", "crates/regain-core", "crates/regain-alpaca", "crates/regain-zwo", "crates/regain-pegasus", "crates/regain-deepskydad", "crates/regain-wanderer", "crates/regain-transport", "crates/regain-worker"]
+members = ["crates/regain-device", "crates/regain-core", "crates/regain-alpaca", "crates/regain-zwo", "crates/regain-pegasus", "crates/regain-deepskydad", "crates/regain-wanderer", "crates/regain-transport", "crates/regain-worker", "crates/regain-hub"]
 resolver = "3"
 
 [workspace.package]
@@ -14,6 +14,7 @@ homepage = "https://pulsarfab.com/docs/regain/"
 # Keep these versions equal to workspace.package.version; crates.io needs them.
 [workspace.dependencies]
 regain-core = { path = "crates/regain-core", version = "0.5.10" }
+regain-hub = { path = "crates/regain-hub", version = "0.5.10" }
 regain-deepskydad = { path = "crates/regain-deepskydad", version = "0.5.10" }
 regain-pegasus = { path = "crates/regain-pegasus", version = "0.5.10" }
 regain-transport = { path = "crates/regain-transport", version = "0.5.10" }

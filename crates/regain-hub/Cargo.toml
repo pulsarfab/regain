@@ -1,0 +1,22 @@
+[package]
+name = "regain-hub"
+description = "Shared device aggregation, safety policy and configuration for PulsarFab regain"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme = "README.md"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+uuid = { version = "1", features = ["v4", "serde"] }
+tokio = { version = "1", features = ["rt", "time", "sync", "macros"] }
+tempfile = "3"
+url = "2"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["test-util"] }

@@ -9,6 +9,12 @@ from [AutoPierCam](https://github.com/theatrus/autopiercam), copyright 2026 Yann
 Ramin, Apache License 2.0. AutoPierCam also informed the package and process
 architecture.
 
+The hub safety policy in `crates/regain-hub` is adapted from the NINA Field Kit
+state-machine design, copyright 2026 Yann Ramin, Apache License 2.0, reference
+commit `8be3d38f0b04fa78d7ae36b460ed10656f259d0f` in
+https://github.com/theatrus/nina-field-kit. The Rust implementation adds shared
+sampling cadence, generation fencing, and configuration invalidation semantics.
+
 The ZWO ASI SDK DLL and header are copyright 2015 ZWO Company and distributed
 under the MIT-style license in `vendor/zwo/LICENSE.txt`, included in packages
 as `licenses/ZWO-ASI-SDK.txt`. ZWO's camera device driver is not included.

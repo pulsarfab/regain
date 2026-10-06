@@ -276,6 +276,7 @@ needed and nothing uploads automatically.
 [Opt-in USB reset recovery](docs/usb-recovery.md) ·
 [Multiple Alpaca focusers](docs/focusers.md) ·
 [Architecture and worker protocols](docs/architecture.md) ·
+[Regain Hub implementation plan](docs/hub-plan.md) ·
 [Camera bring-up](docs/camera-bringup.md) ·
 [Accessory tracing](docs/accessories.md) ·
 [Release process](docs/releasing.md).

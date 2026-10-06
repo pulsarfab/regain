@@ -1,5 +1,8 @@
 # Architecture and protocol
 
+The [Regain Hub plan](hub-plan.md) and [hub contracts](hub-contract.md) track
+multi-source devices and shared frontend configuration under development.
+
 ```text
 NINA / ASCOM / Alpaca
         |
