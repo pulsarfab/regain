@@ -8,6 +8,10 @@ tagged or published. Changed cross-crate APIs require an unpublished version so
 Cargo package verification uses the new workspace packages.
 Last updated: 2026-10-06.
 
+COM checkpoint 2ed2578 passes all eight jobs in both PR/push CI
+37526619358/37526612935, including registered imports, packaging and installer
+acceptance. The locally verified rotator simulator now proceeds into the same PR.
+
 Current position: milestones 0 and 1 are complete. The scalar source/output paths
 in milestones 2 and 3 are implemented; their remaining acceptance gates are open.
 Milestone 4 has focuser and rotator publication through all three frontends.

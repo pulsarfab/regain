@@ -2927,3 +2927,8 @@ own CI; the preceding COM checkpoint has seven successful jobs with Windows
 installer acceptance still running in both PR/push runs. Browser interaction,
 shared rotator creation, conformance,
 equipment acceptance and every original remaining gate stay open.
+
+The preceding COM checkpoint 2ed2578 subsequently passed all eight jobs in both
+PR/push CI 37526619358/37526612935, including Windows registered import, packaging
+and installer acceptance. Publish the locally verified simulator checkpoint to
+the same draft PR; shared creation is a separate increment.
