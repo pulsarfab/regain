@@ -122,7 +122,7 @@ pub enum SourceBackend {
         #[schemars(title = "Driver ProgID", length(min = 1, max = MAX_LABEL_CHARS))]
         prog_id: String,
         /// ASCOM interface exposed by this source.
-        #[schemars(extend("x-regain" = {"enumCapabilities":{"camera":"broaderComSources","rotator":"broaderComSources","filterwheel":"broaderComSources","covercalibrator":"broaderComSources"}}))]
+        #[schemars(extend("x-regain" = {"enumCapabilities":{"camera":"broaderComSources","filterwheel":"broaderComSources","covercalibrator":"broaderComSources"}}))]
         device_type: DeviceType,
         /// Match the architecture in which the source driver is registered.
         #[schemars(extend("x-regain" = {"enumCapabilities":{"x86":"comX86Sources","x64":"comX64Sources"}}))]
@@ -322,7 +322,7 @@ pub enum VirtualDevice {
         #[schemars(extend("x-regain" = {"reference":"source"}))]
         source: Uuid,
         /// Must match the upstream device class.
-        #[schemars(extend("x-regain" = {"enumCapabilities":{"camera":"broaderProxyOutputs","switch":"broaderProxyOutputs","safetymonitor":"broaderProxyOutputs","observingconditions":"broaderProxyOutputs","focuser":"focuserOutputs","rotator":"broaderProxyOutputs","filterwheel":"broaderProxyOutputs","covercalibrator":"broaderProxyOutputs"}}))]
+        #[schemars(extend("x-regain" = {"enumCapabilities":{"camera":"broaderProxyOutputs","switch":"broaderProxyOutputs","safetymonitor":"broaderProxyOutputs","observingconditions":"broaderProxyOutputs","focuser":"focuserOutputs","rotator":"rotatorOutputs","filterwheel":"broaderProxyOutputs","covercalibrator":"broaderProxyOutputs"}}))]
         device_type: DeviceType,
     },
 }

@@ -2410,8 +2410,7 @@
                   "enumCapabilities": {
                     "camera": "broaderComSources",
                     "covercalibrator": "broaderComSources",
-                    "filterwheel": "broaderComSources",
-                    "rotator": "broaderComSources"
+                    "filterwheel": "broaderComSources"
                   }
                 }
               },
@@ -2878,7 +2877,7 @@
                     "filterwheel": "broaderProxyOutputs",
                     "focuser": "focuserOutputs",
                     "observingconditions": "broaderProxyOutputs",
-                    "rotator": "broaderProxyOutputs",
+                    "rotator": "rotatorOutputs",
                     "safetymonitor": "broaderProxyOutputs",
                     "switch": "broaderProxyOutputs"
                   }

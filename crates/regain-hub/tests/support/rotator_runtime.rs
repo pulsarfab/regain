@@ -401,7 +401,7 @@ async fn actual_rotator_ipc_dispatch_preserves_sparse_identity_shared_leases_and
 }
 
 #[test]
-fn rotator_poll_plans_deduplicate_all_typed_properties_without_connecting_and_setup_stays_gated() {
+fn rotator_poll_plans_deduplicate_without_connecting_and_setup_exposes_completed_proxies() {
     let device = Device::new();
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -442,11 +442,18 @@ fn rotator_poll_plans_deduplicate_all_typed_properties_without_connecting_and_se
             .unwrap();
             if id == 2 {
                 assert!(
-                    !reply["result"]["capabilities"]
+                    reply["result"]["capabilities"]
                         .as_array()
                         .unwrap()
                         .iter()
                         .any(|item| item == "rotatorOutputs")
+                );
+                assert!(
+                    !reply["result"]["capabilities"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .any(|item| item == "broaderProxyOutputs")
                 );
             }
         }

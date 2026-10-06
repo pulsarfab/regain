@@ -131,8 +131,8 @@ internal static class Program
             var deviceChoices = editor.Draft!.Description.Root.GetProperty("$defs").GetProperty("VirtualDevice");
             var proxyChoice = editor.Draft.Description.Variants(deviceChoices).Single(v => v.Kind == "proxy");
             if (!proxyChoice.Enabled || editor.Draft.InitialValue(proxyChoice.Schema).GetProperty("deviceType").GetString() != "focuser" ||
-                editor.Draft.Description.Choices(proxyChoice.Schema.GetProperty("properties").GetProperty("deviceType")).Where(v => v.Enabled).Any(v => v.Value != "focuser"))
-                throw new InvalidOperationException("Typed proxy setup did not restrict creation to the published focuser class");
+                !editor.Draft.Description.Choices(proxyChoice.Schema.GetProperty("properties").GetProperty("deviceType")).Where(v => v.Enabled).Select(v => v.Value).SequenceEqual(new[] { "focuser", "rotator" }))
+                throw new InvalidOperationException("Typed proxy setup did not restrict creation to the published classes");
             if (editor.Draft!.Revision == oldRevision || editor.Draft.Field("/outputs/0/label").Value!.Value.GetString() != "net48 edited simulation")
                 throw new InvalidOperationException("Native editor did not reconcile saved changes");
             var inspectedSource = saved.GetProperty("sources")[0].GetProperty("id").GetGuid();
@@ -160,6 +160,7 @@ internal static class Program
             await NativeOutputs.SimulatedFocuserRun(args[0],args[1],attached.InstanceId,saved,simulatedFocuser,editor,deadline.Token);
             await NativeOutputs.RotatorRun(args[0],args[1],attached.InstanceId,saved,rotatorServer,deadline.Token);
             await NativeOutputs.SimulatedRotatorRun(args[0],args[1],attached.InstanceId,saved,simulatedRotator,editor,deadline.Token);
+            await NativeOutputs.CreatedRotatorRun(args[0],args[1],attached.InstanceId,editor,deadline.Token);
             Console.WriteLine($"net48 {IntPtr.Size * 8}-bit: shared identity, independent leases, selection CAS/removal, native session/reconnect, editor review/apply/reconcile, setup inspection/export/simulation, typed ASCOM outputs and surviving host passed");
             return 0;
         } catch (Exception error) { Console.Error.WriteLine(error.GetType().Name + ": " + error.Message); return 1; }

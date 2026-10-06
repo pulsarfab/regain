@@ -1632,3 +1632,19 @@ coordinates and reference; it is not persistent equipment calibration or a model
 of motor mechanics. Actual source persistence, conformance and hardware acceptance
 remain separate gates. Boxing the larger IPC update payload changes its Rust
 representation only, preserving the existing JSON object and generated schema.
+
+### Shared typed output creation
+
+The configuration description now advertises `focuserOutputs` and `rotatorOutputs`.
+Both native and browser editors expose those two proxy classes through the same
+tagged form. Windows COM choices also include rotators when a compatible import
+worker is available; worker bitness remains independently gated. Camera, wheel
+and panel proxy creation remain unavailable until their interfaces are implemented.
+
+Creation assigns stable source/output UUIDs and explicit per-class device numbers.
+Two outputs may reference one source while retaining independent connection
+leases. Review checks source/output class agreement and duplicate/cyclic mappings
+without connecting equipment. Apply remains revision-checked and requires all
+output leases to drain; Reload reconciles the saved result without replaying Apply.
+Saved IDs and numbers survive reload. Frontend choices guide editing; the Rust
+engine still validates the complete candidate before preparing or publishing it.

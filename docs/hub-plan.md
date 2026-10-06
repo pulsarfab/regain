@@ -15,9 +15,18 @@ acceptance. The locally verified rotator simulator now proceeds into the same PR
 Current position: milestones 0 and 1 are complete. The scalar source/output paths
 in milestones 2 and 3 are implemented; their remaining acceptance gates are open.
 Milestone 4 has focuser and rotator publication through all three frontends.
-Rotator COM, virtual and dedicated simulation inputs are implemented; shared
-creation remains. Wheels, panels and camera proxies remain; milestone 5's coordinated
+Rotator COM, virtual and dedicated simulation inputs and shared creation are
+implemented. Wheels, panels and camera proxies remain; milestone 5's coordinated
 groups are not yet implemented. PR #21 stays draft until the full plan passes.
+
+Completed increment: shared setup enables rotator proxy creation and installed COM
+rotator choices through the existing generated forms. Native NINA and real net48
+fixtures create two outputs for one simulated source, preserve saved IDs and
+verify independent leases and shared coordinates. Actual WPF and in-app browser
+acceptance cover creation, review/apply/reload, source-class errors and inert setup.
+Browser simulation acceptance verifies sparse updates and Single boundaries.
+Full local validation is recorded in the progress log. This closes implementation
+of rotator creation; broader hardware/conformance acceptance remains open.
 
 Completed increment: dedicated rotator simulation uses the existing typed source,
 controller and outputs with shared timed motion, source-owned coordinates,
@@ -877,7 +886,7 @@ deduplicated polling and cached typed diagnostics/DeviceState are implemented.
 All three frontend publications, Windows COM imports and virtual inputs are
 implemented. Dedicated focuser simulation is implemented. Broader simulation, general typed
 setup and conformance remain required.
-Shared setup now enables Focuser proxy creation, with all other proxy classes
+Shared setup now enables Focuser and Rotator proxy creation, with other proxy classes
 gated until their interfaces are implemented and verified.
 
 Rotator controller increment: shared typed sessions and live property/command
@@ -889,7 +898,7 @@ without replay or implicit Halt. Virtual inputs reuse bounded typed connection
 admission and preserve cached ages/errors through the validated graph.
 Windows COM imports reuse the existing isolated STA worker and typed polling,
 with V2/V3 legacy and V4 asynchronous ownership. Both-architecture private worker
-and registered parent tests pass. Shared rotator creation remains required.
+and registered parent tests pass. Shared rotator creation is implemented.
 Dedicated rotator simulation now uses shared timed
 motion, atomic controls and retained uncertainty through all three outputs.
 Conformance and broader acceptance stay open.
@@ -1006,3 +1015,4 @@ Keep existing device profiles and registrations compatible throughout migration.
 | 2026-10-06 | Implemented and reviewed Windows COM rotator imports through existing STA workers, typed controllers and leases. Corrected typed ASCOM identity cycle validation and aligned Rust/C# Single boundary checks. | Twenty-four private worker and fourteen actual registered parent cases pass, including existing scalar/focuser regressions; final Rust hub/Alpaca, Clippy, Rust 1.89, contract freshness, rebuilt-host NINA 196/196 and real net48 x86/x64 pass. Retain the first parent numeric-representation assertion failure; the corrected test compares strict numeric values. Prior virtual CI has seven successes with Windows installer tests live; let it finish before pushing. Next: dedicated rotator simulation, shared creation and every original remaining gate. |
 | 2026-10-06 | Confirmed exact-head virtual checkpoint 87ca1c1 CI before pushing the reviewed COM increment. | PR/push runs 37522869618/37522861252 both pass all eight jobs, including Windows packaging, registered imports and installer acceptance. COM commit 89fae59 has complete local checks and now proceeds to its own CI. Dedicated simulation is in local implementation; shared creation and all original remaining gates stay open. |
 | 2026-10-06 | Implemented and reviewed dedicated rotator simulation through the existing actor, typed controller, virtual graph and all three outputs. Shared setup derives twelve controls and strict nested/Single validation from host metadata. | Twenty-one simulation cases, full Rust hub/Alpaca suites, warning-denied Clippy, Rust 1.89, generated contracts, Node/four schema tests, rebuilt-host NINA 199/199 and real net48 x86/x64 pass. Actual WPF screenshot is explicitly labelled simulation. Retain the first temporary-lease assertion failure and Clippy enum-size diagnostic; fixes preserve deadlines and JSON. COM checkpoint PR/push CI 37526619358/37526612935 has seven successes with Windows installer acceptance live. Keep this increment local until that checkpoint finishes, then push to the same draft PR. Next: shared rotator creation, remaining typed devices/camera ownership/coordination and every original acceptance gate. |
+| 2026-10-06 | Enabled and reviewed shared rotator creation, reusing generated native/web forms and installed COM worker/bitness choices. | Full Rust hub/Alpaca suites, Clippy, Rust 1.89, contracts, Node/four schema checks, all 201 NINA tests and real net48 x86/x64 created-output fixtures pass. Actual WPF and in-app browser acceptance cover creation/reload, class mismatch, sparse Single controls and zero leases; screenshots label simulation. Retain the obsolete Rust gate assertion, original-source-list WPF failure and empty-tab/early-visibility capture evidence. Preceding simulator PR/push CI 37530345334/37530337700 has six successes with Intel macOS and Windows live. Keep this increment local until CI finishes, then publish to the same draft PR. Next: typed wheels and panels, camera ownership/transport, coordination and every original remaining acceptance/final gate. |

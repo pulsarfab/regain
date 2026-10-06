@@ -2932,3 +2932,55 @@ The preceding COM checkpoint 2ed2578 subsequently passed all eight jobs in both
 PR/push CI 37526619358/37526612935, including Windows registered import, packaging
 and installer acceptance. Publish the locally verified simulator checkpoint to
 the same draft PR; shared creation is a separate increment.
+
+### Shared rotator creation review (2026-10-06)
+
+Enabled the completed rotator class through generated configuration metadata and
+the host's `rotatorOutputs` capability. Installed COM rotator choices reuse existing
+worker/bitness gates. No frontend implements another device form, controller or
+executable. Camera, wheel and panel proxy classes remain unavailable. Configuration
+review still checks class relationships and immutable identities before Apply;
+editing choices cannot authorize unsupported source construction or bypass leases.
+
+Parameterized the existing native focuser-creation fixture to cover rotators too.
+Both cases create two outputs sharing one source, reject unsupported or mismatched
+classes, preserve IDs on reload and verify independent NINA leases. The rotator
+case checks shared Sync and signed relative movement. Real net48 x86/x64 clients
+now create and use their own rotator outputs through the same editor. Actual WPF
+button/combobox events cover source/output creation, review/apply/reload and cached
+health with zero leases. The first WPF run saved correctly but its final check used
+the fixture's original source list; the check now uses authoritative saved UUIDs.
+Retain artifacts/hub-rotator-setup-wpf.log.
+
+The initial WPF render captured an empty Review tab. Pixel diversity alone was
+insufficient evidence that settings were visible. Acceptance now explicitly selects
+Configuration, checks the saved reference value and visibility, then captures it
+after the normal dispatcher/layout pass. The first visibility assertion ran before
+that pass; retain artifacts/hub-rotator-setup-wpf-visible.log. Final visible capture
+passes in artifacts/hub-rotator-setup-wpf-visible-confirmed.log and is inspected.
+No production behavior or deadline changed to repair these fixture assertions.
+
+Actual in-app browser acceptance starts from a private empty hub with no camera
+profiles. It rejects a focuser output referencing a rotator, then saves/reloads two
+rotator outputs numbered 7/8 sharing one source. Sparse Logical angle 42.5 preserves
+mechanical angle, target and StepSize. Angles rounding to 360 and step underflow
+are rejected before dispatch; Read current state reconciles without Replay.
+Visible cached health confirms unchanged revision, zero leases and disconnected
+transport. Evidence: artifacts/hub-rotator-setup-browser-{saved,verification}.json
+and the actual screenshot. Chrome is unavailable in this session; this is in-app
+browser evidence, not a Chrome claim. Both private owned processes and the tab
+are retired after acceptance; no hardware or installed vendor driver is opened.
+
+The first Rust regression still asserted that rotator creation was hidden; update
+that earlier gate test to require the completed capability and retain rejection of
+unimplemented broader proxies. Its original failure is retained in
+artifacts/hub-rotator-setup-rust.log. Full refined-code Rust hub/Alpaca suites,
+Clippy, Rust 1.89, generated contracts, Node event checks and four schema tests pass.
+All 201 warnings-denied NINA tests pass after the visible WPF refinement, and real
+net48 x86/x64 creation/output fixtures pass. Logs use
+artifacts/hub-rotator-setup-{rust-confirmed,clippy,msrv,contract,schema,node-final,nina-final,net48}.log.
+Simulator checkpoint d4050c1 CI has six successes with Intel macOS and Windows
+still live in PR/push 37530345334/37530337700. Retain this creation checkpoint
+locally until that CI finishes, then push it to the same draft PR for its own CI.
+Broader conformance/vendor/interactive acceptance and all original remaining
+typed devices, camera ownership/transport, coordination and final gates stay open.

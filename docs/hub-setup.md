@@ -399,9 +399,8 @@ These controls change runtime test state; restarting resets test coordinates.
 This actual WPF capture shows a private simulated source with only Logical angle
 selected for a sparse 42.5-degree update. Native NINA and real net48 ASCOM fixtures
 verify shared coordinates, timed commands, optional errors and retained uncertainty
-in both Windows architectures. Browser descriptors and HTTP integration are tested;
-interactive browser acceptance for rotator setup remains open. Shared rotator
-output creation is still gated in this development checkpoint.
+in both Windows architectures. Actual browser acceptance also verifies sparse
+updates, Single boundaries, unchanged configuration and zero source leases.
 
 ## Create a shared focuser output (development)
 
@@ -414,11 +413,49 @@ Add an output, choose **Republish a device**, select **focuser** and its source,
 then give it a label and an unused focuser number. Review, apply and reload. Saved
 IDs and numbers are retained; adding another output referencing the same source
 shares its connection while each frontend keeps its own lease. Review reports
-mismatched source classes rather than opening equipment. Other proxy classes stay
-unavailable until their interfaces are implemented. Select/save the output in the
+mismatched source classes rather than opening equipment. Rotators use the same
+form below; camera, wheel and panel proxies remain under development. Select/save the output in the
 native selector or register it through the ASCOM manager before connecting a client.
 
 ![Browser-created focuser output backed by explicit simulation](images/hub-web-focuser-setup.jpg)
 
 This is the actual saved Chrome form, with a simulated focuser source and output
 number 7. Creation and configuration changes leave source lease counts at zero.
+
+## Create shared rotator outputs (development)
+
+Add one source for each rotator, then choose its transport:
+
+| Source | What to select |
+| --- | --- |
+| Direct Regain driver | `caa` or `falcon`, with the hardware's stable identity |
+| Remote Alpaca | Rotator class, server URL, device number and connection policy |
+| Windows ASCOM driver | Rotator class, installed ProgID and an available worker bitness |
+| Another hub device | The existing rotator output's stable ID |
+| Simulation | Rotator class; no equipment connection |
+
+Add an output, choose **Republish a device**, select **rotator** and its source,
+then give it a label and an unused rotator number. Review, apply and reload. Add
+another output referencing that source to share its connection. Each NINA, ASCOM
+or Alpaca client keeps an independent lease; disconnecting one cannot disconnect
+the others. Saved IDs and numbers remain stable across reload.
+
+Review rejects mismatched source classes without opening equipment. Modern
+rotator publication requires upstream reversal support. For native NINA, select
+and save the new output in the shared selector; for ASCOM, register it with the
+shared manager. Wheels, panels and camera proxies remain under development.
+
+![Shared native rotator output backed by explicit simulation](images/hub-native-rotator-setup-simulation.png)
+
+This actual WPF capture shows the saved rotator class and its simulated source.
+Native NINA and real net48 clients verify creation, reload, shared coordinates and
+independent connections. Creation and review do not acquire source leases.
+
+![Browser-created rotator output backed by explicit simulation](images/hub-web-rotator-setup-simulation.png)
+
+This actual in-app browser capture shows the saved shared-source selection. The
+private test created outputs 7 and 8, verified save/reload, rejected a mismatched
+focuser class, then applied only Logical angle 42.5. Mechanical angle and StepSize
+remained unchanged. Cached health confirms zero leases and disconnected transport;
+no equipment or installed vendor driver was opened. This is simulation acceptance,
+not hardware or conformance evidence.

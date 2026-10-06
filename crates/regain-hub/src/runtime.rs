@@ -213,6 +213,7 @@ impl HubRuntime {
             "simulation",
             "proxyOutputs",
             "focuserOutputs",
+            "rotatorOutputs",
         ];
         if !self.com_architectures.is_empty() {
             capabilities.push("comSources");
