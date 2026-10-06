@@ -73,7 +73,13 @@ budget. Logs show passing Rust suites and cold build time, not a hung test. The
 portable CI job budget is now 25 minutes; test/transport deadlines are unchanged.
 Frontend checkpoint 96ea4e3 PR 37475434423 and push 37475427160 both pass all
 eight jobs, including Windows and Intel macOS. Polling checkpoint 400a74d PR
-37478747826 and push 37478744401 are in progress at this observation.
+37478747826 fails Windows in the native safety-expiry fixture: its expected
+unchanged source generation changed. The reset's cause is not proved by that
+assertion. The fixture now supplies and verifies an acknowledged Retry-After
+longer than the safe-data lifetime before checking expiry, retaining unchanged-
+generation, stale-state, independent weather and recovery assertions. Production
+deadlines/policies are unchanged. New CI must verify this correction; push
+37478744401 and empty-profile runs 37479613856/37479602454 remain live.
 Interactive UAC/Chooser, conformance and
 vendor acceptance remain required.
 
@@ -85,8 +91,8 @@ Real executable startup/restart, catalog, invalid-camera requests, profile
 persistence, first-slot setup and actual browser acceptance pass without equipment
 activation. This does not close broader setup, discovery or frontend acceptance.
 
-Next: verify complete diagnostics CI and investigate the earlier push COM fixture
-timeout. Then complete broader typed proxies, camera ownership,
+Next: verify corrected safety-backoff CI and begin broader typed accessory proxies,
+retaining the earlier push COM fixture timeout investigation. Complete camera ownership,
 coordination and every remaining
 original milestone gate. This increment does not close the full setup milestone.
 
@@ -778,3 +784,4 @@ Keep existing device profiles and registrations compatible throughout migration.
 | 2026-10-06 | Added shared native/web output health and observed export using the host-generated serialized reply schema. Reviewed required nullable fields, reference constraints, decoded string equivalence, saved identities/paging, uncertainty and review preservation. | Full hub/Alpaca suites, strict Clippy, Rust 1.89, generated-contract freshness, Node/four schema tests, all 168 warnings-denied NINA checks and actual net48 x86/x64 clients pass. Browser proves all three output classes, pagination, preserved review, downloaded Reviewed export, zero leases/errors; WPF/browser screenshots inspected. de2691a CI passes seven jobs but Intel macOS hits the outer 15-minute budget during otherwise passing tests. Budget increased to 25 minutes; complete new CI remains required. Next: actual actor retry scheduling, previous COM fixture timeout, and every original remaining milestone/acceptance gate. |
 | 2026-10-06 | Added actual actor polling phases, observation-time waits, started attempts/cycle completion and backoff diagnostics to cached source/output health, generated schema, native/web summaries and exports. Reviewed in-flight visibility, delayed dispatch and command no-replay semantics. | Four paused-time scheduling cases, full Rust hub/Alpaca suites, strict Clippy, Rust 1.89, generated-contract/Node/four schema checks, all 171 NINA tests and real net48 x86/x64 clients pass. Actual WPF/browser simulation renders inspected; browser preserves one independent lease and cleanup confirms zero. 96ea4e3 CI passes seven jobs including Intel macOS; Windows still live. Next: accessory-only HTTP startup with explicit empty camera profiles, prior COM timeout and every original remaining gate. |
 | 2026-10-06 | Completed accessory-only HTTP refinement: explicit empty camera lists, ordinary missing-file defaults, common startup/reload identity checks and empty camera setup with first-slot creation. | 15 Alpaca unit, nine executable and 14 router tests pass; strict Clippy/Rust 1.89, formatting and JS syntax pass. Browser proves empty/add/save flow, unchanged hub catalog and zero leases/connections/errors; simulation screenshot inspected. Both 96ea4e3 CI runs pass all eight jobs. Next: polling CI, earlier COM timeout and broader typed proxies/camera ownership/coordination plus every original remaining acceptance gate. |
+| 2026-10-06 | Reviewed polling CI Windows failure at native safety-expiry unchanged-generation assertion. Changed the fixture to establish a completed 503 with Retry-After longer than the safe lifetime before checking expiry, retaining generation, stale state, weather, timing and recovery assertions. | All 172 NINA tests and five focused expiry repeats pass. Production deadlines/policies unchanged; exact old reset cause remains unproved. New CI required. Next: corrected CI and broader typed accessory proxies, retaining COM timeout and all original remaining acceptance gates. |

@@ -2079,3 +2079,30 @@ documented as simulation. Only the fixture's verified host/publisher were stoppe
 and its browser tab was closed. Both 96ea4e3 CI runs now pass all eight jobs;
 400a74d polling CI is still live. Original remaining gates, including the earlier
 COM timeout investigation and broader proxies/cameras/coordination, stay open.
+
+### Native safety expiry fixture establishes actual HTTP backoff
+
+Polling 400a74d PR Windows job 112321024800 fails one of 171 NINA tests at the
+unchanged-generation assertion in
+`NativeSafetyExpiresDuringHttpBackoffWhileOtherReadingsRemainAvailable`. All Rust
+tests and 89 managed recovery tests pass before it. The preserved log
+`artifacts/hub-polling-pr-ci-failure.log` proves a changed generation, not the exact
+reason for the transport reset. Do not call this checkpoint green or infer a
+production reset bug from that assertion alone.
+
+Review found that the fixture called this backoff without sending Retry-After;
+it repeatedly replied 503 at the ordinary short poll cadence. It now returns a
+two-second Retry-After, longer than the 1.2-second safe lifetime, and the test
+first verifies a completed 503, retained generation, still-safe output, waiting/
+retry phase and actual scheduled wait. It then retains stale-state expiry,
+generation identity, independent weather availability, elapsed-time bound and
+recovery checks. A separate fixture test verifies the header is present only
+on failed safety polls. Existing transport-loss safety checks remain intact;
+production request deadlines, scheduling and policies did not change.
+
+All 172 warnings-denied NINA tests pass locally
+(`artifacts/hub-safety-backoff-nina.log`). Five focused repeats also pass, recorded in
+`hub-safety-backoff-repeat-*.log`; new disposable-runner CI is still required.
+The earlier empty-camera increment also passes all 171 then-current NINA checks.
+Broader typed proxies, camera ownership, coordination and every original
+remaining acceptance gate stay required.

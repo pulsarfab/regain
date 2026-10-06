@@ -29,6 +29,18 @@ public sealed partial class HubNativeTests
         using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         Assert.True(body.RootElement.GetProperty("Value").GetBoolean());
     }
+    [Fact]
+    public async Task SafetyFixtureReportsRetryAfterOnFailedPolls()
+    {
+        await using var server = new SafetyServer { Failing = true };
+        using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
+        using var failed = await http.GetAsync(server.Url + "/issafe");
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, failed.StatusCode);
+        Assert.Equal(TimeSpan.FromSeconds(2), failed.Headers.RetryAfter!.Delta);
+        using var metadata = await http.GetAsync(server.Url + "/interfaceversion");
+        Assert.Equal(HttpStatusCode.OK, metadata.StatusCode);
+        Assert.Null(metadata.Headers.RetryAfter);
+    }
     private static HubSelection Binding(string directory, string type = "switch") => new() {
         ConfigPath = Path.Combine(directory, "configuration.json"), InstanceId = Guid.NewGuid(), OutputId = Guid.NewGuid(),
         DeviceType = type, Label = "Saved simulation", Simulated = true
@@ -202,6 +214,23 @@ public sealed partial class HubNativeTests
         var before = await host.Status(1);
         upstream.Failing = true;
         var clock = Stopwatch.StartNew();
+        // Establish an acknowledged HTTP backoff rather than assuming the
+        // frontend becoming unsafe proves expiry without a transport reset.
+        // The fixture's Retry-After exceeds the maximum safe age.
+        await Eventually(async () => {
+            var state = await host.Status(1);
+            var error = state.GetProperty("error");
+            return error.ValueKind == JsonValueKind.Object &&
+                error.GetProperty("upstreamCode").ValueKind == JsonValueKind.Number &&
+                error.GetProperty("upstreamCode").GetInt32() == 503;
+        });
+        var backoff = await host.Status(1);
+        Assert.Equal(before.GetProperty("generation").GetString(), backoff.GetProperty("generation").GetString());
+        Assert.True(safety.IsSafe);
+        var polling = backoff.GetProperty("polling");
+        Assert.Equal("waiting", polling.GetProperty("phase").GetString());
+        Assert.Equal("retry", polling.GetProperty("reason").GetString());
+        Assert.InRange(polling.GetProperty("nextPollAfterSeconds").GetDouble(), 1.5, 2.0);
         await Eventually(() => !safety.IsSafe);
         Assert.True(safety.Connected); Assert.Equal(12, weather.Temperature);
         var after = await host.Status(1);
@@ -463,6 +492,7 @@ public sealed partial class HubNativeTests
                         path.EndsWith("/connecting", StringComparison.Ordinal) ? false : true;
                     var body = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new { Value = value, ErrorNumber = 0, ServerTransactionID = 1 }));
                     var header = Encoding.ASCII.GetBytes("HTTP/1.1 " + (failed ? "503 Service Unavailable" : "200 OK") +
+                        (failed ? "\r\nRetry-After: 2" : "") +
                         "\r\nContent-Type: application/json\r\nContent-Length: " + body.Length + "\r\nConnection: close\r\n\r\n");
                     await stream.WriteAsync(header, stopping.Token); await stream.WriteAsync(body, stopping.Token);
         }
