@@ -2448,3 +2448,58 @@ passes all eight jobs; PR 37496570309 was cancelled. Simulation checkpoint runs
 coordination, remaining typed interfaces, conformance, interactive/vendor/hardware,
 resume/recovery, discovery, main reconciliation and documentation/final gates remain
 required before PR21 can merge.
+
+### Typed rotator controller and shared accessory sessions (2026-10-06)
+
+Extracted only connection readiness, immutable generation checks and unique
+command admission from Focuser into TypedSourceSession. Reviewed the extraction
+against the existing implementation: the enclosing whole-handshake deadline still
+includes capability reads, uncertainty is checked before adopting any generation,
+and cancellation/drop releases only owned leases through the same actor FIFO.
+Device-specific limits, motion and optional properties remain in their controllers.
+All eighteen existing focuser actor/transport/runtime/IPC cases pass after extraction.
+
+The new rotator controller validates seven typed properties, keeps logical,
+mechanical and target angles distinct, and forwards exact signed relative angles.
+Absolute/mechanical/reference commands validate their range; malformed motion is
+not idle. Per-operation ownership arbitrates even simultaneous calls on one
+session. Live reversal capability and optional Halt/StepSize errors survive.
+Move acknowledges start; Sync does not synthesize physical motion or a private
+offset. Sync/Reverse require idle through explicit hub preflight. Native source
+reference persistence must be proved before publication; modern interface reversal
+requirements and older-source capability admission remain part of that work.
+
+Eleven tests cover shared leases, connection/capability cancellation, limits,
+malformed readings, optional errors, preflight generation loss, dispatched
+uncertainty and actual Alpaca V3/V4 transport. The HTTP fixtures verify exact
+Position/Reverse parameters, shared ClientID, unique transactions, connection
+version negotiation and one final owned cleanup. An applied move with malformed
+acknowledgment latches uncertainty without replay or automatic Halt. Initial test
+compilation fixes used the existing Backend reset/SourceError fields, actual
+connection_info snapshot field and cancellation error access; no production API
+or deadline was altered to accommodate a fixture.
+
+Full hub/Alpaca suites pass with explicitly simulated production workers. Strict
+Clippy, Rust 1.89 all-target checks, generated-contract freshness, Node and four
+independent schema cases pass. All 186 warning-denied NINA tests and real net48
+x86/x64 clients pass against the rebuilt host. Logs use artifacts/hub-rotator-*.log.
+The first freshness invocation named a nonexistent export_description example;
+the actual CI export_config command was then run and passed. No physical equipment
+or installed vendor driver was activated. Runtime/IPC, native adapter persistence,
+COM/virtual/simulated imports, frontends and setup still require implementation.
+
+Simulation checkpoint PR/push CI 37499571887/37499559138 now passes all eight jobs.
+Shared setup push 37501487430 fails an initial connection in the NINA uncertain-
+Move fixture, before any injected move. Its generic exception hides the structured
+error; this does not establish a timeout or reconnect cause. The fixture now
+reports first/second connection stage, structured code/message, actual source
+snapshot and private request start/reply/close timings on failure. It retains the
+same deadlines and does not retry. The failed log is preserved in
+artifacts/hub-focuser-setup-push-ci-failure.log. Local success cannot close this
+investigation. PR 37501496852 remains live at this observation. Preserve the older
+COM response-timeout investigation and all original acceptance/final gates.
+
+Ten separate local runs of the affected cold connection/uncertain-Move test pass
+without retries inside the test. This does not reproduce or explain the CI failure;
+the new evidence must be inspected if it recurs. Logs use
+artifacts/hub-focuser-connection-audit-1.log through -10.log.

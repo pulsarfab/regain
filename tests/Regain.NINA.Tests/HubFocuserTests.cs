@@ -65,7 +65,19 @@ public sealed partial class HubNativeTests
         await using var host = await Host.Open(config => server.AddTo(config, 4, 7));
         using var first = new HubFocuserDevice(host.Selection(3, "focuser"), host.Executable, host.Workers);
         using var second = new HubFocuserDevice(host.Selection(4, "focuser"), host.Executable, host.Workers);
-        await first.Connect(CancellationToken.None); await second.Connect(CancellationToken.None);
+        async Task ConnectWithEvidence(HubFocuserDevice device, string stage)
+        {
+            try { Assert.True(await device.Connect(CancellationToken.None)); }
+            catch (HubException error) {
+                // Keep the original failure and deadlines. CI must distinguish
+                // a cold transport/capability failure from the injected Move.
+                var state = await host.Command(new { op = "sourceStatus", source = server.SourceId });
+                throw new Xunit.Sdk.XunitException($"{stage}: {error.Failure}, code={error.Remote?.Code}, message={error.Remote?.Message}, " +
+                    $"source={state.GetRawText()}, private request trace={server.RequestTrace}");
+            }
+        }
+        await ConnectWithEvidence(first, "first output initial connection");
+        await ConnectWithEvidence(second, "second output initial connection");
         var lost = await Assert.ThrowsAsync<HubException>(() => first.Move(70, CancellationToken.None, 0));
         Assert.Equal("uncertain", lost.Remote!.Code);
         var refused = await Assert.ThrowsAsync<HubException>(() => second.Move(71, CancellationToken.None, 0));

@@ -162,7 +162,30 @@ and has an actual form-event regression. All 186 NINA tests and real net48 x86/x
 clients pass. Virtual checkpoint push CI 37496563543 passes all eight jobs; its PR
 run 37496570309 was cancelled. Simulation checkpoint CI is still running.
 
-Next: the remaining typed accessory proxies and their shared setup.
+Completed increment: typed rotator controller with shared accessory session
+ownership. Focuser and rotator controllers now reuse connection readiness,
+immutable generation fences and unique command leases without sharing device
+semantics. Rotator reads preserve logical, mechanical and target angles separately;
+relative commands retain their signed distance. Live motion and reversal checks,
+optional errors, cancellation and dispatched uncertainty remain explicit. Eleven
+private actor/actual Alpaca V3/V4 transport tests pass, including an applied move
+with a malformed acknowledgment and no replay. Full local hub/Alpaca regressions,
+Clippy, Rust 1.89, generated-contract, Node/schema, all 186 NINA tests and real
+net48 x86/x64 clients pass. This controller is not yet enabled in runtime/IPC,
+native source adapters, simulation, COM/virtual imports or any output frontend.
+Native reference persistence must be implemented before rotator publication.
+
+Simulation checkpoint PR/push CI 37499571887/37499559138 passes all eight jobs.
+Shared-setup push CI 37501487430 fails Windows during an initial NINA focuser
+connection, before the injected uncertain Move. Its cause is unproved. The fixture
+now reports the structured remote error, source snapshot and private request
+timings without retries or deadline changes. Preserve this failure alongside the
+earlier COM timeout; passing local tests alone do not close either investigation.
+Shared-setup PR CI 37501496852 remains live at this observation.
+
+Next: complete native rotator reference persistence and typed source support,
+then runtime/IPC, all three frontends, COM/virtual/simulation imports and shared
+setup. Continue the remaining typed accessory proxies.
 Retain the earlier COM fixture timeout
 investigation. Complete camera ownership, coordination and every original
 remaining milestone and acceptance gate. Proxy setup enables only implemented classes; broader typed configuration and
@@ -779,6 +802,12 @@ setup and conformance remain required.
 Shared setup now enables Focuser proxy creation, with all other proxy classes
 gated until their interfaces are implemented and verified.
 
+Rotator controller increment: shared typed sessions and live property/command
+semantics are implemented with eleven private actor/Alpaca V3/V4 cases. Native
+CAA/Falcon reference persistence and adapter coverage remain required, followed by
+runtime/IPC, native NINA/ASCOM/Alpaca outputs, COM/virtual/simulation inputs and
+shared setup. No rotator publication gate is enabled by the controller alone.
+
 - [ ] Specify camera buffer lifetime, image transport, capability passthrough, and
   acquisition ownership before enabling camera proxies.
 - [ ] Run relevant ASCOM/Alpaca conformance checks and multi-client failure tests.
@@ -878,3 +907,4 @@ Keep existing device profiles and registrations compatible throughout migration.
 | 2026-10-06 | Added virtual focuser composition through the shared typed controller, generation-checked cached polling and incremental supervised inner connections. Reviewed ages, types, optional errors, ownership, pending cancellation and no replay/automatic Halt. | Seven private loopback cases and one explicitly simulated production EAF worker case pass, alongside full Rust hub/Alpaca suites, strict Clippy, Rust 1.89, 180 NINA tests and real net48 x86/x64 regressions. COM checkpoint CI is still active. Next: dedicated focuser simulation and shared typed setup, other accessory proxies, cameras/coordination and every original acceptance/final gate. |
 | 2026-10-06 | Added and reviewed dedicated Focuser V4 simulation through shared actors/controllers and fifteen generated native/web controls. | Fifteen Rust simulation cases, full hub/Alpaca suites, Clippy/MSRV, Node/four schema checks, all 184 NINA tests and real net48 x86/x64 fixtures pass. Actual WPF screenshot is labelled simulation. COM push CI 37494616586 passes all eight jobs. Next: shared typed setup; all original later gates remain required. |
 | 2026-10-06 | Enabled shared class-gated Focuser setup, including Windows COM choices; fixed the browser tagged-type event closure found in actual acceptance. | Native review/apply creates two shared outputs without source leases. All 186 NINA tests, real net48 x86/x64 fixtures, Rust/Clippy/MSRV, Node form-event tests and Chrome creation/save/reload/sparse Int32 acceptance pass. New screenshot shows explicit simulation. Next: other typed accessory proxies and every original remaining gate. |
+| 2026-10-06 | Added typed rotator semantics and extracted shared accessory session ownership from the focuser controller. Reviewed generation, cancellation, independent angles, optional errors and no replay. Added evidence to a newly observed Windows initial focuser-connection failure without retries/deadline changes. | Eleven private actor/actual Alpaca V3/V4 cases, full hub/Alpaca regressions, Clippy/MSRV, contract/Node/four schema checks, 186 NINA tests and real net48 x86/x64 clients pass. Rotator publication remains gated. Next: native reference persistence and typed adapters, then runtime/IPC, all frontends/imports/setup and every original remaining gate. |

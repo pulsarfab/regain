@@ -1,8 +1,9 @@
 //! Typed focuser operations over the shared source actor. A session is bound to
 //! one transport generation; reconnect explicitly to adopt a replacement device.
 use crate::{
-    readout::{SourceLease, invalid, unavailable},
+    readout::{invalid, unavailable},
     source::{ErrorKind, SourceError, SourceHandle, Values},
+    typed_source::TypedSourceSession,
 };
 use serde_json::{Value, json};
 use std::{sync::Arc, time::Duration};
@@ -196,23 +197,9 @@ impl FocuserController {
 
     pub async fn connect(&self) -> Result<FocuserSession, SourceError> {
         let connect = async {
-            // Acquire can acknowledge a pending asynchronous connection. Observe
-            // actual readiness before fencing the first capability request.
-            let lease = SourceLease::acquire(self.source.clone()).await?;
-            let mut status = self.source.status();
-            let generation = loop {
-                let state = status.borrow_and_update().clone();
-                if state.transport_connected {
-                    break state.generation;
-                }
-                if let Some(error) = state.error
-                    && matches!(error.kind, ErrorKind::Permanent | ErrorKind::Unsupported)
-                {
-                    return Err(error);
-                }
-                status.changed().await.map_err(|_| disconnected())?;
+            let session = FocuserSession {
+                source: TypedSourceSession::connect(self.source.clone()).await?,
             };
-            let session = FocuserSession { lease, generation };
             session.capabilities().await?;
             Ok(session)
         };
@@ -230,8 +217,7 @@ impl FocuserController {
 /// Each connected output owns only its own source lease. Dropping it releases
 /// that lease without halting motion or disconnecting other clients.
 pub struct FocuserSession {
-    lease: SourceLease,
-    generation: Uuid,
+    source: TypedSourceSession,
 }
 impl FocuserSession {
     pub async fn property(&self, property: FocuserProperty) -> Result<Value, SourceError> {
@@ -243,27 +229,19 @@ impl FocuserSession {
         Ok(value)
     }
     pub fn connected(&self) -> bool {
-        self.check_generation().is_ok()
+        self.source.connected()
     }
     pub(crate) fn cached_sample(
         &self,
         property: FocuserProperty,
         now: Duration,
     ) -> Result<FocuserSample, SourceError> {
-        let state = self.lease.source.snapshot();
-        if state.generation != self.generation {
-            return Err(disconnected());
-        }
-        cached_property(&state, property, now)
+        cached_property(&self.source.snapshot()?, property, now)
     }
     pub(crate) fn device_state(&self, now: Duration) -> Values {
-        if !self.connected() {
+        let Ok(state) = self.source.snapshot() else {
             return Values::new();
-        }
-        let state = self.lease.source.snapshot();
-        if state.generation != self.generation {
-            return Values::new();
-        }
+        };
         [
             (FocuserProperty::IsMoving, "IsMoving"),
             (FocuserProperty::Position, "Position"),
@@ -283,26 +261,10 @@ impl FocuserSession {
         .collect()
     }
     pub fn generation(&self) -> Uuid {
-        self.generation
+        self.source.generation()
     }
-
-    fn check_generation(&self) -> Result<(), SourceError> {
-        let state = self.lease.source.snapshot();
-        if state.generation != self.generation || !state.transport_connected {
-            return Err(disconnected());
-        }
-        Ok(())
-    }
-
     async fn read(&self, member: &str) -> Result<Value, SourceError> {
-        self.check_generation()?;
-        let value = self
-            .lease
-            .source
-            .read_fenced(self.lease.id, member, Values::new(), Some(self.generation))
-            .await?;
-        self.check_generation()?;
-        Ok(value)
+        self.source.read(member).await
     }
     async fn boolean(&self, member: &str) -> Result<bool, SourceError> {
         self.read(member).await?.as_bool().ok_or_else(bad_reading)
@@ -367,37 +329,10 @@ impl FocuserSession {
         Ok(value)
     }
 
-    async fn operation(&self) -> Result<SourceLease, SourceError> {
-        if self.lease.source.snapshot().write_uncertain {
-            return Err(SourceError::uncertain());
-        }
-        self.check_generation()?;
-        // Unique control ownership includes overlapping calls from this session.
-        // Cancellation drops the guard and queues release in source FIFO order.
-        let operation = SourceLease::acquire(self.lease.source.clone()).await?;
-        self.check_generation()?;
-        operation.source.control(operation.id, true).await?;
-        self.check_generation()?;
-        Ok(operation)
-    }
-    async fn write(
-        &self,
-        operation: &SourceLease,
-        member: &str,
-        parameters: Values,
-    ) -> Result<(), SourceError> {
-        self.check_generation()?;
-        operation
-            .source
-            .write_fenced(operation.id, member, parameters, Some(self.generation))
-            .await?;
-        Ok(())
-    }
-
     /// Acknowledges motion start; callers observe IsMoving for completion. It
     /// never disables temperature compensation or retries a dispatched command.
     pub async fn move_to(&self, position: i32) -> Result<(), SourceError> {
-        let operation = self.operation().await?;
+        let operation = self.source.operation().await?;
         let capabilities = self.capabilities().await?;
         let valid = if capabilities.absolute {
             (0..=capabilities.max_step).contains(&position)
@@ -424,33 +359,35 @@ impl FocuserSession {
                 ));
             }
         }
-        self.write(
-            &operation,
-            "move",
-            Values::from([("Position".into(), json!(position))]),
-        )
-        .await
+        self.source
+            .write(
+                &operation,
+                "move",
+                Values::from([("Position".into(), json!(position))]),
+            )
+            .await
     }
     /// Optional support is determined by the source; setup never probes Halt by
     /// actuating it. A halt failure is not replaced by a guessed motion command.
     pub async fn halt(&self) -> Result<(), SourceError> {
-        let operation = self.operation().await?;
-        self.write(&operation, "halt", Values::new()).await
+        let operation = self.source.operation().await?;
+        self.source.write(&operation, "halt", Values::new()).await
     }
     pub async fn set_temp_comp(&self, enabled: bool) -> Result<(), SourceError> {
-        let operation = self.operation().await?;
+        let operation = self.source.operation().await?;
         if !self.capabilities().await?.temp_comp_available {
             return Err(SourceError::new(
                 ErrorKind::Unsupported,
                 "Temperature compensation is not supported",
             ));
         }
-        self.write(
-            &operation,
-            "tempcomp",
-            Values::from([("TempComp".into(), json!(enabled))]),
-        )
-        .await
+        self.source
+            .write(
+                &operation,
+                "tempcomp",
+                Values::from([("TempComp".into(), json!(enabled))]),
+            )
+            .await
     }
 }
 fn bad_reading() -> SourceError {

@@ -1410,3 +1410,26 @@ class, currently Focuser, rather than defaulting to an unsupported Camera. Sourc
 references and matching device classes remain subject to host validation before
 Apply; schema choices alone cannot authorize a configuration. Creation, review
 and persistence do not acquire equipment leases.
+
+The typed rotator controller shares connection readiness, generation fencing and
+unique command leases with the focuser controller. Device capabilities, value
+validation and command semantics remain in their respective controllers. A pending
+connection acknowledgment is not readiness; the controller bounds the entire
+handshake, including capability reads. Dropping a session releases only its lease.
+
+Rotator properties keep Position, MechanicalPosition and TargetPosition distinct.
+Angles must be finite Single-range numbers in [0, 360); StepSize must be positive,
+and boolean properties require actual booleans. Invalid upstream readings are
+errors rather than normalized guesses. Move forwards signed finite relative angles;
+MoveAbsolute, MoveMechanical and Sync enforce the angular range. Command admission
+checks live IsMoving before Move, Sync or Reverse; busy/error readings cannot cause
+dispatch. Reverse checks live CanReverse. Halt remains explicit, with optional
+upstream errors preserved. Motion acknowledgment means start, not completion.
+
+Sync delegates the reference operation to its source without moving equipment or
+inventing a hub-local offset. Source adapters must preserve their persistent
+reference across restarts before native rotator publication is enabled. Lost or
+malformed dispatched replies retain source uncertainty, fence all old sessions and
+cannot cause replay or automatic Halt. Alpaca V3 uses legacy Connected; V4 uses
+Connect/Connecting/Disconnect with the same per-source connection ownership.
+The controller alone does not enable rotator runtime, IPC or frontend publication.

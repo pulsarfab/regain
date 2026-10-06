@@ -29,11 +29,13 @@ internal sealed class HubFocuserServer : IDisposable
     private readonly CancellationTokenSource stopping = new();
     private readonly ConcurrentDictionary<TcpClient, byte> clients = new();
     private readonly ConcurrentBag<Task> requests = new();
+    private readonly ConcurrentQueue<string> trace = new();
     private readonly Task serving;
     internal readonly ConcurrentDictionary<string, object> Values = new();
     private int moves, halts, connected;
     internal int Moves => Volatile.Read(ref moves);
     internal int Halts => Volatile.Read(ref halts);
+    internal string RequestTrace => string.Join("; ", trace);
     internal volatile bool LoseMoveReply;
     internal string Url { get; }
     internal Guid SourceId { get; } = Guid.NewGuid();
@@ -70,6 +72,8 @@ internal sealed class HubFocuserServer : IDisposable
     }
     private async Task Handle(TcpClient client)
     {
+        var operation = "unparsed request";
+        var started = System.Diagnostics.Stopwatch.StartNew();
         try {
             using var stream = client.GetStream();
             using var reader = new StreamReader(stream, Encoding.ASCII, false, 4096, true);
@@ -93,6 +97,8 @@ internal sealed class HubFocuserServer : IDisposable
                 uint.Parse(args["ClientID"]) == 0 || uint.Parse(args["ClientTransactionID"]) == 0)
                 throw new InvalidOperationException("Invalid private upstream request");
             var member = uri.Segments.Last(); object? value = null; var code = 0;
+            operation = first[0] + " " + member + " transaction=" + args["ClientTransactionID"];
+            trace.Enqueue(operation + " started");
             if (first[0] == "PUT") {
                 switch (member) {
                     case "connected": Volatile.Write(ref connected, bool.Parse(args["Connected"]) ? 1 : 0); break;
@@ -111,8 +117,12 @@ internal sealed class HubFocuserServer : IDisposable
             var header = Encoding.ASCII.GetBytes("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: " + body.Length + "\r\nConnection: close\r\n\r\n");
             await stream.WriteAsync(header, 0, header.Length, stopping.Token).ConfigureAwait(false);
             await stream.WriteAsync(body, 0, body.Length, stopping.Token).ConfigureAwait(false);
+            trace.Enqueue(operation + " replied code=" + code + " elapsedMs=" + started.ElapsedMilliseconds);
         } catch (Exception error) when (error is IOException or SocketException or ObjectDisposedException or OperationCanceledException) { }
-        finally { clients.TryRemove(client, out _); client.Dispose(); }
+        finally {
+            trace.Enqueue(operation + " closed elapsedMs=" + started.ElapsedMilliseconds);
+            clients.TryRemove(client, out _); client.Dispose();
+        }
     }
     public void Dispose()
     {
