@@ -63,8 +63,9 @@ not proof of worker teardown. Configuration replacement must drain the old
 registry before allowing the next runtime to open its sources.
 
 These runtime contracts have local lifecycle/fault tests. Scalar framing and
-dispatch now use this runtime through a host-supplied stream. OS ownership,
-protected endpoints, configuration replacement, and resume handling remain open.
+dispatch now use this runtime through a host-supplied stream. Protected local
+endpoints and OS ownership locks are implemented separately below. Executable
+startup/attach, configuration replacement, and resume handling remain open.
 
 Use the existing convention: little-endian 32-bit JSON length followed by UTF-8
 JSON; responses may carry separately bounded binary image data. Version the hub
@@ -125,9 +126,40 @@ leases. A timed-out put reports uncertain and is never replayed. Serialization
 has a bounded output buffer; an oversized response returns `responseTooLarge`
 without corrupting the next frame. Protocol failures never echo request content.
 
-These checks use in-memory duplex streams and the full runtime. Named-pipe ACLs,
-Unix socket permissions, process startup locks, and separate-process client tests
-remain required before exposing the service in the shared executable.
+Framing/fault checks use in-memory duplex streams and the full runtime. Endpoint
+and separate-process tests also exercise hello/listDevices over actual local IPC.
+
+### Local endpoints and ownership locks
+
+`Endpoint::for_config` requires an existing absolute regular configuration file.
+It hashes the canonical path and OS user identity; Windows normalizes path case.
+Atomic configuration replacement preserves this identity. A separate persistent
+lock file uses the OS exclusive file lock and is never unlinked on release. A
+crashed process therefore releases ownership without PID-file guessing or deleting
+another process's lock. Binding requires possession of this lock. Accepted streams
+retain ownership if their listener is dropped; the host must additionally retain
+the listener/lock until runtime shutdown has drained device work.
+
+Windows uses the current process SID and a protected, explicit user-only DACL for
+the named pipe and `%LOCALAPPDATA%/Regain/Hub` storage, resolved through the OS known
+folder API. Existing storage and opened pipe handles are checked for owner/DACL;
+permissive ACLs are rejected without silent repair. Reparse points are rejected
+for the storage directory and lock file. Pipes reject remote clients, and clients
+use identification-only impersonation rights.
+
+Unix uses `/tmp/regain-hub-UID` with mode 0700, a mode-0600 socket and lock, and
+peer-UID checks in both directions. Existing non-private directories, links,
+hard-linked lock files, and non-socket endpoint files are rejected. Only the lock
+owner can remove a stale socket. Listener cleanup checks the socket's device and
+inode before unlinking, preserving a replacement file.
+
+Endpoint connection retries only not-ready errors until its supplied deadline;
+permission failures return immediately. A connected stream is not readiness proof:
+the launcher must still validate the versioned hello and expected hub identity.
+The shared executable's startup coordinator, global client admission bound, and
+shutdown integration remain pending. Windows tests cover anonymous denial,
+permissive-storage rejection, cross-process contention/crash recovery, and actual
+IPC. Unix-specific permission tests await the portable CI matrix for this change.
 
 ## Identities and configuration
 

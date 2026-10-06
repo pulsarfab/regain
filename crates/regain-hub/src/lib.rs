@@ -3,6 +3,7 @@
 pub mod alpaca;
 pub mod config;
 pub mod description;
+pub mod endpoint;
 pub mod factory;
 pub mod ipc;
 pub mod native;

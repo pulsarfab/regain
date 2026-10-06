@@ -448,3 +448,45 @@ No listener is opened by this module. User-only OS endpoints, startup ownership,
 separate-process tests, durable configuration replacement, protected credentials,
 resume handling, executable integration, and all frontend/conformance/hardware
 gates remain open. Camera buffers/images retain their separate planned contract.
+
+## 2026-10-05: protected local endpoints and OS ownership
+
+Added named pipes/Unix sockets keyed by canonical configuration path and OS user.
+Binding consumes an OS-held exclusive lock on a separate persistent file. Atomic
+config replacement cannot replace that lock, and process death releases it.
+
+Review findings and corrections:
+
+1. Listener lifetime alone is insufficient: accepted streams retain the ownership
+   guard. The executable host must still retain ownership until runtime/source
+   shutdown completes, including commands whose initiating client has disconnected.
+2. Windows creation permissions do not prove existing storage or a connected
+   server is private. Validate owner and protected user-only DACL on opened handles;
+   reject reparse points and permissive ACLs without modifying them. Inspect ACE
+   type/size before casting to an allowed ACE. Use identification-only client
+   impersonation rights and reject remote named-pipe clients.
+3. Unix directory/socket/lock modes and effective UID are checked; peer credentials
+   verify both connection directions. Reject links and multi-link lock files. Only
+   an actual owned socket can be removed as stale. Drop checks device/inode so it
+   cannot remove an unrelated replacement at the same path.
+4. Readiness retries are bounded and limited to absent/busy/refused endpoints.
+   Permission errors do not enter the retry loop. A later launcher must validate
+   hello rather than equating successful connect with readiness or compatibility.
+5. Process fixtures use real child processes and OS locks: a competing process is
+   denied before and after atomic config replacement; killing the owner permits a
+   new owner. Another child serves real versioned IPC and drains on client EOF.
+
+Windows endpoint/process tests pass, including anonymous access denial and an
+explicit Everyone ACL fixture for directory/lock rejection. Unix mode, symlink,
+hard-link, and replaced-socket tests are implemented but not locally executed:
+the installed WSL distribution has no Rust toolchain. Portable CI must verify them.
+No hardware is accessed by endpoint fixtures.
+
+Full local verification: 120 hub tests plus the separate-process fixture pass.
+Clippy with warnings denied, Rust 1.89.0 all-target checks, transport/core/hub
+package verification, generated-contract freshness, formatting and diff checks
+also pass. Existing production native-worker tests use explicit simulation.
+
+Executable host startup/attach, global client admission, durable configuration
+apply, protected credentials, resume, and all frontend/conformance/hardware gates
+remain pending. These endpoints do not yet expose a user-facing hub service.

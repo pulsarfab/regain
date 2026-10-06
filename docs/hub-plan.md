@@ -352,10 +352,17 @@ bounded framing, typed device operations, configuration description/read/validat
 and connection-owned client identities. Requests start in order but can finish
 out of order; slow source I/O does not block cached safety reads or EOF cleanup.
 Tests cover unknown fields, spoofed client IDs, replayed request IDs, deadlines,
-overload, oversized replies, and clients that stop reading. This is a stream
-implementation, not yet a protected OS endpoint or a published frontend service.
+overload, oversized replies, and clients that stop reading.
 
-Next: implement protected IPC endpoints and host startup ownership, durable config
+Protected local endpoints now use per-user named pipes/Unix sockets and a separate
+OS ownership lock keyed by canonical configuration path. Accepted connections
+retain the lock, atomic config replacement keeps the same identity, and process
+death releases ownership. Windows tests exercise anonymous denial, permissive ACL
+rejection, competing processes, crash recovery, and real framed IPC. Unix permission,
+link, and socket-cleanup tests await portable CI. The shared executable still needs
+startup/attach coordination, bounded client admission, and shutdown integration.
+
+Next: connect endpoint ownership to executable host startup, implement durable config
 apply, protected credentials, and device capabilities, then connect the first
 three virtual classes to the existing Alpaca server/setup UI. Frontend error
 translation and protocol conformance remain unverified. Generic
@@ -441,3 +448,4 @@ Keep existing device profiles and registrations compatible throughout migration.
 | 2026-10-05 | Added configuration-driven native/Alpaca source construction, unioned poll plans, enabled-membership polling cadence, bounded plan growth, and the credential-provider boundary. Mixed-source integration now uses the real factory. | 95 hub tests pass, including plan deduplication, weather ages, disabled memberships, combined limits, validation before credential access, authenticated requests, and shared leases without secret-bearing diagnostics. Next: shared output runtime, protected storage, virtual/simulated sources, host IPC, and publication. No later gate is closed by source construction alone. |
 | 2026-10-05 | Added shared output/client sessions, cancellation-safe connection reservations, and explicit runtime/registry shutdown. Safety policy and weather settings are shared per output; queued commands cannot revive a retired actor. Reviewed last-client cleanup, in-flight writes, and cancelled shutdown. | 104 local hub tests cover shared state, disconnect order, cancellation/replacement, source stalls with independent safety expiry, uncertain writes/cleanup, and resumed shutdown. Mixed native/network integration uses the runtime builder. Next: IPC framing, user-only endpoints, startup ownership, protected storage, and frontend publication; all remaining original gates stay open. |
 | 2026-10-05 | Added bounded scalar IPC framing, handshake, typed controller dispatch, configuration reads/validation, and per-stream clients. Review fixed request-start ordering and strict parsing of no-argument commands. | 114 local hub tests pass, including ten framed-stream integration/fault cases; Clippy, Rust 1.89.0, and package verification pass. Next: user-only named pipes/Unix sockets, startup ownership and process tests, durable applyConfig, and executable/frontend integration. No OS endpoint or hardware acceptance gate is closed by duplex-stream tests. |
+| 2026-10-05 | Added user-scoped local endpoints and OS ownership locks, with private-storage validation, bounded connection retries, accepted-stream ownership retention, and separate-process crash/IPC fixtures. | 120 local hub tests plus process fixtures, Clippy, Rust 1.89.0, package verification, and contract freshness pass. Windows checks include anonymous denial and permissive ACL rejection. Unix permission/link/cleanup checks await portable CI. Next: executable host startup/attach and shutdown integration, durable apply, protected credentials, and frontend publication. Milestones 2–5 remain open. |

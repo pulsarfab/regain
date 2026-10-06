@@ -978,15 +978,18 @@ dependencies = [
  "axum",
  "futures-util",
  "httpdate",
+ "libc",
  "regain-core",
  "reqwest",
  "schemars",
  "serde",
  "serde_json",
+ "sha2",
  "tempfile",
  "tokio",
  "url",
  "uuid",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
