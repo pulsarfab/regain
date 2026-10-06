@@ -8,13 +8,19 @@ tagged or published. Changed cross-crate APIs require an unpublished version so
 Cargo package verification uses the new workspace packages.
 Last updated: 2026-10-06.
 
-Current increment: native ASCOM output adapters and dynamic registration. The
-shared native session can now attach without an equipment lease, leaving modern
-connection initiation/completion to the host. Corrected runner CI also exposed a
-loopback safety fixture abort race; the fixture now continues after a cancelled
-client disconnects. All 116 NINA checks and actual net48 x86/x64 attachment,
-lease and editor fixtures pass locally. New CI is required; native ASCOM exports
-and all remaining original milestone gates are still pending.
+Current increment: typed native ASCOM Switch 3, SafetyMonitor 3 and
+ObservingConditions 2 adapters, with legacy interfaces, and bound COM factories
+in the existing import/export executable. Dynamic identities derive from the
+instance/output/class, using the same saved selections as NINA. The pumping STA,
+metadata preparation and object lifetime are shared with existing serial drivers.
+Private real-COM fixtures pass for four outputs against both server architectures
+and both client bitnesses. All 117 NINA checks and net48 x86/x64 adapter fixtures
+pass locally. Checkpoint 64178eb passed all eight jobs in both CI runs; a later
+run exposed a separate queued-writer fixture deadline, now corrected locally.
+Next: verify new CI, implement/review production registration and removal,
+self-proxy/alias checks for exports, conformance and interactive setup acceptance,
+then every remaining original milestone gate. No production chooser entries have
+been registered by this increment.
 
 Use this document as the working checklist. Complete one reviewable milestone at
 a time, record its tests and remaining limitations, and update the next action
@@ -672,3 +678,4 @@ Keep existing device profiles and registrations compatible throughout migration.
 | 2026-10-06 | Added the isolated x86/x64 Windows COM import-worker boundary for Switch, SafetyMonitor and ObservingConditions. Reviewed STA/pump, connection ownership, terminal framing, sanitized HRESULTs and uncertain command/cleanup behavior. | Both warnings-denied builds and 16 real registered-COM cases in each architecture pass. Fixture registration is removed; hardware remains untouched. Native-editor 2171bec passed all eight jobs in both CI runs. Next: Rust COM adapter/factory integration, parent process ownership/deadline/generation and actual shared-policy tests, private worker packaging/signing, then all original remaining gates. No COM capability is advertised yet. |
 | 2026-10-06 | Adopted scalar COM workers in the Rust factory; shared Alpaca/COM sampling, typed reply validation, process ownership, capability metadata and private Windows packaging. Reviewed cancellation, lost writes, connection/cleanup uncertainty and vendor helper isolation. | Ten real Rust-parent cases run in both bitnesses, plus 16 worker cases; Clippy, core/hub/Alpaca tests, Rust 1.89, 110 NINA tests and net48 x86/x64 fixtures pass locally. Both unsigned packages validate. Foundation CI failed Windows activation (0x80070002); loader diagnostics and updated CI remain required. Next: resolve that failure, native ASCOM outputs and shared setup refinements, then all original acceptance/coordination/documentation gates. |
 | 2026-10-06 | Diagnosed elevated runner COM activation after successful direct managed loads; selected private HKLM fixture keys explicitly only for elevated disposable GitHub runners. Added native saved-choice management using the common store/selector. | Adapter 9dfdb82 passed seven jobs in both CI runs but Windows still failed; the runner correction requires new CI. Local 16 worker and ten parent cases pass in both bitnesses; machine registration is rejected outside runner context. All 114 NINA checks, net48 x86/x64 removal/lease fixtures and warnings-denied shared builds pass. WPF render verified after correcting clipped identity/path text. Next: verify corrected CI, native ASCOM outputs and remaining original gates. |
+| 2026-10-06 | Added typed native ASCOM scalar adapters and bound export factories in the existing helper; shared the COM server with serial frontends. Reviewed capability admission, private leases, response epochs, typed errors and simulation metadata. | 117 NINA tests, net48 x86/x64 adapters, four private COM outputs against both server/client bitnesses, existing serial COM regressions and import-parent tests pass locally. Checkpoint 64178eb passed both complete CI runs; a newer queued-writer fixture deadline is corrected. Native chooser registration/removal, self-proxy aliases, SCM/setup/conformance and all original remaining gates stay open. |

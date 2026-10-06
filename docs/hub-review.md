@@ -1404,11 +1404,61 @@ exercise the same removal/CAS/retained-lease behavior
 (`artifacts/hub-selection-net48.log`); both native framework builds pass with
 warnings denied (`artifacts/hub-selection-build.log`). New CI remains required.
 
-Next: corrected COM runner validation, native ASCOM output/registration, remaining
-setup initialization, credentials, inspection/simulation/diagnostics, interactive
-acceptance and every original broader proxy, camera, coordination and release gate.
+## 2026-10-06: typed native ASCOM outputs and common COM server
 
-Next: resolve Windows fixture activation, complete native ASCOM outputs/setup,
-interactive NINA/vendor acceptance and shared setup refinements, then all original
-broader proxy, camera/acquisition, coordination, conformance, recovery, hardware,
-README/site/screenshots and final merge gates. PR #21 remains draft.
+Reviewed current/legacy interface metadata against the pinned ASCOM 7.1.2 assembly
+and async completion/error semantics against the primary interface documentation.
+The existing helper serves both isolated imports and bound native outputs; no
+per-class executable/project was added.
+
+1. Separate verified host attachment from equipment acquisition. ASCOM delegates
+   modern/legacy connection operations to the Rust host and retains failures in
+   Connecting. Admission is reserved before dispatch; no automatic retry occurs.
+   Each COM object checks required interface capabilities before acquiring equipment
+   and retains a private client and immutable selection. Dispose and
+   disconnect preserve sibling leases. Added logical connection epochs as well
+   as transport epochs so responses cannot become fresh after a connection change.
+2. Convert scalar values to current/legacy ASCOM interfaces, including DeviceState
+   collections. Unavailable weather raises ValueNotSet, unimplemented properties
+   and methods have distinct ASCOM errors, and invalid/non-finite writes fail.
+   General source failures retain full HRESULTs with sanitized diagnostics.
+   No measurement TimeStamp is synthesized. Review fixed stale simulation display
+   metadata by replacing it from the authenticated catalogue on attachment.
+3. Derive dynamic CLSIDs with UUIDv5 from instance/output/class and 39-character
+   ProgIDs. An independent Python implementation verifies the actual factory IDs
+   through COM activation. Four outputs include two Switch outputs sharing a
+   source; names/order do not establish identity. Register fixture keys only after
+   both-hive/bitness preflight and remove only exact private keys in finally. Machine
+   fixture registration remains restricted to elevated disposable GitHub runners.
+4. Extract the pumping STA, metadata warmup, weak object tracking, factory/QI and
+   shutdown into LocalComServer shared by hub, Pegasus, OFP2 and ETA frontends.
+   Actual 32/64-bit COM simulation regressions pass for the existing drivers.
+   Shared native setup opens the same editor; interactive COM SetupDialog and
+   production registration/SCM lifecycle remain pending.
+5. Checkpoint 64178eb passed all eight jobs in both CI runs, verifying the private
+   HKLM runner correction. Subsequent 1adcafe PR CI found the queued-writer fixture
+   still used the peer's short default deadline despite a longer client deadline.
+   Give only that deliberate 100 kB/tiny-buffer exchange a bounded ten-second peer
+   allowance; production limits and separate deadline/fault tests are unchanged.
+   The earlier safety fixture fix tolerates only expected socket abort/reset/EOF.
+
+Local evidence: all 117 NINA checks (`artifacts/hub-output-nina-tests.log`), actual
+net48 adapters/current+legacy COM QI in both bitnesses
+(`artifacts/hub-ascom-output-tests.log`), real exported COM dispatch to each server
+architecture from both client bitnesses (`artifacts/hub-exports-com-tests.log`),
+and serial-driver regressions (`artifacts/hub-shared-server-{ofp2,pegasus,eta,falcon}.log`).
+The 16 import-worker cases and ten Rust-parent cases each cover both architectures
+again (`artifacts/hub-output-import-regression.log`). Unsigned NINA and ASCOM
+packages build with the new private assembly (`artifacts/hub-output-package.log`
+and `artifacts/hub-output-ascom-package.log`).
+The same export playbook passes with the actual staged helpers and release Rust
+host (`artifacts/hub-exports-staged-tests.log`); publication checks pass without
+remote writes (`artifacts/hub-output-release-checks.log`).
+The new private frontend DLL is explicitly signed/verified alongside both helper
+EXEs; package validation requires its version and architecture. Signed development
+payload validation remains pending.
+
+Next: new CI and remaining production registration/removal, identifiable export
+self-proxy/alias checks, setup/SCM/conformance acceptance, then every original
+broader proxy, camera/acquisition, coordination, recovery, hardware and
+README/site/screenshots/final merge gate. PR #21 remains draft.

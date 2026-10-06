@@ -27,6 +27,8 @@ try {
     if ($LASTEXITCODE) { throw 'NINA contract tests failed' }
     & (Join-Path $PSScriptRoot 'test-hub-dotnet.ps1')
     & (Join-Path $PSScriptRoot 'test-hub-com.ps1')
+    python scripts/test-hub-exports.py
+    if ($LASTEXITCODE) { throw 'Hub native COM output tests failed' }
     python scripts/test-native-camera.py
     if ($LASTEXITCODE) { throw 'Native camera IPC tests failed' }
     python scripts/test-usb-recovery.py

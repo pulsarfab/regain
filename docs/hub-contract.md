@@ -924,6 +924,8 @@ requires explicit reload; neither removal nor restoration is automatically repla
 Connect copies the selection, checks its instance before launching the helper,
 authenticates the live host, and matches the output UUID/class exactly. Metadata
 initialization is bounded by the native device's 45-second connection deadline.
+The same session also supports verified attachment without acquiring equipment;
+native ASCOM uses this to delegate connection changes and completion to the host.
 Each device has its own private client lease and connection epoch. Read requests
 normally have a three-second caller deadline; capability/command waits allow up
 to 35 seconds, surrounding the host's independent operation bound. These are
@@ -974,3 +976,42 @@ for active operations/cancellation callbacks. Scalar parse errors retain the
 invalid text across collapsed sections and block structural changes or review.
 Collection controls load lazily in 32-item pages. Cached source health is separate
 from live inspection, which remains a native setup refinement.
+
+## Native ASCOM output increment
+
+The existing `Regain.Hub.ASCOM.exe` now has import and export modes. Bound exports
+implement Switch 3/2, SafetyMonitor 3/legacy and ObservingConditions 2/1, sharing
+the native IPC client and themed configuration editor. Construction, catalogue
+loading and metadata do not attach to the host or acquire equipment. Each COM
+object gets its own client and checks required interface capabilities before
+equipment acquisition. Modern Connect/Disconnect return after local admission,
+and Connecting reports both attachment progress and the host's completion/failure.
+The legacy Connected setter waits for the bounded host operation. Completion
+failures remain visible until another explicit connection operation. Getters
+never launch/reconnect. Disposal closes only this client, leaving other leases
+and the shared host running. Session and logical connection epochs fence responses
+across reconnect/disconnect; an in-flight command is reported as possibly completed.
+
+Saved selections bind instance, output and class, never an output list position.
+CLSID is UUIDv5 in the URL namespace with name
+`https://pulsarfab.com/regain/ascom-hub/output/{instance}/{output}/{class}` (lowercase
+canonical UUIDs/class). The ProgID is `Rgn.HS.`, `Rgn.HM.` or `Rgn.HW.` plus the
+32-digit CLSID, meeting COM's 39-character bound. Renames, paths and reordering do
+not change identity. The server publishes one factory per saved selection. The
+shared LocalComServer prepares default interface metadata on its STA before
+publishing any factory and tracks weak COM object lifetimes.
+
+Native ASCOM returns typed exceptions for unavailable weather, unsupported
+properties/methods, invalid values and disconnects; it does not substitute NINA's
+NaN convention. Other structured source errors retain their full upstream HRESULT
+when present, using sanitized diagnostics. DeviceState retains scalar types and
+does not invent a shared measurement timestamp. Live catalogue simulation metadata
+replaces stale saved display metadata on attachment. Switch async capability is
+false for the current scalar mapping; unsupported initiators fail explicitly.
+
+Private registered fixtures exercise actual COM dispatch from both client
+bitnesses to both server architectures, four outputs including two Switch outputs,
+independent source leases and DeviceState collections. These fixtures do not
+prove production chooser registration, SCM launch, interactive setup, full ASCOM
+conformance or installed vendor/hardware acceptance. Those remain required before
+merge, alongside export self-proxy/alias checks and every broader plan gate.

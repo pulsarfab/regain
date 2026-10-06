@@ -12,6 +12,7 @@ internal static class Program {
 
     [STAThread]
     private static int Main(string[] args) {
+        if (args.Length == 0 || args[0] != "--import") return ExportServer.Run(args);
         Options options;
         try { options = Options.Parse(args); }
         catch { return 2; } // Never echo arguments, exception text, or driver output.

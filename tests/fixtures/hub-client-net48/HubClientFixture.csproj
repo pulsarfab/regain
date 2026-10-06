@@ -9,5 +9,8 @@
     <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
     <GenerateBindingRedirectsOutputType>true</GenerateBindingRedirectsOutputType>
   </PropertyGroup>
-  <ItemGroup><ProjectReference Include="../../../src/Regain.Rotator/Regain.Rotator.csproj" /></ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../../src/Regain.Rotator/Regain.Rotator.csproj" />
+    <ProjectReference Include="../../../src/Regain.Hub.ASCOM/Regain.Hub.ASCOM.csproj" />
+  </ItemGroup>
 </Project>

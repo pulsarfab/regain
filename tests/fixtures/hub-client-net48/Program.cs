@@ -13,7 +13,7 @@ internal static class Program
         uint? candidate = null;
         try {
             if (args.Length != 3 || IntPtr.Size * 8 != int.Parse(args[2])) throw new InvalidOperationException("Wrong fixture bitness");
-            using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(40));
+            using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(75));
             var attachment = await HubAttachment.AttachAsync(args[0], args[1], cancellation: deadline.Token);
             candidate = attachment.StartedProcessId;
             if (candidate is null) throw new InvalidOperationException("Fixture expected to launch its unique test host");
@@ -92,7 +92,8 @@ internal static class Program
             await editor.ReloadAsync(deadline.Token);
             if (editor.Draft!.Revision == oldRevision || editor.Draft.Field("/outputs/0/label").Value!.Value.GetString() != "net48 edited simulation")
                 throw new InvalidOperationException("Native editor did not reconcile saved changes");
-            Console.WriteLine($"net48 {IntPtr.Size * 8}-bit: shared identity, independent leases, selection CAS/removal, native session/reconnect, editor review/apply/reconcile and surviving host passed");
+            await NativeOutputs.Run(args[0], args[1], attached.InstanceId, saved, probe, deadline.Token);
+            Console.WriteLine($"net48 {IntPtr.Size * 8}-bit: shared identity, independent leases, selection CAS/removal, native session/reconnect, editor review/apply/reconcile, typed ASCOM outputs and surviving host passed");
             return 0;
         } catch (Exception error) { Console.Error.WriteLine(error.GetType().Name + ": " + error.Message); return 1; }
         finally {

@@ -13,6 +13,13 @@ public sealed class HubNativeSession(string executable, string? workers = null) 
     private Guid epoch = Guid.NewGuid();
     public Guid Epoch { get { lock (gate) return epoch; } }
     public bool IsAttached { get { lock (gate) return client?.IsConnected == true; } }
+    public void RequireCapabilities(params string[] required)
+    {
+        lock (gate) {
+            if (client is null) throw new HubException(HubFailure.Disconnected);
+            client.RequireCapabilities(required);
+        }
+    }
     public bool Connected { get { lock (gate) return leased && client?.IsConnected == true; } }
     public Task<JsonElement> ConnectAsync(HubSelection selection, CancellationToken cancellation) => OpenAsync(selection, true, cancellation);
     /// Attach to a verified output without acquiring equipment. Native ASCOM

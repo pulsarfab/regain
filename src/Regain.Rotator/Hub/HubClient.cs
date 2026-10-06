@@ -11,6 +11,14 @@ public sealed partial class HubClient : IDisposable
     public HubHello Hello => state.Hello;
     public bool IsConnected => !state.Closed.IsCompleted;
     public Task Closed => state.Closed;
+    /// Check interface contracts before acquiring equipment. Negotiation alone
+    /// neither dispatches a request nor retires other clients of the host.
+    public void RequireCapabilities(params string[] required)
+    {
+        if (!IsConnected) throw new HubException(HubFailure.Disconnected);
+        if (required.Any(capability => !Hello.Capabilities.Contains(capability, StringComparer.Ordinal)))
+            throw new HubException(HubFailure.Protocol);
+    }
     private HubClient(Connection state) { this.state = state; }
     public Task<JsonElement> RequestAsync(JsonElement command, CancellationToken cancellation = default) => state.Request(command, cancellation);
     public void Dispose() { state.Close(HubFailure.Disconnected); GC.SuppressFinalize(this); }

@@ -134,5 +134,5 @@ public sealed class HubConfigurationWindow : Window
     private void ShowErrors(JsonElement fields) => errors.Text = string.Join("\n", fields.EnumerateArray().Select(field => field.GetProperty("path").GetString() + ": " + field.GetProperty("message").GetString()));
     private static string Pretty(JsonElement value) => JsonSerializer.Serialize(value, new JsonSerializerOptions { WriteIndented = true });
     private static string Uncertain() => "The outcome is unknown or the host changed. Reload the saved configuration and inspect host status before another change. Do not repeat Apply.";
-    public static void Show(Window owner, string executable, string configPath, Guid instance) => new HubConfigurationWindow(executable, configPath, instance) { Owner = owner }.ShowDialog();
+    public static void Show(Window? owner, string executable, string configPath, Guid instance) => new HubConfigurationWindow(executable, configPath, instance) { Owner = owner }.ShowDialog();
 }

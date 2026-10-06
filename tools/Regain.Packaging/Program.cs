@@ -20,7 +20,7 @@ using (var archive = ZipFile.OpenRead(archivePath))
     foreach (string name in required)
         if (archive.GetEntry(name) is not { Length: > 0 }) throw new InvalidDataException($"Package missing {name}");
     foreach (string architecture in new[] { "x86", "x64" })
-        foreach (string dependency in new[] { "Regain.Hub.ASCOM.exe", "Regain.Hub.ASCOM.exe.config", "ASCOM.DeviceInterfaces.dll", "ASCOM.Exceptions.dll", "System.Text.Json.dll" })
+        foreach (string dependency in new[] { "Regain.Hub.ASCOM.exe", "Regain.Hub.ASCOM.exe.config", "Regain.Rotator.dll", "ASCOM.DeviceInterfaces.dll", "ASCOM.Exceptions.dll", "System.Text.Json.dll" })
             if (archive.GetEntry($"hub-ascom/{architecture}/{dependency}") is not { Length: > 0 })
                 throw new InvalidDataException($"Package missing {architecture} COM worker dependency {dependency}");
     foreach (var old in new[] { "regain-host.exe", "regain-direct.exe", "regain-caa.exe", "regain-accessories.exe", "regain-fc3.exe", "regain-ofp2.exe", "regain-eta.exe" })
@@ -35,7 +35,7 @@ using (var archive = ZipFile.OpenRead(archivePath))
     using var license = new StreamReader(archive.GetEntry("LICENSE")!.Open());
     if (!(await license.ReadToEndAsync()).Contains("Apache License")) throw new InvalidDataException("Missing Apache license text");
     // Check the assemblies inside the ZIP against the versions we actually built.
-    foreach (string name in new[] { "Regain.NINA.dll", "Regain.Core.dll", "Regain.Rotator.dll", "hub-ascom/x86/Regain.Hub.ASCOM.exe", "hub-ascom/x64/Regain.Hub.ASCOM.exe" })
+    foreach (string name in new[] { "Regain.NINA.dll", "Regain.Core.dll", "Regain.Rotator.dll", "hub-ascom/x86/Regain.Hub.ASCOM.exe", "hub-ascom/x64/Regain.Hub.ASCOM.exe", "hub-ascom/x86/Regain.Rotator.dll", "hub-ascom/x64/Regain.Rotator.dll" })
     {
         using var stream = archive.GetEntry(name)!.Open();
         using var copy = new MemoryStream();

@@ -56,10 +56,10 @@ public sealed class HubClientTests
                 await serving; return peer;
             } catch { peer.Dispose(); throw; }
         }
-        internal Task<JsonElement> Read() => ReadCore();
-        private async Task<JsonElement> ReadCore()
+        internal Task<JsonElement> Read(TimeSpan? timeout = null) => ReadCore(timeout);
+        private async Task<JsonElement> ReadCore(TimeSpan? timeout)
         {
-            using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+            using var deadline = new CancellationTokenSource(timeout ?? TimeSpan.FromSeconds(3));
             if (firstByte is byte prefix) {
                 firstByte = null;
                 byte[] header = [prefix, 0, 0, 0];
@@ -70,7 +70,7 @@ public sealed class HubClientTests
                 await server.ReadExactlyAsync(bytes, deadline.Token);
                 return HubWire.Parse(bytes);
             }
-            return HubWire.Parse(await HubWire.ReadFrame(server, HubWire.MaxFrame, TimeSpan.FromSeconds(2), deadline.Token));
+            return HubWire.Parse(await HubWire.ReadFrame(server, HubWire.MaxFrame, timeout ?? TimeSpan.FromSeconds(2), deadline.Token));
         }
         internal async Task Raw(byte[] bytes) => await HubWire.WriteFrame(server, bytes, TimeSpan.FromSeconds(2), CancellationToken.None);
         internal Task Reply(ulong id, object? result) => Raw(JsonSerializer.SerializeToUtf8Bytes(new { version = 1, id, result }));
@@ -91,6 +91,19 @@ public sealed class HubClientTests
         public void Dispose() { Client?.Dispose(); stream.Dispose(); server.Dispose(); }
     }
 
+    [Fact]
+    public async Task InterfaceCapabilityChecksDoNotAcquireEquipmentOrConsumeRequestIds()
+    {
+        using var peer = await Peer.Open();
+        peer.Client.RequireCapabilities("scalarDeviceState", "asyncOutputConnection");
+        await Fails(HubFailure.Protocol, () => { peer.Client.RequireCapabilities("switchAsyncContract"); return Task.CompletedTask; });
+        Assert.True(peer.Client.IsConnected);
+        var query = peer.Client.RequestAsync(Command());
+        var request = await peer.Read();
+        Assert.Equal(2ul, request.GetProperty("id").GetUInt64());
+        Assert.Equal("getConfig", request.GetProperty("command").GetProperty("op").GetString());
+        await peer.Reply(2, true); Assert.True((await query).GetBoolean());
+    }
     [Fact]
     public async Task OutOfOrderRepliesAndNullResultsStayCorrelated()
     {
@@ -138,8 +151,11 @@ public sealed class HubClientTests
         using var borrowed = JsonDocument.Parse("{\"op\":\"getConfig\"}");
         var next = peer.Client.RequestAsync(borrowed.RootElement);
         borrowed.Dispose();
-        var a = await peer.Read(); await peer.Reply(a.GetProperty("id").GetUInt64(), null); await first;
-        var b = await peer.Read();
+        // Both sides of this deliberate 100 kB/tiny-buffer stall need an
+        // ordering-test allowance. The peer's default partial-frame bound is
+        // used by other fixtures, not by this throughput-sensitive exchange.
+        var a = await peer.Read(TimeSpan.FromSeconds(10)); await peer.Reply(a.GetProperty("id").GetUInt64(), null); await first;
+        var b = await peer.Read(TimeSpan.FromSeconds(10));
         Assert.Equal("getConfig", b.GetProperty("command").GetProperty("op").GetString());
         Assert.Equal(3ul, b.GetProperty("id").GetUInt64());
         await peer.Reply(3, true); Assert.True((await next).GetBoolean());
