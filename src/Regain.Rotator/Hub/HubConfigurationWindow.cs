@@ -51,6 +51,7 @@ public sealed partial class HubConfigurationWindow : Window
         AddOutputDiagnosticsTab();
         tabs.Items.Add(new TabItem { Header = "Focuser groups", Content = new ScrollViewer { Content = focuserGroupPanel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto } });
         tabs.Items.Add(new TabItem { Header = "Camera groups", Content = new ScrollViewer { Content = cameraGroupPanel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto } });
+        tabs.Items.Add(new TabItem { Header = "Discover devices", Content = new ScrollViewer { Content = discoveryPanel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto } });
         reload.Click += async (_, _) => {
             if ((session?.Draft?.Dirty == true || form?.Errors.Count > 0) && MessageBox.Show(this, "Discard the unsaved draft and reload?", "Reload hub configuration", MessageBoxButton.YesNo) != MessageBoxResult.Yes) return;
             await Run(Load);
@@ -100,6 +101,7 @@ public sealed partial class HubConfigurationWindow : Window
         RenderOutputDiagnostics();
         RenderFocuserGroups();
         RenderCameraGroups();
+        RenderDiscovery();
     }
     private async Task Run(Func<Task> action)
     {
@@ -136,6 +138,7 @@ public sealed partial class HubConfigurationWindow : Window
         OutputDiagnosticControls(editable);
         FocuserGroupControls(editable);
         CameraGroupControls(editable);
+        DiscoveryControls(editable);
     }
     private void ShowErrors(JsonElement fields) => errors.Text = string.Join("\n", fields.EnumerateArray().Select(field => field.GetProperty("path").GetString() + ": " + field.GetProperty("message").GetString()));
     private static string Pretty(JsonElement value) => JsonSerializer.Serialize(value, new JsonSerializerOptions { WriteIndented = true });

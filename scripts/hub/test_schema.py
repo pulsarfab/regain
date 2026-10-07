@@ -17,6 +17,28 @@ def example(name):
 
 
 class SchemaContractTests(unittest.TestCase):
+    def test_catalog_discovery_bounds_string_ids_and_unsupported_classes(self):
+        schema = DESCRIPTION["discovery"]["alpaca"]["responseSchema"]
+        validator = Draft202012Validator(schema, format_checker=FormatChecker())
+        good = {"configurationRevision": "11111111-1111-4111-8111-111111111111",
+                "baseUrl": "http://localhost:11111/prefix", "devices": [
+                    {"name": "[SIMULATION] café", "reportedDeviceType": "Camera",
+                     "supportedDeviceType": "camera", "number": 4294967295, "uniqueId": "camera unit 42"},
+                    {"name": "[SIMULATION] mount", "reportedDeviceType": "Telescope",
+                     "supportedDeviceType": None, "number": 9, "uniqueId": "mount-99"}]}
+        validator.validate(good)
+        for patch in [{"number": -1}, {"number": 4294967296}, {"uniqueId": ""},
+                      {"uniqueId": "\ninvalid"}, {"uniqueId": "é"}, {"name": "x" * 257},
+                      {"reportedDeviceType": "Camera2"}, {"supportedDeviceType": "telescope"},
+                      {"authorization": "must-not-escape"}]:
+            changed = copy.deepcopy(good)
+            changed["devices"][0].update(patch)
+            with self.subTest(patch=patch):
+                self.assertTrue(list(validator.iter_errors(changed)))
+        changed = copy.deepcopy(good)
+        changed["devices"] = [good["devices"][0]] * 257
+        self.assertTrue(list(validator.iter_errors(changed)))
+
     def test_camera_groups_keep_policies_required_and_bound_members_and_deadlines(self):
         config = example("paired-cameras")
         VALIDATOR.validate(config)

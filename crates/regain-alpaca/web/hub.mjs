@@ -3,6 +3,7 @@ import { renderConfiguration, previewValue } from './hub-form.mjs';
 import { CredentialSetup } from './hub-credentials.mjs';
 import { SimulationSetup, parseSimulationArray } from './hub-simulation.mjs';
 import { OutputDiagnostics, diagnosticSummary } from './hub-diagnostics.mjs';
+import { AlpacaDiscovery, catalogSummary } from './hub-discovery.mjs';
 const $ = id => document.getElementById(id);
 let base, draft, reader, description, reviewed, dirty = false, busy = false, uncertain = false;
 let publicHostStatus;
@@ -12,6 +13,7 @@ function revokeReview() { reviewed = undefined; $('apply').disabled = true; $('p
 function changed() { dirty = true; revokeReview(); status('Unsaved changes. Review before applying.'); }
 const credentials = new CredentialSetup(rpc, reference => { $('credential-reference').value = reference; }, revokeReview);
 const outputDiagnostics = new OutputDiagnostics(rpc,revokeReview);
+const discovery = new AlpacaDiscovery(rpc);
 function controls() {
   $('editor-fields').disabled = busy || !reader || uncertain; $('validate').disabled = busy || !reader || uncertain; $('apply').disabled = busy || !reviewed || uncertain; $('reload').disabled = busy;
   for (const button of $('sources').querySelectorAll('button')) button.disabled = busy || uncertain;
@@ -20,6 +22,7 @@ function controls() {
   $('export-diagnostics').disabled = busy || !outputDiagnostics.observation;
   const fields = $('credential-fields'); if (fields) fields.disabled = busy || uncertain || credentials.uncertain;
   const create = $('credential-create'); if (create) create.disabled = busy || uncertain || credentials.description?.clientChosenReferences !== true;
+  const catalog = $('discovery-fields'); if (catalog) catalog.disabled = busy || uncertain || discovery.uncertain;
 }
 async function rpc(command, path = '/setup/api/hub', deadlineSeconds = 40) {
   const abort = new AbortController(); const timer = setTimeout(() => abort.abort(),deadlineSeconds * 1000);
@@ -73,6 +76,26 @@ function renderCredentials() {
   },true);
   form.onsubmit = event => { event.preventDefault(); if (!busy && !uncertain && !credentials.uncertain && storage.clientChosenReferences === true) action(create,true); };
   text('After a lost reply, Reload and read the retained reference before another change. Removing a credential is refused while the saved configuration uses it. Retain the reference separately before leaving this page.');
+}
+function renderDiscovery() {
+  const root=$('discovery-controls'); root.replaceChildren();
+  const d=discovery.description, fields=document.createElement('fieldset'); fields.id='discovery-fields'; root.append(fields);
+  const field=(key)=>{
+    const schema=d.parameters[key], label=document.createElement('label'), input=document.createElement('input');
+    label.textContent=schema.label; input.type='text'; input.autocomplete='off'; input.id=`discovery-${key}`;
+    if (schema.maxLength) input.maxLength=schema.maxLength;
+    input.title=schema.description; label.append(input); fields.append(label); return input;
+  };
+  const url=field('baseUrl'), credential=field('credentialReference');
+  const note=document.createElement('p'); note.className='hint'; note.textContent=`One query, up to ${d.timeoutSeconds} seconds and ${d.maximumDevices} devices. Include any reverse-proxy prefix. Credentials are protected references from the Credentials section.`; fields.append(note);
+  const button=document.createElement('button'); button.type='button'; button.textContent='Read Alpaca device catalog'; fields.append(button);
+  button.onclick=()=>action(async()=>{
+    $('discovery-result').textContent='';
+    const catalog=await discovery.query(url.value,credential.value.trim()?credential.value:null);
+    $('discovery-result').textContent=catalogSummary(catalog);
+    status(`Read ${catalog.devices.length} catalog entries. No equipment connection was opened; configuration is unchanged.`);
+  });
+  $('discovery-result').textContent='';
 }
 function renderSources() {
   $('sources').replaceChildren(...base.sources.map(source => {
@@ -165,10 +188,11 @@ async function load() {
   if (host.configurationRevision !== saved.revision) throw new Error('Saved configuration changed during reload; reload again');
   credentials.load(description.credentialStorage);
   outputDiagnostics.load(description,saved); publicHostStatus=structuredClone(host);
+  discovery.load(description,saved);
   uncertain = host.phase !== 'ready'; dirty = false;
   $('host-state').textContent = `Host: ${host.phase}${host.persistenceWarning ? ` · ${host.persistenceWarning}` : ''}`;
   $('revision').textContent = `Saved revision: ${base.revision}`;
-  renderConfiguration($('configuration'),reader,draft,base,changed); renderSources(); renderOutputs(); renderCredentials(); $('preview').hidden = true;
+  renderConfiguration($('configuration'),reader,draft,base,changed); renderSources(); renderOutputs(); renderCredentials(); renderDiscovery(); $('preview').hidden = true;
   status(uncertain ? 'Host is not ready. Inspect its status before applying another change.' : 'Configuration loaded. Source connections are shared across frontends.', uncertain);
 }
 $('reload').onclick = () => {

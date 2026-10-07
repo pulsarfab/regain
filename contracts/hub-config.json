@@ -796,6 +796,120 @@
       }
     }
   },
+  "discovery": {
+    "alpaca": {
+      "maximumDevices": 256,
+      "opensSource": false,
+      "operation": "discoverAlpaca",
+      "parameters": {
+        "baseUrl": {
+          "description": "Query this server's configured device catalog without connecting equipment.",
+          "label": "Alpaca server URL",
+          "maxLength": 4096,
+          "type": "string"
+        },
+        "credentialReference": {
+          "description": "Optional protected credential reference for this server. The secret is never included in discovery results.",
+          "label": "Credential reference",
+          "sensitive": true,
+          "type": "string"
+        }
+      },
+      "persistsConfiguration": false,
+      "responseSchema": {
+        "$defs": {
+          "Device": {
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "maxLength": 256,
+                "minLength": 1,
+                "type": "string"
+              },
+              "number": {
+                "format": "uint32",
+                "maximum": 4294967295,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "reportedDeviceType": {
+                "maxLength": 64,
+                "minLength": 1,
+                "pattern": "^[A-Za-z]+$",
+                "type": "string"
+              },
+              "supportedDeviceType": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/DeviceType"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "uniqueId": {
+                "description": "Alpaca UIDs are stable ASCII strings, not necessarily UUIDs.",
+                "maxLength": 256,
+                "minLength": 1,
+                "pattern": "^[ -~]+$",
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "reportedDeviceType",
+              "number",
+              "uniqueId"
+            ],
+            "type": "object"
+          },
+          "DeviceType": {
+            "enum": [
+              "camera",
+              "switch",
+              "safetymonitor",
+              "observingconditions",
+              "focuser",
+              "rotator",
+              "filterwheel",
+              "covercalibrator"
+            ],
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "baseUrl": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "type": "string"
+          },
+          "configurationRevision": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "devices": {
+            "items": {
+              "$ref": "#/$defs/Device"
+            },
+            "maxItems": 256,
+            "type": "array"
+          }
+        },
+        "required": [
+          "configurationRevision",
+          "baseUrl",
+          "devices"
+        ],
+        "title": "Catalog",
+        "type": "object"
+      },
+      "timeoutSeconds": 5,
+      "writesEquipment": false
+    }
+  },
   "outputDiagnostics": {
     "countsSafetyObservations": false,
     "covercalibratorProperties": [

@@ -7118,3 +7118,90 @@ camera recovery metadata, README/site, main reconciliation and the original fina
 review/CI/audit/merge. All equipment-facing work uses private peers or explicit
 simulation. No attached hardware or installed vendor driver is opened. Keep the
 single PR draft and continue construction without waiting for intermediate CI.
+
+
+## 2026-10-07 — Explicit Alpaca catalog discovery through shared setup
+
+Implemented the first discovery slice in the existing hub crate and host. An
+explicit HTTP(S) server selection reads only its management configured-devices
+catalog. The ordinary Alpaca URL validation, HTTP client, authorization handling,
+status/error mapping and bounded body reader are shared. No redirects, proxy
+lookup or retries are introduced. Queries have a five-second network deadline,
+a 1 MiB response bound, 256-device limit and four-query host admission limit.
+A source is never created, connected or sampled by this operation.
+
+The catalog preserves upstream ASCII string IDs, including non-UUID values,
+sparse UInt32 numbers, Unicode names and unsupported classes. Typed decoding of
+the original response rejects duplicate identity fields before Value conversion
+could erase them. Repeated class/number pairs and repeated IDs are rejected;
+recognized UUID forms are normalized for duplicate detection. Malformed values,
+upstream errors, mismatched transaction IDs and oversized/chunked bodies fail
+without returning vendor error text or credentials.
+
+Private IPC, both clients and the existing protected setup POST endpoint expose
+the operation. Rust-generated metadata supplies descriptions, deadlines, bounds,
+class choices and response schema to the native NINA/ASCOM editor and web page.
+Managed/browser clients validate revision, selected endpoint, identity uniqueness,
+class support and response shape. Successful reads retain the reviewed draft;
+reload clears the retained catalog. Stale or malformed replies cannot authorize
+another query without explicit reload. Results do not create or adopt sources.
+
+Review refinements and initial evidence:
+
+- The initial concurrency test admitted fewer than four anonymous queries because
+  credential resolution unnecessarily moved their configuration gate into a
+  blocking task. Anonymous requests now release that gate before yielding. The
+  four held requests fill capacity, reject a fifth without HTTP, allow a saved
+  configuration update, and all reject their stale results after release. The
+  initial failure remains in `artifacts/hub-alpaca-discovery-tests.log`; all four
+  initial cases then pass in `hub-alpaca-discovery-tests-2.log`.
+- Credential resolution retains its transaction guard through blocking protected
+  storage work, then releases it before HTTP. The authenticated private-store case
+  verifies the header reaches only the selected server and missing references
+  perform no HTTP. Neither results nor sanitized errors contain fixture secrets.
+- The managed operation allowlist is updated alongside host advertisement and
+  Rust client mapping. Actual private-host tests exercise negotiation and dispatch
+  rather than relying on injected reply tests alone.
+- Independent validation initially used the system Python without jsonschema;
+  its import failure remains in `hub-alpaca-discovery-schema.log`. The existing
+  isolated schema environment runs the actual 13-case suite successfully.
+
+Validation:
+
+- `cargo test -j2 --locked -p regain-hub -p regain-alpaca` passes in
+  `artifacts/hub-alpaca-discovery-full-rust.log`, including the ordinary transport
+  regression and the actual setup HTTP/private-IPC/management integration. The
+  latter verifies forbidden-origin rejection, preserved catalog/output IDs and
+  zero source/output leases. The initial four discovery cases are in this run.
+- Final `cargo test -j2 --locked -p regain-hub --test discovery` passes all six
+  cases in `hub-alpaca-discovery-final-tests.log`, adding protected credential
+  resolution and an actual stalled-response timeout with exactly one request.
+- Strict all-target Clippy passes in `hub-alpaca-discovery-clippy.log`; Rust 1.89
+  all-target check passes in `hub-alpaca-discovery-msrv.log`. Generated-contract
+  freshness passes in `hub-alpaca-discovery-freshness.log`.
+- All 13 independent schema cases pass in `hub-alpaca-discovery-schema-2.log`.
+  Node configuration/browser contract checks pass in `hub-alpaca-discovery-node.log`,
+  including string IDs, unsupported classes, endpoint/revision fences, malformed
+  replies, GUID aliases, capacity admission and no replay. Both modules pass syntax
+  checking. Native/browser semantics consume the same generated contract.
+- Full warning-denied NINA execution passes 453 cases with one explicit
+  registered-COM-fixture skip in `hub-alpaca-discovery-full-nina.log`. Thirteen new
+  cases include actual private IPC, eleven reply/transport faults and a rendered
+  WPF query. The focused eleven fault cases also pass in
+  `hub-alpaca-discovery-managed-faults.log`.
+- Full real net48 x86/x64 suites pass in `hub-alpaca-discovery-net48.log`. The same
+  catalog fixture runs before any equipment leases in both architectures, checking
+  invalid URL rejection, management-only requests, string IDs, unsupported classes,
+  preserved review/configuration and zero source connections. Ordinary image,
+  ASCOM, camera and coordination checks remain green.
+- The actual native render was inspected and is checked in as
+  `docs/images/hub-native-discovery-simulation.png`, with setup instructions.
+  All peers and displayed devices are explicitly private simulations.
+
+This increment does not complete discovery/configuration transfer. Network
+Alpaca discovery, native/COM enumeration, identity-pinned catalog adoption and
+configuration import/export remain construction work. Preserve actual OS resume,
+conformance/interactive/signing/upgrade/physical acceptance, camera recovery
+metadata, README/site, main reconciliation and every original final review/CI/
+audit/merge gate. No attached hardware or installed vendor driver was opened;
+no intermediate CI was awaited. Keep the single PR draft.

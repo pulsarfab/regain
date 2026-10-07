@@ -1447,6 +1447,7 @@ async fn setup_rejects_cross_origin_wrong_media_type_and_device_commands_without
     for path in [
         "/setup/hub",
         "/hub.mjs",
+        "/hub-discovery.mjs",
         "/hub-config.mjs",
         "/hub-form.mjs",
         "/hub-credentials.mjs",
@@ -1467,6 +1468,55 @@ async fn setup_rejects_cross_origin_wrong_media_type_and_device_commands_without
             StatusCode::NOT_FOUND
         );
     }
+    f.finish().await;
+}
+
+#[tokio::test]
+async fn setup_catalog_query_uses_private_ipc_and_management_without_source_leases() {
+    let f = Fixture::new().await;
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    let router = f.router.clone();
+    let task = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+    let command =
+        json!({"op":"discoverAlpaca", "baseUrl":url, "expectedRevision":f.config.revision});
+    assert_eq!(
+        setup(
+            &f.router,
+            command.clone(),
+            "application/json",
+            "http://untrusted.example"
+        )
+        .await
+        .0,
+        StatusCode::FORBIDDEN
+    );
+    let (status, response) = setup(
+        &f.router,
+        command,
+        "application/json",
+        "http://127.0.0.1:11111",
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{response}");
+    let catalog = &response["result"];
+    assert_eq!(catalog["configurationRevision"], json!(f.config.revision));
+    assert_eq!(catalog["baseUrl"], url);
+    let entries = catalog["devices"].as_array().unwrap();
+    assert_eq!(entries.len(), f.config.outputs.len());
+    for (entry, output) in entries.iter().zip(&f.config.outputs) {
+        assert_eq!(entry["uniqueId"], json!(output.id));
+        assert_eq!(entry["number"], output.number);
+        assert!(entry["supportedDeviceType"].is_string());
+    }
+    assert_eq!(f.hub.active_connections(), 0);
+    for source in &f.config.sources {
+        let snapshot = f.hub.source_snapshot(source.id).unwrap();
+        assert_eq!(snapshot.lease_count, 0);
+        assert!(!snapshot.transport_connected);
+    }
+    task.abort();
+    let _ = task.await;
     f.finish().await;
 }
 

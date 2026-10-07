@@ -79,6 +79,7 @@ pub struct HubService {
     builder: Option<Arc<RuntimeBuilder>>,
     credentials: Option<Arc<CredentialStore>>,
     update: Arc<tokio::sync::Mutex<()>>,
+    discovery: Arc<tokio::sync::Semaphore>,
 }
 impl HubService {
     pub fn read_only(runtime: Arc<HubRuntime>) -> Arc<Self> {
@@ -128,6 +129,7 @@ impl HubService {
             builder,
             credentials,
             update: Arc::new(tokio::sync::Mutex::new(())),
+            discovery: Arc::new(tokio::sync::Semaphore::new(4)),
         })
     }
     pub fn instance_id(&self) -> Uuid {
@@ -149,6 +151,67 @@ impl HubService {
     }
     pub fn credential_description(&self) -> Option<serde_json::Value> {
         self.credentials.as_ref().map(|store| store.description())
+    }
+    pub async fn discover_alpaca(
+        &self,
+        base_url: String,
+        credential_reference: Option<String>,
+        expected: Uuid,
+    ) -> Result<crate::alpaca::discovery::Catalog, SourceError> {
+        use crate::factory::CredentialProvider;
+        crate::alpaca::server_root(&base_url)?;
+        let _permit = self
+            .discovery
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| SourceError::new(ErrorKind::Busy, "Discovery is busy"))?;
+        let guard = self
+            .update
+            .clone()
+            .try_lock_owned()
+            .map_err(|_| SourceError::new(ErrorKind::Busy, "Configuration is being updated"))?;
+        if expected.is_nil() || self.runtime()?.configuration().revision != expected {
+            return Err(SourceError::new(
+                ErrorKind::InvalidValue,
+                "Reload the saved configuration before discovery",
+            ));
+        }
+        let authorization = if let Some(reference) = credential_reference {
+            let store = self.credentials.clone();
+            Some(
+                tokio::task::spawn_blocking(move || {
+                    let _guard = guard;
+                    store
+                        .as_ref()
+                        .ok_or_else(|| {
+                            SourceError::new(
+                                ErrorKind::Unsupported,
+                                "Protected credentials are unavailable",
+                            )
+                        })?
+                        .authorization(&reference)
+                })
+                .await
+                .map_err(|_| {
+                    SourceError::new(ErrorKind::Unavailable, "Credential resolution failed")
+                })??,
+            )
+        } else {
+            // Anonymous queries have no blocking credential work. Release the
+            // configuration gate before yielding so independent catalog reads
+            // can use the bounded query capacity without incidental contention.
+            drop(guard);
+            None
+        };
+        let catalog =
+            crate::alpaca::discovery::discover(&base_url, authorization, expected).await?;
+        if self.runtime()?.configuration().revision != expected {
+            return Err(SourceError::new(
+                ErrorKind::InvalidValue,
+                "Configuration changed during discovery; reload before using these results",
+            ));
+        }
+        Ok(catalog)
     }
     pub async fn credential_status(
         &self,

@@ -94,6 +94,28 @@ can also create a file through the shared selector as described below.
 If creation times out or reports uncertain durability, inspect the selected file
 before another action. Never treat an unknown result as proof that creation failed.
 
+To find devices on a known Alpaca server, use **Discover devices** in native setup,
+or **Find devices on an Alpaca server** on the web page. Enter its HTTP(S) base
+URL, including any reverse-proxy prefix. If authentication is required, enter a
+protected credential reference from the Credentials section. The query reads only
+the management catalog; it does not connect equipment, create sources, count
+safety observations or change a reviewed draft.
+
+Each entry shows its reported class, device number and upstream identity. IDs are
+preserved as strings; they need not be UUIDs. Unsupported classes remain visible
+and are marked accordingly. Queries have a five-second network deadline, a 1 MiB
+response limit and a 256-device catalog limit. Redirects and failed queries are
+not retried. Configuration changes during a query invalidate its result.
+
+This first discovery interface queries an explicitly selected server. Network
+discovery, native/COM enumeration, selecting catalog entries into a pinned source,
+and configuration import/export remain on the implementation plan.
+
+![Native Alpaca catalog discovery with a private simulated camera and unsupported mount](images/hub-native-discovery-simulation.png)
+
+This render uses a private management-only peer. The test verifies string IDs,
+unsupported classes, unchanged configuration and zero equipment leases.
+
 1. Expand a source or output to edit its fields. Available choices and parameter
    descriptions come from the host. Saved IDs and device numbers stay fixed.
 2. Use **Status** for cached source diagnostics or **Inspect** to open a temporary

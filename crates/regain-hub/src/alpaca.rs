@@ -24,6 +24,7 @@ use url::Url;
 use uuid::Uuid;
 
 pub const MAX_RESPONSE_BYTES: usize = 1024 * 1024;
+pub mod discovery;
 use crate::sampling::PropertyPoll;
 pub use crate::sampling::{SampleRequest, SampleType};
 
@@ -83,18 +84,7 @@ impl AlpacaBackend {
                 "The configured credential reference must be resolved before connecting",
             ));
         }
-        let mut root = Url::parse(base_url).map_err(|_| invalid("Invalid Alpaca URL"))?;
-        if !matches!(root.scheme(), "http" | "https")
-            || root.host_str().is_none()
-            || !root.username().is_empty()
-            || root.password().is_some()
-            || root.query().is_some()
-            || root.fragment().is_some()
-        {
-            return Err(invalid(
-                "Alpaca URL must be HTTP(S), without credentials, query or fragment",
-            ));
-        }
+        let mut root = server_root(base_url)?;
         let source_device_type = *device_type;
         let device_type = serde_json::to_value(device_type).expect("Device type serializes");
         root.set_path(&format!(
@@ -165,25 +155,8 @@ impl AlpacaBackend {
         } else {
             builder.query(&parameters)
         };
-        let mut response = request.send().await.map_err(|_| transport_error(write))?;
-        let status = response.status().as_u16();
-        if status != 200 {
-            return Err(http_error(&response, member));
-        }
-        if response
-            .content_length()
-            .is_some_and(|length| length > MAX_RESPONSE_BYTES as u64)
-        {
-            return Err(bad_response(write));
-        }
-        let mut body = Vec::new();
-        while let Some(chunk) = response.chunk().await.map_err(|_| transport_error(write))? {
-            if chunk.len() > MAX_RESPONSE_BYTES - body.len() {
-                return Err(bad_response(write));
-            }
-            body.extend_from_slice(&chunk);
-        }
-        parse_response(&body, self.transaction, write)
+        let response = request.send().await.map_err(|_| transport_error(write))?;
+        read_response(response, self.transaction, write, member).await
     }
     async fn image(&mut self, budget: ImageBudget) -> Result<CameraImage, SourceError> {
         let client = self.image_client.as_ref().ok_or_else(|| {
@@ -538,6 +511,56 @@ impl Backend for AlpacaBackend {
 
 fn invalid(message: &'static str) -> SourceError {
     SourceError::new(ErrorKind::InvalidValue, message)
+}
+pub(crate) fn server_root(base_url: &str) -> Result<Url, SourceError> {
+    if base_url.len() > 4096 {
+        return Err(invalid("Invalid Alpaca URL"));
+    }
+    let root = Url::parse(base_url).map_err(|_| invalid("Invalid Alpaca URL"))?;
+    if !matches!(root.scheme(), "http" | "https")
+        || root.host_str().is_none()
+        || !root.username().is_empty()
+        || root.password().is_some()
+        || root.query().is_some()
+        || root.fragment().is_some()
+    {
+        return Err(invalid(
+            "Alpaca URL must be HTTP(S), without credentials, query or fragment",
+        ));
+    }
+    Ok(root)
+}
+async fn read_response(
+    mut response: reqwest::Response,
+    transaction: u32,
+    write: bool,
+    member: &str,
+) -> Result<Value, SourceError> {
+    let body = read_body(&mut response, write, member).await?;
+    parse_response(&body, transaction, write)
+}
+async fn read_body(
+    response: &mut reqwest::Response,
+    write: bool,
+    member: &str,
+) -> Result<Vec<u8>, SourceError> {
+    if response.status().as_u16() != 200 {
+        return Err(http_error(response, member));
+    }
+    if response
+        .content_length()
+        .is_some_and(|length| length > MAX_RESPONSE_BYTES as u64)
+    {
+        return Err(bad_response(write));
+    }
+    let mut body = Vec::new();
+    while let Some(chunk) = response.chunk().await.map_err(|_| transport_error(write))? {
+        if chunk.len() > MAX_RESPONSE_BYTES - body.len() {
+            return Err(bad_response(write));
+        }
+        body.extend_from_slice(&chunk);
+    }
+    Ok(body)
 }
 fn image_error(error: ImageReadError) -> SourceError {
     match error {

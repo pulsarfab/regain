@@ -87,6 +87,8 @@ internal static class Program
                 throw new InvalidOperationException("Shared host identity changed");
             using var second = await HubClient.ConnectAsync(attached, cancellation: deadline.Token);
             if (first.Hello.ClientId == second.Hello.ClientId) throw new InvalidOperationException("Clients were not independent");
+            using (var discovery = await HubEditorSession.AttachAsync(args[0], args[1], attached.InstanceId, deadline.Token))
+                await HubDiscoveryFixture.Run(discovery);
             var saved = await first.RequestAsync(JsonSerializer.SerializeToElement(new { op = "getConfig" }), deadline.Token);
             var output = saved.GetProperty("outputs")[0].GetProperty("id").GetGuid();
             var outputStatus = JsonSerializer.SerializeToElement(new { op = "outputStatus", output,

@@ -90,6 +90,7 @@ impl Publisher {
                 | Command::SourceStatus { .. }
                 | Command::OutputStatus { .. }
                 | Command::InspectSource { .. }
+                | Command::DiscoverAlpaca { .. }
                 | Command::ValidateConfig { .. }
                 | Command::ApplyConfig { .. }
                 | Command::UpdateSimulation { .. }

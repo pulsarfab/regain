@@ -13,7 +13,27 @@ increments. Push those increments to the same draft PR without waiting for slow
 CI between steps. Final CI, review and the original acceptance/completion audit
 remain merge gates.
 
-Current increment: native NINA camera-group capture and separate image saving.
+Current increment: explicit Alpaca server catalog discovery. Shared host IPC and
+the existing protected setup endpoint query only management/configureddevices;
+they create no source lease, equipment call, configuration or safety observation.
+The generated descriptor supplies deadlines, field descriptions, response bounds
+and supported classes to shared native NINA/ASCOM setup and the web editor.
+String identities, sparse UInt32 numbers and unsupported classes remain visible.
+Queries preserve reviewed drafts and reject stale revisions, ambiguous identities,
+redirects and malformed/oversized replies without retry. Anonymous admission no
+longer yields while holding the credential/configuration gate. Full Rust hub/
+Alpaca regression, all six final catalog cases, strict Clippy/Rust 1.89,
+contract freshness, 13 independent schema cases, Node/browser checks, all 453
+ordinary NINA cases and real net48 x86/x64 suites pass. The explicit registered-
+COM-fixture skip remains. Native rendering is inspected and documented; review
+and initial concurrency/environment failures are retained in hub-review.md.
+This is the explicit-server catalog slice, not complete discovery or transfer.
+Network discovery, native/COM enumeration, identity-pinned source adoption and
+configuration import/export remain construction work. Preserve OS resume,
+acceptance, camera recovery metadata, README/site, main reconciliation and every
+original final review/CI/audit/merge gate. No intermediate CI wait.
+
+Previous increment: native NINA camera-group capture and separate image saving.
 The advanced-sequencer instruction freezes per-member requests, output directory
 and NINA save settings, admits only scalar monochrome/RGGB metadata, and uses
 the existing protected image reader and ordinary NINA file writer. The host
@@ -2522,3 +2542,5 @@ then cameras/coordination and every original remaining acceptance/final gate.
 | 2026-10-06 | Preserved worker-relative observation ages through core and native camera properties; separated acknowledged evidence from desired settings and shared the four-control apply/readback helper. | Full core/hub/Alpaca/ZWO regressions (47 core, 49 hub unit, 22 native owner, 98 ZWO library), strict Clippy, Rust 1.89, contracts, Node/seven schema checks, rebuilt-host NINA 228/228 and real net48 x86/x64 pass. Retain initial fixture errors and corrections. Preceding adfb9e2 PR/push CI both pass all eight jobs. This checkpoint needs its own CI. Next: native camera adapter/config/factory/runtime with shared host budget/activity/recovery allowances and preserved sample ages, then all remaining camera inputs/outputs, coordination and every original acceptance/final gate. |
 | 2026-10-06 | Integrated and reviewed native camera inputs through actual SourceActor/CameraSupervisor with shared ages, immutable images, strict commands, retained telemetry/restoration and unknown-outcome fencing. Fixed publication and worker/logical-session races found in review and integration. | Eleven adapter cases plus full Rust regressions (49 core, 49 hub unit, 22 native owner, 98 ZWO library), strict Rust 1.99 Clippy, Rust 1.89, contracts, Node/seven schema checks, fresh-host NINA 228/228 and real net48 x86/x64 pass. Preserve initial fixture/deadline errors and paging-file exhaustion; final build uses two compiler jobs. Observation b038f8e PR/push CI each fail one Windows NINA case; cause remains unproved and original logs are retained with new fixture timing/pool diagnostics. Next: native factory/config/runtime and host budget/activity/recovery allowance wiring, remaining camera inputs/outputs, recurring Windows CI investigation, coordination and all original acceptance/final gates. Camera choices remain disabled; keep PR #21 draft. |
 | 2026-10-07 | Implemented and reviewed native NINA camera-group capture/save with frozen scalar metadata, separate ordinary NINA file writes, partial-success preservation, explicit cancellation and durable no-replay reconciliation. Shared configuration selection and ordinary camera metadata/conversions are reused. | Full Rust hub/Alpaca and 75 acquisition cases, strict Clippy/Rust 1.89, twelve schema/Node/freshness checks, warning-denied focused managed checks, final full NINA 440 passed plus one explicit registered-COM skip, and real net48 x86/x64 suites pass. Initial NOVAS/fixture/analyzer/alias/control findings are retained in hub-review.md. Next: discovery/configuration transfer, OS resume, recovery metadata, remaining acceptance, README/site, main reconciliation and original final review/CI/audit/merge; no intermediate CI waiting. |
+
+| 2026-10-07 | Implemented and reviewed explicit Alpaca server catalog discovery through shared host IPC, protected HTTP setup, native NINA/ASCOM setup and the web editor. Reused bounded transport and generated descriptors; preserved string identities, sparse numbers, unsupported classes, reviewed drafts and zero equipment leases. Corrected anonymous credential-gate contention found by concurrent admission tests. | Full Rust hub/Alpaca, all six final catalog cases, strict Clippy/Rust 1.89, contract freshness, 13 independent schema cases, Node/browser checks, full NINA 453 passed plus one explicit registered-COM skip, and real net48 x86/x64 suites pass. Native simulation render inspected and documented; initial failures retained in hub-review.md. Next: identity-pinned adoption, network/native/COM discovery and configuration transfer, then OS resume, recovery metadata and every original acceptance/documentation/final merge gate. No intermediate CI waiting. |

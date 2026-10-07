@@ -5,6 +5,7 @@ import { initialValue, newIdentity, previewValue, renderConfiguration } from '..
 import { CredentialSetup, credentialContract } from '../crates/regain-alpaca/web/hub-credentials.mjs';
 import { SimulationSetup, simulationControls, validateSimulationValue, parseSimulationArray } from '../crates/regain-alpaca/web/hub-simulation.mjs';
 import { OutputDiagnostics, diagnosticSummary, validateDiagnosticSchema } from '../crates/regain-alpaca/web/hub-diagnostics.mjs';
+import { AlpacaDiscovery, catalogSummary } from '../crates/regain-alpaca/web/hub-discovery.mjs';
 
 const description = JSON.parse(readFileSync(new URL('../contracts/hub-config.json', import.meta.url), 'utf8'));
 const reader = configurationContract(description);
@@ -717,3 +718,49 @@ for (const fault of [null,'nil','generation','direction','duration','missingErro
   assert.match(diagnosticSummary(await setup.read(cameraOutput.id,0,1)),/Unknown guide completion/);
 }
 console.log('Camera guide diagnostics preserve uncertainty and reject invalid identities, ownership and parameters.');
+
+// Catalog discovery shares generated bounds and does not configure/connect a
+// source. Non-UUID identities and unsupported classes remain visible.
+{
+  const revision='11111111-1111-4111-8111-111111111111', saved={revision};
+  const good={configurationRevision:revision,baseUrl:'http://localhost:11111/prefix',devices:[
+    {name:'[SIMULATION] café camera',reportedDeviceType:'Camera',supportedDeviceType:'camera',number:4294967295,uniqueId:'camera unit 42'},
+    {name:'[SIMULATION] mount',reportedDeviceType:'Telescope',supportedDeviceType:null,number:9,uniqueId:'mount-99'}
+  ]};
+  const requests=[], setup=new AlpacaDiscovery(async(command,path,deadline)=>{requests.push(command);assert.equal(deadline,10);return structuredClone(good);});
+  setup.load(description,saved);
+  for (const url of ['file:///secret','http://user:secret@localhost/','http://localhost/?','http://localhost/#','http://localhost/?secret'])
+    await assert.rejects(()=>setup.query(url));
+  assert.equal(requests.length,0);
+  const result=await setup.query('http://LOCALHOST:11111/prefix/','protected-reference');
+  assert.deepEqual(requests,[{op:'discoverAlpaca',baseUrl:'http://LOCALHOST:11111/prefix/',credentialReference:'protected-reference',expectedRevision:revision}]);
+  assert.equal(result.devices[0].uniqueId,'camera unit 42');
+  assert.match(catalogSummary(result),/Telescope 9[\s\S]*not supported/);
+  result.devices[0].name='changed caller copy'; assert.equal(setup.catalog.devices[0].name,good.devices[0].name);
+  setup.load(description,saved);assert.equal(setup.catalog,null);
+  for (const fault of ['revision','url','extra','missing','number','duplicate','identity','supported','unsupported','name','count','uuid-alias']) {
+    const reply=structuredClone(good), item=reply.devices[0];
+    if(fault==='revision')reply.configurationRevision='22222222-2222-4222-8222-222222222222';
+    if(fault==='url')reply.baseUrl='http://other.example:11111/prefix';
+    if(fault==='extra')reply.authorization='must-not-escape';
+    if(fault==='missing')delete item.uniqueId;
+    if(fault==='number')item.number=4294967296;
+    if(fault==='duplicate')reply.devices.push(structuredClone(item));
+    if(fault==='identity')item.uniqueId='\ninvalid';
+    if(fault==='supported')item.supportedDeviceType='focuser';
+    if(fault==='unsupported')item.supportedDeviceType=null;
+    if(fault==='name')item.name='\u0085invalid';
+    if(fault==='count')reply.devices=Array.from({length:257},(_,i)=>({...item,number:i,uniqueId:`id-${i}`}));
+    if(fault==='uuid-alias'){item.uniqueId=revision;reply.devices[1].uniqueId=revision.replaceAll('-','').toUpperCase();}
+    let calls=0;const rejected=new AlpacaDiscovery(async()=>{calls++;return reply;});rejected.load(description,saved);
+    await assert.rejects(()=>rejected.query('http://localhost:11111/prefix/'),/Invalid Alpaca catalog response/);
+    assert.equal(rejected.catalog,null);assert.equal(rejected.uncertain,true);assert.equal(calls,1);
+    await assert.rejects(()=>rejected.query('http://localhost:11111/prefix/'),/Reload/);assert.equal(calls,1);
+  }
+  let release;const held=new AlpacaDiscovery(()=>new Promise(resolve=>{release=resolve;}));held.load(description,saved);
+  const pending=held.query('http://localhost:11111/prefix/');
+  await assert.rejects(()=>held.query('http://localhost:11111/prefix/'),/Reload/);
+  assert.throws(()=>held.load(description,saved),/pending/);release(good);await pending;
+  assert.match(catalogSummary({...good,devices:[]}),/no configured devices/);
+}
+console.log('Alpaca discovery passed: management-only requests, shared schema/bounds, string IDs, unsupported classes, stale/malformed rejection, concurrency and no replay.');

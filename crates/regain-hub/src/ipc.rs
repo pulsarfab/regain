@@ -138,6 +138,14 @@ pub enum Command {
         expected_revision: Uuid,
     },
     GetConfig {},
+    DiscoverAlpaca {
+        #[serde(rename = "baseUrl")]
+        base_url: String,
+        #[serde(rename = "credentialReference")]
+        credential_reference: Option<String>,
+        #[serde(rename = "expectedRevision")]
+        expected_revision: Uuid,
+    },
     ValidateConfig {
         candidate: Box<HubConfig>,
     },
@@ -550,7 +558,7 @@ where
                     if !greeted {
                         if !matches!(request.command, Command::Hello {}) { return Err(ProtocolError::Handshake); }
                         greeted = true;
-                        let mut operations = vec!["cameraImage","cameraGroupImage","cameraTiming","cameraCaptureTiming","cameraControl","describeConfig","getConfig","validateConfig","listDevices","sourceStatus","outputStatus","inspectSource","updateSimulation","startFocuserGroup","focuserGroupStatus","cancelFocuserGroup","startCameraGroup","cameraGroupStatus","cancelCameraGroup","connect","disconnect","changeConnection","get","put","hostStatus"];
+                        let mut operations = vec!["cameraImage","cameraGroupImage","cameraTiming","cameraCaptureTiming","cameraControl","describeConfig","getConfig","discoverAlpaca","validateConfig","listDevices","sourceStatus","outputStatus","inspectSource","updateSimulation","startFocuserGroup","focuserGroupStatus","cancelFocuserGroup","startCameraGroup","cameraGroupStatus","cancelCameraGroup","connect","disconnect","changeConnection","get","put","hostStatus"];
                         if service.can_apply() { operations.push("applyConfig"); }
                         if service.credential_description().is_some() { operations.extend(["createCredential", "credentialStatus", "deleteCredential"]); }
                         let hello = json!({"protocolVersion":VERSION, "instanceId":service.instance_id(),
@@ -875,6 +883,15 @@ async fn dispatch_service(
             Ok(json!(service.delete_credential(reference).await?))
         }
         Command::GetConfig {} => Ok(json!(service.configuration())),
+        Command::DiscoverAlpaca {
+            base_url,
+            credential_reference,
+            expected_revision,
+        } => Ok(json!(
+            service
+                .discover_alpaca(base_url, credential_reference, expected_revision)
+                .await?
+        )),
         Command::HostStatus {} => Ok(json!(service.status())),
         Command::ApplyConfig {
             expected_revision,
@@ -919,6 +936,7 @@ async fn dispatch(
         | Command::CancelFocuserGroup { .. }
         | Command::HostStatus {}
         | Command::DescribeConfig {}
+        | Command::DiscoverAlpaca { .. }
         | Command::CreateCredential { .. }
         | Command::CredentialStatus { .. }
         | Command::DeleteCredential { .. } => {
