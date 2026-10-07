@@ -19,6 +19,8 @@ public sealed partial class HubEditorSession : IDisposable
     private long reviewedVersion;
     private volatile bool disposed;
     public Guid InstanceId { get; }
+    private readonly Guid? hostInstance;
+    public HubFocuserGroups? FocuserGroups { get; private set; }
     public HubConfigurationDraft? Draft { get; private set; }
     public HubEditorState State {
         get { lock (lifecycle) return state; }
@@ -29,14 +31,14 @@ public sealed partial class HubEditorSession : IDisposable
     public JsonElement? SavedConfiguration { get; private set; }
     public JsonElement? LastApply { get; private set; }
     public JsonElement Errors { get; private set; } = JsonSerializer.SerializeToElement(Array.Empty<object>());
-    internal HubEditorSession(Guid instance, Func<JsonElement, CancellationToken, Task<JsonElement>> request, Action close)
-    { InstanceId = instance; this.request = request; this.close = close; }
+    internal HubEditorSession(Guid instance, Func<JsonElement, CancellationToken, Task<JsonElement>> request, Action close, Guid? hostInstance = null)
+    { InstanceId = instance; this.request = request; this.close = close; this.hostInstance = hostInstance; }
     public static async Task<HubEditorSession> AttachAsync(string executable, string configPath, Guid expectedInstance,
         CancellationToken cancellation = default)
     {
         var attachment = await HubAttachment.AttachAsync(executable, configPath, cancellation: cancellation, expectedInstance: expectedInstance).ConfigureAwait(false);
         var client = await HubClient.ConnectAsync(attachment, cancellation: cancellation).ConfigureAwait(false);
-        return new(attachment.InstanceId, client.RequestAsync, client.Dispose);
+        return new(attachment.InstanceId, client.RequestAsync, client.Dispose, client.Hello.HostInstance);
     }
     private Task<JsonElement> Rpc(object command, CancellationToken token) => request(JsonSerializer.SerializeToElement(command), token);
     public async Task ReloadAsync(CancellationToken cancellation = default)
@@ -56,6 +58,9 @@ public sealed partial class HubEditorSession : IDisposable
                 throw new InvalidOperationException("The saved configuration changed during reload; reload again");
             var draft = new HubConfigurationDraft(description, saved);
             Draft = draft; SavedConfiguration = saved.Clone(); Description = description.Clone(); HostStatus = status.Clone(); Errors = JsonSerializer.SerializeToElement(Array.Empty<object>());
+            FocuserGroups?.Dispose(); FocuserGroups = null;
+            if (hostInstance.HasValue && description.GetProperty("capabilities").EnumerateArray().Any(c => c.GetString() == "focuserGroups"))
+                FocuserGroups = new(hostInstance.Value, description.GetProperty("coordination").GetProperty("focuserGroups"), saved, request, () => { });
             State = status.GetProperty("phase").GetString() == "ready" ? HubEditorState.Editing : HubEditorState.Blocked;
         } catch { if (!disposed) State = HubEditorState.Uncertain; throw; }
         finally { operations.Release(); }
@@ -185,6 +190,6 @@ public sealed partial class HubEditorSession : IDisposable
             activeOperations++;
         }
         try { lifetime.Cancel(); }
-        finally { try { close(); } finally { Release(); } }
+        finally { try { FocuserGroups?.Dispose(); close(); } finally { Release(); } }
     }
 }

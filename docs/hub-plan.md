@@ -8,8 +8,39 @@ tagged or published. Changed cross-crate APIs require an unpublished version so
 Cargo package verification uses the new workspace packages.
 Last updated: 2026-10-07.
 
+Construction pacing: batch relevant local tests and review around useful feature
+increments. Push those increments to the same draft PR without waiting for slow
+CI between steps. Final CI, review and the original acceptance/completion audit
+remain merge gates.
 
-Current increment: implement the explicit focuser-group core in regain-hub,
+Current increment: saved focuser groups, revision-owned host operations and native
+NINA orchestration are implemented locally. The shared schema/editor carries
+stable group IDs, labels, logical bounds, rational calibration, offsets, travel
+limits and timing. Validation resolves virtual aliases and rejects repeated
+physical leaves and reused identities. Host-owned operations retain activity
+through connection, motion acknowledgement and cleanup; client EOF does not
+cancel them. A bounded latest-operation inventory supports explicit status and
+cancellation by operation ID, with host/revision fences and no implicit restart.
+Shutdown cancels further work, awaits admitted command acknowledgements and
+drains source ownership without Halt or rollback.
+
+The shared native setup has a Focuser groups tab. Native NINA gains a Move Regain
+focuser group sequence instruction with per-member results and an interrupted/
+failed-step fence preserved through cloning and saved sequences. Automatic error
+retry cannot replay an unknown move; a new operation requires explicit user
+reconciliation. The 18 focused managed group cases pass, including actual private
+host reattachment, cancellation and the rendered WPF panel. Rust hub/Alpaca
+regression, strict all-target Clippy and Rust 1.89 checks pass. Independent schema
+validation caught missing explicit Int32 bounds; these are corrected. The first
+full managed regression caught the cold file-identity reader rejecting the new
+root key; that reader is corrected and all 337 ordinary NINA cases pass, with the
+explicit registered-COM-fixture skip. Real net48 x86/x64 suites also pass,
+including new group reattachment/member-result cases. See
+hub-coordination.md and hub-review.md. Camera coordination, discovery/transfer,
+OS resume, broad acceptance, README/site, main reconciliation and final gates
+remain required. Do not wait on intermediate CI before continuing construction.
+
+Previous increment: implement the explicit focuser-group core in regain-hub,
 reusing typed sessions/source actors rather than adding a device crate or process.
 Rational calibrated transforms, configured/live travel and increment checks,
 all-member reservations/preflight, per-dispatch rechecks and immutable member
@@ -25,7 +56,7 @@ shutdown/recovery and native NINA integration remain required before closing
 milestone 5. Keep synchronized cameras and every original acceptance/final gate.
 
 
-Current increment: investigate terminal 9e60a77 CI. Both workflows are red;
+Previous increment: investigate terminal 9e60a77 CI. Both workflows are red;
 push Windows passes, while PR Windows fails timing-descriptor and native
 filter-wheel review fixtures. Failure messages now retain the exact timing
 exception and the native window text; product deadlines and assertions stay
@@ -38,7 +69,7 @@ host test passes locally; fresh Unix execution remains required. The preceding
 OFP2 correction passes the portable jobs that reached it. Preserve the other
 Windows failures as unresolved, all original milestones and the draft PR.
 
-Current increment: reviewed failure-only camera preflight diagnostics. The private
+Previous increment: reviewed failure-only camera preflight diagnostics. The private
 actual-Alpaca proxy fixture records the structured hub failure and relay command
 sequence before rethrowing the original exception. All seven focused cases pass
 with warnings denied; no assertion, deadline or production behavior changed.
@@ -2132,19 +2163,22 @@ integrity tests cover the classes shipped, with limitations stated explicitly.
 
 ### 5. Explicit coordination
 
-- [ ] Add focuser groups with calibrated transforms, offsets, per-device limits,
+- [x] Add focuser groups with calibrated transforms, offsets, per-device limits,
   preflight checks, cancellation, and visible partial-failure results.
 - [ ] Define synchronized camera orchestration with separate results, measured
   start skew, partial failures, and explicit abort/continue policy.
 - [ ] Expose useful orchestration in native NINA without pretending one standard
   Camera interface can return several independent images.
 
-Core progress: the Rust focuser-group controller and 16 private coordination
-cases are implemented; all 34 focuser cases pass. It shares existing actor control
-leases, generation fences and live validation. See [coordination contract](hub-coordination.md).
-Saved/generated config, physical alias resolution, host operation activity and
-revision, IPC reattachment/shutdown and native NINA integration are still required.
-Do not check off this milestone from core tests alone.
+Focuser progress: the core, saved/generated configuration, physical alias
+resolution, host activity/revision, retained IPC reattachment/shutdown, shared
+native controls and native NINA sequence instruction are implemented. All 39 Rust
+focuser tests pass, including five host/IPC cases; 18 focused managed cases cover
+strict result admission, schema-driven editing, actual-host operation ownership,
+NINA failure/cancellation/save/clone fencing and rendered native controls. See
+[coordination contract](hub-coordination.md). Camera coordination and its native
+NINA integration remain construction work. Interactive installed NINA and
+physical-device acceptance remain separate gates; simulation does not close them.
 
 Gate: simulation/fault-injection tests precede hardware trials; measured behavior
 and timing limits are documented. Do not claim rollback or hard synchronization

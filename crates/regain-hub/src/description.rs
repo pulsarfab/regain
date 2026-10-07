@@ -15,6 +15,24 @@ pub fn describe_config(capabilities: &[&str]) -> Value {
         "capabilities": capabilities,
         "simulationControl": crate::simulated::description(),
         "outputDiagnostics": crate::diagnostics::description(),
+        "coordination": {
+            "focuserGroups": {
+                "responseSchema": schemars::schema_for!(crate::coordination::HostedFocuserStatus),
+                "configurationKey": "focuserGroups",
+                "startOperation": "startFocuserGroup",
+                "statusOperation": "focuserGroupStatus",
+                "cancelOperation": "cancelFocuserGroup",
+                "statusOpensSources": false,
+                "cancelHaltsEquipment": false,
+                "retention": "latestPerGroupUntilHostOrRevisionChanges",
+                "target": {
+                    "type": "integer", "format": "int32",
+                    "minimum": i32::MIN, "maximum": i32::MAX,
+                    "label": "Logical target", "units": "steps",
+                    "description": "Logical group coordinate. Saved group bounds and each calibrated device target are checked before connecting sources."
+                }
+            }
+        },
         "apply": "disconnect",
         "validation": "The hub validates relationships, identities, capabilities and revisions before applying. Schema validation alone does not authorize an update."
     })

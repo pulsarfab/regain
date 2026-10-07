@@ -1089,6 +1089,7 @@ async fn group_setup(
 fn group_config(sessions: &[Arc<regain_hub::focuser::FocuserSession>]) -> FocuserGroupConfig {
     FocuserGroupConfig {
         id: Uuid::new_v4(),
+        label: "Private calibrated focusers".into(),
         minimum: 0,
         maximum: 1000,
         timeout_seconds: 2.0,
@@ -1610,4 +1611,380 @@ async fn group_deadline_awaits_existing_mutation_bound_and_preserves_lost_acknow
     assert_eq!(devices[0].writes.lock().unwrap().len(), 1);
     assert!(devices[1].writes.lock().unwrap().is_empty());
     shutdown_group(&sources).await;
+}
+
+fn hosted_config() -> regain_hub::config::HubConfig {
+    let mut config: regain_hub::config::HubConfig =
+        serde_json::from_str(include_str!("../examples/paired-focusers.json")).unwrap();
+    for source in &mut config.sources {
+        source.polling.request_timeout_seconds = 0.1;
+    }
+    let group = &mut config.focuser_groups[0];
+    group.minimum = 0;
+    group.maximum = 1000;
+    group.timeout_seconds = 2.0;
+    group.poll_seconds = 0.01;
+    group.members[1].offset = 20;
+    config
+}
+fn hosted_devices() -> Arc<Vec<Arc<Device>>> {
+    Arc::new(
+        (0..3)
+            .map(|_| {
+                let device = Device::new();
+                device.set("tempcomp", json!(false));
+                device
+            })
+            .collect(),
+    )
+}
+fn hosted_runtime(
+    config: regain_hub::config::HubConfig,
+    devices: &Arc<Vec<Arc<Device>>>,
+) -> Arc<regain_hub::runtime::HubRuntime> {
+    let clock = Arc::new(MonotonicClock::default());
+    let registry = regain_hub::source::SourceRegistry::build(&config, clock.clone(), |source| {
+        let index = config
+            .sources
+            .iter()
+            .position(|item| item.id == source.id)
+            .unwrap();
+        Ok(Box::new(Mock(devices[index].clone())))
+    })
+    .unwrap();
+    regain_hub::runtime::HubRuntime::from_registry(config, Arc::new(registry), clock).unwrap()
+}
+async fn hosted_send(stream: &mut tokio::io::DuplexStream, id: u64, command: Value) {
+    use tokio::io::AsyncWriteExt;
+    let bytes = serde_json::to_vec(&json!({"version":1, "id":id, "command":command})).unwrap();
+    stream
+        .write_all(&(bytes.len() as u32).to_le_bytes())
+        .await
+        .unwrap();
+    stream.write_all(&bytes).await.unwrap();
+}
+async fn hosted_call(stream: &mut tokio::io::DuplexStream, id: u64, command: Value) -> Value {
+    hosted_send(stream, id, command).await;
+    serde_json::from_slice(
+        &regain_hub::ipc::read_frame(stream, Duration::from_secs(2))
+            .await
+            .unwrap()
+            .unwrap(),
+    )
+    .unwrap()
+}
+async fn hosted_stream(
+    service: Arc<regain_hub::service::HubService>,
+) -> (
+    tokio::io::DuplexStream,
+    tokio::task::JoinHandle<Result<(), regain_hub::ipc::ProtocolError>>,
+) {
+    let (mut stream, server) = tokio::io::duplex(1024 * 1024);
+    let server = tokio::spawn(regain_hub::ipc::serve_service_stream(
+        server,
+        service,
+        regain_hub::ipc::Limits::default(),
+    ));
+    let hello = hosted_call(&mut stream, 1, json!({"op":"hello"})).await;
+    assert!(
+        hello["result"]["capabilities"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("focuserGroups"))
+    );
+    assert!(
+        hello["result"]["operations"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("startFocuserGroup"))
+    );
+    (stream, server)
+}
+async fn hosted_terminal(
+    runtime: &regain_hub::runtime::HubRuntime,
+    revision: Uuid,
+    group: Uuid,
+) -> regain_hub::coordination::HostedFocuserStatus {
+    use regain_hub::coordination::HostedFocuserPhase;
+    tokio::time::timeout(Duration::from_secs(3), async {
+        loop {
+            let status = runtime.focuser_group_status(revision, group, None).unwrap();
+            if !matches!(
+                status.phase,
+                HostedFocuserPhase::Connecting | HostedFocuserPhase::Running
+            ) {
+                return status;
+            }
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+    })
+    .await
+    .expect("Hosted group did not finish")
+}
+async fn hosted_idle(runtime: &regain_hub::runtime::HubRuntime) {
+    tokio::time::timeout(Duration::from_secs(1), async {
+        while runtime.active_connections() != 0
+            || runtime
+                .source_snapshots()
+                .iter()
+                .any(|source| source.lease_count != 0)
+        {
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+    })
+    .await
+    .expect("Hosted group did not release retained activity/leases");
+}
+
+#[tokio::test(start_paused = true)]
+async fn hosted_group_ipc_reattaches_after_lost_ack_without_replay_and_retires_old_inventory() {
+    use regain_hub::coordination::HostedFocuserPhase;
+    for read_ack in [false, true] {
+        let config = hosted_config();
+        let revision = config.revision;
+        let group = config.focuser_groups[0].id;
+        let devices = hosted_devices();
+        let runtime = hosted_runtime(config.clone(), &devices);
+        let service = regain_hub::service::HubService::read_only(runtime.clone());
+        let (mut first, first_server) = hosted_stream(service.clone()).await;
+        let query = |operation: Option<Uuid>| json!({"op":"focuserGroupStatus", "group":group, "operation":operation, "expectedRevision":revision});
+        assert_eq!(
+            hosted_call(&mut first, 2, query(None)).await["error"]["code"],
+            "unavailable"
+        );
+        assert!(
+            devices
+                .iter()
+                .all(|device| device.connects.load(SeqCst) == 0)
+        );
+        let start = json!({"op":"startFocuserGroup", "group":group, "target":100, "expectedRevision":revision});
+        let acknowledged = if read_ack {
+            Some(hosted_call(&mut first, 3, start.clone()).await["result"].clone())
+        } else {
+            hosted_send(&mut first, 3, start).await;
+            None
+        };
+        wrote(&devices[0]).await;
+        wrote(&devices[1]).await;
+        assert!(runtime.active_connections() > 0);
+        assert_eq!(
+            runtime.source_snapshots()[2].lease_count,
+            0,
+            "Virtual alias must not open an additional transport"
+        );
+        drop(first);
+        let _ = first_server.await.unwrap();
+        let (mut second, second_server) = hosted_stream(service.clone()).await;
+        let recovered = hosted_call(&mut second, 2, query(None)).await["result"].clone();
+        let operation: Uuid = serde_json::from_value(recovered["operation"].clone()).unwrap();
+        assert_eq!(recovered["configurationRevision"], json!(revision));
+        assert_eq!(recovered["hostInstance"], json!(service.host_id()));
+        assert_eq!(
+            recovered["bindings"][0]["configuredSource"],
+            json!(config.sources[2].id)
+        );
+        assert_eq!(
+            recovered["bindings"][0]["physicalSource"],
+            json!(config.sources[0].id)
+        );
+        if let Some(acknowledged) = acknowledged {
+            assert_eq!(acknowledged["operation"], recovered["operation"]);
+        }
+        assert_eq!(hosted_call(&mut second, 3, json!({"op":"startFocuserGroup", "group":group, "target":100, "expectedRevision":revision})).await["error"]["code"], "busy");
+        assert_eq!(hosted_call(&mut second, 4, json!({"op":"cancelFocuserGroup", "group":group, "operation":Uuid::new_v4(), "expectedRevision":revision})).await["error"]["code"], "invalidValue");
+        for device in devices.iter().take(2) {
+            device.set("ismoving", json!(false));
+        }
+        let complete = hosted_terminal(&runtime, revision, group).await;
+        assert_eq!(complete.phase, HostedFocuserPhase::Complete);
+        assert_eq!(complete.result.unwrap().members[1].target, 120);
+        hosted_idle(&runtime).await;
+        assert!(
+            devices
+                .iter()
+                .take(2)
+                .all(|device| device.writes.lock().unwrap().len() == 1)
+        );
+        assert!(devices[2].writes.lock().unwrap().is_empty());
+        let next = hosted_call(&mut second, 5, json!({"op":"startFocuserGroup", "group":group, "target":120, "expectedRevision":revision})).await["result"].clone();
+        let next_id: Uuid = serde_json::from_value(next["operation"].clone()).unwrap();
+        assert_ne!(next_id, operation);
+        assert_eq!(
+            hosted_call(&mut second, 6, query(Some(operation))).await["error"]["code"],
+            "unavailable"
+        );
+        assert_eq!(hosted_call(&mut second, 7, json!({"op":"cancelFocuserGroup", "group":group, "operation":next_id, "expectedRevision":revision})).await["result"]["operation"], json!(next_id));
+        assert_eq!(
+            hosted_terminal(&runtime, revision, group).await.phase,
+            HostedFocuserPhase::Cancelled
+        );
+        drop(second);
+        let _ = second_server.await.unwrap();
+        runtime.shutdown().await.unwrap();
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn hosted_group_pending_connection_blocks_apply_after_eof_and_old_revision_cannot_replay() {
+    use regain_hub::{
+        config::ConfigStore,
+        coordination::HostedFocuserPhase,
+        service::{HubService, RuntimeBuilder, UpdateError},
+    };
+    let config = hosted_config();
+    let revision = config.revision;
+    let group = config.focuser_groups[0].id;
+    let devices = hosted_devices();
+    devices[0].pending.store(true, SeqCst);
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("hub.json");
+    let store = ConfigStore::new(Some(path.clone()), config.clone()).unwrap();
+    std::fs::write(&path, serde_json::to_vec(&store.snapshot()).unwrap()).unwrap();
+    let before = std::fs::read(&path).unwrap();
+    let builder: Arc<RuntimeBuilder> = Arc::new({
+        let devices = devices.clone();
+        move |config| Ok(hosted_runtime(config, &devices))
+    });
+    let service = HubService::persistent(store, builder).unwrap();
+    let runtime = service.runtime().unwrap();
+    let (mut first, server) = hosted_stream(service.clone()).await;
+    let ack = hosted_call(
+        &mut first,
+        2,
+        json!({"op":"startFocuserGroup", "group":group, "target":100, "expectedRevision":revision}),
+    )
+    .await;
+    let operation: Uuid = serde_json::from_value(ack["result"]["operation"].clone()).unwrap();
+    drop(first);
+    let _ = server.await.unwrap();
+    assert!(runtime.active_connections() > 0);
+    let mut candidate = service.configuration();
+    candidate.focuser_groups[0].label = "New saved group revision".into();
+    assert!(matches!(
+        service.apply(revision, candidate.clone()).await,
+        Err(UpdateError::Connected)
+    ));
+    assert_eq!(std::fs::read(&path).unwrap(), before);
+    let (mut second, server) = hosted_stream(service.clone()).await;
+    assert_eq!(hosted_call(&mut second, 2, json!({"op":"cancelFocuserGroup", "group":group, "operation":operation, "expectedRevision":Uuid::new_v4()})).await["error"]["code"], "revisionConflict");
+    hosted_call(&mut second, 3, json!({"op":"cancelFocuserGroup", "group":group, "operation":operation, "expectedRevision":revision})).await;
+    assert_eq!(
+        hosted_terminal(&runtime, revision, group).await.phase,
+        HostedFocuserPhase::Cancelled
+    );
+    hosted_idle(&runtime).await;
+    assert!(
+        devices
+            .iter()
+            .all(|device| device.writes.lock().unwrap().is_empty())
+    );
+    assert_eq!(devices[1].connects.load(SeqCst), 0);
+    service.apply(revision, candidate).await.unwrap();
+    let current = service.configuration();
+    assert_ne!(current.revision, revision);
+    assert_eq!(hosted_call(&mut second, 4, json!({"op":"startFocuserGroup", "group":group, "target":100, "expectedRevision":revision})).await["error"]["code"], "revisionConflict");
+    assert_eq!(hosted_call(&mut second, 5, json!({"op":"focuserGroupStatus", "group":group, "operation":operation, "expectedRevision":current.revision})).await["error"]["code"], "unavailable");
+    assert!(
+        devices
+            .iter()
+            .all(|device| device.writes.lock().unwrap().is_empty())
+    );
+    drop(second);
+    let _ = server.await.unwrap();
+    service.shutdown().await.unwrap();
+}
+
+#[tokio::test(start_paused = true)]
+async fn hosted_group_shutdown_preserves_inflight_ack_and_does_not_halt_or_dispatch_more() {
+    use regain_hub::coordination::HostedFocuserPhase;
+    let config = hosted_config();
+    let revision = config.revision;
+    let group = config.focuser_groups[0].id;
+    let devices = hosted_devices();
+    let gate = Arc::new(tokio::sync::Notify::new());
+    *devices[0].write_gate.lock().unwrap() = Some(gate.clone());
+    let runtime = hosted_runtime(config, &devices);
+    let accepted = runtime
+        .start_focuser_group(runtime.runtime_id(), revision, group, 100)
+        .unwrap();
+    wrote(&devices[0]).await;
+    let shutdown = tokio::spawn({
+        let runtime = runtime.clone();
+        async move { runtime.shutdown().await }
+    });
+    settle().await;
+    assert!(!shutdown.is_finished());
+    assert!(
+        runtime
+            .start_focuser_group(runtime.runtime_id(), revision, group, 100)
+            .is_err()
+    );
+    gate.notify_one();
+    shutdown.await.unwrap().unwrap();
+    let result = runtime
+        .focuser_group_status(revision, group, Some(accepted.operation))
+        .unwrap();
+    assert_eq!(result.phase, HostedFocuserPhase::Cancelled);
+    assert_eq!(
+        result.result.unwrap().members[0].phase,
+        FocuserMemberPhase::Moving
+    );
+    assert_eq!(devices[0].writes.lock().unwrap().len(), 1);
+    assert!(devices[1].writes.lock().unwrap().is_empty());
+    assert_eq!(runtime.active_connections(), 0);
+    assert!(
+        runtime
+            .source_snapshots()
+            .iter()
+            .all(|source| !source.transport_connected && source.lease_count == 0)
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn hosted_group_connection_failure_identifies_member_without_motion_or_retained_activity() {
+    use regain_hub::coordination::HostedFocuserPhase;
+    let config = hosted_config();
+    let revision = config.revision;
+    let group = config.focuser_groups[0].id;
+    let devices = hosted_devices();
+    devices[1].errors.lock().unwrap().insert(
+        "maxstep".into(),
+        SourceError::new(ErrorKind::Unsupported, "Private absent capability"),
+    );
+    let runtime = hosted_runtime(config.clone(), &devices);
+    assert!(
+        runtime
+            .start_focuser_group(runtime.runtime_id(), Uuid::new_v4(), group, 100)
+            .is_err()
+    );
+    assert_eq!(runtime.active_connections(), 0);
+    runtime
+        .start_focuser_group(runtime.runtime_id(), revision, group, 100)
+        .unwrap();
+    let failed = hosted_terminal(&runtime, revision, group).await;
+    assert_eq!(failed.phase, HostedFocuserPhase::Failed);
+    assert_eq!(failed.failed_source, Some(config.sources[1].id));
+    assert_eq!(failed.error.unwrap().kind, ErrorKind::Unsupported);
+    hosted_idle(&runtime).await;
+    assert!(
+        devices
+            .iter()
+            .all(|device| device.writes.lock().unwrap().is_empty())
+    );
+    runtime.shutdown().await.unwrap();
+}
+
+#[test]
+fn hosted_group_ipc_rejects_unknown_fields_missing_revision_and_noninteger_targets() {
+    let group = Uuid::new_v4();
+    let revision = Uuid::new_v4();
+    for command in [
+        json!({"op":"startFocuserGroup", "group":group, "target":1}),
+        json!({"op":"startFocuserGroup", "group":group, "target":1.5, "expectedRevision":revision}),
+        json!({"op":"startFocuserGroup", "group":group, "target":2147483648_i64, "expectedRevision":revision}),
+        json!({"op":"startFocuserGroup", "group":group, "target":1, "expectedRevision":revision, "retry":true}),
+        json!({"op":"cancelFocuserGroup", "group":group, "expectedRevision":revision}),
+    ] {
+        assert!(serde_json::from_value::<regain_hub::ipc::Command>(command).is_err());
+    }
 }

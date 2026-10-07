@@ -14,6 +14,10 @@ internal static class Program
     {
         uint? candidate = null;
         try {
+            if (args.Length == 4 && args[0] == "--focuser-group") {
+                if (IntPtr.Size * 8 != int.Parse(args[3])) throw new InvalidOperationException("Wrong group fixture bitness");
+                await FocuserGroupFixture.Run(args[1], args[2]); return 0;
+            }
             if (args.Length == 2 && args[0] == "--camera-timing") {
                 if (IntPtr.Size * 8 != int.Parse(args[1])) throw new InvalidOperationException("Wrong timing fixture bitness");
                 await HubTimingFixture.RunAll(); return 0;
@@ -235,17 +239,21 @@ internal static class Program
             // Test-only cleanup, never used by production frontends. The script
             // supplies a fresh simulation-only config and launches sequentially.
             if (candidate is uint pid) {
-                try {
-                    using var host = Process.GetProcessById(checked((int)pid));
-                    var path = new StringBuilder(32768); uint length = (uint)path.Capacity;
-                    if (!QueryFullProcessImageName(host.Handle, 0, path, ref length) ||
-                        !string.Equals(System.IO.Path.GetFullPath(args[0]), path.ToString(), StringComparison.OrdinalIgnoreCase))
-                        throw new InvalidOperationException("Fixture host executable did not match; refusing cleanup");
-                    host.Kill();
-                    if (!host.WaitForExit(5000)) throw new InvalidOperationException("Fixture cleanup timed out");
-                } catch (ArgumentException) { }
+                StopOwned(pid, args[0]);
             }
         }
+    }
+    internal static void StopOwned(uint pid, string executable)
+    {
+        try {
+            using var host = Process.GetProcessById(checked((int)pid));
+            var path = new StringBuilder(32768); uint length = (uint)path.Capacity;
+            if (!QueryFullProcessImageName(host.Handle, 0, path, ref length) ||
+                !string.Equals(System.IO.Path.GetFullPath(executable), path.ToString(), StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("Fixture host executable did not match; refusing cleanup");
+            host.Kill();
+            if (!host.WaitForExit(5000)) throw new InvalidOperationException("Fixture cleanup timed out");
+        } catch (ArgumentException) { }
     }
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]

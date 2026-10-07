@@ -66,11 +66,10 @@ public sealed class HubInitialization
     }
     private void ReadIdentity(JsonElement configuration)
     {
-        if (configuration.TryGetProperty("identities", out _))
-            HubWire.Members(configuration, "schemaVersion", "instanceId", "revision", "sources", "outputs", "identities");
-        else HubWire.Members(configuration, "schemaVersion", "instanceId", "revision", "sources", "outputs");
+        HubWire.Members(configuration, "schemaVersion", "instanceId", "revision", "sources", "outputs", "identities", "focuserGroups");
         if (configuration.ValueKind != JsonValueKind.Object || configuration.GetProperty("schemaVersion").GetInt32() != 1 ||
-            configuration.GetProperty("sources").ValueKind != JsonValueKind.Array || configuration.GetProperty("outputs").ValueKind != JsonValueKind.Array)
+            configuration.GetProperty("sources").ValueKind != JsonValueKind.Array || configuration.GetProperty("outputs").ValueKind != JsonValueKind.Array ||
+            configuration.TryGetProperty("focuserGroups", out var groups) && groups.ValueKind != JsonValueKind.Array)
             throw new HubException(HubFailure.Protocol);
         // This is bounded file identification, not host validation or permission.
         InstanceId = HubWire.Identity(configuration, "instanceId"); Revision = HubWire.Identity(configuration, "revision");

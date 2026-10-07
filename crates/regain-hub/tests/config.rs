@@ -16,6 +16,94 @@ fn invalid(config: &HubConfig, code: &str) {
         config.validate()
     );
 }
+
+fn paired_focusers() -> HubConfig {
+    serde_json::from_str(include_str!("../examples/paired-focusers.json")).unwrap()
+}
+
+#[test]
+fn focuser_groups_resolve_aliases_and_reject_duplicate_physical_members() {
+    let config = paired_focusers();
+    assert!(config.validate().is_empty());
+    assert_eq!(
+        config
+            .physical_focuser_source(config.sources[2].id)
+            .unwrap(),
+        config.sources[0].id
+    );
+    for source in [config.sources[0].id, config.sources[2].id] {
+        let mut duplicate = config.clone();
+        duplicate.focuser_groups[0].members[1].source = source;
+        invalid(
+            &duplicate,
+            if source == config.sources[2].id {
+                "group"
+            } else {
+                "duplicate"
+            },
+        );
+    }
+    for fault in ["missing", "class", "cycle", "identity", "label", "count"] {
+        let mut changed = config.clone();
+        match fault {
+            "missing" => changed.focuser_groups[0].members[0].source = Uuid::new_v4(),
+            "class" => {
+                changed.sources[1].backend = SourceBackend::Simulated {
+                    device_type: DeviceType::Camera,
+                }
+            }
+            "cycle" => {
+                changed.outputs[0].device = VirtualDevice::Proxy {
+                    source: changed.sources[2].id,
+                    device_type: DeviceType::Focuser,
+                }
+            }
+            "identity" => changed.focuser_groups[0].id = changed.outputs[0].id,
+            "label" => changed.focuser_groups[0].label.clear(),
+            "count" => changed.focuser_groups = vec![changed.focuser_groups[0].clone(); 65],
+            _ => unreachable!(),
+        }
+        assert!(!changed.validate().is_empty(), "{fault}");
+    }
+    let mut cycle = config;
+    cycle.outputs[0].device = VirtualDevice::Proxy {
+        source: cycle.sources[2].id,
+        device_type: DeviceType::Focuser,
+    };
+    assert!(cycle.physical_focuser_source(cycle.sources[2].id).is_err());
+}
+
+#[test]
+fn focuser_groups_round_trip_and_retired_ids_cannot_be_repurposed() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("groups.json");
+    let initial = paired_focusers();
+    let group = initial.focuser_groups[0].id;
+    let store = ConfigStore::new(Some(path.clone()), initial).unwrap();
+    let mut next = store.snapshot();
+    next.focuser_groups[0].label = "Edited calibrated group".into();
+    next.focuser_groups[0].members[1].offset = -200;
+    let saved = store.apply(next.revision, next, false).unwrap();
+    assert_eq!(ConfigStore::load(&path).unwrap().snapshot(), saved);
+    let mut removed = saved.clone();
+    removed.focuser_groups.clear();
+    let removed = store.apply(removed.revision, removed, false).unwrap();
+    let mut reused = removed.clone();
+    reused.sources.push(SourceConfig {
+        id: group,
+        label: "Reused group as source".into(),
+        backend: SourceBackend::Simulated {
+            device_type: DeviceType::Focuser,
+        },
+        polling: PollPolicy::default(),
+    });
+    assert!(matches!(
+        store.apply(reused.revision, reused, false),
+        Err(ApplyError::Invalid(_))
+    ));
+    assert_eq!(store.snapshot(), removed);
+    assert_eq!(ConfigStore::load(&path).unwrap().snapshot(), removed);
+}
 #[test]
 fn initialization_publishes_one_empty_identity_and_never_overwrites() {
     let directory = tempfile::tempdir().unwrap();

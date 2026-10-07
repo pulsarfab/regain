@@ -613,3 +613,30 @@ configuration revision change, zero leases and a disconnected transport. Real
 net48 clients and NINA verify shared state and independent connection ownership.
 Panel hardware, interactive installed-client and conformance acceptance remain
 separate plan gates.
+
+## Move a calibrated focuser group
+
+Add **Focuser groups** in Configuration and define a group label, logical travel
+bounds, timing and at least two members. Choose saved absolute-focuser sources;
+each member has a signed scale numerator, positive denominator, step offset and
+device travel limits. Virtual aliases are resolved by the host, and repeated
+physical members are rejected. Review, apply and reload the saved definition.
+
+Use the **Focuser groups** tab to read retained status, enter a logical target and
+start one explicit operation. Each member reports its target, observed position
+and result. Closing setup leaves admitted work running; reopen and read status to
+inspect it. Cancel stops further group work without implying Halt or rollback.
+
+![Native focuser-group results in explicit simulation](images/hub-focuser-group-results-simulation.png)
+
+This is an actual private simulation capture. It demonstrates retained results
+after closing and reopening setup, with separate member targets and positions.
+
+In NINA's advanced sequencer, add **Move Regain focuser group** under **PulsarFab
+regain**, choose the saved configuration/group and set the logical target. It
+talks directly to the shared host over local IPC; no ASCOM output or HTTP listener
+is needed. It succeeds only when every member reports stopped at its exact target.
+Failed or interrupted steps remain fenced across cloning and saved sequences.
+Inspect the retained result and equipment state, then explicitly allow a new
+operation to run the step again. Automatic error retry cannot repeat an unknown
+move. See [coordination](hub-coordination.md) for timing and partial-failure limits.

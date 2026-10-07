@@ -28,6 +28,13 @@ foreach ($architecture in 'x86', 'x64') {
         [IO.File]::WriteAllText($configPath, ($config | ConvertTo-Json -Depth 40), [Text.UTF8Encoding]::new($false))
         & (Join-Path $buildDirectory 'Regain.Hub.Client.Fixture.exe') $executable $configPath $bitness
         if ($LASTEXITCODE) { throw "net48 $architecture hub fixture failed" }
+        $groupConfig = Get-Content -LiteralPath (Join-Path $repo 'crates/regain-hub/examples/paired-focusers.json') -Raw | ConvertFrom-Json
+        $groupConfig.instanceId = [guid]::NewGuid().ToString()
+        $groupConfig.revision = [guid]::NewGuid().ToString()
+        $groupPath = Join-Path $temporary 'paired focusers.json'
+        [IO.File]::WriteAllText($groupPath, ($groupConfig | ConvertTo-Json -Depth 40), [Text.UTF8Encoding]::new($false))
+        & (Join-Path $buildDirectory 'Regain.Hub.Client.Fixture.exe') --focuser-group $executable $groupPath $bitness
+        if ($LASTEXITCODE) { throw "net48 $architecture focuser group fixture failed" }
     } finally {
         $resolved = [IO.Path]::GetFullPath($temporary)
         $allowed = [IO.Path]::GetFullPath((Join-Path $repo 'artifacts')) + [IO.Path]::DirectorySeparatorChar

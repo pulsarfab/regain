@@ -399,6 +399,11 @@ pub struct HubConfig {
     /// Virtual devices published through NINA, Alpaca, or native ASCOM.
     #[schemars(length(max = MAX_DEVICES))]
     pub outputs: Vec<OutputConfig>,
+    /// Explicit calibrated motion groups. These do not create standard device outputs.
+    #[serde(default)]
+    #[schemars(length(max = 64))]
+    #[schemars(extend("x-regain" = {"requiresCapability":"focuserGroups"}))]
+    pub focuser_groups: Vec<crate::coordination::FocuserGroupConfig>,
     /// Owned by the store. Retired IDs remain reserved after deletion/restart.
     #[serde(default)]
     #[schemars(extend("readOnly" = true, "x-regain" = {"hidden":true}))]
@@ -411,6 +416,8 @@ pub struct IdentityLedger {
     sources: BTreeMap<Uuid, String>,
     outputs: BTreeMap<Uuid, OutputIdentity>,
     channels: BTreeMap<Uuid, ChannelIdentity>,
+    #[serde(default)]
+    groups: BTreeSet<Uuid>,
 }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -463,7 +470,12 @@ impl SourceConfig {
 }
 
 impl IdentityLedger {
-    fn register(&mut self, sources: &[SourceConfig], outputs: &[OutputConfig]) -> Vec<FieldError> {
+    fn register(
+        &mut self,
+        sources: &[SourceConfig],
+        outputs: &[OutputConfig],
+        groups: &[crate::coordination::FocuserGroupConfig],
+    ) -> Vec<FieldError> {
         let mut errors = Vec::new();
         for source in sources {
             let Ok(identity) = source.identity() else {
@@ -475,6 +487,7 @@ impl IdentityLedger {
                 .is_some_and(|old| *old != identity)
                 || self.outputs.contains_key(&source.id)
                 || self.channels.contains_key(&source.id)
+                || self.groups.contains(&source.id)
             {
                 errors.push(FieldError::new(
                     "sources",
@@ -500,6 +513,7 @@ impl IdentityLedger {
                     .any(|(id, old)| *id != output.id && old == &identity)
                 || self.sources.contains_key(&output.id)
                 || self.channels.contains_key(&output.id)
+                || self.groups.contains(&output.id)
             {
                 errors.push(FieldError::new(
                     "outputs",
@@ -527,6 +541,7 @@ impl IdentityLedger {
                         })
                         || self.outputs.contains_key(&channel.id)
                         || self.sources.contains_key(&channel.id)
+                        || self.groups.contains(&channel.id)
                     {
                         errors.push(FieldError::new(
                             "outputs",
@@ -537,6 +552,20 @@ impl IdentityLedger {
                         self.channels.insert(channel.id, identity);
                     }
                 }
+            }
+        }
+        for group in groups {
+            if self.sources.contains_key(&group.id)
+                || self.outputs.contains_key(&group.id)
+                || self.channels.contains_key(&group.id)
+            {
+                errors.push(FieldError::new(
+                    "focuserGroups",
+                    "identity",
+                    "Group IDs cannot repurpose source, output or channel identities",
+                ));
+            } else {
+                self.groups.insert(group.id);
             }
         }
         errors
@@ -593,6 +622,7 @@ impl HubConfig {
             instance_id: Uuid::new_v4(),
             sources: vec![],
             outputs: vec![],
+            focuser_groups: vec![],
             identities: IdentityLedger::default(),
         }
     }
@@ -639,11 +669,14 @@ impl HubConfig {
                 "Retired switch slots must stay within the supported channel range",
             );
         }
-        if self.sources.len() > MAX_DEVICES || self.outputs.len() > MAX_DEVICES {
+        if self.sources.len() > MAX_DEVICES
+            || self.outputs.len() > MAX_DEVICES
+            || self.focuser_groups.len() > 64
+        {
             error(
                 "sources".into(),
                 "limit",
-                "At most 256 sources and outputs are supported",
+                "At most 256 sources, 256 outputs and 64 focuser groups are supported",
             );
             // Bound graph traversal before descending into user-controlled data.
             return errors;
@@ -1027,7 +1060,69 @@ impl HubConfig {
                 "Virtual devices must not depend on themselves, directly or indirectly",
             );
         }
+        for (index, group) in self.focuser_groups.iter().enumerate() {
+            let path = format!("focuserGroups[{index}]");
+            if group.id.is_nil() || !ids.insert(group.id) {
+                error(
+                    format!("{path}.id"),
+                    "identity",
+                    "Group IDs must be non-nil and distinct from other IDs",
+                );
+            }
+            if let Err(problem) = group.validate() {
+                error(path.clone(), "group", problem.message);
+                continue;
+            }
+            let mut leaves = BTreeSet::new();
+            for (member, calibration) in group.members.iter().enumerate() {
+                let reference = format!("{path}.members[{member}].source");
+                match self.physical_focuser_source(calibration.source) {
+                    Ok(leaf) if leaves.insert(leaf) => {}
+                    Ok(_) => error(
+                        reference,
+                        "duplicate",
+                        "Group members must resolve to different physical focusers",
+                    ),
+                    Err(problem) => error(reference, "source", problem),
+                }
+            }
+        }
         errors
+    }
+    /// Follow only typed focuser proxy aliases. Bound traversal independently of
+    /// prior graph validation so malformed/cyclic drafts remain safe to inspect.
+    pub fn physical_focuser_source(&self, mut source: Uuid) -> Result<Uuid, &'static str> {
+        let mut visited = BTreeSet::new();
+        loop {
+            if !visited.insert(source) || visited.len() > MAX_DEVICES {
+                return Err("Focuser source aliases contain a cycle");
+            }
+            let config = self
+                .sources
+                .iter()
+                .find(|entry| entry.id == source)
+                .ok_or("Focuser source does not exist")?;
+            match config.backend {
+                SourceBackend::Virtual { output } => {
+                    let output = self
+                        .outputs
+                        .iter()
+                        .find(|entry| entry.id == output)
+                        .ok_or("Focuser alias output does not exist")?;
+                    match output.device {
+                        VirtualDevice::Proxy {
+                            source: next,
+                            device_type: DeviceType::Focuser,
+                        } => source = next,
+                        _ => {
+                            return Err("Group members must resolve through focuser proxy outputs");
+                        }
+                    }
+                }
+                _ if self.source_type(source) == Some(DeviceType::Focuser) => return Ok(source),
+                _ => return Err("Group members must resolve to focuser sources"),
+            }
+        }
     }
     fn validate_readout(&self, readout: &Readout) -> Vec<FieldError> {
         let unit = match readout {
@@ -1165,11 +1260,11 @@ impl ConfigStore {
     }
     pub fn new(path: Option<PathBuf>, mut initial: HubConfig) -> Result<Self, ApplyError> {
         let mut errors = initial.validate();
-        errors.extend(
-            initial
-                .identities
-                .register(&initial.sources, &initial.outputs),
-        );
+        errors.extend(initial.identities.register(
+            &initial.sources,
+            &initial.outputs,
+            &initial.focuser_groups,
+        ));
         if !errors.is_empty() {
             return Err(ApplyError::Invalid(errors));
         }
@@ -1246,7 +1341,10 @@ impl ConfigStore {
                 "Identity history is managed by the hub and cannot be edited",
             ));
         }
-        errors.extend(next.identities.register(&next.sources, &next.outputs));
+        errors.extend(
+            next.identities
+                .register(&next.sources, &next.outputs, &next.focuser_groups),
+        );
         if !errors.is_empty() {
             return Err(ApplyError::Invalid(errors));
         }

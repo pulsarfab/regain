@@ -2938,7 +2938,7 @@ Camera creation does not enable coordinated multi-camera capture or close the
 remaining conformance, interactive and physical acceptance gates.
 
 
-### Explicit focuser coordination (core development)
+### Explicit focuser coordination
 
 The shared Rust core now provides calibrated absolute-focuser groups with actor
 command reservations across all members, preflight before any write, live checks
@@ -2950,7 +2950,28 @@ waiter preserves the owned task; explicit cancellation stops further work while
 preserving any in-flight command's acknowledgement/uncertainty. See
 [the coordination contract](hub-coordination.md) for bounds and partial results.
 
-This API is not yet in HubConfig, IPC or generated frontend descriptors. Host
-activity/revision retention, physical alias resolution, bounded operation
-reattachment/shutdown and native NINA orchestration remain required. Existing
-single-device frontends do not advertise group support from this core increment.
+`focuserGroups` is an optional schema-1 configuration collection, bounded to 64
+groups with stable non-repurposable IDs. Generated descriptors carry calibration,
+timing, labels, bounds and the capability gate. Virtual focuser aliases resolve to
+distinct physical leaves before publication. Operations retain the host instance,
+configuration revision, group/operation UUIDs and configured-to-physical bindings.
+The host reserves activity before spawning and through source connection and
+in-flight command cleanup, so apply cannot race admitted group work.
+
+Private commands `startFocuserGroup`, `focuserGroupStatus` and
+`cancelFocuserGroup` require `expectedRevision`. Status optionally names an exact
+operation; cancellation always names one. Start/cancel are classified as mutations
+by both Rust and managed clients. An EOF or lost acknowledgement never replays a
+start and does not cancel its owned task. The latest operation is retained per
+group, including terminal member results, until another explicit start or host/
+revision replacement. Status is inert and cancellation is not a physical Halt.
+Shutdown cancels further work, awaits bounded mutation acknowledgement and drains
+the registry. No operation is automatically resumed after a restart.
+
+Native setup and NINA consume these same commands/results. The shared group panel
+supports explicit status/start/cancel. The NINA sequence instruction waits for
+per-member exact completion and retains an interrupted/failed-step flag across
+clone/save, requiring explicit reconciliation before another operation. Native
+ASCOM/Alpaca standard Focuser outputs continue to represent individual devices;
+coordination does not invent a standard multi-device interface. Camera groups,
+real OS resume integration and final acceptance remain open.

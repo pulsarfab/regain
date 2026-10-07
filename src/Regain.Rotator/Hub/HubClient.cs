@@ -76,7 +76,7 @@ public sealed partial class HubClient : IDisposable
     // finalized and close its stream instead of keeping its leases alive forever.
     private sealed class Connection
     {
-        private static readonly string[] knownOperations = ["cameraTiming", "cameraCaptureTiming", "cameraControl", "describeConfig", "getConfig", "validateConfig", "applyConfig",
+        private static readonly string[] knownOperations = ["startFocuserGroup", "focuserGroupStatus", "cancelFocuserGroup", "cameraTiming", "cameraCaptureTiming", "cameraControl", "describeConfig", "getConfig", "validateConfig", "applyConfig",
             "listDevices", "sourceStatus", "outputStatus", "hostStatus", "inspectSource", "updateSimulation", "createCredential",
             "credentialStatus", "deleteCredential", "connect", "disconnect", "changeConnection", "get", "put"];
         private readonly object gate = new();
@@ -107,7 +107,7 @@ public sealed partial class HubClient : IDisposable
             } catch (Exception) { throw new HubException(HubFailure.InvalidRequest); }
             var deadline = cameraDeadline.HasValue ? cameraDeadline.Value + limits.FrameTimeout + limits.FrameTimeout : limits.RequestTimeout;
             if (deadline < limits.RequestTimeout) deadline = limits.RequestTimeout;
-            var p = new Pending(operation is "cameraControl" or "put" or "connect" or "disconnect" or "changeConnection" or
+            var p = new Pending(operation is "startFocuserGroup" or "cancelFocuserGroup" or "cameraControl" or "put" or "connect" or "disconnect" or "changeConnection" or
                 "applyConfig" or "createCredential" or "deleteCredential" or "updateSimulation", caller, deadline);
             lock (gate) {
                 if (closed.Task.IsCompleted) throw new HubException(HubFailure.Disconnected);

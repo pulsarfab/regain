@@ -1,0 +1,25 @@
+<ResourceDictionary x:Class="Regain.NINA.HubSequenceTemplates"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="clr-namespace:Regain.NINA"
+    xmlns:nina="clr-namespace:NINA.View.Sequencer;assembly=NINA.Sequencer">
+    <DataTemplate DataType="{x:Type local:MoveHubFocuserGroup}">
+        <nina:SequenceBlockView>
+            <nina:SequenceBlockView.SequenceItemContent>
+                <StackPanel>
+                    <WrapPanel>
+                        <Button Content="Choose saved group…" Click="ChooseGroup" Margin="0,0,8,4" />
+                        <TextBlock Text="{Binding GroupLabel}" VerticalAlignment="Center" TextWrapping="Wrap" />
+                    </WrapPanel>
+                    <WrapPanel>
+                        <TextBlock Text="Logical target (steps)" VerticalAlignment="Center" />
+                        <TextBox Width="100" Margin="8,0" Text="{Binding Target, UpdateSourceTrigger=PropertyChanged, ValidatesOnExceptions=True}" />
+                        <Button Content="Inspect retained result…" Click="Inspect" Margin="0,4,8,4" />
+                        <Button Content="Allow new operation after inspection…" Click="AllowNewOperation" Margin="0,4,0,4" />
+                    </WrapPanel>
+                    <TextBlock Text="{Binding Outcome}" TextWrapping="Wrap" />
+                </StackPanel>
+            </nina:SequenceBlockView.SequenceItemContent>
+        </nina:SequenceBlockView>
+    </DataTemplate>
+</ResourceDictionary>

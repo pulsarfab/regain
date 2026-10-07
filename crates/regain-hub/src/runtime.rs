@@ -11,6 +11,7 @@ use crate::{
         runtime::CameraResources,
     },
     config::{Bitness, DeviceType, HubConfig, SafetyMember, VirtualDevice},
+    coordination::{HostedFocuserStatus, host::GroupCoordinator},
     covercalibrator::{CoverCalibratorController, CoverCalibratorSession},
     factory::{CredentialProvider, build_sources_bound},
     filterwheel::{FilterWheelController, FilterWheelSession},
@@ -66,6 +67,7 @@ pub struct HubRuntime {
     outputs: BTreeMap<Uuid, Output>,
     cameras: BTreeMap<Uuid, Arc<CameraSupervisor>>,
     activity: ActivityCounter,
+    groups: GroupCoordinator,
     lifecycle: Mutex<Lifecycle>,
     shutdown: tokio::sync::OnceCell<Result<(), Vec<(Uuid, SourceError)>>>,
 }
@@ -329,6 +331,7 @@ impl HubRuntime {
             outputs.insert(output.id, mapped);
         }
         Ok(Arc::new(Self {
+            groups: GroupCoordinator::new(&config, &registry, resources.activity()),
             com_architectures: Vec::new(),
             native_camera_sources: false,
             runtime_id: Uuid::new_v4(),
@@ -367,6 +370,7 @@ impl HubRuntime {
             "proxyOutputs",
             "cameraOutputs",
             "focuserOutputs",
+            "focuserGroups",
             "rotatorOutputs",
             "filterWheelOutputs",
             "coverCalibratorOutputs",
@@ -731,6 +735,55 @@ impl HubRuntime {
     pub fn active_connections(&self) -> usize {
         self.activity.active()
     }
+    pub fn start_focuser_group(
+        &self,
+        host: Uuid,
+        expected_revision: Uuid,
+        group: Uuid,
+        target: i32,
+    ) -> Result<HostedFocuserStatus, SourceError> {
+        let lifecycle = self.lifecycle.lock().unwrap();
+        if lifecycle.closed {
+            return Err(disconnected());
+        }
+        if lifecycle.frozen {
+            return Err(SourceError::new(
+                ErrorKind::Busy,
+                "Configuration replacement is in progress",
+            ));
+        }
+        self.group_revision(expected_revision)?;
+        // Reserve retained activity while holding the same lifecycle lock used
+        // by quiesce. EOF of the admitting client never releases that activity.
+        self.groups.start(host, self.revision(), group, target)
+    }
+    pub fn focuser_group_status(
+        &self,
+        expected_revision: Uuid,
+        group: Uuid,
+        operation: Option<Uuid>,
+    ) -> Result<HostedFocuserStatus, SourceError> {
+        self.group_revision(expected_revision)?;
+        self.groups.status(group, operation)
+    }
+    pub fn cancel_focuser_group(
+        &self,
+        expected_revision: Uuid,
+        group: Uuid,
+        operation: Uuid,
+    ) -> Result<HostedFocuserStatus, SourceError> {
+        self.group_revision(expected_revision)?;
+        self.groups.cancel(group, operation)
+    }
+    fn group_revision(&self, expected_revision: Uuid) -> Result<(), SourceError> {
+        if expected_revision != self.revision() {
+            return Err(SourceError::new(
+                ErrorKind::InvalidValue,
+                "Configuration revision changed",
+            ));
+        }
+        Ok(())
+    }
 
     pub fn client(self: &Arc<Self>) -> Arc<ClientSession> {
         self.client_with_id(Uuid::new_v4())
@@ -787,6 +840,7 @@ impl HubRuntime {
                 for client in clients.into_iter().filter_map(|client| client.upgrade()) {
                     client.close();
                 }
+                self.groups.stop().await;
                 for output in self.outputs.values() {
                     if let Output::Safety { active, .. } = output
                         && let Some(output) = active.lock().unwrap().upgrade()

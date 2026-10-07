@@ -14,20 +14,30 @@ use tokio::{
     time::{Instant, sleep, sleep_until},
 };
 use uuid::Uuid;
+pub(crate) mod host;
+pub use host::{FocuserBinding, HostedFocuserPhase, HostedFocuserStatus};
 
-#[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct FocuserCalibration {
-    /// Stable physical source identity, never an enumeration index.
+    /// Stable configured source identity, never an enumeration index. The host
+    /// resolves virtual aliases to physical leaves before constructing a group.
+    #[schemars(extend("x-regain" = {"reference":"source", "deviceType":"focuser"}))]
     pub source: Uuid,
     /// Signed scale numerator; negative values reverse logical motion.
+    #[schemars(extend("default" = 1, "not" = {"const":0}))]
+    #[schemars(range(min = -2147483648_i64, max = 2147483647_i64))]
     pub scale_numerator: i32,
     /// Positive scale denominator. Rounding is nearest, ties away from zero.
+    #[schemars(range(min = 1, max = 2147483647_i64), extend("default" = 1))]
     pub scale_denominator: i32,
     /// Absolute device steps added after rounding the scaled logical target.
+    #[schemars(range(min = -2147483648_i64, max = 2147483647_i64), extend("x-regain" = {"units":"steps"}))]
     pub offset: i32,
     /// Inclusive configured travel bounds, additionally restricted by live limits.
+    #[schemars(range(min = 0, max = 2147483647_i64), extend("x-regain" = {"units":"steps"}))]
     pub minimum: i32,
+    #[schemars(range(min = 0, max = 2147483647_i64), extend("x-regain" = {"units":"steps"}))]
     pub maximum: i32,
 }
 impl FocuserCalibration {
@@ -59,23 +69,35 @@ impl FocuserCalibration {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct FocuserGroupConfig {
+    /// Stable group identity retained across edits and frontend reconnection.
+    #[schemars(extend("readOnly" = true, "x-regain" = {"immutableAfterCreate":true}))]
     pub id: Uuid,
+    /// Name shown in coordination controls; no standard Focuser output is created.
+    #[schemars(length(min = 1, max = 200))]
+    pub label: String,
     /// Inclusive logical coordinates admitted before any source I/O.
+    #[schemars(range(min = -2147483648_i64, max = 2147483647_i64))]
     pub minimum: i32,
+    #[schemars(range(min = -2147483648_i64, max = 2147483647_i64))]
     pub maximum: i32,
     /// Whole-operation bound, including reservations, preflight and completion.
     /// An in-flight mutation finishes its existing actor deadline before return.
+    #[schemars(range(min = 0.01, max = 300.0), extend("default" = 120.0, "x-regain" = {"units":"s"}))]
     pub timeout_seconds: f64,
     /// Completion observation interval; does not change source polling policy.
+    #[schemars(range(min = 0.01, max = 10.0), extend("default" = 0.1, "x-regain" = {"units":"s"}))]
     pub poll_seconds: f64,
+    #[schemars(length(min = 2, max = 32))]
     pub members: Vec<FocuserCalibration>,
 }
 impl FocuserGroupConfig {
     pub fn validate(&self) -> Result<(), SourceError> {
         if self.id.is_nil()
+            || self.label.trim().is_empty()
+            || self.label.chars().count() > 200
             || self.maximum < self.minimum
             || !(2..=32).contains(&self.members.len())
             || !self.timeout_seconds.is_finite()
@@ -182,6 +204,22 @@ impl FocuserGroup {
         self: &Arc<Self>,
         logical_target: i32,
     ) -> Result<FocuserGroupOperation, SourceError> {
+        self.start_owned(
+            logical_target,
+            Uuid::new_v4(),
+            CancellationToken::new(),
+            Instant::now() + Duration::from_secs_f64(self.config.timeout_seconds),
+            None,
+        )
+    }
+    pub(crate) fn start_owned(
+        self: &Arc<Self>,
+        logical_target: i32,
+        operation: Uuid,
+        cancel: CancellationToken,
+        deadline: Instant,
+        retained: Option<crate::activity::Activity>,
+    ) -> Result<FocuserGroupOperation, SourceError> {
         if !(self.config.minimum..=self.config.maximum).contains(&logical_target) {
             return Err(invalid(
                 "Focuser group logical target is outside configured travel",
@@ -199,7 +237,7 @@ impl FocuserGroup {
             SourceError::new(ErrorKind::Busy, "Focuser group operation is already active")
         })?;
         let report = FocuserGroupResult {
-            operation: Uuid::new_v4(),
+            operation,
             group: self.config.id,
             logical_target,
             sequence: 1,
@@ -219,15 +257,20 @@ impl FocuserGroup {
                 .collect(),
         };
         let (publish, status) = watch::channel(report);
-        let cancel = CancellationToken::new();
         let task_cancel = cancel.clone();
         let group = self.clone();
-        let deadline = Instant::now() + Duration::from_secs_f64(self.config.timeout_seconds);
+        let (finish, finished) = watch::channel(false);
         runtime.spawn(async move {
-            let _active = active;
             group.run(publish, task_cancel, deadline).await;
+            drop(active);
+            drop(retained);
+            finish.send_replace(true);
         });
-        Ok(FocuserGroupOperation { status, cancel })
+        Ok(FocuserGroupOperation {
+            status,
+            cancel,
+            finished,
+        })
     }
 
     async fn run(
@@ -396,8 +439,18 @@ impl FocuserGroup {
 pub struct FocuserGroupOperation {
     status: watch::Receiver<FocuserGroupResult>,
     cancel: CancellationToken,
+    finished: watch::Receiver<bool>,
 }
 impl FocuserGroupOperation {
+    pub(crate) async fn settled(&mut self) -> Result<(), SourceError> {
+        while !*self.finished.borrow_and_update() {
+            self.finished
+                .changed()
+                .await
+                .map_err(|_| SourceError::uncertain())?;
+        }
+        Ok(())
+    }
     /// Local immutable observation: no I/O or mutation on a status read.
     pub fn status(&self) -> FocuserGroupResult {
         self.status.borrow().clone()

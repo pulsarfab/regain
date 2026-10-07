@@ -2,6 +2,283 @@
   "apply": "disconnect",
   "capabilities": [],
   "contractVersion": 1,
+  "coordination": {
+    "focuserGroups": {
+      "cancelHaltsEquipment": false,
+      "cancelOperation": "cancelFocuserGroup",
+      "configurationKey": "focuserGroups",
+      "responseSchema": {
+        "$defs": {
+          "ErrorKind": {
+            "enum": [
+              "connecting",
+              "disconnected",
+              "busy",
+              "transient",
+              "permanent",
+              "uncertain",
+              "unsupported",
+              "invalidValue",
+              "unavailable"
+            ],
+            "type": "string"
+          },
+          "FocuserBinding": {
+            "additionalProperties": false,
+            "properties": {
+              "configuredSource": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "physicalSource": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "configuredSource",
+              "physicalSource"
+            ],
+            "type": "object"
+          },
+          "FocuserGroupPhase": {
+            "enum": [
+              "preflight",
+              "moving",
+              "complete",
+              "preflightFailed",
+              "partialFailure",
+              "cancelled",
+              "deadline"
+            ],
+            "type": "string"
+          },
+          "FocuserGroupResult": {
+            "additionalProperties": false,
+            "properties": {
+              "group": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "logicalTarget": {
+                "format": "int32",
+                "type": "integer"
+              },
+              "members": {
+                "items": {
+                  "$ref": "#/$defs/FocuserMemberResult"
+                },
+                "type": "array"
+              },
+              "operation": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "phase": {
+                "$ref": "#/$defs/FocuserGroupPhase"
+              },
+              "sequence": {
+                "description": "Increases only on publication, never because a frontend reads status.",
+                "format": "uint64",
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "operation",
+              "group",
+              "logicalTarget",
+              "sequence",
+              "phase",
+              "members"
+            ],
+            "type": "object"
+          },
+          "FocuserMemberPhase": {
+            "enum": [
+              "notStarted",
+              "rejected",
+              "moving",
+              "complete",
+              "failed",
+              "uncertain"
+            ],
+            "type": "string"
+          },
+          "FocuserMemberResult": {
+            "additionalProperties": false,
+            "properties": {
+              "error": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/SourceError"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "generation": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "lastPosition": {
+                "format": "int32",
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "phase": {
+                "$ref": "#/$defs/FocuserMemberPhase"
+              },
+              "source": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "target": {
+                "format": "int32",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "source",
+              "generation",
+              "target",
+              "phase"
+            ],
+            "type": "object"
+          },
+          "HostedFocuserPhase": {
+            "enum": [
+              "connecting",
+              "running",
+              "complete",
+              "preflightFailed",
+              "partialFailure",
+              "cancelled",
+              "deadline",
+              "failed"
+            ],
+            "type": "string"
+          },
+          "SourceError": {
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "$ref": "#/$defs/ErrorKind"
+              },
+              "message": {
+                "type": "string"
+              },
+              "upstreamCode": {
+                "format": "int32",
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "message"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "bindings": {
+            "items": {
+              "$ref": "#/$defs/FocuserBinding"
+            },
+            "type": "array"
+          },
+          "configurationRevision": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/SourceError"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "failedSource": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "group": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "hostInstance": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "logicalTarget": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "operation": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "phase": {
+            "$ref": "#/$defs/HostedFocuserPhase"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/FocuserGroupResult"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sequence": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "hostInstance",
+          "configurationRevision",
+          "operation",
+          "group",
+          "logicalTarget",
+          "sequence",
+          "phase",
+          "bindings"
+        ],
+        "title": "HostedFocuserStatus",
+        "type": "object"
+      },
+      "retention": "latestPerGroupUntilHostOrRevisionChanges",
+      "startOperation": "startFocuserGroup",
+      "statusOpensSources": false,
+      "statusOperation": "focuserGroupStatus",
+      "target": {
+        "description": "Logical group coordinate. Saved group bounds and each calibrated device target are checked before connecting sources.",
+        "format": "int32",
+        "label": "Logical target",
+        "maximum": 2147483647,
+        "minimum": -2147483648,
+        "type": "integer",
+        "units": "steps"
+      }
+    }
+  },
   "outputDiagnostics": {
     "countsSafetyObservations": false,
     "covercalibratorProperties": [
@@ -2756,6 +3033,181 @@
         ],
         "type": "string"
       },
+      "FocuserCalibration": {
+        "additionalProperties": false,
+        "properties": {
+          "maximum": {
+            "format": "int32",
+            "maximum": 2147483647,
+            "minimum": 0,
+            "title": "Maximum",
+            "type": "integer",
+            "x-regain": {
+              "units": "steps"
+            }
+          },
+          "minimum": {
+            "description": "Inclusive configured travel bounds, additionally restricted by live limits.",
+            "format": "int32",
+            "maximum": 2147483647,
+            "minimum": 0,
+            "title": "Minimum",
+            "type": "integer",
+            "x-regain": {
+              "units": "steps"
+            }
+          },
+          "offset": {
+            "description": "Absolute device steps added after rounding the scaled logical target.",
+            "format": "int32",
+            "maximum": 2147483647,
+            "minimum": -2147483648,
+            "title": "Offset",
+            "type": "integer",
+            "x-regain": {
+              "units": "steps"
+            }
+          },
+          "scaleDenominator": {
+            "default": 1,
+            "description": "Positive scale denominator. Rounding is nearest, ties away from zero.",
+            "format": "int32",
+            "maximum": 2147483647,
+            "minimum": 1,
+            "title": "Scale Denominator",
+            "type": "integer",
+            "x-regain": {
+              "apply": "reconnect"
+            }
+          },
+          "scaleNumerator": {
+            "default": 1,
+            "description": "Signed scale numerator; negative values reverse logical motion.",
+            "format": "int32",
+            "maximum": 2147483647,
+            "minimum": -2147483648,
+            "not": {
+              "const": 0
+            },
+            "title": "Scale Numerator",
+            "type": "integer",
+            "x-regain": {
+              "apply": "reconnect"
+            }
+          },
+          "source": {
+            "description": "Stable configured source identity, never an enumeration index. The host\nresolves virtual aliases to physical leaves before constructing a group.",
+            "format": "uuid",
+            "title": "Source",
+            "type": "string",
+            "x-regain": {
+              "deviceType": "focuser",
+              "reference": "source"
+            }
+          }
+        },
+        "required": [
+          "source",
+          "scaleNumerator",
+          "scaleDenominator",
+          "offset",
+          "minimum",
+          "maximum"
+        ],
+        "type": "object"
+      },
+      "FocuserGroupConfig": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Stable group identity retained across edits and frontend reconnection.",
+            "format": "uuid",
+            "readOnly": true,
+            "title": "Id",
+            "type": "string",
+            "x-regain": {
+              "immutableAfterCreate": true
+            }
+          },
+          "label": {
+            "description": "Name shown in coordination controls; no standard Focuser output is created.",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Label",
+            "type": "string",
+            "x-regain": {
+              "apply": "reconnect"
+            }
+          },
+          "maximum": {
+            "format": "int32",
+            "maximum": 2147483647,
+            "minimum": -2147483648,
+            "title": "Maximum",
+            "type": "integer",
+            "x-regain": {
+              "apply": "reconnect"
+            }
+          },
+          "members": {
+            "items": {
+              "$ref": "#/$defs/FocuserCalibration"
+            },
+            "maxItems": 32,
+            "minItems": 2,
+            "title": "Members",
+            "type": "array",
+            "x-regain": {
+              "apply": "reconnect"
+            }
+          },
+          "minimum": {
+            "description": "Inclusive logical coordinates admitted before any source I/O.",
+            "format": "int32",
+            "maximum": 2147483647,
+            "minimum": -2147483648,
+            "title": "Minimum",
+            "type": "integer",
+            "x-regain": {
+              "apply": "reconnect"
+            }
+          },
+          "pollSeconds": {
+            "default": 0.1,
+            "description": "Completion observation interval; does not change source polling policy.",
+            "format": "double",
+            "maximum": 10.0,
+            "minimum": 0.01,
+            "title": "Poll Seconds",
+            "type": "number",
+            "x-regain": {
+              "units": "s"
+            }
+          },
+          "timeoutSeconds": {
+            "default": 120.0,
+            "description": "Whole-operation bound, including reservations, preflight and completion.\nAn in-flight mutation finishes its existing actor deadline before return.",
+            "format": "double",
+            "maximum": 300.0,
+            "minimum": 0.01,
+            "title": "Timeout Seconds",
+            "type": "number",
+            "x-regain": {
+              "units": "s"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "minimum",
+          "maximum",
+          "timeoutSeconds",
+          "pollSeconds",
+          "members"
+        ],
+        "type": "object"
+      },
       "IdentityLedger": {
         "additionalProperties": false,
         "properties": {
@@ -2765,6 +3217,19 @@
             },
             "title": "Channels",
             "type": "object",
+            "x-regain": {
+              "apply": "reconnect"
+            }
+          },
+          "groups": {
+            "default": [],
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Groups",
+            "type": "array",
+            "uniqueItems": true,
             "x-regain": {
               "apply": "reconnect"
             }
@@ -4245,10 +4710,24 @@
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "additionalProperties": false,
     "properties": {
+      "focuserGroups": {
+        "default": [],
+        "description": "Explicit calibrated motion groups. These do not create standard device outputs.",
+        "items": {
+          "$ref": "#/$defs/FocuserGroupConfig"
+        },
+        "maxItems": 64,
+        "title": "Focuser Groups",
+        "type": "array",
+        "x-regain": {
+          "requiresCapability": "focuserGroups"
+        }
+      },
       "identities": {
         "$ref": "#/$defs/IdentityLedger",
         "default": {
           "channels": {},
+          "groups": [],
           "outputs": {},
           "sources": {}
         },

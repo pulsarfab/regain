@@ -98,6 +98,24 @@ pub enum Command {
         command: Box<Command>,
     },
     DescribeConfig {},
+    StartFocuserGroup {
+        group: Uuid,
+        target: i32,
+        #[serde(rename = "expectedRevision")]
+        expected_revision: Uuid,
+    },
+    FocuserGroupStatus {
+        group: Uuid,
+        operation: Option<Uuid>,
+        #[serde(rename = "expectedRevision")]
+        expected_revision: Uuid,
+    },
+    CancelFocuserGroup {
+        group: Uuid,
+        operation: Uuid,
+        #[serde(rename = "expectedRevision")]
+        expected_revision: Uuid,
+    },
     GetConfig {},
     ValidateConfig {
         candidate: Box<HubConfig>,
@@ -511,14 +529,14 @@ where
                     if !greeted {
                         if !matches!(request.command, Command::Hello {}) { return Err(ProtocolError::Handshake); }
                         greeted = true;
-                        let mut operations = vec!["cameraImage","cameraTiming","cameraCaptureTiming","cameraControl","describeConfig","getConfig","validateConfig","listDevices","sourceStatus","outputStatus","inspectSource","updateSimulation","connect","disconnect","changeConnection","get","put","hostStatus"];
+                        let mut operations = vec!["cameraImage","cameraTiming","cameraCaptureTiming","cameraControl","describeConfig","getConfig","validateConfig","listDevices","sourceStatus","outputStatus","inspectSource","updateSimulation","startFocuserGroup","focuserGroupStatus","cancelFocuserGroup","connect","disconnect","changeConnection","get","put","hostStatus"];
                         if service.can_apply() { operations.push("applyConfig"); }
                         if service.credential_description().is_some() { operations.extend(["createCredential", "credentialStatus", "deleteCredential"]); }
                         let hello = json!({"protocolVersion":VERSION, "instanceId":service.instance_id(),
                             "hostInstance":service.host_id(), "configurationRevision":service.configuration().revision, "clientId":client.id(),
                             "maxFrameBytes":MAX_FRAME_BYTES, "maxInFlight":MAX_IN_FLIGHT,
                             "operations":operations,
-                            "capabilities":["switchOutputs","safetyOutputs","weatherOutputs","focuserOutputs","rotatorOutputs","filterWheelOutputs","coverCalibratorOutputs","cameraOutputs","cameraAcquisition","cameraImageStream","cameraOperationTiming","cameraCaptureTiming","rotatorMotionReceipt","weatherSensorDescription","scalarDeviceState","asyncOutputConnection","switchAsyncContract"]});
+                            "capabilities":["switchOutputs","safetyOutputs","weatherOutputs","focuserOutputs","focuserGroups","rotatorOutputs","filterWheelOutputs","coverCalibratorOutputs","cameraOutputs","cameraAcquisition","cameraImageStream","cameraOperationTiming","cameraCaptureTiming","rotatorMotionReceipt","weatherSensorDescription","scalarDeviceState","asyncOutputConnection","switchAsyncContract"]});
                         write_response(&mut writer, Response::new(request.id, Ok(hello)), limits.frame_timeout).await?;
                         continue;
                     }
@@ -602,6 +620,8 @@ async fn dispatch_bounded(
             | Command::CreateCredential { .. }
             | Command::DeleteCredential { .. }
             | Command::UpdateSimulation { .. }
+            | Command::StartFocuserGroup { .. }
+            | Command::CancelFocuserGroup { .. }
     );
     let result = if let Some((output, kind)) = crate::camera::ipc_timing::operation(&command) {
         // Select and bind one revision before deriving the bound. Configuration
@@ -657,6 +677,55 @@ async fn dispatch_service(
     limits: Limits,
 ) -> Result<Value, RpcError> {
     match command {
+        Command::StartFocuserGroup {
+            group,
+            target,
+            expected_revision,
+        } => {
+            let runtime = service.runtime()?;
+            if expected_revision != runtime.revision() {
+                return Err(UpdateError::Conflict.into());
+            }
+            let _client = client.bind(&runtime)?;
+            Ok(json!(runtime.start_focuser_group(
+                service.host_id(),
+                expected_revision,
+                group,
+                target
+            )?))
+        }
+        Command::FocuserGroupStatus {
+            group,
+            operation,
+            expected_revision,
+        } => {
+            let runtime = service.runtime()?;
+            if expected_revision != runtime.revision() {
+                return Err(UpdateError::Conflict.into());
+            }
+            let _client = client.bind(&runtime)?;
+            Ok(json!(runtime.focuser_group_status(
+                expected_revision,
+                group,
+                operation
+            )?))
+        }
+        Command::CancelFocuserGroup {
+            group,
+            operation,
+            expected_revision,
+        } => {
+            let runtime = service.runtime()?;
+            if expected_revision != runtime.revision() {
+                return Err(UpdateError::Conflict.into());
+            }
+            let _client = client.bind(&runtime)?;
+            Ok(json!(runtime.cancel_focuser_group(
+                expected_revision,
+                group,
+                operation
+            )?))
+        }
         Command::CameraCaptureTiming {
             output,
             expected_revision,
@@ -750,6 +819,9 @@ async fn dispatch(
         | Command::CameraTiming { .. }
         | Command::CameraCaptureTiming { .. }
         | Command::CameraControl { .. }
+        | Command::StartFocuserGroup { .. }
+        | Command::FocuserGroupStatus { .. }
+        | Command::CancelFocuserGroup { .. }
         | Command::HostStatus {}
         | Command::DescribeConfig {}
         | Command::CreateCredential { .. }

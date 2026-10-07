@@ -6711,3 +6711,73 @@ retention, physical leaf resolution, bounded IPC operation retention/reattachmen
 shutdown/recovery and native NINA orchestration. Camera synchronization, discovery
 and transfer, OS resume, broader conformance/interactive/physical acceptance,
 README/site, main reconciliation and the final audit/merge are unchanged gates.
+
+## Saved focuser groups, host ownership and native NINA (2026-10-07)
+
+Reviewed the complete admission/retirement path, rather than treating the core
+group controller as a finished frontend feature. Saved groups use the existing
+schema, atomic store, identity ledger and generated editor. Validation follows
+only typed focuser proxy aliases to physical leaves, bounds traversal independently
+of prior graph validation, and rejects duplicate leaves. IDs cannot be repurposed
+across source/output/channel/group kinds. Old schema-1 files default to no groups.
+
+The coordinator reserves activity while holding the runtime lifecycle lock,
+before spawning or connecting. Pending connections therefore block apply just as
+admitted motion does. One retained operation per configured group bounds memory;
+new explicit starts retire the prior ID. Read/unread acknowledgement EOF tests
+prove work survives the caller and a new client can inspect/cancel the exact
+operation. Stale revision and operation IDs cannot retarget a move. Status does
+not acquire equipment. Shutdown closes admission, cancels later work, awaits
+admitted mutation acknowledgement and then drains the existing registry; it
+never sends an implicit Halt or rollback. Independent child activity retention
+also protects quiesce if its outer monitor fails, and failed/uncertain monitor
+results fence a new start in that runtime.
+
+The managed group client consumes the generated result schema, checks host,
+revision, operation, physical alias mapping, calibrated targets, generations and
+non-regressing publication sequences, and rejects changed terminal reports.
+Unknown start outcomes cannot replay through that client. Shared native controls
+require a retained-status read before a new start, keep cancel tied to the shown
+operation, and disable selection edits during an admitted request. The NINA
+sequence instruction uses native IPC, reports each member and succeeds only on
+exact complete results. Its interrupted/failed flag is saved and cloned before
+dispatch; error retry remains fenced until an explicit user reconciliation.
+Changing a group selection alone cannot clear that flag. Cancellation addresses
+only a known operation and retains the distinction between cancel and Halt.
+
+Local validation:
+
+- Full hub/Alpaca regression passes, including 39 focuser cases (five new
+  host/IPC tests) and 18 configuration cases. Evidence:
+  `artifacts/hub-group-host-full-rust.log`. Strict Clippy/all targets and Rust
+  1.89/all targets pass in `hub-group-host-clippy.log` and
+  `hub-group-host-msrv.log`. Schema freshness, formatting and diff checks pass.
+- Independent JSON Schema validation passes all 11 cases; browser contract,
+  creation/default/identity and existing frontend tests pass. The independent
+  validator found missing explicit Int32 bounds in the generated group fields;
+  those bounds are corrected. System Python lacks jsonschema; the existing
+  private `artifacts/hub-schema-venv` supplies it without changing system Python.
+- All 18 focused managed group cases pass. The first full managed run found five
+  cold setup/creation failures because `HubInitialization` rejected the new root
+  key. Its bounded, strict identity reader now admits the optional group array.
+  The complete rerun passes **337 cases with one explicit registered-COM-fixture
+  skip**, recorded in `artifacts/hub-group-managed-full.log`; the initial failed
+  log is retained as `hub-group-managed-first-failed.log`.
+- Real net48 x86/x64 full private suites pass with warnings denied, including new
+  calibrated group/alias/reattachment/member-result/lease-cleanup cases:
+  `artifacts/hub-group-net48-full.log`. NINA warnings-denied build passes.
+- The actual WPF panel was rendered, inspected and reopened to read the same
+  completed operation. The retained-results simulation screenshot is in
+  `docs/images/hub-focuser-group-results-simulation.png`. NINA's sequence template
+  is compiled/exported and its instruction executes against the real private
+  host. A standalone attempt to instantiate its SequenceBlockView encountered
+  NINA's Application-dependent drag/drop behavior; the fixture checks its typed
+  exported resource instead. Installed-NINA rendering remains an acceptance gate,
+  with no production workaround for the missing private-fixture Application.
+
+No attached hardware or installed vendor driver is used. Synchronized cameras,
+discovery/configuration transfer, actual OS resume integration, remaining
+conformance/interactive/physical acceptance, README/site updates, main
+reconciliation and final CI/audit/merge remain required. Per the user's pacing
+instruction, local checks/review are batched at useful construction increments;
+intermediate CI is not a waiting gate. Keep the one PR draft until final gates.

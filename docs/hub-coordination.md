@@ -1,8 +1,10 @@
 # Explicit hub coordination
 
-Status: development core on `codex/regain-hub`. This is not yet a saved hub
-configuration or a frontend feature. Milestone 5 remains open until host/IPC,
-generated configuration, native NINA orchestration and acceptance are complete.
+Status: development on `codex/regain-hub`. Focuser groups have shared saved
+configuration, host-owned IPC operations, native setup controls and a native NINA
+sequence instruction. Camera coordination and the overall acceptance gates remain
+open. No new standard single-device interface or hardware synchronization promise
+is introduced by coordination.
 
 ## Focuser groups
 
@@ -76,7 +78,66 @@ Status uses one latest immutable report with stable operation/group IDs and an
 increasing publication sequence. Reads do not poll sources or advance sequence.
 Handles can subscribe to changes or await a terminal report.
 
-### Acceptance and remaining integration
+### Saved configuration and host ownership
+
+`HubConfig.focuserGroups` is optional in schema version 1, defaults to an empty
+array, and contains at most 64 groups. Each group has an immutable UUID and a
+label; calibration, bounds and timing use the generated Rust descriptors in the
+browser and native configuration editors. Retired group IDs cannot be reused as
+source, output or channel identities. Removing and restoring a group does not
+reset identity history. The [paired-focusers example](../crates/regain-hub/examples/paired-focusers.json)
+uses only explicit simulations and includes a virtual source alias.
+
+Saved members may reference virtual focuser proxies. Validation follows those
+references to physical source leaves and rejects missing/wrong classes, cycles
+and repeated leaves before publishing a runtime. Operations use physical source
+actors directly; aliases cannot bypass shared command leases. Results retain both
+configured-to-physical bindings and each physical member's transport generation.
+
+The host admits work under its runtime lifecycle lock and reserves activity
+before spawning. This prevents configuration apply from passing through a pending
+connection or admitted move. Status is bounded to the latest operation per group,
+including terminal results; a new explicit start retires the previous operation
+ID. Host restart or configuration revision replacement clears this inventory and
+never resumes equipment work. No persistent operation journal is claimed.
+
+The private IPC commands are `startFocuserGroup(group, target, expectedRevision)`,
+`focuserGroupStatus(group, operation?, expectedRevision)` and
+`cancelFocuserGroup(group, operation, expectedRevision)`. The `focuserGroups`
+capability gates these controls. Status does not connect or poll equipment. Start
+returns the admitted operation's identity; losing its reply never causes an
+automatic retry. A replacement client can read the latest retained status and
+then address that exact operation. Cancellation acknowledges a request, rather
+than completed physical motion. Shutdown stops admission, cancels further work,
+awaits in-flight acknowledgements and drains source ownership without Halt.
+
+Hosted phases are `connecting`, `running`, `complete`, `preflightFailed`,
+`partialFailure`, `cancelled`, `deadline` and `failed`. A connection/capability
+failure identifies its physical source even before a core member report exists.
+Host instance, revision, operation, calibrated targets and publication sequence
+are checked by the managed client before publishing results. An unexpected host
+monitor failure cancels its child task and retains an uncertain result; an
+independent child activity guard prevents configuration quiescence while that
+child is still retiring.
+
+### Native setup and NINA
+
+Add a **Focuser groups** entry in Configuration, choose saved focuser sources and
+their calibration, then review, apply and reload. In the **Focuser groups** tab,
+select the group, read retained status, enter a logical target and explicitly
+start. Read status to inspect member targets, positions and errors. Closing the
+window leaves admitted work running; reopening it can inspect that same result.
+
+In NINA's advanced sequencer, add **Move Regain focuser group** from **PulsarFab
+regain**, choose a saved group and set its logical target. The instruction uses
+local IPC and waits for every member to report its exact target. It needs neither
+an ASCOM output nor an HTTP listener. Cancellation requests cancellation only for
+its known operation; it never guesses an operation after losing the start reply.
+Failed/interrupted steps retain a reconciliation flag through cloning and saved
+sequences, so automatic error retry cannot start another move. Inspect the result
+and equipment, then explicitly allow a new operation before re-running the step.
+
+### Acceptance and remaining work
 
 Private actor tests cover calibration/reverse/rounding/overflow, preflight across
 all members, live limit changes between dispatches, shared lease contention,
@@ -85,10 +146,14 @@ dropped waiters, exact completion, ignored commands, stalled members, deadlines,
 lost acknowledgement without replay, independent sibling observation and source
 retirement. No physical focuser or installed vendor driver is used.
 
-Next integration must resolve physical leaves through virtual aliases, include
-group definitions in the generated configuration contract, retain host activity
-and configuration revision through the owned task, retain a bounded operation
-inventory for IPC reattachment, and define explicit shutdown/recovery behavior.
-Expose the same operation/results in native NINA. These are required work, not
-implied by the core tests. Synchronized camera orchestration, measured start skew,
-per-camera results and explicit abort/continue policy remain separate requirements.
+Host/IPC cases cover alias deduplication, connection failure, revision fencing,
+configuration apply during pending connection, read/unread start-acknowledgement
+loss, explicit reattachment/cancellation, superseded operation IDs and shutdown
+during a held Move. Managed tests cover malformed results, shared schema/drafts,
+actual-host reattachment and member completion, NINA cancellation/failure fences
+across save/clone and a rendered WPF panel. These are private fixtures and explicit
+simulations, not installed-NINA or physical-device acceptance.
+
+Synchronized cameras, measured start skew, separate images/member results,
+abort/continue policy, real OS recovery/resume notifications and the remaining
+interactive/physical acceptance, documentation and final merge gates remain work.

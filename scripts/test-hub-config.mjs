@@ -8,6 +8,20 @@ import { OutputDiagnostics, diagnosticSummary, validateDiagnosticSchema } from '
 
 const description = JSON.parse(readFileSync(new URL('../contracts/hub-config.json', import.meta.url), 'utf8'));
 const reader = configurationContract(description);
+const groupField = reader.fields(reader.root).find(field => field.key === 'focuserGroups');
+assert.equal(groupField.enabled, false);
+assert.equal(reader.fields(reader.root, {}, ['focuserGroups']).find(field => field.key === 'focuserGroups').enabled, true);
+const groupSchema = reader.resolve(groupField.schema.items);
+const groupDraft = initialValue(reader, groupSchema, () => '11111111-1111-4111-8111-111111111111');
+assert.equal(groupDraft.id, '11111111-1111-4111-8111-111111111111');
+assert.equal(groupDraft.timeoutSeconds, 120);
+assert.equal(groupDraft.pollSeconds, 0.1);
+assert.equal(reader.fields(groupSchema, groupDraft).find(field => field.key === 'id').readOnly, true);
+const calibrationSchema = reader.resolve(groupSchema.properties.members.items);
+assert.deepEqual([initialValue(reader, calibrationSchema).scaleNumerator, initialValue(reader, calibrationSchema).scaleDenominator], [1,1]);
+assert.deepEqual([calibrationSchema.properties.offset.minimum, calibrationSchema.properties.offset.maximum], [-2147483648,2147483647]);
+assert.equal(description.coordination.focuserGroups.statusOpensSources, false);
+assert.equal(description.coordination.focuserGroups.cancelHaltsEquipment, false);
 const recoverySchema = reader.root.$defs.CameraRecovery;
 const recoveryFields = reader.fields(recoverySchema);
 assert.equal(recoveryFields.length, 14);

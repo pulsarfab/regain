@@ -50,8 +50,29 @@ class SchemaContractTests(unittest.TestCase):
 
     def test_schema_and_examples(self):
         Draft202012Validator.check_schema(SCHEMA)
-        for name in ["two-source-safety", "mixed-switch", "shared-camera"]:
+        for name in ["two-source-safety", "mixed-switch", "shared-camera", "paired-focusers"]:
             VALIDATOR.validate(example(name))
+
+    def test_focuser_group_bounds_types_and_strict_members(self):
+        config = example("paired-focusers")
+        for patch in [{"label": ""}, {"label": "x" * 201}, {"timeoutSeconds": 0},
+                      {"timeoutSeconds": 301}, {"pollSeconds": 0}, {"pollSeconds": 11},
+                      {"minimum": -2147483649}, {"maximum": 2147483648},
+                      {"minimum": 1.5}, {"members": []}, {"extra": True}]:
+            changed = copy.deepcopy(config)
+            changed["focuserGroups"][0].update(patch)
+            with self.subTest(group_patch=patch):
+                self.assertTrue(list(VALIDATOR.iter_errors(changed)))
+        for patch in [{"source": "bad-id"}, {"scaleNumerator": 0},
+                      {"scaleDenominator": 0}, {"scaleDenominator": 1.5},
+                      {"minimum": -1}, {"offset": 2147483648}, {"retry": True}]:
+            changed = copy.deepcopy(config)
+            changed["focuserGroups"][0]["members"][0].update(patch)
+            with self.subTest(member_patch=patch):
+                self.assertTrue(list(VALIDATOR.iter_errors(changed)))
+        changed = copy.deepcopy(config)
+        changed["focuserGroups"] *= 65
+        self.assertTrue(list(VALIDATOR.iter_errors(changed)))
 
     def test_missing_required_fields_unknown_fields_types_and_bounds(self):
         baseline = example("two-source-safety")
