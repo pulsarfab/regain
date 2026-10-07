@@ -149,8 +149,9 @@ impl NativeGeometry {
             dark,
         }
     }
-    /// Validate individual setters, preserving intermediate ROI combinations.
-    /// StartExposure validates combined binning, bounds and sensor alignment.
+    /// Validate scalar types/ranges, preserving intermediate desired ROI.
+    /// StartExposure validates all sensor bounds, binning and alignment before
+    /// hardware dispatch or allocation, as required by the camera interface.
     pub fn configured(mut self, setting: CameraSetting, info: &Value) -> Result<Self, SourceError> {
         setting.validate()?;
         match setting {
@@ -161,17 +162,6 @@ impl NativeGeometry {
                 self.bin = v as u32;
             }
             CameraSetting::NumX(v) | CameraSetting::NumY(v) => {
-                let maximum = dimension(
-                    info,
-                    if matches!(setting, CameraSetting::NumX(_)) {
-                        "width"
-                    } else {
-                        "height"
-                    },
-                )? / self.bin;
-                if v as u32 > maximum {
-                    return Err(invalid());
-                }
                 if matches!(setting, CameraSetting::NumX(_)) {
                     self.width = v as u32;
                 } else {
@@ -179,17 +169,6 @@ impl NativeGeometry {
                 }
             }
             CameraSetting::StartX(v) | CameraSetting::StartY(v) => {
-                let maximum = dimension(
-                    info,
-                    if matches!(setting, CameraSetting::StartX(_)) {
-                        "width"
-                    } else {
-                        "height"
-                    },
-                )? / self.bin;
-                if v as u32 >= maximum {
-                    return Err(invalid());
-                }
                 if matches!(setting, CameraSetting::StartX(_)) {
                     self.start_x = v as u32;
                 } else {

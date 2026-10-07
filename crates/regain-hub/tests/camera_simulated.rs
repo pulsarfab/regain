@@ -282,12 +282,14 @@ async fn camera_exposure_and_readout_use_monotonic_time_and_frozen_subframes() {
     ] {
         write(&mut backend, member, value).await;
     }
+    let before_start = chrono::Utc::now();
     write(
         &mut backend,
         "startexposure",
         json!({"Duration":10.0,"Light":true}),
     )
     .await;
+    let after_start = chrono::Utc::now();
     assert_eq!(read(&mut backend, "imageready").await, false);
     assert_eq!(read(&mut backend, "camerastate").await, 2);
     assert_eq!(
@@ -333,6 +335,12 @@ async fn camera_exposure_and_readout_use_monotonic_time_and_frozen_subframes() {
     assert_eq!(read(&mut backend, "lastexposureduration").await, 10.0);
     let timestamp = read(&mut backend, "lastexposurestarttime").await;
     P::LastExposureStartTime.decode(&timestamp).unwrap();
+    let captured =
+        chrono::NaiveDateTime::parse_from_str(timestamp.as_str().unwrap(), "%Y-%m-%dT%H:%M:%S%.f")
+            .unwrap()
+            .and_utc();
+    assert!(captured >= before_start && captured <= after_start);
+    assert!(!timestamp.as_str().unwrap().ends_with('Z')); // FITS times are implicitly UTC.
     let budget = ImageBudget::new(24).unwrap();
     let image = backend.camera_image(budget.clone()).await.unwrap();
     assert_eq!(image.descriptor().width(), 3);
@@ -360,7 +368,9 @@ async fn camera_exposure_and_readout_use_monotonic_time_and_frozen_subframes() {
         json!({"Duration":0.0,"Light":false}),
     )
     .await;
-    assert_ne!(read(&mut backend, "lastexposurestarttime").await, timestamp);
+    P::LastExposureStartTime
+        .decode(&read(&mut backend, "lastexposurestarttime").await)
+        .unwrap();
     let dark = backend.camera_image(budget).await.unwrap();
     assert!(
         dark.bytes()
@@ -394,8 +404,16 @@ async fn camera_modes_preserve_rgb_planes_and_rank_three_one_plane() {
         assert_eq!(image.bytes().len(), 12 * planes.unwrap_or(1) as usize);
         assert_eq!(
             read(&mut backend, "sensortype").await,
-            if mode == 1 { 2 } else { 0 }
+            if mode == 1 { 1 } else { 0 }
         );
+        for member in ["bayeroffsetx", "bayeroffsety"] {
+            let value = backend.read(member.into(), Values::new()).await;
+            if mode == 1 {
+                assert_eq!(value.unwrap(), 0);
+            } else {
+                assert_eq!(value.unwrap_err().kind, ErrorKind::Unsupported);
+            }
+        }
         for property in P::ALL {
             match backend.read(property.member().into(), Values::new()).await {
                 Ok(value) => {
@@ -405,8 +423,16 @@ async fn camera_modes_preserve_rgb_planes_and_rank_three_one_plane() {
                     assert_eq!(error.kind, ErrorKind::Unsupported);
                     assert!(matches!(
                         property,
-                        P::Gains | P::Offsets | P::SubExposureDuration | P::IsPulseGuiding
+                        P::Gains
+                            | P::Offsets
+                            | P::SubExposureDuration
+                            | P::IsPulseGuiding
+                            | P::BayerOffsetX
+                            | P::BayerOffsetY
                     ));
+                    if matches!(property, P::BayerOffsetX | P::BayerOffsetY) {
+                        assert_ne!(mode, 1);
+                    }
                 }
             }
         }
@@ -461,8 +487,8 @@ async fn camera_setters_reject_malformed_or_out_of_range_values_without_mutation
     for (member, args) in [
         ("binx", json!({"BinX":5})),
         ("biny", json!({"BinY":0})),
-        ("numx", json!({"NumX":321})),
-        ("startx", json!({"StartX":320})),
+        ("numx", json!({"NumX":0})),
+        ("startx", json!({"StartX":-1})),
         ("gain", json!({"Gain":601})),
         ("offset", json!({"Offset":-1})),
         ("readoutmode", json!({"ReadoutMode":3})),
@@ -507,6 +533,52 @@ async fn camera_setters_reject_malformed_or_out_of_range_values_without_mutation
             .unwrap()
             .image_ready
     );
+}
+
+#[tokio::test(start_paused = true)]
+async fn desired_roi_bounds_are_rejected_at_capture_without_allocation_or_image_replacement() {
+    let (runtime, resources, _, outputs) = runtime(1_000_000, 1);
+    let client = runtime.client();
+    client.connect(outputs[0]).await.unwrap();
+    let connection = client.connection(outputs[0]).unwrap();
+    let camera = connection.camera().unwrap();
+    camera.set(S::NumX(3)).await.unwrap();
+    camera.set(S::NumY(2)).await.unwrap();
+    let request = ExposureRequest {
+        duration_seconds: 0.0,
+        light: false,
+    };
+    camera.start(request).await.unwrap();
+    until(|| camera.status().image_ready).await;
+    let frame = camera.image().unwrap();
+    let held = resources.image_budget().used_bytes();
+    for setting in [
+        S::NumX(321),
+        S::NumY(241),
+        S::StartX(320),
+        S::StartY(240),
+        S::NumX(i32::MAX),
+        S::StartY(i32::MAX),
+    ] {
+        camera.set(S::NumX(3)).await.unwrap();
+        camera.set(S::NumY(2)).await.unwrap();
+        camera.set(S::StartX(0)).await.unwrap();
+        camera.set(S::StartY(0)).await.unwrap();
+        camera.set(setting).await.unwrap();
+        assert_eq!(
+            camera.start(request).await.unwrap_err().kind,
+            ErrorKind::InvalidValue
+        );
+        assert_eq!(camera.status().phase, Phase::Idle);
+        assert!(camera.status().image_ready);
+        assert!(Arc::ptr_eq(&frame, &camera.image().unwrap()));
+        assert_eq!(resources.image_budget().used_bytes(), held);
+    }
+    client.close();
+    drop(connection);
+    runtime.shutdown().await.unwrap();
+    drop(frame);
+    assert_eq!(resources.image_budget().used_bytes(), 0);
 }
 
 #[tokio::test]

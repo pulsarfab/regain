@@ -8,7 +8,27 @@ tagged or published. Changed cross-crate APIs require an unpublished version so
 Cargo package verification uses the new workspace packages.
 Last updated: 2026-10-07.
 
-Current increment: investigate terminal 32a34ae CI failures without extending
+Current increment: Camera and CoverCalibrator pass selected external ConformU
+strict protocol and full interface checks with zero errors/issues/alerts/timing
+issues. Monochrome Bayer offsets are unsupported; RGB reports Color. Simulated
+capture timestamps use actual UTC in the interface's FITS format while all
+deadlines remain monotonic. Native and simulated desired ROI setters defer sensor
+bounds to capture admission; invalid starts retain the old image and allocate no
+new pixels. The panel simulation uses an observable two-second travel duration
+through its ordinary revision-checked control. The runner starts a fresh owned
+host/frontend per mode so prior protocol acquisitions do not contaminate interface
+first-use checks; disconnect still retains completed images. Preserve the
+intermediate timestamp/first-use findings and the alternate protocol success
+summary in hub-conformance.md. Full Rust hub/Alpaca, strict Clippy, Rust 1.89,
+all 319 ordinary NINA cases (one explicit registered-fixture skip), real net48
+x86/x64, Python syntax, formatting and diff checks pass; review is recorded.
+Two prior reviewed commits remain local after GitHub rejected SSH/HTTPS pushes
+and the PR-body edit with server errors; read access works. Remote 32a34ae CI is
+terminal and red. Fresh CI is required after publishing, including Unix lock
+retirement execution. Keep the single PR draft and all original coordination,
+discovery/transfer, OS resume, broader acceptance, README/site and final gates open.
+
+Previous increment: investigate terminal 32a34ae CI failures without extending
 production deadlines. The NINA safety upstream now reuses the bounded, dedicated
 HTTP scheduler used by the other private accessory fixtures. Its 503/Retry-After
 behavior, aborted-client handling and generation/expiry assertions remain intact.

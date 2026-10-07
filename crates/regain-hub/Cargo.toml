@@ -28,6 +28,7 @@ reqwest = { version = "0.12.28", default-features = false, features = ["rustls-t
 futures-util = "0.3"
 tokio-util = { version = "0.7", features = ["io"] }
 httpdate = "1"
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
 sha2 = "0.10"
 zeroize = "1"
 

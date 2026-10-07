@@ -157,6 +157,7 @@ impl CameraUpdate {
 struct Exposure {
     completed: AtomicBool,
     started: Instant,
+    started_utc: String,
     duration: Duration,
     readout: Duration,
     settings: CameraState,
@@ -219,7 +220,7 @@ impl CameraExposure {
             "numy" => json!(state.num_y),
             "startx" => json!(state.start_x),
             "starty" => json!(state.start_y),
-            "bayeroffsetx" | "bayeroffsety" => json!(0),
+            "bayeroffsetx" | "bayeroffsety" if state.readout_mode == 1 => json!(0),
             "camerastate" => json!(state.camera_state),
             "imageready" => json!(state.image_ready),
             "percentcompleted" => json!(state.percent_completed),
@@ -259,7 +260,7 @@ impl CameraExposure {
             "readoutmode" => json!(state.readout_mode),
             "readoutmodes" => json!(MODES),
             "sensorname" => json!("Regain simulated sensor"),
-            "sensortype" => json!(if state.readout_mode == 1 { 2 } else { 0 }),
+            "sensortype" => json!(if state.readout_mode == 1 { 1 } else { 0 }),
             "lastexposureduration" | "lastexposurestarttime"
                 if state.exposure_metadata_available =>
             {
@@ -273,16 +274,7 @@ impl CameraExposure {
                 if member == "lastexposureduration" {
                     json!(exposure.duration.as_secs_f64())
                 } else {
-                    // Explicit synthetic epoch, unique per exposure in this runtime;
-                    // virtual-time tests never depend on the wall clock.
-                    let seconds = exposure.sequence / 10_000_000;
-                    json!(format!(
-                        "2000-01-01T{:02}:{:02}:{:02}.{:07}Z",
-                        seconds / 3600,
-                        seconds / 60 % 60,
-                        seconds % 60,
-                        exposure.sequence % 10_000_000
-                    ))
+                    json!(exposure.started_utc)
                 }
             }
             _ => return Err(unsupported()),
@@ -344,11 +336,15 @@ impl CameraExposure {
                 let sequence = self
                     .sequence
                     .checked_add(1)
-                    .filter(|sequence| *sequence < 864_000_000_000)
                     .ok_or_else(|| invalid("Simulated exposure sequence exhausted"))?;
                 self.exposure = Some(Exposure {
                     completed: AtomicBool::new(false),
                     started: Instant::now(),
+                    // Wall time is descriptive metadata only. Integration,
+                    // readiness, readout and Halt/Stop still use monotonic time.
+                    started_utc: chrono::Utc::now()
+                        .format("%Y-%m-%dT%H:%M:%S%.9f")
+                        .to_string(),
                     duration: Duration::from_secs_f64(seconds),
                     readout: Duration::from_secs_f64(state.readout_duration_seconds),
                     settings: state.clone(),
@@ -386,10 +382,13 @@ impl CameraExposure {
                 match setting {
                     CameraSetting::BinX(value) if value <= MAX_BIN => state.bin_x = value,
                     CameraSetting::BinY(value) if value <= MAX_BIN => state.bin_y = value,
-                    CameraSetting::NumX(value) if value <= WIDTH => state.num_x = value,
-                    CameraSetting::NumY(value) if value <= HEIGHT => state.num_y = value,
-                    CameraSetting::StartX(value) if value < WIDTH => state.start_x = value,
-                    CameraSetting::StartY(value) if value < HEIGHT => state.start_y = value,
+                    // Desired ROI may be temporarily outside the sensor while
+                    // clients change several fields. StartExposure checks the
+                    // complete geometry before replacing state or allocating.
+                    CameraSetting::NumX(value) => state.num_x = value,
+                    CameraSetting::NumY(value) => state.num_y = value,
+                    CameraSetting::StartX(value) => state.start_x = value,
+                    CameraSetting::StartY(value) => state.start_y = value,
                     CameraSetting::Gain(value) if (0..=600).contains(&value) => state.gain = value,
                     CameraSetting::Offset(value) if (0..=255).contains(&value) => {
                         state.offset = value

@@ -479,9 +479,7 @@ async fn symmetric_native_geometry_freezes_at_admission_and_rejects_invalid_capt
     for setting in [
         S::BinY(3),
         S::BinX(0),
-        S::NumX(481),
         S::NumY(-1),
-        S::StartX(480),
         S::StartY(-1),
         S::ReadoutMode(1),
     ] {
@@ -565,6 +563,30 @@ async fn symmetric_native_geometry_freezes_at_admission_and_rejects_invalid_capt
         owner.read_property(P::CameraState).unwrap(),
         V::Integer { value: 0 }
     );
+    // Positive scalar ROI values are desired state, including combinations that
+    // cannot fit. Admission rejects them before allocation/dispatch and retains
+    // the completed image. Reconfiguring the valid ROI remains possible.
+    for setting in [
+        S::NumX(481),
+        S::StartX(480),
+        S::NumY(i32::MAX),
+        S::StartY(i32::MAX),
+    ] {
+        owner.configure_geometry(S::NumX(64)).unwrap();
+        owner.configure_geometry(S::NumY(64)).unwrap();
+        owner.configure_geometry(S::StartX(3)).unwrap();
+        owner.configure_geometry(S::StartY(1)).unwrap();
+        owner.configure_geometry(setting).unwrap();
+        assert_eq!(
+            owner.start_configured(10_000, true).unwrap_err().kind,
+            ErrorKind::InvalidValue
+        );
+        assert_eq!(activity.active(), 0);
+        assert_eq!(
+            owner.image().unwrap().bytes().as_ptr(),
+            image.bytes().as_ptr()
+        );
+    }
     owner.close().await.unwrap();
     settled(&owner, &activity).await;
 }

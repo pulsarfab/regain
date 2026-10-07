@@ -3,6 +3,75 @@
 This records local review and tests for the single hub PR. Passing a foundation
 test does not imply that a frontend, transport, or hardware gate has passed.
 
+## 2026-10-07: camera geometry/metadata and external panel acceptance
+
+Reviewed the camera findings against the pinned ASCOM camera interface and the
+unmodified ConformU 4.5.0 source. The simulator now rejects monochrome Bayer
+queries as unsupported and identifies its three-plane RGB layout as Color. Its
+start metadata records actual UTC in the interface's implicit-UTC FITS format;
+the monotonic start instant still controls exposure, readout and guide timing.
+Sequence numbers remain acquisition/pixel identity, never fabricated UTC.
+Chrono is already present in the workspace lock; this adds the hub dependency
+without introducing a package or changing a locked version.
+
+Native and simulated ROI setters validate scalar type/sign but preserve desired
+intermediate geometry beyond sensor bounds. StartExposure validates the whole
+configuration before replacing capture state, reserving pixels or dispatching.
+Review confirmed the native owner calls core validate_capture before its budget
+reservation and worker spawn, retaining binning, alignment and exposure limits.
+The simulator computes combined bounds with 64-bit arithmetic. Added actual
+shared-controller regression cases for oversized and Int32-max settings: rejected
+starts keep Idle/ImageReady, the same retained image Arc and unchanged byte
+budget; shutdown releases the frame. Native owner cases verify rejection before
+capture activity and preservation of the completed buffer. Existing malformed
+scalar/bin/mode checks remain. The virtual-clock exposure test bounds the frozen
+wall timestamp at actual start while still advancing integration/readout through
+virtual monotonic time. RGB and one-plane shape checks remain intact.
+
+The first selected rerun retains 22 camera issues: five first-use checks plus
+idle StopExposure reused an image captured by the protocol tests; sixteen UTC
+comparisons parsed an RFC3339 Z suffix into local time in ConformU's DateTime.Parse
+before subtraction from naive UTC. The runner now owns a fresh host/frontend per
+mode, preserving production image retention on disconnect. The final timestamp
+uses the interface's FITS spelling rather than modifying the external tool.
+The panel's default 200 ms travel completed before the validator's 500 ms Halt
+observation. The runner applies two seconds through ordinary revision-checked
+simulation control and retains its request/reply. The panel interface already
+passed in that intermediate run, but protocol result parsing missed the tool's
+alternative explicit zero-alert success sentence; both accepted summary forms
+still require exit zero and zero errors/issues. Unknown summaries still fail.
+Startup diagnostics now name the mode-specific log. No checks were disabled.
+
+Final selected evidence: artifacts/hub-interface-camera-panel-conformu-second.log
+and artifacts/hub-conformance-3d15f909af3c4cb1a07bd22877c0f4e9/summary.json. Both
+classes pass strict protocol and full interface checks with zero errors/issues,
+configuration alerts and timing issues. Keep the initial rerun at
+artifacts/hub-conformance-400ecc6d3eb448a1973bbf2278971651. The five other previously
+passing interface classes were not rerun in this selection. Focuser boundary and
+MaxIncrement findings remain open, as do native ASCOM and other backend acceptance.
+
+Local regression after the final FITS/fresh-mode changes passes:
+artifacts/hub-interface-camera-rust-full.log (full hub/Alpaca, including 22 native
+owner and 16 camera simulator cases), artifacts/hub-interface-camera-nina-final.log
+(319 ordinary NINA cases; one explicit registered-fixture skip),
+artifacts/hub-interface-camera-net48-final.log (full actual x86/x64 suites),
+artifacts/hub-interface-camera-msrv-final.log (Rust 1.89 all targets) and
+artifacts/hub-interface-camera-clippy-final.log (strict Clippy). Python syntax,
+Rust formatting and diff checks pass. Executable rebuilding finished before
+ConformU/managed fixtures used it. The earlier focused tests and first NINA run
+remain in artifacts/hub-interface-camera-focused.log and
+artifacts/hub-interface-camera-nina.log; those preceded the final FITS spelling.
+
+Publishing status: SSH pushes of the prior two reviewed commits failed twice;
+an ordinary credential-helper HTTPS push and the PR-body GraphQL edit also failed
+with GitHub server errors. Read access and remote inspection work; the remote
+remains 32a34ae and its CI is terminal/red. Preserve local commits, retry ordinary
+publication after review and require fresh CI. Do not infer acceptance from local
+passes or alter branch history to work around the service error. All original
+coordination, discovery/transfer, OS resume, broader acceptance, README/site and
+final audit/merge gates remain required. No physical hardware or installed vendor
+driver was opened.
+
 ## 2026-10-07: shared camera creation and capability admission
 
 Reviewed the generated setup capability gates and runtime support boundaries.

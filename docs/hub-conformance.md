@@ -10,6 +10,9 @@ python scripts/test-hub-conformance.py --conformu C:/path/to/conformu.exe
 Use `--mode protocol` or `--mode interface` to run one suite, and `--classes
 camera focuser` to select classes. The script always creates its own loopback
 server, empty ordinary camera profiles and eight explicitly simulated sources.
+Each mode gets a fresh host and frontend: protocol tests can acquire images, while
+interface first-use tests require a camera that has not acquired an image yet.
+Ordinary client disconnect continues to retain completed images.
 It accepts no existing device configuration, upstream URI or COM ProgID. Never
 rebuild the running server executable until the script finishes.
 
@@ -17,8 +20,9 @@ Evidence is retained under `artifacts/hub-conformance-<id>/`: private configurat
 ConformU settings, host/server logs, per-class logs, interface JSON reports and a
 combined summary including executable hashes and tool version. ConformU 4.5's
 protocol command does not write its `--resultsfile`; the script records its exit
-code and parses its explicit error/issue summary instead. A missing summary,
-nonzero exit, configuration alert, timing issue or reported error/issue fails
+code and parses its explicit error/issue summary or exact zero-alert success
+message instead. A missing summary, nonzero exit, configuration alert, timing
+issue or reported error/issue fails
 the run. The 900-second per-command bound stops that owned validator on timeout;
 the script then records failure and continues the remaining checks. Cleanup stops
 the two private processes it owns: HTTP frontend and separately launched hub host.
@@ -26,7 +30,10 @@ Closing an ordinary frontend does not stop a shared host.
 
 The script enables strict Alpaca protocol checks and ConformU's full interface
 tests. Switch settle delays are 20 ms for reads and 50 ms for writes because this
-source has in-memory state. Tests, ranges and offsets remain enabled. This checks
+source has in-memory state. Tests, ranges and offsets remain enabled.
+The panel's ordinary revision-checked simulation control sets cover travel to two
+seconds so the validator's 500 ms sampling can observe motion before testing Halt.
+The applied request and response are retained for each mode. This checks
 simulated hub behavior, not physical settling or installed driver acceptance.
 UDP discovery is disabled here and needs its separate acceptance check.
 
@@ -82,3 +89,55 @@ exit codes. Evidence is `artifacts/hub-protocol-conformu-third.log` and
 This passes the simulated HTTP protocol slice; the interface findings, other
 source/backend combinations, native ASCOM conformance and broader acceptance
 remain open.
+
+## Camera and panel corrections (2026-10-07)
+
+The selected full protocol/interface rerun passes Camera and CoverCalibrator:
+zero errors, issues, timing issues and configuration alerts, with all interface
+tests enabled. Evidence is `artifacts/hub-interface-camera-panel-conformu-second.log`
+and `artifacts/hub-conformance-3d15f909af3c4cb1a07bd22877c0f4e9/summary.json`.
+The five other previously passing classes have not been rerun in this selection;
+the four focuser findings still need their own standards review and acceptance.
+
+Camera corrections follow the [ASCOM camera interface](https://ascom-standards.org/newdocs/camera.html):
+monochrome Bayer offsets are unsupported, three-plane RGB reports Color rather
+than a Bayer mosaic, and exposure start metadata records actual UTC in the FITS
+format `CCYY-MM-DDThh:mm:ss[.sss…]`. Exposure/readout and control deadlines still
+use monotonic time. Positive scalar ROI settings can represent intermediate
+desired geometry; combined sensor bounds are checked at StartExposure before
+dispatch or pixel allocation. Invalid starts preserve the previous completed
+image and leave the camera idle. Native capture retains its core bounds,
+alignment, binning and exposure validation at that admission point.
+
+Preserve the intermediate rerun in
+`artifacts/hub-conformance-400ecc6d3eb448a1973bbf2278971651/summary.json`:
+camera reports 22 issues after the initial production corrections. Five first-use
+findings and the idle StopExposure finding came from reusing a host whose protocol
+tests had already acquired an image. Sixteen timestamp findings came from an
+RFC3339 `Z` suffix: ConformU 4.5 parses it into local time, then subtracts that from
+a naive UTC value. The final emitted string follows the interface's implicit-UTC
+FITS format, and the runner uses fresh modes; it does not clear retained images
+on disconnect or modify the validator. The intermediate panel interface already
+passed. Its protocol command exited successfully but used the alternative
+zero-alert success sentence, which the runner now recognises explicitly.
+
+These passes cover the private simulated Alpaca slice. Native ASCOM conformance,
+other source/backend combinations and the original acceptance gates remain open.
+
+## Focuser findings still under review
+
+The default simulated absolute focuser starts at 50000, has MaxStep 100000 and
+MaxIncrement 1000. ConformU 4.5 issues direct moves to both endpoints without
+respecting MaxIncrement, then expects targets below zero and above MaxStep to
+clamp without an error. These account for the four retained findings.
+
+The [published focuser interface](https://ascom-standards.org/newdocs/focuser.html)
+defines MaxIncrement as a per-move limit and Move's InvalidValue error for an
+out-of-range target; its MaxStep note also describes stopping at a limit. The
+validator's expectations and the method contract therefore need reconciliation.
+Regain currently rejects invalid targets and excessive travel before dispatch.
+Existing `absolute_target_and_per_move_travel_are_separate_limits` coverage
+verifies zero upstream writes for both failures and a valid boundary move.
+This is an open acceptance finding, not a conformance pass or an excuse to
+remove movement protections. No validator tests or production limits are changed
+to suppress it.

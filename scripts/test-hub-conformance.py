@@ -73,46 +73,68 @@ def main():
                              check=True, timeout=30).stdout.strip()
     provenance = {"toolPath": str(tool), "toolSha256": sha256(tool),
                   "serverPath": str(binary), "serverSha256": sha256(binary)}
-    with socket.socket() as reservation:
-        reservation.bind(("127.0.0.1", 0))
-        port = reservation.getsockname()[1]
-    base = f"http://127.0.0.1:{port}"
     results = []
     modes = ("protocol", "interface") if args.mode == "all" else (args.mode,)
     print(f"ConformU: {version}\nPrivate simulation evidence: {directory}", flush=True)
-    with (directory / "server.log").open("w", encoding="utf-8") as server_log, \
-            (directory / "host.log").open("w", encoding="utf-8") as host_log:
-        flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
-        host = subprocess.Popen([str(binary), "--hub-host", "--hub-config", str(config_file),
-                                 "--workers", str(binary.parent), "--simulate"],
-                                stdout=host_log, stderr=host_log, creationflags=flags)
-        server = None
-        try:
-            deadline = time.monotonic() + 30
-            while "Regain hub ready:" not in (directory / "host.log").read_text(encoding="utf-8"):
-                if host.poll() is not None or time.monotonic() >= deadline:
-                    raise RuntimeError("Private host failed to bind; see host.log")
-                time.sleep(0.05)
-            # The owned host holds the lock before HTTP attachment, so the
-            # frontend cannot launch an unowned persistent host during a race.
-            server = subprocess.Popen([str(binary), "--listen", "127.0.0.1", "--port", str(port),
-                                       "--hub-config", str(config_file), "--profiles", str(profiles),
-                                       "--workers", str(binary.parent), "--simulate", "--no-discovery"],
-                                      stdout=server_log, stderr=server_log, creationflags=flags)
-            deadline = time.monotonic() + 30
-            while True:
-                try:
-                    with urllib.request.urlopen(base + "/management/v1/configureddevices", timeout=1) as response:
-                        devices = json.load(response)
-                    assert devices["ErrorNumber"] == 0 and len(devices["Value"]) == len(CLASSES), devices
-                    assert all(d["DeviceNumber"] == 40 and "Simulation" in d["DeviceName"] for d in devices["Value"]), devices
-                    break
-                except (urllib.error.URLError, TimeoutError):
-                    if server.poll() is not None or time.monotonic() >= deadline:
-                        raise RuntimeError("Private simulated hub failed to start; see server.log")
+    # Protocol tests may acquire images. Interface first-use checks need a
+    # fresh host; client disconnect deliberately retains completed frames.
+    for mode in modes:
+        with socket.socket() as reservation:
+            reservation.bind(("127.0.0.1", 0))
+            port = reservation.getsockname()[1]
+        base = f"http://127.0.0.1:{port}"
+        with (directory / f"{mode}-server.log").open("w", encoding="utf-8") as server_log, \
+                (directory / f"{mode}-host.log").open("w", encoding="utf-8") as host_log:
+            flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+            host = subprocess.Popen([str(binary), "--hub-host", "--hub-config", str(config_file),
+                                     "--workers", str(binary.parent), "--simulate"],
+                                    stdout=host_log, stderr=host_log, creationflags=flags)
+            server = None
+            try:
+                deadline = time.monotonic() + 30
+                while "Regain hub ready:" not in (directory / f"{mode}-host.log").read_text(encoding="utf-8"):
+                    if host.poll() is not None or time.monotonic() >= deadline:
+                        raise RuntimeError(f"Private host failed to bind; see {mode}-host.log")
                     time.sleep(0.05)
-            for kind in args.classes:
-                for mode in modes:
+                # The owned host holds the lock before HTTP attachment, so the
+                # frontend cannot launch an unowned persistent host during a race.
+                server = subprocess.Popen([str(binary), "--listen", "127.0.0.1", "--port", str(port),
+                                           "--hub-config", str(config_file), "--profiles", str(profiles),
+                                           "--workers", str(binary.parent), "--simulate", "--no-discovery"],
+                                          stdout=server_log, stderr=server_log, creationflags=flags)
+                deadline = time.monotonic() + 30
+                while True:
+                    try:
+                        with urllib.request.urlopen(base + "/management/v1/configureddevices", timeout=1) as response:
+                            devices = json.load(response)
+                        assert devices["ErrorNumber"] == 0 and len(devices["Value"]) == len(CLASSES), devices
+                        assert all(d["DeviceNumber"] == 40 and "Simulation" in d["DeviceName"] for d in devices["Value"]), devices
+                        break
+                    except (urllib.error.URLError, TimeoutError):
+                        if server.poll() is not None or time.monotonic() >= deadline:
+                            raise RuntimeError(f"Private simulated hub failed to start; see {mode}-server.log")
+                        time.sleep(0.05)
+                # ConformU samples cover motion at 500 ms intervals. A 200 ms
+                # simulator can finish before its Halt test even observes motion.
+                # Set an observable travel duration using the ordinary, revision-
+                # checked simulation controls; retain both request and response.
+                controls = []
+                for source in config["sources"]:
+                    if source["backend"]["deviceType"] != "covercalibrator":
+                        continue
+                    command = {"op": "updateSimulation", "source": source["id"],
+                               "expectedRevision": config["revision"],
+                               "update": {"coverCalibrator": {"moveDurationSeconds": 2.0}}}
+                    request = urllib.request.Request(base + "/setup/api/hub",
+                                                     data=json.dumps(command).encode("utf-8"),
+                                                     headers={"Content-Type": "application/json", "Origin": base})
+                    with urllib.request.urlopen(request, timeout=5) as response:
+                        applied = json.load(response)
+                    if "result" not in applied:
+                        raise RuntimeError(f"Private simulation control failed: {applied}")
+                    controls.append({"request": command, "response": applied})
+                (directory / f"{mode}-simulation-controls.json").write_text(json.dumps(controls, indent=2), encoding="utf-8")
+                for kind in args.classes:
                     stem = f"{kind}-{mode}"
                     log = directory / f"{stem}.log"
                     console = directory / f"{stem}-console.log"
@@ -134,6 +156,8 @@ def main():
                         counts = re.search(r"Found (\d+) errors?, (\d+) issues? and (\d+) information messages?", text)
                         if counts:
                             record.update(errors=int(counts[1]), issues=int(counts[2]), information=int(counts[3]))
+                        elif "Congratulations there were no errors, issues or information alerts - Your device passes ASCOM Alpaca protocol validation!!" in text:
+                            record.update(errors=0, issues=0, information=0)
                         else:
                             record["missingSummary"] = True
                     elif report.is_file():
@@ -148,19 +172,19 @@ def main():
                                         and record.get("configurationAlerts", 0) == 0
                                         and record.get("timingIssues", 0) == 0)
                     print(f"{stem}: {'PASS' if record['passed'] else 'FAIL'} {json.dumps(record)}", flush=True)
-        finally:
-            for process in (server, host):
-                if process is not None:
-                    if process.poll() is None:
-                        process.terminate()
-                    try:
-                        process.wait(timeout=15)
-                    except subprocess.TimeoutExpired:
-                        process.kill()
-                        process.wait(timeout=5)
-            (directory / "summary.json").write_text(json.dumps({"toolVersion": version, "simulationOnly": True,
-                                                                "config": str(config_file), "provenance": provenance,
-                                                                "results": results}, indent=2), encoding="utf-8")
+            finally:
+                for process in (server, host):
+                    if process is not None:
+                        if process.poll() is None:
+                            process.terminate()
+                        try:
+                            process.wait(timeout=15)
+                        except subprocess.TimeoutExpired:
+                            process.kill()
+                            process.wait(timeout=5)
+                (directory / "summary.json").write_text(json.dumps({"toolVersion": version, "simulationOnly": True,
+                                                                    "config": str(config_file), "provenance": provenance,
+                                                                    "results": results}, indent=2), encoding="utf-8")
     return 0 if results and all(result["passed"] for result in results) else 1
 
 
