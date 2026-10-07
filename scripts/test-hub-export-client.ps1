@@ -124,6 +124,26 @@ try {
             return $brightnessReady
         } 'panel cached typed DeviceState'
         $panel.Disconnect(); Wait-Condition { !(Value $panel 'Connecting') } 'panel disconnect completion'
+        $camera = $objects[8]; $camera.Connected = $true
+        $cameraSibling = $objects[9]; $cameraSibling.Connect()
+        Wait-Condition { !(Value $cameraSibling 'Connecting') } 'camera sibling connect completion'
+        $camera.NumX = 3; $camera.NumY = 2
+        if ((Value $cameraSibling 'NumX') -ne 3 -or (Value $cameraSibling 'NumY') -ne 2) { throw 'COM camera settings not shared' }
+        $camera.StartExposure(0.1, $true)
+        Wait-Condition { Value $cameraSibling 'ImageReady' } 'camera exposure'
+        $cameraPixels = Value $camera 'ImageArray'; $cameraVariants = Value $cameraSibling 'ImageArrayVariant'
+        if ($cameraPixels.Rank -ne 2 -or $cameraPixels.GetLength(0) -ne 3 -or $cameraPixels.GetLength(1) -ne 2 -or $cameraPixels.GetType().GetElementType() -ne [int]) { throw 'COM camera typed SAFEARRAY shape/type' }
+        if ($cameraVariants.Rank -ne 2 -or $cameraVariants.GetType().GetElementType() -ne [object] -or $cameraVariants.GetValue(2,1) -isnot [int] -or $cameraVariants.GetValue(2,1) -ne $cameraPixels.GetValue(2,1)) { throw 'COM camera variant SAFEARRAY values/type' }
+        $retainedCameraPixel = $cameraPixels.GetValue(2,1)
+        foreach ($mode in 1,2) {
+            $camera.ReadoutMode = [int16]$mode; $camera.StartExposure(0.05, $false)
+            Wait-Condition { Value $camera 'ImageReady' } 'rank-three camera exposure'
+            $rgb = Value $camera 'ImageArray'
+            $planes = if ($mode -eq 1) { 3 } else { 1 }
+            if ($rgb.Rank -ne 3 -or $rgb.GetLength(0) -ne 3 -or $rgb.GetLength(1) -ne 2 -or $rgb.GetLength(2) -ne $planes -or $rgb.GetType().GetElementType() -ne [int]) { throw 'COM rank-three camera SAFEARRAY shape/type' }
+        }
+        $camera.ReadoutMode = [int16]0
+        $cameraSibling.Connected = $false
     }
     if ($Role -eq 'second') {
         Wait-Signal 'first-connected'
@@ -139,6 +159,12 @@ try {
         $panel.CloseCover(); $panel.CalibratorOff()
         if ((Value $panel 'Brightness') -ne 0 -or (Value $panel 'CalibratorState') -ne 1 -or (Value $panel 'CoverState') -ne 1) { throw 'COM panel explicit Close/Off' }
         $panel.Connected = $false
+        $camera = $objects[9]; $camera.Connected = $true
+        if ((Value $camera 'NumX') -ne 3 -or (Value $camera 'NumY') -ne 2 -or !(Value $camera 'ImageReady')) { throw 'Second COM bitness lost camera state' }
+        $camera.StartExposure(0.05, $false)
+        Wait-Condition { Value $camera 'ImageReady' } 'second client camera exposure'
+        $pixels = Value $camera 'ImageArray'
+        if ($pixels.Rank -ne 2 -or $pixels.GetType().GetElementType() -ne [int]) { throw 'Second COM bitness camera SAFEARRAY' }
     }
     Write-Output "Hub export ${Role}: connect primary"
     $primary.Connect(); Wait-Condition { !(Value $primary 'Connecting') } 'primary connect completion'
@@ -152,6 +178,8 @@ try {
         Wait-Signal 'second-connected'
         $primary.Disconnect(); Wait-Condition { !(Value $primary 'Connecting') } 'primary disconnect completion'
         $other.Connected = $false
+        $camera.Connected = $false
+        if ($cameraPixels.GetValue(2,1) -ne $retainedCameraPixel) { throw 'Later capture or disconnect mutated returned COM pixels' }
         'done' | Set-Content -LiteralPath (Join-Path $Directory 'first-disconnected')
         Wait-Signal 'second-finished'
     } else {
@@ -159,6 +187,8 @@ try {
         'ready' | Set-Content -LiteralPath (Join-Path $Directory 'second-connected')
         Wait-Signal 'first-disconnected'
         if (!(Value $primary 'Connected') -or $other.GetSwitchValue(1) -ne 46) { throw 'Client disconnect revoked sibling output' }
+        if (!(Value $camera 'Connected') -or !(Value $camera 'ImageReady')) { throw 'Camera owner disconnect revoked sibling output/frame' }
+        $camera.Connected = $false
         $other.SetSwitchValue(1, 72); Wait-Condition { $primary.GetSwitchValue(1) -eq 72 } 'shared value 72'
         $weather.Connect(); Wait-Condition { !(Value $weather 'Connecting') } 'weather connect completion'
         Wait-Condition { $weather.GetType().InvokeMember('Temperature', [Reflection.BindingFlags]::GetProperty, $null, $weather, $null) -eq 12 } 'weather temperature 12'

@@ -24,6 +24,10 @@ internal static class Program
                 await HubCameraHostFixture.Run(args[1], true);
                 await HubCameraHostFixture.Run(args[1], false, standard: true);
                 await HubCameraHostFixture.Run(args[1], false, standard: true, nested: true);
+                await HubCameraOutputFixture.Run(args[1], false);
+                await HubCameraOutputFixture.Run(args[1], true);
+                await HubCameraOutputFixture.Run(args[1], false, standard: true);
+                await HubCameraOutputFixture.Run(args[1], false, standard: true, nested: true);
                 return 0;
             }
             if (args.Length == 2 && args[0] == "--image-codec") {

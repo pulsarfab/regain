@@ -35,10 +35,10 @@ internal static class ExportServer
             var classes = store.Load().Bindings.Select(binding => {
                 var saved = binding.Copy();
                 Type type = saved.DeviceType switch { "switch" => typeof(SwitchOutput), "safetymonitor" => typeof(SafetyOutput),
-                    "observingconditions" => typeof(WeatherOutput), "focuser" => typeof(FocuserOutput), "rotator" => typeof(RotatorOutput), "filterwheel" => typeof(FilterWheelOutput), "covercalibrator" => typeof(CoverCalibratorOutput), _ => throw new ArgumentException() };
+                    "observingconditions" => typeof(WeatherOutput), "focuser" => typeof(FocuserOutput), "rotator" => typeof(RotatorOutput), "filterwheel" => typeof(FilterWheelOutput), "covercalibrator" => typeof(CoverCalibratorOutput), "camera" => typeof(CameraOutput), _ => throw new ArgumentException() };
                 return new ServerClass(OutputIdentity.ClassId(saved), type, () => saved.DeviceType switch {
                     "switch" => new SwitchOutput(saved, executable, workers), "safetymonitor" => new SafetyOutput(saved, executable, workers),
-                    "observingconditions" => new WeatherOutput(saved, executable, workers), "focuser" => new FocuserOutput(saved, executable, workers), "rotator" => new RotatorOutput(saved, executable, workers), "filterwheel" => new FilterWheelOutput(saved, executable, workers), "covercalibrator" => new CoverCalibratorOutput(saved, executable, workers), _ => throw new ArgumentException()
+                    "observingconditions" => new WeatherOutput(saved, executable, workers), "focuser" => new FocuserOutput(saved, executable, workers), "rotator" => new RotatorOutput(saved, executable, workers), "filterwheel" => new FilterWheelOutput(saved, executable, workers), "covercalibrator" => new CoverCalibratorOutput(saved, executable, workers), "camera" => new CameraOutput(saved, executable, workers), _ => throw new ArgumentException()
                 });
             }).ToArray();
             Progress("bindings loaded");

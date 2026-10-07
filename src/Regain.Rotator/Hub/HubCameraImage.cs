@@ -4,8 +4,8 @@ namespace Regain.Hub;
 
 public enum HubImageElementType { Int16 = 1, Int32 = 2, Double = 3, Single = 4, UInt64 = 5, Byte = 6, Int64 = 7, UInt16 = 8, UInt32 = 9 }
 
-/// Limits retained encoded pixels in one frontend process. Share this budget
-/// across camera sessions; it does not account for CLR/COM objects or conversions.
+/// Limits retained encoded pixels and explicitly charged array conversions.
+/// Share across camera sessions. COM's own marshaling/caller memory is external.
 public sealed class HubImageBudget
 {
     public const int MaximumImageBytes = 512 * 1024 * 1024;

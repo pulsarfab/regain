@@ -3,6 +3,67 @@
 This records local review and tests for the single hub PR. Passing a foundation
 test does not imply that a frontend, transport, or hardware gate has passed.
 
+## 2026-10-07: native ASCOM camera publication
+
+Reviewed Camera V2/V3/V4 implementation, stable output factories/registration,
+shared native session attachment, camera timing, protected completed-image reads,
+and managed array lifetime. Camera properties/settings reuse the shared strict
+protocol. ASCOM getters preserve enum, Short, Int32, Double and Boolean contracts;
+Start/Stop/Abort/PulseGuide retain host ownership and no-replay behavior. Synchronous
+camera connection and writes use revision-bound negotiated deadlines; asynchronous
+connection uses the existing admission/completion path. Ordinary reads retain
+their existing bounds. Attachment remains finite before camera recovery begins.
+
+Images use a separate protected reader and exact completed acquisition identity.
+Reader cancellation/failure cannot send Abort or retire control. A cancelled
+status read uses the ordinary client's bounded pending-read handling rather than
+the native session wrapper that retires control on cancellation. Epoch/client
+checks reject stale downloads before returning them. Once returned, an immutable
+array remains usable after subsequent captures, disconnect or driver disposal.
+
+Managed conversion preserves all nine primitive types, packed Int32 values,
+X/Y/plane ordering, floating bits, and rank-three one-plane images. Typed and boxed
+variant arrays reserve conservative capacity against the shared frontend budget;
+scratch stays bounded to one 64-KiB chunk. A ConditionalWeakTable ties each returned
+array to its reservation; collection releases it. COM/client-side marshaling copies
+are outside this managed budget. Review/testing found an implicit numeric switch
+conversion in the boxed path; explicit boxing fixes the type/value loss. The first
+ASCOM connection fixture also passed a relative executable path, correctly rejected
+by production attachment. Its path is now normalized; no admission check changed.
+
+Final fixture review moved the initial budget assertion inside the helper that
+still strongly roots the returned array. Background GC is allowed immediately
+after that helper returns; testing an unrooted array's charge first would race
+collection. The x86/x64 codec suites and focused managed lifetime case pass after
+this test-only correction (`artifacts/hub-camera-native-array-gc-review.log`).
+
+Validation (simulation/private fixtures, no installed equipment driver):
+
+- Full `scripts/test-hub-dotnet.ps1` passes actual net48 x86/x64 with warnings
+  denied: image codecs, cancellation/accounting, negotiated timing, SDK/direct/
+  explicit/nested camera sessions and Camera V2/V3/V4 output checks, plus existing
+  output/editor regressions. Evidence: `artifacts/hub-camera-native-net48-full-first.log`.
+- All 285 NINA regression tests pass in `artifacts/hub-camera-native-nina-final.log`.
+- Both ASCOM payload architectures build with warnings denied and license staging
+  passes in `artifacts/hub-camera-native-ascom-build-final.log`.
+- Actual private COM exports pass for x86/x64 servers and both client bitnesses,
+  with ten stable outputs, inert metadata, shared camera leases/settings, Int32 and
+  variant SAFEARRAYs, RGB/one-plane rank and retained pixels across later captures.
+  Evidence: `artifacts/hub-camera-native-com-exports-first.log`.
+- Cold HKCU SCM launch fails locally at the first Switch class before camera
+  activation (0x80040154), the same previously recorded limitation. Preserve
+  `artifacts/hub-camera-native-com-scm-first.log`; this is not a successful SCM
+  test. Disposable-runner production registration/SCM acceptance remains required.
+- Generated contract freshness passes in `artifacts/hub-camera-native-contract.log`.
+- Existing COM import regressions pass all 34 private worker cases in each
+  architecture and all 26 registered parent cases in
+  `artifacts/hub-camera-native-com-import-regression.log`.
+
+The preceding 74d73a0 PR/push CI runs 37619558594/37619553321 are terminal with
+all eight jobs passing in each. New camera commits require new CI. Native NINA
+camera publication/common creation, coordination, recovery/resume, conformance,
+interactive/physical acceptance, documentation and final audit remain required.
+
 ## 2026-10-07: Alpaca camera publication
 
 Reviewed the production HTTP router, publisher session lifecycle, existing camera
@@ -60,8 +121,8 @@ Validation (explicit simulation/private endpoints only):
 - Generated contract freshness passes in
   `artifacts/hub-camera-publish-contract.log`; formatting and diff checks pass.
 
-The new code is local while the preceding 74d73a0 PR/push CI runs
-37619558594/37619553321 remain active. All completed jobs passed at this check.
+The preceding 74d73a0 PR/push CI runs 37619558594/37619553321 subsequently
+completed with all eight jobs passing in each; those checks exclude this code.
 Native NINA/native ASCOM camera publication/setup, coordination, recovery/resume,
 conformance, interactive/physical acceptance, README/site work and final audit
 remain required. No hardware or installed vendor driver was activated.

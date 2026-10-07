@@ -2853,3 +2853,28 @@ with bounded chunks. JSON rejects nonfinite pixels before success headers;
 ImageBytes preserves their bits. This publication does not add native recovery
 capabilities to Alpaca/COM/virtual proxy sources. Conformance and all other
 frontend/acceptance gates remain separate.
+
+### Native ASCOM camera publication
+
+Saved camera bindings publish Camera V2/V3/V4 through the existing shared local
+COM server, with stable UUID-derived identities and both Camera chooser views.
+Metadata remains inert. Setup uses the same configuration editor as other hub
+outputs. General camera creation remains gated until native NINA publication and
+shared creation are also implemented and verified.
+
+The shared native camera session negotiates host/client/revision-bound timing
+before acquiring a connection. Synchronous connection and camera writes use that
+finite bound; ordinary reads keep their original bounds. Async Connect/Disconnect
+retain existing host completion semantics. Start/Stop/Abort/PulseGuide and settings
+use shared strict typed commands, ownership and uncertainty fences.
+
+ImageArray/ImageArrayVariant read the exact completed acquisition through the
+protected image stream. Cancellation releases the reader without aborting capture
+or closing control. Retired epochs cannot return a newly downloaded frame. Typed
+arrays preserve logical primitive types; variants box those exact types. Packed
+transmission widens only declared Int32 elements. X/Y/plane order and rank-three
+one-plane shapes remain intact. Returned arrays freeze their pixels across later
+captures and control disconnect. Managed encoded pixels, converted arrays and
+bounded scratch share the frontend budget. Array reservations persist until GC
+collects those arrays; external COM/marshaling copies are outside that budget.
+These proxies do not gain upstream retained-download recovery capabilities.

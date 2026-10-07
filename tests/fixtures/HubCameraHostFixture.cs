@@ -13,7 +13,8 @@ internal static class HubCameraHostFixture
     { if (!value) throw new InvalidOperationException(message); }
     // Explicit --simulate is mandatory here. SDK path deliberately does not exist.
     // Start/kill only this private process; attaching clients never own the host.
-    internal static async Task Run(string executable, bool direct, bool standard = false, bool nested = false)
+    internal static async Task Run(string executable, bool direct, bool standard = false, bool nested = false,
+        Func<HubSelection, HubSelection, Task>? frontendCheck = null)
     {
         executable = Path.GetFullPath(executable);
         var workers = Path.GetDirectoryName(executable)!;
@@ -179,6 +180,40 @@ internal static class HubCameraHostFixture
             pin.CopyTo(65530, repeated, 0, repeated.Length); Check(original.SequenceEqual(repeated), "Client loss changed pinned pixels");
             pin.Dispose(); Check(budget.UsedBytes == 0, "Completed managed images leaked budget");
             await Command(observer, new { op = "disconnect", output = secondOutput });
+            HubSelection Binding(Guid output) => new() { ConfigPath = configPath, InstanceId = instance, OutputId = output,
+                DeviceType = "camera", Label = "Private shared camera", Simulated = true };
+            using (var firstSession = new HubNativeSession(executable, workers))
+            using (var secondSession = new HubNativeSession(executable, workers)) {
+                await firstSession.AttachAsync(Binding(firstOutput), stop.Token);
+                var epoch = firstSession.Epoch;
+                await firstSession.RequestCameraAsync(epoch, JsonSerializer.SerializeToElement(new { op = "changeConnection", output = firstOutput,
+                    connected = true, asynchronous = false }), stop.Token);
+                await secondSession.ConnectAsync(Binding(secondOutput), stop.Token);
+                Check(secondSession.Connected, "Native camera connection did not acquire its output");
+                foreach (var property in new[] { HubCameraProperty.NumX, HubCameraProperty.NumY })
+                    await firstSession.RequestCameraAsync(epoch, JsonSerializer.SerializeToElement(new { op = "put", output = firstOutput,
+                        property = HubCameraProtocol.Setting(property, 64) }), stop.Token);
+                await firstSession.RequestCameraAsync(epoch, JsonSerializer.SerializeToElement(new { op = "put", output = firstOutput,
+                    property = HubCameraProtocol.Start(0.05, false) }), stop.Token);
+                var clock = Stopwatch.StartNew();
+                while (!(await secondSession.RequestAsync(secondSession.Epoch, JsonSerializer.SerializeToElement(new { op = "get", output = secondOutput,
+                    property = HubCameraProtocol.Read(HubCameraProperty.ImageReady) }), cancellation: stop.Token)).GetBoolean()) {
+                    if (clock.Elapsed > TimeSpan.FromSeconds(15)) throw new TimeoutException("Native session camera did not finish");
+                    await Task.Delay(5, stop.Token);
+                }
+                using var image = await secondSession.DownloadCameraImageAsync(secondSession.Epoch, budget, stop.Token);
+                Check(image.Descriptor.Width == 64 && image.Descriptor.Height == 64, "Native image session changed geometry");
+                using (var cancel = new CancellationTokenSource()) {
+                    cancel.Cancel();
+                    try { using var cancelled = await secondSession.DownloadCameraImageAsync(secondSession.Epoch, budget, cancel.Token); throw new Exception("Cancelled native image was returned"); }
+                    catch (OperationCanceledException) { Check(secondSession.IsAttached && secondSession.Connected, "Image cancellation retired native control"); }
+                }
+                firstSession.Disconnect();
+                try { using var retired = await firstSession.DownloadCameraImageAsync(epoch, budget, stop.Token); throw new Exception("Retired native session returned an image"); }
+                catch (HubException error) { Check(error.Failure == HubFailure.Disconnected, "Retired native session rejection changed"); }
+                Check(secondSession.Connected, "One native camera disconnect revoked its sibling");
+            }
+            if (frontendCheck is not null) await frontendCheck(Binding(firstOutput), Binding(secondOutput));
             var mode = nested ? "virtual explicit" : standard ? "explicit" : direct ? "direct" : "SDK";
             Console.WriteLine($"Camera image {mode} simulation {IntPtr.Size * 8}-bit: protected pipe, multichunk bytes, independent readers, retained pins, budget and identity rejection passed");
             completed = true;

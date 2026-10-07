@@ -4,7 +4,7 @@ namespace Regain.Hub;
 
 /// One native device's private client. The shared Rust host owns sources and
 /// policy. There is no HTTP listener or ASCOM-output dependency here.
-public sealed class HubNativeSession(string executable, string? workers = null) : IDisposable
+public sealed partial class HubNativeSession(string executable, string? workers = null) : IDisposable
 {
     private readonly object gate = new();
     private HubClient? client;
@@ -53,12 +53,27 @@ public sealed class HubNativeSession(string executable, string? workers = null) 
                 opened.RequireCapabilities("rotatorOutputs", "scalarDeviceState", "asyncOutputConnection");
                 if (acquire) opened.RequireCapabilities("rotatorMotionReceipt");
             }
+            HubCameraTiming? timing = null;
+            if (selection.DeviceType == "camera") {
+                opened.RequireCapabilities("cameraAcquisition", "cameraImageStream", "cameraOperationTiming", "scalarDeviceState", "asyncOutputConnection");
+                timing = await opened.GetCameraTimingAsync(selection.OutputId, operation.Token).ConfigureAwait(false);
+            }
             lock (gate) {
                 if (token != epoch || operation.IsCancellationRequested || disposed) throw new OperationCanceledException(operation.Token);
                 client = opened;
+                cameraAttachment = timing is null ? null : attachment; cameraTiming = timing;
             }
-            if (acquire) await opened.RequestAsync(JsonSerializer.SerializeToElement(new { op = "changeConnection", output = selection.OutputId,
-                connected = true, asynchronous = false }), operation.Token).ConfigureAwait(false);
+            if (acquire) {
+                var command = JsonSerializer.SerializeToElement(new { op = "changeConnection", output = selection.OutputId,
+                    connected = true, asynchronous = false });
+                if (timing is null) await opened.RequestAsync(command, operation.Token).ConfigureAwait(false);
+                else {
+                    // Attachment is bounded above. Equipment recovery now uses
+                    // the controller's finite bound, plus caller cancellation.
+                    operation.CancelAfter(Timeout.InfiniteTimeSpan);
+                    await opened.RequestCameraAsync(timing, command, operation.Token).ConfigureAwait(false);
+                }
+            }
             lock (gate) {
                 if (token != epoch || operation.IsCancellationRequested || disposed) throw new OperationCanceledException(operation.Token);
                 leased = acquire;
@@ -66,7 +81,7 @@ public sealed class HubNativeSession(string executable, string? workers = null) 
             return matches[0].Clone();
         } catch {
             opened?.Dispose();
-            lock (gate) { if (token == epoch) { client = null; leased = false; epoch = Guid.NewGuid(); } }
+            lock (gate) { if (token == epoch) { client = null; leased = false; cameraAttachment = null; cameraTiming = null; epoch = Guid.NewGuid(); } }
             throw;
         } finally {
             lock (gate) { if (ReferenceEquals(pending, operation)) pending = null; }
@@ -104,7 +119,7 @@ public sealed class HubNativeSession(string executable, string? workers = null) 
         HubClient? closing;
         lock (gate) {
             if (epoch != expected) return;
-            closing = client; client = null; leased = false; epoch = Guid.NewGuid();
+            closing = client; client = null; leased = false; cameraAttachment = null; cameraTiming = null; epoch = Guid.NewGuid();
         }
         closing?.Dispose();
     }
@@ -114,6 +129,7 @@ public sealed class HubNativeSession(string executable, string? workers = null) 
         CancellationTokenSource? cancelling;
         lock (gate) {
             epoch = Guid.NewGuid(); leased = false; closing = client; client = null;
+            cameraAttachment = null; cameraTiming = null;
             cancelling = pending;
         }
         // Cancellation callbacks run synchronously: never invoke them under the

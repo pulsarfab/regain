@@ -19,6 +19,43 @@ public enum HubCameraValueKind { Boolean, Integer, Number, Text, Strings }
 /// Scalar camera contract shared by Windows imports and output providers.
 /// Acquisition ownership, geometry admission and image lifetime belong to Rust.
 public static class HubCameraProtocol {
+    public static object Read(HubCameraProperty property) => new { member = "camera", property = Key(property) };
+    public static object Setting(HubCameraProperty property, object value) {
+        if (property is not (HubCameraProperty.BinX or HubCameraProperty.BinY or HubCameraProperty.NumX or HubCameraProperty.NumY or
+            HubCameraProperty.StartX or HubCameraProperty.StartY or HubCameraProperty.Gain or HubCameraProperty.Offset or
+            HubCameraProperty.ReadoutMode or HubCameraProperty.FastReadout or HubCameraProperty.CoolerOn or
+            HubCameraProperty.SetCcdTemperature or HubCameraProperty.SubExposureDuration)) throw new ArgumentOutOfRangeException(nameof(property));
+        JsonElement encoded;
+        try { encoded = Validate(property, JsonSerializer.SerializeToElement(value)); }
+        catch (Exception) { throw new ArgumentOutOfRangeException(nameof(value)); }
+        return new { member = "cameraSetting", setting = new { property = Key(property), value = encoded } };
+    }
+    public static object Start(double seconds, bool light) {
+        if (double.IsNaN(seconds) || double.IsInfinity(seconds) || seconds < 0) throw new ArgumentOutOfRangeException(nameof(seconds));
+        return new { member = "startExposure", request = new { durationSeconds = seconds, light } };
+    }
+    public static object Guide(int direction, int milliseconds) {
+        if (direction < 0 || direction > 3 || milliseconds < 0) throw new ArgumentOutOfRangeException(nameof(direction));
+        return new { member = "pulseGuide", request = new { direction, durationMilliseconds = milliseconds } };
+    }
+    public static HubCameraProperty StateProperty(string? name) => name switch {
+        "CameraState" => HubCameraProperty.CameraState, "CCDTemperature" => HubCameraProperty.CcdTemperature,
+        "CoolerPower" => HubCameraProperty.CoolerPower, "HeatSinkTemperature" => HubCameraProperty.HeatSinkTemperature,
+        "IsPulseGuiding" => HubCameraProperty.IsPulseGuiding, "PercentCompleted" => HubCameraProperty.PercentCompleted,
+        "ImageReady" => HubCameraProperty.ImageReady, _ => throw new HubException(HubFailure.Protocol)
+    };
+    public static HubImageRequest CompletedImage(HubHello hello, Guid output, JsonElement status) {
+        try {
+            if (!status.GetProperty("imageReady").GetBoolean())
+                throw new HubException(HubFailure.Remote, new HubRemoteError(JsonSerializer.SerializeToElement(new { code = "unavailable", message = "Camera image is not ready" })));
+            var completed = status.GetProperty("completed");
+            var source = HubWire.Identity(completed, "source");
+            if (source != HubWire.Identity(status, "source")) throw new HubException(HubFailure.Protocol);
+            return new HubImageRequest(hello.HostInstance, hello.ConfigurationRevision, hello.ClientId, output, source,
+                HubWire.Identity(completed, "generation"), HubWire.Identity(completed, "acquisition"));
+        } catch (HubException) { throw; }
+        catch (Exception) { throw new HubException(HubFailure.Protocol); }
+    }
     public static string Key(HubCameraProperty property) {
         if (!Enum.IsDefined(typeof(HubCameraProperty), property)) throw new ArgumentOutOfRangeException(nameof(property));
         var name = property.ToString();

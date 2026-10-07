@@ -45,6 +45,7 @@ public sealed class HubRegistrationTests
     [InlineData("rotator", "Rotator", "R")]
     [InlineData("filterwheel", "FilterWheel", "L")]
     [InlineData("covercalibrator", "CoverCalibrator", "C")]
+    [InlineData("camera", "Camera", "A")]
     public void TypedRegistrationUsesBothChooserViewsAndStableIdentity(string kind, string chooser, string prefix)
     {
         using var f = new Fixture(kind);

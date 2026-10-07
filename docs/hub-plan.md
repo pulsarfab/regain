@@ -8,6 +8,33 @@ tagged or published. Changed cross-crate APIs require an unpublished version so
 Cargo package verification uses the new workspace packages.
 Last updated: 2026-10-07.
 
+Current increment: native ASCOM camera publication reuses the shared native
+session, revision-bound camera timing and protected completed-frame reader.
+Camera V2/V3/V4 expose typed properties/settings, capture, guiding, DeviceState,
+and immutable typed/variant images. Stable camera identities use both chooser
+views and the existing shared setup styling. Managed array reservations follow
+their arrays through collection, including arrays retained after disconnect.
+All nine numeric types and rank-two/rank-three layouts are tested in managed
+conversion; actual COM clients verify Int32/variant, RGB and one-plane SAFEARRAYs.
+Full real net48 x86/x64 checks, all 285 NINA regression tests, and existing COM
+imports (34 private worker cases per architecture, 26 parent cases) pass. Both server
+architectures pass actual private COM export checks with both client bitnesses.
+Cold local HKCU SCM activation still fails at the first Switch class with
+0x80040154, matching the recorded local limitation; it does not reach camera
+activation. CI must verify the disposable-runner machine registration/SCM path.
+The first new camera fixture incorrectly passed a relative executable path;
+normalizing that fixture path fixes the rejection without changing production.
+Preceding 74d73a0 PR/push runs 37619558594/37619553321 now pass all eight jobs
+in each. New camera increments still need their own CI. Native NINA camera
+publication, shared camera creation, coordination, recovery/resume, conformance,
+interactive/physical acceptance, README/site work and final audit remain open.
+The next NINA camera slice must also derive its readiness/profile timeout from
+the host's actual duration-dependent capture allowance. The existing cameraTiming
+descriptor covers connection and command acknowledgement only; it cannot stand
+in for a retrying capture's readiness/download bound. Keep that negotiation inert,
+revision-bound and shared with the supervisor rather than duplicating recovery
+policy in NINA or returning early readiness.
+
 Current increment: Alpaca camera publication uses the existing private host's
 typed properties, settings, retained capture/guiding and protected image API.
 Dynamic camera numbers and UUIDs appear in discovery; conflicts with local camera
@@ -24,9 +51,9 @@ ownership, cancellation, revision timing, image lifetime, wire types and errors.
 Native NINA/native ASCOM camera publications and shared camera creation remain
 next; creation remains gated until all three frontends implement the interface.
 Coordination, recovery/resume, conformance, physical acceptance, documentation and
-the final merge audit remain open. This increment is local while preceding
-74d73a0 PR/push workflows 37619558594/37619553321 are still running; completed
-jobs have passed. Earlier green CI does not establish this increment's CI.
+the final merge audit remain open. The preceding 74d73a0 PR/push workflows
+37619558594/37619553321 subsequently passed all eight jobs each. That green CI
+does not establish this increment's CI.
 
 Current increment: shared camera PulseGuide lifecycle and controlled IPC. A pulse
 retains its own identity, owner, source generation, activity and control lease
@@ -1816,9 +1843,11 @@ implemented. Dedicated focuser simulation is implemented. Broader simulation, ge
 setup and conformance remain required.
 Shared setup now enables Focuser, Rotator, FilterWheel and CoverCalibrator proxy creation, with other proxy classes
 gated until their interfaces are implemented and verified.
-Existing camera proxies now publish through Alpaca and their setup links open the
-shared hub editor. Camera creation remains gated pending native NINA/native ASCOM
-publication and common setup selection; it is not enabled by the Alpaca slice alone.
+Existing camera proxies now publish through Alpaca and native ASCOM; their setup
+links open the shared hub editor. Native ASCOM uses the shared camera session,
+negotiated operation deadlines, protected image reader and budgeted managed arrays.
+Camera creation remains gated pending native NINA publication and common setup
+selection; neither of the first two publication slices enables it alone.
 
 Rotator controller increment: shared typed sessions and live property/command
 semantics are implemented with eleven private actor/Alpaca V3/V4 cases. Native

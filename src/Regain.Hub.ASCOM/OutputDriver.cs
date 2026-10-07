@@ -84,8 +84,10 @@ public abstract class OutputDriver : IDisposable
                         if (selection.DeviceType == "switch") session.RequireCapabilities("switchAsyncContract");
                     } catch { session.Disconnect(); throw; }
                     var epoch = session.Epoch;
-                    await session.RequestAsync(epoch, JsonSerializer.SerializeToElement(new { op = "changeConnection",
-                        output = selection.OutputId, connected, asynchronous }), TimeSpan.FromSeconds(35), lifetime.Token).ConfigureAwait(false);
+                    var command = JsonSerializer.SerializeToElement(new { op = "changeConnection", output = selection.OutputId, connected, asynchronous });
+                    if (selection.DeviceType == "camera" && connected && !asynchronous)
+                        await session.RequestCameraAsync(epoch, command, lifetime.Token).ConfigureAwait(false);
+                    else await session.RequestAsync(epoch, command, TimeSpan.FromSeconds(35), lifetime.Token).ConfigureAwait(false);
                 } catch (Exception error) { throw Translate(error, connected ? "Connect" : "Disconnect", false, false); }
             });
             // Observe the task even if a client drops the object without ever
@@ -111,8 +113,10 @@ public abstract class OutputDriver : IDisposable
         }
         if (!session.IsAttached) throw new global::ASCOM.NotConnectedException("Hub output is disconnected; connect explicitly");
         try {
-            var value = session.RequestAsync(sessionToken, JsonSerializer.SerializeToElement(new { op = operation,
-                output = selection.OutputId, property }), write ? TimeSpan.FromSeconds(35) : null, lifetime.Token).GetAwaiter().GetResult();
+            var command = JsonSerializer.SerializeToElement(new { op = operation, output = selection.OutputId, property });
+            var value = (selection.DeviceType == "camera" && write
+                ? session.RequestCameraAsync(sessionToken, command, lifetime.Token)
+                : session.RequestAsync(sessionToken, command, write ? TimeSpan.FromSeconds(35) : null, lifetime.Token)).GetAwaiter().GetResult();
             lock (gate) {
                 if (disposed || operationToken != operationEpoch) {
                     if (write) throw new global::ASCOM.DriverException("Hub connection changed while the command was in flight; it may have completed. Reconcile before another command.");
@@ -122,7 +126,7 @@ public abstract class OutputDriver : IDisposable
             return value;
         } catch (Exception error) { throw Translate(error, member, write, method); }
     }
-    private static Exception Translate(Exception error, string member, bool write, bool method)
+    protected static Exception Translate(Exception error, string member, bool write, bool method)
     {
         if (error is global::ASCOM.DriverException) return error;
         if (error is HubException hub) {
@@ -148,6 +152,10 @@ public abstract class OutputDriver : IDisposable
             var values = new List<StateValue>();
             foreach (var state in states.EnumerateArray()) {
                 var value = state.GetProperty("Value");
+                if (selection.DeviceType == "camera") {
+                    try { HubCameraProtocol.Validate(HubCameraProtocol.StateProperty(state.GetProperty("Name").GetString()), value); }
+                    catch (HubException) { throw new global::ASCOM.DriverException("Hub DeviceState contained an invalid camera member or value"); }
+                }
                 if (selection.DeviceType == "rotator") {
                     var property = state.GetProperty("Name").GetString() switch {
                         "IsMoving" => HubRotatorProperty.IsMoving, "Position" => HubRotatorProperty.Position,
@@ -174,6 +182,8 @@ public abstract class OutputDriver : IDisposable
                     JsonValueKind.Number when selection.DeviceType == "covercalibrator" && state.GetProperty("Name").GetString() == "CoverState" => (CoverStatus)value.GetInt32(),
                     JsonValueKind.Number when selection.DeviceType == "covercalibrator" && state.GetProperty("Name").GetString() == "CalibratorState" => (CalibratorStatus)value.GetInt32(),
                     JsonValueKind.Number when selection.DeviceType == "covercalibrator" => value.GetInt32(),
+                    JsonValueKind.Number when selection.DeviceType == "camera" && state.GetProperty("Name").GetString() == "CameraState" => (CameraStates)value.GetInt32(),
+                    JsonValueKind.Number when selection.DeviceType == "camera" && state.GetProperty("Name").GetString() == "PercentCompleted" => checked((short)value.GetInt32()),
                     JsonValueKind.Number => value.GetDouble(),
                     _ => throw new global::ASCOM.DriverException("Hub DeviceState contained an invalid scalar")
                 };
@@ -181,6 +191,24 @@ public abstract class OutputDriver : IDisposable
             }
             return new StateValueCollection(values);
         }
+    }
+    protected HubCameraImage DownloadCameraImage(string member)
+    {
+        Guid operationToken, sessionToken;
+        lock (gate) {
+            CheckDisposed(); CheckChange();
+            if (changing is { IsCompleted: false }) throw new global::ASCOM.DriverException("Hub connection change is pending");
+            operationToken = operationEpoch; sessionToken = session.Epoch;
+        }
+        try {
+            var image = session.DownloadCameraImageAsync(sessionToken, HubImageBudget.Shared, lifetime.Token).GetAwaiter().GetResult();
+            lock (gate) {
+                if (disposed || operationToken != operationEpoch) {
+                    image.Dispose(); throw new global::ASCOM.NotConnectedException("Camera image belongs to a retired connection");
+                }
+            }
+            return image;
+        } catch (Exception error) { throw Translate(error, member, false, false); }
     }
     public void Dispose()
     {

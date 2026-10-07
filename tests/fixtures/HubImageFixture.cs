@@ -19,7 +19,7 @@ internal static class HubImageFixture
     }
     internal static async Task RunAll()
     {
-        await Types(); await Lifetime(); await Capacity();
+        await Types(); await Lifetime(); await Capacity(); await ArrayLifetime();
         foreach (var fault in Faults) await Malformed(fault);
         await Stalled(true); await Stalled(false);
         Console.WriteLine("Image peer: nine types, packed Int32, rank 3, pins, shared budget, malformed input and cancellation/deadline passed");
@@ -43,6 +43,20 @@ internal static class HubImageFixture
                     copy[0] ^= 255; image.CopyTo(0, copy, 0, 1);
                     Check(copy[0] == peer.Pixels[0], "Reader exposed mutable backing storage");
                     Check(budget.UsedBytes == peer.Pixels.Length, "Live buffer uncharged");
+                    var arrays = new HubImageBudget(1024 * 1024);
+                    var typed = HubCameraArrays.Convert(image, budget: arrays);
+                    var variant = HubCameraArrays.Convert(image, variants: true, budget: arrays);
+                    Check(typed.Rank == image.Descriptor.Rank && variant.Rank == typed.Rank &&
+                        typed.GetLength(0) == image.Descriptor.Width && typed.GetLength(1) == image.Descriptor.Height,
+                        "Returned CLR image shape changed");
+                    var encoded = new byte[image.ByteLength]; Buffer.BlockCopy(typed, 0, encoded, 0, encoded.Length);
+                    Check(encoded.SequenceEqual(peer.Pixels), "Typed CLR image changed numeric bits or X/Y/plane order");
+                    Check(variant.GetType().GetElementType() == typeof(object), "Variant array must contain boxed primitives");
+                    foreach (var indices in Coordinates(image.Descriptor)) {
+                        var scalar = typed.GetValue(indices)!; var boxed = variant.GetValue(indices)!;
+                        Check(boxed.GetType() == scalar.GetType() && boxed.Equals(scalar), "Variant pixel numeric type/value changed");
+                    }
+                    Check(arrays.UsedBytes > 0 && budget.UsedBytes == peer.Pixels.Length, "Array/encoded accounting changed");
                 }
                 Check(budget.UsedBytes == 0, "Image budget leaked");
             }
@@ -51,7 +65,53 @@ internal static class HubImageFixture
             using var peer = await Peer.Open(HubImageElementType.Int32, transmitted);
             var serving = peer.Serve(); using var image = await peer.Download(new HubImageBudget(1024)); await serving;
             Check(image.Descriptor.ElementType == HubImageElementType.Int32 && image.Descriptor.TransmissionType == transmitted, "Packed Int32 type changed");
+            var typed = HubCameraArrays.Convert(image, budget: new HubImageBudget(4096));
+            var variant = HubCameraArrays.Convert(image, true, new HubImageBudget(4096));
+            Check(typed.GetType().GetElementType() == typeof(int), "Packed Int32 was not widened to the logical array type");
+            var index = 0;
+            foreach (var indices in Coordinates(image.Descriptor)) {
+                var expected = transmitted switch {
+                    HubImageElementType.Byte => (int)peer.Pixels[index++],
+                    HubImageElementType.Int16 => BitConverter.ToInt16(peer.Pixels, 2 * index++),
+                    _ => BitConverter.ToUInt16(peer.Pixels, 2 * index++)
+                };
+                Check(typed.GetValue(indices) is int value && value == expected && variant.GetValue(indices) is int boxed && boxed == expected,
+                    "Packed Int32 changed signs or variant type");
+            }
         }
+    }
+    private static IEnumerable<int[]> Coordinates(HubImageDescriptor descriptor) {
+        for (var x = 0; x < descriptor.Width; x++) for (var y = 0; y < descriptor.Height; y++)
+            if (descriptor.Planes.HasValue) for (var p = 0; p < descriptor.Planes.Value; p++) yield return new[] { x, y, p };
+            else yield return new[] { x, y };
+    }
+    internal static async Task ArrayLifetime() {
+        using var peer = await Peer.Open(HubImageElementType.Int32, HubImageElementType.UInt16);
+        var serving = peer.Serve(); using var image = await peer.Download(new HubImageBudget(4096)); await serving;
+        var tiny = new HubImageBudget(1);
+        try { HubCameraArrays.Convert(image, budget: tiny); throw new InvalidOperationException("Uncharged CLR array was allocated"); }
+        catch (HubException error) { Check(error.Failure == HubFailure.Busy && tiny.UsedBytes == 0, "Array capacity cleanup changed"); }
+        var budget = new HubImageBudget(4096);
+        using (var stop = new CancellationTokenSource()) {
+            stop.Cancel();
+            try { HubCameraArrays.Convert(image, budget: budget, cancellation: stop.Token); throw new InvalidOperationException("Cancelled conversion was returned"); }
+            catch (OperationCanceledException) { Check(budget.UsedBytes == 0, "Cancelled array retained budget"); }
+        }
+        var abandoned = AbandonArray(image, budget);
+        for (var attempt = 0; attempt < 10 && budget.UsedBytes != 0; attempt++) {
+            GC.Collect(); GC.WaitForPendingFinalizers(); GC.Collect(); await Task.Delay(5);
+        }
+        Check(!abandoned.IsAlive && budget.UsedBytes == 0, "Collected CLR array leaked its budget");
+    }
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+    private static WeakReference AbandonArray(HubCameraImage image, HubImageBudget budget) {
+        var array = HubCameraArrays.Convert(image, budget: budget);
+        var weak = new WeakReference(array);
+        Check(budget.UsedBytes > 0, "Returned array lost its budget reservation");
+        // Assert while the array is strongly rooted; after return a background
+        // collection is permitted, including before the caller's first read.
+        GC.KeepAlive(array);
+        return weak;
     }
     internal static async Task Lifetime()
     {
