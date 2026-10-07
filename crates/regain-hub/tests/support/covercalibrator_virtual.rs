@@ -56,7 +56,10 @@ pub(super) async fn nested(
             backend: SourceBackend::Virtual { output },
             polling: PollPolicy {
                 poll_seconds: 0.1,
-                request_timeout_seconds: 0.1,
+                // Use the ordinary scalar deadline for real nested HTTP work.
+                // This fixture checks ownership/cache/generation, not a 100-ms
+                // scheduler bound. The leaf's injected hung read still exceeds
+                // that deadline; focused mock timing tests keep their short bound.
                 connection_timeout_seconds: 4.0,
                 ..Default::default()
             },
