@@ -111,6 +111,18 @@ class SchemaContractTests(unittest.TestCase):
         VALIDATOR.validate(config)
 
 
+    def test_camera_simulation_update_contract(self):
+        validator = Draft202012Validator(DESCRIPTION["simulationControl"]["schema"])
+        for update in [{"readoutDurationSeconds": 0}, {"readoutDurationSeconds": 300},
+                       {"temperature": -273.15}, {"canAbortExposure": False},
+                       {"exposureMetadataAvailable": False}]:
+            validator.validate({"camera": update})
+        for update in [{"readoutDurationSeconds": -1}, {"readoutDurationSeconds": 301},
+                       {"temperature": -300}, {"hasShutter": 1}, {"temperature": "12"},
+                       {"gain": 100}, {"imageReady": True}, {"extra": False}]:
+            with self.subTest(update=update):
+                self.assertTrue(list(validator.iter_errors({"camera": update})))
+
     def test_panel_simulation_update_contract(self):
         validator = Draft202012Validator(DESCRIPTION["simulationControl"]["schema"])
         for update in [{"brightness": 0}, {"brightness": 2147483647, "maxBrightness": 2147483647, "calibratorState": 3},

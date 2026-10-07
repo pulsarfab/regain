@@ -8,6 +8,29 @@ tagged or published. Changed cross-crate APIs require an unpublished version so
 Cargo package verification uses the new workspace packages.
 Last updated: 2026-10-07.
 
+Current increment: the explicit camera simulator now uses the ordinary source
+actor, acquisition supervisor, typed settings and host image budget. Integration
+and readout use monotonic time; settings freeze at Start, Stop preserves partial
+duration, Abort discards, and disconnect sends no implicit command. Binning and
+subframes produce deterministic packed Int32/UInt16 mono/RGB/rank-three-one-plane
+images. Optional capabilities, temperature readings, metadata availability,
+readout delay and camera-specific faults use shared generated simulation controls.
+Ordinary camera settings/diagnostics remain on their common typed path. Timestamps
+use an explicit synthetic epoch, not wall-clock hardware timing. No native retry
+policy, SDK or worker is required. Camera setup/publication choices remain gated.
+Thirteen focused camera cases and all 35 existing simulator cases pass. Review
+corrected completion latching so a future stall cannot reopen a completed frame,
+and simulation-update acknowledgements now include releasing local control to
+avoid racing an immediate ordinary command. The same release runs on rejected
+updates, without clearing uncertain-write fences. Runtime fault updates correctly
+remain Busy while an acquisition owns control. Full hub/Alpaca regressions,
+strict Rust 1.99 lint, Rust 1.89 compatibility, Node and nine schema checks pass.
+Fresh-host NINA 274/274 and actual net48 x86/x64 image/setup and existing driver
+fixtures pass with warnings denied. The explicit simulator joins SDK/direct
+simulations in protected-pipe, repeated image, retained pin and capacity checks.
+All original gates stay
+open, including remaining COM/virtual inputs and all three camera publications.
+
 Current increment: camera operation deadline negotiation is implemented in Rust
 and the shared .NET 8/net48 client. The host derives separate Connect, Start,
 setting, Stop and Abort allowances from the actual controller/source bounds and
@@ -30,10 +53,15 @@ The shared client API is ready for camera providers to adopt; it does not enable
 public camera choices or complete the remaining camera inputs/publications.
 Keep all original coordination, acceptance, documentation and merge gates open.
 
-Image reader 5b39476 is pushed to the same draft PR #21. PR CI 37601691962 and
-push CI 37601685235 each currently have seven successful jobs with Windows still
-running. Do not call this head green or push the timing increment until both are
-terminal.
+Image reader 5b39476 passes all eight jobs in both PR CI 37601691962 and push
+CI 37601685235, now terminal including Windows. The reviewed deadline increment
+e51eaaf is pushed to the same draft PR #21. Its PR CI 37606180612 fails
+macOS ARM's private camera endpoint test: the OS lock remains held after awaited
+host shutdown. The corresponding push job passes, but this does not establish
+correct cleanup. Investigation identified nested reader/operation tasks whose
+JoinSet drop requests cancellation without waiting for destruction. Keep new
+work local while both workflows finish and correct this lifecycle separately;
+no milestone or merge gate closes here.
 
 Previous increment: the shared managed camera image reader is implemented for
 .NET 8 and .NET Framework 4.8. It opens a separate verified user-protected pipe

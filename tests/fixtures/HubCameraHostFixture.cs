@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Regain.Hub;
 
 namespace Regain.TestFixtures;
@@ -12,7 +13,7 @@ internal static class HubCameraHostFixture
     { if (!value) throw new InvalidOperationException(message); }
     // Explicit --simulate is mandatory here. SDK path deliberately does not exist.
     // Start/kill only this private process; attaching clients never own the host.
-    internal static async Task Run(string executable, bool direct)
+    internal static async Task Run(string executable, bool direct, bool standard = false)
     {
         executable = Path.GetFullPath(executable);
         var workers = Path.GetDirectoryName(executable)!;
@@ -22,12 +23,14 @@ internal static class HubCameraHostFixture
         var configPath = Path.Combine(directory, "camera.json");
         var instance = Guid.NewGuid(); var revision = Guid.NewGuid(); var source = Guid.NewGuid();
         var firstOutput = Guid.NewGuid(); var secondOutput = Guid.NewGuid();
+        object backend = standard ? new { kind = "simulated", deviceType = "camera" } : new {
+            kind = "native", device = direct ? "camera-direct" : "camera-sdk", identity = direct ? "direct-simulator" : "sim00001",
+            camera = new { model = direct ? "ZWO ASI585MM Pro" : "ZWO Simulated",
+                recovery = new { maxRetries = 0, readyFrameDownloadRetries = 0, reconnectDelaySeconds = 0.01 } } };
+        var height = standard ? 192 : 256;
         var configuration = new {
             schemaVersion = 1, instanceId = instance, revision,
-            sources = new[] { new { id = source, label = "Private camera simulation", backend = new {
-                kind = "native", device = direct ? "camera-direct" : "camera-sdk", identity = direct ? "direct-simulator" : "sim00001",
-                camera = new { model = direct ? "ZWO ASI585MM Pro" : "ZWO Simulated",
-                    recovery = new { maxRetries = 0, readyFrameDownloadRetries = 0, reconnectDelaySeconds = 0.01 } } },
+            sources = new[] { new { id = source, label = "Private camera simulation", backend,
                 polling = new { connectionTimeoutSeconds = 10, requestTimeoutSeconds = 5, pollSeconds = 60 } } },
             outputs = new[] { new { id = firstOutput, number = 2, label = "Private camera A", device = new { kind = "proxy", source, deviceType = "camera" } },
                 new { id = secondOutput, number = 9, label = "Private camera B", device = new { kind = "proxy", source, deviceType = "camera" } } }
@@ -56,9 +59,36 @@ internal static class HubCameraHostFixture
             async Task<JsonElement> Command(HubClient client, object value) => await client.RequestAsync(JsonSerializer.SerializeToElement(value), stop.Token);
             async Task<JsonElement> CameraCommand(HubClient client, HubCameraTiming timing, object value) =>
                 await client.RequestCameraAsync(timing, JsonSerializer.SerializeToElement(value), stop.Token);
+            if (standard) {
+                using var editor = await HubEditorSession.AttachAsync(executable, configPath, instance);
+                await editor.ReloadAsync(stop.Token);
+                var controls = editor.SimulationControls(source);
+                Check(controls.Count == 13, "Shared camera simulation controls missing");
+                var duration = controls.Single(field => field.Path.SequenceEqual(new[] { "camera", "readoutDurationSeconds" }));
+                foreach (var invalid in new[] { "-1", "301", "NaN" }) {
+                    try { duration.Parse(invalid); throw new Exception("Invalid simulator duration accepted"); }
+                    catch (InvalidOperationException) { }
+                }
+                var updated = (await editor.UpdateSimulationAsync(source, JsonSerializer.SerializeToElement(new { camera = new { temperature = -10.0 } }), stop.Token)).GetProperty("simulation");
+                Check(updated.GetProperty("camera").GetProperty("temperature").GetDouble() == -10.0, "Camera simulation update lost");
+                var malformed = JsonNode.Parse(updated.GetRawText())!;
+                malformed["camera"]!["imageReady"] = true;
+                try { editor.ValidateSimulationStatus(source, JsonSerializer.SerializeToElement(malformed)); throw new Exception("Unknown camera simulation field accepted"); }
+                catch (HubException error) { Check(error.Failure == HubFailure.Protocol, "Malformed simulation status rejection changed"); }
+                Check((await Command(control, new { op = "getConfig" })).GetProperty("revision").GetGuid() == revision, "Simulation updated saved configuration revision");
+                // The editor update releases its temporary connection lease
+                // asynchronously. Establish an idle baseline before proving
+                // that timing metadata itself acquires no equipment lease.
+                var cleanup = Stopwatch.StartNew();
+                while ((await Command(control, new { op = "sourceStatus", source })).GetProperty("leaseCount").GetInt32() != 0) {
+                    if (cleanup.Elapsed >= TimeSpan.FromSeconds(5)) throw new TimeoutException("Simulation update lease did not retire");
+                    await Task.Delay(5, stop.Token);
+                }
+            }
             var firstTiming = await control.GetCameraTimingAsync(firstOutput, stop.Token);
             var secondTiming = await observer.GetCameraTimingAsync(secondOutput, stop.Token);
-            Check(firstTiming.Native && firstTiming.Source == source && firstTiming.Connect > TimeSpan.FromSeconds(35), "Native controller deadline not negotiated");
+            Check(firstTiming.Native == !standard && firstTiming.Source == source &&
+                (standard ? firstTiming.Connect >= TimeSpan.FromSeconds(30) : firstTiming.Connect > TimeSpan.FromSeconds(35)), "Controller deadline not negotiated");
             try {
                 await CameraCommand(observer, firstTiming, new { op = "connect", output = firstOutput });
                 throw new InvalidOperationException("Another client's timing descriptor was accepted");
@@ -68,7 +98,7 @@ internal static class HubCameraHostFixture
             await CameraCommand(control, firstTiming, new { op = "connect", output = firstOutput });
             await CameraCommand(observer, secondTiming, new { op = "connect", output = secondOutput });
             foreach (var property in new[] { "numX", "numY" }) await CameraCommand(control, firstTiming, new {
-                op = "put", output = firstOutput, property = new { member = "cameraSetting", setting = new { property, value = 256 } } });
+                op = "put", output = firstOutput, property = new { member = "cameraSetting", setting = new { property, value = property == "numX" ? 256 : height } } });
             async Task<HubImageRequest> Capture(HubClient client, HubCameraTiming timing) {
                 var output = timing.Output;
                 await CameraCommand(client, timing, new { op = "put", output, property = new { member = "startExposure", request = new { durationSeconds = 0.05, light = false } } });
@@ -88,7 +118,7 @@ internal static class HubCameraHostFixture
             using var first = await HubCameraImages.DownloadAsync(attached, control, request, budget, TimeSpan.FromSeconds(10), stop.Token);
             using var second = await HubCameraImages.DownloadAsync(attached, control, request, budget, TimeSpan.FromSeconds(10), stop.Token);
             Check(first.Descriptor.ElementType == HubImageElementType.Int32 && first.Descriptor.TransmissionType == HubImageElementType.UInt16 &&
-                first.ByteLength == 256 * 256 * 2 && first.Descriptor.Rank == 2, "Rust/managed image descriptor disagrees");
+                first.ByteLength == 256 * height * 2 && first.Descriptor.Rank == 2, "Rust/managed image descriptor disagrees");
             var original = new byte[257]; var repeated = new byte[257];
             first.CopyTo(65530, original, 0, original.Length); second.CopyTo(65530, repeated, 0, repeated.Length);
             Check(original.SequenceEqual(repeated), "Repeated immutable read changed pixels");
@@ -118,7 +148,7 @@ internal static class HubCameraHostFixture
             pin.CopyTo(65530, repeated, 0, repeated.Length); Check(original.SequenceEqual(repeated), "Client loss changed pinned pixels");
             pin.Dispose(); Check(budget.UsedBytes == 0, "Completed managed images leaked budget");
             await Command(observer, new { op = "disconnect", output = secondOutput });
-            Console.WriteLine($"Camera image {(direct ? "direct" : "SDK")} simulation {IntPtr.Size * 8}-bit: protected pipe, multichunk bytes, independent readers, retained pins, budget and identity rejection passed");
+            Console.WriteLine($"Camera image {(standard ? "explicit" : direct ? "direct" : "SDK")} simulation {IntPtr.Size * 8}-bit: protected pipe, multichunk bytes, independent readers, retained pins, budget and identity rejection passed");
             completed = true;
         } finally {
             // The Process object is the specific child started above, never a

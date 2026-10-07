@@ -742,12 +742,13 @@ handlers as virtual sources. This implementation covers local composition of the
 first three classes. COM imports and NINA/HTTP publication now use these same
 controllers; camera proxies and native ASCOM output publication remain pending.
 
-### Explicit scalar simulation
+### Explicit simulation
 
-`simulated` sources currently implement Switch, SafetyMonitor, and
-ObservingConditions through the same actors, leases, polling, and output policies
-as native/network sources. Other classes remain unsupported until their proxy
-contracts are implemented. Simulation is never a fallback for a failed device.
+`simulated` sources implement Switch, SafetyMonitor, ObservingConditions, Focuser,
+Rotator, FilterWheel, CoverCalibrator and Camera through the same actors, leases,
+polling, and controllers as native/network sources. Camera input is available to
+the acquisition/image IPC paths; public camera setup choices and all three camera
+frontend publications remain gated. Simulation is never a fallback for a failed device.
 Source status, output listings, and setup inspection mark simulated data. An
 output with any simulated dependency is marked simulated, including mixed outputs.
 
@@ -757,6 +758,28 @@ class-specific controls, and supported faults. Updates are atomic, require the
 source control lease, and participate in configuration quiescence. They invalidate
 cached samples and schedule a new poll; they do not directly grant safety
 permission. Ordinary device commands retain the production permission/range checks.
+The acknowledgement includes local control release, including after a rejected
+update. A test update cannot interrupt an acquisition that owns source control.
+
+The camera simulator has a fixed 320×240 sensor, independent binning up to four,
+subframes and numeric gain/offset controls. Readout modes produce mono, three-plane
+RGB or rank-three-one-plane packed Int32/UInt16 images in sensor-row order. Host
+budget admission precedes pixel allocation. Integration and readout use monotonic
+time; geometry, readout duration and pixel settings freeze at StartExposure. Stop
+retains the elapsed partial duration; Abort discards the frame. Disconnect does
+not send either command. Completed frames remain complete when arming a future
+stall fault. Each exposure uses a synthetic epoch timestamp with seven fractional
+digits; these are test identities, not measured UTC capture times.
+
+Shared `camera` simulation controls inject readout duration, temperature readings,
+optional capabilities and metadata availability. Ordinary settings and acquisition
+state use typed camera commands/diagnostics rather than duplicate test fields.
+Cooling controls retain the requested state without claiming thermal dynamics.
+Camera-specific faults are stalled readiness, image failure and mismatched image
+geometry, alongside ordinary read failure, timeout and uncertain writes. The
+supervisor retains uncertainty and publishes no partial frame; clearing a test
+fault neither replays an exposure nor resets a source write fence. These inputs
+do not gain native retained-frame recovery, worker processes or an SDK dependency.
 
 Switch channels are a writable relay (0, range 0–1), a writable level (1, range
 0–100), and a read-only temperature sensor (2, range −40–80 °C). Test controls can

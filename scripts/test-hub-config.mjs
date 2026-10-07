@@ -149,12 +149,31 @@ function simulationState(type) {
   }
   return state;
 }
-for (const type of ['switch','safetymonitor','observingconditions','focuser','rotator','filterwheel','covercalibrator']) {
+for (const type of ['switch','safetymonitor','observingconditions','focuser','rotator','filterwheel','covercalibrator','camera']) {
   const fields = simulationControls(simDescription,simulatedSource(type));
-  assert.equal(fields.length,type==='switch'?5:type==='safetymonitor'?2:type==='rotator'?12:type==='filterwheel'?6:type==='covercalibrator'?10:15);
+  assert.equal(fields.length,type==='switch'?5:type==='safetymonitor'?2:type==='rotator'?12:type==='filterwheel'?6:type==='covercalibrator'?10:type==='camera'?13:15);
   assert.deepEqual(fields.find(f=>f.path[0]==='fault').enum,simDescription.faultsByDeviceType[type]);
 }
 assert.deepEqual(simulationControls(simDescription,{backend:{kind:'native'}}),[]);
+{
+  const fields=simulationControls(simDescription,simulatedSource('camera'));
+  const duration=fields.find(f=>f.path[1]==='readoutDurationSeconds'), temperature=fields.find(f=>f.path[1]==='temperature');
+  for(const value of [-1,301,'0',Infinity]) assert.throws(()=>validateSimulationValue(duration,value));
+  for(const value of [-273.16,'12',NaN]) assert.throws(()=>validateSimulationValue(temperature,value));
+  const state=simulationState('camera'); let writes=0;
+  const setup=new SimulationSetup(async command=>{
+    writes++; assert.deepEqual(command.update,{camera:{readoutDurationSeconds:1,temperature:-10}});
+    Object.assign(state.camera,command.update.camera);
+    return {source:setup.source.id,configurationRevision:simRevision,simulation:state};
+  },()=>{});
+  setup.load(simDescription,simulatedSource('camera'),simRevision);
+  await assert.rejects(setup.update([{path:['camera','readoutDurationSeconds'],value:301}])); assert.equal(writes,0);
+  assert.equal((await setup.update([{path:['camera','readoutDurationSeconds'],value:1},{path:['camera','temperature'],value:-10}])).camera.temperature,-10);
+  for(const mutate of [s=>s.camera.temperature=-300,s=>s.camera.readoutDurationSeconds=301,
+    s=>s.camera.hasShutter=0,s=>s.camera.imageReady=true,s=>delete s.camera.temperature]) {
+    const bad=structuredClone(state); mutate(bad); assert.throws(()=>setup.statusValue(bad));
+  }
+}
 {
   const fields=simulationControls(simDescription,simulatedSource('covercalibrator'));
   const brightness=fields.find(f=>f.path[1]==='brightness'), cover=fields.find(f=>f.path[1]==='coverState');

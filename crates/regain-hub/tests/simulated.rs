@@ -1035,7 +1035,7 @@ fn updates_are_atomic_class_specific_and_share_production_validation() {
             before
         );
     }
-    assert!(SimulatedBackend::new(DeviceType::Camera, vec![]).is_err());
+    assert!(SimulatedBackend::new(DeviceType::Camera, vec![]).is_ok());
     let mut weather = SimulatedBackend::new(DeviceType::ObservingConditions, vec![]).unwrap();
     assert!(
         weather

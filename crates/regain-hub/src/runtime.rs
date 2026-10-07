@@ -665,7 +665,14 @@ impl HubRuntime {
         };
         let lease = crate::readout::SourceLease::acquire(self.registry.get(source)?).await?;
         lease.source.control(lease.id, true).await?;
-        lease.source.update_simulation(lease.id, update).await
+        let result = lease.source.update_simulation(lease.id, update).await;
+        // Acknowledgement includes releasing local control. Drop releases the
+        // remaining connection lease asynchronously; an immediate camera or
+        // accessory command must not race that cleanup for control ownership.
+        let release = lease.source.control(lease.id, false).await;
+        let status = result?;
+        release?;
+        Ok(status)
     }
     pub fn outputs(&self) -> Vec<OutputDescriptor> {
         self.config

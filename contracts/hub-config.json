@@ -4246,6 +4246,151 @@
   "simulationControl": {
     "apply": "immediate",
     "controlsByDeviceType": {
+      "camera": [
+        {
+          "default": 0.2,
+          "description": "New exposures enter Reading for this monotonic duration after integration. Settings are frozen at StartExposure.",
+          "label": "Readout duration (s)",
+          "maximum": 300.0,
+          "minimum": 0.0,
+          "path": [
+            "camera",
+            "readoutDurationSeconds"
+          ],
+          "type": "number"
+        },
+        {
+          "default": 12.0,
+          "description": "Injected reading; cooler controls do not simulate thermal dynamics.",
+          "label": "CCD temperature (°C)",
+          "minimum": -273.15,
+          "path": [
+            "camera",
+            "temperature"
+          ],
+          "type": "number"
+        },
+        {
+          "default": 20.0,
+          "description": "Injected reading; cooler controls do not simulate thermal dynamics.",
+          "label": "Heat sink temperature (°C)",
+          "minimum": -273.15,
+          "path": [
+            "camera",
+            "heatSinkTemperature"
+          ],
+          "type": "number"
+        },
+        {
+          "default": true,
+          "description": "Inject an optional camera capability. Unsupported properties remain explicit errors.",
+          "label": "Abort available",
+          "path": [
+            "camera",
+            "canAbortExposure"
+          ],
+          "type": "boolean"
+        },
+        {
+          "default": true,
+          "description": "Inject an optional camera capability. Unsupported properties remain explicit errors.",
+          "label": "Stop available",
+          "path": [
+            "camera",
+            "canStopExposure"
+          ],
+          "type": "boolean"
+        },
+        {
+          "default": true,
+          "description": "Inject an optional camera capability. Unsupported properties remain explicit errors.",
+          "label": "Fast readout available",
+          "path": [
+            "camera",
+            "canFastReadout"
+          ],
+          "type": "boolean"
+        },
+        {
+          "default": true,
+          "description": "Inject an optional camera capability. Unsupported properties remain explicit errors.",
+          "label": "Cooler control available",
+          "path": [
+            "camera",
+            "canSetCcdTemperature"
+          ],
+          "type": "boolean"
+        },
+        {
+          "default": true,
+          "description": "Inject an optional camera capability. Unsupported properties remain explicit errors.",
+          "label": "Cooler power available",
+          "path": [
+            "camera",
+            "canGetCoolerPower"
+          ],
+          "type": "boolean"
+        },
+        {
+          "default": true,
+          "description": "Inject an optional camera capability. Unsupported properties remain explicit errors.",
+          "label": "Shutter present",
+          "path": [
+            "camera",
+            "hasShutter"
+          ],
+          "type": "boolean"
+        },
+        {
+          "default": true,
+          "description": "Inject an optional camera capability. Unsupported properties remain explicit errors.",
+          "label": "Temperature available",
+          "path": [
+            "camera",
+            "temperatureAvailable"
+          ],
+          "type": "boolean"
+        },
+        {
+          "default": true,
+          "description": "Inject an optional camera capability. Unsupported properties remain explicit errors.",
+          "label": "Exposure metadata available",
+          "path": [
+            "camera",
+            "exposureMetadataAvailable"
+          ],
+          "type": "boolean"
+        },
+        {
+          "default": "none",
+          "description": "Select none to clear a fault. This does not clear an uncertain-write latch.",
+          "enum": [
+            "none",
+            "readError",
+            "timeout",
+            "uncertainWrite",
+            "stalledExposure",
+            "imageError",
+            "invalidImage"
+          ],
+          "label": "Injected fault",
+          "path": [
+            "fault"
+          ],
+          "type": "string"
+        },
+        {
+          "default": 0.0,
+          "description": "Age reported for each new simulated observation. Refresh resets it to zero.",
+          "label": "Sample age (s)",
+          "maximum": 86400.0,
+          "minimum": 0.0,
+          "path": [
+            "sampleAgeSeconds"
+          ],
+          "type": "number"
+        }
+      ],
       "covercalibrator": [
         {
           "default": 0,
@@ -5070,9 +5215,19 @@
       "focuser",
       "rotator",
       "filterwheel",
-      "covercalibrator"
+      "covercalibrator",
+      "camera"
     ],
     "faultsByDeviceType": {
+      "camera": [
+        "none",
+        "readError",
+        "timeout",
+        "uncertainWrite",
+        "stalledExposure",
+        "imageError",
+        "invalidImage"
+      ],
       "covercalibrator": [
         "none",
         "readError",
@@ -5128,6 +5283,11 @@
       ]
     },
     "fieldsByDeviceType": {
+      "camera": [
+        "camera",
+        "fault",
+        "sampleAgeSeconds"
+      ],
       "covercalibrator": [
         "coverCalibrator",
         "fault",
@@ -5167,6 +5327,85 @@
     "revisionCheckedUpdates": true,
     "schema": {
       "$defs": {
+        "CameraUpdate": {
+          "additionalProperties": false,
+          "properties": {
+            "canAbortExposure": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "canFastReadout": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "canGetCoolerPower": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "canSetCcdTemperature": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "canStopExposure": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "exposureMetadataAvailable": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "hasShutter": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "heatSinkTemperature": {
+              "format": "double",
+              "minimum": -273.15,
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "readoutDurationSeconds": {
+              "format": "double",
+              "maximum": 300,
+              "minimum": 0,
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "temperature": {
+              "format": "double",
+              "minimum": -273.15,
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "temperatureAvailable": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          },
+          "type": "object"
+        },
         "CoverCalibratorUpdate": {
           "additionalProperties": false,
           "properties": {
@@ -5248,7 +5487,10 @@
             "uncertainWrite",
             "invalidMotion",
             "stalledMotion",
-            "stoppedShort"
+            "stoppedShort",
+            "stalledExposure",
+            "imageError",
+            "invalidImage"
           ],
           "type": "string"
         },
@@ -5493,6 +5735,17 @@
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
       "properties": {
+        "camera": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CameraUpdate"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Optional camera capabilities, readings and timing for explicit tests.\nOrdinary geometry/settings still use the common camera command path."
+        },
         "coverCalibrator": {
           "anyOf": [
             {

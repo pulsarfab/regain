@@ -22,6 +22,7 @@ internal static class Program
                 if (IntPtr.Size * 8 != int.Parse(args[2])) throw new InvalidOperationException("Wrong camera fixture bitness");
                 await HubCameraHostFixture.Run(args[1], false);
                 await HubCameraHostFixture.Run(args[1], true);
+                await HubCameraHostFixture.Run(args[1], false, standard: true);
                 return 0;
             }
             if (args.Length == 2 && args[0] == "--image-codec") {

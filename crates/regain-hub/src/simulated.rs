@@ -14,7 +14,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
+mod camera;
 mod panel;
+use camera::CameraExposure;
+pub use camera::{CameraState, CameraUpdate};
 use panel::PanelMotion;
 pub use panel::{CoverCalibratorState, CoverCalibratorUpdate};
 
@@ -30,6 +33,9 @@ pub enum Fault {
     InvalidMotion,
     StalledMotion,
     StoppedShort,
+    StalledExposure,
+    ImageError,
+    InvalidImage,
 }
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -333,6 +339,9 @@ pub struct SimulationUpdate {
     /// Sparse independent cover/light state. Component state updates replace
     /// only that component's pending operation; durations do not stop either.
     pub cover_calibrator: Option<CoverCalibratorUpdate>,
+    /// Optional camera capabilities, readings and timing for explicit tests.
+    /// Ordinary geometry/settings still use the common camera command path.
+    pub camera: Option<CameraUpdate>,
 }
 // Internally tagged commands deserialize through serde's captured content,
 // whose map keys do not perform JSON's string-to-integer conversion. Parse the
@@ -381,6 +390,8 @@ pub struct SimulationStatus {
     pub filter_wheel: Option<FilterWheelState>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cover_calibrator: Option<CoverCalibratorState>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub camera: Option<CameraState>,
 }
 pub fn description() -> Value {
     let mut controls = BTreeMap::new();
@@ -392,6 +403,7 @@ pub fn description() -> Value {
         DeviceType::Rotator,
         DeviceType::FilterWheel,
         DeviceType::CoverCalibrator,
+        DeviceType::Camera,
     ] {
         let state = SimulatedBackend::new(device, Vec::new()).unwrap().state;
         let mut fields = Vec::new();
@@ -543,7 +555,19 @@ pub fn description() -> Value {
                     "default":defaults[key],"minimum":0.0,"maximum":300.0}));
             }
         }
+        if device == DeviceType::Camera {
+            fields.extend(camera::controls());
+        }
         let faults = match device {
+            DeviceType::Camera => vec![
+                Fault::None,
+                Fault::ReadError,
+                Fault::Timeout,
+                Fault::UncertainWrite,
+                Fault::StalledExposure,
+                Fault::ImageError,
+                Fault::InvalidImage,
+            ],
             DeviceType::Switch => vec![
                 Fault::None,
                 Fault::ReadError,
@@ -585,9 +609,9 @@ pub fn description() -> Value {
     }
     json!({"schema":schemars::schema_for!(SimulationUpdate), "apply":"immediate",
         "controlsByDeviceType":controls,"revisionCheckedUpdates":true,"deadlineSeconds":30,
-        "sourceKinds":["simulated"],"deviceTypes":["switch","safetymonitor","observingconditions","focuser","rotator","filterwheel","covercalibrator"],
-        "fieldsByDeviceType":{"switch":["switchValues","fault","sampleAgeSeconds"],"safetymonitor":["safe","fault"],"observingconditions":["weather","fault","sampleAgeSeconds"],"focuser":["focuser","fault","sampleAgeSeconds"],"rotator":["rotator","fault","sampleAgeSeconds"],"filterwheel":["filterWheel","fault","sampleAgeSeconds"],"covercalibrator":["coverCalibrator","fault","sampleAgeSeconds"]},
-        "faultsByDeviceType":{"switch":["none","readError","timeout","uncertainWrite"],"safetymonitor":["none","readError","timeout","invalidSafety"],"observingconditions":["none","readError","timeout"],"focuser":["none","readError","timeout","uncertainWrite","invalidMotion","stalledMotion","stoppedShort"],"rotator":["none","readError","timeout","uncertainWrite","invalidMotion","stalledMotion","stoppedShort"],"filterwheel":["none","readError","timeout","uncertainWrite","invalidMotion","stalledMotion","stoppedShort"],"covercalibrator":["none","readError","timeout","uncertainWrite","invalidMotion","stalledMotion","stoppedShort"]},
+        "sourceKinds":["simulated"],"deviceTypes":["switch","safetymonitor","observingconditions","focuser","rotator","filterwheel","covercalibrator","camera"],
+        "fieldsByDeviceType":{"switch":["switchValues","fault","sampleAgeSeconds"],"safetymonitor":["safe","fault"],"observingconditions":["weather","fault","sampleAgeSeconds"],"focuser":["focuser","fault","sampleAgeSeconds"],"rotator":["rotator","fault","sampleAgeSeconds"],"filterwheel":["filterWheel","fault","sampleAgeSeconds"],"covercalibrator":["coverCalibrator","fault","sampleAgeSeconds"],"camera":["camera","fault","sampleAgeSeconds"]},
+        "faultsByDeviceType":{"switch":["none","readError","timeout","uncertainWrite"],"safetymonitor":["none","readError","timeout","invalidSafety"],"observingconditions":["none","readError","timeout"],"focuser":["none","readError","timeout","uncertainWrite","invalidMotion","stalledMotion","stoppedShort"],"rotator":["none","readError","timeout","uncertainWrite","invalidMotion","stalledMotion","stoppedShort"],"filterwheel":["none","readError","timeout","uncertainWrite","invalidMotion","stalledMotion","stoppedShort"],"covercalibrator":["none","readError","timeout","uncertainWrite","invalidMotion","stalledMotion","stoppedShort"],"camera":["none","readError","timeout","uncertainWrite","stalledExposure","imageError","invalidImage"]},
         "persistence":"Test state is shared for this runtime only. A new runtime starts safety unsafe.",
         "uncertainWrites":"Changing a fault does not clear an uncertain-write latch. Disconnect every source lease before retrying commands."})
 }
@@ -597,6 +621,7 @@ pub struct SimulatedBackend {
     connected: bool,
     motion: Option<(tokio::time::Instant, MotionTarget)>,
     panel_motion: PanelMotion,
+    camera_exposure: CameraExposure,
 }
 #[derive(Clone, Copy)]
 enum MotionTarget {
@@ -615,6 +640,7 @@ impl SimulatedBackend {
                 | DeviceType::Rotator
                 | DeviceType::FilterWheel
                 | DeviceType::CoverCalibrator
+                | DeviceType::Camera
         ) {
             return Err(unsupported());
         }
@@ -651,11 +677,13 @@ impl SimulatedBackend {
                     .then(FilterWheelState::default),
                 cover_calibrator: (device_type == DeviceType::CoverCalibrator)
                     .then(CoverCalibratorState::default),
+                camera: (device_type == DeviceType::Camera).then(CameraState::default),
             },
             samples,
             connected: false,
             motion: None,
             panel_motion: PanelMotion::default(),
+            camera_exposure: CameraExposure::default(),
         })
     }
     fn patch(&mut self, update: SimulationUpdate) -> Result<SimulationStatus, SourceError> {
@@ -669,6 +697,7 @@ impl SimulatedBackend {
             || update.rotator.is_some() && next.device_type != DeviceType::Rotator
             || update.filter_wheel.is_some() && next.device_type != DeviceType::FilterWheel
             || update.cover_calibrator.is_some() && next.device_type != DeviceType::CoverCalibrator
+            || update.camera.is_some() && next.device_type != DeviceType::Camera
         {
             return Err(invalid("Simulator controls do not match this source class"));
         }
@@ -701,6 +730,7 @@ impl SimulatedBackend {
                             | DeviceType::Rotator
                             | DeviceType::FilterWheel
                             | DeviceType::CoverCalibrator
+                            | DeviceType::Camera
                     )
                 || matches!(
                     fault,
@@ -712,6 +742,10 @@ impl SimulatedBackend {
                         | DeviceType::FilterWheel
                         | DeviceType::CoverCalibrator
                 )
+                || matches!(
+                    fault,
+                    Fault::StalledExposure | Fault::ImageError | Fault::InvalidImage
+                ) && next.device_type != DeviceType::Camera
             {
                 return Err(invalid(
                     "Injected fault does not match the simulated source class",
@@ -751,6 +785,9 @@ impl SimulatedBackend {
                     .as_mut()
                     .expect("Validated panel source"),
             )?;
+        }
+        if let Some(update) = update.camera {
+            update.apply(next.camera.as_mut().expect("Validated camera source"))?;
         }
         self.state = next;
         self.panel_motion.replace(replace_cover, replace_light);
@@ -803,6 +840,9 @@ impl SimulatedBackend {
         }
         if let Some(panel) = state.cover_calibrator.as_mut() {
             self.panel_motion.effective(panel, state.fault);
+        }
+        if let Some(camera) = state.camera.as_mut() {
+            self.camera_exposure.effective(camera, state.fault);
         }
         state
     }
@@ -1036,7 +1076,7 @@ impl SimulatedBackend {
                     2
                 } else if matches!(
                     self.state.device_type,
-                    DeviceType::Focuser | DeviceType::Rotator
+                    DeviceType::Focuser | DeviceType::Rotator | DeviceType::Camera
                 ) {
                     4
                 } else {
@@ -1047,6 +1087,11 @@ impl SimulatedBackend {
             _ => {}
         }
         match self.state.device_type {
+            DeviceType::Camera => self.camera_exposure.value(
+                self.state.camera.as_ref().expect("Camera state"),
+                member,
+                args,
+            ),
             DeviceType::CoverCalibrator => self
                 .state
                 .cover_calibrator
@@ -1237,8 +1282,14 @@ impl Backend for SimulatedBackend {
                     | DeviceType::Rotator
                     | DeviceType::FilterWheel
                     | DeviceType::CoverCalibrator
+                    | DeviceType::Camera
             ) {
                 match self.state.device_type {
+                    DeviceType::Camera => self.camera_exposure.write(
+                        self.state.camera.as_mut().expect("Camera state"),
+                        &member,
+                        &args,
+                    )?,
                     DeviceType::FilterWheel => self.write_filterwheel(&member, &args)?,
                     DeviceType::Focuser => self.write_focuser(&member, &args)?,
                     DeviceType::Rotator => self.write_rotator(&member, &args)?,
@@ -1289,6 +1340,20 @@ impl Backend for SimulatedBackend {
                 return Err(SourceError::uncertain());
             }
             Ok(Value::Null)
+        })
+    }
+    fn camera_image(
+        &mut self,
+        budget: crate::camera::image::ImageBudget,
+    ) -> BackendFuture<'_, crate::camera::image::CameraImage> {
+        Box::pin(async move {
+            self.advance_motion();
+            self.check_read().await?;
+            self.camera_exposure.image(
+                self.state.camera.as_ref().ok_or_else(unsupported)?,
+                budget,
+                self.state.fault,
+            )
         })
     }
     fn poll(&mut self) -> BackendFuture<'_, Values> {

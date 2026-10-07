@@ -3,6 +3,80 @@
 This records local review and tests for the single hub PR. Passing a foundation
 test does not imply that a frontend, transport, or hardware gate has passed.
 
+## 2026-10-07: explicit camera simulator
+
+The simulator joins the existing source factory and shared simulation controls;
+it uses no workers, SDK, vendor activation or native recovery allowance. Camera
+settings use the existing strict parameter decoder; the ordinary supervisor
+owns acquisition control, publishes immutable images and retains uncertainty.
+Its bounded fixed sensor generates deterministic packed Int32/UInt16 rows after
+host-budget admission. Mono, RGB and rank-three-one-plane modes exercise image
+layout. Synthetic seven-fractional-digit timestamps distinguish test exposures;
+integration/readout use Tokio's monotonic clock. Temperature controls inject
+readings without claiming a thermal model.
+
+Review corrected a future stall fault retroactively reopening a completed frame;
+completion now latches until explicit Abort or a new exposure. Simulator status
+contains only described injection fields; ordinary settings/acquisition state
+remain typed camera properties and diagnostics. Capability changes cannot leave
+FastReadout or cooling enabled after removing their support. Unknown setters,
+invalid subframes and malformed parameters fail before a new exposure.
+
+The real runtime tests found that simulation-update acknowledgement raced Drop's
+asynchronous control release. The common runtime now explicitly releases control
+before acknowledging successful or rejected updates. It still refuses test
+updates while an acquisition owns control and never clears uncertain-write
+fences. Tests were corrected to respect those production rules. Initial fixture
+compilation used incorrect method names/signatures and output JSON fields; those
+were corrected without loosening production validation. The two-camera fixture
+wait now allows its requested ten-second integration plus readout. A Cell-based
+completion latch failed the backend's Send-future requirement and was replaced
+with an atomic latch.
+
+artifacts/hub-camera-simulation-focused-7.log records twelve camera cases and all
+35 existing simulator cases passing. The final focused run in
+artifacts/hub-camera-simulation-reviewed-focused.log passes thirteen, adding
+stalled readiness through the actual supervisor deadline and explicit local
+abandonment before clearing the injected fault. These cover monotonic phases, frozen
+geometry/timing, exact pixel bytes, ranks, partial Stop, Abort, optional errors,
+independent cameras, shared ownership, retained pins across capture/shutdown,
+budget/image faults, no partial publication, uncertain writes and immediate
+commands after both accepted and rejected test updates. Node and nine schema
+checks pass. artifacts/hub-camera-simulation-rust.log passes full hub/Alpaca
+regressions. artifacts/hub-camera-simulation-final-clippy.log and
+artifacts/hub-camera-simulation-msrv.log pass strict Rust 1.99 lint and Rust 1.89
+all-target compatibility for five affected crates. Lint found a test-only
+constant chunks_exact call; it now uses as_chunks with the correct array-reference
+comparison, without suppression. The final thirteen cases pass again in
+artifacts/hub-camera-simulation-final-focused.log after that correction.
+artifacts/hub-camera-simulation-exe.log and the contract/fmt checks pass.
+artifacts/hub-camera-simulation-nina.log records NINA 274/274 passing against the
+rebuilt host. artifacts/hub-camera-simulation-net48.log passes the complete
+actual x86/x64 suite with zero warnings/errors. The shared host fixture adds the
+explicit simulator alongside SDK/direct, verifies shared injection descriptions,
+strict malformed-status rejection, unchanged saved revision, timed camera
+commands, protected multi-chunk image IPC, repeated reads, capacity failure,
+retained pins across captures/client loss and exact stale-image rejection.
+Camera setup/publications and every original gate stay open.
+
+The preceding image head 5b39476 passes all eight jobs in both workflows
+37601691962 and 37601685235. Reviewed deadline commit e51eaaf is pushed to the
+same draft PR #21. PR CI 37606180612 fails macOS ARM job 112742092072 at
+runtime_tests.rs:528: the endpoint lock remains held after the host task returns.
+The full job log is retained in artifacts/hub-ci-37606180612-macos-arm.log.
+The corresponding push job passes; the cleanup contract still needs correction.
+Inspection found nested reader/operation JoinSets dropped without awaiting their
+task destruction. That lifecycle correction is a separate increment. This
+simulator increment remains local while both preceding workflows are live.
+Final fixture review establishes the editor update's asynchronous connection
+lease retirement before testing inert camera timing metadata; it does not change
+production deadlines or retry an equipment command.
+The final baseline/name refinements pass thirteen Rust camera cases, all three
+real-host NINA image cases and SDK/direct/explicit image cases in actual net48
+x86/x64: artifacts/hub-camera-simulation-commit-focused.log,
+artifacts/hub-camera-simulation-commit-nina.log and
+artifacts/hub-camera-simulation-commit-net48.log.
+
 ## 2026-10-07: camera frontend operation deadlines
 
 Reviewed the existing fixed 30-second server/35-second client deadlines against
