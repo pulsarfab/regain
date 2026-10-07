@@ -24,7 +24,10 @@ impl TypedSourceSession {
                 break state.generation;
             }
             if let Some(error) = state.error
-                && matches!(error.kind, ErrorKind::Permanent | ErrorKind::Unsupported)
+                && matches!(
+                    error.kind,
+                    ErrorKind::Permanent | ErrorKind::Unsupported | ErrorKind::Uncertain
+                )
             {
                 return Err(error);
             }

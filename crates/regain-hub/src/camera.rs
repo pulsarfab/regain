@@ -6,4 +6,5 @@ pub mod json_image;
 pub mod native_capture;
 pub mod native_owner;
 pub mod native_properties;
+pub mod native_source;
 pub mod properties;

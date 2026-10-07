@@ -115,6 +115,7 @@ internal class HubAccessoryServer : IDisposable
     {
         var operation = "unparsed request";
         var started = System.Diagnostics.Stopwatch.StartNew();
+        long responseStartedMs = -1;
         try {
             using var stream = client.GetStream();
             using var reader = new StreamReader(stream, Encoding.ASCII, false, 4096, true);
@@ -139,7 +140,7 @@ internal class HubAccessoryServer : IDisposable
                 throw new InvalidOperationException("Invalid private upstream request");
             var member = uri.Segments.Last(); object? value = null; var code = 0;
             operation = first[0] + " " + member + " transaction=" + args["ClientTransactionID"];
-            trace.Enqueue(operation + " started");
+            trace.Enqueue(operation + " started elapsedMs=" + started.ElapsedMilliseconds + " " + SchedulerState());
             if (first[0] == "PUT") {
                 trace.Enqueue("write " + member + (args.TryGetValue("Position", out var position) ? " position=" + position : ""));
                 switch (member) {
@@ -192,16 +193,28 @@ internal class HubAccessoryServer : IDisposable
             else if (!Values.TryGetValue(member, out value)) code = 1024;
             var body = JsonSerializer.SerializeToUtf8Bytes(new { ErrorNumber = code, ErrorMessage = code == 0 ? "" : "private upstream detail", Value = value });
             var header = Encoding.ASCII.GetBytes("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: " + body.Length + "\r\nConnection: close\r\n\r\n");
+            responseStartedMs = started.ElapsedMilliseconds;
             await stream.WriteAsync(header, 0, header.Length, stopping.Token).ConfigureAwait(false);
             await stream.WriteAsync(body, 0, body.Length, stopping.Token).ConfigureAwait(false);
             trace.Enqueue(operation + " replied code=" + code + " elapsedMs=" + started.ElapsedMilliseconds);
         } catch (Exception error) when (error is IOException or SocketException or ObjectDisposedException or OperationCanceledException) {
-            trace.Enqueue(operation + " failed elapsedMs=" + started.ElapsedMilliseconds + " " + error);
+            // Distinguish time spent accepting/parsing/scheduling from a reply
+            // write itself. Aborted writes alone do not identify the CI cause.
+            trace.Enqueue(operation + " failed elapsedMs=" + started.ElapsedMilliseconds +
+                " responseStartedMs=" + responseStartedMs + " " + SchedulerState() + " " + error);
         }
         finally {
             trace.Enqueue(operation + " closed elapsedMs=" + started.ElapsedMilliseconds);
             clients.TryRemove(client, out _); client.Dispose();
         }
+    }
+    private static string SchedulerState()
+    {
+        System.Threading.ThreadPool.GetAvailableThreads(out var workers, out var io);
+        System.Threading.ThreadPool.GetMinThreads(out var minimumWorkers, out var minimumIo);
+        System.Threading.ThreadPool.GetMaxThreads(out var maximumWorkers, out var maximumIo);
+        return $"poolWorkers={maximumWorkers - workers} poolIo={maximumIo - io} " +
+            $"minimumWorkers={minimumWorkers} minimumIo={minimumIo}";
     }
     public void Dispose()
     {

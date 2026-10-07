@@ -213,6 +213,9 @@ struct BudgetInner {
 #[derive(Clone)]
 pub struct ImageBudget(Arc<BudgetInner>);
 impl ImageBudget {
+    pub(crate) fn shares(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
     pub fn new(maximum: usize) -> Result<Self, SourceError> {
         if maximum == 0 {
             return Err(invalid("Camera image budget must be positive"));

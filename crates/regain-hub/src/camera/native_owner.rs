@@ -4,7 +4,8 @@ use super::{
     image::{CameraImage, ImageBudget},
     native_capture::{NativeCaptureError, capture_admitted},
     native_properties::{
-        NativeGeometry, NativeProperties, NativePropertyObservation, validate_imaging_control,
+        NativeGeometry, NativeProperties, NativePropertyObservation, validate_control_request,
+        validate_imaging_control,
     },
     properties::{CameraProperty, CameraSetting, CameraValue},
 };
@@ -30,6 +31,7 @@ pub enum NativeOperationKind {
     Connecting,
     Capturing,
     Configuring,
+    Refreshing,
     Aborting,
     Closing,
 }
@@ -86,6 +88,15 @@ struct State {
     last_acquisition: Option<Uuid>,
     error: Option<SourceError>,
 }
+impl State {
+    fn publication_pending(&self) -> bool {
+        self.cooling.is_some()
+            || self
+                .pending
+                .as_ref()
+                .is_some_and(|pending| pending.operation.kind != NativeOperationKind::Refreshing)
+    }
+}
 /// Constructed by the native source adapter, sharing the host's budget/activity.
 /// This type deliberately exposes no client connection lease or automatic retries.
 pub struct NativeCamera {
@@ -96,6 +107,7 @@ pub struct NativeCamera {
     activity: ActivityCounter,
     changed: Notify,
     sdk_fallback: bool,
+    simulated: bool,
     cooling: CoolingHandle,
     command_timeout: Duration,
 }
@@ -253,6 +265,153 @@ fn cooling_error(error: CoolingError) -> SourceError {
 }
 
 impl NativeCamera {
+    pub fn simulated(&self) -> bool {
+        self.simulated
+    }
+    pub(crate) fn shares_budget(&self, budget: &ImageBudget) -> bool {
+        self.budget.shares(budget)
+    }
+    /// A known explicit control request can restore the worker retired by Abort.
+    /// Restoration only reapplies acknowledged settings; the requested new value
+    /// is dispatched by its normal retained command after this method succeeds.
+    pub(crate) async fn prepare_control(
+        self: &Arc<Self>,
+        control: i32,
+        value: i64,
+    ) -> Result<(), SourceError> {
+        let (generation, id) = {
+            let mut state = self.state.lock().unwrap();
+            if !state.connected {
+                return Err(disconnected());
+            }
+            if let Some(error) = &state.error {
+                return Err(error.clone());
+            }
+            let core = self.status.lock().unwrap();
+            validate_control_request(&core, control, value)?;
+            if core.control_connection_available {
+                return Ok(());
+            }
+            if state.pending.is_some() || state.cooling.is_some() {
+                return Err(busy());
+            }
+            drop(core);
+            let generation = state.generation;
+            let id = Uuid::new_v4();
+            let token = CancellationToken::new();
+            let work = self.work(generation, id);
+            state.pending = Some(Pending {
+                operation: NativeOperation {
+                    id,
+                    kind: NativeOperationKind::Configuring,
+                    exposure: None,
+                },
+                token: token.clone(),
+            });
+            tokio::spawn(async move {
+                let owner = &work.owner;
+                let mut session = owner.engine.lock().await;
+                if !owner.current(generation, id) {
+                    return;
+                }
+                let result = session.refresh(&token).await.map_err(|e| core_error(&e));
+                let mut state = owner.state.lock().unwrap();
+                if state.generation == generation
+                    && state.pending.as_ref().is_some_and(|p| p.operation.id == id)
+                {
+                    state.pending = None;
+                    if let Err(error) = result {
+                        state.connected = false;
+                        state.error = Some(error);
+                    }
+                }
+                owner.changed.notify_waiters();
+            });
+            (generation, id)
+        };
+        self.wait_operation(generation, id).await?;
+        let state = self.state.lock().unwrap();
+        if state.generation != generation {
+            return Err(disconnected());
+        }
+        state.error.clone().map_or(Ok(()), Err)
+    }
+    /// An adapter command can await this read-only reservation before dispatch.
+    /// Cancellation withdraws only the caller, not the retained telemetry task.
+    pub(crate) async fn wait_environment_refresh(&self) -> Result<(), SourceError> {
+        let pending = {
+            let state = self.state.lock().unwrap();
+            state
+                .pending
+                .as_ref()
+                .filter(|p| p.operation.kind == NativeOperationKind::Refreshing)
+                .map(|p| (state.generation, p.operation.id))
+        };
+        if let Some((generation, id)) = pending {
+            self.wait_operation(generation, id).await?;
+        }
+        Ok(())
+    }
+    /// Schedule read-only telemetry without lending task ownership to a poll
+    /// waiter. Capture and acknowledged settings already own the same engine;
+    /// a background poll never queues behind them or opens another worker.
+    pub fn begin_environment_refresh(self: &Arc<Self>) -> Result<bool, SourceError> {
+        let mut state = self.state.lock().unwrap();
+        if !state.connected {
+            return Err(disconnected());
+        }
+        if let Some(error) = state
+            .error
+            .as_ref()
+            .filter(|e| e.kind == ErrorKind::Uncertain)
+        {
+            return Err(error.clone());
+        }
+        if state.pending.is_some() || state.cooling.is_some() {
+            return Ok(false);
+        }
+        if !self.status.lock().unwrap().control_connection_available {
+            // No implicit reopen after a capture/Abort retired the worker.
+            // Cached readings retain their ages until explicit work restores it.
+            return Ok(false);
+        }
+        let generation = state.generation;
+        let id = Uuid::new_v4();
+        let token = CancellationToken::new();
+        let work = self.work(generation, id);
+        state.pending = Some(Pending {
+            operation: NativeOperation {
+                id,
+                kind: NativeOperationKind::Refreshing,
+                exposure: None,
+            },
+            token: token.clone(),
+        });
+        tokio::spawn(async move {
+            let owner = &work.owner;
+            let mut session = owner.engine.lock().await;
+            if !owner.current(generation, id) {
+                return;
+            }
+            let result = session
+                .refresh_environment(&token)
+                .await
+                .map_err(|e| core_error(&e));
+            let mut state = owner.state.lock().unwrap();
+            if state.generation == generation
+                && state.pending.as_ref().is_some_and(|p| p.operation.id == id)
+            {
+                state.pending = None;
+                if let Err(mut error) = result {
+                    error.transport_lost = true;
+                    state.error = Some(error);
+                    state.connected = false;
+                }
+            }
+            owner.changed.notify_waiters();
+        });
+        Ok(true)
+    }
     /// No discovery or I/O. Simulation is explicitly selected by Runtime.
     pub fn new(
         selection: Selection,
@@ -262,6 +421,7 @@ impl NativeCamera {
         log: Diagnostic,
     ) -> Result<Arc<Self>, SourceError> {
         let sdk_fallback = selection.direct && selection.sdk_fallback;
+        let simulated = runtime.simulate;
         let session = Session::new(selection, runtime, log).map_err(|e| core_error(&e))?;
         let command_timeout =
             Duration::from_secs_f64(session.selection.recovery.command_timeout_seconds);
@@ -284,6 +444,7 @@ impl NativeCamera {
             activity,
             changed: Notify::new(),
             sdk_fallback,
+            simulated,
         }))
     }
     pub fn snapshot(&self) -> NativeCameraSnapshot {
@@ -296,8 +457,7 @@ impl NativeCamera {
             geometry: state.geometry,
             acquisition: state.last_acquisition,
             image_ready: state.connected
-                && state.pending.is_none()
-                && state.cooling.is_none()
+                && !state.publication_pending()
                 && state.completed.is_some()
                 && state.error.is_none(),
             error: state.error.clone(),
@@ -545,8 +705,7 @@ impl NativeCamera {
             geometry: state.geometry.ok_or_else(disconnected)?,
             operation: state.pending.as_ref().map(|p| p.operation.kind),
             image: state.completed.as_ref().map(|p| &p.image),
-            image_ready: state.pending.is_none()
-                && state.cooling.is_none()
+            image_ready: !state.publication_pending()
                 && state.completed.is_some()
                 && state.error.is_none(),
             error: state.error.as_ref(),
@@ -806,7 +965,7 @@ impl NativeCamera {
         if !state.connected {
             return Err(disconnected());
         }
-        if state.pending.is_some() || state.cooling.is_some() {
+        if state.publication_pending() {
             return Err(busy());
         }
         if let Some(error) = &state.error {
@@ -842,7 +1001,7 @@ impl NativeCamera {
                         "Native acquisition is no longer current",
                     ));
                 }
-                if state.cooling.is_none() && state.pending.is_none() {
+                if !state.publication_pending() {
                     if let Some(error) = &state.error {
                         return Err(error.clone());
                     }

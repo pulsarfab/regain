@@ -4751,3 +4751,123 @@ and preserving these ages through SampleBatch. Remaining inputs, binary frontend
 IPC, all camera outputs, coordination and all original acceptance/final gates
 remain open. Camera choices stay disabled; PR #21 remains draft and no physical
 equipment or installed vendor driver was activated.
+
+## 2026-10-06: native camera source actor/supervisor integration
+
+NativeCameraBackend implements the common Backend lifecycle using one retained
+NativeCamera. Construction does no discovery/I/O. Incremental handshake steps
+leave the source actor responsive; the owner keeps connection/cleanup work after
+waiter loss. Simulation identity comes from the actual core Runtime. Scalar
+reads use the existing 53 typed properties; setters share strict member/parameter
+decoding for the 13 settings. Known malformed commands fail before dispatch.
+StartExposure requires bounded Duration/Light, converts to native microseconds
+and freezes configured geometry atomically. Sub-microsecond/zero native captures
+are invalid; fractional native temperature targets are rejected rather than
+silently truncated. StopExposure remains unsupported, never an Abort alias.
+
+Sampling uses the common plan/type/aggregate bounds. Optional-property failures
+stay per key. Hardware samples retain their original evidence ages through the
+actual SourceActor; local geometry/state and negotiated metadata carry no hardware
+timestamp. A read-only core environment method uses only the existing worker,
+reads temperature/power and cannot apply queued settings or implicitly reopen.
+Failure retires the worker while retaining aged diagnostic evidence. The owner
+retains refresh activity and fences generations; it skips capture/setting work.
+Adapter commands await a running refresh before dispatch. An empty sample plan
+does not schedule telemetry. Explicit Refresh remains supported.
+
+Review found that sharing the ordinary pending marker with background telemetry
+could race ImageReady and camera_image, hiding an already immutable image.
+Refreshing is now excluded from publication fences and reports idle camera state;
+capture/setting/cooling/cleanup reservations keep their original fences. The
+image, metadata and budget charge remain unchanged through telemetry. Binary
+image dispatch verifies that native owner and caller use the exact same shared
+ImageBudget and returns the existing Arc without allocation or another download.
+
+Review also found a handshake replay risk: initialization acknowledges persistent
+settings, so a timeout/reset or invalid readback cannot automatically reopen and
+replay them. The adapter retains a conservative unknown-outcome fence through
+automatic resets. Only complete last-lease disconnect clears it. SourceActor
+publishes the normal write-uncertain latch for uncertain connection outcomes;
+typed source waiters return Uncertain promptly. No generic read-only reconnect
+behavior for other existing adapters was removed.
+
+Further review/integration tests exposed the distinction between a logical core
+Session and its current worker handle. Recovery and explicit Abort retire a worker;
+the first adapter incorrectly interpreted that as a source transport failure,
+changing generation after a known Abort. Cached reads now follow the owner's
+logical connection. Background telemetry skips an absent worker without reopening.
+Core continues its own configured recovery with the same acquisition/generation.
+A later explicit hardware control validates its requested range/capability first,
+then retains restoration of acknowledged settings before the requested setting's
+normal write/readback. Local geometry and StartExposure do not trigger a separate
+restoration; core capture owns its own restore. Reset while connecting, configuring
+or cooling conservatively retains the outcome fence, including restoration tasks.
+The integrated SDK/direct case now verifies owner-only cooling, unsupported Stop,
+known Abort, subsequent explicit gain restoration and a new capture with unchanged
+source generation. The injected failed-status case reads cached properties during
+core reconnect delay and aborts without an outer reset or replacement exposure.
+Another test resets control restoration before dispatch and proves the requested
+gain was never applied; a complete disconnect clears that conservative fence.
+
+Production worker-pipe simulations cover SDK/direct captures through actual
+SourceActor/CameraSupervisor, two clients/one connection/one capture, shared pixel
+identity, frozen native metadata, pinned readers after last disconnect, preserved
+aged temperature evidence in SampleBatch/actor caches, optional errors, malformed
+commands/no capture, foreign-budget rejection/no allocation, lost initialization
+outcomes/no automatic replay, explicit disconnect/reconnect, and refresh/capture/
+reset/publication races. Two core cases prove queued settings are not applied by
+telemetry and failed telemetry cannot reopen the worker.
+Eleven adapter integration cases pass, with production simulations only.
+
+Retained initial failures: the test helper double-wrapped SourceHandle's Arc;
+an aged-gain initialization override correctly failed write/readback freshness
+validation. The aged-cache fixture now uses read-only temperature evidence;
+production validation is unchanged. The first reconnect-delay fixture guessed
+the phase name as "SDK reconnect delay"; the actual core phase is "Reconnect
+delay" and the fixture now observes that actual state. The first Abort integration
+failure exposed the worker/logical-session bug described above. A later explicit
+restoration fixture used the default five-second reconnect delay against a
+five-second source deadline, correctly yielding uncertainty. It now uses the
+same explicit 0.01-second simulated reconnect delay as other owner fixtures;
+the source deadline and failure semantics were not relaxed. Production factory
+recovery/deadline derivation remains required. The broad unrestricted build hit Windows
+paging-file exhaustion (os error 1455), followed by compiler metadata errors.
+The same broad build succeeds with two compiler jobs. Final validation following
+the publication and worker/logical-session corrections passes: full combined
+core/hub/Alpaca/ZWO regressions (49 core tests, 49 hub unit tests, 22 native owner
+cases, eleven new adapter cases and 98 ZWO library tests, plus all integrations),
+strict Rust 1.99 Clippy for core/hub/Alpaca/ZWO/device all targets, Rust 1.89
+all-target compatibility, generated contract freshness, Node/seven independent
+schema checks, formatting/diff checks, freshly rebuilt-host NINA 228/228 and
+actual net48 x86/x64 integration fixtures. Main evidence:
+artifacts/hub-camera-native-source-rust-complete.log,
+artifacts/hub-camera-native-source-clippy-complete.log,
+artifacts/hub-camera-native-source-msrv-complete.log,
+artifacts/hub-camera-native-source-contract.log,
+artifacts/hub-camera-native-source-node.log,
+artifacts/hub-camera-native-source-schema.log,
+artifacts/hub-camera-native-source-host-final.log,
+artifacts/hub-camera-native-source-nina-final.log and
+artifacts/hub-camera-native-source-net48-final.log.
+Earlier failed runs remain alongside these final results. Code review covered
+generation/operation guards, retained cleanup/activity, pre-dispatch validation,
+read/write uncertainty, publication through telemetry, budget identity, original
+sample ages and core-owned worker recovery. New CI is required before acceptance.
+
+Preceding observation CI b038f8e is terminal: PR 37578062435 and push
+37578058561 each pass seven jobs and fail one Windows NINA case. PR fails second
+focuser initial connection, push fails shared panel read. Private upstream writes
+report SocketException 10053; root cause remains unproved. Logs and job metadata
+are saved as artifacts/hub-camera-observation-{pr,push}-ci*. The private fixture
+now records request-parse elapsed time, response-write start and thread-pool counts
+so future failures can distinguish scheduling/parse delay from reply writes.
+This adds evidence only; no deadlines/retries/assertions or production paths
+changed. Prior green runs do not prove these failures' cause.
+
+Next: native factory/config/runtime, host-wide budget/activity and native recovery
+allowances, other camera inputs, bounded binary frontend IPC and all three camera
+outputs. Discovery/config transfer, recovery metadata migration, OS resume,
+coordination, conformance, physical/interactive acceptance, README/site updates,
+main reconciliation and the original final audit remain required. Camera choices
+remain disabled and PR #21 stays draft. Only explicit simulations/private fixtures
+were activated.

@@ -865,6 +865,11 @@ impl Actor {
                 Ok(())
             }
             Err(e) => {
+                // Some handshakes initialize settings. An unknown write outcome
+                // during connection needs the same last-lease fence as a command.
+                if e.kind == ErrorKind::Uncertain {
+                    self.write_uncertain = true;
+                }
                 self.fault(e.clone());
                 Err(e)
             }

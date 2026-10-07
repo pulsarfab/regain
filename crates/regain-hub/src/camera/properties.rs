@@ -96,6 +96,17 @@ pub enum CameraValue {
     Text { value: String },
     Strings { value: Vec<String> },
 }
+impl CameraValue {
+    pub fn into_value(self) -> Value {
+        match self {
+            Self::Boolean { value } => json!(value),
+            Self::Integer { value } => json!(value),
+            Self::Number { value } => json!(value),
+            Self::Text { value } => json!(value),
+            Self::Strings { value } => json!(value),
+        }
+    }
+}
 fn bad_reading() -> SourceError {
     SourceError::new(ErrorKind::Unavailable, "Invalid typed camera property")
 }
@@ -219,6 +230,59 @@ pub enum CameraSetting {
     SubExposureDuration(f64),
 }
 impl CameraSetting {
+    /// Strict standard member/parameter decoding shared by input adapters.
+    /// Unknown members are unsupported; malformed known setters are invalid.
+    pub fn from_parameters(member: &str, parameters: &Values) -> Result<Self, SourceError> {
+        let (name, property) = [
+            ("BinX", CameraProperty::BinX),
+            ("BinY", CameraProperty::BinY),
+            ("NumX", CameraProperty::NumX),
+            ("NumY", CameraProperty::NumY),
+            ("StartX", CameraProperty::StartX),
+            ("StartY", CameraProperty::StartY),
+            ("Gain", CameraProperty::Gain),
+            ("Offset", CameraProperty::Offset),
+            ("ReadoutMode", CameraProperty::ReadoutMode),
+            ("FastReadout", CameraProperty::FastReadout),
+            ("CoolerOn", CameraProperty::CoolerOn),
+            ("SetCCDTemperature", CameraProperty::SetCcdTemperature),
+            ("SubExposureDuration", CameraProperty::SubExposureDuration),
+        ]
+        .into_iter()
+        .find(|(_, property)| property.member() == member)
+        .ok_or_else(|| SourceError::new(ErrorKind::Unsupported, "Unsupported camera setter"))?;
+        if parameters.len() != 1 {
+            return Err(invalid());
+        }
+        let value = parameters.get(name).ok_or_else(invalid)?;
+        let setting = match property.decode(value).map_err(|_| invalid())? {
+            CameraValue::Boolean { value } => match property {
+                CameraProperty::FastReadout => Self::FastReadout(value),
+                CameraProperty::CoolerOn => Self::CoolerOn(value),
+                _ => unreachable!(),
+            },
+            CameraValue::Integer { value } => match property {
+                CameraProperty::BinX => Self::BinX(value),
+                CameraProperty::BinY => Self::BinY(value),
+                CameraProperty::NumX => Self::NumX(value),
+                CameraProperty::NumY => Self::NumY(value),
+                CameraProperty::StartX => Self::StartX(value),
+                CameraProperty::StartY => Self::StartY(value),
+                CameraProperty::Gain => Self::Gain(value),
+                CameraProperty::Offset => Self::Offset(value),
+                CameraProperty::ReadoutMode => Self::ReadoutMode(value),
+                _ => unreachable!(),
+            },
+            CameraValue::Number { value } => match property {
+                CameraProperty::SetCcdTemperature => Self::SetCcdTemperature(value),
+                CameraProperty::SubExposureDuration => Self::SubExposureDuration(value),
+                _ => unreachable!(),
+            },
+            _ => unreachable!(),
+        };
+        setting.validate()?;
+        Ok(setting)
+    }
     pub(crate) fn changes_capture(self) -> bool {
         !matches!(self, Self::CoolerOn(_) | Self::SetCcdTemperature(_))
     }

@@ -81,6 +81,16 @@ pub(super) fn validate_imaging_control(
     if !core.connected || !core.control_connection_available {
         return Err(unavailable());
     }
+    validate_control_request(core, kind, requested)
+}
+pub(super) fn validate_control_request(
+    core: &Status,
+    kind: i32,
+    requested: i64,
+) -> Result<(), SourceError> {
+    if !matches!(kind, 0 | 5 | 16 | 17) {
+        return Err(unsupported());
+    }
     let control = cap(core, kind)?;
     if !control.writable {
         return Err(unsupported());
@@ -88,7 +98,7 @@ pub(super) fn validate_imaging_control(
     if !(control.min..=control.max).contains(&requested) {
         return Err(SourceError::new(
             ErrorKind::InvalidValue,
-            "Native imaging control value is outside its range",
+            "Native camera control value is outside its range",
         ));
     }
     Ok(())
@@ -328,8 +338,8 @@ impl NativeProperties<'_> {
                         }
                         _ => 1,
                     },
+                    None | Some(NativeOperationKind::Refreshing) => 0,
                     Some(_) => 1,
-                    None => 0,
                 }
             }),
             P::ImageReady => {

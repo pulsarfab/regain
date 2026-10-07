@@ -8,6 +8,36 @@ tagged or published. Changed cross-crate APIs require an unpublished version so
 Cargo package verification uses the new workspace packages.
 Last updated: 2026-10-06.
 
+Latest local native camera adapter checkpoint: NativeCameraBackend now connects
+the retained owner to the real SourceActor and CameraSupervisor. It shares strict
+typed property/setting decoding, incremental connection steps, client/control
+leases, independent hardware ages and immutable image storage. Image dispatch
+rejects a different host budget without allocating or copying pixels. Read-only
+idle telemetry never applies desired settings or opens a replacement worker.
+Its retained activity/generation reservation skips captures/settings; commands
+await it before dispatch, while completed images remain readable throughout.
+Unknown initialization outcomes survive automatic reset/reconnect attempts until
+the last client disconnects; typed connection waiters return that uncertainty.
+Core worker retirement during recovery/Abort does not change the logical source
+generation. A later explicit control can retain restoration of known settings;
+background polling never triggers that restoration. Reset during setting/cooling
+or restoration work retains the unknown-outcome fence. All eleven focused
+production-pipe simulation checks pass. Full core/hub/Alpaca/ZWO regressions,
+strict Rust 1.99 Clippy, Rust 1.89 all-target compatibility, generated contracts,
+Node/seven schema checks, fresh-host NINA 228/228 and real net48 x86/x64 pass.
+Final evidence is recorded in hub-review.md and
+artifacts/hub-camera-native-source-*.log. Factory/config/runtime and host-wide budget/activity/recovery
+allowance wiring remain next, alongside remaining camera inputs and all outputs.
+Camera choices stay disabled; the original milestones and final gates stay open.
+
+Observation checkpoint b038f8e CI has finished: both PR/push runs
+37578062435/37578058561 pass seven jobs and fail Windows NINA tests. PR fails a
+second focuser initial connection; push fails the shared panel read. Private HTTP
+reply writes report SocketException 10053. Cause is unproved. Original logs are
+retained; the fixture now records parsing/reply-start times and thread-pool counts
+to distinguish scheduling from reply-write delay without changing deadlines,
+retries, assertions or production behavior. Fresh CI is required.
+
 Latest local camera checkpoint: timestamped worker observations now reach core
 and native typed property reads. Core keeps acknowledged value/time evidence
 separate from queued desired values. Temperature, power, target and enable retain
@@ -24,7 +54,7 @@ for the four acknowledged controls now reuses the same helper and uncertain
 outcome retirement; its invalid-readback tests prove no replay/replacement
 exposure. Verification commands, initial fixture errors and their corrections
 are retained in artifacts/hub-camera-observation-*.log and hub-review.md.
-This reviewed observation checkpoint requires its own CI before final acceptance.
+The terminal observation CI failures are recorded above; acceptance stays open.
 
 Native properties/geometry fa04eb4 and acknowledged imaging controls adfb9e2 are
 pushed to the same draft PR. Their complete local checks include full Rust,
@@ -1628,3 +1658,4 @@ then cameras/coordination and every original remaining acceptance/final gate.
 
 | 2026-10-06 | Enabled shared wheel creation using generated capability choices and existing editors; parameterized rotator/wheel WPF and real net48 creation checks. Reviewed browser creation, mismatched classes, saved identities and names-only updates. | Full Rust hub/Alpaca, 22 wheel cases, strict Clippy, Rust 1.89, contracts, Node/six schema checks, fresh-host NINA 213/213 and real net48 x86/x64 pass. Corrected a test request-ID ordering error in a separate IPC capability test; no protocol rule changed. Actual native/browser captures and zero-lease status verified. Preceding a586c76 CI remains live; keep local increments until it ends. Next: panels, cameras/coordination and every original acceptance/final gate. |
 | 2026-10-06 | Preserved worker-relative observation ages through core and native camera properties; separated acknowledged evidence from desired settings and shared the four-control apply/readback helper. | Full core/hub/Alpaca/ZWO regressions (47 core, 49 hub unit, 22 native owner, 98 ZWO library), strict Clippy, Rust 1.89, contracts, Node/seven schema checks, rebuilt-host NINA 228/228 and real net48 x86/x64 pass. Retain initial fixture errors and corrections. Preceding adfb9e2 PR/push CI both pass all eight jobs. This checkpoint needs its own CI. Next: native camera adapter/config/factory/runtime with shared host budget/activity/recovery allowances and preserved sample ages, then all remaining camera inputs/outputs, coordination and every original acceptance/final gate. |
+| 2026-10-06 | Integrated and reviewed native camera inputs through actual SourceActor/CameraSupervisor with shared ages, immutable images, strict commands, retained telemetry/restoration and unknown-outcome fencing. Fixed publication and worker/logical-session races found in review and integration. | Eleven adapter cases plus full Rust regressions (49 core, 49 hub unit, 22 native owner, 98 ZWO library), strict Rust 1.99 Clippy, Rust 1.89, contracts, Node/seven schema checks, fresh-host NINA 228/228 and real net48 x86/x64 pass. Preserve initial fixture/deadline errors and paging-file exhaustion; final build uses two compiler jobs. Observation b038f8e PR/push CI each fail one Windows NINA case; cause remains unproved and original logs are retained with new fixture timing/pool diagnostics. Next: native factory/config/runtime and host budget/activity/recovery allowance wiring, remaining camera inputs/outputs, recurring Windows CI investigation, coordination and all original acceptance/final gates. Camera choices remain disabled; keep PR #21 draft. |

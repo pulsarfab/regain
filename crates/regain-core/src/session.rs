@@ -810,6 +810,21 @@ impl Session {
             state.values.get(&15).copied(),
         ))
     }
+    /// Read-only idle telemetry on the existing worker. Unlike refresh, this
+    /// never opens a replacement worker or applies desired configuration.
+    pub async fn refresh_environment(&mut self, token: &CancellationToken) -> Result<()> {
+        let state = self.snapshot();
+        ensure!(
+            state.connected && state.control_connection_available && self.worker.is_some(),
+            invalid("Camera controls are unavailable")
+        );
+        let result = self.read_environment(token).await.map(|_| ());
+        if let Err(error) = &result {
+            self.emit("warning", "environment.failed", format!("{error:#}"));
+            self.invalidate().await;
+        }
+        result
+    }
     pub async fn refresh(&mut self, token: &CancellationToken) -> Result<()> {
         let result = async {
             if self.worker.is_none() {
@@ -1448,6 +1463,76 @@ mod tests {
             assert_ne!(session.snapshot().phase, "Exposing");
             session.close().await;
         }
+    }
+    #[tokio::test]
+    async fn idle_environment_read_never_applies_queued_settings_or_reopens_lost_worker() {
+        for direct in [false, true] {
+            let token = CancellationToken::new();
+            let mut selected = selection(direct);
+            if direct {
+                selected.name = "ZWO ASI585MM Pro".into();
+            }
+            let mut session = Session::new(selected, runtime(), log()).unwrap();
+            session.connect(&token).await.unwrap();
+            session.refresh(&token).await.unwrap();
+            let before = session.snapshot();
+            Session::queue_control(&session.status, 0, 234).unwrap();
+            Session::queue_control(&session.status, 16, -20).unwrap();
+            session.refresh_environment(&token).await.unwrap();
+            let after = session.snapshot();
+            assert_eq!(after.process_id, before.process_id);
+            for kind in [0, 5, 16, 17] {
+                assert_eq!(after.observations[&kind], before.observations[&kind]);
+                assert_eq!(
+                    session
+                        .call("get", json!({"control":kind}), None, &token)
+                        .await
+                        .unwrap()
+                        .0,
+                    before.observations[&kind].value
+                );
+            }
+            assert_eq!(after.values[&0], 234);
+            assert_eq!(after.values[&16], -20);
+            for kind in [8, 15] {
+                assert!(
+                    after.observations[&kind].observed_at > before.observations[&kind].observed_at
+                );
+            }
+            session.invalidate().await;
+            assert!(session.refresh_environment(&token).await.is_err());
+            assert!(session.worker.is_none());
+            assert_eq!(session.snapshot().observations, after.observations);
+            session.close().await;
+        }
+    }
+    #[tokio::test]
+    async fn failed_idle_environment_read_retires_worker_without_reopening_or_applying_settings() {
+        let token = CancellationToken::new();
+        let mut session = Session::new(selection(false), runtime(), log()).unwrap();
+        session.connect(&token).await.unwrap();
+        session.refresh(&token).await.unwrap();
+        let before = session.snapshot();
+        Session::queue_control(&session.status, 0, 234).unwrap();
+        session
+            .call(
+                "simulation",
+                json!({"observationControl":8,
+            "observationReply":{"value":100,"ageSeconds":-1}}),
+                None,
+                &token,
+            )
+            .await
+            .unwrap();
+        assert!(session.refresh_environment(&token).await.is_err());
+        assert!(!session.snapshot().control_connection_available);
+        assert!(session.worker.is_none());
+        assert_eq!(session.snapshot().observations, before.observations);
+        assert_eq!(session.snapshot().values[&0], 234);
+        assert!(session.refresh_environment(&token).await.is_err());
+        assert!(session.worker.is_none());
+        assert_eq!(session.snapshot().observations, before.observations);
+        session.close().await;
     }
     #[tokio::test]
     async fn observations_are_acknowledged_evidence_not_desired_settings_or_new_worker_defaults() {
