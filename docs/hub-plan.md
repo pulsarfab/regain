@@ -44,7 +44,8 @@ MSRV-compatible checked CAS correction passes all nineteen camera image/binary
 actor cases, explicit Rust 1.99 strict Clippy and Rust 1.89 all-target checks.
 Replacement f7cfbcd push CI 37557702178 finishes with a Windows NINA panel-sharing
 connection failure (1280); the Rust 1.99 lint correction passes. PR CI 37557708906
-has seven successful jobs and Windows still running. The panel failure's original
+finishes with all eight jobs successful, including Windows installer acceptance.
+This green run does not establish the cause of the panel failure. Its original
 assertion omitted its error message; the local fixture now retains the exact
 envelope, source status and upstream trace without changing success criteria or
 deadlines. Its targeted local confirmation passes; the CI cause remains unproved.

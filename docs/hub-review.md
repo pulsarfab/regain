@@ -4110,3 +4110,17 @@ request trace on failure. Targeted local confirmation passes; this diagnostic is
 not a proven production fix. Logs: artifacts/hub-panel-publisher-ci-diagnostic
 and hub-panel-publisher-ci-diagnostic-final.log. Earlier intermittent Windows
 connection/motion failures remain open for investigation.
+
+## 2026-10-06: camera foundation CI confirmation and reviewed publication
+
+Exact f7cfbcd PR CI 37557708906 finishes with all eight jobs successful, including
+Windows tests, production registration, packaging and installer acceptance. Its
+push CI 37557702178 fails the NINA panel connection case described above. The
+green PR run verifies the Rust 1.99 lint correction but does not explain or fix
+that intermittent failure. The diagnostic assertion is preserved in 457b3af.
+
+Reviewed local acquisition supervision e243a05, panel diagnostic 457b3af and
+upstream ImageBytes 119d71c proceed together to the same draft PR. Their full
+local regressions pass; new-head CI remains required. JSON decoding is being
+implemented separately and is not included in this reviewed publication.
+Camera choices and every original remaining acceptance/final gate stay open.
