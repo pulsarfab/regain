@@ -1,12 +1,14 @@
 //! Bounded upstream Alpaca transport. Typed output controllers choose the poll
 //! plan; this adapter never invents capabilities or retries a command itself.
 use crate::{
+    camera::image::{CameraImage, ImageBudget, ImageReadError, read_imagebytes},
     config::{ConnectionPolicy, DeviceType, SourceBackend, SourceConfig},
     source::{
         Backend, BackendFuture, ConnectionInfo, ConnectionMethod, ErrorKind, SampleBatch,
         SampleBudget, SourceError, Values,
     },
 };
+use futures_util::TryStreamExt;
 use reqwest::{
     Client, Method,
     header::{AUTHORIZATION, HeaderValue, RETRY_AFTER},
@@ -38,6 +40,7 @@ enum ConnectionPhase {
 
 pub struct AlpacaBackend {
     client: Client,
+    image_client: Option<Client>,
     root: Url,
     client_id: u32,
     transaction: u32,
@@ -113,18 +116,15 @@ impl AlpacaBackend {
             headers.insert(AUTHORIZATION, authorization);
         }
         let deadline = Duration::from_secs_f64(config.polling.request_timeout_seconds);
-        let client = Client::builder()
-            .default_headers(headers)
-            .redirect(reqwest::redirect::Policy::none())
-            .retry(reqwest::retry::never())
-            .no_proxy()
-            .timeout(deadline)
-            .connect_timeout(deadline)
-            .pool_max_idle_per_host(1)
-            .build()
-            .map_err(|_| invalid("Could not initialize Alpaca HTTP client"))?;
+        let client = http_client(headers.clone(), deadline, true)?;
+        // Image bodies have the caller's separately bounded download deadline.
+        // Applying the scalar timeout here would truncate ordinary long reads.
+        let image_client = (source_device_type == DeviceType::Camera)
+            .then(|| http_client(headers, deadline, false))
+            .transpose()?;
         Ok(Self {
             client,
+            image_client,
             root,
             client_id: (Uuid::new_v4().as_u128() as u32).max(1),
             transaction: 0,
@@ -167,23 +167,7 @@ impl AlpacaBackend {
         let mut response = request.send().await.map_err(|_| transport_error(write))?;
         let status = response.status().as_u16();
         if status != 200 {
-            let mut error = SourceError::new(
-                if status == 404 && member == "interfaceversion" {
-                    ErrorKind::Unsupported
-                } else if matches!(status, 408 | 429 | 500 | 502 | 503 | 504) {
-                    ErrorKind::Transient
-                } else {
-                    ErrorKind::Permanent
-                },
-                "Alpaca server returned an HTTP error",
-            );
-            error.upstream_code = Some(i32::from(status));
-            error.retry_after = response
-                .headers()
-                .get(RETRY_AFTER)
-                .and_then(|value| value.to_str().ok())
-                .and_then(retry_after);
-            return Err(error);
+            return Err(http_error(&response, member));
         }
         if response
             .content_length()
@@ -199,6 +183,75 @@ impl AlpacaBackend {
             body.extend_from_slice(&chunk);
         }
         parse_response(&body, self.transaction, write)
+    }
+    async fn image(&mut self, budget: ImageBudget) -> Result<CameraImage, SourceError> {
+        let client = self.image_client.as_ref().ok_or_else(|| {
+            SourceError::new(ErrorKind::Unsupported, "Source is not an Alpaca camera")
+        })?;
+        self.transaction = self.transaction.wrapping_add(1).max(1);
+        let transaction = self.transaction;
+        let url = self
+            .root
+            .join("imagearray")
+            .map_err(|_| invalid("Invalid Alpaca member"))?;
+        let mut response = client
+            .get(url)
+            .header(reqwest::header::ACCEPT, "application/imagebytes")
+            .query(&[
+                ("ClientID", self.client_id),
+                ("ClientTransactionID", transaction),
+            ])
+            .send()
+            .await
+            .map_err(|_| transport_error(false))?;
+        if response.status().as_u16() != 200 {
+            return Err(http_error(&response, "imagearray"));
+        }
+        let content_type = response
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.split(';').next())
+            .map(str::trim)
+            .unwrap_or_default();
+        if content_type.eq_ignore_ascii_case("application/json") {
+            // Error envelopes are still JSON even when ImageBytes is requested.
+            // Successful JSON images need their own bounded array decoder; do
+            // not coerce or buffer an unbounded image in the scalar JSON path.
+            let mut body = Vec::new();
+            while let Some(chunk) = response.chunk().await.map_err(|_| transport_error(false))? {
+                if chunk.len() > MAX_RESPONSE_BYTES - body.len() {
+                    return Err(bad_response(false));
+                }
+                body.extend_from_slice(&chunk);
+            }
+            parse_response(&body, transaction, false)?;
+            return Err(SourceError::new(
+                ErrorKind::Unsupported,
+                "Camera JSON image transport is not yet implemented",
+            ));
+        }
+        if !content_type.eq_ignore_ascii_case("application/imagebytes") {
+            return Err(bad_response(false));
+        }
+        // Stream directly into the pre-reserved immutable image allocation.
+        // No full HTTP body or JSON image allocation precedes the payload budget.
+        let stream = response
+            .bytes_stream()
+            .map_err(|_| std::io::Error::other("Alpaca camera image transport failed"));
+        let mut reader = tokio_util::io::StreamReader::new(stream);
+        read_imagebytes(&mut reader, &budget, transaction)
+            .await
+            .map(|response| response.image)
+            .map_err(|error| match error {
+                ImageReadError::Contract(error) if error.kind == ErrorKind::Busy => error,
+                ImageReadError::Contract(_) => bad_response(false),
+                ImageReadError::Io(error) if error.kind() == std::io::ErrorKind::UnexpectedEof => {
+                    bad_response(false)
+                }
+                ImageReadError::Io(_) => transport_error(false),
+                ImageReadError::Upstream { code, .. } => upstream_error(code as i32),
+            })
     }
     async fn read_sample(&mut self, sample: &SampleRequest) -> Result<(Value, f64), SourceError> {
         // Query age first. If the sensor updates between requests, attributing
@@ -401,6 +454,9 @@ impl AlpacaBackend {
     }
 }
 impl Backend for AlpacaBackend {
+    fn camera_image(&mut self, budget: ImageBudget) -> BackendFuture<'_, CameraImage> {
+        Box::pin(self.image(budget))
+    }
     fn connect(&mut self) -> BackendFuture<'_, ()> {
         Box::pin(async {
             // Direct callers get the complete handshake. Source actors invoke
@@ -501,6 +557,62 @@ impl Backend for AlpacaBackend {
 
 fn invalid(message: &'static str) -> SourceError {
     SourceError::new(ErrorKind::InvalidValue, message)
+}
+fn http_client(
+    headers: reqwest::header::HeaderMap,
+    deadline: Duration,
+    scalar: bool,
+) -> Result<Client, SourceError> {
+    let builder = Client::builder()
+        .default_headers(headers)
+        .redirect(reqwest::redirect::Policy::none())
+        .retry(reqwest::retry::never())
+        .no_proxy()
+        .connect_timeout(deadline)
+        .pool_max_idle_per_host(1);
+    let builder = if scalar {
+        builder.timeout(deadline)
+    } else {
+        builder
+    };
+    builder
+        .build()
+        .map_err(|_| invalid("Could not initialize Alpaca HTTP client"))
+}
+fn http_error(response: &reqwest::Response, member: &str) -> SourceError {
+    let status = response.status().as_u16();
+    SourceError {
+        upstream_code: Some(i32::from(status)),
+        retry_after: response
+            .headers()
+            .get(RETRY_AFTER)
+            .and_then(|value| value.to_str().ok())
+            .and_then(retry_after),
+        ..SourceError::new(
+            if status == 404 && member == "interfaceversion" {
+                ErrorKind::Unsupported
+            } else if matches!(status, 408 | 429 | 500 | 502 | 503 | 504) {
+                ErrorKind::Transient
+            } else {
+                ErrorKind::Permanent
+            },
+            "Alpaca server returned an HTTP error",
+        )
+    }
+}
+fn upstream_error(number: i32) -> SourceError {
+    let kind = match number {
+        0x400 | 0x40c => ErrorKind::Unsupported,
+        0x401 => ErrorKind::InvalidValue,
+        0x402 => ErrorKind::Unavailable,
+        0x407 => ErrorKind::Disconnected,
+        _ => ErrorKind::Permanent,
+    };
+    SourceError {
+        upstream_code: Some(number),
+        transport_lost: number == 0x407,
+        ..SourceError::new(kind, "Upstream Alpaca device rejected the request")
+    }
 }
 fn connection_expired() -> SourceError {
     SourceError::new(
@@ -609,18 +721,7 @@ fn parse_response(body: &[u8], transaction: u32, write: bool) -> Result<Value, S
         return Err(bad_response(write));
     }
     if number != 0 {
-        let kind = match number {
-            0x400 | 0x40c => ErrorKind::Unsupported,
-            0x401 => ErrorKind::InvalidValue,
-            0x402 => ErrorKind::Unavailable,
-            0x407 => ErrorKind::Disconnected,
-            _ => ErrorKind::Permanent,
-        };
-        return Err(SourceError {
-            upstream_code: Some(number),
-            transport_lost: number == 0x407,
-            ..SourceError::new(kind, "Upstream Alpaca device rejected the request")
-        });
+        return Err(upstream_error(number));
     }
     match fields.value {
         Some(value) => Ok(value),

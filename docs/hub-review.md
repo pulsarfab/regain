@@ -4062,3 +4062,51 @@ activated. Preceding f7cfbcd CI 37557708906/37557702178 remains live, with six j
 passing in each run. Keep this reviewed increment local until those runs are
 terminal. Runtime/adapters, binary frontend transport, native recovery metadata
 and every original gate remain open.
+
+## 2026-10-06: upstream Alpaca camera ImageBytes (local)
+
+Seven actual loopback cases pass, including the real source actor and acquisition
+supervisor sharing one immutable download between two independent clients.
+The image client preserves protected headers, no redirects/retries and bounded
+connection establishment; its overall deadline comes from binary source dispatch,
+not the scalar timeout. A 1.2-second body succeeds with the unchanged default
+one-second scalar deadline. Cancellation waits for an actual allocation before
+dropping the reader, then verifies released memory and one HTTP request.
+
+Malformed/truncated/trailing bodies, wrong transaction/media type, budget exhaustion,
+non-camera reads, binary/JSON device errors and HTTP retry/redirect responses are
+covered. Error classifications/codes are shared with scalar requests and arbitrary
+upstream text is redacted. The first end-to-end fixture echoed a zero transaction
+for PUT because it inspected only query parameters; production correctly rejected
+that acknowledgement as uncertain. The fixture now reads the actual form body.
+Initial and corrected logs: artifacts/hub-camera-alpaca-{check,focused,
+focused-confirmed,focused-final}.log. Stream support adds futures-io/wasm-streams
+to the lockfile without upgrading existing packages. Full Rust hub/Alpaca,
+strict Rust 1.99 Clippy, Rust 1.89 all targets and generated-contract checks pass.
+A freshly rebuilt host passes NINA 228/228 and actual net48 x86/x64 regressions
+with zero build warnings. The final focused check also verifies successful JSON
+images are explicitly gated without a second download. Logs:
+artifacts/hub-camera-alpaca-{final-focused,rust,clippy,final-clippy,msrv,contract,
+host,nina,net48}.log. Formatting/diff checks pass. New-head CI remains required.
+
+Successful JSON images still need a bounded array decoder. No camera setup choice
+is enabled and no equipment/vendor driver is used. All original camera/runtime,
+recovery, coordination and final gates remain required.
+
+## 2026-10-06: image CI result and panel failure diagnostic
+
+f7cfbcd push CI 37557702178 finishes with seven successful jobs, including all
+Rust 1.99 checks, and a Windows NINA failure in
+ActualPanelPublisherAndNativeNinaShareLightWithoutOwningEachOthersLeases.
+Its connected=true request returns 1280; the original assertion exposes only
+the number. Original output is retained at
+artifacts/hub-camera-image-ci-push-failure.log. PR CI 37557708906 has seven jobs
+passing with Windows still live. Do not cancel/restart it or infer the failure's
+cause from a later green run.
+
+The fixture keeps the same zero-error requirement and deadlines but includes the
+exact private response envelope, sourceStatus and the loopback server's existing
+request trace on failure. Targeted local confirmation passes; this diagnostic is
+not a proven production fix. Logs: artifacts/hub-panel-publisher-ci-diagnostic
+and hub-panel-publisher-ci-diagnostic-final.log. Earlier intermittent Windows
+connection/motion failures remain open for investigation.

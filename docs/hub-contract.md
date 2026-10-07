@@ -2151,7 +2151,19 @@ ordinary errors retain their meaning. No image read automatically repeats,
 starts an exposure, updates scalar caches or clears an uncertain-write fence.
 A control owner can explicitly read images for reconciliation after uncertainty,
 but that does not authorize publishing them as a newly owned acquisition. All
-existing adapters default to Unsupported until their camera paths are implemented.
+adapters default to Unsupported until their camera paths are implemented, except
+for the Alpaca ImageBytes path described below.
+
+The Alpaca camera adapter requests application/imagebytes on the imagearray
+endpoint and streams its finite body into the reserved image allocation. Its
+camera HTTP client shares the scalar client's protected headers, connect timeout,
+redirect denial and no-retry policy, but leaves the overall image deadline to the
+source actor. Binary and bounded JSON error envelopes preserve upstream codes
+without exporting their arbitrary message text. Unexpected media types, malformed
+headers, mismatched transactions and incomplete/trailing payloads do not publish.
+Successful JSON ImageArray decoding remains a separate required transport step;
+until it and the other camera gates pass, camera choices remain disabled. This
+adapter does not grant SDK/COM/network sources retained-frame recovery semantics.
 
 The source-owned acquisition supervisor implements the following ownership rules
 in private tests; it is not yet wired into the runtime, adapters or frontends.

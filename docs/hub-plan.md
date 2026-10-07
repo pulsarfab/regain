@@ -33,18 +33,23 @@ The Automation assertion admits only the declared enum or bounded Int32; driver
 behavior is unchanged. Simulation and the correction are pushed at 2f3f8c2;
 PR/push CI 37554304962/37554298269 both pass all eight jobs, including Windows
 registered imports, production registration, packaging and installer acceptance.
-Shared panel creation and the first camera image/source increments pass local
-regressions and are included in the next PR checkpoint; their own CI is required.
-The source-owned camera acquisition supervisor is the next implementation step.
+Shared panel creation and the first camera image/source increments are pushed
+through f7cfbcd. Their latest CI outcome and the locally reviewed acquisition
+supervisor/upstream ImageBytes transport are recorded below.
 
 Camera foundation head 3ed8515 PR/push CI 37556724162/37556718661 both finish with
 five Rust/Windows lint failures and three successful jobs. CI uses Rust 1.99,
 which deprecates fetch_update and requires fixed-size as_chunks access. The
 MSRV-compatible checked CAS correction passes all nineteen camera image/binary
 actor cases, explicit Rust 1.99 strict Clippy and Rust 1.89 all-target checks.
-Replacement f7cfbcd CI 37557708906/37557702178 remains live, with six jobs passing
-in each run. Camera acquisition supervision is implemented locally and under
-review; camera choices remain gated and every original remaining gate stays open.
+Replacement f7cfbcd push CI 37557702178 finishes with a Windows NINA panel-sharing
+connection failure (1280); the Rust 1.99 lint correction passes. PR CI 37557708906
+has seven successful jobs and Windows still running. The panel failure's original
+assertion omitted its error message; the local fixture now retains the exact
+envelope, source status and upstream trace without changing success criteria or
+deadlines. Its targeted local confirmation passes; the CI cause remains unproved.
+Camera acquisition supervision is reviewed and committed locally at e243a05;
+camera choices remain gated and every original remaining gate stays open.
 
 Camera supervisor checkpoint (local): nineteen private virtual-clock cases pass.
 One source-owned acquisition retains control and runtime activity after caller
@@ -60,6 +65,18 @@ Rust 1.89 all targets, generated contracts, rebuilt-host NINA 228/228 and actual
 net48 x86/x64 regressions pass. New-head CI remains required.
 Runtime integration, native/Alpaca/COM/virtual/simulation camera adapters, all three
 image outputs, recovery metadata and host-wide staging budgets remain open.
+
+Upstream camera ImageBytes checkpoint (local): seven loopback cases pass with the
+real Alpaca backend, source actor and acquisition supervisor. The camera HTTP
+client shares credentials, connection bounds, redirect denial and no-retry policy,
+but the scalar request timeout does not truncate the separately bounded image
+download. Streaming preserves full U16 values and transaction/shape checks,
+releases partial allocations on cancellation and never repeats a download.
+HTTP/JSON/binary error codes are retained with redacted text. Non-camera sources
+reject image reads without I/O. JSON success images still require a bounded array
+decoder, so camera creation remains disabled. Full Rust hub/Alpaca, strict Rust
+1.99 Clippy, Rust 1.89, generated contracts, rebuilt-host NINA 228/228 and actual
+net48 x86/x64 regressions pass. New-head CI is required before acceptance.
 
 Current position: milestones 0 and 1 are complete. The scalar source/output paths
 in milestones 2 and 3 are implemented; their remaining acceptance gates are open.
@@ -90,7 +107,7 @@ ImageBytes reader/export codec, with native adoption and bounded order conversio
 The shared source actor now has fenced binary download dispatch with exclusive
 control, a separate bounded image deadline and retained write uncertainty.
 Acquisition supervision is now implemented locally with nineteen focused tests;
-runtime integration, capability/recovery propagation, camera adapters and
+runtime integration, capability/recovery propagation, remaining camera adapters and
 frontend image transport remain unimplemented. Their contracts are recorded in
 hub-contract.md and camera choices stay gated.
 Milestone 5's coordinated groups are not yet
