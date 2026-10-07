@@ -243,12 +243,18 @@ async fn sdk_and_direct_native_properties_use_shared_types_and_frozen_completed_
         );
         let metadata: Value =
             serde_json::from_slice(reader.native().unwrap().metadata_json()).unwrap();
-        assert_eq!(
-            owner.read_property(P::LastExposureStartTime).unwrap(),
-            V::Text {
-                value: metadata["startedUtc"].as_str().unwrap().into()
-            }
-        );
+        let V::Text { value } = owner.read_property(P::LastExposureStartTime).unwrap() else {
+            panic!("Native exposure timestamp must be text");
+        };
+        assert!(!value.ends_with('Z') && !value.ends_with("+00:00"));
+        let property_time = chrono::NaiveDateTime::parse_from_str(&value, "%Y-%m-%dT%H:%M:%S%.f")
+            .unwrap()
+            .and_utc();
+        let metadata_time =
+            chrono::DateTime::parse_from_rfc3339(metadata["startedUtc"].as_str().unwrap())
+                .unwrap()
+                .with_timezone(&chrono::Utc);
+        assert_eq!(property_time, metadata_time);
         let timing = owner.read_property(P::LastExposureStartTime).unwrap();
         owner.configure_geometry(S::NumX(72)).unwrap();
         assert_eq!(

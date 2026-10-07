@@ -35,6 +35,8 @@ def main():
     parser.add_argument("--bin-dir", default=ROOT / "target/debug", type=Path)
     parser.add_argument("--mode", choices=("protocol", "interface", "all"), default="all")
     parser.add_argument("--classes", nargs="+", choices=CLASSES, default=CLASSES)
+    parser.add_argument("--camera-backend", choices=("simulated", "sdk-simulated", "direct-simulated"),
+                        default="simulated", help="Explicit simulation only; never opens an SDK or USB device")
     parser.add_argument("--timeout-seconds", type=int, default=900)
     args = parser.parse_args()
     if args.timeout_seconds <= 0:
@@ -58,6 +60,21 @@ def main():
                                   "device": {"kind": "proxy", "source": source, "deviceType": kind}})
     assert len(config["sources"]) == len(CLASSES)
     assert all(source["backend"]["kind"] == "simulated" for source in config["sources"])
+    if args.camera_backend != "simulated":
+        worker = binary.parent / ("regain-device.exe" if os.name == "nt" else "regain-device")
+        if not worker.is_file():
+            parser.error(f"Build the native simulation worker first: {worker}")
+        direct = args.camera_backend == "direct-simulated"
+        for source in config["sources"]:
+            if source["backend"]["deviceType"] == "camera":
+                source["backend"] = {"kind": "native", "device": "camera-direct" if direct else "camera-sdk",
+                                     "identity": "direct-simulator" if direct else "sim00001",
+                                     "camera": {"model": "ZWO ASI585MM Pro" if direct else "ZWO Simulated",
+                                                "recovery": {"maxRetries": 0, "readyFrameDownloadRetries": 0,
+                                                             "reconnectDelaySeconds": 0.01}}}
+                source["polling"] = {"connectionTimeoutSeconds": 10.0, "requestTimeoutSeconds": 5.0,
+                                     "pollSeconds": 60.0}
+                break
     config_file = directory / "hub.json"
     config_file.write_text(json.dumps(config, indent=2), encoding="utf-8")
     profiles = directory / "profiles.json"
@@ -73,6 +90,8 @@ def main():
                              check=True, timeout=30).stdout.strip()
     provenance = {"toolPath": str(tool), "toolSha256": sha256(tool),
                   "serverPath": str(binary), "serverSha256": sha256(binary)}
+    if args.camera_backend != "simulated":
+        provenance.update(workerPath=str(worker), workerSha256=sha256(worker))
     results = []
     modes = ("protocol", "interface") if args.mode == "all" else (args.mode,)
     print(f"ConformU: {version}\nPrivate simulation evidence: {directory}", flush=True)
@@ -120,7 +139,7 @@ def main():
                 # checked simulation controls; retain both request and response.
                 controls = []
                 for source in config["sources"]:
-                    if source["backend"]["deviceType"] != "covercalibrator":
+                    if source["backend"].get("deviceType") != "covercalibrator":
                         continue
                     command = {"op": "updateSimulation", "source": source["id"],
                                "expectedRevision": config["revision"],
@@ -183,6 +202,7 @@ def main():
                             process.kill()
                             process.wait(timeout=5)
                 (directory / "summary.json").write_text(json.dumps({"toolVersion": version, "simulationOnly": True,
+                                                                    "cameraBackend": args.camera_backend,
                                                                     "config": str(config_file), "provenance": provenance,
                                                                     "results": results}, indent=2), encoding="utf-8")
     return 0 if results and all(result["passed"] for result in results) else 1

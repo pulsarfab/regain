@@ -8,7 +8,36 @@ tagged or published. Changed cross-crate APIs require an unpublished version so
 Cargo package verification uses the new workspace packages.
 Last updated: 2026-10-07.
 
-Current increment: Camera and CoverCalibrator pass selected external ConformU
+Current increment: normalize native camera LastExposureStartTime to implicit-UTC
+FITS across the shared frontends, preserving the core frame's original metadata.
+Focused native owner/source/capture and library tests pass, including exact UTC
+equivalence, fractional precision, leap-second spelling and malformed/non-UTC
+rejection. Extend the private ConformU runner with fixed SDK/direct simulation
+choices only; it still accepts no hardware identity, SDK path or upstream config,
+always supplies --simulate and records native worker hashes. Both native camera
+protocol runs pass. SDK interface reports eleven issues (idle unsupported Stop
+plus ten sparse-binning assumptions); direct reports the idle Stop issue only.
+Correct idle command capability checking without dispatch, preserving completed
+pixels and inert no-ops during a retained setting/guide or image readout. The first
+attempt queued capability reads behind those operations; regression caught it.
+The corrected acquisition suite passes all 43 cases, including capability checks
+before/after capture and a held setting with both true/false cached capabilities.
+Final focused regression passes 81 hub library, 43 acquisition, 22 native owner,
+13 native source and three native capture cases, plus strict Clippy/Rust 1.89.
+The rebuilt native direct ConformU run passes protocol and full interface with
+zero findings. SDK protocol passes; ten sparse-bin interface findings remain
+open. Full hub/Alpaca, all 319 ordinary NINA cases (one explicit registered-fixture
+skip), real net48 x86/x64, strict lint/MSRV, formatting and syntax checks pass;
+see hub-conformance.md and hub-review.md for evidence.
+All three prior reviewed increments are pushed at 8ab8611; GitHub writes work
+again and PR #21 remains draft. Push CI 37644612391 is terminal/red; PR CI
+37644620829 is still active. Both have portable OFP2 script failures after the new
+HTTP admission; push Windows also fails camera proxy preflight before its injected
+pixel fault. Mac ARM logs verify the duplicate-descriptor regression and formerly
+failing camera endpoint reacquisition now pass. Keep further increments local
+until both runs are terminal. Preserve all original gates.
+
+Previous increment: Camera and CoverCalibrator pass selected external ConformU
 strict protocol and full interface checks with zero errors/issues/alerts/timing
 issues. Monochrome Bayer offsets are unsupported; RGB reports Color. Simulated
 capture timestamps use actual UTC in the interface's FITS format while all
@@ -22,10 +51,10 @@ intermediate timestamp/first-use findings and the alternate protocol success
 summary in hub-conformance.md. Full Rust hub/Alpaca, strict Clippy, Rust 1.89,
 all 319 ordinary NINA cases (one explicit registered-fixture skip), real net48
 x86/x64, Python syntax, formatting and diff checks pass; review is recorded.
-Two prior reviewed commits remain local after GitHub rejected SSH/HTTPS pushes
-and the PR-body edit with server errors; read access works. Remote 32a34ae CI is
-terminal and red. Fresh CI is required after publishing, including Unix lock
-retirement execution. Keep the single PR draft and all original coordination,
+Initial SSH/HTTPS pushes and the PR-body edit failed with GitHub server errors;
+the retry succeeds and all three reviewed commits are now published at 8ab8611.
+Preceding 32a34ae CI remains terminal/red. Fresh CI is required, including Unix
+lock retirement execution. Keep the single PR draft and all original coordination,
 discovery/transfer, OS resume, broader acceptance, README/site and final gates open.
 
 Previous increment: investigate terminal 32a34ae CI failures without extending

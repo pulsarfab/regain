@@ -16,6 +16,14 @@ Ordinary client disconnect continues to retain completed images.
 It accepts no existing device configuration, upstream URI or COM ProgID. Never
 rebuild the running server executable until the script finishes.
 
+For native camera transport acceptance, select `--classes camera --camera-backend
+sdk-simulated` or `--camera-backend direct-simulated`. These use only fixed private
+simulation identities and models with `--simulate` on the host/frontend; native
+workers inherit that explicit flag and never load the vendor SDK or open USB.
+The runner accepts no model, serial or SDK-path override and records the worker
+hash. Other sources remain the dedicated simulations. This exercises Regain's
+native transport paths, not attached camera hardware.
+
 Evidence is retained under `artifacts/hub-conformance-<id>/`: private configuration,
 ConformU settings, host/server logs, per-class logs, interface JSON reports and a
 combined summary including executable hashes and tool version. ConformU 4.5's
@@ -141,3 +149,29 @@ verifies zero upstream writes for both failures and a valid boundary move.
 This is an open acceptance finding, not a conformance pass or an excuse to
 remove movement protections. No validator tests or production limits are changed
 to suppress it.
+
+## Native camera acceptance in progress
+
+The first native SDK simulation run passes strict protocol checks and reports
+eleven interface issues: unsupported StopExposure succeeds while idle, and ten
+checks assume bin 3 must work when MaxBin is 4. This SDK simulation advertises the
+actual sparse set `[1, 2, 4]`; the controller preserves that set and refuses bin 3.
+The first direct simulation also passes protocol checks and reports only the idle
+StopExposure issue. Both runs accept the new FITS timestamp property and report
+no timing issues or configuration alerts.
+
+Evidence: `artifacts/hub-conformance-9ff4cf9c56154468b427151baca0684b/summary.json`
+(SDK) and `artifacts/hub-conformance-56e5fa94ff324876a1fa4833f79e039d/summary.json`
+(direct). The idle optional-command behavior is being corrected; sparse binning
+needs its own standards reconciliation. Native source modes are not declared
+conformant from their protocol passes, and no bin is invented or hidden to make
+the external tool pass.
+
+After the idle command correction, native direct simulation passes full protocol
+and interface checks with zero errors/issues/alerts/timing issues in
+`artifacts/hub-native-direct-conformu-second.log` and
+`artifacts/hub-conformance-adac0f3488d143e8a6cf12c03d0ece63/summary.json`.
+Native SDK simulation passes protocol and retains only the ten sparse-bin findings
+in `artifacts/hub-native-sdk-conformu-second.log` and
+`artifacts/hub-conformance-cd0c6cf385d14787bf54ad84550644fa/summary.json`.
+The SDK interface gate remains open. Neither native simulation opens hardware.

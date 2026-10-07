@@ -3,6 +3,74 @@
 This records local review and tests for the single hub PR. Passing a foundation
 test does not imply that a frontend, transport, or hardware gate has passed.
 
+## 2026-10-07: native FITS metadata and idle camera commands
+
+Reviewed native publication against the same FITS timestamp contract as the
+dedicated simulator. Core frames retain their original metadata JSON and UTC
+precision. Native LastExposureStartTime validates the original value, then
+removes only a UTC Z/+00:00 suffix for standard property presentation. It does
+not convert nonzero offsets or normalise imported proxy frame identity. Tests
+cover implicit UTC, nanoseconds, explicit zero offset, leap-second spelling and
+unchanged retained metadata; existing malformed/missing/non-UTC rejection remains.
+Actual SDK/direct owner tests parse the property as UTC and compare its instant
+to the original frame metadata, then verify subsequent settings do not alter it.
+
+The private conformance runner now offers only fixed sdk-simulated and
+direct-simulated camera choices, requires the production worker and records its
+hash. Both host/frontend always have --simulate. Reviewed core Runtime.spawn:
+the worker receives --simulate, and no SDK-path argument is supplied in that mode.
+No existing config, serial, SDK path or upstream URI is accepted by this runner.
+The ordinary management response must still label all eight outputs Simulation.
+
+Initial native SDK protocol passes; interface reports eleven issues: idle
+unsupported StopExposure plus ten assumptions that bin 3 is supported below
+MaxBin 4. Initial direct protocol passes and its only interface finding is idle
+StopExposure. The shared supervisor previously returned success before checking
+capabilities when no acquisition existed. Idle Stop/Abort now validate supported
+capabilities without dispatching or changing completed pixels. During a retained
+setting or guide, they use generation-fenced observed capabilities rather than
+queueing behind unrelated driver work; missing/malformed/error evidence is not
+invented as support. Active owner/phase/uncertainty checks remain unchanged, and
+Stop during an existing image readout keeps its original inert path.
+
+Preserve the first regression in artifacts/hub-native-camera-admission-rust.log:
+fresh capability reads blocked behind a held transfer and setting preflight. The
+new fixture also omitted its explicit device.complete signal. The correction
+restores inert download behavior, uses cached capabilities for retained unrelated
+operations and supplies the missing simulated completion. A second compile
+attempt records a missing Value import; the final code uses the existing value's
+boolean accessor. The 43-case acquisition suite then passes, including true/false
+observed capability during a held setting and unsupported idle commands before/
+after capture with zero actuator writes and the exact retained image Arc.
+
+Final focused evidence is artifacts/hub-native-camera-admission-rust-final.log:
+81 library, 43 acquisition, 22 native owner, 13 native source and three native
+capture cases pass. Strict Clippy and Rust 1.89 checks pass in
+artifacts/hub-native-camera-clippy.log and artifacts/hub-native-camera-msrv.log.
+The rebuilt native direct external check passes full protocol/interface with zero
+findings at artifacts/hub-conformance-adac0f3488d143e8a6cf12c03d0ece63. SDK protocol
+passes and its interface retains only ten sparse-bin findings at
+artifacts/hub-conformance-cd0c6cf385d14787bf54ad84550644fa. Those remain an open
+standards/validator review; no unsupported bin is invented and MaxBin is not
+lowered to hide an advertised native capability. Full regressions pass in
+artifacts/hub-native-camera-rust-full.log (hub/Alpaca),
+artifacts/hub-native-camera-nina.log (319 ordinary cases, one explicit registered
+fixture skip) and artifacts/hub-native-camera-net48.log (real x86/x64 suites).
+Rust formatting, diff checks and Python syntax pass.
+
+The preceding HTTP/CI/camera checkpoints are pushed at 8ab8611 and PR #21 remains
+draft. Push CI 37644612391 is terminal/red and PR CI 37644620829 is still active;
+hold this increment locally until both finish. New portable failures are the OFP2
+script's old expectation for PUT to read-only Brightness (HTTP 404 now); push
+Windows fails MaxBinY during proxy preflight before pixel-fault dispatch. Keep
+artifacts/hub-conformance-ci-pr-linux.log and
+artifacts/hub-conformance-ci-push-windows.log for the next CI corrections. Mac ARM
+log artifacts/hub-conformance-ci-pr-macos-arm.log verifies both the new duplicate
+descriptor regression and formerly failing camera endpoint reacquisition pass;
+the job later fails at OFP2's old expectation. Do not treat the new preflight
+failure as resolved by the local NINA pass. All original coordination, discovery/transfer, OS resume,
+broader acceptance, README/site and final audit/merge gates remain open.
+
 ## 2026-10-07: camera geometry/metadata and external panel acceptance
 
 Reviewed the camera findings against the pinned ASCOM camera interface and the

@@ -346,7 +346,19 @@ impl NativeProperties<'_> {
                     }
                     let timing: Timing = serde_json::from_slice(native.metadata_json())
                         .map_err(|_| unavailable())?;
-                    json!(timing.started_utc.ok_or_else(unavailable)?)
+                    let started = timing.started_utc.ok_or_else(unavailable)?;
+                    if !super::acquisition::valid_start_time(&started) {
+                        return Err(unavailable());
+                    }
+                    // Core frame metadata retains its original UTC timestamp.
+                    // The standard camera property presents implicit-UTC FITS,
+                    // consistently across Alpaca, ASCOM and native NINA.
+                    json!(
+                        started
+                            .strip_suffix('Z')
+                            .or_else(|| started.strip_suffix("+00:00"))
+                            .unwrap_or(&started)
+                    )
                 }
             }
             P::ElectronsPerAdu
@@ -591,6 +603,58 @@ mod tests {
                 .kind,
             ErrorKind::InvalidValue
         );
+    }
+    #[test]
+    fn native_timestamp_property_uses_fits_without_rewriting_retained_metadata() {
+        use std::sync::Arc;
+        let core = core();
+        let exposure = NativeGeometry::initial(&core.info)
+            .unwrap()
+            .configured(CameraSetting::NumX(64), &core.info)
+            .unwrap()
+            .configured(CameraSetting::NumY(64), &core.info)
+            .unwrap()
+            .exposure(10_000, true);
+        for (started, expected) in [
+            ("2026-10-07T12:34:56Z", "2026-10-07T12:34:56"),
+            (
+                "2026-10-07T12:34:56.123456789Z",
+                "2026-10-07T12:34:56.123456789",
+            ),
+            ("2026-10-07T12:34:56.123+00:00", "2026-10-07T12:34:56.123"),
+            ("2026-10-07T12:34:56.123", "2026-10-07T12:34:56.123"),
+            ("2016-12-31T23:59:60Z", "2016-12-31T23:59:60"),
+        ] {
+            let budget = super::super::image::ImageBudget::new(1024 * 1024).unwrap();
+            let metadata = json!({"startedUtc":started, "identity":"retained native frame"});
+            let image = budget
+                .reserve_native(&exposure)
+                .unwrap()
+                .adopt(regain_core::Frame {
+                    exposure: exposure.clone(),
+                    pixels: Arc::from(vec![0; 8192]),
+                    metadata: metadata.clone(),
+                })
+                .unwrap();
+            let view = NativeProperties {
+                core: &core,
+                geometry: NativeGeometry::from_exposure(&exposure),
+                operation: None,
+                image: Some(&image),
+                image_ready: true,
+                error: None,
+            };
+            assert_eq!(
+                view.read(CameraProperty::LastExposureStartTime).unwrap(),
+                CameraValue::Text {
+                    value: expected.into()
+                }
+            );
+            assert_eq!(
+                serde_json::from_slice::<Value>(image.native().unwrap().metadata_json()).unwrap(),
+                metadata
+            );
+        }
     }
     #[test]
     fn invalid_or_missing_native_timestamp_is_independent_of_known_completed_duration() {

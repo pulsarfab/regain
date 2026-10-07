@@ -852,7 +852,7 @@ impl CameraSupervisor {
     ) -> Result<(), SourceError> {
         source.snapshot()?;
         let (reply, response) = oneshot::channel();
-        let (id, operation, previous) = {
+        let (admission, idle_cached) = {
             let mut state = self.state.lock().unwrap();
             if state.retired {
                 return Err(SourceError::new(
@@ -870,40 +870,63 @@ impl CameraSupervisor {
             {
                 return Err(busy());
             }
-            let Some(active) = state.active.as_mut() else {
-                return Ok(());
-            };
-            if active.owner != owner
-                || active.command_pending
-                || active.phase == AcquisitionPhase::Starting
-            {
-                return Err(busy());
-            }
-            if active.phase == AcquisitionPhase::Uncertain {
-                return Err(SourceError::uncertain());
-            }
-            if active.generation != source.generation() {
-                return Err(unavailable("Camera acquisition generation changed"));
-            }
-            if active.phase == AcquisitionPhase::Downloading {
-                return if abort { Err(busy()) } else { Ok(()) };
-            }
-            let previous = active.phase;
-            active.phase = if abort {
-                AcquisitionPhase::Aborting
+            let idle_cached = state.setting.is_some() || state.guiding.is_some();
+            let admission = if let Some(active) = state.active.as_mut() {
+                if active.owner != owner
+                    || active.command_pending
+                    || active.phase == AcquisitionPhase::Starting
+                {
+                    return Err(busy());
+                }
+                if active.phase == AcquisitionPhase::Uncertain {
+                    return Err(SourceError::uncertain());
+                }
+                if active.generation != source.generation() {
+                    return Err(unavailable("Camera acquisition generation changed"));
+                }
+                if active.phase == AcquisitionPhase::Downloading {
+                    return if abort { Err(busy()) } else { Ok(()) };
+                } else {
+                    let previous = active.phase;
+                    active.phase = if abort {
+                        AcquisitionPhase::Aborting
+                    } else {
+                        AcquisitionPhase::Stopping
+                    };
+                    active.command_pending = true;
+                    Some((
+                        active.id,
+                        active
+                            .operation
+                            .as_ref()
+                            .expect("Admitted camera control")
+                            .clone(),
+                        previous,
+                    ))
+                }
             } else {
-                AcquisitionPhase::Stopping
+                None
             };
-            active.command_pending = true;
-            (
-                active.id,
-                active
-                    .operation
-                    .as_ref()
-                    .expect("Admitted camera control")
-                    .clone(),
-                previous,
-            )
+            (admission, idle_cached)
+        };
+        let Some((id, operation, previous)) = admission else {
+            // Never queue an idle no-op behind an unrelated retained setting or
+            // guide. Its observed capability is enough; no actuator is invoked.
+            if idle_cached {
+                let snapshot = source.snapshot()?;
+                let member = command_capability_member(abort);
+                if let Some(error) = snapshot.sample_errors.get(member) {
+                    return Err(error.clone());
+                }
+                return validate_command_capability(
+                    snapshot
+                        .values
+                        .get(member)
+                        .and_then(|value| value.as_bool())
+                        .ok_or_else(|| unavailable("Camera command capability is unavailable"))?,
+                );
+            }
+            return command_capability(&source, abort).await;
         };
         let supervisor = self.clone();
         tokio::spawn(async move {
@@ -911,21 +934,7 @@ impl CameraSupervisor {
                 supervisor.end_command(id, previous, None);
                 return;
             }
-            let admitted = async {
-                let capability = if abort {
-                    "canabortexposure"
-                } else {
-                    "canstopexposure"
-                };
-                if !boolean(&source, capability).await? {
-                    return Err(SourceError::new(
-                        ErrorKind::Unsupported,
-                        "Camera does not support this exposure command",
-                    ));
-                }
-                Ok::<_, SourceError>(())
-            }
-            .await;
+            let admitted = command_capability(&source, abort).await;
             if admitted.is_ok() && reply.is_closed() {
                 supervisor.end_command(id, previous, None);
                 return;
@@ -999,6 +1008,26 @@ impl CameraSupervisor {
             .await
             .map_err(|_| unavailable("Camera command task stopped"))?
     }
+}
+
+async fn command_capability(source: &TypedSourceSession, abort: bool) -> Result<(), SourceError> {
+    validate_command_capability(boolean(source, command_capability_member(abort)).await?)
+}
+fn command_capability_member(abort: bool) -> &'static str {
+    if abort {
+        "canabortexposure"
+    } else {
+        "canstopexposure"
+    }
+}
+fn validate_command_capability(supported: bool) -> Result<(), SourceError> {
+    if !supported {
+        return Err(SourceError::new(
+            ErrorKind::Unsupported,
+            "Camera does not support this exposure command",
+        ));
+    }
+    Ok(())
 }
 
 pub struct CameraSession {

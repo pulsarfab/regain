@@ -774,32 +774,45 @@ async fn camera_deadline_during_cooler_preflight_prevents_a_late_setting_write()
 
 #[tokio::test(start_paused = true)]
 async fn cancelled_camera_setting_preflight_sends_no_write_and_releases_activity() {
-    let f = Fixture::new(24);
-    let session = Arc::new(f.session().await);
-    f.device.hold_setting_preflight.store(true, SeqCst);
-    let pending = tokio::spawn({
-        let session = session.clone();
-        async move { session.set(S::Gain(3)).await }
-    });
-    settle().await;
-    assert_eq!(f.device.setting_preflights.load(SeqCst), 1);
-    let setting = f.supervisor.status().setting.unwrap();
-    assert_eq!(setting.owner, session.id());
-    assert_eq!(setting.property, P::Gain);
-    assert_eq!(
-        session.start(request()).await.unwrap_err().kind,
-        ErrorKind::Busy
-    );
-    session.abort().await.unwrap(); // No exposure exists: abort stays inert.
-    assert_eq!(f.device.starts.load(SeqCst), 0);
-    pending.abort();
-    assert!(pending.await.unwrap_err().is_cancelled());
-    f.device.release_setting_preflight.notify_one();
-    settle().await;
-    assert!(f.device.settings.lock().unwrap().is_empty());
-    assert_eq!(f.activity.active(), 0);
-    assert!(f.supervisor.status().setting.is_none());
-    f.source.shutdown().await.unwrap();
+    for can_abort in [true, false] {
+        let f = Fixture::new(24);
+        f.device.set("canabortexposure", json!(can_abort));
+        let session = Arc::new(f.session().await);
+        f.device.hold_setting_preflight.store(true, SeqCst);
+        let pending = tokio::spawn({
+            let session = session.clone();
+            async move { session.set(S::Gain(3)).await }
+        });
+        settle().await;
+        assert_eq!(f.device.setting_preflights.load(SeqCst), 1);
+        let setting = f.supervisor.status().setting.unwrap();
+        assert_eq!(setting.owner, session.id());
+        assert_eq!(setting.property, P::Gain);
+        assert_eq!(
+            session.start(request()).await.unwrap_err().kind,
+            ErrorKind::Busy
+        );
+        // The held preflight prevents a fresh driver read. An idle command uses
+        // observed capabilities without queueing behind it or actuating hardware.
+        if can_abort {
+            session.abort().await.unwrap();
+        } else {
+            assert_eq!(
+                session.abort().await.unwrap_err().kind,
+                ErrorKind::Unsupported
+            );
+        }
+        assert_eq!(f.device.starts.load(SeqCst), 0);
+        assert_eq!(f.device.aborts.load(SeqCst), 0);
+        pending.abort();
+        assert!(pending.await.unwrap_err().is_cancelled());
+        f.device.release_setting_preflight.notify_one();
+        settle().await;
+        assert!(f.device.settings.lock().unwrap().is_empty());
+        assert_eq!(f.activity.active(), 0);
+        assert!(f.supervisor.status().setting.is_none());
+        f.source.shutdown().await.unwrap();
+    }
 }
 
 #[tokio::test(start_paused = true)]
@@ -952,6 +965,40 @@ async fn invalid_start_preserves_completed_image_and_makes_no_equipment_command(
     assert_eq!(f.device.starts.load(SeqCst), 1);
     assert_eq!(f.device.aborts.load(SeqCst), 0);
     assert_eq!(f.activity.active(), 0);
+    drop(owner);
+    f.source.shutdown().await.unwrap();
+}
+
+#[tokio::test(start_paused = true)]
+async fn unsupported_idle_stop_and_abort_return_errors_without_dispatch_or_image_loss() {
+    let f = Fixture::new(24);
+    let owner = f.session().await;
+    for completed in [false, true] {
+        if completed {
+            f.device.set("canstopexposure", json!(true));
+            f.device.set("canabortexposure", json!(true));
+            owner.start(request()).await.unwrap();
+            f.device.complete();
+            f.ready().await;
+        }
+        let retained = completed.then(|| owner.image().unwrap());
+        f.device.set("canstopexposure", json!(false));
+        f.device.set("canabortexposure", json!(false));
+        assert_eq!(owner.stop().await.unwrap_err().kind, ErrorKind::Unsupported);
+        assert_eq!(
+            owner.abort().await.unwrap_err().kind,
+            ErrorKind::Unsupported
+        );
+        assert_eq!(f.supervisor.status().phase, Phase::Idle);
+        assert_eq!(f.device.stops.load(SeqCst), 0);
+        assert_eq!(f.device.aborts.load(SeqCst), 0);
+        assert_eq!(f.activity.active(), 0);
+        if let Some(retained) = retained {
+            assert!(Arc::ptr_eq(&retained, &owner.image().unwrap()));
+        } else {
+            assert!(owner.image().is_err());
+        }
+    }
     drop(owner);
     f.source.shutdown().await.unwrap();
 }
