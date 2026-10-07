@@ -255,6 +255,7 @@ impl HubRuntime {
             "focuserOutputs",
             "rotatorOutputs",
             "filterWheelOutputs",
+            "coverCalibratorOutputs",
         ];
         if !self.com_architectures.is_empty() {
             capabilities.push("comSources");

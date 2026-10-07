@@ -50,7 +50,7 @@ public sealed class HubConfigurationTests
         var com=reader.Variants(source,["comSources"]).Single(v=>v.Kind=="com");
         Assert.True(com.Enabled);
         var properties=com.Schema.GetProperty("properties");
-        Assert.Equal(new[]{"switch","safetymonitor","observingconditions","focuser","rotator","filterwheel"},reader.Choices(properties.GetProperty("deviceType")).Where(c=>c.Enabled).Select(c=>c.Value));
+        Assert.Equal(new[]{"switch","safetymonitor","observingconditions","focuser","rotator","filterwheel","covercalibrator"},reader.Choices(properties.GetProperty("deviceType")).Where(c=>c.Enabled).Select(c=>c.Value));
         var bitness=reader.Choices(properties.GetProperty("bitness"),["comX86Sources"]);
         Assert.True(bitness.Single(c=>c.Value=="x86").Enabled);
         Assert.False(bitness.Single(c=>c.Value=="x64").Enabled);
@@ -68,6 +68,7 @@ public sealed class HubConfigurationTests
         Assert.Equal(new[] { "rotator" }, reader.Choices(classes, ["rotatorOutputs"]).Where(c => c.Enabled).Select(c => c.Value));
         Assert.Equal(new[] { "focuser", "rotator" }, reader.Choices(classes, ["focuserOutputs", "rotatorOutputs"]).Where(c => c.Enabled).Select(c => c.Value));
         Assert.Equal(new[] { "filterwheel" }, reader.Choices(classes, ["filterWheelOutputs"]).Where(c => c.Enabled).Select(c => c.Value));
+        Assert.Equal(new[] { "covercalibrator" }, reader.Choices(classes, ["coverCalibratorOutputs"]).Where(c => c.Enabled).Select(c => c.Value));
         Assert.Equal(new[] { "focuser", "rotator", "filterwheel" }, reader.Choices(classes, ["focuserOutputs", "rotatorOutputs", "filterWheelOutputs"]).Where(c => c.Enabled).Select(c => c.Value));
         Assert.All(reader.Choices(classes), c => Assert.False(c.Enabled));
     }

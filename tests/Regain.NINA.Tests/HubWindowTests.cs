@@ -14,6 +14,7 @@ public sealed partial class HubNativeTests
     [Theory]
     [InlineData("rotator")]
     [InlineData("filterwheel")]
+    [InlineData("covercalibrator")]
     public async Task NativeWindowCreatesAndReloadsSimulatedTypedOutputFromSharedControls(string deviceType)
     {
         await Wpf(async () => {

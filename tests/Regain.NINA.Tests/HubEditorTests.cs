@@ -57,6 +57,7 @@ public sealed partial class HubNativeTests
     [Theory]
     [InlineData("focuser")]
     [InlineData("rotator")]
+    [InlineData("covercalibrator")]
     public async Task NativeEditorCreatesSharedTypedOutputsFromHostDescriptorsWithoutOpeningEquipment(string type)
     {
         await using var host = await Host.Open(); using var editor = await Editor(host); await editor.ReloadAsync();
@@ -90,14 +91,23 @@ public sealed partial class HubNativeTests
         Assert.Equal(ids[1], editor.Draft.Field("/outputs/4/id").Value!.Value.GetGuid());
         HubSelection Selection(int index) => new() { ConfigPath = host.ConfigPath, InstanceId = host.Selection(0,"switch").InstanceId,
             OutputId = ids[index], DeviceType = type, Label = $"Shared {type} {index + 3}", Simulated = true };
-        HubDevice Device(int index) => type == "focuser" ? new HubFocuserDevice(Selection(index),host.Executable,host.Workers)
-            : new HubRotatorDevice(Selection(index),host.Executable,host.Workers);
+        HubDevice Device(int index) => type switch {
+            "focuser" => new HubFocuserDevice(Selection(index),host.Executable,host.Workers),
+            "covercalibrator" => new HubCoverCalibratorDevice(Selection(index),host.Executable,host.Workers),
+            _ => new HubRotatorDevice(Selection(index),host.Executable,host.Workers)
+        };
         using var first = Device(0);
         using var second = Device(1);
         await first.Connect(CancellationToken.None); await second.Connect(CancellationToken.None);
         await Eventually(async () => (await editor.SourceStatusAsync(source)).GetProperty("leaseCount").GetInt32() == 2);
         if (first is HubFocuserDevice focuser) {
             await focuser.Move(50100,CancellationToken.None,0); Assert.Equal(50100,((HubFocuserDevice)second).Position);
+        } else if (first is HubCoverCalibratorDevice panel) {
+            panel.Brightness=0;
+            Assert.True(((HubCoverCalibratorDevice)second).LightOn);
+            Assert.Equal(0,((HubCoverCalibratorDevice)second).Brightness);
+            Assert.True(await panel.Open(CancellationToken.None,10));
+            Assert.Equal(global::NINA.Equipment.Interfaces.CoverState.Open,((HubCoverCalibratorDevice)second).CoverState);
         } else {
             var rotator = (HubRotatorDevice)first; rotator.Sync(42.5f);
             Assert.True(await rotator.Move(-721.5f,CancellationToken.None));

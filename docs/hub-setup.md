@@ -414,7 +414,7 @@ then give it a label and an unused focuser number. Review, apply and reload. Sav
 IDs and numbers are retained; adding another output referencing the same source
 shares its connection while each frontend keeps its own lease. Review reports
 mismatched source classes rather than opening equipment. Rotators use the same
-form below; camera and panel proxies remain under development. Select/save the output in the
+form below; camera proxies remain under development. Select/save the output in the
 native selector or register it through the ASCOM manager before connecting a client.
 
 ![Browser-created focuser output backed by explicit simulation](images/hub-web-focuser-setup.jpg)
@@ -443,7 +443,7 @@ the others. Saved IDs and numbers remain stable across reload.
 Review rejects mismatched source classes without opening equipment. Modern
 rotator publication requires upstream reversal support. For native NINA, select
 and save the new output in the shared selector; for ASCOM, register it with the
-shared manager. Panels and camera proxies remain under development.
+shared manager. Camera proxies remain under development.
 
 ![Shared native rotator output backed by explicit simulation](images/hub-native-rotator-setup-simulation.png)
 
@@ -528,7 +528,7 @@ For a saved explicit CoverCalibrator simulation source, open **Simulation** in
 shared setup. The native and browser forms share ten generated controls: cover
 and light state, their independent completion flags, brightness and its live
 maximum, two operation durations, fault injection and sample age. Select only
-the fields to change. Panel creation in setup is the next development step.
+the fields to change. Create a source and output as described below.
 
 ![Shared panel simulation controls](images/hub-native-panel-simulation.png)
 
@@ -546,3 +546,35 @@ completion flags. Stalls, stopped-short results, malformed completion, read
 failures and applied uncertain writes are available for testing. Clearing a
 fault does not clear an uncertain-write fence. Read the applied state and release
 every source lease before explicitly reconnecting; setup never retries commands.
+
+## Create shared panel outputs (development)
+
+Add one source per panel and select its transport:
+
+| Source | What to select |
+| --- | --- |
+| Direct Regain driver | `ofp2`, with the panel's stable identity |
+| Remote Alpaca | CoverCalibrator class, server URL, device number and connection policy |
+| Windows ASCOM driver | CoverCalibrator class, installed ProgID and an available worker bitness |
+| Another hub device | The existing panel output's stable ID |
+| Simulation | CoverCalibrator class; no equipment connection |
+
+Add an output, choose **Republish a device**, select **covercalibrator** and its
+source, then assign a label and an unused panel number. Review, apply and reload.
+Add another output referencing the same source to share its state and connection.
+Each NINA, ASCOM and Alpaca client retains its own connection lease. Saved output
+IDs and numbers remain stable across reload; review rejects mismatched classes
+without connecting equipment. Select/save the output in the native selector or
+register it with the shared ASCOM manager before connecting a client.
+
+![Native panel creation through shared setup](images/hub-native-covercalibrator-setup-simulation.png)
+
+![Browser panel creation through shared setup](images/hub-web-covercalibrator-setup-simulation.png)
+
+These actual captures use explicit simulation. The browser workflow creates two
+outputs, preserves their IDs on reload and changes only the cover state through
+simulation controls. Status confirms unchanged light state and brightness, no
+configuration revision change, zero leases and a disconnected transport. Real
+net48 clients and NINA verify shared state and independent connection ownership.
+Panel hardware, interactive installed-client and conformance acceptance remain
+separate plan gates.

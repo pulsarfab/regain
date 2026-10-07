@@ -30,9 +30,9 @@ failure in the panel Automation DeviceState fixture. Registered panel imports
 pass. The fixture incorrectly requires a managed enum identity across VARIANT;
 native Int32 enum marshaling is now checked explicitly in both net48 clients.
 The Automation assertion admits only the declared enum or bounded Int32; driver
-behavior is unchanged. New CI confirmation remains required.
-Dedicated panel simulation is implemented and verified locally. Shared panel
-creation is the next implementation step.
+behavior is unchanged. Simulation and the correction are pushed at 2f3f8c2;
+new PR/push CI 37554304962/37554298269 is live. Shared panel creation is implemented
+and verified locally. Cameras are the next implementation step.
 
 Current position: milestones 0 and 1 are complete. The scalar source/output paths
 in milestones 2 and 3 are implemented; their remaining acceptance gates are open.
@@ -55,7 +55,9 @@ implemented and pushed; six loopback and a production OFP2 simulation case pass.
 Full virtual-panel Rust, strict checks, NINA 223/223 and real net48 x86/x64 pass.
 Dedicated panel simulation has 35 passing Rust simulator cases, three new NINA
 cases and real net48 x86/x64 coverage. Full regressions and strict checks pass;
-shared panel setup remains, followed by camera proxies.
+shared panel setup passes full Rust/strict checks, NINA 228/228 and real net48
+x86/x64 checks. Actual native/browser captures and browser creation/reload/sparse
+update acceptance are verified. Camera proxies remain.
 Milestone 5's coordinated groups are not yet
 implemented. PR #21 stays draft until the full plan passes.
 
@@ -100,6 +102,20 @@ all targets and generated-contract freshness pass. Sequential confirmation
 followed an overlapping NINA host causing a Windows executable lock; no running
 test was interrupted. Shared panel creation stays gated until its
 own acceptance. No hardware or installed vendor driver was used.
+
+Shared panel creation checkpoint (local): the existing generated native/browser
+forms enable CoverCalibrator proxy, COM and simulation choices. Two real net48
+clients and NINA verify stable save/reload identities, independent leases,
+shared On(0) and actual cover completion. Actual WPF/browser captures are visually
+verified. Browser acceptance creates outputs 7/8, rejects a class mismatch,
+retains both UUIDs on reload and applies a cover-only simulation edit while light
+state and configuration revision remain unchanged and leases return to zero.
+Full Rust hub/Alpaca, strict Clippy, Rust 1.89 all targets, generated contracts,
+Node/seven schema checks, NINA 228/228 and real net48 x86/x64 pass. Original
+fixture-choice/namespace failures are retained and explained in the review log.
+Preceding simulator/Automation-fix CI 37554304962/37554298269 is live; keep this
+increment local until it finishes. Next: camera ownership/buffer/transport
+contracts and implementation, then every remaining original gate.
 
 Filter-wheel controller increment: shared typed sessions, live ordered names and
 signed offsets, slot bounds, nonblocking Position writes and moving `-1` are
@@ -1103,7 +1119,7 @@ deduplicated polling and cached typed diagnostics/DeviceState are implemented.
 All three frontend publications, Windows COM imports and virtual inputs are
 implemented. Dedicated focuser simulation is implemented. Broader simulation, general typed
 setup and conformance remain required.
-Shared setup now enables Focuser, Rotator and FilterWheel proxy creation, with other proxy classes
+Shared setup now enables Focuser, Rotator, FilterWheel and CoverCalibrator proxy creation, with other proxy classes
 gated until their interfaces are implemented and verified.
 
 Rotator controller increment: shared typed sessions and live property/command

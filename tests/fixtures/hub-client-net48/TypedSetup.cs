@@ -49,6 +49,16 @@ internal static partial class NativeOutputs
             Require(second.Position == 41 && second.MechanicalPosition == 358.5f, "Created outputs share source coordinates");
             first.Connected = false; Require(second.Connected, "Created output lease independence");
             second.Connected = false;
+        } else if (deviceType == "covercalibrator") {
+            using var first = new CoverCalibratorOutput(Binding(0), executable);
+            using var second = new CoverCalibratorOutput(Binding(1), executable);
+            first.Connected = true; second.Connected = true;
+            first.CalibratorOn(0); await Until(() => !second.CalibratorChanging,token);
+            Require(second.Brightness==0 && second.CalibratorState==ASCOM.DeviceInterface.CalibratorStatus.Ready,"Created panel lost On(0)");
+            first.OpenCover(); await Until(() => !second.CoverMoving,token);
+            Require(second.CoverState==ASCOM.DeviceInterface.CoverStatus.Open,"Created panel fabricated completion");
+            first.Connected=false; Require(second.Connected && second.CalibratorState==ASCOM.DeviceInterface.CalibratorStatus.Ready,"Created panel lease independence");
+            second.Connected=false;
         } else {
             using var first = new FilterWheelOutput(Binding(0), executable);
             using var second = new FilterWheelOutput(Binding(1), executable);

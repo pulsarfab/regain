@@ -1909,8 +1909,8 @@ ongoing movement before sending another actuator command; Halt and light command
 remain independently available. Imported drivers keep their own motion policies.
 
 The runtime, publications and input adapters below extend this controller.
-Dedicated simulation controls and shared creation remain required before opening
-the panel setup gate.
+Dedicated simulation controls and shared creation use the same descriptors and
+review/apply flow, as described below.
 Reference: [ASCOM CoverCalibrator](https://ascom-standards.org/newdocs/covercalibrator.html),
 with the installed ASCOM 7.1.2 enum/interface declarations and captured
 [OFP2 protocol evidence](ofp2.md).
@@ -1945,8 +1945,8 @@ unavailable completion is omitted rather than represented as stopped.
 Both setup diagnostic readers consume generated property types/bounds and the
 response schema using their existing typed-accessory display. They preserve
 identity/epoch/page checks and reject incorrect Int32, enum and Boolean values.
-Panel creation remains gated until all its input/output integrations are verified;
-every later plan gate remains required.
+Panel creation uses its own verified output capability; every later acceptance
+and final plan gate remains required.
 
 ### Panel Alpaca publication
 
@@ -1968,8 +1968,8 @@ Hub setup routes use the existing shared editor for configured panel numbers.
 The standalone OFP2 retains its slot-zero route and setup; a conflicting hub
 panel rejects discovery, requests and setup before any equipment connection.
 Five private HTTP cases cover these rules, including the production OFP2 worker
-in explicit simulation. COM/virtual inputs, dedicated
-simulation and shared creation are still required before opening the setup gate.
+in explicit simulation. COM/virtual inputs, dedicated simulation and shared
+creation reuse the paths described below.
 
 ### Native panel publication
 
@@ -2002,7 +2002,7 @@ only its leases and sends no actuator command. Native chooser enumeration,
 registration and metadata are inert. Manual private COM exports pass both server
 and client bitnesses; cold/production registration and interactive acceptance
 still require their separate gates. Dedicated panel simulation and shared
-creation remain pending; virtual inputs are described below.
+creation are implemented; their contracts are described below.
 
 Interface references: installed NINA 3.2 IFlatDevice declarations and
 [NINA's cover/calibrator adapter](https://github.com/isbeorn/nina/blob/develop/NINA.Equipment/Equipment/MyFlatDevice/AscomCoverCalibrator.cs),
@@ -2032,8 +2032,8 @@ activate a fresh worker, but cannot clear that fence, replay a command or silent
 move an existing typed session to a new source generation.
 
 These paths are exercised through fail-if-present private registry fixtures,
-never installed vendor drivers. Generated panel COM choices remain gated until
-dedicated simulation and shared panel creation are implemented and verified.
+never installed vendor drivers. Generated panel COM choices use the same
+verified shared creation form and available-worker bitness gates.
 
 ### Virtual panel inputs
 
@@ -2055,7 +2055,7 @@ existing sibling session, without replay or automatic actuator cleanup. Retiring
 an inner transport can release its last lease and leave that source idle under the
 normal disconnect rules; this does not clear an active outer owner's fence.
 Explicit reconnect creates a new session rather than retargeting an old one.
-Shared panel creation remains required before opening its setup capabilities.
+Shared panel creation uses the same setup capabilities described below.
 
 ### Dedicated panel simulation
 
@@ -2083,5 +2083,23 @@ compound status replies. Updates are revision-checked, change test state only,
 and release temporary control leases. Stalls, stopped-short results, malformed
 completion, read errors, timeouts and applied uncertain writes use the existing
 fault path. Clearing a fault never clears an active owner's uncertainty fence
-or replays a command. Shared panel creation remains gated pending its own
-setup/save/reload acceptance.
+or replays a command.
+
+### Shared panel creation
+
+CoverCalibrator proxy creation is gated by coverCalibratorOutputs, advertised by
+the runtime alongside the existing typed classes. COM and explicit simulation
+panel classes are available through their existing source/bitness capabilities;
+camera choices remain gated. Native OFP2, remote Alpaca and virtual source forms
+retain their existing identity and connection policies. No new frontend-specific
+configuration, executable or registration path is introduced.
+
+Both schema-driven editors create multiple stable outputs for one source and
+reject mismatched classes through runtime review before any activation. Apply
+and reload preserve output UUIDs and class-local numbers. Real net48 x86/x64 and
+native NINA clients verify independent leases, actual cover completion and shared
+On(0) state. Actual browser acceptance verifies two outputs, rejected class
+mismatch, stable save/reload IDs and cover-only simulation updates that leave
+light state and configuration revision unchanged and release their temporary
+lease. These fixtures/captures prove simulation acceptance, not installed-client,
+hardware or conformance acceptance.

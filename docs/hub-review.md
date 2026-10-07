@@ -3875,3 +3875,38 @@ with both server and client bitnesses. Logs:
 artifacts/hub-panel-ci-export-{build,reproduction,confirmed}.log and
 artifacts/hub-panel-creation-net48-confirmed.log. Cold/production registration
 remains a CI gate; no installed vendor driver was activated.
+
+### Shared panel creation review (2026-10-06, local increment)
+
+Reviewed reuse of generated source/output fields, runtime capability admission,
+revisioned review/apply/reload, saved identity ledger, native selectors and COM
+registration. CoverCalibrator has its own published output capability; COM and
+simulation source classes use their existing transport/bitness gates. Cameras
+remain disabled. No extra executable, transport or configuration definition is
+introduced. Typed controller/output behavior is unchanged.
+
+Existing native editor, actual WPF and real net48 creation fixtures now include
+panels. They create two outputs for one simulated source, reject mismatched
+classes before activation, retain saved identities/numbers and verify actual
+cover completion, shared On(0) and independent leases. Actual browser acceptance
+creates outputs 7/8, rejects a focuser/panel mismatch, preserves both output IDs
+on save/reload and applies a cover-only state update without changing brightness,
+light state or configuration revision. Observed status confirms zero leases and
+disconnected transport. Native/browser screenshots are visually verified and
+documented. Only the uniquely identified private browser fixture processes were
+stopped afterward; no equipment or installed vendor driver was activated.
+
+The first net48 run caught a stale expected proxy-choice list; it now requires
+the newly supported panel choice while cameras remain disabled. A focused NINA
+compile caught a test namespace qualification; global:: resolves the installed
+NINA CoverState enum. Both original logs are retained. Confirmation passes full
+Rust hub/Alpaca suites, strict Clippy, Rust 1.89 all targets, contract freshness,
+Node/seven independent schema checks, NINA 228/228 and real net48 x86/x64 clients.
+Formatting/diff checks pass. New CI for the preceding simulator/Automation fix
+is still live; keep this reviewed creation increment local until it finishes.
+
+Evidence: artifacts/hub-panel-creation-{contract-generate,node,schema,host,
+focused,focused-confirmed,net48,net48-confirmed,rust,clippy,msrv,contract,nina}.log
+and artifacts/hub-panel-creation-browser-{state,saved,verification}.json. Every
+original remaining camera, coordination, recovery, documentation, acceptance
+and final review gate remains required.
