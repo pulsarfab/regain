@@ -15,6 +15,17 @@ internal static partial class NativeOutputs
         using var first = new CoverCalibratorOutput(Binding(firstNumber),executable);
         using var second = new CoverCalibratorOutput(Binding(secondNumber),executable);
         Query<ICoverCalibratorV2>(first); Query<ICoverCalibratorV1>(first);
+        // DeviceState returns declared enums to managed clients. Automation's
+        // Object/VARIANT boundary carries the underlying Int32, not an enum name.
+        foreach (var state in new object[]{CoverStatus.Unknown,CalibratorStatus.Ready}) {
+            var variant=System.Runtime.InteropServices.Marshal.AllocCoTaskMem(24);
+            try {
+                System.Runtime.InteropServices.Marshal.GetNativeVariantForObject(state,variant);
+                Require(System.Runtime.InteropServices.Marshal.ReadInt16(variant)==3,"Panel enum was not marshaled as VT_I4");
+                var roundtrip=System.Runtime.InteropServices.Marshal.GetObjectForNativeVariant(variant);
+                Require(roundtrip is int number && number==(int)Convert.ChangeType(state,typeof(int)),"Panel Automation state lost Int32 value");
+            } finally { System.Runtime.InteropServices.Marshal.FreeCoTaskMem(variant); }
+        }
         Require(first.InterfaceVersion==2 && !first.Connected && source.PanelCommands.IsEmpty,"Panel metadata activated equipment");
         Require(OutputIdentity.ProgId(Binding(firstNumber)).StartsWith("Rgn.HC.") && OutputIdentity.ProgId(Binding(firstNumber)).Length==39,"Panel stable identity");
         Expect<global::ASCOM.NotConnectedException>(()=>_=first.Brightness);

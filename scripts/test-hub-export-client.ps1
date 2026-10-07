@@ -108,7 +108,12 @@ try {
                     $brightnessReady = $value -eq 17
                 } elseif ($name -in 'CoverState','CalibratorState') {
                     $expected = if ($name -eq 'CoverState') { 'ASCOM.DeviceInterface.CoverStatus' } else { 'ASCOM.DeviceInterface.CalibratorStatus' }
-                    if ($value.GetType().FullName -ne $expected -or [Enum]::GetUnderlyingType($value.GetType()) -ne [int] -or [int]$value -lt 0 -or [int]$value -gt 5) { throw 'Panel DeviceState lost its declared state enum type or bounds' }
+                    # IStateValue.Value is Object/VARIANT. A boxed Int32 enum
+                    # crosses Automation as VT_I4; a managed CCW shortcut may
+                    # retain the enum. Direct managed clients check its declared
+                    # enum type separately. Never accept strings/Short/Double.
+                    $typedEnum = $value.GetType().FullName -eq $expected -and [Enum]::GetUnderlyingType($value.GetType()) -eq [int]
+                    if ((!$typedEnum -and $value -isnot [int]) -or [int]$value -lt 0 -or [int]$value -gt 5) { throw "Panel DeviceState $name expected $expected or VT_I4 with bounds 0..5, received $($value.GetType().AssemblyQualifiedName) value=$value" }
                 } else { throw 'Unexpected panel DeviceState entry' }
             }
             return $brightnessReady

@@ -3846,3 +3846,32 @@ http,node,schema,host,nina-focused,capture,nina,net48,rust,rust-confirmed,clippy
 msrv,contract-generate,contract}.log. Shared panel creation stays gated until its own review/apply/reload
 acceptance. No equipment or installed vendor driver was activated; every
 original later milestone gate remains required.
+
+### Panel Automation CI review (2026-10-06)
+
+Both 5a22737 CI runs 37552662096/37552655796 finish with seven successful jobs
+and a Windows failure at the new panel DeviceState Automation assertion. All
+19 registered parent/import cases pass. The export fixture requires the boxed
+value's managed enum identity; an Object/VARIANT boundary can instead carry its
+underlying Int32. Manual exports on this machine retain the enum and pass the
+original assertion, so they do not reproduce that CI environment difference.
+The original CI failures are retained in artifacts/hub-panel-publication-{pr,push}-ci-failure.log.
+
+[Microsoft's object marshaling contract](https://learn.microsoft.com/en-us/dotnet/framework/interop/default-marshalling-for-objects)
+maps an IConvertible Int32 value to VT_I4 and back to System.Int32. New real
+net48 x86/x64 checks marshal actual CoverStatus and CalibratorStatus values to
+native VARIANTs and verify tag 3 (VT_I4), Int32 type and unchanged value on return.
+Existing managed DeviceState checks still require the declared ASCOM enums.
+The Automation fixture now accepts only that declared Int32 enum or System.Int32
+in 0..5; strings, Short, Double and unrelated enums remain rejected. Failures
+report actual assembly-qualified types and values. Driver behavior, command
+policy and time bounds are unchanged. The CI runtime type is not captured by
+the original short assertion; new CI must confirm this wire-correct assertion
+and complete the remaining registration/packaging checks.
+
+Local confirmation passes warning-denied both-architecture staging, actual
+net48 x86/x64 enum-to-native-VARIANT checks and eight-output manual COM exports
+with both server and client bitnesses. Logs:
+artifacts/hub-panel-ci-export-{build,reproduction,confirmed}.log and
+artifacts/hub-panel-creation-net48-confirmed.log. Cold/production registration
+remains a CI gate; no installed vendor driver was activated.

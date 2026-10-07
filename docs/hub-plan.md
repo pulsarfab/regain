@@ -25,7 +25,12 @@ registered activation does not establish interactive/hardware acceptance.
 
 Reviewed native panel outputs (554794f), Windows COM imports (593c0de) and virtual
 inputs (5a22737) are now pushed together to PR #21. New PR/push CI
-37552662096/37552655796 is queued/running; its acceptance is not yet established.
+37552662096/37552655796 both finish with seven successful jobs and a Windows
+failure in the panel Automation DeviceState fixture. Registered panel imports
+pass. The fixture incorrectly requires a managed enum identity across VARIANT;
+native Int32 enum marshaling is now checked explicitly in both net48 clients.
+The Automation assertion admits only the declared enum or bounded Int32; driver
+behavior is unchanged. New CI confirmation remains required.
 Dedicated panel simulation is implemented and verified locally. Shared panel
 creation is the next implementation step.
 
