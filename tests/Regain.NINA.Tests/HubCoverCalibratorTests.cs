@@ -38,7 +38,14 @@ public sealed partial class HubNativeTests
                 using var response = key is null ? await http.GetAsync("/api/v1/covercalibrator/17/"+member+"?ClientID=87001",timeout.Token) :
                     await http.PutAsync("/api/v1/covercalibrator/17/"+member,new FormUrlEncodedContent(new Dictionary<string,string>{["ClientID"]="87001",[key]=value!}),timeout.Token);
                 response.EnsureSuccessStatusCode(); using var parsed=JsonDocument.Parse(await response.Content.ReadAsStringAsync(timeout.Token));
-                Assert.Equal(0,parsed.RootElement.GetProperty("ErrorNumber").GetInt32()); return parsed.RootElement.GetProperty("Value").Clone();
+                var number = parsed.RootElement.GetProperty("ErrorNumber").GetInt32();
+                string? diagnostic = null;
+                if (number != 0) {
+                    try { diagnostic = (await host.Command(new {op="sourceStatus",source=source.SourceId})).GetRawText(); }
+                    catch (Exception failure) { diagnostic = "Source diagnostic failed: " + failure.GetType().Name; }
+                }
+                Assert.True(number == 0,$"Panel {member} failed: {parsed.RootElement.GetRawText()}; source={diagnostic}; upstream={source.RequestTrace}");
+                return parsed.RootElement.GetProperty("Value").Clone();
             }
             await Eventually(async () => {
                 if (publisher.HasExited) throw new InvalidOperationException("Private panel publisher exited before readiness");
