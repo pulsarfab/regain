@@ -26,6 +26,9 @@ use tokio::sync::Notify;
 use uuid::Uuid;
 
 struct Device {
+    connects: AtomicUsize,
+    hold_connect: AtomicBool,
+    release_connect: Notify,
     values: Mutex<Values>,
     errors: Mutex<BTreeMap<String, SourceError>>,
     starts: AtomicUsize,
@@ -72,6 +75,9 @@ struct Device {
 impl Default for Device {
     fn default() -> Self {
         Self {
+            connects: AtomicUsize::new(0),
+            hold_connect: AtomicBool::new(false),
+            release_connect: Notify::new(),
             values: Mutex::new(Values::from([
                 ("camerastate".into(), json!(0)),
                 ("imageready".into(), json!(false)),
@@ -167,7 +173,13 @@ impl Device {
 struct Mock(Arc<Device>);
 impl Backend for Mock {
     fn connect(&mut self) -> BackendFuture<'_, ()> {
-        Box::pin(async { Ok(()) })
+        Box::pin(async {
+            self.0.connects.fetch_add(1, SeqCst);
+            if self.0.hold_connect.load(SeqCst) {
+                self.0.release_connect.notified().await;
+            }
+            Ok(())
+        })
     }
     fn disconnect(&mut self) -> BackendFuture<'_, ()> {
         self.0.disconnects.fetch_add(1, SeqCst);
@@ -422,6 +434,8 @@ fn request() -> ExposureRequest {
         light: true,
     }
 }
+#[path = "support/camera_group_host.rs"]
+mod camera_group_host;
 #[path = "support/camera_groups.rs"]
 mod camera_groups;
 #[path = "support/camera_guiding.rs"]

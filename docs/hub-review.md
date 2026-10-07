@@ -6855,3 +6855,81 @@ interactive/physical acceptance, README/site, main reconciliation and final
 review/CI/audit/merge remain unchanged gates. All fixtures are private actors;
 no attached hardware or installed vendor driver is opened. Do not wait for
 intermediate CI before continuing construction.
+
+## Saved camera groups and retained host/image IPC (2026-10-07)
+
+Reviewed the saved-schema, typed alias, identity-history, lifecycle admission,
+owned task, operation retirement and image-transfer paths. Camera groups use the
+same generated configuration editor and typed physical-leaf resolver as focuser
+groups. The common host-phase/binding definitions retain existing focuser wire
+semantics. Separate retired camera-group identities prevent cross-kind reuse;
+old schema-1 files and identity ledgers default to no camera groups.
+
+Admission reserves activity under the runtime lifecycle lock before spawning or
+connecting. The host owns one latest operation per configured group, including
+immutable per-member image pins. Losing a read or unread start acknowledgement
+cannot replay a capture or cancel it. Revision, group and exact operation IDs
+fence status/cancel/image access. A new explicit start retires old access while
+already admitted readers retain their pins and shared memory accounting. Status
+opens no source. Failed connection status identifies the physical member without
+starting any exposure. Independent core activity protects configuration retirement
+if the outer monitor fails. Shutdown now cancels both coordinators concurrently
+before awaiting them; camera cancellation follows the saved explicit policy and
+awaits admitted mutation acknowledgements.
+
+Group image streams reuse ordinary camera buffer/export/reader validation through
+generic typed request/manifest selection. The ordinary image request and wire
+shape remain unchanged. Group requests need no departed client's connection ID,
+but check all seven host/revision/group/operation/source/generation/acquisition
+identities before accepting pixels. They retrieve a retained image without a new
+exposure, source read or download. A completed image remains valid historical data
+after source transport retirement; it is not fresh evidence of live camera state.
+The focused follow-up waits for asynchronous lease cleanup and verifies that
+generations have changed before successfully exporting those exact old images.
+Image ownership stays bounded by the existing shared budget and latest-operation
+inventory; no extra retained pixel pool is introduced.
+
+The generated optional root key is admitted by the shared cold file-identity
+reader while wrong types/unknown keys remain rejected. Rust and managed clients
+classify group start/cancel as mutations and status as a read. Managed lost-reply
+tests preserve uncertainty for the first two and disconnected status for the
+third; no client retries are added. Shared camera draft tests cover immutable IDs,
+source references, policy edits, capability gating and generated timeout defaults.
+
+Local evidence:
+
+- Full Rust hub/Alpaca regression passes in
+  `artifacts/hub-camera-saved-full-rust.log`, including **71 acquisition cases**
+  (seven new saved-group/host/image cases) and **20 configuration cases**.
+- The focused retirement/image follow-up passes all eight matched cases in
+  `artifacts/hub-camera-saved-retired-image.log`, including the existing core
+  host-skew case and all seven new host cases. Source cleanup observations wait
+  for zero retained work and zero leases rather than assuming synchronous Drop.
+- Strict all-target Clippy and Rust 1.89 all-target checking pass in
+  `hub-camera-saved-clippy.log` and `hub-camera-saved-msrv.log`.
+- Independent JSON Schema validation passes **12 cases**, and browser contract,
+  defaults, references, capability and existing frontend checks pass. The generated
+  contract is refreshed from Rust. The paired-cameras example is explicit simulation.
+- Full NINA regression passes **342 cases with one explicit registered-COM-fixture
+  skip** in `artifacts/hub-camera-saved-managed-full.log`; the TRX is retained in
+  `artifacts/hub-camera-saved-regression.trx`. The five new managed cases cover
+  shared configuration/cold identity reading and lost-reply mutation classification.
+- Real **net48 x86/x64** private suites pass with warnings denied in
+  `artifacts/hub-camera-saved-net48.log`, including ordinary camera image codecs,
+  protected streams, shared acquisition and the prior calibrated-group fixtures.
+  These are compatibility checks; they do not claim new managed camera-group
+  controls or sequence orchestration. Formatting, diff and contract freshness pass.
+
+The first connection-failure fixture observed for ten virtual seconds against a
+default longer timeout and did not finish. Its initial 0.1-second configuration
+was then correctly rejected by the existing one-second minimum. The final fixture
+uses a valid one-second timeout, proves failure/member identity and passes. Both
+initial failure logs are retained; production timing limits are unchanged.
+
+Shared camera operation controls, managed image access and native NINA coordinated
+capture/image-save orchestration remain construction work. This increment does
+not close camera coordination or installed-client/physical acceptance. Discovery
+and transfer, OS resume, conformance reconciliation, README/site, main
+reconciliation and final review/CI/audit/merge remain required. All fixtures use
+private actors or explicit simulation, with no attached hardware/vendor driver.
+Continue construction without waiting for intermediate CI; keep the single PR draft.

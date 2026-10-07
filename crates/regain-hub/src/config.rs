@@ -404,6 +404,11 @@ pub struct HubConfig {
     #[schemars(length(max = 64))]
     #[schemars(extend("x-regain" = {"requiresCapability":"focuserGroups"}))]
     pub focuser_groups: Vec<crate::coordination::FocuserGroupConfig>,
+    /// Explicit camera bursts; each member produces a separate image/result.
+    #[serde(default)]
+    #[schemars(length(max = 64))]
+    #[schemars(extend("x-regain" = {"requiresCapability":"cameraGroups"}))]
+    pub camera_groups: Vec<crate::coordination::CameraGroupConfig>,
     /// Owned by the store. Retired IDs remain reserved after deletion/restart.
     #[serde(default)]
     #[schemars(extend("readOnly" = true, "x-regain" = {"hidden":true}))]
@@ -418,6 +423,8 @@ pub struct IdentityLedger {
     channels: BTreeMap<Uuid, ChannelIdentity>,
     #[serde(default)]
     groups: BTreeSet<Uuid>,
+    #[serde(default)]
+    camera_groups: BTreeSet<Uuid>,
 }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -475,6 +482,7 @@ impl IdentityLedger {
         sources: &[SourceConfig],
         outputs: &[OutputConfig],
         groups: &[crate::coordination::FocuserGroupConfig],
+        camera_groups: &[crate::coordination::CameraGroupConfig],
     ) -> Vec<FieldError> {
         let mut errors = Vec::new();
         for source in sources {
@@ -488,6 +496,7 @@ impl IdentityLedger {
                 || self.outputs.contains_key(&source.id)
                 || self.channels.contains_key(&source.id)
                 || self.groups.contains(&source.id)
+                || self.camera_groups.contains(&source.id)
             {
                 errors.push(FieldError::new(
                     "sources",
@@ -514,6 +523,7 @@ impl IdentityLedger {
                 || self.sources.contains_key(&output.id)
                 || self.channels.contains_key(&output.id)
                 || self.groups.contains(&output.id)
+                || self.camera_groups.contains(&output.id)
             {
                 errors.push(FieldError::new(
                     "outputs",
@@ -542,6 +552,7 @@ impl IdentityLedger {
                         || self.outputs.contains_key(&channel.id)
                         || self.sources.contains_key(&channel.id)
                         || self.groups.contains(&channel.id)
+                        || self.camera_groups.contains(&channel.id)
                     {
                         errors.push(FieldError::new(
                             "outputs",
@@ -558,6 +569,7 @@ impl IdentityLedger {
             if self.sources.contains_key(&group.id)
                 || self.outputs.contains_key(&group.id)
                 || self.channels.contains_key(&group.id)
+                || self.camera_groups.contains(&group.id)
             {
                 errors.push(FieldError::new(
                     "focuserGroups",
@@ -566,6 +578,21 @@ impl IdentityLedger {
                 ));
             } else {
                 self.groups.insert(group.id);
+            }
+        }
+        for group in camera_groups {
+            if self.sources.contains_key(&group.id)
+                || self.outputs.contains_key(&group.id)
+                || self.channels.contains_key(&group.id)
+                || self.groups.contains(&group.id)
+            {
+                errors.push(FieldError::new(
+                    "cameraGroups",
+                    "identity",
+                    "Camera group IDs cannot repurpose other identities",
+                ));
+            } else {
+                self.camera_groups.insert(group.id);
             }
         }
         errors
@@ -623,6 +650,7 @@ impl HubConfig {
             sources: vec![],
             outputs: vec![],
             focuser_groups: vec![],
+            camera_groups: vec![],
             identities: IdentityLedger::default(),
         }
     }
@@ -672,11 +700,12 @@ impl HubConfig {
         if self.sources.len() > MAX_DEVICES
             || self.outputs.len() > MAX_DEVICES
             || self.focuser_groups.len() > 64
+            || self.camera_groups.len() > 64
         {
             error(
                 "sources".into(),
                 "limit",
-                "At most 256 sources, 256 outputs and 64 focuser groups are supported",
+                "At most 256 sources, 256 outputs and 64 groups of each kind are supported",
             );
             // Bound graph traversal before descending into user-controlled data.
             return errors;
@@ -1087,40 +1116,79 @@ impl HubConfig {
                 }
             }
         }
+        for (index, group) in self.camera_groups.iter().enumerate() {
+            let path = format!("cameraGroups[{index}]");
+            if group.id.is_nil() || !ids.insert(group.id) {
+                error(
+                    format!("{path}.id"),
+                    "identity",
+                    "Group IDs must be non-nil and distinct from other IDs",
+                );
+            }
+            if let Err(problem) = group.validate() {
+                error(path.clone(), "group", problem.message);
+                continue;
+            }
+            let mut leaves = BTreeSet::new();
+            for (member, source) in group.members.iter().enumerate() {
+                let reference = format!("{path}.members[{member}]");
+                match self.physical_camera_source(*source) {
+                    Ok(leaf) if leaves.insert(leaf) => {}
+                    Ok(_) => error(
+                        reference,
+                        "duplicate",
+                        "Group members must resolve to different physical cameras",
+                    ),
+                    Err(problem) => error(reference, "source", problem),
+                }
+            }
+        }
         errors
     }
-    /// Follow only typed focuser proxy aliases. Bound traversal independently of
+    /// Follow only typed proxy aliases. Bound traversal independently of
     /// prior graph validation so malformed/cyclic drafts remain safe to inspect.
-    pub fn physical_focuser_source(&self, mut source: Uuid) -> Result<Uuid, &'static str> {
+    pub fn physical_focuser_source(&self, source: Uuid) -> Result<Uuid, &'static str> {
+        self.physical_source(source, DeviceType::Focuser)
+    }
+    pub fn physical_camera_source(&self, source: Uuid) -> Result<Uuid, &'static str> {
+        self.physical_source(source, DeviceType::Camera)
+    }
+    fn physical_source(
+        &self,
+        mut source: Uuid,
+        expected: DeviceType,
+    ) -> Result<Uuid, &'static str> {
         let mut visited = BTreeSet::new();
         loop {
             if !visited.insert(source) || visited.len() > MAX_DEVICES {
-                return Err("Focuser source aliases contain a cycle");
+                return Err("Source aliases contain a cycle");
             }
             let config = self
                 .sources
                 .iter()
                 .find(|entry| entry.id == source)
-                .ok_or("Focuser source does not exist")?;
+                .ok_or("Group source does not exist")?;
             match config.backend {
                 SourceBackend::Virtual { output } => {
                     let output = self
                         .outputs
                         .iter()
                         .find(|entry| entry.id == output)
-                        .ok_or("Focuser alias output does not exist")?;
+                        .ok_or("Group alias output does not exist")?;
                     match output.device {
                         VirtualDevice::Proxy {
                             source: next,
-                            device_type: DeviceType::Focuser,
-                        } => source = next,
+                            device_type,
+                        } if device_type == expected => source = next,
                         _ => {
-                            return Err("Group members must resolve through focuser proxy outputs");
+                            return Err(
+                                "Group members must resolve through matching proxy outputs",
+                            );
                         }
                     }
                 }
-                _ if self.source_type(source) == Some(DeviceType::Focuser) => return Ok(source),
-                _ => return Err("Group members must resolve to focuser sources"),
+                _ if self.source_type(source) == Some(expected) => return Ok(source),
+                _ => return Err("Group member source has the wrong device class"),
             }
         }
     }
@@ -1264,6 +1332,7 @@ impl ConfigStore {
             &initial.sources,
             &initial.outputs,
             &initial.focuser_groups,
+            &initial.camera_groups,
         ));
         if !errors.is_empty() {
             return Err(ApplyError::Invalid(errors));
@@ -1341,10 +1410,12 @@ impl ConfigStore {
                 "Identity history is managed by the hub and cannot be edited",
             ));
         }
-        errors.extend(
-            next.identities
-                .register(&next.sources, &next.outputs, &next.focuser_groups),
-        );
+        errors.extend(next.identities.register(
+            &next.sources,
+            &next.outputs,
+            &next.focuser_groups,
+            &next.camera_groups,
+        ));
         if !errors.is_empty() {
             return Err(ApplyError::Invalid(errors));
         }

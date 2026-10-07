@@ -16,6 +16,20 @@ pub fn describe_config(capabilities: &[&str]) -> Value {
         "simulationControl": crate::simulated::description(),
         "outputDiagnostics": crate::diagnostics::description(),
         "coordination": {
+            "cameraGroups": {
+                "responseSchema": schemars::schema_for!(crate::coordination::HostedCameraStatus),
+                "configurationKey": "cameraGroups",
+                "startOperation": "startCameraGroup",
+                "statusOperation": "cameraGroupStatus",
+                "cancelOperation": "cancelCameraGroup",
+                "imageOperation": "cameraGroupImage",
+                "statusOpensSources": false,
+                "imageOpensSources": false,
+                "cancellationPolicy": "savedGroupPolicy",
+                "retention": "latestPerGroupUntilHostOrRevisionChanges",
+                "startSkew": "monotonicHostRequestSpreadNotSensorSynchronization",
+                "images": "separateImmutablePinsUsingSharedImageBudget"
+            },
             "focuserGroups": {
                 "responseSchema": schemars::schema_for!(crate::coordination::HostedFocuserStatus),
                 "configurationKey": "focuserGroups",

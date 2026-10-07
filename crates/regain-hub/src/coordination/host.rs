@@ -22,7 +22,7 @@ use uuid::Uuid;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
-pub enum HostedFocuserPhase {
+pub enum HostedGroupPhase {
     Connecting,
     Running,
     Complete,
@@ -32,14 +32,15 @@ pub enum HostedFocuserPhase {
     Deadline,
     Failed,
 }
-impl HostedFocuserPhase {
+pub type HostedFocuserPhase = HostedGroupPhase;
+impl HostedGroupPhase {
     fn terminal(self) -> bool {
         !matches!(self, Self::Connecting | Self::Running)
     }
 }
 #[derive(Clone, Debug, Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct FocuserBinding {
+pub struct GroupBinding {
     pub configured_source: Uuid,
     pub physical_source: Uuid,
 }
@@ -58,6 +59,7 @@ pub struct HostedFocuserStatus {
     pub failed_source: Option<Uuid>,
     pub error: Option<SourceError>,
 }
+pub type FocuserBinding = GroupBinding;
 struct Definition {
     config: FocuserGroupConfig,
     bindings: Vec<FocuserBinding>,

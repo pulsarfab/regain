@@ -80,6 +80,9 @@ pub enum Command {
     CameraImage {
         request: crate::camera::ipc_image::ImageRequest,
     },
+    CameraGroupImage {
+        request: crate::camera::ipc_image::GroupImageRequest,
+    },
     CameraTiming {
         output: Uuid,
         #[serde(rename = "expectedRevision")]
@@ -98,6 +101,24 @@ pub enum Command {
         command: Box<Command>,
     },
     DescribeConfig {},
+    StartCameraGroup {
+        group: Uuid,
+        requests: Vec<crate::coordination::CameraMemberRequest>,
+        #[serde(rename = "expectedRevision")]
+        expected_revision: Uuid,
+    },
+    CameraGroupStatus {
+        group: Uuid,
+        operation: Option<Uuid>,
+        #[serde(rename = "expectedRevision")]
+        expected_revision: Uuid,
+    },
+    CancelCameraGroup {
+        group: Uuid,
+        operation: Uuid,
+        #[serde(rename = "expectedRevision")]
+        expected_revision: Uuid,
+    },
     StartFocuserGroup {
         group: Uuid,
         target: i32,
@@ -529,14 +550,14 @@ where
                     if !greeted {
                         if !matches!(request.command, Command::Hello {}) { return Err(ProtocolError::Handshake); }
                         greeted = true;
-                        let mut operations = vec!["cameraImage","cameraTiming","cameraCaptureTiming","cameraControl","describeConfig","getConfig","validateConfig","listDevices","sourceStatus","outputStatus","inspectSource","updateSimulation","startFocuserGroup","focuserGroupStatus","cancelFocuserGroup","connect","disconnect","changeConnection","get","put","hostStatus"];
+                        let mut operations = vec!["cameraImage","cameraGroupImage","cameraTiming","cameraCaptureTiming","cameraControl","describeConfig","getConfig","validateConfig","listDevices","sourceStatus","outputStatus","inspectSource","updateSimulation","startFocuserGroup","focuserGroupStatus","cancelFocuserGroup","startCameraGroup","cameraGroupStatus","cancelCameraGroup","connect","disconnect","changeConnection","get","put","hostStatus"];
                         if service.can_apply() { operations.push("applyConfig"); }
                         if service.credential_description().is_some() { operations.extend(["createCredential", "credentialStatus", "deleteCredential"]); }
                         let hello = json!({"protocolVersion":VERSION, "instanceId":service.instance_id(),
                             "hostInstance":service.host_id(), "configurationRevision":service.configuration().revision, "clientId":client.id(),
                             "maxFrameBytes":MAX_FRAME_BYTES, "maxInFlight":MAX_IN_FLIGHT,
                             "operations":operations,
-                            "capabilities":["switchOutputs","safetyOutputs","weatherOutputs","focuserOutputs","focuserGroups","rotatorOutputs","filterWheelOutputs","coverCalibratorOutputs","cameraOutputs","cameraAcquisition","cameraImageStream","cameraOperationTiming","cameraCaptureTiming","rotatorMotionReceipt","weatherSensorDescription","scalarDeviceState","asyncOutputConnection","switchAsyncContract"]});
+                            "capabilities":["switchOutputs","safetyOutputs","weatherOutputs","focuserOutputs","focuserGroups","cameraGroups","rotatorOutputs","filterWheelOutputs","coverCalibratorOutputs","cameraOutputs","cameraAcquisition","cameraImageStream","cameraOperationTiming","cameraCaptureTiming","rotatorMotionReceipt","weatherSensorDescription","scalarDeviceState","asyncOutputConnection","switchAsyncContract"]});
                         write_response(&mut writer, Response::new(request.id, Ok(hello)), limits.frame_timeout).await?;
                         continue;
                     }
@@ -544,6 +565,25 @@ where
                     if let Command::CameraImage { request: image_request } = request.command {
                         if request.id != 2 || !tasks.is_empty() { return Err(ProtocolError::RequestOrder); }
                         let image = crate::camera::ipc_image::prepare(&service, image_request);
+                        match image {
+                            Err(error) => write_response(&mut writer, Response::new(request.id, Err(error.into())), limits.frame_timeout).await?,
+                            Ok(mut image) => {
+                                write_response(&mut writer, Response::new(request.id, Ok(json!(image.manifest))), limits.frame_timeout).await?;
+                                // No further command is legal on this stream. EOF,
+                                // cancellation or a stalled reader releases only its
+                                // image pin/borrowed lease, never sends Abort.
+                                tokio::select! {
+                                    biased;
+                                    _ = incoming.recv() => return Err(ProtocolError::Malformed),
+                                    result = image.write(&mut writer, limits.frame_timeout) => result?,
+                                }
+                            }
+                        }
+                        return Ok(());
+                    }
+                    if let Command::CameraGroupImage { request: image_request } = request.command {
+                        if request.id != 2 || !tasks.is_empty() { return Err(ProtocolError::RequestOrder); }
+                        let image = crate::camera::ipc_image::prepare_group(&service, image_request);
                         match image {
                             Err(error) => write_response(&mut writer, Response::new(request.id, Err(error.into())), limits.frame_timeout).await?,
                             Ok(mut image) => {
@@ -620,7 +660,9 @@ async fn dispatch_bounded(
             | Command::CreateCredential { .. }
             | Command::DeleteCredential { .. }
             | Command::UpdateSimulation { .. }
+            | Command::StartCameraGroup { .. }
             | Command::StartFocuserGroup { .. }
+            | Command::CancelCameraGroup { .. }
             | Command::CancelFocuserGroup { .. }
     );
     let result = if let Some((output, kind)) = crate::camera::ipc_timing::operation(&command) {
@@ -677,6 +719,55 @@ async fn dispatch_service(
     limits: Limits,
 ) -> Result<Value, RpcError> {
     match command {
+        Command::StartCameraGroup {
+            group,
+            requests,
+            expected_revision,
+        } => {
+            let runtime = service.runtime()?;
+            if expected_revision != runtime.revision() {
+                return Err(UpdateError::Conflict.into());
+            }
+            let _client = client.bind(&runtime)?;
+            Ok(json!(runtime.start_camera_group(
+                service.host_id(),
+                expected_revision,
+                group,
+                requests
+            )?))
+        }
+        Command::CameraGroupStatus {
+            group,
+            operation,
+            expected_revision,
+        } => {
+            let runtime = service.runtime()?;
+            if expected_revision != runtime.revision() {
+                return Err(UpdateError::Conflict.into());
+            }
+            let _client = client.bind(&runtime)?;
+            Ok(json!(runtime.camera_group_status(
+                expected_revision,
+                group,
+                operation
+            )?))
+        }
+        Command::CancelCameraGroup {
+            group,
+            operation,
+            expected_revision,
+        } => {
+            let runtime = service.runtime()?;
+            if expected_revision != runtime.revision() {
+                return Err(UpdateError::Conflict.into());
+            }
+            let _client = client.bind(&runtime)?;
+            Ok(json!(runtime.cancel_camera_group(
+                expected_revision,
+                group,
+                operation
+            )?))
+        }
         Command::StartFocuserGroup {
             group,
             target,
@@ -816,11 +907,15 @@ async fn dispatch(
     Ok(match command {
         Command::ApplyConfig { .. }
         | Command::CameraImage { .. }
+        | Command::CameraGroupImage { .. }
         | Command::CameraTiming { .. }
         | Command::CameraCaptureTiming { .. }
         | Command::CameraControl { .. }
+        | Command::StartCameraGroup { .. }
         | Command::StartFocuserGroup { .. }
+        | Command::CameraGroupStatus { .. }
         | Command::FocuserGroupStatus { .. }
+        | Command::CancelCameraGroup { .. }
         | Command::CancelFocuserGroup { .. }
         | Command::HostStatus {}
         | Command::DescribeConfig {}

@@ -33,16 +33,22 @@ pub enum CameraCancellationPolicy {
     LeaveRunning,
     AbortStarted,
 }
-#[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CameraGroupConfig {
+    #[schemars(extend("readOnly" = true, "x-regain" = {"immutableAfterCreate":true}))]
     pub id: Uuid,
+    #[schemars(length(min = 1, max = 200))]
     pub label: String,
     /// Whole-operation bound. Admitted mutations retain their actor deadline.
+    #[schemars(range(min = 0.01, max = 604800.0), extend("default" = 300.0, "x-regain" = {"units":"s"}))]
     pub timeout_seconds: f64,
+    /// Continue healthy captures, or explicitly abort acknowledged siblings.
     pub failure_policy: CameraFailurePolicy,
+    /// Cancellation and the group deadline use this explicit policy.
     pub cancellation_policy: CameraCancellationPolicy,
     /// Resolved physical source IDs, not enumeration indices.
+    #[schemars(length(min = 2, max = 32), extend("items" = {"type":"string","format":"uuid","x-regain":{"reference":"source","deviceType":"camera"}}))]
     pub members: Vec<Uuid>,
 }
 impl CameraGroupConfig {
@@ -163,6 +169,25 @@ impl CameraGroup {
         self: &Arc<Self>,
         requests: Vec<CameraMemberRequest>,
     ) -> Result<CameraGroupOperation, SourceError> {
+        let origin = Instant::now();
+        self.start_owned(
+            requests,
+            Uuid::new_v4(),
+            CancellationToken::new(),
+            origin,
+            origin + Duration::from_secs_f64(self.config.timeout_seconds),
+            None,
+        )
+    }
+    pub(crate) fn start_owned(
+        self: &Arc<Self>,
+        requests: Vec<CameraMemberRequest>,
+        operation: Uuid,
+        cancel: CancellationToken,
+        origin: Instant,
+        deadline: Instant,
+        retained: Option<crate::activity::Activity>,
+    ) -> Result<CameraGroupOperation, SourceError> {
         if requests.len() != self.sessions.len()
             || requests
                 .iter()
@@ -184,10 +209,8 @@ impl CameraGroup {
         let active = self.active.clone().try_lock_owned().map_err(|_| {
             SourceError::new(ErrorKind::Busy, "Camera group operation is already active")
         })?;
-        let origin = Instant::now();
-        let deadline = origin + Duration::from_secs_f64(self.config.timeout_seconds);
         let report = CameraGroupResult {
-            operation: Uuid::new_v4(),
+            operation,
             group: self.config.id,
             sequence: 1,
             phase: CameraGroupPhase::Preflight,
@@ -212,7 +235,6 @@ impl CameraGroup {
         };
         let (publish, status) = watch::channel(report);
         let (finish, finished) = watch::channel(false);
-        let cancel = CancellationToken::new();
         let task_cancel = cancel.clone();
         let images: Images = Arc::new(Mutex::new(vec![None; self.sessions.len()]));
         let task_images = images.clone();
@@ -227,6 +249,7 @@ impl CameraGroup {
                 .run(&publish, task_cancel, origin, deadline, task_images)
                 .await;
             drop(active);
+            drop(retained);
             guard.finish();
         });
         Ok(CameraGroupOperation {

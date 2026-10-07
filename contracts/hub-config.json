@@ -3,6 +3,471 @@
   "capabilities": [],
   "contractVersion": 1,
   "coordination": {
+    "cameraGroups": {
+      "cancelOperation": "cancelCameraGroup",
+      "cancellationPolicy": "savedGroupPolicy",
+      "configurationKey": "cameraGroups",
+      "imageOpensSources": false,
+      "imageOperation": "cameraGroupImage",
+      "images": "separateImmutablePinsUsingSharedImageBudget",
+      "responseSchema": {
+        "$defs": {
+          "AcquisitionIdentity": {
+            "additionalProperties": false,
+            "properties": {
+              "acquisition": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "exposure": {
+                "$ref": "#/$defs/ExposureMetadata"
+              },
+              "generation": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "geometry": {
+                "$ref": "#/$defs/CaptureGeometry"
+              },
+              "request": {
+                "$ref": "#/$defs/ExposureRequest"
+              },
+              "source": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "source",
+              "generation",
+              "acquisition",
+              "request",
+              "geometry",
+              "exposure"
+            ],
+            "type": "object"
+          },
+          "CameraGroupPhase": {
+            "enum": [
+              "preflight",
+              "capturing",
+              "complete",
+              "preflightFailed",
+              "partialFailure",
+              "cancelled",
+              "deadline"
+            ],
+            "type": "string"
+          },
+          "CameraGroupResult": {
+            "additionalProperties": false,
+            "properties": {
+              "group": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "members": {
+                "items": {
+                  "$ref": "#/$defs/CameraMemberResult"
+                },
+                "type": "array"
+              },
+              "operation": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "phase": {
+                "$ref": "#/$defs/CameraGroupPhase"
+              },
+              "sequence": {
+                "format": "uint64",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "startSkewSeconds": {
+                "description": "Spread of observed host dispatch times, never a sensor synchronization claim.\nNone until every member's start window is known.",
+                "format": "double",
+                "type": [
+                  "number",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "operation",
+              "group",
+              "sequence",
+              "phase",
+              "members"
+            ],
+            "type": "object"
+          },
+          "CameraMemberPhase": {
+            "enum": [
+              "notStarted",
+              "prepared",
+              "starting",
+              "exposing",
+              "aborting",
+              "complete",
+              "rejected",
+              "failed",
+              "uncertain",
+              "aborted"
+            ],
+            "type": "string"
+          },
+          "CameraMemberRequest": {
+            "additionalProperties": false,
+            "properties": {
+              "exposure": {
+                "$ref": "#/$defs/ExposureRequest"
+              },
+              "source": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "source",
+              "exposure"
+            ],
+            "type": "object"
+          },
+          "CameraMemberResult": {
+            "additionalProperties": false,
+            "properties": {
+              "abortError": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/SourceError"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "acknowledgementSeconds": {
+                "format": "double",
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "acquisition": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "dispatchSeconds": {
+                "description": "Monotonic host request/ack windows relative to operation admission.",
+                "format": "double",
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "error": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/SourceError"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "generation": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "image": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/AcquisitionIdentity"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "phase": {
+                "$ref": "#/$defs/CameraMemberPhase"
+              },
+              "request": {
+                "$ref": "#/$defs/ExposureRequest"
+              },
+              "source": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "source",
+              "generation",
+              "request",
+              "phase"
+            ],
+            "type": "object"
+          },
+          "CaptureGeometry": {
+            "additionalProperties": false,
+            "properties": {
+              "binX": {
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "binY": {
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "height": {
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "startX": {
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "startY": {
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "width": {
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "width",
+              "height",
+              "binX",
+              "binY",
+              "startX",
+              "startY"
+            ],
+            "type": "object"
+          },
+          "ErrorKind": {
+            "enum": [
+              "connecting",
+              "disconnected",
+              "busy",
+              "transient",
+              "permanent",
+              "uncertain",
+              "unsupported",
+              "invalidValue",
+              "unavailable"
+            ],
+            "type": "string"
+          },
+          "ExposureMetadata": {
+            "additionalProperties": false,
+            "properties": {
+              "durationError": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/SourceError"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "durationSeconds": {
+                "format": "double",
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "startTime": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "startTimeError": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/SourceError"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "type": "object"
+          },
+          "ExposureRequest": {
+            "additionalProperties": false,
+            "properties": {
+              "durationSeconds": {
+                "format": "double",
+                "type": "number"
+              },
+              "light": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "durationSeconds",
+              "light"
+            ],
+            "type": "object"
+          },
+          "GroupBinding": {
+            "additionalProperties": false,
+            "properties": {
+              "configuredSource": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "physicalSource": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "configuredSource",
+              "physicalSource"
+            ],
+            "type": "object"
+          },
+          "HostedGroupPhase": {
+            "enum": [
+              "connecting",
+              "running",
+              "complete",
+              "preflightFailed",
+              "partialFailure",
+              "cancelled",
+              "deadline",
+              "failed"
+            ],
+            "type": "string"
+          },
+          "SourceError": {
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "$ref": "#/$defs/ErrorKind"
+              },
+              "message": {
+                "type": "string"
+              },
+              "upstreamCode": {
+                "format": "int32",
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "message"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "bindings": {
+            "items": {
+              "$ref": "#/$defs/GroupBinding"
+            },
+            "type": "array"
+          },
+          "configurationRevision": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/SourceError"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "failedSource": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "group": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "hostInstance": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "operation": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "phase": {
+            "$ref": "#/$defs/HostedGroupPhase"
+          },
+          "requests": {
+            "description": "Configured identities, mapped to physical sources in the core result.",
+            "items": {
+              "$ref": "#/$defs/CameraMemberRequest"
+            },
+            "type": "array"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/CameraGroupResult"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sequence": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "hostInstance",
+          "configurationRevision",
+          "operation",
+          "group",
+          "sequence",
+          "phase",
+          "bindings",
+          "requests"
+        ],
+        "title": "HostedCameraStatus",
+        "type": "object"
+      },
+      "retention": "latestPerGroupUntilHostOrRevisionChanges",
+      "startOperation": "startCameraGroup",
+      "startSkew": "monotonicHostRequestSpreadNotSensorSynchronization",
+      "statusOpensSources": false,
+      "statusOperation": "cameraGroupStatus"
+    },
     "focuserGroups": {
       "cancelHaltsEquipment": false,
       "cancelOperation": "cancelFocuserGroup",
@@ -22,24 +487,6 @@
               "unavailable"
             ],
             "type": "string"
-          },
-          "FocuserBinding": {
-            "additionalProperties": false,
-            "properties": {
-              "configuredSource": {
-                "format": "uuid",
-                "type": "string"
-              },
-              "physicalSource": {
-                "format": "uuid",
-                "type": "string"
-              }
-            },
-            "required": [
-              "configuredSource",
-              "physicalSource"
-            ],
-            "type": "object"
           },
           "FocuserGroupPhase": {
             "enum": [
@@ -149,7 +596,25 @@
             ],
             "type": "object"
           },
-          "HostedFocuserPhase": {
+          "GroupBinding": {
+            "additionalProperties": false,
+            "properties": {
+              "configuredSource": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "physicalSource": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "configuredSource",
+              "physicalSource"
+            ],
+            "type": "object"
+          },
+          "HostedGroupPhase": {
             "enum": [
               "connecting",
               "running",
@@ -191,7 +656,7 @@
         "properties": {
           "bindings": {
             "items": {
-              "$ref": "#/$defs/FocuserBinding"
+              "$ref": "#/$defs/GroupBinding"
             },
             "type": "array"
           },
@@ -233,7 +698,7 @@
             "type": "string"
           },
           "phase": {
-            "$ref": "#/$defs/HostedFocuserPhase"
+            "$ref": "#/$defs/HostedGroupPhase"
           },
           "result": {
             "anyOf": [
@@ -2699,6 +3164,98 @@
         ],
         "type": "string"
       },
+      "CameraCancellationPolicy": {
+        "enum": [
+          "leaveRunning",
+          "abortStarted"
+        ],
+        "type": "string"
+      },
+      "CameraFailurePolicy": {
+        "enum": [
+          "continue",
+          "abortStarted"
+        ],
+        "type": "string"
+      },
+      "CameraGroupConfig": {
+        "additionalProperties": false,
+        "properties": {
+          "cancellationPolicy": {
+            "$ref": "#/$defs/CameraCancellationPolicy",
+            "description": "Cancellation and the group deadline use this explicit policy.",
+            "title": "Cancellation Policy",
+            "x-regain": {
+              "apply": "reconnect"
+            }
+          },
+          "failurePolicy": {
+            "$ref": "#/$defs/CameraFailurePolicy",
+            "description": "Continue healthy captures, or explicitly abort acknowledged siblings.",
+            "title": "Failure Policy",
+            "x-regain": {
+              "apply": "reconnect"
+            }
+          },
+          "id": {
+            "format": "uuid",
+            "readOnly": true,
+            "title": "Id",
+            "type": "string",
+            "x-regain": {
+              "immutableAfterCreate": true
+            }
+          },
+          "label": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Label",
+            "type": "string",
+            "x-regain": {
+              "apply": "reconnect"
+            }
+          },
+          "members": {
+            "description": "Resolved physical source IDs, not enumeration indices.",
+            "items": {
+              "format": "uuid",
+              "type": "string",
+              "x-regain": {
+                "deviceType": "camera",
+                "reference": "source"
+              }
+            },
+            "maxItems": 32,
+            "minItems": 2,
+            "title": "Members",
+            "type": "array",
+            "x-regain": {
+              "apply": "reconnect"
+            }
+          },
+          "timeoutSeconds": {
+            "default": 300.0,
+            "description": "Whole-operation bound. Admitted mutations retain their actor deadline.",
+            "format": "double",
+            "maximum": 604800.0,
+            "minimum": 0.01,
+            "title": "Timeout Seconds",
+            "type": "number",
+            "x-regain": {
+              "units": "s"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "timeoutSeconds",
+          "failurePolicy",
+          "cancellationPolicy",
+          "members"
+        ],
+        "type": "object"
+      },
       "CameraRecovery": {
         "additionalProperties": false,
         "default": {
@@ -3211,6 +3768,19 @@
       "IdentityLedger": {
         "additionalProperties": false,
         "properties": {
+          "cameraGroups": {
+            "default": [],
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Camera Groups",
+            "type": "array",
+            "uniqueItems": true,
+            "x-regain": {
+              "apply": "reconnect"
+            }
+          },
           "channels": {
             "additionalProperties": {
               "$ref": "#/$defs/ChannelIdentity"
@@ -4710,6 +5280,19 @@
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "additionalProperties": false,
     "properties": {
+      "cameraGroups": {
+        "default": [],
+        "description": "Explicit camera bursts; each member produces a separate image/result.",
+        "items": {
+          "$ref": "#/$defs/CameraGroupConfig"
+        },
+        "maxItems": 64,
+        "title": "Camera Groups",
+        "type": "array",
+        "x-regain": {
+          "requiresCapability": "cameraGroups"
+        }
+      },
       "focuserGroups": {
         "default": [],
         "description": "Explicit calibrated motion groups. These do not create standard device outputs.",
@@ -4726,6 +5309,7 @@
       "identities": {
         "$ref": "#/$defs/IdentityLedger",
         "default": {
+          "cameraGroups": [],
           "channels": {},
           "groups": [],
           "outputs": {},

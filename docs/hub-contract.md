@@ -2975,3 +2975,27 @@ clone/save, requiring explicit reconciliation before another operation. Native
 ASCOM/Alpaca standard Focuser outputs continue to represent individual devices;
 coordination does not invent a standard multi-device interface. Camera groups,
 real OS resume integration and final acceptance remain open.
+
+### Explicit camera coordination
+
+`cameraGroups` is an optional schema-1 collection with stable IDs, typed source
+references, a whole-operation timeout and required failure/cancellation policies.
+The host resolves aliases to distinct physical cameras and uses their existing
+acquisition supervisors. All members reserve/preflight before one-shot dispatch.
+Separate results retain exact images and measured host request skew; no hardware
+synchronization or rollback is promised.
+
+`startCameraGroup`, `cameraGroupStatus` and `cancelCameraGroup` require the exact
+configuration revision. Start requests match saved configured source identities;
+results retain their physical bindings. One latest host-owned operation per group
+survives frontend EOF and supports explicit reattachment. Dedicated
+`cameraGroupImage` streams address the exact host/revision/group/operation/source/
+generation/acquisition and reuse ordinary bounded ImageBytes export/validation.
+They perform no upstream image download or equipment command. An explicit new
+start retires prior operation access while already admitted readers retain their
+pins and shared budget. Shutdown honors the saved cancellation policy and awaits
+admitted mutations. See [coordination](hub-coordination.md) for semantics and bounds.
+
+Generated browser/native configuration editing is available. Camera operation
+controls and native NINA capture/image-save orchestration remain construction
+work; this host increment does not close their acceptance or the final merge gates.

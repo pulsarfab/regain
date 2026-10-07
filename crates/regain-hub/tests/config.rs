@@ -20,6 +20,119 @@ fn invalid(config: &HubConfig, code: &str) {
 fn paired_focusers() -> HubConfig {
     serde_json::from_str(include_str!("../examples/paired-focusers.json")).unwrap()
 }
+fn paired_cameras() -> HubConfig {
+    serde_json::from_str(include_str!("../examples/paired-cameras.json")).unwrap()
+}
+#[test]
+fn camera_groups_resolve_typed_aliases_and_reject_duplicate_leaves_or_wrong_classes() {
+    let config = paired_cameras();
+    assert!(config.validate().is_empty());
+    assert_eq!(
+        config.physical_camera_source(config.sources[2].id).unwrap(),
+        config.sources[0].id
+    );
+    assert!(
+        config
+            .physical_focuser_source(config.sources[2].id)
+            .is_err()
+    );
+    for fault in [
+        "duplicate",
+        "same-id",
+        "missing",
+        "class",
+        "cycle",
+        "identity",
+        "count",
+        "policy",
+    ] {
+        let mut bad = config.clone();
+        match fault {
+            "duplicate" => bad.camera_groups[0].members[1] = config.sources[0].id,
+            "same-id" => bad.camera_groups[0].members[1] = config.sources[2].id,
+            "missing" => bad.camera_groups[0].members[0] = Uuid::new_v4(),
+            "class" => {
+                bad.sources[1].backend = SourceBackend::Simulated {
+                    device_type: DeviceType::Focuser,
+                }
+            }
+            "cycle" => {
+                bad.outputs[0].device = VirtualDevice::Proxy {
+                    source: config.sources[2].id,
+                    device_type: DeviceType::Camera,
+                }
+            }
+            "identity" => bad.camera_groups[0].id = config.outputs[0].id,
+            "count" => bad.camera_groups = vec![bad.camera_groups[0].clone(); 65],
+            "policy" => bad.camera_groups[0].timeout_seconds = f64::NAN,
+            _ => unreachable!(),
+        }
+        assert!(!bad.validate().is_empty(), "{fault}");
+    }
+    let mut cycle = config;
+    cycle.outputs[0].device = VirtualDevice::Proxy {
+        source: cycle.sources[2].id,
+        device_type: DeviceType::Camera,
+    };
+    assert!(cycle.physical_camera_source(cycle.sources[2].id).is_err());
+}
+#[test]
+fn camera_group_defaults_round_trip_and_retired_identity_cannot_change_kind() {
+    let mut old = serde_json::to_value(paired_focusers()).unwrap();
+    old.as_object_mut().unwrap().remove("cameraGroups");
+    let old: HubConfig = serde_json::from_value(old).unwrap();
+    assert!(old.camera_groups.is_empty());
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("cameras.json");
+    let initial = paired_cameras();
+    let group = initial.camera_groups[0].clone();
+    let store = ConfigStore::new(Some(path.clone()), initial).unwrap();
+    let mut next = store.snapshot();
+    next.camera_groups[0].label = "Edited camera group".into();
+    let saved = store.apply(next.revision, next, false).unwrap();
+    assert_eq!(ConfigStore::load(&path).unwrap().snapshot(), saved);
+    let mut removed = saved;
+    removed.camera_groups.clear();
+    let removed = store.apply(removed.revision, removed, false).unwrap();
+    let mut reused = removed.clone();
+    reused.sources.push(SourceConfig {
+        id: group.id,
+        label: "Repurposed".into(),
+        backend: SourceBackend::Simulated {
+            device_type: DeviceType::Camera,
+        },
+        polling: PollPolicy::default(),
+    });
+    assert!(matches!(
+        store.apply(reused.revision, reused, false),
+        Err(ApplyError::Invalid(_))
+    ));
+    let mut reused = removed.clone();
+    let mut focuser = paired_focusers().focuser_groups.remove(0);
+    focuser.id = group.id;
+    for member in &mut focuser.members {
+        member.source = Uuid::new_v4();
+        reused.sources.push(SourceConfig {
+            id: member.source,
+            label: "Private focuser".into(),
+            backend: SourceBackend::Simulated {
+                device_type: DeviceType::Focuser,
+            },
+            polling: PollPolicy::default(),
+        });
+    }
+    reused.focuser_groups.push(focuser);
+    assert!(reused.validate().is_empty());
+    let Err(ApplyError::Invalid(errors)) = store.apply(reused.revision, reused, false) else {
+        panic!("Group kind reuse admitted")
+    };
+    assert!(errors.iter().any(|e| e.code == "identity"));
+    assert_eq!(store.snapshot(), removed);
+    let mut restored = removed;
+    restored.camera_groups.push(group);
+    let restored = store.apply(restored.revision, restored, false).unwrap();
+    assert_eq!(ConfigStore::load(&path).unwrap().snapshot(), restored);
+}
 
 #[test]
 fn focuser_groups_resolve_aliases_and_reject_duplicate_physical_members() {

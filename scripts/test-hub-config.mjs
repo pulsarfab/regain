@@ -22,6 +22,17 @@ assert.deepEqual([initialValue(reader, calibrationSchema).scaleNumerator, initia
 assert.deepEqual([calibrationSchema.properties.offset.minimum, calibrationSchema.properties.offset.maximum], [-2147483648,2147483647]);
 assert.equal(description.coordination.focuserGroups.statusOpensSources, false);
 assert.equal(description.coordination.focuserGroups.cancelHaltsEquipment, false);
+const cameraGroupField = reader.fields(reader.root).find(field => field.key === 'cameraGroups');
+assert.equal(cameraGroupField.enabled, false);
+assert.equal(reader.fields(reader.root, {}, ['cameraGroups']).find(field => field.key === 'cameraGroups').enabled, true);
+const cameraGroupSchema = reader.resolve(cameraGroupField.schema.items);
+assert.equal(initialValue(reader, cameraGroupSchema).timeoutSeconds, 300);
+assert.deepEqual([cameraGroupSchema.properties.members.minItems, cameraGroupSchema.properties.members.maxItems], [2,32]);
+assert.equal(cameraGroupSchema.properties.members.items['x-regain'].reference, 'source');
+assert.equal(cameraGroupSchema.properties.members.items['x-regain'].deviceType, 'camera');
+assert.equal(description.coordination.cameraGroups.imageOpensSources, false);
+assert.equal(description.coordination.cameraGroups.statusOpensSources, false);
+assert.equal(description.coordination.cameraGroups.cancellationPolicy, 'savedGroupPolicy');
 const recoverySchema = reader.root.$defs.CameraRecovery;
 const recoveryFields = reader.fields(recoverySchema);
 assert.equal(recoveryFields.length, 14);

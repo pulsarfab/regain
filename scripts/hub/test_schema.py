@@ -17,6 +17,25 @@ def example(name):
 
 
 class SchemaContractTests(unittest.TestCase):
+    def test_camera_groups_keep_policies_required_and_bound_members_and_deadlines(self):
+        config = example("paired-cameras")
+        VALIDATOR.validate(config)
+        for patch in [{"timeoutSeconds": 0}, {"timeoutSeconds": 604801},
+                      {"members": []}, {"members": ["bad-uuid", "bad-uuid"]},
+                      {"failurePolicy": "retry"}, {"cancellationPolicy": "stop"},
+                      {"label": ""}, {"extra": True}]:
+            changed = copy.deepcopy(config)
+            changed["cameraGroups"][0].update(patch)
+            with self.subTest(patch=patch):
+                self.assertTrue(list(VALIDATOR.iter_errors(changed)))
+        for key in ["failurePolicy", "cancellationPolicy", "members"]:
+            changed = copy.deepcopy(config)
+            changed["cameraGroups"][0].pop(key)
+            self.assertTrue(list(VALIDATOR.iter_errors(changed)))
+        changed = copy.deepcopy(config)
+        changed["cameraGroups"] *= 65
+        self.assertTrue(list(VALIDATOR.iter_errors(changed)))
+
     def test_native_camera_recovery_uses_legacy_limits_and_class_constraints(self):
         config = example("two-source-safety")
         backend = {"kind": "native", "device": "camera-direct", "identity": "PRIVATE-CAMERA",

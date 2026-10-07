@@ -38,6 +38,70 @@ pub struct ImageRequest {
     pub generation: Uuid,
     pub acquisition: Uuid,
 }
+/// A retained operation is host-owned; reattachment does not require the old
+/// frontend's connection identity or an ordinary single-camera output lease.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct GroupImageRequest {
+    pub host_instance: Uuid,
+    pub configuration_revision: Uuid,
+    pub group: Uuid,
+    pub operation: Uuid,
+    pub source: Uuid,
+    pub generation: Uuid,
+    pub acquisition: Uuid,
+}
+trait TransferRequest: Copy + PartialEq + Serialize + serde::de::DeserializeOwned {
+    fn valid(&self) -> bool;
+    fn host(&self) -> Uuid;
+    fn revision(&self) -> Uuid;
+    fn operation(&self) -> &'static str;
+    fn command(self) -> Command;
+}
+impl TransferRequest for ImageRequest {
+    fn valid(&self) -> bool {
+        ImageRequest::valid(self)
+    }
+    fn host(&self) -> Uuid {
+        self.host_instance
+    }
+    fn revision(&self) -> Uuid {
+        self.configuration_revision
+    }
+    fn operation(&self) -> &'static str {
+        "cameraImage"
+    }
+    fn command(self) -> Command {
+        Command::CameraImage { request: self }
+    }
+}
+impl TransferRequest for GroupImageRequest {
+    fn valid(&self) -> bool {
+        [
+            self.host_instance,
+            self.configuration_revision,
+            self.group,
+            self.operation,
+            self.source,
+            self.generation,
+            self.acquisition,
+        ]
+        .iter()
+        .all(|id| !id.is_nil())
+    }
+    fn host(&self) -> Uuid {
+        self.host_instance
+    }
+    fn revision(&self) -> Uuid {
+        self.configuration_revision
+    }
+    fn operation(&self) -> &'static str {
+        "cameraGroupImage"
+    }
+    fn command(self) -> Command {
+        Command::CameraGroupImage { request: self }
+    }
+}
 impl ImageRequest {
     fn valid(&self) -> bool {
         [
@@ -56,19 +120,19 @@ impl ImageRequest {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct ImageManifest {
-    pub request: ImageRequest,
+pub struct ImageManifest<R = ImageRequest> {
+    pub request: R,
     pub descriptor: ImageDescriptor,
     pub payload_bytes: usize,
     pub chunk_bytes: usize,
     pub timeout_seconds: u32,
 }
 
-pub(crate) struct PreparedImage {
-    pub(crate) manifest: ImageManifest,
+pub(crate) struct PreparedImage<R = ImageRequest> {
+    pub(crate) manifest: ImageManifest<R>,
     image: Arc<CapturedImage>,
     buffer: TransferBuffer,
-    _connection: Arc<OutputConnection>,
+    _connection: Option<Arc<OutputConnection>>,
 }
 pub(crate) fn prepare(
     service: &HubService,
@@ -95,6 +159,35 @@ pub(crate) fn prepare(
     {
         return Err(invalid());
     }
+    prepare_retained(request, image, Some(connection))
+}
+pub(crate) fn prepare_group(
+    service: &HubService,
+    request: GroupImageRequest,
+) -> Result<PreparedImage<GroupImageRequest>, SourceError> {
+    if !request.valid() || request.host_instance != service.host_id() {
+        return Err(SourceError::new(
+            ErrorKind::Unavailable,
+            "Camera group image host identity does not match",
+        ));
+    }
+    let runtime = service.runtime()?;
+    let image = runtime.camera_group_image(
+        request.configuration_revision,
+        request.group,
+        request.operation,
+        request.source,
+        request.generation,
+        request.acquisition,
+    )?;
+    prepare_retained(request, image, None)
+}
+/// Shared immutable image export for ordinary outputs and retained group members.
+pub(crate) fn prepare_retained<R>(
+    request: R,
+    image: Arc<CapturedImage>,
+    connection: Option<Arc<OutputConnection>>,
+) -> Result<PreparedImage<R>, SourceError> {
     let source = image.image.descriptor();
     let descriptor = ImageDescriptor::new(
         source.width(),
@@ -120,7 +213,7 @@ pub(crate) fn prepare(
         _connection: connection,
     })
 }
-impl PreparedImage {
+impl<R> PreparedImage<R> {
     pub(crate) async fn write<W: AsyncWrite + Unpin>(
         &mut self,
         writer: &mut W,
@@ -154,8 +247,8 @@ impl PreparedImage {
     }
 }
 
-pub struct DownloadedImage {
-    pub manifest: ImageManifest,
+pub struct DownloadedImage<R = ImageRequest> {
+    pub manifest: ImageManifest<R>,
     pub image: CameraImage,
 }
 
@@ -163,7 +256,7 @@ pub struct DownloadedImage {
 /// refers to an already connected control client. No connection, capture or
 /// source image download is retried. Dropping this future closes only the reader.
 pub async fn download_from_stream<T>(
-    mut stream: T,
+    stream: T,
     instance: Uuid,
     request: ImageRequest,
     budget: &ImageBudget,
@@ -172,6 +265,31 @@ pub async fn download_from_stream<T>(
 where
     T: AsyncRead + AsyncWrite + Unpin + Send + 'static,
 {
+    download_selected(stream, instance, request, budget, deadline).await
+}
+pub async fn download_group_from_stream<T>(
+    stream: T,
+    instance: Uuid,
+    request: GroupImageRequest,
+    budget: &ImageBudget,
+    deadline: Duration,
+) -> Result<DownloadedImage<GroupImageRequest>, ClientError>
+where
+    T: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+{
+    download_selected(stream, instance, request, budget, deadline).await
+}
+async fn download_selected<T, R>(
+    mut stream: T,
+    instance: Uuid,
+    request: R,
+    budget: &ImageBudget,
+    deadline: Duration,
+) -> Result<DownloadedImage<R>, ClientError>
+where
+    T: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+    R: TransferRequest,
+{
     if instance.is_nil() || !request.valid() || deadline.is_zero() || deadline > MAX_TRANSFER_TIME {
         return Err(ClientError::InvalidRequest);
     }
@@ -179,9 +297,9 @@ where
         let hello = handshake(&mut stream, instance, FRAME_TIMEOUT)
             .await
             .map_err(connection_error)?;
-        if hello.host_instance != request.host_instance
-            || hello.configuration_revision != request.configuration_revision
-            || !hello.operations.iter().any(|op| op == "cameraImage")
+        if hello.host_instance != request.host()
+            || hello.configuration_revision != request.revision()
+            || !hello.operations.iter().any(|op| op == request.operation())
             || !hello
                 .capabilities
                 .iter()
@@ -192,7 +310,7 @@ where
         let bytes = serde_json::to_vec(&Request {
             version: VERSION,
             id: 2,
-            command: Command::CameraImage { request },
+            command: request.command(),
         })
         .map_err(|_| ClientError::InvalidRequest)?;
         if bytes.len() > hello.max_frame_bytes {
@@ -224,7 +342,7 @@ where
         if id != 2 {
             return Err(ClientError::Protocol);
         }
-        let manifest: ImageManifest =
+        let manifest: ImageManifest<R> =
             serde_json::from_value(reply?).map_err(|_| ClientError::Protocol)?;
         if manifest.request != request
             || manifest.descriptor.order() != ImageOrder::Ascom

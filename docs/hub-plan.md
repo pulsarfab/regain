@@ -13,7 +13,27 @@ increments. Push those increments to the same draft PR without waiting for slow
 CI between steps. Final CI, review and the original acceptance/completion audit
 remain merge gates.
 
-Current increment: synchronized camera-group core construction. The ordinary
+Current increment: saved camera groups and revision-owned host operations.
+Generated descriptors carry group identity, source references, timeout and
+required failure/cancellation policies. Camera and focuser aliases share typed
+physical-leaf traversal; identity history prevents retired group IDs from being
+repurposed across group kinds or other equipment. The host retains one latest
+operation per configured camera group, including exact image pins, after the
+admitting client disconnects. Start/status/cancel and dedicated image IPC carry
+revision/operation/source/generation/acquisition fences. Images reuse the ordinary
+bounded ImageBytes pipeline and shared budget without re-exposure or upstream
+redownload. Activity is reserved under the runtime lifecycle lock before any
+connection; shutdown concurrently stops both group classes and awaits admitted
+mutations. The paired-cameras example uses explicit simulation. Shared generated
+configuration editing is available; camera operation controls and native NINA
+capture/image-save orchestration remain construction work. All original acceptance
+and final merge gates remain open. Full hub/Alpaca regression passes, including
+71 acquisition and 20 configuration cases; 342 NINA cases pass with the explicit
+registered-fixture skip. Real net48 x86/x64 suites, strict Clippy, Rust 1.89,
+independent schema/browser checks and contract freshness pass. No intermediate
+CI waiting gate.
+
+Previous increment: synchronized camera-group core construction. The ordinary
 camera supervisor now supports owned preflight reservations, one-shot burst
 dispatch and exact completed-image pins. All members are reserved and validated
 before any StartExposure; geometry and required abort capabilities are rechecked
@@ -2190,8 +2210,10 @@ integrity tests cover the classes shipped, with limitations stated explicitly.
 Camera progress: the explicit core reserves all members before a burst, retains
 separate images/results, measures host request skew and applies explicit
 failure/cancellation policies through the existing camera supervisor. Saved
-configuration, alias resolution, host-owned retained operations, IPC/image access,
-shared controls and native NINA remain required before closing these items.
+configuration, typed physical-alias resolution, host-owned retained operations and
+revision-fenced status/cancellation/image IPC are implemented. Shared operation
+controls and native NINA capture/image-save orchestration remain required before
+closing the camera coordination items and their acceptance gate.
 
 Focuser progress: the core, saved/generated configuration, physical alias
 resolution, host activity/revision, retained IPC reattachment/shutdown, shared

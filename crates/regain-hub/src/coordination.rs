@@ -15,9 +15,13 @@ use tokio::{
 };
 use uuid::Uuid;
 mod camera;
+pub(crate) mod camera_host;
 pub(crate) mod host;
 pub use camera::*;
-pub use host::{FocuserBinding, HostedFocuserPhase, HostedFocuserStatus};
+pub use camera_host::{HostedCameraPhase, HostedCameraStatus};
+pub use host::{
+    FocuserBinding, GroupBinding, HostedFocuserPhase, HostedFocuserStatus, HostedGroupPhase,
+};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]

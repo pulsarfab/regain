@@ -161,9 +161,10 @@ interactive/physical acceptance, documentation and final merge gates remain work
 ## Camera group core
 
 The Rust core now provides explicit camera bursts through the same acquisition
-supervisors used by ordinary Camera outputs. This is not yet exposed in saved
-configuration, host IPC, shared setup or NINA. Those integration steps remain
-required; a standard Camera output still represents one camera and one image.
+supervisors used by ordinary Camera outputs. Saved configuration and retained
+host/status/image IPC are implemented. Shared operation controls and native NINA
+capture/image-save orchestration remain required; a standard Camera output still
+represents one camera and one image.
 
 A group has a stable UUID, label, two to 32 distinct physical camera source IDs,
 a finite whole-operation timeout (0.01 seconds to seven days), an explicit failure
@@ -218,6 +219,64 @@ overlapping ownership/settings, live geometry changes, dropped waiters, separate
 image pins across later captures, delayed start replies, explicit continue/abort,
 cancellation before and during dispatch, later-capture protection, readout/abort
 races, deadlines, uncertain abort, image budget and generation loss. No attached
-hardware or installed vendor driver is opened. Saved/group host integration,
-bounded reattachment/image inventory and native NINA are the next construction
-steps, followed by the original acceptance and final merge gates.
+hardware or installed vendor driver is opened. Shared operation controls and
+native NINA are the next construction steps, followed by the original acceptance
+and final merge gates.
+
+### Saved camera groups and retained operations
+
+`cameraGroups` is an optional schema-1 collection, bounded to 64 groups. The
+generated contract drives its fields in browser and native configuration editors;
+the `cameraGroups` capability gates editing. Both policies are required. Source
+references may name typed virtual Camera aliases, which resolve to distinct
+physical leaves before the runtime is published. Missing/wrong classes, cycles,
+duplicate leaves and repurposed identities are rejected. Camera and focuser
+groups share typed alias traversal and common binding/host-phase definitions.
+The [paired-cameras example](../crates/regain-hub/examples/paired-cameras.json)
+uses two explicit simulations and one alias; it creates no implicit equipment.
+
+The private commands are `startCameraGroup(group, requests, expectedRevision)`,
+`cameraGroupStatus(group, operation?, expectedRevision)` and
+`cancelCameraGroup(group, operation, expectedRevision)`. Each request names its
+configured source and `{durationSeconds, light}` exposure. Admission captures
+the host instance, configuration revision, operation UUID and configured-to-
+physical bindings before connecting. Requests must match saved members exactly.
+Start/cancel are mutations in Rust and managed clients; losing a reply remains
+uncertain and cannot justify replay. EOF does not cancel admitted work.
+
+The host reserves activity under its lifecycle lock before spawning. Pending
+connections, captures and cleanup therefore exclude configuration replacement.
+One latest operation per configured group bounds retained status/image ownership;
+a new explicit start retires the old operation. Existing image readers keep their
+immutable pins and budget reservations. Host/revision replacement clears the
+inventory and never resumes captures automatically. Source acquisition/guiding
+ownership remains shared with all ordinary frontends. Shutdown cancels both
+coordination classes promptly, honors each camera group's saved cancellation
+policy, awaits admitted command acknowledgements and drains the source registry.
+An independent core activity guard protects retirement if its host monitor fails.
+
+`cameraGroupImage` is legal only immediately after hello on a dedicated protected
+image stream. Its request names `hostInstance`, `configurationRevision`, `group`,
+`operation`, physical `source`, `generation` and `acquisition`. Every identity is
+checked before the stream acknowledges pixels. It needs no old frontend client
+ID or ordinary Camera output connection, allowing a new client to retrieve an
+exact retained image. A mismatched/retired identity fails without source I/O.
+The manifest echoes that request and carries the same descriptor, bounded chunk
+size, ImageBytes payload length and transfer deadline as ordinary camera image
+streams. Both transfers share the buffer/export/reader validation implementation;
+there is no separate image pool, pixel copy or native SDK reread claim.
+
+Status and image retrieval are inert. Hosted phases are connecting, running,
+complete, preflightFailed, partialFailure, cancelled, deadline and failed.
+Connection failures identify the physical member even before a core report exists.
+Terminal reports retain member images, host request/acknowledgement windows and
+partial failures until explicitly superseded. A stopped leaveRunning report
+remains frozen even if its ordinary supervisor later completes an exposure.
+
+Private host tests cover read/unread start-reply EOF, reattachment, alias transport
+deduplication, exact image streams without redownload, all seven image identity
+fences, superseded operations and existing readers, blocked apply during pending
+connection, configuration replacement, failed connection identity and shutdown
+during a held start acknowledgement. Shared generated editor/cold identity reader
+tests cover the new optional collection. Installed NINA and physical acceptance
+remain separate gates; these fixtures do not establish either.

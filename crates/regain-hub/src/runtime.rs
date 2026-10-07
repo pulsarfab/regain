@@ -11,7 +11,10 @@ use crate::{
         runtime::CameraResources,
     },
     config::{Bitness, DeviceType, HubConfig, SafetyMember, VirtualDevice},
-    coordination::{HostedFocuserStatus, host::GroupCoordinator},
+    coordination::{
+        CameraMemberRequest, HostedCameraStatus, HostedFocuserStatus,
+        camera_host::CameraGroupCoordinator, host::GroupCoordinator,
+    },
     covercalibrator::{CoverCalibratorController, CoverCalibratorSession},
     factory::{CredentialProvider, build_sources_bound},
     filterwheel::{FilterWheelController, FilterWheelSession},
@@ -68,6 +71,7 @@ pub struct HubRuntime {
     cameras: BTreeMap<Uuid, Arc<CameraSupervisor>>,
     activity: ActivityCounter,
     groups: GroupCoordinator,
+    camera_groups: CameraGroupCoordinator,
     lifecycle: Mutex<Lifecycle>,
     shutdown: tokio::sync::OnceCell<Result<(), Vec<(Uuid, SourceError)>>>,
 }
@@ -332,6 +336,7 @@ impl HubRuntime {
         }
         Ok(Arc::new(Self {
             groups: GroupCoordinator::new(&config, &registry, resources.activity()),
+            camera_groups: CameraGroupCoordinator::new(&config, &cameras, resources.activity()),
             com_architectures: Vec::new(),
             native_camera_sources: false,
             runtime_id: Uuid::new_v4(),
@@ -371,6 +376,7 @@ impl HubRuntime {
             "cameraOutputs",
             "focuserOutputs",
             "focuserGroups",
+            "cameraGroups",
             "rotatorOutputs",
             "filterWheelOutputs",
             "coverCalibratorOutputs",
@@ -784,6 +790,58 @@ impl HubRuntime {
         }
         Ok(())
     }
+    pub fn start_camera_group(
+        &self,
+        host: Uuid,
+        expected_revision: Uuid,
+        group: Uuid,
+        requests: Vec<CameraMemberRequest>,
+    ) -> Result<HostedCameraStatus, SourceError> {
+        let lifecycle = self.lifecycle.lock().unwrap();
+        if lifecycle.closed {
+            return Err(disconnected());
+        }
+        if lifecycle.frozen {
+            return Err(SourceError::new(
+                ErrorKind::Busy,
+                "Configuration replacement is in progress",
+            ));
+        }
+        self.group_revision(expected_revision)?;
+        self.camera_groups
+            .start(host, self.revision(), group, requests)
+    }
+    pub fn camera_group_status(
+        &self,
+        expected_revision: Uuid,
+        group: Uuid,
+        operation: Option<Uuid>,
+    ) -> Result<HostedCameraStatus, SourceError> {
+        self.group_revision(expected_revision)?;
+        self.camera_groups.status(group, operation)
+    }
+    pub fn cancel_camera_group(
+        &self,
+        expected_revision: Uuid,
+        group: Uuid,
+        operation: Uuid,
+    ) -> Result<HostedCameraStatus, SourceError> {
+        self.group_revision(expected_revision)?;
+        self.camera_groups.cancel(group, operation)
+    }
+    pub fn camera_group_image(
+        &self,
+        expected_revision: Uuid,
+        group: Uuid,
+        operation: Uuid,
+        source: Uuid,
+        generation: Uuid,
+        acquisition: Uuid,
+    ) -> Result<Arc<crate::camera::acquisition::CapturedImage>, SourceError> {
+        self.group_revision(expected_revision)?;
+        self.camera_groups
+            .image(group, operation, source, generation, acquisition)
+    }
 
     pub fn client(self: &Arc<Self>) -> Arc<ClientSession> {
         self.client_with_id(Uuid::new_v4())
@@ -840,7 +898,7 @@ impl HubRuntime {
                 for client in clients.into_iter().filter_map(|client| client.upgrade()) {
                     client.close();
                 }
-                self.groups.stop().await;
+                tokio::join!(self.groups.stop(), self.camera_groups.stop());
                 for output in self.outputs.values() {
                     if let Output::Safety { active, .. } = output
                         && let Some(output) = active.lock().unwrap().upgrade()

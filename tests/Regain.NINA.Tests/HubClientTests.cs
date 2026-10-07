@@ -12,6 +12,17 @@ namespace Regain.NINA.Tests;
 
 public sealed class HubClientTests
 {
+    [Theory]
+    [InlineData("startCameraGroup", HubFailure.Uncertain)]
+    [InlineData("cancelCameraGroup", HubFailure.Uncertain)]
+    [InlineData("cameraGroupStatus", HubFailure.Disconnected)]
+    public async Task CameraGroupLostRepliesPreserveMutationUncertainty(string operation, HubFailure expected)
+    {
+        using var peer = await Peer.Open(hello => hello["operations"] = new JsonArray(operation));
+        var pending = peer.Client.RequestAsync(Command(operation));
+        var sent = await peer.Read(); Assert.Equal(operation, sent.GetProperty("command").GetProperty("op").GetString());
+        peer.Client.Dispose(); await Fails(expected, () => pending);
+    }
     private static JsonElement Command(string op = "getConfig") => JsonSerializer.SerializeToElement(new { op });
     private static async Task<HubException> Fails(HubFailure failure, Func<Task> action)
     {

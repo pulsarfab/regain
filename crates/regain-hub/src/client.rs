@@ -319,7 +319,9 @@ fn mutating(command: &Command) -> bool {
             | Command::CreateCredential { .. }
             | Command::DeleteCredential { .. }
             | Command::UpdateSimulation { .. }
+            | Command::StartCameraGroup { .. }
             | Command::StartFocuserGroup { .. }
+            | Command::CancelCameraGroup { .. }
             | Command::CancelFocuserGroup { .. }
             | Command::Connect { .. }
             | Command::ChangeConnection { .. }
@@ -330,10 +332,14 @@ fn operation(command: &Command) -> &'static str {
     match command {
         Command::Hello {} => "hello",
         Command::CameraImage { .. } => "cameraImage",
+        Command::CameraGroupImage { .. } => "cameraGroupImage",
         Command::CameraTiming { .. } => "cameraTiming",
         Command::CameraCaptureTiming { .. } => "cameraCaptureTiming",
         Command::CameraControl { .. } => "cameraControl",
         Command::DescribeConfig {} => "describeConfig",
+        Command::StartCameraGroup { .. } => "startCameraGroup",
+        Command::CameraGroupStatus { .. } => "cameraGroupStatus",
+        Command::CancelCameraGroup { .. } => "cancelCameraGroup",
         Command::StartFocuserGroup { .. } => "startFocuserGroup",
         Command::FocuserGroupStatus { .. } => "focuserGroupStatus",
         Command::CancelFocuserGroup { .. } => "cancelFocuserGroup",
