@@ -39,9 +39,23 @@ internal static partial class NativeOutputs
         Require((await editor.SourceStatusAsync(source, token)).GetProperty("leaseCount").GetInt32() == 0, "Creation is inert");
         for (int i = 0; i < 2; i++)
             Require(editor.Draft!.Field("/outputs/" + (start + i) + "/id").Value!.Value.GetGuid() == ids[i], "Created identity survives reload");
+        for (int i = 0; i < 2; i++)
+            Require(editor.Draft!.Field("/outputs/" + (start + i) + "/number").Value!.Value.GetUInt32() == 10 + i, "Created number survives reload");
         HubSelection Binding(int i) => new() { ConfigPath = path, InstanceId = instance, OutputId = ids[i],
             DeviceType = deviceType, Label = "Created simulated " + deviceType + " " + i, Simulated = true };
-        if (deviceType == "rotator") {
+        if (deviceType == "camera") {
+            using var first = new CameraOutput(Binding(0), executable);
+            using var second = new CameraOutput(Binding(1), executable);
+            first.Connected = true; second.Connected = true;
+            first.NumX = 96; first.NumY = 64; first.StartExposure(0.01, true);
+            await Until(() => second.ImageReady, token);
+            var pixels = (Array)second.ImageArray;
+            Require(pixels.Rank == 2 && pixels.GetLength(0) == 96 && pixels.GetLength(1) == 64, "Created camera image shape");
+            var retained = pixels.GetValue(0, 0);
+            first.Connected = false; Require(second.Connected, "Created camera lease independence");
+            Require(Equals(retained,pixels.GetValue(0, 0)), "Created camera retained image");
+            second.Connected = false;
+        } else if (deviceType == "rotator") {
             using var first = new RotatorOutput(Binding(0), executable);
             using var second = new RotatorOutput(Binding(1), executable);
             first.Connected = true; second.Connected = true;

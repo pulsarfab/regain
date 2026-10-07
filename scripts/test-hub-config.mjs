@@ -38,6 +38,7 @@ assert.equal(variants.find(v => v.kind === 'com').enabled, false);
 const com = reader.variants(source, ['comSources']).find(v => v.kind === 'com');
 assert.equal(com.enabled, true);
 assert.deepEqual(reader.choices(com.schema.properties.deviceType).filter(c => c.enabled).map(c => c.value), ['switch','safetymonitor','observingconditions','focuser','rotator','filterwheel','covercalibrator']);
+assert.equal(reader.choices(com.schema.properties.deviceType,['cameraComSources']).find(c => c.value === 'camera').enabled,true);
 assert.equal(reader.choices(com.schema.properties.bitness, ['comX86Sources']).find(c => c.value === 'x86').enabled, true);
 assert.equal(reader.choices(com.schema.properties.bitness, ['comX86Sources']).find(c => c.value === 'x64').enabled, false);
 const fields = reader.fields(source, { kind: 'alpaca', baseUrl: 'http://localhost:11111', deviceNumber: 0 });
@@ -84,17 +85,23 @@ assert.equal(preview.sources.find(source => source.backend.kind === 'alpaca').ba
 assert.equal(privateSource.backend.credentialReference, 'private-reference');
 assert.deepEqual(preview.outputs, saved.outputs);
 assert.equal(editor.variants(editor.root.$defs.VirtualDevice).find(v => v.kind === 'proxy').enabled, false);
-const typedEditor = configurationContract({...description, capabilities:['simulation','proxyOutputs','focuserOutputs','rotatorOutputs','filterWheelOutputs','coverCalibratorOutputs']});
+const typedEditor = configurationContract({...description, capabilities:['simulation','cameraSimulation','proxyOutputs','cameraOutputs','focuserOutputs','rotatorOutputs','filterWheelOutputs','coverCalibratorOutputs']});
 const proxy = typedEditor.variants(typedEditor.root.$defs.VirtualDevice).find(v => v.kind === 'proxy');
 assert.equal(proxy.enabled,true);
-assert.deepEqual(typedEditor.choices(proxy.schema.properties.deviceType).filter(v => v.enabled).map(v => v.value),['focuser','rotator','filterwheel','covercalibrator']);
+assert.deepEqual(typedEditor.choices(proxy.schema.properties.deviceType).filter(v => v.enabled).map(v => v.value),['camera','focuser','rotator','filterwheel','covercalibrator']);
+assert.deepEqual(reader.choices(proxy.schema.properties.deviceType,['cameraOutputs']).filter(v => v.enabled).map(v => v.value),['camera']);
+const simulatedChoice=typedEditor.variants(source).find(v=>v.kind==='simulated');
+assert.equal(typedEditor.choices(simulatedChoice.schema.properties.deviceType).find(v=>v.value==='camera').enabled,true);
+assert.equal(reader.choices(simulatedChoice.schema.properties.deviceType).find(v=>v.value==='camera').enabled,false);
+assert.equal(reader.choices(nativeWheel.schema.properties.device,['nativeCameraSources']).find(v=>v.value==='camera-sdk').enabled,true);
+assert.equal(reader.choices(nativeWheel.schema.properties.device).find(v=>v.value==='camera-sdk').enabled,false);
 assert.deepEqual(reader.choices(proxy.schema.properties.deviceType,['focuserOutputs']).filter(v => v.enabled).map(v => v.value),['focuser']);
 assert.deepEqual(reader.choices(proxy.schema.properties.deviceType,['rotatorOutputs']).filter(v => v.enabled).map(v => v.value),['rotator']);
 assert.deepEqual(reader.choices(proxy.schema.properties.deviceType,['filterWheelOutputs']).filter(v => v.enabled).map(v => v.value),['filterwheel']);
 assert.deepEqual(reader.choices(proxy.schema.properties.deviceType,['coverCalibratorOutputs']).filter(v => v.enabled).map(v => v.value),['covercalibrator']);
-assert.deepEqual(initialValue(typedEditor,proxy.schema),{kind:'proxy',deviceType:'focuser',source:''});
+assert.deepEqual(initialValue(typedEditor,proxy.schema),{kind:'proxy',deviceType:'camera',source:''});
 assert.equal(reader.choices(proxy.schema.properties.deviceType).every(v => !v.enabled),true);
-assert.deepEqual(typedEditor.choices(typedEditor.variants(typedEditor.root.$defs.SourceBackend).find(v => v.kind === 'simulated').schema.properties.deviceType).filter(v => v.enabled).map(v => v.value),['switch','safetymonitor','observingconditions','focuser','rotator','filterwheel','covercalibrator']);
+assert.deepEqual(typedEditor.choices(typedEditor.variants(typedEditor.root.$defs.SourceBackend).find(v => v.kind === 'simulated').schema.properties.deviceType).filter(v => v.enabled).map(v => v.value),['camera','switch','safetymonitor','observingconditions','focuser','rotator','filterwheel','covercalibrator']);
 const simulatedSchema = editor.variants(editor.root.$defs.SourceBackend).find(v => v.kind === 'simulated').schema;
 assert.equal(initialValue(editor, simulatedSchema).deviceType,'switch');
 assert.equal(editor.choices(simulatedSchema.properties.deviceType).find(v=>v.value==='camera').enabled,false);
@@ -444,16 +451,16 @@ class FormElement {
 const priorDocument=globalThis.document;
 try {
   globalThis.document={createElement:tag=>new FormElement(tag)};
-  for (const deviceClass of ['rotator','filterwheel','covercalibrator']) {
+  for (const deviceClass of ['rotator','filterwheel','covercalibrator','camera']) {
     const container=new FormElement('div');
-    const formReader=configurationContract({...description,capabilities:['alpacaSources','simulation','comSources','comX64Sources','proxyOutputs','focuserOutputs','rotatorOutputs','filterWheelOutputs','coverCalibratorOutputs']});
+    const formReader=configurationContract({...description,capabilities:['alpacaSources','simulation','cameraSimulation','comSources','cameraComSources','comX64Sources','proxyOutputs','cameraOutputs','focuserOutputs','rotatorOutputs','filterWheelOutputs','coverCalibratorOutputs']});
     const baseline=JSON.parse(readFileSync(new URL('../crates/regain-hub/examples/two-source-safety.json',import.meta.url),'utf8'));
     const draft=structuredClone(baseline); let changes=0;
     const field=path=>container.descendants().find(child=>child.dataset.path===path);
     const taggedChoice=path=>field(path).descendants().find(child=>child.tagName==='SELECT');
     renderConfiguration(container,formReader,draft,baseline,()=>changes++);
     let transport=taggedChoice('sources[0].backend'); transport.value='simulated'; transport.onchange();
-    assert.deepEqual(draft.sources[0].backend,{kind:'simulated',deviceType:'switch'});
+    assert.deepEqual(draft.sources[0].backend,{kind:'simulated',deviceType:'camera'});
     assert.equal(field('sources[0].backend.baseUrl'),undefined);
     assert.notEqual(field('sources[0].backend.deviceType'),undefined);
     let deviceType=taggedChoice('sources[0].backend.deviceType'); deviceType.value=deviceClass; deviceType.onchange();
@@ -464,9 +471,9 @@ try {
     deviceType=taggedChoice('sources[0].backend.deviceType'); deviceType.value=deviceClass; deviceType.onchange();
     assert.equal(draft.sources[0].backend.deviceType,deviceClass);
     const outputChoice=taggedChoice('outputs[0].device'); outputChoice.value='proxy'; outputChoice.onchange();
-    assert.deepEqual(draft.outputs[0].device,{kind:'proxy',source:'',deviceType:'focuser'});
+    assert.deepEqual(draft.outputs[0].device,{kind:'proxy',source:'',deviceType:'camera'});
     const classes=taggedChoice('outputs[0].device.deviceType').children.filter(child=>child.value);
-    assert.deepEqual(classes.filter(child=>!child.disabled).map(child=>child.value),['focuser','rotator','filterwheel','covercalibrator']);
+    assert.deepEqual(classes.filter(child=>!child.disabled).map(child=>child.value),['camera','focuser','rotator','filterwheel','covercalibrator']);
     deviceType=taggedChoice('outputs[0].device.deviceType'); deviceType.value=deviceClass; deviceType.onchange();
     assert.equal(draft.outputs[0].device.deviceType,deviceClass);
     assert.equal(changes,6); assert.equal(baseline.outputs[0].device.kind,'safety');

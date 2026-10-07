@@ -55,9 +55,43 @@ public sealed partial class HubNativeTests
         Assert.Equal(0, (await editor.SourceStatusAsync(source)).GetProperty("leaseCount").GetInt32());
     }
     [Theory]
+    [InlineData("camera-sdk")]
+    [InlineData("camera-direct")]
+    public async Task NativeEditorCreatesNativeCameraRecoveryConfigurationWithoutOpeningEquipment(string device)
+    {
+        await using var host = await Host.Open(); using var editor = await Editor(host); await editor.ReloadAsync();
+        var draft = editor.Draft!;
+        draft.AddItem("/sources"); draft.SelectVariant("/sources/3/backend","native");
+        draft.SetValue("/sources/3/label",JsonSerializer.SerializeToElement("Inert native camera configuration"));
+        draft.SetValue("/sources/3/backend/device",draft.ParseScalar(draft.Field("/sources/3/backend/device").Schema,device));
+        draft.SetValue("/sources/3/backend/identity",JsonSerializer.SerializeToElement("PRIVATE-CREATION-NO-HARDWARE"));
+        draft.AddOptional("/sources/3/backend/camera",replaceNull:true);
+        draft.SetValue("/sources/3/backend/camera/model",JsonSerializer.SerializeToElement("ZWO ASI585MM Pro"));
+        draft.SetValue("/sources/3/backend/camera/sdkFallback",JsonSerializer.SerializeToElement(device=="camera-direct"));
+        Assert.Equal(3,draft.Field("/sources/3/backend/camera/recovery/maxRetries").Value!.Value.GetInt32());
+        draft.SetValue("/sources/3/backend/camera/recovery/maxRetries",JsonSerializer.SerializeToElement(2));
+        var source = draft.Field("/sources/3/id").Value!.Value.GetGuid();
+        draft.AddItem("/outputs"); draft.SelectVariant("/outputs/3/device","proxy");
+        draft.SetValue("/outputs/3/device/source",JsonSerializer.SerializeToElement(source));
+        draft.SetValue("/outputs/3/label",JsonSerializer.SerializeToElement("Inert native camera output"));
+        draft.SetValue("/outputs/3/number",JsonSerializer.SerializeToElement(4));
+        var output = draft.Field("/outputs/3/id").Value!.Value.GetGuid();
+        editor.Changed(); Assert.True(await editor.ReviewAsync(),editor.Errors.GetRawText());
+        await Assert.ThrowsAsync<InvalidOperationException>(()=>editor.SourceStatusAsync(source));
+        await editor.ApplyAsync(); await editor.ReloadAsync();
+        Assert.Equal(output,editor.Draft!.Field("/outputs/3/id").Value!.Value.GetGuid());
+        Assert.Equal(device,editor.Draft.Field("/sources/3/backend/device").Value!.Value.GetString());
+        Assert.Equal(2,editor.Draft.Field("/sources/3/backend/camera/recovery/maxRetries").Value!.Value.GetInt32());
+        var state = await editor.SourceStatusAsync(source);
+        Assert.Equal(0,state.GetProperty("leaseCount").GetInt32());
+        Assert.False(state.GetProperty("transportConnected").GetBoolean());
+        // This fixture deliberately never connects the native source.
+    }
+    [Theory]
     [InlineData("focuser")]
     [InlineData("rotator")]
     [InlineData("covercalibrator")]
+    [InlineData("camera")]
     public async Task NativeEditorCreatesSharedTypedOutputsFromHostDescriptorsWithoutOpeningEquipment(string type)
     {
         await using var host = await Host.Open(); using var editor = await Editor(host); await editor.ReloadAsync();
@@ -69,16 +103,16 @@ public sealed partial class HubNativeTests
         var ids = new List<Guid>();
         for (int index = 3; index < 5; index++) {
             draft.AddItem("/outputs"); draft.SelectVariant($"/outputs/{index}/device", "proxy");
-            Assert.Equal("focuser", draft.Field($"/outputs/{index}/device/deviceType").Value!.Value.GetString());
+            Assert.Equal("camera", draft.Field($"/outputs/{index}/device/deviceType").Value!.Value.GetString());
             draft.SetValue($"/outputs/{index}/device/deviceType", draft.ParseScalar(draft.Field($"/outputs/{index}/device/deviceType").Schema, type));
-            Assert.Throws<FormatException>(() => draft.ParseScalar(draft.Field($"/outputs/{index}/device/deviceType").Schema, "camera"));
+            Assert.Throws<FormatException>(() => draft.ParseScalar(draft.Field($"/outputs/{index}/device/deviceType").Schema, "switch"));
             draft.SetValue($"/outputs/{index}/device/source", JsonSerializer.SerializeToElement(source));
             draft.SetValue($"/outputs/{index}/label", JsonSerializer.SerializeToElement($"Shared {type} {index}"));
             draft.SetValue($"/outputs/{index}/number", JsonSerializer.SerializeToElement(index == 3 ? 4 : 7));
             ids.Add(draft.Field($"/outputs/{index}/id").Value!.Value.GetGuid());
         }
         // Schema choices guide setup; the engine still authorizes the candidate.
-        draft.SetValue("/outputs/3/device/deviceType", JsonSerializer.SerializeToElement("camera")); editor.Changed();
+        draft.SetValue("/outputs/3/device/deviceType", JsonSerializer.SerializeToElement("switch")); editor.Changed();
         Assert.False(await editor.ReviewAsync()); Assert.NotEmpty(editor.Errors.EnumerateArray());
         draft.SetValue("/outputs/3/device/deviceType", JsonSerializer.SerializeToElement(type == "focuser" ? "rotator" : "focuser")); editor.Changed();
         Assert.False(await editor.ReviewAsync()); Assert.NotEmpty(editor.Errors.EnumerateArray());
@@ -89,18 +123,34 @@ public sealed partial class HubNativeTests
         Assert.Equal(0, (await editor.SourceStatusAsync(source)).GetProperty("leaseCount").GetInt32());
         Assert.Equal(ids[0], editor.Draft!.Field("/outputs/3/id").Value!.Value.GetGuid());
         Assert.Equal(ids[1], editor.Draft.Field("/outputs/4/id").Value!.Value.GetGuid());
+        Assert.Equal(4u, editor.Draft.Field("/outputs/3/number").Value!.Value.GetUInt32());
+        Assert.Equal(7u, editor.Draft.Field("/outputs/4/number").Value!.Value.GetUInt32());
         HubSelection Selection(int index) => new() { ConfigPath = host.ConfigPath, InstanceId = host.Selection(0,"switch").InstanceId,
             OutputId = ids[index], DeviceType = type, Label = $"Shared {type} {index + 3}", Simulated = true };
         HubDevice Device(int index) => type switch {
             "focuser" => new HubFocuserDevice(Selection(index),host.Executable,host.Workers),
             "covercalibrator" => new HubCoverCalibratorDevice(Selection(index),host.Executable,host.Workers),
+            "camera" => new HubCameraDevice(Selection(index),Moq.Mock.Of<global::NINA.Image.Interfaces.IImageDataFactory>(),executable:host.Executable,workers:host.Workers),
             _ => new HubRotatorDevice(Selection(index),host.Executable,host.Workers)
         };
         using var first = Device(0);
         using var second = Device(1);
         await first.Connect(CancellationToken.None); await second.Connect(CancellationToken.None);
         await Eventually(async () => (await editor.SourceStatusAsync(source)).GetProperty("leaseCount").GetInt32() == 2);
-        if (first is HubFocuserDevice focuser) {
+        if (first is HubCameraDevice camera) {
+            camera.EnableSubSample = true; camera.SubSampleWidth = 96; camera.SubSampleHeight = 64;
+            camera.StartExposure(new global::NINA.Equipment.Model.CaptureSequence { ExposureTime = 0.01,
+                Binning = new global::NINA.Core.Model.Equipment.BinningMode(1,1), Gain = -1, Offset = -1 });
+            using var limit = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+            await camera.WaitUntilExposureIsReady(limit.Token);
+            var frame = Assert.IsType<HubCameraExposureData>(await camera.DownloadExposure(limit.Token));
+            Assert.Equal(96,frame.Width); Assert.Equal(64,frame.Height);
+            Assert.IsType<ushort[]>(frame.Pixels); Assert.Equal(96*64,frame.Pixels.Length);
+            camera.CoolerOn = true; Assert.True(((HubCameraDevice)second).CoolerOn); camera.CoolerOn = false;
+            var retained = frame.Pixels.GetValue(0);
+            first.Disconnect(); Assert.True(second.Connected);
+            Assert.Equal(retained,frame.Pixels.GetValue(0));
+        } else if (first is HubFocuserDevice focuser) {
             await focuser.Move(50100,CancellationToken.None,0); Assert.Equal(50100,((HubFocuserDevice)second).Position);
         } else if (first is HubCoverCalibratorDevice panel) {
             panel.Brightness=0;

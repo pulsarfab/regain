@@ -3739,7 +3739,7 @@
                 "title": "Device Type",
                 "x-regain": {
                   "enumCapabilities": {
-                    "camera": "broaderComSources"
+                    "camera": "cameraComSources"
                   }
                 }
               },
@@ -3816,7 +3816,7 @@
                 "title": "Device Type",
                 "x-regain": {
                   "enumCapabilities": {
-                    "camera": "broaderSimulation"
+                    "camera": "cameraSimulation"
                   }
                 }
               },
@@ -4199,7 +4199,7 @@
                 "title": "Device Type",
                 "x-regain": {
                   "enumCapabilities": {
-                    "camera": "broaderProxyOutputs",
+                    "camera": "cameraOutputs",
                     "covercalibrator": "coverCalibratorOutputs",
                     "filterwheel": "filterWheelOutputs",
                     "focuser": "focuserOutputs",

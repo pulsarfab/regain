@@ -518,7 +518,7 @@ where
                             "hostInstance":service.host_id(), "configurationRevision":service.configuration().revision, "clientId":client.id(),
                             "maxFrameBytes":MAX_FRAME_BYTES, "maxInFlight":MAX_IN_FLIGHT,
                             "operations":operations,
-                            "capabilities":["switchOutputs","safetyOutputs","weatherOutputs","focuserOutputs","rotatorOutputs","filterWheelOutputs","coverCalibratorOutputs","cameraAcquisition","cameraImageStream","cameraOperationTiming","cameraCaptureTiming","rotatorMotionReceipt","weatherSensorDescription","scalarDeviceState","asyncOutputConnection","switchAsyncContract"]});
+                            "capabilities":["switchOutputs","safetyOutputs","weatherOutputs","focuserOutputs","rotatorOutputs","filterWheelOutputs","coverCalibratorOutputs","cameraOutputs","cameraAcquisition","cameraImageStream","cameraOperationTiming","cameraCaptureTiming","rotatorMotionReceipt","weatherSensorDescription","scalarDeviceState","asyncOutputConnection","switchAsyncContract"]});
                         write_response(&mut writer, Response::new(request.id, Ok(hello)), limits.frame_timeout).await?;
                         continue;
                     }

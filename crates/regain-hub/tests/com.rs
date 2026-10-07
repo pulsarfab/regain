@@ -792,7 +792,12 @@ async fn shared_factory_outputs_reuse_com_source_and_preserve_last_lease_ownersh
         .unwrap();
         let service = HubService::read_only(hub.clone());
         let capabilities = service.configuration_capabilities();
-        for capability in ["comSources", "comX86Sources", "comX64Sources"] {
+        for capability in [
+            "comSources",
+            "cameraComSources",
+            "comX86Sources",
+            "comX64Sources",
+        ] {
             assert!(capabilities.contains(&capability));
         }
         assert!(!capabilities.contains(&"broaderComSources"));

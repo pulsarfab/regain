@@ -58,6 +58,7 @@ enum Output {
 
 pub struct HubRuntime {
     com_architectures: Vec<Bitness>,
+    native_camera_sources: bool,
     runtime_id: Uuid,
     config: HubConfig,
     registry: Arc<SourceRegistry>,
@@ -131,6 +132,7 @@ impl HubRuntime {
             Self::from_registry_with_camera_resources(config, registry, clock, resources)?;
         let unpublished = Arc::get_mut(&mut runtime).expect("Unpublished runtime");
         unpublished.com_architectures = crate::com::available_architectures(native);
+        unpublished.native_camera_sources = native.cameras.is_some();
         binding
             .set(Arc::downgrade(&runtime))
             .expect("New runtime binding");
@@ -328,6 +330,7 @@ impl HubRuntime {
         }
         Ok(Arc::new(Self {
             com_architectures: Vec::new(),
+            native_camera_sources: false,
             runtime_id: Uuid::new_v4(),
             config,
             registry,
@@ -360,14 +363,20 @@ impl HubRuntime {
             "virtualSources",
             "writeReadout",
             "simulation",
+            "cameraSimulation",
             "proxyOutputs",
+            "cameraOutputs",
             "focuserOutputs",
             "rotatorOutputs",
             "filterWheelOutputs",
             "coverCalibratorOutputs",
         ];
+        if self.native_camera_sources {
+            capabilities.push("nativeCameraSources");
+        }
         if !self.com_architectures.is_empty() {
             capabilities.push("comSources");
+            capabilities.push("cameraComSources");
         }
         if self.com_architectures.contains(&Bitness::X86) {
             capabilities.push("comX86Sources");

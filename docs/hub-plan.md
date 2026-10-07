@@ -8,6 +8,30 @@ tagged or published. Changed cross-crate APIs require an unpublished version so
 Cargo package verification uses the new workspace packages.
 Last updated: 2026-10-07.
 
+Current increment: shared camera creation uses specific cameraOutputs,
+cameraSimulation and cameraComSources capabilities. Native camera choices require
+the host's camera runtime; COM choices require an available worker and its own
+bitness capability. Generic Switch/SafetyMonitor/ObservingConditions proxies remain
+gated. Browser and WPF forms reuse generated source/output and camera recovery
+metadata. Actual HTTP setup and focused WPF/NINA cases pass inert review/apply,
+saved UUIDs/numbers, shared source capture and independent connections. Native
+SDK/direct configuration preserves core recovery defaults without opening a device.
+Full Rust hub/Alpaca, strict lint/MSRV, generated-contract, schema/Node, all 319
+NINA cases (one explicit registered-fixture skip) and actual net48 x86/x64 checks
+pass. The actual browser creates/reviews/applies a camera with zero leases and a
+disconnected transport afterward; its screenshot is saved in hub setup docs.
+Registered COM regression also passes: 34 worker, 26 parent and eight actual NINA
+camera cases; both private registry views are cleaned up. Keep all
+original coordination, discovery/transfer, recovery/resume, conformance,
+interactive/physical acceptance, README/site and final audit/merge gates open.
+The preceding NINA provider/proxy checkpoint fc7c3d7 is pushed; PR/push CI
+37634266085/37634257580 is not yet terminal in both runs. The PR Windows job failed
+on an HTTP startup-probe timeout; local 2ec5210 fixes bounded read-only startup
+polling without changing production deadlines. Push Intel macOS failed two nested
+panel fixture admissions; local dbc6a4e restores the ordinary scalar deadline in
+that real-HTTP fixture, and all 25 local panel cases pass. Keep subsequent commits
+local until both runs are terminal, then require fresh CI for these changes.
+
 Current increment: native NINA camera proxy acceptance now crosses actual Alpaca
 and registered x86/x64 COM inputs. A private loopback relay injects lost start
 acknowledgements, invalid exposure metadata, admitted geometry disagreement and
@@ -1928,11 +1952,13 @@ implemented. Dedicated focuser simulation is implemented. Broader simulation, ge
 setup and conformance remain required.
 Shared setup now enables Focuser, Rotator, FilterWheel and CoverCalibrator proxy creation, with other proxy classes
 gated until their interfaces are implemented and verified.
-Existing camera proxies now publish through Alpaca and native ASCOM; their setup
+Existing camera proxies now publish through Alpaca, native NINA and native ASCOM; their setup
 links open the shared hub editor. Native ASCOM uses the shared camera session,
 negotiated operation deadlines, protected image reader and budgeted managed arrays.
-Camera creation remains gated pending native NINA publication and common setup
-selection; neither of the first two publication slices enables it alone.
+Shared camera creation is implemented through the generated browser/WPF editor
+and native ASCOM selector. Native camera recovery, explicit simulation and COM
+bitness use specific capability gates. The creation increment above records its
+tests; conformance and broader interactive/physical acceptance remain open.
 
 Rotator controller increment: shared typed sessions and live property/command
 semantics are implemented with eleven private actor/Alpaca V3/V4 cases. Native

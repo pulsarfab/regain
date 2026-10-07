@@ -3,6 +3,88 @@
 This records local review and tests for the single hub PR. Passing a foundation
 test does not imply that a frontend, transport, or hardware gate has passed.
 
+## 2026-10-07: shared camera creation and capability admission
+
+Reviewed the generated setup capability gates and runtime support boundaries.
+Camera output creation has its own capability instead of enabling the unfinished
+generic Switch/SafetyMonitor/ObservingConditions proxy classes. Dedicated combined
+outputs retain their existing behavior. Explicit camera simulation and COM camera
+imports use separate capabilities; COM bitness remains independently gated.
+Native camera choices require host-owned native camera resources. Injected/proxy-
+only runtimes do not advertise unsupported native setup choices.
+
+The actual HTTP setup route creates two camera outputs, persists UUIDs/numbers,
+checks discovery, rejects a mismatched source class, stays inert through review/
+apply and rejects apply while clients are connected. Capture publishes retained
+ImageBytes after the initiating client disconnects; the sibling stays connected.
+Managed setup uses actual lazy WPF controls/events and the native NINA provider,
+with shared cooler state, scalar images and independent leases. Browser form
+event handlers use the generated choices, including camera COM imports.
+No new frontend-specific configuration definition is introduced.
+
+Initial fixture corrections: C# uint expected values must use uint literals;
+the WPF dropdown includes a placeholder that is not a device class; NINA crop
+selection is local UI state, so shared state is verified through CoolerOn instead.
+Camera is the first enabled schema choice when its capability is present, so
+browser expectations now follow that shared ordering. A previous actual-host
+test explicitly asserted native camera setup remained hidden; it now expects the
+new implemented capability. The hello handshake now advertises the implemented
+camera output interface alongside its acquisition/image capabilities. Native
+recovery defaults already materialize from the shared schema; the inert setup
+fixture verifies them before editing instead of trying to add an existing field.
+None of these corrections relax runtime validation.
+
+Validation:
+
+- Full Rust hub/Alpaca suites pass in `artifacts/hub-camera-creation-rust-third.log`,
+  including 80 hub unit cases, 42 acquisition cases, 19 Alpaca library cases,
+  ten actual-host cases and 45 HTTP publication cases. Initial failures record
+  the old native setup and hello capability gates; final assertions verify both.
+- Strict Rust 1.99 Clippy, Rust 1.89 compatibility, contract freshness and formatting
+  pass (`hub-camera-creation-clippy`, `msrv`, `contract` logs).
+- Full NINA regression passes 319 cases with one explicit registered-fixture skip
+  in `artifacts/hub-camera-creation-nina-full-second.log`, including native SDK/
+  direct inert creation and recovery defaults. The first full run records the
+  fixture's redundant AddOptional attempt; final coverage verifies saved values.
+- Actual net48 x86/x64 suites pass with warnings denied in
+  `artifacts/hub-camera-creation-net48-first.log`, including created camera outputs,
+  image shape/lifetime and independent leases in both architectures.
+- Node form/contract checks and ten independent schema checks pass. The existing
+  private schema environment supplies jsonschema; system Python lacks it.
+- The actual in-app browser creates a simulated source and Camera output, reviews,
+  applies and shows zero leases/disconnected transport afterward. Persisted UUID,
+  number and source link match the reviewed UI. `docs/images/hub-camera-creation.jpg`
+  records the saved editor. Its private server/tab are stopped/closed afterward.
+- The new shared-camera example passes semantic roundtrip/reorder checks and the
+  independent structural validator. It shares one explicit simulation at outputs
+  4 and 17; it does not imply synchronized cameras.
+- Registered COM regression passes all 34 worker, 26 parent and eight actual NINA
+  camera cases in `artifacts/hub-camera-creation-com-first.log`. Both private HKCU
+  registry views are verified cleaned up afterward. This execution, rather than
+  the ordinary skipped theory, supplies COM acceptance evidence.
+  Full interactive/physical acceptance and every original
+  coordination/recovery/documentation/final merge gate remain open.
+
+Preceding fc7c3d7 PR Windows CI fails before the fault scenario at the one-second
+HTTP startup probe (job 112836210890, run 37634266085). The publisher readiness
+loop handled refused connections but not a timed-out first read. Local 2ec5210
+retries only read-only probes within the existing ten-second startup window and
+preserves overall cancellation. Production timeouts and fault assertions do not
+change. The fresh full local NINA suite passes this correction. Keep its initial
+CI failure visible; a new CI run is still required after both preceding runs end.
+
+The fc7c3d7 push also fails Intel macOS nested panel initial/reconnect admission
+(run 37634257580, job 112836179210). Both report transient transport timeouts in
+`covercalibrator_virtual.rs` before any actuation. The nested real-HTTP fixture
+overrode the ordinary scalar deadline with 100 ms while the leaf already used
+the normal one-second deadline. Local dbc6a4e uses the ordinary default at nested
+layers too; it leaves production code, the four-second connection bound and
+short mock timing tests unchanged. The injected hung read lasts two seconds and
+still fails preflight without motion; all 25 panel cases pass in
+`artifacts/hub-panel-ci-scalar-deadline.log`. Scheduling sensitivity is an inference
+from the short fixture deadline and failure sites; fresh Intel CI must verify the
+correction rather than treating a Windows local pass as macOS acceptance.
+
 ## 2026-10-07: native NINA camera over Alpaca and registered COM
 
 Reviewed proxy camera timing, ownership, cancellation, exact frame identity,

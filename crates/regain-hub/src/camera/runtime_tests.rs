@@ -1029,7 +1029,17 @@ async fn runtime_constructs_distinct_inert_supervisors_before_adopting_host_reso
     assert_eq!(resources.image_budget().used_bytes(), 0);
     assert!(runtime.outputs().is_empty());
     assert!(
-        !runtime
+        runtime
+            .configuration_capabilities()
+            .contains(&"nativeCameraSources")
+    );
+    assert!(
+        runtime
+            .configuration_capabilities()
+            .contains(&"cameraSimulation")
+    );
+    assert!(
+        runtime
             .configuration_capabilities()
             .contains(&"cameraOutputs")
     );
@@ -1612,7 +1622,7 @@ async fn camera_acquisition_ipc_retains_one_owner_after_stream_loss_and_uses_sca
             .any(|value| value == "cameraAcquisition")
     );
     assert!(
-        !first
+        first
             .hello()
             .capabilities
             .iter()

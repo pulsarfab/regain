@@ -57,6 +57,146 @@ async fn image(f: &Fixture, number: u32, client: u32, binary: bool) -> axum::res
 }
 
 #[tokio::test]
+async fn camera_creation_through_shared_setup_is_inert_persistent_and_publishes_independent_outputs()
+ {
+    let f = Fixture::from_config(HubConfig::empty()).await;
+    let invoke = async |command| {
+        setup(
+            &f.router,
+            command,
+            "application/json",
+            "http://127.0.0.1:11111",
+        )
+        .await
+    };
+    let (status, description) = invoke(json!({"op":"describeConfig"})).await;
+    assert_eq!(status, StatusCode::OK);
+    let capabilities = description["result"]["capabilities"].as_array().unwrap();
+    for capability in ["cameraOutputs", "cameraSimulation"] {
+        assert!(capabilities.iter().any(|value| value == capability));
+    }
+    // This embedding has no native camera runtime or installed COM workers.
+    for capability in [
+        "nativeCameraSources",
+        "cameraComSources",
+        "broaderProxyOutputs",
+    ] {
+        assert!(!capabilities.iter().any(|value| value == capability));
+    }
+    let (_, saved) = invoke(json!({"op":"getConfig"})).await;
+    let mut candidate = saved["result"].clone();
+    let revision = candidate["revision"].clone();
+    let created = configuration();
+    candidate["sources"] = serde_json::to_value(&created.sources).unwrap();
+    candidate["outputs"] = serde_json::to_value(&created.outputs).unwrap();
+    let source = created.sources[0].id;
+    let (_, valid) = invoke(json!({"op":"validateConfig","candidate":candidate})).await;
+    assert_eq!(valid["result"]["valid"], true, "{valid}");
+    assert!(
+        f.ok("GET", "/management/v1/configureddevices", "")
+            .await
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(
+        invoke(json!({"op":"sourceStatus","source":source})).await.0,
+        StatusCode::BAD_REQUEST
+    );
+    let mut invalid = candidate.clone();
+    invalid["outputs"][0]["device"]["deviceType"] = json!("switch");
+    let (_, result) = invoke(json!({"op":"validateConfig","candidate":invalid})).await;
+    assert_eq!(result["result"]["valid"], false);
+    let (status, applied) =
+        invoke(json!({"op":"applyConfig","expectedRevision":revision,"candidate":candidate})).await;
+    assert_eq!(status, StatusCode::OK, "{applied}");
+    assert_eq!(applied["result"]["ready"], true);
+    let (_, state) = invoke(json!({"op":"sourceStatus","source":source})).await;
+    assert_eq!(state["result"]["leaseCount"], 0);
+    assert_eq!(state["result"]["transportConnected"], false);
+    let (_, reloaded) = invoke(json!({"op":"getConfig"})).await;
+    let devices = f.ok("GET", "/management/v1/configureddevices", "").await;
+    for (index, output) in created.outputs.iter().enumerate() {
+        assert_eq!(reloaded["result"]["outputs"][index]["id"], json!(output.id));
+        assert_eq!(
+            reloaded["result"]["outputs"][index]["number"],
+            output.number
+        );
+        assert_eq!(devices[index]["UniqueID"], json!(output.id));
+        assert_eq!(devices[index]["DeviceNumber"], output.number);
+    }
+    let persisted: HubConfig =
+        serde_json::from_slice(&std::fs::read(f._dir.path().join("hub.json")).unwrap()).unwrap();
+    assert_eq!(persisted.outputs, created.outputs);
+    for (number, client) in [(4, 1), (17, 2)] {
+        f.ok(
+            "PUT",
+            &format!("/api/v1/camera/{number}/connected"),
+            &format!("ClientID={client}&Connected=true"),
+        )
+        .await;
+    }
+    for (member, value) in [("numx", "NumX=96"), ("numy", "NumY=64")] {
+        f.ok(
+            "PUT",
+            &format!("/api/v1/camera/4/{member}"),
+            &format!("ClientID=1&{value}"),
+        )
+        .await;
+    }
+    let (status, blocked) = invoke(json!({"op":"applyConfig","expectedRevision":reloaded["result"]["revision"],"candidate":reloaded["result"]})).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(blocked["error"]["code"], "connected");
+    f.ok(
+        "PUT",
+        "/api/v1/camera/4/startexposure",
+        "ClientID=1&Duration=0.01&Light=true",
+    )
+    .await;
+    ready(&f, 4, 1).await;
+    let retained = image(&f, 17, 2, true).await;
+    assert_eq!(retained.status(), StatusCode::OK);
+    f.ok(
+        "PUT",
+        "/api/v1/camera/4/connected",
+        "ClientID=1&Connected=false",
+    )
+    .await;
+    assert_eq!(
+        f.ok("GET", "/api/v1/camera/17/connected", "ClientID=2")
+            .await,
+        true
+    );
+    let bytes = retained.into_body().collect().await.unwrap().to_bytes();
+    let decoded = regain_hub::camera::image::read_imagebytes(
+        &mut bytes.as_ref(),
+        &regain_hub::camera::image::ImageBudget::new(64 * 1024).unwrap(),
+        987,
+    )
+    .await
+    .unwrap();
+    assert_eq!(decoded.image.bytes().len(), 96 * 64 * 2);
+    f.ok(
+        "PUT",
+        "/api/v1/camera/17/connected",
+        "ClientID=2&Connected=false",
+    )
+    .await;
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let (_, state) = invoke(json!({"op":"sourceStatus","source":source})).await;
+            if state["result"]["leaseCount"] == 0 {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap();
+    f.finish().await;
+}
+
+#[tokio::test]
 async fn shared_camera_publication_routes_identity_settings_guiding_and_both_image_formats() {
     let f = Fixture::from_config(configuration()).await;
     let devices = f.ok("GET", "/management/v1/configureddevices", "").await;

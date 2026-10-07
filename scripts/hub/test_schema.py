@@ -50,7 +50,7 @@ class SchemaContractTests(unittest.TestCase):
 
     def test_schema_and_examples(self):
         Draft202012Validator.check_schema(SCHEMA)
-        for name in ["two-source-safety", "mixed-switch"]:
+        for name in ["two-source-safety", "mixed-switch", "shared-camera"]:
             VALIDATOR.validate(example(name))
 
     def test_missing_required_fields_unknown_fields_types_and_bounds(self):

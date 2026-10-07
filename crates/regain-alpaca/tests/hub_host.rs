@@ -603,7 +603,7 @@ async fn actual_host_uses_explicit_native_camera_simulation_and_shared_scalar_le
     request(&mut first, 1, json!({"op":"hello"})).await;
     let metadata = request(&mut first, 2, json!({"op":"describeConfig"})).await;
     assert!(
-        !metadata["capabilities"]
+        metadata["capabilities"]
             .as_array()
             .unwrap()
             .contains(&json!("nativeCameraSources"))

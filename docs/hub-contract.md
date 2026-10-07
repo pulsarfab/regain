@@ -2899,3 +2899,40 @@ unpublished pixels and never implicitly sends Abort, Stop or a replacement expos
 It does not alter the source's recovery policy or extend scalar request bounds.
 Frontends must validate exact identity/duration and reject old-session metadata.
 Protected frontend image transfer remains a distinct finite operation.
+
+### Native NINA camera publication
+
+The native provider enumerates saved Camera bindings and the common setup choice
+without connecting. It uses the shared local session and exact acquisition UUID,
+source generation, connection epoch, duration and frozen frame metadata. Caller
+cancellation releases a waiter; only explicit Stop/Abort requests control capture.
+Readiness, failure, cancellation and disconnect restore the original profile
+timeout if the user has not changed it. The negotiated completion bound plus
+protected transfer allowance supplies the temporary timeout.
+
+NINA's scalar image interfaces accept losslessly representable UInt16 or Int32
+values from all nine wire types, including rank-three one-plane arrays. Fractional,
+nonfinite, out-of-range or multi-plane input fails explicitly. Row-major arrays
+retain their memory reservations and immutable pixels through subsequent captures
+and disconnect. Real NINA ImageArray/ImageArrayInt and BaseImageData share those
+arrays. Generic hub camera publication exposes no private heater, USB-limit or
+live-video extensions; existing direct providers retain their own extensions.
+
+### Shared camera creation
+
+`cameraOutputs` enables Camera in the existing Proxy output editor, independently
+of `broaderProxyOutputs`. Generic Switch/SafetyMonitor/ObservingConditions proxies
+remain unavailable; their dedicated combined outputs remain available.
+`cameraSimulation` enables explicit camera simulation. `nativeCameraSources` is
+advertised only when the host has a native camera runtime. `cameraComSources`
+requires an available COM worker, with x86/x64 choices independently gated.
+These are setup capabilities, not promises of a connected physical device.
+
+The generated Rust contract drives browser, WPF/NINA and native ASCOM setup.
+Review and Apply remain inert, revision-bound and blocked by active connections
+or retained work. New camera output UUIDs and device numbers survive saving and
+reload; shared sources retain independent connection leases and one acquisition
+owner. Native camera model/identity/recovery fields use the existing core metadata
+without importing native recovery promises into Alpaca/COM/virtual proxies.
+Camera creation does not enable coordinated multi-camera capture or close the
+remaining conformance, interactive and physical acceptance gates.

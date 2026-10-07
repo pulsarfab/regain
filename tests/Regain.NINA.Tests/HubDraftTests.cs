@@ -144,6 +144,42 @@ public sealed class HubDraftTests
             Assert.Equal("managed", draft.Field("/sources/0/backend/connectionPolicy").Value!.Value.GetString());
         });
     }
+    [Fact]
+    public async Task NativeCameraChoicesUseSharedCapabilitiesAndActualWpfSelectionEvents()
+    {
+        await Sta(() => {
+            var description = JsonNode.Parse(Description().GetRawText())!;
+            description["capabilities"] = new JsonArray("simulation", "cameraSimulation", "proxyOutputs", "cameraOutputs", "focuserOutputs");
+            var draft = new HubConfigurationDraft(Json(description),Configuration());
+            draft.AddItem("/sources"); draft.SelectVariant("/sources/3/backend","simulated");
+            draft.SetValue("/sources/3/backend/deviceType",Json("focuser"));
+            draft.SetValue("/sources/3/label",Json("Camera creation source"));
+            draft.AddItem("/outputs"); draft.SelectVariant("/outputs/3/device","proxy");
+            draft.SetValue("/outputs/3/label",Json("Camera creation output"));
+            draft.SetValue("/outputs/3/device/deviceType",Json("focuser"));
+            var source = draft.Field("/sources/3/id").Value!.Value.GetGuid();
+            draft.SetValue("/outputs/3/device/source",Json(source));
+            var output = draft.Field("/outputs/3/id").Value!.Value.GetGuid();
+            var changed = 0;
+            var form = new HubConfigurationForm(draft,()=>changed++,message=>throw new Exception(message)); form.Render();
+            ComboBox Select(string path) {
+                // Expand the real lazy WPF tree, including newly rendered descendants.
+                for (int depth = 0; depth < 10; depth++)
+                    foreach (var expander in All<Expander>(form.Root).ToArray()) expander.IsExpanded = true;
+                return All<ComboBox>(form.Root).Single(c=>(string?)c.Tag==path);
+            }
+            var types = Select("/outputs/3/device/deviceType");
+            Assert.Equal(new[]{"camera","focuser"},types.Items.Cast<ComboBoxItem>().Where(c=>c.IsEnabled && c.Tag is string value && value.Length != 0).Select(c=>(string)c.Tag));
+            types.SelectedItem = types.Items.Cast<ComboBoxItem>().Single(c=>(string)c.Tag=="camera");
+            types = Select("/sources/3/backend/deviceType");
+            types.SelectedItem = types.Items.Cast<ComboBoxItem>().Single(c=>(string)c.Tag=="camera");
+            Assert.Equal("camera",draft.Field("/outputs/3/device/deviceType").Value!.Value.GetString());
+            Assert.Equal("camera",draft.Field("/sources/3/backend/deviceType").Value!.Value.GetString());
+            Assert.Equal(source,draft.Field("/outputs/3/device/source").Value!.Value.GetGuid());
+            Assert.Equal(output,draft.Field("/outputs/3/id").Value!.Value.GetGuid());
+            Assert.Equal(2,changed); Assert.Empty(form.Errors);
+        });
+    }
     private static Expander Box(DependencyObject root, string header) => All<Expander>(root).Single(e => (string)e.Header == header);
     private static IEnumerable<T> All<T>(DependencyObject root) where T : DependencyObject
     {

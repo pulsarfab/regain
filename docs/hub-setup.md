@@ -1,13 +1,13 @@
 # Hub setup development preview
 
 Regain Hub combines source devices into shared Switch, SafetyMonitor,
-ObservingConditions, Focuser, Rotator and FilterWheel outputs. The development branch publishes those
+ObservingConditions, Focuser, Rotator, FilterWheel, CoverCalibrator and Camera outputs. The development branch publishes those
 outputs through Alpaca, native NINA providers and native ASCOM. Their setup uses
 the shared configuration. Broader proxy devices and acceptance remain in progress;
 this is not a released feature.
 
-Windows sources can import ASCOM Switch, SafetyMonitor, ObservingConditions, Focuser, Rotator
-and FilterWheel drivers directly through private x86/x64 helpers. Add a **COM** source, enter the
+Windows sources can import ASCOM Switch, SafetyMonitor, ObservingConditions, Focuser, Rotator,
+FilterWheel, CoverCalibrator and Camera drivers directly through private x86/x64 helpers. Add a **COM** source, enter the
 installed driver's ProgID and select its registration bitness. Available choices
 come from the host's installed helper capabilities. This does not connect through
 Alpaca or require a Regain native ASCOM output. Select **Managed** to let the hub
@@ -22,6 +22,24 @@ them. Killing a private worker does not prove the upstream driver disconnected.
 Other platforms can import a driver's exported Alpaca endpoint. Registered
 fixture tests and both-bit machine SCM activation pass; installed vendor-driver
 and interactive frontend acceptance remain on the plan.
+
+Camera outputs use the same source and output editor. Add a camera source, then
+add a **Proxy** output with device class **Camera** and select that source. Native
+SDK/direct choices appear when the host has a native camera runtime; their model,
+stable identity and recovery settings reuse the camera core's definitions. COM
+choices require an available helper of the selected bitness. Explicit camera
+simulation is also available. Review and Apply save configuration without opening
+equipment. Each output keeps its own UUID and device number; several outputs can
+share one source and independent connections, while the host controls exposure
+ownership. This is sharing one camera, not synchronized multi-camera capture.
+
+Native NINA camera choices connect directly to the hub. The provider adjusts the
+profile timeout to the negotiated capture bound, restores it afterward and
+preserves user edits. Canceling a wait does not implicitly stop an exposure.
+Representable scalar pixels become UInt16 or Int32 NINA images; fractional,
+out-of-range and multi-plane frames fail explicitly. ASCOM/Alpaca retain their
+broader numeric and image layouts. Camera proxy sources do not acquire native
+same-frame download recovery just by being republished.
 
 To try the editor without equipment, copy
 [`simulated-observatory.json`](../crates/regain-hub/examples/simulated-observatory.json)
@@ -38,6 +56,20 @@ For an accessory-only server, create a separate camera-profile file containing
 explicit empty list creates no camera slots; a missing profile file retains the
 normal main/guide defaults. The root `/setup` remains usable and **Add camera
 slot** can create the first slot later without changing the hub's devices.
+
+For a camera-only example, copy
+[`shared-camera.json`](../crates/regain-hub/examples/shared-camera.json) instead.
+It publishes one explicit simulated camera at two stable camera output numbers,
+4 and 17. Pass the empty ordinary profile list described above so local camera
+slots do not compete with those numbers. Both outputs share settings and accepted
+captures; separate physical cameras require separate sources. Native NINA and
+native ASCOM can select these saved output IDs through the common selector.
+
+![Camera source and output saved through the shared editor in a private simulation test](images/hub-camera-creation.jpg)
+
+This actual browser check created, reviewed and applied a simulated camera output
+without opening equipment. Its cached status retained zero leases and a
+disconnected transport after Apply.
 
 ![Accessory-only setup during a private simulation test](images/hub-accessory-only-setup.jpg)
 

@@ -172,8 +172,8 @@ internal static class Program
             await editor.ReloadAsync(deadline.Token);
             var deviceChoices = editor.Draft!.Description.Root.GetProperty("$defs").GetProperty("VirtualDevice");
             var proxyChoice = editor.Draft.Description.Variants(deviceChoices).Single(v => v.Kind == "proxy");
-            if (!proxyChoice.Enabled || editor.Draft.InitialValue(proxyChoice.Schema).GetProperty("deviceType").GetString() != "focuser" ||
-                !editor.Draft.Description.Choices(proxyChoice.Schema.GetProperty("properties").GetProperty("deviceType")).Where(v => v.Enabled).Select(v => v.Value).SequenceEqual(new[] { "focuser", "rotator", "filterwheel", "covercalibrator" }))
+            if (!proxyChoice.Enabled || editor.Draft.InitialValue(proxyChoice.Schema).GetProperty("deviceType").GetString() != "camera" ||
+                !editor.Draft.Description.Choices(proxyChoice.Schema.GetProperty("properties").GetProperty("deviceType")).Where(v => v.Enabled).Select(v => v.Value).SequenceEqual(new[] { "camera", "focuser", "rotator", "filterwheel", "covercalibrator" }))
                 throw new InvalidOperationException("Typed proxy setup did not restrict creation to the published classes");
             if (editor.Draft!.Revision == oldRevision || editor.Draft.Field("/outputs/0/label").Value!.Value.GetString() != "net48 edited simulation")
                 throw new InvalidOperationException("Native editor did not reconcile saved changes");
@@ -221,7 +221,7 @@ internal static class Program
                 () => NativeOutputs.RotatorRun(args[0],args[1],attached.InstanceId,saved,rotatorServer,deadline.Token));
             await RotatorCheckpoint("ASCOM simulated rotator", simulatedRotator,
                 () => NativeOutputs.SimulatedRotatorRun(args[0],args[1],attached.InstanceId,saved,simulatedRotator,editor,deadline.Token));
-            foreach (var deviceType in new[] { "rotator", "filterwheel", "covercalibrator" })
+            foreach (var deviceType in new[] { "rotator", "filterwheel", "covercalibrator", "camera" })
                 await NativeOutputs.CreatedTypedRun(args[0],args[1],attached.InstanceId,editor,deviceType,deadline.Token);
             await NativeOutputs.WheelRun(args[0],args[1],attached.InstanceId,saved,wheelServer,deadline.Token);
             await NativeOutputs.SimulatedWheelRun(args[0],args[1],attached.InstanceId,saved,simulatedWheel,editor,deadline.Token);
