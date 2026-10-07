@@ -3,6 +3,71 @@
 This records local review and tests for the single hub PR. Passing a foundation
 test does not imply that a frontend, transport, or hardware gate has passed.
 
+## 2026-10-07: virtual camera inputs
+
+Reviewed local camera composition against the existing typed virtual accessories
+and the camera supervisor's source/control/generation fences. Reused their factory
+binding, internal clients, incremental connection checks and typed observation
+envelope. Camera member lookup now comes from one shared CameraProperty method;
+native and virtual adapters use it. Strict CameraSetting decoding remains shared.
+
+Each virtual transport records the inner Start's accepted acquisition UUID. Its
+readiness/metadata/image path can pin only that exact completed acquisition;
+status/image races recheck identity before retaining pixels. Replacement before
+pinning fails rather than relabeling a later frame. A successful pin retains the
+immutable image and metadata across new inner captures. Stop/Abort refuse a later
+active UUID even if it uses the same inner session; ordinary controller ownership
+checks also remain. Failed Start preserves the previous pin. Disconnect/reset
+clears only local pins/clients and sends no implicit Abort. Generation loss retires
+the virtual transport instead of adopting another inner session silently.
+
+Image clones must share the host's exact budget identity. They allocate no pixels,
+issue no second download/exposure, and preserve native recovery metadata. Each
+layer keeps its own publication identities. Proxy deadlines remain configured at
+that layer, without acquiring native retries; an inner native operation may
+continue after an outer timeout. Cached telemetry uses the existing typed sample
+age/error envelope; published acquisition evidence uses the pinned-frame path.
+
+artifacts/hub-camera-virtual-reviewed-tests.log passes two focused unit cases and
+all eight nested factory cases, alongside all 76 hub unit cases. Cases cover
+replacement before pinning, later Stop/Abort fencing under the same inner owner,
+frozen metadata/pixels, wrong-budget rejection, one reservation through three
+levels, all image ranks/subframes/binning/cooling, partial Stop, optional errors,
+40-second observation ages, sibling ownership, client loss, retained external
+pins, capacity/image failures and retained uncertainty. Real SDK/direct workers
+run only explicit simulations; private IPC timing confirms proxies gain no native
+policy. Initial tests used the wrong simulation age key and a native ROI below
+the direct device's reported 64-by-64 minimum; fixtures now honor the common
+contract and real capabilities. Original failures remain in the initial logs.
+Final additions cover optional exposure metadata and generation/uncertainty
+propagation. The first generation fixture incorrectly required a leaf latch
+after all leaf leases had closed. artifacts/hub-camera-virtual-generation-diagnostic.log
+shows the acknowledged value 12, zero leases, a retired generation and completed
+disconnect; the existing source policy clears that last-lease latch. Independent
+observer leases now stay open at each inner layer. The same fixture verifies all
+generations change, all shared latches remain, every observer is disconnected,
+the rejected follow-up setter cannot change 12 to 13, and an external old frame
+stays charged through shutdown. No production policy/deadline was relaxed.
+
+artifacts/hub-camera-virtual-rust.log passes full hub/Alpaca regressions.
+artifacts/hub-camera-virtual-final-focused-2.log passes all 76 hub unit cases and
+ten nested factory cases after those additions. Final strict Rust 1.99 lint,
+Rust 1.89 all-target compatibility across five affected crates, formatting,
+contract freshness, Node and nine schema checks pass. artifacts/hub-camera-virtual-nina.log
+records NINA 275/275; artifacts/hub-camera-virtual-net48.log passes the complete
+actual x86/x64 suite with zero warnings/errors. The shared managed actual-host
+fixture now adds two virtual layers over the explicit camera, using the same
+protected multi-chunk transfer, repeated readers, retained pin, budget, stale
+identity and control-client checks as native SDK/direct/explicit sources. All
+local test processes are complete.
+
+The preceding simulator/lifecycle commits are pushed through ec52cc2 after both
+e51eaaf workflows became terminal. New PR/push CI 37609737316/37609727056 is active.
+Both pass the formerly failing macOS ARM job; Intel macOS and Windows are live.
+Keep this virtual-camera increment local, the same PR draft, and every original
+camera import/publication, coordination, acceptance, documentation and merge gate
+open.
+
 ## 2026-10-07: IPC stream lifetime after shutdown
 
 PR CI 37606180612's macOS ARM camera image test found the endpoint still locked

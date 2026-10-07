@@ -5,13 +5,13 @@ namespace Regain.NINA.Tests;
 
 public sealed class HubImageTests
 {
-    [Theory, InlineData(false, false), InlineData(true, false), InlineData(false, true)]
-    public Task ProtectedRustHostTransfersImagesAndPreservesControl(bool direct, bool standard)
+    [Theory, InlineData(false, false, false), InlineData(true, false, false), InlineData(false, true, false), InlineData(false, true, true)]
+    public Task ProtectedRustHostTransfersImagesAndPreservesControl(bool direct, bool standard, bool nested)
     {
         var directory = new System.IO.DirectoryInfo(AppContext.BaseDirectory);
         while (directory is not null && !System.IO.File.Exists(System.IO.Path.Combine(directory.FullName, "Cargo.toml"))) directory = directory.Parent;
         var workers = Environment.GetEnvironmentVariable("REGAIN_TEST_WORKERS") ?? System.IO.Path.Combine(directory!.FullName, "target", "debug");
-        return HubCameraHostFixture.Run(System.IO.Path.Combine(workers, "regain-alpaca.exe"), direct, standard);
+        return HubCameraHostFixture.Run(System.IO.Path.Combine(workers, "regain-alpaca.exe"), direct, standard, nested);
     }
     [Fact] public Task NumericTypesAndRankAreLossless() => HubImageFixture.Types();
     [Fact] public Task PinsKeepImmutableStorageChargedUntilLastReader() => HubImageFixture.Lifetime();

@@ -17,6 +17,8 @@ use serde_json::{Value, json};
 use std::sync::{Arc, OnceLock, Weak};
 use uuid::Uuid;
 
+mod camera;
+
 pub(crate) type Binding = Arc<OnceLock<Weak<HubRuntime>>>;
 pub(crate) struct VirtualBackend {
     binding: Binding,
@@ -26,12 +28,14 @@ pub(crate) struct VirtualBackend {
     clock: Arc<dyn Clock>,
     simulated: bool,
     client: Option<Arc<ClientSession>>,
+    camera: camera::Camera,
 }
 impl VirtualBackend {
-    fn typed_accessory(&self) -> bool {
+    fn typed_proxy(&self) -> bool {
         matches!(
             self.kind,
-            DeviceType::Focuser
+            DeviceType::Camera
+                | DeviceType::Focuser
                 | DeviceType::Rotator
                 | DeviceType::FilterWheel
                 | DeviceType::CoverCalibrator
@@ -53,6 +57,7 @@ impl VirtualBackend {
             clock,
             simulated,
             client: None,
+            camera: camera::Camera::default(),
         }
     }
     fn connection(&self) -> Result<Arc<OutputConnection>, SourceError> {
@@ -61,7 +66,7 @@ impl VirtualBackend {
             .as_ref()
             .ok_or_else(disconnected)?
             .connection(self.output)?;
-        if self.typed_accessory() && !connection.connected() {
+        if self.typed_proxy() && !connection.connected() {
             // Retire this virtual transport instead of adopting another inner
             // generation for an already-connected outer session.
             return Err(SourceError {
@@ -72,6 +77,7 @@ impl VirtualBackend {
         Ok(connection)
     }
     fn close(&mut self) {
+        self.camera.clear();
         if let Some(client) = self.client.take() {
             client.close();
         }
@@ -178,7 +184,7 @@ impl Backend for VirtualBackend {
     }
     fn connect_step(&mut self) -> BackendFuture<'_, bool> {
         Box::pin(async {
-            if !self.typed_accessory() {
+            if !self.typed_proxy() {
                 return self.connect().await.map(|()| true);
             }
             if self.client.is_none() {
@@ -218,7 +224,7 @@ impl Backend for VirtualBackend {
                 no_args(&args)?;
                 return Ok(json!(match self.kind {
                     DeviceType::ObservingConditions | DeviceType::CoverCalibrator => 2,
-                    DeviceType::Focuser | DeviceType::Rotator => 4,
+                    DeviceType::Camera | DeviceType::Focuser | DeviceType::Rotator => 4,
                     _ => 3,
                 }));
             }
@@ -233,6 +239,9 @@ impl Backend for VirtualBackend {
             if member == "devicestate" {
                 no_args(&args)?;
                 return connection.get(Get::DeviceState {}).await;
+            }
+            if self.kind == DeviceType::Camera {
+                return self.camera.read(connection.camera()?, &member, &args).await;
             }
             let get = match self.kind {
                 DeviceType::SafetyMonitor if member == "issafe" => {
@@ -310,6 +319,12 @@ impl Backend for VirtualBackend {
     fn write(&mut self, member: String, args: Values) -> BackendFuture<'_, Value> {
         Box::pin(async move {
             let connection = self.connection()?;
+            if self.kind == DeviceType::Camera {
+                self.camera
+                    .write(connection.camera()?, &member, &args)
+                    .await?;
+                return Ok(Value::Null);
+            }
             let put = match (self.kind, member.as_str()) {
                 (DeviceType::Rotator, "move") => Put::MoveRotator {
                     degrees: number(&args, "Position")?,
@@ -411,6 +426,15 @@ impl Backend for VirtualBackend {
             Ok(Value::Null)
         })
     }
+    fn camera_image(
+        &mut self,
+        budget: crate::camera::image::ImageBudget,
+    ) -> BackendFuture<'_, crate::camera::image::CameraImage> {
+        Box::pin(async move {
+            let connection = self.connection()?;
+            self.camera.image(connection.camera()?, &budget)
+        })
+    }
     fn poll(&mut self) -> BackendFuture<'_, Values> {
         Box::pin(async { Ok(self.sample().await?.values) })
     }
@@ -444,8 +468,22 @@ impl Backend for VirtualBackend {
                 return Ok(batch);
             }
             for request in &self.samples {
-                if self.typed_accessory() {
-                    let result = if self.kind == DeviceType::Focuser {
+                if self.typed_proxy() {
+                    let result = if self.kind == DeviceType::Camera {
+                        no_args(&request.parameters)
+                            .and_then(|()| {
+                                crate::camera::properties::CameraProperty::from_member(
+                                    &request.member,
+                                )
+                                .ok_or_else(unsupported)
+                            })
+                            .and_then(|property| {
+                                connection
+                                    .camera()?
+                                    .cached_sample(property, self.clock.now())
+                            })
+                            .map(|sample| (sample.value.into_value(), sample.age_seconds))
+                    } else if self.kind == DeviceType::Focuser {
                         no_args(&request.parameters)
                             .and_then(|()| focuser_property(&request.member))
                             .and_then(|property| {

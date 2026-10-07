@@ -448,6 +448,9 @@ struct ImageInner {
 #[derive(Clone)]
 pub struct CameraImage(Arc<ImageInner>);
 impl CameraImage {
+    pub(crate) fn shares_budget(&self, budget: &ImageBudget) -> bool {
+        self.0._reservation.budget.shares(budget)
+    }
     pub fn descriptor(&self) -> ImageDescriptor {
         self.0.descriptor
     }

@@ -8,6 +8,29 @@ tagged or published. Changed cross-crate APIs require an unpublished version so
 Cargo package verification uses the new workspace packages.
 Last updated: 2026-10-07.
 
+Current increment: virtual Camera inputs compose through the existing source
+factory, internal client leases, incremental connection admission and generation
+fences. Typed setters and Start/Stop/Abort forward through the inner acquisition
+controller. A virtual input records the exact accepted inner acquisition and pins
+only that completed image; replacement before pinning fails explicitly. A pinned
+frame freezes metadata/pixels across later inner captures. Each layer keeps its
+own output/source/acquisition identity while sharing one image reservation and
+retained native metadata. Its configured proxy timing remains independent of the
+inner native recovery policy; an inner operation can outlive an outer timeout.
+Cached telemetry preserves per-key source ages and optional errors. No new crate,
+worker, executable, replay or implicit Abort is added.
+Two exact-frame/budget/command-fence cases and ten nested factory cases pass,
+including SDK/direct production simulations, all ranks, partial Stop, Abort,
+client loss, capacity/download failures, independent inner capture and old pins.
+All 76 hub unit cases and full hub/Alpaca regressions pass. Strict Rust 1.99 lint,
+Rust 1.89 compatibility, contract freshness, Node and nine schema checks pass.
+The rebuilt host passes NINA 275/275 and full actual net48 x86/x64, including a
+three-level explicit camera fixture through protected image IPC, independent
+readers, retained pins, capacity and identity rejection. Extra cases confirm
+optional exposure metadata and retained uncertainty/generation fences across
+independent inner observers. Camera setup/publications and every original gate
+remain open; Windows camera imports are still required.
+
 Current increment: endpoint cleanup after client completion/cancellation. The
 macOS ARM failure exposed nested IPC tasks that could retain accepted streams
 after the host had joined their parents. Two deterministic local regressions
@@ -22,9 +45,10 @@ host passes NINA 274/274 and the full actual net48 x86/x64 suite, including imag
 deadline, source-sharing, typed ASCOM and setup fixtures with warnings denied.
 Preceding e51eaaf workflows are terminal: push 37606175254 passes all eight jobs;
 PR 37606180612 has seven successes and only the macOS ARM ownership failure.
-Explicit simulator 4f94bcf and lifecycle correction 47be4d2 are now ready to push
-to the same draft PR #21, with a fresh CI requirement. Subsequent virtual camera
-work remains local and is not covered by these checks.
+Explicit simulator 4f94bcf and lifecycle correction 47be4d2 are pushed through
+ec52cc2 to the same draft PR #21. Both new PR/push workflows
+37609737316/37609727056 pass macOS ARM; Intel macOS and Windows remain active.
+Subsequent virtual camera work remains local and is not covered by those checks.
 Device actor/source drain remains separate and still precedes listener release.
 Do not close the CI or any original milestone gate from these local results.
 

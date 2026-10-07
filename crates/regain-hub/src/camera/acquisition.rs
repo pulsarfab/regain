@@ -795,6 +795,29 @@ pub struct CameraSession {
     id: Uuid,
 }
 impl CameraSession {
+    /// Preserve the inner source's per-key observation age/error when composing
+    /// outputs. Acquisition identity and published readiness use their own path.
+    pub(crate) fn cached_sample(
+        &self,
+        property: CameraProperty,
+        now: Duration,
+    ) -> Result<crate::readout::TypedSample<CameraValue>, SourceError> {
+        let source = self.source.snapshot()?;
+        if let Some(error) = source.error {
+            return Err(error);
+        }
+        let key = property.member();
+        if let Some(error) = source.sample_errors.get(key) {
+            return Err(error.clone());
+        }
+        let value = property.decode(
+            source
+                .values
+                .get(key)
+                .ok_or_else(|| unavailable("No camera sample has been received"))?,
+        )?;
+        crate::readout::typed_sample(&source, key, now, value)
+    }
     /// Operational state only. No getter refreshes telemetry or copies pixels;
     /// ImageReady describes this supervisor's published acquisition.
     pub(crate) fn device_state(&self, now: Duration) -> Values {

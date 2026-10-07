@@ -743,8 +743,33 @@ create safe evidence.
 Simulation marking propagates through the dependency graph, including mixed
 outputs. Setup inspection and scalar IPC use the same typed output operation
 handlers as virtual sources. This implementation covers local composition of the
-first three classes. COM imports and NINA/HTTP publication now use these same
-controllers; camera proxies and native ASCOM output publication remain pending.
+first three classes; typed accessory and camera extensions are described below.
+Each implemented frontend uses the same controllers. Camera COM imports and
+Alpaca/NINA/ASCOM camera publication remain pending.
+
+### Virtual camera inputs
+
+Validated Camera output graphs use the same internal clients, source leases,
+incremental connection admission and generation checks as typed accessories.
+Camera properties/setters and Start/Stop/Abort use the inner camera controller.
+Ordinary readiness, exposure metadata and images refer to the exact inner
+acquisition accepted by that virtual input's Start. A later inner acquisition
+cannot replace it: losing the original before pinning returns an error; pinning
+freezes its immutable pixels and metadata. Stop/Abort cannot target a later
+active acquisition. Disconnect/reset closes local clients/pins without issuing
+Abort; already dispatched acquisition work retains its normal owner.
+
+Each layer publishes its own source/generation/acquisition identities. Pixel
+storage, budget reservations, rank/type/order and native frame metadata are
+shared without another download, exposure or image-sized allocation. A different
+image budget is rejected. External pins remain charged across later captures
+and runtime shutdown. Cached telemetry preserves inner per-key observation ages
+and optional errors; standard image readiness/metadata use the acquisition path.
+Virtual layers keep their configured proxy operation/readiness deadlines and do
+not inherit native recovery policy. An inner operation may continue after an
+outer deadline; timeout does not authorize replay or implicit Abort.
+These inputs are implemented through manual valid configuration/private IPC;
+public camera creation and all three camera publications remain gated.
 
 ### Explicit simulation
 

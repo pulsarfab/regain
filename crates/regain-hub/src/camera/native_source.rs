@@ -40,11 +40,7 @@ fn no_parameters(parameters: &Values) -> Result<(), SourceError> {
     }
 }
 fn property(member: &str) -> Result<CameraProperty, SourceError> {
-    CameraProperty::ALL
-        .iter()
-        .copied()
-        .find(|p| p.member() == member)
-        .ok_or_else(unsupported)
+    CameraProperty::from_member(member).ok_or_else(unsupported)
 }
 impl NativeCameraBackend {
     /// No discovery or equipment I/O. The owner must use the host's shared image

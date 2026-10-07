@@ -114,6 +114,12 @@ fn invalid() -> SourceError {
     SourceError::new(ErrorKind::InvalidValue, "Invalid camera setting")
 }
 impl CameraProperty {
+    pub fn from_member(member: &str) -> Option<Self> {
+        Self::ALL
+            .iter()
+            .copied()
+            .find(|property| property.member() == member)
+    }
     pub fn sample_request(self) -> crate::sampling::SampleRequest {
         use crate::sampling::SampleType;
         crate::sampling::SampleRequest {
