@@ -2,6 +2,9 @@
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut args = std::env::args().skip(1);
     let path = args.next().ok_or("Usage: export_config PATH [--check]")?;
+    if path == "--check" {
+        return Err("Usage: export_config PATH [--check]".into());
+    }
     let check = args.next();
     if check.as_deref().is_some_and(|s| s != "--check") || args.next().is_some() {
         return Err("Unknown option".into());

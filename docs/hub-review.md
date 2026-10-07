@@ -3,6 +3,28 @@
 This records local review and tests for the single hub PR. Passing a foundation
 test does not imply that a frontend, transport, or hardware gate has passed.
 
+## 2026-10-07: reject a missing contract-export path
+
+Final status inspection found an untracked file named --check. The verification
+command omitted the contract path; export_config interpreted --check as an output
+filename and returned success without checking freshness. That success is not
+validation evidence. Retain the original log in
+artifacts/hub-camera-runtime-contract-invalid-command.log. The correctly invoked
+`cargo run -j2 -p regain-hub --example export_config --locked -- contracts/hub-config.json --check`
+passes and replaces artifacts/hub-camera-runtime-contract.log with actual check
+evidence. Only the file created by this invocation was removed after verifying
+its resolved workspace path.
+
+The exporter now rejects --check in place of PATH before any write. Actual
+executable cases in artifacts/hub-contract-cli-65da57ef9ab047bd852e979fff01ec5b
+prove missing-path rejection with no artifact, valid generation/fresh acceptance,
+and stale rejection after modifying the generated fixture. Strict Rust 1.99
+Clippy and Rust 1.89 all-target checks for regain-hub pass, as does formatting;
+logs use artifacts/hub-contract-cli-{build,clippy,msrv}.log. This changes only the
+example CLI's invalid invocation; runtime/managed validation remains applicable.
+Runtime increment 74bea3a and this correction stay local while both preceding
+CI Windows test.ps1 steps remain authoritatively live.
+
 ## 2026-10-07: runtime-owned camera supervisors
 
 Reviewed construction order and resource identity. HubRuntime previously changed

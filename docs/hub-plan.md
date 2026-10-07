@@ -8,6 +8,14 @@ tagged or published. Changed cross-crate APIs require an unpublished version so
 Cargo package verification uses the new workspace packages.
 Last updated: 2026-10-07.
 
+Contract-check refinement: the correct export invocation includes
+`contracts/hub-config.json --check`. A verification command supplied only
+`--check`, which the exporter treated as a filename; its successful exit was not
+a freshness check. The correctly invoked checker passes. The exporter now rejects
+that missing-path form without writing a file. Actual CLI checks prove fresh
+acceptance and stale rejection; strict Clippy, Rust 1.89 and formatting pass.
+The original mistaken-command log is retained and its generated file removed.
+
 Current runtime increment: HubRuntime owns one inert acquisition supervisor per
 camera source UUID. Camera resources are selected before controller construction;
 native actors expose their existing budget/counter identities, and both must
@@ -30,6 +38,7 @@ Preceding retirement/timing increments are pushed through 0ba47ec to PR #21;
 PR/push CI 37592319880/37592313062 each have seven successes with only Windows
 still running. Neither run is accepted as green yet. Keep new work local
 until those runs finish.
+The reviewed runtime increment is committed locally at 74bea3a.
 
 Current timing increment: core now derives validated native connection, control,
 capture and cleanup allowances from the existing recovery workflow. Canonical
