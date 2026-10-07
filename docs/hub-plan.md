@@ -8,6 +8,26 @@ tagged or published. Changed cross-crate APIs require an unpublished version so
 Cargo package verification uses the new workspace packages.
 Last updated: 2026-10-07.
 
+Current increment: Alpaca camera publication uses the existing private host's
+typed properties, settings, retained capture/guiding and protected image API.
+Dynamic camera numbers and UUIDs appear in discovery; conflicts with local camera
+slots fail before connection. Existing camera output setup links open shared hub
+setup. Negotiated, revision-bound command timing is retained per connected output.
+Completed-frame reads preserve numeric types, rank, ordering and frozen pixels
+through later captures and control disconnect. Four HTTP readers share one
+512-MiB frontend pixel budget; encoded chunks stay within 64 KiB. JSON rejects
+nonfinite pixels before success headers; ImageBytes retains their exact bits.
+Full Alpaca regressions pass: 19 library, ten actual-host and 44 HTTP publication
+cases, with production SDK/direct workers explicitly simulated. Strict Rust 1.99
+lint, Rust 1.89 compatibility and generated-contract freshness pass. Review covers
+ownership, cancellation, revision timing, image lifetime, wire types and errors.
+Native NINA/native ASCOM camera publications and shared camera creation remain
+next; creation remains gated until all three frontends implement the interface.
+Coordination, recovery/resume, conformance, physical acceptance, documentation and
+the final merge audit remain open. This increment is local while preceding
+74d73a0 PR/push workflows 37619558594/37619553321 are still running; completed
+jobs have passed. Earlier green CI does not establish this increment's CI.
+
 Current increment: shared camera PulseGuide lifecycle and controlled IPC. A pulse
 retains its own identity, owner, source generation, activity and control lease
 after acknowledgement or caller loss. The same owner's exposure can share that
@@ -27,7 +47,8 @@ ten schema checks pass. The rebuilt host passes NINA 283/283 and full actual
 net48 x86/x64 checks with warnings denied, including real managed pulse commands,
 shared identities, sibling rejection and overlapping captures. All 34 private
 COM worker cases across both architectures and 26 registered parent cases pass.
-All three camera frontend publications/setup and all original gates remain open.
+Alpaca camera publication is implemented in the increment above. Native NINA and
+native ASCOM publication/setup and all original gates remain open.
 
 Current increment: Windows Camera imports reuse the existing x86/x64 isolated
 STA worker and shared process transport. Strict scalar properties/settings and
@@ -1795,6 +1816,9 @@ implemented. Dedicated focuser simulation is implemented. Broader simulation, ge
 setup and conformance remain required.
 Shared setup now enables Focuser, Rotator, FilterWheel and CoverCalibrator proxy creation, with other proxy classes
 gated until their interfaces are implemented and verified.
+Existing camera proxies now publish through Alpaca and their setup links open the
+shared hub editor. Camera creation remains gated pending native NINA/native ASCOM
+publication and common setup selection; it is not enabled by the Alpaca slice alone.
 
 Rotator controller increment: shared typed sessions and live property/command
 semantics are implemented with eleven private actor/Alpaca V3/V4 cases. Native

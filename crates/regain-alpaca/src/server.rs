@@ -302,6 +302,9 @@ impl Server {
         let devices = hub.devices().await?;
         for device in &devices {
             let conflict = match device.device_type {
+                regain_hub::config::DeviceType::Camera => {
+                    self.profiles.get(device.number as usize).is_ok()
+                }
                 regain_hub::config::DeviceType::Focuser => {
                     self.profiles.focusers.get(device.number as usize).is_some()
                 }
@@ -340,10 +343,7 @@ impl Server {
                 "/setup",
                 get(|| async { axum::response::Html(include_str!("../web/index.html")) }),
             )
-            .route(
-                "/setup/v1/camera/{slot}/setup",
-                get(|| async { axum::response::Html(include_str!("../web/index.html")) }),
-            )
+            .route("/setup/v1/camera/{slot}/setup", get(camera_page))
             .route(
                 "/style.css",
                 get(|| async {
@@ -669,25 +669,50 @@ async fn camera(
     params: Result<Params>,
     headers: HeaderMap,
 ) -> Response {
-    let Ok(device) = s.device(slot) else {
-        return StatusCode::NOT_FOUND.into_response();
-    };
     if member != member.to_lowercase() {
         return StatusCode::NOT_FOUND.into_response();
     }
+    if s.hub.is_some() {
+        match s.hub_devices().await {
+            Ok(devices) => {
+                if let Some(device) = devices.into_iter().find(|device| {
+                    device.device_type == regain_hub::config::DeviceType::Camera
+                        && device.number as usize == slot
+                }) {
+                    return hub_camera(s, device, member, method == Method::PUT, params, headers)
+                        .await;
+                }
+            }
+            Err(failure) => {
+                let transaction = params
+                    .as_ref()
+                    .ok()
+                    .and_then(|p| p.optional_id("ClientTransactionID").ok())
+                    .unwrap_or(0);
+                let server = s.next();
+                if method == Method::GET
+                    && matches!(member.as_str(), "imagearray" | "imagearrayvariant")
+                    && accepts_imagebytes(&headers)
+                {
+                    return image_error(
+                        error_code(&failure),
+                        &format!("{failure:#}"),
+                        transaction,
+                        server,
+                    );
+                }
+                return Json(self::failure(failure, transaction, server)).into_response();
+            }
+        }
+    }
+    let Ok(device) = s.device(slot) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
     let server = s.next();
     let mut client_transaction = 0;
     let image =
         method == Method::GET && matches!(member.as_str(), "imagearray" | "imagearrayvariant");
-    let binary = headers
-        .get("accept")
-        .and_then(|s| s.to_str().ok())
-        .is_some_and(|s| {
-            s.split(',').any(|m| {
-                let mut parts = m.trim().split(';');
-                parts.next() == Some("application/imagebytes") && !parts.any(|v| v.trim() == "q=0")
-            })
-        });
+    let binary = accepts_imagebytes(&headers);
     let result=async {
         let p=params?;let client=p.optional_id("ClientID")?;client_transaction=p.optional_id("ClientTransactionID")?;
         if image{return Ok(image_response(device.image(client)?,binary,client_transaction,server))}
@@ -713,6 +738,80 @@ async fn camera(
                 Json(failure(e, client_transaction, server)).into_response()
             }
         }
+    }
+}
+fn accepts_imagebytes(headers: &HeaderMap) -> bool {
+    headers
+        .get("accept")
+        .and_then(|s| s.to_str().ok())
+        .is_some_and(|s| {
+            s.split(',').any(|m| {
+                let mut parts = m.trim().split(';');
+                if !parts
+                    .next()
+                    .is_some_and(|mime| mime.trim().eq_ignore_ascii_case("application/imagebytes"))
+                {
+                    return false;
+                }
+                let mut quality = None;
+                for parameter in parts {
+                    if let Some((name, value)) = parameter.trim().split_once('=')
+                        && name.trim().eq_ignore_ascii_case("q")
+                    {
+                        if quality.is_some() {
+                            return false;
+                        }
+                        let Ok(value) = value.trim().parse::<f64>() else {
+                            return false;
+                        };
+                        if !value.is_finite() || !(0.0..=1.0).contains(&value) {
+                            return false;
+                        }
+                        quality = Some(value);
+                    }
+                }
+                quality.unwrap_or(1.0) > 0.0
+            })
+        })
+}
+async fn hub_camera(
+    s: Arc<Server>,
+    device: regain_hub::runtime::OutputDescriptor,
+    member: String,
+    put: bool,
+    params: Result<Params>,
+    headers: HeaderMap,
+) -> Response {
+    let server = s.next();
+    let mut transaction = 0;
+    let image = !put && matches!(member.as_str(), "imagearray" | "imagearrayvariant");
+    let binary = accepts_imagebytes(&headers);
+    let result = async {
+        let params = params?;
+        transaction = params.optional_id("ClientTransactionID")?;
+        let hub = s.hub.as_ref().unwrap();
+        if image {
+            return hub
+                .image(&device, &params, binary, transaction, server)
+                .await;
+        }
+        Ok(Json(envelope(
+            hub.request(&device, &member, put, &params).await?,
+            transaction,
+            server,
+        ))
+        .into_response())
+    }
+    .await;
+    match result {
+        Ok(response) => response,
+        Err(error) if image && binary => image_error(
+            error_code(&error),
+            &format!("{error:#}"),
+            transaction,
+            server,
+        ),
+        Err(error) => Json(failure(error, transaction, server)).into_response(),
     }
 }
 pub fn image_header(width: u32, height: u32, client: u32, server: u32, error: u32) -> Vec<u8> {
@@ -1057,6 +1156,12 @@ async fn rotator_discover_slot(
 async fn accessory_page() -> axum::response::Html<&'static str> {
     axum::response::Html(include_str!("../web/accessory.html"))
 }
+async fn camera_page(State(s): State<Arc<Server>>, Path(slot): Path<usize>) -> Response {
+    if let Some(page) = hub_device_page(&s, regain_hub::config::DeviceType::Camera, slot).await {
+        return page;
+    }
+    axum::response::Html(include_str!("../web/index.html")).into_response()
+}
 async fn hub_device_page(
     s: &Server,
     kind: regain_hub::config::DeviceType,
@@ -1388,6 +1493,24 @@ mod tests {
     use super::*;
     use http_body_util::BodyExt;
     use tower::ServiceExt;
+    #[test]
+    fn imagebytes_negotiation_respects_quality_zero_case_and_malformed_values() {
+        for (value, expected) in [
+            ("application/imagebytes", true),
+            ("application/json, Application/ImageBytes; Q = 0.25", true),
+            ("application/imagebytes;q=0", false),
+            ("application/imagebytes;q=0.000, application/json", false),
+            ("application/imagebytes;q=NaN", false),
+            ("application/imagebytes;q=2", false),
+            ("application/imagebytes;q=invalid", false),
+            ("application/imagebytes;q=0;q=1", false),
+            ("application/json", false),
+        ] {
+            let mut headers = HeaderMap::new();
+            headers.insert("Accept", value.parse().unwrap());
+            assert_eq!(accepts_imagebytes(&headers), expected, "{value}");
+        }
+    }
     fn runtime() -> Runtime {
         Runtime {
             directory: std::env::var_os("REGAIN_TEST_WORKERS")

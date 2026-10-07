@@ -2831,3 +2831,25 @@ their retirement handles. The explicit simulator models monotonic pulses when
 its shared canPulseGuide control is enabled (default false). A false capability
 leaves guiding commands/properties unsupported. Frontend camera publication and
 its conformance/acceptance remain required separately.
+
+### Alpaca camera publication
+
+Configured camera outputs now publish at their stable camera device numbers in
+the ordinary HTTP server. Every local camera slot reserves its number; conflicting
+hub configuration fails explicitly. Camera output setup opens the common hub
+editor. Shared creation remains gated pending native NINA/native ASCOM support.
+
+Connected outputs retain their host/client/revision-bound camera operation timing.
+Camera setters and Start/Stop/Abort/PulseGuide use cameraControl and return null
+through the standard API. Private acquisition/guide UUIDs remain in diagnostics.
+Completed images use the protected image stream and exact completed identity;
+HTTP reads never trigger another upstream exposure or image download.
+
+Four concurrent HTTP image readers share one 512-MiB frontend pixel budget.
+Prepared responses retain their immutable pixels, admission and accounting across
+later captures or control disconnect until body completion/cancellation. Binary
+ImageBytes and JSON preserve all supported numeric types and X/Y/plane ordering
+with bounded chunks. JSON rejects nonfinite pixels before success headers;
+ImageBytes preserves their bits. This publication does not add native recovery
+capabilities to Alpaca/COM/virtual proxy sources. Conformance and all other
+frontend/acceptance gates remain separate.

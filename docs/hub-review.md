@@ -3,6 +3,69 @@
 This records local review and tests for the single hub PR. Passing a foundation
 test does not imply that a frontend, transport, or hardware gate has passed.
 
+## 2026-10-07: Alpaca camera publication
+
+Reviewed the production HTTP router, publisher session lifecycle, existing camera
+supervisor, revision-bound cameraControl and protected finite image reader. The
+publisher reuses these paths instead of owning a camera actor, initiating image
+downloads upstream, adding an executable, or supplying proxy recovery promises.
+[Alpaca API reference section 8](https://ascom-standards.org/AlpacaDeveloper/ASCOMAlpacaAPIReference.html)
+defines the ImageBytes transaction fields, numeric IDs and X/Y/plane serial order.
+
+Camera discovery retains configured UUIDs and non-contiguous device numbers.
+Every existing local camera slot reserves its number, including unconfigured
+slots; collisions fail discovery/routing/setup without touching equipment.
+Shared hub setup handles existing camera outputs. Camera creation stays gated
+until native NINA/native ASCOM interfaces and selection are implemented.
+Synchronous and asynchronous connection share the existing bounded supervisor.
+Each connected camera retains negotiated timing bound to its control client and
+configuration revision. Setters and Start/Stop/Abort/PulseGuide use cameraControl;
+reads keep ordinary bounds. Standard writes return null, keeping operation UUIDs
+inside diagnostics. Lost acknowledgements retain the source/acquisition fence;
+the retired generation rejects sibling commands as disconnected without replay.
+
+Images are downloaded once from the completed host acquisition over a separate
+protected stream. Each HTTP reader pins its own immutable frontend frame and
+retains the shared pixel budget and admission permit until body completion/drop.
+Four readers bound working overhead; one 512-MiB frontend budget bounds retained
+pixels across clients. No JSON pixel Value tree is constructed. Binary and JSON
+chunks stay within 64 KiB. All nine numeric types, two-dimensional arrays and
+rank-three arrays (including one plane) preserve values/order. Nonfinite floating
+pixels remain lossless in binary and fail before JSON success headers. ImageBytes
+errors preserve client/server transactions. HTTP cancellation never aborts a
+capture or guide; a prepared body remains valid after control disconnect.
+
+Review corrected three fixture assumptions: a false guiding property can precede
+control retirement, independent HTTP responses have distinct server transaction
+IDs, and a source generation retired after a lost write returns disconnected on
+later commands while its uncertainty fence remains visible. The tests now verify
+these behaviors explicitly. ImageBytes negotiation also handles case-insensitive
+media types/quality keys and rejects zero, malformed or duplicate quality values.
+Rust 1.99 lint required the constant-size test iterator to use as_chunks_mut;
+the revised encoder tests pass without a lint suppression.
+
+Validation (explicit simulation/private endpoints only):
+
+- `REGAIN_TEST_WORKERS=target/debug cargo test -j2 -p regain-alpaca --locked`:
+  19 library, ten actual-host and 44 HTTP publication cases pass in
+  `artifacts/hub-camera-publish-final-rust-4.log`. The six new HTTP cases include
+  production SDK and direct simulations, shared capture/guiding, client loss,
+  pinned frames, reader capacity, slot collision and uncertain writes.
+- The three image tests pass again after the lint-only test edit in
+  `artifacts/hub-camera-publish-encoder-final.log`. A large UInt64 RGB image
+  crosses chunk boundaries and roundtrips through the production JSON decoder.
+- Strict Rust 1.99 all-targets Clippy passes in
+  `artifacts/hub-camera-publish-clippy-final-2.log`; Rust 1.89 all-targets check
+  passes in `artifacts/hub-camera-publish-msrv-final-2.log`.
+- Generated contract freshness passes in
+  `artifacts/hub-camera-publish-contract.log`; formatting and diff checks pass.
+
+The new code is local while the preceding 74d73a0 PR/push CI runs
+37619558594/37619553321 remain active. All completed jobs passed at this check.
+Native NINA/native ASCOM camera publication/setup, coordination, recovery/resume,
+conformance, interactive/physical acceptance, README/site work and final audit
+remain required. No hardware or installed vendor driver was activated.
+
 ## 2026-10-07: retained camera pulse guiding
 
 Reviewed [ASCOM Camera PulseGuide and IsPulseGuiding](https://ascom-standards.org/newdocs/camera.html#Camera.PulseGuide):

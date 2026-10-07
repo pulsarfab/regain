@@ -1,4 +1,6 @@
 //! Real private endpoint and production HTTP router, using explicit simulation.
+#[path = "support/hub_camera_output.rs"]
+mod camera;
 #[path = "support/hub_covercalibrator_output.rs"]
 mod covercalibrator;
 #[path = "support/hub_filterwheel_output.rs"]
@@ -919,7 +921,12 @@ impl Fixture {
                     .is_file()
             );
             NativeRuntime {
-                cameras: None,
+                cameras: Some(regain_hub::camera::runtime::NativeCameraRuntime {
+                    sdk: "unused-explicit-simulation".into(),
+                    sdk_simulation: Some(json!({"instant":false})),
+                    resources: Default::default(),
+                    diagnostic: Arc::new(|_, _, _| {}),
+                }),
                 directory,
                 simulate: true,
                 references: Some(

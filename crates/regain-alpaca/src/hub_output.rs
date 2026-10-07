@@ -23,6 +23,8 @@ use std::{
 };
 use tokio::sync::{Mutex as AsyncMutex, OnceCell};
 use uuid::Uuid;
+#[path = "hub_camera.rs"]
+mod camera;
 
 // Leave room within the host's 32-connection bound for native frontends/setup.
 const MAX_CLIENTS: usize = 24;
@@ -30,6 +32,7 @@ struct Session {
     client: OnceCell<Client>,
     gate: Arc<AsyncMutex<()>>,
     outputs: Mutex<BTreeSet<Uuid>>,
+    camera_timings: Mutex<HashMap<Uuid, regain_hub::camera::ipc_timing::CameraOperationTiming>>,
     retired: AtomicBool,
     progress: Mutex<Option<ConnectionProgress>>,
 }
@@ -43,12 +46,14 @@ impl Session {
             client: OnceCell::new(),
             gate: Arc::new(AsyncMutex::new(())),
             outputs: Mutex::new(BTreeSet::new()),
+            camera_timings: Mutex::new(HashMap::new()),
             retired: AtomicBool::new(false),
             progress: Mutex::new(None),
         }
     }
     fn close(&self) {
         self.retired.store(true, Ordering::SeqCst);
+        self.camera_timings.lock().unwrap().clear();
         if let Some(client) = self.client.get() {
             client.close();
         }
@@ -70,6 +75,8 @@ pub struct Publisher {
     setup_client: Mutex<Client>,
     setup_gate: AsyncMutex<()>,
     state: Mutex<State>,
+    image_budget: regain_hub::camera::image::ImageBudget,
+    image_readers: Arc<tokio::sync::Semaphore>,
 }
 impl Publisher {
     /// Setup requests retain the host's structured validation and uncertainty.
@@ -155,6 +162,10 @@ impl Publisher {
                 closed: false,
                 clients: HashMap::new(),
             }),
+            image_budget: regain_hub::camera::image::ImageBudget::new(
+                regain_hub::camera::image::MAX_IMAGE_BYTES,
+            )?,
+            image_readers: Arc::new(tokio::sync::Semaphore::new(4)),
         }))
     }
     pub fn close(&self) {
@@ -203,7 +214,7 @@ impl Publisher {
                     .capabilities
                     .iter()
                     .any(|c| c == "coverCalibratorOutputs"),
-                _ => false,
+                DeviceType::Camera => camera::supported(&self.catalog.hello().capabilities),
             }),
             error(
                 0x400,
@@ -265,6 +276,7 @@ impl Publisher {
         output: Uuid,
         on: bool,
         asynchronous: bool,
+        camera: bool,
     ) -> Result<()> {
         // Supervise accepted connection changes through HTTP caller cancellation.
         // No global lock is held across I/O; other clients and cached safety run.
@@ -335,22 +347,36 @@ impl Publisher {
                     .capabilities
                     .iter()
                     .any(|capability| capability == "asyncOutputConnection");
-                client
-                    .request(if modern {
-                        // The HTTP wrapper covers its own pipe initialization;
-                        // the host owns the operation and its retained result.
-                        Command::ChangeConnection {
-                            output,
-                            connected: on,
-                            asynchronous: false,
-                        }
-                    } else if on {
-                        Command::Connect { output }
-                    } else {
-                        Command::Disconnect { output }
-                    })
-                    .await
-                    .map_err(translate)?;
+                let command = if modern {
+                    // The HTTP wrapper covers its own pipe initialization;
+                    // the host owns the operation and its retained result.
+                    Command::ChangeConnection {
+                        output,
+                        connected: on,
+                        asynchronous: false,
+                    }
+                } else if on {
+                    Command::Connect { output }
+                } else {
+                    Command::Disconnect { output }
+                };
+                if camera && on {
+                    let timing = client.camera_timing(output).await.map_err(translate)?;
+                    client
+                        .request_camera(&timing, command)
+                        .await
+                        .map_err(translate)?;
+                    session
+                        .camera_timings
+                        .lock()
+                        .unwrap()
+                        .insert(output, timing);
+                } else {
+                    client.request(command).await.map_err(translate)?;
+                    if camera {
+                        session.camera_timings.lock().unwrap().remove(&output);
+                    }
+                }
                 let mut outputs = session.outputs.lock().unwrap();
                 if on {
                     outputs.insert(output);
@@ -388,8 +414,14 @@ impl Publisher {
                 unsupported(member)
             );
             if put {
-                self.connection(id, device.id, member == "connect", true)
-                    .await?;
+                self.connection(
+                    id,
+                    device.id,
+                    member == "connect",
+                    true,
+                    device.device_type == DeviceType::Camera,
+                )
+                .await?;
                 return Ok(Value::Null);
             }
             let Some(session) = self.existing(id) else {
@@ -407,8 +439,14 @@ impl Publisher {
         }
         if member == "connected" {
             if put {
-                self.connection(id, device.id, params.boolean("Connected")?, false)
-                    .await?;
+                self.connection(
+                    id,
+                    device.id,
+                    params.boolean("Connected")?,
+                    false,
+                    device.device_type == DeviceType::Camera,
+                )
+                .await?;
                 return Ok(Value::Null);
             }
             let Some(session) = self.existing(id) else {
@@ -474,6 +512,8 @@ impl Publisher {
                         DeviceType::FilterWheel if modern => 3,
                         DeviceType::FilterWheel => 2,
                         DeviceType::CoverCalibrator if modern => 2,
+                        DeviceType::Camera if modern => 4,
+                        DeviceType::Camera => 3,
                         _ => 1,
                     }));
                 }
@@ -574,7 +614,26 @@ impl Publisher {
                 "This member requires an updated shared hub host",
             ));
         }
-        let value = client.request(command).await.map_err(translate)?;
+        let value = if device.device_type == DeviceType::Camera && put {
+            let timing = session
+                .camera_timings
+                .lock()
+                .unwrap()
+                .get(&device.id)
+                .cloned()
+                .ok_or_else(|| error(0x407, "Connect this camera output first"))?;
+            client
+                .request_camera(&timing, command)
+                .await
+                .map_err(translate)?
+        } else {
+            client.request(command).await.map_err(translate)?
+        };
+        if device.device_type == DeviceType::Camera && put {
+            // Acquisition/guide identities belong to private diagnostics. The
+            // standard camera methods acknowledge completion without a value.
+            return Ok(Value::Null);
+        }
         if device.device_type == DeviceType::ObservingConditions
             && !put
             && serde_json::from_value::<regain_hub::config::WeatherMetric>(json!(member)).is_ok()
@@ -649,7 +708,7 @@ pub fn class_name(kind: DeviceType) -> &'static str {
         DeviceType::Rotator => "Rotator",
         DeviceType::FilterWheel => "FilterWheel",
         DeviceType::CoverCalibrator => "CoverCalibrator",
-        _ => "Unsupported",
+        DeviceType::Camera => "Camera",
     }
 }
 pub(crate) fn configured_device(device: &OutputDescriptor) -> Value {
@@ -667,6 +726,9 @@ fn channel(params: &Params) -> Result<u32> {
 }
 fn operation(device: &OutputDescriptor, member: &str, put: bool, p: &Params) -> Result<Command> {
     let output = device.id;
+    if device.device_type == DeviceType::Camera && member != "devicestate" {
+        return camera::operation(output, member, put, p);
+    }
     if put {
         let property = match (device.device_type, member) {
             (DeviceType::CoverCalibrator, "opencover") => Put::OpenCover {},
