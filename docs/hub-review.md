@@ -3759,3 +3759,47 @@ verified. Every original later gate remains required.
 Evidence: artifacts/hub-panel-com-{compile,private,private-confirmed,rust,clippy,
 msrv,contract,node,schema,host,nina,net48}.log. Previous panel CI remains live;
 keep reviewed native/import increments local until that preceding run finishes.
+
+### Virtual panel input review (2026-10-06, local increment)
+
+Reviewed reuse of the existing validated composition graph, supervised bounded
+typed connection, generation-fenced sessions, IPC command mappings and source
+leases. Panels use that path with six strict properties and five commands. Their
+cached-sample accessor delegates to the existing panel cache validator; polling
+forwards values, errors and original dependency ages without leaf I/O. Int32
+parameter admission is now shared with wheel/focuser forwarding. Virtual panel
+metadata publishes V2 while the leaf retains V1/V2 ownership and completion rules.
+
+Six actual two-layer loopback cases cover legacy/modern states, independent
+completion, logical On(0), live brightness bounds, cache aging without extra leaf
+requests, partial errors/recovery, slow/cancelled connections, lost preflight
+generations and applied malformed acknowledgements. A seventh case uses the
+production OFP2 worker in explicit simulation through two virtual layers and
+checks shared illumination, cover/Halt status, simulation provenance and leases.
+All 25 panel and four focused native panel cases pass.
+
+Initial failures were fixture assumptions. A numeric zero maximum is valid to the
+scalar sampler but rejected by the typed cache validator; assertions now check the
+raw leaf sample and dependent errors in virtual layers. Captured snapshots prove
+an inner source can become idle after retiring its last lease, clearing its local
+latch under existing disconnect rules. The corrected uncertain-command assertion
+requires the outer owner and every still-owned source to remain fenced, plus one
+applied actuator command through shutdown. No production recovery or timing rules
+were changed. The first evidence compile also caught use of id instead of the
+actual SourceSnapshot.source field. Failure logs are retained.
+
+Final confirmation: all 25 panel and 23 native cases and full Rust hub/Alpaca
+suites pass, along with strict Clippy, Rust 1.89 all targets, generated contract
+freshness, Node/six schema checks, rebuilt-host warnings-denied NINA 223/223 and
+real net48 x86/x64 clients. A concurrent host build encountered a Windows lock on
+the test-owned executable; the original log is retained. After the actual Rust
+suite completed, sequential host rebuild and frontend checks passed. No process
+was killed, deadline changed or production retry added for that build collision.
+
+Evidence: artifacts/hub-panel-virtual-{check,focused,focused-confirmed,evidence,
+evidence-confirmed,native-focused,rust,clippy,msrv,contract,node,schema,host,
+host-confirmed,nina,net48}.log. No hardware or installed vendor driver was used.
+Preceding 36a5558 PR/push CI 37550182065/37550174221 now both pass all eight jobs,
+including Windows packaging/installer acceptance. Reviewed native/import/virtual
+increments may now be pushed; their own CI is still required. Dedicated panel
+simulation/shared creation and every original later gate remain required.

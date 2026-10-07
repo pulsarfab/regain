@@ -1520,6 +1520,13 @@ async fn native_panel_controller_shares_motion_and_zero_on_without_disconnect_ac
 
 #[tokio::test]
 async fn native_panel_runtime_uses_one_worker_for_two_outputs_and_cached_independent_status() {
+    native_panel_runtime(false).await;
+}
+#[tokio::test]
+async fn nested_native_panel_preserves_explicit_simulation_shared_light_cover_and_leases() {
+    native_panel_runtime(true).await;
+}
+async fn native_panel_runtime(nested: bool) {
     use regain_hub::{
         config::{DeviceType, HubConfig, OutputConfig, VirtualDevice},
         covercalibrator::CoverCalibratorProperty as Property,
@@ -1544,6 +1551,38 @@ async fn native_panel_runtime_uses_one_worker_for_two_outputs_and_cached_indepen
             },
         });
     }
+    if nested {
+        let mut previous = config.outputs[0].id;
+        for number in [42, 91] {
+            let source = Uuid::new_v4();
+            config.sources.push(SourceConfig {
+                id: source,
+                label: "Nested native panel input".into(),
+                polling: source_config.polling.clone(),
+                backend: SourceBackend::Virtual { output: previous },
+            });
+            previous = Uuid::new_v4();
+            config.outputs.push(OutputConfig {
+                id: previous,
+                number,
+                label: "Nested native panel output".into(),
+                device: VirtualDevice::Proxy {
+                    source,
+                    device_type: DeviceType::CoverCalibrator,
+                },
+            });
+        }
+    }
+    let selected = if nested {
+        config.outputs.last().unwrap().id
+    } else {
+        config.outputs[1].id
+    };
+    let selected_source = if nested {
+        config.sources.last().unwrap().id
+    } else {
+        source_config.id
+    };
     let runtime = HubRuntime::build(
         config.clone(),
         &native,
@@ -1556,7 +1595,7 @@ async fn native_panel_runtime_uses_one_worker_for_two_outputs_and_cached_indepen
     let first = runtime.client();
     let second = runtime.client();
     first.connect(config.outputs[0].id).await.unwrap();
-    second.connect(config.outputs[1].id).await.unwrap();
+    second.connect(selected).await.unwrap();
     assert_eq!(snapshot().lease_count, 2);
     assert!(snapshot().simulated);
     first
@@ -1568,18 +1607,24 @@ async fn native_panel_runtime_uses_one_worker_for_two_outputs_and_cached_indepen
         .await
         .unwrap();
     tokio::time::timeout(Duration::from_secs(3), async {
-        while snapshot().values.get("brightness") != Some(&json!(17)) {
+        while runtime
+            .source_snapshot(selected_source)
+            .unwrap()
+            .values
+            .get("brightness")
+            != Some(&json!(17))
+        {
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
     })
     .await
     .unwrap();
-    let status = runtime.output_status(config.outputs[1].id, 0, 32).unwrap();
+    let status = runtime.output_status(selected, 0, 32).unwrap();
     assert!(status.simulated);
     let Diagnostics::CoverCalibrator { health, properties } = status.diagnostics else {
         panic!()
     };
-    assert_eq!(health.source, source_config.id);
+    assert_eq!(health.source, selected_source);
     assert_eq!(properties.len(), 6);
     assert!(
         properties
@@ -1594,7 +1639,7 @@ async fn native_panel_runtime_uses_one_worker_for_two_outputs_and_cached_indepen
     })
     .await
     .unwrap();
-    let connection = second.connection(config.outputs[1].id).unwrap();
+    let connection = second.connection(selected).unwrap();
     assert_eq!(
         connection
             .covercalibrator()
@@ -1613,6 +1658,25 @@ async fn native_panel_runtime_uses_one_worker_for_two_outputs_and_cached_indepen
             .unwrap(),
         3
     );
+    if nested {
+        let panel = connection.covercalibrator().unwrap();
+        panel.calibrator_on(0).await.unwrap();
+        assert_eq!(
+            panel.property(Property::CalibratorState).await.unwrap(),
+            json!(3)
+        );
+        assert_eq!(
+            panel.property(Property::Brightness).await.unwrap(),
+            json!(0)
+        );
+        panel.open_cover().await.unwrap();
+        panel.halt_cover().await.unwrap();
+        assert_eq!(
+            panel.property(Property::CoverMoving).await.unwrap(),
+            json!(false)
+        );
+        assert!(runtime.source_snapshots().iter().all(|s| s.simulated));
+    }
     drop(connection);
     second.close();
     runtime.shutdown().await.unwrap();

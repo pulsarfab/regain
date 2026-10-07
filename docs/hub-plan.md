@@ -20,7 +20,7 @@ are pushed at a586c76; all eight jobs pass in both PR/push CI
 37544747351/37544741219. Wheel simulation/shared creation are pushed at 5d0ed34;
 Both PR/push CI 37547703480/37547695748 pass all eight jobs, including Windows
 installer acceptance. Reviewed panel controller/runtime/HTTP increments are
-pushed at 36a5558; PR/push CI 37550182065/37550174221 is running. Private
+pushed at 36a5558; PR/push CI 37550182065/37550174221 both pass all eight jobs. Private
 registered activation does not establish interactive/hardware acceptance.
 
 Current position: milestones 0 and 1 are complete. The scalar source/output paths
@@ -39,8 +39,11 @@ with dynamic identities, legacy V1/modern V2 inputs and production OFP2 simulati
 Native NINA/ASCOM panel publication is implemented locally, using shared protocol,
 selection/setup and registration paths. Final validation is recorded below.
 Panel Windows COM imports are implemented locally through the existing STA worker;
-30 private worker and 19 registered parent cases pass. Virtual inputs, dedicated panel
-simulation/shared setup and camera proxies remain.
+30 private worker and 19 registered parent cases pass. Virtual panel inputs are
+implemented locally; six loopback and a production OFP2 simulation case pass.
+Full virtual-panel Rust, strict checks, NINA 223/223 and real net48 x86/x64 pass.
+Dedicated panel simulation/shared
+setup and camera proxies remain.
 Milestone 5's coordinated groups are not yet
 implemented. PR #21 stays draft until the full plan passes.
 
@@ -56,6 +59,21 @@ schema checks, rebuilt-host NINA 223/223 and real net48 x86/x64 clients pass.
 Panel COM choices stay gated until virtual inputs, simulation and shared creation
 are verified. Next: virtual panels, then dedicated simulation/shared creation and
 all remaining camera, coordination and original acceptance/final gates.
+
+Virtual panel checkpoint: the existing bounded typed composition path now supports
+six properties and five commands. Cached polling preserves dependency ages and
+per-property errors without extra leaf I/O. Six two-layer loopback cases cover
+V1/V2, slow/cancelled connection, unknown completion, lost generations/replies,
+On(0), shared ownership and partial recovery. Production OFP2 explicit simulation
+also passes through two layers. All 25 panel and 23 native cases, full Rust
+hub/Alpaca, strict Clippy, Rust 1.89, contract freshness, Node/six schema checks,
+rebuilt-host NINA 223/223 and real net48 x86/x64 clients pass. Review evidence
+records corrected fixture assumptions about typed versus scalar validation and
+idle inner leases. The host rebuild initially encountered a test-owned Windows
+executable lock; after the running Rust suite finished, sequential rebuild and
+frontend confirmation passed. No equipment or installed vendor driver was used.
+Next: dedicated panel simulation and shared creation, then all original remaining
+camera, coordination, recovery, documentation and final acceptance gates.
 
 Filter-wheel controller increment: shared typed sessions, live ordered names and
 signed offsets, slot bounds, nonblocking Position writes and moving `-1` are

@@ -655,6 +655,9 @@ async fn concurrent_commands_share_control_and_cancelled_dispatch_retains_uncert
 }
 
 async fn alpaca_panel(version: u16, lose_ack: bool) {
+    alpaca_panel_case(version, lose_ack, None).await;
+}
+async fn alpaca_panel_case(version: u16, lose_ack: bool, nested: Option<panel_virtual::Case>) {
     use axum::{
         Json, Router,
         body::to_bytes,
@@ -739,13 +742,26 @@ async fn alpaca_panel(version: u16, lose_ack: bool) {
             Value::Null
         } else {
             match member.as_str() {
-                "interfaceversion" => json!(state.version),
+                "interfaceversion" => {
+                    if state.device.pending.swap(false, SeqCst) {
+                        tokio::time::sleep(Duration::from_millis(700)).await;
+                    }
+                    json!(state.version)
+                }
                 "connected" => json!(state.connected.load(SeqCst)),
                 "connecting" => {
                     assert_eq!(state.version, 2);
                     json!(false)
                 }
                 _ => {
+                    let hang = state.device.hang_read.lock().unwrap().as_ref() == Some(&member);
+                    if hang {
+                        tokio::time::sleep(Duration::from_secs(2)).await;
+                    }
+                    if let Some(error) = state.device.errors.lock().unwrap().get(&member) {
+                        return Json(json!({"ErrorNumber":error.upstream_code.unwrap_or(0x402),
+                            "ClientTransactionID":parameters["ClientTransactionID"].as_str().unwrap().parse::<u32>().unwrap()}));
+                    }
                     if state.version == 1
                         && matches!(member.as_str(), "covermoving" | "calibratorchanging")
                     {
@@ -793,6 +809,21 @@ async fn alpaca_panel(version: u16, lose_ack: bool) {
             credential_reference: None,
         },
     };
+    if let Some(case) = nested {
+        panel_virtual::nested(
+            config,
+            fixture.device,
+            fixture.connected,
+            fixture.requests,
+            version,
+            lose_ack,
+            case,
+        )
+        .await;
+        server.abort();
+        assert!(server.await.unwrap_err().is_cancelled());
+        return;
+    }
     use regain_hub::{
         config::{HubConfig, OutputConfig, VirtualDevice},
         diagnostics::{Diagnostics, Reading},
@@ -959,3 +990,6 @@ async fn real_alpaca_lost_ack_applies_once_and_never_replays_or_darkens() {
 
 #[path = "support/covercalibrator_runtime.rs"]
 mod panel_runtime;
+
+#[path = "support/covercalibrator_virtual.rs"]
+mod panel_virtual;

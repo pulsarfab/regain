@@ -3,6 +3,7 @@
 use crate::{
     alpaca::SampleRequest,
     config::{DeviceType, WeatherMetric},
+    covercalibrator::{CoverCalibratorProperty, CoverCalibratorValue},
     filterwheel::{FilterWheelProperty, FilterWheelValue},
     focuser::{FocuserProperty, FocuserValue},
     ipc::{Get, Put},
@@ -30,7 +31,10 @@ impl VirtualBackend {
     fn typed_accessory(&self) -> bool {
         matches!(
             self.kind,
-            DeviceType::Focuser | DeviceType::Rotator | DeviceType::FilterWheel
+            DeviceType::Focuser
+                | DeviceType::Rotator
+                | DeviceType::FilterWheel
+                | DeviceType::CoverCalibrator
         )
     }
     pub(crate) fn new(
@@ -128,14 +132,20 @@ fn filterwheel_property(member: &str) -> Result<FilterWheelProperty, SourceError
         .find(|property| property.member() == member)
         .ok_or_else(unsupported)
 }
-fn position(args: &Values) -> Result<i32, SourceError> {
+fn panel_property(member: &str) -> Result<CoverCalibratorProperty, SourceError> {
+    CoverCalibratorProperty::ALL
+        .into_iter()
+        .find(|property| property.member() == member)
+        .ok_or_else(unsupported)
+}
+fn integer(args: &Values, key: &str) -> Result<i32, SourceError> {
     if args.len() != 1 {
-        return Err(invalid("Expected only Position"));
+        return Err(invalid("Expected one integer parameter"));
     }
-    args.get("Position")
+    args.get(key)
         .and_then(Value::as_i64)
         .and_then(|value| i32::try_from(value).ok())
-        .ok_or_else(|| invalid("Expected Int32 Position"))
+        .ok_or_else(|| invalid("Expected Int32 parameter"))
 }
 fn number(args: &Values, key: &str) -> Result<f64, SourceError> {
     if args.len() != 1 {
@@ -207,7 +217,7 @@ impl Backend for VirtualBackend {
             if member == "interfaceversion" {
                 no_args(&args)?;
                 return Ok(json!(match self.kind {
-                    DeviceType::ObservingConditions => 2,
+                    DeviceType::ObservingConditions | DeviceType::CoverCalibrator => 2,
                     DeviceType::Focuser | DeviceType::Rotator => 4,
                     _ => 3,
                 }));
@@ -286,6 +296,12 @@ impl Backend for VirtualBackend {
                         property: filterwheel_property(&member)?,
                     }
                 }
+                DeviceType::CoverCalibrator => {
+                    no_args(&args)?;
+                    Get::CoverCalibrator {
+                        property: panel_property(&member)?,
+                    }
+                }
                 _ => return Err(unsupported()),
             };
             connection.get(get).await
@@ -323,11 +339,30 @@ impl Backend for VirtualBackend {
                     }
                 }
                 (DeviceType::Focuser, "move") => Put::MoveFocuser {
-                    position: position(&args)?,
+                    position: integer(&args, "Position")?,
                 },
                 (DeviceType::FilterWheel, "position") => Put::MoveFilterWheel {
-                    position: position(&args)?,
+                    position: integer(&args, "Position")?,
                 },
+                (DeviceType::CoverCalibrator, "calibratoron") => Put::CalibratorOn {
+                    brightness: integer(&args, "Brightness")?,
+                },
+                (DeviceType::CoverCalibrator, "opencover") => {
+                    no_args(&args)?;
+                    Put::OpenCover {}
+                }
+                (DeviceType::CoverCalibrator, "closecover") => {
+                    no_args(&args)?;
+                    Put::CloseCover {}
+                }
+                (DeviceType::CoverCalibrator, "haltcover") => {
+                    no_args(&args)?;
+                    Put::HaltCover {}
+                }
+                (DeviceType::CoverCalibrator, "calibratoroff") => {
+                    no_args(&args)?;
+                    Put::CalibratorOff {}
+                }
                 (DeviceType::Focuser, "halt") => {
                     no_args(&args)?;
                     Put::HaltFocuser {}
@@ -441,7 +476,7 @@ impl Backend for VirtualBackend {
                                 };
                                 (value, sample.age_seconds)
                             })
-                    } else {
+                    } else if self.kind == DeviceType::FilterWheel {
                         no_args(&request.parameters)
                             .and_then(|()| filterwheel_property(&request.member))
                             .and_then(|property| {
@@ -454,6 +489,21 @@ impl Backend for VirtualBackend {
                                     FilterWheelValue::Strings { value } => json!(value),
                                     FilterWheelValue::Integers { value } => json!(value),
                                     FilterWheelValue::Integer { value } => json!(value),
+                                };
+                                (value, sample.age_seconds)
+                            })
+                    } else {
+                        no_args(&request.parameters)
+                            .and_then(|()| panel_property(&request.member))
+                            .and_then(|property| {
+                                connection
+                                    .covercalibrator()?
+                                    .cached_sample(property, self.clock.now())
+                            })
+                            .map(|sample| {
+                                let value = match sample.value {
+                                    CoverCalibratorValue::Boolean { value } => json!(value),
+                                    CoverCalibratorValue::Integer { value } => json!(value),
                                 };
                                 (value, sample.age_seconds)
                             })

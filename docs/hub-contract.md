@@ -1908,9 +1908,9 @@ explicit simulator preserves that distinction. Native Open/Close rejects a known
 ongoing movement before sending another actuator command; Halt and light commands
 remain independently available. Imported drivers keep their own motion policies.
 
-The runtime/IPC/cache increment below extends this controller. Publication,
-COM imports, virtual inputs, dedicated simulation controls and shared creation
-remain required before opening the panel setup gate.
+The runtime, publications and input adapters below extend this controller.
+Dedicated simulation controls and shared creation remain required before opening
+the panel setup gate.
 Reference: [ASCOM CoverCalibrator](https://ascom-standards.org/newdocs/covercalibrator.html),
 with the installed ASCOM 7.1.2 enum/interface declarations and captured
 [OFP2 protocol evidence](ofp2.md).
@@ -2001,8 +2001,8 @@ shares the same panel with a native NINA client; stopping the publisher releases
 only its leases and sends no actuator command. Native chooser enumeration,
 registration and metadata are inert. Manual private COM exports pass both server
 and client bitnesses; cold/production registration and interactive acceptance
-still require their separate gates. Virtual panel inputs, dedicated simulation
-and shared creation remain pending.
+still require their separate gates. Dedicated panel simulation and shared
+creation remain pending; virtual inputs are described below.
 
 Interface references: installed NINA 3.2 IFlatDevice declarations and
 [NINA's cover/calibrator adapter](https://github.com/isbeorn/nina/blob/develop/NINA.Equipment/Equipment/MyFlatDevice/AscomCoverCalibrator.cs),
@@ -2034,3 +2034,26 @@ move an existing typed session to a new source generation.
 These paths are exercised through fail-if-present private registry fixtures,
 never installed vendor drivers. Generated panel COM choices remain gated until
 dedicated simulation and shared panel creation are implemented and verified.
+
+### Virtual panel inputs
+
+Panel outputs compose through the existing validated graph and bounded typed
+connection path. A virtual source publishes V2 reads and the same five commands;
+the leaf source's controller owns presence, brightness limits and V1 completion
+conversion. Existing sessions remain bound to their admitted generation, including
+preflight failures before actuator dispatch. Integer argument admission is shared
+with focuser and wheel forwarding; no extra executable or transport is added.
+
+Polling forwards cached typed samples with their original dependency ages and
+per-property errors. It never performs a fresh leaf read, fabricates a completion
+flag or renews a sample age. Invalid maxima withhold dependent brightness while
+unrelated cover/light state remains available. Scalar transport validation and
+typed property validation retain their separate responsibilities.
+
+Applied uncertain commands fence all sources that still have owners and every
+existing sibling session, without replay or automatic actuator cleanup. Retiring
+an inner transport can release its last lease and leave that source idle under the
+normal disconnect rules; this does not clear an active outer owner's fence.
+Explicit reconnect creates a new session rather than retargeting an old one.
+Dedicated panel simulation and shared panel creation remain required before
+opening their setup capabilities.
