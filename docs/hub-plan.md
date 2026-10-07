@@ -42,9 +42,11 @@ activation and zero acknowledgements. Timeout diagnostics report process/reader
 state and fixture call names. All 30 worker cases in x86/x64 and all 19 registered
 parent cases pass locally. No production timeout or worker lifecycle is changed.
 Both workflows are terminal: PR CI has that Windows failure and seven successes;
-push CI 37609727056 passes all eight jobs. The reviewed virtual camera increment
-f577dbf and framing boundary checks 3aa1273 can now be pushed to the same draft PR.
-Camera COM imports are in local implementation/testing and remain unshipped.
+push CI 37609727056 passes all eight jobs. Virtual camera f577dbf and framing
+boundary checks 3aa1273 are pushed through b275ce7 to the same draft PR #21.
+New PR/push runs 37613322368/37613316420 each pass seven jobs; Windows remains
+active in both. Reviewed camera COM increment f75684a is committed locally and
+not included in that CI head. Keep it local until both workflows are terminal.
 
 Current increment: virtual Camera inputs compose through the existing source
 factory, internal client leases, incremental connection admission and generation
