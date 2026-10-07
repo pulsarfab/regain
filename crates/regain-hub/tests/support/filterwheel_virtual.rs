@@ -252,14 +252,13 @@ pub(super) async fn nested(
         fresh.connect(output).await.unwrap();
         let fresh_connection = fresh.connection(output).unwrap();
         assert_ne!(fresh_connection.filterwheel().unwrap().generation(), old);
-        assert_eq!(
-            fresh_connection
-                .filterwheel()
-                .unwrap()
-                .position()
-                .await
-                .unwrap(),
-            0
+        let position = fresh_connection.filterwheel().unwrap().position().await;
+        assert!(
+            matches!(position, Ok(0)),
+            "Fresh nested wheel read failed: {position:?}; sources={:?}; private requests={:?}; writes={:?}",
+            hub.source_snapshots(),
+            requests.lock().unwrap(),
+            device.writes.lock().unwrap()
         );
         assert_eq!(
             aw.move_to(1).await.unwrap_err().kind,

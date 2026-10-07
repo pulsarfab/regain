@@ -75,7 +75,15 @@ public sealed class HubClientTests
             }
             return HubWire.Parse(await HubWire.ReadFrame(server, HubWire.MaxFrame, timeout ?? TimeSpan.FromSeconds(2), deadline.Token));
         }
-        internal async Task Raw(byte[] bytes) => await HubWire.WriteFrame(server, bytes, TimeSpan.FromSeconds(2), CancellationToken.None);
+        internal async Task Raw(byte[] bytes)
+        {
+            var elapsed = Stopwatch.StartNew();
+            try { await HubWire.WriteFrame(server, bytes, TimeSpan.FromSeconds(2), CancellationToken.None); }
+            catch (HubException error) {
+                throw new IOException($"Private peer reply failed: bytes={bytes.Length}, elapsedMs={elapsed.ElapsedMilliseconds}, " +
+                    $"clientConnected={Client?.IsConnected}, failure={error.Failure}; frame={Encoding.UTF8.GetString(bytes)}",error);
+            }
+        }
         internal Task Reply(ulong id, object? result) => Raw(JsonSerializer.SerializeToUtf8Bytes(new { version = 1, id, result }));
         internal async Task Partial() { await server.WriteAsync(new byte[] { 42 }); await server.FlushAsync(); }
         internal async Task Header(uint length)

@@ -144,11 +144,14 @@ internal class HubAccessoryServer : IDisposable
                     case "disconnect" when kind == "filterwheel" || kind == "covercalibrator" && version >= 2: Volatile.Write(ref connected,0); break;
                     case "opencover": case "closecover": case "haltcover": case "calibratoron": case "calibratoroff":
                         if (kind != "covercalibrator" || args.Count != (member == "calibratoron" ? 3 : 2)) throw new InvalidOperationException("Invalid panel command");
-                        PanelCommands.Enqueue(member);
                         if (member == "opencover" || member == "closecover") { Values["coverstate"] = 2; Values["covermoving"] = true; }
                         else if (member == "haltcover") { Values["coverstate"] = 4; Values["covermoving"] = false; }
                         else if (member == "calibratoron") { Values["brightness"] = int.Parse(args["Brightness"]); Values["calibratorstate"] = 2; Values["calibratorchanging"] = true; }
                         else { Values["brightness"] = 0; Values["calibratorstate"] = 1; Values["calibratorchanging"] = false; }
+                        // Tests advance physical completion after observing this
+                        // marker. Publish it only after the start state exists,
+                        // or the handler can overwrite their completed state.
+                        PanelCommands.Enqueue(member);
                         if (LoseMoveReply) await Task.Delay(1000,stopping.Token).ConfigureAwait(false);
                         break;
                     case "position" when kind == "filterwheel":

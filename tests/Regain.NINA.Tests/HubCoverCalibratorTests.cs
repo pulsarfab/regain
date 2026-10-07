@@ -64,7 +64,20 @@ public sealed partial class HubNativeTests
             await Eventually(async () => (await host.Command(new {op="sourceStatus",source=source.SourceId})).GetProperty("leaseCount").GetInt32()==1);
             Assert.True(device.Connected); Assert.True(device.LightOn);
             Assert.Equal(new[]{"calibratoron","calibratoron"},source.PanelCommands.ToArray());
-        } catch (Exception error) { primaryFailure=error; throw; }
+        } catch (Exception error) {
+            primaryFailure=error;
+            // Preserve native structured errors as well as HTTP envelopes. Take
+            // the private trace before diagnostic IPC can append more requests.
+            var trace = source.RequestTrace;
+            var values = JsonSerializer.Serialize(source.Values);
+            string state;
+            try { state = (await host.Command(new {op="sourceStatus",source=source.SourceId})).GetRawText(); }
+            catch (Exception diagnostic) { state = "unavailable: " + diagnostic.Message; }
+            var remote = error as HubException;
+            throw new IOException($"Panel sharing failed: failure={remote?.Failure}, code={remote?.Remote?.Code}, " +
+                $"message={remote?.Remote?.Message}, upstreamCode={remote?.Remote?.UpstreamCode}; " +
+                $"source={state}; fixture={values}; upstream={trace}",error);
+        }
         finally {
             if (!publisher.HasExited) { publisher.Kill(); await publisher.WaitForExitAsync(); }
             try {
