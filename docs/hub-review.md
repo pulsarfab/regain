@@ -3649,3 +3649,8 @@ opened. Preceding 5d0ed34 PR CI 37547703480 passes all eight jobs; push CI
 observation. Keep panel increments local until that run ends. Native NINA/ASCOM
 panel outputs, COM/virtual inputs, dedicated simulation/shared creation and every
 original remaining gate remain required; PR #21 stays draft.
+
+Preceding push CI 37547695748 is now terminal success, so both 5d0ed34 runs pass
+all eight jobs, including Windows packaging/installer acceptance. The reviewed
+panel controller/runtime/HTTP commits may now be pushed; their own CI remains
+required. This does not establish hardware or interactive acceptance.

@@ -18,8 +18,9 @@ PR/push CI 37541898392/37541893308, including private cold/production wheel
 registration and packaging/installer checks. Reviewed COM/virtual wheel inputs
 are pushed at a586c76; all eight jobs pass in both PR/push CI
 37544747351/37544741219. Wheel simulation/shared creation are pushed at 5d0ed34;
-PR CI 37547703480 passes all eight jobs; push CI 37547695748 has seven passed
-and Windows installer acceptance running at last observation. Private
+Both PR/push CI 37547703480/37547695748 pass all eight jobs, including Windows
+installer acceptance. Reviewed panel controller/runtime/HTTP increments are
+ready for push and require their own CI. Private
 registered activation does not establish interactive/hardware acceptance.
 
 Current position: milestones 0 and 1 are complete. The scalar source/output paths
@@ -1110,7 +1111,8 @@ explicit simulation. All 37 router cases, full Rust hub/Alpaca regressions,
 strict Clippy, Rust 1.89 all targets, contracts, Node/six schema checks,
 fresh-host NINA 214/214 and net48 x86/x64 pass. Standalone OFP2 worker/HTTP
 simulation also passes. No physical equipment or installed vendor driver was
-opened. Keep this reviewed increment local until preceding push CI finishes.
+opened. Preceding 5d0ed34 PR/push CI now passes all eight jobs in both runs;
+publish these reviewed panel increments and verify their own CI next.
 Next: native NINA/ASCOM panel publication, COM/virtual inputs, dedicated
 simulation/shared creation, cameras/coordination and every original remaining gate.
 
