@@ -3654,3 +3654,62 @@ Preceding push CI 37547695748 is now terminal success, so both 5d0ed34 runs pass
 all eight jobs, including Windows packaging/installer acceptance. The reviewed
 panel controller/runtime/HTTP commits may now be pushed; their own CI remains
 required. This does not establish hardware or interactive acceptance.
+
+### Native panel publication review (2026-10-06, local increment)
+
+Reviewed the installed NINA 3.2 IFlatDevice interface and ASCOM.DeviceInterfaces
+7.1.2 V2/V1 declarations. Both native outputs share one new C# protocol validator,
+existing private sessions, output selection/setup styling and registration paths.
+No HTTP bridge or second equipment owner is introduced. Provider enumeration,
+metadata and registration are inert; saved output class/identity and required
+host capabilities are checked before acquiring equipment. Native ASCOM exports
+both interfaces, keeps actuator acknowledgements nonblocking and preserves
+Brightness as Int32, states as declared enums and completion as Boolean in
+DeviceState. Unknown/absent states and independent completion stay source-owned.
+
+NINA maps enum values explicitly, waits for actual cover endpoints and light
+readiness/brightness, and bounds completion waits. Its light toggle remembers
+only a requested level for the current connection epoch, including logical On(0).
+Live readings and source polling remain authoritative. Review removed a possible
+lock-order inversion between connection publication and requested-level storage,
+and bound the explicit toggle's read/preflight/write to one captured epoch so it
+cannot retarget a replacement connection. No lock calls into ReadContext.
+Cancelled, stopped-short, invalid or uncertain operations never invent Halt,
+Close, Off or a replay. Cover/light absence has independent NINA capabilities;
+unknown light state is unavailable rather than falsely Off.
+
+The first NINA compile caught use of an internal HubException constructor outside
+its assembly; the unreachable invalid-state branch now reports InvalidDataException.
+The first net48 fixture used LINQ Cast on IStateValueCollection, which exposes an
+enumerator/indexer rather than IEnumerable; the test now enumerates its actual
+indexed interface. Both failures are retained. Seven initial panel cases passed;
+an additional actual HTTP-publisher/NINA case proves shared state and independent
+leases across processes, including surviving publisher shutdown without Off.
+The existing registration theory now covers CoverCalibrator chooser entries and
+stable identities in both private registry views.
+
+The first eight-output manual COM export test failed because the new fixture
+expected plain Int32 for state enums. Captured type evidence proves actual
+ASCOM.DeviceInterface.CalibratorStatus Ready was preserved. The corrected fixture
+requires exact declared enum types with Int32 underlying representation and
+bounds, plus strict Brightness Int32 and Boolean completion. Production behavior
+was not changed to accommodate the fixture. Both server/client bitnesses now pass
+real exported-COM metadata, state, commands, cached DeviceState and source sharing.
+
+Final verification: full Rust hub/Alpaca suites, warnings-denied NINA 223/223,
+real net48 x86/x64 clients with V1/V2 panel inputs, both-architecture warning-denied
+staging, eight-output manual COM exports with both client bitnesses, Node and six
+independent schema cases pass. Existing HTTP-head strict Clippy, Rust 1.89 and
+generated-contract checks still cover the unchanged Rust sources. Source/fixture
+Python syntax and diff checks pass. No physical device or installed vendor driver
+was activated. Cold/production panel registration requires the new head's CI;
+interactive and hardware acceptance remain separate gates.
+
+Evidence: artifacts/hub-panel-native-{build,build-confirmed,ascom-build,
+nina-focused,nina,nina-confirmed,nina-final,cross-frontend,net48,net48-confirmed,
+staging,exports,exports-type-evidence,exports-confirmed,rust,node,schema}.log.
+The local interface inspection helper is under artifacts/hub-interface-inspect.
+Panel controller/runtime/HTTP is pushed at 36a5558; PR/push CI
+37550182065/37550174221 is live. Keep this reviewed native increment local until
+those runs end. Next: panel COM imports, virtual inputs, dedicated simulation and
+shared creation, followed by every original camera/coordination/acceptance gate.

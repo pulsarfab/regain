@@ -162,11 +162,18 @@ public abstract class OutputDriver : IDisposable
                     try {HubFilterWheelProtocol.Validate(HubFilterWheelProperty.Position,value);}
                     catch (HubException) {throw new global::ASCOM.DriverException("Hub DeviceState contained an invalid filter wheel reading");}
                 }
+                if (selection.DeviceType == "covercalibrator") {
+                    try { HubCoverCalibratorProtocol.Validate(HubCoverCalibratorProtocol.StateProperty(state.GetProperty("Name").GetString()),value); }
+                    catch (HubException) { throw new global::ASCOM.DriverException("Hub DeviceState contained an invalid panel member or value"); }
+                }
                 object scalar = value.ValueKind switch {
                     JsonValueKind.True => true, JsonValueKind.False => false,
                     JsonValueKind.Number when selection.DeviceType == "focuser" && state.GetProperty("Name").GetString() == "Position" => value.GetInt32(),
                     JsonValueKind.Number when selection.DeviceType == "rotator" => value.GetSingle(),
                     JsonValueKind.Number when selection.DeviceType == "filterwheel" => value.GetInt16(),
+                    JsonValueKind.Number when selection.DeviceType == "covercalibrator" && state.GetProperty("Name").GetString() == "CoverState" => (CoverStatus)value.GetInt32(),
+                    JsonValueKind.Number when selection.DeviceType == "covercalibrator" && state.GetProperty("Name").GetString() == "CalibratorState" => (CalibratorStatus)value.GetInt32(),
+                    JsonValueKind.Number when selection.DeviceType == "covercalibrator" => value.GetInt32(),
                     JsonValueKind.Number => value.GetDouble(),
                     _ => throw new global::ASCOM.DriverException("Hub DeviceState contained an invalid scalar")
                 };

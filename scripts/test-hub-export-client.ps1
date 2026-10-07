@@ -88,6 +88,32 @@ try {
             return (Value $item 'Name') -eq 'Position' -and $value -is [int16] -and $value -eq 2
         } 'wheel cached short DeviceState'
         $wheel.Disconnect(); Wait-Condition { !(Value $wheel 'Connecting') } 'wheel disconnect completion'
+        $panel = $objects[7]
+        $panel.Connect(); Wait-Condition { !(Value $panel 'Connecting') } 'panel connect completion'
+        if ((Value $panel 'MaxBrightness') -ne 4096 -or (Value $panel 'CoverState') -ne 1) { throw 'COM panel typed initial properties' }
+        $panel.OpenCover()
+        $panel.CalibratorOn(0)
+        if ((Value $panel 'Brightness') -ne 0 -or (Value $panel 'CalibratorState') -ne 3 -or (Value $panel 'CalibratorChanging') -or (Value $panel 'CoverMoving')) { throw 'COM panel logical zero-on or completion' }
+        $panel.CalibratorOn(17)
+        Wait-Condition {
+            $states = Value $panel 'DeviceState'
+            if ((Value $states 'Count') -ne 5) { return $false }
+            $brightnessReady = $false
+            for ($index = 0; $index -lt 5; $index++) {
+                $item = $states.GetType().InvokeMember('Item', [Reflection.BindingFlags]::GetProperty, $null, $states, [object[]]@($index))
+                $name = Value $item 'Name'; $value = Value $item 'Value'
+                if ($name -in 'CoverMoving','CalibratorChanging') { if ($value -isnot [bool]) { throw 'Panel DeviceState completion lost Boolean type' } }
+                elseif ($name -eq 'Brightness') {
+                    if ($value -isnot [int]) { throw 'Panel DeviceState brightness lost Int32 type' }
+                    $brightnessReady = $value -eq 17
+                } elseif ($name -in 'CoverState','CalibratorState') {
+                    $expected = if ($name -eq 'CoverState') { 'ASCOM.DeviceInterface.CoverStatus' } else { 'ASCOM.DeviceInterface.CalibratorStatus' }
+                    if ($value.GetType().FullName -ne $expected -or [Enum]::GetUnderlyingType($value.GetType()) -ne [int] -or [int]$value -lt 0 -or [int]$value -gt 5) { throw 'Panel DeviceState lost its declared state enum type or bounds' }
+                } else { throw 'Unexpected panel DeviceState entry' }
+            }
+            return $brightnessReady
+        } 'panel cached typed DeviceState'
+        $panel.Disconnect(); Wait-Condition { !(Value $panel 'Connecting') } 'panel disconnect completion'
     }
     if ($Role -eq 'second') {
         Wait-Signal 'first-connected'
@@ -98,6 +124,11 @@ try {
         $wheel = $objects[6]; $wheel.Connected = $true
         if ((Value $wheel 'Position') -ne 2 -or ((Value $wheel 'Names') -join '|') -cne $wheelNames) { throw 'Second COM bitness lost wheel state or arrays' }
         $wheel.Connected = $false
+        $panel = $objects[7]; $panel.Connected = $true
+        if ((Value $panel 'Brightness') -ne 17 -or (Value $panel 'CalibratorState') -ne 3 -or (Value $panel 'CoverState') -ne 3) { throw 'Second COM bitness lost shared panel state' }
+        $panel.CloseCover(); $panel.CalibratorOff()
+        if ((Value $panel 'Brightness') -ne 0 -or (Value $panel 'CalibratorState') -ne 1 -or (Value $panel 'CoverState') -ne 1) { throw 'COM panel explicit Close/Off' }
+        $panel.Connected = $false
     }
     Write-Output "Hub export ${Role}: connect primary"
     $primary.Connect(); Wait-Condition { !(Value $primary 'Connecting') } 'primary connect completion'

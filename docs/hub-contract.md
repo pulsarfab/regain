@@ -1945,8 +1945,8 @@ unavailable completion is omitted rather than represented as stopped.
 Both setup diagnostic readers consume generated property types/bounds and the
 response schema using their existing typed-accessory display. They preserve
 identity/epoch/page checks and reject incorrect Int32, enum and Boolean values.
-This does not enable panel selection, creation or native NINA/ASCOM publication;
-those integrations and every later plan gate remain required.
+Panel creation remains gated until all its input/output integrations are verified;
+every later plan gate remains required.
 
 ### Panel Alpaca publication
 
@@ -1968,5 +1968,42 @@ Hub setup routes use the existing shared editor for configured panel numbers.
 The standalone OFP2 retains its slot-zero route and setup; a conflicting hub
 panel rejects discovery, requests and setup before any equipment connection.
 Five private HTTP cases cover these rules, including the production OFP2 worker
-in explicit simulation. Native panel output, COM/virtual inputs, dedicated
+in explicit simulation. COM/virtual inputs, dedicated
 simulation and shared creation are still required before opening the setup gate.
+
+### Native panel publication
+
+The shared C# panel protocol defines strict Int32, enum and Boolean reads plus
+the five typed commands for both frontends. Saved bindings and capability checks
+reuse existing private sessions. The common native selector, styled configuration
+editor and registration inventory accept CoverCalibrator outputs; stable ProgIDs
+use Rgn.HC and retain the same UUID-derived class identity through renames.
+Native ASCOM implements V2/V1, with asynchronous connection ownership and
+nonblocking actuator commands. DeviceState validates its allowed members, retains
+Brightness as Int32, states as their declared ASCOM enums and completion as Boolean.
+
+NINA publishes IFlatDevice directly, without an HTTP listener or native ASCOM
+output. Cover states are mapped explicitly because NINA's enum numbers differ.
+Open/Close awaits reported motion completion and the requested endpoint. Light
+setters await reported readiness and brightness, with bounded completion waits.
+Stopped-short, failed readback, timeout, cancellation and uncertain writes never
+trigger automatic Halt, Close, Off or replay. Logical On(0) remains on.
+
+NINA's per-connection requested brightness is only a convenience for explicit
+light toggles, including zero. It does not replace live source observations,
+renew cache ages or survive a new connection epoch. The first toggle uses live
+MaxBrightness when no requested level exists. Port selection belongs to shared
+source setup. Independent cover/light presence is reflected in NINA capabilities;
+unknown illumination is unavailable rather than represented as Off.
+
+Private NINA/ASCOM tests use loopback V1/V2 sources. An actual Alpaca publisher
+shares the same panel with a native NINA client; stopping the publisher releases
+only its leases and sends no actuator command. Native chooser enumeration,
+registration and metadata are inert. Manual private COM exports pass both server
+and client bitnesses; cold/production registration and interactive acceptance
+still require their separate gates. Panel COM imports, virtual inputs, dedicated
+simulation and shared creation remain pending.
+
+Interface references: installed NINA 3.2 IFlatDevice declarations and
+[NINA's cover/calibrator adapter](https://github.com/isbeorn/nina/blob/develop/NINA.Equipment/Equipment/MyFlatDevice/AscomCoverCalibrator.cs),
+plus the installed ASCOM.DeviceInterfaces 7.1.2 V2/V1 declarations.

@@ -38,10 +38,12 @@ internal static class HubAccessorySimulation
 internal sealed class HubFocuserServer : HubAccessoryServer { internal HubFocuserServer() : base("focuser") { } }
 internal sealed class HubRotatorServer : HubAccessoryServer { internal HubRotatorServer() : base("rotator") { } }
 internal sealed class HubFilterWheelServer : HubAccessoryServer { internal HubFilterWheelServer() : base("filterwheel") { } }
+internal sealed class HubCoverCalibratorServer : HubAccessoryServer { internal HubCoverCalibratorServer(int version = 2) : base("covercalibrator",version) { } }
 
 internal class HubAccessoryServer : IDisposable
 {
     private readonly string kind;
+    private readonly int version;
     private readonly TcpListener listener = new(IPAddress.Loopback, 0);
     private readonly CancellationTokenSource stopping = new();
     private readonly ConcurrentDictionary<TcpClient, byte> clients = new();
@@ -49,6 +51,7 @@ internal class HubAccessoryServer : IDisposable
     private readonly ConcurrentQueue<string> trace = new();
     private readonly Task serving;
     internal readonly ConcurrentDictionary<string, object> Values = new();
+    internal readonly ConcurrentQueue<string> PanelCommands = new();
     private int moves, halts, connected;
     internal int Moves => Volatile.Read(ref moves);
     internal int Halts => Volatile.Read(ref halts);
@@ -57,10 +60,13 @@ internal class HubAccessoryServer : IDisposable
     internal volatile bool IgnoreMove = false;
     internal string Url { get; }
     internal Guid SourceId { get; } = Guid.NewGuid();
-    internal HubAccessoryServer(string kind)
+    internal HubAccessoryServer(string kind,int version = 3)
     {
-        this.kind = kind;
-        if (kind == "filterwheel") {
+        this.kind = kind; this.version = version;
+        if (kind == "covercalibrator") {
+            Values["brightness"] = 0; Values["maxbrightness"] = 4096; Values["coverstate"] = 1;
+            Values["calibratorstate"] = 1; Values["covermoving"] = false; Values["calibratorchanging"] = false;
+        } else if (kind == "filterwheel") {
             Values["names"] = new[] {"L","Hα",""}; Values["focusoffsets"] = new[] {-12,0,17}; Values["position"] = 0;
         } else if (kind == "focuser") {
             Values["absolute"] = true; Values["maxstep"] = 1000; Values["maxincrement"] = 100;
@@ -130,8 +136,17 @@ internal class HubAccessoryServer : IDisposable
                 trace.Enqueue("write " + member + (args.TryGetValue("Position", out var position) ? " position=" + position : ""));
                 switch (member) {
                     case "connected": Volatile.Write(ref connected, bool.Parse(args["Connected"]) ? 1 : 0); break;
-                    case "connect" when kind == "filterwheel": Volatile.Write(ref connected,1); break;
-                    case "disconnect" when kind == "filterwheel": Volatile.Write(ref connected,0); break;
+                    case "connect" when kind == "filterwheel" || kind == "covercalibrator" && version >= 2: Volatile.Write(ref connected,1); break;
+                    case "disconnect" when kind == "filterwheel" || kind == "covercalibrator" && version >= 2: Volatile.Write(ref connected,0); break;
+                    case "opencover": case "closecover": case "haltcover": case "calibratoron": case "calibratoroff":
+                        if (kind != "covercalibrator" || args.Count != (member == "calibratoron" ? 3 : 2)) throw new InvalidOperationException("Invalid panel command");
+                        PanelCommands.Enqueue(member);
+                        if (member == "opencover" || member == "closecover") { Values["coverstate"] = 2; Values["covermoving"] = true; }
+                        else if (member == "haltcover") { Values["coverstate"] = 4; Values["covermoving"] = false; }
+                        else if (member == "calibratoron") { Values["brightness"] = int.Parse(args["Brightness"]); Values["calibratorstate"] = 2; Values["calibratorchanging"] = true; }
+                        else { Values["brightness"] = 0; Values["calibratorstate"] = 1; Values["calibratorchanging"] = false; }
+                        if (LoseMoveReply) await Task.Delay(1000,stopping.Token).ConfigureAwait(false);
+                        break;
                     case "position" when kind == "filterwheel":
                         Values["position"] = -1; Interlocked.Increment(ref moves);
                         if (LoseMoveReply) await Task.Delay(1000,stopping.Token).ConfigureAwait(false);
@@ -160,8 +175,9 @@ internal class HubAccessoryServer : IDisposable
                     default: throw new InvalidOperationException("Unexpected private upstream write");
                 }
             } else if (member == "connected") value = Volatile.Read(ref connected) != 0;
-            else if (member == "connecting" && kind == "filterwheel") value = false;
-            else if (member == "interfaceversion") value = 3;
+            else if (member == "connecting" && (kind == "filterwheel" || kind == "covercalibrator" && version >= 2)) value = false;
+            else if (member == "interfaceversion") value = version;
+            else if (kind == "covercalibrator" && version == 1 && member is "covermoving" or "calibratorchanging") code = 1024;
             else if (!Values.TryGetValue(member, out value)) code = 1024;
             var body = JsonSerializer.SerializeToUtf8Bytes(new { ErrorNumber = code, ErrorMessage = code == 0 ? "" : "private upstream detail", Value = value });
             var header = Encoding.ASCII.GetBytes("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: " + body.Length + "\r\nConnection: close\r\n\r\n");

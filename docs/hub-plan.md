@@ -20,7 +20,7 @@ are pushed at a586c76; all eight jobs pass in both PR/push CI
 37544747351/37544741219. Wheel simulation/shared creation are pushed at 5d0ed34;
 Both PR/push CI 37547703480/37547695748 pass all eight jobs, including Windows
 installer acceptance. Reviewed panel controller/runtime/HTTP increments are
-ready for push and require their own CI. Private
+pushed at 36a5558; PR/push CI 37550182065/37550174221 is running. Private
 registered activation does not establish interactive/hardware acceptance.
 
 Current position: milestones 0 and 1 are complete. The scalar source/output paths
@@ -32,11 +32,13 @@ wheel imports and virtual wheel inputs pass local full regressions and are pushe
 Dedicated wheel simulation passes local full Rust, NINA and both-architecture
 net48 confirmation, with a verified native setup capture. Shared wheel creation is
 verified locally in both setup frontends and real net48 clients, and pushed.
-The panel typed controller/native OFP2 evidence is committed locally at f622d51.
-Panel runtime, typed IPC and cached diagnostics pass full local Rust, NINA 214/214
-and both-architecture net48 checks. Panel Alpaca V2 publication is verified locally
+Panel controller/runtime/IPC/cache and Alpaca V2 publication are pushed at 36a5558,
+with full local Rust, NINA 214/214 and both-architecture net48 checks.
+Panel Alpaca V2 publication is verified
 with dynamic identities, legacy V1/modern V2 inputs and production OFP2 simulation.
-Native panel publication, imports/virtual inputs,
+Native NINA/ASCOM panel publication is implemented locally, using shared protocol,
+selection/setup and registration paths. Final validation is recorded below.
+Panel COM/virtual inputs,
 dedicated simulation/shared setup and camera proxies remain.
 Milestone 5's coordinated groups are not yet
 implemented. PR #21 stays draft until the full plan passes.
@@ -1101,7 +1103,25 @@ Keep existing device profiles and registrations compatible throughout migration.
 
 ## Progress log
 
-Latest checkpoint (2026-10-06): panel Alpaca V2 publication reuses the existing
+Latest native panel checkpoint (2026-10-06): NINA IFlatDevice and native ASCOM
+CoverCalibrator V2/V1 reuse shared protocol validation, private sessions,
+saved identities, setup styling and registration. NINA waits for actual cover
+endpoints and illumination completion, preserves logical On(0), bounds waits and
+never invents compensating commands. ASCOM remains nonblocking and preserves
+Int32/enum/Boolean DeviceState types. Private V1/V2 upstreams verify siblings,
+live limits, absent components, modern errors, cancellation and lost replies.
+An actual Alpaca process shares a panel with NINA; stopping it leaves NINA's
+lease and illumination intact. Real net48 x86/x64 tests and eight-output manual
+COM exports with both client bitnesses pass. Cold/production registration still
+requires CI; interactive/hardware acceptance is separate. This increment stays
+locally verified with full Rust hub/Alpaca suites, warnings-denied NINA 223/223,
+both-architecture staging/client checks, Node and six schema cases. Review records
+the corrected fixture enum assumption and preserves its failure evidence.
+This increment stays
+local while preceding 36a5558 CI runs. Next: panel COM/virtual inputs, dedicated
+simulation/shared creation, cameras/coordination and every original later gate.
+
+Previous HTTP checkpoint (2026-10-06): panel Alpaca V2 publication reuses the existing
 publisher, private IPC and typed controller. Five new actual HTTP cases cover
 dynamic identities/numbers, independent clients/sources, V1/V2 inputs, live
 brightness bounds/zero-on, component absence, known stopped/unknown endpoint,
@@ -1112,7 +1132,7 @@ strict Clippy, Rust 1.89 all targets, contracts, Node/six schema checks,
 fresh-host NINA 214/214 and net48 x86/x64 pass. Standalone OFP2 worker/HTTP
 simulation also passes. No physical equipment or installed vendor driver was
 opened. Preceding 5d0ed34 PR/push CI now passes all eight jobs in both runs;
-publish these reviewed panel increments and verify their own CI next.
+these reviewed panel increments are pushed at 36a5558 and their own CI is running.
 Next: native NINA/ASCOM panel publication, COM/virtual inputs, dedicated
 simulation/shared creation, cameras/coordination and every original remaining gate.
 
