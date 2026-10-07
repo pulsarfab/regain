@@ -56,12 +56,12 @@ Reviewed acquisition/ImageBytes/diagnostic commits are now pushed through 1579a9
 PR CI 37560177877 finishes with seven successes and a Windows native panel-sharing
 read failure after On(0). Push CI 37560173015 finishes with six successes, a Windows
 private peer reply deadline and an Intel macOS fresh nested-wheel read failure.
-Their causes remain unproved. Failure-only native/peer/wheel diagnostics are local;
+Their causes remain unproved. Failure-only native/peer/wheel diagnostics are pushed;
 the panel fixture also publishes its command marker after setting its start state,
 preventing the handler from overwriting a test's completed state. This ordering
 defect is evident in the fixture; it is not proved to explain the CI failure.
-The bounded JSON image decoder
-is a separate local increment: ten stream cases and two cancellation unit cases
+The bounded JSON image decoder and diagnostic corrections are pushed through
+0923e51. Ten stream cases and two cancellation unit cases
 pass, with seven updated actual HTTP cases including binary and JSON Double
 captures shared by independent clients. Raw response chunks and final pixels
 compete for one budget; decoding does not construct a nested pixel Value tree.
@@ -72,9 +72,30 @@ error; enabling serde_json float_roundtrip fixes it without dependency upgrades.
 The final focused ten JSON/seven HTTP checks, full Rust hub/Alpaca suites, nineteen
 core camera tests with feature unification, Rust 1.99 strict Clippy, Rust 1.89,
 contract freshness, rebuilt-host NINA 228/228 and real net48 x86/x64 pass against
-the latest changes. This increment still requires its own CI. Camera runtime,
-remaining adapters/properties/settings, all three outputs, native recovery metadata
+the reviewed JSON changes. PR CI 37562038506 finishes with seven successes and
+Windows failure: invalid-hello validation receives Timeout instead of Protocol,
+and panel HTTP connection fails with 1280. The panel trace now shows aborted
+private response writes and connection re-entry; the root cause remains unproved.
+Push CI 37562034286 is still live. Camera runtime,
+remaining adapters, all three outputs, native recovery metadata
 and every original later gate remain open.
+
+Camera properties/settings checkpoint (local): the existing source supervisor now
+shares 53 typed properties and 13 setters, preserving optional errors, numeric and
+named gain/offset modes, range/capability checks and frozen publication timing.
+Thirty focused cases pass (eleven new cases plus nineteen acquisition cases).
+A source-wide retained settings reservation rejects concurrent setters/starts
+before they queue behind a dispatched write. Before-dispatch caller loss skips
+the write; after-dispatch loss retains ownership/activity until its known outcome.
+Capture settings remain frozen. The capture owner can adjust cooling while
+exposing/reading through its retained lease; sibling cooling writes are rejected.
+Publication waits for an outstanding owner cooling write. A deadline during
+preflight prevents a late write; uncertain writes retain the source fence.
+Pending setting identity/owner/property is available in shared status. Full final
+Rust hub/Alpaca, strict Rust 1.99 Clippy, Rust 1.89, contracts, rebuilt-host NINA
+228/228 and real net48 x86/x64 pass; this increment remains local while prior
+push CI runs. Camera runtime/adapters/binary IPC/all outputs/recovery metadata,
+coordination and every original acceptance/final gate remain required.
 
 Camera supervisor checkpoint (local): nineteen private virtual-clock cases pass.
 One source-owned acquisition retains control and runtime activity after caller
@@ -131,8 +152,9 @@ adds validated immutable image buffers, a shared payload budget and a lossless
 ImageBytes reader/export codec, with native adoption and bounded order conversion.
 The shared source actor now has fenced binary download dispatch with exclusive
 control, a separate bounded image deadline and retained write uncertainty.
-Acquisition supervision is now implemented locally with nineteen focused tests;
-runtime integration, capability/recovery propagation, remaining camera adapters and
+Acquisition supervision and shared properties/settings now pass thirty focused
+tests; binary/JSON Alpaca image inputs are implemented. Runtime integration,
+capability/recovery propagation, remaining camera adapters and
 frontend image transport remain unimplemented. Their contracts are recorded in
 hub-contract.md and camera choices stay gated.
 Milestone 5's coordinated groups are not yet

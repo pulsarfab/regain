@@ -7,6 +7,7 @@ use regain_hub::{
             ExposureRequest,
         },
         image::{CameraImage, ElementType, ImageBudget, ImageDescriptor, ImageOrder},
+        properties::{CameraProperty as P, CameraSetting as S, CameraValue as V},
     },
     parameters::PollPolicy,
     safety::MonotonicClock,
@@ -49,6 +50,13 @@ struct Device {
     release_capability: Notify,
     release_abort: Notify,
     release_download: Notify,
+    settings: Mutex<Vec<(String, Values)>>,
+    hold_setting: AtomicBool,
+    hold_setting_preflight: AtomicBool,
+    setting_preflights: AtomicUsize,
+    uncertain_setting: AtomicBool,
+    release_setting: Notify,
+    release_setting_preflight: Notify,
 }
 impl Default for Device {
     fn default() -> Self {
@@ -71,6 +79,19 @@ impl Default for Device {
                 ("canasymmetricbin".into(), json!(false)),
                 ("canabortexposure".into(), json!(true)),
                 ("canstopexposure".into(), json!(true)),
+                ("gain".into(), json!(0)),
+                ("gainmin".into(), json!(-5)),
+                ("gainmax".into(), json!(500)),
+                ("offset".into(), json!(0)),
+                ("offsets".into(), json!(["Bias zero", "Bias fifty"])),
+                ("readoutmode".into(), json!(0)),
+                ("readoutmodes".into(), json!(["RAW16", "Fast"])),
+                ("canfastreadout".into(), json!(false)),
+                ("fastreadout".into(), json!(false)),
+                ("cansetccdtemperature".into(), json!(true)),
+                ("setccdtemperature".into(), json!(0.0)),
+                ("cooleron".into(), json!(false)),
+                ("subexposureduration".into(), json!(0.0)),
                 ("lastexposureduration".into(), json!(1.125)),
                 (
                     "lastexposurestarttime".into(),
@@ -100,6 +121,13 @@ impl Default for Device {
             release_capability: Notify::new(),
             release_abort: Notify::new(),
             release_download: Notify::new(),
+            settings: Mutex::default(),
+            hold_setting: AtomicBool::new(false),
+            hold_setting_preflight: AtomicBool::new(false),
+            setting_preflights: AtomicUsize::new(0),
+            uncertain_setting: AtomicBool::new(false),
+            release_setting: Notify::new(),
+            release_setting_preflight: Notify::new(),
         }
     }
 }
@@ -126,6 +154,12 @@ impl Backend for Mock {
     }
     fn read(&mut self, member: String, _: Values) -> BackendFuture<'_, Value> {
         Box::pin(async move {
+            if matches!(member.as_str(), "gains" | "cansetccdtemperature")
+                && self.0.hold_setting_preflight.load(SeqCst)
+            {
+                self.0.setting_preflights.fetch_add(1, SeqCst);
+                self.0.release_setting_preflight.notified().await;
+            }
             if member == "exposuremin" && self.0.hold_prepare.load(SeqCst) {
                 self.0.prepare_reads.fetch_add(1, SeqCst);
                 self.0.release_prepare.notified().await;
@@ -182,6 +216,36 @@ impl Backend for Mock {
                         return Err(SourceError::uncertain());
                     }
                 }
+                "binx"
+                | "biny"
+                | "numx"
+                | "numy"
+                | "startx"
+                | "starty"
+                | "gain"
+                | "offset"
+                | "readoutmode"
+                | "fastreadout"
+                | "cooleron"
+                | "setccdtemperature"
+                | "subexposureduration" => {
+                    assert_eq!(parameters.len(), 1);
+                    let value = parameters.values().next().unwrap().clone();
+                    self.0.set(&member, value.clone());
+                    if matches!(member.as_str(), "binx" | "biny")
+                        && self.0.values.lock().unwrap()["canasymmetricbin"] == json!(false)
+                    {
+                        self.0
+                            .set(if member == "binx" { "biny" } else { "binx" }, value);
+                    }
+                    self.0.settings.lock().unwrap().push((member, parameters));
+                    if self.0.hold_setting.load(SeqCst) {
+                        self.0.release_setting.notified().await;
+                    }
+                    if self.0.uncertain_setting.load(SeqCst) {
+                        return Err(SourceError::uncertain());
+                    }
+                }
                 _ => {
                     return Err(SourceError::new(
                         ErrorKind::Unsupported,
@@ -235,6 +299,9 @@ impl Fixture {
         Self::with_poll_interval(memory, Duration::from_millis(10))
     }
     fn with_poll_interval(memory: usize, poll_interval: Duration) -> Self {
+        Self::with_timing(memory, poll_interval, Duration::from_secs(2))
+    }
+    fn with_timing(memory: usize, poll_interval: Duration, readiness_grace: Duration) -> Self {
         let device = Arc::new(Device::default());
         let source = SourceHandle::spawn(
             Uuid::new_v4(),
@@ -249,7 +316,7 @@ impl Fixture {
         let timing = AcquisitionTiming {
             connection_timeout: Duration::from_secs(2),
             admission_timeout: Duration::from_secs(4),
-            readiness_grace: Duration::from_secs(2),
+            readiness_grace,
             download_timeout: Duration::from_secs(1),
             poll_interval,
         };
@@ -298,6 +365,441 @@ fn request() -> ExposureRequest {
         duration_seconds: 1.0,
         light: true,
     }
+}
+
+#[test]
+fn camera_properties_reject_coercion_invalid_bounds_and_unbounded_metadata() {
+    let members: std::collections::BTreeSet<_> = P::ALL.iter().map(|p| p.member()).collect();
+    assert_eq!(members.len(), P::ALL.len());
+    for (property, value) in [
+        (P::ImageReady, json!(1)),
+        (P::BinX, json!(0)),
+        (P::BinX, json!(1.0)),
+        (P::Gain, json!(i64::MAX)),
+        (P::CameraState, json!(6)),
+        (P::SensorType, json!(-1)),
+        (P::CoolerPower, json!(101)),
+        (P::ExposureMin, json!(-0.1)),
+        (P::PixelSizeX, json!(0)),
+        (P::PercentCompleted, json!(101)),
+        (P::StartY, json!(-1)),
+        (P::ReadoutModes, json!([])),
+        (P::Gains, json!([1])),
+        (P::Offsets, json!(vec!["x"; 1025])),
+        (P::SensorName, json!("x".repeat(1_048_577))),
+        (P::LastExposureStartTime, json!("2026-02-30T00:00:00")),
+    ] {
+        assert!(property.decode(&value).is_err(), "{property:?}");
+    }
+    assert_eq!(
+        P::Gain.decode(&json!(-5)).unwrap(),
+        V::Integer { value: -5 }
+    );
+    assert_eq!(
+        P::CoolerPower.decode(&json!(100)).unwrap(),
+        V::Number { value: 100.0 }
+    );
+    for setting in [
+        S::BinX(0),
+        S::NumX(-1),
+        S::StartY(-1),
+        S::ReadoutMode(-1),
+        S::SetCcdTemperature(f64::NAN),
+        S::SetCcdTemperature(-274.0),
+        S::SubExposureDuration(f64::INFINITY),
+        S::SubExposureDuration(-1.0),
+    ] {
+        assert!(setting.validate().is_err());
+    }
+    assert!(serde_json::from_value::<S>(json!({"property":"coolerOn","value":1})).is_err());
+    assert!(
+        serde_json::from_value::<S>(json!({"property":"gain","value":1,"extra":true})).is_err()
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn camera_settings_share_live_state_and_forward_one_typed_write_without_roi_compensation() {
+    let f = Fixture::new(24);
+    let first = f.session().await;
+    let sibling = f.session().await;
+    f.device.set("canfastreadout", json!(true));
+    for setting in [
+        S::BinX(2),
+        S::BinY(1),
+        S::NumX(99),
+        S::NumY(3),
+        S::StartX(1),
+        S::StartY(2),
+        S::Gain(-5),
+        S::Offset(1),
+        S::ReadoutMode(1),
+        S::FastReadout(true),
+        S::CoolerOn(true),
+        S::SetCcdTemperature(-10.5),
+        S::SubExposureDuration(0.25),
+    ] {
+        first.set(setting).await.unwrap();
+    }
+    assert_eq!(
+        sibling.property(P::Gain).await.unwrap(),
+        V::Integer { value: -5 }
+    );
+    assert_eq!(
+        sibling.property(P::BinX).await.unwrap(),
+        V::Integer { value: 1 }
+    );
+    assert_eq!(
+        sibling.property(P::NumX).await.unwrap(),
+        V::Integer { value: 99 }
+    );
+    assert_eq!(
+        sibling.property(P::SetCcdTemperature).await.unwrap(),
+        V::Number { value: -10.5 }
+    );
+    let writes = f.device.settings.lock().unwrap().clone();
+    assert_eq!(writes.len(), 13);
+    assert_eq!(
+        writes[0],
+        ("binx".into(), Values::from([("BinX".into(), json!(2))]))
+    );
+    assert_eq!(
+        writes[11],
+        (
+            "setccdtemperature".into(),
+            Values::from([("SetCCDTemperature".into(), json!(-10.5))])
+        )
+    );
+    assert_eq!(
+        first.start(request()).await.unwrap_err().kind,
+        ErrorKind::InvalidValue
+    );
+    assert_eq!(f.device.starts.load(SeqCst), 0);
+    assert_eq!(f.activity.active(), 0);
+    f.source.shutdown().await.unwrap();
+    assert_eq!(
+        sibling.property(P::Gain).await.unwrap_err().kind,
+        ErrorKind::Disconnected
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn camera_setting_modes_capabilities_and_upstream_errors_are_checked_before_dispatch() {
+    let f = Fixture::new(24);
+    let session = f.session().await;
+    for setting in [
+        S::BinX(5),
+        S::Gain(-6),
+        S::Gain(501),
+        S::Offset(2),
+        S::ReadoutMode(2),
+    ] {
+        assert_eq!(
+            session.set(setting).await.unwrap_err().kind,
+            ErrorKind::InvalidValue
+        );
+    }
+    assert_eq!(
+        session.set(S::FastReadout(true)).await.unwrap_err().kind,
+        ErrorKind::Unsupported
+    );
+    f.device.set("cansetccdtemperature", json!(false));
+    assert_eq!(
+        session
+            .set(S::SetCcdTemperature(-10.0))
+            .await
+            .unwrap_err()
+            .kind,
+        ErrorKind::Unsupported
+    );
+    f.device.set("gains", json!(["Low", "High"]));
+    session.set(S::Gain(1)).await.unwrap();
+    assert_eq!(
+        session.set(S::Gain(-1)).await.unwrap_err().kind,
+        ErrorKind::InvalidValue
+    );
+    f.device.set("gains", json!([]));
+    assert_eq!(
+        session.set(S::Gain(0)).await.unwrap_err().kind,
+        ErrorKind::Unavailable
+    );
+    f.device.errors.lock().unwrap().insert(
+        "gains".into(),
+        SourceError {
+            kind: ErrorKind::Permanent,
+            message: "Private capability failure",
+            upstream_code: Some(1201),
+            retry_after: None,
+            transport_lost: false,
+        },
+    );
+    assert_eq!(
+        session.set(S::Gain(0)).await.unwrap_err().upstream_code,
+        Some(1201)
+    );
+    assert_eq!(f.device.settings.lock().unwrap().len(), 1);
+    f.source.shutdown().await.unwrap();
+}
+
+#[tokio::test(start_paused = true)]
+async fn camera_capture_blocks_owner_and_sibling_settings_and_freezes_published_timing() {
+    let f = Fixture::new(24);
+    let owner = f.session().await;
+    let sibling = f.session().await;
+    f.device.set("imageready", json!(true));
+    assert_eq!(
+        sibling.property(P::ImageReady).await.unwrap(),
+        V::Boolean { value: false }
+    );
+    owner.start(request()).await.unwrap();
+    for session in [&owner, &sibling] {
+        assert_eq!(
+            session.set(S::Gain(1)).await.unwrap_err().kind,
+            ErrorKind::Busy
+        );
+    }
+    assert!(f.device.settings.lock().unwrap().is_empty());
+    f.device.complete();
+    f.ready().await;
+    f.device.set("lastexposureduration", json!(9.0));
+    f.device
+        .set("lastexposurestarttime", json!("2026-10-07T12:34:56"));
+    sibling.set(S::Gain(2)).await.unwrap();
+    assert_eq!(
+        sibling.property(P::LastExposureDuration).await.unwrap(),
+        V::Number { value: 1.125 }
+    );
+    assert_eq!(
+        sibling.property(P::LastExposureStartTime).await.unwrap(),
+        V::Text {
+            value: "2026-10-07T00:00:01.123".into()
+        }
+    );
+    assert_eq!(
+        sibling.property(P::ImageReady).await.unwrap(),
+        V::Boolean { value: true }
+    );
+    f.source.shutdown().await.unwrap();
+}
+
+#[tokio::test(start_paused = true)]
+async fn camera_owner_can_adjust_cooling_during_exposure_without_releasing_capture_control() {
+    let f = Fixture::new(24);
+    let owner = f.session().await;
+    let observer = f.session().await;
+    owner.start(request()).await.unwrap();
+    assert_eq!(
+        observer.set(S::CoolerOn(true)).await.unwrap_err().kind,
+        ErrorKind::Busy
+    );
+    owner.set(S::CoolerOn(true)).await.unwrap();
+    owner.set(S::SetCcdTemperature(-15.0)).await.unwrap();
+    assert_eq!(f.activity.active(), 1);
+    assert_eq!(f.supervisor.status().phase, Phase::Exposing);
+    assert_eq!(
+        observer.property(P::CoolerOn).await.unwrap(),
+        V::Boolean { value: true }
+    );
+    assert_eq!(
+        observer.set(S::Gain(1)).await.unwrap_err().kind,
+        ErrorKind::Busy
+    );
+    assert_eq!(f.device.settings.lock().unwrap().len(), 2);
+    // Stop still owns the original acquisition after both cooler setters.
+    owner.stop().await.unwrap();
+    f.ready().await;
+    assert_eq!(
+        observer.image().unwrap().identity.exposure.duration_seconds,
+        Some(0.25)
+    );
+    assert_eq!(f.device.downloads.load(SeqCst), 1);
+    f.source.shutdown().await.unwrap();
+}
+
+#[tokio::test(start_paused = true)]
+async fn abandoned_owner_cooling_finishes_before_image_publication_and_wakes_long_poll() {
+    let f = Fixture::with_poll_interval(24, Duration::from_secs(60));
+    let owner = Arc::new(f.session().await);
+    let observer = f.session().await;
+    owner.start(request()).await.unwrap();
+    f.device.hold_setting.store(true, SeqCst);
+    let pending = tokio::spawn({
+        let owner = owner.clone();
+        async move { owner.set(S::CoolerOn(true)).await }
+    });
+    settle().await;
+    assert_eq!(f.device.settings.lock().unwrap().len(), 1);
+    assert_eq!(owner.abort().await.unwrap_err().kind, ErrorKind::Busy);
+    assert_eq!(f.supervisor.status().setting.unwrap().property, P::CoolerOn);
+    pending.abort();
+    assert!(pending.await.unwrap_err().is_cancelled());
+    drop(owner);
+    assert_eq!(f.activity.active(), 2);
+    f.device.complete();
+    settle().await;
+    assert!(!f.supervisor.status().image_ready);
+    assert_eq!(f.device.downloads.load(SeqCst), 0);
+    assert_eq!(
+        observer.set(S::CoolerOn(false)).await.unwrap_err().kind,
+        ErrorKind::Busy
+    );
+    f.device.release_setting.notify_one();
+    f.ready().await;
+    assert_eq!(f.activity.active(), 0);
+    assert_eq!(f.device.downloads.load(SeqCst), 1);
+    assert_eq!(f.device.settings.lock().unwrap().len(), 1);
+    assert_eq!(f.device.aborts.load(SeqCst), 0);
+    assert_eq!(f.device.stops.load(SeqCst), 0);
+    f.source.shutdown().await.unwrap();
+}
+
+#[tokio::test(start_paused = true)]
+async fn uncertain_owner_cooling_retains_capture_activity_and_fence_without_replay() {
+    let f = Fixture::new(24);
+    let owner = f.session().await;
+    let observer = f.session().await;
+    let id = owner.start(request()).await.unwrap();
+    f.device.uncertain_setting.store(true, SeqCst);
+    assert_eq!(
+        owner.set(S::CoolerOn(true)).await.unwrap_err().kind,
+        ErrorKind::Uncertain
+    );
+    f.phase(Phase::Uncertain).await;
+    assert_eq!(f.activity.active(), 1);
+    assert!(f.source.snapshot().write_uncertain);
+    assert_eq!(
+        observer.set(S::CoolerOn(false)).await.unwrap_err().kind,
+        ErrorKind::Uncertain
+    );
+    assert_eq!(f.device.settings.lock().unwrap().len(), 1);
+    assert_eq!(f.device.downloads.load(SeqCst), 0);
+    assert_eq!(f.device.aborts.load(SeqCst), 0);
+    assert!(observer.property(P::ImageReady).await.is_err());
+    f.supervisor.abandon_uncertain(id).unwrap();
+    settle().await;
+    assert_eq!(f.activity.active(), 0);
+    f.source.shutdown().await.unwrap();
+}
+
+#[tokio::test(start_paused = true)]
+async fn camera_deadline_during_cooler_preflight_prevents_a_late_setting_write() {
+    let f = Fixture::with_timing(24, Duration::from_millis(10), Duration::from_millis(200));
+    let owner = Arc::new(f.session().await);
+    owner
+        .start(ExposureRequest {
+            duration_seconds: 0.0,
+            light: false,
+        })
+        .await
+        .unwrap();
+    f.device.hold_setting_preflight.store(true, SeqCst);
+    let pending = tokio::spawn({
+        let owner = owner.clone();
+        async move { owner.set(S::SetCcdTemperature(-10.0)).await }
+    });
+    settle().await;
+    assert_eq!(f.device.setting_preflights.load(SeqCst), 1);
+    tokio::time::advance(Duration::from_millis(250)).await;
+    settle().await;
+    assert_eq!(f.supervisor.status().phase, Phase::Uncertain);
+    f.device.release_setting_preflight.notify_one();
+    assert_eq!(
+        pending.await.unwrap().unwrap_err().kind,
+        ErrorKind::Uncertain
+    );
+    assert!(f.device.settings.lock().unwrap().is_empty());
+    assert_eq!(f.activity.active(), 1);
+    owner.abandon_uncertain().unwrap();
+    settle().await;
+    assert_eq!(f.activity.active(), 0);
+    f.source.shutdown().await.unwrap();
+}
+
+#[tokio::test(start_paused = true)]
+async fn cancelled_camera_setting_preflight_sends_no_write_and_releases_activity() {
+    let f = Fixture::new(24);
+    let session = Arc::new(f.session().await);
+    f.device.hold_setting_preflight.store(true, SeqCst);
+    let pending = tokio::spawn({
+        let session = session.clone();
+        async move { session.set(S::Gain(3)).await }
+    });
+    settle().await;
+    assert_eq!(f.device.setting_preflights.load(SeqCst), 1);
+    let setting = f.supervisor.status().setting.unwrap();
+    assert_eq!(setting.owner, session.id());
+    assert_eq!(setting.property, P::Gain);
+    assert_eq!(
+        session.start(request()).await.unwrap_err().kind,
+        ErrorKind::Busy
+    );
+    session.abort().await.unwrap(); // No exposure exists: abort stays inert.
+    assert_eq!(f.device.starts.load(SeqCst), 0);
+    pending.abort();
+    assert!(pending.await.unwrap_err().is_cancelled());
+    f.device.release_setting_preflight.notify_one();
+    settle().await;
+    assert!(f.device.settings.lock().unwrap().is_empty());
+    assert_eq!(f.activity.active(), 0);
+    assert!(f.supervisor.status().setting.is_none());
+    f.source.shutdown().await.unwrap();
+}
+
+#[tokio::test(start_paused = true)]
+async fn cancelled_dispatched_camera_setting_retains_ownership_until_its_reply_and_never_replays() {
+    let f = Fixture::new(24);
+    let owner = Arc::new(f.session().await);
+    let observer = f.session().await;
+    f.device.hold_setting.store(true, SeqCst);
+    let pending = tokio::spawn({
+        let owner = owner.clone();
+        async move { owner.set(S::Gain(3)).await }
+    });
+    settle().await;
+    assert_eq!(f.device.settings.lock().unwrap().len(), 1);
+    pending.abort();
+    assert!(pending.await.unwrap_err().is_cancelled());
+    drop(owner);
+    assert_eq!(f.activity.active(), 1);
+    assert_eq!(
+        observer.set(S::Offset(0)).await.unwrap_err().kind,
+        ErrorKind::Busy
+    );
+    f.device.release_setting.notify_one();
+    settle().await;
+    assert_eq!(f.activity.active(), 0);
+    assert_eq!(f.source.snapshot().lease_count, 1);
+    assert_eq!(
+        observer.property(P::Gain).await.unwrap(),
+        V::Integer { value: 3 }
+    );
+    assert_eq!(f.device.settings.lock().unwrap().len(), 1);
+    assert_eq!(f.device.aborts.load(SeqCst), 0);
+    assert_eq!(f.device.stops.load(SeqCst), 0);
+    f.source.shutdown().await.unwrap();
+}
+
+#[tokio::test(start_paused = true)]
+async fn uncertain_camera_setting_fences_siblings_and_preserves_the_old_image() {
+    let f = Fixture::new(24);
+    let owner = f.session().await;
+    let observer = f.session().await;
+    owner.start(request()).await.unwrap();
+    f.device.complete();
+    f.ready().await;
+    let image = observer.image().unwrap();
+    f.device.uncertain_setting.store(true, SeqCst);
+    assert_eq!(
+        owner.set(S::Gain(4)).await.unwrap_err().kind,
+        ErrorKind::Uncertain
+    );
+    assert_eq!(
+        observer.set(S::Offset(1)).await.unwrap_err().kind,
+        ErrorKind::Uncertain
+    );
+    assert!(f.source.snapshot().write_uncertain);
+    assert_eq!(f.device.settings.lock().unwrap().len(), 1);
+    assert_eq!(image.image.bytes(), [17; 12]);
+    f.source.shutdown().await.unwrap();
 }
 
 #[tokio::test(start_paused = true)]
@@ -831,10 +1333,13 @@ async fn optional_metadata_members_are_independent() {
     for missing in ["lastexposureduration", "lastexposurestarttime"] {
         let f = Fixture::new(24);
         let owner = f.session().await;
-        f.device.errors.lock().unwrap().insert(
-            missing.into(),
-            SourceError::new(ErrorKind::Unsupported, "Private optional member"),
-        );
+        let mut error = SourceError::new(ErrorKind::Unsupported, "Private optional member");
+        error.upstream_code = Some(1024);
+        f.device
+            .errors
+            .lock()
+            .unwrap()
+            .insert(missing.into(), error);
         owner.start(request()).await.unwrap();
         f.device.complete();
         f.ready().await;
@@ -856,6 +1361,16 @@ async fn optional_metadata_members_are_independent() {
             metadata.start_time_error.is_some(),
             missing == "lastexposurestarttime"
         );
+        let (unsupported, supported) = if missing == "lastexposureduration" {
+            (P::LastExposureDuration, P::LastExposureStartTime)
+        } else {
+            (P::LastExposureStartTime, P::LastExposureDuration)
+        };
+        assert_eq!(
+            owner.property(unsupported).await.unwrap_err().upstream_code,
+            Some(1024)
+        );
+        assert!(owner.property(supported).await.is_ok());
         assert_eq!(f.device.downloads.load(SeqCst), 1);
         drop(image);
         drop(owner);

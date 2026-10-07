@@ -4196,3 +4196,71 @@ policy changes. Retain artifacts/hub-camera-supervisor-{pr,push}-ci-failure.log.
 All three causes remain unproved and reliability acceptance stays open.
 The final full Rust/228 NINA/both net48 regressions also verify the changed
 private fixtures locally. These passes do not prove the CI failures resolved.
+
+## 2026-10-06: camera JSON publication and subsequent CI evidence
+
+Reviewed JSON 07c0faa and fixture corrections 0923e51 are pushed to draft PR #21.
+PR CI 37562038506 finishes with seven successes, including all four Rust platforms,
+package verification and registered COM activation. Windows fails two NINA cases:
+invalid-hello validation receives Timeout instead of Protocol, and panel HTTP
+Connected=true returns 1280. The panel failure now retains the source snapshot
+(connection re-entry with transportConnected=false) and private response writes
+aborted with SocketException 10053. This is stronger evidence of connection loss,
+but does not prove its root cause. Retain
+artifacts/hub-camera-json-pr-ci-failure.log. Push 37562034286 remains live.
+
+The private accessory HTTP fixture now sets NoDelay on accepted sockets: it sends
+small headers/body separately and should not add Nagle/delayed-ACK latency to
+ownership/deadline tests. No source deadline or success criterion changes. This
+is fixture hardening, not a demonstrated explanation of the CI failures.
+
+## 2026-10-06: shared camera properties, settings and owner cooling (local)
+
+One property definition provides 53 typed camera members and polling plans;
+thirteen typed setters reuse source leases, generation checks and the acquisition
+supervisor. Booleans, Int32, finite numbers and budgeted strings/flat arrays keep
+their types. Optional errors remain independent, with their upstream codes.
+ImageReady and last-exposure timing use the immutable published acquisition;
+external upstream buffer changes cannot change that image's identity.
+
+Settings preflight preserves numeric/named-index Gain/Offset modes and live
+bin/readout/capability limits. Only Unsupported permits a mode fallback. ROI
+combination checks stay at StartExposure; setting one bin axis forwards one write
+and leaves symmetric propagation to the source. No fabricated counterpart write,
+rollback, exposure retry or successful-value cache is introduced.
+
+Review found and corrected source-owned setter admission. The first focused run
+passed 24/26: a second setter queued behind a held write and eventually saw a
+retired generation; an existing uncertain fence was masked by a snapshot error.
+A source-wide retained settings reservation now rejects concurrent setters and
+starts before source queueing, and uncertainty takes priority for setters. Its
+ID/owner/property are observable in shared status. Before-dispatch caller loss
+skips writes; dispatched work retains activity/ownership after caller loss.
+The original failure log remains artifacts/hub-camera-properties-focused.log.
+
+Capture settings remain frozen, while CoolerOn/SetCCDTemperature can use the
+capture owner's retained operation during exposure/readout. Siblings are blocked.
+Publication and owner Stop/Abort do not race an outstanding cooling write. Dropping
+its waiter retains work; completion wakes even a long-poll readiness monitor.
+No borrowed operation release ends the exposure. A final acquisition-state check
+prevents preflight from dispatching after a capture becomes uncertain or abandoned.
+An initial deadline test reached the shorter serial-read deadline instead; its
+corrected private timing gives the readiness deadline precedence without changing
+production bounds. Retain both final-focused and final-confirmed logs.
+
+All thirty focused cases pass: nineteen existing acquisition cases and eleven
+new property/setting/cooling cases. They cover malformed/bounded values, exact
+single writes, temporary ROI incompatibility, live modes/capabilities, old sessions,
+frozen timing, both cancellation boundaries, concurrent settings/starts, owner
+cooling, pending publication, late preflight and uncertain no-replay behavior.
+Full final hub/Alpaca Rust, strict Rust 1.99 Clippy, Rust 1.89 all targets, generated
+contracts and formatting pass. Fresh-host NINA 228/228 and real net48 x86/x64 also
+pass, including the NoDelay private fixture change. Logs:
+artifacts/hub-camera-properties-final-{confirmed,rust,clippy,
+msrv,contract,host,nina,net48}.log. Earlier Clippy found one test-only needless
+string conversion; it was removed without a lint suppression.
+
+This layer is not yet wired into camera runtime, adapters, binary IPC or frontend
+publication. Native recovery metadata and staging admission, all camera outputs,
+coordination and every original acceptance/final gate stay open. Camera choices
+remain disabled. Keep the increment local while preceding push CI remains live.

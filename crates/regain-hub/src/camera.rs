@@ -3,3 +3,4 @@
 pub mod acquisition;
 pub mod image;
 pub mod json_image;
+pub mod properties;

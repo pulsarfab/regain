@@ -3,6 +3,7 @@
 //! Tasks own admission and commands after dispatch. A dropped frontend future
 //! never drops an exposure's control lease or sends an implicit AbortExposure.
 use super::image::{CameraImage, ImageBudget};
+use super::properties::{CameraProperty, CameraSetting, CameraValue};
 use crate::{
     activity::{Activity, ActivityCounter},
     readout::SourceLease,
@@ -145,6 +146,14 @@ pub struct AcquisitionStatus {
     pub image_ready: bool,
     pub error: Option<SourceError>,
     pub completed: Option<AcquisitionIdentity>,
+    pub setting: Option<SettingStatus>,
+}
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SettingStatus {
+    pub id: Uuid,
+    pub owner: Uuid,
+    pub property: CameraProperty,
 }
 struct Active {
     id: Uuid,
@@ -158,8 +167,27 @@ struct Active {
 #[derive(Default)]
 struct State {
     active: Option<Active>,
+    setting: Option<SettingStatus>,
     completed: Option<Arc<CapturedImage>>,
     error: Option<SourceError>,
+}
+struct SettingWork {
+    supervisor: Arc<CameraSupervisor>,
+    id: Uuid,
+    _activity: Activity,
+}
+impl Drop for SettingWork {
+    fn drop(&mut self) {
+        let mut state = self.supervisor.state.lock().unwrap();
+        if state
+            .setting
+            .as_ref()
+            .is_some_and(|setting| setting.id == self.id)
+        {
+            state.setting = None;
+            self.supervisor.changed.notify_waiters();
+        }
+    }
 }
 
 pub struct CameraSupervisor {
@@ -220,6 +248,7 @@ impl CameraSupervisor {
             image_ready: completed.is_some(),
             error: state.error.clone(),
             completed: completed.map(|image| image.identity.clone()),
+            setting: state.setting.clone(),
         }
     }
     /// Explicit administrative abandonment for an orphaned uncertain capture.
@@ -285,6 +314,9 @@ impl CameraSupervisor {
         let (reply, response) = oneshot::channel();
         {
             let mut state = self.state.lock().unwrap();
+            if state.setting.is_some() {
+                return Err(busy());
+            }
             if let Some(active) = &state.active {
                 return Err(if active.phase == AcquisitionPhase::Uncertain {
                     SourceError::uncertain()
@@ -478,7 +510,7 @@ impl CameraSupervisor {
                 if active.phase == AcquisitionPhase::Uncertain {
                     return Ok(false);
                 }
-                active.command_pending
+                active.command_pending || state.setting.is_some()
             };
             if !paused {
                 let ready = boolean(source, "imageready").await?;
@@ -490,13 +522,14 @@ impl CameraSupervisor {
                     return Err(unavailable("Upstream camera reports an acquisition error"));
                 }
                 let mut state = self.state.lock().unwrap();
+                let setting_pending = state.setting.is_some();
                 let Some(active) = state.active.as_mut().filter(|a| a.id == id) else {
                     return Ok(false);
                 };
                 if active.phase == AcquisitionPhase::Uncertain {
                     return Ok(false);
                 }
-                if !active.command_pending {
+                if !active.command_pending && !setting_pending {
                     if ready {
                         active.phase = AcquisitionPhase::Downloading;
                         return Ok(true);
@@ -524,6 +557,9 @@ impl CameraSupervisor {
         let (reply, response) = oneshot::channel();
         let (id, operation, previous) = {
             let mut state = self.state.lock().unwrap();
+            if state.active.is_some() && state.setting.is_some() {
+                return Err(busy());
+            }
             let Some(active) = state.active.as_mut() else {
                 return Ok(());
             };
@@ -657,6 +693,156 @@ impl CameraSession {
     pub fn status(&self) -> AcquisitionStatus {
         self.supervisor.status()
     }
+    /// Standard image readiness/timing belongs to our published acquisition,
+    /// never to a later unowned exposure in an upstream driver's buffer.
+    pub async fn property(&self, property: CameraProperty) -> Result<CameraValue, SourceError> {
+        self.source.snapshot()?;
+        let value = match property {
+            CameraProperty::ImageReady => {
+                let status = self.supervisor.status();
+                if !status.image_ready
+                    && let Some(error) = status.error
+                {
+                    return Err(error);
+                }
+                CameraValue::Boolean {
+                    value: status.image_ready,
+                }
+            }
+            CameraProperty::LastExposureDuration => {
+                let image = self.image()?;
+                match image.identity.exposure.duration_seconds {
+                    Some(value) => CameraValue::Number { value },
+                    None => {
+                        return Err(image
+                            .identity
+                            .exposure
+                            .duration_error
+                            .clone()
+                            .unwrap_or_else(|| {
+                                unavailable("Camera exposure duration unavailable")
+                            }));
+                    }
+                }
+            }
+            CameraProperty::LastExposureStartTime => {
+                let image = self.image()?;
+                match &image.identity.exposure.start_time {
+                    Some(value) => CameraValue::Text {
+                        value: value.clone(),
+                    },
+                    None => {
+                        return Err(image
+                            .identity
+                            .exposure
+                            .start_time_error
+                            .clone()
+                            .unwrap_or_else(|| {
+                                unavailable("Camera exposure start time unavailable")
+                            }));
+                    }
+                }
+            }
+            _ => property.read(&self.source).await?,
+        };
+        self.source.snapshot()?;
+        Ok(value)
+    }
+    /// A dropped setter waiter does not release a dispatched write's ownership.
+    /// No setting is replayed, compensated, or locally cached as a hardware fact.
+    pub async fn set(&self, setting: CameraSetting) -> Result<(), SourceError> {
+        setting.validate()?;
+        if self.supervisor.source.snapshot().write_uncertain {
+            return Err(SourceError::uncertain());
+        }
+        self.source.snapshot()?;
+        let source = self.source.clone();
+        let supervisor = self.supervisor.clone();
+        let (work, acquisition_operation, acquisition) = {
+            let mut state = supervisor.state.lock().unwrap();
+            let operation = settings_operation(&state, setting, self.id)?;
+            let id = Uuid::new_v4();
+            state.setting = Some(SettingStatus {
+                id,
+                owner: self.id,
+                property: setting.property(),
+            });
+            (
+                SettingWork {
+                    supervisor: supervisor.clone(),
+                    id,
+                    _activity: Activity::new(supervisor.activity.clone()),
+                },
+                operation,
+                state.active.as_ref().map(|active| active.id),
+            )
+        };
+        let (reply, response) = oneshot::channel();
+        tokio::spawn(async move {
+            let release_control = acquisition_operation.is_none();
+            let result = async {
+                if reply.is_closed() {
+                    return Ok(());
+                }
+                let operation = timeout(supervisor.timing.admission_timeout, async {
+                    let operation = match acquisition_operation {
+                        Some(operation) => operation,
+                        None => Arc::new(source.operation().await?),
+                    };
+                    setting.preflight(&source).await?;
+                    Ok::<_, SourceError>(operation)
+                })
+                .await
+                .map_err(|_| SourceError::timeout())??;
+                if reply.is_closed() {
+                    return Ok(());
+                }
+                if let Some(id) = acquisition {
+                    let state = supervisor.state.lock().unwrap();
+                    let active = state
+                        .active
+                        .as_ref()
+                        .filter(|active| active.id == id)
+                        .ok_or_else(|| {
+                            unavailable("Camera acquisition changed before setting dispatch")
+                        })?;
+                    if active.phase == AcquisitionPhase::Uncertain {
+                        return Err(SourceError::uncertain());
+                    }
+                    if active.command_pending
+                        || !matches!(
+                            active.phase,
+                            AcquisitionPhase::Exposing | AcquisitionPhase::Reading
+                        )
+                    {
+                        return Err(busy());
+                    }
+                }
+                let result = source
+                    .write(
+                        &operation,
+                        setting.property().member(),
+                        setting.parameters(),
+                    )
+                    .await;
+                // Explicit local release completes before acknowledging this
+                // setter, so an immediate next setter does not race Drop cleanup.
+                let release = if release_control {
+                    operation.source.control(operation.id, false).await
+                } else {
+                    Ok(())
+                };
+                result?;
+                release
+            }
+            .await;
+            drop(work);
+            let _ = reply.send(result);
+        });
+        response
+            .await
+            .map_err(|_| unavailable("Camera setting task stopped"))?
+    }
     pub async fn start(&self, request: ExposureRequest) -> Result<Uuid, SourceError> {
         self.supervisor
             .start(self.source.clone(), self.id, request)
@@ -705,6 +891,33 @@ impl CameraSession {
         let id = active.id;
         drop(state);
         self.supervisor.abandon_uncertain(id)
+    }
+}
+fn settings_operation(
+    state: &State,
+    setting: CameraSetting,
+    owner: Uuid,
+) -> Result<Option<Arc<SourceLease>>, SourceError> {
+    if state.setting.is_some() {
+        return Err(busy());
+    }
+    match state.active.as_ref() {
+        None => Ok(None),
+        Some(active) if active.phase == AcquisitionPhase::Uncertain => {
+            Err(SourceError::uncertain())
+        }
+        Some(active)
+            if active.owner == owner
+                && !setting.changes_capture()
+                && !active.command_pending
+                && matches!(
+                    active.phase,
+                    AcquisitionPhase::Exposing | AcquisitionPhase::Reading
+                ) =>
+        {
+            active.operation.clone().map(Some).ok_or_else(busy)
+        }
+        Some(_) => Err(busy()),
     }
 }
 
@@ -817,7 +1030,7 @@ async fn exposure_metadata(source: &TypedSourceSession) -> Result<ExposureMetada
         start_time_error,
     })
 }
-fn valid_start_time(value: &str) -> bool {
+pub(super) fn valid_start_time(value: &str) -> bool {
     if value.len() > 128 {
         return false;
     }

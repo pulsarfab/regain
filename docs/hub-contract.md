@@ -2248,6 +2248,40 @@ unique acquisition ID. Old-generation completions cannot replace current state.
 An uncertain start/stop/abort retains the command fence and source lease until
 state is reconciled or explicitly reset; it cannot be replayed because a waiter
 disappears. Observed upstream activity cannot be adopted as a new owned exposure.
+The shared camera property/setting layer now implements 53 typed properties and
+13 standard setters in the source supervisor. It preserves booleans, Int32 values,
+finite numbers and budgeted text/flat string arrays. Gain and Offset use the
+source's named-index mode or its numeric min/max mode; only Unsupported permits
+the numeric fallback. Malformed or failed capability reads never authorize writes.
+Binning limits are checked live; symmetric propagation belongs to the source
+setter. Combined ROI/binning validation remains at StartExposure, so intermediate
+settings can be incompatible without invented compensating writes. These rules
+follow the [Camera interface](https://ascom-standards.org/newdocs/camera.html).
+
+A source-wide settings reservation carries a unique ID, owner and property in
+shared status. It precedes async dispatch and blocks concurrent setters/starts.
+Caller loss during preflight skips the command; a dispatched write retains local
+ownership/activity until its reply or bounded source outcome. Settings are not
+cached as successful hardware facts or replayed. Source uncertainty takes priority
+over a stale session when rejecting further setters; an old session never adopts
+a replacement generation.
+
+Capture geometry, gain, mode and other imaging settings cannot change during an
+active acquisition. The owner can change CoolerOn/SetCCDTemperature during
+exposure/readout by borrowing its own capture lease; siblings cannot. No borrowed
+lease release ends the capture. An outstanding cooling write pauses publication
+and other owner commands, then wakes the readiness monitor. Cooling is rejected
+during start/download/stop/abort or uncertain state. Preflight rechecks acquisition
+identity/state before dispatch, so a deadline or abandonment cannot authorize a
+late cooling write. Native adapter cooling queues/recovery allowances still need
+integration. A setter never waits for a thermal target to be achieved.
+
+ImageReady and last-exposure timing are derived from the hub's published image,
+not an upstream driver's later unowned buffer. Optional timing errors retain their
+upstream codes independently; no requested duration/start time replaces unavailable
+actual timing. Other properties remain live generation-fenced source readings.
+The layer alone does not enable camera runtime, adapters, IPC or frontend choices.
+
 Capabilities and optional property errors pass through from the admitted source;
 SDK, COM, Alpaca and virtual inputs do not gain direct retained-frame rereads.
 Native recovery remains in regain-core and reports its actual backend/fallback,
