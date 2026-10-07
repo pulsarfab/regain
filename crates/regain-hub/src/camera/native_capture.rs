@@ -1,6 +1,6 @@
 //! Native capture admission around the existing core recovery implementation.
 //! The caller owns capture lifecycle; this boundary adds no retries or deadlines.
-use super::image::{CameraImage, ImageBudget};
+use super::image::{CameraImage, ImageBudget, NativeFramePermit};
 use crate::source::SourceError;
 use regain_core::{CancellationToken, Exposure, Session};
 
@@ -37,6 +37,15 @@ pub async fn capture(
     let permit = budget
         .reserve_native(&exposure)
         .map_err(NativeCaptureError::Contract)?;
+    capture_admitted(session, exposure, permit, token).await
+}
+
+pub(super) async fn capture_admitted(
+    session: &mut Session,
+    exposure: Exposure,
+    permit: NativeFramePermit,
+    token: &CancellationToken,
+) -> Result<CameraImage, NativeCaptureError> {
     let frame = session
         .capture(exposure, token)
         .await

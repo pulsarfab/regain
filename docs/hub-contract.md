@@ -2260,12 +2260,35 @@ After adoption, staging is released; final pixels and the fixed 128-KiB metadata
 capacity remain charged until the last shared image reader leaves. This is a host
 payload budget, not a whole-process/worker RSS bound or decoded JSON tree budget.
 
-This boundary adds no retries, recovery policies or deadlines. A future native
-backend must retain its capture task independently of frontend waiters, derive its
-allowance from core recovery/cooling settings and share the host's budget. The
-boundary alone does not implement that lifecycle, a native source backend or any
-camera frontend. Core cancellation tests exercise cancellation of owned capture
-work; frontend disconnect must not map to that cancellation token.
+This boundary adds no retries, recovery policies or deadlines. The native camera
+owner now retains connection, capture and cleanup tasks independently of waiters,
+using one serialized core Session and a separate readable state snapshot. It
+reserves runtime activity before publishing an operation marker. Concurrent
+connection waiters join one handshake; capture admission validates geometry and
+reserves the shared payload budget before clearing the prior image. Failed/busy
+admission preserves that image. Budget sizing must include retained images and
+the next capture's staging; admission never evicts pinned readers.
+
+Operation IDs and generations fence results and cleanup. Reset cancels owned
+core work and retires the generation synchronously, then retains worker cleanup;
+a replacement connection waits for cleanup. Old waiters cannot adopt a newer
+image or error. Explicit Abort acknowledges after core cleanup and discards the
+active image; an idle Abort is inert. Dropping any waiter does not send Abort or
+cancel core work. Unexpected task loss withdraws connected state and reports a
+failure instead of leaving a permanent Busy marker. Task activity survives even
+the loss of external owner references. The source adapter must close the owner
+on ordinary last-source-lease teardown, independently of frontend waiters.
+
+The owner is not yet wired into the source factory/runtime, frontend authorization
+or any image output. A native adapter must derive its allowance from all core
+recovery/cooling settings and share the host's budget/activity counter. The owner
+adds no outer deadline and preserves existing core recovery. Frontend disconnect
+must not map to its core cancellation token. Native cooling writes need a common
+acknowledged path: core queue_control currently records desired values, while
+capture environment refresh reads only temperature/power; the direct worker
+rejects control writes during capture. Queuing a desired cooler value alone must
+not be reported as an applied in-exposure write. Implement and test SDK/direct
+cooling application and recovery-setting preservation before enabling cameras.
 
 Acquisitions and publications carry source identity, source generation and a
 unique acquisition ID. Old-generation completions cannot replace current state.

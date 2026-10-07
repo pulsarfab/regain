@@ -115,6 +115,25 @@ real net48 x86/x64 regressions also pass. Native source lifecycle/runtime/config
 host budget wiring, recovery
 allowances, all camera outputs and every original later gate remain open.
 
+Native owner checkpoint (local): one core Session now retains connection, capture
+and cleanup tasks independently of waiters. Atomic admission reserves runtime
+activity and payload before publishing markers; invalid/busy starts preserve the
+prior image. Snapshots remain readable during capture. Operation/generation guards
+reject stale images/errors and cleanup. Explicit Abort waits for core cleanup;
+reset fences synchronously and retains cleanup before reconnect. Eight real
+worker-simulation cases pass, including last external-reference loss, joined
+connections, dropped capture/abort/close waiters, no-dispatch reset, no-retry error
+codes and pinned-reader preservation. Full Rust/strict Clippy/MSRV/contracts,
+fresh-host NINA 228/228 and real net48 x86/x64 pass. Source factory/runtime/config,
+typed native properties/settings, recovery allowances and all outputs remain open.
+Review refinement: core cooler queueing is desired state only during capture, and
+the direct worker rejects capture-time writes. Add a common acknowledged SDK/direct
+cooling path and preserve live targets across recovery; do not equate queued intent
+with an applied write. This remains part of the original native camera scope.
+Current ef0748e PR/push CI has seven successful jobs each; Windows test.ps1 passes
+in both runs and packaging/installer checks remain live. Earlier failure causes
+remain unproved. Keep native admission/owner increments local until CI finishes.
+
 Camera supervisor checkpoint (local): nineteen private virtual-clock cases pass.
 One source-owned acquisition retains control and runtime activity after caller
 cancellation/disconnect, freezes geometry and available exposure identity, and

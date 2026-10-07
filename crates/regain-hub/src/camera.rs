@@ -4,4 +4,5 @@ pub mod acquisition;
 pub mod image;
 pub mod json_image;
 pub mod native_capture;
+pub mod native_owner;
 pub mod properties;

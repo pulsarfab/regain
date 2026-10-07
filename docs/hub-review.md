@@ -4323,3 +4323,62 @@ remaining input adapters. Recovery metadata migration, coordination, conformance
 hardware/client acceptance, README/site documentation, main reconciliation and all
 original final gates remain open. Camera choices stay disabled; keep this reviewed
 increment local while ef0748e CI runs.
+
+## 2026-10-06: retained native camera ownership (local)
+
+The native owner serializes one core Session while exposing a separate readable
+snapshot. Connection, capture and cleanup work retain their own Arc and runtime
+activity; waiters own neither cancellation tokens nor tasks. Concurrent connects
+join one handshake. Valid capture admission reserves payload memory and activity,
+then publishes an operation ID and clears the prior image. Invalid/busy admission
+preserves that image. Core recovery remains unchanged and no deadline/retry is
+added around it. Immutable image readers continue to pin payload and metadata.
+
+Explicit Abort cancels only the current owned core capture, discards its result
+and acknowledges after cleanup. Idle Abort is inert; Stop is not fabricated.
+Reset retires the generation synchronously, cancels pending core work and retains
+cleanup before reconnect. Stale capture/connection completions and obsolete cleanup
+cannot publish or close a replacement connection. Wait notifications are enabled
+before checking state, preventing lost completion wakes. Unexpected task loss
+withdraws connected state, reports a failure and clears its marker; reconnect
+closes the prior session before opening. Normal source teardown must call close,
+rather than relying on eventual Session/worker Drop for hardware cleanup.
+
+Review tightened two races before final validation. Activity is reserved before
+publishing any operation marker, including close/reset, so runtime replacement
+cannot see an accepted operation without retained work. Acquisition identity is
+checked separately from generation, preventing an old/unknown waiter from receiving
+a newer capture's error. Connection/abort/close acknowledgements also recheck
+their generation and do not report an unexpected task failure as success. Source
+errors retain SDK codes with fixed text; raw worker diagnostics stay in core status.
+
+Eight actual worker-simulation cases pass: joined/abandoned connection waiters,
+dropped capture waiters with live status and frozen images, invalid/budget-rejected
+admission preserving the prior frame, explicit SDK/direct Abort and fresh capture,
+reset during capture and before dispatch, repeated reset, abandoned close, typed
+SDK failure without replacement retries, and capture completion after loss of all
+external owner references. The final two normal-capture tests use six-second
+simulated exposures instead of a brief 200-ms phase window, without increasing
+test deadlines. All eight confirmed cases pass; production bounds are unchanged.
+
+Full core/hub/Alpaca Rust, strict Rust 1.99 all-target Clippy, Rust 1.89 all-target
+checks, generated contracts and formatting pass. The final test-only duration
+change also passes focused Clippy/MSRV. Fresh-host NINA 228/228 and real net48
+x86/x64 regressions pass. Logs:
+artifacts/hub-camera-native-owner-{check,focused,reviewed,confirmed,rust,clippy,
+msrv,test-clippy,test-msrv,contract,host,nina,net48}.log.
+
+The owner still needs the typed native source adapter, configuration/factory and
+runtime sharing, recovery/cooling allowances and all frontend image outputs.
+Inspection also found a required cooling refinement: Session.queue_control changes
+desired values, but capture read_environment only reads temperature/power; direct
+server get/set rejects capture-time writes except cached environmental reads.
+Implement a common acknowledged in-capture cooling path, retaining target changes
+across recovery. Do not claim queued intent is hardware application or bypass the
+worker's capture ownership. This is original scope, not an optional follow-up.
+Camera creation remains gated and all original later gates remain open.
+
+Current ef0748e PR/push CI 37564346322/37564341366 each has seven successful jobs
+and a live Windows packaging job. Both Windows test.ps1 steps pass. This does not
+prove NoDelay or marker ordering explains the earlier intermittent failures.
+Keep native admission and ownership local until these runs finish.
