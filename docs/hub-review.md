@@ -3990,3 +3990,16 @@ Preceding panel CI 37554304962/37554298269 has passed its Windows test script an
 is still running installer acceptance. Keep local commits pending those terminal
 results. Next: the source-owned acquisition supervisor, camera adapters and all
 three publications, followed by every original remaining acceptance/final gate.
+
+## 2026-10-06: panel CI confirmation and camera foundation publication
+
+Exact preceding head 2f3f8c2 passes all eight jobs in both PR/push CI
+37554304962/37554298269. Windows completes its test script, registered imports,
+production exports, packaging and installer acceptance. This verifies the panel
+Automation correction in CI; it does not establish a cause for unrelated older
+connection/motion failures or replace physical/interactive acceptance.
+Reviewed shared panel creation 1c67398, image foundation b154c87 and binary source
+dispatch 56c2e7a now proceed together to the same draft PR. Their own new-head CI
+remains required. Local validation includes full Rust hub/Alpaca, all eleven image
+and eight binary actor cases, strict Clippy, Rust 1.89 all targets, generated
+contracts, fresh-host NINA 228/228 and actual net48 x86/x64. Camera acquisition,+adapters, three outputs, coordination and every original final gate remain open.

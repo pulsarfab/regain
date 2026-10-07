@@ -31,8 +31,11 @@ pass. The fixture incorrectly requires a managed enum identity across VARIANT;
 native Int32 enum marshaling is now checked explicitly in both net48 clients.
 The Automation assertion admits only the declared enum or bounded Int32; driver
 behavior is unchanged. Simulation and the correction are pushed at 2f3f8c2;
-new PR/push CI 37554304962/37554298269 is live. Shared panel creation is implemented
-and verified locally. Cameras are the next implementation step.
+PR/push CI 37554304962/37554298269 both pass all eight jobs, including Windows
+registered imports, production registration, packaging and installer acceptance.
+Shared panel creation and the first camera image/source increments pass local
+regressions and are included in the next PR checkpoint; their own CI is required.
+The source-owned camera acquisition supervisor is the next implementation step.
 
 Current position: milestones 0 and 1 are complete. The scalar source/output paths
 in milestones 2 and 3 are implemented; their remaining acceptance gates are open.
@@ -136,7 +139,11 @@ x86/x64 regressions. Image dispatch requires source control and a matching
 generation, uses its own bounded download deadline and preserves uncertainty.
 The acquisition supervisor must retain runtime activity after a frontend
 disconnect; camera adapters and all three image publications remain open.
-Preceding panel CI has progressed past Windows tests into installer acceptance.
+Preceding panel CI 37554304962/37554298269 now finishes successfully in both runs,
+all eight jobs including Windows installer acceptance. Reviewed shared panel
+creation, camera image buffers/codec and binary source dispatch proceed to the
+same draft PR. New-head CI is required; earlier unrelated intermittent failures
+remain documented rather than being declared resolved by these green runs.
 
 Filter-wheel controller increment: shared typed sessions, live ordered names and
 signed offsets, slot bounds, nonblocking Position writes and moving `-1` are
