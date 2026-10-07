@@ -27,6 +27,9 @@ pub use guiding::{GuideRequest, GuidingPhase, GuidingStatus};
 #[path = "prepared.rs"]
 mod prepared;
 pub(crate) use prepared::{CameraDispatch, PreparedCameraStart};
+#[path = "capture_profile.rs"]
+mod capture_profile;
+pub use capture_profile::CameraCaptureProfile;
 
 #[derive(Clone, Copy)]
 struct StartPlan {

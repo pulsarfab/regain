@@ -9,6 +9,7 @@ pub(crate) struct PreparedCameraStart {
     request: ExposureRequest,
     operation: Option<Arc<SourceLease>>,
     geometry: Option<CaptureGeometry>,
+    capture_profile: Option<CameraCaptureProfile>,
     armed: bool,
     dispatched: bool,
     cleanup_started: bool,
@@ -28,6 +29,7 @@ impl CameraSession {
     pub(crate) async fn prepare_group(
         &self,
         request: ExposureRequest,
+        require_scalar_image: bool,
     ) -> Result<PreparedCameraStart, SourceError> {
         let plan = self
             .supervisor
@@ -39,6 +41,7 @@ impl CameraSession {
             request,
             operation: None,
             geometry: None,
+            capture_profile: None,
             armed: true,
             dispatched: false,
             cleanup_started: false,
@@ -57,6 +60,25 @@ impl CameraSession {
                 Ok((operation, geometry)) => {
                     reservation.operation = Some(operation);
                     reservation.geometry = Some(geometry);
+                    if require_scalar_image {
+                        match timeout(
+                            reservation.supervisor.timing.admission_timeout,
+                            CameraCaptureProfile::scalar(&reservation.source),
+                        )
+                        .await
+                        .unwrap_or_else(|_| Err(SourceError::timeout()))
+                        {
+                            Ok(profile) => reservation.capture_profile = Some(profile),
+                            Err(mut error) => {
+                                if let Err(cleanup) = reservation.release(Some(error.clone())).await
+                                {
+                                    error = cleanup;
+                                }
+                                let _ = reply.send(Err(error));
+                                return;
+                            }
+                        }
+                    }
                     // A closed receiver drops the reservation and queues owned cleanup.
                     let _ = reply.send(Ok(reservation));
                 }
@@ -79,10 +101,18 @@ impl CameraSession {
     }
 }
 impl PreparedCameraStart {
+    pub(crate) fn capture_profile(&self) -> Option<CameraCaptureProfile> {
+        self.capture_profile.clone()
+    }
     pub(crate) async fn recheck(&self, require_abort: bool) -> Result<(), SourceError> {
         let geometry = prepare(&self.source, self.request).await?;
         if Some(geometry) != self.geometry {
             return Err(invalid("Camera geometry changed after group preflight"));
+        }
+        if let Some(profile) = &self.capture_profile
+            && &CameraCaptureProfile::scalar(&self.source).await? != profile
+        {
+            return Err(invalid("Camera image format changed after group preflight"));
         }
         if require_abort {
             command_capability(&self.source, true).await?;

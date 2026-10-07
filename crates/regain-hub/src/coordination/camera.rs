@@ -1,8 +1,8 @@
 //! Explicit camera bursts through the ordinary acquisition supervisor.
 use crate::{
     camera::acquisition::{
-        AcquisitionIdentity, CameraDispatch, CameraSession, CameraStartReceipt, CapturedImage,
-        ExposureRequest, PreparedCameraStart,
+        AcquisitionIdentity, CameraCaptureProfile, CameraDispatch, CameraSession,
+        CameraStartReceipt, CapturedImage, ExposureRequest, PreparedCameraStart,
     },
     readout::invalid,
     source::{ErrorKind, SourceError},
@@ -77,6 +77,9 @@ impl CameraGroupConfig {
 pub struct CameraMemberRequest {
     pub source: Uuid,
     pub exposure: ExposureRequest,
+    /// Consumers such as NINA require frozen, supported scalar sensor metadata.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub require_scalar_image: bool,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
@@ -114,6 +117,8 @@ pub struct CameraMemberResult {
     pub source: Uuid,
     pub generation: Uuid,
     pub request: ExposureRequest,
+    pub require_scalar_image: bool,
+    pub capture_profile: Option<CameraCaptureProfile>,
     pub acquisition: Option<Uuid>,
     pub phase: CameraMemberPhase,
     /// Monotonic host request/ack windows relative to operation admission.
@@ -223,6 +228,8 @@ impl CameraGroup {
                     source: r.source,
                     generation: s.generation(),
                     request: r.exposure,
+                    require_scalar_image: r.require_scalar_image,
+                    capture_profile: None,
                     acquisition: None,
                     phase: CameraMemberPhase::NotStarted,
                     dispatch_seconds: None,
@@ -275,10 +282,11 @@ impl CameraGroup {
             let result = tokio::select! { biased;
                 _ = cancel.cancelled() => Err(CameraGroupPhase::Cancelled),
                 _ = sleep_until(deadline) => Err(CameraGroupPhase::Deadline),
-                result = session.prepare_group(report.members[index].request) => Ok(result),
+                result = session.prepare_group(report.members[index].request, report.members[index].require_scalar_image) => Ok(result),
             };
             match result {
                 Ok(Ok(value)) => {
+                    report.members[index].capture_profile = value.capture_profile();
                     prepared.push(value);
                     report.members[index].phase = CameraMemberPhase::Prepared;
                     emit(publish, &mut report);

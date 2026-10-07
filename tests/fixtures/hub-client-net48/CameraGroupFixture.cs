@@ -13,7 +13,7 @@ internal static class CameraGroupFixture
             owned = attachment.StartedProcessId;
             if (owned is null) throw new InvalidOperationException("Camera group fixture must own its fresh private host");
             using var first = await HubCameraGroups.AttachAsync(executable, path, attachment.InstanceId, deadline.Token);
-            var group = first.Groups.Single().GetProperty("id").GetGuid(); var requests = first.UniformRequests(group, 0.2, true);
+            var group = first.Groups.Single().GetProperty("id").GetGuid(); var requests = first.UniformRequests(group, 0.2, true, requireScalarImage: true);
             var started = await first.StartAsync(group, requests, deadline.Token); first.Dispose();
             using var second = await HubCameraGroups.AttachAsync(executable, path, attachment.InstanceId, deadline.Token);
             var operation = started.GetProperty("operation").GetGuid(); JsonElement status;
@@ -22,6 +22,12 @@ internal static class CameraGroupFixture
                 if (!HubCameraGroups.Terminal(status)) await Task.Delay(20, deadline.Token);
             } while (!HubCameraGroups.Terminal(status));
             if (status.GetProperty("phase").GetString() != "complete") throw new InvalidOperationException("Camera group lost retained completion");
+            foreach (var member in status.GetProperty("result").GetProperty("members").EnumerateArray()) {
+                var profile = member.GetProperty("captureProfile");
+                if (!member.GetProperty("requireScalarImage").GetBoolean() || profile.GetProperty("maxAdu").GetInt32() != 65535 ||
+                    profile.GetProperty("sensorType").GetInt32() != 0 || profile.GetProperty("bayerOffsetX").GetInt32() != 0)
+                    throw new InvalidOperationException("Camera group lost its frozen scalar metadata");
+            }
             var budget = new HubImageBudget(1024 * 1024);
             using (var a = await second.DownloadAsync(group, operation, requests[0].Source, budget, TimeSpan.FromSeconds(10), deadline.Token))
             using (var b = await second.DownloadAsync(group, operation, requests[1].Source, budget, TimeSpan.FromSeconds(10), deadline.Token)) {
@@ -54,7 +60,7 @@ internal static class CameraGroupFixture
                 try { await guarded.StatusAsync(group, operation, deadline.Token); throw new InvalidOperationException("Rounded terminal sequence was accepted"); }
                 catch (HubException error) when (error.Failure == HubFailure.Protocol) { }
             }
-            Console.WriteLine($"net48 {IntPtr.Size * 8}-bit: camera group, alias mapping, retained IPC reattachment, separate exact images, rereads, shared budget and zero output leases passed");
+            Console.WriteLine($"net48 {IntPtr.Size * 8}-bit: camera group, frozen scalar metadata, alias mapping, retained IPC reattachment, separate exact images, rereads, shared budget and zero output leases passed");
         } finally { if (owned is uint pid) Program.StopOwned(pid, executable); }
     }
 }

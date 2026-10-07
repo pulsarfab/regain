@@ -18,6 +18,7 @@ async fn group(
         .map(|source| CameraMemberRequest {
             source: *source,
             exposure: request(),
+            require_scalar_image: false,
         })
         .collect();
     let config = CameraGroupConfig {
@@ -594,4 +595,166 @@ fn camera_group_config_rejects_duplicates_unbounded_counts_and_nonfinite_deadlin
     bad = config;
     bad.label = " ".into();
     assert!(bad.validate().is_err());
+}
+
+fn scalar_metadata(device: &Device, sensor: i32) {
+    device.set("maxadu", json!(65535));
+    device.set("sensortype", json!(sensor));
+    device.set("bayeroffsetx", json!(1));
+    device.set("bayeroffsety", json!(0));
+    device.set("sensorname", json!("[SIMULATION] sensor"));
+}
+#[tokio::test(start_paused = true)]
+async fn camera_group_scalar_profile_is_frozen_before_start_and_survives_later_changes() {
+    let a = Fixture::new(24);
+    let b = Fixture::new(24);
+    scalar_metadata(&a.device, 0);
+    scalar_metadata(&b.device, 2);
+    let (g, mut r) = group(&a, &b, Failure::Continue, Cancel::LeaveRunning).await;
+    for request in &mut r {
+        request.require_scalar_image = true;
+    }
+    let mut op = g.start(r).unwrap();
+    capturing(&op).await;
+    let admitted = op.status();
+    assert_eq!(
+        admitted.members[0]
+            .capture_profile
+            .as_ref()
+            .unwrap()
+            .bayer_offset_x,
+        0
+    );
+    assert_eq!(
+        admitted.members[1]
+            .capture_profile
+            .as_ref()
+            .unwrap()
+            .bayer_offset_x,
+        1
+    );
+    a.device.complete();
+    b.device.complete();
+    let result = terminal(&mut op).await;
+    assert_eq!(result.phase, GroupPhase::Complete);
+    a.device.set("maxadu", json!(255));
+    b.device.set("sensortype", json!(0));
+    assert_eq!(
+        op.status().members[0]
+            .capture_profile
+            .as_ref()
+            .unwrap()
+            .max_adu,
+        65535
+    );
+    assert_eq!(
+        op.status().members[1]
+            .capture_profile
+            .as_ref()
+            .unwrap()
+            .sensor_type,
+        2
+    );
+    assert_eq!(
+        result.members[0].capture_profile,
+        admitted.members[0].capture_profile
+    );
+    assert!(op.image(a.source.snapshot().source).is_ok());
+}
+#[tokio::test(start_paused = true)]
+async fn camera_group_scalar_profile_rejects_unsupported_or_malformed_members_before_any_start() {
+    for (key, value) in [
+        ("maxadu", json!(0)),
+        ("sensortype", json!(1)),
+        ("sensortype", json!(99)),
+        ("bayeroffsetx", json!(-1)),
+        ("sensorname", json!(123)),
+    ] {
+        let a = Fixture::new(24);
+        let b = Fixture::new(24);
+        scalar_metadata(&a.device, 0);
+        scalar_metadata(&b.device, 2);
+        b.device.set(key, value);
+        let (g, mut r) = group(&a, &b, Failure::Continue, Cancel::LeaveRunning).await;
+        for request in &mut r {
+            request.require_scalar_image = true;
+        }
+        let mut op = g.start(r).unwrap();
+        let result = terminal(&mut op).await;
+        assert_eq!(result.phase, GroupPhase::PreflightFailed, "{key}");
+        assert!(result.members[1].error.is_some());
+        assert_eq!(
+            a.device.starts.load(SeqCst) + b.device.starts.load(SeqCst),
+            0
+        );
+        assert_eq!(a.activity.active() + b.activity.active(), 0);
+    }
+}
+#[tokio::test(start_paused = true)]
+async fn camera_group_scalar_profile_recheck_prevents_a_burst_after_format_changes() {
+    let a = Fixture::new(24);
+    let b = Fixture::new(24);
+    scalar_metadata(&a.device, 0);
+    scalar_metadata(&b.device, 2);
+    let (g, mut r) = group(&a, &b, Failure::Continue, Cancel::LeaveRunning).await;
+    for request in &mut r {
+        request.require_scalar_image = true;
+    }
+    b.device.hold_prepare.store(true, SeqCst);
+    let mut op = g.start(r).unwrap();
+    for _ in 0..100 {
+        settle().await;
+        if b.device.prepare_reads.load(SeqCst) > 0 {
+            break;
+        }
+    }
+    assert_eq!(b.device.prepare_reads.load(SeqCst), 1);
+    a.device.set("maxadu", json!(255));
+    b.device.hold_prepare.store(false, SeqCst);
+    b.device.release_prepare.notify_one();
+    let result = terminal(&mut op).await;
+    assert_eq!(result.phase, GroupPhase::PreflightFailed);
+    assert_eq!(
+        a.device.starts.load(SeqCst) + b.device.starts.load(SeqCst),
+        0
+    );
+    assert_eq!(
+        result.members[0].capture_profile.as_ref().unwrap().max_adu,
+        65535
+    );
+}
+#[tokio::test(start_paused = true)]
+async fn camera_group_scalar_profile_missing_requirement_is_opt_in_and_sensor_name_is_optional() {
+    let a = Fixture::new(24);
+    let b = Fixture::new(24);
+    let (g, mut r) = group(&a, &b, Failure::Continue, Cancel::LeaveRunning).await;
+    for request in &mut r {
+        request.require_scalar_image = true;
+    }
+    let mut op = g.start(r).unwrap();
+    assert_eq!(terminal(&mut op).await.phase, GroupPhase::PreflightFailed);
+    scalar_metadata(&a.device, 0);
+    scalar_metadata(&b.device, 0);
+    for device in [&a.device, &b.device] {
+        device.errors.lock().unwrap().insert(
+            "sensorname".into(),
+            SourceError::new(ErrorKind::Unsupported, "Unsupported sensor name"),
+        );
+    }
+    let (g, mut r) = group(&a, &b, Failure::Continue, Cancel::LeaveRunning).await;
+    for request in &mut r {
+        request.require_scalar_image = true;
+    }
+    let mut op = g.start(r).unwrap();
+    capturing(&op).await;
+    a.device.complete();
+    b.device.complete();
+    let result = terminal(&mut op).await;
+    assert_eq!(result.phase, GroupPhase::Complete);
+    assert!(
+        result
+            .members
+            .iter()
+            .all(|m| m.capture_profile.as_ref().unwrap().sensor_name.is_none())
+    );
 }

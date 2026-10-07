@@ -322,4 +322,48 @@ fences, ordinary/group capacity contention, pins, cancellation and malformed
 payload cleanup. Actual private hosts verify reattachment, separate exact image
 rereads, both cancellation policies and no output leases. The same public APIs
 run inside real net48 x86/x64 processes. Installed-client and physical acceptance
-remain separate gates. Native NINA group capture/save remains construction work.
+remain separate gates.
+
+### Native NINA group capture and saving
+
+Add **Capture Regain camera group** from **PulsarFab regain** in the advanced
+sequencer. Choose a saved configuration/group, set each member's duration and
+Light flag, and choose an absolute save directory or use the active NINA profile
+directory. The step freezes its identities, requests, pixel-conversion preference
+and separate NINA file settings before asynchronous work. Changed saved membership
+is rejected before capture. The directory is checked for write access first.
+
+The step requests scalar-image admission. Under the ordinary camera reservation,
+the host freezes MaxADU, sensor type, Bayer offsets and optional sensor name, then
+rechecks them before dispatch. Monochrome and RGGB scalar sensors are supported;
+multi-plane color and other sensor layouts fail preflight before any member starts.
+Ordinary group clients can omit this requirement and keep their existing behavior.
+Capture profiles become immutable member results. Historical saves use these
+profiles and authoritative completed exposure time/start, even after a live source
+changes format. The ordinary NINA camera and group adapter share metadata and
+lossless pixel conversion helpers.
+
+Each completed member goes through NINA's ordinary image factory/file writer.
+The profile selects the file format and compression. Names use physical source
+and acquisition UUIDs in a `regain-<operation UUID>` folder; aliases or labels
+cannot retarget a filename. NINA avoids overwriting an existing file. Regain
+records group, operation, acquisition and source-generation headers alongside
+the frozen exposure metadata. Separate file settings prevent NINA's mutable save
+path from nesting later members under an earlier filename.
+
+Healthy completed images are saved even when a sibling fails. A save failure is
+reported for that member and does not suppress later healthy saves. The step
+succeeds only when all captures and saves succeed. Partial failure, cancellation
+or an unknown start leaves a reconciliation fence through cloning and NINA's
+saved-sequence loader. Inspect retained results, equipment and files before
+explicitly allowing a new operation. That action does not resume captures, save
+old images, clear source ownership or recover a failed camera. A failed upstream
+download can retain ordinary acquisition control while recovery is pending.
+
+Cancellation during capture addresses only the acknowledged operation and uses
+its saved group policy. Losing the start acknowledgement never guesses an
+operation or sends an abort. Cancellation during saving does not alter a terminal
+capture and keeps existing files. Retained images remain subject to the latest-
+operation/revision lifetime above: save them before starting another operation.
+Installed NINA and physical-device acceptance remain open; local evidence uses
+private simulated hosts, real NINA serialization and actual FITS file writes.

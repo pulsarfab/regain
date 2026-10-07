@@ -14,25 +14,33 @@ public partial class HubSequenceTemplates : ResourceDictionary
     private async void ChooseGroup(object sender, RoutedEventArgs args)
     {
         if ((sender as FrameworkElement)?.DataContext is not MoveHubFocuserGroup step || step.Executing) return;
+        await ChooseSavedGroup("focuser", () => step.Executing, async (path, instance) => {
+            using var groups = await HubFocuserGroups.AttachAsync(HubEquipment.Executable, path, instance); return groups.Groups;
+        }, (path, instance, group) => step.SelectGroup(path, instance, group.GetProperty("id").GetGuid(), group.GetProperty("label").GetString()!));
+    }
+    private static async Task ChooseSavedGroup(string kind, Func<bool> executing,
+        Func<string, Guid, Task<IReadOnlyList<JsonElement>>> load, Action<string, Guid, JsonElement> select)
+    {
         var picker = new Microsoft.Win32.OpenFileDialog { Filter = "Regain hub configuration (*.json)|*.json", CheckFileExists = true };
         if (picker.ShowDialog() != true) return;
         try {
             var instance = await ConfigurationInstance(picker.FileName);
-            using var groups = await HubFocuserGroups.AttachAsync(HubEquipment.Executable, picker.FileName, instance);
-            var window = new Window { Title = "PulsarFab regain — choose focuser group", Width = 650, Height = 340, WindowStartupLocation = WindowStartupLocation.CenterScreen };
+            var groups = await load(picker.FileName, instance);
+            if (executing()) return;
+            var window = new Window { Title = $"PulsarFab regain — choose {kind} group", Width = 650, Height = 340, WindowStartupLocation = WindowStartupLocation.CenterScreen };
             SetupTheme.Apply(window);
             var panel = new StackPanel { Margin = new Thickness(20) }; window.Content = panel;
-            panel.Children.Add(new TextBlock { Text = "Select a saved group. This loads configuration without connecting equipment. Calibration and travel bounds are edited in hub setup.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0,0,0,12) });
+            panel.Children.Add(new TextBlock { Text = "Select a saved group. This loads configuration without connecting equipment. Group settings and policies are edited in hub setup.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0,0,0,12) });
             var choices = new ComboBox();
-            foreach (var group in groups.Groups) choices.Items.Add(new ComboBoxItem { Content = group.GetProperty("label").GetString(), Tag = group.Clone() });
+            foreach (var group in groups) choices.Items.Add(new ComboBoxItem { Content = group.GetProperty("label").GetString(), Tag = group.Clone() });
             choices.SelectedIndex = choices.Items.Count == 0 ? -1 : 0; panel.Children.Add(choices);
             var save = new Button { Content = "Use selected group", IsEnabled = choices.Items.Count > 0, Padding = new Thickness(12,8,12,8), Margin = new Thickness(0,12,0,0) };
             save.Click += (_, _) => {
-                if (step.Executing) { MessageBox.Show(window, "Wait for this sequence step to finish before changing its group.", "Regain focuser groups"); return; }
-                if (choices.SelectedItem is ComboBoxItem item) { var group = (JsonElement)item.Tag; step.SelectGroup(picker.FileName, instance, group.GetProperty("id").GetGuid(), group.GetProperty("label").GetString()!); window.DialogResult = true; }
+                if (executing()) { MessageBox.Show(window, "Wait for this sequence step to finish before changing its group.", $"Regain {kind} groups"); return; }
+                if (choices.SelectedItem is ComboBoxItem item) { select(picker.FileName, instance, (JsonElement)item.Tag); window.DialogResult = true; }
             };
             panel.Children.Add(save); window.ShowDialog();
-        } catch (Exception error) { MessageBox.Show(error is HubException ? "Could not load the saved groups from the shared hub. Open hub setup to inspect its configuration and host status." : error.Message, "Regain focuser groups"); }
+        } catch (Exception error) { MessageBox.Show(error is HubException ? "Could not load the saved groups from the shared hub. Open hub setup to inspect its configuration and host status." : error.Message, $"Regain {kind} groups"); }
     }
     private static async Task<Guid> ConfigurationInstance(string path)
     {
@@ -44,6 +52,24 @@ public partial class HubSequenceTemplates : ResourceDictionary
             if (size > 4 * 1024 * 1024) throw new InvalidOperationException("The configuration is too large");
             try { using var config = JsonDocument.Parse(bytes.AsMemory(0, size)); return config.RootElement.GetProperty("instanceId").GetGuid(); }
             finally { Array.Clear(bytes); }
+    }
+    private async void ChooseCameraGroup(object sender, RoutedEventArgs args)
+    {
+        if ((sender as FrameworkElement)?.DataContext is not CaptureHubCameraGroup step || step.Executing) return;
+        await ChooseSavedGroup("camera", () => step.Executing, async (path, instance) => {
+            using var groups = await HubCameraGroups.AttachAsync(HubEquipment.Executable, path, instance); return groups.Groups;
+        }, step.SelectGroup);
+    }
+    private void InspectCameraGroup(object sender, RoutedEventArgs args)
+    {
+        if ((sender as FrameworkElement)?.DataContext is not CaptureHubCameraGroup step || step.Executing) return;
+        HubConfigurationWindow.Show(null, HubEquipment.Executable, step.ConfigPath, step.InstanceId);
+    }
+    private void AllowNewCameraOperation(object sender, RoutedEventArgs args)
+    {
+        if ((sender as FrameworkElement)?.DataContext is not CaptureHubCameraGroup step || step.Executing) return;
+        if (MessageBox.Show("Have you inspected every retained camera result and saved file? Allowing a new operation permits a new exposure on each camera. It does not resume the previous capture or save its images.", "Allow a new Regain camera capture", MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes)
+            step.AllowNewOperationAfterInspection();
     }
     private void Inspect(object sender, RoutedEventArgs args)
     {

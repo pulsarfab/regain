@@ -660,7 +660,20 @@ those same results. A new start replaces the retained operation and its images.
 This actual private simulation capture shows distinct member exposure requests
 after reopening setup. The input fields describe the next capture. Managed
 clients can retrieve each completed image over protected local IPC without an
-ordinary output connection or upstream redownload. Native NINA group capture/save
-is the next construction step; ordinary NINA Camera devices continue to return
-one image each. See [coordination](hub-coordination.md) for ownership, policies,
-image lifetime and acceptance limits.
+ordinary output connection or upstream redownload.
+
+In NINA's advanced sequencer, add **Capture Regain camera group** under
+**PulsarFab regain**. Choose the saved group, set each duration and Light flag,
+and enter an absolute save directory or use the NINA profile directory. Each
+completed camera image is saved separately using the profile's format and
+compression, under a folder named for the operation. Physical camera and
+acquisition IDs distinguish files. Monochrome and RGGB scalar sensors are
+supported; unsupported sensor layouts fail group preflight before exposure.
+
+The step saves healthy completed images even if a sibling fails, and reports
+individual save failures. A failed or interrupted step requires inspection of
+retained results, equipment and files before explicitly allowing another capture.
+This fence survives cloning and saved sequences; automatic retry cannot repeat
+an uncertain start. Ordinary NINA Camera devices continue to return one image
+each. See [coordination](hub-coordination.md) for ownership, policies, image
+lifetime and the still-open installed-client/physical acceptance gates.

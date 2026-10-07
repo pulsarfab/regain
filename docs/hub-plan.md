@@ -13,7 +13,31 @@ increments. Push those increments to the same draft PR without waiting for slow
 CI between steps. Final CI, review and the original acceptance/completion audit
 remain merge gates.
 
-Current increment: shared native camera-group controls and managed retained-image
+Current increment: native NINA camera-group capture and separate image saving.
+The advanced-sequencer instruction freezes per-member requests, output directory
+and NINA save settings, admits only scalar monochrome/RGGB metadata, and uses
+the existing protected image reader and ordinary NINA file writer. The host
+freezes/rechecks MaxADU, sensor layout, Bayer offsets and optional sensor name
+before dispatch; historical images never consult later live format settings.
+Healthy completed members are saved through sibling capture/save failures.
+Unknown starts, partial failures and cancellation keep a reconciliation fence
+through cloning and NINA's actual saved-sequence converter. Capture cancellation
+uses only the acknowledged operation and saved policy; cancellation during saving
+keeps existing files and never alters a terminal capture. Explicit reconciliation
+does not clear source acquisition ownership. Shared group selection and ordinary
+camera metadata/conversion helpers avoid separate frontend implementations.
+Real FITS writes verify pixel values and frozen exposure/acquisition metadata;
+private-host sequence tests cover both cancellation policies, unknown starts,
+membership/format rejection and separate files. See hub-review.md for final
+local validation evidence. Final full NINA passes 440 cases with one explicit
+registered-COM-fixture skip; real net48 x86/x64 suites, full Rust hub/Alpaca,
+strict Clippy/Rust 1.89 and independent schema/browser/freshness checks pass.
+Keep installed NINA/physical coordination acceptance,
+discovery/transfer, OS resume, conformance reconciliation, camera recovery metadata,
+README/site, main reconciliation and final review/CI/audit/merge gates open.
+No attached hardware/vendor activation or intermediate CI waiting gate.
+
+Previous increment: shared native camera-group controls and managed retained-image
 access. A camera-group client validates host/revision/operation identities, exact
 configured-to-physical bindings, requests, monotonic reports, generation/acquisition
 pins, frozen images and measured host request spread. An unknown Start outcome
@@ -2220,9 +2244,9 @@ integrity tests cover the classes shipped, with limitations stated explicitly.
 
 - [x] Add focuser groups with calibrated transforms, offsets, per-device limits,
   preflight checks, cancellation, and visible partial-failure results.
-- [ ] Define synchronized camera orchestration with separate results, measured
+- [x] Define synchronized camera orchestration with separate results, measured
   start skew, partial failures, and explicit abort/continue policy.
-- [ ] Expose useful orchestration in native NINA without pretending one standard
+- [x] Expose useful orchestration in native NINA without pretending one standard
   Camera interface can return several independent images.
 
 Camera progress: the explicit core reserves all members before a burst, retains
@@ -2230,9 +2254,13 @@ separate images/results, measures host request skew and applies explicit
 failure/cancellation policies through the existing camera supervisor. Saved
 configuration, typed physical-alias resolution, host-owned retained operations and
 revision-fenced status/cancellation/image IPC are implemented. Shared native
-operation controls and managed protected image access are implemented. Native NINA
-capture/image-save orchestration remains required before closing the camera
-coordination items and their acceptance gate.
+operation controls, managed protected image access and native NINA capture/save
+orchestration are implemented. The NINA instruction uses frozen scalar profiles,
+separate exact images and per-member file settings, preserves healthy saves on
+partial failure, and persists reconciliation through NINA's actual saved-sequence
+loader. Local simulation/fault and actual FITS evidence is in hub-review.md.
+Installed NINA and physical coordination acceptance remain open; checked
+construction items do not close the milestone's acceptance gate.
 
 Focuser progress: the core, saved/generated configuration, physical alias
 resolution, host activity/revision, retained IPC reattachment/shutdown, shared
@@ -2241,7 +2269,7 @@ focuser tests pass, including five host/IPC cases; 18 focused managed cases cove
 strict result admission, schema-driven editing, actual-host operation ownership,
 NINA failure/cancellation/save/clone fencing and rendered native controls. See
 [coordination contract](hub-coordination.md). Camera coordination and its native
-NINA integration remain construction work. Interactive installed NINA and
+NINA integration are implemented locally. Interactive installed NINA and
 physical-device acceptance remain separate gates; simulation does not close them.
 
 Gate: simulation/fault-injection tests precede hardware trials; measured behavior
@@ -2493,3 +2521,4 @@ then cameras/coordination and every original remaining acceptance/final gate.
 | 2026-10-06 | Enabled shared wheel creation using generated capability choices and existing editors; parameterized rotator/wheel WPF and real net48 creation checks. Reviewed browser creation, mismatched classes, saved identities and names-only updates. | Full Rust hub/Alpaca, 22 wheel cases, strict Clippy, Rust 1.89, contracts, Node/six schema checks, fresh-host NINA 213/213 and real net48 x86/x64 pass. Corrected a test request-ID ordering error in a separate IPC capability test; no protocol rule changed. Actual native/browser captures and zero-lease status verified. Preceding a586c76 CI remains live; keep local increments until it ends. Next: panels, cameras/coordination and every original acceptance/final gate. |
 | 2026-10-06 | Preserved worker-relative observation ages through core and native camera properties; separated acknowledged evidence from desired settings and shared the four-control apply/readback helper. | Full core/hub/Alpaca/ZWO regressions (47 core, 49 hub unit, 22 native owner, 98 ZWO library), strict Clippy, Rust 1.89, contracts, Node/seven schema checks, rebuilt-host NINA 228/228 and real net48 x86/x64 pass. Retain initial fixture errors and corrections. Preceding adfb9e2 PR/push CI both pass all eight jobs. This checkpoint needs its own CI. Next: native camera adapter/config/factory/runtime with shared host budget/activity/recovery allowances and preserved sample ages, then all remaining camera inputs/outputs, coordination and every original acceptance/final gate. |
 | 2026-10-06 | Integrated and reviewed native camera inputs through actual SourceActor/CameraSupervisor with shared ages, immutable images, strict commands, retained telemetry/restoration and unknown-outcome fencing. Fixed publication and worker/logical-session races found in review and integration. | Eleven adapter cases plus full Rust regressions (49 core, 49 hub unit, 22 native owner, 98 ZWO library), strict Rust 1.99 Clippy, Rust 1.89, contracts, Node/seven schema checks, fresh-host NINA 228/228 and real net48 x86/x64 pass. Preserve initial fixture/deadline errors and paging-file exhaustion; final build uses two compiler jobs. Observation b038f8e PR/push CI each fail one Windows NINA case; cause remains unproved and original logs are retained with new fixture timing/pool diagnostics. Next: native factory/config/runtime and host budget/activity/recovery allowance wiring, remaining camera inputs/outputs, recurring Windows CI investigation, coordination and all original acceptance/final gates. Camera choices remain disabled; keep PR #21 draft. |
+| 2026-10-07 | Implemented and reviewed native NINA camera-group capture/save with frozen scalar metadata, separate ordinary NINA file writes, partial-success preservation, explicit cancellation and durable no-replay reconciliation. Shared configuration selection and ordinary camera metadata/conversions are reused. | Full Rust hub/Alpaca and 75 acquisition cases, strict Clippy/Rust 1.89, twelve schema/Node/freshness checks, warning-denied focused managed checks, final full NINA 440 passed plus one explicit registered-COM skip, and real net48 x86/x64 suites pass. Initial NOVAS/fixture/analyzer/alias/control findings are retained in hub-review.md. Next: discovery/configuration transfer, OS resume, recovery metadata, remaining acceptance, README/site, main reconciliation and original final review/CI/audit/merge; no intermediate CI waiting. |

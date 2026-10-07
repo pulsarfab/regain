@@ -47,6 +47,40 @@
             ],
             "type": "object"
           },
+          "CameraCaptureProfile": {
+            "additionalProperties": false,
+            "properties": {
+              "bayerOffsetX": {
+                "format": "int32",
+                "type": "integer"
+              },
+              "bayerOffsetY": {
+                "format": "int32",
+                "type": "integer"
+              },
+              "maxAdu": {
+                "format": "int32",
+                "type": "integer"
+              },
+              "sensorName": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "sensorType": {
+                "format": "int32",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "maxAdu",
+              "sensorType",
+              "bayerOffsetX",
+              "bayerOffsetY"
+            ],
+            "type": "object"
+          },
           "CameraGroupPhase": {
             "enum": [
               "preflight",
@@ -123,6 +157,10 @@
               "exposure": {
                 "$ref": "#/$defs/ExposureRequest"
               },
+              "requireScalarImage": {
+                "description": "Consumers such as NINA require frozen, supported scalar sensor metadata.",
+                "type": "boolean"
+              },
               "source": {
                 "format": "uuid",
                 "type": "string"
@@ -159,6 +197,16 @@
                 "type": [
                   "string",
                   "null"
+                ]
+              },
+              "captureProfile": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/CameraCaptureProfile"
+                  },
+                  {
+                    "type": "null"
+                  }
                 ]
               },
               "dispatchSeconds": {
@@ -199,6 +247,9 @@
               "request": {
                 "$ref": "#/$defs/ExposureRequest"
               },
+              "requireScalarImage": {
+                "type": "boolean"
+              },
               "source": {
                 "format": "uuid",
                 "type": "string"
@@ -208,6 +259,7 @@
               "source",
               "generation",
               "request",
+              "requireScalarImage",
               "phase"
             ],
             "type": "object"

@@ -28,7 +28,7 @@ public sealed class HubCameraGroupReplyTests
                 ["geometry"] = new JsonObject { ["width"] = 64, ["height"] = 48, ["binX"] = 1, ["binY"] = 1, ["startX"] = 0, ["startY"] = 0 },
                 ["exposure"] = new JsonObject { ["durationSeconds"] = i + 1, ["startTime"] = "2026-10-07T12:00:00", ["durationError"] = null, ["startTimeError"] = null } };
             members.Add(new JsonObject { ["source"] = source, ["generation"] = generation, ["acquisition"] = acquisition, ["request"] = exposure,
-                ["phase"] = "complete", ["dispatchSeconds"] = 0.1 + i * 0.02, ["acknowledgementSeconds"] = 0.101 + i * 0.02, ["image"] = image, ["error"] = null, ["abortError"] = null });
+                ["phase"] = "complete", ["requireScalarImage"] = false, ["captureProfile"] = null, ["dispatchSeconds"] = 0.1 + i * 0.02, ["acknowledgementSeconds"] = 0.101 + i * 0.02, ["image"] = image, ["error"] = null, ["abortError"] = null });
         }
         return new JsonObject { ["hostInstance"] = Host.ToString(), ["configurationRevision"] = config["revision"]!.DeepClone(), ["operation"] = operation,
             ["group"] = group["id"]!.DeepClone(), ["sequence"] = 3, ["phase"] = "complete", ["requests"] = requests, ["bindings"] = bindings, ["failedSource"] = null, ["error"] = null,
@@ -127,6 +127,37 @@ public sealed class HubCameraGroupReplyTests
         var target = inner ? result["result"]! : result; target["sequence"] = 9007199254740992UL;
         using var groups = new HubCameraGroups(Host, Description(), Element(config), (_, _) => Task.FromResult(Element(result)), () => { });
         await groups.StatusAsync(Group(config)); target["sequence"] = 9007199254740993UL;
+        var error = await Assert.ThrowsAsync<HubException>(() => groups.StatusAsync(Group(config))); Assert.Equal(HubFailure.Protocol, error.Failure);
+    }
+    [Theory, InlineData("missing"), InlineData("maxAdu"), InlineData("sensorType"), InlineData("bayer"), InlineData("requirement"), InlineData("sensorName")]
+    public async Task ScalarProfileMustMatchTheRequestedFormatAndRemainValid(string fault)
+    {
+        var config = HubCameraGroupContractTests.Configuration(); var result = Complete(config); var member = result["result"]!["members"]![0]!;
+        result["requests"]![0]!["requireScalarImage"] = true; member["requireScalarImage"] = true;
+        var profile = new JsonObject { ["maxAdu"] = 65535, ["sensorType"] = 0, ["bayerOffsetX"] = 0, ["bayerOffsetY"] = 0, ["sensorName"] = "Frozen sensor" };
+        member["captureProfile"] = profile;
+        switch (fault) {
+            case "missing": member["captureProfile"] = null; break;
+            case "maxAdu": profile["maxAdu"] = 0; break;
+            case "sensorType": profile["sensorType"] = 1; break;
+            case "bayer": profile["bayerOffsetX"] = 1; break;
+            case "requirement": member["requireScalarImage"] = false; break;
+            case "sensorName": profile.Remove("sensorName"); break;
+        }
+        using var groups = new HubCameraGroups(Host, Description(), Element(config), (_, _) => Task.FromResult(Element(result)), () => { });
+        var error = await Assert.ThrowsAsync<HubException>(() => groups.StatusAsync(Group(config))); Assert.Equal(HubFailure.Protocol, error.Failure);
+    }
+    [Fact]
+    public async Task PublishedScalarProfileCannotChangeWithALaterRunningReport()
+    {
+        var config = HubCameraGroupContractTests.Configuration(); var result = Complete(config);
+        result["phase"] = "running"; result["result"]!["phase"] = "capturing";
+        result["requests"]![0]!["requireScalarImage"] = true;
+        var member = result["result"]!["members"]![0]!; member["requireScalarImage"] = true;
+        member["captureProfile"] = new JsonObject { ["maxAdu"] = 65535, ["sensorType"] = 0, ["bayerOffsetX"] = 0, ["bayerOffsetY"] = 0, ["sensorName"] = "Frozen sensor" };
+        using var groups = new HubCameraGroups(Host, Description(), Element(config), (_, _) => Task.FromResult(Element(result)), () => { });
+        await groups.StatusAsync(Group(config)); result["sequence"] = 4; result["result"]!["sequence"] = 3;
+        member["captureProfile"]!["sensorName"] = "Different valid name";
         var error = await Assert.ThrowsAsync<HubException>(() => groups.StatusAsync(Group(config))); Assert.Equal(HubFailure.Protocol, error.Failure);
     }
     [Theory, InlineData(false), InlineData(true)]

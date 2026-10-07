@@ -7023,3 +7023,98 @@ reconciliation and final review/CI/audit/merge stay open. All equipment-facing
 fixtures are private peers or explicit simulations; no attached hardware or
 installed vendor driver is opened. Continue construction without intermediate CI
 waiting; keep the single PR draft.
+
+## 2026-10-07 — Native NINA camera-group capture and exact image saving
+
+Implemented `CaptureHubCameraGroup` as an exported advanced-sequencer instruction,
+with saved per-camera duration/Light settings and an optional absolute directory.
+It freezes requests, profile conversion preference and individual FileSaveInfo
+instances before awaiting attachment. Saved membership is checked before dispatch;
+write access is probed before exposure. Group and focuser instructions share the
+bounded configuration loader and themed saved-group picker.
+
+Scalar image consumers opt in through `requireScalarImage`. The existing owned
+preflight reservation reads/rechecks MaxADU, sensor type, Bayer offsets and optional
+sensor name. Only supported monochrome/RGGB scalar layouts proceed. Ordinary
+requests omit the false flag and incur no new metadata reads. The host retains
+profiles in immutable member results; managed validation rejects missing, invalid
+or subsequently changed profiles. Geometry, acquisition admission, activity,
+source control, dispatch and cleanup remain on the ordinary supervisor path.
+
+The NINA adapter shares ordinary metadata construction, protected image pins,
+lossless integer conversion and budget accounting. It uses completed authoritative
+exposure metadata, never a later live source format or a fabricated timestamp.
+NINA's real image factory/file writer saves separate files using the frozen profile
+format/compression. A per-operation directory and physical source/acquisition IDs
+prevent aliases or labels from retargeting files. Distinct settings avoid NINA's
+mutable FilePath leaking from one member to another. FITS headers identify group,
+operation, acquisition and source generation.
+
+All healthy completed members are attempted even through sibling capture or save
+failure. Success requires all captures/saves. Partial/unknown/interrupted work keeps
+the step fenced through clone and NINA's real SequenceItemCreationConverter. No
+automatic retry replays a Start. Known-operation cancellation uses the saved policy;
+an unknown acknowledgement cannot guess an abort target. Cancellation after capture
+leaves terminal status and existing files intact. Explicitly clearing the sequence
+fence does not clear ordinary source ownership or recover a failed camera.
+
+Review corrections and retained initial evidence:
+
+- Real SaveToDisk initially failed because NINA.Plugin omits NOVAS31lib.dll while
+  NINA's filename formatter always calculates MJD. Added the exact upstream x64
+  dependency under tests/fixtures/nina only, with pinned provenance, SHA-256 and
+  the complete USNO README/license statement. No installed paths, downloads during
+  tests, astronomy stub, obsolete save API or production payload change is used.
+  A subsequent NullReference was a fixture's missing CreateAnalysis result;
+  supplying an ordinary mock analysis fixes the fixture. Both real FITS cases pass
+  in `artifacts/hub-camera-profile-fits-2.log`.
+- Sequence tests first assumed alias IDs were physical filenames. Corrected that
+  assertion to preserve the host's physical binding. A simulated upstream image
+  failure retains ordinary acquisition control; its attempted fault reset correctly
+  returns Busy. The fixture now verifies that ownership instead of bypassing it.
+  Logs: `hub-camera-sequence-focused-2.log` and `hub-camera-sequence-review.log`.
+- NINA's loader populates exported instances, so Members explicitly uses collection
+  replacement to avoid appending duplicate cameras to a prepopulated instance.
+  Tests exercise the actual NINA converter/factory route and a deep cloned list.
+- The initial full regression passes 438 cases plus the explicit registered-COM skip,
+  but its command exits unsuccessfully on xUnit2031. Replaced Where+Assert.Single
+  with the analyzer-approved predicate overload. Later warning-denied builds and
+  focused suites pass; preserve `hub-camera-sequence-full-nina.log` as failed-build
+  evidence rather than calling that command green.
+- Save errors no longer promise a pin remains available after another client may
+  have replaced the latest operation. They direct inspection of that exact image.
+
+Validation:
+
+- Full hub/Alpaca Rust regression passes in
+  `artifacts/hub-camera-profile-full-rust.log`; all 75 acquisition cases pass in
+  `hub-camera-profile-acquisition.log`. Four added cases cover immutable mono/RGGB
+  metadata, malformed/unsupported profiles, pre-dispatch format changes, optional
+  SensorName and no starts/activity leaks after rejected preflight.
+- Strict all-target Clippy passes (`hub-camera-profile-clippy.log`); Rust 1.89
+  all-target check passes (`hub-camera-profile-msrv.log`). Contract freshness,
+  twelve independent schema cases, Node/browser checks, formatting and diff checks
+  pass. The ordinary executable was rebuilt after Rust tests and before managed
+  hosts, never while private hosts held it.
+- Final warning-denied managed follow-up passes 22 cases in
+  `artifacts/hub-camera-sequence-final-reviewed.log`, including real FITS writes,
+  the full sequence through NINA's writer, missing authoritative metadata with a
+  healthy sibling save, both cancellation policies, cancellation during saving,
+  lost Start replies, changed membership/format, partial capture/save, immutable
+  profiles, deep clone, actual saved-sequence loader and focuser compatibility.
+- The full real net48 x86/x64 suites pass in
+  `artifacts/hub-camera-sequence-net48.log`. Both architectures now opt into and
+  verify frozen scalar profiles while retaining existing images, aliases, reader
+  budgets, ordinary ASCOM/camera/focuser compatibility and zero output leases.
+- Final full NINA execution passes 440 cases with one explicit registered-COM
+  fixture skip (441 total), exit code zero, in
+  `artifacts/hub-camera-sequence-final-full-nina.log`. It uses the final
+  warning-denied build from the reviewed focused run; no intermediate CI wait.
+
+Construction for both coordination classes is implemented locally. Installed NINA
+and physical trials remain acceptance gates, as do discovery/config transfer,
+actual OS resume, remaining conformance/interactive/signing/upgrade acceptance,
+camera recovery metadata, README/site, main reconciliation and the original final
+review/CI/audit/merge. All equipment-facing work uses private peers or explicit
+simulation. No attached hardware or installed vendor driver is opened. Keep the
+single PR draft and continue construction without waiting for intermediate CI.

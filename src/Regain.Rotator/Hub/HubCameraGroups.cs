@@ -8,13 +8,17 @@ public sealed class HubCameraMemberRequest
     public Guid Source { get; }
     public double DurationSeconds { get; }
     public bool Light { get; }
-    public HubCameraMemberRequest(Guid source, double durationSeconds, bool light)
+    public bool RequireScalarImage { get; }
+    public HubCameraMemberRequest(Guid source, double durationSeconds, bool light, bool requireScalarImage = false)
     {
         if (source == Guid.Empty) throw new ArgumentException("Select a saved camera member", nameof(source));
         HubCameraProtocol.Start(durationSeconds, light);
         Source = source; DurationSeconds = durationSeconds; Light = light;
+        RequireScalarImage = requireScalarImage;
     }
-    internal object Wire() => new { source = Source, exposure = new { durationSeconds = DurationSeconds, light = Light } };
+    internal object Wire() => RequireScalarImage ?
+        new { source = Source, exposure = new { durationSeconds = DurationSeconds, light = Light }, requireScalarImage = true } :
+        new { source = Source, exposure = new { durationSeconds = DurationSeconds, light = Light } };
 }
 
 /// Retained camera operations use the same private host and immutable image reader
@@ -65,8 +69,8 @@ public sealed class HubCameraGroups : IDisposable
         } catch { client.Dispose(); throw; }
     }
 
-    public IReadOnlyList<HubCameraMemberRequest> UniformRequests(Guid group, double durationSeconds, bool light)
-        => Array.AsReadOnly(Group(group).GetProperty("members").EnumerateArray().Select(m => new HubCameraMemberRequest(m.GetGuid(), durationSeconds, light)).ToArray());
+    public IReadOnlyList<HubCameraMemberRequest> UniformRequests(Guid group, double durationSeconds, bool light, bool requireScalarImage = false)
+        => Array.AsReadOnly(Group(group).GetProperty("members").EnumerateArray().Select(m => new HubCameraMemberRequest(m.GetGuid(), durationSeconds, light, requireScalarImage)).ToArray());
     public Task<JsonElement> StartAsync(Guid group, IReadOnlyList<HubCameraMemberRequest> members, CancellationToken cancellation = default)
     {
         var config = Group(group); var frozen = members.ToArray();
@@ -143,6 +147,7 @@ public sealed class HubCameraGroups : IDisposable
                         Require(before.GetProperty("generation").GetGuid() == after.GetProperty("generation").GetGuid());
                         if (before.GetProperty("acquisition").ValueKind != JsonValueKind.Null) Require(HubDiagnosticContract.Equal(before.GetProperty("acquisition"), after.GetProperty("acquisition")));
                         if (before.GetProperty("image").ValueKind != JsonValueKind.Null) Require(HubDiagnosticContract.Equal(before.GetProperty("image"), after.GetProperty("image")));
+                        if (before.GetProperty("captureProfile").ValueKind != JsonValueKind.Null) Require(HubDiagnosticContract.Equal(before.GetProperty("captureProfile"), after.GetProperty("captureProfile")));
                     }
                 }
             }
@@ -156,6 +161,15 @@ public sealed class HubCameraGroups : IDisposable
             var dispatches = new List<double>();
             for (var i = 0; i < results.Length; i++) {
                 var member = results[i]; var image = member.GetProperty("image"); var completed = member.GetProperty("phase").GetString() == "complete";
+                var scalar = demands[i].TryGetProperty("requireScalarImage", out var requirement) && requirement.GetBoolean();
+                var profile = member.GetProperty("captureProfile");
+                Require(member.GetProperty("requireScalarImage").GetBoolean() == scalar);
+                if (scalar && member.GetProperty("phase").GetString() is "prepared" or "starting" or "exposing" or "aborting" or "complete" or "aborted") Require(profile.ValueKind != JsonValueKind.Null);
+                if (profile.ValueKind != JsonValueKind.Null) {
+                    Require(scalar && profile.GetProperty("maxAdu").GetInt32() > 0 && profile.GetProperty("sensorType").GetInt32() is 0 or 2 &&
+                        profile.GetProperty("bayerOffsetX").GetInt32() >= 0 && profile.GetProperty("bayerOffsetY").GetInt32() >= 0 && profile.TryGetProperty("sensorName", out _));
+                    if (profile.GetProperty("sensorType").GetInt32() == 0) Require(profile.GetProperty("bayerOffsetX").GetInt32() == 0 && profile.GetProperty("bayerOffsetY").GetInt32() == 0);
+                }
                 Require(member.GetProperty("source").GetGuid() == bindings[i].GetProperty("physicalSource").GetGuid() &&
                     HubDiagnosticContract.Equal(member.GetProperty("request"), demands[i].GetProperty("exposure")) && completed == (image.ValueKind != JsonValueKind.Null));
                 var dispatch = member.GetProperty("dispatchSeconds"); var acknowledgement = member.GetProperty("acknowledgementSeconds");

@@ -8,6 +8,8 @@
   <!-- Test-only: allow short WPF renders in CI/disconnected desktop sessions. -->
   <RuntimeHostConfigurationOption Include="Switch.System.Windows.Media.ShouldRenderEvenWhenNoDisplayDevicesAreAvailable" Value="true" />
   <None Include="../../contracts/hub-config.json" Link="hub-config.json" CopyToOutputDirectory="PreserveNewest" />
+  <!-- Test-only NINA astronomy dependency; see fixtures/nina/README.md. -->
+  <None Include="../fixtures/nina/NOVAS31lib.dll" Link="NOVAS31lib.dll" CopyToOutputDirectory="PreserveNewest" />
   <ProjectReference Include="../../src/Regain.NINA/Regain.NINA.csproj" />
   <PackageReference Include="NINA.Plugin" Version="3.2.0.9001" PrivateAssets="all" />
   <PackageReference Include="System.Text.Json" Version="9.0.5" />

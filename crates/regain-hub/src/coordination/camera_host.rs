@@ -355,6 +355,7 @@ async fn run(
         .map(|(r, b)| CameraMemberRequest {
             source: b.physical_source,
             exposure: r.exposure,
+            require_scalar_image: r.require_scalar_image,
         })
         .collect();
     let group = CameraGroup::new(definition.config.clone(), sessions)?;

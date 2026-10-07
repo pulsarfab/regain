@@ -33,6 +33,7 @@ fn requests(config: &HubConfig) -> Vec<CameraMemberRequest> {
         .map(|source| CameraMemberRequest {
             source: *source,
             exposure: request(),
+            require_scalar_image: false,
         })
         .collect()
 }

@@ -22,4 +22,36 @@
             </nina:SequenceBlockView.SequenceItemContent>
         </nina:SequenceBlockView>
     </DataTemplate>
+    <DataTemplate DataType="{x:Type local:CaptureHubCameraGroup}">
+        <nina:SequenceBlockView>
+            <nina:SequenceBlockView.SequenceItemContent>
+                <StackPanel>
+                    <WrapPanel>
+                        <Button Content="Choose saved camera group…" Click="ChooseCameraGroup" Margin="0,0,8,4" />
+                        <TextBlock Text="{Binding GroupLabel}" VerticalAlignment="Center" TextWrapping="Wrap" />
+                    </WrapPanel>
+                    <ItemsControl ItemsSource="{Binding Members}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <WrapPanel Margin="0,4">
+                                    <TextBlock Text="{Binding Label}" VerticalAlignment="Center" MaxWidth="260" TextWrapping="Wrap" />
+                                    <TextBlock Text="Seconds" VerticalAlignment="Center" Margin="8,0,4,0" />
+                                    <TextBox Width="90" Text="{Binding DurationSeconds, UpdateSourceTrigger=PropertyChanged, ValidatesOnExceptions=True}" />
+                                    <CheckBox Content="Light frame" IsChecked="{Binding Light}" VerticalAlignment="Center" Margin="8,0" />
+                                </WrapPanel>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <TextBlock Text="Save directory (empty uses the NINA profile). Each capture gets its own folder." TextWrapping="Wrap" />
+                    <TextBox Text="{Binding SaveDirectory, UpdateSourceTrigger=PropertyChanged}" Margin="0,4" />
+                    <TextBlock Text="Failure and cancellation use the policies saved in hub setup. Completed images are saved separately; request timing is not hardware synchronization." TextWrapping="Wrap" />
+                    <WrapPanel>
+                        <Button Content="Inspect retained result…" Click="InspectCameraGroup" Margin="0,4,8,4" />
+                        <Button Content="Allow new operation after inspection…" Click="AllowNewCameraOperation" Margin="0,4,0,4" />
+                    </WrapPanel>
+                    <TextBlock Text="{Binding Outcome}" TextWrapping="Wrap" />
+                </StackPanel>
+            </nina:SequenceBlockView.SequenceItemContent>
+        </nina:SequenceBlockView>
+    </DataTemplate>
 </ResourceDictionary>

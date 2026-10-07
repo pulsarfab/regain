@@ -258,19 +258,8 @@ public sealed class HubCameraDevice : HubTypedDevice, ICamera
                 || geometry.GetProperty("binX").GetInt32() != current.BinX || geometry.GetProperty("binY").GetInt32() != current.BinY
                 || geometry.GetProperty("startX").GetInt32() != current.X || geometry.GetProperty("startY").GetInt32() != current.Y)
                 throw new IOException("Accepted camera geometry differs from the requested NINA frame");
-            var metadata = new ImageMetaData();
-            metadata.Camera.BinX = current.BinX; metadata.Camera.BinY = current.BinY;
-            metadata.Camera.BayerOffsetX = current.BayerX; metadata.Camera.BayerOffsetY = current.BayerY;
-            var exposure = completed.GetProperty("exposure");
-            if (exposure.GetProperty("durationSeconds").ValueKind != JsonValueKind.Number || exposure.GetProperty("startTime").ValueKind != JsonValueKind.String
-                || exposure.GetProperty("durationError").ValueKind != JsonValueKind.Null || exposure.GetProperty("startTimeError").ValueKind != JsonValueKind.Null)
-                throw new IOException("The completed camera frame has no authoritative exposure metadata");
-            metadata.Image.ExposureTime = HubCameraProtocol.Validate(HubCameraProperty.LastExposureDuration, exposure.GetProperty("durationSeconds")).GetDouble();
-            metadata.Image.ExposureStart = DateTime.Parse(HubCameraProtocol.Validate(HubCameraProperty.LastExposureStartTime, exposure.GetProperty("startTime")).GetString()!,
-                CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal);
+            var metadata = HubCameraFrames.Metadata(geometry, completed.GetProperty("exposure"), current.Sensor, current.BayerX, current.BayerY);
             var bayered = current.Sensor is SensorType.RGGB or SensorType.BGGR or SensorType.GRBG or SensorType.GBRG;
-            metadata.Camera.BayerPattern = current.Sensor switch { SensorType.RGGB => BayerPatternEnum.RGGB, SensorType.BGGR => BayerPatternEnum.BGGR,
-                SensorType.GRBG => BayerPatternEnum.GRBG, SensorType.GBRG => BayerPatternEnum.GBRG, _ => BayerPatternEnum.None };
             using var image = await Session.DownloadCameraImageAsync(current.Epoch, HubImageBudget.Shared, current.Acquisition, token).ConfigureAwait(false);
             if (image.Descriptor.Width != current.Width || image.Descriptor.Height != current.Height) throw new IOException("Camera image dimensions differ from frozen metadata");
             var signed = current.Depth > 16 || profiles?.ActiveProfile.CameraSettings.ASCOMCreate32BitData == true;
