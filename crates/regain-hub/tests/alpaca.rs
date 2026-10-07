@@ -435,6 +435,7 @@ async fn mixed_native_and_http_switch_shares_native_temperature_with_weather() {
         return;
     };
     let runtime = NativeRuntime {
+        cameras: None,
         directory: directory.into(),
         simulate: true,
         references: None,
@@ -822,6 +823,7 @@ async fn configured_factory_resolves_one_credential_and_keeps_secrets_out_of_sou
     let registry = build_sources(
         &config,
         &NativeRuntime {
+            cameras: None,
             directory: ".".into(),
             simulate: false,
             references: None,

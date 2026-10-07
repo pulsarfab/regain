@@ -539,6 +539,110 @@ fn host(path: &Path) -> Command {
 }
 
 #[tokio::test]
+async fn actual_host_uses_explicit_native_camera_simulation_and_shared_scalar_leases() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("hub.json");
+    let missing_sdk = directory.path().join("not-installed-sdk");
+    let source = uuid::Uuid::new_v4();
+    let output = uuid::Uuid::new_v4();
+    let mut config = HubConfig::empty();
+    config.sources.push(
+        serde_json::from_value(json!({
+            "id": source, "label":"Explicit native camera simulation",
+            "backend":{"kind":"native","device":"camera-sdk","identity":"sim00001",
+                "camera":{"model":"ZWO Simulated","recovery":{"maxRetries":0}}},
+            "polling":{"pollSeconds":0.1,"requestTimeoutSeconds":5,"connectionTimeoutSeconds":10}
+        }))
+        .unwrap(),
+    );
+    config.outputs.push(
+        serde_json::from_value(json!({
+            "id":output,"number":0,"label":"Simulated camera temperature",
+            "device":{"kind":"switch","channels":[{
+                "id":uuid::Uuid::new_v4(),"number":0,"label":"CCD temperature","writable":false,
+                "readout":{"kind":"property","source":source,"property":"ccdtemperature"},
+                "minimum":-100,"maximum":100,"step":0.1,"units":"°C"
+            }]}
+        }))
+        .unwrap(),
+    );
+    assert!(config.validate().is_empty());
+    std::fs::write(&path, serde_json::to_vec(&config).unwrap()).unwrap();
+    let endpoint = Endpoint::for_config(&path).unwrap();
+    let mut owner = host(&path)
+        .arg("--simulate")
+        .arg("--sdk")
+        .arg(&missing_sdk)
+        .spawn()
+        .unwrap();
+    probe(&endpoint, config.instance_id, Duration::from_secs(5))
+        .await
+        .unwrap();
+    let mut first = endpoint.connect(Duration::from_secs(5)).await.unwrap();
+    request(&mut first, 1, json!({"op":"hello"})).await;
+    let metadata = request(&mut first, 2, json!({"op":"describeConfig"})).await;
+    assert!(
+        !metadata["capabilities"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("nativeCameraSources"))
+    );
+    let before = request(&mut first, 3, json!({"op":"sourceStatus","source":source})).await;
+    assert_eq!(before["leaseCount"], 0);
+    assert_eq!(before["transportConnected"], false);
+    assert_eq!(before["simulated"], true);
+    request(&mut first, 4, json!({"op":"connect","output":output})).await;
+    let mut second = endpoint.connect(Duration::from_secs(5)).await.unwrap();
+    request(&mut second, 1, json!({"op":"hello"})).await;
+    request(&mut second, 2, json!({"op":"connect","output":output})).await;
+    let mut id = 5;
+    let confirmed = tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            let status =
+                request(&mut first, id, json!({"op":"sourceStatus","source":source})).await;
+            id += 1;
+            if status["values"]["ccdtemperature"].is_number() {
+                break status;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(confirmed["leaseCount"], 2);
+    assert_eq!(confirmed["transportConnected"], true);
+    let value = request(
+        &mut first,
+        id,
+        json!({"op":"get","output":output,
+        "property":{"member":"getSwitchValue","id":0}}),
+    )
+    .await;
+    id += 1;
+    assert_eq!(value, confirmed["values"]["ccdtemperature"]);
+    assert!((-100.0..=100.0).contains(&value.as_f64().unwrap()));
+    request(&mut first, id, json!({"op":"disconnect","output":output})).await;
+    let retained = request(&mut second, 3, json!({"op":"sourceStatus","source":source})).await;
+    assert_eq!(retained["leaseCount"], 1);
+    assert_eq!(retained["transportConnected"], true);
+    assert_eq!(
+        request(
+            &mut second,
+            4,
+            json!({"op":"get","output":output,
+        "property":{"member":"getSwitchValue","id":0}})
+        )
+        .await,
+        value
+    );
+    request(&mut second, 5, json!({"op":"disconnect","output":output})).await;
+    assert!(!missing_sdk.exists());
+    drop(first);
+    drop(second);
+    owner.kill().await.unwrap();
+}
+
+#[tokio::test]
 async fn ordinary_http_executable_attaches_to_existing_host_without_taking_ownership() {
     use tokio::io::AsyncReadExt;
     async fn http(port: u16, method: &str, path: &str, body: &str) -> Value {
@@ -942,6 +1046,13 @@ async fn hub_mode_rejects_ambiguous_options_and_invalid_configuration() {
             "relative.json",
         ],
         vec!["--hub-attach", "--stdio", "--hub-config", "relative.json"],
+        vec![
+            "--hub-attach",
+            "--sdk",
+            "unused",
+            "--hub-config",
+            "relative.json",
+        ],
         vec!["--hub-host"],
         vec!["--hub-config", "relative.json"],
         vec!["--hub-host", "--hub-config", "relative.json"],

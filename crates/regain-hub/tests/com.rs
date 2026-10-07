@@ -37,6 +37,7 @@ impl Fixture {
             return None;
         };
         let native = NativeRuntime {
+            cameras: None,
             directory: PathBuf::from(std::env::var_os("REGAIN_TEST_WORKERS").unwrap()),
             simulate: true,
             references: None,
@@ -174,6 +175,7 @@ fn preparation_checks_architecture_and_class_without_activation() {
         matches!(ComBackend::new(&camera, &f.native, Vec::new()), Err(e) if e.kind == ErrorKind::Unsupported)
     );
     let missing = NativeRuntime {
+        cameras: None,
         directory: PathBuf::from("nonexistent-com-helper-directory"),
         simulate: false,
         references: None,

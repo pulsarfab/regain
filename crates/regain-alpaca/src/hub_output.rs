@@ -852,6 +852,7 @@ mod setup_tests {
                 HubRuntime::build(
                     config,
                     &NativeRuntime {
+                        cameras: None,
                         directory: "unused-fixture".into(),
                         simulate: false,
                         references: None,

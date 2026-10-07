@@ -4950,3 +4950,76 @@ OS resume, coordinated groups, conformance/interactive/physical acceptance,
 README/site updates, main reconciliation and the original final audit remain
 required. This checkpoint does not close milestone 4's full migration/runtime or
 camera acceptance gate, and does not narrow the plan.
+
+## Native camera factory and host resources (2026-10-07)
+
+The factory now builds native SDK/direct camera backends from the source's exact
+model/serial/backend/recovery selection and the host's explicit camera runtime.
+Construction performs no discovery, worker launch, SDK load or pixel allocation.
+Missing host resources fail Unsupported. A production SDK/fallback path must be
+absolute; supplying a fixture without explicit native simulation fails closed.
+Accessory fixtures explicitly omit camera resources and retain their previous
+behavior. Typed camera proxy poll plans deduplicate all 53 properties and apply
+the same combined sample bound as the other device classes.
+
+CameraResources clones share the image-budget and activity Arcs across applied
+revisions. The host builder supplies them once, and HubRuntime uses that activity
+counter for output admission/quiescence as well as retained native work. The
+registry's image dispatch still verifies budget identity. Review followed leases,
+retained capture tasks, pinned readers, reservation shrink/drop, caller loss and
+builder closure ownership. Source polling configuration is not rewritten. This
+increment does not derive recovery timing or change core retries/deadlines.
+
+Four factory cases exercise inert construction with absent worker/SDK paths,
+required resources, explicit simulation, typed poll deduplication with runtime
+camera admission still rejected, and SDK/direct production-pipe capture with two
+clients. The capture case retains a pinned image across a new configuration
+revision, fills the remaining shared budget, proves Busy before another exposure
+dispatch, then releases capacity and captures without damaging the pinned image.
+Its SDK exposure is deliberately non-instant so the retained activity assertion
+does not depend on scheduling before a completed instant capture.
+
+The actual executable fixture uses --hub-host --simulate --sdk with an absent
+library, maps CCD temperature to an existing read-only Switch gauge, and verifies
+two client leases, confirmed scalar values and independent disconnect. Setup
+still omits nativeCameraSources. A CLI rejection case prevents --hub-attach from
+overriding the SDK. Camera output and setup gates remain closed.
+
+Focused factory/executable checks, strict Rust 1.99 Clippy, Rust 1.89 all-target
+checks, Node/eight independent schema checks, fresh-host NINA 229/229 and real
+net48 x86/x64 pass. The default Python invocation lacked jsonschema; the existing
+private hub-schema-venv passes without an environment change. The first combined
+Rust invocation stopped during build with Windows error 5 deleting the executable
+while managed fixtures used it. That build did not run the full suite; its log is
+retained. Managed fixtures completed successfully before the serialized Rust
+confirmation began. Full core/hub/Alpaca/ZWO Rust regressions and generated
+contract freshness now pass. Formatting and diff checks pass as well.
+
+Evidence: artifacts/hub-camera-factory-final.log,
+artifacts/hub-camera-runtime-{host,build,clippy,msrv,node,schema-venv,nina,net48}.log.
+The original failed build is artifacts/hub-camera-runtime-rust.log; its serialized
+confirmation is artifacts/hub-camera-runtime-rust-complete.log.
+
+Validation commands (all final invocations pass):
+
+```text
+cargo build -j2 -p regain-alpaca -p regain-device --locked
+cargo test -j2 -p regain-core -p regain-hub -p regain-alpaca -p regain-zwo --locked
+cargo +1.99.0 clippy -j2 -p regain-core -p regain-hub -p regain-alpaca -p regain-zwo -p regain-device --all-targets --locked -- -D warnings
+cargo +1.89.0 check -j2 -p regain-core -p regain-hub -p regain-alpaca -p regain-zwo -p regain-device --all-targets --locked
+cargo run -j2 -p regain-hub --example export_config --locked -- contracts/hub-config.json --check
+node scripts/test-hub-config.mjs
+artifacts/hub-schema-venv/Scripts/python.exe scripts/hub/test_schema.py
+dotnet test tests/Regain.NINA.Tests -c Release -warnaserror
+scripts/test-hub-dotnet.ps1
+cargo fmt --all --check
+git diff --check
+```
+
+Preceding a9b3c50 PR/push CI both finished all eight jobs green. Recovery metadata
+6f29557 is pushed to draft PR #21; runs 37585153377/37585149444 remain live. Keep
+this factory increment local until those jobs finish. Next: full core-derived
+connection/control/readiness/cleanup allowances and runtime camera supervision,
+then remaining inputs, bounded binary frontend IPC, all camera publications,
+coordination and every original acceptance/documentation/final gate. No physical
+equipment or installed vendor driver was activated; no original milestone closes.

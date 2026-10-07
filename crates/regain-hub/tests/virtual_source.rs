@@ -13,6 +13,7 @@ use uuid::Uuid;
 
 fn native() -> NativeRuntime {
     NativeRuntime {
+        cameras: None,
         directory: "no-hardware-workers".into(),
         simulate: false,
         references: None,

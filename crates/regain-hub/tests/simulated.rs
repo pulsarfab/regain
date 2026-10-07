@@ -755,6 +755,7 @@ fn build(config: HubConfig) -> Arc<HubRuntime> {
     HubRuntime::build(
         config,
         &NativeRuntime {
+            cameras: None,
             directory: "missing-and-unused-worker-directory".into(),
             simulate: false,
             references: None,

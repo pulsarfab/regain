@@ -74,6 +74,7 @@ pub(super) async fn nested(
     let hub = HubRuntime::build(
         config,
         &NativeRuntime {
+            cameras: None,
             directory: directory.path().into(),
             simulate: false,
             references: None,

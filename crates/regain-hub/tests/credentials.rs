@@ -126,6 +126,7 @@ fn builder(credentials: Arc<CredentialStore>) -> Arc<RuntimeBuilder> {
         HubRuntime::build(
             config,
             &NativeRuntime {
+                cameras: None,
                 directory: "unused-fixture-directory".into(),
                 simulate: false,
                 references: None,

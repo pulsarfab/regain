@@ -754,6 +754,7 @@ async fn alpaca_transport(version: u16, uncertain_reply: bool, case: TransportCa
     let host = HubRuntime::build(
         hub_config,
         &NativeRuntime {
+            cameras: None,
             directory: directory.path().into(),
             simulate: false,
             references: None,

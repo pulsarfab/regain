@@ -35,6 +35,7 @@ async fn fixture(mode: &str, path: &Path) {
         let runtime = HubRuntime::build(
             config,
             &NativeRuntime {
+                cameras: None,
                 directory: path.parent().unwrap().into(),
                 simulate: false,
                 references: None,

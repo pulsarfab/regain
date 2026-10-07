@@ -82,9 +82,11 @@ impl HubRuntime {
             Some(binding.clone()),
         )?;
         let mut runtime = Self::from_registry(config, registry, clock)?;
-        Arc::get_mut(&mut runtime)
-            .expect("Unpublished runtime")
-            .com_architectures = crate::com::available_architectures(native);
+        let unpublished = Arc::get_mut(&mut runtime).expect("Unpublished runtime");
+        unpublished.com_architectures = crate::com::available_architectures(native);
+        if let Some(cameras) = &native.cameras {
+            unpublished.activity = cameras.resources.activity();
+        }
         binding
             .set(Arc::downgrade(&runtime))
             .expect("New runtime binding");

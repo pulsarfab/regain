@@ -919,6 +919,7 @@ impl Fixture {
                     .is_file()
             );
             NativeRuntime {
+                cameras: None,
                 directory,
                 simulate: true,
                 references: Some(
@@ -931,6 +932,7 @@ impl Fixture {
             }
         } else {
             NativeRuntime {
+                cameras: None,
                 directory: dir.path().into(),
                 simulate: false,
                 references: None,

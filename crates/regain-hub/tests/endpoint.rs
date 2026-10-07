@@ -94,6 +94,7 @@ async fn real_endpoint_serves_versioned_ipc_and_waits_only_for_bounded_startup()
     let runtime = HubRuntime::build(
         config.clone(),
         &NativeRuntime {
+            cameras: None,
             directory: dir.path().into(),
             simulate: false,
             references: None,

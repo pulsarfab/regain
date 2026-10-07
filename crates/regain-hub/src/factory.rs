@@ -2,7 +2,9 @@
 //! poll plan per source; construction performs no device I/O or discovery.
 use crate::{
     alpaca::{AlpacaBackend, SampleRequest},
-    config::{DeviceType, HubConfig, Readout, SourceBackend, SourceConfig, VirtualDevice},
+    config::{
+        DeviceType, HubConfig, NativeDevice, Readout, SourceBackend, SourceConfig, VirtualDevice,
+    },
     native::{NativeAccessoryBackend, NativeRuntime},
     parameters::FieldError,
     safety::Clock,
@@ -128,6 +130,15 @@ pub fn source_plans(config: &HubConfig) -> Result<BTreeMap<Uuid, SourcePlan>, Ve
                 samples.insert(sample.key.clone(), sample);
             }
         }
+        if config.outputs.iter().any(|output| {
+            matches!(output.device,
+            VirtualDevice::Proxy { source: id, device_type: DeviceType::Camera } if id == source.id)
+        }) {
+            for property in crate::camera::properties::CameraProperty::ALL {
+                let sample = property.sample_request();
+                samples.insert(sample.key.clone(), sample);
+            }
+        }
         if samples.len() > MAX_SAMPLE_KEYS {
             return Err(vec![FieldError::new(
                 format!("sources[{index}]"),
@@ -174,6 +185,49 @@ pub(crate) fn build_sources_bound(
     SourceRegistry::build(&effective, clock.clone(), |source| {
         let plan = plans.remove(&source.id).expect("Validated source plan");
         match &source.backend {
+            SourceBackend::Native {
+                device,
+                identity,
+                camera: Some(camera),
+                ..
+            } if matches!(device, NativeDevice::CameraDirect | NativeDevice::CameraSdk) => {
+                let cameras = native.cameras.as_ref().ok_or_else(|| {
+                    SourceError::new(
+                        ErrorKind::Unsupported,
+                        "Native camera sources require host-owned camera resources",
+                    )
+                })?;
+                if cameras.sdk_simulation.is_some() && !native.simulate {
+                    return Err(SourceError::new(
+                        ErrorKind::InvalidValue,
+                        "SDK simulation requires explicit native simulation mode",
+                    ));
+                }
+                if !native.simulate
+                    && (*device == NativeDevice::CameraSdk || camera.sdk_fallback)
+                    && !cameras.sdk.is_absolute()
+                {
+                    return Err(SourceError::new(
+                        ErrorKind::InvalidValue,
+                        "Native SDK path must be absolute",
+                    ));
+                }
+                let owner = crate::camera::native_owner::NativeCamera::new(
+                    camera.selection(identity, *device == NativeDevice::CameraDirect),
+                    regain_core::Runtime {
+                        directory: native.directory.clone(),
+                        sdk: cameras.sdk.clone(),
+                        simulate: native.simulate,
+                        sdk_simulation: cameras.sdk_simulation.clone(),
+                    },
+                    cameras.resources.image_budget(),
+                    cameras.resources.activity(),
+                    cameras.diagnostic.clone(),
+                )?;
+                Ok(Box::new(
+                    crate::camera::native_source::NativeCameraBackend::new(owner, plan.samples)?,
+                ))
+            }
             SourceBackend::Native { .. } => Ok(Box::new(NativeAccessoryBackend::new(
                 source,
                 native.clone(),

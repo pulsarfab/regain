@@ -16,6 +16,8 @@ pub struct NativeRuntime {
     pub directory: PathBuf,
     pub simulate: bool,
     pub references: Option<NativeReferenceStore>,
+    /// One host-owned resource set, retained across configuration revisions.
+    pub cameras: Option<crate::camera::runtime::NativeCameraRuntime>,
 }
 pub struct NativeAccessoryBackend {
     runtime: NativeRuntime,

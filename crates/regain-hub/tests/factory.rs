@@ -400,6 +400,7 @@ async fn validate_before_credentials_and_fail_closed_when_no_provider_is_availab
     };
     *credential_reference = Some("private-reference".into());
     let native = NativeRuntime {
+        cameras: None,
         directory: "missing-worker-directory".into(),
         simulate: false,
         references: None,

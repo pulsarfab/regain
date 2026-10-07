@@ -94,12 +94,18 @@ async fn main() -> Result<()> {
         ensure!(
             options.keys().all(|key| matches!(
                 key.as_str(),
-                "--hub-host" | "--hub-attach" | "--hub-config" | "--workers" | "--simulate"
+                "--hub-host"
+                    | "--hub-attach"
+                    | "--hub-config"
+                    | "--workers"
+                    | "--simulate"
+                    | "--sdk"
             )),
-            "Hub host mode accepts only --hub-config, --workers and --simulate"
+            "Hub host mode accepts only --hub-config, --workers, --sdk and --simulate"
         );
         ensure!(
-            !(options.contains_key("--hub-attach") && options.contains_key("--simulate")),
+            !(options.contains_key("--hub-attach")
+                && (options.contains_key("--simulate") || options.contains_key("--sdk"))),
             "Attachment uses the existing host settings; configure explicit simulated sources for tests"
         );
     } else {
@@ -124,18 +130,6 @@ async fn main() -> Result<()> {
         println!("{}", serde_json::to_string(&attached)?);
         return Ok(());
     }
-    if options.contains_key("--hub-host") {
-        return regain_alpaca::hub::run(
-            &PathBuf::from(&options["--hub-config"]),
-            regain_hub::native::NativeRuntime {
-                directory,
-                simulate: options.contains_key("--simulate"),
-                references: None,
-            },
-            shutdown_signal(),
-        )
-        .await;
-    }
     let sdk = options.get("--sdk").map(PathBuf::from).unwrap_or_else(|| {
         directory.join(if cfg!(windows) {
             "ASICamera2.dll"
@@ -145,9 +139,28 @@ async fn main() -> Result<()> {
             "libASICamera2.so"
         })
     });
+    let sdk = std::path::absolute(sdk)?;
+    if options.contains_key("--hub-host") {
+        return regain_alpaca::hub::run(
+            &PathBuf::from(&options["--hub-config"]),
+            regain_hub::native::NativeRuntime {
+                cameras: Some(regain_hub::camera::runtime::NativeCameraRuntime {
+                    sdk,
+                    sdk_simulation: None,
+                    resources: Default::default(),
+                    diagnostic: Log::new(None).diagnostic(None),
+                }),
+                directory,
+                simulate: options.contains_key("--simulate"),
+                references: None,
+            },
+            shutdown_signal(),
+        )
+        .await;
+    }
     let runtime = Runtime {
         directory,
-        sdk: std::path::absolute(sdk)?,
+        sdk,
         simulate: options.contains_key("--simulate"),
         sdk_simulation: None,
     };

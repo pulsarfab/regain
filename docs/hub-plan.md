@@ -6,9 +6,25 @@ milestone gates and the final completion audit pass.
 This branch uses development version `0.6.0` / Windows `0.6.0.0`; it has not been
 tagged or published. Changed cross-crate APIs require an unpublished version so
 Cargo package verification uses the new workspace packages.
-Last updated: 2026-10-06.
+Last updated: 2026-10-07.
 
-Native recovery configuration checkpoint (local, reviewed and validated): core
+Native factory/resource integration is locally reviewed and validated. The production
+factory now constructs configured native SDK/direct owners with one host-owned
+image budget and activity counter shared across revisions. Focused production
+simulation tests verify inert construction, explicit simulation, shared images,
+retained-reader accounting and rejection before exposure when capacity is full.
+The actual executable also passes a simulated native camera temperature gauge
+with two shared client leases and an absent SDK library. Camera output admission
+and setup choices remain gated. Full core/hub/Alpaca/ZWO regressions, strict
+Clippy, Rust 1.89, generated contracts, Node/eight schema checks, fresh-host NINA
+229/229 and real net48 x86/x64 pass. Core-derived
+connection/control/readiness/cleanup allowances, remaining camera
+inputs and all image publications remain next. No original milestone gate closes
+at this checkpoint. Preceding a9b3c50 PR/push CI both finish all eight jobs green;
+reviewed recovery configuration 6f29557 is pushed to the same draft PR and its
+37585153377/37585149444 runs remain live.
+
+Native recovery configuration checkpoint (pushed, reviewed and validated): core
 now declares all fourteen saved recovery keys, defaults, ranges and descriptions
 once and generates schema data without a schema dependency. Legacy sparse
 profiles and unknown-extension loading remain compatible; the hub uses a strict
@@ -24,10 +40,10 @@ x86/x64 pass. The first NINA run failed a post-write switch read with ValueNotSe
 a deterministic held-poll test proves the deliberate cache invalidation interval.
 The fixture now awaits confirmed readback within the unchanged deadline and does
 not retry commands or accept other errors. Earlier HTTP/connection CI failure
-causes remain unproved. Preceding a9b3c50 PR/push CI each have seven successful
-jobs and successful Windows test.ps1; packaging/installer stages are still live.
-Keep this increment local until those runs finish. Factory/runtime, host-wide
-budgets/activity, derived recovery allowances,
+causes remain unproved. Preceding a9b3c50 PR/push CI both finish all eight jobs
+successfully. Recovery configuration is pushed at 6f29557; its CI is recorded
+above. Factory/host resources are now locally integrated as recorded above;
+runtime acquisition supervision, derived recovery allowances,
 remaining camera inputs and all image outputs are still required. Camera choices
 remain disabled; no original milestone or final acceptance gate is closed here.
 
@@ -1486,6 +1502,18 @@ Publishing installers, plugin feeds, and releases follows the existing
 Keep existing device profiles and registrations compatible throughout migration.
 
 ## Progress log
+
+2026-10-07: Reviewed native camera factory and host resource integration. One
+budget/activity counter survives configuration revisions; retained readers remain
+charged and capacity rejection precedes exposure dispatch. Actual SDK/direct
+simulations and a two-client executable scalar gauge pass. Full core/hub/Alpaca/
+ZWO Rust suites, strict Clippy, Rust 1.89, contract freshness, Node/eight schema
+checks, NINA 229/229 and actual net48 x86/x64 pass. Retain the initial executable
+lock build failure and default-Python dependency failure; serialized Rust and the
+existing schema venv pass. Preceding recovery head 6f29557 CI is still live, so
+keep this increment local. Next: core-derived native timing/cleanup and runtime
+supervision, remaining camera inputs, bounded IPC/all outputs, coordination and
+every original acceptance/documentation/final gate. Camera choices stay disabled.
 
 Native recovery metadata checkpoint (2026-10-06): migrated Rust recovery
 declarations and added strict hub native-camera configuration without changing

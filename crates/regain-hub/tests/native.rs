@@ -24,6 +24,7 @@ fn runtime() -> Option<NativeRuntime> {
             .is_file()
     );
     Some(NativeRuntime {
+        cameras: None,
         directory,
         simulate: true,
         references: None,
@@ -733,6 +734,7 @@ async fn lost_reply_or_ignored_native_sync_retains_durable_uncertainty_after_sou
         std::fs::write(directory.path().join("commands.log"), "").unwrap();
         std::fs::write(directory.path().join("mode"), mode).unwrap();
         let native = NativeRuntime {
+            cameras: None,
             directory: directory.path().to_owned(),
             simulate: true,
             references: Some(
@@ -1104,6 +1106,7 @@ async fn runtime_native_focuser_proxies_keep_stable_numbers_and_one_simulated_wo
 #[test]
 fn construction_does_no_io_and_cameras_require_their_supervisor() {
     let runtime = NativeRuntime {
+        cameras: None,
         directory: PathBuf::from("nonexistent-worker-directory"),
         simulate: false,
         references: None,
@@ -1295,6 +1298,7 @@ async fn unavailable_identity_never_falls_back_to_another_device_or_simulator() 
         ErrorKind::Disconnected
     );
     let runtime = NativeRuntime {
+        cameras: None,
         directory: PathBuf::from("nonexistent-worker-directory"),
         simulate: false,
         references: None,
@@ -1840,6 +1844,7 @@ async fn native_efw_mismatched_saved_slots_remain_an_error_instead_of_defaulting
 fn invalid_native_filter_metadata_cannot_launch_a_worker_or_open_another_class() {
     use regain_hub::filterwheel::NativeFilterWheelMetadata;
     let native = NativeRuntime {
+        cameras: None,
         directory: PathBuf::from("missing-private-worker"),
         simulate: true,
         references: None,

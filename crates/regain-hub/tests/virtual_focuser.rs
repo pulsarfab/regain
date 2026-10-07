@@ -207,6 +207,7 @@ impl Fixture {
         HubRuntime::build(
             self.config.clone(),
             &NativeRuntime {
+                cameras: None,
                 directory: "no-workers".into(),
                 simulate: false,
                 references: None,
@@ -590,6 +591,7 @@ async fn native_worker_simulation_remains_explicit_through_nested_focuser_output
     let hub = HubRuntime::build(
         fixture.config.clone(),
         &NativeRuntime {
+            cameras: None,
             directory: directory.into(),
             simulate: true,
             references: None,

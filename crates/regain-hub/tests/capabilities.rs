@@ -368,6 +368,7 @@ async fn real_alpaca_inspections_share_owned_connection_and_only_release_their_l
     let registry = regain_hub::factory::build_sources(
         &config,
         &regain_hub::native::NativeRuntime {
+            cameras: None,
             directory: "unused".into(),
             simulate: false,
             references: None,

@@ -2471,5 +2471,38 @@ rereads from this metadata. USB recovery remains disabled by default and keeps
 the core's verified-target, OS-permission and at-most-once-per-capture rules.
 Configuration edits reconnect through normal atomic apply; they do not retarget
 source IDs, mutate polling settings or dispatch hardware work. This schema
-checkpoint alone does not wire camera runtime resources, derive full recovery
-timing allowances or enable camera setup/output support.
+checkpoint alone does not derive full recovery timing allowances or enable
+camera setup/output support.
+
+### Native camera factory and host resources
+
+The native factory now constructs SDK/direct camera owners from the validated
+model, serial, backend and unchanged recovery options. Construction does not
+discover equipment, launch workers, load an SDK or allocate an image. A host
+must explicitly supply `NativeCameraRuntime`; accessory-only embedders may omit
+it and receive an Unsupported error for a camera source. Production SDK paths
+must be absolute when the source uses SDK or permits SDK fallback. A simulation
+fixture never enables simulation without the host's explicit simulation flag.
+
+`CameraResources` belongs to the host builder and its clones share one image
+budget and retained-activity counter across configuration revisions. Images
+pinned by disconnected readers remain charged until their last reference drops.
+Native owners reserve capacity before exposure dispatch; a full shared budget
+returns Busy without sending StartExposure. Hub connection/apply admission uses
+the same activity counter, including retained native work after caller loss.
+The default limit is 512 MiB; constructing the budget does not allocate that
+amount of memory. Embedded hosts may select a smaller validated limit.
+
+The shared executable accepts `--sdk PATH` in explicit `--hub-host` mode.
+`--hub-attach` cannot override SDK or simulation settings of an existing host.
+Explicit simulation with a nonexistent SDK path does not load a vendor library.
+A native camera can supply selected scalar observations to an existing read-only
+Switch gauge with shared connection leases. This is not a camera image output.
+Camera proxy poll plans deduplicate all typed properties, but the runtime still
+rejects camera outputs and the setup capability remains disabled.
+
+Factory integration preserves persisted polling settings. Full core-derived
+connection/control/readiness/cleanup allowances, runtime acquisition ownership,
+remaining input adapters, bounded binary IPC and camera publication in Alpaca,
+NINA and ASCOM are still required before enabling camera choices. In particular,
+scalar request deadlines are not a complete native recovery budget.
