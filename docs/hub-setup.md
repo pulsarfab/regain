@@ -6,6 +6,9 @@ outputs through Alpaca, native NINA providers and native ASCOM. Their setup uses
 the shared configuration. Broader proxy devices and acceptance remain in progress;
 this is not a released feature.
 
+The [conformance playbook](hub-conformance.md) runs external protocol and interface
+checks against a private simulated hub and records the remaining acceptance issues.
+
 Windows sources can import ASCOM Switch, SafetyMonitor, ObservingConditions, Focuser, Rotator,
 FilterWheel, CoverCalibrator and Camera drivers directly through private x86/x64 helpers. Add a **COM** source, enter the
 installed driver's ProgID and select its registration bitness. Available choices

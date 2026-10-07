@@ -5,6 +5,8 @@ mod camera;
 mod covercalibrator;
 #[path = "support/hub_filterwheel_output.rs"]
 mod filterwheel;
+#[path = "support/hub_protocol.rs"]
+mod protocol;
 #[path = "support/hub_rotator_output.rs"]
 mod rotator;
 use axum::{
@@ -705,18 +707,26 @@ async fn relative_focuser_rejects_position_and_preserves_signed_moves_and_strict
         0x401
     );
     assert_eq!(
-        f.call("GET", "/api/v1/focuser/4/getswitch", "ClientID=1&Id=0")
-            .await["ErrorNumber"],
-        0x400
+        request(
+            &f.router,
+            "GET",
+            "/api/v1/focuser/4/getswitch",
+            "ClientID=1&Id=0"
+        )
+        .await
+        .0,
+        StatusCode::NOT_FOUND
     );
     assert_eq!(
-        f.call(
+        request(
+            &f.router,
             "PUT",
             "/api/v1/focuser/4/move",
             "ClientID=1&Position=1&position=2"
         )
-        .await["ErrorNumber"],
-        0x401
+        .await
+        .0,
+        StatusCode::BAD_REQUEST
     );
     f.finish().await;
     upstream.finish().await;
@@ -1882,7 +1892,6 @@ async fn invalid_requests_are_rejected_without_mutation_and_shutdown_releases_on
     for data in [
         "ClientID=42&Id=-1&Value=1",
         "ClientID=42&Id=1&Value=NaN",
-        "ClientID=42&Id=1&Value=1&id=2",
         "ClientID=42&Id=1&Value=101",
     ] {
         assert_eq!(
@@ -1890,6 +1899,17 @@ async fn invalid_requests_are_rejected_without_mutation_and_shutdown_releases_on
             0x401
         );
     }
+    assert_eq!(
+        request(
+            &f.router,
+            "PUT",
+            "/api/v1/switch/7/setswitchvalue",
+            "ClientID=42&Id=1&Value=1&id=2"
+        )
+        .await
+        .0,
+        StatusCode::BAD_REQUEST
+    );
     assert_eq!(
         f.call(
             "PUT",
@@ -1900,9 +1920,10 @@ async fn invalid_requests_are_rejected_without_mutation_and_shutdown_releases_on
         0x400
     );
     assert_eq!(
-        f.call("GET", "/api/v1/switch/7/issafe", "ClientID=42")
-            .await["ErrorNumber"],
-        0x400
+        request(&f.router, "GET", "/api/v1/switch/7/issafe", "ClientID=42")
+            .await
+            .0,
+        StatusCode::NOT_FOUND
     );
     f.server.shutdown().await;
     eventually(async || {

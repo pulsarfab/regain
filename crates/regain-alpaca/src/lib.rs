@@ -8,6 +8,7 @@ pub mod hub_output;
 pub mod hub_setup;
 pub mod native;
 pub mod profile;
+mod protocol;
 pub mod rotator;
 pub mod server;
 pub mod slots;

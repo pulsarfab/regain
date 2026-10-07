@@ -515,7 +515,7 @@ pub(crate) fn error_code(e: &anyhow::Error) -> i32 {
     }
 }
 fn failure(e: anyhow::Error, client: u32, server: u32) -> Value {
-    json!({"ClientTransactionID":client,"ServerTransactionID":server,"ErrorNumber":error_code(&e),"ErrorMessage":format!("{e:#}")})
+    json!({"Value":null,"ClientTransactionID":client,"ServerTransactionID":server,"ErrorNumber":error_code(&e),"ErrorMessage":format!("{e:#}")})
 }
 async fn management_versions(State(s): State<Arc<Server>>, RawQuery(q): RawQuery) -> Json<Value> {
     let p = Params::parse(q.as_deref().unwrap_or(""));
@@ -636,15 +636,11 @@ async fn camera_get(
     RawQuery(q): RawQuery,
     headers: HeaderMap,
 ) -> Response {
-    camera(
-        s,
-        slot,
-        member,
-        Method::GET,
-        Params::parse(q.as_deref().unwrap_or("")),
-        headers,
-    )
-    .await
+    let params = match crate::protocol::query(q.as_deref().unwrap_or("")) {
+        Ok(params) => params,
+        Err(status) => return status.into_response(),
+    };
+    camera(s, slot, member, Method::GET, Ok(params), headers).await
 }
 async fn camera_put(
     State(s): State<Arc<Server>>,
@@ -659,7 +655,11 @@ async fn camera_put(
     {
         return StatusCode::BAD_REQUEST.into_response();
     }
-    camera(s, slot, member, Method::PUT, Params::parse(&body), headers).await
+    let params = match crate::protocol::form("camera", &member, &body) {
+        Ok(params) => params,
+        Err(status) => return status.into_response(),
+    };
+    camera(s, slot, member, Method::PUT, Ok(params), headers).await
 }
 async fn camera(
     s: Arc<Server>,
@@ -669,7 +669,7 @@ async fn camera(
     params: Result<Params>,
     headers: HeaderMap,
 ) -> Response {
-    if member != member.to_lowercase() {
+    if !crate::protocol::known_member("camera", &member, method == Method::PUT) {
         return StatusCode::NOT_FOUND.into_response();
     }
     if s.hub.is_some() {
@@ -977,14 +977,11 @@ async fn rotator_get(
     Path((slot, member)): Path<(usize, String)>,
     RawQuery(q): RawQuery,
 ) -> Response {
-    rotator_request(
-        s,
-        slot,
-        member,
-        false,
-        Params::parse(q.as_deref().unwrap_or("")),
-    )
-    .await
+    let params = match crate::protocol::query(q.as_deref().unwrap_or("")) {
+        Ok(params) => params,
+        Err(status) => return status.into_response(),
+    };
+    rotator_request(s, slot, member, false, Ok(params)).await
 }
 async fn rotator_put(
     State(s): State<Arc<Server>>,
@@ -999,7 +996,11 @@ async fn rotator_put(
     {
         return StatusCode::BAD_REQUEST.into_response();
     }
-    rotator_request(s, slot, member, true, Params::parse(&body)).await
+    let params = match crate::protocol::form("rotator", &member, &body) {
+        Ok(params) => params,
+        Err(status) => return status.into_response(),
+    };
+    rotator_request(s, slot, member, true, Ok(params)).await
 }
 async fn rotator_request(
     s: Arc<Server>,
@@ -1008,6 +1009,9 @@ async fn rotator_request(
     put: bool,
     params: Result<Params>,
 ) -> Response {
+    if !crate::protocol::known_member("rotator", &member, put) {
+        return StatusCode::NOT_FOUND.into_response();
+    }
     if s.hub.is_some() {
         match s.hub_devices().await {
             Ok(devices)
@@ -1206,15 +1210,11 @@ async fn accessory_get(
     Path((kind, slot, member)): Path<(String, usize, String)>,
     RawQuery(q): RawQuery,
 ) -> Response {
-    accessory_request(
-        s,
-        kind,
-        slot,
-        member,
-        false,
-        Params::parse(q.as_deref().unwrap_or("")),
-    )
-    .await
+    let params = match crate::protocol::query(q.as_deref().unwrap_or("")) {
+        Ok(params) => params,
+        Err(status) => return status.into_response(),
+    };
+    accessory_request(s, kind, slot, member, false, Ok(params)).await
 }
 async fn accessory_put(
     State(s): State<Arc<Server>>,
@@ -1229,7 +1229,11 @@ async fn accessory_put(
     {
         return StatusCode::BAD_REQUEST.into_response();
     }
-    accessory_request(s, kind, slot, member, true, Params::parse(&body)).await
+    let params = match crate::protocol::form(&kind, &member, &body) {
+        Ok(params) => params,
+        Err(status) => return status.into_response(),
+    };
+    accessory_request(s, kind, slot, member, true, Ok(params)).await
 }
 async fn accessory_request(
     s: Arc<Server>,
@@ -1239,6 +1243,9 @@ async fn accessory_request(
     put: bool,
     params: Result<Params>,
 ) -> Response {
+    if !crate::protocol::known_member(&kind, &member, put) {
+        return StatusCode::NOT_FOUND.into_response();
+    }
     if matches!(kind.as_str(), "focuser" | "filterwheel" | "covercalibrator") && s.hub.is_some() {
         match s.hub_devices().await {
             Ok(devices)

@@ -321,25 +321,38 @@ async fn wheel_publication_preserves_dynamic_identity_metadata_shared_ownership_
             );
         }
         assert_eq!(
-            f.call(
+            request(
+                &f.router,
                 "PUT",
                 "/api/v1/filterwheel/4/position",
                 "ClientID=1&Position=1&position=2"
             )
-            .await["ErrorNumber"],
-            0x401
+            .await
+            .0,
+            StatusCode::BAD_REQUEST
         );
-        for member in ["halt", "calibrate", "move", "commandblind"] {
+        for member in ["halt", "calibrate", "move"] {
             assert_eq!(
-                f.call(
+                request(
+                    &f.router,
                     "PUT",
                     &format!("/api/v1/filterwheel/4/{member}"),
                     "ClientID=1&Position=1"
                 )
-                .await["ErrorNumber"],
-                0x400
+                .await
+                .0,
+                StatusCode::NOT_FOUND
             );
         }
+        assert_eq!(
+            f.call(
+                "PUT",
+                "/api/v1/filterwheel/4/commandblind",
+                "ClientID=1&Command=unsupported&Raw=false"
+            )
+            .await["ErrorNumber"],
+            0x400
+        );
         assert!(moves(&upstream).is_empty());
         f.ok(
             "PUT",

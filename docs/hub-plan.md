@@ -8,7 +8,35 @@ tagged or published. Changed cross-crate APIs require an unpublished version so
 Cargo package verification uses the new workspace packages.
 Last updated: 2026-10-07.
 
-Current increment: shared camera creation uses specific cameraOutputs,
+Current increment: external ConformU 4.5.0 strict Alpaca protocol checks pass all
+eight explicitly simulated hub classes with zero errors/issues. A common HTTP
+admission layer rejects unknown methods, incorrectly cased/missing required PUT
+keys, duplicate decoded keys and invalid client IDs before connection/dispatch.
+GET keys stay case insensitive; incorrectly cased optional PUT client IDs are
+ignored. JSON errors retain ErrorNumber/ErrorMessage and include Value:null.
+The actual HTTP regression covers all eight classes, zero leases after invalid
+requests, unchanged settings after rejected mutations and unsupported-method errors.
+Full Alpaca regression passes 19 library, ten executable-host and 46 HTTP cases;
+strict lint, Rust 1.89 and all 319 ordinary NINA cases pass (one separately run
+registered-COM theory remains explicitly skipped here).
+The reproducible private conformance runner owns both its HTTP frontend and hub
+host, bounds each validator run and retains evidence. See hub-conformance.md.
+Baseline full interface checks pass Switch, SafetyMonitor, ObservingConditions,
+Rotator and FilterWheel. Focuser has four issues, CoverCalibrator one and Camera
+34; these are recorded for the next reviewed corrections and keep acceptance open.
+No physical equipment or installed vendor driver is opened. Preserve coordinated
+groups, discovery/transfer, OS recovery/resume, broader acceptance, documentation,
+main reconciliation and the original final audit/merge gates.
+Previous fc7c3d7 PR/push CI is now terminal: PR Windows startup-probe failure,
+push Intel panel-fixture failures; push Windows ultimately passes packaging and
+installer checks. Reviewed fixture corrections and camera creation are pushed at
+32a34ae. PR/push runs 37639099147/37639086923 are terminal and fail: Windows
+focuser cancellation/safety-backoff fixtures, plus the push's macOS ARM camera
+endpoint lock-release assertion. Preserve their logs and investigate event ordering
+and OS ownership; these are not resolved by the local passes. This HTTP increment
+still needs CI at its own head after the reviewed corrections.
+
+Previous increment: shared camera creation uses specific cameraOutputs,
 cameraSimulation and cameraComSources capabilities. Native camera choices require
 the host's camera runtime; COM choices require an available worker and its own
 bitness capability. Generic Switch/SafetyMonitor/ObservingConditions proxies remain

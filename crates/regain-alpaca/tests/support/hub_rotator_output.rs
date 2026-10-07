@@ -653,18 +653,26 @@ async fn rotator_publication_rejects_invalid_values_and_preserves_optional_error
         0x401
     );
     assert_eq!(
-        f.call(
+        request(
+            &f.router,
             "PUT",
             "/api/v1/rotator/4/move",
             "ClientID=1&Position=1&position=2"
         )
-        .await["ErrorNumber"],
-        0x401
+        .await
+        .0,
+        StatusCode::BAD_REQUEST
     );
     assert_eq!(
-        f.call("GET", "/api/v1/rotator/4/getswitch", "ClientID=1&Id=0")
-            .await["ErrorNumber"],
-        0x400
+        request(
+            &f.router,
+            "GET",
+            "/api/v1/rotator/4/getswitch",
+            "ClientID=1&Id=0"
+        )
+        .await
+        .0,
+        StatusCode::NOT_FOUND
     );
     assert_eq!(upstream.writes.lock().unwrap().len(), 1);
     upstream.values.lock().unwrap().remove("stepsize");

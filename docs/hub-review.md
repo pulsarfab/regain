@@ -6325,3 +6325,80 @@ by a local pass. All original acceptance gates remain required. Continue native
 core-derived timing and cleanup, runtime camera supervision, remaining camera
 inputs/outputs and coordination after publishing these reviewed increments to
 the same draft PR. No physical equipment or installed vendor driver was used.
+
+## External protocol conformance and shared HTTP admission (2026-10-07)
+
+Built unmodified official ConformU v4.5.0 from source commit
+49ab847c24c3d1a5bc11fb159ad2dd6787659098. Its reported version is
+4.5.0 (Build 55822.49ab847). The first absolute-output build failed in an upstream
+ASCOM package target; default relative output succeeds. Corrected private Git
+metadata before the final build so the tool reports its own source SHA rather
+than this parent repository's. No validator code or installed driver was changed.
+
+An explicitly simulated eight-class hub on loopback, empty ordinary camera
+profiles and disabled discovery establish the initial interface baseline. Full
+default-delay checks pass Switch, SafetyMonitor, ObservingConditions, Rotator and
+FilterWheel with no errors/issues/timing issues/configuration alerts. Focuser has
+four boundary/increment issues, CoverCalibrator one HaltCover timing issue and
+Camera 34 monochrome Bayer/timestamp/geometry-setter issues. Do not call interface
+conformance complete. The pinned Focuser definition and validator disagree in
+their treatment of some limits; investigate before changing source protections.
+The private evidence is artifacts/hub-conformance-228c321a75f8483aabb4c9a04f863dc6.
+
+The first tolerant protocol pass has 36 issues: unknown URLs return a successful
+HTTP status, and required PUT key casing is ignored. Added one HTTP syntax layer
+shared by ordinary equipment and hub paths. Recognised GET properties reuse the
+existing typed property definitions. Unknown methods return 404; malformed IDs,
+duplicate decoded keys and missing/incorrectly cased required PUT keys return 400
+before source lookup, connection or mutation. GET queries retain case-insensitive
+keys. Optional PUT ClientID/ClientTransactionID names use exact casing; other
+casings are ignored and cannot select/echo a different client identity. Required
+Switch IDs are parsed even for recognised unsupported SetSwitchName. Actual
+interface/value failures retain their ASCOM ErrorNumber/Message with HTTP 200.
+Their Value is null, without fabricating readings or successful image data.
+
+Reviewed URI/member versus interface support, optional IDs, URL-decoded duplicate
+keys, request bounds, source admission, error/value distinction, binary image
+errors, and compatibility with direct/native dispatch. HTTP parsing does not alter
+the shared source/command protocol, ownership, retry policy or production deadlines.
+Existing tests now assert the correct HTTP status for malformed/unknown requests;
+semantic bounds still assert the same ASCOM errors. Unsupported standard methods
+are checked with correctly formed arguments and still return NotImplemented.
+The all-class HTTP regression proves no leases after rejected connections, GET
+transaction round trips, ignored optional PUT IDs, and unchanged settings/position
+after rejected mutations. It observes cached scalar readiness before comparing it.
+
+The reproducible runner in scripts/test-hub-conformance.py constructs only private
+simulated sources; no URI/ProgID/config override is exposed. It enables all full
+interface tests and strict protocol checks, with shorter settling only for its
+in-memory Switch. Exit codes, summaries, settings, executable hashes and logs are
+retained. Missing evidence or any errors/issues/alerts/timing issues fails the run.
+ConformU 4.5 does not emit protocol JSON despite accepting --resultsfile, so its
+explicit console counts and exit code are recorded. Each external command has a
+finite 900-second deadline. Reviewed cleanup: an ordinary HTTP frontend deliberately
+leaves its shared host alive. The runner now launches and owns that host before
+HTTP attachment, waits for its bound-listener acknowledgement, then retires both
+owned processes. The first runner's private orphan was identified by exact config
+and PID and removed; no other host was stopped.
+
+Final strict protocol evidence: artifacts/hub-protocol-conformu-third.log and
+artifacts/hub-conformance-d178f97fbd0642a1b0d6cab1ea2df19a/summary.json. All eight
+classes have exit 0, zero errors and zero issues. Informational messages are
+retained. The runner's owned host/frontend are absent afterward. Full Alpaca
+regression passes 19 library, ten executable-host and 46 HTTP cases in
+artifacts/hub-protocol-admission-alpaca-fifth.log. Strict Clippy passes in
+artifacts/hub-protocol-admission-clippy-third.log; Rust 1.89 all-target check passes
+in artifacts/hub-protocol-msrv.log. All 319 ordinary NINA cases pass in
+artifacts/hub-protocol-nina-regression.log, with one explicit registered-COM theory
+skip; the previous separately registered run remains its execution evidence.
+Python syntax, Rust format and diff checks pass.
+
+Preserve initial fixture failures: nonexistent HubRuntime.status getter, a rebuild
+while a private host retained the executable, old JSON-status expectations for
+malformed URLs/duplicates, and a cached scalar read before its first observation.
+These are corrected without weakening no-dispatch/ownership/semantic assertions.
+The first strict run exposed optional ID casing and error Value shape, which are
+fixed in production and covered above. No physical equipment or installed vendor
+driver was activated. The simulated HTTP protocol slice passes; interface/native
+ASCOM conformance, other source combinations, coordination, discovery/transfer,
+OS resume, broader acceptance, README/site and original final audit/merge remain.

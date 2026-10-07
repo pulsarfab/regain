@@ -159,22 +159,39 @@ async fn panel_publication_preserves_dynamic_identity_shared_clients_and_indepen
         }
         for args in ["ClientID=1", "ClientID=1&Brightness=1&brightness=2"] {
             assert_eq!(
-                f.call("PUT", "/api/v1/covercalibrator/4/calibratoron", args)
-                    .await["ErrorNumber"],
-                0x401
+                request(
+                    &f.router,
+                    "PUT",
+                    "/api/v1/covercalibrator/4/calibratoron",
+                    args
+                )
+                .await
+                .0,
+                StatusCode::BAD_REQUEST
             );
         }
-        for member in ["move", "halt", "brightness", "commandblind"] {
+        for member in ["move", "halt", "brightness"] {
             assert_eq!(
-                f.call(
+                request(
+                    &f.router,
                     "PUT",
                     &format!("/api/v1/covercalibrator/4/{member}"),
                     "ClientID=1&Brightness=1"
                 )
-                .await["ErrorNumber"],
-                0x400
+                .await
+                .0,
+                StatusCode::NOT_FOUND
             );
         }
+        assert_eq!(
+            f.call(
+                "PUT",
+                "/api/v1/covercalibrator/4/commandblind",
+                "ClientID=1&Command=unsupported&Raw=false"
+            )
+            .await["ErrorNumber"],
+            0x400
+        );
         assert!(commands(&upstream).is_empty());
         let accepted = f
             .call(
