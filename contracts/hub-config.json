@@ -3496,6 +3496,129 @@
   "simulationControl": {
     "apply": "immediate",
     "controlsByDeviceType": {
+      "covercalibrator": [
+        {
+          "default": 0,
+          "description": "Actual light level within the current maximum. Off and absent lights require zero.",
+          "label": "Brightness",
+          "maximum": 2147483647,
+          "minimum": 0,
+          "path": [
+            "coverCalibrator",
+            "brightness"
+          ],
+          "type": "integer"
+        },
+        {
+          "default": 4096,
+          "description": "Live Int32 maximum. Change brightness with the maximum if needed.",
+          "label": "Maximum brightness",
+          "maximum": 2147483647,
+          "minimum": 1,
+          "path": [
+            "coverCalibrator",
+            "maxBrightness"
+          ],
+          "type": "integer"
+        },
+        {
+          "default": 1,
+          "description": "0 absent, 1 closed, 2 moving, 3 open, 4 unknown, 5 error. Endpoint and motion are independent.",
+          "label": "Cover state",
+          "maximum": 5,
+          "minimum": 0,
+          "path": [
+            "coverCalibrator",
+            "coverState"
+          ],
+          "type": "integer"
+        },
+        {
+          "default": 1,
+          "description": "0 absent, 1 off, 2 not ready, 3 ready, 4 unknown, 5 error. On at zero is distinct from Off.",
+          "label": "Light state",
+          "maximum": 5,
+          "minimum": 0,
+          "path": [
+            "coverCalibrator",
+            "calibratorState"
+          ],
+          "type": "integer"
+        },
+        {
+          "default": false,
+          "description": "Independent completion flag. Setting component state replaces only that component's pending operation.",
+          "label": "Cover moving",
+          "path": [
+            "coverCalibrator",
+            "coverMoving"
+          ],
+          "type": "boolean"
+        },
+        {
+          "default": false,
+          "description": "Independent completion flag. Setting component state replaces only that component's pending operation.",
+          "label": "Light changing",
+          "path": [
+            "coverCalibrator",
+            "calibratorChanging"
+          ],
+          "type": "boolean"
+        },
+        {
+          "default": 0.2,
+          "description": "Monotonic duration for new operations. Cover and light run independently; disconnect does not Halt or turn Off.",
+          "label": "Cover move duration (s)",
+          "maximum": 300.0,
+          "minimum": 0.0,
+          "path": [
+            "coverCalibrator",
+            "moveDurationSeconds"
+          ],
+          "type": "number"
+        },
+        {
+          "default": 0.2,
+          "description": "Monotonic duration for new operations. Cover and light run independently; disconnect does not Halt or turn Off.",
+          "label": "Light readiness duration (s)",
+          "maximum": 300.0,
+          "minimum": 0.0,
+          "path": [
+            "coverCalibrator",
+            "lightDurationSeconds"
+          ],
+          "type": "number"
+        },
+        {
+          "default": "none",
+          "description": "Select none to clear a fault. This does not clear an uncertain-write latch.",
+          "enum": [
+            "none",
+            "readError",
+            "timeout",
+            "uncertainWrite",
+            "invalidMotion",
+            "stalledMotion",
+            "stoppedShort"
+          ],
+          "label": "Injected fault",
+          "path": [
+            "fault"
+          ],
+          "type": "string"
+        },
+        {
+          "default": 0.0,
+          "description": "Age reported for each new simulated observation. Refresh resets it to zero.",
+          "label": "Sample age (s)",
+          "maximum": 86400.0,
+          "minimum": 0.0,
+          "path": [
+            "sampleAgeSeconds"
+          ],
+          "type": "number"
+        }
+      ],
       "filterwheel": [
         {
           "default": [
@@ -4196,9 +4319,19 @@
       "observingconditions",
       "focuser",
       "rotator",
-      "filterwheel"
+      "filterwheel",
+      "covercalibrator"
     ],
     "faultsByDeviceType": {
+      "covercalibrator": [
+        "none",
+        "readError",
+        "timeout",
+        "uncertainWrite",
+        "invalidMotion",
+        "stalledMotion",
+        "stoppedShort"
+      ],
       "filterwheel": [
         "none",
         "readError",
@@ -4245,6 +4378,11 @@
       ]
     },
     "fieldsByDeviceType": {
+      "covercalibrator": [
+        "coverCalibrator",
+        "fault",
+        "sampleAgeSeconds"
+      ],
       "filterwheel": [
         "filterWheel",
         "fault",
@@ -4279,6 +4417,78 @@
     "revisionCheckedUpdates": true,
     "schema": {
       "$defs": {
+        "CoverCalibratorUpdate": {
+          "additionalProperties": false,
+          "properties": {
+            "brightness": {
+              "format": "int32",
+              "maximum": 2147483647,
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "calibratorChanging": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "calibratorState": {
+              "format": "int32",
+              "maximum": 5,
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "coverMoving": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "coverState": {
+              "format": "int32",
+              "maximum": 5,
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "lightDurationSeconds": {
+              "format": "double",
+              "maximum": 300,
+              "minimum": 0,
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "maxBrightness": {
+              "format": "int32",
+              "maximum": 2147483647,
+              "minimum": 1,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "moveDurationSeconds": {
+              "format": "double",
+              "maximum": 300,
+              "minimum": 0,
+              "type": [
+                "number",
+                "null"
+              ]
+            }
+          },
+          "type": "object"
+        },
         "Fault": {
           "enum": [
             "none",
@@ -4533,6 +4743,17 @@
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
       "properties": {
+        "coverCalibrator": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CoverCalibratorUpdate"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Sparse independent cover/light state. Component state updates replace\nonly that component's pending operation; durations do not stop either."
+        },
         "fault": {
           "anyOf": [
             {

@@ -80,6 +80,18 @@ class SchemaContractTests(unittest.TestCase):
         VALIDATOR.validate(config)
 
 
+    def test_panel_simulation_update_contract(self):
+        validator = Draft202012Validator(DESCRIPTION["simulationControl"]["schema"])
+        for update in [{"brightness": 0}, {"brightness": 2147483647, "maxBrightness": 2147483647, "calibratorState": 3},
+                       {"coverState": 4, "coverMoving": False}, {"lightDurationSeconds": 300},
+                       {"calibratorState": 0, "calibratorChanging": False}]:
+            validator.validate({"coverCalibrator": update})
+        for update in [{"brightness": -1}, {"brightness": 2147483648}, {"brightness": 1.5}, {"brightness": "0"},
+                       {"maxBrightness": 0}, {"coverState": 6}, {"calibratorState": -1}, {"coverMoving": 0},
+                       {"lightDurationSeconds": 301}, {"moveDurationSeconds": -1}, {"extra": True}]:
+            with self.subTest(update=update):
+                self.assertTrue(list(validator.iter_errors({"coverCalibrator": update})))
+
     def test_wheel_simulation_update_contract(self):
         schema = DESCRIPTION["simulationControl"]["schema"]
         Draft202012Validator.check_schema(schema)

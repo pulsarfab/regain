@@ -29,6 +29,7 @@ internal static class Program
             panelServer.AddTo(fixtureConfig,4,17);
             using var legacyPanelServer = new HubCoverCalibratorServer(1);
             legacyPanelServer.AddTo(fixtureConfig,12,13);
+            var simulatedPanel=HubCoverCalibratorSimulation.AddTo(fixtureConfig,20,21);
             File.WriteAllText(args[1], fixtureConfig.ToJsonString());
             using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(75));
             var initializedPath = System.IO.Path.Combine(System.IO.Path.GetDirectoryName(args[1])!, "created empty configuration.json");
@@ -192,6 +193,7 @@ internal static class Program
             await NativeOutputs.SimulatedWheelRun(args[0],args[1],attached.InstanceId,saved,simulatedWheel,editor,deadline.Token);
             await NativeOutputs.PanelRun(args[0],args[1],attached.InstanceId,saved,panelServer,4,17,2,deadline.Token);
             await NativeOutputs.PanelRun(args[0],args[1],attached.InstanceId,saved,legacyPanelServer,12,13,1,deadline.Token);
+            await NativeOutputs.SimulatedPanelRun(args[0],args[1],attached.InstanceId,saved,simulatedPanel,editor,deadline.Token);
             Console.WriteLine($"net48 {IntPtr.Size * 8}-bit: shared identity, independent leases, selection CAS/removal, native session/reconnect, editor review/apply/reconcile, setup inspection/export/simulation, typed ASCOM outputs and surviving host passed");
             return 0;
         } catch (Exception error) { Console.Error.WriteLine(error.ToString()); return 1; }

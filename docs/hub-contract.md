@@ -2055,5 +2055,33 @@ existing sibling session, without replay or automatic actuator cleanup. Retiring
 an inner transport can release its last lease and leave that source idle under the
 normal disconnect rules; this does not clear an active outer owner's fence.
 Explicit reconnect creates a new session rather than retargeting an old one.
-Dedicated panel simulation and shared panel creation remain required before
-opening their setup capabilities.
+Shared panel creation remains required before opening its setup capabilities.
+
+### Dedicated panel simulation
+
+An explicit simulated CoverCalibrator is a V2 source using the existing source
+actor, polling, typed runtime, virtual composition and all three output paths.
+Its new runtime starts Closed/Off, brightness zero, maximum 4096, with independent
+cover/light completion flags and operation durations. It opens no equipment.
+
+Open/Close acknowledge a start and reject another cover move while busy. Halt
+cancels only cover motion and reports Unknown when stopped between endpoints.
+On sets the requested brightness, enters NotReady and completes independently
+as Ready; On(0) retains that distinction from Off. Off cancels only light
+readiness. Disconnect and shutdown do not actuate either component.
+
+Sparse state updates are atomic. A cover state/flag injection replaces only
+pending cover motion. Brightness, maximum or light state/flag injection replaces
+only pending light readiness. Duration and fault changes retain both pending
+operations. Brightness/maxima use strict Int32 bounds, states use 0..5 and
+durations are finite 0..300 seconds. Brightness cannot exceed its live maximum;
+Off/absent lights require zero, and absent components cannot report movement.
+Unknown/Error states retain independent completion flags.
+
+Both setup frontends consume the same ten generated controls and reject invalid
+compound status replies. Updates are revision-checked, change test state only,
+and release temporary control leases. Stalls, stopped-short results, malformed
+completion, read errors, timeouts and applied uncertain writes use the existing
+fault path. Clearing a fault never clears an active owner's uncertainty fence
+or replays a command. Shared panel creation remains gated pending its own
+setup/save/reload acceptance.

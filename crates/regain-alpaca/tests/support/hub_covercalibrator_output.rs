@@ -706,3 +706,173 @@ async fn panel_native_ofp2_worker_publishes_light_and_cover_through_shared_http_
     .await;
     f.finish().await;
 }
+
+#[tokio::test]
+async fn panel_dedicated_simulation_keeps_http_operations_independent_and_uncertainty_fenced() {
+    use regain_hub::config::{DeviceType, OutputConfig, SourceBackend, SourceConfig};
+    let mut config = HubConfig::empty();
+    let source = uuid::Uuid::new_v4();
+    config.sources.push(SourceConfig {
+        id: source,
+        label: "Explicit panel simulation".into(),
+        polling: regain_hub::parameters::PollPolicy::default(),
+        backend: SourceBackend::Simulated {
+            device_type: DeviceType::CoverCalibrator,
+        },
+    });
+    for number in [4, 17] {
+        config.outputs.push(OutputConfig {
+            id: uuid::Uuid::new_v4(),
+            number,
+            label: format!("Panel {number}"),
+            device: VirtualDevice::Proxy {
+                source,
+                device_type: DeviceType::CoverCalibrator,
+            },
+        });
+    }
+    let f = Fixture::from_config(config).await;
+    let update = async |value| {
+        f.hub
+            .update_simulation(source, serde_json::from_value(value).unwrap())
+            .await
+            .unwrap()
+    };
+    update(json!({"fault":"stalledMotion","coverCalibrator":{"moveDurationSeconds":300,"lightDurationSeconds":0}})).await;
+    assert!(f.hub.outputs().iter().all(|output| output.simulated));
+    for (slot, client) in [(4, 1), (17, 2)] {
+        f.ok(
+            "PUT",
+            &format!("/api/v1/covercalibrator/{slot}/connected"),
+            &format!("ClientID={client}&Connected=true"),
+        )
+        .await;
+    }
+    f.ok("PUT", "/api/v1/covercalibrator/4/opencover", "ClientID=1")
+        .await;
+    f.ok(
+        "PUT",
+        "/api/v1/covercalibrator/4/calibratoron",
+        "ClientID=1&Brightness=0",
+    )
+    .await;
+    for member in ["covermoving", "calibratorchanging"] {
+        assert_eq!(
+            f.ok(
+                "GET",
+                &format!("/api/v1/covercalibrator/17/{member}"),
+                "ClientID=2"
+            )
+            .await,
+            true
+        );
+    }
+    update(json!({"fault":"none"})).await;
+    assert_eq!(
+        f.ok(
+            "GET",
+            "/api/v1/covercalibrator/17/calibratorstate",
+            "ClientID=2"
+        )
+        .await,
+        3
+    );
+    assert_eq!(
+        f.ok("GET", "/api/v1/covercalibrator/17/brightness", "ClientID=2")
+            .await,
+        0
+    );
+    assert_eq!(
+        f.ok(
+            "GET",
+            "/api/v1/covercalibrator/17/covermoving",
+            "ClientID=2"
+        )
+        .await,
+        true
+    );
+    f.ok(
+        "PUT",
+        "/api/v1/covercalibrator/4/connected",
+        "ClientID=1&Connected=false",
+    )
+    .await;
+    eventually(async || f.hub.source_snapshot(source).unwrap().lease_count == 1).await;
+    f.ok(
+        "PUT",
+        "/api/v1/covercalibrator/17/calibratoroff",
+        "ClientID=2",
+    )
+    .await;
+    assert_eq!(
+        f.ok(
+            "GET",
+            "/api/v1/covercalibrator/17/covermoving",
+            "ClientID=2"
+        )
+        .await,
+        true
+    );
+    f.ok("PUT", "/api/v1/covercalibrator/17/haltcover", "ClientID=2")
+        .await;
+    assert_eq!(
+        f.ok("GET", "/api/v1/covercalibrator/17/coverstate", "ClientID=2")
+            .await,
+        4
+    );
+    update(json!({"fault":"invalidMotion"})).await;
+    assert_eq!(
+        f.call(
+            "GET",
+            "/api/v1/covercalibrator/17/covermoving",
+            "ClientID=2"
+        )
+        .await["ErrorNumber"],
+        0x402
+    );
+    update(json!({"fault":"uncertainWrite"})).await;
+    assert_eq!(
+        f.call(
+            "PUT",
+            "/api/v1/covercalibrator/17/calibratoron",
+            "ClientID=2&Brightness=17"
+        )
+        .await["ErrorNumber"],
+        0x500
+    );
+    update(json!({"fault":"none"})).await;
+    for member in ["calibratoroff", "haltcover", "closecover"] {
+        assert_eq!(
+            f.call(
+                "PUT",
+                &format!("/api/v1/covercalibrator/17/{member}"),
+                "ClientID=2"
+            )
+            .await["ErrorNumber"],
+            0x500
+        );
+    }
+    let observed = f.hub.source_snapshot(source).unwrap();
+    assert!(observed.write_uncertain);
+    assert_eq!(
+        observed
+            .simulation
+            .unwrap()
+            .cover_calibrator
+            .unwrap()
+            .brightness,
+        17
+    );
+    let hub = f.hub.clone();
+    f.finish().await;
+    let stopped = hub
+        .source_snapshot(source)
+        .unwrap()
+        .simulation
+        .unwrap()
+        .cover_calibrator
+        .unwrap();
+    assert_eq!(stopped.brightness, 17);
+    assert_eq!(stopped.calibrator_state, 3);
+    assert_eq!(stopped.cover_state, 4);
+}

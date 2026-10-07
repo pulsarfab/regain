@@ -162,6 +162,15 @@ public sealed partial class HubEditorSession
             var metadata = HubFilterWheelProtocol.Metadata(wheel.GetProperty("names"),wheel.GetProperty("focusOffsets"));
             if (wheel.GetProperty("position").GetInt32() >= metadata.Names.Length) throw new HubException(HubFailure.Protocol);
         }
+        if (status.TryGetProperty("coverCalibrator", out var panel)) {
+            var brightness = panel.GetProperty("brightness").GetInt32();
+            var cover = panel.GetProperty("coverState").GetInt32();
+            var light = panel.GetProperty("calibratorState").GetInt32();
+            if (brightness > panel.GetProperty("maxBrightness").GetInt32()
+                || light <= 1 && brightness != 0
+                || cover == 0 && panel.GetProperty("coverMoving").GetBoolean()
+                || light == 0 && panel.GetProperty("calibratorChanging").GetBoolean()) throw new HubException(HubFailure.Protocol);
+        }
     }
     internal static JsonElement SimulationPatch(IEnumerable<KeyValuePair<HubSimulationControl, JsonElement>> selected)
     {

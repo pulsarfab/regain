@@ -521,3 +521,28 @@ Position injection replaces pending test movement; duration and fault changes
 retain it. Clearing a fault does not clear an uncertain-write fence. If an update
 reply is lost or too large, reload and read the applied state before changing it
 again; setup never repeats the update automatically.
+
+## Panel simulation controls (development)
+
+For a saved explicit CoverCalibrator simulation source, open **Simulation** in
+shared setup. The native and browser forms share ten generated controls: cover
+and light state, their independent completion flags, brightness and its live
+maximum, two operation durations, fault injection and sample age. Select only
+the fields to change. Panel creation in setup is the next development step.
+
+![Shared panel simulation controls](images/hub-native-panel-simulation.png)
+
+This actual WPF capture selects Cover state alone. Applying it retains the light
+state and brightness and releases the temporary setup lease. Injecting component
+state replaces only that component's pending operation; changing a duration or
+fault retains both operations. Open and Close acknowledge a start. Halt reports
+an unknown endpoint when stopped between endpoints. Turning the light Off does
+not stop the cover; disconnect does not Halt, Close or turn Off.
+
+On at brightness zero is distinct from Off. Brightness must stay within the
+current positive Int32 maximum; Off and absent lights require brightness zero.
+Absent components cannot report movement. Unknown/Error states retain independent
+completion flags. Stalls, stopped-short results, malformed completion, read
+failures and applied uncertain writes are available for testing. Clearing a
+fault does not clear an uncertain-write fence. Read the applied state and release
+every source lease before explicitly reconnecting; setup never retries commands.

@@ -77,6 +77,11 @@ export class SimulationSetup {
         validateSimulationValue(control,value);
       }
       if (status.filterWheel && (status.filterWheel.names.length !== status.filterWheel.focusOffsets.length || status.filterWheel.position >= status.filterWheel.names.length)) protocol();
+      if (status.coverCalibrator) {
+        const p = status.coverCalibrator;
+        if (p.brightness > p.maxBrightness || p.calibratorState <= 1 && p.brightness !== 0
+          || p.coverState === 0 && p.coverMoving || p.calibratorState === 0 && p.calibratorChanging) protocol();
+      }
       return status;
     } catch { protocol(); }
   }

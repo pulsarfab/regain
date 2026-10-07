@@ -3809,3 +3809,40 @@ virtual input 5a22737 are pushed together after both preceding 36a5558 CI runs
 complete successfully. PR #21's description now reflects their verified scope.
 New PR/push CI 37552662096/37552655796 is queued/running. Its native panel
 cold/production registration and portable acceptance remain to be established.
+
+### Dedicated panel simulation review (2026-10-06, local increment)
+
+Reviewed the explicit V2 simulated source through the existing source actor,
+typed controller, polling, virtual composition, IPC and all three outputs. Cover
+motion and light readiness have independent monotonic clocks. Atomic sparse
+updates replace only the selected component's pending operation; durations and
+faults do not cancel either operation. Strict Int32 brightness/live maximum,
+state bounds, independent completion and absent-component invariants are shared
+with generated native/browser controls. No hardware transport or worker is added.
+
+Eight panel cases cover atomic rejection, paused-clock independence, Halt/Off and
+disconnect behavior, sparse updates, On(0), absence, live bounds, fault injection,
+applied-write fencing, two-layer composition/provenance/age and actual IPC
+revision rejection without saved configuration changes. All 35 simulator cases
+pass. Actual Alpaca HTTP and real net48 x86/x64 clients verify nonblocking
+independent operations, typed cache and retained uncertainty without automatic
+actuator cleanup. Three new NINA cases cover completion, cancellation,
+stopped-short/wrong-brightness results and the rendered sparse setup form.
+Warnings-denied NINA 226/226, Node and seven independent schema checks pass.
+The actual WPF capture is visually verified and documented in the setup guide.
+
+The first simulator run failed an immediate lease-count assertion after a setup
+update. SourceLease drop schedules release; the corrected fixture awaits the
+observable zero count within its existing bound. Production ownership/timing is
+unchanged. The original failure log is retained. A full Rust check also failed
+to replace regain-alpaca.exe while the concurrently started NINA suite owned it.
+NINA was allowed to finish normally; sequential confirmation passes the full
+Rust hub/Alpaca suites, strict Clippy, Rust 1.89 all targets and generated-contract
+freshness. Formatting and diff checks pass. No process was killed or test deadline
+relaxed.
+
+Evidence: artifacts/hub-panel-simulation-{check,focused,focused-confirmed,ipc,
+http,node,schema,host,nina-focused,capture,nina,net48,rust,rust-confirmed,clippy,
+msrv,contract-generate,contract}.log. Shared panel creation stays gated until its own review/apply/reload
+acceptance. No equipment or installed vendor driver was activated; every
+original later milestone gate remains required.

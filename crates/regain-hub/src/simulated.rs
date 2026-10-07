@@ -14,6 +14,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
+mod panel;
+use panel::PanelMotion;
+pub use panel::{CoverCalibratorState, CoverCalibratorUpdate};
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub enum Fault {
@@ -326,6 +330,9 @@ pub struct SimulationUpdate {
     /// Sparse wheel state. Metadata or Position replaces a pending movement;
     /// duration and fault changes do not stop it. Arrays must remain aligned.
     pub filter_wheel: Option<FilterWheelUpdate>,
+    /// Sparse independent cover/light state. Component state updates replace
+    /// only that component's pending operation; durations do not stop either.
+    pub cover_calibrator: Option<CoverCalibratorUpdate>,
 }
 // Internally tagged commands deserialize through serde's captured content,
 // whose map keys do not perform JSON's string-to-integer conversion. Parse the
@@ -372,6 +379,8 @@ pub struct SimulationStatus {
     pub rotator: Option<RotatorState>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub filter_wheel: Option<FilterWheelState>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cover_calibrator: Option<CoverCalibratorState>,
 }
 pub fn description() -> Value {
     let mut controls = BTreeMap::new();
@@ -382,6 +391,7 @@ pub fn description() -> Value {
         DeviceType::Focuser,
         DeviceType::Rotator,
         DeviceType::FilterWheel,
+        DeviceType::CoverCalibrator,
     ] {
         let state = SimulatedBackend::new(device, Vec::new()).unwrap().state;
         let mut fields = Vec::new();
@@ -482,6 +492,57 @@ pub fn description() -> Value {
                 "description":"Position returns -1 until this monotonic duration elapses. Clear stalledMotion to resume, or inject Position to replace pending test movement.",
                 "default":wheel.move_duration_seconds,"minimum":0.0,"maximum":300.0}));
         }
+        if let Some(panel) = state.cover_calibrator.as_ref() {
+            let defaults = serde_json::to_value(panel).unwrap();
+            for (key, label, minimum, maximum, help) in [
+                (
+                    "brightness",
+                    "Brightness",
+                    0,
+                    i32::MAX,
+                    "Actual light level within the current maximum. Off and absent lights require zero.",
+                ),
+                (
+                    "maxBrightness",
+                    "Maximum brightness",
+                    1,
+                    i32::MAX,
+                    "Live Int32 maximum. Change brightness with the maximum if needed.",
+                ),
+                (
+                    "coverState",
+                    "Cover state",
+                    0,
+                    5,
+                    "0 absent, 1 closed, 2 moving, 3 open, 4 unknown, 5 error. Endpoint and motion are independent.",
+                ),
+                (
+                    "calibratorState",
+                    "Light state",
+                    0,
+                    5,
+                    "0 absent, 1 off, 2 not ready, 3 ready, 4 unknown, 5 error. On at zero is distinct from Off.",
+                ),
+            ] {
+                fields.push(json!({"path":["coverCalibrator",key],"type":"integer","label":label,
+                    "description":help,"default":defaults[key],"minimum":minimum,"maximum":maximum}));
+            }
+            for (key, label) in [
+                ("coverMoving", "Cover moving"),
+                ("calibratorChanging", "Light changing"),
+            ] {
+                fields.push(json!({"path":["coverCalibrator",key],"type":"boolean","label":label,
+                    "description":"Independent completion flag. Setting component state replaces only that component's pending operation.","default":defaults[key]}));
+            }
+            for (key, label) in [
+                ("moveDurationSeconds", "Cover move duration (s)"),
+                ("lightDurationSeconds", "Light readiness duration (s)"),
+            ] {
+                fields.push(json!({"path":["coverCalibrator",key],"type":"number","label":label,
+                    "description":"Monotonic duration for new operations. Cover and light run independently; disconnect does not Halt or turn Off.",
+                    "default":defaults[key],"minimum":0.0,"maximum":300.0}));
+            }
+        }
         let faults = match device {
             DeviceType::Switch => vec![
                 Fault::None,
@@ -495,7 +556,10 @@ pub fn description() -> Value {
                 Fault::Timeout,
                 Fault::InvalidSafety,
             ],
-            DeviceType::Focuser | DeviceType::Rotator | DeviceType::FilterWheel => vec![
+            DeviceType::Focuser
+            | DeviceType::Rotator
+            | DeviceType::FilterWheel
+            | DeviceType::CoverCalibrator => vec![
                 Fault::None,
                 Fault::ReadError,
                 Fault::Timeout,
@@ -521,9 +585,9 @@ pub fn description() -> Value {
     }
     json!({"schema":schemars::schema_for!(SimulationUpdate), "apply":"immediate",
         "controlsByDeviceType":controls,"revisionCheckedUpdates":true,"deadlineSeconds":30,
-        "sourceKinds":["simulated"],"deviceTypes":["switch","safetymonitor","observingconditions","focuser","rotator","filterwheel"],
-        "fieldsByDeviceType":{"switch":["switchValues","fault","sampleAgeSeconds"],"safetymonitor":["safe","fault"],"observingconditions":["weather","fault","sampleAgeSeconds"],"focuser":["focuser","fault","sampleAgeSeconds"],"rotator":["rotator","fault","sampleAgeSeconds"],"filterwheel":["filterWheel","fault","sampleAgeSeconds"]},
-        "faultsByDeviceType":{"switch":["none","readError","timeout","uncertainWrite"],"safetymonitor":["none","readError","timeout","invalidSafety"],"observingconditions":["none","readError","timeout"],"focuser":["none","readError","timeout","uncertainWrite","invalidMotion","stalledMotion","stoppedShort"],"rotator":["none","readError","timeout","uncertainWrite","invalidMotion","stalledMotion","stoppedShort"],"filterwheel":["none","readError","timeout","uncertainWrite","invalidMotion","stalledMotion","stoppedShort"]},
+        "sourceKinds":["simulated"],"deviceTypes":["switch","safetymonitor","observingconditions","focuser","rotator","filterwheel","covercalibrator"],
+        "fieldsByDeviceType":{"switch":["switchValues","fault","sampleAgeSeconds"],"safetymonitor":["safe","fault"],"observingconditions":["weather","fault","sampleAgeSeconds"],"focuser":["focuser","fault","sampleAgeSeconds"],"rotator":["rotator","fault","sampleAgeSeconds"],"filterwheel":["filterWheel","fault","sampleAgeSeconds"],"covercalibrator":["coverCalibrator","fault","sampleAgeSeconds"]},
+        "faultsByDeviceType":{"switch":["none","readError","timeout","uncertainWrite"],"safetymonitor":["none","readError","timeout","invalidSafety"],"observingconditions":["none","readError","timeout"],"focuser":["none","readError","timeout","uncertainWrite","invalidMotion","stalledMotion","stoppedShort"],"rotator":["none","readError","timeout","uncertainWrite","invalidMotion","stalledMotion","stoppedShort"],"filterwheel":["none","readError","timeout","uncertainWrite","invalidMotion","stalledMotion","stoppedShort"],"covercalibrator":["none","readError","timeout","uncertainWrite","invalidMotion","stalledMotion","stoppedShort"]},
         "persistence":"Test state is shared for this runtime only. A new runtime starts safety unsafe.",
         "uncertainWrites":"Changing a fault does not clear an uncertain-write latch. Disconnect every source lease before retrying commands."})
 }
@@ -532,6 +596,7 @@ pub struct SimulatedBackend {
     samples: Vec<SampleRequest>,
     connected: bool,
     motion: Option<(tokio::time::Instant, MotionTarget)>,
+    panel_motion: PanelMotion,
 }
 #[derive(Clone, Copy)]
 enum MotionTarget {
@@ -549,6 +614,7 @@ impl SimulatedBackend {
                 | DeviceType::Focuser
                 | DeviceType::Rotator
                 | DeviceType::FilterWheel
+                | DeviceType::CoverCalibrator
         ) {
             return Err(unsupported());
         }
@@ -583,10 +649,13 @@ impl SimulatedBackend {
                 rotator: (device_type == DeviceType::Rotator).then(RotatorState::default),
                 filter_wheel: (device_type == DeviceType::FilterWheel)
                     .then(FilterWheelState::default),
+                cover_calibrator: (device_type == DeviceType::CoverCalibrator)
+                    .then(CoverCalibratorState::default),
             },
             samples,
             connected: false,
             motion: None,
+            panel_motion: PanelMotion::default(),
         })
     }
     fn patch(&mut self, update: SimulationUpdate) -> Result<SimulationStatus, SourceError> {
@@ -599,6 +668,7 @@ impl SimulatedBackend {
             || update.focuser.is_some() && next.device_type != DeviceType::Focuser
             || update.rotator.is_some() && next.device_type != DeviceType::Rotator
             || update.filter_wheel.is_some() && next.device_type != DeviceType::FilterWheel
+            || update.cover_calibrator.is_some() && next.device_type != DeviceType::CoverCalibrator
         {
             return Err(invalid("Simulator controls do not match this source class"));
         }
@@ -630,13 +700,17 @@ impl SimulatedBackend {
                             | DeviceType::Focuser
                             | DeviceType::Rotator
                             | DeviceType::FilterWheel
+                            | DeviceType::CoverCalibrator
                     )
                 || matches!(
                     fault,
                     Fault::InvalidMotion | Fault::StalledMotion | Fault::StoppedShort
                 ) && !matches!(
                     next.device_type,
-                    DeviceType::Focuser | DeviceType::Rotator | DeviceType::FilterWheel
+                    DeviceType::Focuser
+                        | DeviceType::Rotator
+                        | DeviceType::FilterWheel
+                        | DeviceType::CoverCalibrator
                 )
             {
                 return Err(invalid(
@@ -666,7 +740,20 @@ impl SimulatedBackend {
         if let Some(update) = update.filter_wheel {
             update.apply(next.filter_wheel.as_mut().expect("Validated wheel source"))?;
         }
+        let (replace_cover, replace_light) = update
+            .cover_calibrator
+            .as_ref()
+            .map(|update| (update.replaces_cover(), update.replaces_light()))
+            .unwrap_or_default();
+        if let Some(update) = update.cover_calibrator {
+            update.apply(
+                next.cover_calibrator
+                    .as_mut()
+                    .expect("Validated panel source"),
+            )?;
+        }
         self.state = next;
+        self.panel_motion.replace(replace_cover, replace_light);
         if replaces_motion {
             self.motion = None;
         }
@@ -714,10 +801,16 @@ impl SimulatedBackend {
                 }
             }
         }
+        if let Some(panel) = state.cover_calibrator.as_mut() {
+            self.panel_motion.effective(panel, state.fault);
+        }
         state
     }
     fn advance_motion(&mut self) {
         self.state = self.effective_state();
+        if let Some(panel) = self.state.cover_calibrator.as_ref() {
+            self.panel_motion.advance(panel);
+        }
         if self
             .state
             .focuser
@@ -936,23 +1029,30 @@ impl SimulatedBackend {
     fn value(&self, member: &str, args: &Values) -> Result<Value, SourceError> {
         match member {
             "interfaceversion" if args.is_empty() => {
-                return Ok(json!(
-                    if self.state.device_type == DeviceType::ObservingConditions {
-                        2
-                    } else if matches!(
-                        self.state.device_type,
-                        DeviceType::Focuser | DeviceType::Rotator
-                    ) {
-                        4
-                    } else {
-                        3
-                    }
-                ));
+                return Ok(json!(if matches!(
+                    self.state.device_type,
+                    DeviceType::ObservingConditions | DeviceType::CoverCalibrator
+                ) {
+                    2
+                } else if matches!(
+                    self.state.device_type,
+                    DeviceType::Focuser | DeviceType::Rotator
+                ) {
+                    4
+                } else {
+                    3
+                }));
             }
             "connected" if args.is_empty() => return Ok(json!(self.connected)),
             _ => {}
         }
         match self.state.device_type {
+            DeviceType::CoverCalibrator => self
+                .state
+                .cover_calibrator
+                .as_ref()
+                .expect("Panel state")
+                .value(member, args, self.state.fault),
             DeviceType::FilterWheel => {
                 if !args.is_empty() {
                     return Err(invalid("Unexpected wheel parameters"));
@@ -1133,12 +1233,20 @@ impl Backend for SimulatedBackend {
             self.check_read().await?;
             if matches!(
                 self.state.device_type,
-                DeviceType::Focuser | DeviceType::Rotator | DeviceType::FilterWheel
+                DeviceType::Focuser
+                    | DeviceType::Rotator
+                    | DeviceType::FilterWheel
+                    | DeviceType::CoverCalibrator
             ) {
                 match self.state.device_type {
                     DeviceType::FilterWheel => self.write_filterwheel(&member, &args)?,
                     DeviceType::Focuser => self.write_focuser(&member, &args)?,
                     DeviceType::Rotator => self.write_rotator(&member, &args)?,
+                    DeviceType::CoverCalibrator => self.panel_motion.write(
+                        self.state.cover_calibrator.as_mut().expect("Panel state"),
+                        &member,
+                        &args,
+                    )?,
                     _ => unreachable!(),
                 }
                 return if self.state.fault == Fault::UncertainWrite {

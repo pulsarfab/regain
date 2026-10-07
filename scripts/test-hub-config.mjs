@@ -139,12 +139,33 @@ function simulationState(type) {
   }
   return state;
 }
-for (const type of ['switch','safetymonitor','observingconditions','focuser','rotator','filterwheel']) {
+for (const type of ['switch','safetymonitor','observingconditions','focuser','rotator','filterwheel','covercalibrator']) {
   const fields = simulationControls(simDescription,simulatedSource(type));
-  assert.equal(fields.length,type==='switch'?5:type==='safetymonitor'?2:type==='rotator'?12:type==='filterwheel'?6:15);
+  assert.equal(fields.length,type==='switch'?5:type==='safetymonitor'?2:type==='rotator'?12:type==='filterwheel'?6:type==='covercalibrator'?10:15);
   assert.deepEqual(fields.find(f=>f.path[0]==='fault').enum,simDescription.faultsByDeviceType[type]);
 }
 assert.deepEqual(simulationControls(simDescription,{backend:{kind:'native'}}),[]);
+{
+  const fields=simulationControls(simDescription,simulatedSource('covercalibrator'));
+  const brightness=fields.find(f=>f.path[1]==='brightness'), cover=fields.find(f=>f.path[1]==='coverState');
+  for(const value of [-1,2147483648,1.5,'0',true]) assert.throws(()=>validateSimulationValue(brightness,value));
+  for(const value of [-1,6,1.5,'1']) assert.throws(()=>validateSimulationValue(cover,value));
+  const state=simulationState('covercalibrator'); let writes=0;
+  const setup=new SimulationSetup(async command=>{
+    writes++; assert.deepEqual(command.update,{coverCalibrator:{coverState:4,coverMoving:false}});
+    Object.assign(state.coverCalibrator,command.update.coverCalibrator);
+    return {source:setup.source.id,configurationRevision:simRevision,simulation:state};
+  },()=>{});
+  setup.load(simDescription,simulatedSource('covercalibrator'),simRevision);
+  await assert.rejects(setup.update([{path:['coverCalibrator','coverState'],value:6}])); assert.equal(writes,0);
+  assert.equal((await setup.update([{path:['coverCalibrator','coverState'],value:4},{path:['coverCalibrator','coverMoving'],value:false}])).coverCalibrator.coverState,4);
+  for(const mutate of [s=>s.coverCalibrator.brightness=4097,s=>s.coverCalibrator.brightness=1,
+    s=>{s.coverCalibrator.coverState=0;s.coverCalibrator.coverMoving=true;},
+    s=>{s.coverCalibrator.calibratorState=0;s.coverCalibrator.calibratorChanging=true;},
+    s=>s.coverCalibrator.extra=true,s=>delete s.coverCalibrator.coverMoving]) {
+    const bad=structuredClone(state); mutate(bad); assert.throws(()=>setup.statusValue(bad));
+  }
+}
 {
   const fields = simulationControls(simDescription,simulatedSource('filterwheel'));
   const names = fields.find(f=>f.path[1]==='names'), offsets = fields.find(f=>f.path[1]==='focusOffsets');

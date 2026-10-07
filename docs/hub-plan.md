@@ -26,7 +26,8 @@ registered activation does not establish interactive/hardware acceptance.
 Reviewed native panel outputs (554794f), Windows COM imports (593c0de) and virtual
 inputs (5a22737) are now pushed together to PR #21. New PR/push CI
 37552662096/37552655796 is queued/running; its acceptance is not yet established.
-The next implementation step is dedicated panel simulation and shared creation.
+Dedicated panel simulation is implemented and verified locally. Shared panel
+creation is the next implementation step.
 
 Current position: milestones 0 and 1 are complete. The scalar source/output paths
 in milestones 2 and 3 are implemented; their remaining acceptance gates are open.
@@ -47,8 +48,9 @@ Panel Windows COM imports are pushed through the existing STA worker;
 30 private worker and 19 registered parent cases pass. Virtual panel inputs are
 implemented and pushed; six loopback and a production OFP2 simulation case pass.
 Full virtual-panel Rust, strict checks, NINA 223/223 and real net48 x86/x64 pass.
-Dedicated panel simulation/shared
-setup and camera proxies remain.
+Dedicated panel simulation has 35 passing Rust simulator cases, three new NINA
+cases and real net48 x86/x64 coverage. Full regressions and strict checks pass;
+shared panel setup remains, followed by camera proxies.
 Milestone 5's coordinated groups are not yet
 implemented. PR #21 stays draft until the full plan passes.
 
@@ -79,6 +81,20 @@ executable lock; after the running Rust suite finished, sequential rebuild and
 frontend confirmation passed. No equipment or installed vendor driver was used.
 Next: dedicated panel simulation and shared creation, then all original remaining
 camera, coordination, recovery, documentation and final acceptance gates.
+
+Dedicated panel simulation checkpoint (local): a new V2 simulated source reuses
+the shared actor/controller, polling, virtual composition and all three outputs.
+Independent cover/light clocks, atomic sparse updates, Int32 brightness bounds,
+On(0), absence and completion semantics, stalls/stopped-short/malformed replies
+and retained write uncertainty are implemented. Native/web editors share ten
+generated controls and reject inconsistent compound status. Thirty-five Rust
+simulator cases, the new actual HTTP case, Node/seven schema checks, NINA 226/226
+and real net48 x86/x64 clients pass. The actual WPF capture is visually verified
+and included in the setup guide. Full Rust hub/Alpaca, strict Clippy, Rust 1.89
+all targets and generated-contract freshness pass. Sequential confirmation
+followed an overlapping NINA host causing a Windows executable lock; no running
+test was interrupted. Shared panel creation stays gated until its
+own acceptance. No hardware or installed vendor driver was used.
 
 Filter-wheel controller increment: shared typed sessions, live ordered names and
 signed offsets, slot bounds, nonblocking Position writes and moving `-1` are
