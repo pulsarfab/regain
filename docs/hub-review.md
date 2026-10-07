@@ -3,6 +3,46 @@
 This records local review and tests for the single hub PR. Passing a foundation
 test does not imply that a frontend, transport, or hardware gate has passed.
 
+## 2026-10-07: IPC stream lifetime after shutdown
+
+PR CI 37606180612's macOS ARM camera image test found the endpoint still locked
+after awaited host completion. Inspection traced this to a nested reader task:
+the host aborted and joined its client tasks, but dropping their JoinSets only
+requested child cancellation. A child ReadHalf retained the accepted LocalStream
+and its ownership Arc until Tokio subsequently destroyed the task. Operation
+tasks similarly outlived their parent briefly. Accepted-stream lock retention is
+intentional; releasing it early or adding a polling assertion would hide the bug.
+
+Two in-memory regressions fail deterministically before the fix on Windows:
+protocol rejection with an open peer and cancellation while the reader is
+blocked. Both assert underlying-stream Drop synchronously, without a scheduler
+yield or eventual lock retry. artifacts/hub-ipc-drain-before.log retains both
+failures. The stream now owns its reader future and a bounded FuturesUnordered
+of operations directly. A separate select drives the reader during dispatcher
+I/O, including binary image writes; terminal reader results still drain through
+the bounded channel. The first operation poll stays in request order, so a later
+Disconnect sees a pending Connect reservation. Parent cancellation destroys all
+stream/operation futures before the host's join completes. It does not abort or
+replay work retained by the independent source actors/native owners, whose drain
+still precedes listener release. Panics remain isolated by the host's client task.
+
+artifacts/hub-ipc-drain-runtime.log passes both new regressions and all 43 runtime
+cases, including hung-request cached reads, pending Connect cancellation,
+request ordering, overload, stalled writers, atomic apply and OS endpoint cleanup.
+artifacts/hub-ipc-drain-rust.log passes full hub/Alpaca regressions, including all
+74 hub unit cases and the actual camera OS-endpoint ownership assertion.
+artifacts/hub-ipc-drain-clippy.log and artifacts/hub-ipc-drain-msrv.log pass
+strict Rust 1.99 lint and Rust 1.89 all-target checks across five affected crates.
+The rebuilt executable, formatting, generated-contract freshness, Node and nine
+schema checks pass. artifacts/hub-ipc-drain-nina.log passes NINA 274/274 against
+the rebuilt host; artifacts/hub-ipc-drain-net48.log passes the complete actual
+x86/x64 suite with warnings denied. These include SDK/direct/explicit camera
+images, timing, typed ASCOM, source-sharing and editor fixtures. All local test
+processes are complete. Explicit simulator 4f94bcf and this correction stay local
+while e51eaaf workflows 37606180612/37606175254 are still live. A fresh CI run must
+verify the correction on macOS ARM; no failed job is cancelled or rerun here.
+Keep the single PR draft and all original acceptance gates open.
+
 ## 2026-10-07: explicit camera simulator
 
 The simulator joins the existing source factory and shared simulation controls;

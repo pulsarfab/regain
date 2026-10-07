@@ -9,13 +9,13 @@ use crate::{
     service::{HubService, ServiceClient, UpdateError},
     source::{ErrorKind, SourceError},
 };
+use futures_util::{StreamExt, stream::FuturesUnordered};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{io, sync::Arc, time::Duration};
 use tokio::{
     io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
     sync::mpsc,
-    task::JoinSet,
     time::timeout,
 };
 use uuid::Uuid;
@@ -436,6 +436,8 @@ impl Response {
 /// has one host-created client, one bounded reader, and at most eight operations.
 /// Frames/operations have separate deadlines. Dropping this future closes the
 /// client even when a write was dispatched; that write is never replayed here.
+/// Reader and operation futures are owned directly, so return/cancellation
+/// destroys both stream halves before the host can release its endpoint lock.
 pub async fn serve_stream<T>(
     stream: T,
     runtime: Arc<HubRuntime>,
@@ -461,8 +463,7 @@ where
     let _close = CloseClient(client.clone());
     let (mut reader, mut writer) = tokio::io::split(stream);
     let (frames, mut incoming) = mpsc::channel(1);
-    let mut reading = JoinSet::new();
-    reading.spawn(async move {
+    let reading = async move {
         let mut first = true;
         loop {
             let frame = if first {
@@ -481,72 +482,83 @@ where
                 break;
             }
         }
-    });
-    let mut tasks = JoinSet::new();
-    let mut last_id = 0;
-    let mut greeted = false;
-    loop {
-        tokio::select! {
-            frame = incoming.recv() => {
-                let Some(bytes) = frame.ok_or(ProtocolError::Io)?? else { return Ok(()); };
-                let request: Request = serde_json::from_slice(&bytes).map_err(|_| ProtocolError::Malformed)?;
-                if request.version != VERSION { return Err(ProtocolError::Version); }
-                if request.id <= last_id { return Err(ProtocolError::RequestOrder); }
-                last_id = request.id;
-                if !greeted {
-                    if !matches!(request.command, Command::Hello {}) { return Err(ProtocolError::Handshake); }
-                    greeted = true;
-                    let mut operations = vec!["cameraImage","cameraTiming","cameraControl","describeConfig","getConfig","validateConfig","listDevices","sourceStatus","outputStatus","inspectSource","updateSimulation","connect","disconnect","changeConnection","get","put","hostStatus"];
-                    if service.can_apply() { operations.push("applyConfig"); }
-                    if service.credential_description().is_some() { operations.extend(["createCredential", "credentialStatus", "deleteCredential"]); }
-                    let hello = json!({"protocolVersion":VERSION, "instanceId":service.instance_id(),
-                        "hostInstance":service.host_id(), "configurationRevision":service.configuration().revision, "clientId":client.id(),
-                        "maxFrameBytes":MAX_FRAME_BYTES, "maxInFlight":MAX_IN_FLIGHT,
-                        "operations":operations,
-                        "capabilities":["switchOutputs","safetyOutputs","weatherOutputs","focuserOutputs","rotatorOutputs","filterWheelOutputs","coverCalibratorOutputs","cameraAcquisition","cameraImageStream","cameraOperationTiming","rotatorMotionReceipt","weatherSensorDescription","scalarDeviceState","asyncOutputConnection","switchAsyncContract"]});
-                    write_response(&mut writer, Response::new(request.id, Ok(hello)), limits.frame_timeout).await?;
-                    continue;
-                }
-                if matches!(request.command, Command::Hello {}) { return Err(ProtocolError::Handshake); }
-                if let Command::CameraImage { request: image_request } = request.command {
-                    if request.id != 2 || !tasks.is_empty() { return Err(ProtocolError::RequestOrder); }
-                    let image = crate::camera::ipc_image::prepare(&service, image_request);
-                    match image {
-                        Err(error) => write_response(&mut writer, Response::new(request.id, Err(error.into())), limits.frame_timeout).await?,
-                        Ok(mut image) => {
-                            write_response(&mut writer, Response::new(request.id, Ok(json!(image.manifest))), limits.frame_timeout).await?;
-                            // No further command is legal on this stream. EOF,
-                            // cancellation or a stalled reader releases only its
-                            // image pin/borrowed lease, never sends Abort.
-                            tokio::select! {
-                                biased;
-                                _ = incoming.recv() => return Err(ProtocolError::Malformed),
-                                result = image.write(&mut writer, limits.frame_timeout) => result?,
+    };
+    let serving = async {
+        // Own pending RPC futures rather than child tasks. Cancelling this
+        // stream drops them now; independently owned device work still drains.
+        let mut tasks = FuturesUnordered::new();
+        let mut last_id = 0;
+        let mut greeted = false;
+        loop {
+            tokio::select! {
+                frame = incoming.recv() => {
+                    let Some(bytes) = frame.ok_or(ProtocolError::Io)?? else { return Ok(()); };
+                    let request: Request = serde_json::from_slice(&bytes).map_err(|_| ProtocolError::Malformed)?;
+                    if request.version != VERSION { return Err(ProtocolError::Version); }
+                    if request.id <= last_id { return Err(ProtocolError::RequestOrder); }
+                    last_id = request.id;
+                    if !greeted {
+                        if !matches!(request.command, Command::Hello {}) { return Err(ProtocolError::Handshake); }
+                        greeted = true;
+                        let mut operations = vec!["cameraImage","cameraTiming","cameraControl","describeConfig","getConfig","validateConfig","listDevices","sourceStatus","outputStatus","inspectSource","updateSimulation","connect","disconnect","changeConnection","get","put","hostStatus"];
+                        if service.can_apply() { operations.push("applyConfig"); }
+                        if service.credential_description().is_some() { operations.extend(["createCredential", "credentialStatus", "deleteCredential"]); }
+                        let hello = json!({"protocolVersion":VERSION, "instanceId":service.instance_id(),
+                            "hostInstance":service.host_id(), "configurationRevision":service.configuration().revision, "clientId":client.id(),
+                            "maxFrameBytes":MAX_FRAME_BYTES, "maxInFlight":MAX_IN_FLIGHT,
+                            "operations":operations,
+                            "capabilities":["switchOutputs","safetyOutputs","weatherOutputs","focuserOutputs","rotatorOutputs","filterWheelOutputs","coverCalibratorOutputs","cameraAcquisition","cameraImageStream","cameraOperationTiming","rotatorMotionReceipt","weatherSensorDescription","scalarDeviceState","asyncOutputConnection","switchAsyncContract"]});
+                        write_response(&mut writer, Response::new(request.id, Ok(hello)), limits.frame_timeout).await?;
+                        continue;
+                    }
+                    if matches!(request.command, Command::Hello {}) { return Err(ProtocolError::Handshake); }
+                    if let Command::CameraImage { request: image_request } = request.command {
+                        if request.id != 2 || !tasks.is_empty() { return Err(ProtocolError::RequestOrder); }
+                        let image = crate::camera::ipc_image::prepare(&service, image_request);
+                        match image {
+                            Err(error) => write_response(&mut writer, Response::new(request.id, Err(error.into())), limits.frame_timeout).await?,
+                            Ok(mut image) => {
+                                write_response(&mut writer, Response::new(request.id, Ok(json!(image.manifest))), limits.frame_timeout).await?;
+                                // No further command is legal on this stream. EOF,
+                                // cancellation or a stalled reader releases only its
+                                // image pin/borrowed lease, never sends Abort.
+                                tokio::select! {
+                                    biased;
+                                    _ = incoming.recv() => return Err(ProtocolError::Malformed),
+                                    result = image.write(&mut writer, limits.frame_timeout) => result?,
+                                }
                             }
                         }
+                        return Ok(());
                     }
-                    return Ok(());
+                    if tasks.len() >= MAX_IN_FLIGHT { return Err(ProtocolError::Overloaded); }
+                    let service = service.clone();
+                    let client = client.clone();
+                    let mut operation = Box::pin(async move {
+                        let result = dispatch_bounded(&service, &client, request.command, limits).await;
+                        Response::new(request.id, result)
+                    });
+                    // Start requests in arrival order, without waiting for their
+                    // I/O. In particular Disconnect must see an earlier Connect's
+                    // reservation even if the worker task has not been scheduled.
+                    match std::future::poll_fn(|cx| std::task::Poll::Ready(operation.as_mut().poll(cx))).await {
+                        std::task::Poll::Ready(response) => write_response(&mut writer, response, limits.frame_timeout).await?,
+                        std::task::Poll::Pending => { tasks.push(operation); }
+                    }
                 }
-                if tasks.len() >= MAX_IN_FLIGHT { return Err(ProtocolError::Overloaded); }
-                let service = service.clone();
-                let client = client.clone();
-                let mut operation = Box::pin(async move {
-                    let result = dispatch_bounded(&service, &client, request.command, limits).await;
-                    Response::new(request.id, result)
-                });
-                // Start requests in arrival order, without waiting for their
-                // I/O. In particular Disconnect must see an earlier Connect's
-                // reservation even if the worker task has not been scheduled.
-                match std::future::poll_fn(|cx| std::task::Poll::Ready(operation.as_mut().poll(cx))).await {
-                    std::task::Poll::Ready(response) => write_response(&mut writer, response, limits.frame_timeout).await?,
-                    std::task::Poll::Pending => { tasks.spawn(operation); }
+                response = tasks.next(), if !tasks.is_empty() => {
+                    let response = response.ok_or(ProtocolError::Io)?;
+                    write_response(&mut writer, response, limits.frame_timeout).await?;
                 }
-            }
-            response = tasks.join_next(), if !tasks.is_empty() => {
-                let response = response.ok_or(ProtocolError::Io)?.map_err(|_| ProtocolError::Io)?;
-                write_response(&mut writer, response, limits.frame_timeout).await?;
             }
         }
+    };
+    tokio::pin!(serving);
+    tokio::select! {
+        result = &mut serving => result,
+        // The reader sends its terminal frame/error before closing the channel.
+        // Let the dispatcher consume that result and cancel any pending RPCs.
+        () = reading => serving.await,
     }
 }
 struct CloseClient(Arc<ServiceClient>);

@@ -127,9 +127,13 @@ return errors while preserving the connection.
 
 Default deadlines are five seconds for hello, a partial frame, or writing a
 response, and thirty seconds for an operation. The host supplies these limits.
-Idle established connections are allowed. A dedicated reader detects EOF during
-in-flight operations; closing/cancelling the server task releases that client's
-leases. A timed-out put reports uncertain and is never replayed. Serialization
+Idle established connections are allowed. A dedicated reader future detects EOF
+during in-flight operations and image writes. Each stream directly owns that
+reader and its bounded pending operation futures; return or cancellation drops
+both stream halves synchronously, before the host finishes joining clients.
+Closing/cancelling the server task releases that client's leases. Independently
+retained device work still drains before endpoint ownership is released.
+A timed-out put reports uncertain and is never replayed. Serialization
 has a bounded output buffer; an oversized response returns `responseTooLarge`
 without corrupting the next frame. Protocol failures never echo request content.
 

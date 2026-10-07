@@ -8,6 +8,23 @@ tagged or published. Changed cross-crate APIs require an unpublished version so
 Cargo package verification uses the new workspace packages.
 Last updated: 2026-10-07.
 
+Current increment: endpoint cleanup after client completion/cancellation. The
+macOS ARM failure exposed nested IPC tasks that could retain accepted streams
+after the host had joined their parents. Two deterministic local regressions
+reproduce ownership surviving protocol rejection and future cancellation without
+yielding after completion. The stream now owns its reader and pending operation
+futures directly, preserving separate deadlines, bounded concurrency, ordered
+first dispatch and EOF detection while eliminating detached child cleanup.
+Both regressions, all 43 runtime cases, all 74 hub unit cases and the full
+hub/Alpaca regressions pass. Strict Rust 1.99 lint, Rust 1.89 compatibility,
+generated-contract freshness, Node and nine schema checks pass. The rebuilt
+host passes NINA 274/274 and the full actual net48 x86/x64 suite, including image,
+deadline, source-sharing, typed ASCOM and setup fixtures with warnings denied.
+Explicit simulator commit 4f94bcf and this lifecycle correction remain local
+while preceding e51eaaf PR/push workflows 37606180612/37606175254 are live.
+Device actor/source drain remains separate and still precedes listener release.
+Do not close the CI or any original milestone gate from these local results.
+
 Current increment: the explicit camera simulator now uses the ordinary source
 actor, acquisition supervisor, typed settings and host image budget. Integration
 and readout use monotonic time; settings freeze at Start, Stop preserves partial

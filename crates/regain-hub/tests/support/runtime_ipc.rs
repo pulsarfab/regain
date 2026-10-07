@@ -7,6 +7,103 @@ use tokio::{
     task::JoinHandle,
 };
 
+struct TrackedStream {
+    inner: DuplexStream,
+    dropped: Arc<AtomicBool>,
+    entered: Option<tokio::sync::oneshot::Sender<()>>,
+}
+impl Drop for TrackedStream {
+    fn drop(&mut self) {
+        self.dropped.store(true, SeqCst);
+    }
+}
+impl tokio::io::AsyncRead for TrackedStream {
+    fn poll_read(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buffer: &mut tokio::io::ReadBuf<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        if let Some(entered) = self.entered.take() {
+            let _ = entered.send(());
+        }
+        std::pin::Pin::new(&mut self.inner).poll_read(cx, buffer)
+    }
+}
+impl tokio::io::AsyncWrite for TrackedStream {
+    fn poll_write(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        bytes: &[u8],
+    ) -> std::task::Poll<std::io::Result<usize>> {
+        std::pin::Pin::new(&mut self.inner).poll_write(cx, bytes)
+    }
+    fn poll_flush(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        std::pin::Pin::new(&mut self.inner).poll_flush(cx)
+    }
+    fn poll_shutdown(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        std::pin::Pin::new(&mut self.inner).poll_shutdown(cx)
+    }
+}
+
+#[tokio::test]
+async fn ipc_protocol_failure_drops_both_stream_halves_before_returning() {
+    let f = fixture();
+    let (mut client, server) = tokio::io::duplex(128);
+    let dropped = Arc::new(AtomicBool::new(false));
+    let stream = TrackedStream {
+        inner: server,
+        dropped: dropped.clone(),
+        entered: None,
+    };
+    // Keep the peer open: the reader is waiting for another frame when the
+    // dispatcher rejects this one. Do not yield after serving completes.
+    let send = async {
+        client.write_all(&1u32.to_le_bytes()).await.unwrap();
+        client.write_all(b"{").await.unwrap();
+    };
+    let (result, ()) = tokio::join!(
+        serve_stream(stream, f.runtime.clone(), Limits::default()),
+        send
+    );
+    assert!(matches!(result, Err(ProtocolError::Malformed)));
+    assert!(
+        dropped.load(SeqCst),
+        "Returned with a reader still owning the stream"
+    );
+    f.runtime.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn ipc_future_cancellation_drops_both_stream_halves_synchronously() {
+    let f = fixture();
+    let (_client, server) = tokio::io::duplex(128);
+    let dropped = Arc::new(AtomicBool::new(false));
+    let (entered, reading) = tokio::sync::oneshot::channel();
+    let stream = TrackedStream {
+        inner: server,
+        dropped: dropped.clone(),
+        entered: Some(entered),
+    };
+    let mut serving = Box::pin(serve_stream(stream, f.runtime.clone(), Limits::default()));
+    tokio::select! {
+        result = &mut serving => panic!("Silent stream finished before cancellation: {result:?}"),
+        result = reading => result.unwrap(),
+    }
+    assert!(!dropped.load(SeqCst));
+    drop(serving);
+    assert!(
+        dropped.load(SeqCst),
+        "Cancellation left a reader owning the stream"
+    );
+    f.runtime.shutdown().await.unwrap();
+}
+
 struct Peer {
     stream: DuplexStream,
     task: JoinHandle<Result<(), ProtocolError>>,
