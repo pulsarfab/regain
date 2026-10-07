@@ -63,7 +63,7 @@ artifacts/hub-camera-guide-net48-final.log. No physical/installed-driver accepta
 is claimed. Camera publication/setup remains gated and every original gate stays open.
 
 Both preceding b275ce7 CI workflows 37613322368/37613316420 are terminal, all eight
-jobs passing in each. Those checks exclude the local camera COM/PulseGuide work.
+jobs passing in each. Those checks exclude the newer camera COM/PulseGuide commits.
 
 ## 2026-10-07: Windows camera inputs and finite worker image transport
 

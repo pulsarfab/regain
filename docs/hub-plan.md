@@ -66,10 +66,10 @@ Both workflows are terminal: PR CI has that Windows failure and seven successes;
 push CI 37609727056 passes all eight jobs. Virtual camera f577dbf and framing
 boundary checks 3aa1273 are pushed through b275ce7 to the same draft PR #21.
 New PR/push runs 37613322368/37613316420 are now terminal, all eight jobs passing
-in each. Reviewed camera COM increment f75684a remains local and is not included
-in that green b275ce7 CI head. The reviewed PulseGuide increment now passes final
-local validation and is ready to push with camera imports to the same draft PR.
-Those local results do not establish CI for the new commits or close any original gate.
+in each. Camera COM increment f75684a and reviewed PulseGuide f128caa pass final
+local validation. Neither is included in that green b275ce7 CI head. They belong
+to the same draft PR; new CI is required after pushing. Local results do not
+establish CI for the new commits or close any original gate.
 
 Current increment: virtual Camera inputs compose through the existing source
 factory, internal client leases, incremental connection admission and generation
