@@ -2,6 +2,7 @@
 //! plan; this adapter never invents capabilities or retries a command itself.
 use crate::{
     camera::image::{CameraImage, ImageBudget, ImageReadError, read_imagebytes},
+    camera::json_image::read_json_image,
     config::{ConnectionPolicy, DeviceType, SourceBackend, SourceConfig},
     source::{
         Backend, BackendFuture, ConnectionInfo, ConnectionMethod, ErrorKind, SampleBatch,
@@ -194,7 +195,7 @@ impl AlpacaBackend {
             .root
             .join("imagearray")
             .map_err(|_| invalid("Invalid Alpaca member"))?;
-        let mut response = client
+        let response = client
             .get(url)
             .header(reqwest::header::ACCEPT, "application/imagebytes")
             .query(&[
@@ -214,24 +215,8 @@ impl AlpacaBackend {
             .and_then(|value| value.split(';').next())
             .map(str::trim)
             .unwrap_or_default();
-        if content_type.eq_ignore_ascii_case("application/json") {
-            // Error envelopes are still JSON even when ImageBytes is requested.
-            // Successful JSON images need their own bounded array decoder; do
-            // not coerce or buffer an unbounded image in the scalar JSON path.
-            let mut body = Vec::new();
-            while let Some(chunk) = response.chunk().await.map_err(|_| transport_error(false))? {
-                if chunk.len() > MAX_RESPONSE_BYTES - body.len() {
-                    return Err(bad_response(false));
-                }
-                body.extend_from_slice(&chunk);
-            }
-            parse_response(&body, transaction, false)?;
-            return Err(SourceError::new(
-                ErrorKind::Unsupported,
-                "Camera JSON image transport is not yet implemented",
-            ));
-        }
-        if !content_type.eq_ignore_ascii_case("application/imagebytes") {
+        let json = content_type.eq_ignore_ascii_case("application/json");
+        if !json && !content_type.eq_ignore_ascii_case("application/imagebytes") {
             return Err(bad_response(false));
         }
         // Stream directly into the pre-reserved immutable image allocation.
@@ -240,18 +225,14 @@ impl AlpacaBackend {
             .bytes_stream()
             .map_err(|_| std::io::Error::other("Alpaca camera image transport failed"));
         let mut reader = tokio_util::io::StreamReader::new(stream);
-        read_imagebytes(&mut reader, &budget, transaction)
-            .await
-            .map(|response| response.image)
-            .map_err(|error| match error {
-                ImageReadError::Contract(error) if error.kind == ErrorKind::Busy => error,
-                ImageReadError::Contract(_) => bad_response(false),
-                ImageReadError::Io(error) if error.kind() == std::io::ErrorKind::UnexpectedEof => {
-                    bad_response(false)
-                }
-                ImageReadError::Io(_) => transport_error(false),
-                ImageReadError::Upstream { code, .. } => upstream_error(code as i32),
-            })
+        let image = if json {
+            read_json_image(&mut reader, &budget, transaction).await
+        } else {
+            read_imagebytes(&mut reader, &budget, transaction)
+                .await
+                .map(|response| response.image)
+        };
+        image.map_err(image_error)
     }
     async fn read_sample(&mut self, sample: &SampleRequest) -> Result<(Value, f64), SourceError> {
         // Query age first. If the sensor updates between requests, attributing
@@ -557,6 +538,23 @@ impl Backend for AlpacaBackend {
 
 fn invalid(message: &'static str) -> SourceError {
     SourceError::new(ErrorKind::InvalidValue, message)
+}
+fn image_error(error: ImageReadError) -> SourceError {
+    match error {
+        ImageReadError::Contract(error)
+            if matches!(error.kind, ErrorKind::InvalidValue | ErrorKind::Unsupported) =>
+        {
+            bad_response(false)
+        }
+        // Preserve local budget/allocation/decoder failures; they do not prove
+        // that the remote device sent a malformed image or lost its session.
+        ImageReadError::Contract(error) => error,
+        ImageReadError::Io(error) if error.kind() == std::io::ErrorKind::UnexpectedEof => {
+            bad_response(false)
+        }
+        ImageReadError::Io(_) => transport_error(false),
+        ImageReadError::Upstream { code, .. } => upstream_error(code as i32),
+    }
 }
 fn http_client(
     headers: reqwest::header::HeaderMap,

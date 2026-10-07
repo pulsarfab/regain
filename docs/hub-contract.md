@@ -2161,9 +2161,41 @@ redirect denial and no-retry policy, but leaves the overall image deadline to th
 source actor. Binary and bounded JSON error envelopes preserve upstream codes
 without exporting their arbitrary message text. Unexpected media types, malformed
 headers, mismatched transactions and incomplete/trailing payloads do not publish.
-Successful JSON ImageArray decoding remains a separate required transport step;
-until it and the other camera gates pass, camera choices remain disabled. This
-adapter does not grant SDK/COM/network sources retained-frame recovery semantics.
+The JSON ImageArray path is implemented locally and under final review. It stages
+the raw finite response in reserved chunks, validates envelope/shape and then
+decodes typed pixels directly into one reserved allocation. Field order is
+irrelevant; no nested pixel Value tree or implicit integer/unsigned/floating
+conversion is used. Raw staging and final pixels compete for the same budget.
+Successful decoding releases staging before returning the immutable image.
+Small bounded device-error envelopes remain reportable when old image readers
+pin the whole budget. Local budget/allocation errors retain their classification;
+malformed wire data is a transport-contract error. Upstream error text is redacted.
+
+Four admitted JSON decoders bound fixed working memory. Admission precedes
+working-buffer allocation; queued readers cannot each allocate a 64-KiB buffer.
+Only the bounded small-envelope pass runs on the async task. Larger shape/pixel
+passes run on a blocking worker with cancellation checks, including when work
+was queued before cancellation. Cancellation aborts queued blocking work; its
+reserved staging can remain accounted until the blocking queue consumes the
+cancelled task. Running work observes the flag at reader/pixel boundaries.
+Streaming explicitly yields between chunks even with an immediately-ready reader.
+These limits bound payload and decoder overhead, not whole-process RSS.
+The read adapter uses a terminal cancellation
+error; Interrupted would be retried by std::io::Bytes and could spin forever.
+No array work continues indefinitely after its caller's download deadline.
+
+Limits are explicit: the existing 512-MiB pixel ceiling, raw JSON up to 32 times
+that ceiling (still constrained by the shared budget), at most 32 envelope fields,
+64-KiB encoded string tokens, 128-byte numeric tokens and a 4096-byte decoded error
+message. Known duplicate fields, wrong transaction/type/rank, ragged/empty/deep
+arrays, invalid numeric ranges/types, nonfinite pixels and trailing data fail
+without publication. All nine declared numeric types use their native little-endian
+encoding; serde_json float_roundtrip is required to preserve Double pixels through
+decimal parsing. JSON Int32 is not silently packed into U16 or clamped. Rank three retains
+one, RGB or LRGB planes. The camera choice gate remains disabled until remaining
+inputs/runtime/outputs and original acceptance checks pass. No proxy input gains
+direct-camera retained-frame recovery semantics. The content-type fallback follows
+[Alpaca API reference section 8.5](https://ascom-standards.org/AlpacaDeveloper/ASCOMAlpacaAPIReference.html).
 
 The source-owned acquisition supervisor implements the following ownership rules
 in private tests; it is not yet wired into the runtime, adapters or frontends.

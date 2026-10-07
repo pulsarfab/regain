@@ -52,6 +52,30 @@ deadlines. Its targeted local confirmation passes; the CI cause remains unproved
 Camera acquisition supervision is reviewed and committed locally at e243a05;
 camera choices remain gated and every original remaining gate stays open.
 
+Reviewed acquisition/ImageBytes/diagnostic commits are now pushed through 1579a90.
+PR CI 37560177877 finishes with seven successes and a Windows native panel-sharing
+read failure after On(0). Push CI 37560173015 finishes with six successes, a Windows
+private peer reply deadline and an Intel macOS fresh nested-wheel read failure.
+Their causes remain unproved. Failure-only native/peer/wheel diagnostics are local;
+the panel fixture also publishes its command marker after setting its start state,
+preventing the handler from overwriting a test's completed state. This ordering
+defect is evident in the fixture; it is not proved to explain the CI failure.
+The bounded JSON image decoder
+is a separate local increment: ten stream cases and two cancellation unit cases
+pass, with seven updated actual HTTP cases including binary and JSON Double
+captures shared by independent clients. Raw response chunks and final pixels
+compete for one budget; decoding does not construct a nested pixel Value tree.
+All nine numeric types preserve their declared encoding/range, with strict shape,
+rank, transaction and token bounds. Parsing is cancellable and limited to four
+admitted decoders. A 4,000-pattern Double fidelity test reproduced a one-ULP parser
+error; enabling serde_json float_roundtrip fixes it without dependency upgrades.
+The final focused ten JSON/seven HTTP checks, full Rust hub/Alpaca suites, nineteen
+core camera tests with feature unification, Rust 1.99 strict Clippy, Rust 1.89,
+contract freshness, rebuilt-host NINA 228/228 and real net48 x86/x64 pass against
+the latest changes. This increment still requires its own CI. Camera runtime,
+remaining adapters/properties/settings, all three outputs, native recovery metadata
+and every original later gate remain open.
+
 Camera supervisor checkpoint (local): nineteen private virtual-clock cases pass.
 One source-owned acquisition retains control and runtime activity after caller
 cancellation/disconnect, freezes geometry and available exposure identity, and

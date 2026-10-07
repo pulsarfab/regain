@@ -42,7 +42,7 @@ impl ElementType {
             Self::Int64 | Self::UInt64 | Self::Double => 8,
         }
     }
-    fn from_id(value: u32) -> Result<Self, SourceError> {
+    pub(super) fn from_id(value: u32) -> Result<Self, SourceError> {
         match value {
             1 => Ok(Self::Int16),
             2 => Ok(Self::Int32),
@@ -265,6 +265,23 @@ impl ImageBudget {
             reservation,
         })
     }
+    /// A bounded transport chunk retained across decoding. Raw JSON staging
+    /// and final pixels compete for the same budget; no unbounded Value tree.
+    pub(super) fn stage(&self, data: &[u8]) -> Result<StagedBytes, SourceError> {
+        if data.len() > IMAGE_CHUNK_BYTES {
+            return Err(invalid("Camera transport chunk exceeds its bound"));
+        }
+        let reservation = self.reserve(data.len())?;
+        let mut bytes = Vec::new();
+        bytes.try_reserve_exact(data.len()).map_err(|_| {
+            SourceError::new(ErrorKind::Unavailable, "Camera transport allocation failed")
+        })?;
+        bytes.extend_from_slice(data);
+        Ok(StagedBytes {
+            bytes,
+            _reservation: reservation,
+        })
+    }
     /// Adopt native U16 rows without making a second full-size image allocation.
     /// The acquisition supervisor must account for its worker's staging buffer separately.
     pub fn adopt_native(&self, frame: regain_core::Frame) -> Result<CameraImage, SourceError> {
@@ -287,6 +304,15 @@ impl ImageBudget {
             bytes: Pixels::Shared(frame.pixels),
             _reservation: reservation,
         })))
+    }
+}
+pub(super) struct StagedBytes {
+    bytes: Vec<u8>,
+    _reservation: Reservation,
+}
+impl StagedBytes {
+    pub(super) fn bytes(&self) -> &[u8] {
+        &self.bytes
     }
 }
 struct Reservation {

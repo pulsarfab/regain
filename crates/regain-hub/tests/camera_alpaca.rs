@@ -389,81 +389,102 @@ async fn shared_budget_exhaustion_and_non_camera_reads_have_no_fallback_or_retry
 
 #[tokio::test]
 async fn real_alpaca_source_and_supervisor_share_one_owned_download() {
-    let server = Server::new(vec![Reply::image()]).await;
-    let source = SourceHandle::spawn(
-        server.config.id,
-        Uuid::new_v4(),
-        server.config.polling.clone(),
-        Box::new(server.backend()),
-        Arc::new(MonotonicClock::default()),
-    )
-    .unwrap();
-    let activity = ActivityCounter::default();
-    let supervisor = CameraSupervisor::new(
-        source.clone(),
-        ImageBudget::new(12).unwrap(),
-        AcquisitionTiming {
-            poll_interval: Duration::from_millis(10),
-            ..AcquisitionTiming::default()
-        },
-        activity.clone(),
-    )
-    .unwrap();
-    let owner = supervisor.connect().await.unwrap();
-    let observer = supervisor.connect().await.unwrap();
-    let id = owner
-        .start(ExposureRequest {
-            duration_seconds: 0.01,
-            light: true,
+    for (reply, kind) in [
+        (Reply::image(), ElementType::Int32),
+        (
+            Reply::json(
+                json!({"ErrorNumber":0,"Type":3,"Rank":2,"Value":[[-1.25,0.0],[65535.5,3.0],[4.0,5.0]]}),
+            ),
+            ElementType::Double,
+        ),
+    ] {
+        let server = Server::new(vec![reply]).await;
+        let source = SourceHandle::spawn(
+            server.config.id,
+            Uuid::new_v4(),
+            server.config.polling.clone(),
+            Box::new(server.backend()),
+            Arc::new(MonotonicClock::default()),
+        )
+        .unwrap();
+        let activity = ActivityCounter::default();
+        let supervisor = CameraSupervisor::new(
+            source.clone(),
+            ImageBudget::new(1024).unwrap(),
+            AcquisitionTiming {
+                poll_interval: Duration::from_millis(10),
+                ..AcquisitionTiming::default()
+            },
+            activity.clone(),
+        )
+        .unwrap();
+        let owner = supervisor.connect().await.unwrap();
+        let observer = supervisor.connect().await.unwrap();
+        let id = owner
+            .start(ExposureRequest {
+                duration_seconds: 0.01,
+                light: true,
+            })
+            .await
+            .unwrap();
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while !supervisor.status().image_ready {
+                assert_ne!(
+                    supervisor.status().phase,
+                    AcquisitionPhase::Uncertain,
+                    "{:?}",
+                    supervisor.status()
+                );
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
         })
         .await
         .unwrap();
-    tokio::time::timeout(Duration::from_secs(2), async {
-        while !supervisor.status().image_ready {
-            assert_ne!(
-                supervisor.status().phase,
-                AcquisitionPhase::Uncertain,
-                "{:?}",
-                supervisor.status()
-            );
-            tokio::time::sleep(Duration::from_millis(5)).await;
-        }
-    })
-    .await
-    .unwrap();
-    let a = owner.image().unwrap();
-    let b = observer.image().unwrap();
-    assert!(Arc::ptr_eq(&a, &b));
-    assert_eq!(a.identity.acquisition, id);
-    assert_eq!(server.image_requests(), 1);
-    assert_eq!(activity.active(), 0);
-    let starts = server
-        .data
-        .requests
-        .lock()
-        .unwrap()
-        .iter()
-        .filter(|r| r.0 == "PUT" && r.1.ends_with("/startexposure"))
-        .count();
-    assert_eq!(starts, 1);
-    drop(owner);
-    drop(observer);
-    source.shutdown().await.unwrap();
-    assert_eq!(a.image.bytes(), b.image.bytes());
+        let a = owner.image().unwrap();
+        let b = observer.image().unwrap();
+        assert!(Arc::ptr_eq(&a, &b));
+        assert_eq!(a.identity.acquisition, id);
+        assert_eq!(a.image.descriptor().element_type(), kind);
+        assert_eq!(server.image_requests(), 1);
+        assert_eq!(activity.active(), 0);
+        let starts = server
+            .data
+            .requests
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|r| r.0 == "PUT" && r.1.ends_with("/startexposure"))
+            .count();
+        assert_eq!(starts, 1);
+        drop(owner);
+        drop(observer);
+        source.shutdown().await.unwrap();
+        assert_eq!(a.image.bytes(), b.image.bytes());
+    }
 }
 
 #[tokio::test]
-async fn successful_json_images_are_explicitly_gated_without_a_second_download() {
+async fn successful_json_images_use_the_same_download_and_preserve_type_and_order() {
     let server = Server::new(vec![Reply::json(json!({
         "ErrorNumber":0, "Type":2, "Rank":2, "Value":[[1,2],[3,4],[5,6]]
     }))])
     .await;
-    let budget = ImageBudget::new(12).unwrap();
-    let error = match server.backend().camera_image(budget.clone()).await {
-        Err(error) => error,
-        Ok(_) => panic!("Unimplemented JSON image decoder published pixels"),
-    };
-    assert_eq!(error.kind, ErrorKind::Unsupported);
+    let budget = ImageBudget::new(1024).unwrap();
+    let image = server.backend().camera_image(budget.clone()).await.unwrap();
+    assert_eq!(image.descriptor().element_type(), ElementType::Int32);
+    assert_eq!(image.descriptor().order(), ImageOrder::Ascom);
+    assert_eq!(
+        image
+            .bytes()
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|v| i32::from_le_bytes(*v))
+            .collect::<Vec<_>>(),
+        vec![1, 2, 3, 4, 5, 6]
+    );
+    assert_eq!(budget.used_bytes(), 24);
+    drop(image);
     assert_eq!(budget.used_bytes(), 0);
     assert_eq!(server.image_requests(), 1);
 }

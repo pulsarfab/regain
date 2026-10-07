@@ -4124,3 +4124,75 @@ upstream ImageBytes 119d71c proceed together to the same draft PR. Their full
 local regressions pass; new-head CI remains required. JSON decoding is being
 implemented separately and is not included in this reviewed publication.
 Camera choices and every original remaining acceptance/final gate stay open.
+
+## 2026-10-06: bounded JSON camera images (local)
+
+Reviewed the fallback required by Alpaca content-type negotiation. One finite
+JSON response is staged in reserved chunks; a shape/envelope pass precedes typed
+decoding directly into one pixel allocation. Field order is irrelevant. No
+serde_json::Value pixel tree is constructed. Raw chunks and final pixels share
+the same payload budget; pinned readers are not evicted. Small device errors can
+still report their original codes when that budget is fully pinned.
+
+Ten private JSON stream cases, two cancellation unit cases and seven updated
+actual HTTP cases pass. They verify all nine numeric encodings and signed/unsigned
+extremes, negative zero, normal/subnormal floating limits, non-square RGB/LRGB and
+rank-three one-plane data, strict ranges/types, duplicate fields/transactions,
+malformed/ragged/empty/deep shapes and finite/trailing data. A response exceeding
+one MiB decodes independently of scalar envelope limits. Actual source/supervisor
+cases share one binary or JSON Double capture between two clients and retain its
+pixels after source shutdown. No second download, exposure retry or vendor I/O
+occurs. Admission/cancellation tests prove four waiting decoders, freed slots,
+partial-staging cleanup and an abandoned queued blocking decode releasing memory
+before allocating pixels.
+
+Review corrections: use terminal ConnectionAborted instead of Interrupted in the
+blocking reader, since std::io::Bytes retries interruptions; allocate working memory
+only after decoder admission instead of embedding 64 KiB in every async future;
+retain local allocation/decoder failure classifications rather than label them as
+malformed upstream images. Numeric and string tokens, field count and raw payload
+are bounded before parser work; primitive typed deserialization avoids integer
+coercion or invented U16 packing. Errors have controlled text at the adapter.
+
+A deterministic sample of 4,000 finite Double bit patterns reproduced a one-ULP
+change at pixel 3 with default serde_json parsing. Enabling float_roundtrip fixes
+that test; no lockfile or dependency version changes are required. Retain both
+artifacts/hub-camera-json-float-fidelity.log and
+artifacts/hub-camera-json-float-fidelity-confirmed.log. This sample does not prove
+every possible floating bit pattern. Explicit yields bound work per async poll;
+cancellation also aborts queued blocking work. Staging remains budgeted until a
+cancelled queued task is consumed; this is not a whole-process RSS guarantee.
+
+Initial/final focused logs: artifacts/hub-camera-json-{check,focused,
+focused-confirmed,final-focused,cancellation,complete-focused}.log. Final full
+Rust hub/Alpaca suites, Rust 1.99 Clippy, Rust 1.89, generated contracts,
+rebuilt-host NINA 228/228 and actual net48 x86/x64 pass against all reviewed
+changes. Nineteen core camera tests also pass with feature unification; 39 hub
+unit tests include both cancellation regressions. Final logs:
+artifacts/hub-camera-json-reviewed-{rust,clippy,msrv,contract,host,nina,net48,core}.log.
+Camera choices stay gated. Runtime,
+remaining adapters/properties/settings, native recovery metadata, all outputs and
+every original later gate remain required. The latest ten JSON/seven actual HTTP
+cases pass together (artifacts/hub-camera-json-complete-focused.log).
+
+## 2026-10-06: terminal supervisor CI failures and local fixture evidence
+
+1579a90 PR CI 37560177877 finishes with seven successes and Windows failure in
+ActualPanelPublisherAndNativeNinaShareLightWithoutOwningEachOthersLeases. This
+failure is a native structured read error after On(0), not the preceding HTTP
+connection failure. The catch now retains the structured native error, private
+source status, fixture state and upstream trace with the original inner exception.
+The private fixture enqueued its command marker before changing start state;
+tests could observe the marker and complete motion before that state was written.
+Publish the marker after the start-state writes, still before any lost-reply stall.
+This corrects a fixture ordering defect without proving it caused the CI failure.
+
+Push CI 37560173015 finishes with six successes. Windows fails the queued-caller
+cancellation test while writing a private peer reply (HubWire.WriteFrame); Intel
+macOS fails a fresh nested-wheel Position read with a transport-lost Transient
+error. Failure-only diagnostics retain peer frame/elapsed/client state and wheel
+source snapshots/request trace. No deadline, expected result or command replay
+policy changes. Retain artifacts/hub-camera-supervisor-{pr,push}-ci-failure.log.
+All three causes remain unproved and reliability acceptance stays open.
+The final full Rust/228 NINA/both net48 regressions also verify the changed
+private fixtures locally. These passes do not prove the CI failures resolved.
