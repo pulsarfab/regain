@@ -20,12 +20,14 @@ compile_error!("PulsarFab regain supports Windows, Linux, and macOS");
 
 pub use platform::{DeviceInfo, enumerate, require_sdk_absent};
 
-pub type Telemetry = std::sync::Arc<std::sync::Mutex<Option<[i64; 2]>>>;
+/// Temperature, power, acknowledged target and cooler enable, in that order.
+pub type Telemetry = std::sync::Arc<std::sync::Mutex<Option<[i64; 4]>>>;
 
 pub struct Camera {
     device: RefCell<Option<platform::Device>>,
     environment: RefCell<Option<crate::asi::direct::environment::Environment>>,
     telemetry: Telemetry,
+    cooling: super::environment::CoolingQueue,
     identity: DeviceInfo,
     transfer_timeout: Cell<Duration>,
     phase: Cell<&'static str>,
@@ -39,6 +41,7 @@ impl Camera {
             device: RefCell::new(Some(platform::Device::open(info)?)),
             environment: RefCell::new(None),
             telemetry: Telemetry::default(),
+            cooling: super::environment::CoolingQueue::default(),
             identity: info.clone(),
             transfer_timeout: Cell::new(Duration::from_secs(60)),
             phase: Cell::new("idle"),
@@ -59,9 +62,17 @@ impl Camera {
     pub fn telemetry(&self) -> Telemetry {
         self.telemetry.clone()
     }
+    pub(super) fn cooling_queue(&self) -> super::environment::CoolingQueue {
+        self.cooling.clone()
+    }
     fn publish_environment(&self) -> Result<()> {
         if let Some(environment) = self.environment.borrow().as_ref() {
-            *self.telemetry.lock().unwrap() = Some([environment.get(8)?, environment.get(15)?]);
+            *self.telemetry.lock().unwrap() = Some([
+                environment.get(8)?,
+                environment.get(15)?,
+                environment.get(16)?,
+                environment.get(17)?,
+            ]);
         }
         Ok(())
     }
@@ -69,6 +80,8 @@ impl Camera {
         self.environment.borrow().is_some()
     }
     pub fn service_environment(&self) -> Result<()> {
+        self.cooling
+            .service(|control, value| self.environment_control(control, Some(value)));
         if let Some(environment) = self.environment.borrow_mut().as_mut() {
             environment.service(self)?;
         }

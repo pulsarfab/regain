@@ -4,6 +4,8 @@
 use crate::asi::direct::transport::Camera;
 use anyhow::{Result, ensure};
 use std::time::Instant;
+mod control;
+pub(super) use control::{CoolingError, CoolingQueue};
 
 const CURRENT: [(f64, f64); 12] = [
     (0.0, 255.0),

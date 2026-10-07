@@ -2285,8 +2285,18 @@ recovery/cooling settings and share the host's budget/activity counter. The owne
 adds no outer deadline and preserves existing core recovery. Frontend disconnect
 must not map to its core cancellation token. Native cooling writes need a common
 acknowledged path: core queue_control currently records desired values, while
-capture environment refresh reads only temperature/power; the direct worker
-rejects control writes during capture. Queuing a desired cooler value alone must
+capture environment refresh reads only temperature/power. The direct worker's
+bounded cooling slot now admits target/enable writes at existing USB-owner
+environment checkpoints and exposes only acknowledged cached targets. Unsent
+expiry skips USB; dispatched failures/timeouts fence new cooling writes and
+produce typed non-retryable control uncertainty, causing core worker retirement.
+Once a cooler command's framed write is attempted, core also treats outer
+timeout/cancellation or malformed/lost replies as uncertain and retires the
+worker. Cancellation before dispatch remains distinct. This prevents the outer
+command deadline from bypassing the direct owner's uncertainty envelope.
+Other imaging/auxiliary writes remain excluded during capture. This primitive
+does not yet provide the common Session/NativeCamera acknowledgement queue or
+preserve live targets across core recovery. Queuing a desired cooler value alone must
 not be reported as an applied in-exposure write. Implement and test SDK/direct
 cooling application and recovery-setting preservation before enabling cameras.
 

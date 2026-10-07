@@ -113,14 +113,17 @@ fn core_error(error: &anyhow::Error) -> SourceError {
     let kind = match error.downcast_ref::<regain_core::Failure>() {
         Some(regain_core::Failure::Invalid(_)) => ErrorKind::InvalidValue,
         Some(regain_core::Failure::Cancelled) => ErrorKind::Unavailable,
+        Some(regain_core::Failure::UncertainControl { .. }) => ErrorKind::Uncertain,
         _ => ErrorKind::Unavailable,
     };
     let mut result = SourceError::new(
         kind,
         "Native camera operation failed; inspect its core diagnostics",
     );
-    if let Some(regain_core::Failure::Worker { code, .. }) =
-        error.downcast_ref::<regain_core::Failure>()
+    if let Some(
+        regain_core::Failure::Worker { code, .. }
+        | regain_core::Failure::UncertainControl { code, .. },
+    ) = error.downcast_ref::<regain_core::Failure>()
     {
         result.upstream_code = *code;
     }

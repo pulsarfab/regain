@@ -636,7 +636,10 @@ impl Session {
                         let mut state = self.status.lock().unwrap();
                         state.error = Some(format!("{error:#}"));
                         state.sdk_error_code = match error.downcast_ref::<Failure>() {
-                            Some(Failure::Worker { code, .. }) => *code,
+                            Some(
+                                Failure::Worker { code, .. }
+                                | Failure::UncertainControl { code, .. },
+                            ) => *code,
                             _ => None,
                         };
                     }
@@ -1118,6 +1121,77 @@ mod tests {
         assert!(!hold.observe(Some(-10.), Some(20), -10., 2., 2., 100.));
         assert!(!hold.observe(Some(-10.), Some(0), -10., 2., 2., 102.));
     }
+    #[tokio::test]
+    async fn direct_worker_acknowledges_capture_cooling_over_production_framing() {
+        // Transport primitive only: Session's common acknowledged control queue
+        // is a separate requirement. Never discover or activate physical cameras.
+        for mode in ["still", "video"] {
+            let token = CancellationToken::new();
+            let mut worker = runtime().spawn(true, log()).await.unwrap();
+            worker
+                .call("open", json!({"name":"ZWO ASI585MM Pro"}), 15., &token)
+                .await
+                .unwrap();
+            worker
+                .call(
+                    "start",
+                    json!({"mode":mode,"maxFps":120.0,"width":64,"height":64,
+                "x":0,"y":0,"bin":1,"microseconds":6_000_000,"dark":false}),
+                    15.,
+                    &token,
+                )
+                .await
+                .unwrap();
+            for (control, value) in [(16, -10), (17, 1), (16, -15)] {
+                worker
+                    .call("set", json!({"control":control,"value":value}), 15., &token)
+                    .await
+                    .unwrap();
+                assert_eq!(
+                    worker
+                        .call("get", json!({"control":control}), 15., &token)
+                        .await
+                        .unwrap()
+                        .0,
+                    value
+                );
+                assert_eq!(
+                    worker
+                        .call("status", Value::Null, 15., &token)
+                        .await
+                        .unwrap()
+                        .0,
+                    1
+                );
+            }
+            let deadline = Instant::now() + Duration::from_secs(15);
+            while worker
+                .call("status", Value::Null, 15., &token)
+                .await
+                .unwrap()
+                .0
+                == 1
+            {
+                assert!(Instant::now() < deadline);
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+            let (metadata, pixels) = worker
+                .call_image("download", Value::Null, 15., &token, 8192)
+                .await
+                .unwrap();
+            assert_eq!(metadata["mode"], mode);
+            assert_eq!(
+                pixels,
+                (0..4096u16).flat_map(u16::to_le_bytes).collect::<Vec<_>>()
+            );
+            worker
+                .call("close", Value::Null, 15., &token)
+                .await
+                .unwrap();
+            worker.kill().await;
+        }
+    }
+
     #[tokio::test]
     async fn environment_refreshes_before_sdk_and_direct_exposures_finish() {
         for direct in [false, true] {

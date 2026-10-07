@@ -95,7 +95,8 @@ preflight prevents a late write; uncertain writes retain the source fence.
 Pending setting identity/owner/property is available in shared status. Full final
 Rust hub/Alpaca, strict Rust 1.99 Clippy, Rust 1.89, contracts, rebuilt-host NINA
 228/228 and real net48 x86/x64 pass. Reviewed properties/settings and NoDelay
-fixture hardening are pushed; PR/push CI 37564346322/37564341366 is live.
+fixture hardening are pushed; PR/push CI 37564346322/37564341366 both finish
+with all eight jobs successful, including Windows installer/release checks.
 NoDelay is not a proven explanation of earlier CI failures.
 Camera runtime/adapters/binary IPC/all outputs/recovery metadata,
 coordination and every original acceptance/final gate remain required.
@@ -130,9 +131,28 @@ Review refinement: core cooler queueing is desired state only during capture, an
 the direct worker rejects capture-time writes. Add a common acknowledged SDK/direct
 cooling path and preserve live targets across recovery; do not equate queued intent
 with an applied write. This remains part of the original native camera scope.
-Current ef0748e PR/push CI has seven successful jobs each; Windows test.ps1 passes
-in both runs and packaging/installer checks remain live. Earlier failure causes
-remain unproved. Keep native admission/owner increments local until CI finishes.
+Current ef0748e PR/push CI 37564346322/37564341366 both finish with all eight
+jobs successful, including Windows packaging/installer checks. Earlier failure
+causes remain unproved. Native admission/owner increments can proceed to their
+own CI together with the reviewed direct cooling increment; local checks pass.
+
+Direct cooling checkpoint (reviewed; CI required): one bounded request slot is serviced only
+by the existing USB owner at its environment checkpoints. Capture-time target and
+enable writes wait for an applied/readback acknowledgement; active getters read
+acknowledged telemetry. Unsent expiry skips USB; unknown dispatched outcomes fence
+additional cooling writes and are typed non-retryable by the core, which retires
+the worker. Core also records framed write admission so outer timeout/cancellation
+or lost/malformed acknowledgement cannot bypass uncertainty classification.
+Private still/video simulations pass with unchanged frame pixels and rejected
+unrelated imaging writes. A parked simulated worker verifies outer timeout,
+post-dispatch cancellation and process retirement; pre-dispatch cancellation
+consumes no command ID. Full final core/hub/Alpaca Rust, all 96 ZWO library tests,
+25 core tests, strict Rust 1.99 Clippy and Rust 1.89 all-target checks pass.
+Fresh-host NINA 228/228 and real net48 x86/x64 also pass after the outer-deadline
+correction. Generated contracts and formatting pass. This
+does not complete native cooling: the common Session/NativeCamera acknowledged
+queue, recovery-target preservation, source adapter/runtime and every frontend
+image output remain required. Camera creation remains disabled.
 
 Camera supervisor checkpoint (local): nineteen private virtual-clock cases pass.
 One source-owned acquisition retains control and runtime activity after caller

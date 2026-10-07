@@ -4378,7 +4378,67 @@ across recovery. Do not claim queued intent is hardware application or bypass th
 worker's capture ownership. This is original scope, not an optional follow-up.
 Camera creation remains gated and all original later gates remain open.
 
-Current ef0748e PR/push CI 37564346322/37564341366 each has seven successful jobs
-and a live Windows packaging job. Both Windows test.ps1 steps pass. This does not
+Current ef0748e PR/push CI 37564346322/37564341366 both finish with all eight
+jobs successful, including Windows packaging/installer checks. This does not
 prove NoDelay or marker ordering explains the earlier intermittent failures.
-Keep native admission and ownership local until these runs finish.
+Native admission and ownership can now proceed to their own CI together with
+the reviewed direct cooling increment after local validation.
+
+## 2026-10-06: acknowledged direct-worker cooling (reviewed; CI required)
+
+The direct worker now admits only target/enable writes during capture through one
+bounded request slot. The existing USB owner executes requests at its environment
+service checkpoints, without another USB handle or concurrent transfer thread.
+An acknowledgement follows application, environment service and readback;
+cached active getters expose the acknowledged target/enable alongside temperature
+and power. Imaging and auxiliary writes remain excluded during capture; hardware
+capability, writability and range checks still precede admission.
+
+Unsent expiry never reaches USB. A dispatched timeout retains its slot until the
+owner finishes; failures or missed acknowledgements fence later cooler writes.
+Owner retirement wakes queued waiters as unsent and dispatched waiters as
+uncertain. Review corrected late completion after retirement, so it cannot turn
+published uncertainty into a known acknowledgement. Capacity is released before
+known completion is published. No locks are held over USB operations.
+
+The framed error envelope preserves control uncertainty even through hardware
+error context. Core maps it to UncertainControl, retires the worker and marks it
+non-retryable, including SDK codes that would otherwise permit capture recovery.
+Native ownership maps it to an Uncertain source error with redacted text and the
+original code. This primitive does not supply Session's common acknowledgement
+queue or preserve changed live targets through frozen recovery settings yet.
+
+Further review found that core's outer command deadline could precede the direct
+worker's uncertainty reply and leave a cooler write retryable. Worker exchange
+now records framed write admission. Lost/malformed replies, outer timeout and
+cancellation after that point become typed non-retryable uncertainty and retire
+the process. Cancellation before dispatch remains Cancelled without consuming
+a command ID. An actual SDK-simulation worker parked in download verifies both
+timeout and post-dispatch cancellation, non-retryability and process exit. The
+cancellation test polls through dispatch instead of guessing with a sleep. The
+cooling slot uses one completion timestamp for fencing and publication, avoiding
+a deadline boundary between those decisions.
+
+Four queue cases cover known acknowledgement, before-dispatch expiry, retained
+dispatched timeout, owner loss, USB failure, fencing and late completion after
+retirement. Private Host tests exercise still/video exposure and retained-frame
+cooling, unchanged exact pixels, unsupported cameras, invalid values and excluded
+imaging/auxiliary controls. A real production worker-process framing case runs
+six-second still/video simulations with live acknowledgements and exact pixels.
+The core error parser separately verifies typed non-retryable uncertainty and
+retained codes. No physical camera or installed vendor driver is activated.
+
+Full Rust core/hub/Alpaca/ZWO regressions pass. After the final retirement review,
+all 96 ZWO library tests and all 25 core tests pass with a freshly rebuilt worker.
+The first worker build reported an unused wait_until wrapper after simulation
+moved to the existing service callback; the wrapper is now test-only. Final
+strict Rust 1.99 Clippy, Rust 1.89 all-target checks, generated contracts and
+formatting pass. After the outer-deadline correction, freshly rebuilt-host NINA
+228/228 and actual net48 x86/x64 clients pass with no build warnings.
+Logs: artifacts/hub-camera-direct-cooling-{focused,worker,rust,worker-reviewed,
+reviewed,core,outer-deadline,final-worker,final-rust,final-clippy,final-msrv,
+final-zwo,final-host,final-nina,final-net48,contract}.log.
+Both preceding ef0748e CI runs pass all eight jobs; this reviewed increment and
+the two native camera increments proceed to their own CI on the same draft PR.
+Keep every original camera/runtime/output/recovery,
+coordination and final acceptance gate open; camera creation remains disabled.

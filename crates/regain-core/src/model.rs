@@ -10,12 +10,23 @@ use std::{
 pub enum Failure {
     Invalid(String),
     Cancelled,
-    Worker { message: String, code: Option<i32> },
+    Worker {
+        message: String,
+        code: Option<i32>,
+    },
+    /// A dispatched control has no known acknowledgement. Retire its worker;
+    /// retrying the command or capture could repeat an already applied write.
+    UncertainControl {
+        message: String,
+        code: Option<i32>,
+    },
 }
 impl std::fmt::Display for Failure {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Invalid(m) | Self::Worker { message: m, .. } => f.write_str(m),
+            Self::Invalid(m)
+            | Self::Worker { message: m, .. }
+            | Self::UncertainControl { message: m, .. } => f.write_str(m),
             Self::Cancelled => f.write_str("Exposure aborted"),
         }
     }
@@ -26,7 +37,7 @@ pub fn invalid(message: impl Into<String>) -> anyhow::Error {
 }
 pub fn retryable(error: &anyhow::Error) -> bool {
     match error.downcast_ref::<Failure>() {
-        Some(Failure::Invalid(_) | Failure::Cancelled) => false,
+        Some(Failure::Invalid(_) | Failure::Cancelled | Failure::UncertainControl { .. }) => false,
         Some(Failure::Worker { code: Some(c), .. }) => {
             matches!(c, 1 | 2 | 4 | 5 | 11 | 12 | 15 | 16)
         }
