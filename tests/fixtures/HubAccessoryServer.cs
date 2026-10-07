@@ -103,6 +103,10 @@ internal class HubAccessoryServer : IDisposable
         try {
             while (!stopping.IsCancellationRequested) {
                 var client = await listener.AcceptTcpClientAsync().ConfigureAwait(false);
+                // These fixtures intentionally send tiny HTTP replies with
+                // separate header/body writes. Avoid introducing Nagle/delayed
+                // ACK latency into tests of source ownership and deadlines.
+                client.NoDelay = true;
                 clients.TryAdd(client, 0); requests.Add(Handle(client));
             }
         } catch (Exception error) when (stopping.IsCancellationRequested && error is SocketException or ObjectDisposedException) { }
