@@ -6781,3 +6781,77 @@ conformance/interactive/physical acceptance, README/site updates, main
 reconciliation and final CI/audit/merge remain required. Per the user's pacing
 instruction, local checks/review are batched at useful construction increments;
 intermediate CI is not a waiting gate. Keep the one PR draft until final gates.
+
+## Explicit camera group core (2026-10-07)
+
+Reviewed shared camera admission, preflight/control cleanup, start dispatch,
+completion publication, cancellation and abort races. The implementation extends
+the existing supervisor rather than adding a second acquisition engine. Ordinary
+single-camera starts keep their existing preparation and completion paths. Group
+starts hold owned preparations until every member validates, then dispatch once
+per actor. Preflight cancellation drops only the waiter; an owned preparation
+task finishes cleanup and retains supervisor activity until it has done so.
+Prepared/cleanup Drop guards explicitly retain the whole guard through their
+spawned closures, preserving their uncertainty fallback.
+
+Completion now returns the same immutable image Arc it publishes under the state
+lock. A group's first image therefore survives a later ordinary capture while
+another member is still exposing. There is no second pixel pool or image copy.
+Start receipts retain monotonic host request/acknowledgement times separately;
+the measured skew does not claim hardware exposure synchronization. Independent
+event observation prevents a held sibling acknowledgement from hiding a healthy
+completion. Member download errors retain the ordinary supervisor's uncertain
+ownership, even for deterministic allocation/geometry failures.
+
+Failure and cancellation/deadline policies are distinct and explicit. Required
+abort capabilities are checked before any start. Once a mutation is admitted,
+cancellation awaits its acknowledgement; it cannot erase or replay a start.
+Abort checks the exact acquisition under the supervisor's admission lock, in
+addition to the existing owner/generation checks, so it cannot target a later
+capture. Review found that abort rejection during readout could discard the
+pending group image too early; the corrected coordinator waits for that image
+within the group deadline and retains the abort error independently. Completed
+images remain valid historical results after a later source generation change;
+an in-progress download crossing a generation cannot publish. An unexpected
+coordinator task exit publishes uncertainty rather than leaving active status.
+
+All **64 acquisition/guiding cases pass**, including **21 new camera-group fault
+cases**, in `artifacts/hub-camera-group-final-acquisition.log`. They cover
+all-member preflight rejection, unsupported abort, separate exact image pins,
+healthy completion during a held sibling start, measured dispatch versus delayed
+acknowledgement, continue/abort policy, cancellation before/during dispatch,
+later-capture protection, readout/abort races, overlapping reservations/settings,
+live geometry changes, dropped waiters, deadlines, uncertain abort, allocation
+failure, generation loss and invalid identity/duration/configuration bounds.
+The initial run caught Failed versus Uncertain image-error reporting; the final
+implementation preserves the supervisor fence. A second run exposed a fixture
+attempting to connect a new session through an intentionally held actor read;
+the overlapping-group fixture now creates its clients before injecting the hold.
+Initial failure logs are retained. No production deadline or assertion was weakened.
+
+Full Rust hub/Alpaca regression passes in
+`artifacts/hub-camera-coordination-full-rust.log`. Strict all-target Clippy passes
+in `hub-camera-coordination-clippy.log`; Rust 1.89 all-target checking passes in
+`hub-camera-coordination-msrv.log`. Commands:
+
+```text
+cargo test -j2 -p regain-hub -p regain-alpaca --locked
+cargo clippy -j2 -p regain-hub -p regain-alpaca --all-targets --locked -- -D warnings
+cargo +1.89.0 check -j2 -p regain-hub -p regain-alpaca --all-targets --locked
+cargo fmt --all --check
+git diff --check
+```
+
+Formatting and diff checks pass. This core-only increment changes no IPC wire
+command, frontend or generated root configuration contract, so managed/frontend
+regression remains at the preceding saved-focuser milestone; it is not counted
+as new camera-group frontend evidence.
+
+This closes only the camera core construction increment. Saved/generated camera
+group configuration, physical alias resolution, revision-owned host inventory,
+reattachment and image IPC, shared controls and native NINA orchestration remain
+required. Discovery/transfer, actual OS resume, remaining conformance and
+interactive/physical acceptance, README/site, main reconciliation and final
+review/CI/audit/merge remain unchanged gates. All fixtures are private actors;
+no attached hardware or installed vendor driver is opened. Do not wait for
+intermediate CI before continuing construction.

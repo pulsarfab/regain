@@ -157,3 +157,67 @@ simulations, not installed-NINA or physical-device acceptance.
 Synchronized cameras, measured start skew, separate images/member results,
 abort/continue policy, real OS recovery/resume notifications and the remaining
 interactive/physical acceptance, documentation and final merge gates remain work.
+
+## Camera group core
+
+The Rust core now provides explicit camera bursts through the same acquisition
+supervisors used by ordinary Camera outputs. This is not yet exposed in saved
+configuration, host IPC, shared setup or NINA. Those integration steps remain
+required; a standard Camera output still represents one camera and one image.
+
+A group has a stable UUID, label, two to 32 distinct physical camera source IDs,
+a finite whole-operation timeout (0.01 seconds to seven days), an explicit failure
+policy and an explicit cancellation/deadline policy. Each start supplies one
+exposure request per configured source, matched by identity rather than retargeted
+by enumeration. The core accepts already connected sessions; it never opens,
+reconnects, resets or changes camera settings implicitly.
+
+Preparation reserves each camera's ordinary acquisition/control ownership and
+validates all members before any exposure starts. Every prepared geometry is
+rechecked, along with CanAbortExposure if either configured policy may require
+abort. A bad member releases unused reservations and prevents the entire burst.
+Other camera clients and overlapping groups cannot change settings or capture
+through those reservations. There is no await between the one-shot dispatches
+to independent source actors. External hardware changes cannot be made atomic.
+
+Each member retains its admitted source, generation, request, acquisition UUID,
+host request/acknowledgement window, completion metadata and error. Host dispatch
+skew is the maximum-minus-minimum observed request time, published after every
+start window is known. It is neither a sensor exposure timestamp nor a promise
+of hardware synchronization. A delayed acknowledgement is reported separately.
+Independent observers let a healthy member publish while another start or image
+is stalled. Lost acknowledgements remain uncertain and are never replayed.
+
+Completed images are pinned at the ordinary supervisor's publication point.
+Each group member holds an immutable Arc to that exact image and identity; later
+ordinary captures cannot replace it. Pins share the existing image budget and
+do not copy pixels or evict other readers. A download, geometry, metadata or
+generation failure preserves the supervisor's uncertain ownership and cannot
+publish a replacement frame. Healthy sibling images remain available.
+
+On member failure, **continue** lets other started cameras finish; **abortStarted**
+requests AbortExposure only for acknowledged acquisitions. Cancellation/deadline
+separately chooses **leaveRunning** or **abortStarted**. No policy implies Stop,
+reset, rollback, re-exposure or a retry. Cancellation waits for admitted start and
+abort acknowledgements under the existing actor bounds. Abort admission checks
+the exact acquisition under the supervisor lock, so it cannot abort a later
+capture after a group member has completed. A rejected abort during readout is
+retained as a separate abort error while the admitted image can still complete;
+the group stops waiting at its own deadline. Abort uncertainty remains fenced.
+
+Dropping a group observer does not cancel work. A terminal stopped report is
+frozen: with leaveRunning, unfinished captures continue under their ordinary
+supervisors, but later completion is not added to the stopped group report.
+Reading status performs no equipment I/O or new publication. Starting another
+operation requires explicit admission; source ownership still blocks it when a
+previous stopped capture remains active or uncertain. An unexpectedly stopped
+group task cannot leave observers believing it remains active indefinitely.
+
+Private fault tests cover all-member rejection, required abort capability,
+overlapping ownership/settings, live geometry changes, dropped waiters, separate
+image pins across later captures, delayed start replies, explicit continue/abort,
+cancellation before and during dispatch, later-capture protection, readout/abort
+races, deadlines, uncertain abort, image budget and generation loss. No attached
+hardware or installed vendor driver is opened. Saved/group host integration,
+bounded reattachment/image inventory and native NINA are the next construction
+steps, followed by the original acceptance and final merge gates.

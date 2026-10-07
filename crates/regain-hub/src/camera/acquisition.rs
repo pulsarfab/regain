@@ -24,6 +24,59 @@ use uuid::Uuid;
 #[path = "guiding.rs"]
 mod guiding;
 pub use guiding::{GuideRequest, GuidingPhase, GuidingStatus};
+#[path = "prepared.rs"]
+mod prepared;
+pub(crate) use prepared::{CameraDispatch, PreparedCameraStart};
+
+#[derive(Clone, Copy)]
+struct StartPlan {
+    id: Uuid,
+    ready_timeout: Duration,
+    completion_timeout: Duration,
+}
+pub(crate) struct CameraStartReceipt {
+    /// Host request/acknowledgement window, not a hardware exposure clock.
+    pub dispatched_at: Instant,
+    pub acknowledged_at: Instant,
+    pub result: Result<Uuid, SourceError>,
+}
+type ImageReply = oneshot::Sender<Result<Arc<CapturedImage>, SourceError>>;
+enum StartReply {
+    Single(oneshot::Sender<Result<Uuid, SourceError>>),
+    Group {
+        started: oneshot::Sender<CameraStartReceipt>,
+        completed: ImageReply,
+    },
+}
+impl StartReply {
+    fn send(
+        self,
+        dispatched_at: Instant,
+        acknowledged_at: Instant,
+        result: Result<Uuid, SourceError>,
+    ) -> Option<ImageReply> {
+        match self {
+            Self::Single(reply) => {
+                let _ = reply.send(result);
+                None
+            }
+            Self::Group { started, completed } => {
+                let error = result.as_ref().err().cloned();
+                let _ = started.send(CameraStartReceipt {
+                    dispatched_at,
+                    acknowledged_at,
+                    result,
+                });
+                if let Some(error) = error {
+                    let _ = completed.send(Err(error));
+                    None
+                } else {
+                    Some(completed)
+                }
+            }
+        }
+    }
+}
 
 fn invalid(message: &'static str) -> SourceError {
     SourceError::new(ErrorKind::InvalidValue, message)
@@ -496,17 +549,16 @@ impl CameraSupervisor {
         }
         self.changed.notify_waiters();
     }
-    async fn start(
-        self: &Arc<Self>,
-        source: Arc<TypedSourceSession>,
+    fn admit_start(
+        &self,
+        source: &TypedSourceSession,
         owner: Uuid,
         request: ExposureRequest,
-    ) -> Result<Uuid, SourceError> {
+    ) -> Result<StartPlan, SourceError> {
         let ready_timeout = self.readiness_timeout(request)?;
         let completion_timeout = self.completion_timeout(ready_timeout)?;
         source.snapshot()?;
         let id = Uuid::new_v4();
-        let (reply, response) = oneshot::channel();
         {
             let mut state = self.state.lock().unwrap();
             if state.retired {
@@ -548,18 +600,23 @@ impl CameraSupervisor {
                 _activity: Activity::new(self.activity.clone()),
             });
         }
+        Ok(StartPlan {
+            id,
+            ready_timeout,
+            completion_timeout,
+        })
+    }
+    async fn start(
+        self: &Arc<Self>,
+        source: Arc<TypedSourceSession>,
+        owner: Uuid,
+        request: ExposureRequest,
+    ) -> Result<Uuid, SourceError> {
+        let plan = self.admit_start(&source, owner, request)?;
+        let (reply, response) = oneshot::channel();
         let supervisor = self.clone();
         tokio::spawn(async move {
-            supervisor
-                .run_start(
-                    source,
-                    id,
-                    request,
-                    ready_timeout,
-                    completion_timeout,
-                    reply,
-                )
-                .await;
+            supervisor.run_start(source, plan, request, reply).await;
         });
         response
             .await
@@ -568,17 +625,47 @@ impl CameraSupervisor {
     async fn run_start(
         self: Arc<Self>,
         source: Arc<TypedSourceSession>,
-        id: Uuid,
+        plan: StartPlan,
         request: ExposureRequest,
-        ready_timeout: Duration,
-        completion_timeout: Duration,
         reply: oneshot::Sender<Result<Uuid, SourceError>>,
     ) {
+        let id = plan.id;
         if reply.is_closed() {
             let _ = self.end_rejected(id, None).await;
             return;
         }
-        let prepared = timeout(self.timing.admission_timeout, async {
+        let prepared = self.prepare_start(&source, id, request).await;
+        let (operation, geometry) = match prepared {
+            Ok(value) => value,
+            Err(mut error) => {
+                if let Err(release) = self.end_rejected(id, Some(error.clone())).await {
+                    error = release;
+                }
+                let _ = reply.send(Err(error));
+                return;
+            }
+        };
+        if reply.is_closed() {
+            let _ = self.end_rejected(id, None).await;
+            return;
+        }
+        self.dispatch_start(
+            source,
+            plan,
+            request,
+            operation,
+            geometry,
+            StartReply::Single(reply),
+        )
+        .await;
+    }
+    async fn prepare_start(
+        &self,
+        source: &TypedSourceSession,
+        id: Uuid,
+        request: ExposureRequest,
+    ) -> Result<(Arc<SourceLease>, CaptureGeometry), SourceError> {
+        timeout(self.timing.admission_timeout, async {
             let borrowed = self
                 .state
                 .lock()
@@ -600,25 +687,26 @@ impl CameraSupervisor {
                     .ok_or_else(busy)?
                     .operation = Some(operation.clone());
             }
-            let geometry = prepare(&source, request).await?;
+            let geometry = prepare(source, request).await?;
             Ok::<_, SourceError>((operation, geometry))
         })
         .await
-        .unwrap_or_else(|_| Err(SourceError::timeout()));
-        let (operation, geometry) = match prepared {
-            Ok(value) => value,
-            Err(mut error) => {
-                if let Err(release) = self.end_rejected(id, Some(error.clone())).await {
-                    error = release;
-                }
-                let _ = reply.send(Err(error));
-                return;
-            }
-        };
-        if reply.is_closed() {
-            let _ = self.end_rejected(id, None).await;
-            return;
-        }
+        .unwrap_or_else(|_| Err(SourceError::timeout()))
+    }
+    async fn dispatch_start(
+        self: Arc<Self>,
+        source: Arc<TypedSourceSession>,
+        plan: StartPlan,
+        request: ExposureRequest,
+        operation: Arc<SourceLease>,
+        geometry: CaptureGeometry,
+        reply: StartReply,
+    ) {
+        let StartPlan {
+            id,
+            ready_timeout,
+            completion_timeout,
+        } = plan;
         {
             let mut state = self.state.lock().unwrap();
             let Some(active) = state.active.as_mut().filter(|a| a.id == id) else {
@@ -626,6 +714,7 @@ impl CameraSupervisor {
             };
             active.operation = Some(operation.clone());
         }
+        let dispatched_at = Instant::now();
         let result = source
             .write(
                 &operation,
@@ -636,6 +725,7 @@ impl CameraSupervisor {
                 ]),
             )
             .await;
+        let acknowledged_at = Instant::now();
         if let Err(mut error) = result {
             if error.kind == ErrorKind::Uncertain || error.transport_lost {
                 self.uncertain(id, error.clone());
@@ -644,7 +734,7 @@ impl CameraSupervisor {
                     error = release;
                 }
             }
-            let _ = reply.send(Err(error));
+            reply.send(dispatched_at, acknowledged_at, Err(error));
             return;
         }
         {
@@ -656,18 +746,20 @@ impl CameraSupervisor {
             state.completed = None;
             state.error = None;
         }
-        let _ = reply.send(Ok(id));
-        if timeout(
+        let completion = reply.send(dispatched_at, acknowledged_at, Ok(id));
+        let result = timeout(
             completion_timeout,
             self.complete_exposure(&source, id, request, geometry, &operation, ready_timeout),
         )
         .await
-        .is_err()
-        {
-            self.uncertain(
-                id,
-                SourceError::new(ErrorKind::Uncertain, "Camera completion deadline expired"),
-            );
+        .unwrap_or_else(|_| {
+            let error =
+                SourceError::new(ErrorKind::Uncertain, "Camera completion deadline expired");
+            self.uncertain(id, error.clone());
+            Err(error)
+        });
+        if let Some(completion) = completion {
+            let _ = completion.send(result);
         }
     }
     async fn complete_exposure(
@@ -678,7 +770,7 @@ impl CameraSupervisor {
         geometry: CaptureGeometry,
         operation: &Arc<SourceLease>,
         ready_timeout: Duration,
-    ) {
+    ) -> Result<Arc<CapturedImage>, SourceError> {
         let result = timeout(ready_timeout, self.wait_ready(source, id))
             .await
             .unwrap_or_else(|_| {
@@ -689,10 +781,14 @@ impl CameraSupervisor {
             });
         match result {
             Ok(true) => {}
-            Ok(false) => return, // Explicit abort/abandon already reconciled local state.
+            Ok(false) => {
+                return Err(unavailable(
+                    "Camera exposure ended without a completed image",
+                ));
+            }
             Err(error) => {
-                self.uncertain(id, error);
-                return;
+                self.uncertain(id, error.clone());
+                return Err(error);
             }
         }
         // Compare available upstream exposure identity around the copy. Optional
@@ -700,8 +796,8 @@ impl CameraSupervisor {
         let before = match exposure_metadata(source).await {
             Ok(value) => value,
             Err(error) => {
-                self.uncertain(id, error);
-                return;
+                self.uncertain(id, error.clone());
+                return Err(error);
             }
         };
         let image = match operation
@@ -716,15 +812,15 @@ impl CameraSupervisor {
         {
             Ok(image) => image,
             Err(error) => {
-                self.uncertain(id, error);
-                return;
+                self.uncertain(id, error.clone());
+                return Err(error);
             }
         };
         let after = match exposure_metadata(source).await {
             Ok(value) => value,
             Err(error) => {
-                self.uncertain(id, error);
-                return;
+                self.uncertain(id, error.clone());
+                return Err(error);
             }
         };
         if before.duration_seconds != after.duration_seconds
@@ -732,11 +828,9 @@ impl CameraSupervisor {
             || image.descriptor().width() != geometry.width
             || image.descriptor().height() != geometry.height
         {
-            self.uncertain(
-                id,
-                unavailable("Camera image differs from the admitted acquisition"),
-            );
-            return;
+            let error = unavailable("Camera image differs from the admitted acquisition");
+            self.uncertain(id, error.clone());
+            return Err(error);
         }
         let identity = AcquisitionIdentity {
             source: self.source.snapshot().source,
@@ -747,8 +841,8 @@ impl CameraSupervisor {
             exposure: after,
         };
         if let Err(error) = source.snapshot() {
-            self.uncertain(id, error);
-            return;
+            self.uncertain(id, error.clone());
+            return Err(error);
         }
         {
             let mut state = self.state.lock().unwrap();
@@ -759,20 +853,21 @@ impl CameraSupervisor {
                 // The pulse still owns this control lease. Publish atomically
                 // with removing acquisition ownership so guide completion sees
                 // that it must perform the final explicit release.
-                state.completed = Some(Arc::new(CapturedImage { identity, image }));
+                let captured = Arc::new(CapturedImage { identity, image });
+                state.completed = Some(captured.clone());
                 state.active = None;
                 state.error = None;
                 self.changed.notify_waiters();
-                return;
+                return Ok(captured);
             }
         }
         if let Err(error) = operation.source.control(operation.id, false).await {
-            self.uncertain(id, error);
-            return;
+            self.uncertain(id, error.clone());
+            return Err(error);
         }
         if let Err(error) = source.snapshot() {
-            self.uncertain(id, error);
-            return;
+            self.uncertain(id, error.clone());
+            return Err(error);
         }
         let mut state = self.state.lock().unwrap();
         if state
@@ -780,10 +875,15 @@ impl CameraSupervisor {
             .as_ref()
             .is_some_and(|a| a.id == id && a.phase == AcquisitionPhase::Downloading)
         {
-            state.completed = Some(Arc::new(CapturedImage { identity, image }));
+            let captured = Arc::new(CapturedImage { identity, image });
+            state.completed = Some(captured.clone());
             state.active = None;
             state.error = None;
+            return Ok(captured);
         }
+        Err(unavailable(
+            "Camera acquisition changed before image publication",
+        ))
     }
     async fn wait_ready(&self, source: &TypedSourceSession, id: Uuid) -> Result<bool, SourceError> {
         loop {
@@ -849,11 +949,22 @@ impl CameraSupervisor {
         source: Arc<TypedSourceSession>,
         owner: Uuid,
         abort: bool,
+        expected_acquisition: Option<Uuid>,
     ) -> Result<(), SourceError> {
         source.snapshot()?;
         let (reply, response) = oneshot::channel();
         let (admission, idle_cached) = {
             let mut state = self.state.lock().unwrap();
+            if expected_acquisition.is_some_and(|expected| {
+                state
+                    .active
+                    .as_ref()
+                    .is_none_or(|active| active.id != expected)
+            }) {
+                return Err(unavailable(
+                    "Camera acquisition changed before command admission",
+                ));
+            }
             if state.retired {
                 return Err(SourceError::new(
                     ErrorKind::Disconnected,
@@ -1269,12 +1380,12 @@ impl CameraSession {
     }
     pub async fn abort(&self) -> Result<(), SourceError> {
         self.supervisor
-            .command(self.source.clone(), self.id, true)
+            .command(self.source.clone(), self.id, true, None)
             .await
     }
     pub async fn stop(&self) -> Result<(), SourceError> {
         self.supervisor
-            .command(self.source.clone(), self.id, false)
+            .command(self.source.clone(), self.id, false, None)
             .await
     }
     pub fn image(&self) -> Result<Arc<CapturedImage>, SourceError> {

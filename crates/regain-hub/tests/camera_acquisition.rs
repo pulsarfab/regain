@@ -422,6 +422,8 @@ fn request() -> ExposureRequest {
         light: true,
     }
 }
+#[path = "support/camera_groups.rs"]
+mod camera_groups;
 #[path = "support/camera_guiding.rs"]
 mod camera_guiding;
 

@@ -13,7 +13,24 @@ increments. Push those increments to the same draft PR without waiting for slow
 CI between steps. Final CI, review and the original acceptance/completion audit
 remain merge gates.
 
-Current increment: saved focuser groups, revision-owned host operations and native
+Current increment: synchronized camera-group core construction. The ordinary
+camera supervisor now supports owned preflight reservations, one-shot burst
+dispatch and exact completed-image pins. All members are reserved and validated
+before any StartExposure; geometry and required abort capabilities are rechecked
+before dispatch. Each member retains its own acquisition identity, image and
+failure. Monotonic host dispatch/acknowledgement windows provide measured request
+skew without claiming sensor synchronization. Failure and cancellation policies
+are explicit; abort addresses only the exact acknowledged acquisition and cannot
+retarget a later capture. Unsupported abort during readout retains the pending
+image until completion or the group deadline. This increment is core-only: saved
+camera-group configuration, host/revision inventory, IPC image access, shared
+controls and native NINA orchestration remain construction work. Keep milestone
+5 and all original acceptance/final gates open. See hub-coordination.md and
+hub-review.md for local fault-test evidence. All 64 acquisition cases pass,
+including 21 camera-group cases; full hub/Alpaca regression, strict all-target
+Clippy and Rust 1.89 checks also pass. No intermediate CI waiting gate.
+
+Previous increment: saved focuser groups, revision-owned host operations and native
 NINA orchestration are implemented locally. The shared schema/editor carries
 stable group IDs, labels, logical bounds, rational calibration, offsets, travel
 limits and timing. Validation resolves virtual aliases and rejects repeated
@@ -2169,6 +2186,12 @@ integrity tests cover the classes shipped, with limitations stated explicitly.
   start skew, partial failures, and explicit abort/continue policy.
 - [ ] Expose useful orchestration in native NINA without pretending one standard
   Camera interface can return several independent images.
+
+Camera progress: the explicit core reserves all members before a burst, retains
+separate images/results, measures host request skew and applies explicit
+failure/cancellation policies through the existing camera supervisor. Saved
+configuration, alias resolution, host-owned retained operations, IPC/image access,
+shared controls and native NINA remain required before closing these items.
 
 Focuser progress: the core, saved/generated configuration, physical alias
 resolution, host activity/revision, retained IPC reattachment/shutdown, shared

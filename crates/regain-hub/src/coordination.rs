@@ -14,7 +14,9 @@ use tokio::{
     time::{Instant, sleep, sleep_until},
 };
 use uuid::Uuid;
+mod camera;
 pub(crate) mod host;
+pub use camera::*;
 pub use host::{FocuserBinding, HostedFocuserPhase, HostedFocuserStatus};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
