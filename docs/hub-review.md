@@ -3,6 +3,68 @@
 This records local review and tests for the single hub PR. Passing a foundation
 test does not imply that a frontend, transport, or hardware gate has passed.
 
+## 2026-10-07: native NINA camera over Alpaca and registered COM
+
+Reviewed proxy camera timing, ownership, cancellation, exact frame identity,
+numeric conversion and failure handling using real production transport paths.
+These tests add acceptance evidence; no production code or deadline is changed.
+
+An actual Alpaca publisher attaches the explicitly simulated camera host with an
+empty local camera-profile list. A second actual host imports its camera through
+a loopback fault relay. Both NINA outputs share that imported source. The relay
+preserves real HTTP bodies and ImageBytes and has independent handler threads,
+a bounded queue, bounded requests/responses and cancellation-aware teardown.
+All child processes are explicitly started/owned by the fixture; attachment must
+return no newly started host. Cleanup kills only those private Process objects.
+
+Lost start acknowledgement retains an acquisition/owner and uncertainty; another
+start attempt cannot replay the exposure. Invalid duration/start-time values fail
+the host's metadata validation before requesting pixels. Geometry disagreement
+and a truncated image also retain uncertainty and publish no ready image. Traces
+require exactly one start, zero implicit Stop/Abort and the exact image-read count
+(zero for failed metadata/acknowledgement, one for the remaining cases). A separate
+case gates the actual image reply, cancels a pending NINA waiter, releases the
+reply and downloads the same accepted capture. Sibling connections and profile
+restoration remain intact. Negotiated proxy timing explicitly remains non-native.
+
+The COM script now optionally runs native NINA camera tests before releasing its
+private registration. The standard wrapper enables that option. Normal NINA runs
+explicitly skip the registered theory when its script-owned environment is absent;
+this prevents a skipped fixture from masquerading as actual COM validation.
+Registered tests check both worker architectures, source timing, lower-bound
+SAFEARRAY import, scalar row order/signs, retained pixels, source sharing, one
+exposure and no implicit controls. UInt16 values above Int16.MaxValue and negative
+Int32 values survive exactly; rank-three one-plane arrays adapt to scalar NINA.
+Fractional Single and RGB images fail explicitly instead of narrowing/dropping
+channels. Only the private fixture ProgID prefix is accepted by these tests.
+
+Validation:
+
+- Seven actual Alpaca proxy cases pass in
+  `artifacts/hub-camera-nina-alpaca-final.log`. Initial failed fixtures expected
+  metadata rejection at download, queried acquisition status without their own
+  connection lease, and expected pixels after invalid metadata. The final tests
+  assert the existing earlier uncertainty/no-image/no-download behavior and give
+  the diagnostic observer an independent lease. No production check was relaxed.
+- `scripts/test-hub-com.ps1` passes with warnings denied in
+  `artifacts/hub-camera-nina-com-registered-first.log`: 34 worker cases, 26 Rust
+  parent cases and all eight native NINA COM cases actually execute and pass.
+  A read-only check confirms the private CLSID is absent in both HKCU views after
+  completion. Script registration remains fail-if-present and finally-cleaned.
+- The initial COM test compile tripped xUnit2031; Assert.Single now uses its
+  predicate overload. `artifacts/hub-camera-nina-com-skip-first.log` records both
+  the compile diagnostic and explicit normal-run skip; neither is COM acceptance.
+- Python compilation and diff checks pass. Full ordinary NINA regression passes
+  315 cases with one explicit registered-fixture skip in
+  `artifacts/hub-camera-nina-proxies-full-first.log`. The separate registered run
+  executes and passes all eight COM camera cases.
+
+Only explicit simulation/private drivers were activated. Shared camera creation,
+schema/setup acceptance, conformance, interactive/physical acceptance and the
+original coordination, recovery, documentation and final merge gates remain open.
+Preceding c17808d PR/push CI 37629409093/37629398697 are terminal and successful.
+This local proxy acceptance increment still requires its own CI.
+
 ## 2026-10-07: native NINA camera provider
 
 Reviewed the native NINA camera frontend's connection, capture settings, timing,

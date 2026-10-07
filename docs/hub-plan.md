@@ -8,6 +8,27 @@ tagged or published. Changed cross-crate APIs require an unpublished version so
 Cargo package verification uses the new workspace packages.
 Last updated: 2026-10-07.
 
+Current increment: native NINA camera proxy acceptance now crosses actual Alpaca
+and registered x86/x64 COM inputs. A private loopback relay injects lost start
+acknowledgements, invalid exposure metadata, admitted geometry disagreement and
+truncated pixels. Failures retain uncertainty without replay or implicit Stop/
+Abort; invalid metadata fails before pixel transfer. Cancellation is tested while
+an image response is gated, then the same accepted capture completes after release.
+Proxy capture timing remains non-native. Eight real registered COM cases preserve
+UInt16/negative Int32 values, row order, one-plane arrays and retained images;
+fractional/RGB frames fail explicitly. The script runs those NINA cases while its
+private fixture is registered. Ordinary NINA runs explicitly skip this fixture;
+the registered run, not the skip, proves execution. All 34 COM worker and 26 parent
+tests pass, and both private HKCU registry views are verified removed. Seven
+focused Alpaca cases pass; the full NINA regression passes 315 cases with one
+explicit registered-fixture skip. The separate registered run executes all eight
+COM cases successfully. No production code
+or transport deadline changed in this increment. Shared camera creation and its
+schema/WPF/browser/ASCOM acceptance remain next, followed by every original
+coordination, recovery, acceptance, documentation and final merge gate. Preceding
+c17808d PR/push CI 37629409093/37629398697 are now terminal and successful; this
+local increment still needs its own CI.
+
 Current increment: native NINA camera provider uses the shared native session,
 camera timing and exact-acquisition image adapter. Provider enumeration reads
 saved selections only. Capture settings use controlled, revision-bound commands;

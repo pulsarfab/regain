@@ -895,6 +895,8 @@ if __name__ == "__main__":
     parser.add_argument("--workers", type=Path, default=WORKERS)
     parser.add_argument("--fixture", type=Path, default=FIXTURE)
     parser.add_argument("--rust-tests", action="store_true")
+    parser.add_argument("--nina-tests", action="store_true",
+        help="Run native NINA camera import cases while the private COM fixture is registered")
     parser.add_argument("--machine-fixture", action="store_true",
         help="Private machine registration on elevated disposable GitHub Windows runners only")
     arguments = parser.parse_args()
@@ -911,15 +913,21 @@ if __name__ == "__main__":
         result = unittest.TextTestRunner(verbosity=2).run(suite)
         if not result.wasSuccessful():
             diagnose_fixture_activation()
-        if result.wasSuccessful() and arguments.rust_tests:
+        if result.wasSuccessful() and (arguments.rust_tests or arguments.nina_tests):
             with tempfile.TemporaryDirectory(prefix="hub-com-rust-", dir=ROOT / "artifacts") as fixture_directory:
                 environment = {**os.environ, "REGAIN_TEST_WORKERS": str(WORKERS),
                     "REGAIN_HUB_COM_SELF_INSTANCE": str(SELF_INSTANCE), "REGAIN_HUB_COM_SELF_OUTPUT": str(SELF_OUTPUT),
                     "REGAIN_HUB_COM_FIXTURE_DIRECTORY": fixture_directory, "REGAIN_HUB_COM_FIXTURE_PROGID": PROGID,
                     "REGAIN_HUB_COM_FIXTURE_HELPER": str(ROOT / "artifacts/hub-com-helper/Regain.Hub.Shared.Helper.Fixture.exe")}
                 environment.pop("REGAIN_HUB_COM_FIXTURE_STATE", None)
-                tests = subprocess.run(["cargo", "test", "-j2", "-p", "regain-hub", "--test", "com", "--locked", "--", "--test-threads=1"],
-                    cwd=ROOT, env=environment)
-                if tests.returncode:
-                    raise SystemExit(tests.returncode)
+                if arguments.rust_tests:
+                    tests = subprocess.run(["cargo", "test", "-j2", "-p", "regain-hub", "--test", "com", "--locked", "--", "--test-threads=1"],
+                        cwd=ROOT, env=environment)
+                    if tests.returncode:
+                        raise SystemExit(tests.returncode)
+                if arguments.nina_tests:
+                    tests = subprocess.run(["dotnet", "test", "tests/Regain.NINA.Tests", "-c", "Release", "-warnaserror",
+                        "--filter", "FullyQualifiedName~HubCameraComTests"], cwd=ROOT, env=environment)
+                    if tests.returncode:
+                        raise SystemExit(tests.returncode)
     raise SystemExit(0 if result.wasSuccessful() else 1)
