@@ -115,12 +115,87 @@ impl Session {
         if !mailbox.dispatch(&request) {
             return Ok(());
         }
+        let result = self
+            .write_control(kind, value, deadline, token, false)
+            .await;
+        let result = mailbox.finish(&request, result, || {
+            self.applied.insert(kind, value);
+            settings.insert(kind, value);
+            self.status.lock().unwrap().values.insert(kind, value);
+        });
+        match result {
+            Err(error @ cooling::CoolingError::Uncertain { .. }) => {
+                self.control_result(Err(error)).await.map(|_| ())
+            }
+            Err(cooling::CoolingError::Cancelled) => Err(Failure::Cancelled.into()),
+            _ => Ok(()), // Unsent expiry/failure belongs to the command receipt.
+        }
+    }
+    /// Acknowledge gain/offset while idle, using the same serialized worker as
+    /// capture. The caller must retain this future through dispatch/cleanup.
+    /// Unlike queue_control, success means write plus readback, not desired intent.
+    /// The absolute deadline includes time spent waiting for owner admission.
+    pub async fn set_imaging_control(
+        &mut self,
+        kind: i32,
+        value: i64,
+        deadline: Instant,
+        token: &CancellationToken,
+    ) -> Result<i64> {
+        ensure!(
+            matches!(kind, 0 | 5),
+            invalid("Only gain and offset are supported")
+        );
+        let state = self.snapshot();
+        ensure!(
+            state.connected && state.control_connection_available && self.worker.is_some(),
+            invalid("Camera controls are unavailable")
+        );
+        ensure!(
+            !self.cooling().pending(),
+            invalid("A cooler command is pending")
+        );
+        let cap = state
+            .controls
+            .get(&kind)
+            .ok_or_else(|| invalid("Control is unavailable"))?;
+        ensure!(
+            cap.kind == kind
+                && cap.writable
+                && cap.min <= cap.max
+                && (cap.min..=cap.max).contains(&value),
+            invalid("Control value is outside writable capabilities")
+        );
+        if token.is_cancelled() {
+            return Err(Failure::Cancelled.into());
+        }
+        if Instant::now() >= deadline {
+            return Err(cooling::CoolingError::Expired.into());
+        }
+        let deadline = deadline.min(
+            Instant::now()
+                + Duration::from_secs_f64(self.selection.recovery.command_timeout_seconds),
+        );
+        let result = self.write_control(kind, value, deadline, token, true).await;
+        let actual = self.control_result(result).await?;
+        self.applied.insert(kind, actual);
+        self.status.lock().unwrap().values.insert(kind, actual);
+        Ok(actual)
+    }
+    async fn write_control(
+        &mut self,
+        kind: i32,
+        value: i64,
+        deadline: Instant,
+        token: &CancellationToken,
+        allow_sdk_offset_clamp: bool,
+    ) -> std::result::Result<i64, cooling::CoolingError> {
         let mut set_acknowledged = false;
         let result = async {
             self.worker
                 .as_mut()
                 .context("Camera worker is disconnected")?
-                .cooling_call(
+                .control_call(
                     "set",
                     json!({"control":kind,"value":value}),
                     deadline,
@@ -128,24 +203,47 @@ impl Session {
                 )
                 .await?;
             set_acknowledged = true;
+            self.emit(
+                "debug",
+                "control.write_acknowledged",
+                format!("Control {kind}; readback pending"),
+            );
             let remaining = deadline
                 .saturating_duration_since(Instant::now())
                 .as_secs_f64();
-            ensure!(remaining > 0., "Cooler deadline expired before readback");
+            ensure!(remaining > 0., "Control deadline expired before readback");
             let actual = self
                 .worker
                 .as_mut()
                 .context("Camera worker is disconnected")?
-                .cooling_call("get", json!({"control":kind}), deadline, token)
+                .control_call("get", json!({"control":kind}), deadline, token)
                 .await?
                 .0
                 .as_i64()
-                .ok_or_else(|| invalid("Invalid cooler readback"))?;
-            ensure!(actual == value, "Cooler readback differs from request");
+                .ok_or_else(|| invalid("Invalid control readback"))?;
+            if actual != value {
+                let cap = self.snapshot().controls.get(&kind).cloned();
+                ensure!(
+                    allow_sdk_offset_clamp
+                        && !self.direct
+                        && kind == 5
+                        && cap.is_some_and(|cap| (cap.min..=cap.max).contains(&actual)),
+                    "Control readback differs from request"
+                );
+                self.emit(
+                    "info",
+                    "control.clamped",
+                    format!("SDK applied offset {actual} instead of {value}"),
+                );
+            }
+            ensure!(
+                Instant::now() < deadline,
+                "Control readback exceeded its deadline"
+            );
             Ok::<_, anyhow::Error>(actual)
         }
         .await;
-        let result = result.map_err(|error| {
+        result.map_err(|error| {
             if !set_acknowledged
                 && matches!(
                     error.downcast_ref::<cooling::CoolingError>(),
@@ -169,19 +267,25 @@ impl Session {
                     code,
                 }
             }
-        });
-        let result = mailbox.finish(&request, result, || {
-            self.applied.insert(kind, value);
-            settings.insert(kind, value);
-            self.status.lock().unwrap().values.insert(kind, value);
-        });
+        })
+    }
+    async fn control_result(
+        &mut self,
+        result: std::result::Result<i64, cooling::CoolingError>,
+    ) -> Result<i64> {
         match result {
             Err(cooling::CoolingError::Uncertain { message, code }) => {
                 self.invalidate().await;
                 Err(Failure::UncertainControl { message, code }.into())
             }
-            Err(cooling::CoolingError::Cancelled) => Err(Failure::Cancelled.into()),
-            _ => Ok(()),
+            Err(cooling::CoolingError::Cancelled) => {
+                // Worker cancellation can retire an otherwise untouched process.
+                // Withdraw its core availability before another owner operation.
+                self.invalidate().await;
+                Err(Failure::Cancelled.into())
+            }
+            Err(error) => Err(error.into()),
+            Ok(actual) => Ok(actual),
         }
     }
     /// Opt into Regain-owned WB. The caller serializes this with capture, like
@@ -1187,6 +1291,205 @@ mod tests {
             assert!(Instant::now() < deadline, "Capture never reached Exposing");
             tokio::time::sleep(Duration::from_millis(1)).await;
         }
+    }
+    #[tokio::test]
+    async fn acknowledged_imaging_controls_apply_before_success_and_survive_worker_recovery() {
+        for direct in [false, true] {
+            let token = CancellationToken::new();
+            let mut session = Session::new(selection(direct), runtime(), log()).unwrap();
+            session.connect(&token).await.unwrap();
+            session.refresh(&token).await.unwrap();
+            for (kind, value) in [(0, 123), (5, 20)] {
+                assert_eq!(
+                    session
+                        .set_imaging_control(
+                            kind,
+                            value,
+                            Instant::now() + Duration::from_secs(5),
+                            &token
+                        )
+                        .await
+                        .unwrap(),
+                    value
+                );
+                assert_eq!(session.snapshot().values[&kind], value);
+                assert_eq!(session.applied[&kind], value);
+                assert_eq!(
+                    session
+                        .call("get", json!({"control":kind}), None, &token)
+                        .await
+                        .unwrap()
+                        .0,
+                    value
+                );
+            }
+            session.invalidate().await;
+            let frame = session.capture(exposure(), &token).await.unwrap();
+            assert_eq!(frame.metadata["controls"]["0"], 123);
+            assert_eq!(frame.metadata["controls"]["5"], 20);
+            for (kind, value) in [(0, 123), (5, 20)] {
+                assert_eq!(
+                    session
+                        .call("get", json!({"control":kind}), None, &token)
+                        .await
+                        .unwrap()
+                        .0,
+                    value
+                );
+            }
+            session.close().await;
+        }
+    }
+    #[tokio::test]
+    async fn imaging_control_mismatch_retires_worker_without_publishing_or_retrying() {
+        let token = CancellationToken::new();
+        let mut rt = runtime();
+        rt.sdk_simulation = Some(json!({"instant":true,"clampControl":0,"clampMinimum":200}));
+        let mut session = Session::new(selection(false), rt, log()).unwrap();
+        session.connect(&token).await.unwrap();
+        let before = session.snapshot().values[&0];
+        let error = session
+            .set_imaging_control(0, 100, Instant::now() + Duration::from_secs(5), &token)
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            error.downcast_ref::<Failure>(),
+            Some(Failure::UncertainControl { .. })
+        ));
+        assert!(!retryable(&error));
+        assert_eq!(session.snapshot().values[&0], before);
+        assert!(!session.snapshot().control_connection_available);
+        assert!(session.worker.is_none());
+        assert!(session.applied.is_empty());
+        session.close().await;
+    }
+    #[tokio::test]
+    async fn acknowledged_sdk_offset_preserves_existing_bounded_clamp_policy() {
+        let token = CancellationToken::new();
+        let mut rt = runtime();
+        rt.sdk_simulation = Some(json!({"instant":true,"clampControl":5,"clampMinimum":20}));
+        let mut session = Session::new(selection(false), rt, log()).unwrap();
+        session.connect(&token).await.unwrap();
+        assert_eq!(
+            session
+                .set_imaging_control(5, 0, Instant::now() + Duration::from_secs(5), &token)
+                .await
+                .unwrap(),
+            20
+        );
+        assert_eq!(session.snapshot().values[&5], 20);
+        assert_eq!(session.applied[&5], 20);
+        let frame = session.capture(exposure(), &token).await.unwrap();
+        assert_eq!(frame.metadata["controls"]["5"], 20);
+        let maximum = session.snapshot().controls[&5].max;
+        session
+            .call(
+                "simulation",
+                json!({"clampControl":5,"clampMinimum":maximum+1}),
+                None,
+                &token,
+            )
+            .await
+            .unwrap();
+        let error = session
+            .set_imaging_control(5, 0, Instant::now() + Duration::from_secs(5), &token)
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            error.downcast_ref::<Failure>(),
+            Some(Failure::UncertainControl { .. })
+        ));
+        assert_eq!(session.snapshot().values[&5], 20);
+        assert!(session.worker.is_none());
+        session.close().await;
+    }
+    #[tokio::test]
+    async fn imaging_control_preflight_rejects_without_io_or_desired_state_changes() {
+        let token = CancellationToken::new();
+        let mut session = Session::new(selection(false), runtime(), log()).unwrap();
+        session.connect(&token).await.unwrap();
+        session.refresh(&token).await.unwrap();
+        let before = session.snapshot();
+        let applied = session.applied.clone();
+        for (kind, value) in [(1, 1000), (16, -10), (0, before.controls[&0].max + 1)] {
+            let error = session
+                .set_imaging_control(kind, value, Instant::now() + Duration::from_secs(5), &token)
+                .await
+                .unwrap_err();
+            assert!(matches!(
+                error.downcast_ref::<Failure>(),
+                Some(Failure::Invalid(_))
+            ));
+        }
+        for malformed in 0..4 {
+            {
+                let mut state = session.status.lock().unwrap();
+                let cap = state.controls.get_mut(&0).unwrap();
+                match malformed {
+                    0 => cap.kind = 5,
+                    1 => cap.min = cap.max + 1,
+                    2 => cap.writable = false,
+                    _ => {
+                        state.controls.remove(&0);
+                    }
+                }
+            }
+            assert!(
+                session
+                    .set_imaging_control(0, 123, Instant::now() + Duration::from_secs(5), &token)
+                    .await
+                    .is_err()
+            );
+            session
+                .status
+                .lock()
+                .unwrap()
+                .controls
+                .insert(0, before.controls[&0].clone());
+        }
+        let cancelled = CancellationToken::new();
+        cancelled.cancel();
+        let error = session
+            .set_imaging_control(0, 123, Instant::now() + Duration::from_secs(5), &cancelled)
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            error.downcast_ref::<Failure>(),
+            Some(Failure::Cancelled)
+        ));
+        let error = session
+            .set_imaging_control(0, 123, Instant::now(), &token)
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            error.downcast_ref::<cooling::CoolingError>(),
+            Some(cooling::CoolingError::Expired)
+        ));
+        let cooler = session
+            .cooling()
+            .submit(16, -15, Duration::from_secs(5))
+            .unwrap();
+        assert!(
+            session
+                .set_imaging_control(0, 123, Instant::now() + Duration::from_secs(5), &token)
+                .await
+                .is_err()
+        );
+        drop(cooler);
+        assert_eq!(session.snapshot().values, before.values);
+        assert_eq!(session.applied, applied);
+        assert_eq!(session.snapshot().process_id, before.process_id);
+        for kind in [0, 5] {
+            assert_eq!(
+                session
+                    .call("get", json!({"control":kind}), None, &token)
+                    .await
+                    .unwrap()
+                    .0,
+                before.values[&kind]
+            );
+        }
+        session.close().await;
     }
     async fn acknowledged_cooling(direct: bool) {
         let token = CancellationToken::new();

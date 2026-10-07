@@ -239,6 +239,164 @@ async fn uncooled_camera_reports_missing_cooling_without_fabricated_values() {
 }
 
 #[tokio::test]
+async fn imaging_settings_acknowledge_on_one_owner_and_preserve_previous_frame() {
+    for direct in [false, true] {
+        let (owner, budget, activity, _) = camera(direct, json!({"instant":true}), admission() * 3);
+        owner.connect().await.unwrap();
+        let id = owner.start(exposure(10_000)).unwrap();
+        let reader = owner.wait(id).await.unwrap();
+        settled(&owner, &activity).await;
+        let metadata = reader.native().unwrap().metadata_json().to_vec();
+        let timing = owner.read_property(P::LastExposureStartTime).unwrap();
+        let mut setter = Box::pin(owner.set_imaging_control(0, 123));
+        assert!(futures_util::poll!(setter.as_mut()).is_pending());
+        assert_eq!(
+            owner.snapshot().operation.unwrap().kind,
+            NativeOperationKind::Configuring
+        );
+        assert_eq!(activity.active(), 1);
+        assert_eq!(
+            owner.start(exposure(10_000)).unwrap_err().kind,
+            ErrorKind::Busy
+        );
+        assert_eq!(
+            owner.configure_geometry(S::NumX(72)).unwrap_err().kind,
+            ErrorKind::Busy
+        );
+        assert_eq!(
+            owner.set_imaging_control(5, 20).await.unwrap_err().kind,
+            ErrorKind::Busy
+        );
+        assert_eq!(
+            owner.set_cooling(16, -15).await.unwrap_err().kind,
+            ErrorKind::Busy
+        );
+        assert_eq!(owner.abort().await.unwrap_err().kind, ErrorKind::Busy);
+        assert_eq!(
+            owner.read_property(P::ImageReady).unwrap(),
+            V::Boolean { value: false }
+        );
+        let mut old_waiter = Box::pin(owner.wait(id));
+        assert!(futures_util::poll!(old_waiter.as_mut()).is_pending());
+        assert_eq!(setter.await.unwrap(), 123);
+        let old_image = old_waiter.await.unwrap();
+        settled(&owner, &activity).await;
+        assert_eq!(old_image.bytes().as_ptr(), reader.bytes().as_ptr());
+        assert_eq!(reader.native().unwrap().metadata_json(), metadata);
+        assert_eq!(
+            owner.read_property(P::LastExposureStartTime).unwrap(),
+            timing
+        );
+        assert_eq!(
+            owner.read_property(P::Gain).unwrap(),
+            V::Integer { value: 123 }
+        );
+        assert_eq!(owner.set_imaging_control(5, 20).await.unwrap(), 20);
+        assert_eq!(
+            owner.read_property(P::Offset).unwrap(),
+            V::Integer { value: 20 }
+        );
+        assert_eq!(
+            owner.set_imaging_control(0, 601).await.unwrap_err().kind,
+            ErrorKind::InvalidValue
+        );
+        assert_eq!(
+            owner.set_imaging_control(16, -15).await.unwrap_err().kind,
+            ErrorKind::Unsupported
+        );
+        assert_eq!(activity.active(), 0);
+        let next = owner.start(exposure(10_000)).unwrap();
+        let frame = owner.wait(next).await.unwrap();
+        let latest: Value =
+            serde_json::from_slice(frame.native().unwrap().metadata_json()).unwrap();
+        assert_eq!(latest["controls"]["0"], 123);
+        assert_eq!(latest["controls"]["5"], 20);
+        owner.close().await.unwrap();
+        settled(&owner, &activity).await;
+        drop(frame);
+        drop(old_image);
+        drop(reader);
+        assert_eq!(budget.used_bytes(), 0);
+    }
+}
+
+#[tokio::test]
+async fn unknown_imaging_setting_fences_all_work_until_explicit_reset() {
+    let (owner, budget, activity, _) = camera(
+        false,
+        json!({"instant":true,"clampControl":0,"clampMinimum":100}),
+        admission() * 2,
+    );
+    owner.connect().await.unwrap();
+    let id = owner.start(exposure(10_000)).unwrap();
+    let reader = owner.wait(id).await.unwrap();
+    settled(&owner, &activity).await;
+    assert_eq!(
+        owner.set_imaging_control(0, 50).await.unwrap_err().kind,
+        ErrorKind::Uncertain
+    );
+    settled(&owner, &activity).await;
+    assert_eq!(
+        owner.read_property(P::Gain).unwrap(),
+        V::Integer { value: 100 }
+    );
+    assert_eq!(owner.image().err().unwrap().kind, ErrorKind::Uncertain);
+    assert_eq!(
+        owner.start(exposure(10_000)).unwrap_err().kind,
+        ErrorKind::Uncertain
+    );
+    assert_eq!(
+        owner.set_imaging_control(0, 150).await.unwrap_err().kind,
+        ErrorKind::Uncertain
+    );
+    assert_eq!(
+        owner.set_cooling(16, -15).await.unwrap_err().kind,
+        ErrorKind::Uncertain
+    );
+    assert_eq!(
+        owner.connect().await.unwrap_err().kind,
+        ErrorKind::Uncertain
+    );
+    assert_eq!(reader.bytes().len(), 8192);
+    owner.reset();
+    settled(&owner, &activity).await;
+    owner.connect().await.unwrap();
+    assert_eq!(owner.set_imaging_control(0, 150).await.unwrap(), 150);
+    owner.close().await.unwrap();
+    settled(&owner, &activity).await;
+    drop(reader);
+    assert_eq!(budget.used_bytes(), 0);
+}
+
+#[tokio::test]
+async fn buffered_setting_ack_cannot_cross_reset_and_capture_rejects_imaging_writes() {
+    let (owner, _, activity, _) = camera(false, json!({"instant":false}), admission() * 2);
+    owner.connect().await.unwrap();
+    let mut setter = Box::pin(owner.set_imaging_control(0, 123));
+    assert!(futures_util::poll!(setter.as_mut()).is_pending());
+    until(|| owner.snapshot().operation.is_none() && activity.active() == 0).await;
+    assert_eq!(
+        owner.read_property(P::Gain).unwrap(),
+        V::Integer { value: 123 }
+    );
+    owner.reset();
+    assert_eq!(setter.await.unwrap_err().kind, ErrorKind::Disconnected);
+    settled(&owner, &activity).await;
+    owner.connect().await.unwrap();
+    let id = owner.start(exposure(2_000_000)).unwrap();
+    until(|| owner.snapshot().core.phase == "Exposing").await;
+    assert_eq!(
+        owner.set_imaging_control(0, 150).await.unwrap_err().kind,
+        ErrorKind::Busy
+    );
+    owner.abort().await.unwrap();
+    settled(&owner, &activity).await;
+    assert!(owner.wait(id).await.is_err());
+    owner.close().await.unwrap();
+    settled(&owner, &activity).await;
+}
+
+#[tokio::test]
 async fn symmetric_native_geometry_freezes_at_admission_and_rejects_invalid_capture_without_losing_image()
  {
     let (owner, _, activity, _) = camera(false, json!({"instant":false}), admission() * 2);

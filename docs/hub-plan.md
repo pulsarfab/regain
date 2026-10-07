@@ -17,19 +17,24 @@ Eighteen owner integration and four property unit cases pass with full Rust
 core/hub/Alpaca regressions, strict Rust 1.99 Clippy and Rust 1.89 all-target checks.
 Generated contracts, Node/seven schema checks, rebuilt-host NINA 228/228 and
 actual net48 x86/x64 fixtures also pass. Review is recorded in hub-review.md;
-this increment is local while preceding CI remains live.
-Native acknowledged gain/offset writes, adapters/config/runtime, recovery/budget
-wiring, all camera outputs, coordination and every original final gate remain.
+property checkpoint fa04eb4 is committed locally and requires new CI.
+Native acknowledged gain/offset writes now pass full local validation and review:
+42 core tests, 21 native owner integration cases, five owner unit cases, full
+Rust regressions, strict Clippy/MSRV/contracts, Node/seven schema checks, fresh-host
+NINA 228/228 and real net48 x86/x64 fixtures. Adapters/config/runtime,
+recovery/budget wiring, all camera outputs, coordination and every original final
+gate remain.
 Camera setup choices stay disabled.
 
 Retained cooler checkpoint a92b8bd CI: push 37571649524 finishes with seven
 successes and a Windows initial focuser connection-reply failure. PR 37571654100
-has a macOS native-wheel lease-count failure; Windows remains live at this check.
+finishes with seven successes and a macOS native-wheel lease-count failure.
 The wheel fixture now waits for bounded asynchronous lease cleanup rather than
 asserting immediate scheduler ordering. The Windows cause is unproved; shared
 failure tracing adds elapsed time without changing deadlines, retries or success
 criteria. The focused wheel case, NINA 228/228 and net48 x86/x64 pass locally;
-both corrections require new CI evidence. Windows is at installer validation.
+both corrections require new CI evidence. Windows installer/release validation
+passes in the terminal PR run; that pass does not explain the separate push failure.
 
 Native wheel metadata checkpoint 630b302 passes all eight jobs in both PR/push CI
 37536023962/37536015902, including Windows registered imports, packaging and
@@ -274,8 +279,9 @@ Acquisition supervision and shared properties/settings now pass thirty focused
 tests; binary/JSON Alpaca image inputs are implemented. The retained native owner
 and acknowledged SDK/direct cooler mailbox now pass local validation, preserving
 live targets across recovery and fencing publication after uncertain commands.
-Native RAW16 property mapping and desired bin/ROI selection also pass local
-regressions. Acknowledged native gain/offset commands are still required.
+Native RAW16 property mapping, desired bin/ROI selection and acknowledged native
+gain/offset commands pass full local regressions and review; their CI remains
+required.
 Runtime integration,
 capability/recovery propagation, remaining camera adapters and
 frontend image transport remain unimplemented. Their contracts are recorded in
@@ -1416,6 +1422,25 @@ Publishing installers, plugin feeds, and releases follows the existing
 Keep existing device profiles and registrations compatible throughout migration.
 
 ## Progress log
+
+Imaging-control checkpoint (2026-10-06; reviewed locally, new CI required): gain and
+offset share core's cooler write/readback helper, absolute deadline and persistent
+framed-write uncertainty tracking. Only acknowledged values are published or
+restored. Native owner tasks retain activity/readback/retirement after dispatch,
+skip queued abandoned/expired work, block conflicting operations/publication and
+reject old-generation buffered ACKs. The previous immutable image remains valid.
+Four new core cases and twenty-one owner integration cases pass; nine native
+unit cases include dropping the actual caller after write ACK before readback.
+Full Rust regressions, strict Rust 1.99 Clippy, Rust 1.89 all-target checks,
+contracts/Node/seven schema cases, rebuilt-host NINA 228/228 and real net48
+x86/x64 clients pass. Review records the late-readback deadline correction and
+the test-only MutexGuard lint failure/fix, with all five owner unit cases passing
+again. Next: native adapter/config/factory/runtime with host-wide memory/activity,
+recovery allowances and truthful cached observation ages, then remaining camera
+inputs, all outputs, coordination and every original remaining gate.
+Preceding a92b8bd PR CI is terminal: seven successes, one macOS lease-cleanup
+assertion failure; push has seven successes and the retained Windows initial
+connection failure. All original remaining gates are still required.
 
 Latest property checkpoint (2026-10-06): native RAW16 properties use acknowledged
 core state and immutable frame timing. Desired symmetric bin/ROI settings preserve

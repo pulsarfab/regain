@@ -213,7 +213,8 @@ impl Worker {
         )
         .await
     }
-    pub(crate) async fn cooling_call(
+    /// Persistent camera controls share absolute-deadline/framed-write tracking.
+    pub(crate) async fn control_call(
         &mut self,
         method: &str,
         params: Value,
@@ -230,18 +231,19 @@ impl Worker {
         token: &CancellationToken,
         maximum_bytes: usize,
     ) -> Result<(Value, Vec<u8>)> {
-        let cooling = method == "set" && matches!(params["control"].as_i64(), Some(16 | 17));
+        let control =
+            method == "set" && matches!(params["control"].as_i64(), Some(0 | 5 | 16 | 17));
         let mut dispatched = false;
         let result = tokio::select! {
             biased;
             _=token.cancelled()=>Err(Failure::Cancelled.into()),
             result=tokio::time::timeout_at(deadline,self.exchange(method,params,maximum_bytes,&mut dispatched,deadline))=>result.unwrap_or_else(|_|{
-                if cooling && !dispatched {Err(crate::cooling::CoolingError::Expired.into())}
+                if control && !dispatched {Err(crate::cooling::CoolingError::Expired.into())}
                 else {Err(anyhow::anyhow!("Worker {method} acknowledgement timed out"))}
             }),
         };
         let result = result.map_err(|error| {
-            if cooling
+            if control
                 && dispatched
                 && !matches!(
                     error.downcast_ref::<Failure>(),
@@ -404,55 +406,57 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn cooling_transport_loss_retires_simulated_worker_without_retry() {
+    async fn persistent_control_transport_loss_retires_simulated_worker_without_retry() {
         let runtime = simulated_runtime(json!({"instant":true,"fault":"hang"}));
-        for cancel_after_dispatch in [false, true] {
-            let token = CancellationToken::new();
-            let mut worker = runtime
-                .spawn(false, std::sync::Arc::new(|_, _, _| {}))
-                .await
+        for control in [0, 5, 16, 17] {
+            for cancel_after_dispatch in [false, true] {
+                let token = CancellationToken::new();
+                let mut worker = runtime
+                    .spawn(false, std::sync::Arc::new(|_, _, _| {}))
+                    .await
+                    .unwrap();
+                worker
+                    .call("open", json!({"name":"ZWO Simulated"}), 15., &token)
+                    .await
+                    .unwrap();
+                worker.call("start",json!({"width":64,"height":64,"bin":1,"x":0,"y":0,"microseconds":1000,"dark":false}),15.,&token).await.unwrap();
+                // Deliberately park the simulated owner in download. Its serial
+                // command queue then cannot acknowledge the following control write.
+                worker.id += 1;
+                let header = serde_json::to_vec(
+                    &json!({"version":1,"id":worker.id,"method":"download","params":null}),
+                )
                 .unwrap();
-            worker
-                .call("open", json!({"name":"ZWO Simulated"}), 15., &token)
-                .await
-                .unwrap();
-            worker.call("start",json!({"width":64,"height":64,"bin":1,"x":0,"y":0,"microseconds":1000,"dark":false}),15.,&token).await.unwrap();
-            // Deliberately park the simulated owner in download. Its serial
-            // command queue then cannot acknowledge the following cooler write.
-            worker.id += 1;
-            let header = serde_json::to_vec(
-                &json!({"version":1,"id":worker.id,"method":"download","params":null}),
-            )
-            .unwrap();
-            worker
-                .input
-                .write_u32_le(header.len() as u32)
-                .await
-                .unwrap();
-            worker.input.write_all(&header).await.unwrap();
-            worker.input.flush().await.unwrap();
-            let mut call =
-                Box::pin(worker.call("set", json!({"control":16,"value":-10}), 1., &token));
-            if cancel_after_dispatch {
-                // Poll through write admission before cancellation, rather than
-                // using a scheduling-sensitive sleep to guess dispatch timing.
-                std::future::poll_fn(|cx| {
-                    assert!(std::future::Future::poll(call.as_mut(), cx).is_pending());
-                    std::task::Poll::Ready(())
-                })
-                .await;
-                token.cancel();
+                worker
+                    .input
+                    .write_u32_le(header.len() as u32)
+                    .await
+                    .unwrap();
+                worker.input.write_all(&header).await.unwrap();
+                worker.input.flush().await.unwrap();
+                let mut call =
+                    Box::pin(worker.call("set", json!({"control":control,"value":0}), 1., &token));
+                if cancel_after_dispatch {
+                    // Poll through write admission before cancellation, rather than
+                    // using a scheduling-sensitive sleep to guess dispatch timing.
+                    std::future::poll_fn(|cx| {
+                        assert!(std::future::Future::poll(call.as_mut(), cx).is_pending());
+                        std::task::Poll::Ready(())
+                    })
+                    .await;
+                    token.cancel();
+                }
+                let error = call.await.unwrap_err();
+                assert!(
+                    matches!(
+                        error.downcast_ref::<Failure>(),
+                        Some(Failure::UncertainControl { .. })
+                    ),
+                    "{error:#}"
+                );
+                assert!(!crate::retryable(&error));
+                assert!(worker.child.try_wait().unwrap().is_some());
             }
-            let error = call.await.unwrap_err();
-            assert!(
-                matches!(
-                    error.downcast_ref::<Failure>(),
-                    Some(Failure::UncertainControl { .. })
-                ),
-                "{error:#}"
-            );
-            assert!(!crate::retryable(&error));
-            assert!(worker.child.try_wait().unwrap().is_some());
         }
         // Before-dispatch cancellation is still distinguishable from a write
         // whose acknowledgement was lost. No command ID is consumed.
@@ -476,28 +480,30 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn expired_cooler_write_preserves_worker_and_framing_without_dispatch() {
+    async fn expired_control_write_preserves_worker_and_framing_without_dispatch() {
         let mut worker = simulated_runtime(json!({"instant":true}))
             .spawn(false, std::sync::Arc::new(|_, _, _| {}))
             .await
             .unwrap();
         let token = CancellationToken::new();
         let id = worker.id;
-        let error = worker
-            .cooling_call(
-                "set",
-                json!({"control":16,"value":-10}),
-                tokio::time::Instant::now(),
-                &token,
-            )
-            .await
-            .unwrap_err();
-        assert!(matches!(
-            error.downcast_ref::<crate::cooling::CoolingError>(),
-            Some(crate::cooling::CoolingError::Expired)
-        ));
-        assert_eq!(worker.id, id);
-        assert!(worker.child.try_wait().unwrap().is_none());
+        for control in [0, 5, 16, 17] {
+            let error = worker
+                .control_call(
+                    "set",
+                    json!({"control":control,"value":0}),
+                    tokio::time::Instant::now(),
+                    &token,
+                )
+                .await
+                .unwrap_err();
+            assert!(matches!(
+                error.downcast_ref::<crate::cooling::CoolingError>(),
+                Some(crate::cooling::CoolingError::Expired)
+            ));
+            assert_eq!(worker.id, id);
+            assert!(worker.child.try_wait().unwrap().is_none());
+        }
         worker
             .call("open", json!({"name":"ZWO Simulated"}), 15., &token)
             .await

@@ -4603,3 +4603,67 @@ Native acknowledged gain/offset commands, remaining adapters/config/runtime,
 host-wide recovery/budget wiring, binary frontend IPC, all camera outputs,
 coordination, documentation and every original acceptance/final gate remain open.
 Camera creation stays disabled and PR #21 stays draft.
+
+## 2026-10-06: acknowledged native gain/offset commands
+
+Reviewed idle imaging settings against the existing core persistent controls,
+SDK offset clamp policy, cooler mailbox, capture recovery and native task/generation
+ownership. Core gain/offset and cooler commands now share one write/readback
+helper and absolute deadline. Gain, offset, cooler target and cooler enable use
+the same framed-write tracking. A lost/malformed/timed-out/cancelled dispatched
+write is uncertain and non-retryable; unsent expiry remains distinct. Only
+write-plus-readback success updates applied/shared values. Recovery restores those
+actual values. SDK offset may retain the existing bounded clamp policy and returns
+the actual applied value; other mismatches/out-of-range readbacks retire the worker.
+Review added a final deadline check so an immediately ready late reply cannot
+become success. The original cooler receipt/expiry semantics remain unchanged.
+
+NativeCamera admits one Configuring operation and activity before dispatch. A
+queued caller loss/expiry skips engine I/O and preserves previous image/state.
+Once admitted to the engine, write, readback and retirement are owned independently
+of the frontend future. Pending settings block captures, other settings, Abort
+and image publication. Review found that waits on an older acquisition also need
+to check this pending marker; they now wait for the known setting outcome just
+like new image reads. Unknown outcomes preserve a redacted source fence/code
+until explicit reset/close; unexpected configuring-task loss is also uncertain.
+Reset rejects late completions and already-buffered acknowledgements. Known
+settings preserve the preceding immutable image and its capture metadata/timing.
+The outer supervisor still authorizes source/control leases.
+
+Four new core cases pass: SDK/direct readback and worker recovery; gain mismatch
+without publication/retry; bounded SDK offset clamp versus out-of-range readback;
+and no-I/O capability/cancellation/expiry/cooler-conflict preflight. Existing
+worker fault cases now cover all four persistent controls for dispatched deadline
+and cancellation, plus unsent expiry with unchanged process/framing/command ID.
+Three new native owner integration cases cover conflicting admission, old-reader
+publication/timing, reset/uncertainty reconciliation, buffered ACK fencing and
+capture-time imaging-write rejection. Two new owner unit cases verify queued
+caller loss/expiry and dropping the actual frontend future synchronously after
+the write ACK but before readback, including loss of all external owner references.
+That deterministic hook uses a useful core diagnostic distinguishing write ACK
+from pending readback; it introduces no timing sleeps or physical equipment.
+
+Full core/hub/Alpaca Rust regressions pass, including 42 core tests, 48 hub unit
+tests, 21 native owner integration cases and all existing camera/accessory/runtime
+suites. Strict Rust 1.99 Clippy, Rust 1.89 all-target compatibility, generated
+contracts, formatting, Node/seven independent schema checks and rebuilt-host
+NINA 228/228 pass. The first strict Clippy run identifies a test MutexGuard inside
+a polling macro; the corrected explicit poll closure releases it before returning
+and all five native owner unit cases pass again. Real net48 x86/x64 production-host
+fixtures pass with no build warnings. Logs: artifacts/hub-camera-imaging-control-*.log.
+
+Preceding a92b8bd PR CI 37571654100 is now terminal with seven successes and the
+retained macOS asynchronous-wheel-cleanup assertion failure. Its Windows job
+passes packaging/installer/release checks. Push 37571649524 retains seven successes
+and its initial focuser connection failure; the successful PR does not explain
+that cause. The reviewed local wheel cleanup correction and failure timing
+diagnostic still require new CI. The full PR failure log is retained at
+artifacts/hub-camera-native-cooling-ci-pr-failed.log.
+
+Next: native source adapter/config/factory/runtime with host-wide image budget,
+runtime activity, recovery allowances and truthful observation ages. Neither
+cached reads nor a queued desired value can be presented as new hardware evidence.
+Remaining camera inputs, binary frontend IPC, all three camera outputs, recovery
+metadata migration, coordination, documentation and every original acceptance/
+final gate remain open. Camera setup choices stay disabled; no hardware or
+installed vendor driver was activated and PR #21 remains draft.

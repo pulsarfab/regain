@@ -3,7 +3,7 @@
 use super::{
     image::{CameraImage, ImageBudget},
     native_capture::{NativeCaptureError, capture_admitted},
-    native_properties::{NativeGeometry, NativeProperties},
+    native_properties::{NativeGeometry, NativeProperties, validate_imaging_control},
     properties::{CameraProperty, CameraSetting, CameraValue},
 };
 use crate::{
@@ -27,6 +27,7 @@ use uuid::Uuid;
 pub enum NativeOperationKind {
     Connecting,
     Capturing,
+    Configuring,
     Aborting,
     Closing,
 }
@@ -152,6 +153,10 @@ impl Drop for Work {
                 .as_ref()
                 .is_some_and(|p| p.operation.id == self.id)
         {
+            let configuring = state
+                .pending
+                .as_ref()
+                .is_some_and(|p| p.operation.kind == NativeOperationKind::Configuring);
             state.pending = None;
             state.connected = false;
             if !state
@@ -160,7 +165,11 @@ impl Drop for Work {
                 .is_some_and(|e| e.kind == ErrorKind::Uncertain)
             {
                 state.error = Some(SourceError::new(
-                    ErrorKind::Unavailable,
+                    if configuring {
+                        ErrorKind::Uncertain
+                    } else {
+                        ErrorKind::Unavailable
+                    },
                     "Native camera task stopped before completion",
                 ));
             }
@@ -179,6 +188,15 @@ fn disconnected() -> SourceError {
     )
 }
 fn core_error(error: &anyhow::Error) -> SourceError {
+    if matches!(
+        error.downcast_ref::<CoolingError>(),
+        Some(CoolingError::Expired)
+    ) {
+        return SourceError::new(
+            ErrorKind::Transient,
+            "Native command expired before dispatch",
+        );
+    }
     let kind = match error.downcast_ref::<regain_core::Failure>() {
         Some(regain_core::Failure::Invalid(_)) => ErrorKind::InvalidValue,
         Some(regain_core::Failure::Cancelled) => ErrorKind::Unavailable,
@@ -549,6 +567,100 @@ impl NativeCamera {
         state.geometry = Some(geometry);
         Ok(())
     }
+    /// Retain an idle gain/offset write and its readback independently of callers.
+    /// Caller loss before engine admission skips I/O; after admission the task
+    /// owns dispatch through its bounded outcome and cleanup.
+    pub async fn set_imaging_control(
+        self: &Arc<Self>,
+        control: i32,
+        value: i64,
+    ) -> Result<i64, SourceError> {
+        let (generation, response) = {
+            let mut state = self.state.lock().unwrap();
+            if !state.connected {
+                return Err(disconnected());
+            }
+            if let Some(error) = state
+                .error
+                .as_ref()
+                .filter(|e| e.kind == ErrorKind::Uncertain)
+            {
+                return Err(error.clone());
+            }
+            if state.pending.is_some() || state.cooling.is_some() {
+                return Err(busy());
+            }
+            validate_imaging_control(&self.status.lock().unwrap(), control, value)?;
+            let generation = state.generation;
+            let id = Uuid::new_v4();
+            let token = CancellationToken::new();
+            let work = self.work(generation, id);
+            let deadline = tokio::time::Instant::now() + self.command_timeout;
+            state.pending = Some(Pending {
+                operation: NativeOperation {
+                    id,
+                    kind: NativeOperationKind::Configuring,
+                    exposure: None,
+                },
+                token: token.clone(),
+            });
+            let (mut reply, response) = oneshot::channel();
+            tokio::spawn(async move {
+                let owner = &work.owner;
+                let result = tokio::select! {
+                    biased;
+                    _ = reply.closed() => Err(SourceError::new(ErrorKind::Unavailable, "Native setting caller left before dispatch")),
+                    _ = token.cancelled() => Err(disconnected()),
+                    _ = tokio::time::sleep_until(deadline) => Err(SourceError::new(ErrorKind::Transient, "Native setting expired before dispatch")),
+                    mut session = owner.engine.lock() => {
+                        if reply.is_closed() {
+                            Err(SourceError::new(ErrorKind::Unavailable, "Native setting caller left before dispatch"))
+                        } else if !owner.current(generation, id) {
+                            Err(disconnected())
+                        } else {
+                            // Do not select against caller loss after admission:
+                            // the task retains write/readback/retirement ownership.
+                            session.set_imaging_control(control, value, deadline, &token).await.map_err(|e| core_error(&e))
+                        }
+                    }
+                };
+                let result = {
+                    let mut state = owner.state.lock().unwrap();
+                    if state.generation != generation
+                        || !state.pending.as_ref().is_some_and(|p| p.operation.id == id)
+                    {
+                        Err(disconnected())
+                    } else {
+                        state.pending = None;
+                        if let Err(error) = &result {
+                            if error.kind == ErrorKind::Uncertain {
+                                state.error = Some(error.clone());
+                            } else if !owner.status.lock().unwrap().control_connection_available {
+                                state.connected = false;
+                                state.error = Some(error.clone());
+                            }
+                        }
+                        result
+                    }
+                };
+                owner.changed.notify_waiters();
+                drop(work);
+                let _ = reply.send(result);
+            });
+            (generation, response)
+        };
+        let result = response.await.map_err(|_| {
+            SourceError::new(
+                ErrorKind::Uncertain,
+                "Native setting task stopped before acknowledgement",
+            )
+        })?;
+        let state = self.state.lock().unwrap();
+        if state.generation != generation || !state.connected {
+            return Err(disconnected());
+        }
+        result
+    }
     /// The outer supervisor authorizes the source/capture owner. This method
     /// retains one acknowledged target/enable command through caller loss.
     pub async fn set_cooling(
@@ -719,7 +831,7 @@ impl NativeCamera {
                         "Native acquisition is no longer current",
                     ));
                 }
-                if state.cooling.is_none() {
+                if state.cooling.is_none() && state.pending.is_none() {
                     if let Some(error) = &state.error {
                         return Err(error.clone());
                     }
@@ -855,6 +967,9 @@ mod tests {
     use std::path::{Path, PathBuf};
 
     fn simulated() -> Arc<NativeCamera> {
+        simulated_with_log(Arc::new(|_, _, _| {}))
+    }
+    fn simulated_with_log(log: Diagnostic) -> Arc<NativeCamera> {
         NativeCamera::new(
             Selection {
                 name: "ZWO Simulated".into(),
@@ -875,9 +990,105 @@ mod tests {
             },
             ImageBudget::new(1024 * 1024).unwrap(),
             ActivityCounter::default(),
-            Arc::new(|_, _, _| {}),
+            log,
         )
         .unwrap()
+    }
+
+    #[tokio::test]
+    async fn queued_imaging_caller_loss_and_expiry_skip_io_without_clearing_the_image() {
+        let mut owner = simulated();
+        owner.connect().await.unwrap();
+        let exposure = NativeGeometry::initial(&owner.snapshot().core.info)
+            .unwrap()
+            .configured(CameraSetting::NumX(64), &owner.snapshot().core.info)
+            .unwrap()
+            .configured(CameraSetting::NumY(64), &owner.snapshot().core.info)
+            .unwrap()
+            .exposure(10_000, true);
+        let id = owner.start(exposure).unwrap();
+        let reader = owner.wait(id).await.unwrap();
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while owner.activity.active() != 0 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        Arc::get_mut(&mut owner).unwrap().command_timeout = Duration::from_millis(50);
+        let engine = owner.engine.lock().await;
+        let before = owner.snapshot().core.values[&0];
+        let mut setter = Box::pin(owner.set_imaging_control(0, 123));
+        assert!(futures_util::poll!(setter.as_mut()).is_pending());
+        drop(setter);
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while owner.activity.active() != 0 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        assert!(owner.snapshot().error.is_none());
+        assert_eq!(owner.snapshot().core.values[&0], before);
+        tokio::time::pause();
+        let mut setter = Box::pin(owner.set_imaging_control(0, 123));
+        assert!(futures_util::poll!(setter.as_mut()).is_pending());
+        tokio::time::advance(Duration::from_millis(51)).await;
+        let error = setter.await.unwrap_err();
+        assert_eq!(error.kind, ErrorKind::Transient);
+        assert!(!error.transport_lost);
+        assert!(owner.snapshot().error.is_none());
+        assert_eq!(owner.snapshot().core.values[&0], before);
+        assert_eq!(
+            owner.image().unwrap().bytes().as_ptr(),
+            reader.bytes().as_ptr()
+        );
+        tokio::time::resume();
+        drop(engine);
+        Arc::get_mut(&mut owner).unwrap().command_timeout = Duration::from_secs(15);
+        assert_eq!(owner.set_imaging_control(0, 123).await.unwrap(), 123);
+        owner.close().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn imaging_write_readback_stays_owned_after_caller_and_last_reference_loss() {
+        type Setter =
+            std::pin::Pin<Box<dyn std::future::Future<Output = Result<i64, SourceError>> + Send>>;
+        let pending: Arc<Mutex<Option<Setter>>> = Arc::new(Mutex::new(None));
+        let withdraw = pending.clone();
+        let owner = simulated_with_log(Arc::new(move |_, event, _| {
+            if event == "control.write_acknowledged" {
+                // Drop the actual frontend future after the set ACK and before
+                // core issues readback. The owner's task must finish that read.
+                withdraw.lock().unwrap().take();
+            }
+        }));
+        owner.connect().await.unwrap();
+        let state = owner.status.clone();
+        let activity = owner.activity.clone();
+        let retained = Arc::downgrade(&owner);
+        let caller = owner.clone();
+        *pending.lock().unwrap() =
+            Some(Box::pin(
+                async move { caller.set_imaging_control(0, 123).await },
+            ));
+        std::future::poll_fn(|cx| {
+            let mut pending = pending.lock().unwrap();
+            assert!(pending.as_mut().unwrap().as_mut().poll(cx).is_pending());
+            std::task::Poll::Ready(())
+        })
+        .await;
+        drop(owner);
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while activity.active() != 0 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        assert!(pending.lock().unwrap().is_none());
+        assert_eq!(state.lock().unwrap().values[&0], 123);
+        assert!(retained.upgrade().is_none());
     }
 
     #[tokio::test]

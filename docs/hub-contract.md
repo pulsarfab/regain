@@ -2345,8 +2345,26 @@ exposure duration and UTC start come from the successfully published immutable
 core frame; changing next-capture geometry cannot rewrite them. Invalid/missing
 timestamps fail independently of known duration. The source adapter must preserve
 observation age when exposing cached environmental/control values; this owner
-read API does not establish freshness. Acknowledged native gain/offset setters,
-adapter/runtime wiring and the remaining camera gates are still required.
+read API does not establish freshness.
+
+Idle gain/offset writes now use the same core write/readback helper and absolute
+deadline as cooling. They validate writable capabilities before I/O, commit only
+acknowledged values, preserve those values across worker recovery and do not
+modify the preceding immutable frame. The existing SDK-only bounded offset clamp
+policy returns the actual applied value; gain/direct mismatches and out-of-range
+readbacks remain uncertain. All four persistent controls use framed-write
+tracking: a dispatched timeout, cancellation or malformed/lost reply cannot be
+reported as an unsent command. No unknown write or capture is replayed.
+
+NativeCamera retains idle imaging-setting tasks and runtime activity. Queued
+caller loss/expiry skips I/O; after engine admission the task owns write,
+readback and retirement independently of its caller. Its marker blocks captures,
+other setters, Abort and image publication, including waiters for an older frame.
+Reset/close synchronously fence late results and buffered acknowledgements.
+Unknown outcomes preserve the source error until explicit reset/close; existing
+readers remain valid. Unexpected setting-task loss is uncertain rather than a
+usable connection. Source adapter/runtime/configuration wiring, observation
+freshness and every remaining camera gate are still required.
 
 The shared camera property/setting layer now implements 53 typed properties and
 13 standard setters in the source supervisor. It preserves booleans, Int32 values,

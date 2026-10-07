@@ -69,6 +69,30 @@ fn value(core: &Status, kind: i32) -> Result<i64, SourceError> {
         .ok_or_else(unavailable)
 }
 
+pub(super) fn validate_imaging_control(
+    core: &Status,
+    kind: i32,
+    requested: i64,
+) -> Result<(), SourceError> {
+    if !matches!(kind, 0 | 5) {
+        return Err(unsupported());
+    }
+    if !core.connected || !core.control_connection_available {
+        return Err(unavailable());
+    }
+    let control = cap(core, kind)?;
+    if !control.writable {
+        return Err(unsupported());
+    }
+    if !(control.min..=control.max).contains(&requested) {
+        return Err(SourceError::new(
+            ErrorKind::InvalidValue,
+            "Native imaging control value is outside its range",
+        ));
+    }
+    Ok(())
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NativeGeometry {
