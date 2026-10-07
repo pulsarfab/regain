@@ -578,6 +578,7 @@ async fn native_worker_simulation_remains_explicit_through_nested_focuser_output
     };
     let mut fixture = Fixture::new(false).await;
     fixture.config.sources[0].backend = SourceBackend::Native {
+        camera: None,
         device: regain_hub::config::NativeDevice::Eaf,
         identity: "0102030405060709".into(),
         filter_wheel: None,

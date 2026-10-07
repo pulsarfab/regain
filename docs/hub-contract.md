@@ -2443,3 +2443,33 @@ replacement exposures and retained-frame read attempts. Published images freeze
 that acquisition's geometry, timing and recovery metadata. Camera setup choices
 remain disabled until native/network/COM/virtual/simulation inputs, all three
 outputs, bounded image transport and multi-client failure checks are implemented.
+
+### Native camera recovery configuration
+
+Native `camera-direct` and `camera-sdk` sources require a `camera` object with
+an exact `model`, optional `sdkFallback` (default false), and sparse `recovery`.
+The source's stable `identity` supplies the physical camera serial; the model
+does not authorize selection by discovery index or replacement hardware. Only
+direct sources may opt into SDK fallback. Accessory, COM and Alpaca sources do
+not accept this native camera configuration. Actual model/serial/capability
+verification still belongs to the selected worker at connection time.
+
+`regain-core::recovery` is the canonical Rust definition of all fourteen legacy
+recovery keys, defaults, accepted ranges and descriptions. The existing root and
+`model::RecoveryOptions` paths and camelCase saved format remain compatible.
+Legacy profile loading still defaults omitted fields and accepts unknown
+extensions. Hub `CameraRecovery` rejects unknown keys, retains the core value
+type and exposes the core-generated schema through the shared description.
+Positive timeouts/tolerances use `exclusiveMinimum: 0`; the replacement-exposure
+threshold includes zero. This preserves the existing acceptance range rather
+than inventing a new UI minimum. Semantic validation reports paths under
+`sources[i].backend.camera.recovery.<key>`.
+
+Descriptions distinguish replacement exposures, SDK ready-frame rereads and
+device-specific direct USB reads. Republished drivers do not gain retained-frame
+rereads from this metadata. USB recovery remains disabled by default and keeps
+the core's verified-target, OS-permission and at-most-once-per-capture rules.
+Configuration edits reconnect through normal atomic apply; they do not retarget
+source IDs, mutate polling settings or dispatch hardware work. This schema
+checkpoint alone does not wire camera runtime resources, derive full recovery
+timing allowances or enable camera setup/output support.

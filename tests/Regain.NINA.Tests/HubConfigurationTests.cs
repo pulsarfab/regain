@@ -6,6 +6,27 @@ namespace Regain.NINA.Tests;
 
 public sealed class HubConfigurationTests
 {
+    [Fact]
+    public void NativeCameraRecoveryUsesCoreDefaultsDescriptionsAndPositiveLimits()
+    {
+        var reader = new HubConfiguration(Contract());
+        var schema = reader.Root.GetProperty("$defs").GetProperty("CameraRecovery");
+        var fields = reader.Fields(schema);
+        Assert.Equal(14, fields.Count);
+        Assert.Equal(3, fields.Single(f => f.Key == "maxRetries").Value!.Value.GetInt32());
+        Assert.Equal(60, fields.Single(f => f.Key == "downloadTimeoutSeconds").Value!.Value.GetDouble());
+        Assert.False(fields.Single(f => f.Key == "usbPortCycle").Value!.Value.GetBoolean());
+        var reconnect = fields.Single(f => f.Key == "reconnectDelaySeconds");
+        Assert.Equal(0, reconnect.Schema.GetProperty("exclusiveMinimum").GetDouble());
+        Assert.Equal("s", reconnect.Schema.GetProperty("x-regain").GetProperty("units").GetString());
+        Assert.All(fields, f => Assert.False(string.IsNullOrWhiteSpace(f.Description)));
+        Assert.Contains("device-specific", fields.Single(f => f.Key == "directReadRetries").Description);
+        var native = reader.Variants(reader.Root.GetProperty("$defs").GetProperty("SourceBackend"), ["nativeSources"])
+            .Single(v => v.Kind == "native");
+        Assert.False(reader.Choices(native.Schema.GetProperty("properties").GetProperty("device"))
+            .Single(c => c.Value == "camera-sdk").Enabled);
+    }
+
     private static JsonElement Contract()
     {
         using var doc=JsonDocument.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory,"hub-config.json")));

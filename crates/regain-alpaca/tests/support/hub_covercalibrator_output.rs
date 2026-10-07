@@ -625,6 +625,7 @@ async fn panel_native_ofp2_worker_publishes_light_and_cover_through_shared_http_
             ..Default::default()
         },
         backend: SourceBackend::Native {
+            camera: None,
             device: NativeDevice::Ofp2,
             identity: "SIM-OFP2".into(),
             filter_wheel: None,

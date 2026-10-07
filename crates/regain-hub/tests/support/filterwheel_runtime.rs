@@ -22,6 +22,7 @@ fn wheel_config() -> HubConfig {
             ..Default::default()
         },
         backend: SourceBackend::Native {
+            camera: None,
             device: NativeDevice::Efw,
             identity: "0102030405060708".into(),
             filter_wheel: None,

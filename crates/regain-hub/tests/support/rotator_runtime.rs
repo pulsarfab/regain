@@ -93,6 +93,7 @@ fn runtime_setup_with_request_timeout(
             ..PollPolicy::default()
         },
         backend: SourceBackend::Native {
+            camera: None,
             device: NativeDevice::Caa,
             identity: "0102030405060708".into(),
             filter_wheel: None,

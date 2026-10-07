@@ -20,6 +20,9 @@ struct Device {
     disconnects: AtomicUsize,
     writable: AtomicBool,
     hang_write: AtomicBool,
+    hold_next_poll: AtomicBool,
+    poll_held: tokio::sync::Notify,
+    release_poll: tokio::sync::Notify,
     writes: Mutex<Vec<f64>>,
     step: Mutex<f64>,
     value: Mutex<f64>,
@@ -65,6 +68,10 @@ impl Backend for Mock {
     }
     fn poll(&mut self) -> BackendFuture<'_, Values> {
         Box::pin(async {
+            if self.0.hold_next_poll.swap(false, SeqCst) {
+                self.0.poll_held.notify_one();
+                self.0.release_poll.notified().await;
+            }
             Ok(Values::from([
                 ("channel/0".into(), json!(*self.0.value.lock().unwrap())),
                 ("temperature".into(), json!(12.0)),
@@ -127,6 +134,32 @@ fn grid_rounds_nearest_steps_and_rejects_invalid_bounds_before_io() {
         assert!(Grid::new(min, max, step).is_err());
     }
     assert!(Grid::new(0.0, 1.0, 0.1).is_ok());
+}
+
+#[tokio::test(start_paused = true)]
+async fn acknowledged_switch_write_is_unavailable_until_fresh_poll_confirms_it_for_both_clients() {
+    let config = fixture();
+    let device = device();
+    let (registry, output) = setup(&config, &device);
+    let first = output.connect().await.unwrap();
+    let second = output.connect().await.unwrap();
+    settle().await;
+    assert_eq!(first.value(0).unwrap(), 2.0);
+    assert_eq!(second.value(0).unwrap(), 2.0);
+    device.hold_next_poll.store(true, SeqCst);
+    first.set_value(0, 4.0).await.unwrap();
+    device.poll_held.notified().await;
+    let state = registry.get(config.sources[0].id).unwrap().snapshot();
+    assert!(state.transport_connected && state.error.is_none() && !state.write_uncertain);
+    assert!(state.values.is_empty());
+    assert_eq!(first.value(0).unwrap_err().kind, ErrorKind::Unavailable);
+    assert_eq!(second.value(0).unwrap_err().kind, ErrorKind::Unavailable);
+    assert_eq!(*device.writes.lock().unwrap(), vec![4.0]);
+    device.release_poll.notify_one();
+    settle().await;
+    assert_eq!(first.value(0).unwrap(), 4.0);
+    assert_eq!(second.value(0).unwrap(), 4.0);
+    assert_eq!(*device.writes.lock().unwrap(), vec![4.0]);
 }
 
 #[tokio::test(start_paused = true)]

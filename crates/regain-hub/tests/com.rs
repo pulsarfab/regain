@@ -1130,6 +1130,7 @@ async fn mixed_native_alpaca_and_com_gauges_share_the_same_controller() {
             id: Uuid::new_v4(),
             label: "Explicit native FC3 simulation".into(),
             backend: SourceBackend::Native {
+                camera: None,
                 device: NativeDevice::Fc3,
                 identity: "00:00:00:00:00:03".into(),
                 filter_wheel: None,

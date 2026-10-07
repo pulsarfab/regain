@@ -76,78 +76,7 @@ pub struct Control {
     pub value: i64,
     pub writable: bool,
 }
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(default, rename_all = "camelCase")]
-pub struct RecoveryOptions {
-    pub max_retries: u32,
-    pub maximum_retry_exposure_seconds: f64,
-    pub reconnect_delay_seconds: f64,
-    pub command_timeout_seconds: f64,
-    pub download_timeout_seconds: f64,
-    pub exposure_grace_seconds: f64,
-    pub cooling_timeout_seconds: f64,
-    pub temperature_tolerance_c: f64,
-    pub cooling_stable_samples: u32,
-    pub cooling_sample_seconds: f64,
-    pub ready_frame_download_retries: u32,
-    pub direct_read_retries: u32,
-    /// Zero disables hardware recovery. At most one operation per capture.
-    pub usb_reset_after_failures: u32,
-    /// Linux: cycle the downstream port instead of USBDEVFS_RESET.
-    pub usb_port_cycle: bool,
-}
-impl Default for RecoveryOptions {
-    fn default() -> Self {
-        Self {
-            max_retries: 3,
-            maximum_retry_exposure_seconds: 30.,
-            reconnect_delay_seconds: 5.,
-            command_timeout_seconds: 15.,
-            download_timeout_seconds: 60.,
-            exposure_grace_seconds: 30.,
-            cooling_timeout_seconds: 300.,
-            temperature_tolerance_c: 2.,
-            cooling_stable_samples: 3,
-            cooling_sample_seconds: 2.,
-            ready_frame_download_retries: 2,
-            direct_read_retries: 2,
-            usb_reset_after_failures: 0,
-            usb_port_cycle: false,
-        }
-    }
-}
-impl RecoveryOptions {
-    pub fn validate(&self) -> Result<()> {
-        ensure!(
-            self.max_retries <= 20
-                && self.ready_frame_download_retries <= 5
-                && self.direct_read_retries <= 5
-                && self.usb_reset_after_failures <= 20
-                && (1..=60).contains(&self.cooling_stable_samples),
-            Failure::Invalid("Invalid retry limits".into())
-        );
-        ensure!(
-            self.maximum_retry_exposure_seconds.is_finite()
-                && (0.0..=86400.).contains(&self.maximum_retry_exposure_seconds),
-            Failure::Invalid("Invalid replacement exposure limit".into())
-        );
-        for v in [
-            self.reconnect_delay_seconds,
-            self.command_timeout_seconds,
-            self.download_timeout_seconds,
-            self.exposure_grace_seconds,
-            self.cooling_timeout_seconds,
-            self.temperature_tolerance_c,
-            self.cooling_sample_seconds,
-        ] {
-            ensure!(
-                v.is_finite() && v > 0. && v <= 3600.,
-                Failure::Invalid("Invalid recovery timeout or tolerance".into())
-            );
-        }
-        Ok(())
-    }
-}
+pub use crate::recovery::RecoveryOptions;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Selection {

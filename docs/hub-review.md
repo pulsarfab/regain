@@ -4871,3 +4871,82 @@ coordination, conformance, physical/interactive acceptance, README/site updates,
 main reconciliation and the original final audit remain required. Camera choices
 remain disabled and PR #21 stays draft. Only explicit simulations/private fixtures
 were activated.
+
+## 2026-10-06: canonical native recovery metadata and camera configuration
+
+Core recovery options now declare their fourteen serialized keys, typed defaults,
+ranges, units and descriptions once. The macro supplies the existing value type,
+validation and strict frontend schema data, using only existing serde/JSON
+dependencies. Root and model module reexports remain compatible. Four independent
+legacy-format tests pin the shipped default JSON, sparse overrides/unknown
+extensions, integer types/bounds and all positive/nonfinite floating boundaries.
+Validation still classifies invalid values as Failure::Invalid. Strictly positive
+fields keep their original range down to tiny positive values; no new UI floor
+changes saved policy behavior. The core schema is explicitly for strict frontend
+configuration; it does not change the tolerant legacy profile loader.
+
+Hub CameraRecovery rejects unknown keys but retains the core options/defaults.
+NativeCameraConfig adds an exact model, explicit direct-only SDK fallback and
+native recovery under SourceBackend::Native.camera. Native camera sources require
+it; accessory sources reject it. Alpaca/COM remain separate strict variants and
+do not gain native retry promises. Schema conditionals enforce camera class,
+presence and fallback constraints, independently checked by Python. Semantic
+errors use full source/camera/recovery field paths. Selection carries the source's
+exact serial and backend without discovery, launch or hardware I/O. Six config
+cases cover sparse selection, typo/type rejection, semantic paths/nonfinite
+values, class constraints, atomic persistence and duplicate direct/SDK claims.
+The older duplicate-claim regression now supplies otherwise-valid camera settings.
+Existing accessory fixtures serialize identically because absent camera settings
+are omitted. Native accessory construction also rejects class-mismatched camera
+settings when called outside the complete config validator.
+
+Review covered serialized compatibility, defaults, strict versus legacy loading,
+positive/inclusive bounds, backend/serial selection, source identity/polling
+preservation and no new recovery behavior. It corrected an overbroad deadline
+description to name gain/offset/cooler write-readback behavior. Node and native
+NINA readers verify shared defaults, descriptions, units and exclusive lower
+bounds. Real net48 x86/x64 editor clients also read the live host's recovery
+metadata. Camera choices remain capability gated.
+
+The initial full NINA run ended 228/229: publisher/native switch sharing received
+ASCOM ValueNotSet (1026) immediately after an acknowledged SetValue. Inspection
+found the source actor intentionally invalidates all cached samples after writes,
+then schedules a confirming poll. A new deterministic Rust test holds that poll,
+proves both clients get Unavailable instead of old/optimistic values, releases it
+and observes the confirmed value with exactly one write. The publisher fixture
+now treats only that post-ACK ValueNotSet/unavailable response as pending, still
+requires the exact confirmed value, retains its original deadline, rejects all
+other errors and never retries a write. This corrects the fixture's completion
+model; production cache/error/deadline behavior is unchanged. It does not explain
+the distinct earlier Windows COM/HTTP connection/reply failures. The original
+failed log remains artifacts/hub-camera-recovery-nina-final.log.
+
+Final validation passes: full combined Rust core/hub/Alpaca/ZWO regressions,
+four core recovery compatibility cases, six camera config cases, sixteen existing
+config cases and all seven switch cases; strict Rust 1.99 Clippy for core/hub/
+Alpaca/ZWO/device all targets; Rust 1.89 all-target checks; generated contract
+freshness; Node/eight independent schema checks; formatting/diff checks; fresh
+host NINA 229/229 and real net48 x86/x64 integration. Key evidence is
+artifacts/hub-camera-recovery-rust.log,
+artifacts/hub-camera-recovery-{core,config}-final.log,
+artifacts/hub-camera-recovery-switch-{transition,complete}.log,
+artifacts/hub-camera-recovery-clippy-complete.log,
+artifacts/hub-camera-recovery-msrv.log,
+artifacts/hub-camera-recovery-contract-check.log,
+artifacts/hub-camera-recovery-{node,schema}.log,
+artifacts/hub-camera-recovery-host-final.log and
+artifacts/hub-camera-recovery-{nina,net48}-complete.log.
+
+Preceding native adapter a9b3c50 PR/push CI 37581976334/37581971979 are still live.
+Both have seven successful jobs and successful Windows test.ps1/Python tests;
+Windows build/installer stages remain open. Keep this increment local until those
+runs finish, then publish to the same draft PR. No physical equipment or installed
+vendor driver was activated.
+
+Next: native factory/runtime, shared host budget/activity across config revisions,
+full core-derived recovery/connection/control allowances, other camera inputs,
+bounded frontend image IPC and all three camera outputs. Discovery/config transfer,
+OS resume, coordinated groups, conformance/interactive/physical acceptance,
+README/site updates, main reconciliation and the original final audit remain
+required. This checkpoint does not close milestone 4's full migration/runtime or
+camera acceptance gate, and does not narrow the plan.

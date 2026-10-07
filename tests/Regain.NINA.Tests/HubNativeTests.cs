@@ -369,11 +369,16 @@ public sealed partial class HubNativeTests
                 response.EnsureSuccessStatusCode(); var parsed = JsonDocument.Parse(await response.Content.ReadAsStringAsync(timeout.Token));
                 using (parsed) { Assert.Equal(0, parsed.RootElement.GetProperty("ErrorNumber").GetInt32()); return parsed.RootElement.Clone(); }
             }
-            async Task<JsonElement> Get(string member)
+            async Task<JsonElement> GetReply(string member)
             {
                 using var response = await http.GetAsync("/api/v1/switch/0/" + member + "?ClientID=87001&ClientTransactionID=" + (++transaction) + "&Id=1", timeout.Token);
                 response.EnsureSuccessStatusCode(); using var parsed = JsonDocument.Parse(await response.Content.ReadAsStringAsync(timeout.Token));
-                Assert.Equal(0, parsed.RootElement.GetProperty("ErrorNumber").GetInt32()); return parsed.RootElement.GetProperty("Value").Clone();
+                return parsed.RootElement.Clone();
+            }
+            async Task<JsonElement> Get(string member)
+            {
+                var reply = await GetReply(member);
+                Assert.Equal(0, reply.GetProperty("ErrorNumber").GetInt32()); return reply.GetProperty("Value").Clone();
             }
             await Eventually(async () => {
                 if (publisher.HasExited) throw new InvalidOperationException("Test HTTP publisher exited before readiness");
@@ -391,7 +396,18 @@ public sealed partial class HubNativeTests
             Assert.Equal(2, (await host.Status(0)).GetProperty("leaseCount").GetInt32());
             var level = Assert.IsAssignableFrom<IWritableSwitch>(device.Switches.Single(s => s.Id == 1));
             level.TargetValue = 29; level.SetValue();
-            await Eventually(async () => (await Get("getswitchvalue")).GetDouble() == 29);
+            await Eventually(async () => {
+                var reply = await GetReply("getswitchvalue");
+                // An ACK deliberately invalidates cached switch samples. Only
+                // fresh readback can confirm completion; ValueNotSet is pending,
+                // never success. Keep all other errors and the deadline strict.
+                if (reply.GetProperty("ErrorNumber").GetInt32() == 0x402) {
+                    Assert.Contains("Hub request failed (unavailable)", reply.GetProperty("ErrorMessage").GetString());
+                    return false;
+                }
+                Assert.Equal(0, reply.GetProperty("ErrorNumber").GetInt32());
+                return reply.GetProperty("Value").GetDouble() == 29;
+            });
             using var write = new FormUrlEncodedContent(new Dictionary<string, string> { ["Id"] = "1", ["Value"] = "77", ["ClientID"] = "87001", ["ClientTransactionID"] = (++transaction).ToString() });
             using var changed = await http.PutAsync("/api/v1/switch/0/setswitchvalue", write, timeout.Token);
             changed.EnsureSuccessStatusCode(); using var reply = JsonDocument.Parse(await changed.Content.ReadAsStringAsync(timeout.Token));

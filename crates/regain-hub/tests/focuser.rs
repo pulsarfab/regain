@@ -711,6 +711,7 @@ fn runtime_setup(
             ..PollPolicy::default()
         },
         backend: SourceBackend::Native {
+            camera: None,
             device: NativeDevice::Fc3,
             identity: "PRIVATE-TEST".into(),
             filter_wheel: None,

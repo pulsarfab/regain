@@ -38,11 +38,17 @@ impl NativeAccessoryBackend {
             device,
             identity,
             filter_wheel,
+            camera,
         } = &config.backend
         else {
             return Err(invalid("Expected a native source"));
         };
         worker_arguments(*device)?;
+        if camera.is_some() {
+            return Err(invalid(
+                "Camera settings are not valid for accessory sources",
+            ));
+        }
         if filter_wheel
             .as_ref()
             .is_some_and(|metadata| *device != NativeDevice::Efw || !metadata.validate().is_empty())

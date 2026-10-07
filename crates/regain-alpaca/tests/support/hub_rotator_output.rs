@@ -245,6 +245,7 @@ async fn rotator_native_workers_publish_verified_motion_and_reference_through_ac
             id: source,
             label: "Explicit native rotator simulation".into(),
             backend: SourceBackend::Native {
+                camera: None,
                 device,
                 identity: identity.into(),
                 filter_wheel: None,

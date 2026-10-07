@@ -86,7 +86,13 @@ impl NativeDevice {
 pub enum SourceBackend {
     /// # Direct Regain driver
     /// Use the existing Rust worker and its device-specific recovery behavior.
-    #[schemars(extend("x-regain" = {"requiresCapability":"nativeSources"}))]
+    #[schemars(extend("x-regain" = {"requiresCapability":"nativeSources"}, "allOf" = [
+        {"if":{"properties":{"device":{"enum":["camera-direct","camera-sdk"]}}},
+         "then":{"required":["camera"],"properties":{"camera":{"type":"object"}}},
+         "else":{"properties":{"camera":{"type":"null"}}}},
+        {"if":{"properties":{"device":{"const":"camera-sdk"}}},
+         "then":{"properties":{"camera":{"properties":{"sdkFallback":{"const":false}}}}}}
+    ]))]
     Native {
         /// Hardware driver and backend to use.
         #[schemars(extend("x-regain" = {"enumCapabilities":{"camera-direct":"nativeCameraSources","camera-sdk":"nativeCameraSources"}}))]
@@ -100,6 +106,11 @@ pub enum SourceBackend {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[schemars(title = "Direct EFW filter metadata")]
         filter_wheel: Option<crate::filterwheel::NativeFilterWheelMetadata>,
+        /// Required only for native cameras. Shared recovery definitions retain
+        /// the existing camera defaults; camera setup remains capability gated.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[schemars(extend("x-regain" = {"requiresCapability":"nativeCameraSources"}))]
+        camera: Option<crate::camera::config::NativeCameraConfig>,
     },
     /// # Remote Alpaca
     /// Read or control an ASCOM Alpaca device over HTTP or HTTPS.
@@ -687,6 +698,7 @@ impl HubConfig {
                     device,
                     identity,
                     filter_wheel,
+                    camera,
                 } => {
                     if identity.trim().is_empty() || identity.chars().count() > MAX_LABEL_CHARS {
                         error(
@@ -711,8 +723,30 @@ impl HubConfig {
                             );
                         }
                     }
+                    let is_camera = device.device_type() == DeviceType::Camera;
+                    match camera {
+                        Some(camera) if is_camera => {
+                            for field in camera.validate(*device == NativeDevice::CameraDirect) {
+                                error(
+                                    format!("{p}.backend.camera.{}", field.path),
+                                    &field.code,
+                                    &field.message,
+                                );
+                            }
+                        }
+                        Some(_) => error(
+                            format!("{p}.backend.camera"),
+                            "type",
+                            "Camera settings are only supported by native camera sources",
+                        ),
+                        None if is_camera => error(
+                            format!("{p}.backend.camera"),
+                            "required",
+                            "Select native camera settings",
+                        ),
+                        None => {}
+                    }
                     // Direct and SDK camera paths must not claim the same camera twice.
-                    let _ = device;
                     source.identity().ok()
                 }
                 SourceBackend::Com {

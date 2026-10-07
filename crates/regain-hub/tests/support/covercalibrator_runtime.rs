@@ -19,6 +19,7 @@ fn runtime_setup(device: &Arc<Device>) -> (HubConfig, Arc<HubRuntime>, Arc<Sourc
             ..Default::default()
         },
         backend: SourceBackend::Native {
+            camera: None,
             device: NativeDevice::Ofp2,
             identity: "SIM-OFP2".into(),
             filter_wheel: None,

@@ -500,6 +500,11 @@ fn source_identity_cannot_be_retargeted_and_direct_sdk_share_claim() {
             id: Uuid::new_v4(),
             label: "Camera".into(),
             backend: SourceBackend::Native {
+                camera: Some(regain_hub::camera::config::NativeCameraConfig {
+                    model: "ZWO ASI585MM Pro".into(),
+                    sdk_fallback: false,
+                    recovery: Default::default(),
+                }),
                 device,
                 identity: "ONE-CAMERA".into(),
                 filter_wheel: None,
@@ -566,6 +571,7 @@ fn native_metadata_is_class_specific_and_semantic_errors_keep_shared_field_paths
         label: "Direct wheel".into(),
         polling: PollPolicy::default(),
         backend: SourceBackend::Native {
+            camera: None,
             device: NativeDevice::Efw,
             identity: "PRIVATE".into(),
             filter_wheel: Some(NativeFilterWheelMetadata {

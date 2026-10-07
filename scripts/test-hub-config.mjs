@@ -8,6 +8,15 @@ import { OutputDiagnostics, diagnosticSummary, validateDiagnosticSchema } from '
 
 const description = JSON.parse(readFileSync(new URL('../contracts/hub-config.json', import.meta.url), 'utf8'));
 const reader = configurationContract(description);
+const recoverySchema = reader.root.$defs.CameraRecovery;
+const recoveryFields = reader.fields(recoverySchema);
+assert.equal(recoveryFields.length, 14);
+assert.equal(recoveryFields.find(f => f.key === 'maxRetries').value, 3);
+assert.equal(recoveryFields.find(f => f.key === 'downloadTimeoutSeconds').value, 60);
+assert.equal(recoveryFields.find(f => f.key === 'usbPortCycle').value, false);
+assert.equal(recoveryFields.find(f => f.key === 'reconnectDelaySeconds').schema.exclusiveMinimum, 0);
+assert.equal(recoveryFields.every(f => f.description.length > 0), true);
+assert.match(recoveryFields.find(f => f.key === 'directReadRetries').description, /device-specific/);
 const source = reader.root.$defs.SourceBackend;
 const nativeWheel = reader.variants(source, ['nativeSources']).find(v => v.kind === 'native');
 const nativeFields = reader.fields(nativeWheel.schema, {kind:'native', device:'efw', identity:'PRIVATE-WHEEL'});

@@ -17,6 +17,37 @@ def example(name):
 
 
 class SchemaContractTests(unittest.TestCase):
+    def test_native_camera_recovery_uses_legacy_limits_and_class_constraints(self):
+        config = example("two-source-safety")
+        backend = {"kind": "native", "device": "camera-direct", "identity": "PRIVATE-CAMERA",
+                   "camera": {"model": "ZWO ASI585MM Pro", "sdkFallback": True,
+                              "recovery": {"maxRetries": 0, "directReadRetries": 5,
+                                           "reconnectDelaySeconds": 1e-6, "usbPortCycle": True}}}
+        config["sources"][0]["backend"] = backend
+        VALIDATOR.validate(config)
+        for patch in [{"maxRetires": 0}, {"maxRetries": 21}, {"coolingStableSamples": 0},
+                      {"reconnectDelaySeconds": 0}, {"commandTimeoutSeconds": 3601},
+                      {"maximumRetryExposureSeconds": 86401}, {"directReadRetries": 6},
+                      {"usbPortCycle": 1}, {"readyFrameDownloadRetries": -1}]:
+            changed = copy.deepcopy(config)
+            changed["sources"][0]["backend"]["camera"]["recovery"].update(patch)
+            with self.subTest(patch=patch):
+                self.assertTrue(list(VALIDATOR.iter_errors(changed)))
+        for device in ["camera-sdk", "efw", "ofp2"]:
+            changed = copy.deepcopy(config)
+            changed["sources"][0]["backend"]["device"] = device
+            self.assertTrue(list(VALIDATOR.iter_errors(changed)))
+        backend["device"] = "camera-sdk"
+        backend["camera"]["sdkFallback"] = False
+        VALIDATOR.validate(config)
+        for missing in [None, "absent"]:
+            changed = copy.deepcopy(config)
+            if missing is None:
+                changed["sources"][0]["backend"]["camera"] = None
+            else:
+                changed["sources"][0]["backend"].pop("camera")
+            self.assertTrue(list(VALIDATOR.iter_errors(changed)))
+
     def test_schema_and_examples(self):
         Draft202012Validator.check_schema(SCHEMA)
         for name in ["two-source-safety", "mixed-switch"]:

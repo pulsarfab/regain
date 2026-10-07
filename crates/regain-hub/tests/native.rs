@@ -34,6 +34,7 @@ fn config(device: NativeDevice, identity: &str) -> SourceConfig {
         id: Uuid::new_v4(),
         label: "Explicit native simulation".into(),
         backend: SourceBackend::Native {
+            camera: None,
             device,
             identity: identity.into(),
             filter_wheel: None,

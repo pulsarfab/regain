@@ -116,6 +116,14 @@ internal static class Program
             }
             using var editor = await HubEditorSession.AttachAsync(args[0], args[1], attached.InstanceId, deadline.Token);
             await editor.ReloadAsync(deadline.Token);
+            var recoverySchema = editor.Draft!.Description.Root.GetProperty("$defs").GetProperty("CameraRecovery");
+            var recoveryFields = editor.Draft.Description.Fields(recoverySchema);
+            if (recoveryFields.Count != 14 || recoveryFields.Single(f => f.Key == "maxRetries").Value!.Value.GetInt32() != 3 ||
+                recoveryFields.Single(f => f.Key == "downloadTimeoutSeconds").Value!.Value.GetDouble() != 60 ||
+                recoveryFields.Single(f => f.Key == "usbPortCycle").Value!.Value.GetBoolean() ||
+                recoveryFields.Single(f => f.Key == "reconnectDelaySeconds").Schema.GetProperty("exclusiveMinimum").GetDouble() != 0 ||
+                recoveryFields.Any(f => string.IsNullOrWhiteSpace(f.Description)))
+                throw new InvalidOperationException("Native camera recovery metadata lost its legacy defaults or positive bounds");
             var oldRevision = editor.Draft!.Revision;
             var cachedOutput = await editor.OutputStatusAsync(output, 0, 1, deadline.Token);
             if (cachedOutput.GetProperty("purpose").GetString() != "cachedDiagnostics" ||

@@ -2000,6 +2000,278 @@
         ],
         "type": "string"
       },
+      "CameraRecovery": {
+        "additionalProperties": false,
+        "default": {
+          "commandTimeoutSeconds": 15.0,
+          "coolingSampleSeconds": 2.0,
+          "coolingStableSamples": 3,
+          "coolingTimeoutSeconds": 300.0,
+          "directReadRetries": 2,
+          "downloadTimeoutSeconds": 60.0,
+          "exposureGraceSeconds": 30.0,
+          "maxRetries": 3,
+          "maximumRetryExposureSeconds": 30.0,
+          "readyFrameDownloadRetries": 2,
+          "reconnectDelaySeconds": 5.0,
+          "temperatureToleranceC": 2.0,
+          "usbPortCycle": false,
+          "usbResetAfterFailures": 0
+        },
+        "properties": {
+          "commandTimeoutSeconds": {
+            "default": 15.0,
+            "description": "Deadline for a native worker command. Gain, offset and cooler changes include readback within the same deadline.",
+            "exclusiveMinimum": 0.0,
+            "maximum": 3600.0,
+            "title": "Command timeout",
+            "type": "number",
+            "x-regain": {
+              "apply": "reconnect",
+              "description": "Deadline for a native worker command. Gain, offset and cooler changes include readback within the same deadline.",
+              "group": "Native camera recovery",
+              "key": "commandTimeoutSeconds",
+              "label": "Command timeout",
+              "sensitive": false,
+              "step": 1.0,
+              "units": "s"
+            }
+          },
+          "coolingSampleSeconds": {
+            "default": 2.0,
+            "description": "Time between temperature and cooler-power checks while recovering a camera connection.",
+            "exclusiveMinimum": 0.0,
+            "maximum": 3600.0,
+            "title": "Cooling check interval",
+            "type": "number",
+            "x-regain": {
+              "apply": "reconnect",
+              "description": "Time between temperature and cooler-power checks while recovering a camera connection.",
+              "group": "Native camera recovery",
+              "key": "coolingSampleSeconds",
+              "label": "Cooling check interval",
+              "sensitive": false,
+              "step": 0.1,
+              "units": "s"
+            }
+          },
+          "coolingStableSamples": {
+            "default": 3,
+            "description": "Consecutive acceptable temperature and cooler-power observations required during recovery.",
+            "maximum": 60,
+            "minimum": 1,
+            "title": "Stable cooling samples",
+            "type": "integer",
+            "x-regain": {
+              "apply": "reconnect",
+              "description": "Consecutive acceptable temperature and cooler-power observations required during recovery.",
+              "group": "Native camera recovery",
+              "key": "coolingStableSamples",
+              "label": "Stable cooling samples",
+              "sensitive": false,
+              "step": 1.0,
+              "units": "samples"
+            }
+          },
+          "coolingTimeoutSeconds": {
+            "default": 300.0,
+            "description": "Maximum thermal settling time after reconnecting an enabled cooler before a replacement exposure.",
+            "exclusiveMinimum": 0.0,
+            "maximum": 3600.0,
+            "title": "Cooling recovery timeout",
+            "type": "number",
+            "x-regain": {
+              "apply": "reconnect",
+              "description": "Maximum thermal settling time after reconnecting an enabled cooler before a replacement exposure.",
+              "group": "Native camera recovery",
+              "key": "coolingTimeoutSeconds",
+              "label": "Cooling recovery timeout",
+              "sensitive": false,
+              "step": 1.0,
+              "units": "s"
+            }
+          },
+          "directReadRetries": {
+            "default": 2,
+            "description": "Additional direct USB read attempts under the selected camera's capabilities. Retained-frame support is device-specific; this does not grant rereads to proxy cameras.",
+            "maximum": 5,
+            "minimum": 0,
+            "title": "Direct USB rereads",
+            "type": "integer",
+            "x-regain": {
+              "apply": "reconnect",
+              "description": "Additional direct USB read attempts under the selected camera's capabilities. Retained-frame support is device-specific; this does not grant rereads to proxy cameras.",
+              "group": "Native camera recovery",
+              "key": "directReadRetries",
+              "label": "Direct USB rereads",
+              "sensitive": false,
+              "step": 1.0,
+              "units": "retries"
+            }
+          },
+          "downloadTimeoutSeconds": {
+            "default": 60.0,
+            "description": "Deadline for one image download attempt. Native same-frame rereads retain their own bounded attempts.",
+            "exclusiveMinimum": 0.0,
+            "maximum": 3600.0,
+            "title": "Download timeout",
+            "type": "number",
+            "x-regain": {
+              "apply": "reconnect",
+              "description": "Deadline for one image download attempt. Native same-frame rereads retain their own bounded attempts.",
+              "group": "Native camera recovery",
+              "key": "downloadTimeoutSeconds",
+              "label": "Download timeout",
+              "sensitive": false,
+              "step": 1.0,
+              "units": "s"
+            }
+          },
+          "exposureGraceSeconds": {
+            "default": 30.0,
+            "description": "Additional time beyond the requested exposure for the native worker to report a ready frame.",
+            "exclusiveMinimum": 0.0,
+            "maximum": 3600.0,
+            "title": "Exposure grace",
+            "type": "number",
+            "x-regain": {
+              "apply": "reconnect",
+              "description": "Additional time beyond the requested exposure for the native worker to report a ready frame.",
+              "group": "Native camera recovery",
+              "key": "exposureGraceSeconds",
+              "label": "Exposure grace",
+              "sensitive": false,
+              "step": 1.0,
+              "units": "s"
+            }
+          },
+          "maxRetries": {
+            "default": 3,
+            "description": "Maximum replacement exposures after a recoverable failure. Zero disables replacement exposures.",
+            "maximum": 20,
+            "minimum": 0,
+            "title": "Replacement exposures",
+            "type": "integer",
+            "x-regain": {
+              "apply": "reconnect",
+              "description": "Maximum replacement exposures after a recoverable failure. Zero disables replacement exposures.",
+              "group": "Native camera recovery",
+              "key": "maxRetries",
+              "label": "Replacement exposures",
+              "sensitive": false,
+              "step": 1.0,
+              "units": "retries"
+            }
+          },
+          "maximumRetryExposureSeconds": {
+            "default": 30.0,
+            "description": "Only exposures at or below this duration may be replaced. Same-frame rereads do not start a replacement exposure.",
+            "maximum": 86400.0,
+            "minimum": 0.0,
+            "title": "Replacement exposure limit",
+            "type": "number",
+            "x-regain": {
+              "apply": "reconnect",
+              "description": "Only exposures at or below this duration may be replaced. Same-frame rereads do not start a replacement exposure.",
+              "group": "Native camera recovery",
+              "key": "maximumRetryExposureSeconds",
+              "label": "Replacement exposure limit",
+              "sensitive": false,
+              "step": 1.0,
+              "units": "s"
+            }
+          },
+          "readyFrameDownloadRetries": {
+            "default": 2,
+            "description": "Additional SDK download attempts only while the same exposure still reports a ready frame. No new exposure is started by a reread.",
+            "maximum": 5,
+            "minimum": 0,
+            "title": "SDK ready-frame rereads",
+            "type": "integer",
+            "x-regain": {
+              "apply": "reconnect",
+              "description": "Additional SDK download attempts only while the same exposure still reports a ready frame. No new exposure is started by a reread.",
+              "group": "Native camera recovery",
+              "key": "readyFrameDownloadRetries",
+              "label": "SDK ready-frame rereads",
+              "sensitive": false,
+              "step": 1.0,
+              "units": "retries"
+            }
+          },
+          "reconnectDelaySeconds": {
+            "default": 5.0,
+            "description": "Wait before restoring a camera worker after a recoverable failure or explicit abort.",
+            "exclusiveMinimum": 0.0,
+            "maximum": 3600.0,
+            "title": "Reconnect delay",
+            "type": "number",
+            "x-regain": {
+              "apply": "reconnect",
+              "description": "Wait before restoring a camera worker after a recoverable failure or explicit abort.",
+              "group": "Native camera recovery",
+              "key": "reconnectDelaySeconds",
+              "label": "Reconnect delay",
+              "sensitive": false,
+              "step": 0.1,
+              "units": "s"
+            }
+          },
+          "temperatureToleranceC": {
+            "default": 2.0,
+            "description": "Allowed temperature difference from the pre-failure reading while checking cooling recovery.",
+            "exclusiveMinimum": 0.0,
+            "maximum": 3600.0,
+            "title": "Temperature tolerance",
+            "type": "number",
+            "x-regain": {
+              "apply": "reconnect",
+              "description": "Allowed temperature difference from the pre-failure reading while checking cooling recovery.",
+              "group": "Native camera recovery",
+              "key": "temperatureToleranceC",
+              "label": "Temperature tolerance",
+              "sensitive": false,
+              "step": 0.1,
+              "units": "Â°C"
+            }
+          },
+          "usbPortCycle": {
+            "default": false,
+            "description": "On Linux, use a downstream port power cycle instead of USBDEVFS_RESET when configured USB recovery is triggered.",
+            "title": "Linux USB port cycle",
+            "type": "boolean",
+            "x-regain": {
+              "apply": "reconnect",
+              "description": "On Linux, use a downstream port power cycle instead of USBDEVFS_RESET when configured USB recovery is triggered.",
+              "group": "Native camera recovery",
+              "key": "usbPortCycle",
+              "label": "Linux USB port cycle",
+              "sensitive": false,
+              "step": 1.0,
+              "units": ""
+            }
+          },
+          "usbResetAfterFailures": {
+            "default": 0,
+            "description": "After this many recoverable failures, permit at most one USB reset per capture. Zero disables it; the selected camera must have a verified reset target and required OS permissions.",
+            "maximum": 20,
+            "minimum": 0,
+            "title": "USB reset threshold",
+            "type": "integer",
+            "x-regain": {
+              "apply": "reconnect",
+              "description": "After this many recoverable failures, permit at most one USB reset per capture. Zero disables it; the selected camera must have a verified reset target and required OS permissions.",
+              "group": "Native camera recovery",
+              "key": "usbResetAfterFailures",
+              "label": "USB reset threshold",
+              "sensitive": false,
+              "step": 1.0,
+              "units": "failures"
+            }
+          }
+        },
+        "type": "object"
+      },
       "ChannelIdentity": {
         "additionalProperties": false,
         "properties": {
@@ -2146,6 +2418,58 @@
           "sources",
           "maximumAgeSeconds",
           "averageSeconds"
+        ],
+        "type": "object"
+      },
+      "NativeCameraConfig": {
+        "additionalProperties": false,
+        "properties": {
+          "model": {
+            "description": "Exact camera model name. The source identity selects its physical serial;\ndiscovery order is never used to choose a replacement camera.",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Model",
+            "type": "string",
+            "x-regain": {
+              "apply": "reconnect"
+            }
+          },
+          "recovery": {
+            "$ref": "#/$defs/CameraRecovery",
+            "default": {
+              "commandTimeoutSeconds": 15.0,
+              "coolingSampleSeconds": 2.0,
+              "coolingStableSamples": 3,
+              "coolingTimeoutSeconds": 300.0,
+              "directReadRetries": 2,
+              "downloadTimeoutSeconds": 60.0,
+              "exposureGraceSeconds": 30.0,
+              "maxRetries": 3,
+              "maximumRetryExposureSeconds": 30.0,
+              "readyFrameDownloadRetries": 2,
+              "reconnectDelaySeconds": 5.0,
+              "temperatureToleranceC": 2.0,
+              "usbPortCycle": false,
+              "usbResetAfterFailures": 0
+            },
+            "description": "Native capture recovery. These settings do not apply to Alpaca or COM inputs.",
+            "title": "Recovery",
+            "x-regain": {
+              "apply": "reconnect"
+            }
+          },
+          "sdkFallback": {
+            "default": false,
+            "description": "Permit SDK fallback only when explicitly selecting a direct USB source.\nFallback does not retain the direct backend's reread capabilities.",
+            "title": "Sdk Fallback",
+            "type": "boolean",
+            "x-regain": {
+              "apply": "reconnect"
+            }
+          }
+        },
+        "required": [
+          "model"
         ],
         "type": "object"
       },
@@ -2739,8 +3063,98 @@
         "oneOf": [
           {
             "additionalProperties": false,
+            "allOf": [
+              {
+                "else": {
+                  "properties": {
+                    "camera": {
+                      "title": "Camera",
+                      "type": "null",
+                      "x-regain": {
+                        "apply": "reconnect"
+                      }
+                    }
+                  }
+                },
+                "if": {
+                  "properties": {
+                    "device": {
+                      "enum": [
+                        "camera-direct",
+                        "camera-sdk"
+                      ],
+                      "title": "Device",
+                      "x-regain": {
+                        "apply": "reconnect"
+                      }
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "camera": {
+                      "title": "Camera",
+                      "type": "object",
+                      "x-regain": {
+                        "apply": "reconnect"
+                      }
+                    }
+                  },
+                  "required": [
+                    "camera"
+                  ]
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "device": {
+                      "const": "camera-sdk",
+                      "title": "Device",
+                      "x-regain": {
+                        "apply": "reconnect"
+                      }
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "camera": {
+                      "properties": {
+                        "sdkFallback": {
+                          "const": false,
+                          "title": "Sdk Fallback",
+                          "x-regain": {
+                            "apply": "reconnect"
+                          }
+                        }
+                      },
+                      "title": "Camera",
+                      "x-regain": {
+                        "apply": "reconnect"
+                      }
+                    }
+                  }
+                }
+              }
+            ],
             "description": "Use the existing Rust worker and its device-specific recovery behavior.",
             "properties": {
+              "camera": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/NativeCameraConfig"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Required only for native cameras. Shared recovery definitions retain\nthe existing camera defaults; camera setup remains capability gated.",
+                "title": "Camera",
+                "x-regain": {
+                  "requiresCapability": "nativeCameraSources"
+                }
+              },
               "device": {
                 "$ref": "#/$defs/NativeDevice",
                 "description": "Hardware driver and backend to use.",

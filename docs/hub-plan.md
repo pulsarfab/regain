@@ -8,6 +8,29 @@ tagged or published. Changed cross-crate APIs require an unpublished version so
 Cargo package verification uses the new workspace packages.
 Last updated: 2026-10-06.
 
+Native recovery configuration checkpoint (local, reviewed and validated): core
+now declares all fourteen saved recovery keys, defaults, ranges and descriptions
+once and generates schema data without a schema dependency. Legacy sparse
+profiles and unknown-extension loading remain compatible; the hub uses a strict
+wrapper to reject misspelled recovery fields. Native sources have class-specific
+camera model/recovery configuration, explicit direct-only SDK fallback and exact
+serial selection. Atomic persistence retains source/output identities and polling
+settings. Structural schema enforces camera presence/class/fallback constraints;
+semantic errors retain shared field paths. Web/native readers consume the same
+metadata. Four legacy compatibility cases, six camera config cases, all seven
+switch cases, the full Rust regressions, strict Clippy, Rust 1.89, generated
+contracts, Node/eight schema checks, fresh-host NINA 229/229 and actual net48
+x86/x64 pass. The first NINA run failed a post-write switch read with ValueNotSet;
+a deterministic held-poll test proves the deliberate cache invalidation interval.
+The fixture now awaits confirmed readback within the unchanged deadline and does
+not retry commands or accept other errors. Earlier HTTP/connection CI failure
+causes remain unproved. Preceding a9b3c50 PR/push CI each have seven successful
+jobs and successful Windows test.ps1; packaging/installer stages are still live.
+Keep this increment local until those runs finish. Factory/runtime, host-wide
+budgets/activity, derived recovery allowances,
+remaining camera inputs and all image outputs are still required. Camera choices
+remain disabled; no original milestone or final acceptance gate is closed here.
+
 Latest local native camera adapter checkpoint: NativeCameraBackend now connects
 the retained owner to the real SourceActor and CameraSupervisor. It shares strict
 typed property/setting decoding, incremental connection steps, client/control
@@ -1463,6 +1486,14 @@ Publishing installers, plugin feeds, and releases follows the existing
 Keep existing device profiles and registrations compatible throughout migration.
 
 ## Progress log
+
+Native recovery metadata checkpoint (2026-10-06): migrated Rust recovery
+declarations and added strict hub native-camera configuration without changing
+legacy sparse defaults, unknown-extension loading or accepted numeric ranges.
+Full validation and the first failed NINA run's deterministic cache-transition
+diagnosis are recorded in hub-review.md. Core worker behavior/deadlines are
+unchanged. All original remaining runtime, camera output, coordination,
+conformance/acceptance, documentation and final audit gates remain required.
 
 Imaging-control checkpoint (2026-10-06; reviewed locally, new CI required): gain and
 offset share core's cooler write/readback helper, absolute deadline and persistent
