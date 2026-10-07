@@ -4002,4 +4002,5 @@ Reviewed shared panel creation 1c67398, image foundation b154c87 and binary sour
 dispatch 56c2e7a now proceed together to the same draft PR. Their own new-head CI
 remains required. Local validation includes full Rust hub/Alpaca, all eleven image
 and eight binary actor cases, strict Clippy, Rust 1.89 all targets, generated
-contracts, fresh-host NINA 228/228 and actual net48 x86/x64. Camera acquisition,+adapters, three outputs, coordination and every original final gate remain open.
+contracts, fresh-host NINA 228/228 and actual net48 x86/x64. Camera acquisition,
+adapters, three outputs, coordination and every original final gate remain open.
