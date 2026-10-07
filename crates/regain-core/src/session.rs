@@ -24,6 +24,7 @@ pub struct Session {
     recovery_power: Option<i64>,
     settle_required: bool,
     usb_target: Option<String>,
+    cooling: cooling::Mailbox,
 }
 impl Session {
     pub fn new(selection: Selection, runtime: Runtime, log: Diagnostic) -> Result<Self> {
@@ -41,6 +42,7 @@ impl Session {
             recovery_power: None,
             settle_required: false,
             usb_target: None,
+            cooling: cooling::Mailbox::default(),
         })
     }
     fn emit(&self, level: &str, event: &str, message: impl AsRef<str>) {
@@ -66,6 +68,121 @@ impl Session {
     }
     pub fn snapshot(&self) -> Status {
         self.status.lock().unwrap().clone()
+    }
+    pub fn cooling(&self) -> cooling::CoolingHandle {
+        cooling::CoolingHandle {
+            mailbox: self.cooling.clone(),
+            status: self.status.clone(),
+        }
+    }
+    /// Drive one reserved command while idle. Capture drives the same mailbox
+    /// at safe worker checkpoints. Frontends retain/serialize this operation.
+    pub async fn service_cooling(&mut self, token: &CancellationToken) -> Result<()> {
+        self.service_cooling_with(&mut self.settings(), token).await
+    }
+    async fn service_cooling_with(
+        &mut self,
+        settings: &mut BTreeMap<i32, i64>,
+        token: &CancellationToken,
+    ) -> Result<()> {
+        let Some(request) = self.cooling.claim() else {
+            return Ok(());
+        };
+        let (kind, value, deadline) = {
+            let request = request.lock().unwrap();
+            (request.kind, request.value, request.deadline)
+        };
+        let deadline = deadline.min(
+            Instant::now()
+                + Duration::from_secs_f64(self.selection.recovery.command_timeout_seconds),
+        );
+        let mailbox = self.cooling.clone();
+        if let Err(error) = cooling::validate(&self.status, kind, value) {
+            let _ = mailbox.finish(&request, Err(error), || {});
+            return Ok(());
+        }
+        if token.is_cancelled() {
+            let _ = mailbox.finish(&request, Err(cooling::CoolingError::Cancelled), || {});
+            return Err(Failure::Cancelled.into());
+        }
+        let remaining = deadline
+            .saturating_duration_since(Instant::now())
+            .as_secs_f64();
+        if remaining == 0. {
+            let _ = mailbox.finish(&request, Err(cooling::CoolingError::Expired), || {});
+            return Ok(());
+        }
+        if !mailbox.dispatch(&request) {
+            return Ok(());
+        }
+        let mut set_acknowledged = false;
+        let result = async {
+            self.worker
+                .as_mut()
+                .context("Camera worker is disconnected")?
+                .cooling_call(
+                    "set",
+                    json!({"control":kind,"value":value}),
+                    deadline,
+                    token,
+                )
+                .await?;
+            set_acknowledged = true;
+            let remaining = deadline
+                .saturating_duration_since(Instant::now())
+                .as_secs_f64();
+            ensure!(remaining > 0., "Cooler deadline expired before readback");
+            let actual = self
+                .worker
+                .as_mut()
+                .context("Camera worker is disconnected")?
+                .cooling_call("get", json!({"control":kind}), deadline, token)
+                .await?
+                .0
+                .as_i64()
+                .ok_or_else(|| invalid("Invalid cooler readback"))?;
+            ensure!(actual == value, "Cooler readback differs from request");
+            Ok::<_, anyhow::Error>(actual)
+        }
+        .await;
+        let result = result.map_err(|error| {
+            if !set_acknowledged
+                && matches!(
+                    error.downcast_ref::<cooling::CoolingError>(),
+                    Some(cooling::CoolingError::Expired)
+                )
+            {
+                cooling::CoolingError::Expired
+            } else if !set_acknowledged
+                && matches!(error.downcast_ref::<Failure>(), Some(Failure::Cancelled))
+            {
+                cooling::CoolingError::Cancelled
+            } else {
+                let code = match error.downcast_ref::<Failure>() {
+                    Some(Failure::Worker { code, .. } | Failure::UncertainControl { code, .. }) => {
+                        *code
+                    }
+                    _ => None,
+                };
+                cooling::CoolingError::Uncertain {
+                    message: format!("{error:#}"),
+                    code,
+                }
+            }
+        });
+        let result = mailbox.finish(&request, result, || {
+            self.applied.insert(kind, value);
+            settings.insert(kind, value);
+            self.status.lock().unwrap().values.insert(kind, value);
+        });
+        match result {
+            Err(cooling::CoolingError::Uncertain { message, code }) => {
+                self.invalidate().await;
+                Err(Failure::UncertainControl { message, code }.into())
+            }
+            Err(cooling::CoolingError::Cancelled) => Err(Failure::Cancelled.into()),
+            _ => Ok(()),
+        }
     }
     /// Opt into Regain-owned WB. The caller serializes this with capture, like
     /// all Session operations. Settings and effective AWB gains survive recovery.
@@ -164,6 +281,7 @@ impl Session {
         tokio::select! {biased;_=token.cancelled()=>Err(Failure::Cancelled.into()),_=tokio::time::sleep(Duration::from_secs_f64(seconds))=>Ok(())}
     }
     async fn invalidate(&mut self) {
+        self.cooling.retire();
         if self.ever_opened && !self.settle_required {
             let state = self.snapshot();
             self.recovery_temperature = state.values.get(&8).map(|v| *v as f64 / 10.);
@@ -436,6 +554,7 @@ impl Session {
                 self.selection.serial.as_deref().unwrap_or("unavailable")
             ),
         );
+        self.cooling.activate();
         Ok(())
     }
     fn settings(&self) -> BTreeMap<i32, i64> {
@@ -704,13 +823,13 @@ impl Session {
             self.delay(options.reconnect_delay_seconds, token).await?;
             self.open(token).await?;
         }
+        self.service_cooling_with(settings, token).await?;
         self.apply(settings, token).await?;
         if self.settle_required
             && settings.get(&17).copied().unwrap_or(0) != 0
             && let Some(t) = *prior
         {
-            self.settle(t, *power, *settings.get(&16).unwrap_or(&0) as f64, token)
-                .await?;
+            self.settle(t, *power, settings, token).await?;
         }
         let observed = self.read_environment(token).await?;
         *prior = observed.0.or(*prior);
@@ -730,8 +849,7 @@ impl Session {
                     if settings.get(&17).copied().unwrap_or(0) != 0
                         && let Some(t) = *prior
                     {
-                        self.settle(t, *power, *settings.get(&16).unwrap_or(&0) as f64, token)
-                            .await?;
+                        self.settle(t, *power, settings, token).await?;
                     }
                 } else {
                     return Err(error);
@@ -762,6 +880,7 @@ impl Session {
         let clock = Instant::now();
         let mut environment_sample = Instant::now();
         loop {
+            self.service_cooling_with(settings, token).await?;
             let state = self
                 .call("status", Value::Null, None, token)
                 .await?
@@ -783,6 +902,7 @@ impl Session {
             }
             self.delay(0.025, token).await?;
         }
+        self.service_cooling_with(settings, token).await?;
         self.phase("Downloading");
         let mut reads = 0;
         let (mut metadata, pixels) = loop {
@@ -839,6 +959,8 @@ impl Session {
                 format!("Frame preserved; reconnect required: {error}"),
             );
             self.invalidate().await;
+        } else {
+            self.service_cooling_with(settings, token).await?;
         }
         metadata["startedUtc"] = json!(started);
         if self.snapshot().white_balance.is_some() {
@@ -866,7 +988,7 @@ impl Session {
         &mut self,
         prior: f64,
         prior_power: Option<i64>,
-        target: f64,
+        settings: &mut BTreeMap<i32, i64>,
         token: &CancellationToken,
     ) -> Result<()> {
         let o = self.selection.recovery.clone();
@@ -875,6 +997,11 @@ impl Session {
         let mut hold = CoolingHold::default();
         self.phase(format!("Restoring cooling near {prior:.1} C"));
         while clock.elapsed().as_secs_f64() < o.cooling_timeout_seconds {
+            self.service_cooling_with(settings, token).await?;
+            if settings.get(&17).copied().unwrap_or(0) == 0 {
+                return Ok(());
+            }
+            let target = *settings.get(&16).unwrap_or(&0) as f64;
             let (temperature, power) = self.read_environment(token).await?;
             let output = prior_power.is_none_or(|p| p <= 10 || power.is_some_and(|v| v >= p - 10));
             let near = temperature.is_some_and(|t| {
@@ -908,6 +1035,8 @@ impl Session {
         anyhow::bail!("Camera did not recover its prior cooling temperature and output")
     }
     pub async fn close(&mut self) {
+        self.cooling.retire();
+        self.status.lock().unwrap().connected = false;
         let token = CancellationToken::new();
         let closed = if self.worker.is_some() {
             match self.call("close", Value::Null, Some(2.), &token).await {
@@ -949,8 +1078,15 @@ impl Session {
             self.invalidate().await;
         }
         self.status.lock().unwrap().connected = false;
+        self.cooling.retire();
         self.usb_target = None;
         self.phase("Disconnected");
+    }
+}
+
+impl Drop for Session {
+    fn drop(&mut self) {
+        self.cooling.retire();
     }
 }
 
@@ -1041,6 +1177,237 @@ mod tests {
     }
     fn log() -> Diagnostic {
         Arc::new(|_, _, _| {})
+    }
+    async fn exposing(status: &SharedStatus) {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            if status.lock().unwrap().phase == "Exposing" {
+                return;
+            }
+            assert!(Instant::now() < deadline, "Capture never reached Exposing");
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+    }
+    async fn acknowledged_cooling(direct: bool) {
+        let token = CancellationToken::new();
+        let mut sel = selection(direct);
+        if direct {
+            sel.name = "ZWO ASI585MM Pro".into();
+        }
+        sel.recovery.ready_frame_download_retries = 0;
+        let mut rt = runtime();
+        rt.sdk_simulation = Some(json!({"instant":false}));
+        let mut session = Session::new(sel, rt, log()).unwrap();
+        session.connect(&token).await.unwrap();
+        let handle = session.cooling();
+        let shared = session.status.clone();
+        let original = shared.lock().unwrap().values[&16];
+        Session::queue_control(&shared, 0, 123).unwrap();
+        if !direct {
+            session
+                .call("fault", json!({"kind":"download"}), None, &token)
+                .await
+                .unwrap();
+        }
+        let capture = session.capture(
+            Exposure {
+                microseconds: 6_000_000,
+                ..exposure()
+            },
+            &token,
+        );
+        let commands = async {
+            exposing(&shared).await;
+            let first = handle.submit(16, -10, Duration::from_secs(5)).unwrap();
+            assert_eq!(shared.lock().unwrap().values[&16], original);
+            assert_eq!(first.wait().await, Ok(-10));
+            for (kind, value) in [(17, 1), (16, -15)] {
+                assert_eq!(
+                    handle
+                        .submit(kind, value, Duration::from_secs(5))
+                        .unwrap()
+                        .wait()
+                        .await,
+                    Ok(value)
+                );
+            }
+            drop(handle.submit(16, -20, Duration::from_secs(5)).unwrap());
+            // Legacy deferred imaging intent must not change frozen capture or
+            // replacement settings. Only acknowledged cooler keys are live.
+            Session::queue_control(&shared, 0, 200).unwrap();
+        };
+        let (frame, ()) = tokio::join!(capture, commands);
+        let frame = frame.unwrap();
+        assert_eq!(frame.metadata["controls"]["16"], -15);
+        assert_eq!(frame.metadata["controls"]["17"], 1);
+        assert_eq!(frame.metadata["controls"]["0"], 123);
+        assert_eq!(frame.metadata["recoveries"], if direct { 0 } else { 1 });
+        assert_eq!(
+            frame.pixels.as_ref(),
+            (0..4096u16).flat_map(u16::to_le_bytes).collect::<Vec<_>>()
+        );
+        assert_eq!(session.snapshot().values[&16], -15);
+        assert_eq!(session.snapshot().values[&17], 1);
+        assert!(!handle.pending());
+        session.invalidate().await;
+        // A later capture restores the acknowledged target after worker loss.
+        let next = session.capture(exposure(), &token).await.unwrap();
+        assert_eq!(next.metadata["controls"]["16"], -15);
+        assert_eq!(next.metadata["controls"]["17"], 1);
+        assert_eq!(next.metadata["controls"]["0"], 200);
+        session.close().await;
+    }
+    #[tokio::test]
+    async fn acknowledged_sdk_cooling_survives_replacement_and_preserves_imaging_settings() {
+        acknowledged_cooling(false).await;
+    }
+    #[tokio::test]
+    async fn acknowledged_direct_cooling_survives_worker_recovery() {
+        acknowledged_cooling(true).await;
+    }
+    #[tokio::test]
+    async fn cooler_readback_mismatch_stops_capture_without_retry_or_target_publication() {
+        let token = CancellationToken::new();
+        let mut rt = runtime();
+        rt.sdk_simulation = Some(json!({"instant":false}));
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let sink = events.clone();
+        let mut session = Session::new(
+            selection(false),
+            rt,
+            Arc::new(move |_, event, _| sink.lock().unwrap().push(event.to_owned())),
+        )
+        .unwrap();
+        session.connect(&token).await.unwrap();
+        session.refresh(&token).await.unwrap();
+        session
+            .call(
+                "simulation",
+                json!({"clampControl":16,"clampMinimum":5}),
+                None,
+                &token,
+            )
+            .await
+            .unwrap();
+        let handle = session.cooling();
+        let shared = session.status.clone();
+        let original = shared.lock().unwrap().values[&16];
+        let capture = session.capture(
+            Exposure {
+                microseconds: 6_000_000,
+                ..exposure()
+            },
+            &token,
+        );
+        let commands = async {
+            exposing(&shared).await;
+            assert!(matches!(
+                handle
+                    .submit(16, -10, Duration::from_secs(5))
+                    .unwrap()
+                    .wait()
+                    .await,
+                Err(cooling::CoolingError::Uncertain { .. })
+            ));
+        };
+        let (result, ()) = tokio::join!(capture, commands);
+        let error = result.err().unwrap();
+        assert!(matches!(
+            error.downcast_ref::<Failure>(),
+            Some(Failure::UncertainControl { .. })
+        ));
+        assert!(!retryable(&error));
+        assert_eq!(session.snapshot().values[&16], original);
+        assert!(!session.snapshot().control_connection_available);
+        assert!(
+            !events
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|event| event == "capture.retry")
+        );
+        assert!(matches!(
+            handle.submit(17, 1, Duration::from_secs(1)),
+            Err(cooling::CoolingError::Unavailable)
+        ));
+        session.close().await;
+    }
+    #[tokio::test]
+    async fn idle_cooling_acknowledges_and_teardown_rejects_queued_requests() {
+        for direct in [false, true] {
+            let token = CancellationToken::new();
+            let mut sel = selection(direct);
+            if direct {
+                sel.name = "ZWO ASI585MM Pro".into();
+            }
+            let mut session = Session::new(sel, runtime(), log()).unwrap();
+            session.connect(&token).await.unwrap();
+            let handle = session.cooling();
+            let receipt = handle.submit(16, -10, Duration::from_secs(5)).unwrap();
+            session.service_cooling(&token).await.unwrap();
+            assert_eq!(receipt.wait().await, Ok(-10));
+            assert_eq!(session.snapshot().values[&16], -10);
+            let receipt = handle.submit(16, -20, Duration::from_secs(5)).unwrap();
+            session.close().await;
+            assert_eq!(
+                receipt.wait().await,
+                Err(cooling::CoolingError::Unavailable)
+            );
+            assert!(!handle.pending());
+        }
+    }
+    #[tokio::test]
+    async fn live_cooler_target_and_disable_are_acknowledged_during_recovery_settle() {
+        for direct in [false, true] {
+            let token = CancellationToken::new();
+            let mut sel = selection(direct);
+            if direct {
+                sel.name = "ZWO ASI585MM Pro".into();
+            }
+            let mut session = Session::new(sel, runtime(), log()).unwrap();
+            session.connect(&token).await.unwrap();
+            let handle = session.cooling();
+            let shared = session.status.clone();
+            let enabled = handle.submit(17, 1, Duration::from_secs(5)).unwrap();
+            session.service_cooling(&token).await.unwrap();
+            assert_eq!(enabled.wait().await, Ok(1));
+            // Neither simulator meets this prior temperature/output, so settle
+            // must remain active until the caller explicitly disables cooling.
+            session.seed_recovery(Some(-30.), Some(80));
+            let capture = session.capture(exposure(), &token);
+            let commands = async {
+                let deadline = Instant::now() + Duration::from_secs(10);
+                loop {
+                    if shared
+                        .lock()
+                        .unwrap()
+                        .phase
+                        .starts_with("Restoring cooling")
+                    {
+                        break;
+                    }
+                    assert!(Instant::now() < deadline);
+                    tokio::time::sleep(Duration::from_millis(1)).await;
+                }
+                for (kind, value) in [(16, -15), (17, 0)] {
+                    assert_eq!(
+                        handle
+                            .submit(kind, value, Duration::from_secs(5))
+                            .unwrap()
+                            .wait()
+                            .await,
+                        Ok(value)
+                    );
+                }
+            };
+            let (frame, ()) = tokio::join!(capture, commands);
+            let frame = frame.unwrap();
+            assert_eq!(frame.metadata["controls"]["16"], -15);
+            assert_eq!(frame.metadata["controls"]["17"], 0);
+            assert_eq!(frame.metadata["recoveries"], 0);
+            assert!(!handle.pending());
+            session.close().await;
+        }
     }
     #[tokio::test]
     async fn managed_white_balance_survives_worker_recovery_and_retains_locked_gains() {

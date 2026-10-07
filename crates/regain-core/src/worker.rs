@@ -204,12 +204,41 @@ impl Worker {
         token: &CancellationToken,
         maximum_bytes: usize,
     ) -> Result<(Value, Vec<u8>)> {
+        self.call_until(
+            method,
+            params,
+            tokio::time::Instant::now() + Duration::from_secs_f64(seconds),
+            token,
+            maximum_bytes,
+        )
+        .await
+    }
+    pub(crate) async fn cooling_call(
+        &mut self,
+        method: &str,
+        params: Value,
+        deadline: tokio::time::Instant,
+        token: &CancellationToken,
+    ) -> Result<(Value, Vec<u8>)> {
+        self.call_until(method, params, deadline, token, 0).await
+    }
+    async fn call_until(
+        &mut self,
+        method: &str,
+        params: Value,
+        deadline: tokio::time::Instant,
+        token: &CancellationToken,
+        maximum_bytes: usize,
+    ) -> Result<(Value, Vec<u8>)> {
         let cooling = method == "set" && matches!(params["control"].as_i64(), Some(16 | 17));
         let mut dispatched = false;
         let result = tokio::select! {
             biased;
             _=token.cancelled()=>Err(Failure::Cancelled.into()),
-            result=tokio::time::timeout(Duration::from_secs_f64(seconds),self.exchange(method,params,maximum_bytes,&mut dispatched))=>result.unwrap_or_else(|_|Err(anyhow::anyhow!("Worker {method} timed out after {seconds} seconds"))),
+            result=tokio::time::timeout_at(deadline,self.exchange(method,params,maximum_bytes,&mut dispatched,deadline))=>result.unwrap_or_else(|_|{
+                if cooling && !dispatched {Err(crate::cooling::CoolingError::Expired.into())}
+                else {Err(anyhow::anyhow!("Worker {method} acknowledgement timed out"))}
+            }),
         };
         let result = result.map_err(|error| {
             if cooling
@@ -232,6 +261,13 @@ impl Worker {
             }
         });
         if result.is_err()
+            && !(!dispatched
+                && result.as_ref().err().is_some_and(|error| {
+                    matches!(
+                        error.downcast_ref::<crate::cooling::CoolingError>(),
+                        Some(crate::cooling::CoolingError::Expired)
+                    )
+                }))
             && !matches!(
                 result
                     .as_ref()
@@ -250,14 +286,23 @@ impl Worker {
         params: Value,
         maximum_bytes: usize,
         dispatched: &mut bool,
+        deadline: tokio::time::Instant,
     ) -> Result<(Value, Vec<u8>)> {
-        self.id += 1;
+        let id = self
+            .id
+            .checked_add(1)
+            .ok_or_else(|| invalid("Worker command counter exhausted"))?;
         let bytes =
-            serde_json::to_vec(&json!({"version":1,"id":self.id,"method":method,"params":params}))?;
+            serde_json::to_vec(&json!({"version":1,"id":id,"method":method,"params":params}))?;
         ensure!(
             bytes.len() <= 65536,
             Failure::Invalid("Command too large".into())
         );
+        ensure!(
+            tokio::time::Instant::now() < deadline,
+            crate::cooling::CoolingError::Expired
+        );
+        self.id = id;
         *dispatched = true;
         self.input.write_u32_le(bytes.len() as u32).await?;
         self.input.write_all(&bytes).await?;
@@ -333,6 +378,18 @@ impl Drop for Worker {
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn simulated_runtime(settings: Value) -> Runtime {
+        Runtime {
+            directory: std::env::var_os("REGAIN_TEST_WORKERS")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| {
+                    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/debug")
+                }),
+            sdk: "unused".into(),
+            simulate: true,
+            sdk_simulation: Some(settings),
+        }
+    }
 
     fn response(count: u64, ok: bool) -> Vec<u8> {
         let header = serde_json::to_vec(&json!({
@@ -348,16 +405,7 @@ mod tests {
 
     #[tokio::test]
     async fn cooling_transport_loss_retires_simulated_worker_without_retry() {
-        let runtime = Runtime {
-            directory: std::env::var_os("REGAIN_TEST_WORKERS")
-                .map(PathBuf::from)
-                .unwrap_or_else(|| {
-                    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/debug")
-                }),
-            sdk: "unused".into(),
-            simulate: true,
-            sdk_simulation: Some(json!({"instant":true,"fault":"hang"})),
-        };
+        let runtime = simulated_runtime(json!({"instant":true,"fault":"hang"}));
         for cancel_after_dispatch in [false, true] {
             let token = CancellationToken::new();
             let mut worker = runtime
@@ -425,6 +473,40 @@ mod tests {
         ));
         assert_eq!(worker.id, id);
         assert!(worker.child.try_wait().unwrap().is_some());
+    }
+
+    #[tokio::test]
+    async fn expired_cooler_write_preserves_worker_and_framing_without_dispatch() {
+        let mut worker = simulated_runtime(json!({"instant":true}))
+            .spawn(false, std::sync::Arc::new(|_, _, _| {}))
+            .await
+            .unwrap();
+        let token = CancellationToken::new();
+        let id = worker.id;
+        let error = worker
+            .cooling_call(
+                "set",
+                json!({"control":16,"value":-10}),
+                tokio::time::Instant::now(),
+                &token,
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            error.downcast_ref::<crate::cooling::CoolingError>(),
+            Some(crate::cooling::CoolingError::Expired)
+        ));
+        assert_eq!(worker.id, id);
+        assert!(worker.child.try_wait().unwrap().is_none());
+        worker
+            .call("open", json!({"name":"ZWO Simulated"}), 15., &token)
+            .await
+            .unwrap();
+        worker
+            .call("close", Value::Null, 15., &token)
+            .await
+            .unwrap();
+        worker.kill().await;
     }
 
     #[tokio::test]

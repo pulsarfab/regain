@@ -2295,8 +2295,20 @@ timeout/cancellation or malformed/lost replies as uncertain and retires the
 worker. Cancellation before dispatch remains distinct. This prevents the outer
 command deadline from bypassing the direct owner's uncertainty envelope.
 Other imaging/auxiliary writes remain excluded during capture. This primitive
-does not yet provide the common Session/NativeCamera acknowledgement queue or
-preserve live targets across core recovery. Queuing a desired cooler value alone must
+does not by itself provide frontend ownership or acknowledgement. Session now
+provides a shared SDK/direct mailbox for acknowledged cooler target/enable changes,
+with one slot and distinct queued, claimed/preflight, dispatched and finished states.
+Receipt loss/expiry before dispatch skips I/O. Dispatched work survives waiter loss;
+unknown outcomes prevent further admission, retire the worker and prevent capture
+retry. A successful write/readback commits shared/applied values and the active
+recovery map before its receipt. Only cooler keys change in frozen capture settings;
+frame control metadata reflects their final acknowledged values. Reconnect/settle,
+exposure polling and valid completed-download checkpoints service the same mailbox.
+An expired unsent worker command preserves framing, worker and command identity.
+Close, invalidation and Session Drop retire outstanding requests. The idle owner
+must retain and drive service_cooling; a receipt alone does not schedule I/O or
+grant a source lease. NativeCamera still needs generation/activity/command-task
+and publication integration, with typed redacted errors. Queuing a desired cooler value alone must
 not be reported as an applied in-exposure write. Implement and test SDK/direct
 cooling application and recovery-setting preservation before enabling cameras.
 

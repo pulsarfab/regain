@@ -4442,3 +4442,53 @@ Both preceding ef0748e CI runs pass all eight jobs; this reviewed increment and
 the two native camera increments proceed to their own CI on the same draft PR.
 Keep every original camera/runtime/output/recovery,
 coordination and final acceptance gate open; camera creation remains disabled.
+
+## 2026-10-06: common acknowledged Session cooling (local)
+
+One bounded mailbox now serves SDK/direct cooler target and enable changes on
+Session's existing worker owner. Submit validates capabilities without changing
+shared values. Queued and claimed/preflight requests can expire or lose their
+receipt without dispatch. Dispatched commands retain ownership after receipt
+loss; uncertain outcomes fence new admission, invalidate the worker and are
+non-retryable by capture recovery. Known completion commits shared/applied values
+and the active recovery map before publishing its receipt. Only cooler keys are
+live in otherwise frozen capture/replacement settings; frame control metadata
+records the final acknowledged values rather than a thermal history.
+
+Review separated claimed/preflight ownership from worker dispatch. It also
+carries one absolute deadline through write/readback, capped by the configured
+command timeout, and checks it immediately before framed write admission. An
+unsent expiry preserves worker/framing and consumes no command ID. Cancelling a
+waiter after dispatch cannot free capacity or turn a late outcome into success.
+Identity checks prevent retired completions from modifying a replacement request.
+Close, invalidation and Drop retire queued/dispatched receipts with distinct
+certainty. No mutex is held over I/O. Existing serialized worker ownership and
+core exposure/download retry limits remain in force.
+
+Six mailbox cases cover bounded/validated admission, commit-before-receipt,
+queue/preflight expiry and caller loss, owned dispatched completion, timeout
+fencing, retirement/reactivation, stale results and retained upstream codes.
+Production worker simulations verify SDK target changes survive a replacement
+exposure while imaging settings remain frozen, direct target changes survive
+worker recovery, idle acknowledgement/teardown, readback mismatch without target
+publication or capture retry, and live target/disable commands during recovery
+settle. An expired worker command leaves the same process usable for valid framed
+commands. No physical devices or installed vendor drivers are activated.
+
+Full core/hub/Alpaca regressions and strict Rust 1.99 Clippy/Rust 1.89 all-target
+checks pass. Final core confirmation includes all 37 tests; the added settle case
+also passes and its test-only changes pass focused strict Clippy/MSRV. Generated
+contracts, formatting, rebuilt-host NINA 228/228 and actual net48 x86/x64 clients
+pass with no build warnings.
+Logs: artifacts/hub-camera-core-cooling-{mailbox,worker,focused,reviewed-worker,
+core,rust,clippy,msrv,final-core,final-clippy,final-msrv,contract,host,nina,net48}.log.
+NativeCamera still needs a retained command task for idle/capture, generation and
+activity ownership, error/publication fencing and typed source adapter integration.
+The legacy queue_control API remains deferred desired intent. Do not report it
+as hardware acknowledgement. Camera creation stays disabled; every original
+camera/output/recovery/coordination and final acceptance gate remains required.
+
+Pushed native admission/owner/direct-cooling head 6584e67 PR/push CI
+37568068870/37568064681 each has seven successful jobs and a live Windows job.
+Keep this reviewed Session increment local until both runs finish. Earlier
+intermittent connection/motion failure causes remain unproved.

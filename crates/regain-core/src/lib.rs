@@ -1,4 +1,5 @@
 pub mod accessory;
+pub mod cooling;
 pub mod model;
 mod process;
 pub mod session;

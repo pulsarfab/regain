@@ -154,6 +154,28 @@ does not complete native cooling: the common Session/NativeCamera acknowledged
 queue, recovery-target preservation, source adapter/runtime and every frontend
 image output remain required. Camera creation remains disabled.
 
+Core cooling checkpoint (reviewed locally): Session now exposes one
+bounded acknowledged target/enable mailbox shared by SDK/direct captures. Queued
+and claimed/preflight requests remain cancellable without I/O; dispatched work
+survives waiter loss and fences after uncertain acknowledgement. Set plus readback
+use one absolute deadline, capped by the configured core command timeout. Expiry
+before framed write preserves the worker and consumes no command ID. Successful
+acknowledgement updates applied values, shared status and the active recovery map
+before publishing its receipt, changing only cooler keys in frozen capture settings.
+Recovery reconnect/settle, exposure polling and completed-download checkpoints
+service that mailbox on the existing owner. Close/invalidate/Drop retire requests.
+Six mailbox cases and actual SDK/direct capture/recovery, mismatch/no-retry, idle
+and teardown cases pass, including live target/disable during recovery settle.
+All 37 core tests, full core/hub/Alpaca regressions, strict Rust 1.99 Clippy,
+Rust 1.89 all-target checks, generated contracts, rebuilt-host NINA 228/228 and
+actual net48 x86/x64 clients pass. Logs and review refinements are in hub-review.md.
+Preceding pushed native admission/owner/direct-cooling head 6584e67 has seven
+successful jobs in each PR/push run 37568068870/37568064681, with Windows still
+active. Keep this reviewed core increment local until both runs finish.
+NativeCamera still needs the retained idle/capture command task, generation/activity
+and publication integration and typed source properties; do not equate this core
+mailbox with completed frontend cooling. All original later gates remain required.
+
 Camera supervisor checkpoint (local): nineteen private virtual-clock cases pass.
 One source-owned acquisition retains control and runtime activity after caller
 cancellation/disconnect, freezes geometry and available exposure identity, and
