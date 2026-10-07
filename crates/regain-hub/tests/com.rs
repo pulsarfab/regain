@@ -22,6 +22,9 @@ use serde_json::{Value, json};
 use std::{collections::BTreeMap, path::PathBuf, sync::Arc, time::Duration};
 use uuid::Uuid;
 
+#[path = "support/covercalibrator_com.rs"]
+mod covercalibrator_com;
+
 struct Fixture {
     directory: PathBuf,
     prefix: String,

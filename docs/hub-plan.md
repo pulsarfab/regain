@@ -38,10 +38,24 @@ Panel Alpaca V2 publication is verified
 with dynamic identities, legacy V1/modern V2 inputs and production OFP2 simulation.
 Native NINA/ASCOM panel publication is implemented locally, using shared protocol,
 selection/setup and registration paths. Final validation is recorded below.
-Panel COM/virtual inputs,
-dedicated simulation/shared setup and camera proxies remain.
+Panel Windows COM imports are implemented locally through the existing STA worker;
+30 private worker and 19 registered parent cases pass. Virtual inputs, dedicated panel
+simulation/shared setup and camera proxies remain.
 Milestone 5's coordinated groups are not yet
 implemented. PR #21 stays draft until the full plan passes.
+
+Windows panel import checkpoint: both helper architectures use the common strict
+member tables, typed validation, V1/V2 connection policies and source ownership.
+Private tests cover actual state enums, independent completion and components,
+live brightness limits, On(0), shared leases and applied lost replies that fence
+every sibling command without automatic actuator cleanup. Thirty worker and 19
+registered parent cases pass. Review corrected a fixture-only assumption that
+poll recovery cannot open a new worker; no production recovery policy changed.
+Full local Rust hub/Alpaca, strict Clippy, Rust 1.89, contract freshness, Node/six
+schema checks, rebuilt-host NINA 223/223 and real net48 x86/x64 clients pass.
+Panel COM choices stay gated until virtual inputs, simulation and shared creation
+are verified. Next: virtual panels, then dedicated simulation/shared creation and
+all remaining camera, coordination and original acceptance/final gates.
 
 Filter-wheel controller increment: shared typed sessions, live ordered names and
 signed offsets, slot bounds, nonblocking Position writes and moving `-1` are

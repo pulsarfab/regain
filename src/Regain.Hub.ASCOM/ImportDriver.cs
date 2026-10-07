@@ -97,7 +97,7 @@ internal sealed class ImportDriver {
             case Phase.Version:
                 try { version = Integer(Get("InterfaceVersion"), 1, short.MaxValue); }
                 catch (Exception error) when (Classify(Unwrap(error), false) == "unsupported") { version = null; }
-                modern = version >= (options.DeviceType switch { "observingconditions" => 2, "focuser" or "rotator" => 4, _ => 3 });
+                modern = version >= (options.DeviceType switch { "observingconditions" or "covercalibrator" => 2, "focuser" or "rotator" => 4, _ => 3 });
                 phase = Phase.Check; break;
             case Phase.Check:
                 var connected = Boolean(Get("Connected"));
@@ -175,6 +175,22 @@ internal sealed class ImportDriver {
         if (member == "connected") { Fields(parameters); return Boolean(Get("Connected")); }
         if (member == "interfaceversion") { Fields(parameters); return Integer(Get("InterfaceVersion"), 1, short.MaxValue); }
         if (member == "connecting" && modern) { Fields(parameters); return Boolean(Get("Connecting")); }
+        if (options.DeviceType == "covercalibrator") {
+            foreach (HubCoverCalibratorProperty property in Enum.GetValues(typeof(HubCoverCalibratorProperty))) {
+                if (HubCoverCalibratorProtocol.Key(property).ToLowerInvariant() != member) continue;
+                Fields(parameters);
+                var result = Get(property.ToString());
+                object scalar = property switch {
+                    HubCoverCalibratorProperty.CoverMoving or HubCoverCalibratorProperty.CalibratorChanging => Boolean(result),
+                    HubCoverCalibratorProperty.CoverState when result is global::ASCOM.DeviceInterface.CoverStatus state => (int)state,
+                    HubCoverCalibratorProperty.CalibratorState when result is global::ASCOM.DeviceInterface.CalibratorStatus state => (int)state,
+                    _ => Int32(result)
+                };
+                try { HubCoverCalibratorProtocol.Validate(property, JsonSerializer.SerializeToElement(scalar)); }
+                catch (HubException) { throw new BadValue(); }
+                return scalar;
+            }
+        }
         if (options.DeviceType == "filterwheel") {
             foreach (HubFilterWheelProperty property in Enum.GetValues(typeof(HubFilterWheelProperty))) {
                 if (HubFilterWheelProtocol.Key(property).ToLowerInvariant() != member) continue;
@@ -277,6 +293,17 @@ internal sealed class ImportDriver {
     }
 
     private object? Write(string member, JsonElement parameters) {
+        if (options.DeviceType == "covercalibrator") {
+            if (member == "calibratoron") {
+                Fields(parameters, "Brightness");
+                var item = Parameter(parameters, "Brightness");
+                if (item.ValueKind != JsonValueKind.Number || !item.TryGetInt32(out var brightness) || brightness < 0) throw new InvalidInput();
+                Call("CalibratorOn", brightness); return null;
+            }
+            var method = member switch { "opencover" => "OpenCover", "closecover" => "CloseCover",
+                "haltcover" => "HaltCover", "calibratoroff" => "CalibratorOff", _ => null };
+            if (method is not null) { Fields(parameters); Call(method); return null; }
+        }
         if (options.DeviceType == "filterwheel" && member == "position") {
             Fields(parameters,"Position");
             var item = Parameter(parameters,"Position");

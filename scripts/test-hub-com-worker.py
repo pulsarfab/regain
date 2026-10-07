@@ -46,7 +46,7 @@ def registered_fixture():
         "[Reflection.AssemblyName]::GetAssemblyName($env:REGAIN_COM_FIXTURE_DLL).FullName",
     ], env={**os.environ, "REGAIN_COM_FIXTURE_DLL": str(FIXTURE)}, text=True).strip()
     assert identity.startswith("Regain.Hub.COM.Fixture,")
-    progids = [PROGID] + [PROGID + "." + name for name in ("Switch", "Safety", "Weather", "Other", "Own", "Focuser", "Rotator", "Wheel")]
+    progids = [PROGID] + [PROGID + "." + name for name in ("Switch", "Safety", "Weather", "Other", "Own", "Focuser", "Rotator", "Wheel", "Panel")]
     classids = [CLSID, SELF_CLSID]
     paths = [f"Software\\Classes\\{name}" for name in progids] + [f"Software\\Classes\\CLSID\\{classid}" for classid in classids]
     views = (winreg.KEY_WOW64_32KEY, winreg.KEY_WOW64_64KEY)
@@ -187,6 +187,90 @@ class Worker:
 
 
 class ImportTests(unittest.TestCase):
+    def test_panel_legacy_modern_states_nonblocking_commands_and_connection_versions(self):
+        for architecture in self.each():
+            for version in (1, 2):
+                with self.subTest(architecture=architecture, version=version), Worker(architecture, device="covercalibrator", settings={"version": version}) as worker:
+                    info = worker.connect()
+                    self.assertEqual(info["method"], "async" if version == 2 else "legacy")
+                    self.assertEqual(worker.count("Connect"), int(version == 2))
+                    self.assertEqual(worker.count("Connected.set"), int(version == 1))
+                    for member, value in (("brightness", 0), ("maxbrightness", 4096), ("coverstate", 1), ("calibratorstate", 1)):
+                        reply = worker.send("read", member)
+                        self.assertIsNone(reply["error"], reply)
+                        self.assertEqual(reply["value"], value)
+                    for member in ("covermoving", "calibratorchanging"):
+                        reply = worker.send("read", member)
+                        if version == 1:
+                            self.assertEqual(reply["error"]["kind"], "unsupported")
+                        else:
+                            self.assertIsNone(reply["error"], reply)
+                            self.assertIs(reply["value"], False)
+                    self.assertIsNone(worker.send("write", "opencover")["error"])
+                    self.assertEqual(worker.send("read", "coverstate")["value"], 2)
+                    if version == 2:
+                        self.assertIs(worker.send("read", "covermoving")["value"], True)
+                    self.assertIsNone(worker.send("write", "haltcover")["error"])
+                    self.assertEqual(worker.send("read", "coverstate")["value"], 4)
+                    self.assertIsNone(worker.send("write", "closecover")["error"])
+                    self.assertIsNone(worker.send("write", "calibratoron", {"Brightness": 0})["error"])
+                    self.assertEqual(worker.send("read", "calibratorstate")["value"], 2)
+                    self.assertEqual(worker.send("read", "brightness")["value"], 0)
+                    if version == 2:
+                        self.assertIs(worker.send("read", "calibratorchanging")["value"], True)
+                    self.assertIsNone(worker.send("write", "calibratoron", {"Brightness": 2147483647})["error"])
+                    self.assertEqual(worker.send("read", "brightness")["value"], 2147483647)
+                    self.assertIsNone(worker.send("write", "calibratoroff")["error"])
+                    self.assertEqual(worker.send("read", "calibratorstate")["value"], 1)
+                    worker.disconnect()
+                    self.assertEqual(worker.count("Disconnect"), int(version == 2))
+                    self.assertEqual(worker.count("SetupDialog"), 0)
+                    self.assertEqual({t["apartment"] for t in worker.trace()}, {"STA"})
+                    self.assertEqual(len({t["thread"] for t in worker.trace()}), 1)
+
+    def test_panel_strict_values_and_arguments_before_driver_dispatch(self):
+        for architecture in self.each():
+            with self.subTest(architecture=architecture), Worker(architecture, device="covercalibrator", settings={"version": 2}) as worker:
+                worker.connect()
+                for member, bad, good in (("Brightness", [-1, 1.5, "1", True, 2147483648], 0),
+                                          ("MaxBrightness", [0, -1, 1.5, "1", 2147483648], 2147483647),
+                                          ("CoverState", [-1, 6, 1.5, "1", True], 5),
+                                          ("CalibratorState", [-1, 6, 1.5, "1", True], 0),
+                                          ("CoverMoving", [0, "false"], False),
+                                          ("CalibratorChanging", [1, "true"], True)):
+                    for value in bad:
+                        worker.set(**{"panel" + member: value})
+                        reply = worker.send("read", member.lower())
+                        self.assertEqual(reply["error"]["kind"], "unavailable", (member, value, reply))
+                    worker.set(**{"panel" + member: good})
+                    self.assertIsNone(worker.send("read", member.lower())["error"])
+                for args in ({}, {"Brightness": -1}, {"Brightness": 2147483648}, {"Brightness": 1.5},
+                             {"Brightness": "1"}, {"Brightness": True}, {"brightness": 1}, {"Brightness": 1, "extra": True}):
+                    self.assertEqual(worker.send("write", "calibratoron", args)["error"]["kind"], "invalidValue")
+                for member in ("opencover", "closecover", "haltcover", "calibratoroff"):
+                    self.assertEqual(worker.send("write", member, {"extra": True})["error"]["kind"], "invalidValue")
+                for member in ("CalibratorOn", "OpenCover", "CloseCover", "HaltCover", "CalibratorOff"):
+                    self.assertEqual(worker.count(member), 0)
+                for member in ("move", "halt", "action", "commandblind"):
+                    self.assertEqual(worker.send("write", member)["error"]["kind"], "unsupported")
+
+    def test_panel_applied_on_with_unknown_reply_fences_all_mutations(self):
+        for architecture in self.each():
+            with self.subTest(architecture=architecture), Worker(architecture, device="covercalibrator", settings={"version": 2, "panelFaultAfterOn": True}) as worker:
+                worker.connect()
+                self.assertEqual(worker.send("write", "calibratoron", {"Brightness": 17})["error"]["kind"], "uncertain")
+                self.assertEqual(worker.count("CalibratorOn.applied"), 1)
+                self.assertEqual(worker.send("read", "brightness")["value"], 17)
+                worker.set(panelFaultAfterOn=False)
+                for member, args in (("calibratoron", {"Brightness": 18}), ("calibratoroff", {}),
+                                     ("opencover", {}), ("closecover", {}), ("haltcover", {})):
+                    self.assertEqual(worker.send("write", member, args)["error"]["kind"], "uncertain")
+                worker.disconnect()
+                worker.close()
+                self.assertEqual(worker.count("CalibratorOn"), 1)
+                for member in ("CalibratorOff", "OpenCover", "CloseCover", "HaltCover", "Dispose"):
+                    self.assertEqual(worker.count(member), 0)
+
     def test_wheel_metadata_short_setter_and_class_specific_connection_versions(self):
         for architecture in self.each():
             for version in (2, 3):
@@ -328,7 +412,7 @@ class ImportTests(unittest.TestCase):
 
     def test_typed_accessory_borrowed_connections_and_alias_denial(self):
         for architecture in self.each():
-            for device, versions, suffix in (("rotator", (3, 4), "Rotator"), ("filterwheel", (2, 3), "Wheel")):
+            for device, versions, suffix in (("rotator", (3, 4), "Rotator"), ("filterwheel", (2, 3), "Wheel"), ("covercalibrator", (1, 2), "Panel")):
                 for version in versions:
                     with self.subTest(architecture=architecture, device=device, version=version), Worker(architecture, device=device, policy="externallyManaged", settings={"version": version, "initialConnected": True}) as worker:
                         self.assertFalse(worker.connect()["ownsConnection"])

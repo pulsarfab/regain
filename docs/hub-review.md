@@ -3713,3 +3713,49 @@ Panel controller/runtime/HTTP is pushed at 36a5558; PR/push CI
 37550182065/37550174221 is live. Keep this reviewed native increment local until
 those runs end. Next: panel COM imports, virtual inputs, dedicated simulation and
 shared creation, followed by every original camera/coordination/acceptance gate.
+
+### Windows panel import review (2026-10-06, local increment)
+
+Reviewed the existing STA activation, strict member whitelist, connection policy,
+request framing and uncertain-mutation behavior. CoverCalibrator now uses those
+paths in both helper architectures, sharing native property validation and the
+Rust panel controller rather than introducing another owner or transport.
+V1 negotiates Connected; V2 negotiates asynchronous Connect/Disconnect. Borrowed
+and external ownership, class alias denial and no vendor Dispose remain common.
+
+Six reads admit strict Int32, state enums 0..5 and Boolean completion. Actual
+declared ASCOM enums and COM integer representations are admitted without numeric
+string/fraction/overflow coercion. V2 completion remains mandatory; only the
+existing V1 controller derives it. Five nonblocking commands validate exact
+parameter shapes before invocation. Live presence and maximum checks remain in
+the shared controller. Unknown command outcomes fence sibling mutations without
+automatic Halt/Close/Off or replay.
+
+Thirty actual private COM worker checks pass, including panel V1/V2 connection
+thresholds, all properties/commands, strict invalid readings/arguments, STA pump,
+borrowed/external cleanup and class alias denial. The fixture uses the installed
+interface package for actual state enums. Its applied-then-failed On records
+mutation before throwing, while its applied-lost-reply mode stalls after recording
+mutation so the production Rust parent retires the worker.
+
+The first registered parent run passes 18/19 cases. The new lost-reply case passes
+its uncertainty fence and no-replay checks but incorrectly requires exactly one
+activation through shutdown. The source actor can legitimately reconnect its
+poll transport after a loss. The corrected test requires one initial shared
+activation and exactly one applied On through shutdown; all sibling commands
+remain fenced and no automatic actuator cleanup is permitted. Production recovery,
+deadlines and retry rules are unchanged. The original failure log is retained at
+artifacts/hub-panel-com-private.log. Confirmation passes all 30 worker and 19
+actual registered parent cases, covering V1/V2 in both architectures and retained
+uncertainty through sibling calls and shutdown.
+
+Full local Rust hub/Alpaca suites, strict Clippy, Rust 1.89 all targets, generated
+contract freshness, Node/six schema checks, rebuilt-host warnings-denied NINA
+223/223 and real net48 x86/x64 regressions pass. Python syntax and diff checks
+pass. No physical equipment or installed vendor driver was activated. Panel COM
+choices stay gated until virtual inputs, simulation and shared creation are
+verified. Every original later gate remains required.
+
+Evidence: artifacts/hub-panel-com-{compile,private,private-confirmed,rust,clippy,
+msrv,contract,node,schema,host,nina,net48}.log. Previous panel CI remains live;
+keep reviewed native/import increments local until that preceding run finishes.

@@ -2001,9 +2001,36 @@ shares the same panel with a native NINA client; stopping the publisher releases
 only its leases and sends no actuator command. Native chooser enumeration,
 registration and metadata are inert. Manual private COM exports pass both server
 and client bitnesses; cold/production registration and interactive acceptance
-still require their separate gates. Panel COM imports, virtual inputs, dedicated
-simulation and shared creation remain pending.
+still require their separate gates. Virtual panel inputs, dedicated simulation
+and shared creation remain pending.
 
 Interface references: installed NINA 3.2 IFlatDevice declarations and
 [NINA's cover/calibrator adapter](https://github.com/isbeorn/nina/blob/develop/NINA.Equipment/Equipment/MyFlatDevice/AscomCoverCalibrator.cs),
 plus the installed ASCOM.DeviceInterfaces 7.1.2 V2/V1 declarations.
+
+### Windows panel imports
+
+The existing isolated, message-pumping STA worker admits CoverCalibrator sources
+in either installed helper architecture. V2 uses owned asynchronous Connect and
+Disconnect; V1 uses Connected. Externally managed connections and already-open
+legacy connections retain the common borrowed-ownership rules. Configuration
+preparation and class-denial checks do not activate a driver.
+
+Six whitelisted reads reuse the native panel validator. Brightness and maximum
+are bounded Int32 values, states are 0..5 and completion properties require actual
+Boolean values. Declared ASCOM state enums and COM integer representations are
+accepted; strings, fractional numbers, overflow and invalid state values are
+unavailable. A missing or malformed V2 completion property is never converted from
+the state enum. Only the shared controller's negotiated V1 path derives completion.
+
+Five whitelisted commands retain nonblocking acknowledgements. CalibratorOn
+requires exactly one nonnegative Int32 Brightness argument; the shared controller
+checks current component presence and live maximum before dispatch. No extra
+reflection members, setup calls or automatic actuator cleanup are introduced.
+Uncertain commands fence every sibling output. Read/poll transport recovery can
+activate a fresh worker, but cannot clear that fence, replay a command or silently
+move an existing typed session to a new source generation.
+
+These paths are exercised through fail-if-present private registry fixtures,
+never installed vendor drivers. Generated panel COM choices remain gated until
+dedicated simulation and shared panel creation are implemented and verified.

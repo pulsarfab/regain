@@ -86,6 +86,7 @@ impl ComBackend {
                 | DeviceType::Focuser
                 | DeviceType::Rotator
                 | DeviceType::FilterWheel
+                | DeviceType::CoverCalibrator
         ) {
             return Err(unsupported(
                 "This COM worker does not support the selected device class yet",
@@ -237,7 +238,7 @@ impl ComBackend {
         };
         let expected_method = if reply.connection.interface_version.is_some_and(|v| {
             v >= match self.device {
-                DeviceType::ObservingConditions => 2,
+                DeviceType::ObservingConditions | DeviceType::CoverCalibrator => 2,
                 DeviceType::Focuser | DeviceType::Rotator => 4,
                 _ => 3,
             }

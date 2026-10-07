@@ -25,6 +25,8 @@ public sealed class Driver {
     private short wheelPosition;
     private double logical = 20, mechanical = 350, target = 20;
     private bool reverse;
+    private int brightness, coverState = 1, calibratorState = 1;
+    private bool coverMoving, calibratorChanging;
     public Driver() {
         var explicitState = Environment.GetEnvironmentVariable("REGAIN_HUB_COM_FIXTURE_STATE");
         var arguments = Environment.GetCommandLineArgs();
@@ -76,6 +78,37 @@ public sealed class Driver {
             throw new COMException("PRIVATE_FIXTURE_SECRET_DO_NOT_ECHO", settings.GetProperty("faultCode").GetInt32());
     }
     public short InterfaceVersion { get { Before("InterfaceVersion"); return Settings().TryGetProperty("version", out var value) ? value.GetInt16() : (short)3; } }
+    private object PanelValue(string member, object fallback) {
+        Before(member);
+        if (!Settings().TryGetProperty("panel" + member, out var value)) return fallback;
+        return value.ValueKind switch {
+            JsonValueKind.True => true, JsonValueKind.False => false,
+            JsonValueKind.String => value.GetString()!,
+            JsonValueKind.Number when value.TryGetInt32(out var integer) => integer,
+            JsonValueKind.Number when value.TryGetInt64(out var wide) => wide,
+            JsonValueKind.Number => value.GetDouble(), _ => new object()
+        };
+    }
+    public object Brightness => PanelValue("Brightness", brightness);
+    public object MaxBrightness => PanelValue("MaxBrightness", 4096);
+    public object CoverState => PanelValue("CoverState", (ASCOM.DeviceInterface.CoverStatus)coverState);
+    public object CalibratorState => PanelValue("CalibratorState", (ASCOM.DeviceInterface.CalibratorStatus)calibratorState);
+    private void RequireModernPanel() {
+        if (Settings().TryGetProperty("version", out var version) && version.GetInt32() == 1)
+            throw new COMException("Legacy completion", unchecked((int)0x80040400));
+    }
+    public object CoverMoving { get { RequireModernPanel(); return PanelValue("CoverMoving", coverMoving); } }
+    public object CalibratorChanging { get { RequireModernPanel(); return PanelValue("CalibratorChanging", calibratorChanging); } }
+    public void OpenCover() { Before("OpenCover"); coverState = 2; coverMoving = true; }
+    public void CloseCover() { Before("CloseCover"); coverState = 2; coverMoving = true; }
+    public void HaltCover() { Before("HaltCover"); coverState = 4; coverMoving = false; }
+    public void CalibratorOn(int value) {
+        Before("CalibratorOn", value); brightness = value; calibratorState = 2; calibratorChanging = true;
+        Record("CalibratorOn.applied", value);
+        if (Setting("panelLoseOnReply", false)) Thread.Sleep(600000);
+        if (Setting("panelFaultAfterOn", false)) throw new ArgumentException("PRIVATE_FIXTURE_SECRET_DO_NOT_ECHO");
+    }
+    public void CalibratorOff() { Before("CalibratorOff"); brightness = 0; calibratorState = 1; calibratorChanging = false; }
     public bool Connected { get { Before("Connected.get"); return connected && !Setting("verifyDisconnected", false); } set { Before("Connected.set", value); connected = value; } }
     public bool Connecting {
         get {
