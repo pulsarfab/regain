@@ -49,7 +49,7 @@ public sealed partial class HubNativeTests
                 var references = Controls<ComboBox>(window).Single(c => (string?)c.Tag == "/outputs/3/device/source");
                 references.SelectedItem = references.Items.OfType<ComboBoxItem>().Single(c => ((string)c.Content).StartsWith("Explicit simulation " + deviceType + " setup (", StringComparison.Ordinal));
                 Text("/outputs/3/number", "7"); Text("/outputs/3/label", "Shared " + deviceType + " [SIMULATION]");
-                Click(review); await UiUntil(() => apply.IsEnabled);
+                Click(review); await UiUntil(() => apply.IsEnabled, () => WindowState(window, deviceType + " review"));
                 Click(apply); await UiUntil(() => review.IsEnabled && !apply.IsEnabled);
                 var saved = await host.Command(new { op = "getConfig" });
                 var savedSource = saved.GetProperty("sources")[3]; var savedOutput = saved.GetProperty("outputs")[3];
@@ -112,11 +112,13 @@ public sealed partial class HubNativeTests
             } finally { window.Close(); }
         });
     }
-    private static async Task UiUntil(Func<bool> predicate)
+    private static string WindowState(Window window, string stage) => stage + ": " +
+        string.Join(" | ", Controls<TextBlock>(window).Select(item => item.Text).Where(text => !string.IsNullOrEmpty(text)));
+    private static async Task UiUntil(Func<bool> predicate, Func<string>? diagnostic = null)
     {
         var deadline = DateTime.UtcNow.AddSeconds(10);
         while (!predicate()) {
-            if (DateTime.UtcNow > deadline) throw new TimeoutException("Native setup did not reach its expected UI state");
+            if (DateTime.UtcNow > deadline) throw new TimeoutException("Native setup did not reach its expected UI state. " + diagnostic?.Invoke());
             await Task.Delay(20);
         }
     }

@@ -645,20 +645,48 @@ async fn actual_host_uses_explicit_native_camera_simulation_and_shared_scalar_le
     assert_eq!(value, confirmed["values"]["ccdtemperature"]);
     assert!((-100.0..=100.0).contains(&value.as_f64().unwrap()));
     request(&mut first, id, json!({"op":"disconnect","output":output})).await;
-    let retained = request(&mut second, 3, json!({"op":"sourceStatus","source":source})).await;
+    // Disconnect retires this output synchronously, while SourceLease::drop
+    // queues actor cleanup. Observe that cleanup rather than racing its task.
+    let mut second_id = 3;
+    let mut last_retained = Value::Null;
+    let retained = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let status = request(
+                &mut second,
+                second_id,
+                json!({"op":"sourceStatus","source":source}),
+            )
+            .await;
+            second_id += 1;
+            if status["leaseCount"] == 1 {
+                break status;
+            }
+            last_retained = status;
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap_or_else(|error| {
+        panic!("Native camera lease cleanup deadline: {error}; {last_retained}")
+    });
     assert_eq!(retained["leaseCount"], 1);
     assert_eq!(retained["transportConnected"], true);
     assert_eq!(
         request(
             &mut second,
-            4,
+            second_id,
             json!({"op":"get","output":output,
         "property":{"member":"getSwitchValue","id":0}})
         )
         .await,
         value
     );
-    request(&mut second, 5, json!({"op":"disconnect","output":output})).await;
+    request(
+        &mut second,
+        second_id + 1,
+        json!({"op":"disconnect","output":output}),
+    )
+    .await;
     assert!(!missing_sdk.exists());
     drop(first);
     drop(second);

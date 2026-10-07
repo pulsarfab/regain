@@ -35,7 +35,7 @@ internal static class HubTimingFixture
         using var peer = await Peer.Open();
         var serving = peer.ServeCaptureTiming(fault);
         try { await peer.Client.GetCameraCaptureTimingAsync(peer.Output, 600.0); throw new Exception("Malformed capture timing was admitted"); }
-        catch (HubException error) { Check(error.Failure == HubFailure.Protocol, "Malformed capture timing error changed"); }
+        catch (HubException error) { Check(error.Failure == HubFailure.Protocol, $"Malformed capture timing error changed ({fault}): {error}"); }
         await serving; Check(peer.Client.IsConnected, "Malformed capture metadata retired another connection");
     }
     internal static async Task Malformed(string fault)
@@ -43,7 +43,7 @@ internal static class HubTimingFixture
         using var peer = await Peer.Open();
         var serving = peer.ServeTiming(fault);
         try { await peer.Client.GetCameraTimingAsync(peer.Output); throw new InvalidOperationException("Malformed timing admitted"); }
-        catch (HubException error) { Check(error.Failure == HubFailure.Protocol, "Malformed timing error changed"); }
+        catch (HubException error) { Check(error.Failure == HubFailure.Protocol, $"Malformed timing error changed ({fault}): {error}"); }
         await serving; Check(peer.Client.IsConnected, "Invalid descriptor retired another connection");
     }
     internal static async Task Semantics()

@@ -8,6 +8,20 @@ tagged or published. Changed cross-crate APIs require an unpublished version so
 Cargo package verification uses the new workspace packages.
 Last updated: 2026-10-07.
 
+
+Current increment: investigate terminal 9e60a77 CI. Both workflows are red;
+push Windows passes, while PR Windows fails timing-descriptor and native
+filter-wheel review fixtures. Failure messages now retain the exact timing
+exception and the native window text; product deadlines and assertions stay
+unchanged. Full local NINA passes 319 cases with the explicit registered-COM
+skip; the updated timing/window subset passes all 31. The push macOS ARM camera
+lease test assumes synchronous SourceLease cleanup, although Drop schedules
+release. Replace that immediate observation with bounded polling for exactly one
+lease and retain the sibling connectivity/value assertions. Its actual private
+host test passes locally; fresh Unix execution remains required. The preceding
+OFP2 correction passes the portable jobs that reached it. Preserve the other
+Windows failures as unresolved, all original milestones and the draft PR.
+
 Current increment: reviewed failure-only camera preflight diagnostics. The private
 actual-Alpaca proxy fixture records the structured hub failure and relay command
 sequence before rethrowing the original exception. All seven focused cases pass

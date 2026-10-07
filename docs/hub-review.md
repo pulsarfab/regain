@@ -6636,3 +6636,25 @@ Rust attempt failed to replace regain-alpaca.exe while managed fixtures used it;
 the rerun started after those processes completed. Preserve that failed log.
 Format and diff checks pass. No physical device or installed vendor driver was
 used. Keep original conformance/coordination/recovery/documentation/final gates.
+
+
+### 2026-10-07 — CI lease observation and Windows failure context
+
+Reviewed source retirement: disconnect_checked removes the output immediately;
+SourceLease::drop schedules release on its saved Tokio runtime. A sourceStatus
+request from another stream can legitimately observe the old lease count before
+that cleanup executes. The actual-host fixture now polls for exactly one lease
+within five seconds, preserving the live sibling transport and scalar value
+checks and monotonic request IDs. It never reconnects or repeats a mutation.
+
+Terminal push 37648708041 fails that assertion on macOS ARM (2 rather than 1);
+its Windows job passes. Terminal PR 37648719635 passes all portable jobs but fails
+HubTimingFixture.Malformed(output) and native filter-wheel review. Added original
+exception/window-text context only; neither deadline nor required result changes.
+The complete local NINA run passes 319 with one explicit registered-fixture skip
+(artifacts/hub-ci-review-nina.log); updated timing/window subset passes 31
+(artifacts/hub-ci-timing-window-focused.log). Actual native simulated camera host
+passes (artifacts/hub-ci-lease-cleanup.log). The first Rust attempt hit an executable
+held by the simultaneous private NINA host; rerun after terminal NINA succeeds.
+No hardware or vendor driver was opened. Windows causes and Unix verification
+remain open; local passes do not establish CI stability.
