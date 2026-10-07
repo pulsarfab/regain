@@ -163,8 +163,8 @@ async fn native_camera_factory_requires_host_resources_and_is_inert_with_missing
     );
 }
 
-#[test]
-fn camera_poll_plans_deduplicate_typed_properties_without_enabling_camera_outputs() {
+#[tokio::test]
+async fn camera_poll_plans_deduplicate_typed_properties_with_gated_frontend_choices() {
     let mut cfg = config(false);
     let source = cfg.sources[0].id;
     for number in [2, 9] {
@@ -185,19 +185,17 @@ fn camera_poll_plans_deduplicate_typed_properties_without_enabling_camera_output
     );
     assert_eq!(plans[&source].source.polling, cfg.sources[0].polling);
     let (native, _) = native(CameraResources::default());
-    let errors = HubRuntime::build(
+    let runtime = HubRuntime::build(
         cfg,
         &native,
         &NoCredentials,
         Arc::new(MonotonicClock::default()),
     )
-    .err()
-    .expect("Camera outputs remain gated until their complete integration");
-    assert!(
-        errors
-            .iter()
-            .any(|error| { error.path == "outputs[0].device" && error.code == "unsupported" })
-    );
+    .unwrap();
+    assert_eq!(runtime.outputs().len(), 2);
+    assert_eq!(runtime.source_snapshot(source).unwrap().lease_count, 0);
+    assert!(!runtime.source_snapshot(source).unwrap().transport_connected);
+    runtime.shutdown().await.unwrap();
 }
 
 #[tokio::test]

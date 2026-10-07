@@ -75,7 +75,7 @@ impl AcquisitionTiming {
     }
 }
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ExposureRequest {
     pub duration_seconds: f64,
@@ -87,7 +87,7 @@ impl ExposureRequest {
             .map_err(|_| invalid("Camera exposure duration must be finite and nonnegative"))
     }
 }
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub enum AcquisitionPhase {
     Idle,
@@ -100,7 +100,7 @@ pub enum AcquisitionPhase {
     Uncertain,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CaptureGeometry {
     pub width: u32,
@@ -110,7 +110,7 @@ pub struct CaptureGeometry {
     pub start_x: u32,
     pub start_y: u32,
 }
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AcquisitionIdentity {
     pub source: Uuid,
@@ -120,7 +120,7 @@ pub struct AcquisitionIdentity {
     pub geometry: CaptureGeometry,
     pub exposure: ExposureMetadata,
 }
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ExposureMetadata {
     pub duration_seconds: Option<f64>,
@@ -134,7 +134,7 @@ pub struct CapturedImage {
     pub image: CameraImage,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AcquisitionStatus {
     pub source: Uuid,
@@ -147,7 +147,7 @@ pub struct AcquisitionStatus {
     pub completed: Option<AcquisitionIdentity>,
     pub setting: Option<SettingStatus>,
 }
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SettingStatus {
     pub id: Uuid,
@@ -262,12 +262,15 @@ impl CameraSupervisor {
         })
     }
     pub fn status(&self) -> AcquisitionStatus {
+        self.status_with_source().1
+    }
+    pub(crate) fn status_with_source(&self) -> (crate::source::SourceSnapshot, AcquisitionStatus) {
         let source = self.source.snapshot();
         let state = self.state.lock().unwrap();
         let completed = state.completed.as_ref().filter(|image| {
             image.identity.generation == source.generation && source.transport_connected
         });
-        AcquisitionStatus {
+        let status = AcquisitionStatus {
             source: source.source,
             generation: source.generation,
             acquisition: state.active.as_ref().map(|a| a.id),
@@ -280,7 +283,8 @@ impl CameraSupervisor {
             error: state.error.clone(),
             completed: completed.map(|image| image.identity.clone()),
             setting: state.setting.clone(),
-        }
+        };
+        (source, status)
     }
     /// The source actor has already closed admission and completed backend drain.
     /// Release local ownership/cache without an Abort, replay or uncertainty reset
@@ -751,6 +755,40 @@ pub struct CameraSession {
     id: Uuid,
 }
 impl CameraSession {
+    /// Operational state only. No getter refreshes telemetry or copies pixels;
+    /// ImageReady describes this supervisor's published acquisition.
+    pub(crate) fn device_state(&self, now: Duration) -> Values {
+        let Ok(source) = self.source.snapshot() else {
+            return Values::new();
+        };
+        let mut values = Values::new();
+        if source.error.is_none() {
+            for (property, name) in [
+                (CameraProperty::CameraState, "CameraState"),
+                (CameraProperty::CcdTemperature, "CCDTemperature"),
+                (CameraProperty::CoolerPower, "CoolerPower"),
+                (CameraProperty::HeatSinkTemperature, "HeatSinkTemperature"),
+                (CameraProperty::IsPulseGuiding, "IsPulseGuiding"),
+                (CameraProperty::PercentCompleted, "PercentCompleted"),
+            ] {
+                let key = property.member();
+                if source.sample_errors.contains_key(key) {
+                    continue;
+                }
+                if let Some(value) = source.values.get(key)
+                    && let Ok(value) = property.decode(value)
+                    && crate::readout::typed_sample(&source, key, now, ()).is_ok()
+                {
+                    values.insert(name.into(), value.into_value());
+                }
+            }
+        }
+        let status = self.supervisor.status();
+        if status.error.is_none() {
+            values.insert("ImageReady".into(), json!(status.image_ready));
+        }
+        values
+    }
     pub fn id(&self) -> Uuid {
         self.id
     }

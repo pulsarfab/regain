@@ -151,6 +151,231 @@
     "requiresRevision": true,
     "responseSchema": {
       "$defs": {
+        "AcquisitionIdentity": {
+          "additionalProperties": false,
+          "properties": {
+            "acquisition": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "exposure": {
+              "$ref": "#/$defs/ExposureMetadata"
+            },
+            "generation": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "geometry": {
+              "$ref": "#/$defs/CaptureGeometry"
+            },
+            "request": {
+              "$ref": "#/$defs/ExposureRequest"
+            },
+            "source": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          "required": [
+            "source",
+            "generation",
+            "acquisition",
+            "request",
+            "geometry",
+            "exposure"
+          ],
+          "type": "object"
+        },
+        "AcquisitionPhase": {
+          "enum": [
+            "idle",
+            "starting",
+            "exposing",
+            "reading",
+            "downloading",
+            "stopping",
+            "aborting",
+            "uncertain"
+          ],
+          "type": "string"
+        },
+        "AcquisitionStatus": {
+          "additionalProperties": false,
+          "properties": {
+            "acquisition": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "completed": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/AcquisitionIdentity"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "error": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/SourceError"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "generation": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "imageReady": {
+              "type": "boolean"
+            },
+            "owner": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "phase": {
+              "$ref": "#/$defs/AcquisitionPhase"
+            },
+            "setting": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/SettingStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "source": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          "required": [
+            "source",
+            "generation",
+            "acquisition",
+            "owner",
+            "phase",
+            "imageReady",
+            "error",
+            "completed",
+            "setting"
+          ],
+          "type": "object"
+        },
+        "CameraProperty": {
+          "enum": [
+            "bayerOffsetX",
+            "bayerOffsetY",
+            "binX",
+            "binY",
+            "cameraState",
+            "cameraXSize",
+            "cameraYSize",
+            "canAbortExposure",
+            "canAsymmetricBin",
+            "canFastReadout",
+            "canGetCoolerPower",
+            "canPulseGuide",
+            "canSetCcdTemperature",
+            "canStopExposure",
+            "ccdTemperature",
+            "coolerOn",
+            "coolerPower",
+            "electronsPerAdu",
+            "exposureMin",
+            "exposureMax",
+            "exposureResolution",
+            "fastReadout",
+            "fullWellCapacity",
+            "gain",
+            "gainMin",
+            "gainMax",
+            "gains",
+            "hasShutter",
+            "heatSinkTemperature",
+            "imageReady",
+            "isPulseGuiding",
+            "lastExposureDuration",
+            "lastExposureStartTime",
+            "maxAdu",
+            "maxBinX",
+            "maxBinY",
+            "numX",
+            "numY",
+            "offset",
+            "offsetMin",
+            "offsetMax",
+            "offsets",
+            "percentCompleted",
+            "pixelSizeX",
+            "pixelSizeY",
+            "readoutMode",
+            "readoutModes",
+            "sensorName",
+            "sensorType",
+            "setCcdTemperature",
+            "startX",
+            "startY",
+            "subExposureDuration"
+          ],
+          "type": "string"
+        },
+        "CaptureGeometry": {
+          "additionalProperties": false,
+          "properties": {
+            "binX": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "binY": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "height": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "startX": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "startY": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "width": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "width",
+            "height",
+            "binX",
+            "binY",
+            "startX",
+            "startY"
+          ],
+          "type": "object"
+        },
         "CoverCalibratorProperty": {
           "additionalProperties": false,
           "properties": {
@@ -234,6 +459,35 @@
         },
         "Diagnostics": {
           "oneOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "acquisition": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/AcquisitionStatus"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "One cached acquisition item; None on an empty/end page."
+                },
+                "health": {
+                  "$ref": "#/$defs/SourceHealth"
+                },
+                "kind": {
+                  "const": "camera",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind",
+                "health",
+                "acquisition"
+              ],
+              "type": "object"
+            },
             {
               "additionalProperties": false,
               "properties": {
@@ -419,6 +673,68 @@
             "unavailable"
           ],
           "type": "string"
+        },
+        "ExposureMetadata": {
+          "additionalProperties": false,
+          "properties": {
+            "durationError": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/SourceError"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "durationSeconds": {
+              "format": "double",
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "startTime": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "startTimeError": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/SourceError"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "durationSeconds",
+            "startTime",
+            "durationError",
+            "startTimeError"
+          ],
+          "type": "object"
+        },
+        "ExposureRequest": {
+          "additionalProperties": false,
+          "properties": {
+            "durationSeconds": {
+              "format": "double",
+              "type": "number"
+            },
+            "light": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "durationSeconds",
+            "light"
+          ],
+          "type": "object"
         },
         "FilterWheelProperty": {
           "additionalProperties": false,
@@ -1347,6 +1663,28 @@
             "generation",
             "sequence",
             "revision"
+          ],
+          "type": "object"
+        },
+        "SettingStatus": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "owner": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "property": {
+              "$ref": "#/$defs/CameraProperty"
+            }
+          },
+          "required": [
+            "id",
+            "owner",
+            "property"
           ],
           "type": "object"
         },

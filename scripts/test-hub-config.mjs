@@ -597,3 +597,37 @@ for (const [index,value] of [[0,-1],[0,2147483648],[0,0.5],[1,0],[1,2147483648],
   assert.match(diagnosticSummary(await setup.read(panelOutput.id,4,1)),/Unknown cover completion/);
 }
 console.log('Panel diagnostic states, completion availability, paging and Int32 bounds passed.');
+
+const cameraSaved=structuredClone(focuserSaved);
+cameraSaved.outputs[0].device.deviceType='camera';
+const cameraOutput=cameraSaved.outputs[0], cameraHealth=diagHealth(cameraSaved.sources[0].id);
+function cameraReply(start=0,limit=1) {
+  return {purpose:'cachedDiagnostics',output:cameraOutput.id,configurationRevision:cameraSaved.revision,
+    observedSeconds:1,deviceType:'camera',simulated:true,start,limit,total:1,nextStart:null,
+    diagnostics:{kind:'camera',health:structuredClone(cameraHealth),acquisition:start===0?{
+      source:cameraHealth.source,generation:cameraHealth.generation,acquisition:null,owner:null,
+      phase:'idle',imageReady:false,error:null,completed:null,setting:null}:null}};
+}
+{
+  const setup=new OutputDiagnostics(async c=>cameraReply(c.start,c.limit),()=>assert.fail('Review revoked'));
+  setup.load(description,cameraSaved);
+  assert.match(diagnosticSummary(await setup.read(cameraOutput.id,0,1)),/Acquisition idle/);
+  assert.equal((await setup.read(cameraOutput.id,1,1)).diagnostics.acquisition,null);
+}
+for (const fault of ['source','generation','ready','phase','owner','extra','page']) {
+  let revoked=false;
+  const setup=new OutputDiagnostics(async()=>{
+    const reply=cameraReply(), a=reply.diagnostics.acquisition;
+    if(fault==='source') a.source='88888888-8888-4888-8888-888888888888';
+    if(fault==='generation') a.generation='88888888-8888-4888-8888-888888888888';
+    if(fault==='ready') a.imageReady=true;
+    if(fault==='phase') a.phase='exposing';
+    if(fault==='owner') a.owner='88888888-8888-4888-8888-888888888888';
+    if(fault==='extra') a.pixels=[1,2,3];
+    if(fault==='page') reply.diagnostics.acquisition=null;
+    return reply;
+  },()=>revoked=true);
+  setup.load(description,cameraSaved);
+  await assert.rejects(setup.read(cameraOutput.id,0,1)); assert.equal(revoked,true);
+}
+console.log('Camera diagnostic identity, acquisition ownership, readiness and paging fences passed.');

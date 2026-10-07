@@ -2501,8 +2501,9 @@ The shared executable accepts `--sdk PATH` in explicit `--hub-host` mode.
 Explicit simulation with a nonexistent SDK path does not load a vendor library.
 A native camera can supply selected scalar observations to an existing read-only
 Switch gauge with shared connection leases. This is not a camera image output.
-Camera proxy poll plans deduplicate all typed properties, but the runtime still
-rejects camera outputs and the setup capability remains disabled.
+Camera proxy poll plans deduplicate all typed properties. The runtime admits
+configured camera outputs; public setup capability and frontend publication
+remain disabled until the complete camera path is implemented and verified.
 
 Factory integration preserves persisted polling settings. Core-derived native
 timing and retirement are described below. Runtime-owned supervisors now share
@@ -2514,9 +2515,43 @@ without SDK settings. The cached acquisition-status API performs no device I/O.
 After a source actor stops and drains, runtime shutdown retires the supervisor,
 releases its cache and local acquisition ownership, and retains diagnostic errors.
 It cannot clear live uncertainty; externally pinned buffers remain charged.
-Camera output connection ownership, remaining input adapters, bounded binary IPC
-and camera publication in Alpaca, NINA and ASCOM are still required before
-enabling camera choices.
+Camera output connection ownership and scalar IPC are described below. Remaining
+input adapters, bounded binary IPC, frontend operation timing and camera
+publication in Alpaca, NINA and ASCOM are still required before enabling camera
+choices.
+
+### Camera runtime connections and scalar IPC
+
+Every configured camera output for one source uses the same runtime-owned
+supervisor. Each connected output obtains a separate camera session and source
+lease; only the session that admitted an acquisition may change capture settings,
+Stop, Abort or abandon its uncertain acquisition. Other sessions may observe the
+shared acquisition and completed immutable image. Separate sources can acquire
+concurrently through one host client. Losing an owner's IPC stream releases its
+output connection without implicitly aborting an exposure or transferring command
+ownership. An observer can retain the source connection and receive the result.
+
+The scalar Get contract adds typed camera properties and CameraAcquisition.
+Put adds typed camera settings, StartExposure, StopExposure, AbortExposure and
+AbandonCameraAcquisition. Start returns the acquisition UUID. No JSON control or
+diagnostic reply contains pixel data or an encoded image. Existing scalar IPC
+deadlines still apply; native recovery allowances are not yet negotiated with
+frontend callers. The hello advertises cameraAcquisition, not cameraOutputs.
+
+Camera DeviceState contains only available, valid cached operational properties
+from the [ASCOM Camera DeviceState contract](https://ascom-standards.org/newdocs/camera.html#Camera.DeviceState):
+CameraState, CCDTemperature, CoolerPower, HeatSinkTemperature, IsPulseGuiding,
+PercentCompleted and the supervisor's ImageReady. It neither reads the equipment
+nor invents a TimeStamp. Acquisition errors suppress ImageReady. Per-property
+errors or invalid cached ages suppress the affected measurement.
+
+Camera output diagnostics have one paged acquisition entry and source health.
+Health and acquisition generation derive from one source snapshot. Web/native
+readers require the saved output/source/revision, coherent generation and
+ownership, completed-image readiness and exact page occupancy. They reject
+unknown fields, including unexpected pixels. Diagnostic reads acquire no lease
+and cannot admit a capture. These runtime and diagnostic APIs do not yet provide
+an Alpaca camera, native ASCOM camera or native NINA camera provider.
 
 ### Native camera supervision timing and retirement
 

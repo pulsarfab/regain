@@ -3,6 +3,47 @@
 This records local review and tests for the single hub PR. Passing a foundation
 test does not imply that a frontend, transport, or hardware gate has passed.
 
+## 2026-10-07: camera runtime outputs and scalar IPC
+
+Reviewed source identity and acquisition sharing: camera output controllers reuse
+the runtime map by source UUID, rather than constructing a supervisor per output.
+Output sessions retain the existing host pending-connection/activity admission
+and their own source lease. Typed Get/Put delegates to the reviewed supervisor;
+it adds no replay, takeover, image copy or implicit Abort on disconnect. Both
+native SDK and direct production-worker simulations exercise the runtime path.
+
+Camera diagnostics initially read source health separately from acquisition
+status. Review replaces those reads with status_with_source, so one source
+snapshot supplies both generations. Web/native readers enforce saved identities,
+generation, readiness/completed-image agreement, active ownership and paging.
+Camera DeviceState uses valid cached scalar samples and the supervisor's readiness,
+without refreshing hardware ages or inventing a TimeStamp. Its property list was
+checked against the [official Camera contract](https://ascom-standards.org/newdocs/camera.html).
+
+Eight focused cases pass in artifacts/hub-camera-output-runtime.log. New cases
+cover shared SDK/direct output leases and owner disconnect, independent simultaneous
+camera sources, and actual multiplexed IPC stream loss with scalar-only metadata.
+The web checks pass in artifacts/hub-camera-output-node.log, including seven
+malformed camera diagnostic/page cases. Full hub/Alpaca Rust regressions pass.
+Strict Clippy found a large diagnostics enum variant; acquisition status now
+uses a boxed optional value without changing its JSON/schema representation.
+After that refinement, all eight runtime cases pass again, generated contracts
+are fresh, strict installed-stable/Rust 1.99 lint and Rust 1.89 all-target
+compatibility pass. Formatting, eight independent schema checks, NINA 230/230
+with warnings denied and actual net48 x86/x64 checks pass. Evidence uses
+artifacts/hub-camera-output-{rust-final,runtime-final,clippy,clippy-1.99,msrv,
+contract,schema,node,nina,net48}.log. The initial Clippy failure is retained in
+hub-camera-output-clippy-initial.log. A check command also named a nonexistent
+regain-protocol package; its rejection is retained separately and the actual
+workspace checks use regain-worker. Neither rejected invocation is pass evidence.
+These local checks do not establish frontend camera or physical acceptance.
+
+Both preceding 0ba47ec CI runs now finish all eight jobs successfully: PR
+37592319880 and push 37592313062. New local work is not covered by those runs.
+Public camera setup/publication remains gated. Bounded binary image transport,
+operation timing, remaining camera inputs and all original milestone gates remain
+required. No physical equipment or installed vendor drivers are activated.
+
 ## 2026-10-07: reject a missing contract-export path
 
 Final status inspection found an untracked file named --check. The verification

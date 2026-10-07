@@ -14,6 +14,8 @@ struct StateValue {
 impl OutputConnection {
     pub(crate) async fn get(&self, property: Get) -> Result<Value, SourceError> {
         Ok(match property {
+            Get::Camera { property } => self.camera()?.property(property).await?.into_value(),
+            Get::CameraAcquisition {} => json!(self.camera()?.status()),
             Get::Connected {} => json!(self.connected()),
             Get::Connecting {} => json!(false),
             Get::DeviceState {} => {
@@ -48,6 +50,10 @@ impl OutputConnection {
                     }
                 } else if let Ok(panel) = self.covercalibrator() {
                     for (name, value) in panel.device_state(self.now()) {
+                        values.push(StateValue { name, value });
+                    }
+                } else if let Ok(camera) = self.camera() {
+                    for (name, value) in camera.device_state(self.now()) {
                         values.push(StateValue { name, value });
                     }
                 } else {
@@ -128,6 +134,13 @@ impl OutputConnection {
     }
     pub(crate) async fn put(&self, property: Put) -> Result<Value, SourceError> {
         match property {
+            Put::CameraSetting { setting } => self.camera()?.set(setting).await?,
+            Put::StartExposure { request } => {
+                return Ok(json!(self.camera()?.start(request).await?));
+            }
+            Put::StopExposure {} => self.camera()?.stop().await?,
+            Put::AbortExposure {} => self.camera()?.abort().await?,
+            Put::AbandonCameraAcquisition {} => self.camera()?.abandon_uncertain()?,
             Put::SetSwitch { id, state } => self.switch()?.set_state(id, state).await?,
             Put::SetSwitchValue { id, value } => self.switch()?.set_value(id, value).await?,
             Put::AveragePeriod { hours } => self.weather()?.set_average_period_hours(hours)?,

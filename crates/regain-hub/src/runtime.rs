@@ -7,7 +7,7 @@ mod camera_tests;
 use crate::{
     activity::{Activity, ActivityCounter},
     camera::{
-        acquisition::{AcquisitionStatus, AcquisitionTiming, CameraSupervisor},
+        acquisition::{AcquisitionStatus, AcquisitionTiming, CameraSession, CameraSupervisor},
         runtime::CameraResources,
     },
     config::{Bitness, DeviceType, HubConfig, SafetyMember, VirtualDevice},
@@ -43,6 +43,7 @@ pub struct OutputDescriptor {
 }
 
 enum Output {
+    Camera(Arc<CameraSupervisor>),
     Safety {
         members: Vec<SafetyMember>,
         active: Mutex<Weak<SafetyOutput>>,
@@ -201,6 +202,10 @@ impl HubRuntime {
         let mut outputs = BTreeMap::new();
         for (index, output) in config.outputs.iter().enumerate() {
             let mapped = match &output.device {
+                VirtualDevice::Proxy {
+                    source,
+                    device_type: DeviceType::Camera,
+                } => Output::Camera(cameras[source].clone()),
                 VirtualDevice::Safety { members } => Output::Safety {
                     members: members.clone(),
                     active: Mutex::new(Weak::new()),
@@ -390,6 +395,7 @@ impl HubRuntime {
             .find(|entry| entry.id == output)
             .unwrap();
         let total = match controller {
+            Output::Camera(_) => 1,
             Output::Safety { members, .. } => members.len() as u32,
             Output::Switch(switch) => switch.max_switch(),
             Output::Weather(_) => match &config.device {
@@ -406,6 +412,13 @@ impl HubRuntime {
         let end = page(start, limit, total)?;
         let now = self.clock.now();
         let diagnostics = match controller {
+            Output::Camera(camera) => {
+                let (source, status) = camera.status_with_source();
+                Diagnostics::Camera {
+                    health: SourceHealth::from(&source),
+                    acquisition: (start < end).then(|| Box::new(status)),
+                }
+            }
             Output::Safety { members, active } => {
                 // Upgrade only an already running controller. Constructing a
                 // SafetyOutput here would acquire leases and seed live policy.
@@ -722,6 +735,7 @@ impl HubRuntime {
             return Err(disconnected());
         }
         match self.outputs.get(&id).ok_or_else(unknown_output)? {
+            Output::Camera(camera) => Ok(ConnectedDevice::Camera(camera.connect().await?)),
             Output::Safety { members, active } => {
                 // This lock only creates/subscribes policy tasks; it never waits
                 // for source I/O. All clients of this output share one policy.
@@ -764,7 +778,7 @@ impl HubRuntime {
 fn validate_outputs(config: &HubConfig) -> Result<(), Vec<FieldError>> {
     let mut errors = config.validate();
     for (index, output) in config.outputs.iter().enumerate() {
-        if matches!(output.device, VirtualDevice::Proxy { device_type, .. } if !matches!(device_type, DeviceType::Focuser | DeviceType::Rotator | DeviceType::FilterWheel | DeviceType::CoverCalibrator))
+        if matches!(output.device, VirtualDevice::Proxy { device_type, .. } if !matches!(device_type, DeviceType::Camera | DeviceType::Focuser | DeviceType::Rotator | DeviceType::FilterWheel | DeviceType::CoverCalibrator))
         {
             errors.push(FieldError::new(
                 format!("outputs[{index}].device"),
@@ -803,6 +817,7 @@ impl Drop for Quiescent {
 }
 
 enum ConnectedDevice {
+    Camera(CameraSession),
     Safety(Arc<SafetyOutput>),
     Switch {
         definition: Arc<SwitchOutput>,
@@ -825,6 +840,7 @@ pub struct OutputConnection {
 impl OutputConnection {
     pub fn connected(&self) -> bool {
         match &self.device {
+            ConnectedDevice::Camera(session) => session.connected(),
             ConnectedDevice::Focuser(session) => session.connected(),
             ConnectedDevice::Rotator(session) => session.connected(),
             ConnectedDevice::FilterWheel(session) => session.connected(),
@@ -835,6 +851,12 @@ impl OutputConnection {
     pub fn rotator(&self) -> Result<&RotatorSession, SourceError> {
         match &self.device {
             ConnectedDevice::Rotator(value) => Ok(value),
+            _ => Err(wrong_type()),
+        }
+    }
+    pub fn camera(&self) -> Result<&CameraSession, SourceError> {
+        match &self.device {
+            ConnectedDevice::Camera(value) => Ok(value),
             _ => Err(wrong_type()),
         }
     }

@@ -86,6 +86,11 @@ pub struct OutputStatus {
     deny_unknown_fields
 )]
 pub enum Diagnostics {
+    Camera {
+        health: SourceHealth,
+        /// One cached acquisition item; None on an empty/end page.
+        acquisition: Option<Box<crate::camera::acquisition::AcquisitionStatus>>,
+    },
     Safety {
         controller_active: bool,
         /// The whole output's decision, including members outside this page.

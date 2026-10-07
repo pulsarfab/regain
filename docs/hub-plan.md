@@ -8,6 +8,28 @@ tagged or published. Changed cross-crate APIs require an unpublished version so
 Cargo package verification uses the new workspace packages.
 Last updated: 2026-10-07.
 
+Current checkpoint: camera outputs now share the runtime's acquisition supervisor
+by source UUID. Runtime connections and typed scalar IPC cover camera properties,
+settings, Start/Stop/Abort and owner-only abandonment of an uncertain acquisition.
+Cached DeviceState and paged diagnostics transfer no pixels and perform no
+equipment reads. Web/native diagnostic readers validate saved source, revision,
+generation, acquisition ownership and image-readiness fences. Eight focused
+runtime/real-pipe simulation cases and web checks pass. Full hub/Alpaca Rust
+regressions, strict Clippy (installed stable and Rust 1.99), Rust 1.89 all-target
+compatibility, generated contracts, eight schema checks, NINA 230/230 and actual
+net48 x86/x64 pass after review. Clippy caught the acquisition diagnostic's large
+enum variant; boxing that field preserves its wire schema and final focused
+runtime checks pass. Public camera setup choices and
+Alpaca/NINA/ASCOM camera publication remain gated; bounded binary image IPC,
+frontend operation timing, remaining camera inputs, coordination and every
+original acceptance/documentation/final gate remain required.
+
+Both preceding 0ba47ec workflows are now terminal and green: PR 37592319880 and
+push 37592313062 each pass all eight jobs, including Windows. This proves the
+pushed retirement/timing and portable-fixture corrections. It does not cover the
+newer runtime, contract-check and camera-output increments. Maintenance
+remains on release/0.5; draft PR #21 remains the single hub PR for main.
+
 Contract-check refinement: the correct export invocation includes
 `contracts/hub-config.json --check`. A verification command supplied only
 `--check`, which the exporter treated as a filename; its successful exit was not

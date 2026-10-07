@@ -146,6 +146,10 @@ pub enum Command {
 #[derive(Deserialize, Serialize)]
 #[serde(tag = "member", rename_all = "camelCase", deny_unknown_fields)]
 pub enum Get {
+    Camera {
+        property: crate::camera::properties::CameraProperty,
+    },
+    CameraAcquisition {},
     Connected {},
     DeviceState {},
     Connecting {},
@@ -208,28 +212,73 @@ pub enum Get {
 #[derive(Deserialize, Serialize)]
 #[serde(tag = "member", rename_all = "camelCase", deny_unknown_fields)]
 pub enum Put {
-    SetSwitch { id: u32, state: bool },
-    SetSwitchValue { id: u32, value: f64 },
-    AveragePeriod { hours: f64 },
+    CameraSetting {
+        setting: crate::camera::properties::CameraSetting,
+    },
+    StartExposure {
+        request: crate::camera::acquisition::ExposureRequest,
+    },
+    StopExposure {},
+    AbortExposure {},
+    AbandonCameraAcquisition {},
+    SetSwitch {
+        id: u32,
+        state: bool,
+    },
+    SetSwitchValue {
+        id: u32,
+        value: f64,
+    },
+    AveragePeriod {
+        hours: f64,
+    },
     Refresh {},
-    SetAsync { id: u32, state: bool },
-    SetAsyncValue { id: u32, value: f64 },
-    CancelAsync { id: u32 },
-    MoveFocuser { position: i32 },
+    SetAsync {
+        id: u32,
+        state: bool,
+    },
+    SetAsyncValue {
+        id: u32,
+        value: f64,
+    },
+    CancelAsync {
+        id: u32,
+    },
+    MoveFocuser {
+        position: i32,
+    },
     HaltFocuser {},
-    FocuserTempComp { enabled: bool },
-    MoveRotator { degrees: f64 },
-    MoveRotatorTracked { degrees: f64 },
-    MoveAbsoluteRotator { degrees: f64 },
-    MoveMechanicalRotator { degrees: f64 },
-    SyncRotator { degrees: f64 },
+    FocuserTempComp {
+        enabled: bool,
+    },
+    MoveRotator {
+        degrees: f64,
+    },
+    MoveRotatorTracked {
+        degrees: f64,
+    },
+    MoveAbsoluteRotator {
+        degrees: f64,
+    },
+    MoveMechanicalRotator {
+        degrees: f64,
+    },
+    SyncRotator {
+        degrees: f64,
+    },
     HaltRotator {},
-    RotatorReverse { enabled: bool },
-    MoveFilterWheel { position: i32 },
+    RotatorReverse {
+        enabled: bool,
+    },
+    MoveFilterWheel {
+        position: i32,
+    },
     OpenCover {},
     CloseCover {},
     HaltCover {},
-    CalibratorOn { brightness: i32 },
+    CalibratorOn {
+        brightness: i32,
+    },
     CalibratorOff {},
 }
 
@@ -439,7 +488,7 @@ where
                         "hostInstance":service.host_id(), "configurationRevision":service.configuration().revision, "clientId":client.id(),
                         "maxFrameBytes":MAX_FRAME_BYTES, "maxInFlight":MAX_IN_FLIGHT,
                         "operations":operations,
-                        "capabilities":["switchOutputs","safetyOutputs","weatherOutputs","focuserOutputs","rotatorOutputs","filterWheelOutputs","coverCalibratorOutputs","rotatorMotionReceipt","weatherSensorDescription","scalarDeviceState","asyncOutputConnection","switchAsyncContract"]});
+                        "capabilities":["switchOutputs","safetyOutputs","weatherOutputs","focuserOutputs","rotatorOutputs","filterWheelOutputs","coverCalibratorOutputs","cameraAcquisition","rotatorMotionReceipt","weatherSensorDescription","scalarDeviceState","asyncOutputConnection","switchAsyncContract"]});
                     write_response(&mut writer, Response::new(request.id, Ok(hello)), limits.frame_timeout).await?;
                     continue;
                 }

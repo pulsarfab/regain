@@ -62,13 +62,21 @@ export class OutputDiagnostics {
   validate(result,output,start,limit) {
     validateDiagnosticSchema(this.description.responseSchema,result);
     const kind=output.device.kind==='proxy' ? output.device.deviceType : output.device.kind;
-    const type={switch:'switch',safety:'safetymonitor',weather:'observingconditions',focuser:'focuser',rotator:'rotator',filterwheel:'filterwheel',covercalibrator:'covercalibrator'}[kind];
+    const type={camera:'camera',switch:'switch',safety:'safetymonitor',weather:'observingconditions',focuser:'focuser',rotator:'rotator',filterwheel:'filterwheel',covercalibrator:'covercalibrator'}[kind];
     if (result.purpose!=='cachedDiagnostics' || result.output!==output.id || result.configurationRevision!==this.saved.revision || result.deviceType!==type || result.observedSeconds<0 || result.start!==start || result.limit!==limit || result.total<start || result.total>1024 || result.diagnostics.kind!==kind) protocol();
     const end=Math.min(start+limit,result.total);
     if (result.nextStart!==(end<result.total ? end : null)) protocol();
     const d=result.diagnostics;
     const health = value => { if (value.revision!==this.saved.revision || !this.saved.sources.some(s=>s.id===value.source)) protocol(); validatePolling(value.polling); };
-    if (d.kind==='switch') {
+    if (d.kind==='camera') {
+      health(d.health);
+      if (result.total!==1 || d.health.source!==output.device.source || (d.acquisition!==null)!==(end>start)) protocol();
+      const a=d.acquisition;
+      if (a) {
+        if (a.source!==d.health.source || a.generation!==d.health.generation || a.imageReady!==(a.completed!==null) || a.imageReady&&!d.health.transportConnected || (a.acquisition===null)!==(a.owner===null) || (a.phase==='idle')!==(a.acquisition===null) || a.phase==='uncertain'&&a.error===null) protocol();
+        if (a.completed && (a.completed.source!==a.source || a.completed.generation!==a.generation)) protocol();
+      }
+    } else if (d.kind==='switch') {
       const numbers=output.device.channels.map(c=>c.number);
       for (const entry of Object.values(this.saved.identities?.channels??{})) if (entry.output===output.id) numbers.push(entry.number);
       if (result.total!==(numbers.length ? Math.max(...numbers)+1 : 0) || d.channels.length!==end-start) protocol();
@@ -128,7 +136,14 @@ export class OutputDiagnostics {
 }
 export function diagnosticSummary(result) {
   const d=result.diagnostics, lines=[`${result.simulated?'Simulation · ':''}Cached ${d.kind} output · revision ${result.configurationRevision}`];
-  if (d.kind==='safety') {
+  if (d.kind==='camera') {
+    if (d.acquisition) {
+      const a=d.acquisition;
+      lines.push(`Acquisition ${a.phase} · image ${a.imageReady?'ready':'not ready'}${a.acquisition?' · '+a.acquisition:''}`);
+      if(a.error) lines.push(a.error.message);
+    }
+    lines.push(pollingSummary(d.health));
+  } else if (d.kind==='safety') {
     lines.push(`${d.isSafe?'SAFE':'UNSAFE'} · ${d.controllerActive?'Controller active':'Controller inactive'}`);
     for (const m of d.members) {
       const s=m.decision; lines.push(`${m.source}: ${!m.enabled?'Disabled; no vote':`${s.phase} · raw ${s.rawIsSafe===null?'unknown':s.rawIsSafe?'safe':'unsafe'} · effective ${s.permitsSafe?'safe':'unsafe'} · ${s.reason}`}`);

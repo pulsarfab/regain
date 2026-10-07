@@ -9,6 +9,40 @@ namespace Regain.NINA.Tests;
 
 public sealed partial class HubNativeTests
 {
+    [Fact]
+    public async Task CameraDiagnosticsUseSavedSourceGenerationAndAcquisitionFences()
+    {
+        await using var host = await Host.Open(); using var editor = await Editor(host); await editor.ReloadAsync();
+        var saved = JsonNode.Parse(editor.SavedConfiguration!.Value.GetRawText())!.AsObject();
+        var output = saved["outputs"]![0]!.DeepClone().AsObject(); var source = saved["sources"]![0]!["id"]!.GetValue<string>();
+        var original = await editor.OutputStatusAsync(Guid.Parse(output["id"]!.GetValue<string>()),0,1);
+        var health = JsonNode.Parse(original.GetProperty("diagnostics").GetProperty("channels")[0].GetProperty("health").GetRawText())!;
+        output["device"] = new JsonObject { ["kind"]="proxy",["deviceType"]="camera",["source"]=source };
+        JsonObject Reply(int start) => new() {
+            ["purpose"]="cachedDiagnostics",["output"]=output["id"]!.DeepClone(),["configurationRevision"]=saved["revision"]!.DeepClone(),
+            ["observedSeconds"]=1,["deviceType"]="camera",["simulated"]=true,["start"]=start,["limit"]=1,["total"]=1,["nextStart"]=null,
+            ["diagnostics"]=new JsonObject { ["kind"]="camera",["health"]=health.DeepClone(),["acquisition"]=start==0?new JsonObject {
+                ["source"]=source,["generation"]=health["generation"]!.DeepClone(),["acquisition"]=null,["owner"]=null,
+                ["phase"]="idle",["imageReady"]=false,["error"]=null,["completed"]=null,["setting"]=null,
+            }:null },
+        };
+        JsonElement Element(JsonNode node) => JsonSerializer.SerializeToElement(node);
+        void Validate(JsonObject reply,int start) => HubDiagnosticContract.Reply(editor.OutputDiagnosticDescription,Element(saved),Element(output),Element(reply),start,1);
+        Validate(Reply(0),0); Validate(Reply(1),1);
+        Assert.Contains("Acquisition idle",HubConfigurationWindow.OutputDiagnosticSummary(Element(Reply(0))));
+        foreach(var fault in new[]{"source","generation","ready","phase","owner","extra","page"}) {
+            var reply=Reply(0); var acquisition=reply["diagnostics"]!["acquisition"]!;
+            if(fault=="source") acquisition["source"]=Guid.NewGuid().ToString();
+            if(fault=="generation") acquisition["generation"]=Guid.NewGuid().ToString();
+            if(fault=="ready") acquisition["imageReady"]=true;
+            if(fault=="phase") acquisition["phase"]="exposing";
+            if(fault=="owner") acquisition["owner"]=Guid.NewGuid().ToString();
+            if(fault=="extra") acquisition["pixels"]=new JsonArray(1,2,3);
+            if(fault=="page") reply["diagnostics"]!["acquisition"]=null;
+            Assert.Throws<HubException>(()=>Validate(reply,0));
+        }
+        Assert.Equal(0,(await host.Status(0)).GetProperty("leaseCount").GetInt32());
+    }
     [Theory]
     [InlineData("focuser", "fc3", "00:00:00:00:00:03", 4)]
     [InlineData("rotator", "caa", "0102030405060708", 3)]

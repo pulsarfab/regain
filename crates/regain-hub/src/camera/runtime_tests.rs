@@ -434,3 +434,329 @@ async fn runtime_retirement_preserves_live_uncertainty_then_releases_only_after_
     assert_eq!(resources.image_budget().used_bytes(), 0);
     runtime.shutdown().await.unwrap();
 }
+
+fn outputs(cfg: &mut HubConfig, source: Uuid, numbers: &[u32]) -> Vec<Uuid> {
+    numbers
+        .iter()
+        .map(|number| {
+            let id = Uuid::new_v4();
+            cfg.outputs.push(crate::config::OutputConfig {
+                id,
+                number: *number,
+                label: format!("Camera output {number}"),
+                device: VirtualDevice::Proxy {
+                    source,
+                    device_type: DeviceType::Camera,
+                },
+            });
+            id
+        })
+        .collect()
+}
+
+#[tokio::test]
+async fn camera_output_leases_share_acquisition_and_survive_owner_disconnect() {
+    use crate::ipc::{Get, Put};
+    for direct in [false, true] {
+        let resources = CameraResources::new(1024 * 1024).unwrap();
+        let mut cfg = config(direct);
+        let source = cfg.sources[0].id;
+        let ids = outputs(&mut cfg, source, &[2, 9]);
+        let runtime = HubRuntime::build(
+            cfg,
+            &native(resources.clone()),
+            &NoCredentials,
+            Arc::new(MonotonicClock::default()),
+        )
+        .unwrap();
+        let first = runtime.client();
+        let sibling = runtime.client();
+        first.connect(ids[0]).await.unwrap();
+        sibling.connect(ids[1]).await.unwrap();
+        let owner = first.connection(ids[0]).unwrap();
+        let observer = sibling.connection(ids[1]).unwrap();
+        assert!(owner.connected() && observer.connected());
+        assert_eq!(runtime.source_snapshot(source).unwrap().lease_count, 2);
+        for setting in [
+            CameraSetting::NumX(64),
+            CameraSetting::NumY(64),
+            CameraSetting::Gain(123),
+        ] {
+            owner.put(Put::CameraSetting { setting }).await.unwrap();
+        }
+        assert_eq!(
+            observer
+                .get(Get::Camera {
+                    property: crate::camera::properties::CameraProperty::Gain
+                })
+                .await
+                .unwrap(),
+            json!(123)
+        );
+        let request = ExposureRequest {
+            duration_seconds: 0.3,
+            light: false,
+        };
+        let acquisition = owner.put(Put::StartExposure { request }).await.unwrap();
+        assert_eq!(
+            observer
+                .put(Put::StartExposure { request })
+                .await
+                .unwrap_err()
+                .kind,
+            ErrorKind::Busy
+        );
+        assert_eq!(
+            observer.put(Put::AbortExposure {}).await.unwrap_err().kind,
+            ErrorKind::Busy
+        );
+        assert_eq!(
+            observer
+                .put(Put::CameraSetting {
+                    setting: CameraSetting::Gain(124)
+                })
+                .await
+                .unwrap_err()
+                .kind,
+            ErrorKind::Busy
+        );
+        first.disconnect_checked(ids[0]).unwrap();
+        drop(owner);
+        until(|| observer.camera().unwrap().status().image_ready).await;
+        assert_eq!(
+            observer.get(Get::CameraAcquisition {}).await.unwrap()["completed"]["acquisition"],
+            acquisition
+        );
+        let pinned = observer.camera().unwrap().image().unwrap();
+        let original = pinned.image.bytes().to_vec();
+        let cached = runtime.output_status(ids[1], 0, 1).unwrap();
+        let encoded = serde_json::to_value(cached).unwrap();
+        assert_eq!(
+            encoded["diagnostics"]["acquisition"]["completed"]["acquisition"],
+            acquisition
+        );
+        assert_eq!(
+            encoded["diagnostics"]["health"]["generation"],
+            encoded["diagnostics"]["acquisition"]["generation"]
+        );
+        assert!(!encoded.to_string().contains("pixels"));
+        assert!(runtime.output_status(ids[1], 2, 1).is_err());
+        assert!(serde_json::to_value(runtime.output_status(ids[1],1,1).unwrap()).unwrap()["diagnostics"]["acquisition"].is_null());
+        let state = observer.get(Get::DeviceState {}).await.unwrap();
+        assert!(
+            state
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|value| value["Name"] == "ImageReady" && value["Value"] == true)
+        );
+        assert!(
+            !state
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|value| value["Name"] == "TimeStamp")
+        );
+        assert_eq!(runtime.quiesce().err().unwrap().kind, ErrorKind::Busy);
+        sibling.disconnect_checked(ids[1]).unwrap();
+        drop(observer);
+        until(|| runtime.active_connections() == 0).await;
+        drop(runtime.quiesce().unwrap());
+        runtime.shutdown().await.unwrap();
+        assert_eq!(pinned.image.bytes(), original);
+        drop(pinned);
+        assert_eq!(resources.image_budget().used_bytes(), 0);
+    }
+}
+
+#[tokio::test]
+async fn independent_camera_sources_can_acquire_concurrently_through_one_runtime_client() {
+    let resources = CameraResources::new(2 * 1024 * 1024).unwrap();
+    let mut cfg = config(false);
+    let sdk = cfg.sources[0].id;
+    let direct = config(true).sources.remove(0);
+    let direct_id = direct.id;
+    cfg.sources.push(direct);
+    let first_id = outputs(&mut cfg, sdk, &[2])[0];
+    let second_id = outputs(&mut cfg, direct_id, &[9])[0];
+    let runtime = HubRuntime::build(
+        cfg,
+        &native(resources.clone()),
+        &NoCredentials,
+        Arc::new(MonotonicClock::default()),
+    )
+    .unwrap();
+    let client = runtime.client();
+    client.connect(first_id).await.unwrap();
+    client.connect(second_id).await.unwrap();
+    let first = client.connection(first_id).unwrap();
+    let second = client.connection(second_id).unwrap();
+    for connection in [&first, &second] {
+        connection
+            .camera()
+            .unwrap()
+            .set(CameraSetting::NumX(64))
+            .await
+            .unwrap();
+        connection
+            .camera()
+            .unwrap()
+            .set(CameraSetting::NumY(64))
+            .await
+            .unwrap();
+    }
+    let request = ExposureRequest {
+        duration_seconds: 0.3,
+        light: false,
+    };
+    let a = first.camera().unwrap().start(request).await.unwrap();
+    let b = second.camera().unwrap().start(request).await.unwrap();
+    assert_ne!(a, b);
+    until(|| {
+        first.camera().unwrap().status().image_ready
+            && second.camera().unwrap().status().image_ready
+    })
+    .await;
+    assert_eq!(
+        first.camera().unwrap().image().unwrap().identity.source,
+        sdk
+    );
+    assert_eq!(
+        second.camera().unwrap().image().unwrap().identity.source,
+        direct_id
+    );
+    runtime.shutdown().await.unwrap();
+    assert!(!first.connected() && !second.connected());
+    drop(first);
+    drop(second);
+    until(|| runtime.active_connections() == 0).await;
+    assert_eq!(resources.image_budget().used_bytes(), 0);
+}
+
+#[tokio::test]
+async fn camera_acquisition_ipc_retains_one_owner_after_stream_loss_and_uses_scalar_metadata_only()
+{
+    use crate::{
+        client::{Client, ClientLimits},
+        ipc::{Command, Get, Limits, Put, serve_stream},
+    };
+    let resources = CameraResources::new(1024 * 1024).unwrap();
+    let mut cfg = config(false);
+    let source = cfg.sources[0].id;
+    let ids = outputs(&mut cfg, source, &[2, 9]);
+    let runtime = HubRuntime::build(
+        cfg,
+        &native(resources.clone()),
+        &NoCredentials,
+        Arc::new(MonotonicClock::default()),
+    )
+    .unwrap();
+    let (first_stream, first_server) = tokio::io::duplex(8192);
+    let first_task = tokio::spawn(serve_stream(
+        first_server,
+        runtime.clone(),
+        Limits::default(),
+    ));
+    let first = Client::from_stream(
+        first_stream,
+        runtime.instance_id(),
+        Duration::from_secs(3),
+        ClientLimits::default(),
+    )
+    .await
+    .unwrap();
+    let (second_stream, second_server) = tokio::io::duplex(8192);
+    let second_task = tokio::spawn(serve_stream(
+        second_server,
+        runtime.clone(),
+        Limits::default(),
+    ));
+    let second = Client::from_stream(
+        second_stream,
+        runtime.instance_id(),
+        Duration::from_secs(3),
+        ClientLimits::default(),
+    )
+    .await
+    .unwrap();
+    assert!(
+        first
+            .hello()
+            .capabilities
+            .iter()
+            .any(|value| value == "cameraAcquisition")
+    );
+    assert!(
+        !first
+            .hello()
+            .capabilities
+            .iter()
+            .any(|value| value == "cameraOutputs")
+    );
+    first
+        .request(Command::Connect { output: ids[0] })
+        .await
+        .unwrap();
+    second
+        .request(Command::Connect { output: ids[1] })
+        .await
+        .unwrap();
+    for setting in [CameraSetting::NumX(64), CameraSetting::NumY(64)] {
+        first
+            .request(Command::Put {
+                output: ids[0],
+                property: Put::CameraSetting { setting },
+            })
+            .await
+            .unwrap();
+    }
+    let acquisition = first
+        .request(Command::Put {
+            output: ids[0],
+            property: Put::StartExposure {
+                request: ExposureRequest {
+                    duration_seconds: 0.3,
+                    light: false,
+                },
+            },
+        })
+        .await
+        .unwrap();
+    first.close();
+    until(|| {
+        runtime
+            .camera_acquisition_status(source)
+            .unwrap()
+            .image_ready
+    })
+    .await;
+    let status = second
+        .request(Command::Get {
+            output: ids[1],
+            property: Get::CameraAcquisition {},
+        })
+        .await
+        .unwrap();
+    assert_eq!(status["completed"]["acquisition"], acquisition);
+    assert!(!status.to_string().contains("pixels"));
+    let gain = second
+        .request(Command::Get {
+            output: ids[1],
+            property: Get::Camera {
+                property: crate::camera::properties::CameraProperty::Gain,
+            },
+        })
+        .await
+        .unwrap();
+    assert!(gain.as_i64().is_some());
+    second
+        .request(Command::Disconnect { output: ids[1] })
+        .await
+        .unwrap();
+    second.close();
+    first_task.await.unwrap().unwrap();
+    second_task.await.unwrap().unwrap();
+    until(|| runtime.active_connections() == 0).await;
+    runtime.shutdown().await.unwrap();
+    assert_eq!(resources.image_budget().used_bytes(), 0);
+}

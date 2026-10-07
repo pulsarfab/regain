@@ -72,7 +72,14 @@ public sealed partial class HubConfigurationWindow
         var d = result.GetProperty("diagnostics"); var kind = d.GetProperty("kind").GetString();
         var lines = new List<string> { (result.GetProperty("simulated").GetBoolean() ? "Simulation · " : "") + "Cached " + kind + " output · revision " + result.GetProperty("configurationRevision").GetString() };
         string Number(JsonElement value) => value.GetDouble().ToString("0.0", CultureInfo.InvariantCulture);
-        if (kind == "safety") {
+        if (kind == "camera") {
+            var acquisition = d.GetProperty("acquisition");
+            if (acquisition.ValueKind != JsonValueKind.Null) {
+                lines.Add("Acquisition " + acquisition.GetProperty("phase").GetString() + " · image " + (acquisition.GetProperty("imageReady").GetBoolean() ? "ready" : "not ready"));
+                if (acquisition.GetProperty("error").ValueKind != JsonValueKind.Null) lines.Add(acquisition.GetProperty("error").GetProperty("message").GetString()!);
+            }
+            lines.Add(PollingSummary(d.GetProperty("health")));
+        } else if (kind == "safety") {
             lines.Add((d.GetProperty("isSafe").GetBoolean() ? "SAFE" : "UNSAFE") + " · " + (d.GetProperty("controllerActive").GetBoolean() ? "Controller active" : "Controller inactive"));
             foreach (var member in d.GetProperty("members").EnumerateArray()) {
                 var s = member.GetProperty("decision"); var policy = member.GetProperty("policy");

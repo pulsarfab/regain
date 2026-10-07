@@ -83,12 +83,23 @@ internal static class HubDiagnosticContract
         void Require(bool condition) { if (!condition) throw new HubException(HubFailure.Protocol); }
         var revision = saved.GetProperty("revision").GetGuid(); var device = output.GetProperty("device"); var kind = device.GetProperty("kind").GetString();
         if (kind == "proxy") kind = device.GetProperty("deviceType").GetString();
-        var type = kind switch { "safety" => "safetymonitor", "switch" => "switch", "weather" => "observingconditions", "focuser" => "focuser", "rotator" => "rotator", "filterwheel" => "filterwheel", "covercalibrator" => "covercalibrator", _ => "unsupported" };
+        var type = kind switch { "camera" => "camera", "safety" => "safetymonitor", "switch" => "switch", "weather" => "observingconditions", "focuser" => "focuser", "rotator" => "rotator", "filterwheel" => "filterwheel", "covercalibrator" => "covercalibrator", _ => "unsupported" };
         var total = result.GetProperty("total").GetInt32(); var end = Math.Min(start + limit, total); var diagnostics = result.GetProperty("diagnostics");
         Require(result.GetProperty("purpose").GetString() == "cachedDiagnostics" && result.GetProperty("output").GetGuid() == output.GetProperty("id").GetGuid() && result.GetProperty("configurationRevision").GetGuid() == revision && result.GetProperty("deviceType").GetString() == type && result.GetProperty("observedSeconds").GetDouble() >= 0 && result.GetProperty("start").GetInt32() == start && result.GetProperty("limit").GetInt32() == limit && total >= start && total <= 1024 && diagnostics.GetProperty("kind").GetString() == kind);
         Require(end < total ? result.GetProperty("nextStart").GetInt32() == end : result.GetProperty("nextStart").ValueKind == JsonValueKind.Null);
         void Health(JsonElement health) { Require(health.GetProperty("revision").GetGuid() == revision && saved.GetProperty("sources").EnumerateArray().Any(s => s.GetProperty("id").GetGuid() == health.GetProperty("source").GetGuid())); Polling(description,health.GetProperty("polling")); }
-        if (kind == "switch") {
+        if (kind == "camera") {
+            var health = diagnostics.GetProperty("health"); Health(health);
+            var acquisition = diagnostics.GetProperty("acquisition");
+            Require(total == 1 && health.GetProperty("source").GetGuid() == device.GetProperty("source").GetGuid() && (acquisition.ValueKind != JsonValueKind.Null) == (end > start));
+            if (acquisition.ValueKind != JsonValueKind.Null) {
+                var completed = acquisition.GetProperty("completed");
+                var imageReady = acquisition.GetProperty("imageReady").GetBoolean();
+                var active = acquisition.GetProperty("acquisition").ValueKind != JsonValueKind.Null;
+                Require(acquisition.GetProperty("source").GetGuid() == health.GetProperty("source").GetGuid() && acquisition.GetProperty("generation").GetGuid() == health.GetProperty("generation").GetGuid() && imageReady == (completed.ValueKind != JsonValueKind.Null) && (!imageReady || health.GetProperty("transportConnected").GetBoolean()) && active == (acquisition.GetProperty("owner").ValueKind != JsonValueKind.Null) && (acquisition.GetProperty("phase").GetString() == "idle") == !active && (acquisition.GetProperty("phase").GetString() != "uncertain" || acquisition.GetProperty("error").ValueKind != JsonValueKind.Null));
+                if (completed.ValueKind != JsonValueKind.Null) Require(completed.GetProperty("source").GetGuid() == health.GetProperty("source").GetGuid() && completed.GetProperty("generation").GetGuid() == health.GetProperty("generation").GetGuid());
+            }
+        } else if (kind == "switch") {
             var active = device.GetProperty("channels").EnumerateArray().ToArray(); var numbers = active.Select(c => c.GetProperty("number").GetInt32()).ToList();
             if (saved.TryGetProperty("identities", out var ledger) && ledger.TryGetProperty("channels", out var channels)) foreach (var channel in channels.EnumerateObject().Select(p => p.Value)) if (channel.GetProperty("output").GetGuid() == output.GetProperty("id").GetGuid()) numbers.Add(channel.GetProperty("number").GetInt32());
             Require(total == (numbers.Count == 0 ? 0 : numbers.Max() + 1)); var items = diagnostics.GetProperty("channels"); Require(items.GetArrayLength() == end - start);
