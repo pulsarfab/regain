@@ -2138,6 +2138,21 @@ image. The codec issues no command and has no automatic retry/reconnect behavior
 These rules follow [ICamera image ordering](https://ascom-standards.org/newdocs/camera.html)
 and [Alpaca API reference section 8](https://ascom-standards.org/AlpacaDeveloper/ASCOMAlpacaAPIReference.html).
 
+The source actor has a separate binary image operation that requires an existing
+connection lease, exclusive control and an explicit expected generation. Readers
+of a completed image will share the supervisor's buffer; they do not initiate
+another leaf download. The caller supplies the shared budget and a positive
+download deadline of at most one hour, matching the existing core bound and
+remaining independent of scalar polling timeouts. Cancellation before dispatch
+skips the backend; a dispatched download finishes or reaches its deadline even
+if its receiver disappears. Dropping the undelivered result releases the buffer.
+Transport loss retires the source generation and releases partial allocations;
+ordinary errors retain their meaning. No image read automatically repeats,
+starts an exposure, updates scalar caches or clears an uncertain-write fence.
+A control owner can explicitly read images for reconciliation after uncertainty,
+but that does not authorize publishing them as a newly owned acquisition. All
+existing adapters default to Unsupported until their camera paths are implemented.
+
 The following acquisition requirements are specified but are not yet wired into
 the runtime or frontends. One source-owned supervisor must retain an exclusive
 acquisition lease from admission through start acknowledgement, exposure,
@@ -2150,6 +2165,10 @@ Explicit stop/abort are owner commands with the upstream capability and semantic
 Stop preserves acquired pixels, Abort discards the current acquisition. They are
 not interchangeable. Client cancellation/disconnect releases its wait or reader;
 it does not send Abort or destroy another client's image.
+
+Detached acquisitions retain runtime activity as well as the source control
+lease, so configuration replacement cannot retire a runtime whose last frontend
+has disconnected while a capture or uncertain command remains unresolved.
 
 Acquisitions and publications carry source identity, source generation and a
 unique acquisition ID. Old-generation completions cannot replace current state.

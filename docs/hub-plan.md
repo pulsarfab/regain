@@ -60,9 +60,11 @@ x86/x64 checks. Actual native/browser captures and browser creation/reload/spars
 update acceptance are verified. Camera proxies remain. The first camera increment
 adds validated immutable image buffers, a shared payload budget and a lossless
 ImageBytes reader/export codec, with native adoption and bounded order conversion.
-Acquisition ownership, capability/recovery propagation and frontend image
-transport remain unimplemented; their contracts are recorded in hub-contract.md
-and camera choices stay gated.
+The shared source actor now has fenced binary download dispatch with exclusive
+control, a separate bounded image deadline and retained write uncertainty.
+Acquisition supervision, capability/recovery propagation, camera adapters and
+frontend image transport remain unimplemented; their contracts are recorded in
+hub-contract.md and camera choices stay gated.
 Milestone 5's coordinated groups are not yet
 implemented. PR #21 stays draft until the full plan passes.
 
@@ -126,6 +128,15 @@ contract freshness. Acquisition ownership/capability and binary transport
 requirements are recorded in hub-contract.md. Next: implement source-owned
 acquisition supervision and camera inputs/outputs, then every remaining original
 gate. Camera proxy creation stays disabled.
+
+Camera binary source checkpoint (local): eight private actor cases pass alongside
+the full Rust hub/Alpaca suites, strict Clippy, Rust 1.89 all targets and generated
+contract freshness. A freshly rebuilt host passes NINA 228/228 and actual net48
+x86/x64 regressions. Image dispatch requires source control and a matching
+generation, uses its own bounded download deadline and preserves uncertainty.
+The acquisition supervisor must retain runtime activity after a frontend
+disconnect; camera adapters and all three image publications remain open.
+Preceding panel CI has progressed past Windows tests into installer acceptance.
 
 Filter-wheel controller increment: shared typed sessions, live ordered names and
 signed offsets, slot bounds, nonblocking Position writes and moving `-1` are

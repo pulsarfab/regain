@@ -3950,3 +3950,43 @@ Current preceding panel CI 37554304962/37554298269 remains live with Windows
 test.ps1 still running. Keep reviewed local increments until those runs end.
 Next: source-owned acquisition supervision, binary backend/IPC paths and all
 camera inputs/outputs, followed by every original remaining plan gate.
+
+## 2026-10-06: fenced binary camera source dispatch
+
+The existing source actor now dispatches binary image reads outside scalar
+sampling. Admission requires a connection lease, exclusive control and an
+explicit matching source generation. The caller supplies the shared image
+budget and a separate positive deadline bounded to the existing core's one-hour
+download limit; the one-second default scalar request timeout is not used.
+Existing adapters return Unsupported without any image I/O until their camera
+implementations are added. No capability or configuration choice is enabled.
+
+Review covered queued and dispatched cancellation, current/old generations,
+transport retirement, command ambiguity and memory lifetime. A queued abandoned
+read is skipped. A dispatched read completes or times out within its own bound;
+an undelivered image drops its reservation. Transport loss preserves the original
+error and changes generation. Binary reads neither modify scalar cache nor replay
+a command, create a write fence or clear an existing fence. The exclusive owner
+may perform an explicit reconciliation read after uncertainty; publication still
+requires the future acquisition supervisor to prove ownership. Detached captures
+must also retain runtime activity so configuration quiescence cannot retire an
+active acquisition; that requirement is recorded for supervisor integration.
+
+Eight private actor tests and the full Rust hub/Alpaca suites pass. Tests include
+observer rejection, pre-dispatch generation fencing, independent disconnects,
+image readers surviving source shutdown, distinct image/scalar deadlines,
+partial-download timeout/cancellation, cancelled queue entries, unsupported
+existing adapters and retained uncertain writes. Strict Clippy, Rust 1.89 all
+targets, generated-contract freshness and formatting/diff checks pass. Fresh-host
+NINA passes 228/228; actual net48 x86/x64 regressions pass with zero build warnings.
+No equipment or installed vendor driver was activated.
+
+The first focused compile used unwrap_err on a task whose successful image has
+no Debug implementation; the fixture now matches the cancellation error without
+requiring a pixel debug representation. Initial and confirmed logs are retained
+at artifacts/hub-camera-source-{check,focused,focused-confirmed,focused-final,
+rust,clippy,clippy-final,msrv,msrv-final,contract,host,nina,net48}.log.
+Preceding panel CI 37554304962/37554298269 has passed its Windows test script and
+is still running installer acceptance. Keep local commits pending those terminal
+results. Next: the source-owned acquisition supervisor, camera adapters and all
+three publications, followed by every original remaining acceptance/final gate.

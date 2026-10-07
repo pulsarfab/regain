@@ -187,6 +187,21 @@ pub trait Backend: Send {
     fn disconnect(&mut self) -> BackendFuture<'_, ()>;
     fn read(&mut self, member: String, parameters: Values) -> BackendFuture<'_, Value>;
     fn write(&mut self, member: String, parameters: Values) -> BackendFuture<'_, Value>;
+    /// Binary images bypass scalar sampling and its JSON/array limits. Only the
+    /// acquisition supervisor holding source control may dispatch this read.
+    /// Implementations must reserve from the supplied shared budget before an
+    /// image-sized allocation; the source actor bounds the whole operation.
+    fn camera_image(
+        &mut self,
+        _: crate::camera::image::ImageBudget,
+    ) -> BackendFuture<'_, crate::camera::image::CameraImage> {
+        Box::pin(async {
+            Err(SourceError::new(
+                ErrorKind::Unsupported,
+                "This source does not provide camera images",
+            ))
+        })
+    }
     fn poll(&mut self) -> BackendFuture<'_, Values>;
     fn sample(&mut self) -> BackendFuture<'_, SampleBatch> {
         Box::pin(async { self.poll().await.map(SampleBatch::from) })
@@ -348,6 +363,13 @@ pub struct PollEvent {
 
 type Reply<T> = oneshot::Sender<Result<T, SourceError>>;
 enum Command {
+    CameraImage {
+        lease: Uuid,
+        expected_generation: Uuid,
+        budget: crate::camera::image::ImageBudget,
+        deadline: Duration,
+        reply: Reply<crate::camera::image::CameraImage>,
+    },
     UpdateSimulation {
         lease: Uuid,
         update: Box<crate::simulated::SimulationUpdate>,
@@ -661,6 +683,34 @@ impl SourceHandle {
         parameters: Values,
     ) -> Result<Value, SourceError> {
         self.write_fenced(lease, member, parameters, None).await
+    }
+    /// Read once on behalf of the exclusive acquisition owner. Completed-image
+    /// observers use the supervisor's immutable image, not additional leaf I/O.
+    /// Generation fencing is mandatory; this never starts/retries an exposure.
+    pub async fn camera_image_fenced(
+        &self,
+        lease: Uuid,
+        expected_generation: Uuid,
+        budget: crate::camera::image::ImageBudget,
+        deadline: Duration,
+    ) -> Result<crate::camera::image::CameraImage, SourceError> {
+        // Camera recovery metadata supplies this separately from scalar polling.
+        // Match the existing core download-timeout bound without changing it.
+        if deadline.is_zero() || deadline > Duration::from_secs(3600) {
+            return Err(SourceError::new(
+                ErrorKind::InvalidValue,
+                "Camera image download deadline must be positive and at most one hour",
+            ));
+        }
+        let (reply, response) = oneshot::channel();
+        self.enqueue(Command::CameraImage {
+            lease,
+            expected_generation,
+            budget,
+            deadline,
+            reply,
+        })?;
+        response.await.map_err(|_| closed())?
     }
     pub async fn write_fenced(
         &self,
@@ -1092,6 +1142,55 @@ impl Actor {
                 if reply.send(result).is_err() && acquire && self.controller == Some(lease) {
                     self.controller = previous_controller;
                 }
+            }
+            Command::CameraImage {
+                lease,
+                expected_generation,
+                budget,
+                deadline,
+                reply,
+            } => {
+                if reply.is_closed() {
+                    return;
+                }
+                let mut dispatched = false;
+                let admission = self.authorized(lease, false).and_then(|()| {
+                    if self.controller != Some(lease) {
+                        Err(SourceError::new(
+                            ErrorKind::Busy,
+                            "Acquire source control before downloading a camera image",
+                        ))
+                    } else {
+                        Ok(())
+                    }
+                });
+                let result = match admission {
+                    Err(error) => Err(error),
+                    Ok(()) => match self.connect().await {
+                        Err(error) => Err(error),
+                        Ok(()) if expected_generation != self.state.generation => {
+                            Err(SourceError::new(
+                                ErrorKind::Unavailable,
+                                "Source generation changed before image dispatch",
+                            ))
+                        }
+                        Ok(()) => {
+                            dispatched = true;
+                            timeout(deadline, self.backend.camera_image(budget))
+                                .await
+                                .unwrap_or_else(|_| Err(SourceError::timeout()))
+                        }
+                    },
+                };
+                if let Err(error) = &result
+                    && dispatched
+                    && error.transport_lost
+                {
+                    self.fault(error.clone());
+                }
+                // No sample/cache update, command replay or uncertainty reset.
+                // Dropping a disconnected receiver releases its image handle.
+                let _ = reply.send(result);
             }
             Command::Read {
                 lease,
