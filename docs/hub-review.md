@@ -6933,3 +6933,93 @@ and transfer, OS resume, conformance reconciliation, README/site, main
 reconciliation and final review/CI/audit/merge remain required. All fixtures use
 private actors or explicit simulation, with no attached hardware/vendor driver.
 Continue construction without waiting for intermediate CI; keep the single PR draft.
+
+## Shared managed camera groups and retained images (2026-10-07)
+
+Reviewed managed operation admission, generated-schema/semantic reply validation,
+unknown-start fencing, revision/operation/source/image identities, monotonic
+publication, protected image attachment, budget cleanup, native window lifetime
+and the shared focuser helpers. Shared typed alias traversal, unknown-outcome
+classification and terminal immutability serve both coordination classes.
+Status/cancel never silently starts another operation. Unknown start outcomes
+remain fenced on the same client after status reads; only explicit reattachment
+can admit a subsequent deliberate start. Closing native setup does not cancel a
+capture, and reopening inspects the exact retained operation without output leases.
+
+The common ImageBytes reader now selects an immutable ordinary or group request
+identity. Ordinary wire fields are unchanged. Group requests check host, revision,
+group, operation, physical source, generation and acquisition before accepting
+pixels. Image pin/storage/conversion/budget behavior is shared, including
+contention between ordinary and group readers. The higher-level group client also
+checks descriptor geometry against its validated retained member identity and
+disposes a mismatched returned image. No new pool, implicit exposure, upstream
+redownload or SDK retry claim is introduced. The unpublished 0.6 managed image API
+uses a common request base with concrete ordinary/group identities.
+
+The themed shared native Camera groups tab accepts separate exposure duration and
+Light flag per saved member, shows both saved policies and timeout, requires a
+status read before start, cancels only the displayed operation, and reports
+individual results/image pins plus host request spread. The rendered actual WPF
+capture was inspected and is checked in as
+`docs/images/hub-camera-group-results-simulation.png`. It explicitly labels
+simulation. Reopened inputs describe the next capture; retained results describe
+the admitted requests. The screenshot is not installed-NINA or hardware evidence.
+
+Review refinements:
+
+- A pending abort can fail after the member image completes. Preserve that later
+  abort diagnostic while requiring the completed image identity/metadata to stay
+  frozen; do not freeze the whole running member record prematurely. A private
+  reply test covers the allowed race.
+- General JSON numeric equality uses Double telemetry semantics. Terminal outer
+  and inner UInt64 sequences also need exact comparisons beyond 2^53; the common
+  camera/focuser terminal check now enforces them. Two managed cases and both real
+  net48 architecture fixtures cover adjacent large sequences.
+- New operation admission retires prior image access on that client; a separate
+  already admitted image reader retains its immutable historical pin. Reading
+  images after group source leases drain performs no equipment I/O.
+
+Local evidence:
+
+- Full NINA regression passes **420 cases**, with **one explicit registered-COM
+  fixture skip**, in `artifacts/hub-camera-managed-final-full.log`. This is 78
+  new cases since the saved camera-host checkpoint: generated/semantic reply
+  corruption, lost-start fences, immutable images/terminal sequences, exact
+  transfer and geometry rejection/cleanup, real-host reattachment and both
+  cancellation policies, WPF reopen/results, and group codec fault cases.
+- All private **net48 x86/x64** suites pass with warnings denied in
+  `artifacts/hub-camera-managed-net48.log`, including new camera-group reattachment,
+  exact separate image rereads, pins/budget, aliases and zero output leases.
+  Ordinary Camera/ASCOM and calibrated focuser compatibility remain green.
+- The final focused net48 codec/group follow-up passes both architectures in
+  `artifacts/hub-camera-managed-final-net48.log`; its exact invocation is retained
+  in `artifacts/hub-camera-managed-final-net48.ps1`. It rebuilds both architectures
+  and verifies ordinary/group codecs and retained focuser/camera groups, including
+  exact terminal-sequence comparison. Only the focused checks were repeated after
+  that review refinement.
+- Final focused managed render/geometry/cross-kind budget checks pass five cases
+  in `artifacts/hub-camera-managed-final-focused.log`. The final full regression
+  includes all of them plus the sequence refinement.
+- `git diff --check` passes. No Rust/config-schema/browser contract changed;
+  their full validation evidence remains the preceding saved-host increment,
+  rather than being represented as newly rerun here.
+
+The first focused build correctly rejected an xUnit synchronous assertion around
+an async-returning method; it now awaits ThrowsAsync. The next run passed 105
+cases but exposed 24 fault fixtures attempting GetValue<Guid> on a newly created
+JsonValue<string> before reaching the client. Guid.Parse fixes the fixture and
+all 33 initial reply cases then pass. Failure logs remain in
+`hub-camera-managed-focused.log` and `hub-camera-managed-focused-2.log`; no product
+assertion, deadline or error semantics were weakened.
+
+This completes shared native operation controls and managed retained-image access,
+not native NINA coordinated capture/save. That next increment must preserve
+per-member image metadata and numeric integrity, report partial save/capture
+results, honor explicit cancellation policies, and retain failed/interrupted-step
+reconciliation through cloning/saved sequences without replay. Discovery/transfer,
+actual OS resume, conformance reconciliation, interactive NINA/UAC/Chooser/signing,
+physical acceptance, camera-recovery metadata migration, README/site, main
+reconciliation and final review/CI/audit/merge stay open. All equipment-facing
+fixtures are private peers or explicit simulations; no attached hardware or
+installed vendor driver is opened. Continue construction without intermediate CI
+waiting; keep the single PR draft.

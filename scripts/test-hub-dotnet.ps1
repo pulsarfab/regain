@@ -35,6 +35,13 @@ foreach ($architecture in 'x86', 'x64') {
         [IO.File]::WriteAllText($groupPath, ($groupConfig | ConvertTo-Json -Depth 40), [Text.UTF8Encoding]::new($false))
         & (Join-Path $buildDirectory 'Regain.Hub.Client.Fixture.exe') --focuser-group $executable $groupPath $bitness
         if ($LASTEXITCODE) { throw "net48 $architecture focuser group fixture failed" }
+        $cameraConfig = Get-Content -LiteralPath (Join-Path $repo 'crates/regain-hub/examples/paired-cameras.json') -Raw | ConvertFrom-Json
+        $cameraConfig.instanceId = [guid]::NewGuid().ToString()
+        $cameraConfig.revision = [guid]::NewGuid().ToString()
+        $cameraPath = Join-Path $temporary 'paired cameras.json'
+        [IO.File]::WriteAllText($cameraPath, ($cameraConfig | ConvertTo-Json -Depth 40), [Text.UTF8Encoding]::new($false))
+        & (Join-Path $buildDirectory 'Regain.Hub.Client.Fixture.exe') --camera-group $executable $cameraPath $bitness
+        if ($LASTEXITCODE) { throw "net48 $architecture camera group fixture failed" }
     } finally {
         $resolved = [IO.Path]::GetFullPath($temporary)
         $allowed = [IO.Path]::GetFullPath((Join-Path $repo 'artifacts')) + [IO.Path]::DirectorySeparatorChar

@@ -14,13 +14,15 @@ public static class HubCameraImages
     /// Download an already completed image over a separate verified local pipe.
     /// No equipment connection, capture, Abort or automatic retry is performed.
     public static async Task<HubCameraImage> DownloadAsync(HubAttachment attachment, HubClient control,
-        HubImageRequest request, HubImageBudget budget, TimeSpan deadline, CancellationToken cancellation = default)
+        HubImageIdentity request, HubImageBudget budget, TimeSpan deadline, CancellationToken cancellation = default)
     {
         Validate(deadline);
         control.RequireCapabilities("cameraAcquisition", "cameraImageStream");
+        if (request is HubGroupImageRequest) control.RequireCapabilities("cameraGroups");
         if (control.Hello.InstanceId != attachment.InstanceId || control.Hello.HostInstance != attachment.HostInstance ||
             request.HostInstance != control.Hello.HostInstance || request.ConfigurationRevision != control.Hello.ConfigurationRevision ||
-            request.ClientId != control.Hello.ClientId || !control.Hello.Operations.Contains("cameraImage", StringComparer.Ordinal))
+            request is HubImageRequest ordinary && ordinary.ClientId != control.Hello.ClientId ||
+            !control.Hello.Operations.Contains(request.OperationKey, StringComparer.Ordinal))
             throw new HubException(HubFailure.Protocol);
         using var timer = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
         timer.CancelAfter(deadline);
@@ -44,7 +46,7 @@ public static class HubCameraImages
 
     // Owns the injected protected stream, including on validation failure.
     // Shared by both frontend frameworks; tests alone inject a private peer.
-    internal static async Task<HubCameraImage> FromStreamAsync(Stream stream, Guid instance, HubImageRequest request,
+    internal static async Task<HubCameraImage> FromStreamAsync(Stream stream, Guid instance, HubImageIdentity request,
         HubImageBudget budget, TimeSpan deadline, CancellationToken cancellation = default)
     {
         using (stream) {
@@ -62,8 +64,9 @@ public static class HubCameraImages
                 var hello = new HubHello(first.GetProperty("result"), instance);
                 if (hello.HostInstance != request.HostInstance || hello.ConfigurationRevision != request.ConfigurationRevision ||
                     !hello.Capabilities.Contains("cameraImageStream", StringComparer.Ordinal) ||
-                    !hello.Operations.Contains("cameraImage", StringComparer.Ordinal)) throw new HubException(HubFailure.Protocol);
-                await Write(stream, 2, new { op = "cameraImage", request = request.Wire() }, hello.MaxFrameBytes, timer.Token).ConfigureAwait(false);
+                    request is HubGroupImageRequest && !hello.Capabilities.Contains("cameraGroups", StringComparer.Ordinal) ||
+                    !hello.Operations.Contains(request.OperationKey, StringComparer.Ordinal)) throw new HubException(HubFailure.Protocol);
+                await Write(stream, 2, new { op = request.OperationKey, request = request.Wire() }, hello.MaxFrameBytes, timer.Token).ConfigureAwait(false);
                 var reply = await Json(stream, hello.MaxFrameBytes, timer.Token).ConfigureAwait(false);
                 HubWire.Members(reply, "version", "id", "result", "error"); Envelope(reply, 2);
                 var hasValue = reply.TryGetProperty("result", out var manifest);

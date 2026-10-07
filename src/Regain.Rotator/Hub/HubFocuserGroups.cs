@@ -94,9 +94,7 @@ public sealed class HubFocuserGroups : IDisposable
             Validate(result, config, operation, target);
             observations[group] = result.Clone(); return result.Clone();
         } catch (Exception error) {
-            if (sent && kind == "startOperation" && !(error is HubException hub &&
-                (hub.Failure is HubFailure.Busy or HubFailure.InvalidRequest || hub.Failure == HubFailure.Remote &&
-                 hub.Remote?.Code is not ("uncertain" or "timeout" or "disconnected")))) uncertainStarts.Add(group);
+            if (sent && kind == "startOperation" && HubGroupContract.UnknownStart(error)) uncertainStarts.Add(group);
             throw;
         } finally { requests.Release(); }
     }
@@ -114,7 +112,7 @@ public sealed class HubFocuserGroups : IDisposable
             if (expectedTarget.HasValue) Require(result.GetProperty("phase").GetString() == "connecting" && sequence == 1 && result.GetProperty("result").ValueKind == JsonValueKind.Null);
             if (observations.TryGetValue(group, out var old) && old.GetProperty("operation").GetGuid() == operation) {
                 Require(!expectedTarget.HasValue);
-                if (Terminal(old)) Require(HubDiagnosticContract.Equal(old, result));
+                HubGroupContract.ImmutableTerminal(old, result);
                 Require(old.GetProperty("logicalTarget").GetInt32() == target && sequence >= old.GetProperty("sequence").GetUInt64());
                 if (sequence == old.GetProperty("sequence").GetUInt64()) Require(HubDiagnosticContract.Equal(old, result));
                 var oldReport = old.GetProperty("result"); var nextReport = result.GetProperty("result");
@@ -128,7 +126,7 @@ public sealed class HubFocuserGroups : IDisposable
             var bindings = result.GetProperty("bindings").EnumerateArray().ToArray(); var members = config.GetProperty("members").EnumerateArray().ToArray();
             Require(bindings.Length == members.Length && bindings.Select(b => b.GetProperty("physicalSource").GetGuid()).Distinct().Count() == members.Length);
             for (var i = 0; i < members.Length; i++) Require(bindings[i].GetProperty("configuredSource").GetGuid() == members[i].GetProperty("source").GetGuid() &&
-                bindings[i].GetProperty("physicalSource").GetGuid() == PhysicalSource(members[i].GetProperty("source").GetGuid()));
+                bindings[i].GetProperty("physicalSource").GetGuid() == HubGroupContract.PhysicalSource(saved, members[i].GetProperty("source").GetGuid(), "focuser"));
             var failed = result.GetProperty("failedSource");
             Require(failed.ValueKind == JsonValueKind.Null || bindings.Any(b => b.GetProperty("physicalSource").GetGuid() == failed.GetGuid()));
             var phase = result.GetProperty("phase").GetString(); var report = result.GetProperty("result");
@@ -149,19 +147,6 @@ public sealed class HubFocuserGroups : IDisposable
         } catch (HubException) { throw; }
         catch { throw new HubException(HubFailure.Protocol); }
     }
-    private Guid PhysicalSource(Guid source)
-    {
-        var seen = new HashSet<Guid>();
-        while (seen.Count < 256 && seen.Add(source)) {
-            var backend = saved.GetProperty("sources").EnumerateArray().Single(s => s.GetProperty("id").GetGuid() == source).GetProperty("backend");
-            if (backend.GetProperty("kind").GetString() != "virtual") return source;
-            var output = backend.GetProperty("output").GetGuid();
-            var device = saved.GetProperty("outputs").EnumerateArray().Single(o => o.GetProperty("id").GetGuid() == output).GetProperty("device");
-            if (device.GetProperty("kind").GetString() != "proxy" || device.GetProperty("deviceType").GetString() != "focuser") break;
-            source = device.GetProperty("source").GetGuid();
-        }
-        throw new HubException(HubFailure.Protocol);
-    }
     private static int CalibratedTarget(JsonElement member, int target)
     {
         var numerator = (long)target * member.GetProperty("scaleNumerator").GetInt32();
@@ -170,7 +155,7 @@ public sealed class HubFocuserGroups : IDisposable
         if (Math.Abs(numerator % denominator) * 2 >= denominator) scaled += Math.Sign(numerator);
         return checked((int)(scaled + member.GetProperty("offset").GetInt32()));
     }
-    public static bool Terminal(JsonElement status) => status.GetProperty("phase").GetString() is not ("connecting" or "running");
+    public static bool Terminal(JsonElement status) => HubGroupContract.Terminal(status);
     public static string Summary(JsonElement status)
     {
         var lines = new List<string> { "Group " + status.GetProperty("phase").GetString() + " · logical target " + status.GetProperty("logicalTarget") + " · operation " + status.GetProperty("operation").GetString() };

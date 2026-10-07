@@ -23,15 +23,19 @@ internal static class HubImageFixture
         await Lifetime(); await Capacity(); await ArrayLifetime();
         foreach (var fault in Faults) await Malformed(fault);
         await Stalled(true); await Stalled(false);
+        await Types(true); await Lifetime(true); await Capacity(true);
+        foreach (var fault in GroupFaults) await Malformed(fault, true);
+        await Stalled(true, true); await Stalled(false, true);
         Console.WriteLine("Image peer: nine types, packed Int32, rank 3, pins, shared budget, malformed input and cancellation/deadline passed");
     }
     internal static readonly string[] Faults = ["host", "revision", "request", "payload", "chunk", "timeout", "order",
         "conversion", "oversize", "unknown", "duplicate", "version", "error", "client", "server", "offset", "type", "transmission", "rank", "width", "height", "planes", "truncated", "trailing"];
-    internal static async Task Types()
+    internal static readonly string[] GroupFaults = Faults.Concat(new[] { "identity:hostInstance", "identity:configurationRevision", "identity:group", "identity:operation", "identity:source", "identity:generation", "identity:acquisition", "ordinaryRequest" }).ToArray();
+    internal static async Task Types(bool group = false)
     {
         foreach (var type in Enumerable.Range(1, 9).Select(value => (HubImageElementType)value)) {
             foreach (var planes in new int?[] { null, 1, 3 }) {
-                using var peer = await Peer.Open(type, type, planes);
+                using var peer = await Peer.Open(type, type, planes, group: group);
                 var budget = new HubImageBudget(peer.Pixels.Length);
                 var serving = peer.Serve();
                 using (var image = await peer.Download(budget)) {
@@ -63,7 +67,7 @@ internal static class HubImageFixture
             }
         }
         foreach (var transmitted in new[] { HubImageElementType.Byte, HubImageElementType.Int16, HubImageElementType.UInt16 }) {
-            using var peer = await Peer.Open(HubImageElementType.Int32, transmitted);
+            using var peer = await Peer.Open(HubImageElementType.Int32, transmitted, group: group);
             var serving = peer.Serve(); using var image = await peer.Download(new HubImageBudget(1024)); await serving;
             Check(image.Descriptor.ElementType == HubImageElementType.Int32 && image.Descriptor.TransmissionType == transmitted, "Packed Int32 type changed");
             var typed = HubCameraArrays.Convert(image, budget: new HubImageBudget(4096));
@@ -233,9 +237,9 @@ internal static class HubImageFixture
         GC.KeepAlive(array);
         return weak;
     }
-    internal static async Task Lifetime()
+    internal static async Task Lifetime(bool group = false)
     {
-        using var peer = await Peer.Open(width: 70000);
+        using var peer = await Peer.Open(width: 70000, group: group);
         var budget = new HubImageBudget(peer.Pixels.Length);
         var serving = peer.Serve(); var image = await peer.Download(budget); await serving;
         using var pin = image.Pin(); image.Dispose(); image.Dispose();
@@ -263,9 +267,9 @@ internal static class HubImageFixture
     {
         var forgotten = image.Pin(); image.Dispose(); return new WeakReference(forgotten);
     }
-    internal static async Task Capacity()
+    internal static async Task Capacity(bool group = false)
     {
-        using var first = await Peer.Open(); using var second = await Peer.Open();
+        using var first = await Peer.Open(group: group); using var second = await Peer.Open(group: !group);
         var budget = new HubImageBudget(first.Pixels.Length);
         var serving = first.Serve(); var image = await first.Download(budget); await serving;
         var pin = image.Pin(); image.Dispose();
@@ -273,13 +277,13 @@ internal static class HubImageFixture
         await Failure(HubFailure.Busy, second.Download(budget)); await serving;
         Check(second.Observed.PixelBuffer is null && budget.UsedBytes == first.Pixels.Length, "Rejected buffer allocated or changed retained charge");
         pin.Dispose(); Check(budget.UsedBytes == 0, "Capacity did not return");
-        using var third = await Peer.Open(); serving = third.Serve();
+        using var third = await Peer.Open(group: group); serving = third.Serve();
         using (var restored = await third.Download(budget)) { await serving; Check(budget.UsedBytes == third.Pixels.Length, "Returned capacity unusable"); }
         Check(budget.UsedBytes == 0, "Reused capacity leaked");
     }
-    internal static async Task Malformed(string fault)
+    internal static async Task Malformed(string fault, bool group = false)
     {
-        using var peer = await Peer.Open();
+        using var peer = await Peer.Open(group: group);
         // Header/manifest errors must be rejected before reserve. A one-byte
         // budget would otherwise turn these into Busy instead of Protocol.
         var bodyFault = fault is "truncated" or "trailing";
@@ -291,9 +295,9 @@ internal static class HubImageFixture
         if (!bodyFault) Check(peer.Observed.PixelBuffer is null, "Invalid binary contract allocated pixels");
         if (peer.Observed.PixelBuffer is { } pixels) Check(pixels.All(value => value == 0), "Rejected pixels were not cleared");
     }
-    internal static async Task Stalled(bool cancel)
+    internal static async Task Stalled(bool cancel, bool group = false)
     {
-        using var peer = await Peer.Open(width: 70000);
+        using var peer = await Peer.Open(width: 70000, group: group);
         var budget = new HubImageBudget(peer.Pixels.Length);
         using var stop = new CancellationTokenSource();
         var serving = peer.Serve(headersOnly: true, partial: true);
@@ -322,11 +326,13 @@ internal static class HubImageFixture
         private readonly NamedPipeServerStream server;
         private readonly Guid instance = Guid.NewGuid();
         private readonly JsonObject descriptor;
-        internal readonly HubImageRequest Request = new(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
+        internal readonly HubImageIdentity Request;
         internal readonly byte[] Pixels;
         internal readonly ObservedStream Observed;
-        private Peer(string name, HubImageElementType element, HubImageElementType transmission, int? planes, int width)
+        private Peer(string name, HubImageElementType element, HubImageElementType transmission, int? planes, int width, bool group)
         {
+            Request = group ? new HubGroupImageRequest(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid()) :
+                new HubImageRequest(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
             server = new NamedPipeServerStream(name, PipeDirection.InOut, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous, 65536, 65536);
             Observed = new ObservedStream(new NamedPipeClientStream(".", name, PipeDirection.InOut, PipeOptions.Asynchronous));
             descriptor = new JsonObject { ["width"] = width, ["height"] = 2, ["planes"] = planes,
@@ -334,9 +340,9 @@ internal static class HubImageFixture
             Pixels = Enumerable.Range(0, width * 2 * (planes ?? 1) * HubImageDescriptor.Size(transmission)).Select(index => (byte)(index * 37 + 129)).ToArray();
         }
         internal static async Task<Peer> Open(HubImageElementType element = HubImageElementType.Byte,
-            HubImageElementType transmission = HubImageElementType.Byte, int? planes = null, int width = 3)
+            HubImageElementType transmission = HubImageElementType.Byte, int? planes = null, int width = 3, bool group = false)
         {
-            var peer = new Peer("Regain.Image.Fixture." + Guid.NewGuid().ToString("N"), element, transmission, planes, width);
+            var peer = new Peer("Regain.Image.Fixture." + Guid.NewGuid().ToString("N"), element, transmission, planes, width, group);
             try {
                 var accepting = peer.server.WaitForConnectionAsync();
                 await ((NamedPipeClientStream)peer.Observed.Inner).ConnectAsync(10000); await Bounded(accepting); return peer;
@@ -360,14 +366,16 @@ internal static class HubImageFixture
                     ["hostInstance"] = (fault == "host" ? Guid.NewGuid() : Request.HostInstance).ToString(),
                     ["configurationRevision"] = (fault == "revision" ? Guid.NewGuid() : Request.ConfigurationRevision).ToString(),
                     ["clientId"] = Guid.NewGuid().ToString(), ["maxFrameBytes"] = 1048576, ["maxInFlight"] = 2,
-                    ["operations"] = new JsonArray("cameraImage"), ["capabilities"] = new JsonArray("cameraImageStream") };
+                    ["operations"] = new JsonArray(Request.OperationKey), ["capabilities"] = Request is HubGroupImageRequest ? new JsonArray("cameraImageStream", "cameraGroups") : new JsonArray("cameraImageStream") };
                 await Reply(1, hello);
                 if (fault is "host" or "revision") return;
                 var imageRequest = await Read();
-                Check(imageRequest.GetProperty("id").GetInt32() == 2 && imageRequest.GetProperty("command").GetProperty("op").GetString() == "cameraImage", "Image request sequence changed");
+                Check(imageRequest.GetProperty("id").GetInt32() == 2 && imageRequest.GetProperty("command").GetProperty("op").GetString() == Request.OperationKey, "Image request sequence changed");
                 Request.Match(imageRequest.GetProperty("command").GetProperty("request"));
                 var echoed = JsonSerializer.SerializeToNode(Request.Wire())!.AsObject();
                 if (fault == "request") echoed["acquisition"] = Guid.NewGuid().ToString();
+                if (fault?.StartsWith("identity:", StringComparison.Ordinal) == true) echoed[fault.Substring(9)] = Guid.NewGuid().ToString();
+                if (fault == "ordinaryRequest") { echoed.Remove("group"); echoed.Remove("operation"); echoed["clientId"] = Guid.NewGuid().ToString(); echoed["output"] = Guid.NewGuid().ToString(); }
                 var wireDescriptor = descriptor.DeepClone().AsObject();
                 if (fault == "order") wireDescriptor["order"] = "sensorRows";
                 if (fault == "conversion") wireDescriptor["elementType"] = "double";

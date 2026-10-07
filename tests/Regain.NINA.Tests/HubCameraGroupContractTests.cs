@@ -8,7 +8,7 @@ namespace Regain.NINA.Tests;
 public sealed class HubCameraGroupContractTests
 {
     private static JsonElement Element(JsonNode node) => JsonSerializer.SerializeToElement(node);
-    private static JsonObject Configuration()
+    internal static JsonObject Configuration()
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
         while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "Cargo.toml"))) directory = directory.Parent;

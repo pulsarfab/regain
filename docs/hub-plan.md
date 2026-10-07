@@ -13,7 +13,25 @@ increments. Push those increments to the same draft PR without waiting for slow
 CI between steps. Final CI, review and the original acceptance/completion audit
 remain merge gates.
 
-Current increment: saved camera groups and revision-owned host operations.
+Current increment: shared native camera-group controls and managed retained-image
+access. A camera-group client validates host/revision/operation identities, exact
+configured-to-physical bindings, requests, monotonic reports, generation/acquisition
+pins, frozen images and measured host request spread. An unknown Start outcome
+fences further starts even after reading status; explicit reattachment is required.
+Managed group images reuse the ordinary protected ImageBytes reader, immutable
+pins, array conversions and shared budget; ordinary image wire requests are unchanged.
+The shared native setup has per-camera durations/frame types, visible saved
+failure/cancellation policies, status-first admission and exact-operation cancel.
+Closing/reopening the window retains work/results. Native NINA coordinated capture
+and image-save orchestration remain the next construction step. Full managed
+regression passes 420 cases with one explicit registered-COM-fixture skip; focused
+render/cross-kind budget checks pass. Real net48 x86/x64 suites and the final
+focused image/group checks pass with warnings denied.
+No attached hardware or installed vendor driver is opened. Preserve discovery/
+transfer, actual OS resume, remaining acceptance, README/site, main reconciliation
+and every original final review/CI/audit/merge gate. No intermediate CI waiting gate.
+
+Previous increment: saved camera groups and revision-owned host operations.
 Generated descriptors carry group identity, source references, timeout and
 required failure/cancellation policies. Camera and focuser aliases share typed
 physical-leaf traversal; identity history prevents retired group IDs from being
@@ -2211,9 +2229,10 @@ Camera progress: the explicit core reserves all members before a burst, retains
 separate images/results, measures host request skew and applies explicit
 failure/cancellation policies through the existing camera supervisor. Saved
 configuration, typed physical-alias resolution, host-owned retained operations and
-revision-fenced status/cancellation/image IPC are implemented. Shared operation
-controls and native NINA capture/image-save orchestration remain required before
-closing the camera coordination items and their acceptance gate.
+revision-fenced status/cancellation/image IPC are implemented. Shared native
+operation controls and managed protected image access are implemented. Native NINA
+capture/image-save orchestration remains required before closing the camera
+coordination items and their acceptance gate.
 
 Focuser progress: the core, saved/generated configuration, physical alias
 resolution, host activity/revision, retained IPC reattachment/shutdown, shared

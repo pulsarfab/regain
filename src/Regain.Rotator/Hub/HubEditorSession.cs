@@ -21,6 +21,7 @@ public sealed partial class HubEditorSession : IDisposable
     public Guid InstanceId { get; }
     private readonly Guid? hostInstance;
     public HubFocuserGroups? FocuserGroups { get; private set; }
+    public HubCameraGroups? CameraGroups { get; private set; }
     public HubConfigurationDraft? Draft { get; private set; }
     public HubEditorState State {
         get { lock (lifecycle) return state; }
@@ -61,6 +62,9 @@ public sealed partial class HubEditorSession : IDisposable
             FocuserGroups?.Dispose(); FocuserGroups = null;
             if (hostInstance.HasValue && description.GetProperty("capabilities").EnumerateArray().Any(c => c.GetString() == "focuserGroups"))
                 FocuserGroups = new(hostInstance.Value, description.GetProperty("coordination").GetProperty("focuserGroups"), saved, request, () => { });
+            CameraGroups?.Dispose(); CameraGroups = null;
+            if (hostInstance.HasValue && description.GetProperty("capabilities").EnumerateArray().Any(c => c.GetString() == "cameraGroups"))
+                CameraGroups = new(hostInstance.Value, description.GetProperty("coordination").GetProperty("cameraGroups"), saved, request, () => { });
             State = status.GetProperty("phase").GetString() == "ready" ? HubEditorState.Editing : HubEditorState.Blocked;
         } catch { if (!disposed) State = HubEditorState.Uncertain; throw; }
         finally { operations.Release(); }
@@ -190,6 +194,6 @@ public sealed partial class HubEditorSession : IDisposable
             activeOperations++;
         }
         try { lifetime.Cancel(); }
-        finally { try { FocuserGroups?.Dispose(); close(); } finally { Release(); } }
+        finally { try { FocuserGroups?.Dispose(); CameraGroups?.Dispose(); close(); } finally { Release(); } }
     }
 }

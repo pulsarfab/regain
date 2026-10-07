@@ -81,30 +81,70 @@ public sealed class HubImageDescriptor
 }
 
 /// Frozen identities from the control client and completed acquisition.
-public sealed class HubImageRequest
+public abstract class HubImageIdentity
 {
     public Guid HostInstance { get; }
     public Guid ConfigurationRevision { get; }
-    public Guid ClientId { get; }
-    public Guid Output { get; }
     public Guid Source { get; }
     public Guid Generation { get; }
     public Guid Acquisition { get; }
+    internal HubImageIdentity(Guid hostInstance, Guid configurationRevision, Guid source, Guid generation, Guid acquisition)
+    {
+        if (new[] { hostInstance, configurationRevision, source, generation, acquisition }.Any(id => id == Guid.Empty))
+            throw new HubException(HubFailure.InvalidRequest);
+        HostInstance = hostInstance; ConfigurationRevision = configurationRevision;
+        Source = source; Generation = generation; Acquisition = acquisition;
+    }
+    internal abstract string OperationKey { get; }
+    internal abstract object Wire();
+    internal abstract void Match(JsonElement value);
+}
+
+public sealed class HubImageRequest : HubImageIdentity
+{
+    public Guid ClientId { get; }
+    public Guid Output { get; }
     public HubImageRequest(Guid hostInstance, Guid configurationRevision, Guid clientId,
         Guid output, Guid source, Guid generation, Guid acquisition)
+        : base(hostInstance, configurationRevision, source, generation, acquisition)
     {
-        if (new[] { hostInstance, configurationRevision, clientId, output, source, generation, acquisition }.Any(id => id == Guid.Empty))
+        if (clientId == Guid.Empty || output == Guid.Empty)
             throw new HubException(HubFailure.InvalidRequest);
-        HostInstance = hostInstance; ConfigurationRevision = configurationRevision; ClientId = clientId;
-        Output = output; Source = source; Generation = generation; Acquisition = acquisition;
+        ClientId = clientId; Output = output;
     }
-    internal object Wire() => new { hostInstance = HostInstance, configurationRevision = ConfigurationRevision,
+    internal override string OperationKey => "cameraImage";
+    internal override object Wire() => new { hostInstance = HostInstance, configurationRevision = ConfigurationRevision,
         clientId = ClientId, output = Output, source = Source, generation = Generation, acquisition = Acquisition };
-    internal void Match(JsonElement value)
+    internal override void Match(JsonElement value)
     {
         HubWire.Members(value, "hostInstance", "configurationRevision", "clientId", "output", "source", "generation", "acquisition");
         if (HubWire.Identity(value, "hostInstance") != HostInstance || HubWire.Identity(value, "configurationRevision") != ConfigurationRevision ||
             HubWire.Identity(value, "clientId") != ClientId || HubWire.Identity(value, "output") != Output ||
+            HubWire.Identity(value, "source") != Source || HubWire.Identity(value, "generation") != Generation ||
+            HubWire.Identity(value, "acquisition") != Acquisition) throw new HubException(HubFailure.Protocol);
+    }
+}
+
+/// An immutable operation pin needs neither an ordinary output nor its client lease.
+public sealed class HubGroupImageRequest : HubImageIdentity
+{
+    public Guid Group { get; }
+    public Guid Operation { get; }
+    public HubGroupImageRequest(Guid hostInstance, Guid configurationRevision, Guid group,
+        Guid operation, Guid source, Guid generation, Guid acquisition)
+        : base(hostInstance, configurationRevision, source, generation, acquisition)
+    {
+        if (group == Guid.Empty || operation == Guid.Empty) throw new HubException(HubFailure.InvalidRequest);
+        Group = group; Operation = operation;
+    }
+    internal override string OperationKey => "cameraGroupImage";
+    internal override object Wire() => new { hostInstance = HostInstance, configurationRevision = ConfigurationRevision,
+        group = Group, operation = Operation, source = Source, generation = Generation, acquisition = Acquisition };
+    internal override void Match(JsonElement value)
+    {
+        HubWire.Members(value, "hostInstance", "configurationRevision", "group", "operation", "source", "generation", "acquisition");
+        if (HubWire.Identity(value, "hostInstance") != HostInstance || HubWire.Identity(value, "configurationRevision") != ConfigurationRevision ||
+            HubWire.Identity(value, "group") != Group || HubWire.Identity(value, "operation") != Operation ||
             HubWire.Identity(value, "source") != Source || HubWire.Identity(value, "generation") != Generation ||
             HubWire.Identity(value, "acquisition") != Acquisition) throw new HubException(HubFailure.Protocol);
     }
@@ -116,12 +156,12 @@ public sealed class HubCameraImage : IDisposable
 {
     private readonly object gate = new();
     private Storage? storage;
-    public HubImageRequest Request { get; }
+    public HubImageIdentity Request { get; }
     public HubImageDescriptor Descriptor { get; }
     public int ByteLength => Descriptor.ByteLength;
-    internal HubCameraImage(HubImageRequest request, HubImageDescriptor descriptor, byte[] pixels, HubImageBudget.Reservation reservation)
+    internal HubCameraImage(HubImageIdentity request, HubImageDescriptor descriptor, byte[] pixels, HubImageBudget.Reservation reservation)
     { Request = request; Descriptor = descriptor; storage = new Storage(pixels, reservation); }
-    private HubCameraImage(HubImageRequest request, HubImageDescriptor descriptor)
+    private HubCameraImage(HubImageIdentity request, HubImageDescriptor descriptor)
     { Request = request; Descriptor = descriptor; }
     public HubCameraImage Pin()
     {

@@ -640,3 +640,27 @@ Failed or interrupted steps remain fenced across cloning and saved sequences.
 Inspect the retained result and equipment state, then explicitly allow a new
 operation to run the step again. Automatic error retry cannot repeat an unknown
 move. See [coordination](hub-coordination.md) for timing and partial-failure limits.
+
+## Capture a camera group (development)
+
+Add **Camera groups** in Configuration, select two or more camera sources, and
+choose explicit member-failure and cancellation policies. Set a whole-operation
+timeout, then review, apply and reload. Virtual aliases are allowed; two aliases
+of the same physical camera cannot become separate group members.
+
+Open **Camera groups**, set the next exposure duration and Light flag for each
+camera, then read retained status before starting. The report shows each member's
+request, result and retained image identity, plus measured host request spread.
+It does not claim hardware synchronization. Cancel uses the group's saved policy;
+closing setup leaves admitted captures running. Reopen and read status to inspect
+those same results. A new start replaces the retained operation and its images.
+
+![Camera-group retained results in explicit simulation](images/hub-camera-group-results-simulation.png)
+
+This actual private simulation capture shows distinct member exposure requests
+after reopening setup. The input fields describe the next capture. Managed
+clients can retrieve each completed image over protected local IPC without an
+ordinary output connection or upstream redownload. Native NINA group capture/save
+is the next construction step; ordinary NINA Camera devices continue to return
+one image each. See [coordination](hub-coordination.md) for ownership, policies,
+image lifetime and acceptance limits.

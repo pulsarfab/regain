@@ -162,8 +162,8 @@ interactive/physical acceptance, documentation and final merge gates remain work
 
 The Rust core now provides explicit camera bursts through the same acquisition
 supervisors used by ordinary Camera outputs. Saved configuration and retained
-host/status/image IPC are implemented. Shared operation controls and native NINA
-capture/image-save orchestration remain required; a standard Camera output still
+host/status/image IPC, shared native operation controls and managed image access
+are implemented. Native NINA capture/image-save orchestration remains required; a standard Camera output still
 represents one camera and one image.
 
 A group has a stable UUID, label, two to 32 distinct physical camera source IDs,
@@ -219,8 +219,8 @@ overlapping ownership/settings, live geometry changes, dropped waiters, separate
 image pins across later captures, delayed start replies, explicit continue/abort,
 cancellation before and during dispatch, later-capture protection, readout/abort
 races, deadlines, uncertain abort, image budget and generation loss. No attached
-hardware or installed vendor driver is opened. Shared operation controls and
-native NINA are the next construction steps, followed by the original acceptance
+hardware or installed vendor driver is opened. Native NINA capture/save is the
+next construction step, followed by the original acceptance
 and final merge gates.
 
 ### Saved camera groups and retained operations
@@ -280,3 +280,46 @@ connection, configuration replacement, failed connection identity and shutdown
 during a held start acknowledgement. Shared generated editor/cold identity reader
 tests cover the new optional collection. Installed NINA and physical acceptance
 remain separate gates; these fixtures do not establish either.
+
+### Managed access and shared native controls
+
+The native **Camera groups** tab operates on saved definitions. Set the next
+capture's duration and Light flag separately for each configured camera, inspect
+retained status, then start an explicit new capture. The displayed policy states
+whether member failures continue healthy captures or abort acknowledged members,
+and whether cancellation/deadline leaves captures running or aborts them. Cancel
+addresses only the displayed operation. Closing the editor does not cancel an
+admitted capture; reopening and reading status shows its retained member results.
+A new start replaces the group's retained operation/images, so save desired images
+first. Input fields describe the next capture; the retained report describes the
+already admitted requests.
+
+![Shared camera-group results using explicit simulation](images/hub-camera-group-results-simulation.png)
+
+`HubCameraGroups` is the common net8/net48 client. It validates generated response
+schemas plus identity/binding/request invariants, monotonic outer/inner sequences,
+stable source generations/acquisitions, immutable completed images and measured
+request spread. Terminal reports cannot change. A late abort error can be added
+while an operation runs without changing the completed image. Unknown/malformed
+start replies fence another start on that client, even after status is read;
+reconciliation requires explicit reattachment. No client replays a capture.
+
+After reading an exact operation, `DownloadAsync` accepts its configured member
+ID (including aliases) and derives the physical image identity from the validated
+report. It opens a dedicated protected stream and checks all seven echoed
+identities plus descriptor/geometry agreement before returning pixels. A new
+operation or revision cannot retarget the download. An already admitted reader
+may finish with its historical immutable pin. There is no output lease, capture,
+upstream download, or ASCOM/HTTP dependency in this path.
+
+`HubImageIdentity` carries common image identities. `HubImageRequest` retains its
+ordinary client/output wire shape; `HubGroupImageRequest` carries group/operation
+identities. The common `HubCameraImage` reader, storage, pin, conversion and budget
+implementation serves both. This is an unpublished 0.6 managed API refinement;
+callers needing ordinary-only client/output fields use the concrete request type.
+Private peers cover nine numeric types, packed Int32, rank three, all identity
+fences, ordinary/group capacity contention, pins, cancellation and malformed
+payload cleanup. Actual private hosts verify reattachment, separate exact image
+rereads, both cancellation policies and no output leases. The same public APIs
+run inside real net48 x86/x64 processes. Installed-client and physical acceptance
+remain separate gates. Native NINA group capture/save remains construction work.
