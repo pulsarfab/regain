@@ -14,6 +14,8 @@ public sealed class HubImageTests
         return HubCameraHostFixture.Run(System.IO.Path.Combine(workers, "regain-alpaca.exe"), direct, standard, nested);
     }
     [Fact] public Task NumericTypesAndRankAreLossless() => HubImageFixture.Types();
+    [Fact] public Task ScalarIntegerRowsPreserveTypesSignsRankAndChunkBoundaries() => HubImageFixture.ScalarRows();
+    [Fact] public Task ScalarIntegerConversionRejectsUnrepresentableValuesAndChannels() => HubImageFixture.ScalarRejections();
     [Fact] public Task ReturnedArraysRetainBudgetThroughGcAndRejectCapacityAndCancellation() => HubImageFixture.ArrayLifetime();
     [Fact] public Task PinsKeepImmutableStorageChargedUntilLastReader() => HubImageFixture.Lifetime();
     [Fact] public Task SharedCapacityRejectsBeforePixelAllocationAndReturnsAfterDispose() => HubImageFixture.Capacity();

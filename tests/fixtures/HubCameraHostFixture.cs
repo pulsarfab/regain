@@ -196,7 +196,7 @@ internal static class HubCameraHostFixture
                 foreach (var property in new[] { HubCameraProperty.NumX, HubCameraProperty.NumY })
                     await firstSession.RequestCameraAsync(epoch, JsonSerializer.SerializeToElement(new { op = "put", output = firstOutput,
                         property = HubCameraProtocol.Setting(property, 64) }), stop.Token);
-                await firstSession.RequestCameraAsync(epoch, JsonSerializer.SerializeToElement(new { op = "put", output = firstOutput,
+                var accepted = await firstSession.RequestCameraAsync(epoch, JsonSerializer.SerializeToElement(new { op = "put", output = firstOutput,
                     property = HubCameraProtocol.Start(0.05, false) }), stop.Token);
                 var clock = Stopwatch.StartNew();
                 while (!(await secondSession.RequestAsync(secondSession.Epoch, JsonSerializer.SerializeToElement(new { op = "get", output = secondOutput,
@@ -204,13 +204,45 @@ internal static class HubCameraHostFixture
                     if (clock.Elapsed > TimeSpan.FromSeconds(15)) throw new TimeoutException("Native session camera did not finish");
                     await Task.Delay(5, stop.Token);
                 }
-                using var image = await secondSession.DownloadCameraImageAsync(secondSession.Epoch, budget, stop.Token);
+                var completedStatus = await secondSession.ReadCameraAcquisitionAsync(secondSession.Epoch, stop.Token);
+                Check(completedStatus.GetProperty("completed").GetProperty("acquisition").GetGuid() == accepted.GetGuid(), "Native readiness changed acquisition");
+                var wrongFrameBudget = new HubImageBudget(1);
+                try {
+                    using var wrong = await secondSession.DownloadCameraImageAsync(secondSession.Epoch, wrongFrameBudget, Guid.NewGuid(), stop.Token);
+                    throw new Exception("Native session returned another acquisition");
+                } catch (HubException error) {
+                    Check(error.Failure == HubFailure.Remote && error.Remote?.Code == "unavailable" && wrongFrameBudget.UsedBytes == 0
+                        && secondSession.Connected, "Exact acquisition rejection allocated pixels or retired control");
+                }
+                try {
+                    using var empty = await secondSession.DownloadCameraImageAsync(secondSession.Epoch, wrongFrameBudget, Guid.Empty, stop.Token);
+                    throw new Exception("Empty acquisition was accepted");
+                } catch (HubException error) { Check(error.Failure == HubFailure.InvalidRequest && wrongFrameBudget.UsedBytes == 0, "Empty acquisition validation changed"); }
+                using var image = await secondSession.DownloadCameraImageAsync(secondSession.Epoch, budget, accepted.GetGuid(), stop.Token);
                 Check(image.Descriptor.Width == 64 && image.Descriptor.Height == 64, "Native image session changed geometry");
                 using (var cancel = new CancellationTokenSource()) {
                     cancel.Cancel();
                     try { using var cancelled = await secondSession.DownloadCameraImageAsync(secondSession.Epoch, budget, cancel.Token); throw new Exception("Cancelled native image was returned"); }
                     catch (OperationCanceledException) { Check(secondSession.IsAttached && secondSession.Connected, "Image cancellation retired native control"); }
+                    try { await secondSession.ReadCameraAcquisitionAsync(secondSession.Epoch, cancel.Token); throw new Exception("Cancelled readiness was returned"); }
+                    catch (OperationCanceledException) { Check(secondSession.IsAttached && secondSession.Connected, "Readiness cancellation retired native control"); }
                 }
+                var replacementCapture = await secondSession.RequestCameraAsync(secondSession.Epoch,
+                    JsonSerializer.SerializeToElement(new { op = "put", output = secondOutput, property = HubCameraProtocol.Start(0.01, false) }), stop.Token);
+                clock.Restart();
+                while (!(await secondSession.ReadCameraAcquisitionAsync(secondSession.Epoch, stop.Token)).GetProperty("imageReady").GetBoolean()) {
+                    if (clock.Elapsed > TimeSpan.FromSeconds(15)) throw new TimeoutException("Replacement native camera did not finish");
+                    await Task.Delay(5, stop.Token);
+                }
+                Check(replacementCapture.GetGuid() != accepted.GetGuid(), "Replacement reused an accepted identity");
+                try {
+                    using var replaced = await firstSession.DownloadCameraImageAsync(epoch, wrongFrameBudget, accepted.GetGuid(), stop.Token);
+                    throw new Exception("Old accepted capture returned a sibling's newer frame");
+                } catch (HubException error) {
+                    Check(error.Failure == HubFailure.Remote && error.Remote?.Code == "unavailable" && wrongFrameBudget.UsedBytes == 0
+                        && firstSession.IsAttached, "Replaced acquisition rejection changed ownership/capacity");
+                }
+                Check(image.Request.Acquisition == accepted.GetGuid() && image.Descriptor.Width == 64, "Replacement changed already returned image");
                 firstSession.Disconnect();
                 try { using var retired = await firstSession.DownloadCameraImageAsync(epoch, budget, stop.Token); throw new Exception("Retired native session returned an image"); }
                 catch (HubException error) { Check(error.Failure == HubFailure.Disconnected, "Retired native session rejection changed"); }

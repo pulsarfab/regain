@@ -3,6 +3,51 @@
 This records local review and tests for the single hub PR. Passing a foundation
 test does not imply that a frontend, transport, or hardware gate has passed.
 
+## 2026-10-07: scalar image adaptation and exact capture reads
+
+Reviewed the shared array conversion, reservation lifetime and protected native
+camera read paths before native NINA publication. RowMajorIntegers translates
+ASCOM X/Y order into scalar Y/X arrays with a bounded 64-KiB scratch buffer.
+UInt16 or Int32 is selected explicitly. All integers in either destination range
+are exactly representable by Double, so the unboxed numeric decoder can validate
+finite/integral/range conditions before casting without losing accepted values.
+Int64/UInt64 extremes remain outside the destination range and fail. A rank-three
+one-plane frame is scalar; multiple planes are rejected without dropping channels.
+Returned arrays retain independent budget reservations through collection and
+do not retain encoded images. Failure, cancellation and capacity rejection return
+their reservations. This is an adapter for NINA's scalar API, not a narrowing of
+the existing ASCOM or Alpaca image contract.
+
+ReadCameraAcquisitionAsync uses the bounded observational client path with source
+and session identity checks. Cancelling its waiter does not retire the control
+connection or send Abort/Stop. The exact-acquisition download overload rejects an
+empty identity locally and a replaced capture before reserving pixel storage.
+An immutable returned frame remains valid after another client captures again.
+The existing ASCOM latest-completed-image behavior keeps its original overload.
+
+Validation:
+
+- All 303 NINA regression tests pass with warnings denied in
+  `artifacts/hub-camera-nina-scalar-nina-full-first.log`.
+- Focused image cases pass 36/36 in
+  `artifacts/hub-camera-nina-scalar-exact-first.log`. Scalar checks cover all nine
+  numeric types, both destinations, rank two/three, asymmetric frame order across
+  multiple chunks, packed Int32, numeric boundaries and late-pixel failures.
+  GC checks hold a strong array root while checking its charge, then prove capacity
+  returns after collection. Tiny-budget and precancelled calls allocate no array.
+- Actual SDK/direct/standard/nested private hosts verify exact accepted identities,
+  replacement rejection with a one-byte budget, retained frames, invalid empty
+  identities and cancelled readiness without revoking a sibling connection.
+- Full real net48 x86/x64 fixtures pass with warnings denied in
+  `artifacts/hub-camera-nina-scalar-net48-first.log`, including all native camera
+  modes and the existing output, connection, editor and shared-host checks.
+
+Only explicit simulation/private peers were used. Native NINA publication,
+timeout/profile restoration and shared camera creation remain required. No
+original coordination, recovery, conformance, acceptance or final merge gate is
+closed by these helpers. Preceding c7deb26 push CI 37624807420 passes all eight
+jobs; PR CI 37624811661 still has Windows live. No new push is made.
+
 ## 2026-10-07: duration-dependent camera completion timing
 
 Reviewed the camera supervisor's start acknowledgement, readiness, metadata reads,

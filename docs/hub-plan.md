@@ -8,6 +8,23 @@ tagged or published. Changed cross-crate APIs require an unpublished version so
 Cargo package verification uses the new workspace packages.
 Last updated: 2026-10-07.
 
+Current increment: shared scalar image adaptation and exact camera acquisition
+reads for native NINA. UInt16/Int32 row-major conversion preserves representable
+values from all nine wire types, packed Int32 and rank-three one-plane input.
+Fractional/nonfinite/out-of-range pixels and multiple planes fail explicitly.
+Reservations follow returned arrays through GC; rejected conversions release
+array/scratch capacity. The encoded image can be disposed independently.
+Readiness polling preserves control on caller cancellation. An exact-acquisition
+download rejects a sibling's replacement before allocating pixels, while an
+already returned frame remains retained. All 303 NINA tests pass, including
+actual SDK/direct/standard/nested private host fixtures. Full real net48 x86/x64
+validation passes with warnings denied. The NINA provider, profile timeout management and
+shared camera creation remain next; this helper does not enable camera creation.
+The original coordination, discovery/transfer, recovery/resume, conformance,
+interactive/physical acceptance, README/site and final merge gates remain open.
+Preceding c7deb26 push CI 37624807420 passes all eight jobs. PR CI 37624811661
+still has its Windows job running; retain the new commits locally until terminal.
+
 Current increment: duration-dependent camera capture timing is negotiated through
 an inert cameraCaptureTiming query, bound to host/client/revision/output/source
 and the exact requested duration. Rust and shared .NET clients reject invalid

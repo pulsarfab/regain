@@ -19,7 +19,8 @@ internal static class HubImageFixture
     }
     internal static async Task RunAll()
     {
-        await Types(); await Lifetime(); await Capacity(); await ArrayLifetime();
+        await Types(); await ScalarRows(); await ScalarRejections();
+        await Lifetime(); await Capacity(); await ArrayLifetime();
         foreach (var fault in Faults) await Malformed(fault);
         await Stalled(true); await Stalled(false);
         Console.WriteLine("Image peer: nine types, packed Int32, rank 3, pins, shared budget, malformed input and cancellation/deadline passed");
@@ -85,6 +86,114 @@ internal static class HubImageFixture
             if (descriptor.Planes.HasValue) for (var p = 0; p < descriptor.Planes.Value; p++) yield return new[] { x, y, p };
             else yield return new[] { x, y };
     }
+    internal static async Task ScalarRows() {
+        foreach (var type in Enumerable.Range(1, 9).Select(value => (HubImageElementType)value))
+        foreach (var planes in new int?[] { null, 1 })
+        foreach (var signed in new[] { false, true })
+        foreach (var width in new[] { 3, 32771 }) {
+            using var peer = await Peer.Open(type, type, planes, width);
+            var size = HubImageDescriptor.Size(type);
+            var count = peer.Pixels.Length / size;
+            var expected = new int[count];
+            for (var pixel = 0; pixel < count; pixel++) {
+                var value = pixel * 37 % (type == HubImageElementType.Byte ? 256 : 32768);
+                if (signed && type is HubImageElementType.Int16 or HubImageElementType.Int32 or HubImageElementType.Int64
+                    or HubImageElementType.Single or HubImageElementType.Double) value -= 16384;
+                var encoded = ScalarBytes(type, value);
+                Buffer.BlockCopy(encoded, 0, peer.Pixels, pixel * size, size);
+                // Wire order is X,Y; NINA's flat scalar order is Y,X.
+                expected[pixel % 2 * width + pixel / 2] = value;
+            }
+            var serving = peer.Serve();
+            var encodedBudget = new HubImageBudget(1024 * 1024);
+            var image = await peer.Download(encodedBudget); await serving;
+            var budget = new HubImageBudget(1024 * 1024);
+            var result = HubCameraArrays.RowMajorIntegers(image, signed, budget);
+            image.Dispose();
+            Check(encodedBudget.UsedBytes == 0, "Scalar conversion retained encoded image storage");
+            Check(result.Rank == 1 && result.Length == count && result.GetType().GetElementType() == (signed ? typeof(int) : typeof(ushort)),
+                "Scalar image type/shape changed");
+            for (var pixel = 0; pixel < count; pixel++)
+                Check(System.Convert.ToInt32(result.GetValue(pixel)) == expected[pixel], "Scalar row order, sign or value changed");
+            Check(budget.UsedBytes == count * (signed ? 4 : 2) + 256, "Scalar array reservation or scratch cleanup changed");
+            GC.KeepAlive(result);
+        }
+        foreach (var transmission in new[] { HubImageElementType.Byte, HubImageElementType.Int16, HubImageElementType.UInt16 }) {
+            using var peer = await Peer.Open(HubImageElementType.Int32, transmission);
+            var serving = peer.Serve(); using var image = await peer.Download(new HubImageBudget(1024)); await serving;
+            var result = (int[])HubCameraArrays.RowMajorIntegers(image, true, new HubImageBudget(4096));
+            var size = HubImageDescriptor.Size(transmission);
+            for (var pixel = 0; pixel < 6; pixel++) {
+                var expected = transmission switch { HubImageElementType.Byte => (int)peer.Pixels[pixel],
+                    HubImageElementType.Int16 => BitConverter.ToInt16(peer.Pixels, pixel * size),
+                    _ => BitConverter.ToUInt16(peer.Pixels, pixel * size) };
+                Check(result[pixel % 2 * 3 + pixel / 2] == expected, "Packed scalar image changed sign or order");
+            }
+        }
+    }
+    private static byte[] ScalarBytes(HubImageElementType type, double value) => type switch {
+        HubImageElementType.Byte => new[] { checked((byte)value) },
+        HubImageElementType.Int16 => BitConverter.GetBytes(checked((short)value)),
+        HubImageElementType.Int32 => BitConverter.GetBytes(checked((int)value)),
+        HubImageElementType.Int64 => BitConverter.GetBytes(checked((long)value)),
+        HubImageElementType.UInt16 => BitConverter.GetBytes(checked((ushort)value)),
+        HubImageElementType.UInt32 => BitConverter.GetBytes(checked((uint)value)),
+        HubImageElementType.UInt64 => BitConverter.GetBytes(checked((ulong)value)),
+        HubImageElementType.Single => BitConverter.GetBytes((float)value),
+        HubImageElementType.Double => BitConverter.GetBytes(value), _ => throw new InvalidOperationException()
+    };
+    internal static async Task ScalarRejections() {
+        foreach (var type in new[] { HubImageElementType.Single, HubImageElementType.Double })
+        foreach (var value in new[] { double.NaN, double.PositiveInfinity, double.NegativeInfinity, 1.25, -0.5, 2147483648.0, -2147483649.0 }) {
+            // Single rounds -2147483649 to Int32.MinValue, which is exactly
+            // representable. Use the next smaller Single for that fault instead.
+            var actual = type == HubImageElementType.Single && value == -2147483649.0 ? -2147483904.0 : value;
+            await ScalarCase(type, ScalarBytes(type, actual), true, false);
+        }
+        foreach (var type in new[] { HubImageElementType.Int16, HubImageElementType.Int32, HubImageElementType.Int64,
+            HubImageElementType.Single, HubImageElementType.Double }) {
+            await ScalarCase(type, ScalarBytes(type, -1), false, false);
+            await ScalarCase(type, ScalarBytes(type, -1), true, true);
+        }
+        foreach (var type in new[] { HubImageElementType.Int32, HubImageElementType.Int64, HubImageElementType.UInt32,
+            HubImageElementType.UInt64, HubImageElementType.Single, HubImageElementType.Double })
+            await ScalarCase(type, ScalarBytes(type, 65536), false, false);
+        foreach (var type in new[] { HubImageElementType.Int32, HubImageElementType.Int64, HubImageElementType.Double }) {
+            await ScalarCase(type, ScalarBytes(type, int.MinValue), true, true);
+            await ScalarCase(type, ScalarBytes(type, int.MaxValue), true, true);
+        }
+        foreach (var type in new[] { HubImageElementType.Int64, HubImageElementType.UInt32, HubImageElementType.UInt64, HubImageElementType.Double })
+            await ScalarCase(type, ScalarBytes(type, 2147483648.0), true, false);
+        await ScalarCase(HubImageElementType.UInt64, BitConverter.GetBytes(ulong.MaxValue), true, false);
+        await ScalarCase(HubImageElementType.Int64, BitConverter.GetBytes(long.MaxValue), true, false);
+        await ScalarCase(HubImageElementType.Int64, BitConverter.GetBytes(long.MinValue), true, false);
+        await ScalarCase(HubImageElementType.UInt16, BitConverter.GetBytes(ushort.MaxValue), false, true);
+        using var peer = await Peer.Open(planes: 3);
+        var serving = peer.Serve(); using var image = await peer.Download(new HubImageBudget(4096)); await serving;
+        var budget = new HubImageBudget(4096);
+        try { HubCameraArrays.RowMajorIntegers(image, budget: budget); throw new InvalidOperationException("Scalar conversion dropped RGB planes"); }
+        catch (NotSupportedException) { Check(budget.UsedBytes == 0, "Rejected RGB frame retained scalar budget"); }
+    }
+    private static async Task ScalarCase(HubImageElementType type, byte[] pixel, bool signed, bool accepted) {
+        using var peer = await Peer.Open(type, type);
+        Array.Clear(peer.Pixels, 0, peer.Pixels.Length);
+        // Fail at the last pixel, after an allocation and earlier valid pixels.
+        Buffer.BlockCopy(pixel, 0, peer.Pixels, peer.Pixels.Length - pixel.Length, pixel.Length);
+        var serving = peer.Serve(); using var image = await peer.Download(new HubImageBudget(4096)); await serving;
+        var budget = new HubImageBudget(4096);
+        if (accepted) {
+            var result = HubCameraArrays.RowMajorIntegers(image, signed, budget);
+            var expected = type switch { HubImageElementType.Int16 => BitConverter.ToInt16(pixel, 0),
+                HubImageElementType.UInt16 => BitConverter.ToUInt16(pixel, 0), HubImageElementType.Int32 => BitConverter.ToInt32(pixel, 0),
+                HubImageElementType.Int64 => BitConverter.ToInt64(pixel, 0), HubImageElementType.Single => BitConverter.ToSingle(pixel, 0),
+                HubImageElementType.Double => BitConverter.ToDouble(pixel, 0), _ => throw new InvalidOperationException() };
+            Check(System.Convert.ToDouble(result.GetValue(5)) == expected && budget.UsedBytes > 0, "Boundary pixel narrowed or reservation lost");
+            GC.KeepAlive(result);
+        } else {
+            try { HubCameraArrays.RowMajorIntegers(image, signed, budget); throw new InvalidOperationException("Unrepresentable scalar pixel was returned"); }
+            catch (NotSupportedException) { Check(budget.UsedBytes == 0, "Rejected scalar conversion leaked array or scratch capacity"); }
+        }
+    }
     internal static async Task ArrayLifetime() {
         using var peer = await Peer.Open(HubImageElementType.Int32, HubImageElementType.UInt16);
         var serving = peer.Serve(); using var image = await peer.Download(new HubImageBudget(4096)); await serving;
@@ -102,10 +211,21 @@ internal static class HubImageFixture
             GC.Collect(); GC.WaitForPendingFinalizers(); GC.Collect(); await Task.Delay(5);
         }
         Check(!abandoned.IsAlive && budget.UsedBytes == 0, "Collected CLR array leaked its budget");
+        var scalar = AbandonArray(image, budget, true);
+        for (var attempt = 0; attempt < 10 && budget.UsedBytes != 0; attempt++) {
+            GC.Collect(); GC.WaitForPendingFinalizers(); GC.Collect(); await Task.Delay(5);
+        }
+        Check(!scalar.IsAlive && budget.UsedBytes == 0, "Collected scalar array leaked its budget");
+        var scalarTiny = new HubImageBudget(1);
+        try { HubCameraArrays.RowMajorIntegers(image, budget: scalarTiny); throw new InvalidOperationException("Uncharged scalar array was allocated"); }
+        catch (HubException error) { Check(error.Failure == HubFailure.Busy && scalarTiny.UsedBytes == 0, "Scalar capacity cleanup changed"); }
+        using var scalarStop = new CancellationTokenSource(); scalarStop.Cancel();
+        try { HubCameraArrays.RowMajorIntegers(image, cancellation: scalarStop.Token, budget: budget); throw new InvalidOperationException("Cancelled scalar array was returned"); }
+        catch (OperationCanceledException) { Check(budget.UsedBytes == 0, "Cancelled scalar conversion retained capacity"); }
     }
     [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
-    private static WeakReference AbandonArray(HubCameraImage image, HubImageBudget budget) {
-        var array = HubCameraArrays.Convert(image, budget: budget);
+    private static WeakReference AbandonArray(HubCameraImage image, HubImageBudget budget, bool scalar = false) {
+        var array = scalar ? HubCameraArrays.RowMajorIntegers(image, true, budget) : HubCameraArrays.Convert(image, budget: budget);
         var weak = new WeakReference(array);
         Check(budget.UsedBytes > 0, "Returned array lost its budget reservation");
         // Assert while the array is strongly rooted; after return a background
