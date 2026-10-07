@@ -128,6 +128,29 @@ fn supervisor(
 }
 
 #[tokio::test]
+async fn disconnect_before_connection_task_runs_never_opens_a_worker_and_drains_the_waiter() {
+    let (owner, _, activity, events) = fixture(false, json!({"instant":true}));
+    let mut backend = NativeCameraBackend::new(owner.clone(), vec![]).unwrap();
+    // Current-thread execution cannot run the spawned connection waiter until
+    // this test yields. Its retirement must already be reserved at admission.
+    assert!(!backend.connect_step().await.unwrap());
+    assert_eq!(activity.active(), 1);
+    assert!(owner.snapshot().operation.is_none());
+    backend.disconnect().await.unwrap();
+    backend.finish_shutdown().await.unwrap();
+    assert_eq!(activity.active(), 0);
+    assert!(!owner.snapshot().connected);
+    assert!(owner.snapshot().core.process_id.is_none());
+    assert!(
+        !events
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|event| event.starts_with("connection.opened:"))
+    );
+}
+
+#[tokio::test]
 async fn native_source_supervisor_shares_one_capture_and_pinned_image_across_clients_and_disconnect()
  {
     for direct in [false, true] {

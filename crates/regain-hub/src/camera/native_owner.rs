@@ -105,6 +105,9 @@ pub struct NativeCamera {
     state: Mutex<State>,
     budget: ImageBudget,
     activity: ActivityCounter,
+    // Per-owner retirement includes obsolete generations, without waiting for
+    // unrelated cameras/outputs using the host-wide activity counter.
+    retained: ActivityCounter,
     changed: Notify,
     sdk_fallback: bool,
     simulated: bool,
@@ -124,7 +127,7 @@ struct CoolingWork {
     owner: Arc<NativeCamera>,
     generation: Uuid,
     id: Uuid,
-    _activity: Activity,
+    _activity: RetainedTask,
 }
 impl Drop for CoolingWork {
     fn drop(&mut self) {
@@ -156,7 +159,14 @@ struct Work {
     owner: Arc<NativeCamera>,
     generation: Uuid,
     id: Uuid,
+    _activity: RetainedTask,
+}
+// Reserve before spawning, including adapter connection waiters that may not
+// have entered the core owner yet. Global activity drops before local retirement
+// so observing this owner drained also observes its host activity released.
+pub(crate) struct RetainedTask {
     _activity: Activity,
+    _retained: Activity,
 }
 impl Drop for Work {
     fn drop(&mut self) {
@@ -442,6 +452,7 @@ impl NativeCamera {
             }),
             budget,
             activity,
+            retained: ActivityCounter::default(),
             changed: Notify::new(),
             sdk_fallback,
             simulated,
@@ -469,7 +480,13 @@ impl NativeCamera {
             owner: self.clone(),
             generation,
             id,
+            _activity: self.retain_task(),
+        }
+    }
+    pub(crate) fn retain_task(&self) -> RetainedTask {
+        RetainedTask {
             _activity: Activity::new(self.activity.clone()),
+            _retained: Activity::new(self.retained.clone()),
         }
     }
     fn current(&self, generation: Uuid, id: Uuid) -> bool {
@@ -859,7 +876,7 @@ impl NativeCamera {
                 return Err(busy());
             }
             // Reserve activity before exposing either core or source markers.
-            let activity = Activity::new(self.activity.clone());
+            let activity = self.retain_task();
             let receipt = self
                 .cooling
                 .submit(control, value, self.command_timeout)
@@ -1079,6 +1096,12 @@ impl NativeCamera {
         let work = self.retire();
         self.spawn_close(work);
     }
+    /// Called after the source command queue is closed and disconnect/reset has
+    /// fenced admission. Join all retained work, including retired generations;
+    /// a caller deadline or a cleared pending marker is not worker retirement.
+    pub(crate) async fn finish_shutdown(&self) {
+        self.retained.wait_idle().await;
+    }
     fn retire(self: &Arc<Self>) -> Work {
         let generation = Uuid::new_v4();
         let id = Uuid::new_v4();
@@ -1163,6 +1186,126 @@ mod tests {
             log,
         )
         .unwrap()
+    }
+
+    #[tokio::test]
+    async fn source_shutdown_joins_retired_generations_and_keeps_disconnect_uncertainty() {
+        use crate::{
+            camera::native_source::NativeCameraBackend,
+            config::HubConfig,
+            endpoint::Endpoint,
+            host::serve,
+            ipc::Limits,
+            runtime::HubRuntime,
+            safety::MonotonicClock,
+            source::{PollPhase, SourceRegistry},
+        };
+
+        let owner = simulated();
+        owner.connect().await.unwrap();
+        let mut config = HubConfig::empty();
+        let source_id = Uuid::new_v4();
+        config.sources.push(
+            serde_json::from_value(json!({
+                "id":source_id,"label":"Retirement fixture",
+                "backend":{"kind":"native","device":"camera-sdk","identity":"sim00001",
+                    "camera":{"model":"ZWO Simulated"}},
+                "polling":{"requestTimeoutSeconds":0.05}
+            }))
+            .unwrap(),
+        );
+        let clock = Arc::new(MonotonicClock::default());
+        let registry = Arc::new(
+            SourceRegistry::build(&config, clock.clone(), |_| {
+                Ok(Box::new(NativeCameraBackend::new(owner.clone(), vec![])?))
+            })
+            .unwrap(),
+        );
+        let source = registry.get(source_id).unwrap();
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("hub.json");
+        std::fs::write(&path, serde_json::to_vec(&config).unwrap()).unwrap();
+        let endpoint = Endpoint::for_config(&path).unwrap();
+        let runtime = HubRuntime::from_registry(config, registry, clock).unwrap();
+        source.acquire(Uuid::new_v4()).await.unwrap();
+        owner.retained.wait_idle().await;
+        // Keep the actual worker alive behind its serialized engine. Two reset
+        // generations must retire along with the final disconnect, even after
+        // the source's short request timer has expired.
+        let engine = owner.engine.lock().await;
+        let unrelated = Activity::new(owner.activity.clone());
+        owner.reset();
+        owner.reset();
+        let stop = CancellationToken::new();
+        let stopping = tokio::spawn(serve(
+            endpoint.try_lock().unwrap().unwrap().bind().unwrap(),
+            runtime.clone(),
+            Limits::default(),
+            stop.clone(),
+        ));
+        stop.cancel();
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                if source
+                    .snapshot()
+                    .error
+                    .is_some_and(|error| error.kind == ErrorKind::Uncertain)
+                {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        assert!(!stopping.is_finished());
+        assert!(endpoint.try_lock().unwrap().is_none());
+        assert_ne!(source.snapshot().polling.phase, PollPhase::Stopped);
+        assert!(owner.retained.active() >= 3);
+        assert!(owner.snapshot().core.process_id.is_some());
+        assert_eq!(
+            source.acquire(Uuid::new_v4()).await.unwrap_err().kind,
+            ErrorKind::Disconnected
+        );
+        // A dropped shutdown waiter cannot cancel actor-owned retirement.
+        stopping.abort();
+        let _ = stopping.await;
+        drop(engine);
+        let result = tokio::time::timeout(Duration::from_secs(5), source.shutdown())
+            .await
+            .unwrap()
+            .unwrap_err();
+        assert_eq!(result.kind, ErrorKind::Uncertain);
+        assert_eq!(source.snapshot().polling.phase, PollPhase::Stopped);
+        assert_eq!(owner.retained.active(), 0);
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while endpoint.try_lock().unwrap().is_none() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        let cleanup = runtime.shutdown().await.unwrap_err();
+        assert_eq!(cleanup.len(), 1);
+        assert_eq!(cleanup[0].0, source_id);
+        assert_eq!(cleanup[0].1.kind, ErrorKind::Uncertain);
+        assert_eq!(
+            owner.activity.active(),
+            1,
+            "unrelated work must not block drain"
+        );
+        assert!(owner.snapshot().core.process_id.is_none());
+        assert_eq!(
+            source.shutdown().await.unwrap_err().kind,
+            ErrorKind::Uncertain
+        );
+        assert_eq!(
+            owner.retained.active(),
+            0,
+            "shutdown must not replay cleanup"
+        );
+        drop(unrelated);
+        assert_eq!(owner.activity.active(), 0);
     }
 
     #[tokio::test]

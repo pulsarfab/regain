@@ -406,6 +406,7 @@ impl Session {
         if let Some(mut worker) = self.worker.take() {
             worker.kill().await;
         }
+        self.status.lock().unwrap().process_id = None;
     }
     async fn fallback(&mut self, reason: &str, token: &CancellationToken) -> Result<()> {
         self.emit(
@@ -1502,6 +1503,7 @@ mod tests {
             session.invalidate().await;
             assert!(session.refresh_environment(&token).await.is_err());
             assert!(session.worker.is_none());
+            assert!(session.snapshot().process_id.is_none());
             assert_eq!(session.snapshot().observations, after.observations);
             session.close().await;
         }

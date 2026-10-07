@@ -8,6 +8,31 @@ tagged or published. Changed cross-crate APIs require an unpublished version so
 Cargo package verification uses the new workspace packages.
 Last updated: 2026-10-07.
 
+Current work: native camera retirement and portable host-fixture correction.
+Factory/fixture commits ebcb704/edbafa7 are pushed to draft PR #21. At edbafa7,
+PR/push CI 37587543962/37587539552 fail portable Rust jobs. Downloaded Linux,
+Linux ARM and macOS PR logs identify the actual problem: the native-camera host
+test searches target/debug for regain-device while portable CI builds workers
+in target/release. The test now passes the existing REGAIN_TEST_WORKERS setting
+explicitly, checks that worker before launch and retains source status on timeout.
+All ten host cases pass locally using a separate worker directory with spaces.
+Windows jobs remain live; neither CI run is accepted as green.
+
+Native source shutdown now joins retained camera tasks before publishing actor
+completion. A per-camera counter includes obsolete generations and adapter
+connection waiters without waiting for unrelated host work. Disconnect timeouts
+retain uncertainty; draining does not retry an ambiguous command. A connection
+waiter reserves retirement before spawning and skips opening when disconnected
+before its first poll. Core clears its worker PID only after retirement. The
+actual host test holds its endpoint lock through blocked cleanup and cancelled
+shutdown waiters, then releases it after retirement with the original uncertainty.
+Full core/hub/Alpaca/ZWO regressions, the final focused host case, strict Clippy,
+Rust 1.89, formatting, generated contracts, Node/eight schema checks, NINA 229/229
+and actual net48 x86/x64 all pass locally. Evidence is recorded in hub-review.md.
+Keep this increment local while the preceding Windows CI jobs finish.
+This does not finish derived recovery timing or enable camera outputs.
+All original remaining milestones and final acceptance gates remain required.
+
 Recovery head 6f29557 CI has finished: PR/push runs 37585153377/37585149444 each
 pass seven jobs and fail Windows NINA. PR fails a shared panel read; push fails
 focuser/rotator initial connections and an ETA cancellation position assertion.
@@ -19,8 +44,9 @@ This proves the fixture scheduler dependency, not every earlier CI cause. ETA's
 timer-based assumption and the other distinct failures require fresh evidence;
 no production deadlines, assertions or retries are weakened. Factory integration
 is locally committed at ebcb704. Final NINA 229/229, x86/x64 scheduler isolation
-and complete net48 client checks pass; publish the reviewed factory/fixture
-increments together to the same draft PR for new CI. All original gates remain open.
+and complete net48 client checks pass. Factory/fixture increments were published
+together through edbafa7 to the same draft PR; its CI is recorded above.
+All original gates remain open.
 
 Native factory/resource integration is locally reviewed and validated. The production
 factory now constructs configured native SDK/direct owners with one host-owned

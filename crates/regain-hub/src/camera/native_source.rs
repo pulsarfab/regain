@@ -191,8 +191,14 @@ impl Backend for NativeCameraBackend {
             let (send, receive) = oneshot::channel();
             self.connecting = Some(receive);
             let owner = self.owner.clone();
+            let activity = owner.retain_task();
             tokio::spawn(async move {
-                let _ = send.send(owner.connect().await);
+                // Disconnect may close the adapter receiver before this task
+                // first runs. It must then retire without opening a camera.
+                if !send.is_closed() {
+                    let _ = send.send(owner.connect().await);
+                }
+                drop(activity);
             });
             Ok(false)
         })
@@ -202,6 +208,12 @@ impl Backend for NativeCameraBackend {
             self.connecting = None;
             self.uncertain = None;
             self.owner.close().await
+        })
+    }
+    fn finish_shutdown(&mut self) -> BackendFuture<'_, ()> {
+        Box::pin(async {
+            self.owner.finish_shutdown().await;
+            Ok(())
         })
     }
     fn read(&mut self, member: String, parameters: Values) -> BackendFuture<'_, Value> {

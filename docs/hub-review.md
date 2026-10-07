@@ -3,6 +3,67 @@
 This records local review and tests for the single hub PR. Passing a foundation
 test does not imply that a frontend, transport, or hardware gate has passed.
 
+## 2026-10-07: portable camera workers and retained native retirement
+
+CI evidence: edbafa7 PR/push runs 37587543962/37587539552 fail portable Rust
+checks. Original downloaded PR job logs in artifacts/hub-status-{linux,
+linux-arm,macos}-job.log show an attempted target/debug/regain-device launch
+failing with OS error 2, followed by the camera telemetry timeout. Portable CI
+sets REGAIN_TEST_WORKERS to its release build; this new executable test omitted
+the override. It now passes --workers explicitly, checks the selected executable
+before launch and includes the latest source status in timeout failures. No
+production deadline or assertion is relaxed. The focused default-directory case
+and all ten host cases with a separate worker directory containing spaces pass
+locally; evidence: artifacts/hub-camera-workers-location.log. Fresh portable CI
+must confirm the correction. Windows CI is still running at this checkpoint.
+
+Reviewed native retirement: a source disconnect deadline can expire while an
+owned core task is still retiring a worker. Actor shutdown previously reported
+completion immediately after reset; the host could then release its OS lock
+while that retained task still used equipment. A backend finish_shutdown barrier
+now runs after command admission closes and disconnect/reset fences the source.
+Native cameras join a per-owner retained counter, including obsolete generations;
+ordinary backends preserve their existing shutdown behavior. The original
+disconnect error survives successful draining, and no command is replayed.
+
+Counter waiters register before observing zero; the final decrement notifies only
+after releasing activity. Global activity drops before local retirement. All
+native owner work uses a common reservation. Review found the adapter connection
+task also needs a reservation before spawning: otherwise shutdown could observe
+zero before that task starts. It now retires without opening when its receiver
+has already closed. Public cached state is not used as proof of worker drain.
+Core clears the PID after killing/reaping and dropping the worker.
+
+The held-engine regression exercises real simulated worker pipes, multiple reset
+generations, disconnect uncertainty, cancellation of a shutdown waiter, repeated
+shutdown and unrelated host activity. Its final extension verifies the actual
+endpoint lock remains owned until retirement. A separate current-thread adapter
+case checks disconnect before the queued connection task runs causes no open.
+Initial test setup omitted acquiring the source lease, so its intentionally inert
+actor skipped disconnect; corrected setup uses a real lease. The subsequent PID
+assertion exposed stale core diagnostic state after retirement; clearing that
+state after actual worker cleanup corrects the diagnostic. The host extension's
+first Clippy run also catches a fixture config passed as Arc instead of the API's
+owned value; corrected without a production API change. Preserve the initial
+PID failure in artifacts/hub-camera-retirement-focused.log and that compiler
+failure in artifacts/hub-camera-retirement-clippy.log.
+
+Final verification passes: cargo test -j2 -p regain-core -p regain-hub -p
+regain-alpaca -p regain-zwo --locked; final held-host retirement case; strict
+Rust 1.99 Clippy and Rust 1.89 all-target checks for those four crates plus
+regain-device; formatting; generated configuration freshness; Node/eight schema
+checks; warnings-denied NINA 229/229; actual net48 x86/x64 complete client and
+isolated HTTP scheduler fixtures. Logs use artifacts/hub-camera-retirement-
+{rust,host-final,clippy-final,msrv,contract,node,schema,nina,net48}.log.
+No production code changed after the complete Rust run; the final host extension
+is verified separately. Preceding Windows CI jobs remain live, so retain this
+reviewed increment locally until they finish before updating the same draft PR.
+
+No physical equipment or installed vendor driver is activated. Derived native
+connection/control/capture allowances, the remaining camera inputs/publications,
+coordination, conformance, interactive acceptance, documentation and final merge
+audit remain required; this does not enable camera setup choices.
+
 ## 2026-10-06: cached output diagnostic API
 
 Reviewed controller ownership, saved-revision fencing, pagination, sample epochs,

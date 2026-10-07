@@ -569,8 +569,29 @@ async fn actual_host_uses_explicit_native_camera_simulation_and_shared_scalar_le
     assert!(config.validate().is_empty());
     std::fs::write(&path, serde_json::to_vec(&config).unwrap()).unwrap();
     let endpoint = Endpoint::for_config(&path).unwrap();
+    // Portable CI builds production workers in target/release while Cargo's
+    // integration-test host lives in target/debug. Use the same explicit worker
+    // location as the other native process fixtures, rather than assuming a
+    // worker happens to exist beside this test's host executable.
+    let workers = std::env::var_os("REGAIN_TEST_WORKERS")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| {
+            Path::new(env!("CARGO_BIN_EXE_regain-alpaca"))
+                .parent()
+                .unwrap()
+                .to_path_buf()
+        });
+    assert!(
+        workers
+            .join(format!("regain-device{}", std::env::consts::EXE_SUFFIX))
+            .is_file(),
+        "Build native simulation workers or set REGAIN_TEST_WORKERS: {}",
+        workers.display()
+    );
     let mut owner = host(&path)
         .arg("--simulate")
+        .arg("--workers")
+        .arg(&workers)
         .arg("--sdk")
         .arg(&missing_sdk)
         .spawn()
@@ -596,6 +617,7 @@ async fn actual_host_uses_explicit_native_camera_simulation_and_shared_scalar_le
     request(&mut second, 1, json!({"op":"hello"})).await;
     request(&mut second, 2, json!({"op":"connect","output":output})).await;
     let mut id = 5;
+    let mut last_status = Value::Null;
     let confirmed = tokio::time::timeout(Duration::from_secs(10), async {
         loop {
             let status =
@@ -604,11 +626,12 @@ async fn actual_host_uses_explicit_native_camera_simulation_and_shared_scalar_le
             if status["values"]["ccdtemperature"].is_number() {
                 break status;
             }
+            last_status = status;
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
     })
     .await
-    .unwrap();
+    .unwrap_or_else(|error| panic!("Native camera telemetry deadline: {error}; {last_status}"));
     assert_eq!(confirmed["leaseCount"], 2);
     assert_eq!(confirmed["transportConnected"], true);
     let value = request(

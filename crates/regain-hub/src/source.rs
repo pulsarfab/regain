@@ -185,6 +185,13 @@ pub trait Backend: Send {
         None
     }
     fn disconnect(&mut self) -> BackendFuture<'_, ()>;
+    /// After command admission closes and disconnect/reset fences the source,
+    /// join backend-owned retirement. This must not dispatch or retry equipment
+    /// commands. A disconnect timeout retains its original uncertain result;
+    /// it does not prove that asynchronously owned cleanup has finished.
+    fn finish_shutdown(&mut self) -> BackendFuture<'_, ()> {
+        Box::pin(async { Ok(()) })
+    }
     fn read(&mut self, member: String, parameters: Values) -> BackendFuture<'_, Value>;
     fn write(&mut self, member: String, parameters: Values) -> BackendFuture<'_, Value>;
     /// Binary images bypass scalar sampling and its JSON/array limits. Only the
@@ -947,6 +954,10 @@ impl Actor {
         while commands.try_recv().is_ok() {}
         self.leases.clear();
         let result = self.disconnect().await;
+        // Keep the actor's completion (and therefore host ownership) retained
+        // until backend tasks actually stop using their worker/OS resources.
+        let drained = self.backend.finish_shutdown().await;
+        let result = result.and(drained);
         self.state.error = Some(result.as_ref().err().cloned().unwrap_or_else(closed));
         self.stopped = true;
         self.publish();
