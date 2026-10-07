@@ -75,6 +75,11 @@ export class OutputDiagnostics {
       if (a) {
         if (a.source!==d.health.source || a.generation!==d.health.generation || a.imageReady!==(a.completed!==null) || a.imageReady&&!d.health.transportConnected || (a.acquisition===null)!==(a.owner===null) || (a.phase==='idle')!==(a.acquisition===null) || a.phase==='uncertain'&&a.error===null) protocol();
         if (a.completed && (a.completed.source!==a.source || a.completed.generation!==a.generation)) protocol();
+        const g=a.guiding, nil='00000000-0000-0000-0000-000000000000';
+        if (g && (g.id===nil || g.owner===nil || g.generation===nil ||
+          (g.phase==='uncertain')!==(g.error!==null) ||
+          g.phase!=='uncertain' && (g.generation!==a.generation || !d.health.transportConnected) ||
+          a.owner!==null && a.owner!==g.owner)) protocol();
       }
     } else if (d.kind==='switch') {
       const numbers=output.device.channels.map(c=>c.number);
@@ -140,6 +145,7 @@ export function diagnosticSummary(result) {
     if (d.acquisition) {
       const a=d.acquisition;
       lines.push(`Acquisition ${a.phase} · image ${a.imageReady?'ready':'not ready'}${a.acquisition?' · '+a.acquisition:''}`);
+      if (a.guiding) lines.push(`Guiding ${a.guiding.phase}${a.guiding.error?' · '+a.guiding.error.message:''}`);
       if(a.error) lines.push(a.error.message);
     }
     lines.push(pollingSummary(d.health));

@@ -44,7 +44,7 @@ public sealed class HubCameraTiming
                 "connect" => Connect,
                 "changeConnection" when command.GetProperty("connected").GetBoolean() && !command.GetProperty("asynchronous").GetBoolean() => Connect,
                 "put" => command.GetProperty("property").GetProperty("member").GetString() switch {
-                    "startExposure" => Start, "cameraSetting" => Setting, "stopExposure" => Stop, "abortExposure" => Abort,
+                    "startExposure" => Start, "cameraSetting" or "pulseGuide" => Setting, "stopExposure" => Stop, "abortExposure" => Abort,
                     _ => throw new HubException(HubFailure.InvalidRequest)
                 },
                 _ => throw new HubException(HubFailure.InvalidRequest)

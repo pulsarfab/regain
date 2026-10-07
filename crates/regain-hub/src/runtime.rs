@@ -766,7 +766,7 @@ impl HubRuntime {
                 }
                 let result = self.registry.shutdown().await;
                 for camera in self.cameras.values() {
-                    camera.retire_after_source_shutdown();
+                    camera.retire_after_source_shutdown().await;
                 }
                 result
             })

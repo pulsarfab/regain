@@ -77,13 +77,13 @@ internal static class HubCameraHostFixture
                 using var editor = await HubEditorSession.AttachAsync(executable, configPath, instance);
                 await editor.ReloadAsync(stop.Token);
                 var controls = editor.SimulationControls(simulationSource);
-                Check(controls.Count == 13, "Shared camera simulation controls missing");
+                Check(controls.Count == 14 && controls.Any(field => field.Path.SequenceEqual(new[] { "camera", "canPulseGuide" })), "Shared camera simulation controls missing");
                 var duration = controls.Single(field => field.Path.SequenceEqual(new[] { "camera", "readoutDurationSeconds" }));
                 foreach (var invalid in new[] { "-1", "301", "NaN" }) {
                     try { duration.Parse(invalid); throw new Exception("Invalid simulator duration accepted"); }
                     catch (InvalidOperationException) { }
                 }
-                var updated = (await editor.UpdateSimulationAsync(simulationSource, JsonSerializer.SerializeToElement(new { camera = new { temperature = -10.0 } }), stop.Token)).GetProperty("simulation");
+                var updated = (await editor.UpdateSimulationAsync(simulationSource, JsonSerializer.SerializeToElement(new { camera = new { temperature = -10.0, canPulseGuide = true } }), stop.Token)).GetProperty("simulation");
                 Check(updated.GetProperty("camera").GetProperty("temperature").GetDouble() == -10.0, "Camera simulation update lost");
                 var malformed = JsonNode.Parse(updated.GetRawText())!;
                 malformed["camera"]!["imageReady"] = true;
@@ -128,7 +128,24 @@ internal static class HubCameraHostFixture
                 }
                 throw new TimeoutException("Private camera simulation did not publish its image");
             }
+            if (standard) {
+                await CameraCommand(control,firstTiming,new { op="put",output=firstOutput,property=new { member="pulseGuide",request=new { direction=0,durationMilliseconds=0 } } });
+                var guide=await CameraCommand(control,firstTiming,new { op="put",output=firstOutput,property=new { member="pulseGuide",request=new { direction=2,durationMilliseconds=1000 } } });
+                var state=await Command(observer,new { op="get",output=secondOutput,property=new { member="cameraAcquisition" } });
+                Check(state.GetProperty("guiding").GetProperty("id").GetGuid()==guide.GetGuid(),"Shared guide identity changed");
+                try {
+                    await CameraCommand(observer,secondTiming,new { op="put",output=secondOutput,property=new { member="pulseGuide",request=new { direction=1,durationMilliseconds=0 } } });
+                    throw new InvalidOperationException("Sibling guide was admitted");
+                } catch (HubException error) { Check(error.Failure==HubFailure.Remote && error.Remote?.Code=="busy","Sibling guide rejection changed"); }
+            }
             var request = await Capture(control, firstTiming);
+            if (standard) {
+                var clock=Stopwatch.StartNew();
+                while ((await Command(observer,new { op="get",output=secondOutput,property=new { member="cameraAcquisition" } })).GetProperty("guiding").ValueKind!=JsonValueKind.Null) {
+                    if(clock.Elapsed>=TimeSpan.FromSeconds(5))throw new TimeoutException("Shared guide did not finish");
+                    await Task.Delay(5,stop.Token);
+                }
+            }
             using var first = await HubCameraImages.DownloadAsync(attached, control, request, budget, TimeSpan.FromSeconds(10), stop.Token);
             using var second = await HubCameraImages.DownloadAsync(attached, control, request, budget, TimeSpan.FromSeconds(10), stop.Token);
             Check(first.Descriptor.ElementType == HubImageElementType.Int32 && first.Descriptor.TransmissionType == HubImageElementType.UInt16 &&

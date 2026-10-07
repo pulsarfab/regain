@@ -21,6 +21,9 @@ use tokio::{
     time::{Instant, timeout},
 };
 use uuid::Uuid;
+#[path = "guiding.rs"]
+mod guiding;
+pub use guiding::{GuideRequest, GuidingPhase, GuidingStatus};
 
 fn invalid(message: &'static str) -> SourceError {
     SourceError::new(ErrorKind::InvalidValue, message)
@@ -146,6 +149,7 @@ pub struct AcquisitionStatus {
     pub error: Option<SourceError>,
     pub completed: Option<AcquisitionIdentity>,
     pub setting: Option<SettingStatus>,
+    pub guiding: Option<GuidingStatus>,
 }
 #[derive(Clone, Debug, Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -168,6 +172,7 @@ struct State {
     retired: bool,
     active: Option<Active>,
     setting: Option<SettingStatus>,
+    guiding: Option<guiding::GuideActive>,
     completed: Option<Arc<CapturedImage>>,
     error: Option<SourceError>,
 }
@@ -197,6 +202,7 @@ pub struct CameraSupervisor {
     native_timing: Option<regain_core::timing::NativeCameraTiming>,
     activity: ActivityCounter,
     state: Mutex<State>,
+    guiding_tasks: Mutex<Vec<guiding::GuideTask>>,
     changed: Notify,
 }
 impl CameraSupervisor {
@@ -279,6 +285,7 @@ impl CameraSupervisor {
             native_timing,
             activity,
             state: Mutex::new(State::default()),
+            guiding_tasks: Mutex::new(Vec::new()),
             changed: Notify::new(),
         }))
     }
@@ -323,22 +330,47 @@ impl CameraSupervisor {
             error: state.error.clone(),
             completed: completed.map(|image| image.identity.clone()),
             setting: state.setting.clone(),
+            guiding: state.guiding.as_ref().map(|guide| {
+                let mut status = guide.status.clone();
+                if status.generation != source.generation || !source.transport_connected {
+                    status.phase = GuidingPhase::Uncertain;
+                    status.error.get_or_insert_with(|| {
+                        SourceError::new(
+                            ErrorKind::Disconnected,
+                            "Camera guide source generation is no longer connected",
+                        )
+                    });
+                }
+                status
+            }),
         };
         (source, status)
     }
     /// The source actor has already closed admission and completed backend drain.
     /// Release local ownership/cache without an Abort, replay or uncertainty reset
     /// on live equipment. Pinned readers keep their own immutable image references.
-    pub(crate) fn retire_after_source_shutdown(&self) {
+    pub(crate) async fn retire_after_source_shutdown(&self) {
         let source = self.source.snapshot();
         if source.polling.phase != crate::source::PollPhase::Stopped || source.transport_connected {
             return;
         }
-        let mut state = self.state.lock().unwrap();
-        state.retired = true;
-        state.active = None;
-        state.completed = None;
-        self.changed.notify_waiters();
+        let tasks = {
+            let mut state = self.state.lock().unwrap();
+            state.retired = true;
+            state.active = None;
+            state.guiding = None;
+            state.completed = None;
+            self.changed.notify_waiters();
+            self.guiding_tasks.lock().unwrap().clone()
+        };
+        for task in tasks {
+            let mut handle = task.lock().await;
+            if let Some(task) = handle.as_mut() {
+                let _ = task.await;
+            }
+            *handle = None;
+        }
+        self.guiding_tasks.lock().unwrap().clear();
     }
     /// Explicit administrative abandonment for an orphaned uncertain capture.
     /// A frontend must authorize this setup action; ordinary observers use their
@@ -358,12 +390,35 @@ impl CameraSupervisor {
         self.changed.notify_waiters();
         Ok(())
     }
-    fn end_rejected(&self, id: Uuid, error: Option<SourceError>) {
+    async fn end_rejected(&self, id: Uuid, error: Option<SourceError>) -> Result<(), SourceError> {
+        let operation = {
+            let mut state = self.state.lock().unwrap();
+            let Some(active) = state.active.as_ref().filter(|active| active.id == id) else {
+                return Ok(());
+            };
+            let operation = active.operation.clone();
+            if operation
+                .as_ref()
+                .is_none_or(|operation| Self::guide_retains(&state, operation))
+            {
+                state.active = None;
+                state.error = error;
+                self.changed.notify_waiters();
+                return Ok(());
+            }
+            operation.unwrap()
+        };
+        if let Err(error) = operation.source.control(operation.id, false).await {
+            self.uncertain(id, error.clone());
+            return Err(error);
+        }
         let mut state = self.state.lock().unwrap();
         if state.active.as_ref().is_some_and(|a| a.id == id) {
             state.active = None;
             state.error = error;
         }
+        self.changed.notify_waiters();
+        Ok(())
     }
     fn uncertain(&self, id: Uuid, error: SourceError) {
         let mut state = self.state.lock().unwrap();
@@ -422,6 +477,19 @@ impl CameraSupervisor {
             if state.setting.is_some() {
                 return Err(busy());
             }
+            let guide_operation = match &state.guiding {
+                Some(guide) if guide.status.phase == GuidingPhase::Uncertain => {
+                    return Err(SourceError::uncertain());
+                }
+                Some(guide)
+                    if guide.status.owner == owner
+                        && guide.status.phase == GuidingPhase::Guiding =>
+                {
+                    guide.operation.clone()
+                }
+                Some(_) => return Err(busy()),
+                None => None,
+            };
             if let Some(active) = &state.active {
                 return Err(if active.phase == AcquisitionPhase::Uncertain {
                     SourceError::uncertain()
@@ -434,7 +502,7 @@ impl CameraSupervisor {
                 owner,
                 generation: source.generation(),
                 phase: AcquisitionPhase::Starting,
-                operation: None,
+                operation: guide_operation,
                 command_pending: false,
                 _activity: Activity::new(self.activity.clone()),
             });
@@ -458,11 +526,31 @@ impl CameraSupervisor {
         reply: oneshot::Sender<Result<Uuid, SourceError>>,
     ) {
         if reply.is_closed() {
-            self.end_rejected(id, None);
+            let _ = self.end_rejected(id, None).await;
             return;
         }
         let prepared = timeout(self.timing.admission_timeout, async {
-            let operation = Arc::new(source.operation().await?);
+            let borrowed = self
+                .state
+                .lock()
+                .unwrap()
+                .active
+                .as_ref()
+                .filter(|active| active.id == id)
+                .and_then(|active| active.operation.clone());
+            let operation = match borrowed {
+                Some(operation) => operation,
+                None => Arc::new(source.operation().await?),
+            };
+            {
+                let mut state = self.state.lock().unwrap();
+                state
+                    .active
+                    .as_mut()
+                    .filter(|active| active.id == id)
+                    .ok_or_else(busy)?
+                    .operation = Some(operation.clone());
+            }
             let geometry = prepare(&source, request).await?;
             Ok::<_, SourceError>((operation, geometry))
         })
@@ -470,14 +558,16 @@ impl CameraSupervisor {
         .unwrap_or_else(|_| Err(SourceError::timeout()));
         let (operation, geometry) = match prepared {
             Ok(value) => value,
-            Err(error) => {
-                self.end_rejected(id, Some(error.clone()));
+            Err(mut error) => {
+                if let Err(release) = self.end_rejected(id, Some(error.clone())).await {
+                    error = release;
+                }
                 let _ = reply.send(Err(error));
                 return;
             }
         };
         if reply.is_closed() {
-            self.end_rejected(id, None);
+            let _ = self.end_rejected(id, None).await;
             return;
         }
         {
@@ -497,11 +587,13 @@ impl CameraSupervisor {
                 ]),
             )
             .await;
-        if let Err(error) = result {
+        if let Err(mut error) = result {
             if error.kind == ErrorKind::Uncertain || error.transport_lost {
                 self.uncertain(id, error.clone());
             } else {
-                self.end_rejected(id, Some(error.clone()));
+                if let Err(release) = self.end_rejected(id, Some(error.clone())).await {
+                    error = release;
+                }
             }
             let _ = reply.send(Err(error));
             return;
@@ -583,6 +675,26 @@ impl CameraSupervisor {
             geometry,
             exposure: after,
         };
+        if let Err(error) = source.snapshot() {
+            self.uncertain(id, error);
+            return;
+        }
+        {
+            let mut state = self.state.lock().unwrap();
+            if state.active.as_ref().is_some_and(|active| {
+                active.id == id && active.phase == AcquisitionPhase::Downloading
+            }) && Self::guide_retains(&state, &operation)
+            {
+                // The pulse still owns this control lease. Publish atomically
+                // with removing acquisition ownership so guide completion sees
+                // that it must perform the final explicit release.
+                state.completed = Some(Arc::new(CapturedImage { identity, image }));
+                state.active = None;
+                state.error = None;
+                self.changed.notify_waiters();
+                return;
+            }
+        }
         if let Err(error) = operation.source.control(operation.id, false).await {
             self.uncertain(id, error);
             return;
@@ -615,7 +727,12 @@ impl CameraSupervisor {
                 if active.phase == AcquisitionPhase::Uncertain {
                     return Ok(false);
                 }
-                active.command_pending || state.setting.is_some()
+                active.command_pending
+                    || state.setting.is_some()
+                    || state
+                        .guiding
+                        .as_ref()
+                        .is_some_and(|guide| guide.status.phase == GuidingPhase::Starting)
             };
             if !paused {
                 let ready = boolean(source, "imageready").await?;
@@ -627,7 +744,11 @@ impl CameraSupervisor {
                     return Err(unavailable("Upstream camera reports an acquisition error"));
                 }
                 let mut state = self.state.lock().unwrap();
-                let setting_pending = state.setting.is_some();
+                let setting_pending = state.setting.is_some()
+                    || state
+                        .guiding
+                        .as_ref()
+                        .is_some_and(|guide| guide.status.phase == GuidingPhase::Starting);
                 let Some(active) = state.active.as_mut().filter(|a| a.id == id) else {
                     return Ok(false);
                 };
@@ -669,6 +790,13 @@ impl CameraSupervisor {
                 ));
             }
             if state.active.is_some() && state.setting.is_some() {
+                return Err(busy());
+            }
+            if state
+                .guiding
+                .as_ref()
+                .is_some_and(|guide| guide.status.phase == GuidingPhase::Starting)
+            {
                 return Err(busy());
             }
             let Some(active) = state.active.as_mut() else {
@@ -764,6 +892,19 @@ impl CameraSupervisor {
                     supervisor.uncertain(id, error.clone())
                 }
                 Ok(()) if abort => {
+                    {
+                        let mut state = supervisor.state.lock().unwrap();
+                        if state.active.as_ref().is_some_and(|active| active.id == id)
+                            && Self::guide_retains(&state, &operation)
+                        {
+                            state.active = None;
+                            state.completed = None;
+                            state.error = None;
+                            supervisor.changed.notify_waiters();
+                            let _ = reply.send(Ok(()));
+                            return;
+                        }
+                    }
                     if let Err(error) = operation.source.control(operation.id, false).await {
                         supervisor.uncertain(id, error.clone());
                         let _ = reply.send(Err(error));
@@ -803,6 +944,7 @@ impl CameraSession {
         now: Duration,
     ) -> Result<crate::readout::TypedSample<CameraValue>, SourceError> {
         let source = self.source.snapshot()?;
+        self.guide_property_error(property)?;
         if let Some(error) = source.error {
             return Err(error);
         }
@@ -835,7 +977,9 @@ impl CameraSession {
                 (CameraProperty::PercentCompleted, "PercentCompleted"),
             ] {
                 let key = property.member();
-                if source.sample_errors.contains_key(key) {
+                if source.sample_errors.contains_key(key)
+                    || self.guide_property_error(property).is_err()
+                {
                     continue;
                 }
                 if let Some(value) = source.values.get(key)
@@ -865,6 +1009,7 @@ impl CameraSession {
     /// never to a later unowned exposure in an upstream driver's buffer.
     pub async fn property(&self, property: CameraProperty) -> Result<CameraValue, SourceError> {
         self.source.snapshot()?;
+        self.guide_property_error(property)?;
         let value = match property {
             CameraProperty::ImageReady => {
                 let status = self.supervisor.status();
@@ -1072,6 +1217,13 @@ fn settings_operation(
     setting: CameraSetting,
     owner: Uuid,
 ) -> Result<Option<Arc<SourceLease>>, SourceError> {
+    if let Some(guide) = &state.guiding {
+        return Err(if guide.status.phase == GuidingPhase::Uncertain {
+            SourceError::uncertain()
+        } else {
+            busy()
+        });
+    }
     if state.setting.is_some() {
         return Err(busy());
     }

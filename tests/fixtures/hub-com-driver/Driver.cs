@@ -226,6 +226,8 @@ public sealed class Driver {
     private bool cameraReady;
     private double cameraDuration;
     private int captures;
+    private readonly Stopwatch cameraGuide = new();
+    private int cameraGuideMilliseconds;
     private object CameraValue(string name, object fallback) {
         Before(name);
         if (Settings().TryGetProperty("camera" + name, out var value)) return value.ValueKind switch {
@@ -271,7 +273,7 @@ public sealed class Driver {
     public object HasShutter { get => CameraValue("HasShutter", true); }
     public object HeatSinkTemperature { get => CameraValue("HeatSinkTemperature", 15.0); }
     public object ImageReady { get => CameraValue("ImageReady", cameraReady); }
-    public object IsPulseGuiding { get => CameraValue("IsPulseGuiding", false); }
+    public object IsPulseGuiding { get => CameraValue("IsPulseGuiding", cameraGuide.IsRunning && cameraGuide.ElapsedMilliseconds < cameraGuideMilliseconds); }
     public object LastExposureDuration { get => CameraValue("LastExposureDuration", cameraDuration); }
     public object LastExposureStartTime { get => CameraValue("LastExposureStartTime", "2026-10-07T01:02:03.1234567Z"); }
     public object MaxADU { get => CameraValue("MaxADU", 65535); }
@@ -298,6 +300,13 @@ public sealed class Driver {
     public void StartExposure(double duration, bool light) { Before("StartExposure", new { duration, light }); cameraDuration = duration; captures++; cameraReady = true; }
     public void StopExposure() { Before("StopExposure"); cameraReady = true; }
     public void AbortExposure() { Before("AbortExposure"); cameraReady = false; }
+    public void PulseGuide(global::ASCOM.DeviceInterface.GuideDirections direction, int duration) {
+        Before("PulseGuide",new { direction=(int)direction,duration });
+        cameraGuideMilliseconds=duration; cameraGuide.Restart();
+        Record("Applied.PulseGuide",new { direction=(int)direction,duration });
+        if (Setting("cameraBlockingGuide",false)) { Thread.Sleep(duration); cameraGuide.Stop(); }
+        if (Setting("cameraLostReply",false)) Thread.Sleep(600000);
+    }
     public object ImageArray {
         get {
             Before("ImageArray");

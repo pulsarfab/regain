@@ -235,7 +235,11 @@ pub enum Put {
     },
     StopExposure {},
     AbortExposure {},
+    PulseGuide {
+        request: crate::camera::acquisition::GuideRequest,
+    },
     AbandonCameraAcquisition {},
+    AbandonCameraGuide {},
     SetSwitch {
         id: u32,
         state: bool,

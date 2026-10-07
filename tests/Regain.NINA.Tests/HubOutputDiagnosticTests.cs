@@ -23,7 +23,7 @@ public sealed partial class HubNativeTests
             ["observedSeconds"]=1,["deviceType"]="camera",["simulated"]=true,["start"]=start,["limit"]=1,["total"]=1,["nextStart"]=null,
             ["diagnostics"]=new JsonObject { ["kind"]="camera",["health"]=health.DeepClone(),["acquisition"]=start==0?new JsonObject {
                 ["source"]=source,["generation"]=health["generation"]!.DeepClone(),["acquisition"]=null,["owner"]=null,
-                ["phase"]="idle",["imageReady"]=false,["error"]=null,["completed"]=null,["setting"]=null,
+                ["phase"]="idle",["imageReady"]=false,["error"]=null,["completed"]=null,["setting"]=null,["guiding"]=null,
             }:null },
         };
         JsonElement Element(JsonNode node) => JsonSerializer.SerializeToElement(node);
@@ -41,6 +41,31 @@ public sealed partial class HubNativeTests
             if(fault=="page") reply["diagnostics"]!["acquisition"]=null;
             Assert.Throws<HubException>(()=>Validate(reply,0));
         }
+        JsonObject GuideReply() {
+            var reply=Reply(0);var a=reply["diagnostics"]!["acquisition"]!;
+            reply["diagnostics"]!["health"]!["transportConnected"]=true;
+            a["guiding"]=new JsonObject { ["id"]=Guid.NewGuid().ToString(),["owner"]=Guid.NewGuid().ToString(),
+                ["generation"]=health["generation"]!.DeepClone(),["request"]=new JsonObject { ["direction"]=2,["durationMilliseconds"]=int.MaxValue },["phase"]="guiding",["error"]=null };
+            return reply;
+        }
+        var normal=GuideReply();Validate(normal,0);
+        Assert.Contains("Guiding guiding",HubConfigurationWindow.OutputDiagnosticSummary(Element(normal)));
+        foreach(var fault in new[]{"nil","generation","direction","duration","missingError","extraError","owner"}) {
+            var reply=GuideReply();var a=reply["diagnostics"]!["acquisition"]!;var g=a["guiding"]!;
+            if(fault=="nil")g["id"]=Guid.Empty.ToString();
+            if(fault=="generation")g["generation"]=Guid.NewGuid().ToString();
+            if(fault=="direction")g["request"]!["direction"]=4;
+            if(fault=="duration")g["request"]!["durationMilliseconds"]=-1;
+            if(fault=="missingError")g["phase"]="uncertain";
+            if(fault=="extraError")g["error"]=new JsonObject { ["kind"]="uncertain",["message"]="Unknown guide completion",["upstreamCode"]=null };
+            if(fault=="owner"){a["phase"]="exposing";a["acquisition"]=Guid.NewGuid().ToString();a["owner"]=Guid.NewGuid().ToString();}
+            Assert.Throws<HubException>(()=>Validate(reply,0));
+        }
+        var retained=GuideReply();var retainedGuide=retained["diagnostics"]!["acquisition"]!["guiding"]!;
+        retained["diagnostics"]!["health"]!["transportConnected"]=false;
+        retainedGuide["generation"]=Guid.NewGuid().ToString();retainedGuide["phase"]="uncertain";
+        retainedGuide["error"]=new JsonObject { ["kind"]="uncertain",["message"]="Unknown guide completion",["upstreamCode"]=null };
+        Validate(retained,0);Assert.Contains("Unknown guide completion",HubConfigurationWindow.OutputDiagnosticSummary(Element(retained)));
         Assert.Equal(0,(await host.Status(0)).GetProperty("leaseCount").GetInt32());
     }
     [Theory]

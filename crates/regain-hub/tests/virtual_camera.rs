@@ -1,7 +1,9 @@
 //! Real source factory, nested controllers and image accounting; no SDK/hardware.
 use regain_hub::{
     camera::{
-        acquisition::{AcquisitionPhase, CameraSession, CapturedImage, ExposureRequest},
+        acquisition::{
+            AcquisitionPhase, CameraSession, CapturedImage, ExposureRequest, GuideRequest,
+        },
         image::{ElementType, ImageOrder},
         properties::{CameraProperty as P, CameraSetting as S, CameraValue as V},
         runtime::CameraResources,
@@ -135,6 +137,64 @@ async fn capture(camera: &CameraSession, seconds: f64) -> Arc<CapturedImage> {
     })
     .await;
     camera.image().unwrap()
+}
+
+#[tokio::test(start_paused = true)]
+async fn nested_guiding_and_exposure_share_each_layers_control_and_disconnect_does_not_abort() {
+    let f = Fixture::new(FRAME);
+    f.runtime
+        .update_simulation(
+            f.sources[0],
+            serde_json::from_value(json!({"camera":{"canPulseGuide":true}})).unwrap(),
+        )
+        .await
+        .unwrap();
+    let owner = f.runtime.client();
+    let observer = f.runtime.client();
+    owner.connect(f.outputs[2]).await.unwrap();
+    observer.connect(f.outputs[3]).await.unwrap();
+    let a = owner.connection(f.outputs[2]).unwrap();
+    let b = observer.connection(f.outputs[3]).unwrap();
+    let camera = a.camera().unwrap();
+    let sibling = b.camera().unwrap();
+    let connected_activity = f.resources.activity().active();
+    camera
+        .pulse_guide(GuideRequest {
+            direction: 1,
+            duration_milliseconds: 5000,
+        })
+        .await
+        .unwrap();
+    let image = capture(camera, 0.01).await;
+    assert_eq!(image.image.bytes().len(), FRAME);
+    assert!(camera.status().guiding.is_some());
+    assert_eq!(
+        sibling
+            .pulse_guide(GuideRequest {
+                direction: 0,
+                duration_milliseconds: 0
+            })
+            .await
+            .unwrap_err()
+            .kind,
+        ErrorKind::Busy
+    );
+    assert_eq!(
+        camera.set(S::Gain(1)).await.unwrap_err().kind,
+        ErrorKind::Busy
+    );
+    owner.close();
+    drop(a);
+    assert!(f.resources.activity().active() > 0);
+    until(|| sibling.status().guiding.is_none()).await;
+    sibling.set(S::Gain(1)).await.unwrap();
+    // The observer and two internal virtual connections still own activity.
+    assert_eq!(f.resources.activity().active(), connected_activity - 1);
+    observer.close();
+    drop(b);
+    drop(image);
+    f.finish().await;
+    assert_eq!(f.resources.activity().active(), 0);
 }
 
 #[tokio::test(start_paused = true)]

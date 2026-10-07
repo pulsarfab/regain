@@ -8,6 +8,27 @@ tagged or published. Changed cross-crate APIs require an unpublished version so
 Cargo package verification uses the new workspace packages.
 Last updated: 2026-10-07.
 
+Current increment: shared camera PulseGuide lifecycle and controlled IPC. A pulse
+retains its own identity, owner, source generation, activity and control lease
+after acknowledgement or caller loss. The same owner's exposure can share that
+lease; whichever operation finishes last releases it explicitly before success.
+Short pulses and legacy blocking implementations can report completion on the
+first status read. Lost acknowledgements/completion failures retain uncertainty
+without replay, implicit Stop/Abort, or clearing a source mutation fence. Cached
+virtual telemetry and DeviceState cannot conceal retained guide uncertainty.
+Shutdown wakes and joins guide monitors after source drain; interrupted retirement
+keeps the handles available to a resumed shutdown. Strict integer direction and
+duration pass through Alpaca, virtual and existing isolated x86/x64 COM inputs.
+The explicit simulator gains a shared canPulseGuide control (default false).
+Final five-crate Rust regressions, all 80 hub unit cases, 41 acquisition cases,
+eight Alpaca camera cases and eleven nested virtual camera cases pass. Strict
+Rust 1.99 lint, Rust 1.89 compatibility, generated-contract freshness, Node and
+ten schema checks pass. The rebuilt host passes NINA 283/283 and full actual
+net48 x86/x64 checks with warnings denied, including real managed pulse commands,
+shared identities, sibling rejection and overlapping captures. All 34 private
+COM worker cases across both architectures and 26 registered parent cases pass.
+All three camera frontend publications/setup and all original gates remain open.
+
 Current increment: Windows Camera imports reuse the existing x86/x64 isolated
 STA worker and shared process transport. Strict scalar properties/settings and
 Start/Stop/Abort preserve typed values, HRESULTs and uncertainty. V2/V3 connection
@@ -27,8 +48,8 @@ compatibility, generated-contract freshness, Node and nine schema checks pass.
 The rebuilt host passes NINA 283/283 and the full actual net48 x86/x64 suite with
 warnings denied. Eight managed cases check generated property keys and UTC times.
 Camera publication/setup through all three frontends remains next. Before
-publishing a proxy with CanPulseGuide, add its shared controlled command and
-frontend implementation; observing the upstream capability is not command support.
+publishing a proxy with CanPulseGuide, complete its frontend implementation;
+the shared controlled command is now implemented in the increment above.
 Every original coordination, acceptance, documentation and merge gate stays open.
 
 CI follow-up: ec52cc2 PR Windows run 37609737316 passes Rust and NINA 274/274,
@@ -44,9 +65,11 @@ parent cases pass locally. No production timeout or worker lifecycle is changed.
 Both workflows are terminal: PR CI has that Windows failure and seven successes;
 push CI 37609727056 passes all eight jobs. Virtual camera f577dbf and framing
 boundary checks 3aa1273 are pushed through b275ce7 to the same draft PR #21.
-New PR/push runs 37613322368/37613316420 each pass seven jobs; Windows remains
-active in both. Reviewed camera COM increment f75684a is committed locally and
-not included in that CI head. Keep it local until both workflows are terminal.
+New PR/push runs 37613322368/37613316420 are now terminal, all eight jobs passing
+in each. Reviewed camera COM increment f75684a remains local and is not included
+in that green b275ce7 CI head. The reviewed PulseGuide increment now passes final
+local validation and is ready to push with camera imports to the same draft PR.
+Those local results do not establish CI for the new commits or close any original gate.
 
 Current increment: virtual Camera inputs compose through the existing source
 factory, internal client leases, incremental connection admission and generation

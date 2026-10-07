@@ -3,6 +3,7 @@
 use super::{Fault, invalid, unsupported};
 use crate::{
     camera::{
+        acquisition::GuideRequest,
         image::{CameraImage, ElementType, ImageBudget, ImageDescriptor, ImageOrder},
         properties::CameraSetting,
     },
@@ -56,6 +57,7 @@ pub struct CameraState {
     pub readout_duration_seconds: f64,
     pub can_abort_exposure: bool,
     pub can_stop_exposure: bool,
+    pub can_pulse_guide: bool,
     pub can_fast_readout: bool,
     pub can_set_ccd_temperature: bool,
     pub can_get_cooler_power: bool,
@@ -89,6 +91,7 @@ impl Default for CameraState {
             readout_duration_seconds: 0.2,
             can_abort_exposure: true,
             can_stop_exposure: true,
+            can_pulse_guide: false,
             can_fast_readout: true,
             can_set_ccd_temperature: true,
             can_get_cooler_power: true,
@@ -112,6 +115,7 @@ pub struct CameraUpdate {
     pub heat_sink_temperature: Option<f64>,
     pub can_abort_exposure: Option<bool>,
     pub can_stop_exposure: Option<bool>,
+    pub can_pulse_guide: Option<bool>,
     pub can_fast_readout: Option<bool>,
     pub can_set_ccd_temperature: Option<bool>,
     pub can_get_cooler_power: Option<bool>,
@@ -128,6 +132,7 @@ impl CameraUpdate {
             heat_sink_temperature,
             can_abort_exposure,
             can_stop_exposure,
+            can_pulse_guide,
             can_fast_readout,
             can_set_ccd_temperature,
             can_get_cooler_power,
@@ -161,6 +166,7 @@ struct Exposure {
 #[derive(Default)]
 pub(super) struct CameraExposure {
     exposure: Option<Exposure>,
+    guide: Option<(Instant, Duration)>,
     sequence: u64,
 }
 impl CameraExposure {
@@ -218,7 +224,8 @@ impl CameraExposure {
             "imageready" => json!(state.image_ready),
             "percentcompleted" => json!(state.percent_completed),
             "canasymmetricbin" => json!(true),
-            "canpulseguide" | "ispulseguiding" => json!(false),
+            "canpulseguide" => json!(state.can_pulse_guide),
+            "ispulseguiding" if state.can_pulse_guide => json!(self.guiding()),
             "canabortexposure" => json!(state.can_abort_exposure),
             "canstopexposure" => json!(state.can_stop_exposure),
             "canfastreadout" => json!(state.can_fast_readout),
@@ -289,6 +296,22 @@ impl CameraExposure {
         args: &Values,
     ) -> Result<(), SourceError> {
         match member {
+            "pulseguide" => {
+                let request = GuideRequest::from_parameters(args)?;
+                if !state.can_pulse_guide {
+                    return Err(unsupported());
+                }
+                if self.guiding() {
+                    return Err(SourceError::new(
+                        ErrorKind::Busy,
+                        "Simulated camera is guiding",
+                    ));
+                }
+                self.guide = Some((
+                    Instant::now(),
+                    Duration::from_millis(request.duration_milliseconds as u64),
+                ));
+            }
             "startexposure" => {
                 if args.len() != 2 {
                     return Err(invalid("Expected Duration and Light"));
@@ -402,6 +425,11 @@ impl CameraExposure {
         }
         Ok(())
     }
+    fn guiding(&self) -> bool {
+        self.guide
+            .as_ref()
+            .is_some_and(|(started, duration)| started.elapsed() < *duration)
+    }
     pub(super) fn image(
         &self,
         state: &CameraState,
@@ -478,6 +506,7 @@ pub(super) fn controls() -> Vec<Value> {
     for (key, label) in [
         ("canAbortExposure", "Abort available"),
         ("canStopExposure", "Stop available"),
+        ("canPulseGuide", "Pulse guiding available"),
         ("canFastReadout", "Fast readout available"),
         ("canSetCcdTemperature", "Cooler control available"),
         ("canGetCoolerPower", "Cooler power available"),

@@ -29,6 +29,14 @@ struct Device {
     values: Mutex<Values>,
     errors: Mutex<BTreeMap<String, SourceError>>,
     starts: AtomicUsize,
+    guides: AtomicUsize,
+    hold_guide: AtomicBool,
+    hold_guide_preflight: AtomicBool,
+    guide_preflights: AtomicUsize,
+    uncertain_guide: AtomicBool,
+    blocking_guide: AtomicBool,
+    release_guide: Notify,
+    release_guide_preflight: Notify,
     stops: AtomicUsize,
     aborts: AtomicUsize,
     downloads: AtomicUsize,
@@ -79,6 +87,8 @@ impl Default for Device {
                 ("canasymmetricbin".into(), json!(false)),
                 ("canabortexposure".into(), json!(true)),
                 ("canstopexposure".into(), json!(true)),
+                ("canpulseguide".into(), json!(true)),
+                ("ispulseguiding".into(), json!(false)),
                 ("gain".into(), json!(0)),
                 ("gainmin".into(), json!(-5)),
                 ("gainmax".into(), json!(500)),
@@ -100,6 +110,14 @@ impl Default for Device {
             ])),
             errors: Mutex::new(BTreeMap::new()),
             starts: AtomicUsize::new(0),
+            guides: AtomicUsize::new(0),
+            hold_guide: AtomicBool::new(false),
+            hold_guide_preflight: AtomicBool::new(false),
+            guide_preflights: AtomicUsize::new(0),
+            uncertain_guide: AtomicBool::new(false),
+            blocking_guide: AtomicBool::new(false),
+            release_guide: Notify::new(),
+            release_guide_preflight: Notify::new(),
             stops: AtomicUsize::new(0),
             aborts: AtomicUsize::new(0),
             downloads: AtomicUsize::new(0),
@@ -154,6 +172,10 @@ impl Backend for Mock {
     }
     fn read(&mut self, member: String, _: Values) -> BackendFuture<'_, Value> {
         Box::pin(async move {
+            if member == "canpulseguide" && self.0.hold_guide_preflight.load(SeqCst) {
+                self.0.guide_preflights.fetch_add(1, SeqCst);
+                self.0.release_guide_preflight.notified().await;
+            }
             if matches!(member.as_str(), "gains" | "cansetccdtemperature")
                 && self.0.hold_setting_preflight.load(SeqCst)
             {
@@ -185,6 +207,23 @@ impl Backend for Mock {
     fn write(&mut self, member: String, parameters: Values) -> BackendFuture<'_, Value> {
         Box::pin(async move {
             match member.as_str() {
+                "pulseguide" => {
+                    let request = regain_hub::camera::acquisition::GuideRequest::from_parameters(
+                        &parameters,
+                    )?;
+                    self.0.guides.fetch_add(1, SeqCst);
+                    self.0
+                        .set("ispulseguiding", json!(request.duration_milliseconds != 0));
+                    if self.0.hold_guide.load(SeqCst) {
+                        self.0.release_guide.notified().await;
+                    }
+                    if self.0.blocking_guide.load(SeqCst) {
+                        self.0.set("ispulseguiding", json!(false));
+                    }
+                    if self.0.uncertain_guide.load(SeqCst) {
+                        return Err(SourceError::uncertain());
+                    }
+                }
                 "startexposure" => {
                     assert!(parameters["Duration"].is_number());
                     assert!(parameters["Light"].is_boolean());
@@ -366,6 +405,8 @@ fn request() -> ExposureRequest {
         light: true,
     }
 }
+#[path = "support/camera_guiding.rs"]
+mod camera_guiding;
 
 #[test]
 fn camera_properties_reject_coercion_invalid_bounds_and_unbounded_metadata() {

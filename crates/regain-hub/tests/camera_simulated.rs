@@ -1,7 +1,7 @@
 //! Explicit simulator through the same source, controller and budget as cameras.
 use regain_hub::{
     camera::{
-        acquisition::{AcquisitionPhase as Phase, ExposureRequest},
+        acquisition::{AcquisitionPhase as Phase, ExposureRequest, GuideRequest},
         image::{ElementType, ImageBudget, ImageOrder},
         properties::{CameraProperty as P, CameraSetting as S, CameraValue as V},
         runtime::CameraResources,
@@ -170,6 +170,102 @@ fn camera_controls_are_atomic_strict_and_class_specific() {
 }
 
 #[tokio::test(start_paused = true)]
+async fn simulated_guiding_uses_monotonic_time_and_is_independent_of_capture_and_connection() {
+    let mut backend = simulator();
+    backend.connect().await.unwrap();
+    assert_eq!(read(&mut backend, "canpulseguide").await, json!(false));
+    assert_eq!(
+        backend
+            .read("ispulseguiding".into(), Values::new())
+            .await
+            .unwrap_err()
+            .kind,
+        ErrorKind::Unsupported
+    );
+    assert_eq!(
+        backend
+            .write(
+                "pulseguide".into(),
+                serde_json::from_value(json!({"Direction":0,"Duration":100})).unwrap()
+            )
+            .await
+            .unwrap_err()
+            .kind,
+        ErrorKind::Unsupported
+    );
+    backend
+        .update_simulation(patch(
+            json!({"camera":{"canPulseGuide":true,"readoutDurationSeconds":0.0}}),
+        ))
+        .unwrap();
+    write(
+        &mut backend,
+        "pulseguide",
+        json!({"Direction":0,"Duration":100}),
+    )
+    .await;
+    assert_eq!(read(&mut backend, "ispulseguiding").await, json!(true));
+    write(
+        &mut backend,
+        "startexposure",
+        json!({"Duration":1.0,"Light":true}),
+    )
+    .await;
+    write(&mut backend, "abortexposure", json!({})).await;
+    assert_eq!(read(&mut backend, "ispulseguiding").await, json!(true));
+    tokio::time::advance(Duration::from_millis(99)).await;
+    assert_eq!(read(&mut backend, "ispulseguiding").await, json!(true));
+    backend.disconnect().await.unwrap();
+    tokio::time::advance(Duration::from_millis(1)).await;
+    backend.connect().await.unwrap();
+    assert_eq!(read(&mut backend, "ispulseguiding").await, json!(false));
+    for direction in 0..4 {
+        write(
+            &mut backend,
+            "pulseguide",
+            json!({"Direction":direction,"Duration":0}),
+        )
+        .await;
+        assert_eq!(read(&mut backend, "ispulseguiding").await, json!(false));
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn simulated_guide_retains_runtime_activity_after_client_loss_and_shutdown_joins_monitor() {
+    let (runtime, resources, ids, outputs) = runtime(1_000_000, 1);
+    runtime
+        .update_simulation(ids[0], patch(json!({"camera":{"canPulseGuide":true}})))
+        .await
+        .unwrap();
+    let first = runtime.client();
+    first.connect(outputs[0]).await.unwrap();
+    let connection = first.connection(outputs[0]).unwrap();
+    let camera = connection.camera().unwrap();
+    camera
+        .pulse_guide(GuideRequest {
+            direction: 3,
+            duration_milliseconds: i32::MAX,
+        })
+        .await
+        .unwrap();
+    first.close();
+    drop(connection);
+    assert!(resources.activity().active() > 0);
+    assert_eq!(
+        runtime
+            .update_simulation(ids[0], patch(json!({"camera":{"canPulseGuide":false}})))
+            .await
+            .unwrap_err()
+            .kind,
+        ErrorKind::Busy
+    );
+    runtime.shutdown().await.unwrap();
+    // This is immediate after the awaited drain; no yielding cleanup loop.
+    assert_eq!(resources.activity().active(), 0);
+    assert!(!runtime.source_snapshot(ids[0]).unwrap().transport_connected);
+}
+
+#[tokio::test(start_paused = true)]
 async fn camera_exposure_and_readout_use_monotonic_time_and_frozen_subframes() {
     let mut backend = simulator();
     backend.connect().await.unwrap();
@@ -309,7 +405,7 @@ async fn camera_modes_preserve_rgb_planes_and_rank_three_one_plane() {
                     assert_eq!(error.kind, ErrorKind::Unsupported);
                     assert!(matches!(
                         property,
-                        P::Gains | P::Offsets | P::SubExposureDuration
+                        P::Gains | P::Offsets | P::SubExposureDuration | P::IsPulseGuiding
                     ));
                 }
             }

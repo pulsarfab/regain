@@ -48,6 +48,14 @@ internal static class HubTimingFixture
         await Task.Delay(2200); Check(!write.IsCompleted && peer.Client.IsConnected, "Camera command used the short scalar deadline");
         await peer.Reply(3, null); await write;
         incoming = peer.Read();
+        write = peer.Client.RequestCameraAsync(timing, JsonSerializer.SerializeToElement(new { op = "put", output = peer.Output,
+            property = new { member = "pulseGuide", request = new { direction = 2, durationMilliseconds = 100 } } }));
+        request = await incoming; wrapper = request.GetProperty("command");
+        Check(wrapper.GetProperty("op").GetString() == "cameraControl" && wrapper.GetProperty("expectedRevision").GetGuid() == timing.ConfigurationRevision &&
+            wrapper.GetProperty("command").GetProperty("property").GetProperty("request").GetProperty("durationMilliseconds").GetInt32() == 100,
+            "Pulse guide lost its typed duration or revision fence");
+        await peer.Reply(request.GetProperty("id").GetInt32(), Guid.NewGuid()); await write;
+        incoming = peer.Read();
         using var cancel = new CancellationTokenSource();
         write = peer.Client.RequestCameraAsync(timing, JsonSerializer.SerializeToElement(new { op = "connect", output = peer.Output }), cancel.Token);
         request = await incoming; cancel.Cancel();

@@ -111,6 +111,18 @@ impl Camera {
         args: &Values,
     ) -> Result<(), SourceError> {
         match member {
+            "pulseguide" => {
+                if let Some(active) = session.status().acquisition
+                    && self.acquisition != Some(active)
+                {
+                    return Err(unavailable());
+                }
+                session
+                    .pulse_guide(crate::camera::acquisition::GuideRequest::from_parameters(
+                        args,
+                    )?)
+                    .await?;
+            }
             "startexposure" => {
                 if args.len() != 2 {
                     return Err(super::invalid("Expected Duration and Light"));

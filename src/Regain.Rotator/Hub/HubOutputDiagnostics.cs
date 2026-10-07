@@ -98,6 +98,14 @@ internal static class HubDiagnosticContract
                 var active = acquisition.GetProperty("acquisition").ValueKind != JsonValueKind.Null;
                 Require(acquisition.GetProperty("source").GetGuid() == health.GetProperty("source").GetGuid() && acquisition.GetProperty("generation").GetGuid() == health.GetProperty("generation").GetGuid() && imageReady == (completed.ValueKind != JsonValueKind.Null) && (!imageReady || health.GetProperty("transportConnected").GetBoolean()) && active == (acquisition.GetProperty("owner").ValueKind != JsonValueKind.Null) && (acquisition.GetProperty("phase").GetString() == "idle") == !active && (acquisition.GetProperty("phase").GetString() != "uncertain" || acquisition.GetProperty("error").ValueKind != JsonValueKind.Null));
                 if (completed.ValueKind != JsonValueKind.Null) Require(completed.GetProperty("source").GetGuid() == health.GetProperty("source").GetGuid() && completed.GetProperty("generation").GetGuid() == health.GetProperty("generation").GetGuid());
+                var guide=acquisition.GetProperty("guiding");
+                if (guide.ValueKind != JsonValueKind.Null) {
+                    var uncertain=guide.GetProperty("phase").GetString()=="uncertain";
+                    Require(guide.GetProperty("id").GetGuid()!=Guid.Empty && guide.GetProperty("owner").GetGuid()!=Guid.Empty && guide.GetProperty("generation").GetGuid()!=Guid.Empty &&
+                        uncertain==(guide.GetProperty("error").ValueKind!=JsonValueKind.Null) &&
+                        (uncertain || guide.GetProperty("generation").GetGuid()==health.GetProperty("generation").GetGuid() && health.GetProperty("transportConnected").GetBoolean()) &&
+                        (!active || guide.GetProperty("owner").GetGuid()==acquisition.GetProperty("owner").GetGuid()));
+                }
             }
         } else if (kind == "switch") {
             var active = device.GetProperty("channels").EnumerateArray().ToArray(); var numbers = active.Select(c => c.GetProperty("number").GetInt32()).ToList();

@@ -115,13 +115,26 @@ class SchemaContractTests(unittest.TestCase):
         validator = Draft202012Validator(DESCRIPTION["simulationControl"]["schema"])
         for update in [{"readoutDurationSeconds": 0}, {"readoutDurationSeconds": 300},
                        {"temperature": -273.15}, {"canAbortExposure": False},
-                       {"exposureMetadataAvailable": False}]:
+                       {"exposureMetadataAvailable": False}, {"canPulseGuide": True}]:
             validator.validate({"camera": update})
         for update in [{"readoutDurationSeconds": -1}, {"readoutDurationSeconds": 301},
                        {"temperature": -300}, {"hasShutter": 1}, {"temperature": "12"},
-                       {"gain": 100}, {"imageReady": True}, {"extra": False}]:
+                       {"gain": 100}, {"imageReady": True}, {"canPulseGuide": 1}, {"extra": False}]:
             with self.subTest(update=update):
                 self.assertTrue(list(validator.iter_errors({"camera": update})))
+
+    def test_camera_guide_request_contract(self):
+        validator = Draft202012Validator({"$ref": "#/$defs/GuideRequest",
+            "$defs": DESCRIPTION["outputDiagnostics"]["responseSchema"]["$defs"]})
+        for direction in range(4):
+            for duration in (0, 2147483647):
+                validator.validate({"direction": direction, "durationMilliseconds": duration})
+        for update in [{"direction": -1}, {"direction": 4}, {"direction": True},
+                       {"durationMilliseconds": -1}, {"durationMilliseconds": 2147483648},
+                       {"durationMilliseconds": "1"}, {"extra": True}]:
+            request = {"direction": 0, "durationMilliseconds": 1, **update}
+            with self.subTest(request=request):
+                self.assertTrue(list(validator.iter_errors(request)))
 
     def test_panel_simulation_update_contract(self):
         validator = Draft202012Validator(DESCRIPTION["simulationControl"]["schema"])

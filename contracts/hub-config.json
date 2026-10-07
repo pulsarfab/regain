@@ -233,6 +233,16 @@
               "format": "uuid",
               "type": "string"
             },
+            "guiding": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/GuidingStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
             "imageReady": {
               "type": "boolean"
             },
@@ -270,7 +280,8 @@
             "imageReady",
             "error",
             "completed",
-            "setting"
+            "setting",
+            "guiding"
           ],
           "type": "object"
         },
@@ -919,6 +930,79 @@
               "type": "object"
             }
           ]
+        },
+        "GuideRequest": {
+          "additionalProperties": false,
+          "properties": {
+            "direction": {
+              "format": "int32",
+              "maximum": 3,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "durationMilliseconds": {
+              "format": "int32",
+              "maximum": 2147483647,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "direction",
+            "durationMilliseconds"
+          ],
+          "type": "object"
+        },
+        "GuidingPhase": {
+          "enum": [
+            "starting",
+            "guiding",
+            "finishing",
+            "uncertain"
+          ],
+          "type": "string"
+        },
+        "GuidingStatus": {
+          "additionalProperties": false,
+          "properties": {
+            "error": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/SourceError"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "generation": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "id": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "owner": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "phase": {
+              "$ref": "#/$defs/GuidingPhase"
+            },
+            "request": {
+              "$ref": "#/$defs/GuideRequest"
+            }
+          },
+          "required": [
+            "id",
+            "owner",
+            "generation",
+            "request",
+            "phase",
+            "error"
+          ],
+          "type": "object"
         },
         "Measurement": {
           "additionalProperties": false,
@@ -4302,6 +4386,16 @@
           "type": "boolean"
         },
         {
+          "default": false,
+          "description": "Inject an optional camera capability. Unsupported properties remain explicit errors.",
+          "label": "Pulse guiding available",
+          "path": [
+            "camera",
+            "canPulseGuide"
+          ],
+          "type": "boolean"
+        },
+        {
           "default": true,
           "description": "Inject an optional camera capability. Unsupported properties remain explicit errors.",
           "label": "Fast readout available",
@@ -5343,6 +5437,12 @@
               ]
             },
             "canGetCoolerPower": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "canPulseGuide": {
               "type": [
                 "boolean",
                 "null"

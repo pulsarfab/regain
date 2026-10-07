@@ -1,10 +1,138 @@
 use super::*;
 use regain_hub::camera::{
-    acquisition::ExposureRequest,
+    acquisition::{ExposureRequest, GuideRequest, GuidingPhase},
     image::{ElementType, ImageBudget, ImageOrder},
     properties::{CameraProperty as P, CameraSetting as S, CameraValue as V},
     runtime::CameraResources,
 };
+
+#[tokio::test]
+async fn registered_camera_guide_shares_exposure_control_and_survives_owner_disconnect() {
+    let Some(f) = Fixture::load() else { return };
+    for bitness in [Bitness::X86, Bitness::X64] {
+        f.clear("Camera", json!({"version":4}));
+        let config = camera_config(f.source("Camera", DeviceType::Camera, bitness));
+        let hub = HubRuntime::build(
+            config.clone(),
+            &f.native,
+            &NoCredentials,
+            Arc::new(MonotonicClock::default()),
+        )
+        .unwrap();
+        let first = hub.client();
+        let second = hub.client();
+        first.connect(config.outputs[0].id).await.unwrap();
+        second.connect(config.outputs[1].id).await.unwrap();
+        let a = first.connection(config.outputs[0].id).unwrap();
+        let b = second.connection(config.outputs[1].id).unwrap();
+        let camera = a.camera().unwrap();
+        let observer = b.camera().unwrap();
+        camera
+            .pulse_guide(GuideRequest {
+                direction: 2,
+                duration_milliseconds: i32::MAX,
+            })
+            .await
+            .unwrap();
+        camera.set(S::Gain(1)).await.unwrap_err();
+        camera
+            .start(ExposureRequest {
+                duration_seconds: 0.01,
+                light: true,
+            })
+            .await
+            .unwrap();
+        until(|| camera.status().image_ready).await;
+        assert_eq!(
+            camera.status().guiding.unwrap().phase,
+            GuidingPhase::Guiding
+        );
+        assert_eq!(
+            observer
+                .pulse_guide(GuideRequest {
+                    direction: 0,
+                    duration_milliseconds: 0
+                })
+                .await
+                .unwrap_err()
+                .kind,
+            ErrorKind::Busy
+        );
+        first.close();
+        drop(a);
+        assert_eq!(f.count("Camera", "Disconnect"), 0);
+        f.state("Camera", json!({"version":4,"cameraIsPulseGuiding":false}));
+        until(|| observer.status().guiding.is_none()).await;
+        observer.set(S::Gain(1)).await.unwrap();
+        assert_eq!(f.count("Camera", "PulseGuide"), 1);
+        assert_eq!(f.count("Camera", "Applied.PulseGuide"), 1);
+        assert_eq!(f.count("Camera", "StartExposure"), 1);
+        assert_eq!(f.count("Camera", "AbortExposure"), 0);
+        assert_eq!(f.count("Camera", "StopExposure"), 0);
+        second.close();
+        drop(b);
+        hub.shutdown().await.unwrap();
+        assert_eq!(f.count("Camera", "Activate"), 1);
+    }
+}
+
+#[tokio::test]
+async fn registered_camera_lost_guide_reply_retains_uncertainty_without_replay_or_abort() {
+    let Some(f) = Fixture::load() else { return };
+    for bitness in [Bitness::X86, Bitness::X64] {
+        f.clear("Camera", json!({"version":4}));
+        let config = camera_config(f.source("Camera", DeviceType::Camera, bitness));
+        let hub = HubRuntime::build(
+            config.clone(),
+            &f.native,
+            &NoCredentials,
+            Arc::new(MonotonicClock::default()),
+        )
+        .unwrap();
+        let first = hub.client();
+        let second = hub.client();
+        first.connect(config.outputs[0].id).await.unwrap();
+        second.connect(config.outputs[1].id).await.unwrap();
+        let a = first.connection(config.outputs[0].id).unwrap();
+        let b = second.connection(config.outputs[1].id).unwrap();
+        f.state("Camera", json!({"version":4,"cameraLostReply":true}));
+        assert_eq!(
+            a.camera()
+                .unwrap()
+                .pulse_guide(GuideRequest {
+                    direction: 1,
+                    duration_milliseconds: 100
+                })
+                .await
+                .unwrap_err()
+                .kind,
+            ErrorKind::Uncertain
+        );
+        assert_eq!(
+            b.camera().unwrap().status().guiding.unwrap().phase,
+            GuidingPhase::Uncertain
+        );
+        assert!(
+            hub.source_snapshot(config.sources[0].id)
+                .unwrap()
+                .write_uncertain
+        );
+        assert_eq!(
+            b.camera().unwrap().set(S::Gain(1)).await.unwrap_err().kind,
+            ErrorKind::Uncertain
+        );
+        assert_eq!(f.count("Camera", "PulseGuide"), 1);
+        assert_eq!(f.count("Camera", "Applied.PulseGuide"), 1);
+        assert_eq!(f.count("Camera", "AbortExposure"), 0);
+        assert_eq!(f.count("Camera", "StopExposure"), 0);
+        first.close();
+        second.close();
+        drop(a);
+        drop(b);
+        hub.shutdown().await.unwrap();
+        assert_eq!(f.count("Camera", "PulseGuide"), 1);
+    }
+}
 
 #[tokio::test]
 async fn registered_camera_partial_body_cancellation_bad_header_and_trailer_release_budget_and_worker()

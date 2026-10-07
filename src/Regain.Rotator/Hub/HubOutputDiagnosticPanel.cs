@@ -76,6 +76,11 @@ public sealed partial class HubConfigurationWindow
             var acquisition = d.GetProperty("acquisition");
             if (acquisition.ValueKind != JsonValueKind.Null) {
                 lines.Add("Acquisition " + acquisition.GetProperty("phase").GetString() + " · image " + (acquisition.GetProperty("imageReady").GetBoolean() ? "ready" : "not ready"));
+                var guide=acquisition.GetProperty("guiding");
+                if (guide.ValueKind != JsonValueKind.Null) {
+                    lines.Add("Guiding " + guide.GetProperty("phase").GetString());
+                    if (guide.GetProperty("error").ValueKind != JsonValueKind.Null) lines.Add(guide.GetProperty("error").GetProperty("message").GetString()!);
+                }
                 if (acquisition.GetProperty("error").ValueKind != JsonValueKind.Null) lines.Add(acquisition.GetProperty("error").GetProperty("message").GetString()!);
             }
             lines.Add(PollingSummary(d.GetProperty("health")));

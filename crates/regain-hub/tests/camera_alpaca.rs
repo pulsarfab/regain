@@ -11,7 +11,9 @@ use regain_hub::{
     activity::ActivityCounter,
     alpaca::AlpacaBackend,
     camera::{
-        acquisition::{AcquisitionPhase, AcquisitionTiming, CameraSupervisor, ExposureRequest},
+        acquisition::{
+            AcquisitionPhase, AcquisitionTiming, CameraSupervisor, ExposureRequest, GuideRequest,
+        },
         image::{ElementType, ImageBudget, ImageDescriptor, ImageOrder},
     },
     config::{ConnectionPolicy, DeviceType, SourceBackend, SourceConfig},
@@ -73,6 +75,8 @@ struct StateData {
     replies: Mutex<VecDeque<Reply>>,
     requests: Mutex<Vec<(String, String, String, String)>>,
     started: Mutex<bool>,
+    guiding: Mutex<bool>,
+    guide_parameters: Mutex<Vec<regain_hub::source::Values>>,
 }
 struct Server {
     data: Arc<StateData>,
@@ -168,6 +172,24 @@ async fn handler(State(data): State<Arc<StateData>>, request: Request) -> Respon
             "binx" | "biny" | "maxbinx" | "maxbiny" => json!(1),
             "startx" | "starty" => json!(0),
             "canasymmetricbin" => json!(false),
+            "canpulseguide" => json!(true),
+            "ispulseguiding" => json!(*data.guiding.lock().unwrap()),
+            "pulseguide" => {
+                let args: std::collections::BTreeMap<_, _> =
+                    url::form_urlencoded::parse(&body).into_owned().collect();
+                let direction = args["Direction"].parse::<i32>().unwrap();
+                let duration = args["Duration"].parse::<i32>().unwrap();
+                assert!((0..4).contains(&direction) && duration >= 0);
+                data.guide_parameters
+                    .lock()
+                    .unwrap()
+                    .push(regain_hub::source::Values::from([
+                        ("Direction".into(), json!(direction)),
+                        ("Duration".into(), json!(duration)),
+                    ]));
+                *data.guiding.lock().unwrap() = duration != 0;
+                Value::Null
+            }
             "lastexposureduration" => json!(0.01),
             "lastexposurestarttime" => json!("2026-10-07T00:00:01.125"),
             "startexposure" => {
@@ -201,6 +223,106 @@ async fn handler(State(data): State<Arc<StateData>>, request: Request) -> Respon
         .header("Location", "/redirected")
         .body(Body::from_stream(stream))
         .unwrap()
+}
+
+#[tokio::test]
+async fn alpaca_guide_preserves_integer_parameters_and_exposure_ownership_without_replay() {
+    let server = Server::new(vec![Reply::image()]).await;
+    let source = SourceHandle::spawn(
+        server.config.id,
+        Uuid::new_v4(),
+        PollPolicy::default(),
+        Box::new(server.backend()),
+        Arc::new(MonotonicClock::default()),
+    )
+    .unwrap();
+    let activity = ActivityCounter::default();
+    let supervisor = CameraSupervisor::new(
+        source.clone(),
+        ImageBudget::new(12).unwrap(),
+        AcquisitionTiming::default(),
+        activity.clone(),
+    )
+    .unwrap();
+    let owner = supervisor.connect().await.unwrap();
+    let observer = supervisor.connect().await.unwrap();
+    owner
+        .pulse_guide(GuideRequest {
+            direction: 3,
+            duration_milliseconds: 0,
+        })
+        .await
+        .unwrap();
+    assert!(owner.status().guiding.is_none());
+    owner
+        .pulse_guide(GuideRequest {
+            direction: 2,
+            duration_milliseconds: i32::MAX,
+        })
+        .await
+        .unwrap();
+    owner
+        .start(ExposureRequest {
+            duration_seconds: 0.01,
+            light: true,
+        })
+        .await
+        .unwrap();
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while !observer.status().image_ready {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap();
+    assert!(observer.status().guiding.is_some());
+    assert_eq!(
+        observer
+            .pulse_guide(GuideRequest {
+                direction: 0,
+                duration_milliseconds: 0
+            })
+            .await
+            .unwrap_err()
+            .kind,
+        ErrorKind::Busy
+    );
+    drop(owner);
+    *server.data.guiding.lock().unwrap() = false;
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while observer.status().guiding.is_some() {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(activity.active(), 0);
+    assert_eq!(
+        *server.data.guide_parameters.lock().unwrap(),
+        vec![
+            regain_hub::source::Values::from([
+                ("Direction".into(), json!(3)),
+                ("Duration".into(), json!(0))
+            ]),
+            regain_hub::source::Values::from([
+                ("Direction".into(), json!(2)),
+                ("Duration".into(), json!(i32::MAX))
+            ]),
+        ]
+    );
+    assert_eq!(server.image_requests(), 1);
+    assert!(
+        !server
+            .data
+            .requests
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|request| request.0 == "PUT"
+                && (request.1.ends_with("/abortexposure") || request.1.ends_with("/stopexposure")))
+    );
+    drop(observer);
+    source.shutdown().await.unwrap();
 }
 
 #[tokio::test]

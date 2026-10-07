@@ -151,7 +151,7 @@ function simulationState(type) {
 }
 for (const type of ['switch','safetymonitor','observingconditions','focuser','rotator','filterwheel','covercalibrator','camera']) {
   const fields = simulationControls(simDescription,simulatedSource(type));
-  assert.equal(fields.length,type==='switch'?5:type==='safetymonitor'?2:type==='rotator'?12:type==='filterwheel'?6:type==='covercalibrator'?10:type==='camera'?13:15);
+  assert.equal(fields.length,type==='switch'?5:type==='safetymonitor'?2:type==='rotator'?12:type==='filterwheel'?6:type==='covercalibrator'?10:type==='camera'?14:15);
   assert.deepEqual(fields.find(f=>f.path[0]==='fault').enum,simDescription.faultsByDeviceType[type]);
 }
 assert.deepEqual(simulationControls(simDescription,{backend:{kind:'native'}}),[]);
@@ -625,7 +625,7 @@ function cameraReply(start=0,limit=1) {
     observedSeconds:1,deviceType:'camera',simulated:true,start,limit,total:1,nextStart:null,
     diagnostics:{kind:'camera',health:structuredClone(cameraHealth),acquisition:start===0?{
       source:cameraHealth.source,generation:cameraHealth.generation,acquisition:null,owner:null,
-      phase:'idle',imageReady:false,error:null,completed:null,setting:null}:null}};
+      phase:'idle',imageReady:false,error:null,completed:null,setting:null,guiding:null}:null}};
 }
 {
   const setup=new OutputDiagnostics(async c=>cameraReply(c.start,c.limit),()=>assert.fail('Review revoked'));
@@ -650,3 +650,38 @@ for (const fault of ['source','generation','ready','phase','owner','extra','page
   await assert.rejects(setup.read(cameraOutput.id,0,1)); assert.equal(revoked,true);
 }
 console.log('Camera diagnostic identity, acquisition ownership, readiness and paging fences passed.');
+
+function guideReply() {
+  const reply=cameraReply(), a=reply.diagnostics.acquisition;
+  reply.diagnostics.health.transportConnected=true;
+  a.guiding={id:'11111111-1111-4111-8111-111111111111',owner:'22222222-2222-4222-8222-222222222222',
+    generation:a.generation,request:{direction:2,durationMilliseconds:2147483647},phase:'guiding',error:null};
+  return reply;
+}
+for (const fault of [null,'nil','generation','direction','duration','missingError','extraError','owner']) {
+  let revoked=false;
+  const setup=new OutputDiagnostics(async()=>{
+    const reply=guideReply(), a=reply.diagnostics.acquisition, g=a.guiding;
+    if(fault==='nil')g.id='00000000-0000-0000-0000-000000000000';
+    if(fault==='generation')g.generation='33333333-3333-4333-8333-333333333333';
+    if(fault==='direction')g.request.direction=4;
+    if(fault==='duration')g.request.durationMilliseconds=-1;
+    if(fault==='missingError')g.phase='uncertain';
+    if(fault==='extraError')g.error={kind:'uncertain',message:'Unknown guide completion',upstreamCode:null};
+    if(fault==='owner'){a.phase='exposing';a.acquisition=g.id;a.owner='33333333-3333-4333-8333-333333333333';}
+    return reply;
+  },()=>revoked=true);
+  setup.load(description,cameraSaved);
+  if(fault){await assert.rejects(setup.read(cameraOutput.id,0,1));assert.equal(revoked,true);}
+  else assert.match(diagnosticSummary(await setup.read(cameraOutput.id,0,1)),/Guiding guiding/);
+}
+{
+  const reply=guideReply(), g=reply.diagnostics.acquisition.guiding;
+  reply.diagnostics.health.transportConnected=false;
+  g.generation='33333333-3333-4333-8333-333333333333';g.phase='uncertain';
+  g.error={kind:'uncertain',message:'Unknown guide completion',upstreamCode:null};
+  const setup=new OutputDiagnostics(async()=>reply,()=>assert.fail('Retained uncertain guide rejected'));
+  setup.load(description,cameraSaved);
+  assert.match(diagnosticSummary(await setup.read(cameraOutput.id,0,1)),/Unknown guide completion/);
+}
+console.log('Camera guide diagnostics preserve uncertainty and reject invalid identities, ownership and parameters.');

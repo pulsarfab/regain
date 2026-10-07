@@ -34,6 +34,9 @@ pub(crate) fn operation(command: &Command) -> Option<(Uuid, CameraOperation)> {
             match property {
                 Put::StartExposure { .. } => CameraOperation::Start,
                 Put::CameraSetting { .. } => CameraOperation::Setting,
+                // Admission contains capability/completion preflight; the
+                // remaining bound contains its write and first completion read.
+                Put::PulseGuide { .. } => CameraOperation::Setting,
                 Put::StopExposure {} => CameraOperation::Stop,
                 Put::AbortExposure {} => CameraOperation::Abort,
                 _ => return None,

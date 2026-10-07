@@ -140,7 +140,11 @@ impl OutputConnection {
             }
             Put::StopExposure {} => self.camera()?.stop().await?,
             Put::AbortExposure {} => self.camera()?.abort().await?,
+            Put::PulseGuide { request } => {
+                return Ok(json!(self.camera()?.pulse_guide(request).await?));
+            }
             Put::AbandonCameraAcquisition {} => self.camera()?.abandon_uncertain()?,
+            Put::AbandonCameraGuide {} => self.camera()?.abandon_guiding()?,
             Put::SetSwitch { id, state } => self.switch()?.set_state(id, state).await?,
             Put::SetSwitchValue { id, value } => self.switch()?.set_value(id, value).await?,
             Put::AveragePeriod { hours } => self.weather()?.set_average_period_hours(hours)?,

@@ -41,6 +41,102 @@ fn config(direct: bool) -> HubConfig {
 }
 
 #[tokio::test(start_paused = true)]
+async fn pulse_guide_ipc_uses_shared_timing_and_retains_ownership_after_stream_loss() {
+    use crate::{
+        camera::acquisition::GuideRequest,
+        client::{Client, ClientError, ClientLimits},
+        ipc::{Command, Get, Limits, Put, serve_stream},
+    };
+    let resources = CameraResources::new(1024 * 1024).unwrap();
+    let mut cfg = HubConfig::empty();
+    let source = Uuid::new_v4();
+    cfg.sources.push(serde_json::from_value(json!({"id":source,"label":"Private guide IPC source","backend":{"kind":"simulated","deviceType":"camera"}})).unwrap());
+    let ids = outputs(&mut cfg, source, &[2, 9]);
+    let runtime = HubRuntime::build_with_camera_resources(
+        cfg,
+        &native(resources.clone()),
+        &NoCredentials,
+        Arc::new(MonotonicClock::default()),
+        resources.clone(),
+    )
+    .unwrap();
+    runtime
+        .update_simulation(
+            source,
+            serde_json::from_value(json!({"camera":{"canPulseGuide":true}})).unwrap(),
+        )
+        .await
+        .unwrap();
+    let (stream, server) = tokio::io::duplex(8192);
+    let serving = tokio::spawn(serve_stream(server, runtime.clone(), Limits::default()));
+    let client = Client::from_stream(
+        stream,
+        runtime.instance_id(),
+        Duration::from_secs(3),
+        ClientLimits::default(),
+    )
+    .await
+    .unwrap();
+    let timing = client.camera_timing(ids[0]).await.unwrap();
+    for output in &ids {
+        client
+            .request(Command::Connect { output: *output })
+            .await
+            .unwrap();
+    }
+    let id = client
+        .request_camera(
+            &timing,
+            Command::Put {
+                output: ids[0],
+                property: Put::PulseGuide {
+                    request: GuideRequest {
+                        direction: 2,
+                        duration_milliseconds: 5000,
+                    },
+                },
+            },
+        )
+        .await
+        .unwrap();
+    let status = client
+        .request(Command::Get {
+            output: ids[1],
+            property: Get::CameraAcquisition {},
+        })
+        .await
+        .unwrap();
+    assert_eq!(status["guiding"]["id"], id);
+    assert_eq!(status["guiding"]["phase"], "guiding");
+    assert_eq!(status["guiding"]["request"]["durationMilliseconds"], 5000);
+    let rejected = client
+        .request(Command::Put {
+            output: ids[1],
+            property: Put::PulseGuide {
+                request: GuideRequest {
+                    direction: 0,
+                    duration_milliseconds: 0,
+                },
+            },
+        })
+        .await
+        .unwrap_err();
+    assert!(matches!(rejected,ClientError::Remote(ref error) if error.code=="busy"));
+    client.close();
+    serving.await.unwrap().unwrap();
+    assert!(
+        runtime
+            .camera_acquisition_status(source)
+            .unwrap()
+            .guiding
+            .is_some()
+    );
+    assert!(resources.activity().active() > 0);
+    runtime.shutdown().await.unwrap();
+    assert_eq!(resources.activity().active(), 0);
+}
+
+#[tokio::test(start_paused = true)]
 async fn camera_frontend_deadlines_cover_native_connection_and_control_but_not_scalar_reads() {
     use crate::{
         client::{Client, ClientError, ClientLimits},
@@ -1158,7 +1254,7 @@ async fn runtime_retirement_preserves_live_uncertainty_then_releases_only_after_
         .unwrap();
     until(|| camera.status().phase == crate::camera::acquisition::AcquisitionPhase::Uncertain)
         .await;
-    camera.retire_after_source_shutdown();
+    camera.retire_after_source_shutdown().await;
     assert_eq!(camera.status().acquisition, Some(acquisition));
     assert_eq!(runtime.quiesce().err().unwrap().kind, ErrorKind::Busy);
     let error = camera.status().error.unwrap();

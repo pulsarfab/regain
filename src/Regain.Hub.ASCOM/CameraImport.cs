@@ -41,6 +41,13 @@ internal sealed partial class ImportDriver {
         return names;
     }
     private object? WriteCamera(string member, JsonElement parameters) {
+        if (member == "pulseguide") {
+            Fields(parameters,"Direction","Duration");
+            var direction = Parameter(parameters,"Direction"); var duration = Parameter(parameters,"Duration");
+            if (direction.ValueKind != JsonValueKind.Number || !direction.TryGetInt32(out var guide) || guide is < 0 or > 3
+                || duration.ValueKind != JsonValueKind.Number || !duration.TryGetInt32(out var milliseconds) || milliseconds < 0) throw new InvalidInput();
+            Call("PulseGuide",(global::ASCOM.DeviceInterface.GuideDirections)guide,milliseconds); return null;
+        }
         if (member == "startexposure") {
             Fields(parameters, "Duration", "Light");
             var duration = InputNumber(Parameter(parameters, "Duration"));

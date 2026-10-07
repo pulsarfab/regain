@@ -215,6 +215,32 @@ class Worker:
 
 
 class ImportTests(unittest.TestCase):
+    def test_camera_pulse_guide_enum_validation_async_blocking_and_hresult(self):
+        for architecture in self.each():
+            with Worker(architecture, device="camera", settings={"version": 4}) as worker:
+                worker.connect()
+                for args in ({"Direction": -1, "Duration": 1}, {"Direction": 4, "Duration": 1},
+                             {"Direction": True, "Duration": 1}, {"Direction": 1.0, "Duration": 1},
+                             {"Direction": 0, "Duration": -1}, {"Direction": 0, "Duration": "1"},
+                             {"Direction": 0, "Duration": True}, {"Direction": 0, "Duration": 2**31},
+                             {"Direction": 0}, {"Direction": 0, "Duration": 0, "Extra": 1}):
+                    self.assertEqual(worker.send("write", "pulseguide", args)["error"]["kind"], "invalidValue")
+                self.assertEqual(worker.count("PulseGuide"), 0)
+                for direction in range(4):
+                    self.assertIsNone(worker.send("write", "pulseguide", {"Direction": direction, "Duration": 0})["error"])
+                    self.assertFalse(worker.send("read", "ispulseguiding")["value"])
+                self.assertIsNone(worker.send("write", "pulseguide", {"Direction": 2, "Duration": 2**31-1})["error"])
+                self.assertTrue(worker.send("read", "ispulseguiding")["value"])
+                worker.set(cameraBlockingGuide=True)
+                self.assertIsNone(worker.send("write", "pulseguide", {"Direction": 3, "Duration": 10})["error"])
+                self.assertFalse(worker.send("read", "ispulseguiding")["value"])
+                worker.set(faultMember="PulseGuide", faultCode=hresult(0x80040400))
+                self.assertEqual(worker.send("write", "pulseguide", {"Direction": 0, "Duration": 1})["error"],
+                                 {"kind": "unsupported", "code": hresult(0x80040400)})
+                self.assertEqual(worker.count("Applied.PulseGuide"), 6)
+                self.assertEqual(worker.count("AbortExposure"), 0)
+                self.assertTrue(all(item["apartment"] == "STA" for item in worker.trace()))
+
     def test_camera_binary_all_types_ranks_and_scalar_framing(self):
         types = [("int16", "h", lambda n: -n % -30000), ("int32", "i", lambda n: -n),
                  ("double", "d", lambda n: n + .25), ("single", "f", lambda n: n + .5),

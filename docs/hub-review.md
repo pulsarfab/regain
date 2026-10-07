@@ -3,6 +3,68 @@
 This records local review and tests for the single hub PR. Passing a foundation
 test does not imply that a frontend, transport, or hardware gate has passed.
 
+## 2026-10-07: retained camera pulse guiding
+
+Reviewed [ASCOM Camera PulseGuide and IsPulseGuiding](https://ascom-standards.org/newdocs/camera.html#Camera.PulseGuide):
+the command is normally asynchronous, short pulses can complete before the first
+read, and older cameras may block. Directions remain the upstream enum values;
+duration is a nonnegative Int32 count of milliseconds. A proxy's configured
+request deadline still applies to a blocking driver, independently of duration.
+
+The new retained operation shares the existing source actor/lease with a same-owner
+exposure. Completion/removal decisions happen under one state mutex: capture,
+Abort or rejected Start leaves a live pulse in control; pulse completion leaves
+an active capture in control. The final owner explicitly releases control before
+acknowledging success. Starting/finishing/uncertain pulses exclude competing work.
+One pulse is admitted at a time per source; no simultaneous dual-axis capability
+or synchronization guarantee is claimed. Caller cancellation before dispatch
+skips the command; after dispatch it does not cancel or replay the pulse.
+
+Review corrected COM input validation before TryGetInt32, preserving invalidValue
+for booleans/strings instead of manufacturing write uncertainty. Retained guide
+errors override ordinary and cached IsPulseGuiding reads; DeviceState omits that
+property. Source generation loss still invalidates stale sessions. Final control
+release errors are preserved, including rejected preflight/Start. Guiding tasks
+are registered under the retirement mutex, wake on shutdown without postponing
+ordinary poll deadlines, and keep cancellation-safe join handles until drained.
+
+Final five-crate Rust regressions pass. A fresh boundary run passes all 80 hub
+unit cases, 41 acquisition cases, eight loopback Alpaca camera cases and eleven
+nested virtual camera cases. These include cached-uncertainty/DeviceState,
+cancellation-safe retirement, independent final lease release, full Int32 pulse
+parameters, source/client loss and real timed IPC. All 34 private worker cases
+across x86/x64 and 26 actual registered parent cases pass. New parent cases cover
+guide/exposure sharing, client loss and an applied lost reply with no replay or
+implicit abort. Strict Rust 1.99 lint, Rust 1.89 compatibility, generated contract
+freshness, Node and ten schema checks pass. The rebuilt host passes NINA 283/283
+and the full actual net48 x86/x64 suite with warnings denied. Both managed targets
+exercise real pulse commands, shared identities, sibling Busy and capture overlap
+against explicit simulation and three-level virtual inputs.
+
+Expanded validation found a schema gap: an Int32 format alone does not enforce
+its maximum in a generic JSON Schema validator. GuideRequest now declares the
+maximum explicitly; its boundary cases pass. Web/native diagnostic readers reject
+inconsistent guide identity, owner, request and uncertainty, while preserving
+retired-generation uncertainty and displaying its error. The first broad Rust run
+stopped at an incorrect test assertion expecting zero activity while three virtual
+connections remained open; the corrected test proves the connection baseline and
+zero activity after awaited shutdown. Managed fixture runs initially failed their
+old hard-coded 13-field simulation count; the new count and canPulseGuide path are
+checked explicitly, with command coverage added instead of relaxing the check.
+Test-only compilation mistakes (missing Backend import and Remote.Code access)
+were corrected before the final passing runs. Original logs are retained.
+
+Final evidence: artifacts/hub-camera-guide-final-rust-2.log,
+artifacts/hub-camera-guide-final-boundaries.log,
+artifacts/hub-camera-guide-{clippy,msrv,contract-final,node-final,schema-final}.log,
+artifacts/hub-camera-guide-com-final.log,
+artifacts/hub-camera-guide-nina-final-2.log and
+artifacts/hub-camera-guide-net48-final.log. No physical/installed-driver acceptance
+is claimed. Camera publication/setup remains gated and every original gate stays open.
+
+Both preceding b275ce7 CI workflows 37613322368/37613316420 are terminal, all eight
+jobs passing in each. Those checks exclude the local camera COM/PulseGuide work.
+
 ## 2026-10-07: Windows camera inputs and finite worker image transport
 
 Reviewed the existing isolated COM worker, source factory, camera supervisor and

@@ -2795,7 +2795,39 @@ managed validators also preserve the upstream UTC forms accepted by Rust. Bounde
 admission is shared with filter-wheel imports.
 
 Camera frontend publication/setup and full standard-command coverage remain
-separate gates. In particular, PulseGuide capability can be observed upstream;
-its shared controlled command and frontend implementation must be completed
-before publishing a camera that advertises it. Private registered fixtures do
+separate gates. The shared PulseGuide command is implemented below; its frontend
+implementations remain required before publishing a camera that advertises it.
+Private registered fixtures do
 not establish installed-driver, conformance or physical-camera acceptance.
+
+### Retained camera guiding
+
+`put.pulseGuide` takes a strict request with `direction` (Int32 0–3: North,
+South, East, West) and `durationMilliseconds` (nonnegative Int32). It returns a
+guide UUID after acknowledgement and the first IsPulseGuiding read. False on
+that first read is successful completion for short or legacy blocking pulses,
+as specified by [ASCOM Camera](https://ascom-standards.org/newdocs/camera.html#Camera.PulseGuide).
+The camera acquisition status includes independent `guiding` identity, owner,
+generation, request, phase and error. Guiding does not replace an exposure UUID,
+publish pixels, change image identity, or add recovery promises to proxy cameras.
+
+Only one pulse per source is admitted. A same-owner exposure may overlap the
+acknowledged pulse using one shared control lease. Capture completion, explicit
+exposure Abort or rejected/cancelled Start cannot release a pulse's lease; the
+final remaining operation releases it explicitly. Other owners and settings are
+Busy while guiding. Uncertain pulses reject mutations; subsequent raw false
+telemetry cannot clear the error. DeviceState omits uncertain guiding values and
+virtual cached samples preserve the retained error. No pulse is replayed or
+implicitly stopped when a caller disconnects. `abandonCameraGuide` releases only
+the caller's local uncertain guide marker, never an upstream mutation fence.
+
+The existing setting acknowledgement allowance also covers guide admission,
+write and first completion read through revision-bound cameraControl in Rust and
+shared .NET clients. A blocking upstream remains bounded by its configured request
+deadline. After acknowledgement, the monitor allows duration plus readinessGrace
+and retains uncertainty if completion cannot be established. Shutdown first
+drains source actors, then wakes/joins guide monitors; cancellation does not lose
+their retirement handles. The explicit simulator models monotonic pulses when
+its shared canPulseGuide control is enabled (default false). A false capability
+leaves guiding commands/properties unsupported. Frontend camera publication and
+its conformance/acceptance remain required separately.
