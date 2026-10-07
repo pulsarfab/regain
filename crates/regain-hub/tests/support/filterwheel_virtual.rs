@@ -290,7 +290,16 @@ pub(super) async fn nested(
         );
         assert!(device.writes.lock().unwrap().is_empty());
         aw.move_to(2).await.unwrap();
-        assert_eq!(bw.position().await.unwrap(), -1);
+        let started = std::time::Instant::now();
+        let moving = bw.position().await;
+        assert!(
+            matches!(moving, Ok(-1)),
+            "Nested moving-position read failed after {:?}: {moving:?}; sources={:?}; private requests={:?}; writes={:?}",
+            started.elapsed(),
+            hub.source_snapshots(),
+            requests.lock().unwrap(),
+            device.writes.lock().unwrap()
+        );
         assert_eq!(
             direct_connection
                 .filterwheel()
