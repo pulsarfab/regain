@@ -5023,3 +5023,58 @@ connection/control/readiness/cleanup allowances and runtime camera supervision,
 then remaining inputs, bounded binary frontend IPC, all camera publications,
 coordination and every original acceptance/documentation/final gate. No physical
 equipment or installed vendor driver was activated; no original milestone closes.
+
+## Private HTTP scheduler isolation after recovery CI (2026-10-07)
+
+Recovery head 6f29557 PR/push CI 37585153377/37585149444 are terminal with seven
+successful jobs and one failed Windows job each. PR NINA ends 228/229: the panel
+sharing fixture gets a transient calibrator-state read. Transaction 73 records
+692 ms before parsing/reply start, then an aborted write at 719 ms. Its source
+request deadline remains 300 ms. Push NINA ends 226/229: first focuser connection
+has an uncertain connection write, rotator initial connection fails, and ETA
+expects [590,500,510] but reads [590,600,510] after timer cancellation. Focuser
+connection transaction 3 reports a reply-write failure at 53 ms; this trace
+does not measure time queued before accept. Do not attribute every failure to
+one cause or erase their original evidence.
+
+The private HubAccessoryServer previously used shared thread-pool continuations
+for acceptance, parsing and replies. The same managed tests exercise synchronous
+native getters on that pool. A new isolated net48 child caps and occupies every
+shared worker, then makes eight synchronous HTTP requests from its main thread.
+The original fixture, compiled from ebcb704 into a private baseline project,
+reproduces a socket read timeout. The replacement passes in x86/x64 and drains
+an accepted partial request while every shared worker remains occupied. Limits
+are changed only in that disposable child, never in the test runner or product.
+
+The replacement uses one dedicated accept task, four dedicated request tasks
+and a bounded queue of 64 clients. Synchronous socket operations remain on those
+dedicated threads. The deliberate lost-reply delay is still one second and is
+cancelled on disposal; fixture/source deadlines and assertions are unchanged.
+All clients are tracked before queue admission, cancelled accept is joined before
+cleanup, partial/queued clients close, worker tasks drain, and repeated disposal
+is harmless. Unexpected protocol errors still fail the fixture. Review covered
+queue saturation, shutdown races, EOF and disposed sockets, worker ownership,
+global pool restoration and independent net48 process/bitness checks.
+
+Full NINA 229/229 and real net48 x86/x64 pass after scheduler isolation. The
+final partial-client acceptance barrier and failure cleanup also pass in the
+same complete suites. Earlier full Rust, strict Clippy/MSRV and contract
+checks remain valid: this refinement changes only managed private test fixtures
+and their script. The first baseline compile failed an unused fault-field warning;
+explicitly selecting normal replies removes that warning and the warning-denied
+baseline then reproduces the expected HTTP failure. No production code changed.
+
+Evidence: artifacts/hub-camera-recovery-ci-pr-windows-job.log,
+artifacts/hub-camera-recovery-ci-push-windows-correct.log,
+artifacts/hub-http-scheduler-baseline-build-final.log,
+artifacts/hub-http-scheduler-baseline/stderr.log,
+artifacts/hub-http-scheduler-nina-final.log and
+artifacts/hub-http-scheduler-net48-complete.log. The initially misidentified push
+job log is an ARM job and is not used as Windows evidence.
+
+New CI is required. The HTTP dependency is reproduced and removed; the ETA
+cancellation timing and distinct connection failures are not declared resolved
+by a local pass. All original acceptance gates remain required. Continue native
+core-derived timing and cleanup, runtime camera supervision, remaining camera
+inputs/outputs and coordination after publishing these reviewed increments to
+the same draft PR. No physical equipment or installed vendor driver was used.

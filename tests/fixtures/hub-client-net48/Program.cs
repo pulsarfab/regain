@@ -14,6 +14,11 @@ internal static class Program
     {
         uint? candidate = null;
         try {
+            if (args.Length == 2 && args[0] == "--http-scheduler") {
+                if (IntPtr.Size * 8 != int.Parse(args[1])) throw new InvalidOperationException("Wrong scheduler fixture bitness");
+                HttpSchedulerFixture.Run();
+                return 0;
+            }
             if (args.Length != 3 || IntPtr.Size * 8 != int.Parse(args[2])) throw new InvalidOperationException("Wrong fixture bitness");
             using var focuserServer = new HubFocuserServer();
             var fixtureConfig = JsonNode.Parse(File.ReadAllText(args[1]))!.AsObject();

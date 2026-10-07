@@ -8,6 +8,20 @@ tagged or published. Changed cross-crate APIs require an unpublished version so
 Cargo package verification uses the new workspace packages.
 Last updated: 2026-10-07.
 
+Recovery head 6f29557 CI has finished: PR/push runs 37585153377/37585149444 each
+pass seven jobs and fail Windows NINA. PR fails a shared panel read; push fails
+focuser/rotator initial connections and an ETA cancellation position assertion.
+The panel trace records 692 ms before request parsing against the unchanged
+300 ms deadline. An isolated fully occupied thread-pool test reproduces an HTTP
+timeout in the original private fixture. Dedicated, bounded fixture workers
+pass that check in real net48 x86/x64 and the local NINA suite passes 229/229.
+This proves the fixture scheduler dependency, not every earlier CI cause. ETA's
+timer-based assumption and the other distinct failures require fresh evidence;
+no production deadlines, assertions or retries are weakened. Factory integration
+is locally committed at ebcb704. Final NINA 229/229, x86/x64 scheduler isolation
+and complete net48 client checks pass; publish the reviewed factory/fixture
+increments together to the same draft PR for new CI. All original gates remain open.
+
 Native factory/resource integration is locally reviewed and validated. The production
 factory now constructs configured native SDK/direct owners with one host-owned
 image budget and activity counter shared across revisions. Focused production
@@ -21,8 +35,8 @@ Clippy, Rust 1.89, generated contracts, Node/eight schema checks, fresh-host NIN
 connection/control/readiness/cleanup allowances, remaining camera
 inputs and all image publications remain next. No original milestone gate closes
 at this checkpoint. Preceding a9b3c50 PR/push CI both finish all eight jobs green;
-reviewed recovery configuration 6f29557 is pushed to the same draft PR and its
-37585153377/37585149444 runs remain live.
+reviewed recovery configuration 6f29557 CI failures and the fixture refinement
+are recorded above.
 
 Native recovery configuration checkpoint (pushed, reviewed and validated): core
 now declares all fourteen saved recovery keys, defaults, ranges and descriptions
@@ -1502,6 +1516,17 @@ Publishing installers, plugin feeds, and releases follows the existing
 Keep existing device profiles and registrations compatible throughout migration.
 
 ## Progress log
+
+2026-10-07: Recovery checkpoint CI completes with seven successful jobs and one
+Windows failure in both PR/push runs. The new timing trace exposes a private HTTP
+fixture scheduling delay; an isolated occupied-pool baseline reproduces its read
+timeout. Dedicated bounded workers pass eight replies and accepted partial-client
+cleanup under complete shared-pool saturation in x86/x64. Final NINA 229/229 and
+all actual net48 clients pass. Keep ETA cancellation timing and distinct connection
+failures open pending new CI; no assertions, product deadlines or retries changed.
+Publish this reviewed fixture refinement with factory ebcb704 to draft PR #21,
+then continue native timing/runtime, every camera input/output, coordination and
+all original final gates.
 
 2026-10-07: Reviewed native camera factory and host resource integration. One
 budget/activity counter survives configuration revisions; retained readers remain

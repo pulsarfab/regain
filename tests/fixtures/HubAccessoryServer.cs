@@ -51,14 +51,18 @@ internal class HubAccessoryServer : IDisposable
     private readonly TcpListener listener = new(IPAddress.Loopback, 0);
     private readonly CancellationTokenSource stopping = new();
     private readonly ConcurrentDictionary<TcpClient, byte> clients = new();
-    private readonly ConcurrentBag<Task> requests = new();
+    // Synchronous native getters can occupy the shared pool. Their private
+    // upstream must have independent scheduling and bounded client ownership.
+    private readonly BlockingCollection<TcpClient> pending = new(64);
+    private readonly Task[] handlers;
     private readonly ConcurrentQueue<string> trace = new();
     private readonly Task serving;
     internal readonly ConcurrentDictionary<string, object> Values = new();
     internal readonly ConcurrentQueue<string> PanelCommands = new();
-    private int moves, halts, connected;
+    private int moves, halts, connected, disposed, accepted;
     internal int Moves => Volatile.Read(ref moves);
     internal int Halts => Volatile.Read(ref halts);
+    internal int AcceptedClients => Volatile.Read(ref accepted);
     internal string RequestTrace => string.Join("; ", trace);
     internal volatile bool LoseMoveReply;
     internal volatile bool IgnoreMove = false;
@@ -82,7 +86,11 @@ internal class HubAccessoryServer : IDisposable
         }
         Values["ismoving"] = false;
         listener.Start(); Url = "http://127.0.0.1:" + ((IPEndPoint)listener.LocalEndpoint).Port;
-        serving = Serve();
+        handlers = Enumerable.Range(0, 4).Select(_ => Task.Factory.StartNew(() => {
+            foreach (var client in pending.GetConsumingEnumerable()) Handle(client);
+        }, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default)).ToArray();
+        serving = Task.Factory.StartNew(Serve, CancellationToken.None,
+            TaskCreationOptions.LongRunning, TaskScheduler.Default);
     }
     internal void AddTo(JsonObject config, params uint[] numbers)
     {
@@ -98,38 +106,43 @@ internal class HubAccessoryServer : IDisposable
             device = new { kind = "proxy", source = SourceId, deviceType = kind }
         }));
     }
-    private async Task Serve()
+    private void Serve()
     {
         try {
             while (!stopping.IsCancellationRequested) {
-                var client = await listener.AcceptTcpClientAsync().ConfigureAwait(false);
+                var client = listener.AcceptTcpClient();
                 // These fixtures intentionally send tiny HTTP replies with
                 // separate header/body writes. Avoid introducing Nagle/delayed
                 // ACK latency into tests of source ownership and deadlines.
                 client.NoDelay = true;
-                clients.TryAdd(client, 0); requests.Add(Handle(client));
+                clients.TryAdd(client, 0);
+                Interlocked.Increment(ref accepted);
+                pending.Add(client, stopping.Token);
             }
-        } catch (Exception error) when (stopping.IsCancellationRequested && error is SocketException or ObjectDisposedException) { }
+        } catch (Exception error) when (stopping.IsCancellationRequested && error is SocketException or ObjectDisposedException or OperationCanceledException) { }
     }
-    private async Task Handle(TcpClient client)
+    private void Handle(TcpClient client)
     {
         var operation = "unparsed request";
         var started = System.Diagnostics.Stopwatch.StartNew();
         long responseStartedMs = -1;
         try {
+            if (stopping.IsCancellationRequested) return;
             using var stream = client.GetStream();
             using var reader = new StreamReader(stream, Encoding.ASCII, false, 4096, true);
-            var first = (await reader.ReadLineAsync().ConfigureAwait(false))!.Split(' ');
+            var requestLine = reader.ReadLine();
+            if (requestLine is null) return;
+            var first = requestLine.Split(' ');
             var uri = new Uri("http://fixture" + first[1]);
             var length = 0;
             while (true) {
-                var line = await reader.ReadLineAsync().ConfigureAwait(false);
+                var line = reader.ReadLine();
                 if (string.IsNullOrEmpty(line)) break;
                 if (line.StartsWith("Content-Length:", StringComparison.OrdinalIgnoreCase)) length = int.Parse(line.Substring(15).Trim());
             }
             var chars = new char[length]; var offset = 0;
             while (offset < length) {
-                var count = await reader.ReadAsync(chars, offset, length - offset).ConfigureAwait(false);
+                var count = reader.Read(chars, offset, length - offset);
                 if (count == 0) return; offset += count;
             }
             var text = first[0] == "PUT" ? new string(chars) : uri.Query.TrimStart('?');
@@ -157,15 +170,15 @@ internal class HubAccessoryServer : IDisposable
                         // marker. Publish it only after the start state exists,
                         // or the handler can overwrite their completed state.
                         PanelCommands.Enqueue(member);
-                        if (LoseMoveReply) await Task.Delay(1000,stopping.Token).ConfigureAwait(false);
+                        if (LoseMoveReply) DelayLostReply();
                         break;
                     case "position" when kind == "filterwheel":
                         Values["position"] = -1; Interlocked.Increment(ref moves);
-                        if (LoseMoveReply) await Task.Delay(1000,stopping.Token).ConfigureAwait(false);
+                        if (LoseMoveReply) DelayLostReply();
                         break;
                     case "move" when kind == "focuser":
                         Values["position"] = int.Parse(args["Position"]); Values["ismoving"] = true; Interlocked.Increment(ref moves);
-                        if (LoseMoveReply) await Task.Delay(1000, stopping.Token).ConfigureAwait(false);
+                        if (LoseMoveReply) DelayLostReply();
                         break;
                     case "move": case "moveabsolute": case "movemechanical":
                         if (IgnoreMove) { Interlocked.Increment(ref moves); break; }
@@ -176,7 +189,7 @@ internal class HubAccessoryServer : IDisposable
                         Values["mechanicalposition"] = ((mechanical + target - logical) % 360 + 360) % 360;
                         Values["position"] = target; Values["targetposition"] = target; Values["ismoving"] = true;
                         Interlocked.Increment(ref moves);
-                        if (LoseMoveReply) await Task.Delay(1000, stopping.Token).ConfigureAwait(false);
+                        if (LoseMoveReply) DelayLostReply();
                         break;
                     case "sync":
                         Values["position"] = double.Parse(args["Position"], System.Globalization.CultureInfo.InvariantCulture);
@@ -194,10 +207,12 @@ internal class HubAccessoryServer : IDisposable
             var body = JsonSerializer.SerializeToUtf8Bytes(new { ErrorNumber = code, ErrorMessage = code == 0 ? "" : "private upstream detail", Value = value });
             var header = Encoding.ASCII.GetBytes("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: " + body.Length + "\r\nConnection: close\r\n\r\n");
             responseStartedMs = started.ElapsedMilliseconds;
-            await stream.WriteAsync(header, 0, header.Length, stopping.Token).ConfigureAwait(false);
-            await stream.WriteAsync(body, 0, body.Length, stopping.Token).ConfigureAwait(false);
+            stopping.Token.ThrowIfCancellationRequested();
+            stream.Write(header, 0, header.Length);
+            stream.Write(body, 0, body.Length);
             trace.Enqueue(operation + " replied code=" + code + " elapsedMs=" + started.ElapsedMilliseconds);
-        } catch (Exception error) when (error is IOException or SocketException or ObjectDisposedException or OperationCanceledException) {
+        } catch (Exception error) when (error is IOException or SocketException or ObjectDisposedException or OperationCanceledException ||
+            stopping.IsCancellationRequested && error is InvalidOperationException) {
             // Distinguish time spent accepting/parsing/scheduling from a reply
             // write itself. Aborted writes alone do not identify the CI cause.
             trace.Enqueue(operation + " failed elapsedMs=" + started.ElapsedMilliseconds +
@@ -207,6 +222,11 @@ internal class HubAccessoryServer : IDisposable
             trace.Enqueue(operation + " closed elapsedMs=" + started.ElapsedMilliseconds);
             clients.TryRemove(client, out _); client.Dispose();
         }
+    }
+    private void DelayLostReply()
+    {
+        stopping.Token.WaitHandle.WaitOne(1000);
+        stopping.Token.ThrowIfCancellationRequested();
     }
     private static string SchedulerState()
     {
@@ -218,9 +238,14 @@ internal class HubAccessoryServer : IDisposable
     }
     public void Dispose()
     {
+        if (Interlocked.Exchange(ref disposed, 1) != 0) return;
         stopping.Cancel(); listener.Stop();
-        serving.GetAwaiter().GetResult();
-        foreach (var client in clients.Keys) client.Dispose();
-        Task.WhenAll(requests).GetAwaiter().GetResult(); stopping.Dispose();
+        try { serving.GetAwaiter().GetResult(); }
+        finally {
+            foreach (var client in clients.Keys) client.Dispose();
+            pending.CompleteAdding();
+            try { Task.WhenAll(handlers).GetAwaiter().GetResult(); }
+            finally { pending.Dispose(); stopping.Dispose(); }
+        }
     }
 }

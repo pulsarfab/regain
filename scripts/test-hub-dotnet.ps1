@@ -9,6 +9,9 @@ foreach ($architecture in 'x86', 'x64') {
     # Separate it so the second build cannot reuse the first bitness's DLL.
     dotnet build (Join-Path $repo 'tests/fixtures/hub-client-net48/HubClientFixture.csproj') -c Release -p:PlatformTarget=$architecture -p:IntermediateOutputPath="obj/hub-dotnet-$architecture/Release/" -o $buildDirectory
     if ($LASTEXITCODE) { throw "net48 $architecture fixture build failed" }
+    $bitness = if ($architecture -eq 'x86') { '32' } else { '64' }
+    & (Join-Path $buildDirectory 'Regain.Hub.Client.Fixture.exe') --http-scheduler $bitness
+    if ($LASTEXITCODE) { throw "net48 $architecture HTTP fixture scheduler isolation failed" }
     $temporary = Join-Path $repo ('artifacts/hub-dotnet-run-' + [guid]::NewGuid().ToString('N'))
     [IO.Directory]::CreateDirectory($temporary) | Out-Null
     try {
@@ -17,7 +20,6 @@ foreach ($architecture in 'x86', 'x64') {
         $config.revision = [guid]::NewGuid().ToString()
         $configPath = Join-Path $temporary 'native hub configuration.json'
         [IO.File]::WriteAllText($configPath, ($config | ConvertTo-Json -Depth 40), [Text.UTF8Encoding]::new($false))
-        $bitness = if ($architecture -eq 'x86') { '32' } else { '64' }
         & (Join-Path $buildDirectory 'Regain.Hub.Client.Fixture.exe') $executable $configPath $bitness
         if ($LASTEXITCODE) { throw "net48 $architecture hub fixture failed" }
     } finally {
