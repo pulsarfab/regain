@@ -683,6 +683,15 @@ async fn wheel_native_worker_publishes_preserved_arrays_and_shared_position_thro
         "ClientID=1&Connected=false",
     )
     .await;
+    // Disconnect retires the output immediately; its source lease is released
+    // by retained cleanup. Observe that cleanup rather than scheduler ordering.
+    tokio::time::timeout(Duration::from_secs(3), async {
+        while f.hub.source_snapshot(source).unwrap().lease_count != 1 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
     assert_eq!(f.hub.source_snapshot(source).unwrap().lease_count, 1);
     assert_eq!(
         f.ok("GET", "/api/v1/filterwheel/17/position", "ClientID=2")

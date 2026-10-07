@@ -2327,6 +2327,27 @@ unique acquisition ID. Old-generation completions cannot replace current state.
 An uncertain start/stop/abort retains the command fence and source lease until
 state is reconciled or explicitly reset; it cannot be replayed because a waiter
 disappears. Observed upstream activity cannot be adopted as a new owned exposure.
+The native RAW16 owner now maps those same property types from acknowledged core
+state. Connection validates sensor dimensions/advertised bins and refreshes
+initial controls/environment before publishing connected state. Missing controls,
+malformed values/ranges and unavailable metadata never become zero defaults.
+Optional calibration, heat-sink temperature, named gain/offset modes, progress,
+fast readout, pulse guiding and sub-exposures remain Unsupported where core
+provides no implementation. Uncooled cameras report absent cooling capabilities.
+The native owner does not claim StopExposure or asymmetric binning support.
+
+Native bin/ROI/RAW16 selection is local desired geometry, distinct from hardware
+acknowledgement. Individual setters preserve intermediate combinations and do not
+silently reset ROI when binning changes. Start atomically freezes that geometry,
+validates combined bounds/alignment and reserves payload memory before replacing
+an existing image. Geometry setters reject active work and uncertainty. Last
+exposure duration and UTC start come from the successfully published immutable
+core frame; changing next-capture geometry cannot rewrite them. Invalid/missing
+timestamps fail independently of known duration. The source adapter must preserve
+observation age when exposing cached environmental/control values; this owner
+read API does not establish freshness. Acknowledged native gain/offset setters,
+adapter/runtime wiring and the remaining camera gates are still required.
+
 The shared camera property/setting layer now implements 53 typed properties and
 13 standard setters in the source supervisor. It preserves booleans, Int32 values,
 finite numbers and budgeted text/flat string arrays. Gain and Offset use the

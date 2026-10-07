@@ -8,6 +8,29 @@ tagged or published. Changed cross-crate APIs require an unpublished version so
 Cargo package verification uses the new workspace packages.
 Last updated: 2026-10-06.
 
+Latest local camera checkpoint: native RAW16 typed property reads and desired
+bin/ROI settings reuse the shared CameraProperty/CameraSetting contract. Initial
+connection refreshes controls/environment before publication, capture freezes
+geometry atomically, and successful immutable frames supply last-exposure timing.
+Missing/invalid/unsupported facts are explicit errors, never invented values.
+Eighteen owner integration and four property unit cases pass with full Rust
+core/hub/Alpaca regressions, strict Rust 1.99 Clippy and Rust 1.89 all-target checks.
+Generated contracts, Node/seven schema checks, rebuilt-host NINA 228/228 and
+actual net48 x86/x64 fixtures also pass. Review is recorded in hub-review.md;
+this increment is local while preceding CI remains live.
+Native acknowledged gain/offset writes, adapters/config/runtime, recovery/budget
+wiring, all camera outputs, coordination and every original final gate remain.
+Camera setup choices stay disabled.
+
+Retained cooler checkpoint a92b8bd CI: push 37571649524 finishes with seven
+successes and a Windows initial focuser connection-reply failure. PR 37571654100
+has a macOS native-wheel lease-count failure; Windows remains live at this check.
+The wheel fixture now waits for bounded asynchronous lease cleanup rather than
+asserting immediate scheduler ordering. The Windows cause is unproved; shared
+failure tracing adds elapsed time without changing deadlines, retries or success
+criteria. The focused wheel case, NINA 228/228 and net48 x86/x64 pass locally;
+both corrections require new CI evidence. Windows is at installer validation.
+
 Native wheel metadata checkpoint 630b302 passes all eight jobs in both PR/push CI
 37536023962/37536015902, including Windows registered imports, packaging and
 installer acceptance. Reviewed wheel polling/runtime increments are pushed at
@@ -251,6 +274,8 @@ Acquisition supervision and shared properties/settings now pass thirty focused
 tests; binary/JSON Alpaca image inputs are implemented. The retained native owner
 and acknowledged SDK/direct cooler mailbox now pass local validation, preserving
 live targets across recovery and fencing publication after uncertain commands.
+Native RAW16 property mapping and desired bin/ROI selection also pass local
+regressions. Acknowledged native gain/offset commands are still required.
 Runtime integration,
 capability/recovery propagation, remaining camera adapters and
 frontend image transport remain unimplemented. Their contracts are recorded in
@@ -1391,6 +1416,22 @@ Publishing installers, plugin feeds, and releases follows the existing
 Keep existing device profiles and registrations compatible throughout migration.
 
 ## Progress log
+
+Latest property checkpoint (2026-10-06): native RAW16 properties use acknowledged
+core state and immutable frame timing. Desired symmetric bin/ROI settings preserve
+intermediate combinations, freeze atomically at capture admission and cannot
+change active work. Four property unit and eighteen production-worker simulation
+owner cases pass, including all shared properties on SDK/cooled direct cameras,
+uncooled capabilities, malformed metadata, missing timestamps, uncertainty and
+unchanged retained readers. Full Rust, strict Clippy/MSRV, generated contracts,
+Node and seven independent schema checks pass. The first schema invocation used
+system Python without jsonschema; the existing private schema venv passes. The
+initial 12/14 owner run exposed clamp fixtures rejecting the new initial refresh;
+they now accept the initial -10 target and reject only the intended later -15
+request. Fresh-host NINA 228/228 and real net48 x86/x64 fixtures pass with no build
+warnings; the reviewed checkpoint remains local while preceding CI is live.
+Next: acknowledge native
+gain/offset writes, then adapter/config/runtime and all original later gates.
 
 Latest camera owner checkpoint (2026-10-06): retained SDK/direct cooler commands
 share the capture engine and survive caller loss after dispatch. Pending work

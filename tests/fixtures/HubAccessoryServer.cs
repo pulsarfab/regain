@@ -196,7 +196,7 @@ internal class HubAccessoryServer : IDisposable
             await stream.WriteAsync(body, 0, body.Length, stopping.Token).ConfigureAwait(false);
             trace.Enqueue(operation + " replied code=" + code + " elapsedMs=" + started.ElapsedMilliseconds);
         } catch (Exception error) when (error is IOException or SocketException or ObjectDisposedException or OperationCanceledException) {
-            trace.Enqueue(operation + " failed " + error);
+            trace.Enqueue(operation + " failed elapsedMs=" + started.ElapsedMilliseconds + " " + error);
         }
         finally {
             trace.Enqueue(operation + " closed elapsedMs=" + started.ElapsedMilliseconds);

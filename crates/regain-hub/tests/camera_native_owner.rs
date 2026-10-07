@@ -5,6 +5,7 @@ use regain_hub::{
     camera::{
         image::{IMAGE_CHUNK_BYTES, ImageBudget, NATIVE_METADATA_BYTES},
         native_owner::{NativeCamera, NativeOperationKind},
+        properties::{CameraProperty as P, CameraSetting as S, CameraValue as V},
     },
     source::ErrorKind,
 };
@@ -106,6 +107,290 @@ async fn settled(owner: &NativeCamera, activity: &ActivityCounter) {
         snapshot.operation.is_none() && snapshot.cooling.is_none() && activity.active() == 0
     })
     .await;
+}
+
+#[tokio::test]
+async fn sdk_and_direct_native_properties_use_shared_types_and_frozen_completed_timing() {
+    for direct in [false, true] {
+        let (owner, _, activity, _) = camera_model(
+            direct,
+            json!({"instant":true}),
+            admission() * 2,
+            "ZWO ASI585MM Pro",
+        );
+        assert_eq!(
+            owner.read_property(P::Gain).unwrap_err().kind,
+            ErrorKind::Disconnected
+        );
+        owner.connect().await.unwrap();
+        assert!(owner.snapshot().geometry.is_some());
+        for &property in P::ALL {
+            let reading = owner.read_property(property);
+            let optional = matches!(
+                property,
+                P::ElectronsPerAdu
+                    | P::FastReadout
+                    | P::FullWellCapacity
+                    | P::Gains
+                    | P::HeatSinkTemperature
+                    | P::IsPulseGuiding
+                    | P::Offsets
+                    | P::PercentCompleted
+                    | P::SubExposureDuration
+            ) || (direct && matches!(property, P::BayerOffsetX | P::BayerOffsetY));
+            if optional {
+                assert_eq!(
+                    reading.unwrap_err().kind,
+                    ErrorKind::Unsupported,
+                    "{property:?}"
+                );
+            } else if matches!(property, P::LastExposureDuration | P::LastExposureStartTime) {
+                assert_eq!(
+                    reading.unwrap_err().kind,
+                    ErrorKind::Unavailable,
+                    "{property:?}"
+                );
+            } else {
+                assert!(reading.is_ok(), "{property:?}: {reading:?}");
+            }
+        }
+        assert_eq!(
+            owner.read_property(P::ImageReady).unwrap(),
+            V::Boolean { value: false }
+        );
+        assert_eq!(
+            owner.read_property(P::CanSetCcdTemperature).unwrap(),
+            V::Boolean { value: true }
+        );
+        assert_eq!(
+            owner.read_property(P::CanStopExposure).unwrap(),
+            V::Boolean { value: false }
+        );
+        assert_eq!(
+            owner.read_property(P::MaxAdu).unwrap(),
+            V::Integer { value: 65535 }
+        );
+        assert_eq!(
+            owner.read_property(P::ReadoutModes).unwrap(),
+            V::Strings {
+                value: vec!["RAW16".into()]
+            }
+        );
+        let id = owner.start(exposure(10_000)).unwrap();
+        let reader = owner.wait(id).await.unwrap();
+        settled(&owner, &activity).await;
+        assert_eq!(
+            owner.read_property(P::NumX).unwrap(),
+            V::Integer { value: 64 }
+        );
+        assert_eq!(
+            owner.read_property(P::ImageReady).unwrap(),
+            V::Boolean { value: true }
+        );
+        assert_eq!(
+            owner.read_property(P::LastExposureDuration).unwrap(),
+            V::Number { value: 0.01 }
+        );
+        let metadata: Value =
+            serde_json::from_slice(reader.native().unwrap().metadata_json()).unwrap();
+        assert_eq!(
+            owner.read_property(P::LastExposureStartTime).unwrap(),
+            V::Text {
+                value: metadata["startedUtc"].as_str().unwrap().into()
+            }
+        );
+        let timing = owner.read_property(P::LastExposureStartTime).unwrap();
+        owner.configure_geometry(S::NumX(72)).unwrap();
+        assert_eq!(
+            owner.read_property(P::NumX).unwrap(),
+            V::Integer { value: 72 }
+        );
+        assert_eq!(
+            owner.read_property(P::LastExposureStartTime).unwrap(),
+            timing
+        );
+        assert_eq!(reader.native().unwrap().exposure().width, 64);
+        owner.close().await.unwrap();
+        settled(&owner, &activity).await;
+        assert!(owner.snapshot().geometry.is_none());
+    }
+}
+
+#[tokio::test]
+async fn uncooled_camera_reports_missing_cooling_without_fabricated_values() {
+    let (owner, _, activity, _) = camera(true, json!({"instant":true}), admission() * 2);
+    owner.connect().await.unwrap();
+    assert_eq!(
+        owner.read_property(P::CanSetCcdTemperature).unwrap(),
+        V::Boolean { value: false }
+    );
+    assert_eq!(
+        owner.read_property(P::CanGetCoolerPower).unwrap(),
+        V::Boolean { value: false }
+    );
+    for property in [P::CoolerOn, P::CoolerPower, P::SetCcdTemperature] {
+        assert_eq!(
+            owner.read_property(property).unwrap_err().kind,
+            ErrorKind::Unsupported
+        );
+    }
+    owner.close().await.unwrap();
+    settled(&owner, &activity).await;
+}
+
+#[tokio::test]
+async fn symmetric_native_geometry_freezes_at_admission_and_rejects_invalid_capture_without_losing_image()
+ {
+    let (owner, _, activity, _) = camera(false, json!({"instant":false}), admission() * 2);
+    owner.connect().await.unwrap();
+    owner.configure_geometry(S::BinX(2)).unwrap();
+    assert_eq!(
+        owner.read_property(P::BinY).unwrap(),
+        V::Integer { value: 2 }
+    );
+    assert_eq!(
+        owner.read_property(P::NumX).unwrap(),
+        V::Integer { value: 960 },
+        "Binning does not silently replace desired ROI"
+    );
+    assert_eq!(
+        owner.start_configured(10_000, true).unwrap_err().kind,
+        ErrorKind::InvalidValue
+    );
+    assert_eq!(activity.active(), 0);
+    for setting in [
+        S::NumX(64),
+        S::NumY(64),
+        S::StartX(3),
+        S::StartY(1),
+        S::ReadoutMode(0),
+    ] {
+        owner.configure_geometry(setting).unwrap();
+    }
+    let before = serde_json::to_value(owner.snapshot().geometry).unwrap();
+    for setting in [
+        S::BinY(3),
+        S::BinX(0),
+        S::NumX(481),
+        S::NumY(-1),
+        S::StartX(480),
+        S::StartY(-1),
+        S::ReadoutMode(1),
+    ] {
+        assert_eq!(
+            owner.configure_geometry(setting).unwrap_err().kind,
+            ErrorKind::InvalidValue
+        );
+        assert_eq!(
+            serde_json::to_value(owner.snapshot().geometry).unwrap(),
+            before
+        );
+    }
+    for setting in [
+        S::Gain(100),
+        S::Offset(10),
+        S::FastReadout(false),
+        S::SubExposureDuration(0.0),
+    ] {
+        assert_eq!(
+            owner.configure_geometry(setting).unwrap_err().kind,
+            ErrorKind::Unsupported,
+            "Hardware writes cannot use local geometry admission"
+        );
+    }
+    let id = owner.start_configured(2_000_000, true).unwrap();
+    until(|| owner.snapshot().core.phase == "Exposing").await;
+    assert_eq!(
+        owner.read_property(P::CameraState).unwrap(),
+        V::Integer { value: 2 }
+    );
+    assert_eq!(
+        owner.read_property(P::ImageReady).unwrap(),
+        V::Boolean { value: false }
+    );
+    assert_eq!(
+        owner
+            .read_property(P::LastExposureDuration)
+            .unwrap_err()
+            .kind,
+        ErrorKind::Unavailable
+    );
+    assert_eq!(
+        owner.configure_geometry(S::NumX(72)).unwrap_err().kind,
+        ErrorKind::Busy
+    );
+    assert_eq!(
+        serde_json::to_value(owner.snapshot().geometry).unwrap(),
+        before
+    );
+    assert_eq!(owner.set_cooling(16, -15).await.unwrap(), -15);
+    assert_eq!(
+        owner.read_property(P::SetCcdTemperature).unwrap(),
+        V::Number { value: -15.0 }
+    );
+    let image = owner.wait(id).await.unwrap();
+    settled(&owner, &activity).await;
+    assert_eq!(
+        image.native().unwrap().exposure(),
+        &Exposure {
+            bin: 2,
+            x: 3,
+            y: 1,
+            microseconds: 2_000_000,
+            ..exposure(10_000)
+        }
+    );
+    owner.configure_geometry(S::NumX(65)).unwrap(); // Individual setter is valid; combined RAW16 alignment is not.
+    assert_eq!(
+        owner.start_configured(10_000, true).unwrap_err().kind,
+        ErrorKind::InvalidValue
+    );
+    assert_eq!(
+        owner.image().unwrap().bytes().as_ptr(),
+        image.bytes().as_ptr()
+    );
+    assert_eq!(
+        owner.read_property(P::LastExposureDuration).unwrap(),
+        V::Number { value: 2.0 }
+    );
+    assert_eq!(
+        owner.read_property(P::CameraState).unwrap(),
+        V::Integer { value: 0 }
+    );
+    owner.close().await.unwrap();
+    settled(&owner, &activity).await;
+}
+
+#[tokio::test]
+async fn malformed_native_initial_geometry_fails_connection_without_exposure_or_owned_leaks() {
+    for simulation in [
+        json!({"width":7}),
+        json!({"height":1}),
+        json!({"width":-1}),
+        json!({"width":2147483648i64}),
+        json!({"bins":[]}),
+        json!({"bins":[0]}),
+        json!({"bins":["1"]}),
+    ] {
+        let (owner, budget, activity, events) = camera(false, simulation, admission() * 2);
+        assert_eq!(
+            owner.connect().await.unwrap_err().kind,
+            ErrorKind::Unavailable
+        );
+        settled(&owner, &activity).await;
+        assert!(!owner.snapshot().connected);
+        assert!(owner.snapshot().geometry.is_none());
+        assert_eq!(budget.used_bytes(), 0);
+        assert!(
+            !events
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|line| line.contains("Starting exposure"))
+        );
+        owner.close().await.unwrap();
+        settled(&owner, &activity).await;
+    }
 }
 
 #[tokio::test]
@@ -257,7 +542,7 @@ async fn reset_retires_queued_cooling_and_cannot_acknowledge_a_later_generation(
 async fn uncertain_idle_cooler_blocks_publication_and_restarts_until_explicit_reset() {
     let (owner, budget, activity, _) = camera(
         false,
-        json!({"instant":true,"clampControl":16,"clampMinimum":0}),
+        json!({"instant":true,"clampControl":16,"clampMinimum":-10}),
         admission() * 2,
     );
     owner.connect().await.unwrap();
@@ -282,6 +567,18 @@ async fn uncertain_idle_cooler_blocks_publication_and_restarts_until_explicit_re
         ErrorKind::Uncertain
     );
     assert_eq!(owner.image().err().unwrap().kind, ErrorKind::Uncertain);
+    assert_eq!(
+        owner.read_property(P::ImageReady).unwrap_err().kind,
+        ErrorKind::Uncertain
+    );
+    assert_eq!(
+        owner.read_property(P::CameraState).unwrap(),
+        V::Integer { value: 5 }
+    );
+    assert_eq!(
+        owner.configure_geometry(S::NumX(64)).unwrap_err().kind,
+        ErrorKind::Uncertain
+    );
     assert_eq!(
         owner.start(exposure(10_000)).unwrap_err().kind,
         ErrorKind::Uncertain
@@ -310,7 +607,7 @@ async fn uncertain_idle_cooler_blocks_publication_and_restarts_until_explicit_re
 async fn uncertain_capture_cooler_retains_cleanup_and_never_publishes_or_retries() {
     let (owner, budget, activity, events) = camera(
         false,
-        json!({"instant":false,"clampControl":16,"clampMinimum":0}),
+        json!({"instant":false,"clampControl":16,"clampMinimum":-10}),
         admission() * 2,
     );
     owner.connect().await.unwrap();

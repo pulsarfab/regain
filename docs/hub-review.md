@@ -4548,3 +4548,58 @@ vendor drivers were activated. Native typed properties/settings, adapters/config
 runtime, host budget/recovery allowances, binary frontend IPC, all camera outputs,
 coordination and every original acceptance/final gate remain open. Camera creation
 stays disabled; these owner primitives alone are not frontend camera support.
+
+## 2026-10-06: native typed properties and desired geometry
+
+Reviewed native RAW16 mapping against the shared 53-property type/validation
+contract, core sensor/control capabilities and immutable completed-frame metadata.
+Missing controls and malformed types/ranges remain Unsupported or Unavailable;
+there are no fabricated zero/calibration/progress values. Cooler enable requires
+an exact Boolean control value. Bayer offsets reflect the four actual patterns;
+monochrome cameras reject Bayer properties. Optional core-absent properties remain
+Unsupported. Native StopExposure/asymmetric binning are not advertised.
+
+Connection now validates dimensions/bins and refreshes initial controls and
+environment before publishing connected state. Failure retains cleanup ownership.
+Private clamp fixtures initially rejected that new initial refresh: retain the
+12/14 failure log. Their minimum is now -10, allowing the initial target, while
+the later -15 request still proves mismatch/uncertainty without replay.
+
+Desired geometry has private fields and no deserialization bypass. Initial
+geometry selects an advertised bin rather than assuming bin one. Individual
+setters preserve intermediate ROI combinations and do not silently replace ROI
+on bin changes. Combined bounds/alignment are validated at StartExposure under
+the same state lock that freezes geometry and reserves memory. Busy/uncertain
+setters cannot change it. Hardware settings cannot use this local-only API.
+Duration and UTC start are taken from the successful immutable core frame, not
+next-capture settings or an invented frontend timestamp. Invalid/missing UTC
+fails independently of known duration. Cached property reads remain usable during
+capture, but adapter integration must preserve their true observation age.
+
+Four property unit cases and eighteen production-worker simulation owner cases
+pass, including SDK/cooled direct and uncooled direct cameras, all shared property
+types, geometry admission, frozen readers/timing, absent controls, malformed sensor
+metadata and retained uncertainty. Full core/hub/Alpaca Rust regressions, strict
+Rust 1.99 Clippy, Rust 1.89 all-target checks, generated-contract freshness,
+formatting, Node checks, seven independent schema checks, rebuilt-host NINA
+228/228 and actual net48 x86/x64 fixtures pass with no build warnings. The first
+schema command used system Python without jsonschema; the existing private schema
+venv passes. Logs: artifacts/hub-camera-native-properties-*.log. No physical
+equipment or installed vendor drivers were activated.
+
+Retained a92b8bd CI failures: push 37571649524 finishes with seven successes and
+a Windows initial focuser connection-reply failure. Its trace records an aborted
+header write; the cause is unproved. Shared fixture failure tracing now includes
+elapsed time, without changes to production code, deadlines, retries or expected
+outcomes. PR 37571654100 fails macOS at an immediate source-lease-count assertion
+after native-wheel disconnect. SourceLease release is retained/asynchronous; the
+fixture now waits for cleanup using the existing three-second test bound. The
+targeted wheel regression, NINA and both net48 clients pass. The PR's Windows job
+remains live at installer checks; preserve it and require new CI for these changes.
+CI logs: artifacts/hub-camera-native-cooling-ci-push-failed.log and
+artifacts/hub-camera-native-cooling-ci-pr-macos-job.log.
+
+Native acknowledged gain/offset commands, remaining adapters/config/runtime,
+host-wide recovery/budget wiring, binary frontend IPC, all camera outputs,
+coordination, documentation and every original acceptance/final gate remain open.
+Camera creation stays disabled and PR #21 stays draft.

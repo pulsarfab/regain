@@ -3,6 +3,8 @@
 use super::{
     image::{CameraImage, ImageBudget},
     native_capture::{NativeCaptureError, capture_admitted},
+    native_properties::{NativeGeometry, NativeProperties},
+    properties::{CameraProperty, CameraSetting, CameraValue},
 };
 use crate::{
     activity::{Activity, ActivityCounter},
@@ -52,6 +54,7 @@ pub struct NativeCameraSnapshot {
     pub connected: bool,
     pub operation: Option<NativeOperation>,
     pub cooling: Option<NativeCoolingOperation>,
+    pub geometry: Option<NativeGeometry>,
     pub acquisition: Option<Uuid>,
     pub image_ready: bool,
     pub error: Option<SourceError>,
@@ -75,6 +78,7 @@ struct State {
     connected: bool,
     pending: Option<Pending>,
     cooling: Option<PendingCooling>,
+    geometry: Option<NativeGeometry>,
     completed: Option<Completed>,
     last_acquisition: Option<Uuid>,
     error: Option<SourceError>,
@@ -251,6 +255,7 @@ impl NativeCamera {
                 connected: false,
                 pending: None,
                 cooling: None,
+                geometry: None,
                 completed: None,
                 last_acquisition: None,
                 error: None,
@@ -268,6 +273,7 @@ impl NativeCamera {
             connected: state.connected,
             operation: state.pending.as_ref().map(|p| p.operation.clone()),
             cooling: state.cooling.as_ref().map(|p| p.operation.clone()),
+            geometry: state.geometry,
             acquisition: state.last_acquisition,
             image_ready: state.connected
                 && state.pending.is_none()
@@ -322,6 +328,7 @@ impl NativeCamera {
                 state.generation = generation;
                 state.error = None;
                 state.completed = None;
+                state.geometry = None;
                 state.last_acquisition = None;
                 state.pending = Some(Pending {
                     operation: NativeOperation {
@@ -341,7 +348,18 @@ impl NativeCamera {
                     if !owner.current(generation, id) {
                         return;
                     }
-                    let result = session.connect(&token).await.map_err(|e| core_error(&e));
+                    let result = async {
+                        session.connect(&token).await.map_err(|e| core_error(&e))?;
+                        let geometry = NativeGeometry::initial(&session.snapshot().info)?;
+                        // Publish acknowledged initial controls/environment, not
+                        // the worker's desired/default values from its open reply.
+                        session.refresh(&token).await.map_err(|e| core_error(&e))?;
+                        Ok::<_, SourceError>(geometry)
+                    }
+                    .await;
+                    if result.is_err() {
+                        session.close().await;
+                    }
                     if !owner.current(generation, id) {
                         session.close().await;
                         return;
@@ -353,7 +371,10 @@ impl NativeCamera {
                         {
                             state.pending = None;
                             state.connected = result.is_ok();
-                            state.error = result.err();
+                            match result {
+                                Ok(geometry) => state.geometry = Some(geometry),
+                                Err(error) => state.error = Some(error),
+                            }
                         }
                     }
                     owner.changed.notify_waiters();
@@ -393,6 +414,26 @@ impl NativeCamera {
     /// an older completed image; a successful start clears it before returning.
     pub fn start(self: &Arc<Self>, exposure: Exposure) -> Result<Uuid, SourceError> {
         let mut state = self.state.lock().unwrap();
+        self.start_locked(&mut state, exposure)
+    }
+    /// Freeze the currently configured ROI atomically with capture admission.
+    pub fn start_configured(
+        self: &Arc<Self>,
+        microseconds: u64,
+        dark: bool,
+    ) -> Result<Uuid, SourceError> {
+        let mut state = self.state.lock().unwrap();
+        let exposure = state
+            .geometry
+            .ok_or_else(disconnected)?
+            .exposure(microseconds, dark);
+        self.start_locked(&mut state, exposure)
+    }
+    fn start_locked(
+        self: &Arc<Self>,
+        state: &mut State,
+        exposure: Exposure,
+    ) -> Result<Uuid, SourceError> {
         if !state.connected {
             return Err(disconnected());
         }
@@ -414,6 +455,7 @@ impl NativeCamera {
         let generation = state.generation;
         let token = CancellationToken::new();
         let work = self.work(generation, id);
+        state.geometry = Some(NativeGeometry::from_exposure(&exposure));
         state.pending = Some(Pending {
             operation: NativeOperation {
                 id,
@@ -460,6 +502,52 @@ impl NativeCamera {
             owner.changed.notify_waiters();
         });
         Ok(id)
+    }
+    /// Cached native properties remain readable while the retained core owner
+    /// captures. The source adapter must preserve observation freshness.
+    pub fn read_property(&self, property: CameraProperty) -> Result<CameraValue, SourceError> {
+        let state = self.state.lock().unwrap();
+        if !state.connected {
+            return Err(disconnected());
+        }
+        let core = self.status.lock().unwrap().clone();
+        NativeProperties {
+            core: &core,
+            geometry: state.geometry.ok_or_else(disconnected)?,
+            operation: state.pending.as_ref().map(|p| p.operation.kind),
+            image: state.completed.as_ref().map(|p| &p.image),
+            image_ready: state.pending.is_none()
+                && state.cooling.is_none()
+                && state.completed.is_some()
+                && state.error.is_none(),
+            error: state.error.as_ref(),
+        }
+        .read(property)
+    }
+    /// Local bin/ROI/RAW16 selection only. Hardware settings must use the
+    /// acknowledged core command path, never a desired-state queue as an ACK.
+    pub fn configure_geometry(&self, setting: CameraSetting) -> Result<(), SourceError> {
+        let mut state = self.state.lock().unwrap();
+        if !state.connected {
+            return Err(disconnected());
+        }
+        if let Some(error) = state
+            .error
+            .as_ref()
+            .filter(|e| e.kind == ErrorKind::Uncertain)
+        {
+            return Err(error.clone());
+        }
+        if state.pending.is_some() || state.cooling.is_some() {
+            return Err(busy());
+        }
+        let info = self.status.lock().unwrap().info.clone();
+        let geometry = state
+            .geometry
+            .ok_or_else(disconnected)?
+            .configured(setting, &info)?;
+        state.geometry = Some(geometry);
+        Ok(())
     }
     /// The outer supervisor authorizes the source/capture owner. This method
     /// retains one acknowledged target/enable command through caller loss.
@@ -724,6 +812,7 @@ impl NativeCamera {
         state.generation = generation;
         state.connected = false;
         state.completed = None;
+        state.geometry = None;
         state.last_acquisition = None;
         state.error = None;
         state.pending = Some(Pending {
