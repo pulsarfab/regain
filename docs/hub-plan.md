@@ -20,8 +20,11 @@ hub/Alpaca regressions pass. Strict Rust 1.99 lint, Rust 1.89 compatibility,
 generated-contract freshness, Node and nine schema checks pass. The rebuilt
 host passes NINA 274/274 and the full actual net48 x86/x64 suite, including image,
 deadline, source-sharing, typed ASCOM and setup fixtures with warnings denied.
-Explicit simulator commit 4f94bcf and this lifecycle correction remain local
-while preceding e51eaaf PR/push workflows 37606180612/37606175254 are live.
+Preceding e51eaaf workflows are terminal: push 37606175254 passes all eight jobs;
+PR 37606180612 has seven successes and only the macOS ARM ownership failure.
+Explicit simulator 4f94bcf and lifecycle correction 47be4d2 are now ready to push
+to the same draft PR #21, with a fresh CI requirement. Subsequent virtual camera
+work remains local and is not covered by these checks.
 Device actor/source drain remains separate and still precedes listener release.
 Do not close the CI or any original milestone gate from these local results.
 

@@ -39,8 +39,11 @@ the rebuilt host; artifacts/hub-ipc-drain-net48.log passes the complete actual
 x86/x64 suite with warnings denied. These include SDK/direct/explicit camera
 images, timing, typed ASCOM, source-sharing and editor fixtures. All local test
 processes are complete. Explicit simulator 4f94bcf and this correction stay local
-while e51eaaf workflows 37606180612/37606175254 are still live. A fresh CI run must
-verify the correction on macOS ARM; no failed job is cancelled or rerun here.
+until e51eaaf workflows finish. Both are now terminal: push 37606175254 passes all
+eight jobs, while PR 37606180612 has seven successes and only the macOS ARM
+ownership failure. Simulator 4f94bcf and correction 47be4d2 are ready for the same
+draft PR. A fresh CI run must verify the correction on macOS ARM; no failed job
+is cancelled or rerun here. Subsequent virtual camera work is separate and local.
 Keep the single PR draft and all original acceptance gates open.
 
 ## 2026-10-07: explicit camera simulator
