@@ -2596,9 +2596,31 @@ identities, descriptor, byte count and limits. It rejects a different binary
 descriptor before pixel allocation. Receiver allocations use an explicit budget;
 invalid manifests/headers, partial/trailing bodies, cancellation and deadlines
 never publish a partial image. Its positive caller deadline cannot exceed 300
-seconds. There is no automatic retry. Managed image readers and actual
-Alpaca/NINA/ASCOM camera publication remain required; scalar camera metadata and
-this Rust transport alone do not enable public camera choices.
+seconds. There is no automatic retry.
+
+The shared managed reader runs on .NET 8 and .NET Framework 4.8. DownloadAsync
+requires an existing attachment and live control client, checks their instance,
+host, revision and client identities, then verifies the separate pipe's owner and
+protected ACL using the same rules as the control connection. Its positive
+overall deadline is at most 300 seconds. Handshake, manifest, header, each pixel
+chunk and final EOF also have five-second bounds. It closes only this reader on
+failure or cancellation. Exact header transactions, offset, numeric types, rank
+and dimensions must match before pixel reservation; metadata extensions are not
+accepted on this private stream.
+
+HubImageBudget accounts for retained encoded pixels in the frontend process,
+with a default shared 512-MiB ceiling. It is separate from the host budget and
+does not account for CLR/COM object arrays or subsequent numeric conversions.
+Reservation precedes pixel allocation. A completed HubCameraImage handle pins
+immutable storage; Pin shares it without another allocation of pixels or budget
+charge. CopyTo copies at most 64 KiB and never exposes the backing array.
+Disposing one handle leaves other readers valid. The last reader clears storage
+and releases its reservation; abandoned handles are finalized. Allocation
+failure cannot strand a reference or reservation. Failed/cancelled partial
+downloads clear their pixels and return capacity before reporting failure.
+
+Actual Alpaca/NINA/ASCOM camera publication remains required; scalar camera
+metadata and these shared transports do not enable public camera choices.
 
 ### Native camera supervision timing and retirement
 

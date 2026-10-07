@@ -3,6 +3,57 @@
 This records local review and tests for the single hub PR. Passing a foundation
 test does not imply that a frontend, transport, or hardware gate has passed.
 
+## 2026-10-07: shared managed image reader
+
+Reviewed the .NET 8/net48 implementation against the Rust manifest, binary
+descriptor, protected endpoint and image ownership contract. The separate pipe
+borrows the existing control client's identities; it does not create equipment
+leases, reconnect, capture, abort or replay. Both instance and host identities,
+revision, advertised operation and capability are checked before transfer.
+Header validation precedes reservation and allocation. Exact little-endian
+numeric bytes are retained; rank-three one-plane data is not collapsed.
+
+One atomic frontend budget accounts for complete and partial encoded buffers.
+Reader pins share storage and charge once; bounded copies never expose the
+backing array. Disposal and copying serialize per handle, while storage lifetime
+uses independent references. The last reference clears pixels before releasing
+capacity. Review corrected reservation rollback if its handle allocation fails,
+allocation before pin-reference acquisition, partially constructed finalization,
+and disposal of an image when outer cancellation wins just after the download.
+The budget excludes CLR/COM conversions; actual camera providers must separately
+bound those allocations. No camera publication or setup capability is enabled.
+
+Local evidence:
+
+- artifacts/hub-managed-image-host.log: 31 focused .NET 8 cases pass. The shared
+  private peer covers all nine numeric types, ranks two/three including one plane,
+  three packed Int32 forms, full receiver capacity and 24 malformed transfers.
+  Invalid manifest/header cases use a one-byte budget to prove Protocol precedes
+  allocation rather than a misleading Busy result.
+- artifacts/hub-managed-image-nina.log: full NINA 261/261 passes with warnings
+  denied. The two real Rust host cases use mandatory explicit SDK/direct
+  simulation, unique temporary configurations and an absent SDK. Protected pipes,
+  multi-chunk UInt16 wire spelling, repeated image identity/bytes, two source
+  leases, usable control clients, capacity rejection, retained pins across a new
+  capture and stale acquisition rejection pass.
+- artifacts/hub-managed-image-net48-final.log: real x86/x64 shared codec and
+  SDK/direct host fixtures pass, along with the complete existing managed client
+  and typed ASCOM output regressions. Builds have zero warnings/errors.
+- artifacts/hub-managed-image-reviewed-focused.log: all 31 cases pass after
+  strengthening cancellation/deadline checks to first receive nonzero partial
+  pixels and explicitly verifying an abandoned pin is collected without freeing
+  a live sibling. artifacts/hub-managed-image-reviewed-net48.log passes these
+  strengthened cases in real x86/x64 processes with warnings denied.
+
+No installed vendor driver or physical equipment is activated. The private host
+fixture kills only the Process it started, never an attachment-provided PID.
+These results do not close camera publication, operation timing, remaining
+inputs, conformance, interactive or physical acceptance gates.
+
+PR CI 37596918826 is terminal with eight successful jobs at edc5a59; push CI
+37596912932 is terminal with six successes and the two separately diagnosed
+timeout failures. New image/diagnostic changes still require fresh CI.
+
 ## 2026-10-07: dedicated frontend image stream
 
 Reviewed the binary path against existing ownership and budget rules. An image

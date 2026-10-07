@@ -14,6 +14,17 @@ internal static class Program
     {
         uint? candidate = null;
         try {
+            if (args.Length == 3 && args[0] == "--camera-image") {
+                if (IntPtr.Size * 8 != int.Parse(args[2])) throw new InvalidOperationException("Wrong camera fixture bitness");
+                await HubCameraHostFixture.Run(args[1], false);
+                await HubCameraHostFixture.Run(args[1], true);
+                return 0;
+            }
+            if (args.Length == 2 && args[0] == "--image-codec") {
+                if (IntPtr.Size * 8 != int.Parse(args[1])) throw new InvalidOperationException("Wrong image fixture bitness");
+                await HubImageFixture.RunAll();
+                return 0;
+            }
             if (args.Length == 2 && args[0] == "--http-scheduler") {
                 if (IntPtr.Size * 8 != int.Parse(args[1])) throw new InvalidOperationException("Wrong scheduler fixture bitness");
                 HttpSchedulerFixture.Run();

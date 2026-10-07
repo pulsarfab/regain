@@ -11,6 +11,8 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="../HubAccessoryServer.cs" Link="HubAccessoryServer.cs" />
+    <Compile Include="../HubImageFixture.cs" Link="HubImageFixture.cs" />
+    <Compile Include="../HubCameraHostFixture.cs" Link="HubCameraHostFixture.cs" />
     <ProjectReference Include="../../../src/Regain.Rotator/Regain.Rotator.csproj" />
     <ProjectReference Include="../../../src/Regain.Hub.ASCOM/Regain.Hub.ASCOM.csproj" />
   </ItemGroup>

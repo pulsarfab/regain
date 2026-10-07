@@ -8,7 +8,34 @@ tagged or published. Changed cross-crate APIs require an unpublished version so
 Cargo package verification uses the new workspace packages.
 Last updated: 2026-10-07.
 
-Current increment: bounded Rust frontend image IPC is implemented and locally
+Current increment: the shared managed camera image reader is implemented for
+.NET 8 and .NET Framework 4.8. It opens a separate verified user-protected pipe
+using the existing control client's exact identities, validates the manifest and
+44-byte binary header before reserving pixels, and publishes only a complete
+immutable image. One process budget accounts for retained encoded buffers;
+independent handles share a pin without copying or exposing the backing array.
+Cancellation, truncation and deadlines clear partial pixels and release only the
+image reader. Review corrected allocation-failure accounting and the outer
+cancellation boundary. Private peers exercise all nine types, rank-three
+one-plane images, packed Int32, 24 malformed transfers, capacity, concurrent
+readers, abandoned pins and actual partial-buffer cleanup. Real Rust host
+fixtures use explicit SDK/direct simulations with an absent SDK: protected-pipe
+multi-chunk images, repeated reads, independent leases, retained pins across a
+new acquisition and stale acquisition rejection pass. Full NINA 261/261 and
+actual net48 x86/x64 regressions pass; final strengthened partial/abandoned-pin
+fixtures also pass in .NET 8 and both net48 architectures with warnings denied.
+No physical equipment or installed vendor driver is activated.
+Frontend operation timing, remaining camera inputs and all three camera
+publications remain next; all original coordination, acceptance, documentation
+and final merge gates stay open. Public camera choices remain gated.
+
+PR run 37596918826 is now terminal and passes all eight jobs at edc5a59.
+Push run 37596912932 remains failed with the two distinct timeout cases below;
+the diagnostic changes need fresh CI and are not established root-cause fixes.
+The image reader and three preceding reviewed image/diagnostic commits are ready
+to publish together to the same draft PR #21; fresh CI must cover this head.
+
+Previous increment: bounded Rust frontend image IPC is implemented and locally
 reviewed/validated. A separate authenticated image stream
 borrows an existing control client's output lease and pins its exact completed
 source/generation/acquisition. It issues no equipment command. The host reserves
