@@ -3,6 +3,25 @@
 This records local review and tests for the single hub PR. Passing a foundation
 test does not imply that a frontend, transport, or hardware gate has passed.
 
+## 2026-10-07: OFP2 script follows HTTP method admission
+
+8ab8611 portable jobs pass the Rust regression and then fail test-ofp2.py at PUT
+Brightness. Brightness is read-only, so the reviewed common admission layer now
+rejects that HTTP verb with 404; the old script expected HTTP 200 with ASCOM
+Unsupported. The fixture now requires exactly 404 and checks brightness and
+calibrator state are unchanged. Supported CalibratorOn/Off, invalid brightness
+ranges, unknown actions and recognised optional commands retain their existing
+semantic assertions. Production code and deadlines are unchanged.
+
+The complete private default simulation run passes:
+`python scripts/test-ofp2.py --bin-dir target/debug --report artifacts/hub-ofp2-protocol-contract.json`.
+Evidence is artifacts/hub-ofp2-protocol-contract.log and its JSON report. It
+exercises native brightness/on/off, open/close/halt/resume, actual HTTP routes,
+discovery/identity, independent clients, reconnect, persistent profiles and origin
+checks. No --hardware or serial argument was supplied. Preserve the Linux and
+Mac ARM initial CI logs. Fresh CI is required; push Windows' separate MaxBinY
+proxy preflight failure remains open and occurred before pixel-fault injection.
+
 ## 2026-10-07: native FITS metadata and idle camera commands
 
 Reviewed native publication against the same FITS timestamp contract as the

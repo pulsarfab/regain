@@ -202,7 +202,18 @@ def main():
                     api('calibratoron', {'Brightness': invalid}, error=0x401)
                 api('action', {'Action':'bad','Parameters':''}, error=0x40c)
                 api('commandblind', {'Command':'STOP','Raw':False}, error=0x400)
-                api('brightness', {'Brightness':128}, error=0x400)
+                # Brightness is read-only: the shared protocol layer rejects
+                # this unsupported HTTP verb before equipment dispatch.
+                before = (api('brightness'), api('calibratorstate'))
+                try:
+                    request('/api/v1/covercalibrator/0/brightness',
+                            {'ClientID':1, 'ClientTransactionID':42, 'Brightness':128}, 'PUT')
+                except urllib.error.HTTPError as error:
+                    assert error.code == 404, error.code
+                    error.close()
+                else:
+                    raise AssertionError('PUT Brightness must return HTTP 404')
+                assert (api('brightness'), api('calibratorstate')) == before
                 report['alpaca'] = exercise(call, 'Alpaca CoverCalibrator')
                 assert api('coverstate') in (1, 3)
                 for client in (1, 2):

@@ -8,7 +8,18 @@ tagged or published. Changed cross-crate APIs require an unpublished version so
 Cargo package verification uses the new workspace packages.
 Last updated: 2026-10-07.
 
-Current increment: normalize native camera LastExposureStartTime to implicit-UTC
+Current increment: reviewed OFP2 CI fixture correction for the shared HTTP
+admission layer. PUT to read-only Brightness must return 404 before dispatch;
+the private script now checks that response and unchanged brightness/calibrator
+state instead of expecting an ASCOM unsupported-method payload. The complete
+default simulation exercise passes in artifacts/hub-ofp2-protocol-contract.log,
+including native commands, HTTP commands, discovery, identity, ownership,
+reconnect and origin validation. No hardware flag or serial was supplied.
+Keep the Windows proxy preflight failure open pending reproduction/diagnostics.
+Native FITS/idle-command correction 1808823 is committed locally; keep reviewed
+increments local while the preceding PR run remains active. Preserve original gates.
+
+Previous increment: normalize native camera LastExposureStartTime to implicit-UTC
 FITS across the shared frontends, preserving the core frame's original metadata.
 Focused native owner/source/capture and library tests pass, including exact UTC
 equivalence, fractional precision, leap-second spelling and malformed/non-UTC
