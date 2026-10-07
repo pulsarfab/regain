@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 import queue
 import subprocess
+import struct
 import tempfile
 import threading
 import time
@@ -47,7 +48,7 @@ def registered_fixture():
         "[Reflection.AssemblyName]::GetAssemblyName($env:REGAIN_COM_FIXTURE_DLL).FullName",
     ], env={**os.environ, "REGAIN_COM_FIXTURE_DLL": str(FIXTURE)}, text=True).strip()
     assert identity.startswith("Regain.Hub.COM.Fixture,")
-    progids = [PROGID] + [PROGID + "." + name for name in ("Switch", "Safety", "Weather", "Other", "Own", "Focuser", "Rotator", "Wheel", "Panel")]
+    progids = [PROGID] + [PROGID + "." + name for name in ("Switch", "Safety", "Weather", "Other", "Own", "Focuser", "Rotator", "Wheel", "Panel", "Camera")]
     classids = [CLSID, SELF_CLSID]
     paths = [f"Software\\Classes\\{name}" for name in progids] + [f"Software\\Classes\\CLSID\\{classid}" for classid in classids]
     views = (winreg.KEY_WOW64_32KEY, winreg.KEY_WOW64_64KEY)
@@ -120,6 +121,17 @@ class Worker:
         try:
             for line in self.process.stdout:
                 self.responses.put(line)
+                # Only the image operation acknowledges a descriptor followed
+                # by binary bytes. Read exactly its finite body and trailer so
+                # embedded newline bytes cannot corrupt subsequent scalar frames.
+                envelope = json.loads(line)
+                result = envelope.get("result", {})
+                descriptor = result.get("value")
+                if isinstance(descriptor, dict) and descriptor.get("order") == "ascom":
+                    sizes = {"int16": 2, "int32": 4, "double": 8, "single": 4, "uInt64": 8, "byte": 1, "int64": 8, "uInt16": 2, "uInt32": 4}
+                    length = descriptor["width"] * descriptor["height"] * (descriptor["planes"] or 1) * sizes[descriptor["transmissionType"]]
+                    assert length <= 512 * 1024 * 1024
+                    self.responses.put(self.process.stdout.read(44 + length + 8))
         finally:
             self.responses.put(None)
 
@@ -203,6 +215,87 @@ class Worker:
 
 
 class ImportTests(unittest.TestCase):
+    def test_camera_binary_all_types_ranks_and_scalar_framing(self):
+        types = [("int16", "h", lambda n: -n % -30000), ("int32", "i", lambda n: -n),
+                 ("double", "d", lambda n: n + .25), ("single", "f", lambda n: n + .5),
+                 ("uInt64", "Q", lambda n: 2**63 + n), ("byte", "B", lambda n: n % 256),
+                 ("int64", "q", lambda n: -(2**63) + n), ("uInt16", "H", lambda n: 40000 + n % 20000),
+                 ("uInt32", "I", lambda n: 2**31 + n)]
+        for architecture in self.each():
+            with Worker(architecture, device="camera", settings={"version": 4, "imageWidth": 4, "imageHeight": 3}) as worker:
+                self.assertEqual(worker.connect()["method"], "async")
+                worker.send("write", "startexposure", {"Duration": .01, "Light": True})
+                count = 0
+                for name, encoding, pixel in types:
+                    for planes in (0, 1, 3):
+                        with self.subTest(architecture=architecture, type=name, planes=planes):
+                            worker.set(imageType=name, imagePlanes=planes, imageLowerBounds=True)
+                            reply = worker.send("image")
+                            self.assertIsNone(reply["error"], reply)
+                            self.assertEqual(reply["value"], {"width": 4, "height": 3, "planes": planes or None,
+                                "elementType": name, "transmissionType": name, "order": "ascom"})
+                            body = worker.responses.get(timeout=5)
+                            fields = struct.unpack("<11I", body[:44])
+                            self.assertEqual(fields, (1, 0, worker.id, 0, 44, types.index((name, encoding, pixel)) + 1,
+                                                      types.index((name, encoding, pixel)) + 1, 3 if planes else 2, 4, 3, planes))
+                            expected = b"".join(struct.pack("<" + encoding, pixel(n + 1)) for n in range(12 * (planes or 1)))
+                            self.assertEqual(body[44:-8], expected)
+                            self.assertEqual(body[-8:], b"RGNIMAGE")
+                            count += 1
+                            self.assertEqual(worker.send("read", "name")["value"], "COM fixture")
+                self.assertEqual(worker.count("ImageArray"), count)
+                self.assertEqual(worker.count("StartExposure"), 1)
+                self.assertEqual(worker.count("StopExposure"), 0)
+                self.assertEqual(worker.count("AbortExposure"), 0)
+                self.assertTrue(all(item["apartment"] == "STA" for item in worker.trace()))
+
+    def test_camera_types_setters_errors_and_connection_ownership(self):
+        for architecture in self.each():
+            for version in (2, 3, 4):
+                with self.subTest(architecture=architecture, version=version), Worker(architecture, device="camera", settings={"version": version}) as worker:
+                    info = worker.connect()
+                    self.assertEqual(info["method"], "async" if version == 4 else "legacy")
+                    self.assertEqual(worker.count("Connect"), int(version == 4))
+                    for member, value in [("binx", 2), ("gain", 1), ("offset", 1), ("cooleron", True), ("setccdtemperature", -15), ("subexposureduration", .01)]:
+                        name = {"binx": "BinX", "gain": "Gain", "offset": "Offset", "cooleron": "CoolerOn",
+                                "setccdtemperature": "SetCCDTemperature", "subexposureduration": "SubExposureDuration"}[member]
+                        reply = worker.send("write", member, {name: value})
+                        self.assertIsNone(reply["error"], reply)
+                        self.assertEqual(worker.send("read", member)["value"], value)
+                    for member in ("gains", "offsets", "readoutmodes"):
+                        self.assertEqual(worker.send("read", member)["value"], ["Low", "High"] if member != "readoutmodes" else ["Normal", "Fast"])
+                    self.assertEqual(worker.send("image")["error"]["kind"], "unavailable")
+                    self.assertEqual(worker.count("ImageArray"), 0)
+                    for member, parameters in [("binx", {"BinX": 65536}), ("binx", {"BinX": 0}), ("gain", {"Gain": True}),
+                            ("cooleron", {"CoolerOn": 1}), ("setccdtemperature", {"SetCCDTemperature": -274}),
+                            ("startexposure", {"Duration": -1, "Light": True}), ("startexposure", {"Duration": .1, "Light": 1}),
+                            ("stopexposure", {"Extra": 1})]:
+                        self.assertEqual(worker.send("write", member, parameters)["error"]["kind"], "invalidValue")
+                    self.assertEqual(worker.count("BinX.set"), 1)
+                    self.assertEqual(worker.count("StartExposure"), 0)
+                    worker.set(cameraCameraState=6, cameraImageReady="true", cameraGains=[1])
+                    for member in ("camerastate", "imageready", "gains"):
+                        self.assertEqual(worker.send("read", member)["error"]["kind"], "unavailable")
+                    worker.set(argumentFaultMember="CoolerOn.set")
+                    self.assertEqual(worker.send("write", "cooleron", {"CoolerOn": False})["error"]["kind"], "uncertain")
+                    self.assertEqual(worker.send("write", "abortexposure")["error"]["kind"], "uncertain")
+                    self.assertEqual(worker.count("AbortExposure"), 0)
+                    worker.disconnect()
+                    self.assertEqual(worker.count("Dispose"), 0)
+
+    def test_camera_invalid_arrays_and_upstream_image_errors_stay_framed(self):
+        for architecture in self.each():
+            with Worker(architecture, device="camera", settings={"version": 4, "imageWidth": 2, "imageHeight": 3}) as worker:
+                worker.connect()
+                worker.send("write", "startexposure", {"Duration": .01, "Light": True})
+                for settings in ({"imageRank": 1}, {"imageRank": 4}, {"imageRank": 2, "imageType": "invalid"}, {"imageRank": 2, "imageWidth": 0}):
+                    worker.set(**settings)
+                    self.assertEqual(worker.send("image")["error"]["kind"], "unavailable")
+                    self.assertEqual(worker.send("read", "name")["value"], "COM fixture")
+                worker.set(faultMember="ImageArray", faultCode=hresult(0x80040400))
+                self.assertEqual(worker.send("image")["error"], {"kind": "unsupported", "code": hresult(0x80040400)})
+                self.assertEqual(worker.send("read", "name")["value"], "COM fixture")
+
     def test_panel_legacy_modern_states_nonblocking_commands_and_connection_versions(self):
         for architecture in self.each():
             for version in (1, 2):
@@ -428,7 +521,7 @@ class ImportTests(unittest.TestCase):
 
     def test_typed_accessory_borrowed_connections_and_alias_denial(self):
         for architecture in self.each():
-            for device, versions, suffix in (("rotator", (3, 4), "Rotator"), ("filterwheel", (2, 3), "Wheel"), ("covercalibrator", (1, 2), "Panel")):
+            for device, versions, suffix in (("rotator", (3, 4), "Rotator"), ("filterwheel", (2, 3), "Wheel"), ("covercalibrator", (1, 2), "Panel"), ("camera", (2, 3, 4), "Camera")):
                 for version in versions:
                     with self.subTest(architecture=architecture, device=device, version=version), Worker(architecture, device=device, policy="externallyManaged", settings={"version": version, "initialConnected": True}) as worker:
                         self.assertFalse(worker.connect()["ownsConnection"])
@@ -799,7 +892,7 @@ if __name__ == "__main__":
                     "REGAIN_HUB_COM_FIXTURE_DIRECTORY": fixture_directory, "REGAIN_HUB_COM_FIXTURE_PROGID": PROGID,
                     "REGAIN_HUB_COM_FIXTURE_HELPER": str(ROOT / "artifacts/hub-com-helper/Regain.Hub.Shared.Helper.Fixture.exe")}
                 environment.pop("REGAIN_HUB_COM_FIXTURE_STATE", None)
-                tests = subprocess.run(["cargo", "test", "-p", "regain-hub", "--test", "com", "--locked", "--", "--test-threads=1"],
+                tests = subprocess.run(["cargo", "test", "-j2", "-p", "regain-hub", "--test", "com", "--locked", "--", "--test-threads=1"],
                     cwd=ROOT, env=environment)
                 if tests.returncode:
                     raise SystemExit(tests.returncode)

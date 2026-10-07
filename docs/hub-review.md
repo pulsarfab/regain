@@ -3,6 +3,65 @@
 This records local review and tests for the single hub PR. Passing a foundation
 test does not imply that a frontend, transport, or hardware gate has passed.
 
+## 2026-10-07: Windows camera inputs and finite worker image transport
+
+Reviewed the existing isolated COM worker, source factory, camera supervisor and
+image accounting before extending them. Camera V2/V3 must use legacy ownership;
+V4 uses asynchronous connection methods. No vendor COM object moves off the
+message-pumping STA. Only the detached numeric array crosses to the protocol
+thread, where bounded BlockCopy preserves [X,Y,plane] and nonzero lower bounds.
+The worker releases its array after transfer; it does not cache or redownload it.
+
+The shared accessory transport now supports one typed acknowledgement followed
+by a caller-validated finite body under its existing process/cancellation guard.
+The parent validates exact device/request/connection state and typed descriptor
+before reserving/allocating pixels, checks the finite ImageBytes header and
+trailer, and publishes only the complete immutable image. Errors are structured
+with no binary body; HRESULTs remain sanitized. Capacity, truncation, corruption
+or cancellation retire the stream and release partial reservations. This path
+does not inherit native recovery or replacement-exposure policy.
+
+Review corrections: nullable image values must still be explicitly present;
+duplicate descriptor fields must fail typed deserialization before Value mapping;
+long array size checks must precede multiplication; detached worker arrays must
+be cleared before waiting for another request. Camera and wheel string-list
+validation now shares rank/count/UTF-8 admission and handles ArrayList/nonzero
+array bounds by enumeration. Shared managed UTC validation preserves the Rust
+contract's UTC suffixes, fractional precision and leap-second acceptance.
+
+Local registered tests exercise both bitnesses, all nine numeric types and ranks,
+multi-chunk arrays, scalar framing after images, V2/V3/V4 ownership, capabilities,
+cooling, setters, malformed arrays and upstream errors. Parent fixtures verify
+one shared acquisition/image, retained pixels after new capture/shutdown, full
+budget rejection, hung getter, cancellation after a real partial allocation,
+wrong binary header/trailer, and an applied setter with a lost reply fencing
+both clients without replay or Abort. Private fixtures never activate installed
+equipment drivers.
+
+Final validation passes: all 33 worker cases and 24 registered parent cases
+(including five camera cases) in actual x86/x64, full core/hub/Alpaca/ZWO/worker
+Rust regressions with all 77 hub unit cases, final guarded-transport process
+fixture, strict Rust 1.99 Clippy and Rust 1.89 checks across all five affected
+crates/targets, formatting, diff checks, generated-contract freshness, Node and
+nine schema checks. The rebuilt host passes NINA 283/283 with warnings denied
+and the full actual net48 x86/x64 suite, including protected image/timing and
+existing ASCOM output/setup/simulation regressions. Eight new managed cases
+check property-key parity and UTC timestamps. No production failure was hidden
+by fixture retries or fallback activation.
+
+Evidence logs under `artifacts/`: `hub-camera-com-final-2.log`,
+`hub-camera-com-rust.log`, `hub-camera-com-final-transport.log`,
+`hub-camera-com-final-clippy-2.log`, `hub-camera-com-final-msrv.log`,
+`hub-camera-com-exe.log`, `hub-camera-com-nina.log`, `hub-camera-com-net48.log`,
+`hub-camera-com-contract.log`, `hub-camera-com-node.log` and
+`hub-camera-com-schema.log`. The initial parent fixture compilation needed the
+existing CameraSession status generation accessor and an error extraction that
+does not require CameraImage to implement Debug; production APIs were unchanged.
+
+All three camera publications/setup, full controlled PulseGuide support for
+advertising proxies, original coordination/acceptance/documentation and final
+merge audit remain required. Do not close their gates from these import tests.
+
 ## 2026-10-07: COM framing startup and terminal-exit boundaries
 
 PR CI 37609737316 fails only the Windows job: the malformed UTF-8 x86 fixture

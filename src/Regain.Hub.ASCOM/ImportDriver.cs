@@ -11,7 +11,7 @@ namespace Regain.Hub.ASCOM;
 /// One object, exclusively called on the worker's message-pumping STA. No driver
 /// reflection member is accepted directly from a caller; tables below whitelist
 /// supported typed members. Camera arrays require a separate protocol.
-internal sealed class ImportDriver {
+internal sealed partial class ImportDriver {
     private enum Phase { Activate, Version, Check, Open, WaitOpen, Verify, Ready, WaitClose, Closed, Failed }
     private readonly Options options;
     private readonly int sta = Thread.CurrentThread.ManagedThreadId;
@@ -23,6 +23,13 @@ internal sealed class ImportDriver {
     private bool uncertain;
     private bool writeUncertain;
     private long lastId;
+    internal ComCameraImage? PendingImage { get; private set; }
+    internal ComCameraImage? TakeImage() {
+        AssertSta();
+        var image = PendingImage;
+        PendingImage = null;
+        return image;
+    }
 
     public ImportDriver(Options options) { this.options = options; }
     private static Guid RegisteredClass(string progId)
@@ -42,6 +49,7 @@ internal sealed class ImportDriver {
         AssertSta();
         if (request.Id <= lastId) throw new InvalidOperationException(); // terminal replay/ordering violation
         lastId = request.Id;
+        PendingImage = null;
         object? value = null;
         object? error = null;
         var mutation = request.Operation is "write" or "refresh";
@@ -50,6 +58,14 @@ internal sealed class ImportDriver {
                 case "connectStep": value = ConnectStep(); break;
                 case "disconnectStep": value = DisconnectStep(); break;
                 case "read": RequireReady(); value = Read(request.Member, request.Parameters); break;
+                case "image":
+                    RequireReady();
+                    if (options.DeviceType != "camera") throw new Unsupported();
+                    if (!Boolean(Get("ImageReady"))) throw new BadValue();
+                    var pixels = Get("ImageArray"); // Exactly one upstream getter; never recapture.
+                    try { PendingImage = new ComCameraImage(pixels); }
+                    catch (ArgumentException) { throw new BadValue(); }
+                    value = PendingImage.Descriptor; break;
                 case "write":
                     RequireReady();
                     if (writeUncertain) throw new UncertainCommand();
@@ -97,7 +113,7 @@ internal sealed class ImportDriver {
             case Phase.Version:
                 try { version = Integer(Get("InterfaceVersion"), 1, short.MaxValue); }
                 catch (Exception error) when (Classify(Unwrap(error), false) == "unsupported") { version = null; }
-                modern = version >= (options.DeviceType switch { "observingconditions" or "covercalibrator" => 2, "focuser" or "rotator" => 4, _ => 3 });
+                modern = version >= (options.DeviceType switch { "observingconditions" or "covercalibrator" => 2, "focuser" or "rotator" or "camera" => 4, _ => 3 });
                 phase = Phase.Check; break;
             case Phase.Check:
                 var connected = Boolean(Get("Connected"));
@@ -168,6 +184,8 @@ internal sealed class ImportDriver {
     private void Set(string name, object value) => Invoke(name, BindingFlags.SetProperty, value);
 
     private object Read(string member, JsonElement parameters) {
+        if (options.DeviceType == "camera" && CameraProperty(member) is HubCameraProperty cameraProperty)
+            return ReadCamera(cameraProperty, parameters);
         var common = new Dictionary<string, string>(StringComparer.Ordinal) {
             ["name"] = "Name", ["description"] = "Description", ["driverinfo"] = "DriverInfo", ["driverversion"] = "DriverVersion"
         };
@@ -204,16 +222,7 @@ internal sealed class ImportDriver {
                     // floating values into signed offsets.
                     if (result is not Array array || array.Rank != 1 || array.Length is < 1 or > HubFilterWheelProtocol.MaximumSlots) throw new BadValue();
                     if (property == HubFilterWheelProperty.Names) {
-                        var names = new List<string>(array.Length); long bytes = 0;
-                        var encoding = new System.Text.UTF8Encoding(false,true);
-                        foreach (var item in array) {
-                            if (item is not string name) throw new BadValue();
-                            try {bytes += encoding.GetByteCount(name);}
-                            catch (System.Text.EncoderFallbackException) {throw new BadValue();}
-                            if (bytes > HubFilterWheelProtocol.MaximumTextBytes) throw new BadValue();
-                            names.Add(name);
-                        }
-                        value = names.ToArray();
+                        value = ReadStrings(array,HubFilterWheelProtocol.MaximumSlots);
                     } else {
                         var offsets = new List<int>(array.Length);
                         foreach (var item in array) offsets.Add(Int32(item));
@@ -293,6 +302,7 @@ internal sealed class ImportDriver {
     }
 
     private object? Write(string member, JsonElement parameters) {
+        if (options.DeviceType == "camera") return WriteCamera(member, parameters);
         if (options.DeviceType == "covercalibrator") {
             if (member == "calibratoron") {
                 Fields(parameters, "Brightness");

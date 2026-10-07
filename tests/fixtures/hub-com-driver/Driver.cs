@@ -69,6 +69,11 @@ public sealed class Driver {
             var bytes = System.Text.Encoding.UTF8.GetBytes(settings.GetProperty("rawFrame").GetString() + "\n");
             using var output = Console.OpenStandardOutput();
             output.Write(bytes, 0, bytes.Length);
+            if (settings.TryGetProperty("rawBytesHex", out var hexadecimal)) {
+                var text = hexadecimal.GetString()!;
+                var binary = Enumerable.Range(0,text.Length / 2).Select(index => Convert.ToByte(text.Substring(index * 2,2),16)).ToArray();
+                output.Write(binary,0,binary.Length);
+            }
             output.Flush();
         }
         if (settings.TryGetProperty("hangMember", out var hang) && hang.GetString() == member) Thread.Sleep(600000);
@@ -217,4 +222,109 @@ public sealed class Driver {
     public void Refresh() { Before("Refresh"); }
     public void SetupDialog() { Before("SetupDialog"); throw new InvalidOperationException("Must never be called by polling"); }
     public void Dispose() { Before("Dispose"); connected = false; }
+    private readonly Dictionary<string, object> cameraValues = new(StringComparer.Ordinal);
+    private bool cameraReady;
+    private double cameraDuration;
+    private int captures;
+    private object CameraValue(string name, object fallback) {
+        Before(name);
+        if (Settings().TryGetProperty("camera" + name, out var value)) return value.ValueKind switch {
+            JsonValueKind.True => true, JsonValueKind.False => false, JsonValueKind.String => value.GetString()!,
+            JsonValueKind.Number => value.TryGetInt32(out var integer) ? (object)integer : value.GetDouble(),
+            JsonValueKind.Array => value.EnumerateArray().Select(item => item.ValueKind == JsonValueKind.String ? (object)item.GetString()! : item.GetInt32()).ToArray(),
+            _ => new object()
+        };
+        return cameraValues.TryGetValue(name, out var stored) ? stored : fallback;
+    }
+    private void CameraSet(string name, object value) {
+        Before(name + ".set", value); cameraValues[name] = value;
+        Record("Applied." + name,value);
+        if (Setting("cameraLostReply",false)) Thread.Sleep(600000);
+    }
+    public object BayerOffsetX { get => CameraValue("BayerOffsetX", 0); }
+    public object BayerOffsetY { get => CameraValue("BayerOffsetY", 0); }
+    public object BinX { get => CameraValue("BinX", (short)1); set => CameraSet("BinX", value); }
+    public object BinY { get => CameraValue("BinY", (short)1); set => CameraSet("BinY", value); }
+    public object CameraState { get => CameraValue("CameraState", 0); }
+    public object CameraXSize { get => CameraValue("CameraXSize", 320); }
+    public object CameraYSize { get => CameraValue("CameraYSize", 240); }
+    public object CanAbortExposure { get => CameraValue("CanAbortExposure", true); }
+    public object CanAsymmetricBin { get => CameraValue("CanAsymmetricBin", true); }
+    public object CanFastReadout { get => CameraValue("CanFastReadout", true); }
+    public object CanGetCoolerPower { get => CameraValue("CanGetCoolerPower", true); }
+    public object CanPulseGuide { get => CameraValue("CanPulseGuide", true); }
+    public object CanSetCCDTemperature { get => CameraValue("CanSetCCDTemperature", true); }
+    public object CanStopExposure { get => CameraValue("CanStopExposure", true); }
+    public object CCDTemperature { get => CameraValue("CCDTemperature", -10.0); }
+    public object CoolerOn { get => CameraValue("CoolerOn", false); set => CameraSet("CoolerOn", value); }
+    public object CoolerPower { get => CameraValue("CoolerPower", 12.5); }
+    public object ElectronsPerADU { get => CameraValue("ElectronsPerADU", 0.5); }
+    public object ExposureMin { get => CameraValue("ExposureMin", 0.001); }
+    public object ExposureMax { get => CameraValue("ExposureMax", 600.0); }
+    public object ExposureResolution { get => CameraValue("ExposureResolution", 0.001); }
+    public object FastReadout { get => CameraValue("FastReadout", false); set => CameraSet("FastReadout", value); }
+    public object FullWellCapacity { get => CameraValue("FullWellCapacity", 20000.0); }
+    public object Gain { get => CameraValue("Gain", (short)0); set => CameraSet("Gain", value); }
+    public object GainMin { get => CameraValue("GainMin", -10); }
+    public object GainMax { get => CameraValue("GainMax", 100); }
+    public object Gains { get => CameraValue("Gains", new System.Collections.ArrayList { "Low", "High" }); }
+    public object HasShutter { get => CameraValue("HasShutter", true); }
+    public object HeatSinkTemperature { get => CameraValue("HeatSinkTemperature", 15.0); }
+    public object ImageReady { get => CameraValue("ImageReady", cameraReady); }
+    public object IsPulseGuiding { get => CameraValue("IsPulseGuiding", false); }
+    public object LastExposureDuration { get => CameraValue("LastExposureDuration", cameraDuration); }
+    public object LastExposureStartTime { get => CameraValue("LastExposureStartTime", "2026-10-07T01:02:03.1234567Z"); }
+    public object MaxADU { get => CameraValue("MaxADU", 65535); }
+    public object MaxBinX { get => CameraValue("MaxBinX", 4); }
+    public object MaxBinY { get => CameraValue("MaxBinY", 4); }
+    public object NumX { get => CameraValue("NumX", 320); set => CameraSet("NumX", value); }
+    public object NumY { get => CameraValue("NumY", 240); set => CameraSet("NumY", value); }
+    public object Offset { get => CameraValue("Offset", 0); set => CameraSet("Offset", value); }
+    public object OffsetMin { get => CameraValue("OffsetMin", 0); }
+    public object OffsetMax { get => CameraValue("OffsetMax", 100); }
+    public object Offsets { get => CameraValue("Offsets", new[]{"Low", "High"}); }
+    public object PercentCompleted { get => CameraValue("PercentCompleted", 0); }
+    public object PixelSizeX { get => CameraValue("PixelSizeX", 3.76); }
+    public object PixelSizeY { get => CameraValue("PixelSizeY", 3.76); }
+    public object ReadoutMode { get => CameraValue("ReadoutMode", (short)0); set => CameraSet("ReadoutMode", value); }
+    public object ReadoutModes { get => CameraValue("ReadoutModes", new System.Collections.ArrayList { "Normal", "Fast" }); }
+    public object SensorName { get => CameraValue("SensorName", "Private COM camera"); }
+    public object SensorType { get => CameraValue("SensorType", 0); }
+    public object SetCCDTemperature { get => CameraValue("SetCCDTemperature", 0.0); set => CameraSet("SetCCDTemperature", value); }
+    public object StartX { get => CameraValue("StartX", 0); set => CameraSet("StartX", value); }
+    public object StartY { get => CameraValue("StartY", 0); set => CameraSet("StartY", value); }
+    public object SubExposureDuration { get => CameraValue("SubExposureDuration", 0.0); set => CameraSet("SubExposureDuration", value); }
+
+    public void StartExposure(double duration, bool light) { Before("StartExposure", new { duration, light }); cameraDuration = duration; captures++; cameraReady = true; }
+    public void StopExposure() { Before("StopExposure"); cameraReady = true; }
+    public void AbortExposure() { Before("AbortExposure"); cameraReady = false; }
+    public object ImageArray {
+        get {
+            Before("ImageArray");
+            var settings = Settings();
+            var name = settings.TryGetProperty("imageType", out var selected) ? selected.GetString() : "int32";
+            var type = name switch { "int16" => typeof(short), "int32" => typeof(int), "double" => typeof(double), "single" => typeof(float),
+                "uInt64" => typeof(ulong), "byte" => typeof(byte), "int64" => typeof(long), "uInt16" => typeof(ushort), "uInt32" => typeof(uint), _ => typeof(string) };
+            var width = settings.TryGetProperty("imageWidth", out var x) ? x.GetInt32() : Convert.ToInt32(cameraValues.TryGetValue("NumX", out var nx) ? nx : 320);
+            var height = settings.TryGetProperty("imageHeight", out var y) ? y.GetInt32() : Convert.ToInt32(cameraValues.TryGetValue("NumY", out var ny) ? ny : 240);
+            var planes = settings.TryGetProperty("imagePlanes", out var z) ? z.GetInt32() : 0;
+            var dimensions = planes == 0 ? new[]{width,height} : new[]{width,height,planes};
+            if (settings.TryGetProperty("imageRank", out var rank) && rank.GetInt32() != dimensions.Length) dimensions = Enumerable.Repeat(2, rank.GetInt32()).ToArray();
+            var lower = Setting("imageLowerBounds",false) ? -7 : 0;
+            var array = Array.CreateInstance(type, dimensions, Enumerable.Repeat(lower,dimensions.Length).ToArray());
+            if (dimensions.Length is not (2 or 3)) return array;
+            for (var a = 0; a < width; a++) for (var b = 0; b < height; b++) for (var c = 0; c < Math.Max(1,planes); c++) {
+                var index = (a * height + b) * Math.Max(1,planes) + c + captures;
+                object value = name switch {
+                    "int16" => (short)(-index % 30000), "int32" => -index, "double" => index + 0.25,
+                    "single" => (float)(index + 0.5), "uInt64" => (1UL << 63) + (ulong)index,
+                    "byte" => (byte)(index % 256), "int64" => long.MinValue + index,
+                    "uInt16" => (ushort)(40000 + index % 20000), "uInt32" => 0x80000000U + (uint)index, _ => "bad"
+                };
+                array.SetValue(value, planes == 0 ? new[]{a+lower,b+lower} : new[]{a+lower,b+lower,c+lower});
+            }
+            return array;
+        }
+    }
+
 }

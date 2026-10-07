@@ -22,6 +22,8 @@ use serde_json::{Value, json};
 use std::{collections::BTreeMap, path::PathBuf, sync::Arc, time::Duration};
 use uuid::Uuid;
 
+#[path = "support/camera_com.rs"]
+mod camera_com;
 #[path = "support/covercalibrator_com.rs"]
 mod covercalibrator_com;
 
@@ -171,9 +173,8 @@ fn preparation_checks_architecture_and_class_without_activation() {
     if let SourceBackend::Com { device_type, .. } = &mut camera.backend {
         *device_type = DeviceType::Camera;
     }
-    assert!(
-        matches!(ComBackend::new(&camera, &f.native, Vec::new()), Err(e) if e.kind == ErrorKind::Unsupported)
-    );
+    assert!(ComBackend::new(&camera, &f.native, Vec::new()).is_ok());
+    assert_eq!(f.count("Switch", "Activate"), 0);
     let missing = NativeRuntime {
         cameras: None,
         directory: PathBuf::from("nonexistent-com-helper-directory"),

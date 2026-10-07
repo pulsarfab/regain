@@ -2753,3 +2753,49 @@ before its first poll retires without opening equipment.
 These guarantees are exercised with private fixtures and explicit production
 worker simulations. They do not enable camera frontend outputs or establish
 interactive, conformance or physical-device acceptance.
+
+### Windows camera imports
+
+Camera inputs reuse the existing x86/x64 `Regain.Hub.ASCOM` process, independent
+process guard and message-pumping STA. Activation, scalar properties, settings,
+Start/Stop/Abort and the single ImageArray getter run on that STA. Camera V2/V3
+use legacy connection ownership; V4 uses asynchronous Connect/Disconnect.
+Externally managed connections are borrowed and never closed by Regain. Driver
+HRESULTs remain structured and sanitized; unknown mutations fence later writes.
+There is no second camera import executable or vendor SDK dependency.
+
+`image` is a distinct protocol-1 operation without member/parameters. A successful
+ordinary outer acknowledgement contains a strict ImageDescriptor, followed by a
+finite 44-byte ImageBytes header, exactly the descriptor's pixels, and the eight
+ASCII bytes `RGNIMAGE`. The binary client transaction is the positive request ID
+masked to 31 bits; server transaction is zero. The receiver validates the full
+64-bit ID, device/connection identity, descriptor, exact binary header and trailer
+before publication or returning to scalar framing. Repeated/missing/unknown
+descriptor fields are rejected before allocation. Error acknowledgements have
+explicit null value and no binary body. An unavailable ImageReady never invokes
+ImageArray. No arbitrary Action/Command or reflection member is exposed.
+
+The worker detaches one numeric SAFEARRAY returned by ImageArray, preserves its
+ASCOM [X,Y,plane] ordering and rank, and copies at most 64 KiB at a time. All nine
+ImageBytes numeric types, rank-two mono, rank-three one-plane/RGB and nonzero
+SAFEARRAY lower bounds retain their bytes. Empty, unsupported-type/rank or
+over-512-MiB arrays fail. The detached array is released after transfer rather
+than cached in the worker. Rust reserves the shared image budget before its
+pixel allocation. One process request guard spans acknowledgement and body;
+capacity rejection, malformed/truncated transfer, timeout and cancellation retire
+the worker and release partial reservations. Structured upstream image errors
+retain their HRESULT and leave scalar framing usable.
+
+The ordinary acquisition supervisor owns the imported image getter. Sibling
+outputs read the same immutable image rather than downloading again; old pins
+remain charged after a later acquisition or host shutdown. An imported camera
+does not gain native SDK/direct recovery, replacement exposures or retained-frame
+reread promises. Shared managed property keys match generated Rust metadata;
+managed validators also preserve the upstream UTC forms accepted by Rust. Bounded string-list
+admission is shared with filter-wheel imports.
+
+Camera frontend publication/setup and full standard-command coverage remain
+separate gates. In particular, PulseGuide capability can be observed upstream;
+its shared controlled command and frontend implementation must be completed
+before publishing a camera that advertises it. Private registered fixtures do
+not establish installed-driver, conformance or physical-camera acceptance.

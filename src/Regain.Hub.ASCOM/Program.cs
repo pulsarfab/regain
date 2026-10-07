@@ -35,14 +35,19 @@ internal static class Program {
             while (ReadFrame(input) is byte[] frame) {
                 using var document = JsonDocument.Parse(frame, new JsonDocumentOptions { MaxDepth = 32 });
                 var request = Request.Parse(document.RootElement);
-                var result = dispatcher.Invoke(() => driver.Execute(request));
+                var result = dispatcher.Invoke(() => {
+                    var reply = driver.Execute(request);
+                    return (Reply: reply, Image: driver.TakeImage());
+                });
                 // A structured, sanitized inner error stays inside an acknowledged
                 // outer frame so the existing Rust accessory transport preserves it.
-                var bytes = JsonSerializer.SerializeToUtf8Bytes(new { ok = true, result });
+                var bytes = JsonSerializer.SerializeToUtf8Bytes(new { ok = true, result = result.Reply });
                 if (bytes.Length >= MaxResponseBytes) throw new InvalidDataException();
                 output.Write(bytes, 0, bytes.Length);
                 output.WriteByte((byte)'\n');
                 output.Flush();
+                result.Image?.WriteTo(output, request.Id);
+                result.Image = null;
             }
         } catch {
             // Malformed framing is terminal. Do not resynchronize a corrupt stream
@@ -85,7 +90,7 @@ internal sealed class Options {
             || !values.TryGetValue("--connection-policy", out var policy)
             || !values.TryGetValue("--bitness", out var bitness)) throw new ArgumentException();
         if (string.IsNullOrWhiteSpace(progId) || progId.Length > 200 || progId != progId.Trim()
-            || progId.Any(char.IsControl) || !new[] { "switch", "safetymonitor", "observingconditions", "focuser", "rotator", "filterwheel", "covercalibrator" }.Contains(type)
+            || progId.Any(char.IsControl) || !new[] { "switch", "safetymonitor", "observingconditions", "focuser", "rotator", "filterwheel", "covercalibrator", "camera" }.Contains(type)
             || !new[] { "managed", "externallyManaged" }.Contains(policy)
             || bitness != (Environment.Is64BitProcess ? "x64" : "x86")) throw new ArgumentException();
         Guid[] denied = [];
@@ -112,7 +117,7 @@ internal sealed class Request {
             || root.GetProperty("protocol").GetInt32() != 1 || root.GetProperty("id").GetInt64() <= 0)
             throw new InvalidDataException();
         var operation = root.GetProperty("operation").GetString() ?? throw new InvalidDataException();
-        if (!new[] { "connectStep", "disconnectStep", "read", "write", "refresh" }.Contains(operation))
+        if (!new[] { "connectStep", "disconnectStep", "read", "write", "refresh", "image" }.Contains(operation))
             throw new InvalidDataException();
         var member = root.TryGetProperty("member", out var item) ? item.GetString() ?? "" : "";
         var parameters = root.TryGetProperty("parameters", out var value) ? value.Clone() : default;

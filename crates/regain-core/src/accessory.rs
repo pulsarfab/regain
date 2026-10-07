@@ -1,11 +1,12 @@
 //! Shared client for the newline-JSON accessory workers in `regain-device`.
-//! Camera workers keep their separate binary transport and recovery supervisor.
+//! Native camera workers keep their separate transport/recovery supervisor. COM
+//! imports can append a finite binary body under the same process request guard.
 use crate::process::ProcessGuard;
 use anyhow::{Context, Result};
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
-use std::{fmt, time::Duration};
+use std::{fmt, future::Future, pin::Pin, time::Duration};
 use tokio::{
     io::{AsyncBufRead, AsyncBufReadExt, AsyncWriteExt, BufReader},
     process::{Child, ChildStdin, ChildStdout},
@@ -132,6 +133,60 @@ impl AccessoryWorker {
             .await
             .unwrap_or(Err(AccessoryError::Timeout))
             .map_err(Into::into)
+    }
+    /// One acknowledged frame followed by a caller-defined finite binary body.
+    /// The same process/cancellation guard spans both; a rejected header, partial
+    /// body, failed allocation, timeout or dropped future retires the stream.
+    /// The callback must consume and validate the entire body before succeeding.
+    pub async fn request_typed_with_stream<T, R, F>(
+        &mut self,
+        request: Value,
+        deadline: Duration,
+        body: F,
+    ) -> Result<R>
+    where
+        T: DeserializeOwned,
+        F: for<'a> FnOnce(
+            T,
+            &'a mut BufReader<ChildStdout>,
+        ) -> Pin<Box<dyn Future<Output = Result<R>> + Send + 'a>>,
+    {
+        let bytes = encode_request(request)?;
+        if self.input.is_none() {
+            return Err(AccessoryError::Disconnected.into());
+        }
+        let operation = async {
+            let mut guard = PendingRequest {
+                child: &mut self.child,
+                input: &mut self.input,
+                armed: true,
+            };
+            guard
+                .input
+                .as_mut()
+                .unwrap()
+                .write_all(&bytes)
+                .await
+                .map_err(|_| AccessoryError::Transport)?;
+            let bytes = read_response(&mut self.output).await?;
+            let header = match decode_typed_response(&bytes) {
+                Ok(header) => header,
+                Err(error) => {
+                    if matches!(error, AccessoryError::CommandFailed(_)) {
+                        guard.armed = false;
+                    }
+                    return Err(error.into());
+                }
+            };
+            let result = body(header, &mut self.output).await;
+            if result.is_ok() {
+                guard.armed = false;
+            }
+            result
+        };
+        tokio::time::timeout(deadline, operation)
+            .await
+            .unwrap_or_else(|_| Err(AccessoryError::Timeout.into()))
     }
     /// Retire a stream whose outstanding request may have been cancelled.
     pub fn reset(&mut self) {

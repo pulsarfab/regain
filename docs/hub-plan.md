@@ -8,6 +8,29 @@ tagged or published. Changed cross-crate APIs require an unpublished version so
 Cargo package verification uses the new workspace packages.
 Last updated: 2026-10-07.
 
+Current increment: Windows Camera imports reuse the existing x86/x64 isolated
+STA worker and shared process transport. Strict scalar properties/settings and
+Start/Stop/Abort preserve typed values, HRESULTs and uncertainty. V2/V3 connection
+ownership is legacy; V4 is asynchronous. A distinct finite binary image operation
+retrieves one numeric SAFEARRAY, preserves all nine types and rank/lower bounds,
+copies bounded chunks and validates a typed descriptor, exact ImageBytes header
+and trailer before publication. One cancellation guard spans frame/body; host
+budget rejection, partial/corrupt transfers and hung downloads release pixels and
+retire the worker without replay. Ordinary camera supervision shares images,
+leases, settings and generation fences between outputs; old pins retain budget.
+Shared managed camera property metadata matches the generated Rust contract;
+camera/wheel string lists reuse bounded UTF-8 admission. No new executable, SDK
+or hardware activation is added. All 33 private worker cases and 24 registered
+parent cases pass in actual x86/x64, including five camera parent cases. Final
+five-crate Rust regressions (77 hub unit cases), strict Rust 1.99 lint, Rust 1.89
+compatibility, generated-contract freshness, Node and nine schema checks pass.
+The rebuilt host passes NINA 283/283 and the full actual net48 x86/x64 suite with
+warnings denied. Eight managed cases check generated property keys and UTC times.
+Camera publication/setup through all three frontends remains next. Before
+publishing a proxy with CanPulseGuide, add its shared controlled command and
+frontend implementation; observing the upstream capability is not command support.
+Every original coordination, acceptance, documentation and merge gate stays open.
+
 CI follow-up: ec52cc2 PR Windows run 37609737316 passes Rust and NINA 274/274,
 then fails one cold x86 malformed-frame fixture at its three-second process-exit
 deadline. The log does not distinguish startup delay from shutdown delay; do not
@@ -1764,6 +1787,8 @@ Conformance and broader acceptance stay open.
 
 - [ ] Specify camera buffer lifetime, image transport, capability passthrough, and
   acquisition ownership before enabling camera proxies.
+- [ ] Complete shared controlled PulseGuide and its frontend implementations
+  before publishing proxy cameras that advertise that upstream capability.
 - [ ] Run relevant ASCOM/Alpaca conformance checks and multi-client failure tests.
 - [ ] Migrate existing camera recovery configuration metadata without changing its
   saved behavior or claiming proxy cameras support retained-frame rereads.

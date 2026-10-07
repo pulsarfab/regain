@@ -1,6 +1,10 @@
 //! Private Windows COM workers. No COM object, STA or blocking vendor call lives
 //! in the Rust host; cancellation retires the worker through shared transport.
 use crate::{
+    camera::image::{
+        CameraImage, IMAGEBYTES_HEADER_BYTES, ImageBudget, ImageDescriptor, ImageOrder,
+        ImageReadError, read_imagebytes_matching,
+    },
     config::{Bitness, ConnectionPolicy, DeviceType, SourceBackend, SourceConfig},
     native::NativeRuntime,
     sampling::{PropertyPoll, SampleRequest},
@@ -13,7 +17,7 @@ use regain_core::accessory::{AccessoryError, AccessoryWorker};
 use serde::{Deserialize, Deserializer};
 use serde_json::{Value, json};
 use std::{path::PathBuf, process::Stdio, time::Duration};
-use tokio::{process::Command, time::Instant};
+use tokio::{io::AsyncReadExt, process::Command, time::Instant};
 
 pub fn available_architectures(runtime: &NativeRuntime) -> Vec<Bitness> {
     if !cfg!(windows) {
@@ -76,20 +80,6 @@ impl ComBackend {
         if !cfg!(windows) {
             return Err(unsupported(
                 "COM sources require Windows; use an exported Alpaca source on other systems",
-            ));
-        }
-        if !matches!(
-            device_type,
-            DeviceType::Switch
-                | DeviceType::SafetyMonitor
-                | DeviceType::ObservingConditions
-                | DeviceType::Focuser
-                | DeviceType::Rotator
-                | DeviceType::FilterWheel
-                | DeviceType::CoverCalibrator
-        ) {
-            return Err(unsupported(
-                "This COM worker does not support the selected device class yet",
             ));
         }
         if prog_id.trim().is_empty()
@@ -231,68 +221,29 @@ impl ComBackend {
                 return Err(transport_error(write));
             }
         };
+        if !valid_reply(
+            &reply,
+            self.device,
+            self.policy,
+            operation,
+            member,
+            self.request_id,
+        ) {
+            self.reset();
+            return Err(transport_error(write));
+        }
+        self.accept_reply(reply, connection_change)
+    }
+    fn accept_reply(
+        &mut self,
+        reply: Reply,
+        connection_change: bool,
+    ) -> Result<Value, SourceError> {
         let method = if reply.connection.method == Method::Async {
             ConnectionMethod::Async
         } else {
             ConnectionMethod::Legacy
         };
-        let expected_method = if reply.connection.interface_version.is_some_and(|v| {
-            v >= match self.device {
-                DeviceType::ObservingConditions | DeviceType::CoverCalibrator => 2,
-                DeviceType::Focuser | DeviceType::Rotator => 4,
-                _ => 3,
-            }
-        }) {
-            ConnectionMethod::Async
-        } else {
-            ConnectionMethod::Legacy
-        };
-        if reply.protocol != 1
-            || reply.id != self.request_id
-            || reply.connection.device_type != self.device
-            || reply
-                .connection
-                .interface_version
-                .is_some_and(|v| v == 0 || v > i16::MAX as u16)
-            || method != expected_method
-            || reply.connection.uncertain && reply.connection.ready
-            || self.policy == ConnectionPolicy::ExternallyManaged
-                && reply.connection.owns_connection
-            || reply.error.is_none()
-                && matches!(operation, "read" | "write" | "refresh")
-                && !reply.connection.ready
-            || reply.error.is_some() && !reply.value.is_null()
-            || reply.error.is_none()
-                && operation == "connectStep"
-                && reply.value.as_bool() != Some(reply.connection.ready)
-            || reply.error.is_none()
-                && operation == "disconnectStep"
-                && (reply.value.as_bool().is_none()
-                    || reply.connection.ready
-                    || reply.value == true
-                        && (reply.connection.owns_connection || reply.connection.uncertain))
-            || reply.error.is_none()
-                && matches!(operation, "write" | "refresh")
-                && !reply.value.is_null()
-            || reply.value.is_array()
-                && !(self.device == DeviceType::FilterWheel
-                    && operation == "read"
-                    && match member {
-                        Some("names") => crate::filterwheel::FilterWheelProperty::Names
-                            .decode(&reply.value)
-                            .is_ok(),
-                        Some("focusoffsets") => {
-                            crate::filterwheel::FilterWheelProperty::FocusOffsets
-                                .decode(&reply.value)
-                                .is_ok()
-                        }
-                        _ => false,
-                    })
-            || reply.value.is_object()
-        {
-            self.reset();
-            return Err(transport_error(write));
-        }
         self.ready = reply.connection.ready;
         if connection_change {
             self.connection_uncertain = reply.connection.uncertain;
@@ -355,6 +306,82 @@ impl ComBackend {
         }
         Ok(ready)
     }
+    async fn image(&mut self, budget: ImageBudget) -> Result<CameraImage, SourceError> {
+        if self.device != DeviceType::Camera {
+            return Err(unsupported("Only camera imports provide image arrays"));
+        }
+        self.request_id = self.request_id.checked_add(1).ok_or_else(invalid)?;
+        let id = self.request_id;
+        let device = self.device;
+        let policy = self.policy;
+        let worker = self.worker.as_mut().ok_or_else(|| {
+            SourceError::new(ErrorKind::Disconnected, "COM worker is disconnected")
+        })?;
+        let response = worker
+            .request_typed_with_stream(
+                json!({"protocol":1,"id":id,"operation":"image"}),
+                self.deadline,
+                move |reply: Reply<Option<ImageDescriptor>>, stream| {
+                    Box::pin(async move {
+                        let descriptor = reply.value;
+                        let reply = Reply {
+                            protocol: reply.protocol,
+                            id: reply.id,
+                            value: descriptor
+                                .map(|value| {
+                                    serde_json::to_value(value).expect("Descriptor serializes")
+                                })
+                                .unwrap_or(Value::Null),
+                            error: reply.error,
+                            connection: reply.connection,
+                        };
+                        if !valid_reply(&reply, device, policy, "image", None, id)
+                            || reply.error.is_none() && descriptor.is_none()
+                        {
+                            return Err(AccessoryError::Transport.into());
+                        }
+                        if reply.error.is_some() {
+                            return Ok((reply, None));
+                        }
+                        let descriptor = descriptor.unwrap();
+                        if descriptor.order() != ImageOrder::Ascom {
+                            return Err(AccessoryError::Transport.into());
+                        }
+                        let transaction = (id & i64::from(i32::MAX)) as u32;
+                        let length = descriptor.byte_len() + IMAGEBYTES_HEADER_BYTES;
+                        let image = read_imagebytes_matching(
+                            &mut (&mut *stream).take(length as u64),
+                            &budget,
+                            transaction,
+                            Some((descriptor, 0)),
+                        )
+                        .await?
+                        .image;
+                        let mut trailer = [0; 8];
+                        stream.read_exact(&mut trailer).await?;
+                        if trailer != *b"RGNIMAGE" {
+                            return Err(AccessoryError::Transport.into());
+                        }
+                        Ok((reply, Some(image)))
+                    })
+                },
+            )
+            .await;
+        let (reply, image) = match response {
+            Ok(response) => response,
+            Err(error) => {
+                self.reset();
+                let mut failure = match error.downcast_ref::<ImageReadError>() {
+                    Some(ImageReadError::Contract(error)) => error.clone(),
+                    _ => transport_error(false),
+                };
+                failure.transport_lost = true;
+                return Err(failure);
+            }
+        };
+        self.accept_reply(reply, false)?;
+        image.ok_or_else(|| transport_error(false))
+    }
     async fn sample_step(&mut self) -> Result<SampleBatch, SourceError> {
         let Some(sample) = self.polling.prepare() else {
             return Ok(SampleBatch::default());
@@ -389,6 +416,9 @@ impl ComBackend {
     }
 }
 impl Backend for ComBackend {
+    fn camera_image(&mut self, budget: ImageBudget) -> BackendFuture<'_, CameraImage> {
+        Box::pin(self.image(budget))
+    }
     fn connect(&mut self) -> BackendFuture<'_, ()> {
         Box::pin(async {
             while !self.connection_step().await? {
@@ -473,6 +503,83 @@ impl Backend for ComBackend {
         })
     }
 }
+fn valid_reply(
+    reply: &Reply,
+    device: DeviceType,
+    policy: ConnectionPolicy,
+    operation: &str,
+    member: Option<&str>,
+    request_id: i64,
+) -> bool {
+    let method = if reply.connection.method == Method::Async {
+        ConnectionMethod::Async
+    } else {
+        ConnectionMethod::Legacy
+    };
+    let expected_method = if reply.connection.interface_version.is_some_and(|v| {
+        v >= match device {
+            DeviceType::ObservingConditions | DeviceType::CoverCalibrator => 2,
+            DeviceType::Focuser | DeviceType::Rotator | DeviceType::Camera => 4,
+            _ => 3,
+        }
+    }) {
+        ConnectionMethod::Async
+    } else {
+        ConnectionMethod::Legacy
+    };
+    !(reply.protocol != 1
+        || reply.id != request_id
+        || reply.connection.device_type != device
+        || reply
+            .connection
+            .interface_version
+            .is_some_and(|v| v == 0 || v > i16::MAX as u16)
+        || method != expected_method
+        || reply.connection.uncertain && reply.connection.ready
+        || policy == ConnectionPolicy::ExternallyManaged && reply.connection.owns_connection
+        || reply.error.is_none()
+            && matches!(operation, "read" | "write" | "refresh" | "image")
+            && !reply.connection.ready
+        || reply.error.is_some() && !reply.value.is_null()
+        || reply.error.is_none()
+            && operation == "connectStep"
+            && reply.value.as_bool() != Some(reply.connection.ready)
+        || reply.error.is_none()
+            && operation == "disconnectStep"
+            && (reply.value.as_bool().is_none()
+                || reply.connection.ready
+                || reply.value == true
+                    && (reply.connection.owns_connection || reply.connection.uncertain))
+        || reply.error.is_none()
+            && matches!(operation, "write" | "refresh")
+            && !reply.value.is_null()
+        || reply.value.is_array()
+            && !(device == DeviceType::Camera
+                && operation == "read"
+                && member
+                    .and_then(crate::camera::properties::CameraProperty::from_member)
+                    .is_some_and(|property| property.decode(&reply.value).is_ok())
+                || device == DeviceType::FilterWheel
+                    && operation == "read"
+                    && match member {
+                        Some("names") => crate::filterwheel::FilterWheelProperty::Names
+                            .decode(&reply.value)
+                            .is_ok(),
+                        Some("focusoffsets") => {
+                            crate::filterwheel::FilterWheelProperty::FocusOffsets
+                                .decode(&reply.value)
+                                .is_ok()
+                        }
+                        _ => false,
+                    })
+        || reply.value.is_object()
+            && !(device == DeviceType::Camera
+                && operation == "image"
+                && serde_json::from_value::<crate::camera::image::ImageDescriptor>(
+                    reply.value.clone(),
+                )
+                .is_ok()))
+}
 fn invalid() -> SourceError {
     SourceError::new(ErrorKind::InvalidValue, "Invalid COM source configuration")
 }
@@ -498,12 +605,16 @@ fn transport_error(write: bool) -> SourceError {
 fn nullable<'de, T: Deserialize<'de>, D: Deserializer<'de>>(d: D) -> Result<Option<T>, D::Error> {
     Option::<T>::deserialize(d)
 }
+fn required<'de, T: Deserialize<'de>, D: Deserializer<'de>>(d: D) -> Result<T, D::Error> {
+    T::deserialize(d)
+}
 #[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Reply {
+#[serde(deny_unknown_fields, bound(deserialize = "T: Deserialize<'de>"))]
+struct Reply<T = Value> {
     protocol: u16,
     id: i64,
-    value: Value,
+    #[serde(deserialize_with = "required")]
+    value: T,
     #[serde(deserialize_with = "nullable")]
     error: Option<WireError>,
     connection: WireConnection,
@@ -542,4 +653,73 @@ struct WireConnection {
     owns_connection: bool,
     uncertain: bool,
     ready: bool,
+}
+
+#[cfg(test)]
+mod camera_reply_tests {
+    use super::*;
+    #[test]
+    fn image_headers_require_explicit_fields_and_strict_descriptor_identity() {
+        let valid = json!({"protocol":1,"id":12,"value":{"width":2,"height":3,"planes":null,
+            "elementType":"int32","transmissionType":"int32","order":"ascom"},"error":null,
+            "connection":{"deviceType":"camera","interfaceVersion":4,"method":"async",
+                "ownsConnection":true,"uncertain":false,"ready":true}});
+        let typed: Reply<Option<ImageDescriptor>> = serde_json::from_value(valid.clone()).unwrap();
+        assert!(typed.value.is_some());
+        let reply: Reply = serde_json::from_value(valid.clone()).unwrap();
+        assert!(valid_reply(
+            &reply,
+            DeviceType::Camera,
+            ConnectionPolicy::Managed,
+            "image",
+            None,
+            12
+        ));
+        for field in ["value", "error", "connection", "id"] {
+            let mut missing = valid.clone();
+            missing.as_object_mut().unwrap().remove(field);
+            assert!(
+                serde_json::from_value::<Reply<Option<ImageDescriptor>>>(missing).is_err(),
+                "{field}"
+            );
+        }
+        let duplicate = serde_json::to_string(&valid)
+            .unwrap()
+            .replace("\"width\":2", "\"width\":2,\"width\":2");
+        assert!(serde_json::from_str::<Reply<Option<ImageDescriptor>>>(&duplicate).is_err());
+        for (field, value) in [
+            ("ready", json!(false)),
+            ("method", json!("legacy")),
+            ("uncertain", json!(true)),
+            ("deviceType", json!("focuser")),
+        ] {
+            let mut wrong = valid.clone();
+            wrong["connection"][field] = value;
+            let reply: Reply = serde_json::from_value(wrong).unwrap();
+            assert!(!valid_reply(
+                &reply,
+                DeviceType::Camera,
+                ConnectionPolicy::Managed,
+                "image",
+                None,
+                12
+            ));
+        }
+        assert!(!valid_reply(
+            &reply,
+            DeviceType::Camera,
+            ConnectionPolicy::ExternallyManaged,
+            "image",
+            None,
+            12
+        ));
+        assert!(!valid_reply(
+            &reply,
+            DeviceType::Camera,
+            ConnectionPolicy::Managed,
+            "image",
+            None,
+            13
+        ));
+    }
 }

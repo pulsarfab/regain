@@ -7,6 +7,7 @@ use std::{
     process::Stdio,
     time::Duration,
 };
+use tokio::io::AsyncReadExt;
 
 fn fixture() {
     for line in std::io::stdin().lock().lines() {
@@ -21,6 +22,17 @@ fn fixture() {
                 return;
             }
             "reject" => println!("{}", json!({"ok":false,"error":"invalid position"})),
+            "binary" | "binary_hang" | "binary_short" => {
+                println!("{}", json!({"ok":true,"result":4}));
+                std::io::stdout().flush().unwrap();
+                std::io::stdout().write_all(&[1, 10]).unwrap();
+                std::io::stdout().flush().unwrap();
+                match request["command"].as_str().unwrap() {
+                    "binary_hang" => std::thread::sleep(Duration::from_secs(30)),
+                    "binary_short" => return,
+                    _ => std::io::stdout().write_all(&[0, 255]).unwrap(),
+                }
+            }
             _ => println!("{}", json!({"ok":true,"result":request})),
         }
         std::io::stdout().flush().unwrap();
@@ -122,4 +134,81 @@ async fn main() {
     );
     retired(&mut worker).await;
     println!("Accessory process: external cancellation retires child passed");
+    let mut worker = spawn();
+    let bytes = worker
+        .request_typed_with_stream(
+            json!({"command":"binary"}),
+            Duration::from_secs(3),
+            |length: usize, stream| {
+                Box::pin(async move {
+                    assert_eq!(length, 4);
+                    let mut bytes = vec![0; length];
+                    stream.read_exact(&mut bytes).await?;
+                    Ok(bytes)
+                })
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(bytes, [1, 10, 0, 255]);
+    let rejected = worker
+        .request_typed_with_stream(
+            json!({"command":"reject"}),
+            Duration::from_secs(3),
+            |_: usize, _| Box::pin(async { Ok(()) }),
+        )
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        rejected.downcast_ref::<AccessoryError>(),
+        Some(AccessoryError::CommandFailed(_))
+    ));
+    assert_eq!(
+        worker.request(json!({"command":"status"})).await.unwrap()["command"],
+        "status"
+    );
+    worker.close().await;
+    let mut worker = spawn();
+    let expired = worker
+        .request_typed_with_stream(
+            json!({"command":"binary_hang"}),
+            Duration::from_millis(200),
+            |length: usize, stream| {
+                Box::pin(async move {
+                    let mut bytes = vec![0; length];
+                    stream.read_exact(&mut bytes).await?;
+                    Ok(bytes)
+                })
+            },
+        )
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        expired.downcast_ref::<AccessoryError>(),
+        Some(AccessoryError::Timeout)
+    ));
+    retired(&mut worker).await;
+    for command in ["binary_short", "binary_hang", "binary"] {
+        let mut worker = spawn();
+        let operation = worker.request_typed_with_stream(
+            json!({"command":command}),
+            Duration::from_secs(5),
+            move |length: usize, stream| {
+                Box::pin(async move {
+                    if command == "binary" {
+                        return Err(AccessoryError::Transport.into());
+                    }
+                    let mut bytes = vec![0; length];
+                    stream.read_exact(&mut bytes).await?;
+                    Ok(bytes)
+                })
+            },
+        );
+        let result = tokio::time::timeout(Duration::from_millis(200), operation).await;
+        assert!(result.is_err() || result.unwrap().is_err());
+        retired(&mut worker).await;
+    }
+    println!(
+        "Accessory process: binary framing, partial body, external cancellation and rejected admission passed"
+    );
 }
