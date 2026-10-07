@@ -94,7 +94,13 @@ public sealed class HubCameraAlpacaTests
                     Assert.NotEqual(JsonValueKind.Null, uncertain.GetProperty("owner").ValueKind);
                     Assert.Throws<HubException>(() => owner.StartExposure(sequence));
                 } else {
-                    owner.StartExposure(sequence);
+                    try { owner.StartExposure(sequence); }
+                    catch (HubException error) {
+                        Console.WriteLine(JsonSerializer.Serialize(new { fault, stage = "camera preflight/start",
+                            error.Failure, code = error.Remote?.Code, message = error.Remote?.Message,
+                            fields = error.Remote?.Fields, relayCommands = relay.Commands.ToArray() }));
+                        throw;
+                    }
                     if (fault == "cancel") {
                         await relay.ImageEntered.Task.WaitAsync(deadline.Token);
                         using var cancel = new CancellationTokenSource();
@@ -146,8 +152,8 @@ public sealed class HubCameraAlpacaTests
         return process;
     }
 
-    // Transparent private upstream fault relay. Each blocking handler has its
-    // own thread; synchronous NINA calls cannot starve response production.
+    // Transparent private upstream fault relay. Accept and request handlers use
+    // dedicated threads; forwarding still uses HttpClient asynchronous I/O.
     private sealed class CameraRelay : IDisposable
     {
         private readonly TcpListener listener = new(IPAddress.Loopback, 0);

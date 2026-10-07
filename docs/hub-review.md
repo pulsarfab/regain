@@ -3,6 +3,35 @@
 This records local review and tests for the single hub PR. Passing a foundation
 test does not imply that a frontend, transport, or hardware gate has passed.
 
+## 2026-10-07: failure-only proxy camera preflight diagnostics
+
+The pixels-fault case in push Windows job 112872018908 fails during MaxBinY
+preflight, before fault injection. The private fixture now records the structured
+HubException failure, remote code/message/fields and exact relay command sequence,
+then rethrows. All seven focused actual-Alpaca cases pass with warnings denied in
+artifacts/hub-camera-preflight-diagnostics-focused.log. The change does not retry,
+relax deadlines, change assertions or alter production behavior.
+
+An ignored child-process scheduler probe uses the actual private relay, an
+independent raw TCP upstream/caller and four occupied managed pool workers.
+The baseline cannot finish forwarding before releasing the workers. A proposed
+HttpClient.Send change passes the ordinary seven cases but also fails this probe;
+it was discarded. Preserve artifacts/hub-relay-scheduler-baseline.log,
+hub-relay-scheduler-synchronous.log and hub-relay-synchronous-focused.log.
+The probe runs under PowerShell's bundled runtime, not the .NET 8 test runner;
+it establishes a dependency in that probe, not the cause of the CI failure.
+The fixture comment now accurately distinguishes dedicated request-handler
+threads from asynchronous HTTP forwarding.
+
+Both preceding 8ab8611 runs (37644612391 and 37644620829) are terminal/red.
+PR Windows job 112872048688 passes preceding NINA/net48/COM checks, then fails
+OFP2's old PUT Brightness expectation; evidence is
+artifacts/hub-conformance-ci-pr-windows.log. The portable jobs fail the same
+expectation. Local 48ca3ff corrects that fixture and passes its complete private
+simulation; fresh CI is required. Push Windows' separate preflight failure stays
+open. Mac ARM confirms final-owner lock reacquisition and the duplicated-descriptor
+regression now pass. No new CI result is inferred from local success.
+
 ## 2026-10-07: OFP2 script follows HTTP method admission
 
 8ab8611 portable jobs pass the Rust regression and then fail test-ofp2.py at PUT

@@ -8,7 +8,20 @@ tagged or published. Changed cross-crate APIs require an unpublished version so
 Cargo package verification uses the new workspace packages.
 Last updated: 2026-10-07.
 
-Current increment: reviewed OFP2 CI fixture correction for the shared HTTP
+Current increment: reviewed failure-only camera preflight diagnostics. The private
+actual-Alpaca proxy fixture records the structured hub failure and relay command
+sequence before rethrowing the original exception. All seven focused cases pass
+with warnings denied; no assertion, deadline or production behavior changed.
+A child-process scheduler probe reproduced a forwarding dependency under
+PowerShell's bundled .NET runtime, but synchronous HttpClient.Send did not remove
+it. Discarded that proposal; the probe is not evidence of the .NET 8 CI cause.
+Both preceding 8ab8611 CI runs are now terminal/red. PR Windows passed its NINA,
+net48 and COM checks before the same OFP2 HTTP-method expectation failed; push
+Windows' earlier camera MaxBinY preflight failure remains open. Reviewed native
+FITS/idle-command and OFP2 corrections are local and ready for fresh CI. Keep
+PR #21 draft and preserve all original remaining milestones.
+
+Previous increment: reviewed OFP2 CI fixture correction for the shared HTTP
 admission layer. PUT to read-only Brightness must return 404 before dispatch;
 the private script now checks that response and unchanged brightness/calibrator
 state instead of expecting an ASCOM unsupported-method payload. The complete
@@ -16,8 +29,7 @@ default simulation exercise passes in artifacts/hub-ofp2-protocol-contract.log,
 including native commands, HTTP commands, discovery, identity, ownership,
 reconnect and origin validation. No hardware flag or serial was supplied.
 Keep the Windows proxy preflight failure open pending reproduction/diagnostics.
-Native FITS/idle-command correction 1808823 is committed locally; keep reviewed
-increments local while the preceding PR run remains active. Preserve original gates.
+Native FITS/idle-command correction 1808823 is committed locally; the preceding runs are now terminal, so the reviewed increments can proceed to fresh CI. Preserve original gates.
 
 Previous increment: normalize native camera LastExposureStartTime to implicit-UTC
 FITS across the shared frontends, preserving the core frame's original metadata.
@@ -42,11 +54,10 @@ skip), real net48 x86/x64, strict lint/MSRV, formatting and syntax checks pass;
 see hub-conformance.md and hub-review.md for evidence.
 All three prior reviewed increments are pushed at 8ab8611; GitHub writes work
 again and PR #21 remains draft. Push CI 37644612391 is terminal/red; PR CI
-37644620829 is still active. Both have portable OFP2 script failures after the new
+37644620829 is also terminal/red. Both have portable OFP2 script failures after the new
 HTTP admission; push Windows also fails camera proxy preflight before its injected
 pixel fault. Mac ARM logs verify the duplicate-descriptor regression and formerly
-failing camera endpoint reacquisition now pass. Keep further increments local
-until both runs are terminal. Preserve all original gates.
+failing camera endpoint reacquisition now pass. PR Windows passes its preceding managed checks and then fails the same OFP2 expectation. Fresh CI must verify the local correction. Preserve all original gates.
 
 Previous increment: Camera and CoverCalibrator pass selected external ConformU
 strict protocol and full interface checks with zero errors/issues/alerts/timing
