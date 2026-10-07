@@ -4,6 +4,7 @@ use anyhow::{Result, ensure};
 use regain_hub::{
     client::{Client, ClientError, ClientLimits},
     config::DeviceType,
+    covercalibrator::CoverCalibratorProperty,
     endpoint::Endpoint,
     filterwheel::FilterWheelProperty,
     focuser::FocuserProperty,
@@ -196,6 +197,12 @@ impl Publisher {
                     .capabilities
                     .iter()
                     .any(|c| c == "filterWheelOutputs"),
+                DeviceType::CoverCalibrator => self
+                    .catalog
+                    .hello()
+                    .capabilities
+                    .iter()
+                    .any(|c| c == "coverCalibratorOutputs"),
                 _ => false,
             }),
             error(
@@ -466,6 +473,7 @@ impl Publisher {
                         DeviceType::Rotator => 3,
                         DeviceType::FilterWheel if modern => 3,
                         DeviceType::FilterWheel => 2,
+                        DeviceType::CoverCalibrator if modern => 2,
                         _ => 1,
                     }));
                 }
@@ -524,6 +532,19 @@ impl Publisher {
                 property: Put::MoveFilterWheel { .. },
                 ..
             } => Some("filterWheelOutputs"),
+            Command::Get {
+                property: Get::CoverCalibrator { .. },
+                ..
+            }
+            | Command::Put {
+                property:
+                    Put::OpenCover {}
+                    | Put::CloseCover {}
+                    | Put::HaltCover {}
+                    | Put::CalibratorOn { .. }
+                    | Put::CalibratorOff {},
+                ..
+            } => Some("coverCalibratorOutputs"),
             Command::Get {
                 property: Get::SensorDescription { .. },
                 ..
@@ -627,6 +648,7 @@ pub fn class_name(kind: DeviceType) -> &'static str {
         DeviceType::Focuser => "Focuser",
         DeviceType::Rotator => "Rotator",
         DeviceType::FilterWheel => "FilterWheel",
+        DeviceType::CoverCalibrator => "CoverCalibrator",
         _ => "Unsupported",
     }
 }
@@ -647,6 +669,14 @@ fn operation(device: &OutputDescriptor, member: &str, put: bool, p: &Params) -> 
     let output = device.id;
     if put {
         let property = match (device.device_type, member) {
+            (DeviceType::CoverCalibrator, "opencover") => Put::OpenCover {},
+            (DeviceType::CoverCalibrator, "closecover") => Put::CloseCover {},
+            (DeviceType::CoverCalibrator, "haltcover") => Put::HaltCover {},
+            (DeviceType::CoverCalibrator, "calibratoroff") => Put::CalibratorOff {},
+            (DeviceType::CoverCalibrator, "calibratoron") => Put::CalibratorOn {
+                brightness: i32::try_from(p.integer("Brightness")?)
+                    .map_err(|_| error(0x401, "Invalid calibrator brightness"))?,
+            },
             (DeviceType::FilterWheel, "position") => Put::MoveFilterWheel {
                 position: i32::try_from(p.integer("Position")?)
                     .map_err(|_| error(0x401, "Invalid filter wheel position"))?,
@@ -702,6 +732,12 @@ fn operation(device: &OutputDescriptor, member: &str, put: bool, p: &Params) -> 
     }
     let property = match (device.device_type, member) {
         (_, "devicestate") => Get::DeviceState {},
+        (DeviceType::CoverCalibrator, _) => Get::CoverCalibrator {
+            property: CoverCalibratorProperty::ALL
+                .into_iter()
+                .find(|property| property.member() == member)
+                .ok_or_else(|| unsupported(member))?,
+        },
         (DeviceType::FilterWheel, _) => Get::FilterWheel {
             property: FilterWheelProperty::ALL
                 .into_iter()

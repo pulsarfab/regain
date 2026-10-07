@@ -3610,3 +3610,42 @@ alpaca-evidence,clippy,clippy-final,msrv,msrv-final,host,managed-build,nina,net4
 Keep this locally verified increment with f622d51 until preceding 5d0ed34 CI ends.
 Both PR/push runs have seven successful jobs and Windows build/installer work
 remaining at last observation. All original remaining plan gates still apply.
+
+### Panel Alpaca publication review (2026-10-06, local increment)
+
+Reviewed the existing publisher, capability negotiation, typed Get/Put dispatch,
+common connection ownership and cached DeviceState. Panel publication adds no
+host, acquisition actor or frontend-specific state machine. Saved UUIDs and
+noncontiguous class-local numbers survive discovery/routing; independent HTTP
+clients and multiple source devices retain distinct leases. V1 completion is
+inferred only by the shared controller; mandatory modern errors stay errors.
+Brightness remains strict Int32 with live maximum/presence checks and valid On(0).
+Cover commands preserve imported-driver preemption rather than impose a generic
+Busy rule. Unknown endpoint and known stopped are independent modern properties.
+
+The shared setup-page helper scopes configured panel routes. Standalone OFP2 at
+slot zero retains its existing setup/API and identity. A collision rejects
+discovery, reads and setup without acquiring a lease or touching equipment.
+Applied-once lost acknowledgements fence sibling Close/Halt/Off/On commands,
+retire connected state and prevent idempotent Connect from silently adopting a
+new generation. Publisher/runtime shutdown sends no extra actuator command.
+
+Five new actual HTTP cases pass for loopback V1/V2 and explicitly simulated
+production OFP2. They also cover strict argument errors, absent independent
+components, malformed modern completion, live range changes, warm-up, cache
+omission, shared upstream ClientID and unique transaction IDs. The first focused
+run passed. Review simplified the cache-observation predicate without changing
+its budget or the production polling policy. All 37 router cases and full Rust
+hub/Alpaca suites pass, as do strict Clippy, Rust 1.89 all targets, generated
+contracts, Node/six independent schema checks, fresh-host NINA 214/214 and real
+net48 x86/x64 clients. Standalone OFP2 worker/HTTP simulation passes brightness,
+full open/close, mid-travel halt/resume, independent clients, discovery and
+persistent identity, reconnect, validation and origin checks.
+
+Evidence: artifacts/hub-panel-http-{focused,rust,clippy,msrv,contract,node,schema,
+host,nina,net48,ofp2}.log. No physical equipment or installed vendor drivers were
+opened. Preceding 5d0ed34 PR CI 37547703480 passes all eight jobs; push CI
+37547695748 has seven passed and Windows installer acceptance running at last
+observation. Keep panel increments local until that run ends. Native NINA/ASCOM
+panel outputs, COM/virtual inputs, dedicated simulation/shared creation and every
+original remaining gate remain required; PR #21 stays draft.

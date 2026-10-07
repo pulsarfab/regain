@@ -1945,5 +1945,28 @@ unavailable completion is omitted rather than represented as stopped.
 Both setup diagnostic readers consume generated property types/bounds and the
 response schema using their existing typed-accessory display. They preserve
 identity/epoch/page checks and reject incorrect Int32, enum and Boolean values.
-This does not enable panel selection, creation, native NINA/ASCOM or Alpaca HTTP
-publication; those integrations and every later plan gate remain required.
+This does not enable panel selection, creation or native NINA/ASCOM publication;
+those integrations and every later plan gate remain required.
+
+### Panel Alpaca publication
+
+The common HTTP publisher exposes CoverCalibrator V2 when the shared host
+advertises typed panel outputs, asynchronous connections and cached DeviceState.
+Each saved output retains its UUID and class-local number. HTTP ClientIDs acquire
+independent private leases on the same source; disconnecting one leaves siblings
+connected. Legacy V1 and modern V2 inputs retain the controller's own completion
+semantics, live brightness validation and independent cover/light capabilities.
+Zero brightness is a valid On request and does not imply Off.
+
+OpenCover, CloseCover, HaltCover, CalibratorOn and CalibratorOff use typed IPC.
+The generic publisher does not invent a motion-preemption policy. Source
+uncertainty fences every sibling and never replays a command or invents Halt,
+Close or Off on disconnect. DeviceState uses the existing cached snapshot and
+omits unavailable completion; MaxBrightness and query timestamps are excluded.
+
+Hub setup routes use the existing shared editor for configured panel numbers.
+The standalone OFP2 retains its slot-zero route and setup; a conflicting hub
+panel rejects discovery, requests and setup before any equipment connection.
+Five private HTTP cases cover these rules, including the production OFP2 worker
+in explicit simulation. Native panel output, COM/virtual inputs, dedicated
+simulation and shared creation are still required before opening the setup gate.

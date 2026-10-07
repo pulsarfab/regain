@@ -311,6 +311,9 @@ impl Server {
                 regain_hub::config::DeviceType::FilterWheel => {
                     device.number == 0 && self.filterwheel.configured().await?.is_some()
                 }
+                regain_hub::config::DeviceType::CoverCalibrator => {
+                    device.number == 0 && self.flatpanel.configured().await?.is_some()
+                }
                 _ => false,
             };
             anyhow::ensure!(
@@ -455,8 +458,8 @@ impl Server {
                 post(focuser_settings),
             )
             .route(
-                "/setup/v1/covercalibrator/0/setup",
-                get(|| async { axum::response::Html(include_str!("../web/flatpanel.html")) }),
+                "/setup/v1/covercalibrator/{slot}/setup",
+                get(covercalibrator_page),
             )
             .route(
                 "/flatpanel.js",
@@ -591,7 +594,13 @@ async fn hub_request(
     };
     if !matches!(
         kind.as_str(),
-        "switch" | "safetymonitor" | "observingconditions" | "focuser" | "rotator" | "filterwheel"
+        "switch"
+            | "safetymonitor"
+            | "observingconditions"
+            | "focuser"
+            | "rotator"
+            | "filterwheel"
+            | "covercalibrator"
     ) || member != member.to_lowercase()
     {
         return StatusCode::NOT_FOUND.into_response();
@@ -1076,6 +1085,17 @@ async fn filterwheel_page(State(s): State<Arc<Server>>, Path(slot): Path<usize>)
     }
     accessory_page().await.into_response()
 }
+async fn covercalibrator_page(State(s): State<Arc<Server>>, Path(slot): Path<usize>) -> Response {
+    if let Some(page) =
+        hub_device_page(&s, regain_hub::config::DeviceType::CoverCalibrator, slot).await
+    {
+        return page;
+    }
+    if slot != 0 {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    axum::response::Html(include_str!("../web/flatpanel.html")).into_response()
+}
 async fn accessory_get(
     State(s): State<Arc<Server>>,
     Path((kind, slot, member)): Path<(String, usize, String)>,
@@ -1114,7 +1134,7 @@ async fn accessory_request(
     put: bool,
     params: Result<Params>,
 ) -> Response {
-    if matches!(kind.as_str(), "focuser" | "filterwheel") && s.hub.is_some() {
+    if matches!(kind.as_str(), "focuser" | "filterwheel" | "covercalibrator") && s.hub.is_some() {
         match s.hub_devices().await {
             Ok(devices)
                 if devices.iter().any(|device| {

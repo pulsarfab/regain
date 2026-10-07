@@ -18,7 +18,8 @@ PR/push CI 37541898392/37541893308, including private cold/production wheel
 registration and packaging/installer checks. Reviewed COM/virtual wheel inputs
 are pushed at a586c76; all eight jobs pass in both PR/push CI
 37544747351/37544741219. Wheel simulation/shared creation are pushed at 5d0ed34;
-PR/push CI 37547703480/37547695748 is running. Private
+PR CI 37547703480 passes all eight jobs; push CI 37547695748 has seven passed
+and Windows installer acceptance running at last observation. Private
 registered activation does not establish interactive/hardware acceptance.
 
 Current position: milestones 0 and 1 are complete. The scalar source/output paths
@@ -32,7 +33,9 @@ net48 confirmation, with a verified native setup capture. Shared wheel creation 
 verified locally in both setup frontends and real net48 clients, and pushed.
 The panel typed controller/native OFP2 evidence is committed locally at f622d51.
 Panel runtime, typed IPC and cached diagnostics pass full local Rust, NINA 214/214
-and both-architecture net48 checks. Panel publication, imports/virtual inputs,
+and both-architecture net48 checks. Panel Alpaca V2 publication is verified locally
+with dynamic identities, legacy V1/modern V2 inputs and production OFP2 simulation.
+Native panel publication, imports/virtual inputs,
 dedicated simulation/shared setup and camera proxies remain.
 Milestone 5's coordinated groups are not yet
 implemented. PR #21 stays draft until the full plan passes.
@@ -1097,7 +1100,21 @@ Keep existing device profiles and registrations compatible throughout migration.
 
 ## Progress log
 
-Latest checkpoint (2026-10-06): panel runtime/IPC/cache reuse the existing host,
+Latest checkpoint (2026-10-06): panel Alpaca V2 publication reuses the existing
+publisher, private IPC and typed controller. Five new actual HTTP cases cover
+dynamic identities/numbers, independent clients/sources, V1/V2 inputs, live
+brightness bounds/zero-on, component absence, known stopped/unknown endpoint,
+cached DeviceState omission, slot-zero collision/setup scoping and applied-once
+uncertain commands without replay or cleanup actuation. Production OFP2 uses
+explicit simulation. All 37 router cases, full Rust hub/Alpaca regressions,
+strict Clippy, Rust 1.89 all targets, contracts, Node/six schema checks,
+fresh-host NINA 214/214 and net48 x86/x64 pass. Standalone OFP2 worker/HTTP
+simulation also passes. No physical equipment or installed vendor driver was
+opened. Keep this reviewed increment local until preceding push CI finishes.
+Next: native NINA/ASCOM panel publication, COM/virtual inputs, dedicated
+simulation/shared creation, cameras/coordination and every original remaining gate.
+
+Previous runtime checkpoint (2026-10-06): panel runtime/IPC/cache reuse the existing host,
 polling, typed observation envelopes and diagnostic displays. Nineteen panel,
 eight factory and twenty-two native cases pass in full Rust hub/Alpaca regressions.
 Actual Alpaca V1/V2 runtime polling and production OFP2 simulation retain sibling

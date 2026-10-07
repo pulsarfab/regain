@@ -1,4 +1,6 @@
 //! Real private endpoint and production HTTP router, using explicit simulation.
+#[path = "support/hub_covercalibrator_output.rs"]
+mod covercalibrator;
 #[path = "support/hub_filterwheel_output.rs"]
 mod filterwheel;
 #[path = "support/hub_rotator_output.rs"]
@@ -62,6 +64,9 @@ impl AccessoryUpstream {
     async fn filterwheel(version: u16) -> Self {
         Self::start(regain_hub::config::DeviceType::FilterWheel, version).await
     }
+    async fn covercalibrator(version: u16) -> Self {
+        Self::start(regain_hub::config::DeviceType::CoverCalibrator, version).await
+    }
     async fn start(kind: regain_hub::config::DeviceType, version: u16) -> Self {
         use regain_hub::config::{ConnectionPolicy, DeviceType, SourceBackend, SourceConfig};
         use regain_hub::parameters::PollPolicy;
@@ -86,12 +91,21 @@ impl AccessoryUpstream {
             },
         };
         let modern = version
-            >= if kind == DeviceType::FilterWheel {
-                3
-            } else {
-                4
+            >= match kind {
+                DeviceType::CoverCalibrator => 2,
+                DeviceType::FilterWheel => 3,
+                _ => 4,
             };
-        let initial = if kind == DeviceType::FilterWheel {
+        let initial = if kind == DeviceType::CoverCalibrator {
+            vec![
+                ("brightness".into(), json!(0)),
+                ("maxbrightness".into(), json!(4096)),
+                ("coverstate".into(), json!(1)),
+                ("calibratorstate".into(), json!(1)),
+                ("covermoving".into(), json!(false)),
+                ("calibratorchanging".into(), json!(false)),
+            ]
+        } else if kind == DeviceType::FilterWheel {
             vec![
                 ("names".into(), json!(["L", "Hα", ""])),
                 ("focusoffsets".into(), json!([-12, 0, 17])),
@@ -149,6 +163,36 @@ impl AccessoryUpstream {
                         match member {
                             "connected" => { assert!(!modern); connected.store(args["Connected"] == "true", SeqCst); },
                             "connect" | "disconnect" => { assert!(modern); connected.store(member == "connect", SeqCst); },
+                            "opencover" | "closecover" | "haltcover" | "calibratoron" | "calibratoroff" if kind == DeviceType::CoverCalibrator => {
+                                assert_eq!(args.len(), if member == "calibratoron" { 3 } else { 2 });
+                                {
+                                    let mut state = values.lock().unwrap();
+                                    match member {
+                                        "opencover" | "closecover" => {
+                                            state.insert("coverstate".into(), json!(2));
+                                            state.insert("covermoving".into(), json!(true));
+                                        },
+                                        "haltcover" => {
+                                            state.insert("coverstate".into(), json!(4));
+                                            state.insert("covermoving".into(), json!(false));
+                                        },
+                                        "calibratoron" => {
+                                            let brightness = args["Brightness"].parse::<i32>().unwrap();
+                                            assert!((0..=state["maxbrightness"].as_i64().unwrap()).contains(&i64::from(brightness)));
+                                            state.insert("brightness".into(), json!(brightness));
+                                            state.insert("calibratorstate".into(), json!(2));
+                                            state.insert("calibratorchanging".into(), json!(true));
+                                        },
+                                        "calibratoroff" => {
+                                            state.insert("brightness".into(), json!(0));
+                                            state.insert("calibratorstate".into(), json!(1));
+                                            state.insert("calibratorchanging".into(), json!(false));
+                                        },
+                                        _ => unreachable!(),
+                                    }
+                                }
+                                if lose_move_reply.load(SeqCst) { tokio::time::sleep(Duration::from_secs(1)).await; }
+                            },
                             "position" if kind == DeviceType::FilterWheel => {
                                 assert!(args["Position"].parse::<i32>().unwrap() >= 0);
                                 values.lock().unwrap().insert("position".into(),json!(-1));
@@ -185,6 +229,9 @@ impl AccessoryUpstream {
                             "interfaceversion" => json!(version),
                             "connected" => json!(connected.load(SeqCst)),
                             "connecting" => { assert!(modern); json!(false) },
+                            "covermoving" | "calibratorchanging" if kind == DeviceType::CoverCalibrator && !modern => {
+                                return axum::Json(json!({"ErrorNumber":1024,"ErrorMessage":"V1 has no completion Boolean"}));
+                            },
                             _ => match values.lock().unwrap().get(member) {
                                 Some(value) => value.clone(),
                                 None => return axum::Json(json!({"ErrorNumber":1024,"ErrorMessage":"private detail must not escape"})),
