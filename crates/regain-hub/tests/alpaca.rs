@@ -593,6 +593,7 @@ impl Server {
             label: "HTTP fixture".into(),
             polling: PollPolicy::default(),
             backend: SourceBackend::Alpaca {
+                unique_id: None,
                 base_url: format!("http://{address}/prefix/"),
                 device_type: DeviceType::SafetyMonitor,
                 device_number: 7,

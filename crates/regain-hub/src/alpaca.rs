@@ -3,7 +3,10 @@
 use crate::{
     camera::image::{CameraImage, ImageBudget, ImageReadError, read_imagebytes},
     camera::json_image::read_json_image,
-    config::{ConnectionPolicy, DeviceType, SourceBackend, SourceConfig},
+    config::{
+        ConnectionPolicy, DeviceType, SourceBackend, SourceConfig, normalize_alpaca_id,
+        valid_alpaca_id,
+    },
     source::{
         Backend, BackendFuture, ConnectionInfo, ConnectionMethod, ErrorKind, SampleBatch,
         SampleBudget, SourceError, Values,
@@ -44,6 +47,7 @@ pub struct AlpacaBackend {
     client: Client,
     image_client: Option<Client>,
     root: Url,
+    identity_pin: Option<IdentityPin>,
     client_id: u32,
     transaction: u32,
     policy: ConnectionPolicy,
@@ -58,6 +62,11 @@ pub struct AlpacaBackend {
     polling: PropertyPoll,
     weather_source: bool,
 }
+struct IdentityPin {
+    server: Url,
+    number: u32,
+    unique_id: String,
+}
 impl AlpacaBackend {
     /// `authorization` is resolved by the host's credential provider. This type
     /// does not persist credentials, expose Debug, or echo URLs/response text.
@@ -70,6 +79,7 @@ impl AlpacaBackend {
             base_url,
             device_type,
             device_number,
+            unique_id,
             connection_policy,
             credential_reference,
         } = &config.backend
@@ -85,6 +95,19 @@ impl AlpacaBackend {
             ));
         }
         let mut root = server_root(base_url)?;
+        let identity_pin = unique_id
+            .as_deref()
+            .map(|id| {
+                if !valid_alpaca_id(id) {
+                    return Err(invalid("Invalid upstream catalog identity"));
+                }
+                Ok(IdentityPin {
+                    server: root.clone(),
+                    number: *device_number,
+                    unique_id: normalize_alpaca_id(id),
+                })
+            })
+            .transpose()?;
         let source_device_type = *device_type;
         let device_type = serde_json::to_value(device_type).expect("Device type serializes");
         root.set_path(&format!(
@@ -117,6 +140,7 @@ impl AlpacaBackend {
             client,
             image_client,
             root,
+            identity_pin,
             client_id: (Uuid::new_v4().as_u128() as u32).max(1),
             transaction: 0,
             policy: *connection_policy,
@@ -140,6 +164,7 @@ impl AlpacaBackend {
     ) -> Result<Value, SourceError> {
         validate_member(member)?;
         let mut parameters = encode_parameters(&parameters)?;
+        self.verify_identity().await?;
         self.transaction = self.transaction.wrapping_add(1).max(1);
         parameters.push(("ClientID".into(), self.client_id.to_string()));
         parameters.push(("ClientTransactionID".into(), self.transaction.to_string()));
@@ -159,6 +184,13 @@ impl AlpacaBackend {
         read_response(response, self.transaction, write, member).await
     }
     async fn image(&mut self, budget: ImageBudget) -> Result<CameraImage, SourceError> {
+        if self.image_client.is_none() {
+            return Err(SourceError::new(
+                ErrorKind::Unsupported,
+                "Source is not an Alpaca camera",
+            ));
+        }
+        self.verify_identity().await?;
         let client = self.image_client.as_ref().ok_or_else(|| {
             SourceError::new(ErrorKind::Unsupported, "Source is not an Alpaca camera")
         })?;
@@ -206,6 +238,30 @@ impl AlpacaBackend {
                 .map(|response| response.image)
         };
         image.map_err(image_error)
+    }
+    async fn verify_identity(&mut self) -> Result<(), SourceError> {
+        let Some(pin) = &self.identity_pin else {
+            return Ok(());
+        };
+        self.transaction = self.transaction.wrapping_add(1).max(1);
+        let catalog = discovery::query(
+            &self.client,
+            pin.server.clone(),
+            self.client_id,
+            self.transaction,
+        )
+        .await?;
+        if !catalog.iter().any(|device| {
+            device.supported_device_type == Some(self.device_type)
+                && device.number == pin.number
+                && normalize_alpaca_id(&device.unique_id) == pin.unique_id
+        }) {
+            return Err(SourceError::new(
+                ErrorKind::Permanent,
+                "Pinned Alpaca identity no longer matches this device address; inspect the server catalog before reconnecting",
+            ));
+        }
+        Ok(())
     }
     async fn read_sample(&mut self, sample: &SampleRequest) -> Result<(Value, f64), SourceError> {
         // Query age first. If the sensor updates between requests, attributing

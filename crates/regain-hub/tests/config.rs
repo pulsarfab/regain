@@ -718,6 +718,101 @@ fn source_identity_cannot_be_retargeted_and_direct_sdk_share_claim() {
 }
 
 #[test]
+fn alpaca_pins_strengthen_legacy_sources_and_cannot_be_removed_retargeted_or_forged() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("hub.json");
+    let store = ConfigStore::new(Some(path.clone()), safety()).unwrap();
+    let mut candidate = store.snapshot();
+    assert!(
+        serde_json::to_value(&candidate).unwrap()["sources"][0]["backend"]
+            .get("uniqueId")
+            .is_none()
+    );
+    let original_source = candidate.sources[0].id;
+    let SourceBackend::Alpaca { unique_id, .. } = &mut candidate.sources[0].backend else {
+        unreachable!()
+    };
+    *unique_id = Some("camera unit 42".into());
+    let pinned = store.apply(candidate.revision, candidate, false).unwrap();
+    assert_eq!(pinned.sources[0].id, original_source);
+    for replacement in [None, Some("different unit"), Some("Camera unit 42")] {
+        for forge_history in [false, true] {
+            let mut candidate = store.snapshot();
+            if forge_history {
+                candidate.identities = Default::default();
+            } // Client cannot erase saved protection.
+            let SourceBackend::Alpaca { unique_id, .. } = &mut candidate.sources[0].backend else {
+                unreachable!()
+            };
+            *unique_id = replacement.map(str::to_owned);
+            assert!(matches!(
+                store.apply(candidate.revision, candidate, false),
+                Err(ApplyError::Invalid(_))
+            ));
+        }
+    }
+    let mut renamed = store.snapshot();
+    renamed.sources[0].label = "Renamed pinned source".into();
+    let saved = store.apply(renamed.revision, renamed, false).unwrap();
+    assert_eq!(saved.sources[0].id, original_source);
+    let reloaded = ConfigStore::load(&path).unwrap();
+    let mut candidate = reloaded.snapshot();
+    let SourceBackend::Alpaca { unique_id, .. } = &mut candidate.sources[0].backend else {
+        unreachable!()
+    };
+    *unique_id = None;
+    assert!(matches!(
+        reloaded.apply(candidate.revision, candidate, false),
+        Err(ApplyError::Invalid(_))
+    ));
+    let mut retired = reloaded.snapshot();
+    retired.sources.clear();
+    retired.outputs.clear();
+    let mut revived = reloaded.apply(retired.revision, retired, false).unwrap();
+    let mut source = saved.sources[0].clone();
+    let SourceBackend::Alpaca { unique_id, .. } = &mut source.backend else {
+        unreachable!()
+    };
+    *unique_id = Some("replacement after retirement".into());
+    revived.sources.push(source);
+    assert!(matches!(
+        reloaded.apply(revived.revision, revived, false),
+        Err(ApplyError::Invalid(_))
+    ));
+}
+
+#[test]
+fn alpaca_pin_validation_rejects_invalid_ids_and_aliases_across_server_addresses() {
+    for identity in ["", " ", "é", "\nsecret", &"x".repeat(257)] {
+        let mut config = safety();
+        let SourceBackend::Alpaca { unique_id, .. } = &mut config.sources[0].backend else {
+            unreachable!()
+        };
+        *unique_id = Some(identity.into());
+        invalid(&config, "identity");
+    }
+    let id = Uuid::new_v4();
+    let mut config = safety();
+    for (i, source) in config.sources.iter_mut().enumerate() {
+        let SourceBackend::Alpaca {
+            unique_id,
+            base_url,
+            ..
+        } = &mut source.backend
+        else {
+            unreachable!()
+        };
+        *unique_id = Some(if i == 0 {
+            id.to_string()
+        } else {
+            id.simple().to_string().to_uppercase()
+        });
+        *base_url = format!("http://alias-{i}.example/");
+    }
+    invalid(&config, "duplicate");
+}
+
+#[test]
 fn native_wheel_metadata_round_trips_without_retargeting_the_hardware_or_replacing_other_settings()
 {
     use regain_hub::filterwheel::NativeFilterWheelMetadata;

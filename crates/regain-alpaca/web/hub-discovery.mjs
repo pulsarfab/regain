@@ -1,6 +1,11 @@
 import { validateDiagnosticSchema } from './hub-diagnostics.mjs';
+import { initialValue, newIdentity } from './hub-form.mjs';
 
 const invalid = message => { const error = new Error(message); error.detail = {code:'invalidValue',message}; throw error; };
+function catalogIdentity(id) {
+  const value=id.length===45 && id.startsWith('urn:uuid:')?id.slice(9):/^\{.{36}\}$/.test(id)?id.slice(1,-1):id;
+  return /^([0-9a-f]{32}|[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12})$/i.test(value)?value.toLowerCase().replaceAll('-',''):id;
+}
 function serverUrl(text) {
   let url; try { url = new URL(text); } catch { invalid('Enter an HTTP or HTTPS server URL'); }
   if (!['http:','https:'].includes(url.protocol) || url.username || url.password || text.includes('?') || text.includes('#'))
@@ -31,20 +36,42 @@ export class AlpacaDiscovery {
         const addresses=new Set(), identities=new Set(), known=d.responseSchema.$defs.DeviceType.enum;
         for (const device of result.devices) {
           const type=device.reportedDeviceType.toLowerCase(), address=`${type}:${device.number}`;
-          const uuid=device.uniqueId.replace(/^urn:uuid:/,'').replace(/^\{(.*)\}$/,'$1');
-          const identity=/^([0-9a-f]{32}|[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12})$/i.test(uuid) ? uuid.toLowerCase().replaceAll('-','') : device.uniqueId;
+          const identity=catalogIdentity(device.uniqueId);
           if (!device.name.trim() || /\p{Cc}/u.test(device.name) || !device.uniqueId.trim() ||
               addresses.has(address) || identities.has(identity) || device.supportedDeviceType!==(known.includes(type)?type:null)) throw new Error();
           addresses.add(address); identities.add(identity);
         }
       } catch { throw new Error('Invalid Alpaca catalog response'); }
-      this.catalog=structuredClone(result); return structuredClone(result);
+      this.catalog=structuredClone(result); this.credentialReference=credentialReference; return structuredClone(result);
     } catch (error) {
       if (!error.detail || ['revisionConflict','disconnected','invalidValue'].includes(error.detail.code)) {
         this.uncertain=true; error.uncertain=true;
       }
       throw error;
     } finally { this.busy=false; }
+  }
+  adopt(reader,draft,index,uuid=newIdentity) {
+    if (this.busy || this.uncertain || !this.catalog || draft.revision!==this.revision) invalid('Query the current catalog before adding a source');
+    if (!Number.isInteger(index) || index<0 || index>=this.catalog.devices.length) invalid('Select a catalog entry');
+    const device=this.catalog.devices[index];
+    if (device.supportedDeviceType===null) invalid('This device class is not supported by Regain Hub');
+    const server=this.catalog.baseUrl, type=device.supportedDeviceType, identity=device.uniqueId;
+    const array=reader.resolve(reader.root.properties.sources), schema=reader.resolve(array.items);
+    if (draft.sources.length>=array.maxItems) invalid('Configuration source limit reached');
+    for (const source of draft.sources) {
+      const b=source.backend;
+      if (b.kind==='alpaca' && (b.uniqueId!=null && catalogIdentity(b.uniqueId)===catalogIdentity(identity) ||
+          serverUrl(b.baseUrl)===serverUrl(server) && b.deviceType===type && b.deviceNumber===device.number))
+        invalid('This Alpaca device already has a source. Share its existing source ID');
+    }
+    const choice=reader.variants(schema.properties.backend).find(v=>v.kind==='alpaca' && v.enabled);
+    if (!choice) invalid('Alpaca sources are unavailable in this host');
+    const source=initialValue(reader,schema,uuid), backend=initialValue(reader,choice.schema,uuid);
+    backend.baseUrl=server; backend.deviceType=type; backend.deviceNumber=device.number; backend.uniqueId=identity;
+    if (this.credentialReference!==null) backend.credentialReference=this.credentialReference;
+    source.backend=backend;
+    source.label=[...device.name].slice(0,schema.properties.label.maxLength).join('');
+    draft.sources.push(source); return source.id;
   }
 }
 

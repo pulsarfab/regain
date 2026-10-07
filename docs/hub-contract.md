@@ -563,13 +563,48 @@ already connected are borrowed and never disconnected by the hub. Only an
 acknowledged opening grants ownership for cleanup. A cancelled or uncertain
 Connect/Disconnect is not replayed, including on reset or shutdown.
 
-Each handshake step is one bounded request. `connectionTimeoutSeconds` defaults
+Each handshake step is bounded by the scalar request budget. `connectionTimeoutSeconds` defaults
 to 30 seconds (1–300), independently of `requestTimeoutSeconds`; asynchronous
 waiting cannot continue indefinitely. Pending steps do not emit poll failures
 or safe observations. Reopening after an acknowledged asynchronous Disconnect
 waits for its Connecting state to finish before claiming another connection.
 Snapshots report negotiated version/method, ownership, and uncertainty. These
 diagnostics do not imply broader device capabilities have been discovered.
+
+### Catalog identity pins
+
+Alpaca sources may carry an optional `uniqueId`. Explicit catalog adoption in the
+shared native/web editor copies the selected endpoint, class, UInt32 number,
+unique ID and successful query's credential reference into an off-draft source
+constructed from generated defaults. Only the completed source is appended;
+rejection preserves the candidate and review state. Adoption is local editing,
+with no equipment I/O, persistence or implicit output creation. Review/apply
+remain separate operations. Duplicate addresses and globally duplicate pinned
+identities, including server aliases, must share an existing source ID.
+
+The identity ledger retains normalized pins by source ID, including retired
+sources. An unpinned legacy source can acquire a pin without changing its ID;
+once saved, changing or removing that pin is rejected. Client-supplied history
+cannot erase the pin. UUID D/N/braced/URN forms compare canonically; opaque
+ASCII IDs remain exact and case-sensitive. Other vendor strings, including
+UUID-like strings with whitespace or .NET-only X formatting, are not UUIDs.
+Export redaction preserves pins while removing credential references.
+
+Pinned adapters query `management/v1/configureddevices` before every device HTTP
+request, including metadata, connection changes, polling, commands, images and
+owned cleanup. They reuse the scalar client, authorization, transaction counter,
+bounded catalog decoder and source timeout. The actor's logical request deadline
+includes both verification and device I/O; image transfer keeps its separate
+image budget. Failed, ambiguous or mismatched catalogs block device dispatch.
+No retry, automatic renumbering or fallback to an unpinned endpoint occurs.
+Legacy unpinned sources perform no extra HTTP requests.
+
+Management verification and device I/O are separate, non-atomic HTTP requests.
+Pins detect observed identity/address changes; they cannot prevent an upstream
+remap between the check and call. A mismatch during owned disconnect retains
+ownership and connection uncertainty, including across reset, rather than sending
+cleanup to replacement equipment. Operators must reconcile the original
+connection and configuration before resuming.
 
 Interface references: [ASCOM common behavior through SafetyMonitor V3](https://ascom-standards.org/newdocs/safetymonitor.html),
 [Camera V4](https://ascom-standards.org/newdocs/camera.html),

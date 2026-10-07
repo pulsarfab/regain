@@ -89,10 +89,23 @@ function renderDiscovery() {
   const url=field('baseUrl'), credential=field('credentialReference');
   const note=document.createElement('p'); note.className='hint'; note.textContent=`One query, up to ${d.timeoutSeconds} seconds and ${d.maximumDevices} devices. Include any reverse-proxy prefix. Credentials are protected references from the Credentials section.`; fields.append(note);
   const button=document.createElement('button'); button.type='button'; button.textContent='Read Alpaca device catalog'; fields.append(button);
+  const selection=document.createElement('select'); selection.id='discovery-selection'; selection.setAttribute('aria-label','Catalog device'); fields.append(selection);
+  const add=document.createElement('button'); add.type='button'; add.textContent='Add selected source to draft'; add.disabled=true; fields.append(add);
+  selection.onchange=()=>{add.disabled=selection.selectedIndex<0 || selection.selectedOptions[0].disabled;};
+  add.onclick=()=>action(async()=>{
+    const id=discovery.adopt(reader,draft,Number(selection.value));
+    changed(); renderConfiguration($('configuration'),reader,draft,base,changed);
+    status(`Added pinned source ${id} to the draft. Review its settings and apply before creating output connections.`);
+  });
   button.onclick=()=>action(async()=>{
-    $('discovery-result').textContent='';
+    $('discovery-result').textContent=''; selection.replaceChildren(); add.disabled=true;
     const catalog=await discovery.query(url.value,credential.value.trim()?credential.value:null);
     $('discovery-result').textContent=catalogSummary(catalog);
+    catalog.devices.forEach((device,index)=>{
+      const option=document.createElement('option'); option.value=String(index); option.textContent=`${device.name} — ${device.reportedDeviceType} ${device.number}`;
+      option.disabled=device.supportedDeviceType===null; selection.append(option);
+    });
+    selection.selectedIndex=-1;
     status(`Read ${catalog.devices.length} catalog entries. No equipment connection was opened; configuration is unchanged.`);
   });
   $('discovery-result').textContent='';

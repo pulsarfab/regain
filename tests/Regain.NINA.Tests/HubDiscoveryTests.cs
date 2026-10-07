@@ -74,6 +74,7 @@ public sealed partial class HubNativeTests
             using var server = new HubCatalogServer(); await using var host = await Host.Open();
             var window = new HubConfigurationWindow(host.Executable, host.ConfigPath, host.Selection(0, "switch").InstanceId);
             try {
+                window.Height = 960;
                 window.Show(); var review = Controls<Button>(window).Single(b => (string)b.Content == "Review changes");
                 await UiUntil(() => review.IsEnabled);
                 var tabs = Controls<TabControl>(window).Single();
@@ -85,7 +86,20 @@ public sealed partial class HubNativeTests
                 await UiUntil(() => query.IsEnabled && result.Text.Contains("camera unit 42"));
                 Assert.Contains("SIMULATION", result.Text); Assert.Contains("4294967295", result.Text);
                 Assert.Contains("Telescope", result.Text); Assert.Contains("not supported", result.Text);
+                var selection = Controls<ComboBox>(window).Single(box => (string?)box.Tag == "discovery-selection");
+                Assert.False(((ComboBoxItem)selection.Items[1]).IsEnabled);
+                var add = Controls<Button>(window).Single(b => (string)b.Content == "Add selected source to draft");
+                Assert.False(add.IsEnabled); selection.SelectedIndex = 0; Assert.True(add.IsEnabled);
+                add.BringIntoView();
                 await Capture(window, "hub-native-discovery-simulation.png");
+                add.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                await UiUntil(() => query.IsEnabled);
+                tabs.SelectedIndex = 0;
+                Controls<Expander>(window).Single(expander => (string)expander.Header == "Sources").IsExpanded = true;
+                var adopted = Controls<Expander>(window).Single(expander => (string)expander.Header == "[SIMULATION] café camera"); adopted.IsExpanded = true;
+                Controls<Expander>(adopted).Single(expander => (string)expander.Header == "Backend").IsExpanded = true;
+                Assert.Equal("camera unit 42", Controls<TextBox>(window).Single(box => (string?)box.Tag == "/sources/3/backend/uniqueId").Text);
+                Assert.Equal(3, (await host.Command(new { op = "getConfig" })).GetProperty("sources").GetArrayLength());
                 for (int i = 0; i < 3; i++) Assert.Equal(0, (await host.Status(i)).GetProperty("leaseCount").GetInt32());
                 Assert.Single(server.Requests);
             } finally { window.Close(); }

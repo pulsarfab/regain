@@ -107,14 +107,38 @@ and are marked accordingly. Queries have a five-second network deadline, a 1 MiB
 response limit and a 256-device catalog limit. Redirects and failed queries are
 not retried. Configuration changes during a query invalidate its result.
 
-This first discovery interface queries an explicitly selected server. Network
-discovery, native/COM enumeration, selecting catalog entries into a pinned source,
-and configuration import/export remain on the implementation plan.
+Select a supported entry and choose **Add selected source to draft**. This copies
+the selected server, class, number, upstream unique ID and queried credential
+reference into a new source using the shared configuration defaults. It performs
+no network request and does not save or connect equipment. Configure the source's
+polling and connection policy, add the outputs you need, then review and apply.
+Duplicate addresses or pinned identities are rejected; share an existing source
+ID when several outputs use the same equipment.
+
+A discovered source pins its upstream unique ID. Regain checks the management
+catalog before every device request, including connection changes, polling,
+commands, image downloads and disconnect. A missing, moved or replaced device,
+ambiguous catalog or failed query blocks that request. Regain does not follow a
+device to another number. The check and device call are separate HTTP requests;
+an upstream remap between them cannot be excluded. Keep the server's mappings
+stable while equipment is in use.
+
+Existing manually configured sources remain unpinned unless you add their catalog
+identity. A saved pin cannot be changed or removed under the same source ID. A
+replacement needs a new source ID and reviewed output mappings. If a mismatch
+prevents cleanup of an owned connection, inspect and reconcile that connection;
+Regain retains uncertainty rather than disconnecting replacement equipment.
+Pinned sources require a working management catalog within their scalar request
+budget, so account for the extra catalog query when choosing polling settings.
+
+Network discovery, native/COM enumeration and configuration import/export remain
+on the implementation plan.
 
 ![Native Alpaca catalog discovery with a private simulated camera and unsupported mount](images/hub-native-discovery-simulation.png)
 
 This render uses a private management-only peer. The test verifies string IDs,
-unsupported classes, unchanged configuration and zero equipment leases.
+unsupported classes, draft-only adoption, unchanged saved configuration and zero
+equipment leases.
 
 1. Expand a source or output to edit its fields. Available choices and parameter
    descriptions come from the host. Saved IDs and device numbers stay fixed.

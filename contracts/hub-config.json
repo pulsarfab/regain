@@ -3934,6 +3934,16 @@
       "IdentityLedger": {
         "additionalProperties": false,
         "properties": {
+          "alpacaPins": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Alpaca Pins",
+            "type": "object",
+            "x-regain": {
+              "apply": "reconnect"
+            }
+          },
           "cameraGroups": {
             "default": [],
             "items": {
@@ -4874,6 +4884,7 @@
               "deviceNumber": {
                 "description": "Stable device number on that server.",
                 "format": "uint32",
+                "maximum": 4294967295,
                 "minimum": 0,
                 "title": "Device Number",
                 "type": "integer",
@@ -4893,6 +4904,20 @@
                 "const": "alpaca",
                 "title": "Kind",
                 "type": "string",
+                "x-regain": {
+                  "apply": "reconnect"
+                }
+              },
+              "uniqueId": {
+                "description": "Optional upstream catalog identity. Pinned sources verify this identity\nbefore device requests; changing or removing a saved pin is refused.",
+                "maxLength": 256,
+                "minLength": 1,
+                "pattern": "^[ -~]+$",
+                "title": "Upstream unique ID",
+                "type": [
+                  "string",
+                  "null"
+                ],
                 "x-regain": {
                   "apply": "reconnect"
                 }

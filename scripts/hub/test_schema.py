@@ -17,6 +17,21 @@ def example(name):
 
 
 class SchemaContractTests(unittest.TestCase):
+    def test_alpaca_sources_accept_optional_string_pins_and_bound_device_numbers(self):
+        config = example("two-source-safety")
+        VALIDATOR.validate(config)
+        config["sources"][0]["backend"]["uniqueId"] = "camera unit 42"
+        config["sources"][0]["backend"]["deviceNumber"] = 4294967295
+        VALIDATOR.validate(config)
+        for patch in [{"uniqueId": ""}, {"uniqueId": "x" * 257}, {"uniqueId": "é"},
+                      {"uniqueId": "\nsecret"}, {"deviceNumber": -1}, {"deviceNumber": 4294967296}]:
+            changed = copy.deepcopy(config)
+            changed["sources"][0]["backend"].update(patch)
+            with self.subTest(patch=patch):
+                self.assertTrue(list(VALIDATOR.iter_errors(changed)))
+        config["sources"][0]["backend"]["uniqueId"] = None
+        VALIDATOR.validate(config)
+
     def test_catalog_discovery_bounds_string_ids_and_unsupported_classes(self):
         schema = DESCRIPTION["discovery"]["alpaca"]["responseSchema"]
         validator = Draft202012Validator(schema, format_checker=FormatChecker())

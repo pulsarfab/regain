@@ -81,6 +81,21 @@ internal static class HubDiscoveryFixture
             Check(status.GetProperty("leaseCount").GetInt32() == 0 && !status.GetProperty("transportConnected").GetBoolean(), "Catalog read opened equipment");
         }
         Check(server.Requests.Count == 1, "Catalog read retried or called a device");
+        var sourceId = editor.AddDiscoveredAlpacaSource(0);
+        Check(editor.State == HubEditorState.Editing && editor.Draft.Dirty, "Catalog adoption did not revoke review");
+        var draft = editor.Draft.Candidate;
+        var prepared = draft.GetProperty("sources").EnumerateArray().Single(source => source.GetProperty("id").GetGuid() == sourceId);
+        Check(prepared.GetProperty("backend").GetProperty("uniqueId").GetString() == "camera unit 42" &&
+            prepared.GetProperty("backend").GetProperty("deviceNumber").GetUInt32() == uint.MaxValue,
+            "Catalog adoption lost the address or identity pin");
+        Check(editor.SavedConfiguration.Value.GetRawText() == before && server.Requests.Count == 1, "Draft adoption performed I/O or saved configuration");
+        Check(await editor.ReviewAsync(), "Pinned source failed host validation");
+        await editor.ApplyAsync(); await editor.ReloadAsync();
+        var saved = editor.SavedConfiguration!.Value.GetProperty("sources").EnumerateArray().Single(source => source.GetProperty("id").GetGuid() == sourceId);
+        Check(saved.GetProperty("backend").GetProperty("uniqueId").GetString() == "camera unit 42", "Saved source lost its pin");
+        var pinnedStatus = await editor.SourceStatusAsync(sourceId);
+        Check(pinnedStatus.GetProperty("leaseCount").GetInt32() == 0 && !pinnedStatus.GetProperty("transportConnected").GetBoolean() && server.Requests.Count == 1,
+            "Review/apply of a pinned source contacted equipment");
         await editor.ReloadAsync(); Check(editor.LastDiscovery is null, "Reload retained stale catalog");
     }
 }

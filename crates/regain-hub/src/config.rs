@@ -122,7 +122,17 @@ pub enum SourceBackend {
         /// ASCOM device class advertised by the source.
         device_type: DeviceType,
         /// Stable device number on that server.
+        #[schemars(range(min = 0, max = 4294967295u64))]
         device_number: u32,
+        /// Optional upstream catalog identity. Pinned sources verify this identity
+        /// before device requests; changing or removing a saved pin is refused.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[schemars(
+            title = "Upstream unique ID",
+            length(min = 1, max = 256),
+            regex(pattern = "^[ -~]+$")
+        )]
+        unique_id: Option<String>,
         /// Whether the hub or another application manages the upstream connection.
         #[serde(default)]
         connection_policy: ConnectionPolicy,
@@ -419,6 +429,8 @@ pub struct HubConfig {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct IdentityLedger {
     sources: BTreeMap<Uuid, String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    alpaca_pins: BTreeMap<Uuid, String>,
     outputs: BTreeMap<Uuid, OutputIdentity>,
     channels: BTreeMap<Uuid, ChannelIdentity>,
     #[serde(default)]
@@ -489,10 +501,20 @@ impl IdentityLedger {
             let Ok(identity) = source.identity() else {
                 continue;
             };
+            let pin = match &source.backend {
+                SourceBackend::Alpaca { unique_id, .. } => {
+                    unique_id.as_deref().map(normalize_alpaca_id)
+                }
+                _ => None,
+            };
             if self
                 .sources
                 .get(&source.id)
                 .is_some_and(|old| *old != identity)
+                || self
+                    .alpaca_pins
+                    .get(&source.id)
+                    .is_some_and(|old| pin.as_ref() != Some(old))
                 || self.outputs.contains_key(&source.id)
                 || self.channels.contains_key(&source.id)
                 || self.groups.contains(&source.id)
@@ -505,6 +527,9 @@ impl IdentityLedger {
                 ));
             } else {
                 self.sources.insert(source.id, identity);
+                if let Some(pin) = pin {
+                    self.alpaca_pins.insert(source.id, pin);
+                }
             }
         }
         for output in outputs {
@@ -599,6 +624,16 @@ impl IdentityLedger {
     }
 }
 
+pub(crate) fn valid_alpaca_id(value: &str) -> bool {
+    !value.trim().is_empty()
+        && value.len() <= 256
+        && value.bytes().all(|b| b.is_ascii() && !b.is_ascii_control())
+}
+pub(crate) fn normalize_alpaca_id(value: &str) -> String {
+    Uuid::parse_str(value)
+        .map(|id| id.to_string())
+        .unwrap_or_else(|_| value.to_owned())
+}
 pub fn normalized_url(input: &str) -> Result<String, &'static str> {
     let mut url = url::Url::parse(input).map_err(|_| "Use an absolute HTTP(S) URL")?;
     if !matches!(url.scheme(), "http" | "https")
@@ -685,6 +720,15 @@ impl HubConfig {
         if self.instance_id.is_nil() {
             error("instanceId".into(), "identity", "Instance ID cannot be nil");
         }
+        if self.identities.alpaca_pins.iter().any(|(id, pin)| {
+            id.is_nil() || !valid_alpaca_id(pin) || !self.identities.sources.contains_key(id)
+        }) {
+            error(
+                "identities.alpacaPins".into(),
+                "identity",
+                "Saved Alpaca pins must refer to known source IDs and valid catalog identities",
+            );
+        }
         if self
             .identities
             .channels
@@ -712,6 +756,7 @@ impl HubConfig {
         }
         let mut ids = BTreeSet::new();
         let mut identities = BTreeSet::new();
+        let mut alpaca_pins = BTreeSet::new();
         for (i, source) in self.sources.iter().enumerate() {
             let p = format!("sources[{i}]");
             if source.id.is_nil() || !ids.insert(source.id) {
@@ -732,9 +777,17 @@ impl HubConfig {
                     base_url,
                     device_type,
                     device_number,
+                    unique_id,
                     credential_reference,
                     ..
                 } => {
+                    if unique_id.as_deref().is_some_and(|id| !valid_alpaca_id(id)) {
+                        error(
+                            format!("{p}.backend.uniqueId"),
+                            "identity",
+                            "Use a nonempty ASCII catalog identity of at most 256 bytes",
+                        );
+                    }
                     if credential_reference.as_ref().is_some_and(|r| {
                         r.is_empty()
                             || r.len() > 200
@@ -749,7 +802,18 @@ impl HubConfig {
                         );
                     }
                     match normalized_url(base_url) {
-                        Ok(url) => Some(format!("alpaca:{url}:{device_type:?}:{device_number}")),
+                        Ok(url) => {
+                            if let Some(id) = unique_id
+                                && !alpaca_pins.insert(normalize_alpaca_id(id))
+                            {
+                                error(
+                                    format!("{p}.backend.uniqueId"),
+                                    "duplicate",
+                                    "Configure a pinned Alpaca device once and share its source ID",
+                                );
+                            }
+                            Some(format!("alpaca:{url}:{device_type:?}:{device_number}"))
+                        }
                         Err(why) => {
                             error(format!("{p}.backend.baseUrl"), "url", why);
                             None

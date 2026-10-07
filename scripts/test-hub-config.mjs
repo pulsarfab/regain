@@ -764,3 +764,54 @@ console.log('Camera guide diagnostics preserve uncertainty and reject invalid id
   assert.match(catalogSummary({...good,devices:[]}),/no configured devices/);
 }
 console.log('Alpaca discovery passed: management-only requests, shared schema/bounds, string IDs, unsupported classes, stale/malformed rejection, concurrency and no replay.');
+
+{
+  const d={...description,capabilities:['alpacaSources']}, reader=configurationContract(d);
+  const revision='11111111-1111-4111-8111-111111111111', identity='camera unit 42';
+  const catalog={configurationRevision:revision,baseUrl:'http://localhost:11111/prefix',devices:[
+    {name:'[SIMULATION] '+ '🔭'.repeat(230),reportedDeviceType:'Camera',supportedDeviceType:'camera',number:4294967295,uniqueId:identity},
+    {name:'[SIMULATION] mount',reportedDeviceType:'Telescope',supportedDeviceType:null,number:9,uniqueId:'mount-99'}]};
+  let calls=0;const setup=new AlpacaDiscovery(async()=>{calls++;return structuredClone(catalog);});setup.load(d,{revision});
+  const draft={revision,sources:[]};
+  assert.throws(()=>setup.adopt(reader,draft,0),/Query/);
+  await setup.query('http://localhost:11111/prefix/','protected-reference');
+  for(const index of [-1,2,1])assert.throws(()=>setup.adopt(reader,draft,index));
+  assert.equal(draft.sources.length,0);
+  const id=setup.adopt(reader,draft,0,()=> '22222222-2222-4222-8222-222222222222');
+  assert.equal(id,'22222222-2222-4222-8222-222222222222');
+  assert.equal([...draft.sources[0].label].length,200);
+  assert.deepEqual(draft.sources[0].backend,{kind:'alpaca',baseUrl:catalog.baseUrl,deviceType:'camera',deviceNumber:4294967295,
+    connectionPolicy:'externallyManaged',credentialReference:'protected-reference',uniqueId:identity});
+  assert.equal(draft.sources[0].polling.pollSeconds,30);assert.equal(draft.sources[0].polling.requestTimeoutSeconds,1);
+  const before=JSON.stringify(draft);
+  assert.throws(()=>setup.adopt(reader,draft,0),/already has a source/);assert.equal(JSON.stringify(draft),before);
+  const unpinned=structuredClone(draft);delete unpinned.sources[0].backend.uniqueId;
+  assert.throws(()=>setup.adopt(reader,unpinned,0),/already has a source/);
+  const alias=structuredClone(draft);alias.sources[0].backend.baseUrl='http://alias.example/';
+  assert.throws(()=>setup.adopt(reader,alias,0),/already has a source/);
+  const stale={revision:'33333333-3333-4333-8333-333333333333',sources:[]};
+  assert.throws(()=>setup.adopt(reader,stale,0),/current catalog/);assert.equal(stale.sources.length,0);
+  assert.throws(()=>setup.adopt(configurationContract({...d,capabilities:[]}),{revision,sources:[]},0),/unavailable/);
+  const full={revision,sources:Array.from({length:256},()=>({backend:{kind:'simulated'}}))};
+  assert.throws(()=>setup.adopt(reader,full,0),/limit/);assert.equal(full.sources.length,256);
+  assert.equal(calls,1,'Adoption must perform no network I/O');
+}
+console.log('Catalog adoption passed: generated defaults, fixed identity/credentials, Unicode labels, duplicate/alias/stale/unsupported/capacity rejection and atomic inert draft changes.');
+{
+  const reader=configurationContract({...description,capabilities:['alpacaSources']});
+  const revision='11111111-1111-4111-8111-111111111111', pin='00112233-4455-6677-8899-aabbccddeeff';
+  for (const [identity,duplicate] of [
+    ['00112233445566778899AABBCCDDEEFF',true],['{'+pin+'}',true],['urn:uuid:'+pin,true],
+    [pin+' ',false],['urn:uuid:'+pin.replaceAll('-',''),false],['{'+pin.replaceAll('-','')+'}',false],
+    ['{0x00112233,0x4455,0x6677,{0x88,0x99,0xaa,0xbb,0xcc,0xdd,0xee,0xff}}',false]
+  ]) {
+    const catalog={configurationRevision:revision,baseUrl:'http://localhost:11111',devices:[
+      {name:'[SIMULATION] camera',reportedDeviceType:'Camera',supportedDeviceType:'camera',number:1,uniqueId:identity}]};
+    const setup=new AlpacaDiscovery(async()=>structuredClone(catalog));setup.load(description,{revision});
+    await setup.query(catalog.baseUrl);
+    const draft={revision,sources:[{backend:{kind:'alpaca',baseUrl:catalog.baseUrl,deviceType:'camera',deviceNumber:2,uniqueId:pin}}]};
+    if(duplicate)assert.throws(()=>setup.adopt(reader,draft,0),/already has a source/);
+    else {setup.adopt(reader,draft,0);assert.equal(draft.sources[1].backend.uniqueId,identity);}
+  }
+}
+console.log('Catalog identity comparison preserves opaque strings and normalizes only core UUID forms.');

@@ -7,7 +7,7 @@ namespace Regain.Hub;
 
 /// Schema-driven draft utilities shared by the native frontends. The host,
 /// including its identity ledger and cross-field checks, authorizes Apply.
-public sealed class HubConfigurationDraft
+public sealed partial class HubConfigurationDraft
 {
     private readonly JsonObject baseline;
     private readonly JsonObject value;

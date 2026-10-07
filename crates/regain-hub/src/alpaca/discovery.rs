@@ -3,7 +3,10 @@
 use super::{
     bad_response, http_client, invalid, parse_response, read_body, server_root, transport_error,
 };
-use crate::{config::DeviceType, source::SourceError};
+use crate::{
+    config::{DeviceType, normalize_alpaca_id, valid_alpaca_id},
+    source::SourceError,
+};
 use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderValue};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -70,35 +73,49 @@ pub async fn discover(
     if revision.is_nil() {
         return Err(invalid("Select the current configuration revision"));
     }
-    let mut root = server_root(base_url)?;
+    let root = server_root(base_url)?;
     // Respect the same reverse-proxy prefix as ordinary Alpaca source URLs.
     let base_url = root.as_str().trim_end_matches('/').to_owned();
-    root.set_path(&format!(
-        "{}/management/v1/configureddevices",
-        root.path().trim_end_matches('/')
-    ));
     let mut headers = HeaderMap::new();
     if let Some(mut authorization) = authorization {
         authorization.set_sensitive(true);
         headers.insert(AUTHORIZATION, authorization);
     }
     let client = http_client(headers, TIMEOUT, true)?;
+    let devices = query(&client, root, 1, 1).await?;
+    Ok(Catalog {
+        configuration_revision: revision,
+        base_url,
+        devices,
+    })
+}
+// Source pins use the ordinary source client, scalar timeout and transaction
+// counter. Catalog setup and runtime identity checks share one strict decoder.
+pub(super) async fn query(
+    client: &reqwest::Client,
+    mut root: url::Url,
+    client_id: u32,
+    transaction: u32,
+) -> Result<Vec<Device>, SourceError> {
+    root.set_path(&format!(
+        "{}/management/v1/configureddevices",
+        root.path().trim_end_matches('/')
+    ));
     let mut response = client
         .get(root)
-        .query(&[("ClientID", 1u32), ("ClientTransactionID", 1u32)])
+        .query(&[
+            ("ClientID", client_id),
+            ("ClientTransactionID", transaction),
+        ])
         .send()
         .await
         .map_err(|_| transport_error(false))?;
     let body = read_body(&mut response, false, "configureddevices").await?;
-    parse_response(&body, 1, false)?;
+    parse_response(&body, transaction, false)?;
     // Decode the original body into typed entries: going through Value would
     // silently collapse duplicate device identity fields before validation.
     let catalog: WireCatalog = serde_json::from_slice(&body).map_err(|_| bad_response(false))?;
-    Ok(Catalog {
-        configuration_revision: revision,
-        base_url,
-        devices: devices(catalog.devices)?,
-    })
+    devices(catalog.devices)
 }
 fn devices(entries: Vec<WireDevice>) -> Result<Vec<Device>, SourceError> {
     if entries.len() > MAX_DEVICES {
@@ -115,18 +132,9 @@ fn devices(entries: Vec<WireDevice>) -> Result<Vec<Device>, SourceError> {
                 || wire.device_type.is_empty()
                 || wire.device_type.len() > 64
                 || !wire.device_type.bytes().all(|b| b.is_ascii_alphabetic())
-                || wire.unique_id.trim().is_empty()
-                || wire.unique_id.len() > 256
-                || !wire
-                    .unique_id
-                    .bytes()
-                    .all(|b| b.is_ascii() && !b.is_ascii_control())
+                || !valid_alpaca_id(&wire.unique_id)
                 || !addresses.insert((wire.device_type.to_ascii_lowercase(), wire.number))
-                || !identities.insert(
-                    Uuid::parse_str(&wire.unique_id)
-                        .map(|id| id.to_string())
-                        .unwrap_or_else(|_| wire.unique_id.clone()),
-                )
+                || !identities.insert(normalize_alpaca_id(&wire.unique_id))
             {
                 return Err(bad_response(false));
             }

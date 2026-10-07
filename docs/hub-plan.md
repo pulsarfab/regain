@@ -13,7 +13,29 @@ increments. Push those increments to the same draft PR without waiting for slow
 CI between steps. Final CI, review and the original acceptance/completion audit
 remain merge gates.
 
-Current increment: explicit Alpaca server catalog discovery. Shared host IPC and
+Current increment: identity-pinned Alpaca catalog adoption. Shared native/web
+setup adds a selected supported device to the draft using generated defaults and
+the successful query's endpoint, class, number, unique ID and credential reference.
+No equipment I/O, persistence or output creation occurs during adoption. Duplicate
+addresses and pinned identity aliases are rejected atomically. The identity
+ledger permits strengthening legacy unpinned sources but prevents saved pin
+removal, replacement or reuse after retirement. Pinned adapters check the bounded
+management catalog before every device request, including images and cleanup;
+observed mismatches block dispatch without renumbering or retry. Management and
+device calls remain separate and cannot guarantee atomic identity. Owned cleanup
+failures retain uncertainty. Review aligned managed/browser UUID comparison with
+the Rust core while preserving opaque vendor strings. Full hub/Alpaca Rust,
+final pin/configuration cases, strict Clippy/Rust 1.89, contract freshness, 14
+schema cases, Node contracts, all 466 ordinary NINA cases and real net48 x86/x64
+suites pass. The registered-COM-fixture skip remains explicit. Final native
+render/adoption checks pass and the screenshot is inspected. Review and initial
+failures are retained in hub-review.md. Do not close broader acceptance gates.
+Network/native/COM discovery, configuration transfer, actual OS resume,
+camera recovery metadata, remaining acceptance, README/site, main reconciliation
+and every original final review/CI/audit/merge gate remain required. No
+intermediate CI waiting.
+
+Previous increment: explicit Alpaca server catalog discovery. Shared host IPC and
 the existing protected setup endpoint query only management/configureddevices;
 they create no source lease, equipment call, configuration or safety observation.
 The generated descriptor supplies deadlines, field descriptions, response bounds
@@ -2544,3 +2566,5 @@ then cameras/coordination and every original remaining acceptance/final gate.
 | 2026-10-07 | Implemented and reviewed native NINA camera-group capture/save with frozen scalar metadata, separate ordinary NINA file writes, partial-success preservation, explicit cancellation and durable no-replay reconciliation. Shared configuration selection and ordinary camera metadata/conversions are reused. | Full Rust hub/Alpaca and 75 acquisition cases, strict Clippy/Rust 1.89, twelve schema/Node/freshness checks, warning-denied focused managed checks, final full NINA 440 passed plus one explicit registered-COM skip, and real net48 x86/x64 suites pass. Initial NOVAS/fixture/analyzer/alias/control findings are retained in hub-review.md. Next: discovery/configuration transfer, OS resume, recovery metadata, remaining acceptance, README/site, main reconciliation and original final review/CI/audit/merge; no intermediate CI waiting. |
 
 | 2026-10-07 | Implemented and reviewed explicit Alpaca server catalog discovery through shared host IPC, protected HTTP setup, native NINA/ASCOM setup and the web editor. Reused bounded transport and generated descriptors; preserved string identities, sparse numbers, unsupported classes, reviewed drafts and zero equipment leases. Corrected anonymous credential-gate contention found by concurrent admission tests. | Full Rust hub/Alpaca, all six final catalog cases, strict Clippy/Rust 1.89, contract freshness, 13 independent schema cases, Node/browser checks, full NINA 453 passed plus one explicit registered-COM skip, and real net48 x86/x64 suites pass. Native simulation render inspected and documented; initial failures retained in hub-review.md. Next: identity-pinned adoption, network/native/COM discovery and configuration transfer, then OS resume, recovery metadata and every original acceptance/documentation/final merge gate. No intermediate CI waiting. |
+
+| 2026-10-07 | Implemented and reviewed identity-pinned Alpaca catalog adoption through shared native/web draft editing. Generated defaults, fixed query credentials, atomic duplicate/capacity/stale rejection and immutable saved pins are shared with the existing host/configuration model. Runtime catalog checks guard every device request and retain owned-cleanup uncertainty; separate HTTP calls do not promise atomic identity. | Full Rust hub/Alpaca, final six pin and 22 configuration cases, strict Clippy/Rust 1.89, contract freshness, 14 schema cases, Node contracts, full NINA 466 passed plus one explicit registered-COM skip, final native render and real net48 x86/x64 suites pass. UUID/opaque-ID parser alignment and initial failures are retained in hub-review.md. Next: network/native/COM discovery and configuration import/export, then OS resume, camera recovery metadata and every original acceptance/documentation/final merge gate. No intermediate CI waiting. |

@@ -105,6 +105,7 @@ impl Server {
             label: "Private camera".into(),
             polling: PollPolicy::default(),
             backend: SourceBackend::Alpaca {
+                unique_id: None,
                 base_url: format!("http://{address}/prefix/"),
                 device_type: DeviceType::Camera,
                 device_number: 19,

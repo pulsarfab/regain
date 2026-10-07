@@ -626,6 +626,7 @@ async fn actual_alpaca_transport_preserves_shared_connection_command_parameters_
             ..PollPolicy::default()
         },
         backend: SourceBackend::Alpaca {
+            unique_id: None,
             base_url: format!("http://{address}/prefix/"),
             device_type: DeviceType::Focuser,
             device_number: 7,

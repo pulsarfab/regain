@@ -87,6 +87,7 @@ impl AccessoryUpstream {
                 ..PollPolicy::default()
             },
             backend: SourceBackend::Alpaca {
+                unique_id: None,
                 base_url: format!("http://{}/", listener.local_addr().unwrap()),
                 device_type: kind,
                 device_number: 19,
@@ -2122,6 +2123,7 @@ async fn slow_upstream_connection_does_not_block_other_outputs_or_claim_valid_re
     ))
     .unwrap();
     config.sources[0].backend = SourceBackend::Alpaca {
+        unique_id: None,
         base_url: format!("http://{address}"),
         device_type: DeviceType::Switch,
         device_number: 0,

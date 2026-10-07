@@ -5,6 +5,7 @@ namespace Regain.Hub;
 public sealed partial class HubEditorSession
 {
     public JsonElement? LastDiscovery { get; private set; }
+    private string? discoveryCredentialReference;
     public JsonElement DiscoveryDescription => Description?.GetProperty("discovery").GetProperty("alpaca")
         ?? throw new InvalidOperationException("Reload the host description first");
 
@@ -50,11 +51,11 @@ public sealed partial class HubEditorSession
                         .GetProperty("enum").EnumerateArray().Any(value => value.GetString() == kind);
                     if (string.IsNullOrWhiteSpace(name) || name.Any(char.IsControl) || string.IsNullOrWhiteSpace(identity) ||
                         !addresses.Add(kind + ":" + device.GetProperty("number").GetUInt32().ToString(System.Globalization.CultureInfo.InvariantCulture)) ||
-                        !identities.Add(Guid.TryParse(identity, out var id) ? id.ToString() : identity) ||
+                        !identities.Add(HubAlpacaIdentity.Normalize(identity)) ||
                         (known ? supported.ValueKind != JsonValueKind.String || supported.GetString() != kind : supported.ValueKind != JsonValueKind.Null)) throw new FormatException();
                 }
             } catch { throw new HubException(HubFailure.Protocol); }
-            LastDiscovery = result.Clone(); return result.Clone();
+            LastDiscovery = result.Clone(); discoveryCredentialReference = credentialReference; return result.Clone();
         } catch (HubException error) {
             if (started && (error.Failure is not (HubFailure.Remote or HubFailure.Busy or HubFailure.InvalidRequest) ||
                 error.Remote?.Code is "revisionConflict" or "disconnected" or "invalidValue")) {
@@ -64,6 +65,14 @@ public sealed partial class HubEditorSession
         } catch (OperationCanceledException) {
             if (started) { reviewed = null; State = HubEditorState.Uncertain; } throw;
         } finally { operations.Release(); }
+    }
+    public Guid AddDiscoveredAlpacaSource(int index)
+    {
+        Ready();
+        if (operations.CurrentCount == 0 || LastDiscovery is not JsonElement catalog)
+            throw new InvalidOperationException("Finish a catalog query before selecting a device");
+        var id = Draft!.AddDiscoveredAlpacaSource(catalog, index, discoveryCredentialReference);
+        Changed(); return id;
     }
     private static bool CatalogUrl(string text, out Uri? url) => Uri.TryCreate(text, UriKind.Absolute, out url) &&
         (url.Scheme == Uri.UriSchemeHttp || url.Scheme == Uri.UriSchemeHttps) &&

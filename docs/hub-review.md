@@ -7205,3 +7205,88 @@ conformance/interactive/signing/upgrade/physical acceptance, camera recovery
 metadata, README/site, main reconciliation and every original final review/CI/
 audit/merge gate. No attached hardware or installed vendor driver was opened;
 no intermediate CI was awaited. Keep the single PR draft.
+
+## 2026-10-07 — Identity-pinned Alpaca catalog adoption
+
+Shared native/web setup can add a supported catalog selection to the draft using
+generated source/backend defaults. The copied address, class, UInt32 number,
+upstream ID and credential reference belong to the successful query, not later
+text-field edits. Adoption performs no network request, persistence, output
+creation or equipment connection. Unsupported/stale selections, capacity limits,
+missing capabilities and duplicate addresses/identity aliases preserve the whole
+candidate. A successful edit revokes review and still requires ordinary apply.
+
+Optional source `uniqueId` pins are backward compatible. Existing ledger source
+identity strings are unchanged; a separate retained pin map permits strengthening
+an unpinned source and rejects pin removal/replacement, history forgery and reuse
+after retirement. UUID forms compare canonically across server aliases, while
+opaque strings remain exact. Generated schema now also states the complete
+UInt32 device-number range explicitly.
+
+Pinned adapters share setup's bounded management decoder, the ordinary source
+HTTP client, authorization and transaction counter. Every device request checks
+the catalog first, including metadata, connection changes, reads, writes, images
+and owned cleanup. Missing/moved/replaced identities, malformed/ambiguous catalogs,
+HTTP failure and a stalled response send no device request. Replacement during
+an established session blocks all subsequent operations; failed owned disconnect
+retains ownership/uncertainty through reset. No retry, automatic renumbering or
+unpinned fallback was introduced. Legacy unpinned transport regression passes.
+
+Review refinements and limits:
+
+- Management verification and device I/O are separate HTTP requests. An upstream
+  remap between them cannot be excluded; documentation explicitly avoids an
+  atomic-identity guarantee. Both requests consume the actor's finite logical
+  budget, and management uses the source's scalar timeout.
+- .NET's broad Guid parser initially treated opaque whitespace/X/unsupported
+  wrapper strings as UUIDs. A shared managed helper and browser helper now match
+  the Rust core's actual accepted forms. Behavioral cases in all three languages
+  cover recognized aliases and preserved opaque strings.
+- First focused Rust builds exposed test-only image API/Debug assumptions; the
+  corrected test checks exact Int32 bytes and typed failure kinds. Both compiler
+  logs remain in `hub-alpaca-adoption-core-tests*.log`.
+- Initial browser/managed tests assumed a managed-connection/default integer
+  representation instead of the generated externally-managed policy and 30.0
+  seconds. Corrected assertions check the actual shared defaults; production
+  defaults were not changed. Initial logs remain in
+  `hub-alpaca-adoption-node.log` and `hub-alpaca-adoption-managed-draft-tests.log`.
+- Strict Clippy found a collapsible configuration-validation branch. The equivalent
+  let-chain passes final checks without suppressing the warning. The initial
+  diagnostic remains in `hub-alpaca-adoption-clippy.log`.
+- The first rendered capture scrolled away its explanatory text. The native test
+  now captures a taller real WPF window; the complete inspected render replaces
+  `docs/images/hub-native-discovery-simulation.png`. All peers remain private and
+  explicitly simulated.
+
+Validation:
+
+- Full `cargo test -j2 --locked -p regain-hub -p regain-alpaca` passes in
+  `artifacts/hub-alpaca-adoption-full-rust.log`. Focused final configuration and
+  pin regression passes 22 and six cases in `hub-alpaca-adoption-final-core.log`;
+  the expanded core UUID/opaque-ID cases pass in
+  `hub-alpaca-adoption-final-pin-forms.log`.
+- Final strict all-target Clippy and Rust 1.89 checks pass in
+  `hub-alpaca-adoption-clippy-complete.log` and
+  `hub-alpaca-adoption-msrv-complete.log`. Generated-contract freshness passes in
+  `hub-alpaca-adoption-freshness.log`; all 14 independent schema cases pass in
+  `hub-alpaca-adoption-schema-final.log`. Node configuration/browser contracts
+  pass in `hub-alpaca-adoption-node-final.log`, including frozen credentials,
+  generated defaults, atomic adoption and opaque IDs. Modules pass syntax checks.
+- Full warning-denied NINA passes 466 cases plus one explicit registered-COM
+  fixture skip in `hub-alpaca-adoption-full-nina.log`. Actual private IPC exercises
+  adoption, host review/apply, persisted pins and zero new connections. Thirteen
+  new managed adoption cases cover faults/defaults and UUID/opaque-ID behavior.
+  The final native window test passes in `hub-alpaca-adoption-native-final.log`,
+  verifying selection, unsupported classes, draft fields and unchanged saved
+  configuration/zero leases.
+- Full real net48 x86/x64 compatibility execution passes in
+  `hub-alpaca-adoption-net48.log`, including the shared catalog adoption fixture,
+  inert host review/apply, saved identity pins, zero source connections and
+  existing camera/group/ASCOM compatibility checks in both architectures.
+
+This finishes catalog adoption construction, not all discovery/transfer.
+Network/native/COM enumeration and configuration import/export remain, followed
+by actual OS resume, camera recovery metadata, conformance/interactive/signing/
+upgrade/physical acceptance, README/site, main reconciliation and original final
+review/CI/audit/merge gates. No attached hardware or installed vendor driver was
+opened. No intermediate CI was awaited; keep the single PR draft.
