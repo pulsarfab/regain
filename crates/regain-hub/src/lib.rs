@@ -8,6 +8,7 @@ pub mod capabilities;
 pub mod client;
 pub mod com;
 pub mod config;
+pub mod coordination;
 pub mod covercalibrator;
 pub mod credentials;
 pub mod description;

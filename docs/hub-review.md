@@ -6658,3 +6658,56 @@ passes (artifacts/hub-ci-lease-cleanup.log). The first Rust attempt hit an execu
 held by the simultaneous private NINA host; rerun after terminal NINA succeeds.
 No hardware or vendor driver was opened. Windows causes and Unix verification
 remain open; local passes do not establish CI stability.
+
+
+### 2026-10-07 — Explicit calibrated focuser-group core
+
+Reviewed the new controller against milestone 5 without closing that milestone.
+The existing FocuserSession Move validation is extracted unchanged, and the new
+crate-private reservation uses the same TypedSourceSession operation lease and
+generation-fenced write. Ordinary Move/Halt/TempComp calls remain arbitrated by
+the same source actor; there is no new transport, driver crate or executable.
+
+Calibration uses Int32 inputs and Int64 intermediates: the largest signed product
+and its offset fit Int64; target conversion and configured bounds reject overflow
+before I/O. Positive-denominator nearest rounding uses ties away from zero.
+Construction rejects duplicate/mismatched source IDs and unbounded configuration.
+Physical alias resolution is explicitly not established by this core constructor;
+the host integration must resolve/reject repeated leaves before advertising it.
+
+All member command leases are acquired before any Move. Live preflight requires
+absolute position, valid travel/increment, idle motion and disabled available
+temperature compensation. The controller rechecks before each single dispatch.
+It never disables compensation, homes, reconnects, chunks motion, retries, halts
+or rolls back implicitly. Started members retain independent results after another
+member fails. Acknowledgement with no movement cannot count as reaching a target.
+
+Review found two lifecycle refinements. The initial FuturesUnordered batch waited
+for every member before resampling a healthy moving sibling. The new hung-read
+fault test failed (artifacts/hub-focuser-coordination-batch-monitor-failure.log).
+Independent per-member rescheduling removes that barrier; healthy completion is
+now observed before the stalled member's timeout. Also, start computes the deadline
+before scheduling its owned task; the admission-delay regression prevents a fresh
+allowance after task scheduling. Cancellation/deadline never drops a mutation
+acknowledgement future: the existing actor bounds queued/backend work, and lost
+replies remain uncertain without replay. Return can exceed the group bound while
+an admitted mutation finishes, including actor queue residence; this is documented
+and not presented as one backend timeout. The explicit short-group/held-write test
+preserves the ambiguous member and leaves later members unstarted.
+
+Validation: all 34 focuser cases pass, including 16 new coordination tests
+(artifacts/hub-focuser-coordination-tests.log). Full hub/Alpaca regression passes
+(artifacts/hub-focuser-coordination-rust-full.log; before the final test-only deadline
+case). Strict Clippy for both crates/all targets passes, with the final test-only
+addition rechecked (artifacts/hub-focuser-coordination-clippy.log and
+hub-focuser-coordination-clippy-final.log). Rust 1.89 all-target check passes
+(artifacts/hub-focuser-coordination-msrv.log). Formatting and diff checks pass.
+Fixtures are private actors and explicit simulations; no hardware/vendor driver
+is opened. The intermediate initial compile had unused test imports before the
+new cases were added; final warnings-denied checks pass.
+
+Required next work remains saved/generated group config, host activity/revision
+retention, physical leaf resolution, bounded IPC operation retention/reattachment,
+shutdown/recovery and native NINA orchestration. Camera synchronization, discovery
+and transfer, OS resume, broader conformance/interactive/physical acceptance,
+README/site, main reconciliation and the final audit/merge are unchanged gates.

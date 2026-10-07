@@ -1,5 +1,8 @@
 //! Typed proxy faults are private actors, never physical motion.
 use regain_hub::{
+    coordination::{
+        FocuserCalibration, FocuserGroup, FocuserGroupConfig, FocuserGroupPhase, FocuserMemberPhase,
+    },
     focuser::FocuserController,
     parameters::PollPolicy,
     safety::MonotonicClock,
@@ -27,6 +30,10 @@ struct Device {
     disconnects: AtomicUsize,
     uncertain: AtomicBool,
     hang_write: AtomicBool,
+    write_error: Mutex<Option<SourceError>>,
+    write_gate: Mutex<Option<Arc<tokio::sync::Notify>>>,
+    written: tokio::sync::Notify,
+    ignore_move: AtomicBool,
 }
 impl Device {
     fn new() -> Arc<Self> {
@@ -52,6 +59,10 @@ impl Device {
             disconnects: AtomicUsize::new(0),
             uncertain: AtomicBool::new(false),
             hang_write: AtomicBool::new(false),
+            write_error: Mutex::default(),
+            write_gate: Mutex::default(),
+            written: tokio::sync::Notify::new(),
+            ignore_move: AtomicBool::new(false),
         })
     }
     fn set(&self, member: &str, value: Value) {
@@ -102,16 +113,26 @@ impl Backend for Mock {
                 .lock()
                 .unwrap()
                 .push((member.clone(), parameters.clone()));
+            self.0.written.notify_one();
+            let gate = self.0.write_gate.lock().unwrap().clone();
+            if let Some(gate) = gate {
+                gate.notified().await;
+            }
             if self.0.hang_write.load(SeqCst) {
                 std::future::pending::<()>().await;
             }
             if self.0.uncertain.load(SeqCst) {
                 return Err(SourceError::uncertain());
             }
+            if let Some(error) = self.0.write_error.lock().unwrap().clone() {
+                return Err(error);
+            }
             match member.as_str() {
                 "move" => {
-                    self.0.set("position", parameters["Position"].clone());
-                    self.0.set("ismoving", json!(true));
+                    if !self.0.ignore_move.load(SeqCst) {
+                        self.0.set("position", parameters["Position"].clone());
+                        self.0.set("ismoving", json!(true));
+                    }
                 }
                 "halt" => self.0.set("ismoving", json!(false)),
                 "tempcomp" => self.0.set("tempcomp", parameters["TempComp"].clone()),
@@ -1041,4 +1062,552 @@ fn focuser_poll_plans_deduplicate_properties_across_multiple_outputs_without_io(
         assert_eq!(device.connects.load(SeqCst), 0);
         runtime.shutdown().await.unwrap();
     });
+}
+
+// Coordination fixtures reuse the same actor, fences and typed session as all
+// ordinary focuser clients. No native transport or installed driver is loaded.
+async fn group_setup(
+    count: usize,
+) -> (
+    Vec<Arc<Device>>,
+    Vec<Arc<SourceHandle>>,
+    Vec<Arc<regain_hub::focuser::FocuserSession>>,
+) {
+    let mut devices = Vec::new();
+    let mut sources = Vec::new();
+    let mut sessions = Vec::new();
+    for _ in 0..count {
+        let device = Device::new();
+        device.set("tempcomp", json!(false));
+        let (source, controller) = setup(&device);
+        sessions.push(Arc::new(controller.connect().await.unwrap()));
+        devices.push(device);
+        sources.push(source);
+    }
+    (devices, sources, sessions)
+}
+fn group_config(sessions: &[Arc<regain_hub::focuser::FocuserSession>]) -> FocuserGroupConfig {
+    FocuserGroupConfig {
+        id: Uuid::new_v4(),
+        minimum: 0,
+        maximum: 1000,
+        timeout_seconds: 2.0,
+        poll_seconds: 0.01,
+        members: sessions
+            .iter()
+            .map(|session| FocuserCalibration {
+                source: session.source_id(),
+                scale_numerator: 1,
+                scale_denominator: 1,
+                offset: 0,
+                minimum: 0,
+                maximum: 1000,
+            })
+            .collect(),
+    }
+}
+async fn wrote(device: &Device) {
+    tokio::time::timeout(Duration::from_secs(1), async {
+        loop {
+            let notified = device.written.notified();
+            if !device.writes.lock().unwrap().is_empty() {
+                return;
+            }
+            notified.await;
+        }
+    })
+    .await
+    .expect("Group did not dispatch the expected private move");
+}
+async fn shutdown_group(sources: &[Arc<SourceHandle>]) {
+    for source in sources {
+        source.shutdown().await.unwrap();
+    }
+}
+
+#[test]
+fn group_calibration_rounding_overflow_and_configuration_are_explicit() {
+    let mut calibration = FocuserCalibration {
+        source: Uuid::new_v4(),
+        scale_numerator: 1,
+        scale_denominator: 2,
+        offset: 100,
+        minimum: 0,
+        maximum: 1000,
+    };
+    assert_eq!(calibration.target(1).unwrap(), 101);
+    assert_eq!(calibration.target(-1).unwrap(), 99);
+    assert_eq!(calibration.target(2).unwrap(), 101);
+    calibration.scale_numerator = -1;
+    assert_eq!(calibration.target(1).unwrap(), 99);
+    calibration.scale_numerator = i32::MAX;
+    assert_eq!(
+        calibration.target(i32::MAX).unwrap_err().kind,
+        ErrorKind::InvalidValue
+    );
+    calibration.scale_denominator = 0;
+    assert!(calibration.target(0).is_err());
+    calibration.scale_denominator = 1;
+    calibration.scale_numerator = 0;
+    assert!(calibration.target(0).is_err());
+}
+
+#[tokio::test(start_paused = true)]
+async fn group_calibrates_each_target_and_reserves_members_until_exact_completion() {
+    let (devices, sources, sessions) = group_setup(2).await;
+    let sibling = FocuserController::new(sources[0].clone(), Duration::from_secs(2))
+        .unwrap()
+        .connect()
+        .await
+        .unwrap();
+    let mut config = group_config(&sessions);
+    config.members[0].scale_numerator = 3;
+    config.members[0].scale_denominator = 2;
+    config.members[0].offset = 10;
+    config.members[1].scale_numerator = -2;
+    config.members[1].offset = 500;
+    let group = FocuserGroup::new(config, sessions).unwrap();
+    let mut operation = group.start(100).unwrap();
+    assert_eq!(group.start(100).err().unwrap().kind, ErrorKind::Busy);
+    for device in &devices {
+        wrote(device).await;
+    }
+    assert_eq!(devices[0].writes.lock().unwrap()[0].1["Position"], 160);
+    assert_eq!(devices[1].writes.lock().unwrap()[0].1["Position"], 300);
+    assert_eq!(
+        sibling.move_to(150).await.unwrap_err().kind,
+        ErrorKind::Busy
+    );
+    assert_eq!(
+        sibling.set_temp_comp(true).await.unwrap_err().kind,
+        ErrorKind::Busy
+    );
+    assert_eq!(sibling.halt().await.unwrap_err().kind, ErrorKind::Busy);
+    let before = devices[0].reads.load(SeqCst);
+    let sequence = operation.status().sequence;
+    for _ in 0..10 {
+        assert_eq!(operation.status().sequence, sequence);
+    }
+    assert_eq!(devices[0].reads.load(SeqCst), before);
+    for device in &devices {
+        device.set("ismoving", json!(false));
+    }
+    let result = operation.completed().await.unwrap();
+    assert_eq!(result.phase, FocuserGroupPhase::Complete);
+    assert!(
+        result
+            .members
+            .iter()
+            .all(|member| member.phase == FocuserMemberPhase::Complete
+                && member.last_position == Some(member.target))
+    );
+    assert!(
+        devices
+            .iter()
+            .all(|device| device.writes.lock().unwrap().len() == 1)
+    );
+    shutdown_group(&sources).await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn group_preflights_every_member_before_any_write() {
+    for fault in [
+        "travel",
+        "increment",
+        "compensation",
+        "relative",
+        "moving",
+        "read",
+    ] {
+        let (devices, sources, sessions) = group_setup(2).await;
+        match fault {
+            "travel" => devices[1].set("maxstep", json!(90)),
+            "increment" => devices[1].set("maxincrement", json!(20)),
+            "compensation" => devices[1].set("tempcomp", json!(true)),
+            "relative" => devices[1].set("absolute", json!(false)),
+            "moving" => devices[1].set("ismoving", json!(true)),
+            "read" => {
+                devices[1]
+                    .errors
+                    .lock()
+                    .unwrap()
+                    .insert("maxstep".into(), SourceError::transient());
+            }
+            _ => unreachable!(),
+        }
+        let group = FocuserGroup::new(group_config(&sessions), sessions).unwrap();
+        let result = group.start(100).unwrap().completed().await.unwrap();
+        assert_eq!(result.phase, FocuserGroupPhase::PreflightFailed, "{fault}");
+        assert_eq!(
+            result.members[1].phase,
+            FocuserMemberPhase::Rejected,
+            "{fault}"
+        );
+        assert!(
+            devices
+                .iter()
+                .all(|device| device.writes.lock().unwrap().is_empty()),
+            "{fault}"
+        );
+        shutdown_group(&sources).await;
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn group_rejects_duplicate_mismatched_and_unbounded_configuration_without_io() {
+    let (devices, sources, sessions) = group_setup(2).await;
+    let baseline: Vec<_> = devices
+        .iter()
+        .map(|device| device.reads.load(SeqCst))
+        .collect();
+    let config = group_config(&sessions);
+    for fault in [
+        "duplicate",
+        "mismatch",
+        "empty",
+        "nan",
+        "long",
+        "poll",
+        "logical",
+    ] {
+        let mut invalid = config.clone();
+        match fault {
+            "duplicate" => invalid.members[1].source = invalid.members[0].source,
+            "mismatch" => invalid.members[1].source = Uuid::new_v4(),
+            "empty" => invalid.members.clear(),
+            "nan" => invalid.timeout_seconds = f64::NAN,
+            "long" => invalid.timeout_seconds = 301.0,
+            "poll" => invalid.poll_seconds = 0.0,
+            "logical" => invalid.maximum = -1,
+            _ => unreachable!(),
+        }
+        assert!(
+            FocuserGroup::new(invalid, sessions.clone()).is_err(),
+            "{fault}"
+        );
+    }
+    let group = FocuserGroup::new(config.clone(), sessions.clone()).unwrap();
+    assert!(group.start(-1).is_err());
+    assert!(group.start(1001).is_err());
+    let mut outside = config;
+    outside.members[1].maximum = 99;
+    let other = FocuserGroup::new(outside, sessions).unwrap();
+    assert!(other.start(100).is_err());
+    assert_eq!(
+        devices
+            .iter()
+            .map(|device| device.reads.load(SeqCst))
+            .collect::<Vec<_>>(),
+        baseline
+    );
+    assert!(
+        devices
+            .iter()
+            .all(|device| device.writes.lock().unwrap().is_empty())
+    );
+    shutdown_group(&sources).await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn group_partial_failure_observes_started_member_without_replay_or_rollback() {
+    for uncertain in [false, true] {
+        let (devices, sources, sessions) = group_setup(3).await;
+        devices[1].uncertain.store(uncertain, SeqCst);
+        if !uncertain {
+            *devices[1].write_error.lock().unwrap() = Some(SourceError::new(
+                ErrorKind::Unsupported,
+                "Private rejected move",
+            ));
+        }
+        let group = FocuserGroup::new(group_config(&sessions), sessions).unwrap();
+        let mut operation = group.start(100).unwrap();
+        wrote(&devices[1]).await;
+        devices[0].set("ismoving", json!(false));
+        let result = operation.completed().await.unwrap();
+        assert_eq!(result.phase, FocuserGroupPhase::PartialFailure);
+        assert_eq!(result.members[0].phase, FocuserMemberPhase::Complete);
+        assert_eq!(
+            result.members[1].phase,
+            if uncertain {
+                FocuserMemberPhase::Uncertain
+            } else {
+                FocuserMemberPhase::Failed
+            }
+        );
+        assert_eq!(result.members[2].phase, FocuserMemberPhase::NotStarted);
+        assert_eq!(devices[0].writes.lock().unwrap().len(), 1);
+        assert_eq!(devices[1].writes.lock().unwrap().len(), 1);
+        assert!(devices[2].writes.lock().unwrap().is_empty());
+        shutdown_group(&sources).await;
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn group_cancellation_during_dispatched_move_preserves_ack_and_stops_remaining_dispatch() {
+    let (devices, sources, sessions) = group_setup(2).await;
+    let gate = Arc::new(tokio::sync::Notify::new());
+    *devices[0].write_gate.lock().unwrap() = Some(gate.clone());
+    let group = FocuserGroup::new(group_config(&sessions), sessions).unwrap();
+    let mut operation = group.start(100).unwrap();
+    wrote(&devices[0]).await;
+    operation.cancel();
+    settle().await;
+    assert!(
+        !operation.status().phase.terminal(),
+        "Cancellation discarded an in-flight mutation acknowledgement"
+    );
+    gate.notify_one();
+    let result = operation.completed().await.unwrap();
+    assert_eq!(result.phase, FocuserGroupPhase::Cancelled);
+    assert_eq!(result.members[0].phase, FocuserMemberPhase::Moving);
+    assert_eq!(result.members[1].phase, FocuserMemberPhase::NotStarted);
+    assert_eq!(devices[0].writes.lock().unwrap().len(), 1);
+    assert!(devices[1].writes.lock().unwrap().is_empty());
+    shutdown_group(&sources).await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn group_cancel_before_start_does_no_io_and_dropped_waiter_does_not_cancel() {
+    let (devices, sources, sessions) = group_setup(2).await;
+    let group = FocuserGroup::new(group_config(&sessions), sessions).unwrap();
+    let baseline: Vec<_> = devices
+        .iter()
+        .map(|device| device.reads.load(SeqCst))
+        .collect();
+    let mut cancelled = group.start(100).unwrap();
+    cancelled.cancel();
+    assert_eq!(
+        cancelled.completed().await.unwrap().phase,
+        FocuserGroupPhase::Cancelled
+    );
+    settle().await;
+    assert_eq!(
+        devices
+            .iter()
+            .map(|device| device.reads.load(SeqCst))
+            .collect::<Vec<_>>(),
+        baseline
+    );
+    let operation = group.start(100).unwrap();
+    let mut observer = operation.clone();
+    drop(operation);
+    for device in &devices {
+        wrote(device).await;
+        device.set("ismoving", json!(false));
+    }
+    assert_eq!(
+        observer.completed().await.unwrap().phase,
+        FocuserGroupPhase::Complete
+    );
+    shutdown_group(&sources).await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn group_deadline_does_not_claim_halt_or_reached_position() {
+    let (devices, sources, sessions) = group_setup(2).await;
+    let group = FocuserGroup::new(group_config(&sessions), sessions).unwrap();
+    let result = group.start(100).unwrap().completed().await.unwrap();
+    assert_eq!(result.phase, FocuserGroupPhase::Deadline);
+    assert!(
+        result
+            .members
+            .iter()
+            .all(|member| member.phase == FocuserMemberPhase::Moving)
+    );
+    assert!(
+        devices
+            .iter()
+            .all(|device| device.writes.lock().unwrap().len() == 1)
+    );
+    shutdown_group(&sources).await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn group_acknowledgement_without_motion_cannot_report_success() {
+    let (devices, sources, sessions) = group_setup(2).await;
+    devices[1].ignore_move.store(true, SeqCst);
+    let group = FocuserGroup::new(group_config(&sessions), sessions).unwrap();
+    let mut operation = group.start(100).unwrap();
+    wrote(&devices[1]).await;
+    devices[0].set("ismoving", json!(false));
+    let result = operation.completed().await.unwrap();
+    assert_eq!(result.phase, FocuserGroupPhase::PartialFailure);
+    assert_eq!(result.members[0].phase, FocuserMemberPhase::Complete);
+    assert_eq!(result.members[1].phase, FocuserMemberPhase::Failed);
+    assert_eq!(result.members[1].last_position, Some(50));
+    shutdown_group(&sources).await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn group_rechecks_live_limits_before_later_dispatch_and_observes_prior_motion() {
+    let (devices, sources, sessions) = group_setup(2).await;
+    let gate = Arc::new(tokio::sync::Notify::new());
+    *devices[0].write_gate.lock().unwrap() = Some(gate.clone());
+    let group = FocuserGroup::new(group_config(&sessions), sessions).unwrap();
+    let mut operation = group.start(100).unwrap();
+    wrote(&devices[0]).await;
+    devices[1].set("maxstep", json!(90));
+    gate.notify_one();
+    loop {
+        let report = operation.changed().await.unwrap();
+        if report.members[1].phase == FocuserMemberPhase::Rejected {
+            break;
+        }
+        assert!(!report.phase.terminal());
+    }
+    devices[0].set("ismoving", json!(false));
+    let result = operation.completed().await.unwrap();
+    assert_eq!(result.phase, FocuserGroupPhase::PartialFailure);
+    assert_eq!(result.members[0].phase, FocuserMemberPhase::Complete);
+    assert_eq!(result.members[1].phase, FocuserMemberPhase::Rejected);
+    assert!(devices[1].writes.lock().unwrap().is_empty());
+    shutdown_group(&sources).await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn group_observes_completed_sibling_while_another_member_read_is_hung() {
+    let (devices, sources, sessions) = group_setup(2).await;
+    let gate = Arc::new(tokio::sync::Notify::new());
+    *devices[1].write_gate.lock().unwrap() = Some(gate.clone());
+    let group = FocuserGroup::new(group_config(&sessions), sessions).unwrap();
+    let mut operation = group.start(100).unwrap();
+    wrote(&devices[1]).await;
+    *devices[0].hang_read.lock().unwrap() = Some("ismoving".into());
+    gate.notify_one();
+    loop {
+        let report = operation.changed().await.unwrap();
+        if report.members[1].phase == FocuserMemberPhase::Moving {
+            break;
+        }
+    }
+    devices[1].set("ismoving", json!(false));
+    let start = tokio::time::Instant::now();
+    loop {
+        let report = operation.changed().await.unwrap();
+        if report.members[1].phase == FocuserMemberPhase::Complete {
+            assert_eq!(report.members[0].phase, FocuserMemberPhase::Moving);
+            assert!(tokio::time::Instant::now().duration_since(start) < Duration::from_millis(100));
+            break;
+        }
+    }
+    let result = operation.completed().await.unwrap();
+    assert_eq!(result.phase, FocuserGroupPhase::PartialFailure);
+    assert_eq!(result.members[0].phase, FocuserMemberPhase::Uncertain);
+    assert_eq!(result.members[1].phase, FocuserMemberPhase::Complete);
+    shutdown_group(&sources).await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn group_ambiguous_write_deadline_blocks_replay_and_retains_member_uncertainty() {
+    let (devices, sources, sessions) = group_setup(2).await;
+    devices[0].hang_write.store(true, SeqCst);
+    let group = FocuserGroup::new(group_config(&sessions), sessions.clone()).unwrap();
+    let result = group.start(100).unwrap().completed().await.unwrap();
+    assert_eq!(result.phase, FocuserGroupPhase::PartialFailure);
+    assert_eq!(result.members[0].phase, FocuserMemberPhase::Uncertain);
+    assert_eq!(result.members[1].phase, FocuserMemberPhase::NotStarted);
+    assert_eq!(devices[0].writes.lock().unwrap().len(), 1);
+    assert!(devices[1].writes.lock().unwrap().is_empty());
+    settle().await;
+    let repeated = group.start(100).unwrap().completed().await.unwrap();
+    assert_eq!(repeated.phase, FocuserGroupPhase::PreflightFailed);
+    assert_eq!(devices[0].writes.lock().unwrap().len(), 1);
+    assert!(sessions[0].move_to(100).await.is_err());
+    shutdown_group(&sources).await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn group_overlapping_groups_fail_busy_without_lock_order_deadlock() {
+    let (devices, sources, sessions) = group_setup(2).await;
+    let first = FocuserGroup::new(group_config(&sessions), sessions.clone()).unwrap();
+    let reversed: Vec<_> = sessions.into_iter().rev().collect();
+    let second = FocuserGroup::new(group_config(&reversed), reversed).unwrap();
+    let mut a = first.start(100).unwrap();
+    let mut b = second.start(100).unwrap();
+    settle().await;
+    for device in &devices {
+        device.set("ismoving", json!(false));
+    }
+    let (a, b) = tokio::join!(a.completed(), b.completed());
+    let outcomes = [a.unwrap(), b.unwrap()];
+    assert!(
+        outcomes
+            .iter()
+            .any(|report| report.phase == FocuserGroupPhase::PreflightFailed)
+    );
+    assert!(outcomes.iter().all(|report| matches!(
+        report.phase,
+        FocuserGroupPhase::Complete | FocuserGroupPhase::PreflightFailed
+    )));
+    assert!(
+        devices
+            .iter()
+            .all(|device| device.writes.lock().unwrap().len() <= 1)
+    );
+    shutdown_group(&sources).await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn group_deadline_starts_at_admission_before_the_owned_task_is_scheduled() {
+    let (devices, sources, sessions) = group_setup(2).await;
+    let group = FocuserGroup::new(group_config(&sessions), sessions).unwrap();
+    let mut operation = group.start(100).unwrap();
+    tokio::time::advance(Duration::from_secs(3)).await;
+    assert_eq!(
+        operation.completed().await.unwrap().phase,
+        FocuserGroupPhase::Deadline
+    );
+    assert!(
+        devices
+            .iter()
+            .all(|device| device.writes.lock().unwrap().is_empty())
+    );
+    shutdown_group(&sources).await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn group_source_retirement_during_motion_cannot_publish_false_completion() {
+    let (devices, sources, sessions) = group_setup(2).await;
+    let gate = Arc::new(tokio::sync::Notify::new());
+    *devices[1].write_gate.lock().unwrap() = Some(gate.clone());
+    let group = FocuserGroup::new(group_config(&sessions), sessions).unwrap();
+    let mut operation = group.start(100).unwrap();
+    wrote(&devices[1]).await;
+    sources[0].shutdown().await.unwrap();
+    gate.notify_one();
+    loop {
+        let report = operation.changed().await.unwrap();
+        if report.members[1].phase == FocuserMemberPhase::Moving {
+            break;
+        }
+    }
+    devices[1].set("ismoving", json!(false));
+    let result = operation.completed().await.unwrap();
+    assert_eq!(result.phase, FocuserGroupPhase::PartialFailure);
+    assert_eq!(result.members[0].phase, FocuserMemberPhase::Uncertain);
+    assert_eq!(result.members[1].phase, FocuserMemberPhase::Complete);
+    assert!(
+        devices
+            .iter()
+            .all(|device| device.writes.lock().unwrap().len() == 1)
+    );
+    shutdown_group(&sources).await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn group_deadline_awaits_existing_mutation_bound_and_preserves_lost_acknowledgement() {
+    let (devices, sources, sessions) = group_setup(2).await;
+    devices[0].hang_write.store(true, SeqCst);
+    let mut config = group_config(&sessions);
+    config.timeout_seconds = 0.01;
+    let group = FocuserGroup::new(config, sessions).unwrap();
+    let start = tokio::time::Instant::now();
+    let result = group.start(100).unwrap().completed().await.unwrap();
+    assert_eq!(result.phase, FocuserGroupPhase::Deadline);
+    assert_eq!(result.members[0].phase, FocuserMemberPhase::Uncertain);
+    assert_eq!(result.members[1].phase, FocuserMemberPhase::NotStarted);
+    assert!(tokio::time::Instant::now().duration_since(start) >= Duration::from_millis(100));
+    assert_eq!(devices[0].writes.lock().unwrap().len(), 1);
+    assert!(devices[1].writes.lock().unwrap().is_empty());
+    shutdown_group(&sources).await;
 }

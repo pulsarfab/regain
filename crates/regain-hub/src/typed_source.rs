@@ -38,6 +38,9 @@ impl TypedSourceSession {
     pub(crate) fn generation(&self) -> Uuid {
         self.generation
     }
+    pub(crate) fn source_id(&self) -> Uuid {
+        self.lease.source.snapshot().source
+    }
     pub(crate) fn snapshot(&self) -> Result<SourceSnapshot, SourceError> {
         let state = self.lease.source.snapshot();
         if state.generation != self.generation || !state.transport_connected {

@@ -9,6 +9,22 @@ Cargo package verification uses the new workspace packages.
 Last updated: 2026-10-07.
 
 
+Current increment: implement the explicit focuser-group core in regain-hub,
+reusing typed sessions/source actors rather than adding a device crate or process.
+Rational calibrated transforms, configured/live travel and increment checks,
+all-member reservations/preflight, per-dispatch rechecks and immutable member
+results are implemented. Owned tasks retain work across dropped waiters; explicit
+cancellation stops later work while awaiting any dispatched mutation's bounded
+acknowledgement. Independent member monitors preserve healthy sibling completion
+during a hung read. The first round-based monitor failed that fault test and was
+replaced. All 34 focuser tests pass, including 16 new coordination cases. Full hub/Alpaca
+regression, strict Clippy, Rust 1.89 all-target checks, formatting and diff checks pass. See hub-coordination.md for the contract.
+This is not yet saved configuration/IPC/NINA orchestration. Physical-leaf alias
+resolution, host activity/revision retention, bounded reattachment inventory,
+shutdown/recovery and native NINA integration remain required before closing
+milestone 5. Keep synchronized cameras and every original acceptance/final gate.
+
+
 Current increment: investigate terminal 9e60a77 CI. Both workflows are red;
 push Windows passes, while PR Windows fails timing-descriptor and native
 filter-wheel review fixtures. Failure messages now retain the exact timing
@@ -2122,6 +2138,13 @@ integrity tests cover the classes shipped, with limitations stated explicitly.
   start skew, partial failures, and explicit abort/continue policy.
 - [ ] Expose useful orchestration in native NINA without pretending one standard
   Camera interface can return several independent images.
+
+Core progress: the Rust focuser-group controller and 16 private coordination
+cases are implemented; all 34 focuser cases pass. It shares existing actor control
+leases, generation fences and live validation. See [coordination contract](hub-coordination.md).
+Saved/generated config, physical alias resolution, host operation activity and
+revision, IPC reattachment/shutdown and native NINA integration are still required.
+Do not check off this milestone from core tests alone.
 
 Gate: simulation/fault-injection tests precede hardware trials; measured behavior
 and timing limits are documented. Do not claim rollback or hard synchronization

@@ -2936,3 +2936,21 @@ owner. Native camera model/identity/recovery fields use the existing core metada
 without importing native recovery promises into Alpaca/COM/virtual proxies.
 Camera creation does not enable coordinated multi-camera capture or close the
 remaining conformance, interactive and physical acceptance gates.
+
+
+### Explicit focuser coordination (core development)
+
+The shared Rust core now provides calibrated absolute-focuser groups with actor
+command reservations across all members, preflight before any write, live checks
+before each dispatch and independent completion observations. A group is an
+explicit operation with separate member targets/results; it is not another
+single-device ASCOM interface. It never implicitly disables compensation, homes,
+reconnects, retries a mutation, chunks motion, halts or rolls back. Dropping a
+waiter preserves the owned task; explicit cancellation stops further work while
+preserving any in-flight command's acknowledgement/uncertainty. See
+[the coordination contract](hub-coordination.md) for bounds and partial results.
+
+This API is not yet in HubConfig, IPC or generated frontend descriptors. Host
+activity/revision retention, physical alias resolution, bounded operation
+reattachment/shutdown and native NINA orchestration remain required. Existing
+single-device frontends do not advertise group support from this core increment.

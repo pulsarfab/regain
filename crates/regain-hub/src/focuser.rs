@@ -1,7 +1,7 @@
 //! Typed focuser operations over the shared source actor. A session is bound to
 //! one transport generation; reconnect explicitly to adopt a replacement device.
 use crate::{
-    readout::{invalid, unavailable},
+    readout::{SourceLease, invalid, unavailable},
     source::{ErrorKind, SourceError, SourceHandle, Values},
     typed_source::TypedSourceSession,
 };
@@ -231,6 +231,9 @@ impl FocuserSession {
     pub fn generation(&self) -> Uuid {
         self.source.generation()
     }
+    pub fn source_id(&self) -> Uuid {
+        self.source.source_id()
+    }
     async fn read(&self, member: &str) -> Result<Value, SourceError> {
         self.source.read(member).await
     }
@@ -301,6 +304,10 @@ impl FocuserSession {
     /// never disables temperature compensation or retries a dispatched command.
     pub async fn move_to(&self, position: i32) -> Result<(), SourceError> {
         let operation = self.source.operation().await?;
+        self.validate_move(position).await?;
+        self.write_move(&operation, position).await
+    }
+    async fn validate_move(&self, position: i32) -> Result<(), SourceError> {
         let capabilities = self.capabilities().await?;
         let valid = if capabilities.absolute {
             (0..=capabilities.max_step).contains(&position)
@@ -327,13 +334,22 @@ impl FocuserSession {
                 ));
             }
         }
+        Ok(())
+    }
+    async fn write_move(&self, operation: &SourceLease, position: i32) -> Result<(), SourceError> {
         self.source
             .write(
-                &operation,
+                operation,
                 "move",
                 Values::from([("Position".into(), json!(position))]),
             )
             .await
+    }
+    pub(crate) async fn reserve_motion(&self) -> Result<FocuserMotionReservation<'_>, SourceError> {
+        Ok(FocuserMotionReservation {
+            session: self,
+            operation: self.source.operation().await?,
+        })
     }
     /// Optional support is determined by the source; setup never probes Halt by
     /// actuating it. A halt failure is not replaced by a guessed motion command.
@@ -356,6 +372,35 @@ impl FocuserSession {
                 Values::from([("TempComp".into(), json!(enabled))]),
             )
             .await
+    }
+}
+/// A group retains the existing actor's command lease through completion.
+/// No second transport, connection policy or unchecked public Move API.
+pub(crate) struct FocuserMotionReservation<'a> {
+    session: &'a FocuserSession,
+    operation: SourceLease,
+}
+impl FocuserMotionReservation<'_> {
+    pub(crate) async fn preflight(&self, position: i32) -> Result<(), SourceError> {
+        let capabilities = self.session.capabilities().await?;
+        if !capabilities.absolute {
+            return Err(SourceError::new(
+                ErrorKind::Unsupported,
+                "Focuser groups require absolute position",
+            ));
+        }
+        if capabilities.temp_comp_available && self.session.temp_comp().await? {
+            return Err(SourceError::new(
+                ErrorKind::Busy,
+                "Disable temperature compensation explicitly before group motion",
+            ));
+        }
+        self.session.validate_move(position).await
+    }
+    // The owned coordinator checks cancellation/deadline after preflight and
+    // awaits this bounded mutation even if its caller stops waiting.
+    pub(crate) async fn dispatch(&self, position: i32) -> Result<(), SourceError> {
+        self.session.write_move(&self.operation, position).await
     }
 }
 fn bad_reading() -> SourceError {
