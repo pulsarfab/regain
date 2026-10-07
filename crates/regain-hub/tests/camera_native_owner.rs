@@ -36,6 +36,19 @@ fn camera(
     ActivityCounter,
     Arc<Mutex<Vec<String>>>,
 ) {
+    camera_model(direct, simulation, maximum, "ZWO ASI676MC")
+}
+fn camera_model(
+    direct: bool,
+    simulation: Value,
+    maximum: usize,
+    direct_model: &str,
+) -> (
+    Arc<NativeCamera>,
+    ImageBudget,
+    ActivityCounter,
+    Arc<Mutex<Vec<String>>>,
+) {
     let budget = ImageBudget::new(maximum).unwrap();
     let activity = ActivityCounter::default();
     let events = Arc::new(Mutex::new(Vec::new()));
@@ -43,7 +56,7 @@ fn camera(
     let owner = NativeCamera::new(
         Selection {
             name: if direct {
-                "ZWO ASI676MC"
+                direct_model
             } else {
                 "ZWO Simulated"
             }
@@ -88,7 +101,248 @@ async fn until(mut predicate: impl FnMut() -> bool) {
     .unwrap();
 }
 async fn settled(owner: &NativeCamera, activity: &ActivityCounter) {
-    until(|| owner.snapshot().operation.is_none() && activity.active() == 0).await;
+    until(|| {
+        let snapshot = owner.snapshot();
+        snapshot.operation.is_none() && snapshot.cooling.is_none() && activity.active() == 0
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn idle_cooling_validates_and_admits_once_and_caller_loss_skips_unsent_work() {
+    for direct in [false, true] {
+        let (owner, _, activity, _) = camera_model(
+            direct,
+            json!({"instant":true}),
+            admission() * 2,
+            "ZWO ASI585MM Pro",
+        );
+        assert_eq!(
+            owner.set_cooling(16, -10).await.unwrap_err().kind,
+            ErrorKind::Disconnected
+        );
+        owner.connect().await.unwrap();
+        for (control, value) in [(0, 100), (16, -100), (17, 2)] {
+            assert_eq!(
+                owner.set_cooling(control, value).await.unwrap_err().kind,
+                ErrorKind::InvalidValue
+            );
+            assert_eq!(activity.active(), 0);
+            assert!(owner.snapshot().cooling.is_none());
+        }
+        let original = owner.snapshot().core.values[&16];
+        let mut setter = Box::pin(owner.set_cooling(16, -20));
+        // This current-thread test has not yielded to the retained task yet.
+        assert!(futures_util::poll!(setter.as_mut()).is_pending());
+        assert_eq!(activity.active(), 1);
+        let pending = owner.snapshot().cooling.unwrap();
+        assert_eq!((pending.control, pending.value), (16, -20));
+        assert_eq!(
+            owner.set_cooling(17, 1).await.unwrap_err().kind,
+            ErrorKind::Busy
+        );
+        assert_eq!(
+            owner.start(exposure(10_000)).unwrap_err().kind,
+            ErrorKind::Busy
+        );
+        assert_eq!(owner.abort().await.unwrap_err().kind, ErrorKind::Busy);
+        drop(setter);
+        settled(&owner, &activity).await;
+        assert_eq!(owner.snapshot().core.values[&16], original);
+        assert!(owner.snapshot().error.is_none());
+        for (control, value) in [(16, -10), (17, 1), (16, -15)] {
+            assert_eq!(owner.set_cooling(control, value).await.unwrap(), value);
+            assert_eq!(owner.snapshot().core.values[&control], value);
+            assert_eq!(activity.active(), 0);
+        }
+        owner.close().await.unwrap();
+        settled(&owner, &activity).await;
+    }
+}
+
+#[tokio::test]
+async fn completed_image_publication_waits_for_known_cooling_and_preserves_readers() {
+    let (owner, budget, activity, _) = camera(false, json!({"instant":true}), admission() * 2);
+    owner.connect().await.unwrap();
+    let id = owner.start(exposure(10_000)).unwrap();
+    let reader = owner.wait(id).await.unwrap();
+    settled(&owner, &activity).await;
+    let mut setter = Box::pin(owner.set_cooling(16, -15));
+    assert!(futures_util::poll!(setter.as_mut()).is_pending());
+    assert!(!owner.snapshot().image_ready);
+    assert_eq!(owner.image().err().unwrap().kind, ErrorKind::Busy);
+    let mut waiter = Box::pin(owner.wait(id));
+    assert!(futures_util::poll!(waiter.as_mut()).is_pending());
+    setter.await.unwrap();
+    let image = waiter.await.unwrap();
+    assert_eq!(image.bytes().as_ptr(), reader.bytes().as_ptr());
+    assert!(owner.snapshot().image_ready);
+    owner.close().await.unwrap();
+    settled(&owner, &activity).await;
+    assert_eq!(reader.bytes().len(), 8192);
+    drop(reader);
+    drop(image);
+    assert_eq!(budget.used_bytes(), 0);
+}
+
+#[tokio::test]
+async fn active_sdk_and_direct_capture_acknowledge_cooling_without_engine_deadlock() {
+    for direct in [false, true] {
+        let (owner, _, activity, _) = camera_model(
+            direct,
+            json!({"instant":false}),
+            admission() * 2,
+            "ZWO ASI585MM Pro",
+        );
+        owner.connect().await.unwrap();
+        let id = owner.start(exposure(6_000_000)).unwrap();
+        until(|| owner.snapshot().core.phase == "Exposing").await;
+        for (control, value) in [(16, -15), (17, 1), (16, -20)] {
+            assert_eq!(owner.set_cooling(control, value).await.unwrap(), value);
+            assert_eq!(owner.snapshot().core.values[&control], value);
+            assert_eq!(
+                activity.active(),
+                1,
+                "Capture retains activity after cooler acknowledgement"
+            );
+        }
+        let image = owner.wait(id).await.unwrap();
+        settled(&owner, &activity).await;
+        let metadata: Value =
+            serde_json::from_slice(image.native().unwrap().metadata_json()).unwrap();
+        assert_eq!(metadata["controls"]["16"], -20);
+        assert_eq!(metadata["controls"]["17"], 1);
+        assert_eq!(
+            image.bytes(),
+            (0..4096u16).flat_map(u16::to_le_bytes).collect::<Vec<_>>()
+        );
+        owner.close().await.unwrap();
+        settled(&owner, &activity).await;
+    }
+}
+
+#[tokio::test]
+async fn reset_retires_queued_cooling_and_cannot_acknowledge_a_later_generation() {
+    let (owner, _, activity, _) = camera(false, json!({"instant":true}), admission() * 2);
+    owner.connect().await.unwrap();
+    let generation = owner.snapshot().generation;
+    let mut setter = Box::pin(owner.set_cooling(16, -20));
+    assert!(futures_util::poll!(setter.as_mut()).is_pending());
+    owner.reset();
+    assert_ne!(owner.snapshot().generation, generation);
+    assert!(owner.snapshot().cooling.is_none());
+    assert_eq!(setter.await.unwrap_err().kind, ErrorKind::Disconnected);
+    settled(&owner, &activity).await;
+    owner.connect().await.unwrap();
+    assert_eq!(owner.set_cooling(16, -15).await.unwrap(), -15);
+    assert_eq!(owner.snapshot().core.values[&16], -15);
+    let mut acknowledged = Box::pin(owner.set_cooling(16, -18));
+    assert!(futures_util::poll!(acknowledged.as_mut()).is_pending());
+    // Let the retained task acknowledge, but keep its caller unpolled. A reset
+    // must reject even this already-buffered success for the retired generation.
+    settled(&owner, &activity).await;
+    assert_eq!(owner.snapshot().core.values[&16], -18);
+    owner.reset();
+    assert_eq!(
+        acknowledged.await.unwrap_err().kind,
+        ErrorKind::Disconnected
+    );
+    settled(&owner, &activity).await;
+    owner.connect().await.unwrap();
+    owner.close().await.unwrap();
+    settled(&owner, &activity).await;
+}
+
+#[tokio::test]
+async fn uncertain_idle_cooler_blocks_publication_and_restarts_until_explicit_reset() {
+    let (owner, budget, activity, _) = camera(
+        false,
+        json!({"instant":true,"clampControl":16,"clampMinimum":0}),
+        admission() * 2,
+    );
+    owner.connect().await.unwrap();
+    // Admit a target the clamp can acknowledge before initial capture settings
+    // are applied; only the later negative request should fail readback.
+    owner.set_cooling(16, 0).await.unwrap();
+    let id = owner.start(exposure(10_000)).unwrap();
+    let reader = owner.wait(id).await.unwrap();
+    settled(&owner, &activity).await;
+    let original = owner.snapshot().core.values[&16];
+    let error = owner.set_cooling(16, -15).await.unwrap_err();
+    assert_eq!(error.kind, ErrorKind::Uncertain);
+    assert!(
+        !error.message.contains("readback"),
+        "Worker details stay redacted"
+    );
+    assert_eq!(owner.snapshot().core.values[&16], original);
+    assert!(!owner.snapshot().core.control_connection_available);
+    assert!(!owner.snapshot().image_ready);
+    assert_eq!(
+        owner.wait(id).await.err().unwrap().kind,
+        ErrorKind::Uncertain
+    );
+    assert_eq!(owner.image().err().unwrap().kind, ErrorKind::Uncertain);
+    assert_eq!(
+        owner.start(exposure(10_000)).unwrap_err().kind,
+        ErrorKind::Uncertain
+    );
+    assert_eq!(
+        owner.connect().await.unwrap_err().kind,
+        ErrorKind::Uncertain
+    );
+    assert_eq!(
+        owner.set_cooling(17, 0).await.unwrap_err().kind,
+        ErrorKind::Uncertain
+    );
+    assert_eq!(owner.abort().await.unwrap_err().kind, ErrorKind::Uncertain);
+    assert_eq!(reader.bytes().len(), 8192);
+    owner.reset();
+    settled(&owner, &activity).await;
+    owner.connect().await.unwrap();
+    assert_eq!(owner.set_cooling(16, 5).await.unwrap(), 5);
+    owner.close().await.unwrap();
+    settled(&owner, &activity).await;
+    drop(reader);
+    assert_eq!(budget.used_bytes(), 0);
+}
+
+#[tokio::test]
+async fn uncertain_capture_cooler_retains_cleanup_and_never_publishes_or_retries() {
+    let (owner, budget, activity, events) = camera(
+        false,
+        json!({"instant":false,"clampControl":16,"clampMinimum":0}),
+        admission() * 2,
+    );
+    owner.connect().await.unwrap();
+    owner.set_cooling(16, 0).await.unwrap();
+    let id = owner.start(exposure(6_000_000)).unwrap();
+    until(|| owner.snapshot().core.phase == "Exposing").await;
+    assert_eq!(
+        owner.set_cooling(16, -15).await.unwrap_err().kind,
+        ErrorKind::Uncertain
+    );
+    assert_eq!(
+        owner.wait(id).await.err().unwrap().kind,
+        ErrorKind::Uncertain
+    );
+    settled(&owner, &activity).await;
+    assert_eq!(budget.used_bytes(), 0);
+    assert!(!owner.snapshot().image_ready);
+    assert_eq!(
+        owner.start(exposure(10_000)).unwrap_err().kind,
+        ErrorKind::Uncertain
+    );
+    let lines = events.lock().unwrap().clone();
+    assert!(!lines.iter().any(|line| line.starts_with("capture.retry:")));
+    assert_eq!(
+        lines
+            .iter()
+            .filter(|line| line.contains("session.phase: Starting exposure"))
+            .count(),
+        1
+    );
+    owner.close().await.unwrap();
+    settled(&owner, &activity).await;
 }
 
 #[tokio::test]

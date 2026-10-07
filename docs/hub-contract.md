@@ -2307,8 +2307,18 @@ exposure polling and valid completed-download checkpoints service the same mailb
 An expired unsent worker command preserves framing, worker and command identity.
 Close, invalidation and Session Drop retire outstanding requests. The idle owner
 must retain and drive service_cooling; a receipt alone does not schedule I/O or
-grant a source lease. NativeCamera still needs generation/activity/command-task
-and publication integration, with typed redacted errors. Queuing a desired cooler value alone must
+grant a source lease. NativeCamera now retains the receipt, source marker and
+activity in an owned task. A separate cancellation handle withdraws queued/claimed
+work when the caller leaves; dispatched work is inert to that cancellation. Idle
+service and captures use the same engine. Waiting for engine access races only
+the receipt; a dispatched service future is retained through cleanup. Reset/close
+retire queued work and cancel old service without allowing its completion or an
+already-buffered ACK to modify the replacement generation. Pending cooling blocks
+capture/abort and image publication. Uncertainty retains a redacted source fence
+and upstream code until explicit reset/close; capture completion cannot overwrite
+it or publish pixels. Existing image readers remain valid. Unsent expiry is
+transient without claiming transport loss. Source authorization and typed adapter/
+runtime/config integration remain required. Queuing a desired cooler value alone must
 not be reported as an applied in-exposure write. Implement and test SDK/direct
 cooling application and recovery-setting preservation before enabling cameras.
 

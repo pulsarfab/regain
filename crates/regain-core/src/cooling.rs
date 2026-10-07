@@ -64,6 +64,18 @@ pub struct CoolingReceipt {
     reply: oneshot::Receiver<Outcome>,
     deadline: Instant,
 }
+/// Withdraw an unsent request without dropping its owner's receipt. Once
+/// dispatched this is inert: the owner must retain the command to its outcome.
+#[derive(Clone)]
+pub struct CoolingCancellation {
+    mailbox: Mailbox,
+    request: Arc<Mutex<Request>>,
+}
+impl CoolingCancellation {
+    pub fn cancel_before_dispatch(&self) {
+        self.mailbox.cancel_queued(&self.request);
+    }
+}
 pub(crate) fn validate(status: &SharedStatus, kind: i32, value: i64) -> Result<(), CoolingError> {
     if !matches!(kind, 16 | 17) {
         return Err(CoolingError::Invalid(
@@ -129,6 +141,12 @@ impl CoolingHandle {
     }
 }
 impl CoolingReceipt {
+    pub fn cancellation(&self) -> CoolingCancellation {
+        CoolingCancellation {
+            mailbox: self.mailbox.clone(),
+            request: self.request.clone(),
+        }
+    }
     pub async fn wait(mut self) -> Outcome {
         tokio::select! {
             biased;
@@ -500,5 +518,32 @@ mod tests {
         assert_eq!(receipt.wait().await, Err(CoolingError::Expired));
         assert!(!handle.mailbox.dispatch(&request));
         assert!(!handle.pending());
+    }
+    #[tokio::test]
+    async fn separate_caller_cancellation_preserves_the_owned_receipt() {
+        let handle = handle();
+        for claimed in [false, true] {
+            let receipt = handle.submit(16, -10, Duration::from_secs(5)).unwrap();
+            let cancellation = receipt.cancellation();
+            let request = claimed.then(|| handle.mailbox.claim().unwrap());
+            cancellation.cancel_before_dispatch();
+            assert_eq!(receipt.wait().await, Err(CoolingError::Cancelled));
+            if let Some(request) = request {
+                assert!(!handle.mailbox.dispatch(&request));
+            }
+            assert!(!handle.pending());
+        }
+        let receipt = handle.submit(17, 1, Duration::from_secs(5)).unwrap();
+        let cancellation = receipt.cancellation();
+        let request = dispatch(&handle);
+        cancellation.cancel_before_dispatch();
+        assert!(handle.pending());
+        handle.mailbox.finish(&request, Ok(1), || {}).unwrap();
+        assert_eq!(receipt.wait().await, Ok(1));
+        // An old caller must never cancel a later slot.
+        let next = handle.submit(16, -15, Duration::from_secs(5)).unwrap();
+        cancellation.cancel_before_dispatch();
+        assert!(handle.pending());
+        drop(next);
     }
 }

@@ -4489,6 +4489,62 @@ as hardware acknowledgement. Camera creation stays disabled; every original
 camera/output/recovery/coordination and final acceptance gate remains required.
 
 Pushed native admission/owner/direct-cooling head 6584e67 PR/push CI
-37568068870/37568064681 each has seven successful jobs and a live Windows job.
-Keep this reviewed Session increment local until both runs finish. Earlier
-intermittent connection/motion failure causes remain unproved.
+37568068870/37568064681 both now finish with all eight jobs successful, including
+Windows packaging/installer acceptance. Earlier intermittent connection/motion
+failure causes remain unproved. Session cooling and the retained NativeCamera
+integration below pass local validation and require their own CI.
+
+## 2026-10-06: retained NativeCamera cooling (reviewed locally; CI required)
+
+NativeCamera now owns a separate cooler command marker, receipt, generation,
+token and runtime activity. Its caller only owns a cancellation guard: leaving
+before dispatch withdraws the queued/claimed request, while dispatched work stays
+owned. Admission is synchronous under source state, reserves activity before
+publishing markers and rejects concurrent commands/capture/abort. The outer
+supervisor remains responsible for client/source lease authorization.
+
+The command task waits for either the receipt serviced by capture or idle engine
+access. It never drops a dispatched service future when the receipt expires; idle
+worker retirement stays owned. No second worker/handle or parallel core call is
+introduced. Reset/close cancel old work and fence completions synchronously;
+generation checks also reject a known ACK buffered before its caller resumes.
+Pending cooling pauses image publication, including waits on already completed
+images. Unknown outcomes preserve a redacted Uncertain error and upstream code,
+cancel active capture and prevent later capture completion from overwriting the
+fence. New captures, commands and connection shortcuts cannot clear uncertainty;
+explicit reset/close is required. Existing readers keep immutable pixels.
+
+Review also prevents unexpected capture-task loss from replacing an existing
+uncertainty fence, and prevents an idle cooler task from servicing a disconnected
+or uncertain source. Unsent expiry is Transient without transport_lost. Receipt
+cancellation checks request identity, so an old guard cannot cancel a later slot.
+
+Fourteen production-worker simulation owner cases pass (six new), including idle
+SDK/direct acknowledgement, validation/bounded admission, queued caller loss,
+live six-second SDK/direct capture, unchanged exact pixels/final cooler metadata,
+publication waiting, reset before dispatch/after buffered ACK, idle/capture
+readback mismatch, no retries and explicit reconciliation. Three owner unit cases
+verify queued expiry with a held engine, caller loss after owner ACK and final
+external-reference loss, redaction/code preservation and expiry classification.
+A seventh core mailbox case verifies the separate caller cancellation handle
+before claim, during preflight, after dispatch and against a later slot.
+
+Retain the initial 12/14 owner run: both failures were fixture setup errors. The
+clamp rejected the initial capture target, so the fixture now acknowledges zero
+before capture and fails only the intended later negative request. Also retain
+the terminated paused-clock expiry runs and diagnostic log. Advancing exactly to
+the timer deadline left it pending; advancing one millisecond beyond the timer
+tick resolves it. Temporary stage prints were removed and the next real command
+uses the ordinary timeout. No production deadline or success criterion changed.
+The first strict Rust 1.99 Clippy run rejects a nested conditional; the collapsed
+condition preserves behavior and passes final strict linting and owner tests.
+
+Full Rust core/hub/Alpaca regressions pass, including all 38 core tests and final
+three owner unit cases. Strict Rust 1.99 Clippy, Rust 1.89 all-target checks,
+generated contracts, formatting, freshly rebuilt-host NINA 228/228 and actual
+net48 x86/x64 clients pass with no build warnings. Logs are under
+artifacts/hub-camera-native-cooling-*.log. No physical equipment or installed
+vendor drivers were activated. Native typed properties/settings, adapters/config/
+runtime, host budget/recovery allowances, binary frontend IPC, all camera outputs,
+coordination and every original acceptance/final gate remain open. Camera creation
+stays disabled; these owner primitives alone are not frontend camera support.

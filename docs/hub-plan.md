@@ -169,12 +169,28 @@ and teardown cases pass, including live target/disable during recovery settle.
 All 37 core tests, full core/hub/Alpaca regressions, strict Rust 1.99 Clippy,
 Rust 1.89 all-target checks, generated contracts, rebuilt-host NINA 228/228 and
 actual net48 x86/x64 clients pass. Logs and review refinements are in hub-review.md.
-Preceding pushed native admission/owner/direct-cooling head 6584e67 has seven
-successful jobs in each PR/push run 37568068870/37568064681, with Windows still
-active. Keep this reviewed core increment local until both runs finish.
-NativeCamera still needs the retained idle/capture command task, generation/activity
-and publication integration and typed source properties; do not equate this core
-mailbox with completed frontend cooling. All original later gates remain required.
+Preceding pushed native admission/owner/direct-cooling head 6584e67 now passes
+all eight jobs in each PR/push run 37568068870/37568064681, including Windows
+packaging/installer checks. The reviewed core and NativeCamera increments pass
+local validation and require their own CI. All original later gates remain required.
+
+Native cooler owner checkpoint (reviewed locally; new CI required): NativeCamera now
+retains one SDK/direct target/enable command and runtime activity independently
+of its caller. Caller loss withdraws unsent work; dispatched receipts remain owned.
+Capture services the mailbox on its existing engine; idle work acquires that same
+engine without blocking receipt completion behind a capture. Generation checks
+reject both late completions and buffered acknowledgements after reset. Pending
+cooling blocks capture/abort and image publication; an uncertain result retains
+its redacted error/code, stops publication and requires explicit reset/close before
+new work. Existing readers retain their immutable image. No thermal wait, second
+worker, new retry or fabricated StopExposure is introduced.
+Fourteen production-worker simulation owner cases, three owner unit cases and
+seven core mailbox cases pass. Full core/hub/Alpaca Rust regressions, strict
+Rust 1.99 Clippy, Rust 1.89 all-target compatibility, generated contracts,
+rebuilt-host NINA 228/228 and actual net48 x86/x64 clients pass. Native
+typed properties/settings, source factory/runtime/config, host budget and recovery
+allowances, camera adapters/outputs and every original later gate remain open.
+Camera creation stays disabled.
 
 Camera supervisor checkpoint (local): nineteen private virtual-clock cases pass.
 One source-owned acquisition retains control and runtime activity after caller
@@ -198,8 +214,8 @@ but the scalar request timeout does not truncate the separately bounded image
 download. Streaming preserves full U16 values and transaction/shape checks,
 releases partial allocations on cancellation and never repeats a download.
 HTTP/JSON/binary error codes are retained with redacted text. Non-camera sources
-reject image reads without I/O. JSON success images still require a bounded array
-decoder, so camera creation remains disabled. Full Rust hub/Alpaca, strict Rust
+reject image reads without I/O. Bounded JSON decoding is implemented in the later
+checkpoint above; runtime/frontend camera gates remain open. Full Rust hub/Alpaca, strict Rust
 1.99 Clippy, Rust 1.89, generated contracts, rebuilt-host NINA 228/228 and actual
 net48 x86/x64 regressions pass. New-head CI is required before acceptance.
 
@@ -232,7 +248,10 @@ ImageBytes reader/export codec, with native adoption and bounded order conversio
 The shared source actor now has fenced binary download dispatch with exclusive
 control, a separate bounded image deadline and retained write uncertainty.
 Acquisition supervision and shared properties/settings now pass thirty focused
-tests; binary/JSON Alpaca image inputs are implemented. Runtime integration,
+tests; binary/JSON Alpaca image inputs are implemented. The retained native owner
+and acknowledged SDK/direct cooler mailbox now pass local validation, preserving
+live targets across recovery and fencing publication after uncertain commands.
+Runtime integration,
 capability/recovery propagation, remaining camera adapters and
 frontend image transport remain unimplemented. Their contracts are recorded in
 hub-contract.md and camera choices stay gated.
@@ -1373,7 +1392,20 @@ Keep existing device profiles and registrations compatible throughout migration.
 
 ## Progress log
 
-Latest native panel checkpoint (2026-10-06): NINA IFlatDevice and native ASCOM
+Latest camera owner checkpoint (2026-10-06): retained SDK/direct cooler commands
+share the capture engine and survive caller loss after dispatch. Pending work
+blocks publication; reset rejects even buffered old-generation ACKs. Unknown
+outcomes fence further work until explicit reset/close, preserving existing image
+readers. Fourteen owner integration, three owner unit and seven core mailbox cases
+pass, with full Rust regressions, strict Rust 1.99 Clippy, Rust 1.89, contracts,
+rebuilt-host NINA 228/228 and net48 x86/x64 clients. Review retains fixture setup,
+paused-clock and lint evidence. Preceding 6584e67 PR/push CI passes all eight jobs;
+the reviewed core/owner increments now require their own CI. Next: native typed
+camera properties/settings, source adapter/config/runtime and recovery/budget
+wiring, then remaining adapters, all three image outputs, coordination and every
+original acceptance/final gate. Camera choices remain disabled.
+
+Earlier native panel checkpoint (2026-10-06): NINA IFlatDevice and native ASCOM
 CoverCalibrator V2/V1 reuse shared protocol validation, private sessions,
 saved identities, setup styling and registration. NINA waits for actual cover
 endpoints and illumination completion, preserves logical On(0), bounds waits and
