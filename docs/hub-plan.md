@@ -18,8 +18,10 @@ the running STA (unchanged three-second exit budget). Both modes require zero
 activation and zero acknowledgements. Timeout diagnostics report process/reader
 state and fixture call names. All 30 worker cases in x86/x64 and all 19 registered
 parent cases pass locally. No production timeout or worker lifecycle is changed.
-PR CI is terminal with that failure; push Windows remains active. Keep subsequent
-work local until both workflows are terminal. Camera COM imports are next.
+Both workflows are terminal: PR CI has that Windows failure and seven successes;
+push CI 37609727056 passes all eight jobs. The reviewed virtual camera increment
+f577dbf and framing boundary checks 3aa1273 can now be pushed to the same draft PR.
+Camera COM imports are in local implementation/testing and remain unshipped.
 
 Current increment: virtual Camera inputs compose through the existing source
 factory, internal client leases, incremental connection admission and generation
