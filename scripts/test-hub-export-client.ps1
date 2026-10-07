@@ -32,13 +32,18 @@ try {
                 finally { if ($key) { $key.Dispose() } }
             } finally { $root.Dispose() }
         }
+        if ($TraceLaunch) { Write-Output "Private COM metadata $($identity.clsid): activate" }
         $device = [Activator]::CreateInstance([type]::GetTypeFromCLSID([guid]$identity.clsid))
         $objects += $device
+        if ($TraceLaunch) { Write-Output "Private COM metadata $($identity.clsid): interface version" }
         if ((Value $device 'InterfaceVersion') -ne $identity.version) { throw 'Incorrect interface version over COM' }
+        if ($TraceLaunch) { Write-Output "Private COM metadata $($identity.clsid): connection state" }
         if ((Value $device 'Connected') -or (Value $device 'Connecting')) { throw 'New COM client acquired equipment' }
+        if ($TraceLaunch) { Write-Output "Private COM metadata $($identity.clsid): name" }
         if ((Value $device 'Name') -notmatch 'SIMULATION') { throw 'Missing simulation marker' }
     }
     if ($MetadataOnly) {
+        if ($TraceLaunch) { Write-Output 'Private COM metadata: verify no host process through WMI' }
         $unexpected = @(Get-CimInstance Win32_Process -Filter "Name='regain-alpaca.exe'" | Where-Object { $_.CommandLine -and $_.CommandLine.Contains($Directory) })
         if ($unexpected.Count) { throw 'Metadata launched a host for the private fixture' }
         Write-Output "Hub exported metadata $([IntPtr]::Size * 8)-bit passed"; return
@@ -172,5 +177,7 @@ try {
     }
     Write-Output "Hub exported outputs $Role $([IntPtr]::Size * 8)-bit passed"
 } finally {
+    if ($TraceLaunch) { Write-Output 'Private COM metadata: release objects' }
     foreach ($device in $objects) { try { $device.Dispose() } catch { }; [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($device) }
+    if ($TraceLaunch) { Write-Output 'Private COM metadata: cleanup complete' }
 }

@@ -327,9 +327,19 @@ def main():
                         time.sleep(0.025)
                 for bitness in ("System32", "SysWOW64"):
                     powershell = Path(os.environ["WINDIR"]) / bitness / "WindowsPowerShell/v1.0/powershell.exe"
-                    metadata = subprocess.run([str(powershell), "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(client),
-                                    "-Directory", str(folder), "-Role", "metadata", "-MetadataOnly", "-TraceLaunch"],
-                                   timeout=20, creationflags=NO_WINDOW, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+                    try:
+                        metadata = subprocess.run([str(powershell), "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(client),
+                                        "-Directory", str(folder), "-Role", "metadata", "-MetadataOnly", "-TraceLaunch"],
+                                       timeout=20, creationflags=NO_WINDOW, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+                    except subprocess.TimeoutExpired as failure:
+                        # communicate() retains partial output on timeout. Do not
+                        # discard the launch/activation stage needed to diagnose
+                        # a cold COM/WMI stall, and do not retry or extend it.
+                        captured = failure.stdout or ""
+                        if isinstance(captured, bytes):
+                            captured = captured.decode(errors="replace")
+                        print(f"Private COM metadata {architecture}/{bitness} timed out; partial client trace:\n{captured}", flush=True)
+                        raise
                     print(metadata.stdout, flush=True)
                     if options.scm and server is None:
                         server = find_scm_server(server_exe, folder)

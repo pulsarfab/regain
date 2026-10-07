@@ -27,19 +27,29 @@ private fixtures.
 Managed image readers, frontend operation timing, remaining camera inputs and
 all three camera publications remain required, alongside the original gates.
 
-Runtime/scalar camera output commit edc5a59 is pushed to draft PR #21. Its PR
-37596918826 and push 37596912932 workflows are live. Keep subsequent work local
-until those runs finish; no complete milestone or merge/release gate closes here.
-Push CI's macOS Intel job 112711683350 has failed a nested filter-wheel
-moving-position read with a Transient timeout; the same PR job passes. Both
-Windows jobs remain live. The failed job's raw log is retained. The test now
-reports elapsed read time, source snapshots, private requests and writes at that
-assertion; no deadline, expected result or retry behavior is changed. Cause is
-not established, and fresh CI is required before accepting this correction.
-The diagnostic refinement passes all 22 filter-wheel cases locally, with strict
-lint and Rust 1.89 checks; this does not prove macOS CI acceptance or a root cause.
+Runtime/scalar camera output edc5a59 is pushed to draft PR #21. Image stream
+fa03fa9 and filter-wheel diagnostic 0eb4613 are committed locally. No complete
+milestone or merge/release gate closes here.
+Push run 37596912932 is now terminal with six successful jobs and failures in
+macOS Intel and Windows. Intel job 112711683350 fails a nested filter-wheel
+moving-position read with a Transient timeout; the same PR job passes. The test
+now reports elapsed read time, source snapshots, private requests and writes,
+without changing deadlines, expected results or retries. All 22 filter-wheel
+cases and strict lint/Rust 1.89 pass locally; the CI root cause is not established.
+Windows job 112711683126 times out its first private
+PowerShell COM metadata client after 20 seconds; all 19 parent COM cases passed.
+Its captured partial client output was omitted from the failure log. The fixture
+now prints that output on timeout and traces activation/property/WMI/cleanup
+stages without changing the deadline or retrying. Local real-export checks pass
+with both server/client architectures. A fault fixture using an actual child and
+the unchanged 20-second subprocess deadline proves partial output retention,
+failure propagation and private cleanup. Its first harness incorrectly assumed
+bytes instead of Windows text output; the harness now handles both forms.
+PR run 37596918826 passes test.ps1 and is still building/packaging;
+keep new commits local until it is terminal. These diagnostics are not fixes
+for an established root cause.
 
-Current checkpoint: camera outputs now share the runtime's acquisition supervisor
+Previous scalar increment: camera outputs now share the runtime's acquisition supervisor
 by source UUID. Runtime connections and typed scalar IPC cover camera properties,
 settings, Start/Stop/Abort and owner-only abandonment of an uncertain acquisition.
 Cached DeviceState and paged diagnostics transfer no pixels and perform no

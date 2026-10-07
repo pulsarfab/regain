@@ -77,6 +77,36 @@ All 22 filter-wheel cases pass locally with the unchanged assertion semantics in
 artifacts/hub-ci-filterwheel-diagnostic.log; final strict lint and Rust 1.89 checks
 also pass. The error trace still requires fresh CI evidence.
 
+## 2026-10-07: retain timed-out COM metadata client output
+
+Push 37596912932 finishes with six successes and failures in macOS Intel and
+Windows. Windows job 112711683126 passes all 19 parent COM cases, then its first
+20-second PowerShell metadata subprocess expires. The raw log is retained in
+artifacts/hub-ci-37596912932-windows.log. The Python parent captures stdout but
+did not print TimeoutExpired.stdout, so the launch trace needed to distinguish
+activation, properties, WMI inspection and cleanup is absent. No root cause is
+established. PR Windows passes test.ps1 and is now building/packaging.
+
+The parent now prints captured partial output before re-raising the same timeout.
+TraceLaunch marks each private activation, metadata property, WMI check and
+cleanup boundary. No production driver, timeout, retry or expected value changes.
+Local private real-export checks pass in artifacts/hub-ci-export-metadata-trace.log:
+x86/x64 servers, both client architectures, inert metadata, eight stable outputs,
+independent leases and typed accessory state. The added traces reach every
+activation/property/WMI/cleanup stage.
+
+A private fault harness in artifacts/hub-ci-metadata-timeout-fixture.py runs the
+actual export playbook with only its metadata child replaced by an inert child
+that prints once and sleeps. It preserves the real 20-second subprocess timeout,
+PIPE collection and playbook cleanup. The deadline expires, partial output is
+printed, the original TimeoutExpired propagates and private registration/server
+cleanup completes. Evidence: artifacts/hub-ci-metadata-timeout-fixture.log. The
+first harness incorrectly assumed TimeoutExpired.stdout was bytes; this Windows
+runtime supplies text. Its TypeError is retained in the -initial.log, and the
+corrected assertion accepts both representations. Production logging already
+handles both forms. Fresh CI evidence remains required to establish either
+original failure's cause. No live run is cancelled or restarted.
+
 ## 2026-10-07: camera runtime outputs and scalar IPC
 
 Reviewed source identity and acquisition sharing: camera output controllers reuse
