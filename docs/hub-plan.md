@@ -8,6 +8,19 @@ tagged or published. Changed cross-crate APIs require an unpublished version so
 Cargo package verification uses the new workspace packages.
 Last updated: 2026-10-07.
 
+CI follow-up: ec52cc2 PR Windows run 37609737316 passes Rust and NINA 274/274,
+then fails one cold x86 malformed-frame fixture at its three-second process-exit
+deadline. The log does not distinguish startup delay from shutdown delay; do not
+claim a production root cause or a green workflow. Framing tests now exercise
+every malformed frame both cold (five-second ordinary startup budget plus
+three-second exit budget) and after an inert disconnected getter acknowledges
+the running STA (unchanged three-second exit budget). Both modes require zero
+activation and zero acknowledgements. Timeout diagnostics report process/reader
+state and fixture call names. All 30 worker cases in x86/x64 and all 19 registered
+parent cases pass locally. No production timeout or worker lifecycle is changed.
+PR CI is terminal with that failure; push Windows remains active. Keep subsequent
+work local until both workflows are terminal. Camera COM imports are next.
+
 Current increment: virtual Camera inputs compose through the existing source
 factory, internal client leases, incremental connection admission and generation
 fences. Typed setters and Start/Stop/Abort forward through the inner acquisition

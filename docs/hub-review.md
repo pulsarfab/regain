@@ -3,6 +3,30 @@
 This records local review and tests for the single hub PR. Passing a foundation
 test does not imply that a frontend, transport, or hardware gate has passed.
 
+## 2026-10-07: COM framing startup and terminal-exit boundaries
+
+PR CI 37609737316 fails only the Windows job: the malformed UTF-8 x86 fixture
+times out waiting for a newly spawned process to exit in three seconds. Rust,
+NINA 274/274 and preceding actual net48 fixtures pass. Retained full job log:
+`artifacts/hub-ci-37609737316-windows.log`. Startup versus shutdown is not proven.
+Do not claim the production worker is fixed by a test adjustment.
+
+Each malformed frame now runs cold and with an inert disconnected read that
+acknowledges the STA without activating COM. Warm rejection retains the exact
+three-second deadline; cold rejection gets the normal five-second request/startup
+allowance plus that exit allowance. Both require exit code zero, no reply and
+no activation. Replayed IDs retain their warm three-second exit assertion.
+Fixture-only timeout diagnostics include elapsed time, PID, process/reader state,
+queued response count and call names. No sanitized production errors are changed.
+Review checked that the warm read itself remains disconnected and cannot mask
+vendor activation, and that malformed frames receive no acknowledgement.
+
+Local `pwsh -NoProfile -File scripts/test-hub-com.ps1` passes both architectures,
+all 30 worker cases and all 19 registered parent cases with warnings denied.
+Evidence: `artifacts/hub-com-framing-local.log`. The first invocation used legacy
+Windows PowerShell and stopped at existing license staging's `-AsHashtable`;
+rerunning with the required PowerShell 7 passes. Fresh CI is still required.
+
 ## 2026-10-07: virtual camera inputs
 
 Reviewed local camera composition against the existing typed virtual accessories

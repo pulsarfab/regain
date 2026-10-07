@@ -13,6 +13,7 @@ import queue
 import subprocess
 import tempfile
 import threading
+import time
 import unittest
 import uuid
 import winreg
@@ -97,6 +98,7 @@ class Worker:
         self.state = Path(self.temporary.name) / "state.json"
         self.settings = settings or {}
         self.set(**self.settings)
+        self.started = time.monotonic()
         self.process = subprocess.Popen([
             str(WORKERS / "hub-ascom" / architecture / "Regain.Hub.ASCOM.exe"),
             "--import", "--prog-id", progid, "--device-type", device,
@@ -165,6 +167,20 @@ class Worker:
 
     def count(self, member):
         return sum(item["member"] == member for item in self.trace())
+
+    def expect_exit(self, timeout):
+        try:
+            return self.process.wait(timeout=timeout)
+        except subprocess.TimeoutExpired as error:
+            # Fixture-only diagnostics: preserve the failing deadline and report
+            # whether any driver call or response preceded the missing exit.
+            members = [item["member"] for item in self.trace()]
+            raise AssertionError(
+                f"Worker exit exceeded {timeout}s; elapsed={time.monotonic() - self.started:.3f}s; "
+                f"pid={self.process.pid}; returncode={self.process.poll()}; "
+                f"reader_alive={self.reader.is_alive()}; queued_responses={self.responses.qsize()}; "
+                f"fixture_calls={members}"
+            ) from error
 
     def close(self):
         if not self.process.stdin.closed:
@@ -692,15 +708,27 @@ class ImportTests(unittest.TestCase):
                      b'{"protocol":1,"id":1,"operation":"read","member":"\xff"}\n',
                      b'{"protocol":1,"id":1,"operation":"write","parameters":{"Value":Infinity}}\n']
         for architecture in self.each():
-            for frame in malformed:
-                with self.subTest(architecture=architecture, frame=frame[:60]), Worker(architecture) as worker:
-                    worker.raw(frame)
-                    self.assertEqual(worker.process.wait(timeout=3), 0)
-                    self.assertEqual(worker.count("Activate"), 0)
+            for ready in (False, True):
+                for frame in malformed:
+                    with self.subTest(architecture=architecture, ready=ready, frame=frame[:60]), Worker(architecture) as worker:
+                        if ready:
+                            # A disconnected getter acknowledges the running STA
+                            # without activating the private COM class. Keep the
+                            # three-second terminal-framing assertion independent
+                            # of CLR/process startup on a loaded CI runner.
+                            reply = worker.send("read", "name")
+                            self.assertEqual(reply["error"]["kind"], "disconnected")
+                        worker.raw(frame)
+                        # Cold framing also stays covered: its total allowance is
+                        # the ordinary five-second startup/request budget plus
+                        # the same three-second process-exit budget.
+                        self.assertEqual(worker.expect_exit(3 if ready else 8), 0)
+                        self.assertEqual(worker.count("Activate"), 0)
+                        self.assertIsNone(worker.responses.get(timeout=3))
             with self.subTest(architecture=architecture), Worker(architecture) as worker:
                 worker.send("read", "name")  # valid disconnected response, no activation
                 worker.raw(b'{"protocol":1,"id":1,"operation":"connectStep"}\n')
-                self.assertEqual(worker.process.wait(timeout=3), 0)
+                self.assertEqual(worker.expect_exit(3), 0)
                 self.assertEqual(worker.count("Activate"), 0)
 
     def test_oversized_numeric_input_is_rejected_before_vendor_call(self):
