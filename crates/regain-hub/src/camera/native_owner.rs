@@ -113,6 +113,7 @@ pub struct NativeCamera {
     simulated: bool,
     cooling: CoolingHandle,
     command_timeout: Duration,
+    timing: regain_core::timing::NativeCameraTiming,
 }
 
 // The caller only withdraws work that has not been dispatched. Its receipt and
@@ -278,6 +279,9 @@ impl NativeCamera {
     pub fn simulated(&self) -> bool {
         self.simulated
     }
+    pub(crate) fn timing(&self) -> &regain_core::timing::NativeCameraTiming {
+        &self.timing
+    }
     pub(crate) fn shares_budget(&self, budget: &ImageBudget) -> bool {
         self.budget.shares(budget)
     }
@@ -432,6 +436,8 @@ impl NativeCamera {
     ) -> Result<Arc<Self>, SourceError> {
         let sdk_fallback = selection.direct && selection.sdk_fallback;
         let simulated = runtime.simulate;
+        let timing = regain_core::timing::NativeCameraTiming::new(&selection)
+            .map_err(|error| core_error(&error))?;
         let session = Session::new(selection, runtime, log).map_err(|e| core_error(&e))?;
         let command_timeout =
             Duration::from_secs_f64(session.selection.recovery.command_timeout_seconds);
@@ -439,6 +445,7 @@ impl NativeCamera {
             status: session.status.clone(),
             cooling: session.cooling(),
             command_timeout,
+            timing,
             engine: AsyncMutex::new(session),
             state: Mutex::new(State {
                 generation: Uuid::new_v4(),
@@ -1156,7 +1163,7 @@ impl NativeCamera {
 mod tests {
     use super::*;
     use regain_core::RecoveryOptions;
-    use serde_json::json;
+    use serde_json::{Value, json};
     use std::path::{Path, PathBuf};
 
     fn simulated() -> Arc<NativeCamera> {
@@ -1245,6 +1252,27 @@ mod tests {
         ));
         stop.cancel();
         tokio::time::timeout(Duration::from_secs(5), async {
+            while owner.retained.active() < 3 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        // The scalar 50 ms timer no longer truncates native cleanup. Advance
+        // only while engine I/O is held, then force the derived outer allowance
+        // to expire to retain the original uncertainty/drain regression.
+        tokio::time::pause();
+        tokio::time::advance(Duration::from_millis(51)).await;
+        tokio::task::yield_now().await;
+        assert!(
+            !source
+                .snapshot()
+                .error
+                .is_some_and(|error| error.kind == ErrorKind::Uncertain)
+        );
+        assert!(!stopping.is_finished());
+        tokio::time::advance(owner.timing().cleanup_allowance()).await;
+        tokio::time::timeout(Duration::from_secs(5), async {
             loop {
                 if source
                     .snapshot()
@@ -1258,6 +1286,7 @@ mod tests {
         })
         .await
         .unwrap();
+        tokio::time::resume();
         assert!(!stopping.is_finished());
         assert!(endpoint.try_lock().unwrap().is_none());
         assert_ne!(source.snapshot().polling.phase, PollPhase::Stopped);
@@ -1306,6 +1335,224 @@ mod tests {
         );
         drop(unrelated);
         assert_eq!(owner.activity.active(), 0);
+    }
+
+    #[tokio::test]
+    async fn native_connection_outlives_scalar_and_proxy_deadlines_without_reset() {
+        use crate::{
+            camera::{
+                acquisition::{AcquisitionTiming, CameraSupervisor},
+                native_source::NativeCameraBackend,
+            },
+            parameters::PollPolicy,
+            safety::MonotonicClock,
+            source::SourceHandle,
+        };
+        let owner = simulated();
+        let engine = owner.engine.lock().await;
+        let source = SourceHandle::spawn(
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+            PollPolicy {
+                connection_timeout_seconds: 1.,
+                request_timeout_seconds: 0.05,
+                ..PollPolicy::default()
+            },
+            Box::new(NativeCameraBackend::new(owner.clone(), vec![]).unwrap()),
+            Arc::new(MonotonicClock::default()),
+        )
+        .unwrap();
+        let supervisor = CameraSupervisor::new(
+            source.clone(),
+            owner.budget.clone(),
+            AcquisitionTiming {
+                connection_timeout: Duration::from_millis(10),
+                ..AcquisitionTiming::default()
+            },
+            owner.activity.clone(),
+        )
+        .unwrap();
+        let connecting = tokio::spawn({
+            let supervisor = supervisor.clone();
+            async move { supervisor.connect().await }
+        });
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while owner.snapshot().operation.is_none() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        tokio::time::pause();
+        tokio::time::advance(Duration::from_secs(2)).await;
+        tokio::task::yield_now().await;
+        assert!(!connecting.is_finished());
+        assert_eq!(source.snapshot().error.unwrap().kind, ErrorKind::Connecting);
+        assert_eq!(
+            owner.snapshot().operation.unwrap().kind,
+            NativeOperationKind::Connecting
+        );
+        tokio::time::resume();
+        drop(engine);
+        let session = tokio::time::timeout(Duration::from_secs(5), connecting)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        assert!(session.connected());
+        assert!(source.snapshot().transport_connected);
+        drop(session);
+        drop(supervisor);
+        source.shutdown().await.unwrap();
+        assert_eq!(owner.retained.active(), 0);
+        assert_eq!(owner.activity.active(), 0);
+        assert!(owner.snapshot().core.process_id.is_none());
+    }
+
+    #[tokio::test]
+    async fn native_replacement_restores_cooling_and_gain_before_shared_image_publication() {
+        use crate::{
+            camera::{
+                acquisition::{AcquisitionTiming, CameraSupervisor, ExposureRequest},
+                native_source::NativeCameraBackend,
+            },
+            parameters::PollPolicy,
+            safety::MonotonicClock,
+            source::SourceHandle,
+        };
+        let events = Arc::new(Mutex::new(Vec::<String>::new()));
+        let log = events.clone();
+        let budget = ImageBudget::new(16 * 1024 * 1024).unwrap();
+        let activity = ActivityCounter::default();
+        let owner = NativeCamera::new(
+            Selection {
+                name: "ZWO ASI585MM Pro".into(),
+                serial: None,
+                direct: true,
+                sdk_fallback: false,
+                recovery: RecoveryOptions {
+                    max_retries: 1,
+                    direct_read_retries: 0,
+                    ready_frame_download_retries: 0,
+                    reconnect_delay_seconds: 0.2,
+                    cooling_stable_samples: 3,
+                    cooling_sample_seconds: 0.2,
+                    ..RecoveryOptions::default()
+                },
+            },
+            Runtime {
+                directory: std::env::var_os("REGAIN_TEST_WORKERS")
+                    .map(PathBuf::from)
+                    .unwrap_or_else(|| {
+                        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/debug")
+                    }),
+                sdk: "unused".into(),
+                simulate: true,
+                sdk_simulation: None,
+            },
+            budget.clone(),
+            activity.clone(),
+            Arc::new(move |_, event, _| log.lock().unwrap().push(event.into())),
+        )
+        .unwrap();
+        let source = SourceHandle::spawn(
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+            PollPolicy {
+                request_timeout_seconds: 0.05,
+                ..PollPolicy::default()
+            },
+            Box::new(NativeCameraBackend::new(owner.clone(), vec![]).unwrap()),
+            Arc::new(MonotonicClock::default()),
+        )
+        .unwrap();
+        let supervisor = CameraSupervisor::new(
+            source.clone(),
+            budget.clone(),
+            AcquisitionTiming {
+                readiness_grace: Duration::from_millis(10),
+                poll_interval: Duration::from_millis(10),
+                ..AcquisitionTiming::default()
+            },
+            activity.clone(),
+        )
+        .unwrap();
+        let first = supervisor.connect().await.unwrap();
+        let second = supervisor.connect().await.unwrap();
+        first.set(CameraSetting::NumX(64)).await.unwrap();
+        first.set(CameraSetting::NumY(64)).await.unwrap();
+        first.set(CameraSetting::Gain(123)).await.unwrap();
+        first.set(CameraSetting::CoolerOn(true)).await.unwrap();
+        owner
+            .engine
+            .lock()
+            .await
+            .simulate_read_failures(1, &CancellationToken::new())
+            .await
+            .unwrap();
+        let generation = source.snapshot().generation;
+        first
+            .start(ExposureRequest {
+                duration_seconds: 0.01,
+                light: false,
+            })
+            .await
+            .unwrap();
+        tokio::time::timeout(Duration::from_secs(10), async {
+            while !supervisor.status().image_ready {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .unwrap();
+        let a = first.image().unwrap();
+        let b = second.image().unwrap();
+        assert!(Arc::ptr_eq(&a, &b));
+        let metadata: Value =
+            serde_json::from_slice(a.image.native().unwrap().metadata_json()).unwrap();
+        assert_eq!(metadata["recoveries"], 1);
+        assert_eq!(metadata["controls"]["0"], 123);
+        assert_eq!(metadata["controls"]["17"], 1);
+        assert_eq!(source.snapshot().generation, generation);
+        assert!(!source.snapshot().write_uncertain);
+        let observed = events.lock().unwrap().clone();
+        assert_eq!(
+            observed
+                .iter()
+                .filter(|e| e.as_str() == "capture.retry")
+                .count(),
+            1
+        );
+        assert_eq!(
+            observed
+                .iter()
+                .filter(|e| e.as_str() == "cooling.recovered")
+                .count(),
+            1
+        );
+        assert!(
+            observed
+                .iter()
+                .filter(|e| e.as_str() == "cooling.wait")
+                .count()
+                >= 3
+        );
+        assert_eq!(
+            observed
+                .iter()
+                .filter(|e| e.as_str() == "connection.opened")
+                .count(),
+            2
+        );
+        drop(first);
+        drop(second);
+        drop(supervisor);
+        source.shutdown().await.unwrap();
+        assert_eq!(activity.active(), 0);
+        assert!(owner.snapshot().core.process_id.is_none());
+        drop(a);
+        drop(b);
+        assert_eq!(budget.used_bytes(), 0);
     }
 
     #[tokio::test]

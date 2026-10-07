@@ -35,9 +35,8 @@ fn busy() -> SourceError {
     )
 }
 
-/// Internal timings derived by the adapter from shared source/recovery settings.
-/// Native adapters must include their existing cooling/recovery allowance in
-/// readiness_grace; proxy adapters do not acquire replacement-exposure retries.
+/// Proxy timings. Native sources additionally provide core-derived recovery
+/// allowances; proxy cameras do not acquire native retries by republishing.
 #[derive(Clone)]
 pub struct AcquisitionTiming {
     pub connection_timeout: Duration,
@@ -194,6 +193,7 @@ pub struct CameraSupervisor {
     source: Arc<SourceHandle>,
     budget: ImageBudget,
     timing: AcquisitionTiming,
+    native_timing: Option<regain_core::timing::NativeCameraTiming>,
     activity: ActivityCounter,
     state: Mutex<State>,
     changed: Notify,
@@ -204,14 +204,28 @@ impl CameraSupervisor {
     pub fn new(
         source: Arc<SourceHandle>,
         budget: ImageBudget,
-        timing: AcquisitionTiming,
+        mut timing: AcquisitionTiming,
         activity: ActivityCounter,
     ) -> Result<Arc<Self>, SourceError> {
         timing.validate()?;
+        let native_timing = source.native_camera_timing().cloned();
+        if native_timing.is_some() {
+            timing.connection_timeout =
+                timing.connection_timeout.max(source.connection_allowance());
+            if Instant::now()
+                .checked_add(timing.connection_timeout)
+                .is_none()
+            {
+                return Err(invalid(
+                    "Native camera connection deadline is not representable",
+                ));
+            }
+        }
         Ok(Arc::new(Self {
             source,
             budget,
             timing,
+            native_timing,
             activity,
             state: Mutex::new(State::default()),
             changed: Notify::new(),
@@ -305,10 +319,20 @@ impl CameraSupervisor {
         request: ExposureRequest,
     ) -> Result<Uuid, SourceError> {
         let duration = request.duration()?;
-        let ready_timeout = duration
+        let mut ready_timeout = duration
             .checked_add(self.timing.readiness_grace)
-            .filter(|v| Instant::now().checked_add(*v).is_some())
             .ok_or_else(|| invalid("Camera exposure deadline is not representable"))?;
+        if let Some(native) = &self.native_timing {
+            let microseconds = u64::try_from(duration.as_micros())
+                .map_err(|_| invalid("Native camera exposure duration is not representable"))?;
+            ready_timeout =
+                ready_timeout.max(native.capture_allowance(microseconds).map_err(|_| {
+                    invalid("Native camera exposure deadline is not representable")
+                })?);
+        }
+        if Instant::now().checked_add(ready_timeout).is_none() {
+            return Err(invalid("Camera exposure deadline is not representable"));
+        }
         source.snapshot()?;
         let id = Uuid::new_v4();
         let (reply, response) = oneshot::channel();
@@ -1077,4 +1101,75 @@ pub(super) fn valid_start_time(value: &str) -> bool {
     }
     bytes.len() == 19
         || (bytes.len() > 20 && bytes[19] == b'.' && bytes[20..].iter().all(u8::is_ascii_digit))
+}
+
+#[cfg(test)]
+mod timing_tests {
+    use super::*;
+    #[tokio::test]
+    async fn native_supervisor_honors_a_saved_connection_allowance_above_the_core_ceiling() {
+        use crate::{
+            camera::{native_owner::NativeCamera, native_source::NativeCameraBackend},
+            parameters::PollPolicy,
+            safety::MonotonicClock,
+        };
+        let budget = ImageBudget::new(1024).unwrap();
+        let activity = ActivityCounter::default();
+        let selection = regain_core::Selection {
+            name: "ZWO Simulated".into(),
+            serial: None,
+            direct: false,
+            sdk_fallback: false,
+            recovery: regain_core::RecoveryOptions {
+                command_timeout_seconds: 0.001,
+                ..regain_core::RecoveryOptions::default()
+            },
+        };
+        let native = regain_core::timing::NativeCameraTiming::new(&selection).unwrap();
+        assert!(native.connection_allowance() < Duration::from_secs(300));
+        let owner = NativeCamera::new(
+            selection,
+            regain_core::Runtime {
+                directory: "absent-fixture-workers".into(),
+                sdk: "absent-fixture-sdk".into(),
+                simulate: true,
+                sdk_simulation: None,
+            },
+            budget.clone(),
+            activity.clone(),
+            Arc::new(|_, _, _| {}),
+        )
+        .unwrap();
+        let source = SourceHandle::spawn(
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+            PollPolicy {
+                connection_timeout_seconds: 300.,
+                ..PollPolicy::default()
+            },
+            Box::new(NativeCameraBackend::new(owner, vec![]).unwrap()),
+            Arc::new(MonotonicClock::default()),
+        )
+        .unwrap();
+        let supervisor = CameraSupervisor::new(
+            source.clone(),
+            budget.clone(),
+            AcquisitionTiming::default(),
+            activity.clone(),
+        )
+        .unwrap();
+        assert_eq!(
+            supervisor.timing.connection_timeout,
+            Duration::from_secs(300)
+        );
+        assert_eq!(
+            source.connection_allowance(),
+            supervisor.timing.connection_timeout
+        );
+        assert_eq!(source.snapshot().lease_count, 0);
+        assert_eq!(activity.active(), 0);
+        assert_eq!(budget.used_bytes(), 0);
+        drop(supervisor);
+        source.shutdown().await.unwrap();
+    }
 }

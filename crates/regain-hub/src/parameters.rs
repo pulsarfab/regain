@@ -113,9 +113,9 @@ macro_rules! parameters {
 }
 
 parameters!(PollPolicy, "Source polling", {
-    connection_timeout_seconds: f64 = 30.0 => ("Connection timeout", "Maximum time for a source connection handshake, including asynchronous connection completion.", "s", 1.0, 300.0, 1.0),
+    connection_timeout_seconds: f64 = 30.0 => ("Connection timeout", "Maximum source handshake time, including asynchronous completion. Native cameras extend this for their configured recovery and cleanup.", "s", 1.0, 300.0, 1.0),
     poll_seconds: f64 = 30.0 => ("Check interval", "Time between source polling cycles.", "s", 0.1, 3600.0, 0.1),
-    request_timeout_seconds: f64 = 1.0 => ("Request timeout", "Deadline for one source request; does not extend safety evidence lifetime.", "s", 0.05, 60.0, 0.05),
+    request_timeout_seconds: f64 = 1.0 => ("Request timeout", "Deadline for one scalar source request. Native camera controls and disconnects also allow configured recovery. Safety evidence expires independently.", "s", 0.05, 60.0, 0.05),
     attempts_per_cycle: u32 = 3 => ("Attempts per cycle", "Total attempts including the first request. Only read operations are retried.", "attempts", 1.0, 10.0, 1.0),
     initial_backoff_seconds: f64 = 0.5 => ("Initial retry delay", "Initial exponential retry delay, before equal jitter.", "s", 0.05, 300.0, 0.05),
     backoff_multiplier: f64 = 2.0 => ("Retry multiplier", "Multiplier after consecutive transport failures.", "", 1.0, 10.0, 0.1),

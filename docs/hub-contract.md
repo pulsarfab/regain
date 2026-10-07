@@ -2427,8 +2427,9 @@ lease release ends the capture. An outstanding cooling write pauses publication
 and other owner commands, then wakes the readiness monitor. Cooling is rejected
 during start/download/stop/abort or uncertain state. Preflight rechecks acquisition
 identity/state before dispatch, so a deadline or abandonment cannot authorize a
-late cooling write. Native adapter cooling queues/recovery allowances still need
-integration. A setter never waits for a thermal target to be achieved.
+late cooling write. Native adapters retain a single-slot cooler command and use
+core-derived recovery allowances; proxies retain upstream command semantics.
+A setter never waits for a thermal target to be achieved.
 
 ImageReady and last-exposure timing are derived from the hub's published image,
 not an upstream driver's later unowned buffer. Optional timing errors retain their
@@ -2501,8 +2502,50 @@ Switch gauge with shared connection leases. This is not a camera image output.
 Camera proxy poll plans deduplicate all typed properties, but the runtime still
 rejects camera outputs and the setup capability remains disabled.
 
-Factory integration preserves persisted polling settings. Full core-derived
-connection/control/readiness/cleanup allowances, runtime acquisition ownership,
+Factory integration preserves persisted polling settings. Core-derived native
+timing and retirement are described below. Runtime acquisition ownership,
 remaining input adapters, bounded binary IPC and camera publication in Alpaca,
-NINA and ASCOM are still required before enabling camera choices. In particular,
-scalar request deadlines are not a complete native recovery budget.
+NINA and ASCOM are still required before enabling camera choices.
+
+### Native camera supervision timing and retirement
+
+The native core declares validated supervision allowances from its actual
+recovery policy. Connection includes old-generation cleanup, permitted SDK
+fallback, USB binding/reopen and acknowledged control/environment restoration.
+Controls include waiting for idle telemetry and restoring an Abort-retired worker
+before acknowledging the new setting. Cleanup includes outstanding dispatched
+work, bounded USB reset completion and direct cooled-camera cleanup. Shared
+control lists and fixed USB/close/fixture timings are used by execution and the
+allowance calculation; these do not change the saved recovery keys or defaults.
+
+Acquisition readiness includes each permitted replacement exposure, its reconnect,
+control restoration, thermal settling (including a second settle on SDK fallback),
+readiness overshoot and all permitted image-download attempts. Direct rereads and
+SDK ready-frame rereads have separate allowances. Replacement eligibility uses
+the same microsecond duration and inclusive configured limit as core capture.
+Longer exposures gain no replacement attempts; device-supported retained direct
+rereads can still apply. At most one USB reset allowance is included, and only
+when its failure threshold is reachable within the permitted replacements.
+
+Only NativeCameraBackend supplies this policy to the source actor and acquisition
+supervisor. They take the larger of their configured outer bound and the native
+allowance; ordinary scalar read/poll deadlines are unchanged. Proxy cameras never
+inherit native replacement or retained-frame retry promises. Setup polling
+descriptions explain the native exceptions without changing persisted values.
+The core still enforces its own command/download deadlines and reports failures
+as they happen; a conservative outer ceiling is not a delay before reporting them.
+
+OS process creation/retirement and executor scheduling have no guaranteed finite
+wall-time bound. A timeout records uncertainty rather than proving cleanup.
+After closing command admission and fencing disconnect/reset, source shutdown
+joins every retained native task, including obsolete generations and adapter
+connection waiters. Per-camera retirement does not wait for unrelated host work.
+The host retains its endpoint lock until this drain completes, including after
+its external shutdown waiter is cancelled. Repeated shutdown retains the first
+cleanup result and sends no additional disconnect. Core PID state is cleared
+after worker retirement. A queued connection whose adapter receiver has closed
+before its first poll retires without opening equipment.
+
+These guarantees are exercised with private fixtures and explicit production
+worker simulations. They do not enable camera frontend outputs or establish
+interactive, conformance or physical-device acceptance.

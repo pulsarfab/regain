@@ -1,3 +1,7 @@
+use crate::timing::{
+    ACKNOWLEDGED_CONTROLS, CLOSE_SECONDS, MAX_READ_RETRY_OVERHEAD_SECONDS, PERSISTENT_CONTROLS,
+    USB_BIND_SECONDS, USB_REBIND_PAUSE_SECONDS, USB_RESET_SECONDS,
+};
 use crate::*;
 use anyhow::{Context, Result, ensure};
 use chrono::Utc;
@@ -364,10 +368,7 @@ impl Session {
             ))
         );
         ensure!(
-            matches!(
-                kind,
-                0 | 2 | 3 | 4 | 5 | 6 | 7 | 9 | 13 | 14 | 16 | 17 | 18 | 19 | 20 | 21 | 22 | 23
-            ),
+            PERSISTENT_CONTROLS.contains(&kind),
             Failure::Invalid("Control is not a persistent imaging setting".into())
         );
         state.values.insert(kind, value);
@@ -468,7 +469,7 @@ impl Session {
             &self.selection.name,
             serial,
         ];
-        let command = self.runtime.usb_command(&args, 30);
+        let command = self.runtime.usb_command(&args, USB_BIND_SECONDS);
         let encoded = tokio::select! { biased; _=token.cancelled()=>return Err(Failure::Cancelled.into()), r=command=>r? };
         let target = regain_transport::usb::Target::decode(&encoded)?;
         ensure!(
@@ -515,7 +516,7 @@ impl Session {
                         },
                         target,
                     ],
-                    80,
+                    USB_RESET_SECONDS,
                 )
                 .await?;
         }
@@ -524,12 +525,12 @@ impl Session {
             return Err(Failure::Cancelled.into());
         }
         self.phase("Waiting for USB camera");
-        let deadline = Instant::now() + Duration::from_secs(30);
+        let deadline = Instant::now() + Duration::from_secs(USB_BIND_SECONDS);
         loop {
             match self.bind_usb(token).await {
                 Ok(()) => break,
                 Err(e) if token.is_cancelled() || Instant::now() >= deadline => return Err(e),
-                Err(_) => self.delay(0.5, token).await?,
+                Err(_) => self.delay(USB_REBIND_PAUSE_SECONDS, token).await?,
             }
         }
         self.emit(
@@ -613,28 +614,7 @@ impl Session {
             state.sdk_fallback = self.selection.direct && !self.direct;
             state.controls = controls.into_iter().map(|c| (c.kind, c)).collect();
             for c in state.controls.values().cloned().collect::<Vec<_>>() {
-                if (c.writable || c.kind == 6)
-                    && matches!(
-                        c.kind,
-                        0 | 2
-                            | 3
-                            | 4
-                            | 5
-                            | 6
-                            | 7
-                            | 9
-                            | 13
-                            | 14
-                            | 16
-                            | 17
-                            | 18
-                            | 19
-                            | 20
-                            | 21
-                            | 22
-                            | 23
-                    )
-                {
+                if (c.writable || c.kind == 6) && PERSISTENT_CONTROLS.contains(&c.kind) {
                     state.values.entry(c.kind).or_insert(c.value);
                 } else {
                     state.values.insert(c.kind, c.value);
@@ -683,26 +663,7 @@ impl Session {
             .filter(|(k, _)| {
                 (state.white_balance.is_none() || !matches!(k, 3 | 4 | 9))
                     && state.controls.get(k).is_some_and(|c| c.writable || *k == 6)
-                    && matches!(
-                        k,
-                        0 | 2
-                            | 3
-                            | 4
-                            | 5
-                            | 6
-                            | 7
-                            | 9
-                            | 13
-                            | 14
-                            | 16
-                            | 17
-                            | 18
-                            | 19
-                            | 20
-                            | 21
-                            | 22
-                            | 23
-                    )
+                    && PERSISTENT_CONTROLS.contains(k)
             })
             .collect()
     }
@@ -733,7 +694,7 @@ impl Session {
                 self.applied.insert(kind, value);
                 continue;
             }
-            let observation = if matches!(kind, 0 | 5 | 16 | 17) {
+            let observation = if ACKNOWLEDGED_CONTROLS.contains(&kind) {
                 let deadline = Instant::now()
                     + Duration::from_secs_f64(self.selection.recovery.command_timeout_seconds);
                 let result = self.write_control(kind, value, deadline, token, true).await;
@@ -860,7 +821,7 @@ impl Session {
                         * self.snapshot().info["readRetryOverheadSeconds"]
                             .as_f64()
                             .unwrap_or(0.)
-                            .clamp(0., 15.)
+                            .clamp(0., MAX_READ_RETRY_OVERHEAD_SECONDS)
             } else {
                 0.
             }
@@ -887,11 +848,7 @@ impl Session {
         )?;
         let options = self.selection.recovery.clone();
         let seconds = e.microseconds as f64 / 1e6;
-        let retries = if seconds <= options.maximum_retry_exposure_seconds {
-            options.max_retries
-        } else {
-            0
-        };
+        let retries = options.replacement_exposures(e.microseconds);
         let mut settings = self.settings();
         let mut prior = self
             .recovery_temperature
@@ -1201,7 +1158,10 @@ impl Session {
         self.status.lock().unwrap().connected = false;
         let token = CancellationToken::new();
         let closed = if self.worker.is_some() {
-            match self.call("close", Value::Null, Some(2.), &token).await {
+            match self
+                .call("close", Value::Null, Some(CLOSE_SECONDS), &token)
+                .await
+            {
                 Ok(_) => true,
                 Err(error) => {
                     let message = format!("Camera close or settings restoration failed: {error:#}");
@@ -1226,7 +1186,8 @@ impl Session {
                 self.open(&token).await?;
                 self.call("set", json!({"control":17,"value":0}), None, &token)
                     .await?;
-                self.call("close", Value::Null, Some(2.), &token).await?;
+                self.call("close", Value::Null, Some(CLOSE_SECONDS), &token)
+                    .await?;
                 Result::<()>::Ok(())
             }
             .await;

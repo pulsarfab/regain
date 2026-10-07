@@ -111,7 +111,7 @@ impl Runtime {
                 .call(
                     "simulation",
                     settings.clone(),
-                    5.,
+                    crate::timing::SIMULATION_SETUP_SECONDS,
                     &CancellationToken::new(),
                 )
                 .await?;

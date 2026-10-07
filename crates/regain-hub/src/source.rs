@@ -161,6 +161,11 @@ impl std::error::Error for SourceError {}
 /// Implementations own their connection policy. Externally managed sources must
 /// not be disconnected, and a worker reset must stop any local in-flight I/O.
 pub trait Backend: Send {
+    /// Native core recovery only. Proxies retain ordinary bounded transport
+    /// timings and cannot inherit replacement-exposure or retained-read policy.
+    fn native_camera_timing(&self) -> Option<regain_core::timing::NativeCameraTiming> {
+        None
+    }
     fn simulated(&self) -> bool {
         false
     }
@@ -417,6 +422,8 @@ enum Command {
 }
 
 pub struct SourceHandle {
+    native_camera_timing: Option<regain_core::timing::NativeCameraTiming>,
+    connection_allowance: Duration,
     commands: mpsc::Sender<Command>,
     snapshot: watch::Receiver<SourceSnapshot>,
     events: broadcast::Sender<PollEvent>,
@@ -546,11 +553,20 @@ impl SourceHandle {
             error: None,
             polling: PollingStatus::idle(&policy, clock.now()),
         };
+        let native_camera_timing = backend.native_camera_timing();
+        let configured_connection = Duration::from_secs_f64(policy.connection_timeout_seconds);
+        let connection_allowance = native_camera_timing
+            .as_ref()
+            .map_or(configured_connection, |timing| {
+                configured_connection.max(timing.connection_allowance())
+            });
         let (commands, receiver) = mpsc::channel(16);
         let (snapshot, reader) = watch::channel(initial.clone());
         let (events, _) = broadcast::channel(64);
         let (completion, completed) = watch::channel(None);
         let handle = Arc::new(Self {
+            native_camera_timing: native_camera_timing.clone(),
+            connection_allowance,
             commands,
             snapshot: reader,
             events: events.clone(),
@@ -558,6 +574,8 @@ impl SourceHandle {
         });
         tokio::spawn(
             Actor {
+                native_camera_timing,
+                connection_allowance,
                 backend,
                 policy,
                 clock,
@@ -588,6 +606,12 @@ impl SourceHandle {
     }
     pub fn snapshot(&self) -> SourceSnapshot {
         self.snapshot.borrow().clone()
+    }
+    pub(crate) fn native_camera_timing(&self) -> Option<&regain_core::timing::NativeCameraTiming> {
+        self.native_camera_timing.as_ref()
+    }
+    pub(crate) fn connection_allowance(&self) -> Duration {
+        self.connection_allowance
     }
     pub(crate) fn with_snapshot<T>(&self, read: impl FnOnce(&SourceSnapshot) -> T) -> T {
         read(&self.snapshot.borrow())
@@ -750,6 +774,8 @@ fn closed() -> SourceError {
 }
 
 struct Actor {
+    native_camera_timing: Option<regain_core::timing::NativeCameraTiming>,
+    connection_allowance: Duration,
     backend: Box<dyn Backend>,
     policy: PollPolicy,
     clock: Arc<dyn Clock>,
@@ -775,6 +801,24 @@ struct Actor {
 impl Actor {
     fn deadline(&self) -> Duration {
         Duration::from_secs_f64(self.policy.request_timeout_seconds)
+    }
+    fn cleanup_deadline(&self) -> Duration {
+        self.native_camera_timing
+            .as_ref()
+            .map_or(self.deadline(), |timing| {
+                self.deadline().max(timing.cleanup_allowance())
+            })
+    }
+    fn write_deadline(&self, member: &str) -> Duration {
+        self.native_camera_timing
+            .as_ref()
+            .map_or(self.deadline(), |timing| {
+                self.deadline().max(if member == "abortexposure" {
+                    timing.cleanup_allowance()
+                } else {
+                    timing.control_allowance()
+                })
+            })
     }
     fn publish(&mut self) {
         self.state.connection_info = self.backend.connection_info();
@@ -835,8 +879,7 @@ impl Actor {
             return Ok(());
         }
         let started = *self.connection_started.get_or_insert_with(Instant::now);
-        let remaining = Duration::from_secs_f64(self.policy.connection_timeout_seconds)
-            .saturating_sub(started.elapsed());
+        let remaining = self.connection_allowance.saturating_sub(started.elapsed());
         self.poll_operation = Some(PollPhase::Connecting);
         self.publish();
         let result = if remaining.is_zero() {
@@ -889,7 +932,7 @@ impl Actor {
             return result.clone();
         }
         self.connection_started = None;
-        let result = timeout(self.deadline(), self.backend.disconnect())
+        let result = timeout(self.cleanup_deadline(), self.backend.disconnect())
             .await
             .unwrap_or_else(|_| Err(SourceError::uncertain()));
         if result.is_err() {
@@ -1274,9 +1317,12 @@ impl Actor {
                                 return;
                             }
                             dispatched = true;
-                            timeout(self.deadline(), self.backend.write(member, parameters))
-                                .await
-                                .unwrap_or_else(|_| Err(SourceError::uncertain()))
+                            timeout(
+                                self.write_deadline(&member),
+                                self.backend.write(member, parameters),
+                            )
+                            .await
+                            .unwrap_or_else(|_| Err(SourceError::uncertain()))
                         }
                     },
                 };

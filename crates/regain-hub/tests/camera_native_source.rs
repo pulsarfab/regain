@@ -94,12 +94,15 @@ async fn idle(owner: &NativeCamera, activity: &ActivityCounter) {
     .await;
 }
 fn source(owner: Arc<NativeCamera>, samples: &[P]) -> Arc<SourceHandle> {
+    source_with_timeout(owner, samples, 5.)
+}
+fn source_with_timeout(owner: Arc<NativeCamera>, samples: &[P], seconds: f64) -> Arc<SourceHandle> {
     SourceHandle::spawn(
         Uuid::new_v4(),
         Uuid::new_v4(),
         PollPolicy {
             poll_seconds: 60.0,
-            request_timeout_seconds: 5.0,
+            request_timeout_seconds: seconds,
             ..PollPolicy::default()
         },
         Box::new(
@@ -125,6 +128,115 @@ fn supervisor(
         activity,
     )
     .unwrap()
+}
+
+#[tokio::test]
+async fn native_reread_and_post_abort_restoration_outlive_outer_scalar_and_proxy_bounds() {
+    let (owner, budget, activity, events) = fixture_recovery(
+        false,
+        json!({"instant":false,"fault":"download"}),
+        RecoveryOptions {
+            max_retries: 0,
+            ready_frame_download_retries: 1,
+            reconnect_delay_seconds: 0.3,
+            ..RecoveryOptions::default()
+        },
+    );
+    let source = source_with_timeout(owner.clone(), &[], 0.05);
+    let supervisor = CameraSupervisor::new(
+        source.clone(),
+        budget.clone(),
+        AcquisitionTiming {
+            readiness_grace: Duration::from_millis(10),
+            poll_interval: Duration::from_millis(10),
+            ..AcquisitionTiming::default()
+        },
+        activity.clone(),
+    )
+    .unwrap();
+    let first = supervisor.connect().await.unwrap();
+    let second = supervisor.connect().await.unwrap();
+    first.set(S::NumX(64)).await.unwrap();
+    first.set(S::NumY(64)).await.unwrap();
+    let generation = source.snapshot().generation;
+    let id = first
+        .start(ExposureRequest {
+            duration_seconds: 0.01,
+            light: false,
+        })
+        .await
+        .unwrap();
+    until(|| {
+        owner
+            .snapshot()
+            .core
+            .phase
+            .starts_with("Rereading ready frame")
+    })
+    .await;
+    until(|| supervisor.status().image_ready).await;
+    let a = first.image().unwrap();
+    let b = second.image().unwrap();
+    assert!(Arc::ptr_eq(&a, &b));
+    assert_eq!(a.identity.acquisition, id);
+    let metadata: Value =
+        serde_json::from_slice(a.image.native().unwrap().metadata_json()).unwrap();
+    assert_eq!(metadata["downloadRetries"], 1);
+    assert_eq!(metadata["recoveries"], 0);
+    assert_eq!(source.snapshot().generation, generation);
+    assert!(!source.snapshot().write_uncertain);
+    assert_eq!(
+        events
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|e| e.starts_with("connection.opened:"))
+            .count(),
+        1
+    );
+    assert_eq!(
+        events
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|e| e.contains("session.phase: Starting exposure"))
+            .count(),
+        1
+    );
+    // Abort a later admitted capture: restoring the worker before a new setting
+    // waits the configured 300 ms reconnect delay, beyond the 50 ms scalar bound.
+    first
+        .start(ExposureRequest {
+            duration_seconds: 1.,
+            light: false,
+        })
+        .await
+        .unwrap();
+    first.abort().await.unwrap();
+    assert!(!owner.snapshot().core.control_connection_available);
+    first.set(S::Gain(123)).await.unwrap();
+    assert_eq!(
+        second.property(P::Gain).await.unwrap(),
+        V::Integer { value: 123 }
+    );
+    assert_eq!(source.snapshot().generation, generation);
+    assert!(!source.snapshot().write_uncertain);
+    assert!(
+        !events
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|e| e.starts_with("capture.retry:"))
+    );
+    drop(first);
+    drop(second);
+    drop(supervisor);
+    source.shutdown().await.unwrap();
+    assert_eq!(activity.active(), 0);
+    assert!(owner.snapshot().core.process_id.is_none());
+    drop(a);
+    drop(b);
+    assert_eq!(budget.used_bytes(), 0);
 }
 
 #[tokio::test]

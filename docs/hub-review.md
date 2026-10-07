@@ -3,6 +3,78 @@
 This records local review and tests for the single hub PR. Passing a foundation
 test does not imply that a frontend, transport, or hardware gate has passed.
 
+## 2026-10-07: native recovery supervision allowances
+
+Reviewed the actual core open/refresh/apply/capture/settle/download/USB/close paths
+against the actor and camera supervisor's outer deadlines. A scalar request bound
+could previously cut off valid multi-command restoration; duration plus proxy
+grace did not cover native rereads or replacement exposures. Core now owns the
+allowance calculation. Its eighteen persistent controls and four shared-deadline
+acknowledged controls produce a conservative restoration bound. Open includes
+software-white-balance restoration and explicit simulation configuration. USB
+rebinding includes one deadline overshoot; settling includes one final service,
+environment-read and delay overshoot. SDK fallback can require a second restore
+and settle in one attempt. Download retries include ready-state confirmation and
+configured delays. USB reset is budgeted at most once within reachable permitted
+replacement attempts. Core replacement eligibility and the calculator share the
+same microsecond-based inclusive limit. Existing retry counts/keys/defaults and
+actual command deadlines remain unchanged.
+Cooling tolerance and stable-sample count do not multiply the settling ceiling:
+the core's existing thermal timeout bounds that loop, including its last sample.
+
+NativeCameraBackend supplies immutable validated timing to its actor/handle.
+Only native actors enlarge connection, write and disconnect bounds; scalar
+read/poll bounds stay fixed. The camera supervisor validates proxy timing first,
+then uses native connection and per-exposure readiness allowances. Representation
+checks run before acquisition admission. Proxies supply no native policy. Shared
+polling descriptions and generated contract explain this behavior without
+rewriting saved polling values. Conservative ceilings do not delay early errors.
+OS startup/reaping and scheduling are not claimed strictly bounded: retained
+retirement from d428f6e remains necessary after any outer timeout.
+
+Five pure boundary cases cover inclusive replacement eligibility, long-exposure
+retained-read allowance, reachable single USB reset, direct-only SDK fallback,
+all policy maxima and invalid values. Production-pipe fixtures prove a connection
+outlives both a 10 ms supervisor and one-second scalar connection bound; a failed
+download returns one shared image after its permitted 300 ms same-frame reread,
+with one exposure and no replacement; and a new gain setting restores an
+Abort-retired worker beyond the 50 ms scalar request bound. The held-host test
+first passes that scalar deadline, then deliberately expires the derived outer
+cleanup ceiling while retaining its endpoint lock, uncertainty and owned drain.
+Focused logs: artifacts/hub-camera-timing-{core,connect,drain,capture}-focused.log.
+A separate direct-worker case injects one failed read into the existing worker;
+the replacement restores gain/cooling, collects three stable samples and publishes
+one shared image with recoveries=1. Its initial missing Value import fails fixture
+compilation and is corrected without production changes; retain both logs in
+artifacts/hub-camera-timing-replacement-focused{,-final}.log. Full core/hub/Alpaca/
+ZWO regressions, strict Rust 1.99 Clippy, Rust 1.89 all-target checks, formatting,
+contract freshness and Node/eight schema checks pass. Managed frontend checks
+pass NINA 229/229 and actual net48 x86/x64. Final replacement-test compilation/
+integration passes separately. Review then catches a longer saved source
+connection allowance being ignored by the supervisor when the calculated native
+ceiling is lower. The actor and handle now share that effective allowance; the
+native supervisor respects it. An inert constructor regression verifies a saved
+300-second source allowance with no worker, leases, activity or image allocation.
+Final hub/Alpaca regressions, strict Clippy, Rust 1.89 all-target checks,
+formatting/contract freshness, NINA 229/229 and actual net48 x86/x64 all pass
+after that correction. Evidence: artifacts/hub-camera-timing-{rust,clippy,msrv,
+contract,nina,net48}-final.log. Earlier full core/ZWO and Node/eight schema checks
+remain valid; those inputs have not changed since their passing runs.
+
+Preceding edbafa7 CI is terminal: PR/push 37587543962/37587539552 each pass four
+jobs, including Windows, and fail four portable Rust jobs. All eight original
+job logs show the attempted missing target/debug/regain-device launch before
+the telemetry timeout. PR logs use artifacts/hub-status-{linux,linux-arm,macos,
+macos-intel}-job.log; push logs use artifacts/hub-status-push-portable-JOBID.log.
+The worker-directory correction is committed locally at d428f6e. Publish it and
+this reviewed timing increment together to the same draft PR; local checks pass
+and fresh CI remains required.
+
+Camera runtime/output admission, remaining inputs, bounded frontend image IPC,
+frontend operation timing, coordination and every original remaining acceptance/
+final gate remain required.
+No physical equipment or installed vendor driver is activated.
+
 ## 2026-10-07: portable camera workers and retained native retirement
 
 CI evidence: edbafa7 PR/push runs 37587543962/37587539552 fail portable Rust

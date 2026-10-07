@@ -4,6 +4,7 @@ pub mod model;
 mod process;
 pub mod recovery;
 pub mod session;
+pub mod timing;
 pub mod white_balance;
 pub mod worker;
 pub use model::*;

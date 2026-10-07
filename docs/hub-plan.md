@@ -8,6 +8,27 @@ tagged or published. Changed cross-crate APIs require an unpublished version so
 Cargo package verification uses the new workspace packages.
 Last updated: 2026-10-07.
 
+Current timing increment: core now derives validated native connection, control,
+capture and cleanup allowances from the existing recovery workflow. Canonical
+persistent/acknowledged controls and fixed USB/close/fixture timings are shared
+with execution. Replacement eligibility uses the same microsecond duration and
+inclusive limit as core capture; long exposures acquire no replacement retries.
+Native actors and supervisors use these allowances without changing scalar
+read deadlines or granting retry policy to proxies. Generated polling descriptions
+explain the native exceptions; stored keys, defaults and ranges are unchanged.
+Five policy boundary cases and production-pipe connection, same-frame reread,
+post-Abort restoration and held-host cleanup cases pass. A direct replacement
+also restores gain/cooling and collects three stable samples before publishing
+one shared image. Full Rust regressions, strict Clippy, Rust 1.89, generated
+contracts and Node/eight schema checks pass, as do NINA 229/229 and actual net48
+x86/x64. Review also fixes respecting a longer saved source connection allowance;
+its inert constructor case and final hub/Alpaca regressions pass. Final strict
+Clippy, Rust 1.89, formatting/contracts, NINA 229/229 and net48 x86/x64 pass after
+that correction; evidence uses artifacts/hub-camera-timing-*-final.log.
+Camera outputs remain disabled; all original remaining milestones and acceptance
+gates still apply. Retirement/worker-path correction is committed locally at
+d428f6e; both reviewed increments are ready to publish together for fresh CI.
+
 Current work: native camera retirement and portable host-fixture correction.
 Factory/fixture commits ebcb704/edbafa7 are pushed to draft PR #21. At edbafa7,
 PR/push CI 37587543962/37587539552 fail portable Rust jobs. Downloaded Linux,
@@ -16,7 +37,9 @@ test searches target/debug for regain-device while portable CI builds workers
 in target/release. The test now passes the existing REGAIN_TEST_WORKERS setting
 explicitly, checks that worker before launch and retains source status on timeout.
 All ten host cases pass locally using a separate worker directory with spaces.
-Windows jobs remain live; neither CI run is accepted as green.
+Both runs are now terminal with four successful jobs and four portable failures.
+Both Windows jobs pass. All eight downloaded portable job logs identify the
+same missing debug worker path; neither run is accepted as green.
 
 Native source shutdown now joins retained camera tasks before publishing actor
 completion. A per-camera counter includes obsolete generations and adapter
@@ -29,7 +52,8 @@ shutdown waiters, then releases it after retirement with the original uncertaint
 Full core/hub/Alpaca/ZWO regressions, the final focused host case, strict Clippy,
 Rust 1.89, formatting, generated contracts, Node/eight schema checks, NINA 229/229
 and actual net48 x86/x64 all pass locally. Evidence is recorded in hub-review.md.
-Keep this increment local while the preceding Windows CI jobs finish.
+The retirement correction is locally committed at d428f6e; preceding CI has
+finished as recorded above. Its worker-directory fix still needs fresh CI.
 This does not finish derived recovery timing or enable camera outputs.
 All original remaining milestones and final acceptance gates remain required.
 

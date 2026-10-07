@@ -2678,7 +2678,7 @@
           },
           "connectionTimeoutSeconds": {
             "default": 30.0,
-            "description": "Maximum time for a source connection handshake, including asynchronous connection completion.",
+            "description": "Maximum source handshake time, including asynchronous completion. Native cameras extend this for their configured recovery and cleanup.",
             "maximum": 300.0,
             "minimum": 1.0,
             "title": "Connection timeout",
@@ -2686,7 +2686,7 @@
             "x-regain": {
               "apply": "reconnect",
               "default": 30.0,
-              "description": "Maximum time for a source connection handshake, including asynchronous connection completion.",
+              "description": "Maximum source handshake time, including asynchronous completion. Native cameras extend this for their configured recovery and cleanup.",
               "group": "Source polling",
               "key": "connectionTimeoutSeconds",
               "label": "Connection timeout",
@@ -2744,7 +2744,7 @@
           },
           "requestTimeoutSeconds": {
             "default": 1.0,
-            "description": "Deadline for one source request; does not extend safety evidence lifetime.",
+            "description": "Deadline for one scalar source request. Native camera controls and disconnects also allow configured recovery. Safety evidence expires independently.",
             "maximum": 60.0,
             "minimum": 0.05,
             "title": "Request timeout",
@@ -2752,7 +2752,7 @@
             "x-regain": {
               "apply": "reconnect",
               "default": 1.0,
-              "description": "Deadline for one source request; does not extend safety evidence lifetime.",
+              "description": "Deadline for one scalar source request. Native camera controls and disconnects also allow configured recovery. Safety evidence expires independently.",
               "group": "Source polling",
               "key": "requestTimeoutSeconds",
               "label": "Request timeout",
