@@ -4,7 +4,7 @@ use anyhow::{Context, Result, ensure};
 use serde_json::Value;
 use std::{
     cell::{Cell, RefCell},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 #[cfg(windows)]
@@ -21,7 +21,39 @@ compile_error!("PulsarFab regain supports Windows, Linux, and macOS");
 pub use platform::{DeviceInfo, enumerate, require_sdk_absent};
 
 /// Temperature, power, acknowledged target and cooler enable, in that order.
-pub type Telemetry = std::sync::Arc<std::sync::Mutex<Option<[i64; 4]>>>;
+pub type Telemetry = std::sync::Arc<std::sync::Mutex<Option<TelemetrySample>>>;
+#[derive(Clone, Copy)]
+pub struct TelemetrySample {
+    pub values: [i64; 4],
+    pub observed_at: [Instant; 4],
+}
+impl TelemetrySample {
+    pub fn new(values: [i64; 4], observed: Instant) -> Self {
+        Self {
+            values,
+            observed_at: [observed; 4],
+        }
+    }
+    pub fn index(control: u32) -> Result<usize> {
+        Ok(match control {
+            8 => 0,
+            15 => 1,
+            16 => 2,
+            17 => 3,
+            _ => anyhow::bail!("Unsupported telemetry control"),
+        })
+    }
+    pub fn observation(&self, control: u32) -> Result<regain_core::ControlObservationReply> {
+        let index = Self::index(control)?;
+        let age = Instant::now()
+            .checked_duration_since(self.observed_at[index])
+            .ok_or_else(|| anyhow::anyhow!("Invalid telemetry observation time"))?;
+        Ok(regain_core::ControlObservationReply {
+            value: self.values[index],
+            age_seconds: age.as_secs_f64(),
+        })
+    }
+}
 
 pub struct Camera {
     device: RefCell<Option<platform::Device>>,
@@ -67,12 +99,15 @@ impl Camera {
     }
     fn publish_environment(&self) -> Result<()> {
         if let Some(environment) = self.environment.borrow().as_ref() {
-            *self.telemetry.lock().unwrap() = Some([
-                environment.get(8)?,
-                environment.get(15)?,
-                environment.get(16)?,
-                environment.get(17)?,
-            ]);
+            *self.telemetry.lock().unwrap() = Some(TelemetrySample {
+                values: [
+                    environment.get(8)?,
+                    environment.get(15)?,
+                    environment.get(16)?,
+                    environment.get(17)?,
+                ],
+                observed_at: environment.observed_at(),
+            });
         }
         Ok(())
     }
@@ -279,5 +314,31 @@ impl Camera {
         }
         self.phase("transfer_complete");
         Ok(data)
+    }
+}
+
+#[cfg(test)]
+mod observation_tests {
+    use super::*;
+
+    #[test]
+    fn independent_cached_observation_ages_never_reset_on_reads() {
+        let now = Instant::now();
+        let mut sample = TelemetrySample::new([215, 30, -10, 1], now - Duration::from_secs(20));
+        sample.observed_at[2] = now - Duration::from_secs(5);
+        let before = sample.observed_at;
+        for _ in 0..3 {
+            let temperature = sample.observation(8).unwrap();
+            assert_eq!(temperature.value, 215);
+            assert!(temperature.age_seconds >= 20.0);
+            assert!(sample.observation(15).unwrap().age_seconds >= 20.0);
+            assert!(sample.observation(16).unwrap().age_seconds >= 5.0);
+            assert_eq!(sample.observed_at, before);
+        }
+        sample.observed_at[0] = now + Duration::from_secs(3600);
+        assert!(sample.observation(8).is_err());
+        for control in [0, 5, 21, u32::MAX] {
+            assert!(sample.observation(control).is_err());
+        }
     }
 }

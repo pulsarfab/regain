@@ -3,7 +3,9 @@
 use super::{
     image::{CameraImage, ImageBudget},
     native_capture::{NativeCaptureError, capture_admitted},
-    native_properties::{NativeGeometry, NativeProperties, validate_imaging_control},
+    native_properties::{
+        NativeGeometry, NativeProperties, NativePropertyObservation, validate_imaging_control,
+    },
     properties::{CameraProperty, CameraSetting, CameraValue},
 };
 use crate::{
@@ -524,6 +526,15 @@ impl NativeCamera {
     /// Cached native properties remain readable while the retained core owner
     /// captures. The source adapter must preserve observation freshness.
     pub fn read_property(&self, property: CameraProperty) -> Result<CameraValue, SourceError> {
+        self.read_property_observation(property)
+            .map(|observed| observed.value)
+    }
+    /// Reading cached evidence never resets its age. Metadata/local state have
+    /// no hardware observation time; adapters must preserve this distinction.
+    pub fn read_property_observation(
+        &self,
+        property: CameraProperty,
+    ) -> Result<NativePropertyObservation, SourceError> {
         let state = self.state.lock().unwrap();
         if !state.connected {
             return Err(disconnected());
@@ -540,7 +551,7 @@ impl NativeCamera {
                 && state.error.is_none(),
             error: state.error.as_ref(),
         }
-        .read(property)
+        .observation(property)
     }
     /// Local bin/ROI/RAW16 selection only. Hardware settings must use the
     /// acknowledged core command path, never a desired-state queue as an ACK.

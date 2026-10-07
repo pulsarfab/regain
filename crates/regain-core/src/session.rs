@@ -118,10 +118,15 @@ impl Session {
         let result = self
             .write_control(kind, value, deadline, token, false)
             .await;
-        let result = mailbox.finish(&request, result, || {
+        let observation = result.as_ref().ok().copied();
+        let result = mailbox.finish(&request, result.map(|observed| observed.value), || {
             self.applied.insert(kind, value);
             settings.insert(kind, value);
-            self.status.lock().unwrap().values.insert(kind, value);
+            let mut state = self.status.lock().unwrap();
+            state.values.insert(kind, value);
+            if let Some(observation) = observation {
+                state.observations.insert(kind, observation);
+            }
         });
         match result {
             Err(error @ cooling::CoolingError::Uncertain { .. }) => {
@@ -177,10 +182,12 @@ impl Session {
                 + Duration::from_secs_f64(self.selection.recovery.command_timeout_seconds),
         );
         let result = self.write_control(kind, value, deadline, token, true).await;
-        let actual = self.control_result(result).await?;
-        self.applied.insert(kind, actual);
-        self.status.lock().unwrap().values.insert(kind, actual);
-        Ok(actual)
+        let observation = self.control_result(result).await?;
+        self.applied.insert(kind, observation.value);
+        let mut state = self.status.lock().unwrap();
+        state.values.insert(kind, observation.value);
+        state.observations.insert(kind, observation);
+        Ok(observation.value)
     }
     async fn write_control(
         &mut self,
@@ -189,7 +196,7 @@ impl Session {
         deadline: Instant,
         token: &CancellationToken,
         allow_sdk_offset_clamp: bool,
-    ) -> std::result::Result<i64, cooling::CoolingError> {
+    ) -> std::result::Result<ControlObservation, cooling::CoolingError> {
         let mut set_acknowledged = false;
         let result = async {
             self.worker
@@ -212,15 +219,18 @@ impl Session {
                 .saturating_duration_since(Instant::now())
                 .as_secs_f64();
             ensure!(remaining > 0., "Control deadline expired before readback");
-            let actual = self
+            let request_started = Instant::now();
+            let reply = self
                 .worker
                 .as_mut()
                 .context("Camera worker is disconnected")?
-                .control_call("get", json!({"control":kind}), deadline, token)
+                .control_call("get-observation", json!({"control":kind}), deadline, token)
                 .await?
-                .0
-                .as_i64()
-                .ok_or_else(|| invalid("Invalid control readback"))?;
+                .0;
+            let observation = serde_json::from_value::<ControlObservationReply>(reply)
+                .map_err(|_| invalid("Invalid control readback"))?
+                .normalize(request_started)?;
+            let actual = observation.value;
             if actual != value {
                 let cap = self.snapshot().controls.get(&kind).cloned();
                 ensure!(
@@ -240,7 +250,7 @@ impl Session {
                 Instant::now() < deadline,
                 "Control readback exceeded its deadline"
             );
-            Ok::<_, anyhow::Error>(actual)
+            Ok::<_, anyhow::Error>(observation)
         }
         .await;
         result.map_err(|error| {
@@ -271,8 +281,8 @@ impl Session {
     }
     async fn control_result(
         &mut self,
-        result: std::result::Result<i64, cooling::CoolingError>,
-    ) -> Result<i64> {
+        result: std::result::Result<ControlObservation, cooling::CoolingError>,
+    ) -> Result<ControlObservation> {
         match result {
             Err(cooling::CoolingError::Uncertain { message, code }) => {
                 self.invalidate().await;
@@ -537,6 +547,9 @@ impl Session {
         self.phase("Opening");
         self.worker = Some(self.runtime.spawn(self.direct, self.log.clone()).await?);
         self.applied.clear();
+        // Values retain desired recovery settings; old evidence cannot describe
+        // a replacement worker or its newly negotiated capabilities.
+        self.status.lock().unwrap().observations.clear();
         let (result, _) = self
             .call(
                 "open",
@@ -719,24 +732,32 @@ impl Session {
                 self.applied.insert(kind, value);
                 continue;
             }
-            self.call("set", json!({"control":kind,"value":value}), None, token)
-                .await?;
-            let actual = self
-                .call("get", json!({"control":kind}), None, token)
-                .await?
-                .0
-                .as_i64()
-                .ok_or_else(|| invalid("Invalid control readback"))?;
+            let observation = if matches!(kind, 0 | 5 | 16 | 17) {
+                let deadline = Instant::now()
+                    + Duration::from_secs_f64(self.selection.recovery.command_timeout_seconds);
+                let result = self.write_control(kind, value, deadline, token, true).await;
+                Some(self.control_result(result).await?)
+            } else {
+                self.call("set", json!({"control":kind,"value":value}), None, token)
+                    .await?;
+                None
+            };
+            let actual = if let Some(observation) = observation {
+                observation.value
+            } else {
+                self.call("get", json!({"control":kind}), None, token)
+                    .await?
+                    .0
+                    .as_i64()
+                    .ok_or_else(|| invalid("Invalid control readback"))?
+            };
             if actual != value {
                 ensure!(
                     !self.direct && kind == 5 && actual >= cap.min && actual <= cap.max,
                     "Control {kind} readback {actual} differs from requested {value}"
                 );
-                self.emit(
-                    "info",
-                    "control.clamped",
-                    format!("SDK applied offset {actual} instead of {value}"),
-                );
+                // Acknowledged controls already emit their clamp diagnostic in
+                // the shared helper; other controls cannot use this policy.
                 values.insert(kind, actual);
                 let mut shared = self.status.lock().unwrap();
                 if shared.values.get(&kind) == Some(&value) {
@@ -744,8 +765,32 @@ impl Session {
                 }
             }
             self.applied.insert(kind, actual);
+            if let Some(observation) = observation {
+                self.status
+                    .lock()
+                    .unwrap()
+                    .observations
+                    .insert(kind, observation);
+            }
         }
         Ok(())
+    }
+    async fn observe_control(
+        &mut self,
+        kind: i32,
+        token: &CancellationToken,
+    ) -> Result<ControlObservation> {
+        let request_started = Instant::now();
+        let (reply, pixels) = self
+            .call("get-observation", json!({"control":kind}), None, token)
+            .await?;
+        ensure!(
+            pixels.is_empty(),
+            invalid("Unexpected observation image payload")
+        );
+        serde_json::from_value::<ControlObservationReply>(reply)
+            .map_err(|_| invalid("Invalid control observation"))?
+            .normalize(request_started)
     }
     async fn read_environment(
         &mut self,
@@ -753,13 +798,10 @@ impl Session {
     ) -> Result<(Option<f64>, Option<i64>)> {
         for kind in [8, 15] {
             if self.snapshot().controls.contains_key(&kind) {
-                let value = self
-                    .call("get", json!({"control":kind}), None, token)
-                    .await?
-                    .0
-                    .as_i64()
-                    .ok_or_else(|| invalid("Invalid environment value"))?;
-                self.status.lock().unwrap().values.insert(kind, value);
+                let observation = self.observe_control(kind, token).await?;
+                let mut state = self.status.lock().unwrap();
+                state.values.insert(kind, observation.value);
+                state.observations.insert(kind, observation);
             }
         }
         let state = self.snapshot();
@@ -1293,6 +1335,162 @@ mod tests {
         }
     }
     #[tokio::test]
+    async fn worker_evidence_age_survives_core_refresh_and_invalid_readback_is_uncertain() {
+        let token = CancellationToken::new();
+        let mut session = Session::new(selection(false), runtime(), log()).unwrap();
+        session.connect(&token).await.unwrap();
+        session.refresh(&token).await.unwrap();
+        session
+            .call(
+                "simulation",
+                json!({"observationControl":8,
+            "observationReply":{"value":-100,"ageSeconds":120.25}}),
+                None,
+                &token,
+            )
+            .await
+            .unwrap();
+        let requested = Instant::now();
+        session.read_environment(&token).await.unwrap();
+        let received = Instant::now();
+        let observed = session.snapshot().observations[&8];
+        assert_eq!(observed.value, -100);
+        // The internal request admission lies between these two boundaries.
+        let age = Duration::from_secs_f64(120.25);
+        assert!(observed.observed_at >= requested - age);
+        assert!(observed.observed_at <= received - age);
+        let previous = session.snapshot().observations[&0];
+        session
+            .call(
+                "simulation",
+                json!({"observationControl":0,
+            "observationReply":{"value":123,"ageSeconds":-1}}),
+                None,
+                &token,
+            )
+            .await
+            .unwrap();
+        let error = session
+            .set_imaging_control(0, 123, Instant::now() + Duration::from_secs(5), &token)
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            error.downcast_ref::<Failure>(),
+            Some(Failure::UncertainControl { .. })
+        ));
+        assert!(!retryable(&error));
+        assert_eq!(session.snapshot().observations[&0], previous);
+        assert!(!session.snapshot().control_connection_available);
+        assert!(session.worker.is_none());
+        session.close().await;
+    }
+    #[tokio::test]
+    async fn queued_persistent_control_invalid_observation_never_replays_or_starts_exposure() {
+        for (kind, value) in [(0, 123), (5, 20), (16, -15), (17, 0)] {
+            let token = CancellationToken::new();
+            let events = Arc::new(Mutex::new(Vec::new()));
+            let sink = events.clone();
+            let mut session = Session::new(
+                selection(false),
+                runtime(),
+                Arc::new(move |_, event, _| sink.lock().unwrap().push(event.to_owned())),
+            )
+            .unwrap();
+            session.connect(&token).await.unwrap();
+            session.refresh(&token).await.unwrap();
+            let previous = session.snapshot().observations[&kind];
+            assert_ne!(
+                previous.value, value,
+                "The test must dispatch a changed setting"
+            );
+            let writes = events
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|event| event.as_str() == "control.write_acknowledged")
+                .count();
+            session
+                .call(
+                    "simulation",
+                    json!({"observationControl":kind,
+                "observationReply":{"value":value,"ageSeconds":-1}}),
+                    None,
+                    &token,
+                )
+                .await
+                .unwrap();
+            Session::queue_control(&session.status, kind, value).unwrap();
+            let error = session.capture(exposure(), &token).await.err().unwrap();
+            assert!(matches!(
+                error.downcast_ref::<Failure>(),
+                Some(Failure::UncertainControl { .. })
+            ));
+            assert!(!retryable(&error));
+            assert_eq!(session.snapshot().observations[&kind], previous);
+            assert!(!session.snapshot().control_connection_available);
+            assert!(session.worker.is_none());
+            let observed = events.lock().unwrap().clone();
+            assert_eq!(
+                observed
+                    .iter()
+                    .filter(|event| event.as_str() == "control.write_acknowledged")
+                    .count(),
+                writes + 1
+            );
+            assert_eq!(
+                observed
+                    .iter()
+                    .filter(|event| event.as_str() == "connection.opened")
+                    .count(),
+                1
+            );
+            assert!(!observed.iter().any(|event| event == "capture.retry"));
+            assert_ne!(session.snapshot().phase, "Exposing");
+            session.close().await;
+        }
+    }
+    #[tokio::test]
+    async fn observations_are_acknowledged_evidence_not_desired_settings_or_new_worker_defaults() {
+        for direct in [false, true] {
+            let token = CancellationToken::new();
+            let mut selected = selection(direct);
+            if direct {
+                selected.name = "ZWO ASI585MM Pro".into();
+            }
+            let mut session = Session::new(selected, runtime(), log()).unwrap();
+            session.connect(&token).await.unwrap();
+            assert!(session.snapshot().observations.is_empty());
+            Session::queue_control(&session.status, 0, 123).unwrap();
+            assert!(session.snapshot().observations.is_empty());
+            session.refresh(&token).await.unwrap();
+            let observed = session.snapshot().observations;
+            for kind in [0, 5, 8, 15, 16, 17] {
+                assert!(observed[&kind].observed_at <= Instant::now());
+            }
+            assert_eq!(observed[&0].value, 123);
+            Session::queue_control(&session.status, 0, 234).unwrap();
+            let queued = session.snapshot();
+            assert_eq!(queued.values[&0], 234);
+            assert_eq!(queued.observations[&0], observed[&0]);
+            let json = serde_json::to_value(&queued).unwrap();
+            assert!(json.get("observations").is_none());
+            assert!(json.to_string().find("observedAt").is_none());
+            session.refresh(&token).await.unwrap();
+            let acknowledged = session.snapshot().observations[&0];
+            assert_eq!(acknowledged.value, 234);
+            assert!(acknowledged.observed_at >= observed[&0].observed_at);
+            session.invalidate().await;
+            // Diagnostics can retain known aged evidence while unavailable.
+            assert_eq!(session.snapshot().observations[&0], acknowledged);
+            session.open(&token).await.unwrap();
+            assert!(session.snapshot().observations.is_empty());
+            assert_eq!(session.snapshot().values[&0], 234);
+            session.refresh(&token).await.unwrap();
+            assert_eq!(session.snapshot().observations[&0].value, 234);
+            session.close().await;
+        }
+    }
+    #[tokio::test]
     async fn acknowledged_imaging_controls_apply_before_success_and_survive_worker_recovery() {
         for direct in [false, true] {
             let token = CancellationToken::new();
@@ -1313,6 +1511,9 @@ mod tests {
                     value
                 );
                 assert_eq!(session.snapshot().values[&kind], value);
+                let observation = session.snapshot().observations[&kind];
+                assert_eq!(observation.value, value);
+                assert!(observation.observed_at <= Instant::now());
                 assert_eq!(session.applied[&kind], value);
                 assert_eq!(
                     session
@@ -1621,6 +1822,7 @@ mod tests {
         ));
         assert!(!retryable(&error));
         assert_eq!(session.snapshot().values[&16], original);
+        assert_eq!(session.snapshot().observations[&16].value, original);
         assert!(!session.snapshot().control_connection_available);
         assert!(
             !events

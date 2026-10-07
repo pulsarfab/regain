@@ -8,22 +8,33 @@ tagged or published. Changed cross-crate APIs require an unpublished version so
 Cargo package verification uses the new workspace packages.
 Last updated: 2026-10-06.
 
-Latest local camera checkpoint: native RAW16 typed property reads and desired
-bin/ROI settings reuse the shared CameraProperty/CameraSetting contract. Initial
-connection refreshes controls/environment before publication, capture freezes
-geometry atomically, and successful immutable frames supply last-exposure timing.
-Missing/invalid/unsupported facts are explicit errors, never invented values.
-Eighteen owner integration and four property unit cases pass with full Rust
-core/hub/Alpaca regressions, strict Rust 1.99 Clippy and Rust 1.89 all-target checks.
-Generated contracts, Node/seven schema checks, rebuilt-host NINA 228/228 and
-actual net48 x86/x64 fixtures also pass. Review is recorded in hub-review.md;
-property checkpoint fa04eb4 is committed locally and requires new CI.
-Native acknowledged gain/offset writes now pass full local validation and review:
-42 core tests, 21 native owner integration cases, five owner unit cases, full
-Rust regressions, strict Clippy/MSRV/contracts, Node/seven schema checks, fresh-host
-NINA 228/228 and real net48 x86/x64 fixtures. Adapters/config/runtime,
-recovery/budget wiring, all camera outputs, coordination and every original final
-gate remain.
+Latest local camera checkpoint: timestamped worker observations now reach core
+and native typed property reads. Core keeps acknowledged value/time evidence
+separate from queued desired values. Temperature, power, target and enable retain
+independent ages across cached reads and capture; unrelated setting writes do not
+freshen them. Pipe messages transfer relative ages, conservatively including IPC
+time, never process-local clock epochs. Replacement workers clear old evidence.
+Direct gain/offset acknowledgements describe accepted next-capture configuration;
+sensor programming occurs at exposure start. They are not sensor-register probes.
+Full core/hub/Alpaca/ZWO Rust regressions pass, including 47 core tests, 49 hub
+unit tests, 22 native owner integration cases and 98 ZWO library tests. Strict
+Clippy, Rust 1.89 all-target checks, generated contracts, Node/seven schema
+checks, rebuilt-host NINA 228/228 and real net48 x86/x64 pass. Legacy queued apply
+for the four acknowledged controls now reuses the same helper and uncertain
+outcome retirement; its invalid-readback tests prove no replay/replacement
+exposure. Verification commands, initial fixture errors and their corrections
+are retained in artifacts/hub-camera-observation-*.log and hub-review.md.
+This reviewed observation checkpoint requires its own CI before final acceptance.
+
+Native properties/geometry fa04eb4 and acknowledged imaging controls adfb9e2 are
+pushed to the same draft PR. Their complete local checks include full Rust,
+strict Clippy/MSRV/contracts, Node/seven schema checks, fresh-host NINA 228/228
+and real net48 x86/x64 fixtures. Both adfb9e2 PR/push CI runs
+37575030689/37575027240 now pass all eight jobs, including Windows installer and
+release checks. Their success does not establish the earlier Windows failure's
+cause. Adapters/config/runtime,
+recovery/budget wiring, binary frontend IPC, all camera outputs, coordination and
+every original final gate remain.
 Camera setup choices stay disabled.
 
 Retained cooler checkpoint a92b8bd CI: push 37571649524 finishes with seven
@@ -1616,3 +1627,4 @@ then cameras/coordination and every original remaining acceptance/final gate.
 | 2026-10-06 | Added and reviewed dedicated wheel simulation using shared actors, timed motion, bounded array controls and atomic metadata. Actual IPC verifies applied updates with oversized replies; both frontends require reload without replay. | Full Rust hub/Alpaca suites, 27 simulator cases, strict Clippy, Rust 1.89, contracts, Node/six schema checks, fresh-host NINA 212/212 and real net48 x86/x64 pass. Actual WPF capture verified. Retain initial schema/test/Clippy failures and corrected evidence. Preceding a586c76 PR/push CI remains live; keep this increment local. Next: shared wheel creation, panels, cameras/coordination and every original acceptance/final gate. |
 
 | 2026-10-06 | Enabled shared wheel creation using generated capability choices and existing editors; parameterized rotator/wheel WPF and real net48 creation checks. Reviewed browser creation, mismatched classes, saved identities and names-only updates. | Full Rust hub/Alpaca, 22 wheel cases, strict Clippy, Rust 1.89, contracts, Node/six schema checks, fresh-host NINA 213/213 and real net48 x86/x64 pass. Corrected a test request-ID ordering error in a separate IPC capability test; no protocol rule changed. Actual native/browser captures and zero-lease status verified. Preceding a586c76 CI remains live; keep local increments until it ends. Next: panels, cameras/coordination and every original acceptance/final gate. |
+| 2026-10-06 | Preserved worker-relative observation ages through core and native camera properties; separated acknowledged evidence from desired settings and shared the four-control apply/readback helper. | Full core/hub/Alpaca/ZWO regressions (47 core, 49 hub unit, 22 native owner, 98 ZWO library), strict Clippy, Rust 1.89, contracts, Node/seven schema checks, rebuilt-host NINA 228/228 and real net48 x86/x64 pass. Retain initial fixture errors and corrections. Preceding adfb9e2 PR/push CI both pass all eight jobs. This checkpoint needs its own CI. Next: native camera adapter/config/factory/runtime with shared host budget/activity/recovery allowances and preserved sample ages, then all remaining camera inputs/outputs, coordination and every original acceptance/final gate. |

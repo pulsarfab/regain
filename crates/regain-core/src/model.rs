@@ -169,6 +169,10 @@ pub struct Status {
     pub error: Option<String>,
     pub controls: BTreeMap<i32, Control>,
     pub values: BTreeMap<i32, i64>,
+    /// Acknowledged values, separate from queued desired settings. Monotonic
+    /// timestamps belong to this process and never enter the status JSON.
+    #[serde(skip)]
+    pub observations: BTreeMap<i32, ControlObservation>,
     pub connected: bool,
     pub control_connection_available: bool,
     pub sdk_exposure_state: Option<i64>,
@@ -179,6 +183,40 @@ pub struct Status {
 }
 pub type SharedStatus = Arc<Mutex<Status>>;
 pub type Diagnostic = Arc<dyn Fn(&str, &str, &str) + Send + Sync>;
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ControlObservation {
+    pub value: i64,
+    pub observed_at: tokio::time::Instant,
+}
+/// Worker-relative age; never transfer a process-local monotonic timestamp.
+/// Receivers must also account for the request/response transit time.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ControlObservationReply {
+    pub value: i64,
+    pub age_seconds: f64,
+}
+impl ControlObservationReply {
+    pub fn normalize(&self, request_started: tokio::time::Instant) -> Result<ControlObservation> {
+        Ok(ControlObservation {
+            value: self.value,
+            observed_at: self.observed_at(request_started)?,
+        })
+    }
+    /// Conservatively include all IPC/worker time by subtracting the reported
+    /// age from request admission, never from response receipt. Process-local
+    /// monotonic clock epochs do not need to agree across the pipe.
+    pub fn observed_at(
+        &self,
+        request_started: tokio::time::Instant,
+    ) -> Result<tokio::time::Instant> {
+        let age = std::time::Duration::try_from_secs_f64(self.age_seconds)
+            .map_err(|_| invalid("Invalid control observation age"))?;
+        request_started
+            .checked_sub(age)
+            .ok_or_else(|| invalid("Unrepresentable control observation time"))
+    }
+}
 #[derive(Clone)]
 pub struct Frame {
     pub exposure: Exposure,
@@ -240,4 +278,53 @@ pub fn validate_capture(
     info["originAlignmentX"] = serde_json::json!(1);
     info["originAlignmentY"] = serde_json::json!(1);
     validate_exposure(&info, controls, e)
+}
+
+#[cfg(test)]
+mod observation_tests {
+    use super::*;
+    use std::time::Duration;
+    use tokio::time::Instant;
+
+    #[test]
+    fn worker_age_normalization_includes_transit_and_rejects_invalid_times() {
+        let request = Instant::now();
+        let reply = ControlObservationReply {
+            value: -100,
+            age_seconds: 20.25,
+        };
+        let observed = reply.observed_at(request).unwrap();
+        let received = request + Duration::from_secs(5);
+        assert_eq!(
+            received.duration_since(observed),
+            Duration::from_secs_f64(25.25)
+        );
+        for invalid_age in [-1.0, f64::NAN, f64::INFINITY, f64::NEG_INFINITY, f64::MAX] {
+            assert!(
+                ControlObservationReply {
+                    value: 0,
+                    age_seconds: invalid_age
+                }
+                .observed_at(request)
+                .is_err()
+            );
+        }
+        assert_eq!(
+            ControlObservationReply {
+                value: 0,
+                age_seconds: 0.0
+            }
+            .observed_at(request)
+            .unwrap(),
+            request
+        );
+        for invalid in [
+            serde_json::json!({"value":true,"ageSeconds":0}),
+            serde_json::json!({"value":0,"ageSeconds":"0"}),
+            serde_json::json!({"value":0}),
+            serde_json::json!({"value":0,"ageSeconds":0,"timestamp":"private clock epoch"}),
+        ] {
+            assert!(serde_json::from_value::<ControlObservationReply>(invalid).is_err());
+        }
+    }
 }

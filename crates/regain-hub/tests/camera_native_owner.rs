@@ -110,6 +110,56 @@ async fn settled(owner: &NativeCamera, activity: &ActivityCounter) {
 }
 
 #[tokio::test]
+async fn native_observation_reads_preserve_evidence_times_and_settings_touch_only_their_control() {
+    for direct in [false, true] {
+        let (owner, _, activity, events) = camera_model(
+            direct,
+            json!({"instant":true}),
+            admission(),
+            "ZWO ASI585MM Pro",
+        );
+        owner.connect().await.unwrap();
+        let before = owner.snapshot().core.observations;
+        let event_count = events.lock().unwrap().len();
+        for _ in 0..2 {
+            for (property, kind) in [
+                (P::Gain, 0),
+                (P::Offset, 5),
+                (P::CcdTemperature, 8),
+                (P::CoolerPower, 15),
+                (P::SetCcdTemperature, 16),
+                (P::CoolerOn, 17),
+            ] {
+                let reading = owner.read_property_observation(property).unwrap();
+                assert_eq!(reading.observed_at, Some(before[&kind].observed_at));
+                assert_eq!(reading.value, owner.read_property(property).unwrap());
+            }
+        }
+        assert_eq!(events.lock().unwrap().len(), event_count);
+        assert_eq!(activity.active(), 0);
+        assert!(
+            owner
+                .read_property_observation(P::CameraXSize)
+                .unwrap()
+                .observed_at
+                .is_none()
+        );
+        owner.set_imaging_control(0, 123).await.unwrap();
+        let after = owner.snapshot().core.observations;
+        assert_eq!(after[&0].value, 123);
+        assert!(after[&0].observed_at >= before[&0].observed_at);
+        for kind in [5, 8, 15, 16, 17] {
+            assert_eq!(after[&kind], before[&kind]);
+        }
+        owner.close().await.unwrap();
+        assert_eq!(
+            owner.read_property_observation(P::Gain).unwrap_err().kind,
+            ErrorKind::Disconnected
+        );
+    }
+}
+
+#[tokio::test]
 async fn sdk_and_direct_native_properties_use_shared_types_and_frozen_completed_timing() {
     for direct in [false, true] {
         let (owner, _, activity, _) = camera_model(

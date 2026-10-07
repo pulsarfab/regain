@@ -4667,3 +4667,87 @@ Remaining camera inputs, binary frontend IPC, all three camera outputs, recovery
 metadata migration, coordination, documentation and every original acceptance/
 final gate remain open. Camera setup choices stay disabled; no hardware or
 installed vendor driver was activated and PR #21 remains draft.
+
+## 2026-10-06: worker/core/native observation freshness
+
+Reviewed direct environment sampling/publication, SDK reads, production worker
+framing, desired versus acknowledged core state, native cached properties,
+capture-time cooling and replacement-worker ownership. `get-observation` has a
+strict integer-value/relative-age envelope; existing `get` replies and command
+restrictions are unchanged. Direct temperature, regulator output power, accepted
+target and enable have independent evidence times. Publication copies those
+times rather than replacing them with the cache-read/publication time. During
+still/video captures and retained frames, observations use the existing owner
+cache without queueing USB work behind an exposure. Cooler changes update only
+their affected values; they cannot freshen unrelated temperature/power samples.
+Review also corrected output power publication to follow successful USB writes,
+so a failed write cannot become acknowledged demand.
+
+Core normalizes the relative age against request admission, conservatively
+including all request/response time without comparing process clock epochs.
+Review removed legacy queued gain/offset/cooler apply's duplicate write/readback
+path: these four controls use the same acknowledged helper/deadline and uncertain
+outcome retirement as retained commands. A dispatched invalid readback can no
+longer enter capture recovery and repeat a persistent control write. Other legacy
+controls retain their existing paths and are outside this timestamped contract.
+Negative, nonfinite, overflowing or malformed ages fail. `Status.observations`
+stores acknowledged values/times separately from desired `values`; it is skipped
+in JSON. Queueing desired settings cannot publish or refresh evidence. Apply and
+retained write/readback commit evidence only on success; cooling still commits
+through its receipt's final ownership/deadline check. Invalid age after a write
+is uncertain and retires the worker without new evidence or replay. Unavailable
+worker diagnostics may retain aged evidence, but opening a replacement clears
+it before capability negotiation and restoration. Native property reads now use
+acknowledged evidence, never desired values. Their observation API preserves the
+original time, rejects future/missing evidence and distinguishes host-local state
+or negotiated metadata by an absent hardware timestamp. Cached reads do no I/O.
+
+An important protocol distinction is now explicit: direct gain/offset readback
+acknowledges accepted next-capture worker configuration. Actual sensor-register
+programming occurs at exposure start, and per-capture overrides/immutable frame
+metadata remain separate. SDK observation ages timestamp the SDK call, without
+claiming knowledge of the vendor's internal caching. Continuous streaming keeps
+its pre-existing legacy-command exclusions, including the new observation call.
+
+Tests cover independent aged direct telemetry during six-second still/video
+captures and retained frames, strict SDK control parsing, unchanged legacy reply
+shapes, production worker pipes for all six controls, conservative transit-time
+normalization, desired-value isolation, replacement-worker clearing, JSON clock
+exclusion, no-I/O native cached reads, unrelated-control timestamp preservation,
+and old evidence retained after uncertain readback. A simulation-only SDK reply
+override exercises aged/invalid evidence through the actual process pipe; it
+cannot run against a physical SDK. Initial test compile errors (a misplaced
+variable and unnecessary Clone), an unused close Result, and the reply override's
+incorrect pixels identifier were corrected before final validation.
+The first aged-pipe assertion compared internal request admission to an earlier
+external clock as an upper bound. It now checks both actual admission interval
+boundaries; the exact age and pure transit-time assertion are unchanged. All four
+queued persistent controls additionally exercise invalid age, one write ACK,
+retired worker, preserved evidence and no reconnect/replacement exposure.
+The first queued-enable fixture requested its already-applied value, correctly
+causing no write or readback. It now disables the initially enabled simulated
+cooler and explicitly asserts that every fixture requests a changed setting.
+The default Python lacked jsonschema; the existing hub-schema-venv runs all seven independent
+schema checks successfully. Keep the original logs alongside corrected runs.
+
+Final combined core/hub/Alpaca/ZWO Rust regressions pass, including 47 core tests,
+49 hub unit tests, 22 native owner integration cases and 98 ZWO library tests.
+Strict Rust 1.99 Clippy, Rust 1.89 all-target checks, generated-contract freshness,
+formatting/diff checks, Node/seven independent schema checks, rebuilt-host NINA
+228/228 and actual net48 x86/x64 fixtures pass. Main evidence:
+artifacts/hub-camera-observation-core-rust-complete.log,
+artifacts/hub-camera-observation-core-clippy-complete.log,
+artifacts/hub-camera-observation-core-msrv-final.log,
+artifacts/hub-camera-observation-core-contract.log,
+artifacts/hub-camera-observation-core-nina-reviewed.log and
+artifacts/hub-camera-observation-core-net48-reviewed.log. Earlier failed runs
+remain alongside these final results. Preceding adfb9e2 PR/push CI
+37575030689/37575027240 both pass all eight jobs, including Windows installer and
+release checks; that success does not prove the earlier Windows failure's cause.
+This observation checkpoint requires new CI and is not frontend acceptance.
+Next: native camera source adapter,
+configuration/factory/runtime, shared host budget/activity/recovery allowances
+and preserving these ages through SampleBatch. Remaining inputs, binary frontend
+IPC, all camera outputs, coordination and all original acceptance/final gates
+remain open. Camera choices stay disabled; PR #21 remains draft and no physical
+equipment or installed vendor driver was activated.

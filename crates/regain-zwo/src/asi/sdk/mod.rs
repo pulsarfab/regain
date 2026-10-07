@@ -226,10 +226,23 @@ impl Host {
                     "managed":self.white_balance.is_some(),
                     "settings":self.white_balance.as_ref().map(WhiteBalance::settings)})
             }
-            "get" => {
+            "get" | "get-observation" => {
                 ensure!(self.opened, "not open");
+                let observed = std::time::Instant::now();
                 let c = p["control"].as_i64().unwrap_or(-1) as i32;
-                json!(if let Some(s) = &self.sdk {
+                if method == "get-observation" {
+                    let strict = p["control"]
+                        .as_i64()
+                        .and_then(|v| i32::try_from(v).ok())
+                        .ok_or_else(|| anyhow::anyhow!("invalid observation control"))?;
+                    ensure!(
+                        self.camera["controls"]
+                            .as_array()
+                            .is_some_and(|caps| caps.iter().any(|cap| cap["type"] == strict)),
+                        "unsupported observation control"
+                    );
+                }
+                let value = if let Some(s) = &self.sdk {
                     s.get(c)?
                 } else {
                     self.values[c.to_string()].as_i64().unwrap_or(match c {
@@ -237,7 +250,20 @@ impl Host {
                         15 => 30,
                         _ => 0,
                     })
-                })
+                };
+                if method == "get-observation" {
+                    if self.sdk.is_none()
+                        && let Some(reply) = self.values.get(format!("observationReply:{c}"))
+                    {
+                        return Ok((reply.clone(), Vec::new()));
+                    }
+                    serde_json::to_value(regain_core::ControlObservationReply {
+                        value,
+                        age_seconds: observed.elapsed().as_secs_f64(),
+                    })?
+                } else {
+                    json!(value)
+                }
             }
             "get-control-state" | "set-control-state" => {
                 ensure!(self.opened, "not open");
@@ -535,6 +561,11 @@ impl Host {
                 json!(null)
             }
             "simulation" if self.sdk.is_none() => {
+                if let (Some(control), Some(reply)) =
+                    (p["observationControl"].as_i64(), p.get("observationReply"))
+                {
+                    self.values[format!("observationReply:{control}")] = reply.clone();
+                }
                 if let Some(count) = p["failedStatuses"].as_u64() {
                     ensure!(count <= 2, "at most two simulated failed exposure statuses");
                     self.values["failedStatuses"] = json!(count);
@@ -660,9 +691,8 @@ mod tests {
         assert_eq!(grace.deadline(120_000_000), Duration::from_secs(270));
     }
 
-    #[test]
-    fn sdk_discovery_is_rejected_until_camera_is_closed() {
-        let mut host = Host {
+    fn simulated() -> Host {
+        Host {
             sdk: None,
             exposure: None,
             started: None,
@@ -680,7 +710,53 @@ mod tests {
             video_retry_at: None,
             video_timeouts: 0,
             video_grace: VideoGrace::default(),
-        };
+        }
+    }
+    #[test]
+    fn sdk_observations_read_controls_and_keep_legacy_get_replies() {
+        let mut host = simulated();
+        assert!(
+            host.command("get-observation", json!({"control":8}))
+                .is_err()
+        );
+        host.command("open", json!({"name":"test camera"})).unwrap();
+        for (control, value) in [(0, 123), (5, 20), (16, -15), (17, 1)] {
+            host.command("set", json!({"control":control,"value":value}))
+                .unwrap();
+            let observation: regain_core::ControlObservationReply = serde_json::from_value(
+                host.command("get-observation", json!({"control":control}))
+                    .unwrap()
+                    .0,
+            )
+            .unwrap();
+            assert_eq!(observation.value, value);
+            assert!(observation.age_seconds >= 0.0 && observation.age_seconds.is_finite());
+            assert_eq!(
+                host.command("get", json!({"control":control})).unwrap().0,
+                value
+            );
+        }
+        for control in [json!(999), json!("8"), Value::Null, json!(4294967296u64)] {
+            assert!(
+                host.command("get-observation", json!({"control":control}))
+                    .is_err()
+            );
+        }
+        assert_eq!(
+            host.command("get-observation", json!({"control":8}))
+                .unwrap()
+                .0["value"],
+            -100
+        );
+        host.command("close", Value::Null).unwrap();
+        assert!(
+            host.command("get-observation", json!({"control":8}))
+                .is_err()
+        );
+    }
+    #[test]
+    fn sdk_discovery_is_rejected_until_camera_is_closed() {
+        let mut host = simulated();
         assert!(host.command("list", Value::Null).is_ok());
         assert_eq!(
             host.command("list", json!({"serials":true})).unwrap().0[0]["serial"],

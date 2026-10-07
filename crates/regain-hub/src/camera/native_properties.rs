@@ -62,9 +62,10 @@ fn cap(core: &Status, kind: i32) -> Result<&Control, SourceError> {
 }
 fn value(core: &Status, kind: i32) -> Result<i64, SourceError> {
     let cap = cap(core, kind)?;
-    core.values
+    core.observations
         .get(&kind)
-        .copied()
+        .filter(|observation| observation.observed_at <= tokio::time::Instant::now())
+        .map(|observed| observed.value)
         .filter(|v| (cap.min..=cap.max).contains(v))
         .ok_or_else(unavailable)
 }
@@ -201,7 +202,41 @@ pub(super) struct NativeProperties<'a> {
     pub image_ready: bool,
     pub error: Option<&'a SourceError>,
 }
+/// A typed reading and its original core evidence time. None identifies local
+/// geometry/state or negotiated metadata, never a newly sampled hardware value.
+#[derive(Debug)]
+pub struct NativePropertyObservation {
+    pub value: CameraValue,
+    pub observed_at: Option<tokio::time::Instant>,
+}
 impl NativeProperties<'_> {
+    pub fn observation(
+        &self,
+        property: CameraProperty,
+    ) -> Result<NativePropertyObservation, SourceError> {
+        use CameraProperty as P;
+        let value = self.read(property)?;
+        let control = match property {
+            P::Gain => Some(0),
+            P::Offset => Some(5),
+            P::CcdTemperature => Some(8),
+            P::CoolerPower => Some(15),
+            P::SetCcdTemperature => Some(16),
+            P::CoolerOn => Some(17),
+            _ => None,
+        };
+        let observed_at = control
+            .map(|kind| {
+                self.core
+                    .observations
+                    .get(&kind)
+                    .filter(|observation| observation.observed_at <= tokio::time::Instant::now())
+                    .map(|observation| observation.observed_at)
+                    .ok_or_else(unavailable)
+            })
+            .transpose()?;
+        Ok(NativePropertyObservation { value, observed_at })
+    }
     pub fn read(&self, property: CameraProperty) -> Result<CameraValue, SourceError> {
         use CameraProperty as P;
         let core = self.core;
@@ -369,6 +404,18 @@ mod tests {
             })
             .collect(),
             values: BTreeMap::from([(0, 100), (8, -100), (15, 30), (16, -10), (17, 1)]),
+            observations: [(0, 100), (8, -100), (15, 30), (16, -10), (17, 1)]
+                .into_iter()
+                .map(|(kind, value)| {
+                    (
+                        kind,
+                        regain_core::ControlObservation {
+                            value,
+                            observed_at: tokio::time::Instant::now(),
+                        },
+                    )
+                })
+                .collect(),
             ..Status::default()
         }
     }
@@ -384,10 +431,47 @@ mod tests {
         .read(property)
     }
     #[test]
+    fn cached_readings_preserve_age_ignore_desired_values_and_reject_future_evidence() {
+        let mut core = core();
+        let observed = tokio::time::Instant::now() - std::time::Duration::from_secs(20);
+        core.observations.get_mut(&0).unwrap().observed_at = observed;
+        core.values.insert(0, 234); // Queued desired value, not an acknowledgement.
+        let view = NativeProperties {
+            core: &core,
+            geometry: NativeGeometry::initial(&core.info).unwrap(),
+            operation: None,
+            image: None,
+            image_ready: false,
+            error: None,
+        };
+        for _ in 0..2 {
+            let reading = view.observation(CameraProperty::Gain).unwrap();
+            assert_eq!(reading.value, CameraValue::Integer { value: 100 });
+            assert_eq!(reading.observed_at, Some(observed));
+            assert!(reading.observed_at.unwrap().elapsed().as_secs_f64() >= 20.0);
+        }
+        assert_eq!(
+            view.observation(CameraProperty::NumX).unwrap().observed_at,
+            None
+        );
+        assert_eq!(
+            view.observation(CameraProperty::CameraXSize)
+                .unwrap()
+                .observed_at,
+            None
+        );
+        core.observations.get_mut(&0).unwrap().observed_at =
+            tokio::time::Instant::now() + std::time::Duration::from_secs(5);
+        assert_eq!(
+            read(&core, CameraProperty::Gain).unwrap_err().kind,
+            ErrorKind::Unavailable
+        );
+    }
+    #[test]
     fn missing_malformed_and_out_of_range_controls_never_become_default_values() {
         use CameraProperty as P;
         let mut core = core();
-        core.values.remove(&0);
+        core.observations.remove(&0);
         assert_eq!(
             read(&core, P::Gain).unwrap_err().kind,
             ErrorKind::Unavailable
@@ -396,7 +480,13 @@ mod tests {
             read(&core, P::Offset).unwrap_err().kind,
             ErrorKind::Unsupported
         );
-        core.values.insert(0, 601);
+        core.observations.insert(
+            0,
+            regain_core::ControlObservation {
+                value: 601,
+                observed_at: tokio::time::Instant::now(),
+            },
+        );
         assert_eq!(
             read(&core, P::Gain).unwrap_err().kind,
             ErrorKind::Unavailable
@@ -417,17 +507,17 @@ mod tests {
             ErrorKind::Unavailable
         );
         core.controls.get_mut(&17).unwrap().max = 2;
-        core.values.insert(17, 2);
+        core.observations.get_mut(&17).unwrap().value = 2;
         assert_eq!(
             read(&core, P::CoolerOn).unwrap_err().kind,
             ErrorKind::Unavailable
         );
-        core.values.insert(15, 101);
+        core.observations.get_mut(&15).unwrap().value = 101;
         assert_eq!(
             read(&core, P::CoolerPower).unwrap_err().kind,
             ErrorKind::Unavailable
         );
-        core.values.insert(8, 1001);
+        core.observations.get_mut(&8).unwrap().value = 1001;
         assert_eq!(
             read(&core, P::CcdTemperature).unwrap_err().kind,
             ErrorKind::Unavailable

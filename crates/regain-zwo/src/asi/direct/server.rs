@@ -492,7 +492,9 @@ impl Worker {
                 return;
             }
             let telemetry = device.as_ref().map(|d| d.0.telemetry()).unwrap_or_else(|| {
-                std::sync::Arc::new(std::sync::Mutex::new(Some([250, 0, 25, 0])))
+                std::sync::Arc::new(std::sync::Mutex::new(Some(
+                    transport::TelemetrySample::new([250, 0, 25, 0], Instant::now()),
+                )))
             });
             let cooling = device
                 .as_ref()
@@ -609,7 +611,14 @@ impl Worker {
                             if let Some(value) = value {
                                 sim_environment.borrow_mut().insert(control, value);
                             }
-                            Ok(*sim_environment.borrow().get(&control).unwrap_or(&0))
+                            let value = *sim_environment.borrow().get(&control).unwrap_or(&0);
+                            if let Ok(index) = transport::TelemetrySample::index(control)
+                                && let Some(sample) = telemetry.lock().unwrap().as_mut()
+                            {
+                                sample.values[index] = value;
+                                sample.observed_at[index] = Instant::now();
+                            }
+                            Ok(value)
                         };
                         let _ = watchdog.send(None);
                         let _ = reply.send(result);
@@ -902,13 +911,13 @@ fn service_simulated_cooling(
 ) {
     cooling.service(|control, value| {
         environment.borrow_mut().insert(control, value);
-        let environment = environment.borrow();
-        *telemetry.lock().unwrap() = Some([
-            environment[&8],
-            environment[&15],
-            environment[&16],
-            environment[&17],
-        ]);
+        let index = transport::TelemetrySample::index(control)?;
+        let mut telemetry = telemetry.lock().unwrap();
+        let sample = telemetry
+            .as_mut()
+            .ok_or_else(|| anyhow::anyhow!("Simulation telemetry is unavailable"))?;
+        sample.values[index] = value;
+        sample.observed_at[index] = Instant::now();
         Ok(value)
     });
 }
@@ -922,6 +931,7 @@ struct Host {
     simulate: bool,
     model: Model,
     gain: i32,
+    configured_at: std::collections::BTreeMap<u32, Instant>,
     simulated_read_failures: Option<u32>,
     reconnect_required: bool,
     simulated_delay: Duration,
@@ -1063,6 +1073,10 @@ impl Host {
                     Model::Asi2600P25 => 1,
                 };
                 self.gain = 0;
+                self.configured_at = [0, 5]
+                    .into_iter()
+                    .map(|kind| (kind, Instant::now()))
+                    .collect();
                 let mut controls = model.controls(worker.auxiliary);
                 if model.cooled() {
                     for cap in &mut controls {
@@ -1104,6 +1118,45 @@ impl Host {
                     "managed":self.white_balance.is_some(),
                     "settings":self.white_balance.as_ref().map(WhiteBalance::settings)})
             }
+            "get-observation" => {
+                let worker = self
+                    .worker
+                    .as_ref()
+                    .ok_or_else(|| anyhow::anyhow!("camera is not open"))?;
+                let control = number("control")?;
+                let observation = if matches!(control, 0 | 5) {
+                    let observed = self
+                        .configured_at
+                        .get(&control)
+                        .ok_or_else(|| anyhow::anyhow!("configuration observation unavailable"))?;
+                    regain_core::ControlObservationReply {
+                        value: if control == 0 {
+                            i64::from(self.gain)
+                        } else {
+                            i64::from(self.settings.offset)
+                        },
+                        age_seconds: observed.elapsed().as_secs_f64(),
+                    }
+                } else {
+                    ensure!(
+                        self.model.cooled() && matches!(control, 8 | 15 | 16 | 17),
+                        "unsupported observation control"
+                    );
+                    if self.pending.is_none() && self.frame.is_none() {
+                        // Idle service may refresh the sensor. During capture,
+                        // only the existing USB owner may service it.
+                        worker.environment(control, None).map_err(hardware)?;
+                    }
+                    worker
+                        .telemetry
+                        .lock()
+                        .unwrap()
+                        .as_ref()
+                        .ok_or_else(|| anyhow::anyhow!("environment unavailable"))?
+                        .observation(control)?
+                };
+                serde_json::to_value(observation)?
+            }
             "get" | "set" => {
                 let worker = self
                     .worker
@@ -1129,7 +1182,7 @@ impl Host {
                         17 => 3,
                         _ => unreachable!(),
                     };
-                    return Ok((json!(sample[index]), pixels));
+                    return Ok((json!(sample.values[index]), pixels));
                 }
                 ensure!(
                     (self.pending.is_none() && self.frame.is_none())
@@ -1169,6 +1222,9 @@ impl Host {
                                 return Err(hardware(error));
                             }
                         }
+                    }
+                    if matches!(control, 0 | 5) {
+                        self.configured_at.insert(control, Instant::now());
                     }
                     Value::Null
                 } else {
@@ -1467,6 +1523,13 @@ mod cooling_tests {
             "x":0,"y":0,"bin":1,"microseconds":6_000_000,"dark":false}),
         )
         .unwrap();
+        let aged = Instant::now() - Duration::from_secs(20);
+        {
+            let mut telemetry = host.worker.as_ref().unwrap().telemetry.lock().unwrap();
+            let sample = telemetry.as_mut().unwrap();
+            sample.observed_at[0] = aged;
+            sample.observed_at[1] = aged;
+        }
         for (control, value) in [(16, -10), (17, 1), (16, -15)] {
             host.command("set", &json!({"control":control,"value":value}))
                 .unwrap();
@@ -1475,6 +1538,41 @@ mod cooling_tests {
                 value
             );
             assert_eq!(host.command("status", &Value::Null).unwrap().0, 1);
+            let observation: regain_core::ControlObservationReply = serde_json::from_value(
+                host.command("get-observation", &json!({"control":control}))
+                    .unwrap()
+                    .0,
+            )
+            .unwrap();
+            assert_eq!(observation.value, value);
+            assert!(observation.age_seconds >= 0.0 && observation.age_seconds.is_finite());
+            for environment in [8, 15] {
+                let reading: regain_core::ControlObservationReply = serde_json::from_value(
+                    host.command("get-observation", &json!({"control":environment}))
+                        .unwrap()
+                        .0,
+                )
+                .unwrap();
+                assert!(reading.age_seconds >= 20.0);
+            }
+            let telemetry = host.worker.as_ref().unwrap().telemetry.lock().unwrap();
+            assert_eq!(telemetry.unwrap().observed_at[0], aged);
+            assert_eq!(telemetry.unwrap().observed_at[1], aged);
+        }
+        // Accepted capture configuration is readable without queuing hardware
+        // work. The legacy get restrictions and return type stay unchanged.
+        assert_eq!(
+            host.command("get-observation", &json!({"control":0}))
+                .unwrap()
+                .0["value"],
+            0
+        );
+        assert!(host.command("get", &json!({"control":0})).is_err());
+        for control in [json!(21), json!("8"), json!(-1), json!(4294967296u64)] {
+            assert!(
+                host.command("get-observation", &json!({"control":control}))
+                    .is_err()
+            );
         }
         for (control, value) in [(16, 31), (17, 2), (8, 0), (0, 10), (21, 1)] {
             assert!(
@@ -1502,6 +1600,14 @@ mod cooling_tests {
             .unwrap();
         assert_eq!(host.command("get", &json!({"control":17})).unwrap().0, 0);
         assert_eq!(host.command("status", &Value::Null).unwrap().0, 2);
+        assert!(
+            host.command("get-observation", &json!({"control":8}))
+                .unwrap()
+                .0["ageSeconds"]
+                .as_f64()
+                .unwrap()
+                >= 20.0
+        );
         let (metadata, pixels) = host.command("download", &Value::Null).unwrap();
         assert_eq!(metadata["mode"], mode);
         assert_eq!(
@@ -1512,6 +1618,10 @@ mod cooling_tests {
             assert_eq!(metadata["deliveredFrames"], 1);
         }
         host.command("close", &Value::Null).unwrap();
+        assert!(
+            host.command("get-observation", &json!({"control":8}))
+                .is_err()
+        );
     }
     #[test]
     fn acknowledged_cooling_during_still_and_retained_frame() {

@@ -406,6 +406,73 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn timestamped_control_observations_cross_production_worker_framing() {
+        for direct in [false, true] {
+            let runtime = simulated_runtime(json!({"instant":true}));
+            let token = CancellationToken::new();
+            let mut worker = runtime
+                .spawn(direct, std::sync::Arc::new(|_, _, _| {}))
+                .await
+                .unwrap();
+            worker
+                .call(
+                    "open",
+                    json!({"name":if direct {"ZWO ASI585MM Pro"} else {"ZWO Simulated"}}),
+                    15.,
+                    &token,
+                )
+                .await
+                .unwrap();
+            worker
+                .call("set", json!({"control":0,"value":123}), 15., &token)
+                .await
+                .unwrap();
+            for control in [0, 8, 15, 16, 17] {
+                let requested = tokio::time::Instant::now();
+                let (reply, pixels) = worker
+                    .call("get-observation", json!({"control":control}), 15., &token)
+                    .await
+                    .unwrap();
+                let observation: crate::ControlObservationReply =
+                    serde_json::from_value(reply).unwrap();
+                assert!(pixels.is_empty());
+                assert!(observation.age_seconds.is_finite() && observation.age_seconds >= 0.);
+                assert!(observation.observed_at(requested).unwrap() <= requested);
+                assert_eq!(
+                    worker
+                        .call("get", json!({"control":control}), 15., &token)
+                        .await
+                        .unwrap()
+                        .0,
+                    observation.value
+                );
+                if control == 0 {
+                    assert_eq!(observation.value, 123);
+                }
+            }
+            let pid = worker.pid();
+            for control in [json!(999), json!("8"), json!(4294967296u64)] {
+                assert!(
+                    worker
+                        .call("get-observation", json!({"control":control}), 15., &token)
+                        .await
+                        .is_err()
+                );
+            }
+            assert_eq!(worker.pid(), pid);
+            worker
+                .call("get-observation", json!({"control":0}), 15., &token)
+                .await
+                .unwrap();
+            worker
+                .call("close", Value::Null, 15., &token)
+                .await
+                .unwrap();
+            worker.kill().await;
+        }
+    }
+
+    #[tokio::test]
     async fn persistent_control_transport_loss_retires_simulated_worker_without_retry() {
         let runtime = simulated_runtime(json!({"instant":true,"fault":"hang"}));
         for control in [0, 5, 16, 17] {

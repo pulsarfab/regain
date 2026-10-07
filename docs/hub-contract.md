@@ -2363,8 +2363,44 @@ other setters, Abort and image publication, including waiters for an older frame
 Reset/close synchronously fence late results and buffered acknowledgements.
 Unknown outcomes preserve the source error until explicit reset/close; existing
 readers remain valid. Unexpected setting-task loss is uncertain rather than a
-usable connection. Source adapter/runtime/configuration wiring, observation
-freshness and every remaining camera gate are still required.
+usable connection. Source adapter/runtime/configuration wiring, preserving
+observation freshness through publication and every remaining camera gate are
+still required.
+
+Worker `get-observation` replies carry a strict `{value, ageSeconds}` object;
+legacy `get` replies remain integers. Core subtracts the worker age from its own
+request-start clock, conservatively accounting for transit and worker execution.
+Negative/nonfinite/overflowing ages and malformed replies are errors, not fresh
+zero-age readings. Monotonic clock epochs never cross pipes or status JSON.
+Direct environment publication preserves independent temperature, regulator
+power, accepted target and enable evidence times. Cached reads during still/video
+capture and retained-frame access cannot refresh them, nor can changes to another
+control. Successful USB sampling/output writes update only their relevant times;
+failed power writes do not publish the proposed demand as acknowledged output.
+Idle SDK observations timestamp the SDK read; this does not promise that the
+vendor SDK internally performs uncached hardware I/O. Continuous stream mode
+retains its existing legacy-command exclusion, including `get-observation`.
+
+Core observations are separate from desired `values`. Queueing a control changes
+intent only. Successful apply or retained write/readback commits acknowledged
+evidence; mismatched/invalid readback after a write remains uncertain and retires
+the worker without publishing new evidence or replaying it. A replacement worker
+clears old observations before negotiation/restoration, while unavailable-worker
+diagnostics may retain their original aged evidence. Native property observations
+return those original times with typed values; local geometry/state and negotiated
+metadata have no hardware sampling timestamp. Missing/future evidence cannot
+default to a value. Cached property reads perform no worker I/O.
+Queued application of these same four persistent controls shares the acknowledged
+helper and absolute deadline; an unknown readback cannot enter capture recovery
+and replay that control. Other legacy controls keep their existing paths.
+
+Direct gain/offset observations describe accepted worker configuration for the
+next capture. Sensor register programming occurs at StartExposure; these replies
+do not claim immediate sensor register readback. Capture overrides and immutable
+completed-image settings remain distinct. The future hub source adapter must
+preserve these evidence semantics through SampleBatch and frontend diagnostics.
+That runtime integration, all camera publications and every original acceptance
+gate remain required; this primitive does not enable camera setup choices.
 
 The shared camera property/setting layer now implements 53 typed properties and
 13 standard setters in the source supervisor. It preserves booleans, Int32 values,
