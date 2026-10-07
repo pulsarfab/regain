@@ -78,7 +78,9 @@ public abstract class HubDevice : BaseINPC, IDevice, IDisposable
     public async Task<bool> Connect(CancellationToken token)
     {
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
-        deadline.CancelAfter(TimeSpan.FromSeconds(45));
+        // Camera attachment/acknowledgement has its own negotiated finite
+        // bounds. A second fixed timer would cut off valid native recovery.
+        if (type != "camera") deadline.CancelAfter(TimeSpan.FromSeconds(45));
         HubSelection binding;
         lock (gate) {
             if (disposed) throw new ObjectDisposedException(nameof(HubDevice));
@@ -92,6 +94,7 @@ public abstract class HubDevice : BaseINPC, IDevice, IDisposable
             Session.Disconnect();
             var descriptor = await Session.ConnectAsync(binding, deadline.Token).ConfigureAwait(false);
             var epoch = Session.Epoch;
+            if (type == "camera") deadline.CancelAfter(TimeSpan.FromSeconds(45));
             var publish = await Prepare(epoch, binding.OutputId, deadline.Token).ConfigureAwait(false);
             lock (gate) {
                 if (disposed || !Session.Connected || Session.Epoch != epoch || deadline.IsCancellationRequested)
@@ -107,7 +110,7 @@ public abstract class HubDevice : BaseINPC, IDevice, IDisposable
         } finally { lock (gate) { connecting = false; connectionAttempt = null; } }
     }
     protected virtual Task<Action> Prepare(Guid epoch, Guid output, CancellationToken token) => Task.FromResult<Action>(() => { });
-    public void Disconnect()
+    public virtual void Disconnect()
     {
         CancellationTokenSource? attempt;
         lock (gate) { ready = false; disconnecting++; attempt = connectionAttempt; }

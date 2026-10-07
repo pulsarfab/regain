@@ -8,6 +8,31 @@ tagged or published. Changed cross-crate APIs require an unpublished version so
 Cargo package verification uses the new workspace packages.
 Last updated: 2026-10-07.
 
+Current increment: native NINA camera provider uses the shared native session,
+camera timing and exact-acquisition image adapter. Provider enumeration reads
+saved selections only. Capture settings use controlled, revision-bound commands;
+the host owns admission, recovery and Stop/Abort. The finite completion monitor
+matches acquisition/source/generation/request and frozen geometry/metadata.
+NINA's profile timeout uses negotiated host bounds plus protected transfer time,
+restores on completion/failure/cancellation/disconnect, and preserves user edits.
+Caller cancellation never implicitly aborts. Reconnect publication takes no
+camera lock; retired connection epochs cannot publish readiness or a new frame.
+Real NINA ImageArray/ImageArrayInt and BaseImageData retain the exact scalar arrays.
+Generic hub camera output reports no private heater/USB-limit/live-video features;
+existing direct camera providers retain their extensions. Unsupported scalar
+color layouts fail explicitly. Mutable gain/offset readings are not invented as
+frozen exposure metadata. Source-specific ROI validation remains authoritative.
+Four actual private SDK/direct/standard/nested host cases cover sharing, cooler
+settings, UInt16/Int32, cancellation, profile edits, replacement rejection and
+retained frames. Standard/nested cases verify explicit Stop/Abort and wrong-owner
+rejection. The final 308-case NINA regression passes with warnings denied,
+including epoch fencing and cancellation of pending waits at disconnect.
+Camera creation remains gated until
+broader camera proxy/fault and shared setup acceptance. Coordination, discovery/
+transfer, recovery/resume, conformance, interactive/physical acceptance, README/
+site and the final audit/merge remain required. Pushed timing/scalar checkpoint
+c17808d PR/push CI 37629409093/37629398697 remains active; keep this work local.
+
 Current increment: shared scalar image adaptation and exact camera acquisition
 reads for native NINA. UInt16/Int32 row-major conversion preserves representable
 values from all nine wire types, packed Int32 and rank-three one-plane input.

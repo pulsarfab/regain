@@ -3,6 +3,75 @@
 This records local review and tests for the single hub PR. Passing a foundation
 test does not imply that a frontend, transport, or hardware gate has passed.
 
+## 2026-10-07: native NINA camera provider
+
+Reviewed the native NINA camera frontend's connection, capture settings, timing,
+identity checks, image adapter, metadata, cancellation and profile restoration.
+The MEF provider enumerates saved camera identities and the common setup choice
+without connecting. It reuses HubNativeSession and the host's acquisition engine;
+no new executable, SDK calls, HTTP requirement or ASCOM output is introduced.
+Camera connection uses the session's finite attachment/negotiated recovery bounds
+instead of a second fixed 45-second equipment timer. Preparation remains bounded.
+
+StartExposure negotiates the exact duration, validates basic bin/ROI values, sends
+controlled settings and retains the accepted acquisition ID. The independent
+completion monitor checks source/generation/request identity, fails on uncertainty
+or replacement, and preserves actual readiness. Download checks frozen geometry
+and exposure metadata before allocating scalar pixels, then requests that exact
+completed acquisition. Metadata never substitutes mutable LastExposure values or
+guesses current gain/offset as frame settings. UInt16/Int32 arrays are handed to
+NINA's real ImageArray/ImageArrayInt and BaseImageData without another narrowing
+or transpose; cached ToImageData reuses the same image object and charged array.
+
+The profile timeout covers negotiated completion plus finite protected transfer
+time. Restoration uses the original settings object and preserves a user edit.
+Caller cancellation affects waiting only; explicit Stop/Abort still go through
+host owner checks. Disconnect cancels the monitor, restores the profile and closes
+that frontend while retained host work/sibling connections keep their ownership.
+An in-flight response cannot publish through a retired NINA connection epoch.
+Fault continuations observe failures and restore the timeout even if NINA never
+waits. Readiness success retains the timeout through download completion.
+
+Review found a potential lock-order inversion: HubDevice publishes a connection
+under its base lock, while capture operations read the connection context under
+their camera lock. Camera preparation now takes its lock outside publication;
+the publication callback takes no camera lock. Monochrome Bayer offsets are zero
+without querying the optional source property. Generic hub camera contracts do
+not advertise vendor heater, USB-limit or live-video extensions. Scalar color
+layouts that NINA cannot represent fail explicitly; ASCOM/Alpaca image support
+and the existing direct camera provider are unchanged.
+
+Validation and remaining evidence:
+
+- The four actual private host modes (SDK/direct/standard/nested) pass the focused
+  provider cases in `artifacts/hub-camera-nina-provider-command-final.log`.
+  Checks include shared cooler settings, sibling busy errors, frozen exposure
+  geometry/time, retained arrays, user timeout edits, cancellation followed by
+  successful download, exact replacement rejection and independent disconnect.
+  Standard/nested sources additionally exercise explicit Stop/Abort, rejected
+  sibling Abort, retained error state and the stopped frame's actual duration.
+- Full NINA regression passes 308/308 with warnings denied in
+  `artifacts/hub-camera-nina-provider-nina-full-final.log`. The final epoch fence
+  and pending-wait disconnect refinement also passes all 308 cases in
+  `artifacts/hub-camera-nina-provider-nina-epoch-final.log`.
+- Initial compile errors were missing ElectronsPerADU and use of the shared
+  library's internal exception constructor; public frontend failures use an
+  IOException and the required property is implemented. A later fixture import
+  used the relative NINA namespace; the explicit enum import corrects it.
+- Initial direct capture used a rectangle below the traced 64x64 minimum.
+  The fixture now requests a supported asymmetric 96x64 rectangle; source
+  validation was not relaxed. The SDK simulator is color, so its real NINA
+  factory assertion now checks its actual Bayer flag instead of false.
+- Preserve the initial failed logs. The first parameter filter matched zero
+  tests (`hub-camera-nina-provider-direct-diagnostic.log`); it is not validation.
+  The corrected full theory filter produced the diagnostic used for the ROI fix.
+
+The provider is an implementation increment, not final camera frontend acceptance.
+Broader Alpaca/COM proxy cases, malformed/uncertain metadata and geometry faults,
+shared camera creation/setup, interactive NINA and all original acceptance gates
+remain open. Only explicit simulation/private fixtures were used. Pushed c17808d
+PR/push CI 37629409093/37629398697 remains active; this provider stays local.
+
 ## 2026-10-07: scalar image adaptation and exact capture reads
 
 Reviewed the shared array conversion, reservation lifetime and protected native
