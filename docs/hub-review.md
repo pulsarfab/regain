@@ -4004,3 +4004,21 @@ remains required. Local validation includes full Rust hub/Alpaca, all eleven ima
 and eight binary actor cases, strict Clippy, Rust 1.89 all targets, generated
 contracts, fresh-host NINA 228/228 and actual net48 x86/x64. Camera acquisition,
 adapters, three outputs, coordination and every original final gate remain open.
+
+## 2026-10-06: Rust 1.99 image CI correction
+
+Both 3ed8515 runs 37556724162/37556718661 finish with five Rust/Windows lint
+failures and three successful jobs. Rust 1.99 deprecates AtomicUsize.fetch_update
+and requires fixed-size as_chunks access; local Rust 1.97 had passed. Logs are
+retained in artifacts/hub-camera-foundation-{pr,push}-ci-failure.log.
+The image budget now uses an equivalent checked compare_exchange_weak loop,
+preserving its concurrent bound and Rust 1.89 support without suppressing lints.
+Header/test parsing uses typed fixed-size chunks without redundant conversion.
+All nineteen image/binary actor cases, explicit Rust 1.99 strict Clippy and
+Rust 1.89 all-target checks pass. Initial typed-array fixture compile failure
+and corrected confirmation are retained. No command, deadline or test assertion
+was relaxed. New-head CI must confirm this correction.
+
+The acquisition supervisor and shared runtime activity guard are under local
+implementation and are not part of this CI correction. Their review/tests must
+complete before publication. All original camera and later gates remain open.

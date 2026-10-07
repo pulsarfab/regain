@@ -37,6 +37,14 @@ Shared panel creation and the first camera image/source increments pass local
 regressions and are included in the next PR checkpoint; their own CI is required.
 The source-owned camera acquisition supervisor is the next implementation step.
 
+Camera foundation head 3ed8515 PR/push CI 37556724162/37556718661 both finish with
+five Rust/Windows lint failures and three successful jobs. CI uses Rust 1.99,
+which deprecates fetch_update and requires fixed-size as_chunks access. The
+MSRV-compatible checked CAS correction passes all nineteen camera image/binary
+actor cases, explicit Rust 1.99 strict Clippy and Rust 1.89 all-target checks.
+Replacement CI is required. Camera acquisition supervision is being implemented
+locally; camera choices remain gated and every original remaining gate stays open.
+
 Current position: milestones 0 and 1 are complete. The scalar source/output paths
 in milestones 2 and 3 are implemented; their remaining acceptance gates are open.
 Milestone 4 has focuser and rotator publication through all three frontends.

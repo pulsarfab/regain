@@ -183,7 +183,7 @@ impl ImageDescriptor {
             self.0.planes.unwrap_or(0),
         ];
         let mut header = [0; IMAGEBYTES_HEADER_BYTES];
-        for (bytes, field) in header.chunks_exact_mut(4).zip(fields) {
+        for (bytes, field) in header.as_chunks_mut::<4>().0.iter_mut().zip(fields) {
             bytes.copy_from_slice(&field.to_le_bytes());
         }
         header
@@ -223,17 +223,28 @@ impl ImageBudget {
         self.0.used.load(Ordering::Acquire)
     }
     fn reserve(&self, bytes: usize) -> Result<Reservation, SourceError> {
-        self.0
-            .used
-            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |used| {
-                used.checked_add(bytes).filter(|v| *v <= self.0.maximum)
-            })
-            .map_err(|_| {
-                SourceError::new(
-                    ErrorKind::Busy,
-                    "Camera image memory is retained by active captures or readers",
-                )
-            })?;
+        // fetch_update was renamed in newer Rust; an explicit CAS loop retains
+        // the 1.89 MSRV without relying on deprecated APIs or suppressing lints.
+        let mut used = self.0.used.load(Ordering::Acquire);
+        loop {
+            let next = used
+                .checked_add(bytes)
+                .filter(|v| *v <= self.0.maximum)
+                .ok_or_else(|| {
+                    SourceError::new(
+                        ErrorKind::Busy,
+                        "Camera image memory is retained by active captures or readers",
+                    )
+                })?;
+            match self
+                .0
+                .used
+                .compare_exchange_weak(used, next, Ordering::AcqRel, Ordering::Acquire)
+            {
+                Ok(_) => break,
+                Err(current) => used = current,
+            }
+        }
         Ok(Reservation {
             budget: self.clone(),
             bytes,
@@ -399,8 +410,10 @@ pub async fn read_imagebytes<R: AsyncRead + Unpin>(
     let mut header = [0; IMAGEBYTES_HEADER_BYTES];
     reader.read_exact(&mut header).await?;
     let fields: Vec<u32> = header
-        .chunks_exact(4)
-        .map(|v| u32::from_le_bytes(v.try_into().expect("four-byte header field")))
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|v| u32::from_le_bytes(*v))
         .collect();
     if fields[0] != 1
         || fields[1] > i32::MAX as u32

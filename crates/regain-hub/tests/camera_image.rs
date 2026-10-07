@@ -315,7 +315,13 @@ fn image_export_crosses_chunk_boundaries_without_full_image_transposition() {
     );
     let budget = ImageBudget::new(d.byte_len()).unwrap();
     let mut allocation = budget.allocate(d).unwrap();
-    for (i, bytes) in allocation.bytes_mut().chunks_exact_mut(4).enumerate() {
+    for (i, bytes) in allocation
+        .bytes_mut()
+        .as_chunks_mut::<4>()
+        .0
+        .iter_mut()
+        .enumerate()
+    {
         bytes.copy_from_slice(&(i as u32).to_le_bytes());
     }
     let value = allocation.finish();
@@ -333,13 +339,13 @@ fn image_export_crosses_chunk_boundaries_without_full_image_transposition() {
         exported.extend(chunk);
     }
     assert_eq!(exported.len(), d.byte_len());
-    for (i, bytes) in exported.chunks_exact(4).enumerate() {
+    for (i, bytes) in exported.as_chunks::<4>().0.iter().enumerate() {
         let plane = i % 3;
         let pixel = i / 3;
         let x = pixel / 129;
         let y = pixel % 129;
         assert_eq!(
-            u32::from_le_bytes(bytes.try_into().unwrap()),
+            u32::from_le_bytes(*bytes),
             ((y * 257 + x) * 3 + plane) as u32
         );
     }
