@@ -45,8 +45,9 @@ Validation:
 Only explicit simulation/private peers were used. Native NINA publication,
 timeout/profile restoration and shared camera creation remain required. No
 original coordination, recovery, conformance, acceptance or final merge gate is
-closed by these helpers. Preceding c7deb26 push CI 37624807420 passes all eight
-jobs; PR CI 37624811661 still has Windows live. No new push is made.
+closed by these helpers. Preceding c7deb26 push/PR CI 37624807420/37624811661
+are terminal and pass all eight jobs each. This green result covers c7deb26;
+the timing/scalar increments need their own CI after pushing.
 
 ## 2026-10-07: duration-dependent camera completion timing
 

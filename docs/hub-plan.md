@@ -22,8 +22,8 @@ validation passes with warnings denied. The NINA provider, profile timeout manag
 shared camera creation remain next; this helper does not enable camera creation.
 The original coordination, discovery/transfer, recovery/resume, conformance,
 interactive/physical acceptance, README/site and final merge gates remain open.
-Preceding c7deb26 push CI 37624807420 passes all eight jobs. PR CI 37624811661
-still has its Windows job running; retain the new commits locally until terminal.
+Preceding c7deb26 push/PR CI 37624807420/37624811661 are terminal and pass all
+eight jobs each. The timing/scalar increments require their own CI after pushing.
 
 Current increment: duration-dependent camera capture timing is negotiated through
 an inert cameraCaptureTiming query, bound to host/client/revision/output/source
