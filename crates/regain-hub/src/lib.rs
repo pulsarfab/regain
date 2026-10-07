@@ -1,5 +1,6 @@
 //! Shared hub policy. Frontends render configuration and translate interfaces;
 //! they must not reimplement safety decisions or invent source capabilities.
+pub mod activity;
 pub mod alpaca;
 pub mod ascom_export;
 pub mod camera;

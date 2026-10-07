@@ -4022,3 +4022,43 @@ was relaxed. New-head CI must confirm this correction.
 The acquisition supervisor and shared runtime activity guard are under local
 implementation and are not part of this CI correction. Their review/tests must
 complete before publication. All original camera and later gates remain open.
+
+## 2026-10-06: source-owned camera acquisition supervisor (local)
+
+Reviewed admission, source-generation fencing, exclusive control, caller loss,
+Stop/Abort semantics, immutable image ownership, optional timing and uncertainty.
+The runtime activity guard is factored into a shared counter; integration must
+use that same counter and one supervisor per source. No camera choice is enabled.
+
+Nineteen private virtual-clock cases pass. They cover invalid geometry/duration,
+independent observers, owner disconnect, cancelled preflight and dispatched
+waiters, shortened Stop versus discarded Abort, unsupported/malformed capability
+values, old readers pinning the memory budget, readiness/download deadlines,
+generation loss after pixel copy, identity/geometry replacement and independent
+optional metadata. Valid leap dates, fractional UTC timestamps and malformed
+date/type cases are exercised through actual acquisition publication.
+
+Review added explicit monitor notifications and synchronous control release
+before successful publication/Abort completion. A 60-second polling fixture
+proves immediate new admission after an acknowledged Abort without advancing
+time. Cancelled command preflight restores monitoring and sends no Abort; an
+already dispatched Abort completes even after its caller and session disappear.
+Uncertain start/Abort retain ownership and do not replay or send automatic cleanup.
+
+The first uncertain-Abort fixture expected the shared write fence to survive
+after every source lease was dropped. Existing last-lease teardown deliberately
+retires that epoch. The corrected fixture retains an independent observer and
+verifies that administrative abandonment does not clear its source fence or
+authorize another exposure. Production teardown behavior/deadlines are unchanged.
+Initial expanded failure and corrected confirmations are retained at
+artifacts/hub-camera-acquisition-{expanded,expanded-confirmed,final-focused}.log.
+
+Full Rust hub/Alpaca, explicit Rust 1.99 strict Clippy, Rust 1.89 all-target and
+generated-contract checks pass. A sequentially rebuilt host passes NINA 228/228
+and actual net48 x86/x64 regressions with zero build warnings. Formatting/diff
+checks pass. Logs: artifacts/hub-camera-acquisition-final-{focused,rust,clippy,
+msrv,contract,host,nina,net48}.log. No equipment or installed vendor driver was
+activated. Preceding f7cfbcd CI 37557708906/37557702178 remains live, with six jobs
+passing in each run. Keep this reviewed increment local until those runs are
+terminal. Runtime/adapters, binary frontend transport, native recovery metadata
+and every original gate remain open.

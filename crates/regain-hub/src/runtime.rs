@@ -1,6 +1,7 @@
 //! One set of output controllers per applied configuration. Client identities
 //! and connection leases belong to the host, never to frontend-supplied IDs.
 use crate::{
+    activity::{Activity, ActivityCounter},
     config::{Bitness, DeviceType, HubConfig, SafetyMember, VirtualDevice},
     covercalibrator::{CoverCalibratorController, CoverCalibratorSession},
     factory::{CredentialProvider, build_sources_bound},
@@ -18,10 +19,7 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use std::{
     collections::BTreeMap,
-    sync::{
-        Arc, Mutex, Weak,
-        atomic::{AtomicUsize, Ordering},
-    },
+    sync::{Arc, Mutex, Weak},
 };
 use tokio::sync::oneshot;
 use uuid::Uuid;
@@ -56,7 +54,7 @@ pub struct HubRuntime {
     registry: Arc<SourceRegistry>,
     clock: Arc<dyn Clock>,
     outputs: BTreeMap<Uuid, Output>,
-    activity: Arc<AtomicUsize>,
+    activity: ActivityCounter,
     lifecycle: Mutex<Lifecycle>,
     shutdown: tokio::sync::OnceCell<Result<(), Vec<(Uuid, SourceError)>>>,
 }
@@ -225,7 +223,7 @@ impl HubRuntime {
             registry,
             clock,
             outputs,
-            activity: Arc::new(AtomicUsize::new(0)),
+            activity: ActivityCounter::default(),
             lifecycle: Mutex::new(Lifecycle {
                 closed: false,
                 frozen: false,
@@ -546,7 +544,7 @@ impl HubRuntime {
     /// commands after client disconnect. Zero does not prove worker teardown;
     /// configuration replacement must separately drain the old registry.
     pub fn active_connections(&self) -> usize {
-        self.activity.load(Ordering::SeqCst)
+        self.activity.active()
     }
 
     pub fn client(self: &Arc<Self>) -> Arc<ClientSession> {
@@ -695,22 +693,10 @@ fn wrong_type() -> SourceError {
     )
 }
 
-struct Activity(Arc<AtomicUsize>);
 pub(crate) struct Quiescent(Arc<HubRuntime>);
 impl Drop for Quiescent {
     fn drop(&mut self) {
         self.0.lifecycle.lock().unwrap().frozen = false;
-    }
-}
-impl Activity {
-    fn new(counter: Arc<AtomicUsize>) -> Self {
-        counter.fetch_add(1, Ordering::SeqCst);
-        Self(counter)
-    }
-}
-impl Drop for Activity {
-    fn drop(&mut self) {
-        self.0.fetch_sub(1, Ordering::SeqCst);
     }
 }
 

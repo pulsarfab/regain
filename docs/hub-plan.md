@@ -42,8 +42,24 @@ five Rust/Windows lint failures and three successful jobs. CI uses Rust 1.99,
 which deprecates fetch_update and requires fixed-size as_chunks access. The
 MSRV-compatible checked CAS correction passes all nineteen camera image/binary
 actor cases, explicit Rust 1.99 strict Clippy and Rust 1.89 all-target checks.
-Replacement CI is required. Camera acquisition supervision is being implemented
-locally; camera choices remain gated and every original remaining gate stays open.
+Replacement f7cfbcd CI 37557708906/37557702178 remains live, with six jobs passing
+in each run. Camera acquisition supervision is implemented locally and under
+review; camera choices remain gated and every original remaining gate stays open.
+
+Camera supervisor checkpoint (local): nineteen private virtual-clock cases pass.
+One source-owned acquisition retains control and runtime activity after caller
+cancellation/disconnect, freezes geometry and available exposure identity, and
+publishes one immutable shared image. Owner Stop preserves shortened exposures;
+Abort discards them. Admission cancellation sends no exposure, cancelled command
+preflight sends no Abort, and a dispatched Abort finishes after its waiter leaves.
+Explicit notifications release a long-polling monitor without waiting for its
+timer. Uncertain replies/deadlines retain ownership; old generations, malformed
+readiness/metadata and replaced images cannot publish. Optional metadata remains
+independently unsupported. Full Rust hub/Alpaca, explicit Rust 1.99 strict Clippy,
+Rust 1.89 all targets, generated contracts, rebuilt-host NINA 228/228 and actual
+net48 x86/x64 regressions pass. New-head CI remains required.
+Runtime integration, native/Alpaca/COM/virtual/simulation camera adapters, all three
+image outputs, recovery metadata and host-wide staging budgets remain open.
 
 Current position: milestones 0 and 1 are complete. The scalar source/output paths
 in milestones 2 and 3 are implemented; their remaining acceptance gates are open.
@@ -73,8 +89,9 @@ adds validated immutable image buffers, a shared payload budget and a lossless
 ImageBytes reader/export codec, with native adoption and bounded order conversion.
 The shared source actor now has fenced binary download dispatch with exclusive
 control, a separate bounded image deadline and retained write uncertainty.
-Acquisition supervision, capability/recovery propagation, camera adapters and
-frontend image transport remain unimplemented; their contracts are recorded in
+Acquisition supervision is now implemented locally with nineteen focused tests;
+runtime integration, capability/recovery propagation, camera adapters and
+frontend image transport remain unimplemented. Their contracts are recorded in
 hub-contract.md and camera choices stay gated.
 Milestone 5's coordinated groups are not yet
 implemented. PR #21 stays draft until the full plan passes.

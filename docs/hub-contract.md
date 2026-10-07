@@ -2153,8 +2153,9 @@ A control owner can explicitly read images for reconciliation after uncertainty,
 but that does not authorize publishing them as a newly owned acquisition. All
 existing adapters default to Unsupported until their camera paths are implemented.
 
-The following acquisition requirements are specified but are not yet wired into
-the runtime or frontends. One source-owned supervisor must retain an exclusive
+The source-owned acquisition supervisor implements the following ownership rules
+in private tests; it is not yet wired into the runtime, adapters or frontends.
+One source-owned supervisor retains an exclusive
 acquisition lease from admission through start acknowledgement, exposure,
 readout/download and final publication or explicit failure reconciliation.
 Admission freezes acquisition settings and clears the new acquisition's
@@ -2169,6 +2170,34 @@ it does not send Abort or destroy another client's image.
 Detached acquisitions retain runtime activity as well as the source control
 lease, so configuration replacement cannot retire a runtime whose last frontend
 has disconnected while a capture or uncertain command remains unresolved.
+
+The supervisor uses the same factored activity guard as existing runtime output
+sessions. Runtime integration must pass that counter and share one supervisor
+per source UUID; constructing separate supervisors per output is not sufficient.
+Admission reserves ownership before capability/geometry reads. A cancelled waiter
+observed before Start dispatch abandons that admission without an equipment
+command. Once dispatch is committed, source-owned work continues independently
+of the frontend. Stop/Abort also perform capability admission and check a
+cancelled waiter before committing dispatch. Abort acknowledgement wakes the
+readiness monitor and releases exclusive control before another start is admitted.
+No automatic Stop, Abort or replacement exposure accompanies a disconnect.
+
+Optional LastExposureDuration and LastExposureStartTime are read independently.
+PropertyNotImplemented is preserved with its upstream error; requested timing is
+never substituted for unavailable actual timing. Available duration must be
+finite/nonnegative; available start time must be a bounded valid UTC FITS/ISO
+timestamp. Available identity is compared before and after the pixel copy, and
+dimensions must match admitted geometry. Missing optional identity cannot prove
+that another independent application has not replaced an upstream image.
+
+Readiness/copy errors retain local uncertain acquisition ownership and activity;
+uncertain actuator replies also retain the shared source's write fence. Explicit
+owner or protected administrative abandonment drops local uncertain ownership
+without sending an actuator command or resetting a source fence. The ordinary
+source last-lease teardown still retires its epoch when no clients remain.
+Native adapters must derive readiness allowance from existing cooling/recovery
+settings and preserve core recovery metadata before pixel adoption. The current
+supervisor's frozen standard timing/geometry is not that native recovery metadata.
 
 Acquisitions and publications carry source identity, source generation and a
 unique acquisition ID. Old-generation completions cannot replace current state.
