@@ -1451,6 +1451,24 @@ mod tests {
             .map(|v| u16::from_le_bytes([v[0], v[1]]))
             .collect();
         assert_eq!(values, [1, 4, 2, 50000, 65535, 6]);
+        let budget = regain_hub::camera::image::ImageBudget::new(12).unwrap();
+        let decoded =
+            regain_hub::camera::image::read_imagebytes(&mut data.as_ref(), &budget, u32::MAX)
+                .await
+                .unwrap();
+        assert_eq!(decoded.image.descriptor().width(), 3);
+        assert_eq!(decoded.image.descriptor().height(), 2);
+        assert_eq!(
+            decoded.image.descriptor().element_type(),
+            regain_hub::camera::image::ElementType::Int32
+        );
+        assert_eq!(
+            decoded.image.descriptor().transmission_type(),
+            regain_hub::camera::image::ElementType::UInt16
+        );
+        assert_eq!(decoded.image.imagebytes_chunk(0, 12).unwrap(), data[44..]);
+        drop(decoded);
+        assert_eq!(budget.used_bytes(), 0);
         let response = image_response(frame, false, 7, 8);
         let data = response.into_body().collect().await.unwrap().to_bytes();
         let value: Value = serde_json::from_slice(&data).unwrap();

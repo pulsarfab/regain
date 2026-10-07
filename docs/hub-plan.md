@@ -57,7 +57,12 @@ Dedicated panel simulation has 35 passing Rust simulator cases, three new NINA
 cases and real net48 x86/x64 coverage. Full regressions and strict checks pass;
 shared panel setup passes full Rust/strict checks, NINA 228/228 and real net48
 x86/x64 checks. Actual native/browser captures and browser creation/reload/sparse
-update acceptance are verified. Camera proxies remain.
+update acceptance are verified. Camera proxies remain. The first camera increment
+adds validated immutable image buffers, a shared payload budget and a lossless
+ImageBytes reader/export codec, with native adoption and bounded order conversion.
+Acquisition ownership, capability/recovery propagation and frontend image
+transport remain unimplemented; their contracts are recorded in hub-contract.md
+and camera choices stay gated.
 Milestone 5's coordinated groups are not yet
 implemented. PR #21 stays draft until the full plan passes.
 
@@ -114,8 +119,13 @@ Full Rust hub/Alpaca, strict Clippy, Rust 1.89 all targets, generated contracts,
 Node/seven schema checks, NINA 228/228 and real net48 x86/x64 pass. Original
 fixture-choice/namespace failures are retained and explained in the review log.
 Preceding simulator/Automation-fix CI 37554304962/37554298269 is live; keep this
-increment local until it finishes. Next: camera ownership/buffer/transport
-contracts and implementation, then every remaining original gate.
+increment local until it finishes. Camera buffer/codec foundation now passes
+eleven private tests plus interoperability with the existing Alpaca camera
+response, full Rust hub/Alpaca suites, strict Clippy, Rust 1.89 all targets and
+contract freshness. Acquisition ownership/capability and binary transport
+requirements are recorded in hub-contract.md. Next: implement source-owned
+acquisition supervision and camera inputs/outputs, then every remaining original
+gate. Camera proxy creation stays disabled.
 
 Filter-wheel controller increment: shared typed sessions, live ordered names and
 signed offsets, slot bounds, nonblocking Position writes and moving `-1` are

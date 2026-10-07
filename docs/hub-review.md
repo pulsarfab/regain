@@ -3910,3 +3910,43 @@ focused,focused-confirmed,net48,net48-confirmed,rust,clippy,msrv,contract,nina}.
 and artifacts/hub-panel-creation-browser-{state,saved,verification}.json. Every
 original remaining camera, coordination, recovery, documentation, acceptance
 and final review gate remains required.
+
+## 2026-10-06: camera image buffer and ImageBytes foundation
+
+Reviewed the native core Frame/Session contracts, existing Alpaca camera image
+stream, scalar actor/IPC limits and current ASCOM/Alpaca image specifications.
+The new camera module separates binary images from bounded scalar polling and
+does not enable any camera setup gate. Its acquisition requirements are recorded
+in hub-contract.md; the source supervisor and frontend integration remain open.
+
+Implemented validated geometry/encoding, immutable shared buffers and an atomic
+payload-byte budget retained by the last reader. Consuming native adoption moves
+the existing pixel allocation. Export performs order conversion in at most
+64-KiB chunks, preserving plane order, signed/unsigned values and all nine numeric
+encodings. Int32 packed as Byte/Int16/UInt16 is explicitly supported. Unknown
+types/conversions, overflow, wrong transactions, malformed rank, partial bodies
+and trailing data fail without publishing an image. Metadata/error bounds and
+caller-owned deadlines/cancellation prevent unbounded response retention. The
+codec never sends, retries or reconciles an equipment command. Host-wide staging
+and conversion memory accounting is explicitly still required during integration.
+
+Eleven private Rust tests pass, including competing allocations, reader lifetime,
+native zero-copy adoption, non-square RGB/LRGB and one-plane rank-three arrays,
+all numeric/packed encodings, multi-chunk order conversion, malformed metadata,
+bounded UTF-8 upstream errors and cancellation during a partial download. The
+existing actual Alpaca camera response test now decodes its production image
+stream through the shared reader, preserving unsigned values 50000/65535.
+Full Rust hub/Alpaca suites, strict Clippy, Rust 1.89 all-target checks, generated
+contract freshness and formatting/diff checks pass. No frontend behavior or
+configuration changed, and no hardware or installed driver was activated.
+
+Retained initial checks: after review changed adoption to consume the native
+frame, a test partially moved its exposure before adoption; cloning its small
+exposure descriptor corrects the fixture. Clippy required is_multiple_of for
+chunk alignment. The original failed logs and successful confirmations remain
+in artifacts/hub-camera-image-{focused,focused-confirmed,rust,rust-confirmed,
+clippy,clippy-confirmed,clippy-final,msrv,msrv-confirmed,contract}.log.
+Current preceding panel CI 37554304962/37554298269 remains live with Windows
+test.ps1 still running. Keep reviewed local increments until those runs end.
+Next: source-owned acquisition supervision, binary backend/IPC paths and all
+camera inputs/outputs, followed by every original remaining plan gate.

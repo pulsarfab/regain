@@ -2,6 +2,7 @@
 //! they must not reimplement safety decisions or invent source capabilities.
 pub mod alpaca;
 pub mod ascom_export;
+pub mod camera;
 pub mod capabilities;
 pub mod client;
 pub mod com;

@@ -2103,3 +2103,63 @@ mismatch, stable save/reload IDs and cover-only simulation updates that leave
 light state and configuration revision unchanged and release their temporary
 lease. These fixtures/captures prove simulation acceptance, not installed-client,
 hardware or conformance acceptance.
+
+### Camera image buffers and acquisition contract
+
+Camera images stay outside scalar Values, polling snapshots and the one-MiB
+JSON IPC envelope. The shared camera image module implements a validated
+descriptor, immutable reference-counted pixels and a shared payload-byte budget.
+An allocation reserves its complete payload before allocating; cancellation,
+truncation and failed validation release it without publishing a partial image.
+Source replacement or client disconnect cannot reclaim pixels retained by another
+reader. The last reader releases the reservation. An exhausted budget reports
+Busy; it does not evict an image another client is reading. Native adoption
+consumes the core frame and transfers its existing pixel allocation without a
+second full-size copy. Worker staging, frontend conversions and bounded transfer
+chunks must also be accounted for when the acquisition supervisor is integrated;
+the buffer module alone is not a host-wide memory limit.
+
+Each image payload is limited to 512 MiB. Positive Int32 width/height and an
+optional positive Int32 plane dimension distinguish rank two from rank three,
+including a one-plane rank-three array. Checked multiplication rejects overflow
+before allocation. Native sensor rows and ASCOM Array[X,Y,plane] have explicit
+storage orders. Export transposes at most 64 KiB per chunk and keeps the plane
+index fastest. Bytes are little endian. Descriptors preserve logical element
+type separately from transmission type: all nine ImageBytes numeric types are
+supported unchanged, together with Int32 images packed as Byte, Int16 or UInt16.
+Other cross-type conversions fail explicitly; no clamping, rounding or conversion
+of proxy pixels to the native camera's U16 format is implicit.
+
+The ImageBytes reader operates on one finite response body under the caller's
+deadline/cancellation. It validates version, client transaction, rank, dimensions,
+element types and payload length; metadata extensions are bounded to 64 KiB and
+UTF-8 upstream errors to 4096 bytes. Truncated or trailing data never publish an
+image. The codec issues no command and has no automatic retry/reconnect behavior.
+These rules follow [ICamera image ordering](https://ascom-standards.org/newdocs/camera.html)
+and [Alpaca API reference section 8](https://ascom-standards.org/AlpacaDeveloper/ASCOMAlpacaAPIReference.html).
+
+The following acquisition requirements are specified but are not yet wired into
+the runtime or frontends. One source-owned supervisor must retain an exclusive
+acquisition lease from admission through start acknowledgement, exposure,
+readout/download and final publication or explicit failure reconciliation.
+Admission freezes acquisition settings and clears the new acquisition's
+ImageReady; an invalid request rejected before admission must not erase an older
+completed image. Sibling clients can observe state and read completed buffers,
+but cannot change capture settings, start, stop or abort the owner's acquisition.
+Explicit stop/abort are owner commands with the upstream capability and semantics:
+Stop preserves acquired pixels, Abort discards the current acquisition. They are
+not interchangeable. Client cancellation/disconnect releases its wait or reader;
+it does not send Abort or destroy another client's image.
+
+Acquisitions and publications carry source identity, source generation and a
+unique acquisition ID. Old-generation completions cannot replace current state.
+An uncertain start/stop/abort retains the command fence and source lease until
+state is reconciled or explicitly reset; it cannot be replayed because a waiter
+disappears. Observed upstream activity cannot be adopted as a new owned exposure.
+Capabilities and optional property errors pass through from the admitted source;
+SDK, COM, Alpaca and virtual inputs do not gain direct retained-frame rereads.
+Native recovery remains in regain-core and reports its actual backend/fallback,
+replacement exposures and retained-frame read attempts. Published images freeze
+that acquisition's geometry, timing and recovery metadata. Camera setup choices
+remain disabled until native/network/COM/virtual/simulation inputs, all three
+outputs, bounded image transport and multi-client failure checks are implemented.
