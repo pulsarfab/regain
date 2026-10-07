@@ -45,6 +45,12 @@ public sealed class HubCameraAlpacaTests
                     if (publisher.HasExited) throw new IOException("Private camera publisher exited: " + await publisherError);
                     try { using var response = await readiness.GetAsync("/management/v1/configureddevices", deadline.Token); response.EnsureSuccessStatusCode(); break; }
                     catch (HttpRequestException) when (started.Elapsed < TimeSpan.FromSeconds(10)) { await Task.Delay(10, deadline.Token); }
+                    catch (OperationCanceledException) when (!deadline.IsCancellationRequested && started.Elapsed < TimeSpan.FromSeconds(10)) {
+                        // Startup probes are read-only. A busy CI publisher may
+                        // time out its first HTTP reply before it is ready;
+                        // retry only within the existing finite startup window.
+                        await Task.Delay(10, deadline.Token);
+                    }
                 }
                 using var relay = new CameraRelay(readiness.BaseAddress!, fault);
                 var instance = Guid.NewGuid(); var source = Guid.NewGuid(); var output = Guid.NewGuid(); var second = Guid.NewGuid();
