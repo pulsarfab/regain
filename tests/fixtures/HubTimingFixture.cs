@@ -10,10 +10,33 @@ internal static class HubTimingFixture
 {
     private static void Check(bool value, string message) { if (!value) throw new InvalidOperationException(message); }
     internal static readonly string[] Faults = ["host", "revision", "client", "output", "source", "zero", "negative", "large", "fraction", "missing", "unknown"];
+    internal static readonly string[] CaptureFaults = Faults.Concat(new[] { "duration", "readiness", "completion", "native" }).ToArray();
     internal static async Task RunAll()
     {
         await Semantics(); foreach (var fault in Faults) await Malformed(fault);
+        await CaptureSemantics(); foreach (var fault in CaptureFaults) await MalformedCapture(fault);
         Console.WriteLine($"Camera timing {IntPtr.Size * 8}-bit: bounded negotiation, identity/shape rejection, timed acknowledgement and unchanged scalar deadline passed");
+    }
+    internal static async Task CaptureSemantics()
+    {
+        using var peer = await Peer.Open();
+        foreach (var seconds in new[] { double.NaN, double.PositiveInfinity, -1.0 }) {
+            try { await peer.Client.GetCameraCaptureTimingAsync(peer.Output, seconds); throw new Exception("Invalid duration was queried"); }
+            catch (HubException error) { Check(error.Failure == HubFailure.InvalidRequest, "Invalid capture duration classification changed"); }
+        }
+        var serving = peer.ServeCaptureTiming();
+        var value = await peer.Client.GetCameraCaptureTimingAsync(peer.Output, 600.0); await serving;
+        Check(value.DurationSeconds == 600.0 && value.Readiness == TimeSpan.FromSeconds(630) && value.Completion == TimeSpan.FromSeconds(995)
+            && value.Source == peer.Source && value.Native, "Capture timing lost duration, bounds or identity");
+        Check(peer.Client.IsConnected, "Inert timing query retired control");
+    }
+    internal static async Task MalformedCapture(string fault)
+    {
+        using var peer = await Peer.Open();
+        var serving = peer.ServeCaptureTiming(fault);
+        try { await peer.Client.GetCameraCaptureTimingAsync(peer.Output, 600.0); throw new Exception("Malformed capture timing was admitted"); }
+        catch (HubException error) { Check(error.Failure == HubFailure.Protocol, "Malformed capture timing error changed"); }
+        await serving; Check(peer.Client.IsConnected, "Malformed capture metadata retired another connection");
     }
     internal static async Task Malformed(string fault)
     {
@@ -89,7 +112,7 @@ internal static class HubTimingFixture
                     var request = await peer.Read(); Check(request.GetProperty("id").GetInt32() == 1, "Missing timing hello");
                     await peer.Reply(1, new { protocolVersion = 1, instanceId = peer.instance, hostInstance = peer.host,
                         configurationRevision = peer.revision, clientId = peer.client, maxFrameBytes = 1048576, maxInFlight = 2,
-                        operations = new[] { "cameraTiming", "cameraControl", "get", "put", "connect", "changeConnection" }, capabilities = new[] { "cameraOperationTiming" } });
+                        operations = new[] { "cameraTiming", "cameraCaptureTiming", "cameraControl", "get", "put", "connect", "changeConnection" }, capabilities = new[] { "cameraOperationTiming", "cameraCaptureTiming" } });
                 }
                 var serving = ServeHello();
                 peer.Client = await HubClient.FromStreamAsync(peer.stream, peer.instance, TimeSpan.FromSeconds(10),
@@ -121,6 +144,31 @@ internal static class HubTimingFixture
                 case "fraction": value["stopMilliseconds"] = 1.5; break;
                 case "missing": value.Remove("abortMilliseconds"); break;
                 case "unknown": value["extra"] = 1; break;
+            }
+            await Reply(request.GetProperty("id").GetInt32(), value);
+        }
+        internal async Task ServeCaptureTiming(string? fault = null)
+        {
+            var request = await Read(); var command = request.GetProperty("command");
+            Check(request.GetProperty("id").GetInt32() == 2 && command.GetProperty("op").GetString() == "cameraCaptureTiming"
+                && command.GetProperty("output").GetGuid() == Output && command.GetProperty("expectedRevision").GetGuid() == revision
+                && command.GetProperty("durationSeconds").GetDouble() == 600.0, "Capture query lost identity/revision/duration or invalid queries consumed IDs");
+            var value = new JsonObject { ["hostInstance"] = host.ToString(), ["configurationRevision"] = revision.ToString(),
+                ["clientId"] = client.ToString(), ["output"] = Output.ToString(), ["source"] = Source.ToString(), ["native"] = true,
+                ["durationSeconds"] = 600.0, ["readinessMilliseconds"] = 630000, ["completionMilliseconds"] = 995000 };
+            var key = fault switch { "host" => "hostInstance", "revision" => "configurationRevision", "client" => "clientId", "output" => "output", "source" => "source", _ => null };
+            if (key is not null) value[key] = (fault == "source" ? Guid.Empty : Guid.NewGuid()).ToString();
+            switch (fault) {
+                case "zero": value["readinessMilliseconds"] = 0; break;
+                case "negative": value["completionMilliseconds"] = -1; break;
+                case "large": value["completionMilliseconds"] = HubCameraTiming.MaximumMilliseconds + 1; break;
+                case "fraction": value["completionMilliseconds"] = 1.5; break;
+                case "missing": value.Remove("completionMilliseconds"); break;
+                case "unknown": value["extra"] = 1; break;
+                case "duration": value["durationSeconds"] = 601.0; break;
+                case "readiness": value["readinessMilliseconds"] = 599999; break;
+                case "completion": value["completionMilliseconds"] = 629999; break;
+                case "native": value["native"] = "true"; break;
             }
             await Reply(request.GetProperty("id").GetInt32(), value);
         }

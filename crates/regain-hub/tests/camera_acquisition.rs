@@ -65,6 +65,9 @@ struct Device {
     uncertain_setting: AtomicBool,
     release_setting: Notify,
     release_setting_preflight: Notify,
+    hold_completion_state: AtomicBool,
+    completion_state_reads: AtomicUsize,
+    release_completion_state: Notify,
 }
 impl Default for Device {
     fn default() -> Self {
@@ -146,6 +149,9 @@ impl Default for Device {
             uncertain_setting: AtomicBool::new(false),
             release_setting: Notify::new(),
             release_setting_preflight: Notify::new(),
+            hold_completion_state: AtomicBool::new(false),
+            completion_state_reads: AtomicUsize::new(0),
+            release_completion_state: Notify::new(),
         }
     }
 }
@@ -172,6 +178,17 @@ impl Backend for Mock {
     }
     fn read(&mut self, member: String, _: Values) -> BackendFuture<'_, Value> {
         Box::pin(async move {
+            if member == "queuedread" {
+                tokio::time::sleep(Duration::from_millis(950)).await;
+                return Ok(json!(0));
+            }
+            if member == "camerastate"
+                && self.0.hold_completion_state.load(SeqCst)
+                && self.0.values.lock().unwrap()["imageready"] == json!(true)
+            {
+                self.0.completion_state_reads.fetch_add(1, SeqCst);
+                self.0.release_completion_state.notified().await;
+            }
             if member == "canpulseguide" && self.0.hold_guide_preflight.load(SeqCst) {
                 self.0.guide_preflights.fetch_add(1, SeqCst);
                 self.0.release_guide_preflight.notified().await;
@@ -1187,6 +1204,89 @@ async fn readiness_and_download_failures_retain_ownership_without_exposure_repla
         owner.abandon_uncertain().unwrap();
         assert_eq!(f.activity.active(), 0);
         drop(owner);
+        f.source.shutdown().await.unwrap();
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn completion_deadline_bounds_queued_metadata_and_retains_uncertain_ownership() {
+    use regain_hub::readout::SourceLease;
+    for after_copy in [false, true] {
+        let f = Fixture::new(24);
+        let owner = f.session().await;
+        let sibling = f.session().await;
+        let reader = SourceLease::acquire(f.source.clone()).await.unwrap();
+        owner.start(request()).await.unwrap();
+        f.device.hold_completion_state.store(!after_copy, SeqCst);
+        f.device.hold_download.store(after_copy, SeqCst);
+        f.device.complete();
+        for _ in 0..100 {
+            settle().await;
+            if if after_copy {
+                f.device.downloads.load(SeqCst) != 0
+            } else {
+                f.device.completion_state_reads.load(SeqCst) != 0
+            } {
+                break;
+            }
+            tokio::time::advance(Duration::from_millis(10)).await;
+        }
+        assert_eq!(
+            f.device.completion_state_reads.load(SeqCst),
+            usize::from(!after_copy)
+        );
+        // Every ordinary read succeeds within its one-second transport bound, but
+        // their FIFO queue would keep completed-frame metadata waiting too long.
+        let reads: Vec<_> = (0..15)
+            .map(|_| {
+                let source = f.source.clone();
+                let lease = reader.id;
+                tokio::spawn(async move { source.read(lease, "queuedread", Values::new()).await })
+            })
+            .collect();
+        settle().await;
+        if after_copy {
+            f.device.release_download.notify_one();
+        } else {
+            f.device.release_completion_state.notify_one();
+        }
+        settle().await;
+        assert_eq!(f.supervisor.status().phase, Phase::Downloading);
+        assert_eq!(f.budget.used_bytes() != 0, after_copy);
+        // 3s readiness + 1s download + five 1s scalar allowances + 5s margin.
+        for _ in 0..280 {
+            tokio::time::advance(Duration::from_millis(50)).await;
+            settle().await;
+        }
+        let status = f.supervisor.status();
+        assert_eq!(status.phase, Phase::Uncertain);
+        assert_eq!(
+            status.error.unwrap().message,
+            "Camera completion deadline expired"
+        );
+        assert_eq!(f.activity.active(), 1);
+        assert_eq!(f.source.snapshot().lease_count, 4);
+        assert!(owner.image().is_err());
+        assert_eq!(
+            sibling.start(request()).await.unwrap_err().kind,
+            ErrorKind::Uncertain
+        );
+        assert_eq!(f.device.starts.load(SeqCst), 1);
+        assert_eq!(f.device.aborts.load(SeqCst), 0);
+        assert_eq!(f.device.stops.load(SeqCst), 0);
+        assert_eq!(f.budget.used_bytes(), 0);
+        for _ in 0..20 {
+            tokio::time::advance(Duration::from_millis(50)).await;
+            settle().await;
+        }
+        for read in reads {
+            read.await.unwrap().unwrap();
+        }
+        owner.abandon_uncertain().unwrap();
+        settle().await;
+        assert_eq!(f.source.snapshot().lease_count, 3);
+        assert_eq!(f.activity.active(), 0);
+        drop((owner, sibling, reader));
         f.source.shutdown().await.unwrap();
     }
 }

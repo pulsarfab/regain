@@ -85,6 +85,13 @@ pub enum Command {
         #[serde(rename = "expectedRevision")]
         expected_revision: Uuid,
     },
+    CameraCaptureTiming {
+        output: Uuid,
+        #[serde(rename = "expectedRevision")]
+        expected_revision: Uuid,
+        #[serde(rename = "durationSeconds")]
+        duration_seconds: f64,
+    },
     CameraControl {
         #[serde(rename = "expectedRevision")]
         expected_revision: Uuid,
@@ -504,14 +511,14 @@ where
                     if !greeted {
                         if !matches!(request.command, Command::Hello {}) { return Err(ProtocolError::Handshake); }
                         greeted = true;
-                        let mut operations = vec!["cameraImage","cameraTiming","cameraControl","describeConfig","getConfig","validateConfig","listDevices","sourceStatus","outputStatus","inspectSource","updateSimulation","connect","disconnect","changeConnection","get","put","hostStatus"];
+                        let mut operations = vec!["cameraImage","cameraTiming","cameraCaptureTiming","cameraControl","describeConfig","getConfig","validateConfig","listDevices","sourceStatus","outputStatus","inspectSource","updateSimulation","connect","disconnect","changeConnection","get","put","hostStatus"];
                         if service.can_apply() { operations.push("applyConfig"); }
                         if service.credential_description().is_some() { operations.extend(["createCredential", "credentialStatus", "deleteCredential"]); }
                         let hello = json!({"protocolVersion":VERSION, "instanceId":service.instance_id(),
                             "hostInstance":service.host_id(), "configurationRevision":service.configuration().revision, "clientId":client.id(),
                             "maxFrameBytes":MAX_FRAME_BYTES, "maxInFlight":MAX_IN_FLIGHT,
                             "operations":operations,
-                            "capabilities":["switchOutputs","safetyOutputs","weatherOutputs","focuserOutputs","rotatorOutputs","filterWheelOutputs","coverCalibratorOutputs","cameraAcquisition","cameraImageStream","cameraOperationTiming","rotatorMotionReceipt","weatherSensorDescription","scalarDeviceState","asyncOutputConnection","switchAsyncContract"]});
+                            "capabilities":["switchOutputs","safetyOutputs","weatherOutputs","focuserOutputs","rotatorOutputs","filterWheelOutputs","coverCalibratorOutputs","cameraAcquisition","cameraImageStream","cameraOperationTiming","cameraCaptureTiming","rotatorMotionReceipt","weatherSensorDescription","scalarDeviceState","asyncOutputConnection","switchAsyncContract"]});
                         write_response(&mut writer, Response::new(request.id, Ok(hello)), limits.frame_timeout).await?;
                         continue;
                     }
@@ -650,6 +657,22 @@ async fn dispatch_service(
     limits: Limits,
 ) -> Result<Value, RpcError> {
     match command {
+        Command::CameraCaptureTiming {
+            output,
+            expected_revision,
+            duration_seconds,
+        } => {
+            let runtime = service.runtime()?;
+            if expected_revision != runtime.revision() {
+                return Err(UpdateError::Conflict.into());
+            }
+            Ok(json!(runtime.camera_capture_timing(
+                service.host_id(),
+                client.id(),
+                output,
+                duration_seconds
+            )?))
+        }
         Command::CameraTiming {
             output,
             expected_revision,
@@ -725,6 +748,7 @@ async fn dispatch(
         Command::ApplyConfig { .. }
         | Command::CameraImage { .. }
         | Command::CameraTiming { .. }
+        | Command::CameraCaptureTiming { .. }
         | Command::CameraControl { .. }
         | Command::HostStatus {}
         | Command::DescribeConfig {}

@@ -186,6 +186,9 @@ internal static class HubCameraHostFixture
             using (var secondSession = new HubNativeSession(executable, workers)) {
                 await firstSession.AttachAsync(Binding(firstOutput), stop.Token);
                 var epoch = firstSession.Epoch;
+                var captureBounds = await firstSession.GetCameraCaptureTimingAsync(epoch, 0.05, stop.Token);
+                Check(captureBounds.Native == (!standard && !nested) && captureBounds.DurationSeconds == 0.05
+                    && captureBounds.Completion > captureBounds.Readiness, "Native capture timing query changed mode or finite bounds");
                 await firstSession.RequestCameraAsync(epoch, JsonSerializer.SerializeToElement(new { op = "changeConnection", output = firstOutput,
                     connected = true, asynchronous = false }), stop.Token);
                 await secondSession.ConnectAsync(Binding(secondOutput), stop.Token);

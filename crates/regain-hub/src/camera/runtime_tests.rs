@@ -225,6 +225,25 @@ async fn camera_frontend_deadlines_cover_native_connection_and_control_but_not_s
     .unwrap();
     let timing = client.camera_timing(output).await.unwrap();
     assert!(timing.native && timing.connect_milliseconds > 300_000);
+    let capture_timing = client.camera_capture_timing(output, 1.).await.unwrap();
+    assert!(capture_timing.native && capture_timing.readiness_milliseconds > 300_000);
+    assert!(capture_timing.completion_milliseconds > capture_timing.readiness_milliseconds);
+    let conflict = client
+        .request(Command::CameraCaptureTiming {
+            output,
+            expected_revision: Uuid::new_v4(),
+            duration_seconds: 1.,
+        })
+        .await;
+    assert!(
+        matches!(conflict, Err(ClientError::Remote(ref error)) if error.code == "revisionConflict")
+    );
+    for seconds in [f64::NAN, f64::INFINITY, -1.] {
+        assert!(matches!(
+            client.camera_capture_timing(output, seconds).await,
+            Err(ClientError::InvalidRequest)
+        ));
+    }
     assert_eq!(timing.source, source);
     assert_eq!(runtime.source_snapshot(source).unwrap().lease_count, 0);
     assert_eq!(writes.load(Ordering::SeqCst), 0);
@@ -297,7 +316,7 @@ async fn camera_frontend_deadlines_cover_native_connection_and_control_but_not_s
 #[tokio::test]
 async fn camera_frontend_deadline_metadata_is_inert_and_uses_the_actual_native_policy() {
     use crate::camera::ipc_timing::MAX_OPERATION_MILLISECONDS;
-    for direct in [false, true] {
+    for (direct, fallback) in [(false, false), (true, false), (true, true)] {
         let mut cfg = config(direct);
         let source = cfg.sources[0].id;
         let output = outputs(&mut cfg, source, &[2])[0];
@@ -306,11 +325,29 @@ async fn camera_frontend_deadline_metadata_is_inert_and_uses_the_actual_native_p
             ..
         } = &mut cfg.sources[0].backend
         {
+            camera.sdk_fallback = fallback;
+            camera.recovery.0.max_retries = 2;
             camera.recovery.0.command_timeout_seconds = 3600.;
             camera.recovery.0.reconnect_delay_seconds = 3600.;
             camera.recovery.0.usb_reset_after_failures = 20;
         }
         let mut native = native(CameraResources::default());
+        let SourceBackend::Native {
+            camera: Some(selection),
+            ..
+        } = &cfg.sources[0].backend
+        else {
+            unreachable!()
+        };
+        let capture_policy =
+            regain_core::timing::NativeCameraTiming::new(&regain_core::Selection {
+                name: selection.model.clone(),
+                serial: None,
+                direct,
+                sdk_fallback: selection.sdk_fallback,
+                recovery: selection.recovery.0.clone(),
+            })
+            .unwrap();
         let directory = tempfile::tempdir().unwrap();
         native.directory = directory.path().join("absent-timing-workers");
         native.simulate = false;
@@ -341,6 +378,35 @@ async fn camera_frontend_deadline_metadata_is_inert_and_uses_the_actual_native_p
             + actor.request_allowance()
             + Duration::from_secs(5);
         assert_eq!(timing.setting_milliseconds, expected.as_millis() as u64);
+        let mut capture_bounds = Vec::new();
+        for seconds in [1., 600.] {
+            let capture = runtime
+                .camera_capture_timing(host, client, output, seconds)
+                .unwrap();
+            assert!(capture.native);
+            let expected = capture_policy
+                .capture_allowance((seconds * 1e6) as u64)
+                .unwrap()
+                .max(
+                    Duration::from_secs_f64(seconds) + AcquisitionTiming::default().readiness_grace,
+                );
+            assert_eq!(
+                capture.readiness_milliseconds,
+                expected.as_nanos().div_ceil(1_000_000) as u64
+            );
+            let complete = expected
+                + AcquisitionTiming::default().download_timeout
+                + actor.request_allowance() * 5
+                + Duration::from_secs(5);
+            assert_eq!(
+                capture.completion_milliseconds,
+                complete.as_nanos().div_ceil(1_000_000) as u64
+            );
+            capture_bounds.push(capture.completion_milliseconds);
+        }
+        // The short exposure permits replacements. The 600-second exposure is
+        // above the saved replacement limit, even for direct+SDK fallback.
+        assert!(capture_bounds[0] > capture_bounds[1]);
         assert!(!runtime.source_snapshot(source).unwrap().transport_connected);
         assert_eq!(runtime.source_snapshot(source).unwrap().lease_count, 0);
         runtime.shutdown().await.unwrap();
@@ -381,6 +447,19 @@ async fn camera_frontend_proxy_deadlines_keep_configured_transport_bounds_withou
     assert_eq!(timing.connect_milliseconds, 305_000);
     assert_eq!(timing.setting_milliseconds, 140_000);
     assert_eq!(timing.abort_milliseconds, 185_000);
+    let capture = runtime
+        .camera_capture_timing(Uuid::new_v4(), Uuid::new_v4(), output, 600.)
+        .unwrap();
+    assert!(!capture.native);
+    assert_eq!(capture.readiness_milliseconds, 630_000);
+    assert_eq!(capture.completion_milliseconds, 995_000);
+    for seconds in [f64::NAN, f64::INFINITY, -1., f64::MAX] {
+        assert!(
+            runtime
+                .camera_capture_timing(Uuid::new_v4(), Uuid::new_v4(), output, seconds)
+                .is_err()
+        );
+    }
     assert_eq!(runtime.source_snapshot(source).unwrap().lease_count, 0);
     assert!(!runtime.source_snapshot(source).unwrap().transport_connected);
     runtime.shutdown().await.unwrap();

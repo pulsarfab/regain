@@ -8,6 +8,27 @@ tagged or published. Changed cross-crate APIs require an unpublished version so
 Cargo package verification uses the new workspace packages.
 Last updated: 2026-10-07.
 
+Current increment: duration-dependent camera capture timing is negotiated through
+an inert cameraCaptureTiming query, bound to host/client/revision/output/source
+and the exact requested duration. Rust and shared .NET clients reject invalid
+identity, duration and timer values. Native SDK/direct/fallback sources use the
+actual core recovery allowance; proxies keep their own acquisition/transport
+bounds. The supervisor and descriptor share the same readiness calculation.
+A finite outer completion bound covers metadata, image copy and explicit control
+retirement after StartExposure acknowledgement. Expiry retains uncertainty and
+ownership, releases unpublished pixels and never sends Stop/Abort or replays.
+Virtual-clock tests cover successful reads queued before/after image copying;
+both cannot indefinitely delay metadata/publication. Full hub/Alpaca regressions,
+strict Rust lint, Rust 1.89, generated contracts, all 301 NINA tests and full real
+net48 x86/x64 suites pass. Retain the initial C# fixture numeric-literal compile
+error; it required no production change. Native NINA camera publication remains
+next, including profile timeout handling, exact acquisition matching and lossless
+adaptation to NINA's scalar image interfaces. Creation remains gated. Coordinated
+devices, discovery/transfer, recovery/resume, conformance, interactive/physical
+acceptance, README/site and final audit remain open. Preceding c7deb26 PR/push CI
+37624811661/37624807420 remains active; the PR has seven successful jobs with
+Windows still live. Keep this reviewed increment local until those runs finish.
+
 Current increment: native ASCOM camera publication reuses the shared native
 session, revision-bound camera timing and protected completed-frame reader.
 Camera V2/V3/V4 expose typed properties/settings, capture, guiding, DeviceState,
@@ -28,12 +49,13 @@ Preceding 74d73a0 PR/push runs 37619558594/37619553321 now pass all eight jobs
 in each. New camera increments still need their own CI. Native NINA camera
 publication, shared camera creation, coordination, recovery/resume, conformance,
 interactive/physical acceptance, README/site work and final audit remain open.
-The next NINA camera slice must also derive its readiness/profile timeout from
-the host's actual duration-dependent capture allowance. The existing cameraTiming
-descriptor covers connection and command acknowledgement only; it cannot stand
-in for a retrying capture's readiness/download bound. Keep that negotiation inert,
-revision-bound and shared with the supervisor rather than duplicating recovery
-policy in NINA or returning early readiness.
+The next NINA camera slice must consume cameraCaptureTiming for its readiness/
+profile timeout. cameraTiming covers connection and acknowledgement only. The
+new capture descriptor and supervisor now share duration-dependent readiness and
+completion bounds; the provider must preserve caller cancellation and restore
+profile timeout settings without replay or early readiness. NINA's scalar image
+interfaces require explicit representation checks; preserve supported values and
+reject unrepresentable frames instead of truncating numbers or dropping channels.
 
 Current increment: Alpaca camera publication uses the existing private host's
 typed properties, settings, retained capture/guiding and protected image API.

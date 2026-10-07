@@ -76,7 +76,7 @@ public sealed partial class HubClient : IDisposable
     // finalized and close its stream instead of keeping its leases alive forever.
     private sealed class Connection
     {
-        private static readonly string[] knownOperations = ["cameraTiming", "cameraControl", "describeConfig", "getConfig", "validateConfig", "applyConfig",
+        private static readonly string[] knownOperations = ["cameraTiming", "cameraCaptureTiming", "cameraControl", "describeConfig", "getConfig", "validateConfig", "applyConfig",
             "listDevices", "sourceStatus", "outputStatus", "hostStatus", "inspectSource", "updateSimulation", "createCredential",
             "credentialStatus", "deleteCredential", "connect", "disconnect", "changeConnection", "get", "put"];
         private readonly object gate = new();

@@ -401,6 +401,27 @@ impl HubRuntime {
             )),
         }
     }
+    pub(crate) fn camera_capture_timing(
+        &self,
+        host: Uuid,
+        client: Uuid,
+        output: Uuid,
+        duration_seconds: f64,
+    ) -> Result<crate::camera::ipc_timing::CameraCaptureTiming, SourceError> {
+        match self.outputs.get(&output) {
+            Some(Output::Camera(camera)) => {
+                camera.capture_timing(host, self.revision(), client, output, duration_seconds)
+            }
+            Some(_) => Err(SourceError::new(
+                ErrorKind::Unsupported,
+                "Output is not a camera",
+            )),
+            None => Err(SourceError::new(
+                ErrorKind::InvalidValue,
+                "Unknown output ID",
+            )),
+        }
+    }
     /// Cached acquisition diagnostics only. This does not connect, admit an
     /// exposure, expose pixels, or authorize a camera output.
     pub fn camera_acquisition_status(

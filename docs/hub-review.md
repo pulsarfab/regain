@@ -3,6 +3,73 @@
 This records local review and tests for the single hub PR. Passing a foundation
 test does not imply that a frontend, transport, or hardware gate has passed.
 
+## 2026-10-07: duration-dependent camera completion timing
+
+Reviewed the camera supervisor's start acknowledgement, readiness, metadata reads,
+image copy and explicit control retirement, and both client implementations.
+cameraTiming only bounds acknowledged commands; it cannot establish a NINA capture
+readiness allowance. The new cameraCaptureTiming query is inert and revision-bound,
+with exact host/client/output/source identity and duration. It shares the readiness
+calculation used by StartExposure. Native SDK, direct and explicit SDK fallback
+derive from the saved core recovery policy, including the replacement-exposure
+threshold. Proxy timing retains configured transport/acquisition allowances and
+does not acquire native retries. The query cannot connect, capture or lease a source.
+
+After start acknowledgement, a whole completion deadline bounds readiness plus
+the finite image copy, four exposure metadata reads, control retirement and margin.
+This outer bound matters because independently finite source reads can sit behind
+an occupied queue. Expiry retains the active operation and uncertain outcome,
+drops unpublished pixel storage, and sends no Abort/Stop or replacement exposure.
+Independent guiding ownership keeps its existing lifecycle. Query timing does
+not change the native retry policy, admission deadline or ordinary IPC read bounds.
+Unrepresentable frontend timers fail explicitly before the future NINA capture.
+
+Virtual-clock fault tests queue fifteen successful reads, each within its own
+source timeout, ahead of metadata. Both before-copy and after-copy cases hit the
+whole deadline, release unpublished pixels, retain activity/ownership and reject
+a sibling start. No exposure replay, Stop or Abort occurs. Policy checks compare
+the exact core calculation at one and 600 seconds in SDK/direct/fallback modes;
+the short exposure permits replacements and the long exposure does not. Inert
+queries leave source lease counts zero and absent workers/SDKs untouched.
+
+Validation:
+
+- Full hub suite passes, including 80 unit and 42 acquisition cases, in
+  `artifacts/hub-camera-readiness-hub-full-first.log`. Expanded before/after-copy
+  queue cases, including retained lease ownership and explicit abandonment, pass
+  in `artifacts/hub-camera-readiness-completion-ownership-final.log`; the
+  final SDK/direct/fallback threshold check passes in
+  `artifacts/hub-camera-readiness-policy-final.log`.
+- Full Alpaca suite passes 19 library, ten actual-host and 44 HTTP cases in
+  `artifacts/hub-camera-readiness-alpaca-full-first.log`.
+- All 301 NINA tests pass in `artifacts/hub-camera-readiness-nina-full-first.log`.
+  The 28 focused timing cases include malformed identities, durations, shapes
+  and bounds, unchanged request IDs on local rejection and preserved control.
+- Full real net48 x86/x64 suites pass with warnings denied in
+  `artifacts/hub-camera-readiness-net48-full-first.log`. Actual SDK/direct/explicit/
+  nested host sessions exercise the new shared native query before connection.
+- Strict Rust 1.99 all-targets lint, Rust 1.89 all-targets checks and generated
+  contract freshness pass in `artifacts/hub-camera-readiness-clippy-final-2.log`,
+  `artifacts/hub-camera-readiness-msrv-final-2.log` and
+  `artifacts/hub-camera-readiness-contract-first.log`; formatting/diff checks pass.
+- Preserve `artifacts/hub-camera-readiness-managed-first.log`: initial fixture
+  compilation rejected Rust-style trailing-dot numeric literals in C#. Corrected
+  C# literals pass; no production validation or deadline was relaxed.
+
+NINA image API inspection uses the installed 3.2.0.9001 assemblies and the
+[upstream Version-3.2 image implementation](https://github.com/isbeorn/nina/blob/Version-3.2/NINA.Image/ImageData/ExposureData.cs).
+The scalar pipeline offers UInt16 and Int32 arrays; its standard multidimensional
+adapter rejects rank-three input and can narrow values. The upcoming provider
+must implement explicit representation/range/channel checks and retain pixel
+accounting rather than delegating unchecked conversion. This is evidence for a
+required frontend refinement, not completed NINA camera publication.
+
+Preceding c7deb26 PR/push CI runs 37624811661/37624807420 remain live; the PR has
+seven successful jobs and Windows in progress. Hold this increment locally. Native
+NINA camera publication/setup, coordination, discovery/config transfer, recovery/
+resume, conformance, interactive/physical acceptance, README/site and final audit
+remain required. Only explicit simulation/private fixtures were used.
+
 ## 2026-10-07: native ASCOM camera publication
 
 Reviewed Camera V2/V3/V4 implementation, stable output factories/registration,

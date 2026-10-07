@@ -2878,3 +2878,24 @@ captures and control disconnect. Managed encoded pixels, converted arrays and
 bounded scratch share the frontend budget. Array reservations persist until GC
 collects those arrays; external COM/marshaling copies are outside that budget.
 These proxies do not gain upstream retained-download recovery capabilities.
+
+### Capture completion timing
+
+The cameraCaptureTiming operation/capability is separate from cameraOperationTiming.
+An inert query supplies output, expectedRevision and durationSeconds; its strict
+response echoes host/client/revision/output/source identity, native mode and exact
+duration with readinessMilliseconds and completionMilliseconds. Both positive
+timer fields fit the managed finite timer limit; completion is at least readiness
+and readiness covers the requested duration. A stale revision or unrepresentable
+bound fails without connecting equipment or initiating capture.
+
+The descriptor and supervisor use the same duration-dependent readiness function.
+Native sources include their actual core recovery allowance; proxy sources retain
+only their configured readiness grace and transport/download policy. Completion
+covers readiness, finite download, four exposure metadata reads, control retirement
+and margin after StartExposure acknowledgement. A matching whole supervisor timer
+also bounds queue waits. Expiry retains uncertainty/control ownership, discards
+unpublished pixels and never implicitly sends Abort, Stop or a replacement exposure.
+It does not alter the source's recovery policy or extend scalar request bounds.
+Frontends must validate exact identity/duration and reject old-session metadata.
+Protected frontend image transfer remains a distinct finite operation.

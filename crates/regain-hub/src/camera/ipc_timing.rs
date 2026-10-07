@@ -13,6 +13,37 @@ use uuid::Uuid;
 // real net48 Task.Delay ceiling. Validated native policy maxima fit this bound.
 pub const MAX_OPERATION_MILLISECONDS: u64 = i32::MAX as u64 - 120_000;
 
+/// Inert duration-dependent capture bounds, not a capability to retry or replay.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CameraCaptureTiming {
+    pub host_instance: Uuid,
+    pub configuration_revision: Uuid,
+    pub client_id: Uuid,
+    pub output: Uuid,
+    pub source: Uuid,
+    pub native: bool,
+    pub duration_seconds: f64,
+    pub readiness_milliseconds: u64,
+    pub completion_milliseconds: u64,
+}
+impl CameraCaptureTiming {
+    pub(crate) fn matches(&self, hello: &Hello, output: Uuid, seconds: f64) -> bool {
+        self.host_instance == hello.host_instance
+            && self.configuration_revision == hello.configuration_revision
+            && self.client_id == hello.client_id
+            && self.output == output
+            && !self.source.is_nil()
+            && self.duration_seconds.is_finite()
+            && self.duration_seconds >= 0.
+            && self.duration_seconds == seconds
+            && (1..=MAX_OPERATION_MILLISECONDS).contains(&self.readiness_milliseconds)
+            && (self.readiness_milliseconds..=MAX_OPERATION_MILLISECONDS)
+                .contains(&self.completion_milliseconds)
+            && self.readiness_milliseconds as f64 >= seconds * 1000.
+    }
+}
+
 #[derive(Clone, Copy)]
 pub(crate) enum CameraOperation {
     Connect,

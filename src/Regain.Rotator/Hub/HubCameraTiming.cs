@@ -28,7 +28,7 @@ public sealed class HubCameraTiming
         Setting = Bound(value, "settingMilliseconds"); Stop = Bound(value, "stopMilliseconds"); Abort = Bound(value, "abortMilliseconds");
         if (!Matches(hello) || Output != output) throw new HubException(HubFailure.Protocol);
     }
-    private static TimeSpan Bound(JsonElement value, string key)
+    internal static TimeSpan Bound(JsonElement value, string key)
     {
         var milliseconds = value.GetProperty(key).GetInt64();
         if (milliseconds <= 0 || milliseconds > MaximumMilliseconds) throw new HubException(HubFailure.Protocol);

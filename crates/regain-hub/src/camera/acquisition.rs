@@ -206,6 +206,60 @@ pub struct CameraSupervisor {
     changed: Notify,
 }
 impl CameraSupervisor {
+    fn readiness_timeout(&self, request: ExposureRequest) -> Result<Duration, SourceError> {
+        let duration = request.duration()?;
+        let mut ready = duration
+            .checked_add(self.timing.readiness_grace)
+            .ok_or_else(|| invalid("Camera exposure deadline is not representable"))?;
+        if let Some(native) = &self.native_timing {
+            let microseconds = u64::try_from(duration.as_micros())
+                .map_err(|_| invalid("Native camera exposure duration is not representable"))?;
+            ready =
+                ready.max(native.capture_allowance(microseconds).map_err(|_| {
+                    invalid("Native camera exposure deadline is not representable")
+                })?);
+        }
+        if Instant::now().checked_add(ready).is_none() {
+            return Err(invalid("Camera exposure deadline is not representable"));
+        }
+        Ok(ready)
+    }
+    fn completion_timeout(&self, ready: Duration) -> Result<Duration, SourceError> {
+        // After readiness: two metadata reads before and after copying, the
+        // finite download, then explicit control retirement. This outer bound
+        // also covers queue waits; expiry retains uncertainty without Abort.
+        ready
+            .checked_add(self.timing.download_timeout)
+            .and_then(|value| value.checked_add(self.source.request_allowance().checked_mul(5)?))
+            .and_then(|value| value.checked_add(Duration::from_secs(5)))
+            .filter(|value| Instant::now().checked_add(*value).is_some())
+            .ok_or_else(|| invalid("Camera completion deadline is not representable"))
+    }
+    pub(crate) fn capture_timing(
+        &self,
+        host: Uuid,
+        revision: Uuid,
+        client: Uuid,
+        output: Uuid,
+        duration_seconds: f64,
+    ) -> Result<super::ipc_timing::CameraCaptureTiming, SourceError> {
+        use super::ipc_timing::{CameraCaptureTiming, milliseconds};
+        let ready = self.readiness_timeout(ExposureRequest {
+            duration_seconds,
+            light: true,
+        })?;
+        Ok(CameraCaptureTiming {
+            host_instance: host,
+            configuration_revision: revision,
+            client_id: client,
+            output,
+            source: self.source.with_snapshot(|snapshot| snapshot.source),
+            native: self.native_timing.is_some(),
+            duration_seconds,
+            readiness_milliseconds: milliseconds(ready, Duration::ZERO)?,
+            completion_milliseconds: milliseconds(self.completion_timeout(ready)?, Duration::ZERO)?,
+        })
+    }
     /// Inert controller metadata. Derive from the same source write bounds used
     /// in execution; no capture duration or native retry policy is given to proxies.
     pub(crate) fn operation_timing(
@@ -448,21 +502,8 @@ impl CameraSupervisor {
         owner: Uuid,
         request: ExposureRequest,
     ) -> Result<Uuid, SourceError> {
-        let duration = request.duration()?;
-        let mut ready_timeout = duration
-            .checked_add(self.timing.readiness_grace)
-            .ok_or_else(|| invalid("Camera exposure deadline is not representable"))?;
-        if let Some(native) = &self.native_timing {
-            let microseconds = u64::try_from(duration.as_micros())
-                .map_err(|_| invalid("Native camera exposure duration is not representable"))?;
-            ready_timeout =
-                ready_timeout.max(native.capture_allowance(microseconds).map_err(|_| {
-                    invalid("Native camera exposure deadline is not representable")
-                })?);
-        }
-        if Instant::now().checked_add(ready_timeout).is_none() {
-            return Err(invalid("Camera exposure deadline is not representable"));
-        }
+        let ready_timeout = self.readiness_timeout(request)?;
+        let completion_timeout = self.completion_timeout(ready_timeout)?;
         source.snapshot()?;
         let id = Uuid::new_v4();
         let (reply, response) = oneshot::channel();
@@ -510,7 +551,14 @@ impl CameraSupervisor {
         let supervisor = self.clone();
         tokio::spawn(async move {
             supervisor
-                .run_start(source, id, request, ready_timeout, reply)
+                .run_start(
+                    source,
+                    id,
+                    request,
+                    ready_timeout,
+                    completion_timeout,
+                    reply,
+                )
                 .await;
         });
         response
@@ -523,6 +571,7 @@ impl CameraSupervisor {
         id: Uuid,
         request: ExposureRequest,
         ready_timeout: Duration,
+        completion_timeout: Duration,
         reply: oneshot::Sender<Result<Uuid, SourceError>>,
     ) {
         if reply.is_closed() {
@@ -608,7 +657,29 @@ impl CameraSupervisor {
             state.error = None;
         }
         let _ = reply.send(Ok(id));
-        let result = timeout(ready_timeout, self.wait_ready(&source, id))
+        if timeout(
+            completion_timeout,
+            self.complete_exposure(&source, id, request, geometry, &operation, ready_timeout),
+        )
+        .await
+        .is_err()
+        {
+            self.uncertain(
+                id,
+                SourceError::new(ErrorKind::Uncertain, "Camera completion deadline expired"),
+            );
+        }
+    }
+    async fn complete_exposure(
+        &self,
+        source: &TypedSourceSession,
+        id: Uuid,
+        request: ExposureRequest,
+        geometry: CaptureGeometry,
+        operation: &Arc<SourceLease>,
+        ready_timeout: Duration,
+    ) {
+        let result = timeout(ready_timeout, self.wait_ready(source, id))
             .await
             .unwrap_or_else(|_| {
                 Err(SourceError::new(
@@ -626,7 +697,7 @@ impl CameraSupervisor {
         }
         // Compare available upstream exposure identity around the copy. Optional
         // unsupported metadata is preserved; it cannot prove external ownership.
-        let before = match exposure_metadata(&source).await {
+        let before = match exposure_metadata(source).await {
             Ok(value) => value,
             Err(error) => {
                 self.uncertain(id, error);
@@ -649,7 +720,7 @@ impl CameraSupervisor {
                 return;
             }
         };
-        let after = match exposure_metadata(&source).await {
+        let after = match exposure_metadata(source).await {
             Ok(value) => value,
             Err(error) => {
                 self.uncertain(id, error);
@@ -683,7 +754,7 @@ impl CameraSupervisor {
             let mut state = self.state.lock().unwrap();
             if state.active.as_ref().is_some_and(|active| {
                 active.id == id && active.phase == AcquisitionPhase::Downloading
-            }) && Self::guide_retains(&state, &operation)
+            }) && Self::guide_retains(&state, operation)
             {
                 // The pulse still owns this control lease. Publish atomically
                 // with removing acquisition ownership so guide completion sees

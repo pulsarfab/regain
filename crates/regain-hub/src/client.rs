@@ -202,6 +202,36 @@ impl Client {
         }
         Ok(timing)
     }
+    pub async fn camera_capture_timing(
+        &self,
+        output: Uuid,
+        seconds: f64,
+    ) -> Result<crate::camera::ipc_timing::CameraCaptureTiming, ClientError> {
+        if output.is_nil()
+            || !seconds.is_finite()
+            || seconds < 0.
+            || !self
+                .hello()
+                .capabilities
+                .iter()
+                .any(|value| value == "cameraCaptureTiming")
+        {
+            return Err(ClientError::InvalidRequest);
+        }
+        let value = self
+            .request(Command::CameraCaptureTiming {
+                output,
+                expected_revision: self.hello().configuration_revision,
+                duration_seconds: seconds,
+            })
+            .await?;
+        let timing: crate::camera::ipc_timing::CameraCaptureTiming =
+            serde_json::from_value(value).map_err(|_| ClientError::Protocol)?;
+        if !timing.matches(self.hello(), output, seconds) {
+            return Err(ClientError::Protocol);
+        }
+        Ok(timing)
+    }
     /// Only acknowledged camera operations may use the negotiated bound. Reads,
     /// image transfers and asynchronous connection admission keep their own limits.
     pub async fn request_camera(
@@ -299,6 +329,7 @@ fn operation(command: &Command) -> &'static str {
         Command::Hello {} => "hello",
         Command::CameraImage { .. } => "cameraImage",
         Command::CameraTiming { .. } => "cameraTiming",
+        Command::CameraCaptureTiming { .. } => "cameraCaptureTiming",
         Command::CameraControl { .. } => "cameraControl",
         Command::DescribeConfig {} => "describeConfig",
         Command::GetConfig {} => "getConfig",
