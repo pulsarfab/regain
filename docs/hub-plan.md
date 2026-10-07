@@ -23,6 +23,11 @@ installer acceptance. Reviewed panel controller/runtime/HTTP increments are
 pushed at 36a5558; PR/push CI 37550182065/37550174221 both pass all eight jobs. Private
 registered activation does not establish interactive/hardware acceptance.
 
+Reviewed native panel outputs (554794f), Windows COM imports (593c0de) and virtual
+inputs (5a22737) are now pushed together to PR #21. New PR/push CI
+37552662096/37552655796 is queued/running; its acceptance is not yet established.
+The next implementation step is dedicated panel simulation and shared creation.
+
 Current position: milestones 0 and 1 are complete. The scalar source/output paths
 in milestones 2 and 3 are implemented; their remaining acceptance gates are open.
 Milestone 4 has focuser and rotator publication through all three frontends.
@@ -36,11 +41,11 @@ Panel controller/runtime/IPC/cache and Alpaca V2 publication are pushed at 36a55
 with full local Rust, NINA 214/214 and both-architecture net48 checks.
 Panel Alpaca V2 publication is verified
 with dynamic identities, legacy V1/modern V2 inputs and production OFP2 simulation.
-Native NINA/ASCOM panel publication is implemented locally, using shared protocol,
+Native NINA/ASCOM panel publication is pushed, using shared protocol,
 selection/setup and registration paths. Final validation is recorded below.
-Panel Windows COM imports are implemented locally through the existing STA worker;
+Panel Windows COM imports are pushed through the existing STA worker;
 30 private worker and 19 registered parent cases pass. Virtual panel inputs are
-implemented locally; six loopback and a production OFP2 simulation case pass.
+implemented and pushed; six loopback and a production OFP2 simulation case pass.
 Full virtual-panel Rust, strict checks, NINA 223/223 and real net48 x86/x64 pass.
 Dedicated panel simulation/shared
 setup and camera proxies remain.

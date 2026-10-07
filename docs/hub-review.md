@@ -3803,3 +3803,9 @@ Preceding 36a5558 PR/push CI 37550182065/37550174221 now both pass all eight job
 including Windows packaging/installer acceptance. Reviewed native/import/virtual
 increments may now be pushed; their own CI is still required. Dedicated panel
 simulation/shared creation and every original later gate remain required.
+
+Push checkpoint: native panel output 554794f, registered COM input 593c0de and
+virtual input 5a22737 are pushed together after both preceding 36a5558 CI runs
+complete successfully. PR #21's description now reflects their verified scope.
+New PR/push CI 37552662096/37552655796 is queued/running. Its native panel
+cold/production registration and portable acceptance remain to be established.
