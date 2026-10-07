@@ -165,6 +165,7 @@ struct Active {
 }
 #[derive(Default)]
 struct State {
+    retired: bool,
     active: Option<Active>,
     setting: Option<SettingStatus>,
     completed: Option<Arc<CapturedImage>>,
@@ -208,6 +209,16 @@ impl CameraSupervisor {
         activity: ActivityCounter,
     ) -> Result<Arc<Self>, SourceError> {
         timing.validate()?;
+        if source.native_camera_resources().is_some_and(|resources| {
+            !resources.shares(&super::runtime::CameraResources::from_parts(
+                budget.clone(),
+                activity.clone(),
+            ))
+        }) {
+            return Err(invalid(
+                "Native camera supervision must share its owner's resources",
+            ));
+        }
         let native_timing = source.native_camera_timing().cloned();
         if native_timing.is_some() {
             timing.connection_timeout =
@@ -232,6 +243,12 @@ impl CameraSupervisor {
         }))
     }
     pub async fn connect(self: &Arc<Self>) -> Result<CameraSession, SourceError> {
+        if self.state.lock().unwrap().retired {
+            return Err(SourceError::new(
+                ErrorKind::Disconnected,
+                "Camera runtime has retired",
+            ));
+        }
         let source = timeout(
             self.timing.connection_timeout,
             TypedSourceSession::connect(self.source.clone()),
@@ -264,6 +281,20 @@ impl CameraSupervisor {
             completed: completed.map(|image| image.identity.clone()),
             setting: state.setting.clone(),
         }
+    }
+    /// The source actor has already closed admission and completed backend drain.
+    /// Release local ownership/cache without an Abort, replay or uncertainty reset
+    /// on live equipment. Pinned readers keep their own immutable image references.
+    pub(crate) fn retire_after_source_shutdown(&self) {
+        let source = self.source.snapshot();
+        if source.polling.phase != crate::source::PollPhase::Stopped || source.transport_connected {
+            return;
+        }
+        let mut state = self.state.lock().unwrap();
+        state.retired = true;
+        state.active = None;
+        state.completed = None;
+        self.changed.notify_waiters();
     }
     /// Explicit administrative abandonment for an orphaned uncertain capture.
     /// A frontend must authorize this setup action; ordinary observers use their
@@ -338,6 +369,12 @@ impl CameraSupervisor {
         let (reply, response) = oneshot::channel();
         {
             let mut state = self.state.lock().unwrap();
+            if state.retired {
+                return Err(SourceError::new(
+                    ErrorKind::Disconnected,
+                    "Camera runtime has retired",
+                ));
+            }
             if state.setting.is_some() {
                 return Err(busy());
             }
@@ -581,6 +618,12 @@ impl CameraSupervisor {
         let (reply, response) = oneshot::channel();
         let (id, operation, previous) = {
             let mut state = self.state.lock().unwrap();
+            if state.retired {
+                return Err(SourceError::new(
+                    ErrorKind::Disconnected,
+                    "Camera runtime has retired",
+                ));
+            }
             if state.active.is_some() && state.setting.is_some() {
                 return Err(busy());
             }
@@ -784,6 +827,12 @@ impl CameraSession {
         let supervisor = self.supervisor.clone();
         let (work, acquisition_operation, acquisition) = {
             let mut state = supervisor.state.lock().unwrap();
+            if state.retired {
+                return Err(SourceError::new(
+                    ErrorKind::Disconnected,
+                    "Camera runtime has retired",
+                ));
+            }
             let operation = settings_operation(&state, setting, self.id)?;
             let id = Uuid::new_v4();
             state.setting = Some(SettingStatus {

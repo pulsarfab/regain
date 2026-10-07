@@ -2115,9 +2115,10 @@ Source replacement or client disconnect cannot reclaim pixels retained by anothe
 reader. The last reader releases the reservation. An exhausted budget reports
 Busy; it does not evict an image another client is reading. Native adoption
 consumes the core frame and transfers its existing pixel allocation without a
-second full-size copy. Worker staging, frontend conversions and bounded transfer
-chunks must also be accounted for when the acquisition supervisor is integrated;
-the buffer module alone is not a host-wide memory limit.
+second full-size copy. Native worker staging uses the host budget described
+below. Frontend conversions and bounded transfer chunks must also be accounted
+for as the output integrations are added; the buffer module alone is not a
+host-wide memory limit.
 
 Each image payload is limited to 512 MiB. Positive Int32 width/height and an
 optional positive Int32 plane dimension distinguish rank two from rank three,
@@ -2151,8 +2152,8 @@ ordinary errors retain their meaning. No image read automatically repeats,
 starts an exposure, updates scalar caches or clears an uncertain-write fence.
 A control owner can explicitly read images for reconciliation after uncertainty,
 but that does not authorize publishing them as a newly owned acquisition. All
-adapters default to Unsupported until their camera paths are implemented, except
-for the Alpaca ImageBytes path described below.
+adapters default to Unsupported until their camera paths are implemented. Native
+SDK/direct adapters and the Alpaca paths below implement this operation.
 
 The Alpaca camera adapter requests application/imagebytes on the imagearray
 endpoint and streams its finite body into the reserved image allocation. Its
@@ -2198,7 +2199,8 @@ direct-camera retained-frame recovery semantics. The content-type fallback follo
 [Alpaca API reference section 8.5](https://ascom-standards.org/AlpacaDeveloper/ASCOMAlpacaAPIReference.html).
 
 The source-owned acquisition supervisor implements the following ownership rules
-in private tests; it is not yet wired into the runtime, adapters or frontends.
+through the native SDK/direct adapters and the runtime's per-source supervisor
+map. Camera frontend connections and publication remain gated.
 One source-owned supervisor retains an exclusive
 acquisition lease from admission through start acknowledgement, exposure,
 readout/download and final publication or explicit failure reconciliation.
@@ -2503,9 +2505,18 @@ Camera proxy poll plans deduplicate all typed properties, but the runtime still
 rejects camera outputs and the setup capability remains disabled.
 
 Factory integration preserves persisted polling settings. Core-derived native
-timing and retirement are described below. Runtime acquisition ownership,
-remaining input adapters, bounded binary IPC and camera publication in Alpaca,
-NINA and ASCOM are still required before enabling camera choices.
+timing and retirement are described below. Runtime-owned supervisors now share
+one acquisition state per source UUID. Native source handles retain their owner's
+resource identities; runtimes reject a mismatched budget or activity counter.
+Injected native registries adopt the original resources. Explicit-resource build
+and registry entry points support proxy-only embedding hosts across revisions
+without SDK settings. The cached acquisition-status API performs no device I/O.
+After a source actor stops and drains, runtime shutdown retires the supervisor,
+releases its cache and local acquisition ownership, and retains diagnostic errors.
+It cannot clear live uncertainty; externally pinned buffers remain charged.
+Camera output connection ownership, remaining input adapters, bounded binary IPC
+and camera publication in Alpaca, NINA and ASCOM are still required before
+enabling camera choices.
 
 ### Native camera supervision timing and retirement
 

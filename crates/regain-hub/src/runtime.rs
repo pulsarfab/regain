@@ -1,7 +1,15 @@
 //! One set of output controllers per applied configuration. Client identities
 //! and connection leases belong to the host, never to frontend-supplied IDs.
+#[cfg(test)]
+#[path = "camera/runtime_tests.rs"]
+mod camera_tests;
+
 use crate::{
     activity::{Activity, ActivityCounter},
+    camera::{
+        acquisition::{AcquisitionStatus, AcquisitionTiming, CameraSupervisor},
+        runtime::CameraResources,
+    },
     config::{Bitness, DeviceType, HubConfig, SafetyMember, VirtualDevice},
     covercalibrator::{CoverCalibratorController, CoverCalibratorSession},
     factory::{CredentialProvider, build_sources_bound},
@@ -54,6 +62,7 @@ pub struct HubRuntime {
     registry: Arc<SourceRegistry>,
     clock: Arc<dyn Clock>,
     outputs: BTreeMap<Uuid, Output>,
+    cameras: BTreeMap<Uuid, Arc<CameraSupervisor>>,
     activity: ActivityCounter,
     lifecycle: Mutex<Lifecycle>,
     shutdown: tokio::sync::OnceCell<Result<(), Vec<(Uuid, SourceError)>>>,
@@ -72,6 +81,23 @@ impl HubRuntime {
         credentials: &dyn CredentialProvider,
         clock: Arc<dyn Clock>,
     ) -> Result<Arc<Self>, Vec<FieldError>> {
+        let resources = native
+            .cameras
+            .as_ref()
+            .map(|cameras| cameras.resources.clone())
+            .unwrap_or_default();
+        Self::build_with_camera_resources(config, native, credentials, clock, resources)
+    }
+
+    /// An embedding host can share resources across proxy-only revisions without
+    /// providing SDK configuration. Native owners must use these same resources.
+    pub fn build_with_camera_resources(
+        config: HubConfig,
+        native: &NativeRuntime,
+        credentials: &dyn CredentialProvider,
+        clock: Arc<dyn Clock>,
+        resources: CameraResources,
+    ) -> Result<Arc<Self>, Vec<FieldError>> {
         validate_outputs(&config)?;
         let binding = Arc::new(std::sync::OnceLock::new());
         let registry = build_sources_bound(
@@ -81,12 +107,10 @@ impl HubRuntime {
             clock.clone(),
             Some(binding.clone()),
         )?;
-        let mut runtime = Self::from_registry(config, registry, clock)?;
+        let mut runtime =
+            Self::from_registry_with_camera_resources(config, registry, clock, resources)?;
         let unpublished = Arc::get_mut(&mut runtime).expect("Unpublished runtime");
         unpublished.com_architectures = crate::com::available_architectures(native);
-        if let Some(cameras) = &native.cameras {
-            unpublished.activity = cameras.resources.activity();
-        }
         binding
             .set(Arc::downgrade(&runtime))
             .expect("New runtime binding");
@@ -99,6 +123,29 @@ impl HubRuntime {
         config: HubConfig,
         registry: Arc<SourceRegistry>,
         clock: Arc<dyn Clock>,
+    ) -> Result<Arc<Self>, Vec<FieldError>> {
+        // Injected native actors already own accounting. Adopt the first one,
+        // then require every other native camera to belong to that same host.
+        let resources = config
+            .sources
+            .iter()
+            .find_map(|source| {
+                registry
+                    .get(source.id)
+                    .ok()
+                    .and_then(|source| source.native_camera_resources().cloned())
+            })
+            .unwrap_or_default();
+        Self::from_registry_with_camera_resources(config, registry, clock, resources)
+    }
+
+    /// Hosts retain these resources across revisions, including proxy-only
+    /// cameras and readers that still pin images from a retired runtime.
+    pub fn from_registry_with_camera_resources(
+        config: HubConfig,
+        registry: Arc<SourceRegistry>,
+        clock: Arc<dyn Clock>,
+        resources: CameraResources,
     ) -> Result<Arc<Self>, Vec<FieldError>> {
         validate_outputs(&config)?;
         let snapshots = registry.snapshots();
@@ -113,6 +160,43 @@ impl HubRuntime {
                 "revision",
                 "Source registry does not match this configuration revision",
             )]);
+        }
+        let mut cameras = BTreeMap::new();
+        for (index, source_config) in config.sources.iter().enumerate() {
+            let source = registry
+                .get(source_config.id)
+                .expect("Validated source registry");
+            if source
+                .native_camera_resources()
+                .is_some_and(|native| !native.shares(&resources))
+            {
+                return Err(vec![FieldError::new(
+                    format!("sources[{index}].backend"),
+                    "cameraResources",
+                    "Native cameras must share the host image budget and activity counter",
+                )]);
+            }
+            if config.source_type(source_config.id) == Some(DeviceType::Camera) {
+                let supervisor = CameraSupervisor::new(
+                    source,
+                    resources.image_budget(),
+                    AcquisitionTiming {
+                        connection_timeout: std::time::Duration::from_secs_f64(
+                            source_config.polling.connection_timeout_seconds,
+                        ),
+                        ..Default::default()
+                    },
+                    resources.activity(),
+                )
+                .map_err(|error| {
+                    vec![FieldError::new(
+                        format!("sources[{index}].polling"),
+                        "cameraTiming",
+                        error.message,
+                    )]
+                })?;
+                cameras.insert(source_config.id, supervisor);
+            }
         }
         let mut outputs = BTreeMap::new();
         for (index, output) in config.outputs.iter().enumerate() {
@@ -225,7 +309,8 @@ impl HubRuntime {
             registry,
             clock,
             outputs,
-            activity: ActivityCounter::default(),
+            cameras,
+            activity: resources.activity(),
             lifecycle: Mutex::new(Lifecycle {
                 closed: false,
                 frozen: false,
@@ -273,6 +358,17 @@ impl HubRuntime {
     }
     pub fn source_snapshot(&self, source: Uuid) -> Result<SourceSnapshot, SourceError> {
         self.registry.get(source).map(|source| source.snapshot())
+    }
+    /// Cached acquisition diagnostics only. This does not connect, admit an
+    /// exposure, expose pixels, or authorize a camera output.
+    pub fn camera_acquisition_status(
+        &self,
+        source: Uuid,
+    ) -> Result<AcquisitionStatus, SourceError> {
+        self.cameras
+            .get(&source)
+            .map(|camera| camera.status())
+            .ok_or_else(|| SourceError::new(ErrorKind::InvalidValue, "Unknown camera source ID"))
     }
     /// Cached setup observation only: no connection/control leases or source I/O.
     /// The IPC dispatcher fences this read against the editor's saved revision.
@@ -611,7 +707,11 @@ impl HubRuntime {
                         output.shutdown();
                     }
                 }
-                self.registry.shutdown().await
+                let result = self.registry.shutdown().await;
+                for camera in self.cameras.values() {
+                    camera.retire_after_source_shutdown();
+                }
+                result
             })
             .await
             .clone()

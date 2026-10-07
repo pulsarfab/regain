@@ -12,6 +12,12 @@ pub struct CameraResources {
     activity: ActivityCounter,
 }
 impl CameraResources {
+    pub(crate) fn from_parts(budget: ImageBudget, activity: ActivityCounter) -> Self {
+        Self { budget, activity }
+    }
+    pub(crate) fn shares(&self, other: &Self) -> bool {
+        self.budget.shares(&other.budget) && self.activity.shares(&other.activity)
+    }
     /// Admission does not allocate an image or access equipment. Clones retain
     /// exactly the same accounting, including images pinned by retired clients.
     pub fn new(maximum_image_bytes: usize) -> Result<Self, SourceError> {

@@ -3,6 +3,62 @@
 This records local review and tests for the single hub PR. Passing a foundation
 test does not imply that a frontend, transport, or hardware gate has passed.
 
+## 2026-10-07: runtime-owned camera supervisors
+
+Reviewed construction order and resource identity. HubRuntime previously changed
+its activity counter after controller construction. It now selects resources
+first and constructs a map of acquisition supervisors keyed by camera source
+UUID, independently of camera output count. Each supervisor and its native owner
+must share both the image budget and activity counter. Matching only one is
+rejected before connection or exposure. Source handles carry inert resource
+references from their native backend. Injected registries adopt that existing
+accounting and reject mixed native hosts with a precise source field error.
+Explicit-resource build/from-registry entry points let proxy-only hosts retain
+accounting across revisions without requiring native SDK configuration.
+
+The new camera_acquisition_status method is a cached read with no lease, exposure
+admission or image transfer. Camera outputs remain rejected by runtime validation;
+setup camera capabilities are still disabled. Production frontend connections
+are not implemented by this map alone and remain required.
+
+Runtime retirement follows registry shutdown, never precedes native task drain.
+Only a Stopped, disconnected source permits the supervisor to retire. A mutex
+fences later acquisition/setting/command admission; completed buffers and local
+acquisition ownership are released without Abort or replay. Original diagnostic
+errors remain, and externally pinned image references retain their budget charge.
+Queued tasks cannot publish a later image into the retired supervisor because
+the acquisition identity has been removed. The live-source check prevents this
+path from clearing uncertain equipment ownership before actual shutdown.
+
+Five focused cases pass: distinct inert camera sources with missing worker/SDK
+paths; native resource adoption and rejection of both identity mismatches and
+mixed hosts; SDK/direct capture ownership with an observer, cross-revision image
+charges and capacity rejection; proxy-only resource sharing without any HTTP/SDK
+I/O; and retained uncertainty until real source drain. The first fixture dropped
+every lease and then waited for readiness in a disconnected generation. Its
+timeout is preserved in artifacts/hub-camera-runtime-focused.log; the corrected
+case keeps its observer connected. Three initial focused cases pass in
+artifacts/hub-camera-runtime-focused-final.log; all five reviewed lifecycle cases
+pass in artifacts/hub-camera-runtime-lifecycle.log. Full hub/Alpaca regressions
+passed before the retirement/API refinement. After it, final full hub/Alpaca
+regressions, strict Rust 1.99 Clippy across all five affected crates/targets,
+Rust 1.89 all-target compatibility, formatting and contract freshness pass.
+Node configuration and eight independent schema checks pass. NINA passes 229/229
+with warnings denied; actual net48 x86/x64 client checks pass. Final evidence:
+artifacts/hub-camera-runtime-{rust-final,clippy,msrv,contract,node,schema,nina,
+net48}.log. These final logs were refreshed after this increment; earlier logs
+with the same prefix do not substitute for the current validation.
+
+Preceding 0ba47ec CI PR/push 37592319880/37592313062 each have seven successful
+jobs, including Linux x64/ARM64 and both macOS architectures. Only Windows
+remains live. This is fresh evidence for the portable worker-directory fix,
+not an all-platform green result. Do not publish this increment while those
+runs are live. No equipment or installed vendor drivers are activated.
+
+Camera output connection ownership, remaining inputs, bounded frontend image
+IPC/operation timing, all three publications, coordination and every original
+acceptance/documentation/final gate remain required.
+
 ## 2026-10-07: native recovery supervision allowances
 
 Reviewed the actual core open/refresh/apply/capture/settle/download/USB/close paths

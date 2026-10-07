@@ -8,6 +8,29 @@ tagged or published. Changed cross-crate APIs require an unpublished version so
 Cargo package verification uses the new workspace packages.
 Last updated: 2026-10-07.
 
+Current runtime increment: HubRuntime owns one inert acquisition supervisor per
+camera source UUID. Camera resources are selected before controller construction;
+native actors expose their existing budget/counter identities, and both must
+match the host. Injected registries adopt native resources instead of inventing
+new accounting. Proxy-only embedding hosts can explicitly retain resources across
+revisions without SDK settings. Cached acquisition status does no equipment I/O.
+Runtime shutdown releases supervisor ownership and its image cache only after
+the source actor stops and drains; external pinned images remain charged. Live
+uncertainty cannot be abandoned through this retirement path, and its error is
+retained after shutdown. Five focused cases pass, including SDK/direct actual
+worker simulations, owner loss with an observer, capacity across revisions,
+mixed-resource rejection, inert proxy hosts and uncertain retirement. Final full
+hub/Alpaca regressions, strict Clippy, Rust 1.89, formatting/contracts, Node/eight
+schema checks, NINA 229/229 and actual net48 x86/x64 pass after review refinements.
+The first fixture incorrectly expected an image to survive every lease being
+disconnected into a new generation; corrected coverage keeps the observer alive.
+Camera output connections, bounded frontend image IPC, remaining input adapters,
+all three camera publications and every original remaining gate are still open.
+Preceding retirement/timing increments are pushed through 0ba47ec to PR #21;
+PR/push CI 37592319880/37592313062 each have seven successes with only Windows
+still running. Neither run is accepted as green yet. Keep new work local
+until those runs finish.
+
 Current timing increment: core now derives validated native connection, control,
 capture and cleanup allowances from the existing recovery workflow. Canonical
 persistent/acknowledged controls and fixed USB/close/fixture timings are shared
@@ -27,7 +50,7 @@ Clippy, Rust 1.89, formatting/contracts, NINA 229/229 and net48 x86/x64 pass aft
 that correction; evidence uses artifacts/hub-camera-timing-*-final.log.
 Camera outputs remain disabled; all original remaining milestones and acceptance
 gates still apply. Retirement/worker-path correction is committed locally at
-d428f6e; both reviewed increments are ready to publish together for fresh CI.
+d428f6e; both reviewed increments are published through 0ba47ec for fresh CI.
 
 Current work: native camera retirement and portable host-fixture correction.
 Factory/fixture commits ebcb704/edbafa7 are pushed to draft PR #21. At edbafa7,

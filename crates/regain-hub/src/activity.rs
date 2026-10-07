@@ -14,6 +14,9 @@ struct State {
 #[derive(Clone, Default)]
 pub struct ActivityCounter(Arc<State>);
 impl ActivityCounter {
+    pub(crate) fn shares(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
     pub fn active(&self) -> usize {
         self.0.active.load(Ordering::SeqCst)
     }

@@ -161,6 +161,11 @@ impl std::error::Error for SourceError {}
 /// Implementations own their connection policy. Externally managed sources must
 /// not be disconnected, and a worker reset must stop any local in-flight I/O.
 pub trait Backend: Send {
+    /// Native image accounting is fixed at owner construction. The runtime must
+    /// adopt these resources, never substitute a fresh budget/activity counter.
+    fn native_camera_resources(&self) -> Option<crate::camera::runtime::CameraResources> {
+        None
+    }
     /// Native core recovery only. Proxies retain ordinary bounded transport
     /// timings and cannot inherit replacement-exposure or retained-read policy.
     fn native_camera_timing(&self) -> Option<regain_core::timing::NativeCameraTiming> {
@@ -422,6 +427,7 @@ enum Command {
 }
 
 pub struct SourceHandle {
+    native_camera_resources: Option<crate::camera::runtime::CameraResources>,
     native_camera_timing: Option<regain_core::timing::NativeCameraTiming>,
     connection_allowance: Duration,
     commands: mpsc::Sender<Command>,
@@ -565,6 +571,7 @@ impl SourceHandle {
         let (events, _) = broadcast::channel(64);
         let (completion, completed) = watch::channel(None);
         let handle = Arc::new(Self {
+            native_camera_resources: backend.native_camera_resources(),
             native_camera_timing: native_camera_timing.clone(),
             connection_allowance,
             commands,
@@ -609,6 +616,11 @@ impl SourceHandle {
     }
     pub(crate) fn native_camera_timing(&self) -> Option<&regain_core::timing::NativeCameraTiming> {
         self.native_camera_timing.as_ref()
+    }
+    pub(crate) fn native_camera_resources(
+        &self,
+    ) -> Option<&crate::camera::runtime::CameraResources> {
+        self.native_camera_resources.as_ref()
     }
     pub(crate) fn connection_allowance(&self) -> Duration {
         self.connection_allowance

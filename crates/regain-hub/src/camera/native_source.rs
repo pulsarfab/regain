@@ -131,6 +131,9 @@ impl NativeCameraBackend {
     }
 }
 impl Backend for NativeCameraBackend {
+    fn native_camera_resources(&self) -> Option<super::runtime::CameraResources> {
+        Some(self.owner.resources())
+    }
     fn native_camera_timing(&self) -> Option<regain_core::timing::NativeCameraTiming> {
         Some(self.owner.timing().clone())
     }

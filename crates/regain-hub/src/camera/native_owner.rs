@@ -282,6 +282,9 @@ impl NativeCamera {
     pub(crate) fn timing(&self) -> &regain_core::timing::NativeCameraTiming {
         &self.timing
     }
+    pub(crate) fn resources(&self) -> super::runtime::CameraResources {
+        super::runtime::CameraResources::from_parts(self.budget.clone(), self.activity.clone())
+    }
     pub(crate) fn shares_budget(&self, budget: &ImageBudget) -> bool {
         self.budget.shares(budget)
     }
