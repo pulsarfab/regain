@@ -76,11 +76,12 @@ the reviewed JSON changes. PR CI 37562038506 finishes with seven successes and
 Windows failure: invalid-hello validation receives Timeout instead of Protocol,
 and panel HTTP connection fails with 1280. The panel trace now shows aborted
 private response writes and connection re-entry; the root cause remains unproved.
-Push CI 37562034286 is still live. Camera runtime,
+Push CI 37562034286 has finished with all eight jobs successful, including Windows
+installer/release checks. This does not explain the separate PR failure. Camera runtime,
 remaining adapters, all three outputs, native recovery metadata
 and every original later gate remain open.
 
-Camera properties/settings checkpoint (local): the existing source supervisor now
+Camera properties/settings checkpoint (pushed at ef0748e): the existing source supervisor now
 shares 53 typed properties and 13 setters, preserving optional errors, numeric and
 named gain/offset modes, range/capability checks and frozen publication timing.
 Thirty focused cases pass (eleven new cases plus nineteen acquisition cases).
@@ -93,9 +94,26 @@ Publication waits for an outstanding owner cooling write. A deadline during
 preflight prevents a late write; uncertain writes retain the source fence.
 Pending setting identity/owner/property is available in shared status. Full final
 Rust hub/Alpaca, strict Rust 1.99 Clippy, Rust 1.89, contracts, rebuilt-host NINA
-228/228 and real net48 x86/x64 pass; this increment remains local while prior
-push CI runs. Camera runtime/adapters/binary IPC/all outputs/recovery metadata,
+228/228 and real net48 x86/x64 pass. Reviewed properties/settings and NoDelay
+fixture hardening are pushed; PR/push CI 37564346322/37564341366 is live.
+NoDelay is not a proven explanation of earlier CI failures.
+Camera runtime/adapters/binary IPC/all outputs/recovery metadata,
 coordination and every original acceptance/final gate remain required.
+
+Native capture admission checkpoint (local): a permit precedes the core capture,
+accounting for final pixels, Vec-to-Arc staging, a bounded worker header and encoded
+metadata. Core rejects above-ROI replies before allocation and image-size overflow.
+Adoption compares the full exposure, moves the pixel Arc and preserves every core
+metadata field in bounded immutable JSON. Overflow fails without truncation; the
+last reader retains pixels and metadata capacity. This is payload accounting, not
+whole-process or decoded-tree RSS accounting. No retries/deadlines are added.
+Twelve image cases, three native worker-simulation capture cases and three core
+reply cases pass, including retained-frame recovery, pinned-reader admission and
+pre-dispatch/during-exposure cancellation. Full core/hub/Alpaca Rust, strict Rust
+1.99 Clippy, Rust 1.89 and generated contracts pass. Fresh-host NINA 228/228 and
+real net48 x86/x64 regressions also pass. Native source lifecycle/runtime/config,
+host budget wiring, recovery
+allowances, all camera outputs and every original later gate remain open.
 
 Camera supervisor checkpoint (local): nineteen private virtual-clock cases pass.
 One source-owned acquisition retains control and runtime activity after caller

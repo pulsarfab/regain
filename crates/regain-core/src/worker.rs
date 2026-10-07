@@ -3,7 +3,7 @@ use anyhow::{Context, Result, ensure};
 use serde_json::{Value, json};
 use std::{path::PathBuf, process::Stdio, time::Duration};
 use tokio::{
-    io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
+    io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWriteExt, BufReader},
     process::{Child, ChildStdin, ChildStdout, Command},
 };
 use tokio_util::sync::CancellationToken;
@@ -175,10 +175,39 @@ impl Worker {
         seconds: f64,
         token: &CancellationToken,
     ) -> Result<(Value, Vec<u8>)> {
+        self.call_bounded(method, params, seconds, token, 512 * 1024 * 1024)
+            .await
+    }
+    /// Bound an image reply by the caller's admitted ROI before allocating pixels.
+    /// A zero-length streaming poll remains valid; capture checks exact length.
+    pub async fn call_image(
+        &mut self,
+        method: &str,
+        params: Value,
+        seconds: f64,
+        token: &CancellationToken,
+        maximum_bytes: usize,
+    ) -> Result<(Value, Vec<u8>)> {
+        ensure!(
+            matches!(method, "download" | "stream-download" | "stream-poll")
+                && (1..=512 * 1024 * 1024).contains(&maximum_bytes),
+            Failure::Invalid("Invalid worker image admission".into())
+        );
+        self.call_bounded(method, params, seconds, token, maximum_bytes)
+            .await
+    }
+    async fn call_bounded(
+        &mut self,
+        method: &str,
+        params: Value,
+        seconds: f64,
+        token: &CancellationToken,
+        maximum_bytes: usize,
+    ) -> Result<(Value, Vec<u8>)> {
         let result = tokio::select! {
             biased;
             _=token.cancelled()=>Err(Failure::Cancelled.into()),
-            result=tokio::time::timeout(Duration::from_secs_f64(seconds),self.exchange(method,params))=>result.unwrap_or_else(|_|Err(anyhow::anyhow!("Worker {method} timed out after {seconds} seconds"))),
+            result=tokio::time::timeout(Duration::from_secs_f64(seconds),self.exchange(method,params,maximum_bytes))=>result.unwrap_or_else(|_|Err(anyhow::anyhow!("Worker {method} timed out after {seconds} seconds"))),
         };
         if result.is_err()
             && !matches!(
@@ -193,7 +222,12 @@ impl Worker {
         }
         result
     }
-    async fn exchange(&mut self, method: &str, params: Value) -> Result<(Value, Vec<u8>)> {
+    async fn exchange(
+        &mut self,
+        method: &str,
+        params: Value,
+        maximum_bytes: usize,
+    ) -> Result<(Value, Vec<u8>)> {
         self.id += 1;
         let bytes =
             serde_json::to_vec(&json!({"version":1,"id":self.id,"method":method,"params":params}))?;
@@ -204,49 +238,152 @@ impl Worker {
         self.input.write_u32_le(bytes.len() as u32).await?;
         self.input.write_all(&bytes).await?;
         self.input.flush().await?;
-        let length = self.output.read_u32_le().await? as usize;
-        ensure!(
-            (1..=65536).contains(&length),
-            Failure::Invalid("Invalid worker response length".into())
-        );
-        let mut header = vec![0; length];
-        self.output.read_exact(&mut header).await?;
-        let reply: Value =
-            serde_json::from_slice(&header).map_err(|_| invalid("Malformed worker JSON"))?;
-        ensure!(
-            reply["id"] == self.id && reply["version"] == 1,
-            Failure::Invalid("Stale worker response".into())
-        );
-        let count = reply["binaryLength"]
-            .as_u64()
-            .ok_or_else(|| invalid("Missing frame length"))?;
-        ensure!(
-            count <= 512 * 1024 * 1024
-                && (matches!(method, "download" | "stream-download" | "stream-poll") || count == 0),
-            Failure::Invalid("Invalid worker image length".into())
-        );
-        if reply["ok"] == false {
-            ensure!(
-                count == 0,
-                Failure::Invalid("Error response contains pixels".into())
-            );
-            return Err(Failure::Worker {
-                message: reply["error"].as_str().unwrap_or("Worker error").into(),
-                code: reply["sdkCode"].as_i64().map(|v| v as i32),
-            }
-            .into());
-        }
-        ensure!(
-            reply["ok"] == true,
-            Failure::Invalid("Missing worker status".into())
-        );
-        let mut pixels = vec![0; count as usize];
-        self.output.read_exact(&mut pixels).await?;
-        Ok((reply["result"].clone(), pixels))
+        read_reply(&mut self.output, method, self.id, maximum_bytes).await
     }
+}
+
+async fn read_reply<R: AsyncRead + Unpin>(
+    output: &mut R,
+    method: &str,
+    id: u64,
+    maximum_bytes: usize,
+) -> Result<(Value, Vec<u8>)> {
+    let length = output.read_u32_le().await? as usize;
+    ensure!(
+        (1..=65536).contains(&length),
+        Failure::Invalid("Invalid worker response length".into())
+    );
+    let mut header = vec![0; length];
+    output.read_exact(&mut header).await?;
+    let reply: Value =
+        serde_json::from_slice(&header).map_err(|_| invalid("Malformed worker JSON"))?;
+    ensure!(
+        reply["id"] == id && reply["version"] == 1,
+        Failure::Invalid("Stale worker response".into())
+    );
+    let count = reply["binaryLength"]
+        .as_u64()
+        .ok_or_else(|| invalid("Missing frame length"))?;
+    ensure!(
+        count <= maximum_bytes as u64
+            && count <= 512 * 1024 * 1024
+            && (matches!(method, "download" | "stream-download" | "stream-poll") || count == 0),
+        Failure::Invalid("Invalid worker image length".into())
+    );
+    if reply["ok"] == false {
+        ensure!(
+            count == 0,
+            Failure::Invalid("Error response contains pixels".into())
+        );
+        return Err(Failure::Worker {
+            message: reply["error"].as_str().unwrap_or("Worker error").into(),
+            code: reply["sdkCode"].as_i64().map(|v| v as i32),
+        }
+        .into());
+    }
+    ensure!(
+        reply["ok"] == true,
+        Failure::Invalid("Missing worker status".into())
+    );
+    let mut pixels = Vec::new();
+    pixels
+        .try_reserve_exact(count as usize)
+        .context("Worker image allocation failed")?;
+    pixels.resize(count as usize, 0);
+    output.read_exact(&mut pixels).await?;
+    // Move the result out, avoiding a second decoded metadata tree.
+    let mut reply = reply;
+    Ok((reply["result"].take(), pixels))
 }
 impl Drop for Worker {
     fn drop(&mut self) {
         self.diagnostic.abort();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn response(count: u64, ok: bool) -> Vec<u8> {
+        let header = serde_json::to_vec(&json!({
+            "version":1,"id":7,"ok":ok,"binaryLength":count,
+            "result":{"width":3,"height":2,"readRecoveries":2},
+            "error":"private SDK error","sdkCode":11,
+        }))
+        .unwrap();
+        let mut bytes = (header.len() as u32).to_le_bytes().to_vec();
+        bytes.extend(header);
+        bytes
+    }
+
+    #[tokio::test]
+    async fn oversized_admitted_reply_is_rejected_before_reading_any_body() {
+        let (mut writer, mut reader) = tokio::io::duplex(1024);
+        writer.write_all(&response(13, true)).await.unwrap();
+        // Writer stays open and sends no body: waiting for pixels would time out.
+        let error = tokio::time::timeout(
+            Duration::from_secs(1),
+            read_reply(&mut reader, "download", 7, 12),
+        )
+        .await
+        .unwrap()
+        .unwrap_err();
+        assert!(
+            matches!(error.downcast_ref::<Failure>(), Some(Failure::Invalid(message)) if message == "Invalid worker image length")
+        );
+        assert!(!crate::retryable(&error));
+    }
+
+    #[tokio::test]
+    async fn bounded_reply_preserves_pixels_metadata_and_empty_stream_poll() {
+        let mut bytes = response(12, true);
+        bytes.extend(0u8..12);
+        let (metadata, pixels) = read_reply(&mut bytes.as_slice(), "download", 7, 12)
+            .await
+            .unwrap();
+        assert_eq!(pixels, (0u8..12).collect::<Vec<_>>());
+        assert_eq!(metadata["readRecoveries"], 2);
+        let bytes = response(0, true);
+        assert!(
+            read_reply(&mut bytes.as_slice(), "stream-poll", 7, 12)
+                .await
+                .unwrap()
+                .1
+                .is_empty()
+        );
+    }
+
+    #[tokio::test]
+    async fn bounded_reply_keeps_error_codes_and_rejects_stale_or_non_image_pixels() {
+        let bytes = response(0, false);
+        let error = read_reply(&mut bytes.as_slice(), "download", 7, 12)
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(error.downcast_ref::<Failure>(), Some(Failure::Worker {code:Some(11), message}) if message == "private SDK error")
+        );
+        for (count, ok, method, id) in [
+            (1, false, "download", 7),
+            (1, true, "status", 7),
+            (0, true, "download", 8),
+        ] {
+            let bytes = response(count, ok);
+            let error = read_reply(&mut bytes.as_slice(), method, id, 12)
+                .await
+                .unwrap_err();
+            assert!(matches!(
+                error.downcast_ref::<Failure>(),
+                Some(Failure::Invalid(_))
+            ));
+        }
+        let bytes = response(12, true);
+        let error = read_reply(&mut bytes.as_slice(), "download", 7, 12)
+            .await
+            .unwrap_err();
+        assert_eq!(
+            error.downcast_ref::<std::io::Error>().unwrap().kind(),
+            std::io::ErrorKind::UnexpectedEof
+        );
     }
 }

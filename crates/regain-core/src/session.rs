@@ -784,11 +784,15 @@ impl Session {
         let mut reads = 0;
         let (mut metadata, pixels) = loop {
             match self
-                .call(
+                .worker
+                .as_mut()
+                .context("Camera worker is disconnected")?
+                .call_image(
                     "download",
                     Value::Null,
-                    Some(options.download_timeout_seconds),
+                    options.download_timeout_seconds,
                     token,
+                    e.bytes()?,
                 )
                 .await
             {

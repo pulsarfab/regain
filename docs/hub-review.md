@@ -4264,3 +4264,62 @@ This layer is not yet wired into camera runtime, adapters, binary IPC or fronten
 publication. Native recovery metadata and staging admission, all camera outputs,
 coordination and every original acceptance/final gate stay open. Camera choices
 remain disabled. Keep the increment local while preceding push CI remains live.
+
+## 2026-10-06: native camera admission and immutable recovery metadata (local)
+
+The preceding JSON push CI 37562034286 finishes with all eight jobs successful,
+including Windows installer/release acceptance. Its separate PR failure remains
+retained and unexplained. Reviewed properties/settings and private fixture NoDelay
+hardening are pushed through ef0748e; PR/push CI 37564346322/37564341366 is live.
+No failure was cancelled, restarted or converted into a relaxed assertion.
+
+Review of the original native image helper found admission after allocation and
+loss of Frame metadata. Its unshipped API is replaced by reserve_native followed
+by consuming adoption. The actual core Session wrapper acquires the permit before
+capture; one permit covers final pixels, the worker Vec during Vec-to-Arc conversion,
+64 KiB of raw reply header and 128 KiB of retained encoded metadata. Admission is
+one atomic reservation; error/cancellation drops it. Adoption validates the full
+Exposure (including ROI origin, binning, duration and light/dark), moves the Arc and
+releases staging. Cloned readers pin the same pixels, metadata and reservation.
+
+Core image calls now reject above-ROI replies before allocating/reading pixels;
+existing exact length/geometry checks remain. Reply parsing is factored for private
+AsyncRead fixtures, preserves SDK error codes and retires protocol failures through
+the same Worker call path. Result metadata moves out instead of cloning the Value
+tree. Pixel allocation is fallible. Checked size multiplication rejects extreme
+dimensions rather than overflowing. Generic and streaming worker calls retain
+their existing size ceiling and error/cancellation behavior.
+
+All encoded metadata survives adoption: native timestamps, actual backend/fallback,
+replacement exposures, SDK and retained-frame retries, handle reopens, USB resets,
+controls, white balance and cleanup evidence when present. A bounded writer rejects
+metadata overflow instead of truncating or dropping fields. Its fixed 128-KiB
+capacity remains charged for the final image. These are payload bounds, not decoded
+Value-tree, whole-host RSS or worker-process memory accounting. No new recovery
+attempt, deadline or exposure is introduced. The helper's caller must retain owned
+capture work; frontend disconnect must not cancel the core token. A native backend
+and its source-owned lifecycle are still required.
+
+Validation: twelve image cases, three actual worker-simulation capture cases and
+three private core reply cases pass. Tests prove a withheld oversized body is
+rejected immediately, error codes/empty stream polls remain intact, all admitted
+exposure fields match, metadata overflow frees its permit, and pixel adoption makes
+no copy. SDK/direct simulation preserves metadata and two actual retained-frame
+read recoveries. A last reader blocks a second capture before any exposure/recovery
+event; releasing it permits the next capture. Cancellation before dispatch and
+during an active exposure releases output and staging and preserves core's typed
+Cancelled failure. Every equipment-facing test uses explicit simulation.
+
+Full core/hub/Alpaca Rust, strict Rust 1.99 all-target Clippy, Rust 1.89 all-target
+checks, generated-contract freshness and formatting pass. The added active-cancel
+case also passes focused Clippy/MSRV after its addition. Fresh-host NINA 228/228 and
+real net48 x86/x64 regressions pass. Evidence:
+artifacts/hub-camera-native-admission-{focused,cancellation,rust,clippy,msrv,
+test-clippy,test-msrv,contract,host,nina,net48}.log.
+
+Next: native camera backend/configuration, retained lifecycle and recovery/cooling
+allowances, one host budget/runtime supervisor per source, all image outputs and
+remaining input adapters. Recovery metadata migration, coordination, conformance,
+hardware/client acceptance, README/site documentation, main reconciliation and all
+original final gates remain open. Camera choices stay disabled; keep this reviewed
+increment local while ef0748e CI runs.

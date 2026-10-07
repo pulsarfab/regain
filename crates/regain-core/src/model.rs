@@ -45,7 +45,10 @@ pub struct Exposure {
 }
 impl Exposure {
     pub fn bytes(&self) -> Result<usize> {
-        let count = u64::from(self.width) * u64::from(self.height) * 2;
+        let count = u64::from(self.width)
+            .checked_mul(u64::from(self.height))
+            .and_then(|pixels| pixels.checked_mul(2))
+            .ok_or_else(|| invalid("Invalid frame size"))?;
         ensure!(
             count > 0 && count <= 512 * 1024 * 1024,
             Failure::Invalid("Invalid frame size".into())

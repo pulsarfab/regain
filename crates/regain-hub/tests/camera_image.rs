@@ -2,7 +2,7 @@
 use regain_hub::{
     camera::image::{
         CameraImage, ElementType as T, IMAGE_CHUNK_BYTES, ImageBudget, ImageDescriptor, ImageOrder,
-        ImageReadError, MAX_IMAGE_BYTES, read_imagebytes,
+        ImageReadError, MAX_IMAGE_BYTES, NATIVE_METADATA_BYTES, read_imagebytes,
     },
     source::ErrorKind,
 };
@@ -172,13 +172,32 @@ fn native_unsigned_frame_is_adopted_without_copy_and_transposed_in_chunks() {
             dark: false,
         },
         pixels: pixels.into(),
-        metadata: serde_json::Value::Null,
+        metadata: serde_json::json!({
+            "startedUtc":"2026-10-06T01:02:03Z", "endedUtc":"2026-10-06T01:02:04Z",
+            "recoveries":1, "downloadRetries":2, "readRecoveries":3, "handleReopens":4,
+            "usbResets":0, "backend":"direct", "sdkFallback":false,
+            "whiteBalance":{"applied":true,"gains":{"red":1.25,"blue":0.75}},
+            "controls":{"16":1,"17":-10}, "cleanupError":"reconnect required"
+        }),
     };
-    let budget = ImageBudget::new(12).unwrap();
+    let metadata = frame.metadata.clone();
+    let budget = ImageBudget::new(24 + NATIVE_METADATA_BYTES + IMAGE_CHUNK_BYTES).unwrap();
     let original_pixels = frame.pixels.as_ptr();
     let exposure = frame.exposure.clone();
-    let value = budget.adopt_native(frame).unwrap();
+    let permit = budget.reserve_native(&exposure).unwrap();
+    assert_eq!(
+        budget.used_bytes(),
+        24 + NATIVE_METADATA_BYTES + IMAGE_CHUNK_BYTES
+    );
+    let value = permit.adopt(frame).unwrap();
+    assert_eq!(budget.used_bytes(), 12 + NATIVE_METADATA_BYTES);
     assert_eq!(value.bytes().as_ptr(), original_pixels);
+    assert_eq!(value.native().unwrap().exposure(), &exposure);
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(value.native().unwrap().metadata_json())
+            .unwrap(),
+        metadata
+    );
     assert_eq!(value.descriptor().element_type(), T::Int32);
     let mut exported = Vec::new();
     for offset in (0..12).step_by(4) {
@@ -201,13 +220,86 @@ fn native_unsigned_frame_is_adopted_without_copy_and_transposed_in_chunks() {
     ] {
         assert!(value.imagebytes_chunk(offset, max).is_err());
     }
+    let reader = value.clone();
     drop(value);
+    assert_eq!(budget.used_bytes(), 12 + NATIVE_METADATA_BYTES);
+    assert!(budget.reserve_native(&exposure).is_err());
+    drop(reader);
+    assert_eq!(budget.used_bytes(), 0);
+    let permit = budget.reserve_native(&exposure).unwrap();
     let malformed = regain_core::Frame {
         exposure,
         pixels: Arc::from([1u8; 11]),
         metadata: serde_json::Value::Null,
     };
-    assert!(budget.adopt_native(malformed).is_err());
+    assert!(permit.adopt(malformed).is_err());
+    assert_eq!(budget.used_bytes(), 0);
+}
+
+#[test]
+fn native_admission_rejects_changed_exposure_and_oversized_metadata_without_leaks() {
+    let exposure = regain_core::Exposure {
+        width: 2,
+        height: 2,
+        bin: 1,
+        x: 0,
+        y: 0,
+        microseconds: 1000,
+        dark: true,
+    };
+    let budget = ImageBudget::new(16 + NATIVE_METADATA_BYTES + IMAGE_CHUNK_BYTES).unwrap();
+    for field in 0..6 {
+        let permit = budget.reserve_native(&exposure).unwrap();
+        let mut changed = exposure.clone();
+        match field {
+            0 => changed.bin = 2,
+            1 => changed.x = 1,
+            2 => changed.y = 1,
+            3 => changed.microseconds += 1,
+            4 => changed.dark = false,
+            _ => {
+                changed.width = 4;
+                changed.height = 1;
+            }
+        }
+        assert_eq!(
+            permit
+                .adopt(regain_core::Frame {
+                    exposure: changed,
+                    pixels: Arc::from([0; 8]),
+                    metadata: serde_json::Value::Null,
+                })
+                .err()
+                .unwrap()
+                .kind,
+            ErrorKind::InvalidValue
+        );
+        assert_eq!(budget.used_bytes(), 0);
+    }
+    let permit = budget.reserve_native(&exposure).unwrap();
+    assert_eq!(
+        permit
+            .adopt(regain_core::Frame {
+                exposure: exposure.clone(),
+                pixels: Arc::from([0; 8]),
+                metadata: serde_json::json!({"cleanupError":"x".repeat(NATIVE_METADATA_BYTES)}),
+            })
+            .err()
+            .unwrap()
+            .kind,
+        ErrorKind::InvalidValue
+    );
+    assert_eq!(budget.used_bytes(), 0);
+    let permit = budget.reserve_native(&exposure).unwrap();
+    drop(permit);
+    assert_eq!(budget.used_bytes(), 0);
+    let invalid = regain_core::Exposure {
+        width: u32::MAX,
+        height: u32::MAX,
+        ..exposure
+    };
+    assert!(invalid.bytes().is_err());
+    assert!(budget.reserve_native(&invalid).is_err());
     assert_eq!(budget.used_bytes(), 0);
 }
 

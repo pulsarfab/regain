@@ -2243,6 +2243,30 @@ Native adapters must derive readiness allowance from existing cooling/recovery
 settings and preserve core recovery metadata before pixel adoption. The current
 supervisor's frozen standard timing/geometry is not that native recovery metadata.
 
+The native capture boundary now admits payload memory before calling the existing
+core Session. Its single permit reserves two ROI-sized pixel buffers (worker Vec
+and final Arc during conversion), a 64-KiB worker response header and 128 KiB of
+encoded metadata. Core downloads reject a response larger than the requested ROI
+before pixel allocation; the existing exact length/geometry validation still runs.
+Image size arithmetic rejects overflow. Admission failure sends no exposure or
+recovery work, and failure/cancellation releases the entire permit.
+
+Adoption compares the complete admitted exposure, moves the pixel Arc without
+another copy and encodes all core metadata into bounded immutable JSON. This
+includes actual timestamps, backend/fallback, replacement exposures, download and
+retained-frame retries, handle reopens, USB resets, controls, white balance and
+cleanup evidence when present. Metadata overflow fails instead of truncating.
+After adoption, staging is released; final pixels and the fixed 128-KiB metadata
+capacity remain charged until the last shared image reader leaves. This is a host
+payload budget, not a whole-process/worker RSS bound or decoded JSON tree budget.
+
+This boundary adds no retries, recovery policies or deadlines. A future native
+backend must retain its capture task independently of frontend waiters, derive its
+allowance from core recovery/cooling settings and share the host's budget. The
+boundary alone does not implement that lifecycle, a native source backend or any
+camera frontend. Core cancellation tests exercise cancellation of owned capture
+work; frontend disconnect must not map to that cancellation token.
+
 Acquisitions and publications carry source identity, source generation and a
 unique acquisition ID. Old-generation completions cannot replace current state.
 An uncertain start/stop/abort retains the command fence and source lease until

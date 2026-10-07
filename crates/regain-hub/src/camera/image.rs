@@ -13,6 +13,9 @@ use tokio::io::{AsyncRead, AsyncReadExt};
 pub const MAX_IMAGE_BYTES: usize = 512 * 1024 * 1024;
 pub const IMAGE_CHUNK_BYTES: usize = 64 * 1024;
 pub const IMAGEBYTES_HEADER_BYTES: usize = 44;
+/// Retained encoded native metadata; overflow fails rather than losing recovery evidence.
+pub const NATIVE_METADATA_BYTES: usize = 128 * 1024;
+const NATIVE_WORKER_HEADER_BYTES: usize = 64 * 1024;
 const MAX_ERROR_BYTES: usize = 4096;
 
 fn invalid(message: &'static str) -> SourceError {
@@ -282,28 +285,96 @@ impl ImageBudget {
             _reservation: reservation,
         })
     }
-    /// Adopt native U16 rows without making a second full-size image allocation.
-    /// The acquisition supervisor must account for its worker's staging buffer separately.
-    pub fn adopt_native(&self, frame: regain_core::Frame) -> Result<CameraImage, SourceError> {
+    /// Admit before starting a native capture. Covers retained pixels/metadata,
+    /// the worker's pixel Vec and its bounded response header. This payload budget
+    /// does not claim to account for worker processes or decoded JSON tree overhead.
+    pub fn reserve_native(
+        &self,
+        exposure: &regain_core::Exposure,
+    ) -> Result<NativeFramePermit, SourceError> {
         let descriptor = ImageDescriptor::new(
-            frame.exposure.width,
-            frame.exposure.height,
+            exposure.width,
+            exposure.height,
             None,
             ElementType::Int32,
             ElementType::UInt16,
             ImageOrder::SensorRows,
         )?;
-        if frame.pixels.len() != descriptor.byte_len() {
+        let reservation = self.reserve(
+            descriptor.byte_len() * 2 + NATIVE_METADATA_BYTES + NATIVE_WORKER_HEADER_BYTES,
+        )?;
+        Ok(NativeFramePermit {
+            exposure: exposure.clone(),
+            descriptor,
+            reservation,
+        })
+    }
+}
+
+/// A single native capture admission. Dropping it releases staging and output space.
+pub struct NativeFramePermit {
+    exposure: regain_core::Exposure,
+    descriptor: ImageDescriptor,
+    reservation: Reservation,
+}
+impl NativeFramePermit {
+    /// Adopt the core's Arc without another pixel copy, retaining all metadata.
+    pub fn adopt(mut self, frame: regain_core::Frame) -> Result<CameraImage, SourceError> {
+        if frame.exposure != self.exposure || frame.pixels.len() != self.descriptor.byte_len() {
             return Err(invalid(
-                "Native camera image length differs from its geometry",
+                "Native camera frame differs from its admitted exposure",
             ));
         }
-        let reservation = self.reserve(descriptor.byte_len())?;
+        let mut metadata = BoundedMetadata(Vec::new());
+        metadata
+            .0
+            .try_reserve_exact(NATIVE_METADATA_BYTES)
+            .map_err(|_| {
+                SourceError::new(
+                    ErrorKind::Unavailable,
+                    "Native camera metadata allocation failed",
+                )
+            })?;
+        serde_json::to_writer(&mut metadata, &frame.metadata)
+            .map_err(|_| invalid("Native camera metadata exceeds its encoded bound"))?;
+        drop(frame.metadata);
+        self.reservation
+            .shrink_to(self.descriptor.byte_len() + NATIVE_METADATA_BYTES);
         Ok(CameraImage(Arc::new(ImageInner {
-            descriptor,
+            descriptor: self.descriptor,
             bytes: Pixels::Shared(frame.pixels),
-            _reservation: reservation,
+            native: Some(NativeImageInfo {
+                exposure: frame.exposure,
+                metadata: metadata.0,
+            }),
+            _reservation: self.reservation,
         })))
+    }
+}
+struct BoundedMetadata(Vec<u8>);
+impl std::io::Write for BoundedMetadata {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        if bytes.len() > NATIVE_METADATA_BYTES - self.0.len() {
+            return Err(std::io::Error::other("Native metadata too large"));
+        }
+        self.0.extend_from_slice(bytes);
+        Ok(bytes.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+pub struct NativeImageInfo {
+    exposure: regain_core::Exposure,
+    metadata: Vec<u8>,
+}
+impl NativeImageInfo {
+    pub fn exposure(&self) -> &regain_core::Exposure {
+        &self.exposure
+    }
+    /// Immutable UTF-8 JSON, including native timing, recovery, cooling and WB fields.
+    pub fn metadata_json(&self) -> &[u8] {
+        &self.metadata
     }
 }
 pub(super) struct StagedBytes {
@@ -318,6 +389,16 @@ impl StagedBytes {
 struct Reservation {
     budget: ImageBudget,
     bytes: usize,
+}
+impl Reservation {
+    fn shrink_to(&mut self, bytes: usize) {
+        assert!(bytes <= self.bytes);
+        self.budget
+            .0
+            .used
+            .fetch_sub(self.bytes - bytes, Ordering::AcqRel);
+        self.bytes = bytes;
+    }
 }
 impl Drop for Reservation {
     fn drop(&mut self) {
@@ -337,6 +418,7 @@ impl ImageAllocation {
         CameraImage(Arc::new(ImageInner {
             descriptor: self.descriptor,
             bytes: Pixels::Owned(self.bytes),
+            native: None,
             _reservation: self.reservation,
         }))
     }
@@ -356,6 +438,7 @@ impl Pixels {
 struct ImageInner {
     descriptor: ImageDescriptor,
     bytes: Pixels,
+    native: Option<NativeImageInfo>,
     _reservation: Reservation,
 }
 /// Clones pin the same immutable pixels and budget reservation, never another copy.
@@ -367,6 +450,9 @@ impl CameraImage {
     }
     pub fn bytes(&self) -> &[u8] {
         self.0.bytes.as_slice()
+    }
+    pub fn native(&self) -> Option<&NativeImageInfo> {
+        self.0.native.as_ref()
     }
     /// Returns a bounded, element-aligned ImageBytes payload chunk in ASCOM order.
     /// The caller retains this image handle until the transfer finishes or cancels.
