@@ -8,7 +8,34 @@ tagged or published. Changed cross-crate APIs require an unpublished version so
 Cargo package verification uses the new workspace packages.
 Last updated: 2026-10-07.
 
-Current increment: the shared managed camera image reader is implemented for
+Current increment: camera operation deadline negotiation is implemented in Rust
+and the shared .NET 8/net48 client. The host derives separate Connect, Start,
+setting, Stop and Abort allowances from the actual controller/source bounds and
+the canonical native policy. Scalar reads keep their existing deadline; proxies
+use their own configured transport bounds without gaining native recovery.
+Metadata reads are inert and fenced by configuration revision, output, source,
+host and client identity. Timed mutations carry an expected revision on the wire;
+review caught and corrected the stale-descriptor case after configuration apply.
+The host checks that revision before binding and dispatching the same runtime.
+Four focused Rust cases pass, including a virtual-time 40-second connection and
+setting through one/two-second RPC limits, extreme validated native policies,
+proxy bounds and actual apply followed by rejection of the old descriptor.
+Final local validation passes after the revision correction: all 74 hub unit
+cases and the full hub/Alpaca regressions, strict Rust 1.99 Clippy, Rust 1.89
+compatibility across five affected crates, formatting, generated contracts,
+Node and eight schema checks. The rebuilt host passes NINA 273/273 and actual
+net48 x86/x64 timing, image and existing typed-driver fixtures with warnings
+denied. All local test processes are complete.
+The shared client API is ready for camera providers to adopt; it does not enable
+public camera choices or complete the remaining camera inputs/publications.
+Keep all original coordination, acceptance, documentation and merge gates open.
+
+Image reader 5b39476 is pushed to the same draft PR #21. PR CI 37601691962 and
+push CI 37601685235 each currently have seven successful jobs with Windows still
+running. Do not call this head green or push the timing increment until both are
+terminal.
+
+Previous increment: the shared managed camera image reader is implemented for
 .NET 8 and .NET Framework 4.8. It opens a separate verified user-protected pipe
 using the existing control client's exact identities, validates the manifest and
 44-byte binary header before reserving pixels, and publishes only a complete
@@ -32,8 +59,8 @@ and final merge gates stay open. Public camera choices remain gated.
 PR run 37596918826 is now terminal and passes all eight jobs at edc5a59.
 Push run 37596912932 remains failed with the two distinct timeout cases below;
 the diagnostic changes need fresh CI and are not established root-cause fixes.
-The image reader and three preceding reviewed image/diagnostic commits are ready
-to publish together to the same draft PR #21; fresh CI must cover this head.
+The image reader and three preceding reviewed image/diagnostic commits are
+published through 5b39476 to the same draft PR #21; fresh CI is recorded above.
 
 Previous increment: bounded Rust frontend image IPC is implemented and locally
 reviewed/validated. A separate authenticated image stream

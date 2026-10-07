@@ -172,6 +172,69 @@ impl Client {
     /// Cancellation before dispatch skips the request. Once dispatched, the
     /// client retains its permit until reply/deadline, even if this future drops.
     pub async fn request(&self, command: Command) -> Result<Value, ClientError> {
+        self.request_with_timeout(command, self.0.limits.request_timeout)
+            .await
+    }
+    /// Read inert, revision-fenced camera controller metadata. No equipment lease
+    /// is acquired. Callers must obtain a new descriptor after reattachment.
+    pub async fn camera_timing(
+        &self,
+        output: Uuid,
+    ) -> Result<crate::camera::ipc_timing::CameraOperationTiming, ClientError> {
+        if !self
+            .hello()
+            .capabilities
+            .iter()
+            .any(|value| value == "cameraOperationTiming")
+        {
+            return Err(ClientError::InvalidRequest);
+        }
+        let value = self
+            .request(Command::CameraTiming {
+                output,
+                expected_revision: self.hello().configuration_revision,
+            })
+            .await?;
+        let timing: crate::camera::ipc_timing::CameraOperationTiming =
+            serde_json::from_value(value).map_err(|_| ClientError::Protocol)?;
+        if !timing.matches(self.hello(), output) {
+            return Err(ClientError::Protocol);
+        }
+        Ok(timing)
+    }
+    /// Only acknowledged camera operations may use the negotiated bound. Reads,
+    /// image transfers and asynchronous connection admission keep their own limits.
+    pub async fn request_camera(
+        &self,
+        timing: &crate::camera::ipc_timing::CameraOperationTiming,
+        command: Command,
+    ) -> Result<Value, ClientError> {
+        let (output, kind) =
+            crate::camera::ipc_timing::operation(&command).ok_or(ClientError::InvalidRequest)?;
+        if !timing.matches(self.hello(), output)
+            || !self
+                .hello()
+                .capabilities
+                .iter()
+                .any(|value| value == "cameraOperationTiming")
+        {
+            return Err(ClientError::InvalidRequest);
+        }
+        let deadline = timing.timeout(kind) + self.0.limits.frame_timeout * 2;
+        self.request_with_timeout(
+            Command::CameraControl {
+                expected_revision: timing.configuration_revision,
+                command: Box::new(command),
+            },
+            deadline.max(self.0.limits.request_timeout),
+        )
+        .await
+    }
+    async fn request_with_timeout(
+        &self,
+        command: Command,
+        deadline: Duration,
+    ) -> Result<Value, ClientError> {
         if !self.is_connected() {
             return Err(ClientError::Disconnected);
         }
@@ -197,7 +260,7 @@ impl Client {
             .send
             .try_send(Incoming {
                 command,
-                deadline: Instant::now() + self.0.limits.request_timeout,
+                deadline: Instant::now() + deadline,
                 mutate,
                 reply,
                 permit,
@@ -221,6 +284,7 @@ fn mutating(command: &Command) -> bool {
     matches!(
         command,
         Command::Put { .. }
+            | Command::CameraControl { .. }
             | Command::ApplyConfig { .. }
             | Command::CreateCredential { .. }
             | Command::DeleteCredential { .. }
@@ -234,6 +298,8 @@ fn operation(command: &Command) -> &'static str {
     match command {
         Command::Hello {} => "hello",
         Command::CameraImage { .. } => "cameraImage",
+        Command::CameraTiming { .. } => "cameraTiming",
+        Command::CameraControl { .. } => "cameraControl",
         Command::DescribeConfig {} => "describeConfig",
         Command::GetConfig {} => "getConfig",
         Command::ValidateConfig { .. } => "validateConfig",

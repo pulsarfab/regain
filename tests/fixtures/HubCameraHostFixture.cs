@@ -39,6 +39,7 @@ internal static class HubCameraHostFixture
             UseShellExecute = false, CreateNoWindow = true, WindowStyle = ProcessWindowStyle.Hidden,
             RedirectStandardOutput = true, RedirectStandardError = true } };
         var started = false;
+        var completed = false;
         Task<string>? errors = null;
         var budget = new HubImageBudget(4 * 1024 * 1024);
         try {
@@ -53,12 +54,24 @@ internal static class HubCameraHostFixture
             using var control = await HubClient.ConnectAsync(attached, cancellation: stop.Token);
             using var observer = await HubClient.ConnectAsync(attached, cancellation: stop.Token);
             async Task<JsonElement> Command(HubClient client, object value) => await client.RequestAsync(JsonSerializer.SerializeToElement(value), stop.Token);
-            await Command(control, new { op = "connect", output = firstOutput });
-            await Command(observer, new { op = "connect", output = secondOutput });
-            foreach (var property in new[] { "numX", "numY" }) await Command(control, new {
+            async Task<JsonElement> CameraCommand(HubClient client, HubCameraTiming timing, object value) =>
+                await client.RequestCameraAsync(timing, JsonSerializer.SerializeToElement(value), stop.Token);
+            var firstTiming = await control.GetCameraTimingAsync(firstOutput, stop.Token);
+            var secondTiming = await observer.GetCameraTimingAsync(secondOutput, stop.Token);
+            Check(firstTiming.Native && firstTiming.Source == source && firstTiming.Connect > TimeSpan.FromSeconds(35), "Native controller deadline not negotiated");
+            try {
+                await CameraCommand(observer, firstTiming, new { op = "connect", output = firstOutput });
+                throw new InvalidOperationException("Another client's timing descriptor was accepted");
+            } catch (HubException error) { Check(error.Failure == HubFailure.InvalidRequest, "Cross-client descriptor rejection changed"); }
+            var before = await Command(control, new { op = "sourceStatus", source });
+            Check(before.GetProperty("leaseCount").GetInt32() == 0, "Timing negotiation acquired equipment");
+            await CameraCommand(control, firstTiming, new { op = "connect", output = firstOutput });
+            await CameraCommand(observer, secondTiming, new { op = "connect", output = secondOutput });
+            foreach (var property in new[] { "numX", "numY" }) await CameraCommand(control, firstTiming, new {
                 op = "put", output = firstOutput, property = new { member = "cameraSetting", setting = new { property, value = 256 } } });
-            async Task<HubImageRequest> Capture(HubClient client, Guid output) {
-                await Command(client, new { op = "put", output, property = new { member = "startExposure", request = new { durationSeconds = 0.05, light = false } } });
+            async Task<HubImageRequest> Capture(HubClient client, HubCameraTiming timing) {
+                var output = timing.Output;
+                await CameraCommand(client, timing, new { op = "put", output, property = new { member = "startExposure", request = new { durationSeconds = 0.05, light = false } } });
                 var clock = Stopwatch.StartNew();
                 while (clock.Elapsed < TimeSpan.FromSeconds(15)) {
                     var status = await Command(client, new { op = "get", output, property = new { member = "cameraAcquisition" } });
@@ -71,7 +84,7 @@ internal static class HubCameraHostFixture
                 }
                 throw new TimeoutException("Private camera simulation did not publish its image");
             }
-            var request = await Capture(control, firstOutput);
+            var request = await Capture(control, firstTiming);
             using var first = await HubCameraImages.DownloadAsync(attached, control, request, budget, TimeSpan.FromSeconds(10), stop.Token);
             using var second = await HubCameraImages.DownloadAsync(attached, control, request, budget, TimeSpan.FromSeconds(10), stop.Token);
             Check(first.Descriptor.ElementType == HubImageElementType.Int32 && first.Descriptor.TransmissionType == HubImageElementType.UInt16 &&
@@ -90,7 +103,7 @@ internal static class HubCameraHostFixture
             } catch (HubException error) { Check(error.Failure == HubFailure.Busy && tiny.UsedBytes == 0, "Receiver capacity failure changed"); }
             using var pin = first.Pin(); first.Dispose(); second.Dispose();
             Check(budget.UsedBytes == first.ByteLength, "Pin changed accounting");
-            var newer = await Capture(observer, secondOutput);
+            var newer = await Capture(observer, secondTiming);
             Check(newer.Acquisition != request.Acquisition, "New capture reused acquisition identity");
             using (var replacement = await HubCameraImages.DownloadAsync(attached, observer, newer, budget, TimeSpan.FromSeconds(10), stop.Token)) {
                 pin.CopyTo(65530, repeated, 0, repeated.Length); Check(original.SequenceEqual(repeated), "Next capture changed a pinned image");
@@ -106,13 +119,14 @@ internal static class HubCameraHostFixture
             pin.Dispose(); Check(budget.UsedBytes == 0, "Completed managed images leaked budget");
             await Command(observer, new { op = "disconnect", output = secondOutput });
             Console.WriteLine($"Camera image {(direct ? "direct" : "SDK")} simulation {IntPtr.Size * 8}-bit: protected pipe, multichunk bytes, independent readers, retained pins, budget and identity rejection passed");
+            completed = true;
         } finally {
             // The Process object is the specific child started above, never a
             // PID supplied by an attachment or an installed equipment process.
             if (started && !process.HasExited) { process.Kill(); if (!process.WaitForExit(10000)) throw new TimeoutException("Private camera host did not exit"); }
             if (errors is not null) {
                 var trace = await errors;
-                if (started && process.ExitCode != 0 && trace.Length != 0) Console.Error.WriteLine(trace);
+                if (!completed && trace.Length != 0) Console.Error.WriteLine(trace);
             }
             Directory.Delete(directory, true);
         }

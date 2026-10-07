@@ -200,6 +200,46 @@ pub struct CameraSupervisor {
     changed: Notify,
 }
 impl CameraSupervisor {
+    /// Inert controller metadata. Derive from the same source write bounds used
+    /// in execution; no capture duration or native retry policy is given to proxies.
+    pub(crate) fn operation_timing(
+        &self,
+        host: Uuid,
+        revision: Uuid,
+        client: Uuid,
+        output: Uuid,
+        base: Duration,
+    ) -> Result<super::ipc_timing::CameraOperationTiming, SourceError> {
+        use super::ipc_timing::{CameraOperationTiming, milliseconds};
+        let margin = Duration::from_secs(5);
+        let read = self.source.request_allowance();
+        let admission = self.timing.admission_timeout;
+        Ok(CameraOperationTiming {
+            host_instance: host,
+            configuration_revision: revision,
+            client_id: client,
+            output,
+            source: self.source.with_snapshot(|snapshot| snapshot.source),
+            native: self.native_timing.is_some(),
+            connect_milliseconds: milliseconds(self.timing.connection_timeout + margin, base)?,
+            start_milliseconds: milliseconds(
+                admission + self.source.write_allowance("startexposure") + margin,
+                base,
+            )?,
+            setting_milliseconds: milliseconds(
+                admission + self.source.write_allowance("gain") + read + margin,
+                base,
+            )?,
+            stop_milliseconds: milliseconds(
+                read + self.source.write_allowance("stopexposure") + margin,
+                base,
+            )?,
+            abort_milliseconds: milliseconds(
+                read + self.source.write_allowance("abortexposure") + read + margin,
+                base,
+            )?,
+        })
+    }
     /// Construction performs no I/O. The runtime must share this instance by
     /// source UUID and supply the same activity counter as its output sessions.
     pub fn new(

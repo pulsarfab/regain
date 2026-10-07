@@ -14,6 +14,10 @@ internal static class Program
     {
         uint? candidate = null;
         try {
+            if (args.Length == 2 && args[0] == "--camera-timing") {
+                if (IntPtr.Size * 8 != int.Parse(args[1])) throw new InvalidOperationException("Wrong timing fixture bitness");
+                await HubTimingFixture.RunAll(); return 0;
+            }
             if (args.Length == 3 && args[0] == "--camera-image") {
                 if (IntPtr.Size * 8 != int.Parse(args[2])) throw new InvalidOperationException("Wrong camera fixture bitness");
                 await HubCameraHostFixture.Run(args[1], false);

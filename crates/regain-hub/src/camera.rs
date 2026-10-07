@@ -4,6 +4,7 @@ pub mod acquisition;
 pub mod config;
 pub mod image;
 pub mod ipc_image;
+pub mod ipc_timing;
 pub mod json_image;
 pub mod native_capture;
 pub mod native_owner;

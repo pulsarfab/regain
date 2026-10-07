@@ -80,6 +80,16 @@ pub enum Command {
     CameraImage {
         request: crate::camera::ipc_image::ImageRequest,
     },
+    CameraTiming {
+        output: Uuid,
+        #[serde(rename = "expectedRevision")]
+        expected_revision: Uuid,
+    },
+    CameraControl {
+        #[serde(rename = "expectedRevision")]
+        expected_revision: Uuid,
+        command: Box<Command>,
+    },
     DescribeConfig {},
     GetConfig {},
     ValidateConfig {
@@ -486,14 +496,14 @@ where
                 if !greeted {
                     if !matches!(request.command, Command::Hello {}) { return Err(ProtocolError::Handshake); }
                     greeted = true;
-                    let mut operations = vec!["cameraImage","describeConfig","getConfig","validateConfig","listDevices","sourceStatus","outputStatus","inspectSource","updateSimulation","connect","disconnect","changeConnection","get","put","hostStatus"];
+                    let mut operations = vec!["cameraImage","cameraTiming","cameraControl","describeConfig","getConfig","validateConfig","listDevices","sourceStatus","outputStatus","inspectSource","updateSimulation","connect","disconnect","changeConnection","get","put","hostStatus"];
                     if service.can_apply() { operations.push("applyConfig"); }
                     if service.credential_description().is_some() { operations.extend(["createCredential", "credentialStatus", "deleteCredential"]); }
                     let hello = json!({"protocolVersion":VERSION, "instanceId":service.instance_id(),
                         "hostInstance":service.host_id(), "configurationRevision":service.configuration().revision, "clientId":client.id(),
                         "maxFrameBytes":MAX_FRAME_BYTES, "maxInFlight":MAX_IN_FLIGHT,
                         "operations":operations,
-                        "capabilities":["switchOutputs","safetyOutputs","weatherOutputs","focuserOutputs","rotatorOutputs","filterWheelOutputs","coverCalibratorOutputs","cameraAcquisition","cameraImageStream","rotatorMotionReceipt","weatherSensorDescription","scalarDeviceState","asyncOutputConnection","switchAsyncContract"]});
+                        "capabilities":["switchOutputs","safetyOutputs","weatherOutputs","focuserOutputs","rotatorOutputs","filterWheelOutputs","coverCalibratorOutputs","cameraAcquisition","cameraImageStream","cameraOperationTiming","rotatorMotionReceipt","weatherSensorDescription","scalarDeviceState","asyncOutputConnection","switchAsyncContract"]});
                     write_response(&mut writer, Response::new(request.id, Ok(hello)), limits.frame_timeout).await?;
                     continue;
                 }
@@ -521,11 +531,7 @@ where
                 let service = service.clone();
                 let client = client.clone();
                 let mut operation = Box::pin(async move {
-                    let write = matches!(request.command, Command::Put { .. } | Command::ChangeConnection { .. } | Command::ApplyConfig { .. } | Command::CreateCredential { .. } | Command::DeleteCredential { .. } | Command::UpdateSimulation { .. });
-                    let result = timeout(limits.operation_timeout, dispatch_service(&service, &client, request.command)).await
-                        .unwrap_or_else(|_| Err(if write { SourceError::uncertain().into() } else {
-                            RpcError { code:"timeout", message:"Hub operation deadline expired", upstream_code:None, retry_after_seconds:None, fields:Vec::new() }
-                        }));
+                    let result = dispatch_bounded(&service, &client, request.command, limits).await;
                     Response::new(request.id, result)
                 });
                 // Start requests in arrival order, without waiting for their
@@ -550,12 +556,104 @@ impl Drop for CloseClient {
     }
 }
 
+async fn dispatch_bounded(
+    service: &Arc<HubService>,
+    client: &ServiceClient,
+    command: Command,
+    limits: Limits,
+) -> Result<Value, RpcError> {
+    let (command, expected_revision) = match command {
+        Command::CameraControl {
+            expected_revision,
+            command,
+        } => (*command, Some(expected_revision)),
+        command => (command, None),
+    };
+    let write = matches!(
+        command,
+        Command::Put { .. }
+            | Command::Connect { .. }
+            | Command::Disconnect { .. }
+            | Command::ChangeConnection { .. }
+            | Command::ApplyConfig { .. }
+            | Command::CreateCredential { .. }
+            | Command::DeleteCredential { .. }
+            | Command::UpdateSimulation { .. }
+    );
+    let result = if let Some((output, kind)) = crate::camera::ipc_timing::operation(&command) {
+        // Select and bind one revision before deriving the bound. Configuration
+        // replacement cannot substitute a different controller after negotiation.
+        let runtime = service.runtime()?;
+        if expected_revision.is_some_and(|revision| revision != runtime.revision()) {
+            return Err(UpdateError::Conflict.into());
+        }
+        let timing = runtime.camera_operation_timing(
+            service.host_id(),
+            client.id(),
+            output,
+            limits.operation_timeout,
+        )?;
+        if expected_revision.is_some() && timing.is_none() {
+            return Err(SourceError::new(ErrorKind::Unsupported, "Output is not a camera").into());
+        }
+        let deadline = timing.map_or(limits.operation_timeout, |timing| timing.timeout(kind));
+        let bound = client.bind(&runtime)?;
+        timeout(deadline, dispatch(&runtime, &bound, command)).await
+    } else {
+        if expected_revision.is_some() {
+            return Err(SourceError::new(
+                ErrorKind::InvalidValue,
+                "Not an acknowledged camera operation",
+            )
+            .into());
+        }
+        timeout(
+            limits.operation_timeout,
+            dispatch_service(service, client, command, limits),
+        )
+        .await
+    };
+    result.unwrap_or_else(|_| {
+        Err(if write {
+            SourceError::uncertain().into()
+        } else {
+            RpcError {
+                code: "timeout",
+                message: "Hub operation deadline expired",
+                upstream_code: None,
+                retry_after_seconds: None,
+                fields: Vec::new(),
+            }
+        })
+    })
+}
 async fn dispatch_service(
     service: &Arc<HubService>,
     client: &ServiceClient,
     command: Command,
+    limits: Limits,
 ) -> Result<Value, RpcError> {
     match command {
+        Command::CameraTiming {
+            output,
+            expected_revision,
+        } => {
+            let runtime = service.runtime()?;
+            if expected_revision != runtime.revision() {
+                return Err(UpdateError::Conflict.into());
+            }
+            let timing = runtime
+                .camera_operation_timing(
+                    service.host_id(),
+                    client.id(),
+                    output,
+                    limits.operation_timeout,
+                )?
+                .ok_or_else(|| {
+                    SourceError::new(ErrorKind::Unsupported, "Output is not a camera")
+                })?;
+            Ok(json!(timing))
+        }
         Command::DescribeConfig {} => {
             let mut description = describe_config(&service.configuration_capabilities());
             description["credentialStorage"] =
@@ -610,6 +708,8 @@ async fn dispatch(
     Ok(match command {
         Command::ApplyConfig { .. }
         | Command::CameraImage { .. }
+        | Command::CameraTiming { .. }
+        | Command::CameraControl { .. }
         | Command::HostStatus {}
         | Command::DescribeConfig {}
         | Command::CreateCredential { .. }

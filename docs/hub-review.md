@@ -3,6 +3,69 @@
 This records local review and tests for the single hub PR. Passing a foundation
 test does not imply that a frontend, transport, or hardware gate has passed.
 
+## 2026-10-07: camera frontend operation deadlines
+
+Reviewed the existing fixed 30-second server/35-second client deadlines against
+the core-derived native connection/control/cleanup allowances. A valid native
+operation can outlive those RPC bounds. Added inert per-camera controller
+metadata and explicit Rust/managed timed request APIs. They preserve independent
+scalar, frame, acquisition and image bounds and do not grant native retries to
+proxies. Source write allowance calculation is shared with actor execution;
+integer milliseconds round upward and leave room within the real net48 timer.
+
+Review found that a client-only revision check would not prevent a retained
+descriptor being used after apply: a service client can rebind to a new runtime
+under the same stream identity. cameraControl now carries expectedRevision on
+the wire. The host checks the selected runtime before binding and dispatches
+through that same runtime. Nested wrappers and commands outside the five finite
+acknowledged camera operation classes are rejected. Ordinary callers retain
+their existing API; future camera providers must adopt the negotiated path.
+Connect/Disconnect timeout classification now agrees with the clients' existing
+mutation uncertainty rules. No operation is replayed or implicitly aborted.
+
+Initial local evidence:
+
+- artifacts/hub-camera-front-timing-reviewed-runtime.log: four cases pass. A
+  private native-policy backend spends 40 virtual seconds connecting and writing
+  once while server/client ordinary deadlines are one/two seconds. A scalar read
+  still receives the one-second server timeout. Extreme SDK/direct policy
+  metadata is inert; proxy metadata preserves only its configured transport
+  bounds. Actual configuration apply followed by the old timed connection
+  rejects revisionConflict before any new source lease or connection.
+- artifacts/hub-camera-front-timing-reviewed-focused.log: twelve managed cases
+  pass after the wire revision correction. Private peers verify the wrapper,
+  eleven identity/timer/shape faults, local command rejection without consuming
+  request IDs, acknowledgement beyond the ordinary deadline, cancellation and
+  the unchanged scalar timeout.
+- Initial full hub unit run passes 73 cases before the final apply refinement.
+  Initial .NET 8 image/timing cases pass 43/43 and both net48 architecture suites
+  pass before the revision wrapper. These earlier passes do not validate that
+  final correction. An inert native metadata fixture initially retained SDK
+  simulation while disabling simulation, then used a relative SDK path; both
+  invalid fixture configurations were corrected. Strict lint identified one
+  test-only single-pattern match and it is corrected without lint suppression.
+
+Final local evidence after review corrections:
+
+- artifacts/hub-camera-front-timing-rust.log: full hub/Alpaca regressions pass,
+  including all 74 hub unit cases.
+- artifacts/hub-camera-front-timing-reviewed-clippy.log and
+  artifacts/hub-camera-front-timing-msrv.log: strict Rust 1.99 Clippy and Rust
+  1.89 all-target checks pass across core, hub, Alpaca, ZWO and worker crates.
+  Formatting, generated contract freshness, Node and eight schema checks pass.
+- artifacts/hub-camera-front-timing-reviewed-exe.log: the real host is rebuilt
+  with the revision-fenced wire operation before managed acceptance fixtures run.
+- artifacts/hub-camera-front-timing-nina-final.log: NINA 273/273 passes.
+- artifacts/hub-camera-front-timing-net48-final.log: actual x86/x64 timing,
+  image and complete existing typed-driver/client fixtures pass, with warnings
+  denied. Cross-client descriptors reject locally before connection. Native
+  simulation host fixtures use timed commands and the revision wrapper.
+
+PR/push CI 37601691962/37601685235 for image head 5b39476 each have seven
+successful jobs with Windows running. Keep this timing increment local until
+both are terminal. No physical hardware or installed equipment driver is used;
+the original publication, acceptance, documentation and completion gates remain.
+
 ## 2026-10-07: shared managed image reader
 
 Reviewed the .NET 8/net48 implementation against the Rust manifest, binary

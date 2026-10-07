@@ -12,6 +12,8 @@ foreach ($architecture in 'x86', 'x64') {
     $bitness = if ($architecture -eq 'x86') { '32' } else { '64' }
     & (Join-Path $buildDirectory 'Regain.Hub.Client.Fixture.exe') --image-codec $bitness
     if ($LASTEXITCODE) { throw "net48 $architecture image codec fixture failed" }
+    & (Join-Path $buildDirectory 'Regain.Hub.Client.Fixture.exe') --camera-timing $bitness
+    if ($LASTEXITCODE) { throw "net48 $architecture camera timing fixture failed" }
     & (Join-Path $buildDirectory 'Regain.Hub.Client.Fixture.exe') --camera-image $executable $bitness
     if ($LASTEXITCODE) { throw "net48 $architecture camera image fixture failed" }
     & (Join-Path $buildDirectory 'Regain.Hub.Client.Fixture.exe') --http-scheduler $bitness

@@ -4,6 +4,7 @@
   <Compile Include="../fixtures/HubAccessoryServer.cs" Link="HubAccessoryServer.cs" />
   <Compile Include="../fixtures/HubImageFixture.cs" Link="HubImageFixture.cs" />
   <Compile Include="../fixtures/HubCameraHostFixture.cs" Link="HubCameraHostFixture.cs" />
+  <Compile Include="../fixtures/HubTimingFixture.cs" Link="HubTimingFixture.cs" />
   <!-- Test-only: allow short WPF renders in CI/disconnected desktop sessions. -->
   <RuntimeHostConfigurationOption Include="Switch.System.Windows.Media.ShouldRenderEvenWhenNoDisplayDevicesAreAvailable" Value="true" />
   <None Include="../../contracts/hub-config.json" Link="hub-config.json" CopyToOutputDirectory="PreserveNewest" />

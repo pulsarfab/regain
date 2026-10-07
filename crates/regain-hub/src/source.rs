@@ -430,6 +430,7 @@ pub struct SourceHandle {
     native_camera_resources: Option<crate::camera::runtime::CameraResources>,
     native_camera_timing: Option<regain_core::timing::NativeCameraTiming>,
     connection_allowance: Duration,
+    request_allowance: Duration,
     commands: mpsc::Sender<Command>,
     snapshot: watch::Receiver<SourceSnapshot>,
     events: broadcast::Sender<PollEvent>,
@@ -574,6 +575,7 @@ impl SourceHandle {
             native_camera_resources: backend.native_camera_resources(),
             native_camera_timing: native_camera_timing.clone(),
             connection_allowance,
+            request_allowance: Duration::from_secs_f64(policy.request_timeout_seconds),
             commands,
             snapshot: reader,
             events: events.clone(),
@@ -624,6 +626,16 @@ impl SourceHandle {
     }
     pub(crate) fn connection_allowance(&self) -> Duration {
         self.connection_allowance
+    }
+    pub(crate) fn request_allowance(&self) -> Duration {
+        self.request_allowance
+    }
+    pub(crate) fn write_allowance(&self, member: &str) -> Duration {
+        write_allowance(
+            self.native_camera_timing.as_ref(),
+            self.request_allowance,
+            member,
+        )
     }
     pub(crate) fn with_snapshot<T>(&self, read: impl FnOnce(&SourceSnapshot) -> T) -> T {
         read(&self.snapshot.borrow())
@@ -810,6 +822,19 @@ struct Actor {
     disconnect_result: Option<Result<(), SourceError>>,
     completion: watch::Sender<Option<Result<(), SourceError>>>,
 }
+fn write_allowance(
+    native: Option<&regain_core::timing::NativeCameraTiming>,
+    configured: Duration,
+    member: &str,
+) -> Duration {
+    native.map_or(configured, |timing| {
+        configured.max(if member == "abortexposure" {
+            timing.cleanup_allowance()
+        } else {
+            timing.control_allowance()
+        })
+    })
+}
 impl Actor {
     fn deadline(&self) -> Duration {
         Duration::from_secs_f64(self.policy.request_timeout_seconds)
@@ -822,15 +847,7 @@ impl Actor {
             })
     }
     fn write_deadline(&self, member: &str) -> Duration {
-        self.native_camera_timing
-            .as_ref()
-            .map_or(self.deadline(), |timing| {
-                self.deadline().max(if member == "abortexposure" {
-                    timing.cleanup_allowance()
-                } else {
-                    timing.control_allowance()
-                })
-            })
+        write_allowance(self.native_camera_timing.as_ref(), self.deadline(), member)
     }
     fn publish(&mut self) {
         self.state.connection_info = self.backend.connection_info();

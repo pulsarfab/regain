@@ -2624,6 +2624,43 @@ metadata and these shared transports do not enable public camera choices.
 
 ### Native camera supervision timing and retirement
 
+The host advertises cameraOperationTiming and cameraTiming/cameraControl.
+cameraTiming requires an output UUID and expectedRevision. It returns inert
+controller metadata with host instance, configuration revision, existing client
+ID, output/source UUIDs, a native-policy flag, and five positive integer
+millisecond allowances: connect, start, setting, stop and abort. No equipment
+connection, property read, source lease or control lease is acquired.
+
+Connect covers the controller's whole connection allowance. Start includes
+admission and its source write; settings additionally include control release.
+Stop includes its capability read and write; Abort includes capability read,
+cleanup write and control release. Source write allowances share the exact
+function used by the actor. Each operation adds a five-second supervision margin
+and retains at least the ordinary server operation bound. Millisecond values
+round upward. They must fit the net48 timer range while leaving room for two
+maximum frontend frame allowances. Validated native policy maxima fit this range.
+Proxy cameras use their own connection/request bounds, with no native retries.
+
+Rust request_camera and managed RequestCameraAsync validate the returned host,
+revision, client and output identities, then wrap only synchronous connection,
+Start, settings, Stop or Abort as cameraControl with expectedRevision and the
+original typed command. The host compares this revision before binding the
+runtime and dispatches through that same runtime/controller. A descriptor from
+before configuration apply therefore cannot control the new source even when
+the output UUID is retained. A new attachment/hello is needed for new metadata.
+Nested control wrappers, other device classes, reads, image transfers and
+asynchronous connection admission cannot use this path. Unknown/zero identities,
+unknown fields, fractional, zero or out-of-range timers are rejected.
+
+Clients add two frame allowances to the negotiated operation duration, retaining
+their ordinary request minimum. This does not extend scalar request deadlines,
+frame deadlines, exposure readiness or image-transfer limits. Cancellation of a
+dispatched waiter retains its slot and ownership until reply/deadline; transport
+loss retains mutation uncertainty and no command is automatically replayed.
+Timed-out Connect/Disconnect RPCs are also treated as uncertain mutations.
+Camera providers still need to adopt this shared API when published; no public
+camera capability is enabled by deadline negotiation alone.
+
 The native core declares validated supervision allowances from its actual
 recovery policy. Connection includes old-generation cleanup, permitted SDK
 fallback, USB binding/reopen and acknowledged control/environment restoration.

@@ -383,6 +383,24 @@ impl HubRuntime {
     pub fn source_snapshot(&self, source: Uuid) -> Result<SourceSnapshot, SourceError> {
         self.registry.get(source).map(|source| source.snapshot())
     }
+    pub(crate) fn camera_operation_timing(
+        &self,
+        host: Uuid,
+        client: Uuid,
+        output: Uuid,
+        base: std::time::Duration,
+    ) -> Result<Option<crate::camera::ipc_timing::CameraOperationTiming>, SourceError> {
+        match self.outputs.get(&output) {
+            Some(Output::Camera(camera)) => camera
+                .operation_timing(host, self.revision(), client, output, base)
+                .map(Some),
+            Some(_) => Ok(None),
+            None => Err(SourceError::new(
+                ErrorKind::InvalidValue,
+                "Unknown output ID",
+            )),
+        }
+    }
     /// Cached acquisition diagnostics only. This does not connect, admit an
     /// exposure, expose pixels, or authorize a camera output.
     pub fn camera_acquisition_status(

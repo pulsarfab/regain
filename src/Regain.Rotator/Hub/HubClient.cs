@@ -69,13 +69,14 @@ public sealed partial class HubClient : IDisposable
         internal readonly TaskCompletionSource<JsonElement> Reply = new(TaskCreationOptions.RunContinuationsAsynchronously);
         internal readonly CancellationTokenSource Done = new();
         internal readonly CancellationToken Caller;
-        internal Pending(bool mutating, CancellationToken caller) { Mutating = mutating; Caller = caller; }
+        internal readonly TimeSpan Timeout;
+        internal Pending(bool mutating, CancellationToken caller, TimeSpan timeout) { Mutating = mutating; Caller = caller; Timeout = timeout; }
     }
     // Pump tasks retain only Connection, so an abandoned public client can be
     // finalized and close its stream instead of keeping its leases alive forever.
     private sealed class Connection
     {
-        private static readonly string[] knownOperations = ["describeConfig", "getConfig", "validateConfig", "applyConfig",
+        private static readonly string[] knownOperations = ["cameraTiming", "cameraControl", "describeConfig", "getConfig", "validateConfig", "applyConfig",
             "listDevices", "sourceStatus", "outputStatus", "hostStatus", "inspectSource", "updateSimulation", "createCredential",
             "credentialStatus", "deleteCredential", "connect", "disconnect", "changeConnection", "get", "put"];
         private readonly object gate = new();
@@ -91,7 +92,7 @@ public sealed partial class HubClient : IDisposable
         internal Task Closed => closed.Task;
         internal Connection(Stream stream, HubHello hello, HubClientLimits limits) { this.stream = stream; Hello = hello; this.limits = limits; }
         internal void Start() { _ = ReadLoop(); }
-        internal Task<JsonElement> Request(JsonElement command, CancellationToken caller)
+        internal Task<JsonElement> Request(JsonElement command, CancellationToken caller, TimeSpan? cameraDeadline = null)
         {
             caller.ThrowIfCancellationRequested();
             string operation;
@@ -104,8 +105,10 @@ public sealed partial class HubClient : IDisposable
                 HubWire.CheckTokens(command, ref budget);
                 HubWire.Unique(command);
             } catch (Exception) { throw new HubException(HubFailure.InvalidRequest); }
-            var p = new Pending(operation is "put" or "connect" or "disconnect" or "changeConnection" or
-                "applyConfig" or "createCredential" or "deleteCredential" or "updateSimulation", caller);
+            var deadline = cameraDeadline.HasValue ? cameraDeadline.Value + limits.FrameTimeout + limits.FrameTimeout : limits.RequestTimeout;
+            if (deadline < limits.RequestTimeout) deadline = limits.RequestTimeout;
+            var p = new Pending(operation is "cameraControl" or "put" or "connect" or "disconnect" or "changeConnection" or
+                "applyConfig" or "createCredential" or "deleteCredential" or "updateSimulation", caller, deadline);
             lock (gate) {
                 if (closed.Task.IsCompleted) throw new HubException(HubFailure.Disconnected);
                 if (admitted.Count >= Hello.MaxInFlight) throw new HubException(HubFailure.Busy);
@@ -122,7 +125,7 @@ public sealed partial class HubClient : IDisposable
         }
         private async Task Deadline(Pending p)
         {
-            try { await Task.Delay(limits.RequestTimeout, p.Done.Token).ConfigureAwait(false); Close(HubFailure.Timeout); }
+            try { await Task.Delay(p.Timeout, p.Done.Token).ConfigureAwait(false); Close(HubFailure.Timeout); }
             catch (OperationCanceledException) { }
         }
         private async Task Send(Pending p, JsonElement command)

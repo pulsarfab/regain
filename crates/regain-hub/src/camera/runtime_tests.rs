@@ -40,6 +40,340 @@ fn config(direct: bool) -> HubConfig {
     config
 }
 
+#[tokio::test(start_paused = true)]
+async fn camera_frontend_deadlines_cover_native_connection_and_control_but_not_scalar_reads() {
+    use crate::{
+        client::{Client, ClientError, ClientLimits},
+        ipc::{Command, Get, Limits, Put, serve_stream},
+        source::{Backend, BackendFuture, Values},
+    };
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    struct SlowCamera {
+        timing: regain_core::timing::NativeCameraTiming,
+        writes: Arc<AtomicUsize>,
+    }
+    impl Backend for SlowCamera {
+        fn native_camera_timing(&self) -> Option<regain_core::timing::NativeCameraTiming> {
+            Some(self.timing.clone())
+        }
+        fn connect(&mut self) -> BackendFuture<'_, ()> {
+            Box::pin(async {
+                tokio::time::sleep(Duration::from_secs(40)).await;
+                Ok(())
+            })
+        }
+        fn disconnect(&mut self) -> BackendFuture<'_, ()> {
+            Box::pin(async { Ok(()) })
+        }
+        fn read(&mut self, member: String, _: Values) -> BackendFuture<'_, serde_json::Value> {
+            Box::pin(async move {
+                if member == "gain" {
+                    tokio::time::sleep(Duration::from_secs(40)).await;
+                }
+                Ok(json!(0))
+            })
+        }
+        fn write(&mut self, _: String, _: Values) -> BackendFuture<'_, serde_json::Value> {
+            Box::pin(async {
+                self.writes.fetch_add(1, Ordering::SeqCst);
+                tokio::time::sleep(Duration::from_secs(40)).await;
+                Ok(json!(null))
+            })
+        }
+        fn poll(&mut self) -> BackendFuture<'_, Values> {
+            Box::pin(async { Ok(Values::new()) })
+        }
+        fn reset(&mut self) {}
+    }
+    let mut cfg = config(false);
+    let source = cfg.sources[0].id;
+    cfg.sources[0].polling.request_timeout_seconds = 60.;
+    let output = outputs(&mut cfg, source, &[2])[0];
+    let clock = Arc::new(MonotonicClock::default());
+    let writes = Arc::new(AtomicUsize::new(0));
+    let core = regain_core::timing::NativeCameraTiming::new(&regain_core::Selection {
+        name: "Private timing fixture".into(),
+        serial: None,
+        direct: false,
+        sdk_fallback: false,
+        recovery: Default::default(),
+    })
+    .unwrap();
+    let registry = SourceRegistry::build(&cfg, clock.clone(), |_| {
+        Ok(Box::new(SlowCamera {
+            timing: core.clone(),
+            writes: writes.clone(),
+        }))
+    })
+    .unwrap();
+    let runtime = HubRuntime::from_registry(cfg, Arc::new(registry), clock).unwrap();
+    let (stream, server) = tokio::io::duplex(8192);
+    let serving = tokio::spawn(serve_stream(
+        server,
+        runtime.clone(),
+        Limits {
+            frame_timeout: Duration::from_secs(1),
+            operation_timeout: Duration::from_secs(1),
+        },
+    ));
+    let client = Client::from_stream(
+        stream,
+        runtime.instance_id(),
+        Duration::from_secs(1),
+        ClientLimits {
+            frame_timeout: Duration::from_secs(1),
+            request_timeout: Duration::from_secs(2),
+        },
+    )
+    .await
+    .unwrap();
+    let timing = client.camera_timing(output).await.unwrap();
+    assert!(timing.native && timing.connect_milliseconds > 300_000);
+    assert_eq!(timing.source, source);
+    assert_eq!(runtime.source_snapshot(source).unwrap().lease_count, 0);
+    assert_eq!(writes.load(Ordering::SeqCst), 0);
+    let started = tokio::time::Instant::now();
+    client
+        .request_camera(&timing, Command::Connect { output })
+        .await
+        .unwrap();
+    assert!(started.elapsed() >= Duration::from_secs(40));
+    client
+        .request_camera(
+            &timing,
+            Command::Put {
+                output,
+                property: Put::CameraSetting {
+                    setting: CameraSetting::NumX(64),
+                },
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(writes.load(Ordering::SeqCst), 1);
+    assert_eq!(runtime.source_snapshot(source).unwrap().lease_count, 1);
+    assert!(matches!(
+        client
+            .request_camera(
+                &timing,
+                Command::Get {
+                    output,
+                    property: Get::CameraAcquisition {}
+                }
+            )
+            .await,
+        Err(ClientError::InvalidRequest)
+    ));
+    let started = tokio::time::Instant::now();
+    let read = client
+        .request(Command::Get {
+            output,
+            property: Get::Camera {
+                property: crate::camera::properties::CameraProperty::Gain,
+            },
+        })
+        .await;
+    assert!(matches!(read,Err(ClientError::Remote(ref error)) if error.code == "timeout"));
+    assert!(started.elapsed() < Duration::from_secs(2));
+    assert!(client.is_connected());
+    let mut wrong = timing.clone();
+    wrong.configuration_revision = Uuid::new_v4();
+    assert!(matches!(
+        client
+            .request_camera(&wrong, Command::Connect { output })
+            .await,
+        Err(ClientError::InvalidRequest)
+    ));
+    let conflict = client
+        .request(Command::CameraTiming {
+            output,
+            expected_revision: Uuid::new_v4(),
+        })
+        .await;
+    assert!(
+        matches!(conflict,Err(ClientError::Remote(ref error)) if error.code == "revisionConflict")
+    );
+    client.close();
+    serving.await.unwrap().unwrap();
+    runtime.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn camera_frontend_deadline_metadata_is_inert_and_uses_the_actual_native_policy() {
+    use crate::camera::ipc_timing::MAX_OPERATION_MILLISECONDS;
+    for direct in [false, true] {
+        let mut cfg = config(direct);
+        let source = cfg.sources[0].id;
+        let output = outputs(&mut cfg, source, &[2])[0];
+        if let SourceBackend::Native {
+            camera: Some(camera),
+            ..
+        } = &mut cfg.sources[0].backend
+        {
+            camera.recovery.0.command_timeout_seconds = 3600.;
+            camera.recovery.0.reconnect_delay_seconds = 3600.;
+            camera.recovery.0.usb_reset_after_failures = 20;
+        }
+        let mut native = native(CameraResources::default());
+        let directory = tempfile::tempdir().unwrap();
+        native.directory = directory.path().join("absent-timing-workers");
+        native.simulate = false;
+        let camera = native.cameras.as_mut().unwrap();
+        camera.sdk_simulation = None;
+        camera.sdk = directory.path().join("absent-sdk.dll");
+        let runtime = HubRuntime::build(
+            cfg,
+            &native,
+            &NoCredentials,
+            Arc::new(MonotonicClock::default()),
+        )
+        .unwrap();
+        let host = Uuid::new_v4();
+        let client = Uuid::new_v4();
+        let timing = runtime
+            .camera_operation_timing(host, client, output, Duration::from_secs(30))
+            .unwrap()
+            .unwrap();
+        assert!(timing.valid() && timing.native);
+        assert!(
+            timing.setting_milliseconds > 3_600_000
+                && timing.setting_milliseconds < MAX_OPERATION_MILLISECONDS
+        );
+        let actor = runtime.registry.get(source).unwrap();
+        let expected = actor.write_allowance("gain")
+            + AcquisitionTiming::default().admission_timeout
+            + actor.request_allowance()
+            + Duration::from_secs(5);
+        assert_eq!(timing.setting_milliseconds, expected.as_millis() as u64);
+        assert!(!runtime.source_snapshot(source).unwrap().transport_connected);
+        assert_eq!(runtime.source_snapshot(source).unwrap().lease_count, 0);
+        runtime.shutdown().await.unwrap();
+    }
+}
+
+#[tokio::test]
+async fn camera_frontend_proxy_deadlines_keep_configured_transport_bounds_without_native_policy() {
+    let mut cfg = HubConfig::empty();
+    let source = Uuid::new_v4();
+    cfg.sources.push(serde_json::from_value(json!({"id":source,"label":"Never opened proxy",
+        "backend":{"kind":"alpaca","baseUrl":"http://127.0.0.1:1","deviceType":"camera","deviceNumber":7},
+        "polling":{"connectionTimeoutSeconds":300.,"requestTimeoutSeconds":60.}})).unwrap());
+    let output = outputs(&mut cfg, source, &[7])[0];
+    let native = NativeRuntime {
+        directory: "absent-workers".into(),
+        simulate: false,
+        references: None,
+        cameras: None,
+    };
+    let runtime = HubRuntime::build(
+        cfg,
+        &native,
+        &NoCredentials,
+        Arc::new(MonotonicClock::default()),
+    )
+    .unwrap();
+    let timing = runtime
+        .camera_operation_timing(
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+            output,
+            Duration::from_secs(30),
+        )
+        .unwrap()
+        .unwrap();
+    assert!(!timing.native);
+    assert_eq!(timing.connect_milliseconds, 305_000);
+    assert_eq!(timing.setting_milliseconds, 140_000);
+    assert_eq!(timing.abort_milliseconds, 185_000);
+    assert_eq!(runtime.source_snapshot(source).unwrap().lease_count, 0);
+    assert!(!runtime.source_snapshot(source).unwrap().transport_connected);
+    runtime.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn camera_frontend_control_rejects_an_old_descriptor_after_apply_before_binding_sources() {
+    use crate::{
+        client::{Client, ClientError, ClientLimits},
+        config::ConfigStore,
+        ipc::{Command, Get, Limits, serve_service_stream},
+        service::HubService,
+    };
+    let mut cfg = HubConfig::empty();
+    let source = Uuid::new_v4();
+    cfg.sources.push(serde_json::from_value(json!({"id":source,"label":"Inert proxy",
+        "backend":{"kind":"alpaca","baseUrl":"http://127.0.0.1:1","deviceType":"camera","deviceNumber":7}})).unwrap());
+    let output = outputs(&mut cfg, source, &[7])[0];
+    let service = HubService::persistent(
+        ConfigStore::new(None, cfg).unwrap(),
+        Arc::new(|cfg| {
+            HubRuntime::build(
+                cfg,
+                &NativeRuntime {
+                    directory: "absent-workers".into(),
+                    simulate: false,
+                    references: None,
+                    cameras: None,
+                },
+                &NoCredentials,
+                Arc::new(MonotonicClock::default()),
+            )
+        }),
+    )
+    .unwrap();
+    let (stream, server) = tokio::io::duplex(8192);
+    let serving = tokio::spawn(serve_service_stream(
+        server,
+        service.clone(),
+        Limits::default(),
+    ));
+    let client = Client::from_stream(
+        stream,
+        service.instance_id(),
+        Duration::from_secs(3),
+        ClientLimits::default(),
+    )
+    .await
+    .unwrap();
+    let timing = client.camera_timing(output).await.unwrap();
+    let mut candidate = service.configuration();
+    candidate.outputs[0].label = "Same output, new configuration".into();
+    client
+        .request(Command::ApplyConfig {
+            expected_revision: timing.configuration_revision,
+            candidate: Box::new(candidate),
+        })
+        .await
+        .unwrap();
+    assert_ne!(
+        service.configuration().revision,
+        timing.configuration_revision
+    );
+    let stale = client
+        .request_camera(&timing, Command::Connect { output })
+        .await;
+    assert!(
+        matches!(stale,Err(ClientError::Remote(ref error)) if error.code == "revisionConflict")
+    );
+    assert!(client.is_connected());
+    let current = service.runtime().unwrap();
+    assert_eq!(current.active_connections(), 0);
+    assert_eq!(current.source_snapshot(source).unwrap().lease_count, 0);
+    assert!(!current.source_snapshot(source).unwrap().transport_connected);
+    let invalid = client
+        .request(Command::CameraControl {
+            expected_revision: current.revision(),
+            command: Box::new(Command::Get {
+                output,
+                property: Get::Connected {},
+            }),
+        })
+        .await;
+    assert!(matches!(invalid,Err(ClientError::Remote(ref error)) if error.code == "invalidValue"));
+    client.close();
+    serving.await.unwrap().unwrap();
+    service.shutdown().await.unwrap();
+}
+
 fn native(resources: CameraResources) -> NativeRuntime {
     NativeRuntime {
         directory: std::env::var_os("REGAIN_TEST_WORKERS")
