@@ -457,6 +457,21 @@ impl CameraImage {
     pub fn native(&self) -> Option<&NativeImageInfo> {
         self.0.native.as_ref()
     }
+    /// One reusable, accounted scratch buffer per outgoing stream. Admission
+    /// precedes allocation and the image's existing reservation is not copied.
+    pub(crate) fn transfer_buffer(&self) -> Result<TransferBuffer, SourceError> {
+        let length = self.bytes().len().min(IMAGE_CHUNK_BYTES);
+        let reservation = self.0._reservation.budget.reserve(length)?;
+        let mut bytes = Vec::new();
+        bytes.try_reserve_exact(length).map_err(|_| {
+            SourceError::new(ErrorKind::Unavailable, "Camera transfer allocation failed")
+        })?;
+        bytes.resize(length, 0);
+        Ok(TransferBuffer {
+            bytes,
+            _reservation: reservation,
+        })
+    }
     /// Returns a bounded, element-aligned ImageBytes payload chunk in ASCOM order.
     /// The caller retains this image handle until the transfer finishes or cancels.
     pub fn imagebytes_chunk(&self, offset: usize, maximum: usize) -> Result<Vec<u8>, SourceError> {
@@ -479,6 +494,29 @@ impl CameraImage {
             bytes.extend_from_slice(&self.bytes()[start..start + size]);
         }
         Ok(bytes)
+    }
+}
+
+pub(crate) struct TransferBuffer {
+    bytes: Vec<u8>,
+    _reservation: Reservation,
+}
+impl TransferBuffer {
+    pub(crate) fn fill<'a>(&'a mut self, image: &CameraImage, offset: usize) -> &'a [u8] {
+        let descriptor = image.descriptor();
+        let size = descriptor.transmission_type().bytes();
+        debug_assert!(offset <= image.bytes().len() && offset.is_multiple_of(size));
+        let length = (image.bytes().len() - offset).min(self.bytes.len());
+        if descriptor.order() == ImageOrder::Ascom {
+            self.bytes[..length].copy_from_slice(&image.bytes()[offset..offset + length]);
+        } else {
+            for (index, element) in (offset / size..(offset + length) / size).enumerate() {
+                let source = descriptor.ascom_offset(element);
+                self.bytes[index * size..(index + 1) * size]
+                    .copy_from_slice(&image.bytes()[source..source + size]);
+            }
+        }
+        &self.bytes[..length]
     }
 }
 
@@ -522,6 +560,17 @@ pub async fn read_imagebytes<R: AsyncRead + Unpin>(
     budget: &ImageBudget,
     expected_client_transaction: u32,
 ) -> Result<ImageBytesResponse, ImageReadError> {
+    read_imagebytes_matching(reader, budget, expected_client_transaction, None).await
+}
+
+/// IPC has already admitted an exact descriptor. Reject a differing binary
+/// header before reserving or allocating its pixels.
+pub(crate) async fn read_imagebytes_matching<R: AsyncRead + Unpin>(
+    reader: &mut R,
+    budget: &ImageBudget,
+    expected_client_transaction: u32,
+    expected: Option<(ImageDescriptor, u32)>,
+) -> Result<ImageBytesResponse, ImageReadError> {
     let mut header = [0; IMAGEBYTES_HEADER_BYTES];
     reader.read_exact(&mut header).await?;
     let fields: Vec<u32> = header
@@ -555,6 +604,13 @@ pub async fn read_imagebytes<R: AsyncRead + Unpin>(
     } else {
         None
     };
+    if let Some((expected_descriptor, expected_server_transaction)) = expected
+        && (descriptor != Some(expected_descriptor)
+            || fields[3] != expected_server_transaction
+            || fields[4] != IMAGEBYTES_HEADER_BYTES as u32)
+    {
+        return Err(invalid("ImageBytes header differs from its admitted body contract").into());
+    }
     // Discard a bounded metadata extension without reserving an image-sized buffer.
     let mut remaining = fields[4] as usize - IMAGEBYTES_HEADER_BYTES;
     let mut discard = [0; 1024];

@@ -175,7 +175,7 @@ impl Client {
         if !self.is_connected() {
             return Err(ClientError::Disconnected);
         }
-        if matches!(command, Command::Hello {})
+        if matches!(command, Command::Hello {} | Command::CameraImage { .. })
             || !self
                 .0
                 .hello
@@ -210,7 +210,7 @@ impl Client {
         }))
     }
 }
-fn connection_error(error: io::Error) -> ClientError {
+pub(crate) fn connection_error(error: io::Error) -> ClientError {
     match error.kind() {
         io::ErrorKind::TimedOut => ClientError::Timeout,
         io::ErrorKind::InvalidData | io::ErrorKind::PermissionDenied => ClientError::Protocol,
@@ -233,6 +233,7 @@ fn mutating(command: &Command) -> bool {
 fn operation(command: &Command) -> &'static str {
     match command {
         Command::Hello {} => "hello",
+        Command::CameraImage { .. } => "cameraImage",
         Command::DescribeConfig {} => "describeConfig",
         Command::GetConfig {} => "getConfig",
         Command::ValidateConfig { .. } => "validateConfig",
@@ -277,7 +278,7 @@ fn encode(request: &Request, limit: usize) -> Result<Zeroizing<Vec<u8>>, ClientE
     serde_json::to_writer(&mut bytes, request).map_err(|_| ClientError::InvalidRequest)?;
     Ok(bytes.data)
 }
-fn decode(bytes: &[u8]) -> Result<(u64, Result<Value, ClientError>), ClientError> {
+pub(crate) fn decode(bytes: &[u8]) -> Result<(u64, Result<Value, ClientError>), ClientError> {
     // Struct parsing rejects duplicate IDs/results. Presence is separate from
     // null, because successful void replies legitimately carry a null result.
     #[derive(Deserialize)]

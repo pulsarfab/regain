@@ -67,6 +67,422 @@ async fn until(mut predicate: impl FnMut() -> bool) {
 }
 
 #[tokio::test]
+async fn private_host_endpoint_transfers_camera_pixels_without_replacing_the_control_client() {
+    use crate::{
+        camera::ipc_image::{ImageRequest, download_from_stream},
+        client::{Client, ClientLimits},
+        endpoint::Endpoint,
+        host::serve,
+        ipc::{Command, Get, Limits, Put},
+    };
+    let resources = CameraResources::new(4 * 1024 * 1024).unwrap();
+    let mut cfg = config(false);
+    let source = cfg.sources[0].id;
+    let output = outputs(&mut cfg, source, &[2])[0];
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("private image hub.json");
+    std::fs::write(&path, serde_json::to_vec(&cfg).unwrap()).unwrap();
+    let endpoint = Endpoint::for_config(&path).unwrap();
+    let runtime = HubRuntime::build(
+        cfg,
+        &native(resources.clone()),
+        &NoCredentials,
+        Arc::new(MonotonicClock::default()),
+    )
+    .unwrap();
+    let stop = regain_core::CancellationToken::new();
+    let task = tokio::spawn(serve(
+        endpoint.try_lock().unwrap().unwrap().bind().unwrap(),
+        runtime.clone(),
+        Limits::default(),
+        stop.clone(),
+    ));
+    let control = Client::connect(
+        &endpoint,
+        runtime.instance_id(),
+        Duration::from_secs(5),
+        ClientLimits::default(),
+    )
+    .await
+    .unwrap();
+    control.request(Command::Connect { output }).await.unwrap();
+    for setting in [CameraSetting::NumX(256), CameraSetting::NumY(256)] {
+        control
+            .request(Command::Put {
+                output,
+                property: Put::CameraSetting { setting },
+            })
+            .await
+            .unwrap();
+    }
+    control
+        .request(Command::Put {
+            output,
+            property: Put::StartExposure {
+                request: ExposureRequest {
+                    duration_seconds: 0.05,
+                    light: false,
+                },
+            },
+        })
+        .await
+        .unwrap();
+    let status = tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            let status = control
+                .request(Command::Get {
+                    output,
+                    property: Get::CameraAcquisition {},
+                })
+                .await
+                .unwrap();
+            if status["imageReady"] == true {
+                break status;
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .unwrap();
+    let request = ImageRequest {
+        host_instance: control.hello().host_instance,
+        configuration_revision: runtime.revision(),
+        client_id: control.hello().client_id,
+        output,
+        source,
+        generation: serde_json::from_value(status["completed"]["generation"].clone()).unwrap(),
+        acquisition: serde_json::from_value(status["completed"]["acquisition"].clone()).unwrap(),
+    };
+    assert!(matches!(
+        control.request(Command::CameraImage { request }).await,
+        Err(crate::client::ClientError::InvalidRequest)
+    ));
+    let budget = crate::camera::image::ImageBudget::new(1024 * 1024).unwrap();
+    let image = download_from_stream(
+        endpoint.connect(Duration::from_secs(3)).await.unwrap(),
+        runtime.instance_id(),
+        request,
+        &budget,
+        Duration::from_secs(5),
+    )
+    .await
+    .unwrap();
+    assert_eq!(image.image.bytes().len(), 256 * 256 * 2);
+    assert_eq!(image.manifest.request, request);
+    assert!(control.is_connected());
+    assert_eq!(
+        control
+            .request(Command::Get {
+                output,
+                property: Get::Connected {}
+            })
+            .await
+            .unwrap(),
+        true
+    );
+    assert_eq!(runtime.source_snapshot(source).unwrap().lease_count, 1);
+    drop(image);
+    assert_eq!(budget.used_bytes(), 0);
+    control
+        .request(Command::Disconnect { output })
+        .await
+        .unwrap();
+    control.close();
+    stop.cancel();
+    task.await.unwrap().unwrap();
+    assert_eq!(resources.image_budget().used_bytes(), 0);
+    assert!(endpoint.try_lock().unwrap().is_some());
+}
+
+#[tokio::test]
+async fn dedicated_image_ipc_uses_existing_leases_and_fences_every_saved_identity() {
+    use crate::{
+        camera::ipc_image::{ImageRequest, download_from_stream},
+        client::ClientError,
+        ipc::{Limits, serve_service_stream},
+        service::HubService,
+    };
+    for direct in [false, true] {
+        let resources = CameraResources::new(4 * 1024 * 1024).unwrap();
+        let mut cfg = config(direct);
+        let source = cfg.sources[0].id;
+        let output = outputs(&mut cfg, source, &[2])[0];
+        let runtime = HubRuntime::build(
+            cfg,
+            &native(resources.clone()),
+            &NoCredentials,
+            Arc::new(MonotonicClock::default()),
+        )
+        .unwrap();
+        let service = HubService::read_only(runtime.clone());
+        let client = runtime.client();
+        client.connect(output).await.unwrap();
+        let connection = client.connection(output).unwrap();
+        let camera = connection.camera().unwrap();
+        for setting in [CameraSetting::NumX(256), CameraSetting::NumY(256)] {
+            camera.set(setting).await.unwrap();
+        }
+        camera
+            .start(ExposureRequest {
+                duration_seconds: 0.05,
+                light: false,
+            })
+            .await
+            .unwrap();
+        until(|| camera.status().image_ready).await;
+        let frame = camera.image().unwrap();
+        let request = ImageRequest {
+            host_instance: service.host_id(),
+            configuration_revision: runtime.revision(),
+            client_id: client.id(),
+            output,
+            source,
+            generation: frame.identity.generation,
+            acquisition: frame.identity.acquisition,
+        };
+        let baseline = resources.image_budget().used_bytes();
+        let budget = crate::camera::image::ImageBudget::new(1024 * 1024).unwrap();
+        let (reader, server) = tokio::io::duplex(4096);
+        let task = tokio::spawn(serve_service_stream(
+            server,
+            service.clone(),
+            Limits::default(),
+        ));
+        let downloaded = download_from_stream(
+            reader,
+            runtime.instance_id(),
+            request,
+            &budget,
+            Duration::from_secs(5),
+        )
+        .await
+        .unwrap();
+        task.await.unwrap().unwrap();
+        assert_eq!(downloaded.manifest.request, request);
+        assert_eq!(downloaded.image.descriptor().order(), ImageOrder::Ascom);
+        assert_eq!(
+            downloaded.image.descriptor().element_type(),
+            ElementType::Int32
+        );
+        assert_eq!(
+            downloaded.image.descriptor().transmission_type(),
+            ElementType::UInt16
+        );
+        let expected: Vec<_> = (0..frame.image.bytes().len())
+            .step_by(crate::camera::image::IMAGE_CHUNK_BYTES)
+            .flat_map(|offset| {
+                frame
+                    .image
+                    .imagebytes_chunk(offset, crate::camera::image::IMAGE_CHUNK_BYTES)
+                    .unwrap()
+            })
+            .collect();
+        assert_eq!(downloaded.image.bytes(), expected);
+        assert_eq!(resources.image_budget().used_bytes(), baseline);
+        assert_eq!(runtime.source_snapshot(source).unwrap().lease_count, 1);
+        drop(downloaded);
+        assert_eq!(budget.used_bytes(), 0);
+        let filler = resources
+            .image_budget()
+            .allocate(
+                ImageDescriptor::new(
+                    (4 * 1024 * 1024 - baseline) as u32,
+                    1,
+                    None,
+                    ElementType::Byte,
+                    ElementType::Byte,
+                    ImageOrder::Ascom,
+                )
+                .unwrap(),
+            )
+            .unwrap()
+            .finish();
+        let (reader, server) = tokio::io::duplex(4096);
+        let task = tokio::spawn(serve_service_stream(
+            server,
+            service.clone(),
+            Limits::default(),
+        ));
+        assert!(
+            matches!(download_from_stream(reader, runtime.instance_id(), request, &budget,
+            Duration::from_secs(5)).await, Err(ClientError::Remote(error)) if error.code=="busy")
+        );
+        task.await.unwrap().unwrap();
+        assert_eq!(resources.image_budget().used_bytes(), 4 * 1024 * 1024);
+        drop(filler);
+        assert_eq!(resources.image_budget().used_bytes(), baseline);
+        for field in 0..7 {
+            let mut wrong = request;
+            match field {
+                0 => wrong.host_instance = Uuid::new_v4(),
+                1 => wrong.configuration_revision = Uuid::new_v4(),
+                2 => wrong.client_id = Uuid::new_v4(),
+                3 => wrong.output = Uuid::new_v4(),
+                4 => wrong.source = Uuid::new_v4(),
+                5 => wrong.generation = Uuid::new_v4(),
+                _ => wrong.acquisition = Uuid::new_v4(),
+            }
+            let (reader, server) = tokio::io::duplex(4096);
+            let task = tokio::spawn(serve_service_stream(
+                server,
+                service.clone(),
+                Limits::default(),
+            ));
+            assert!(matches!(
+                download_from_stream(
+                    reader,
+                    runtime.instance_id(),
+                    wrong,
+                    &budget,
+                    Duration::from_secs(5)
+                )
+                .await,
+                Err(ClientError::Protocol | ClientError::Remote(_))
+            ));
+            task.await.unwrap().unwrap();
+            assert_eq!(resources.image_budget().used_bytes(), baseline);
+            assert_eq!(runtime.source_snapshot(source).unwrap().lease_count, 1);
+        }
+        let (reader, server) = tokio::io::duplex(4096);
+        let task = tokio::spawn(serve_service_stream(
+            server,
+            service.clone(),
+            Limits::default(),
+        ));
+        let too_small = crate::camera::image::ImageBudget::new(1024).unwrap();
+        assert!(matches!(
+            download_from_stream(
+                reader,
+                runtime.instance_id(),
+                request,
+                &too_small,
+                Duration::from_secs(5)
+            )
+            .await,
+            Err(ClientError::Busy)
+        ));
+        let _ = task.await.unwrap(); // Receiver rejection may close during the binary write.
+        assert_eq!(too_small.used_bytes(), 0);
+        assert_eq!(resources.image_budget().used_bytes(), baseline);
+        assert_eq!(
+            camera.image().unwrap().identity.acquisition,
+            request.acquisition
+        );
+        client.close();
+        drop(connection);
+        drop(frame);
+        runtime.shutdown().await.unwrap();
+        assert_eq!(resources.image_budget().used_bytes(), 0);
+    }
+}
+
+#[tokio::test]
+async fn outgoing_image_pin_and_accounted_scratch_survive_control_disconnect_until_eof_or_deadline()
+{
+    use crate::{
+        camera::ipc_image::ImageRequest,
+        host::handshake,
+        ipc::{Command, Limits, Request, VERSION, read_frame, serve_service_stream},
+        service::HubService,
+    };
+    use tokio::io::AsyncWriteExt;
+    for close_reader in [true, false] {
+        let resources = CameraResources::new(4 * 1024 * 1024).unwrap();
+        let mut cfg = config(false);
+        let source = cfg.sources[0].id;
+        let output = outputs(&mut cfg, source, &[2])[0];
+        let runtime = HubRuntime::build(
+            cfg,
+            &native(resources.clone()),
+            &NoCredentials,
+            Arc::new(MonotonicClock::default()),
+        )
+        .unwrap();
+        let service = HubService::read_only(runtime.clone());
+        let client = runtime.client();
+        client.connect(output).await.unwrap();
+        let connection = client.connection(output).unwrap();
+        let camera = connection.camera().unwrap();
+        for setting in [CameraSetting::NumX(256), CameraSetting::NumY(256)] {
+            camera.set(setting).await.unwrap();
+        }
+        camera
+            .start(ExposureRequest {
+                duration_seconds: 0.05,
+                light: false,
+            })
+            .await
+            .unwrap();
+        until(|| camera.status().image_ready).await;
+        let frame = camera.image().unwrap();
+        let request = ImageRequest {
+            host_instance: service.host_id(),
+            configuration_revision: runtime.revision(),
+            client_id: client.id(),
+            output,
+            source,
+            generation: frame.identity.generation,
+            acquisition: frame.identity.acquisition,
+        };
+        drop(frame);
+        let baseline = resources.image_budget().used_bytes();
+        let (mut reader, server) = tokio::io::duplex(1024);
+        let task = tokio::spawn(serve_service_stream(
+            server,
+            service.clone(),
+            Limits {
+                frame_timeout: Duration::from_secs(1),
+                ..Limits::default()
+            },
+        ));
+        handshake(&mut reader, runtime.instance_id(), Duration::from_secs(2))
+            .await
+            .unwrap();
+        let bytes = serde_json::to_vec(&Request {
+            version: VERSION,
+            id: 2,
+            command: Command::CameraImage { request },
+        })
+        .unwrap();
+        reader
+            .write_all(&(bytes.len() as u32).to_le_bytes())
+            .await
+            .unwrap();
+        reader.write_all(&bytes).await.unwrap();
+        let manifest: serde_json::Value = serde_json::from_slice(
+            &read_frame(&mut reader, Duration::from_secs(2))
+                .await
+                .unwrap()
+                .unwrap(),
+        )
+        .unwrap();
+        assert!(manifest.get("result").is_some());
+        assert_eq!(
+            resources.image_budget().used_bytes(),
+            baseline + crate::camera::image::IMAGE_CHUNK_BYTES
+        );
+        client.close();
+        drop(connection);
+        assert_eq!(runtime.active_connections(), 1);
+        assert!(runtime.quiesce().is_err());
+        assert_eq!(runtime.source_snapshot(source).unwrap().lease_count, 1);
+        // This separate stalled reader cannot hold the control stream or fabricate
+        // an Abort. Closing it releases the image scratch and borrowed output lease.
+        if close_reader {
+            drop(reader);
+            assert!(task.await.unwrap().is_err());
+        } else {
+            assert_eq!(task.await.unwrap(), Err(crate::ipc::ProtocolError::Timeout));
+            drop(reader);
+        }
+        until(|| runtime.active_connections() == 0).await;
+        until(|| resources.image_budget().used_bytes() <= baseline).await;
+        runtime.shutdown().await.unwrap();
+        assert_eq!(resources.image_budget().used_bytes(), 0);
+    }
+}
+
+#[tokio::test]
 async fn runtime_constructs_distinct_inert_supervisors_before_adopting_host_resources() {
     let resources = CameraResources::default();
     let mut native = native(resources.clone());

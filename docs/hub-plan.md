@@ -8,6 +8,37 @@ tagged or published. Changed cross-crate APIs require an unpublished version so
 Cargo package verification uses the new workspace packages.
 Last updated: 2026-10-07.
 
+Current increment: bounded Rust frontend image IPC is implemented and locally
+reviewed/validated. A separate authenticated image stream
+borrows an existing control client's output lease and pins its exact completed
+source/generation/acquisition. It issues no equipment command. The host reserves
+one reusable 64-KiB scratch buffer before acknowledgement, streams a finite
+ImageBytes body and closes the stream. The Rust reader validates the manifest
+and binary descriptor before publishing a budgeted immutable image. Five binary
+codec/scratch/deadline cases and eleven runtime cases pass, including a real
+private OS endpoint. Final hub/Alpaca regressions, all 69 hub unit tests, strict
+Rust 1.99 lint, Rust 1.89 compatibility, formatting/contracts and Node/eight
+schema checks pass. NINA 230/230 and actual net48 x86/x64 pass with the added
+wire capability. IPC forbids binary metadata extensions or wrong transactions
+before allocation; ordinary HTTP extension support remains unchanged. Full host
+budget rejection, receiver rejection, reader EOF and stalled-writer deadlines
+release transfer resources without replay. These tests use only simulations and
+private fixtures.
+Managed image readers, frontend operation timing, remaining camera inputs and
+all three camera publications remain required, alongside the original gates.
+
+Runtime/scalar camera output commit edc5a59 is pushed to draft PR #21. Its PR
+37596918826 and push 37596912932 workflows are live. Keep subsequent work local
+until those runs finish; no complete milestone or merge/release gate closes here.
+Push CI's macOS Intel job 112711683350 has failed a nested filter-wheel
+moving-position read with a Transient timeout; the same PR job passes. Both
+Windows jobs remain live. The failed job's raw log is retained. The test now
+reports elapsed read time, source snapshots, private requests and writes at that
+assertion; no deadline, expected result or retry behavior is changed. Cause is
+not established, and fresh CI is required before accepting this correction.
+The diagnostic refinement passes all 22 filter-wheel cases locally, with strict
+lint and Rust 1.89 checks; this does not prove macOS CI acceptance or a root cause.
+
 Current checkpoint: camera outputs now share the runtime's acquisition supervisor
 by source UUID. Runtime connections and typed scalar IPC cover camera properties,
 settings, Start/Stop/Abort and owner-only abandonment of an uncertain acquisition.

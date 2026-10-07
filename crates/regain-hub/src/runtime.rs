@@ -74,6 +74,25 @@ struct Lifecycle {
     clients: Vec<Weak<ClientSession>>,
 }
 impl HubRuntime {
+    /// A dedicated image stream borrows an already connected control client's
+    /// lease. It never connects equipment, starts a capture or downloads again.
+    pub(crate) fn image_connection(
+        &self,
+        client: Uuid,
+        output: Uuid,
+    ) -> Result<Arc<OutputConnection>, SourceError> {
+        let lifecycle = self.lifecycle.lock().unwrap();
+        if lifecycle.closed {
+            return Err(disconnected());
+        }
+        lifecycle
+            .clients
+            .iter()
+            .filter_map(Weak::upgrade)
+            .find(|entry| entry.id() == client)
+            .ok_or_else(disconnected)?
+            .connection(output)
+    }
     /// Build controllers without connecting sources. No HTTP listener or ASCOM
     /// Platform is needed for native/network sources.
     pub fn build(

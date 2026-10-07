@@ -2553,6 +2553,53 @@ unknown fields, including unexpected pixels. Diagnostic reads acquire no lease
 and cannot admit a capture. These runtime and diagnostic APIs do not yet provide
 an Alpaca camera, native ASCOM camera or native NINA camera provider.
 
+### Dedicated frontend image IPC
+
+The host advertises cameraImageStream and the cameraImage operation. Image
+transfer uses a separate user-protected connection to the same host, leaving
+the multiplexed scalar control connection available. After hello, request ID 2
+must be cameraImage; it is illegal after other operations. The scalar Rust and
+managed request APIs do not admit this stream-switching operation.
+
+ImageRequest carries host instance, configuration revision, the existing control
+client's ID, output UUID, source UUID, source generation and acquisition UUID.
+The host requires that exact control client/output to remain connected at
+admission and pins only its matching completed image. It does not connect a
+device, acquire a new hardware session, download from the source again, clear
+uncertainty or start an exposure. The user-protected transport remains the
+authorization boundary; UUIDs fence identity, not access between users.
+
+Before success, the host reserves one reusable scratch buffer of at most 64 KiB
+from the image's original host budget. A full budget returns a structured Busy
+error without a successful transfer header or eviction. The manifest is a bounded
+JSON reply containing the echoed identities, validated ASCOM-order descriptor,
+exact ImageBytes body length, chunk bound and transfer deadline. It contains no
+pixels. Success switches that connection to one finite ImageBytes body (44-byte
+standard header plus pixels), then EOF; no further command is accepted there.
+All nine element types and permitted lossless packed Int32 encodings retain
+their numeric representation. Native sensor rows transpose in the single
+accounted scratch buffer; no second full-size server image is created.
+
+The stream pins both the immutable image and the existing output connection
+until completion, cancellation or failure. A control disconnect cannot revoke a
+transfer already admitted; its borrowed source lease/activity remains until the
+reader finishes. New transfers from that disconnected control client fail.
+The normal 32-client host ceiling bounds image streams as well as control
+streams. Each write has the host's frame deadline; the whole body has a
+300-second ceiling. EOF or any additional client frame terminates transfer.
+Shutdown aborts host stream tasks before draining sources. No transfer cleanup
+sends Abort, Stop, reconnect or a replacement exposure.
+
+The Rust reader owns a separate authenticated stream, validates host/revision
+and negotiated capability before requesting pixels, and requires exact echoed
+identities, descriptor, byte count and limits. It rejects a different binary
+descriptor before pixel allocation. Receiver allocations use an explicit budget;
+invalid manifests/headers, partial/trailing bodies, cancellation and deadlines
+never publish a partial image. Its positive caller deadline cannot exceed 300
+seconds. There is no automatic retry. Managed image readers and actual
+Alpaca/NINA/ASCOM camera publication remain required; scalar camera metadata and
+this Rust transport alone do not enable public camera choices.
+
 ### Native camera supervision timing and retirement
 
 The native core declares validated supervision allowances from its actual

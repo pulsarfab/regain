@@ -1,5 +1,6 @@
 //! Versioned scalar hub IPC over a host-supplied, user-protected local stream.
-//! No listener is opened here. Camera images require their separate contract.
+//! No listener is opened here. A dedicated camera-image stream uses the separate
+//! finite ImageBytes contract; multiplexed control replies remain scalar JSON.
 use crate::{
     config::{HubConfig, WeatherMetric},
     credentials::{CredentialError, SecretAuthorization},
@@ -75,6 +76,10 @@ pub struct Request {
 #[serde(tag = "op", rename_all = "camelCase", deny_unknown_fields)]
 pub enum Command {
     Hello {},
+    /// Only the first request after hello on a dedicated image stream.
+    CameraImage {
+        request: crate::camera::ipc_image::ImageRequest,
+    },
     DescribeConfig {},
     GetConfig {},
     ValidateConfig {
@@ -481,18 +486,37 @@ where
                 if !greeted {
                     if !matches!(request.command, Command::Hello {}) { return Err(ProtocolError::Handshake); }
                     greeted = true;
-                    let mut operations = vec!["describeConfig","getConfig","validateConfig","listDevices","sourceStatus","outputStatus","inspectSource","updateSimulation","connect","disconnect","changeConnection","get","put","hostStatus"];
+                    let mut operations = vec!["cameraImage","describeConfig","getConfig","validateConfig","listDevices","sourceStatus","outputStatus","inspectSource","updateSimulation","connect","disconnect","changeConnection","get","put","hostStatus"];
                     if service.can_apply() { operations.push("applyConfig"); }
                     if service.credential_description().is_some() { operations.extend(["createCredential", "credentialStatus", "deleteCredential"]); }
                     let hello = json!({"protocolVersion":VERSION, "instanceId":service.instance_id(),
                         "hostInstance":service.host_id(), "configurationRevision":service.configuration().revision, "clientId":client.id(),
                         "maxFrameBytes":MAX_FRAME_BYTES, "maxInFlight":MAX_IN_FLIGHT,
                         "operations":operations,
-                        "capabilities":["switchOutputs","safetyOutputs","weatherOutputs","focuserOutputs","rotatorOutputs","filterWheelOutputs","coverCalibratorOutputs","cameraAcquisition","rotatorMotionReceipt","weatherSensorDescription","scalarDeviceState","asyncOutputConnection","switchAsyncContract"]});
+                        "capabilities":["switchOutputs","safetyOutputs","weatherOutputs","focuserOutputs","rotatorOutputs","filterWheelOutputs","coverCalibratorOutputs","cameraAcquisition","cameraImageStream","rotatorMotionReceipt","weatherSensorDescription","scalarDeviceState","asyncOutputConnection","switchAsyncContract"]});
                     write_response(&mut writer, Response::new(request.id, Ok(hello)), limits.frame_timeout).await?;
                     continue;
                 }
                 if matches!(request.command, Command::Hello {}) { return Err(ProtocolError::Handshake); }
+                if let Command::CameraImage { request: image_request } = request.command {
+                    if request.id != 2 || !tasks.is_empty() { return Err(ProtocolError::RequestOrder); }
+                    let image = crate::camera::ipc_image::prepare(&service, image_request);
+                    match image {
+                        Err(error) => write_response(&mut writer, Response::new(request.id, Err(error.into())), limits.frame_timeout).await?,
+                        Ok(mut image) => {
+                            write_response(&mut writer, Response::new(request.id, Ok(json!(image.manifest))), limits.frame_timeout).await?;
+                            // No further command is legal on this stream. EOF,
+                            // cancellation or a stalled reader releases only its
+                            // image pin/borrowed lease, never sends Abort.
+                            tokio::select! {
+                                biased;
+                                _ = incoming.recv() => return Err(ProtocolError::Malformed),
+                                result = image.write(&mut writer, limits.frame_timeout) => result?,
+                            }
+                        }
+                    }
+                    return Ok(());
+                }
                 if tasks.len() >= MAX_IN_FLIGHT { return Err(ProtocolError::Overloaded); }
                 let service = service.clone();
                 let client = client.clone();
@@ -585,6 +609,7 @@ async fn dispatch(
     }
     Ok(match command {
         Command::ApplyConfig { .. }
+        | Command::CameraImage { .. }
         | Command::HostStatus {}
         | Command::DescribeConfig {}
         | Command::CreateCredential { .. }

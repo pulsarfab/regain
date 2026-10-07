@@ -3,6 +3,80 @@
 This records local review and tests for the single hub PR. Passing a foundation
 test does not imply that a frontend, transport, or hardware gate has passed.
 
+## 2026-10-07: dedicated frontend image stream
+
+Reviewed the binary path against existing ownership and budget rules. An image
+request is only legal directly after hello on a separate protected stream; the
+normal scalar clients reject it locally. Host/revision/control-client/output/
+source/generation/acquisition identities must match. The host borrows an existing
+output connection instead of creating a new camera session or rereading the leaf
+image. Its immutable image and connection pin survive a later control disconnect.
+The protected endpoint provides authorization; UUIDs provide identity fencing.
+
+Transfer scratch is reserved before acknowledgement and reused for transposition
+in chunks of at most 64 KiB. It competes with captures and pinned images in the
+same host budget. The reader validates the echoed manifest and exact binary
+descriptor before pixel allocation; the existing finite ImageBytes decoder
+retains lossless numeric/rank semantics and rejects truncation/trailing bytes.
+Each host write and the entire transfer have independent bounds. EOF/additional
+commands or caller loss release only transfer resources, without hardware Abort,
+Stop, reconnect or capture replay. Review also enforces advertised scalar frame
+limits and requires an owned stream in the Rust reader API.
+
+Initial artifacts/hub-camera-image-ipc-codec.log passes four cases: all nine
+numeric types with rank-three one-plane data; nine malformed manifest/header/body
+faults; accounted scratch/order preservation and full-budget rejection for all
+nine types; and deadline cleanup of a partial receiver allocation. Initial
+runtime.log and runtime-final.log pass ten cases, including SDK/direct multi-chunk
+transfers, all seven identity fences, receiver budget rejection and a reader pin
+surviving control disconnect. Added host full-budget and stalled-reader deadline
+checks and full regressions are still running; initial passes do not cover these
+last refinements. Managed image transport and actual camera frontend publication
+are still required. No equipment or installed vendor driver is activated.
+
+Runtime/scalar output edc5a59 is pushed to the same draft PR; its PR/push CI
+37596918826/37596912932 is live. This image-stream increment remains local.
+
+Review subsequently found that the shared HTTP ImageBytes reader permits a
+bounded metadata extension, whereas the new IPC manifest declares an exact
+44-byte header. A same-descriptor binary body with an extension could therefore
+exceed the declared body length and still pass. IPC now rejects extensions,
+wrong server transactions and mismatched descriptors before reserving pixels;
+ordinary HTTP extension behavior remains unchanged. New small-budget cases
+distinguish protocol rejection from a later allocation failure. A private actual
+OS endpoint case also
+passes, transferring pixels while the original control client remains usable.
+Final full hub/Alpaca regressions pass in
+artifacts/hub-camera-image-ipc-reviewed-rust.log. Strict Rust 1.99 Clippy across
+five affected crates/all targets, Rust 1.89 compatibility, formatting and actual
+contract freshness pass in reviewed-{clippy,msrv,contract}.log. After the final
+owned-stream/API and fixture refinements, all 69 hub unit tests (five binary
+cases and eleven runtime cases) pass in unit-reviewed.log; final hub all-target
+lint/MSRV pass in final-{lint,msrv}.log. This suite includes host-full-budget
+rejection before acknowledgement, all seven identity fences, receiver budget
+rejection, source-lease/image retention through control disconnect and separate
+EOF/writer-deadline cleanup. The deadline fixture uses a one-second stream limit;
+it asserts the timeout classification and resource release, not a subsecond
+scheduling guarantee. All logs in this paragraph use artifacts/hub-camera-image-ipc-.
+Node and eight schema checks pass in node.log/schema.log. NINA passes 230/230
+with warnings denied; actual net48 x86/x64 pass in nina.log/net48.log after the
+new operation/capability was added. The later Rust reader-only header refinement
+does not change the advertised or managed scalar contract. Managed camera image
+clients remain unimplemented; these checks do not establish camera publication.
+
+CI inspection: push macOS Intel job 112711683350 is terminal and fails
+virtual_wheel::nested_wheel_v3_preserves_arrays_motion_ages_and_ownership at the
+first moving-position read after a successful move. It reports Transient,
+transport_lost=true and no timing/source trace. Raw evidence is retained at
+artifacts/hub-ci-37596912932-macos-intel.log. The same PR macOS Intel job passes;
+both Windows jobs are still live. Cause is unproved. The failed assertion now
+reports elapsed read time, complete source snapshots, private requests and writes
+without changing deadlines, adding retries or accepting a different result.
+Local passes cannot establish the cause or close this CI gate.
+All 22 filter-wheel cases pass locally with the unchanged assertion semantics in
+artifacts/hub-ci-filterwheel-diagnostic.log; final strict lint and Rust 1.89 checks
+also pass. The error trace still requires fresh CI evidence.
+
 ## 2026-10-07: camera runtime outputs and scalar IPC
 
 Reviewed source identity and acquisition sharing: camera output controllers reuse
