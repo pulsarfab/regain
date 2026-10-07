@@ -66,12 +66,15 @@ internal class HubAccessoryServer : IDisposable
     internal string RequestTrace => string.Join("; ", trace);
     internal volatile bool LoseMoveReply;
     internal volatile bool IgnoreMove = false;
+    internal volatile bool SafetyUnavailable = false;
     internal string Url { get; }
     internal Guid SourceId { get; } = Guid.NewGuid();
     internal HubAccessoryServer(string kind,int version = 3)
     {
         this.kind = kind; this.version = version;
-        if (kind == "covercalibrator") {
+        if (kind == "safetymonitor") {
+            Values["issafe"] = true; connected = 1;
+        } else if (kind == "covercalibrator") {
             Values["brightness"] = 0; Values["maxbrightness"] = 4096; Values["coverstate"] = 1;
             Values["calibratorstate"] = 1; Values["covermoving"] = false; Values["calibratorchanging"] = false;
         } else if (kind == "filterwheel") {
@@ -205,7 +208,9 @@ internal class HubAccessoryServer : IDisposable
             else if (kind == "covercalibrator" && version == 1 && member is "covermoving" or "calibratorchanging") code = 1024;
             else if (!Values.TryGetValue(member, out value)) code = 1024;
             var body = JsonSerializer.SerializeToUtf8Bytes(new { ErrorNumber = code, ErrorMessage = code == 0 ? "" : "private upstream detail", Value = value });
-            var header = Encoding.ASCII.GetBytes("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: " + body.Length + "\r\nConnection: close\r\n\r\n");
+            var unavailable = kind == "safetymonitor" && member == "issafe" && SafetyUnavailable;
+            var header = Encoding.ASCII.GetBytes("HTTP/1.1 " + (unavailable ? "503 Service Unavailable\r\nRetry-After: 2" : "200 OK") +
+                "\r\nContent-Type: application/json\r\nContent-Length: " + body.Length + "\r\nConnection: close\r\n\r\n");
             responseStartedMs = started.ElapsedMilliseconds;
             stopping.Token.ThrowIfCancellationRequested();
             stream.Write(header, 0, header.Length);

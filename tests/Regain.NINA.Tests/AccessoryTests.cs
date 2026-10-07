@@ -90,8 +90,16 @@ public sealed class AccessoryTests : IDisposable
         try {
         await focuser.Move(start+20,CancellationToken.None,0);
         Assert.Equal(start+20,focuser.Position);
-        using var cancellation=new CancellationTokenSource(100);
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(()=>focuser.Move(start,cancellation.Token,0));
+        using var cancellation=new CancellationTokenSource();
+        // Cancel synchronously after the acknowledged move's first status
+        // publication. A timer on the shared pool can fire after a 400 ms
+        // simulated move has already completed on a loaded CI runner.
+        System.ComponentModel.PropertyChangedEventHandler cancelAfterStatus = (_, _) => cancellation.Cancel();
+        focuser.PropertyChanged += cancelAfterStatus;
+        try {
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(()=>focuser.Move(start,cancellation.Token,0));
+            Assert.True(cancellation.IsCancellationRequested);
+        } finally { focuser.PropertyChanged -= cancelAfterStatus; }
         Assert.False(focuser.IsMoving);
         await focuser.Move(start,CancellationToken.None,0);
         } finally { focuser.Halt(); await focuser.Move(start,CancellationToken.None,0); }

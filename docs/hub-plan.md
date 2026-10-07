@@ -8,7 +8,23 @@ tagged or published. Changed cross-crate APIs require an unpublished version so
 Cargo package verification uses the new workspace packages.
 Last updated: 2026-10-07.
 
-Current increment: external ConformU 4.5.0 strict Alpaca protocol checks pass all
+Current increment: investigate terminal 32a34ae CI failures without extending
+production deadlines. The NINA safety upstream now reuses the bounded, dedicated
+HTTP scheduler used by the other private accessory fixtures. Its 503/Retry-After
+behavior, aborted-client handling and generation/expiry assertions remain intact.
+The focuser fixture cancels on the first acknowledged status publication instead
+of racing a thread-pool timer; the provider checks cancellation before completion.
+HostLock explicitly unlocks when its final listener/stream owner drops, preventing
+an unrelated concurrent Unix fork's temporary inherited descriptor from extending
+authority. A Unix regression retains a duplicate through final stream release and
+checks that it cannot unlock the successor. Full Rust hub/Alpaca regression,
+strict Clippy, Rust 1.89, all 319 ordinary NINA cases (one explicit registered
+fixture skip) and real net48 x86/x64 pass. The scheduler child passes panel and
+safety replies/failure/recovery/partial cleanup with every shared worker occupied.
+Unix execution and fresh CI remain required; preserve the initial rebuild failure
+while managed fixtures held the executable, then the serialized successful rerun.
+
+Previous increment: external ConformU 4.5.0 strict Alpaca protocol checks pass all
 eight explicitly simulated hub classes with zero errors/issues. A common HTTP
 admission layer rejects unknown methods, incorrectly cased/missing required PUT
 keys, duplicate decoded keys and invalid client IDs before connection/dispatch.

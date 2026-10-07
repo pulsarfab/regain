@@ -7,6 +7,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using NINA.Equipment.Interfaces;
 using Regain.Hub;
+using Regain.TestFixtures;
 using Xunit;
 
 namespace Regain.NINA.Tests;
@@ -20,11 +21,11 @@ public sealed partial class HubNativeTests
         var endpoint = new Uri(server.Url);
         using (var aborted = new TcpClient()) {
             await aborted.ConnectAsync(endpoint.Host, endpoint.Port);
-            await aborted.GetStream().WriteAsync(Encoding.ASCII.GetBytes("GET /issafe HTTP/1.1\r\nHost: fixture\r\n"));
+            await aborted.GetStream().WriteAsync(Encoding.ASCII.GetBytes("GET /api/v1/safetymonitor/19/issafe?ClientID=1&ClientTransactionID=1 HTTP/1.1\r\nHost: fixture\r\n"));
             aborted.Client.LingerState = new LingerOption(true, 0);
         }
         using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
-        using var response = await http.GetAsync(server.Url + "/issafe");
+        using var response = await http.GetAsync(server.Url + "/api/v1/safetymonitor/19/issafe?ClientID=1&ClientTransactionID=2");
         response.EnsureSuccessStatusCode();
         using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         Assert.True(body.RootElement.GetProperty("Value").GetBoolean());
@@ -32,12 +33,12 @@ public sealed partial class HubNativeTests
     [Fact]
     public async Task SafetyFixtureReportsRetryAfterOnFailedPolls()
     {
-        await using var server = new SafetyServer { Failing = true };
+        await using var server = new SafetyServer { SafetyUnavailable = true };
         using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
-        using var failed = await http.GetAsync(server.Url + "/issafe");
+        using var failed = await http.GetAsync(server.Url + "/api/v1/safetymonitor/19/issafe?ClientID=1&ClientTransactionID=1");
         Assert.Equal(HttpStatusCode.ServiceUnavailable, failed.StatusCode);
         Assert.Equal(TimeSpan.FromSeconds(2), failed.Headers.RetryAfter!.Delta);
-        using var metadata = await http.GetAsync(server.Url + "/interfaceversion");
+        using var metadata = await http.GetAsync(server.Url + "/api/v1/safetymonitor/19/interfaceversion?ClientID=1&ClientTransactionID=2");
         Assert.Equal(HttpStatusCode.OK, metadata.StatusCode);
         Assert.Null(metadata.Headers.RetryAfter);
     }
@@ -205,14 +206,14 @@ public sealed partial class HubNativeTests
     {
         await using var upstream = new SafetyServer();
         await using var host = await Host.Open(config => config["sources"]![1]!["backend"] = JsonSerializer.SerializeToNode(new {
-            kind = "alpaca", baseUrl = upstream.Url, deviceType = "safetymonitor", deviceNumber = 0, connectionPolicy = "externallyManaged"
+            kind = "alpaca", baseUrl = upstream.Url, deviceType = "safetymonitor", deviceNumber = 19, connectionPolicy = "externallyManaged"
         }));
         using var safety = host.Safety(); using var weather = host.Weather();
         await safety.Connect(CancellationToken.None); await weather.Connect(CancellationToken.None);
         await Eventually(() => safety.IsSafe);
         await host.Command(new { op = "changeConnection", output = host.Selection(1, "safetymonitor").OutputId, connected = true, asynchronous = false });
         var before = await host.Status(1);
-        upstream.Failing = true;
+        upstream.SafetyUnavailable = true;
         var clock = Stopwatch.StartNew();
         // Establish an acknowledged HTTP backoff rather than assuming the
         // frontend becoming unsafe proves expiry without a transport reset.
@@ -240,7 +241,7 @@ public sealed partial class HubNativeTests
         Assert.Equal("stale", endpoint.GetProperty("phase").GetString());
         Assert.True(endpoint.GetProperty("failedCycles").GetInt32() < 1000);
         Assert.InRange(clock.Elapsed.TotalSeconds, 0.7, 4.0);
-        upstream.Failing = false; await Eventually(() => safety.IsSafe);
+        upstream.SafetyUnavailable = false; await Eventually(() => safety.IsSafe);
     }
     [Fact]
     public async Task WeatherFailuresRemainPerMetricAndStaleReadingsBecomeNan()
@@ -490,52 +491,10 @@ public sealed partial class HubNativeTests
         }
         public async ValueTask DisposeAsync() { Client?.Dispose(); await Stop(); Directory.Delete(DirectoryPath, true); }
     }
-    private sealed class SafetyServer : IAsyncDisposable
+    // Reuse the bounded, independently scheduled upstream used by the other
+    // native HTTP fixtures. Synchronous IsSafe getters cannot delay its replies.
+    private sealed class SafetyServer() : HubAccessoryServer("safetymonitor"), IAsyncDisposable
     {
-        private readonly TcpListener listener = new(IPAddress.Loopback, 0);
-        private readonly CancellationTokenSource stopping = new();
-        private readonly Task serving;
-        internal volatile bool Failing;
-        internal string Url { get; }
-        internal SafetyServer()
-        {
-            listener.Start(); Url = "http://127.0.0.1:" + ((IPEndPoint)listener.LocalEndpoint).Port;
-            serving = Serve();
-        }
-        private async Task Serve()
-        {
-            try {
-                while (!stopping.IsCancellationRequested) {
-                    using var socket = await listener.AcceptTcpClientAsync(stopping.Token);
-                    try { await Reply(socket); }
-                    // The production caller has bounded request deadlines. A
-                    // cancelled/timed-out request may close its socket before
-                    // the fixture writes. Keep serving subsequent polls.
-                    catch (IOException error) when (error.InnerException is SocketException socketError &&
-                        socketError.SocketErrorCode is SocketError.ConnectionAborted or SocketError.ConnectionReset or SocketError.Shutdown) { }
-                }
-            } catch (OperationCanceledException) when (stopping.IsCancellationRequested) { }
-            catch (SocketException) when (stopping.IsCancellationRequested) { }
-        }
-        private async Task Reply(TcpClient socket)
-        {
-                    using var stream = socket.GetStream();
-                    using var reader = new StreamReader(stream, Encoding.ASCII, false, 4096, leaveOpen: true);
-                    var first = await reader.ReadLineAsync(stopping.Token);
-                    if (first is null) return;
-                    string? line;
-                    do { line = await reader.ReadLineAsync(stopping.Token); if (line is null) return; } while (line.Length != 0);
-                    var target = first.Split(' ')[1];
-                    var path = new Uri(Url + target).AbsolutePath;
-                    var failed = path.EndsWith("/issafe", StringComparison.Ordinal) && Failing;
-                    object value = path.EndsWith("/interfaceversion", StringComparison.Ordinal) ? 3 :
-                        path.EndsWith("/connecting", StringComparison.Ordinal) ? false : true;
-                    var body = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new { Value = value, ErrorNumber = 0, ServerTransactionID = 1 }));
-                    var header = Encoding.ASCII.GetBytes("HTTP/1.1 " + (failed ? "503 Service Unavailable" : "200 OK") +
-                        (failed ? "\r\nRetry-After: 2" : "") +
-                        "\r\nContent-Type: application/json\r\nContent-Length: " + body.Length + "\r\nConnection: close\r\n\r\n");
-                    await stream.WriteAsync(header, stopping.Token); await stream.WriteAsync(body, stopping.Token);
-        }
-        public async ValueTask DisposeAsync() { stopping.Cancel(); listener.Stop(); await serving; stopping.Dispose(); }
+        public ValueTask DisposeAsync() { Dispose(); return ValueTask.CompletedTask; }
     }
 }

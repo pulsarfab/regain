@@ -6402,3 +6402,52 @@ fixed in production and covered above. No physical equipment or installed vendor
 driver was activated. The simulated HTTP protocol slice passes; interface/native
 ASCOM conformance, other source combinations, coordination, discovery/transfer,
 OS resume, broader acceptance, README/site and original final audit/merge remain.
+
+## CI event ordering and endpoint lock retirement (2026-10-07)
+
+32a34ae PR/push CI 37639099147/37639086923 is terminal. PR Windows fails the
+FocusCube cancellation fixture (no cancellation observed before completion) and
+safety-backoff startup. Push Windows fails that safety test's unchanged-generation
+assertion, and macOS ARM fails immediate OS lock reacquisition after camera host
+shutdown. Preserve artifacts/hub-camera-creation-ci-pr-windows.log and
+artifacts/hub-camera-creation-ci-push-windows.log; a passing local run does not
+establish these failures are fixed.
+
+The safety fixture still scheduled asynchronous replies on the shared managed
+pool, unlike the already isolated accessory fixture. It now reuses that common
+bounded accept/worker implementation, including tracked sockets, aborted-client
+cleanup and cancelable disposal. Only IsSafe receives the injected 503 and two
+second Retry-After. Extended the isolated net48 scheduler child to exercise both
+panel and safety replies, safety failure/recovery and partial-client cleanup while
+every shared worker is occupied. Source deadlines, safe-age policy, retry delay
+and no-reset generation assertions remain unchanged.
+
+The FocusCube test replaces timer-based cancellation with synchronous cancellation
+at the acknowledged move's first status publication. A loaded pool can run a timer
+after the 400 ms simulation completes. The native provider also checks cancellation
+after status publication and before returning completion, covering cancellation
+during the asynchronous status read or its notification. No motion is replayed;
+the existing direct accessory Halt-on-failure behavior is preserved.
+
+Endpoint ownership remains an Arc held through listening, accepted streams and
+source drain. Final HostLock drop explicitly calls File.unlock rather than relying
+only on close. [Rust's File documentation](https://doc.rust-lang.org/std/fs/struct.File.html#method.unlock)
+specifies that duplicated/inherited descriptors can otherwise retain the lock.
+Concurrent fork inheritance is a plausible cause of the macOS assertion, not yet
+proven by its CI log. The Unix regression deliberately retains a duplicate: the
+accepted stream must keep ownership after listener drop, final stream release must
+permit a successor even with the old duplicate alive, and closing the duplicate
+must not release the successor's distinct lock. Existing uncertain-drain tests
+continue checking that shutdown does not release authority early. Unix execution
+and fresh CI remain required before declaring the macOS failure resolved.
+
+Local validation: artifacts/hub-ci-ordering-nina-focused.log (four cases),
+artifacts/hub-ci-ordering-nina-full.log (319 passed, one explicit registered-COM
+theory skip), artifacts/hub-ci-ordering-net48.log (full x86/x64, including safety
+and panel under pool saturation), artifacts/hub-ci-ordering-rust-full-second.log
+(full hub/Alpaca), artifacts/hub-ci-ordering-clippy.log (warnings denied) and
+artifacts/hub-ci-ordering-msrv.log (Rust 1.89 all targets) pass. The first full
+Rust attempt failed to replace regain-alpaca.exe while managed fixtures used it;
+the rerun started after those processes completed. Preserve that failed log.
+Format and diff checks pass. No physical device or installed vendor driver was
+used. Keep original conformance/coordination/recovery/documentation/final gates.

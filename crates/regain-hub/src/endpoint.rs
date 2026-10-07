@@ -105,6 +105,14 @@ pub struct HostLock {
     endpoint: Endpoint,
     _file: File,
 }
+impl Drop for HostLock {
+    fn drop(&mut self) {
+        // Last listener/accepted-stream owner has drained. Closing this file
+        // alone can leave a Unix flock held by a concurrent fork's inherited
+        // descriptor until that child execs; explicitly retire our authority.
+        let _ = self._file.unlock();
+    }
+}
 impl HostLock {
     pub fn bind(self) -> io::Result<Listener> {
         let inner = platform::bind(&self.endpoint)?;
@@ -169,4 +177,37 @@ fn denied() -> io::Error {
         io::ErrorKind::PermissionDenied,
         "Hub endpoint storage or owner is not private to this user",
     )
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn final_stream_release_unlocks_even_while_a_duplicated_descriptor_remains_open() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("hub.json");
+        std::fs::write(&path, b"{}").unwrap();
+        let endpoint = Endpoint::for_config(&path).unwrap();
+        let owner = endpoint.try_lock().unwrap().unwrap();
+        // A duplicate has the same flock lifetime as a descriptor temporarily
+        // inherited by another thread's fork before exec/close-on-exec.
+        let duplicate = owner._file.try_clone().unwrap();
+        let mut listener = owner.bind().unwrap();
+        let (client, accepted) =
+            tokio::join!(endpoint.connect(Duration::from_secs(2)), listener.accept());
+        let client = client.unwrap();
+        let accepted = accepted.unwrap();
+        drop(listener);
+        assert!(endpoint.try_lock().unwrap().is_none());
+        drop(accepted);
+        let successor = endpoint.try_lock().unwrap().unwrap();
+        // Closing an old duplicate must not unlock the successor's distinct
+        // open file description or bypass the surviving stream check above.
+        drop(duplicate);
+        assert!(endpoint.try_lock().unwrap().is_none());
+        drop(client);
+        drop(successor);
+        assert!(endpoint.try_lock().unwrap().is_some());
+    }
 }
