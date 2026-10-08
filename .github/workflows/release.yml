@@ -45,6 +45,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy, rust-docs
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       - name: Check source version and release train
         id: version
         env:
@@ -137,9 +140,6 @@ jobs:
           path: artifacts/installer-test/*.log
       - name: Test registry publication checks without remote writes
         run: ./scripts/test-release.ps1
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
       - name: Install camera kit build dependencies
         run: python -m pip install -r scripts/camera-kit/requirements.txt
       - name: Test and prepare camera kit with the signed SDK host
