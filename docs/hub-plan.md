@@ -20,7 +20,18 @@ ASCOM worker tree before packaging. Local ZWO library tests (99), seven runtime
 gate cases, PowerShell parsing and whitespace checks pass. This does not close
 the final main reconciliation or acceptance gates.
 
-Current increment: remove the CI lint blocker before installed acceptance.
+Current increment: investigate the retained panel timing finding.
+Code inspection confirms one IPC request reads cached panel samples without
+upstream I/O. A new private diagnostic uses the unchanged ConformU facade, then
+separately measures getter/UI dispatch, COM enumeration and value cleaning.
+Three fresh .NET 10 clients validate all five panel state values. First facade
+reads take 17.79–29.13 ms, warm reads at most 3.19 ms and split getters at most
+3.58 ms. Owned host/server and six private registry roots are cleaned up. This
+does not reproduce or explain the original 139 ms finding; no production change,
+deadline relaxation or conformance waiver is made. Installed NINA/equipment and
+all remaining actual acceptance gates remain untouched/open.
+
+Previous increment: remove the CI lint blocker before installed acceptance.
 Completed push run 37729000130 fails Windows and all four portable jobs at Rust
 1.99's constant-size chunk lint in the identity-pin test; those jobs never reach
 installer/portable execution. Package/MSRV, research and standalone Windows COM

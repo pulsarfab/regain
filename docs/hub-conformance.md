@@ -269,3 +269,29 @@ discarding it or relaxing the target. The isolated panel rerun passes with zero
 findings in `b9497daca46342d68aae337350c386ff`; it does not prove the first timing's
 cause. Forced-timeout and final cleanup evidence are recorded in the review log.
 No installed vendor driver or physical device was opened.
+
+### Panel timing diagnostics
+
+To investigate the retained panel timing finding without changing the validator:
+
+```powershell
+python scripts/test-hub-state-timing.py --conformu C:/path/to/conformu.exe
+```
+
+Requires Windows, .NET 10 SDK and the built, unmodified ConformU 4.5.0 assembly
+beside that executable, plus existing Regain host/x64 COM builds. It creates one
+explicit simulated panel, a private host and temporary COM aliases using the
+conformance publication helper. It accepts no existing config or device identity.
+Three fresh clients measure the original facade first, then split getter/dispatch,
+collection enumeration and value cleaning. All five expected state values are
+validated; output, hashes and cleanup remain under `artifacts/hub-state-timing-*`.
+No HTTP listener, installed driver or hardware is used. No default toolchain or
+upstream assembly is changed.
+
+The command succeeds when measurement and cleanup complete; its timing output
+is diagnostic, not a conformance pass. A fresh original-facade read took
+17.79–29.13 ms in the current record, and split getters stayed below 3.58 ms.
+The validator times enumeration/cleaning as well as the actual getter. This
+narrows the measured path but does not explain or waive the original 139 ms
+finding. Keep that raw report and obtain a trace of an actual slow call before
+changing production behavior or declaring its cause resolved.

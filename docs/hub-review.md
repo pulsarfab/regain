@@ -3,6 +3,42 @@
 This records local review and tests for the single hub PR. Passing a foundation
 test does not imply that a frontend, transport, or hardware gate has passed.
 
+## 2026-10-07: panel DeviceState timing decomposition
+
+The retained 139 ms ConformU finding times more than the Regain getter. The
+unchanged validator's `FacadeBaseClass.DeviceState` dispatches to its WinForms
+STA, gets the COM collection, enumerates each Name/Value through COM and calls
+`OperationalStateProperty.Clean` before returning its local list. Regain's
+`OutputDriver.DeviceState` makes one IPC request; Rust panel `device_state`
+reads a source snapshot and filters cached samples without upstream I/O.
+
+The new [diagnostic](../scripts/test-hub-state-timing.py) reuses the private COM
+publication helper and references the built, unmodified ConformU assembly. A
+single explicit simulated panel runs in an owned host with no HTTP listener.
+Three fresh .NET 10.0.10 clients first read the original facade five times, then
+measure twenty getter/enumeration/cleaning sequences. Every read validates the
+five expected idle panel values. Split diagnostics run afterward, so they cannot
+warm the preceding original-facade call. They include client dispatch costs and
+are not pure server CPU timings or a replacement for ConformU.
+
+Final reproducible evidence:
+`artifacts/hub-state-timing-4034d34c9c3e4b0da3c2605de71f6b14/summary.json`.
+The three first facade reads take 29.1251, 17.7915 and 18.6126 ms; later facade
+reads are at most 3.1878 ms. Split getters are at most 3.5747 ms, enumeration at
+most 5.1381 ms and cleaning at most 0.0486 ms. These measurements do not
+reproduce the initial 139 ms or identify its cause. That raw timing finding and
+the original acceptance boundary remain open; no production optimization,
+warm-up workaround, threshold change or conformance waiver follows from this.
+
+The final client build has zero warnings/errors; all three client processes exit
+successfully. The host stops, and the COM helper verifies its server stopped and
+all six private registry roots were removed. Executable/facade hashes, config,
+bindings, per-client output and cleanup are retained. An earlier one-off probe
+and its missing-namespace compile error are retained under `hub-state-timing/`;
+the committed diagnostic is the final reproducible source. No installed driver,
+NINA session or physical device was touched. Next useful reproduction requires
+capturing the actual slow call; repeated isolated passes cannot close that gate.
+
 ## 2026-10-07: Rust 1.99 CI lint blocker
 
 Completed push run `37729000130` at `a12a265` fails Windows and all four portable
