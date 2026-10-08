@@ -49,6 +49,7 @@ public sealed partial class HubConfigurationWindow : Window
         tabs.Items.Add(new TabItem { Header = "Credentials", Content = new ScrollViewer { Content = credentials, VerticalScrollBarVisibility = ScrollBarVisibility.Auto } });
         tabs.Items.Add(new TabItem { Header = "Simulation", Content = new ScrollViewer { Content = simulation, VerticalScrollBarVisibility = ScrollBarVisibility.Auto } });
         AddOutputDiagnosticsTab();
+        tabs.Items.Add(new TabItem { Header = "Import / export", Content = new ScrollViewer { Content = transferPanel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto } });
         tabs.Items.Add(new TabItem { Header = "Focuser groups", Content = new ScrollViewer { Content = focuserGroupPanel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto } });
         tabs.Items.Add(new TabItem { Header = "Camera groups", Content = new ScrollViewer { Content = cameraGroupPanel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto } });
         tabs.Items.Add(new TabItem { Header = "Discover devices", Content = new ScrollViewer { Content = discoveryPanel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto } });
@@ -102,6 +103,7 @@ public sealed partial class HubConfigurationWindow : Window
         RenderFocuserGroups();
         RenderCameraGroups();
         RenderDiscovery();
+        RenderTransfer();
     }
     private async Task Run(Func<Task> action)
     {
@@ -139,6 +141,7 @@ public sealed partial class HubConfigurationWindow : Window
         FocuserGroupControls(editable);
         CameraGroupControls(editable);
         DiscoveryControls(editable);
+        transferPanel.IsEnabled = !busy && editable;
     }
     private void ShowErrors(JsonElement fields) => errors.Text = string.Join("\n", fields.EnumerateArray().Select(field => field.GetProperty("path").GetString() + ": " + field.GetProperty("message").GetString()));
     private static string Pretty(JsonElement value) => JsonSerializer.Serialize(value, new JsonSerializerOptions { WriteIndented = true });

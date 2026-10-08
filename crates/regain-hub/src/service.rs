@@ -402,6 +402,31 @@ impl HubService {
             None => self.state.lock().unwrap().runtime.configuration().clone(),
         }
     }
+    pub fn export_configuration(
+        &self,
+        expected: Uuid,
+    ) -> Result<crate::transfer::Document, UpdateError> {
+        let _guard = self.update.try_lock().map_err(|_| UpdateError::Busy)?;
+        let current = self.configuration();
+        if current.revision != expected {
+            return Err(UpdateError::Conflict);
+        }
+        Ok(crate::transfer::export(&current))
+    }
+    pub fn prepare_import(
+        &self,
+        expected: Uuid,
+        document: &str,
+        mode: crate::transfer::ImportMode,
+    ) -> Result<crate::transfer::PreparedImport, UpdateError> {
+        let _guard = self.update.try_lock().map_err(|_| UpdateError::Busy)?;
+        self.runtime().map_err(|_| UpdateError::Stopped)?;
+        let current = self.configuration();
+        if current.revision != expected {
+            return Err(UpdateError::Conflict);
+        }
+        crate::transfer::prepare(&current, document, mode).map_err(UpdateError::Invalid)
+    }
     pub fn status(&self) -> ServiceStatus {
         let revision = self.configuration().revision;
         let state = self.state.lock().unwrap();

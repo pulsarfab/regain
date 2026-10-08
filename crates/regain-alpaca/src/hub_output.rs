@@ -86,11 +86,14 @@ impl Publisher {
             &command,
             Command::DescribeConfig {}
                 | Command::GetConfig {}
+                | Command::ExportConfig { .. }
+                | Command::PrepareImport { .. }
                 | Command::HostStatus {}
                 | Command::SourceStatus { .. }
                 | Command::OutputStatus { .. }
                 | Command::InspectSource { .. }
                 | Command::DiscoverAlpaca { .. }
+                | Command::DiscoverLocal { .. }
                 | Command::SearchAlpaca { .. }
                 | Command::ValidateConfig { .. }
                 | Command::ApplyConfig { .. }

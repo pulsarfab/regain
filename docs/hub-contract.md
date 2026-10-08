@@ -87,6 +87,41 @@ to their interface's error conventions.
 
 ### Implemented scalar wire protocol
 
+Configuration transfer uses two revision-owned, inert commands:
+
+```json
+{"op":"exportConfig","expectedRevision":"11111111-1111-4111-8111-111111111111"}
+{"op":"prepareImport","expectedRevision":"11111111-1111-4111-8111-111111111111","mode":"restore","document":"<original UTF-8 JSON file text>"}
+```
+
+`describeConfig.configurationTransfer` supplies both file/response schemas,
+mode labels/descriptions, limits and review instructions. Export returns a
+version-1 envelope containing `configuration` and `credentialSources`. It uses
+the saved configuration, omits every credential reference and identifies omitted
+bindings only by source UUID. Addresses and serials remain. It contains neither
+secret values nor runtime observations. Unsaved draft changes are excluded.
+
+`prepareImport` parses the original text strictly, including duplicate map keys,
+and validates the graph/source plans and destination identity ledger without
+staging a file, building adapters or opening sources. It returns a candidate and
+ID/number/credential reports. It never changes the saved revision or configuration.
+Restore requires the same hub instance and preserves incoming active identities
+while retaining destination identity history and matching local credentials.
+Retargeted saved IDs fail. Copy replaces the draft using fresh source, output,
+channel and group IDs, rewrites their typed references and allocates class-specific
+numbers that avoid active and retired destination slots. It retains destination
+instance/revision/history and reports omitted credentials using the new source IDs.
+Imported history never replaces destination history. This is settings transfer,
+not restoration of running sessions or credentials into a new installation.
+
+Both editors validate the complete reply and replace only their draft, preserving
+the saved baseline and immutable-field behavior. Native setup also rejects a late
+reply if the draft changed while it was pending. Ordinary Review/Apply remains
+required. The file limit is 4 MiB; the existing 1 MiB encoded IPC/HTTP frame limit
+also applies, including the document string and resulting candidate/report. Large
+files can therefore fail before reaching the file limit. There is no chunking,
+truncation, automatic retry or implicit Apply.
+
 `discoverLocal` lists one explicit native backend or one COM class/architecture:
 
 ```json

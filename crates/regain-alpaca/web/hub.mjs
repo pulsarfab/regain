@@ -4,6 +4,7 @@ import { CredentialSetup } from './hub-credentials.mjs';
 import { SimulationSetup, parseSimulationArray } from './hub-simulation.mjs';
 import { OutputDiagnostics, diagnosticSummary } from './hub-diagnostics.mjs';
 import { AlpacaDiscovery, AlpacaNetworkDiscovery, LocalDiscovery, catalogSummary } from './hub-discovery.mjs';
+import { ConfigurationTransfer, transferSummary } from './hub-transfer.mjs';
 const $ = id => document.getElementById(id);
 let base, draft, reader, description, reviewed, dirty = false, busy = false, uncertain = false;
 let publicHostStatus;
@@ -16,6 +17,7 @@ const outputDiagnostics = new OutputDiagnostics(rpc,revokeReview);
 const discovery = new AlpacaDiscovery(rpc);
 const networkDiscovery = new AlpacaNetworkDiscovery(rpc);
 const localDiscovery = new LocalDiscovery(rpc);
+const transfer = new ConfigurationTransfer(rpc);
 function controls() {
   $('editor-fields').disabled = busy || !reader || uncertain; $('validate').disabled = busy || !reader || uncertain; $('apply').disabled = busy || !reviewed || uncertain; $('reload').disabled = busy;
   for (const button of $('sources').querySelectorAll('button')) button.disabled = busy || uncertain;
@@ -26,6 +28,7 @@ function controls() {
   const create = $('credential-create'); if (create) create.disabled = busy || uncertain || credentials.description?.clientChosenReferences !== true;
   const catalog = $('discovery-fields'); if (catalog) catalog.disabled = busy || uncertain || discovery.uncertain || networkDiscovery.uncertain || localDiscovery.uncertain;
   const local = $('local-discovery-fields'); if (local) local.disabled = busy || uncertain || localDiscovery.uncertain;
+  $('transfer-fields').disabled = busy || uncertain || !reader;
 }
 async function rpc(command, path = '/setup/api/hub', deadlineSeconds = 40) {
   const abort = new AbortController(); const timer = setTimeout(() => abort.abort(),deadlineSeconds * 1000);
@@ -276,10 +279,16 @@ async function load() {
   discovery.load(description,saved);
   networkDiscovery.load(description,saved);
   localDiscovery.load(description,saved);
+  transfer.load(description,saved);
   uncertain = host.phase !== 'ready'; dirty = false;
   $('host-state').textContent = `Host: ${host.phase}${host.persistenceWarning ? ` · ${host.persistenceWarning}` : ''}`;
   $('revision').textContent = `Saved revision: ${base.revision}`;
   renderConfiguration($('configuration'),reader,draft,base,changed); renderSources(); renderOutputs(); renderCredentials(); renderDiscovery(); $('preview').hidden = true;
+  const d=transfer.description;
+  $('transfer-note').textContent=[...(saved.sources.length && saved.sources.every(s=>s.backend.kind==='simulated')?[d.simulationNotice]:[]),d.redaction,d.limits,d.review].join(' ');
+  $('configuration-export').textContent=d.exportLabel; $('configuration-import').textContent=d.importLabel;
+  $('import-mode').replaceChildren(...d.modes.map(mode=>{const option=document.createElement('option');option.value=mode.value;option.textContent=mode.label;option.title=mode.description;return option;}));
+  $('import-file').value=''; $('transfer-result').textContent='';
   status(uncertain ? 'Host is not ready. Inspect its status before applying another change.' : 'Configuration loaded. Source connections are shared across frontends.', uncertain);
 }
 $('reload').onclick = () => {
@@ -287,6 +296,19 @@ $('reload').onclick = () => {
   action(load);
 };
 $('editor').onsubmit = event => event.preventDefault();
+$('configuration-export').onclick=()=>action(async()=>{
+  const text=await transfer.export(), url=URL.createObjectURL(new Blob([text],{type:'application/json'}));
+  const link=document.createElement('a');link.href=url;link.download='regain-hub-configuration.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+  status('Exported the saved configuration with credential bindings omitted. Unsaved draft changes are excluded.');
+});
+$('configuration-import').onclick=()=>action(async()=>{
+  const file=$('import-file').files[0]; if (!file || file.size>transfer.description.maximumDocumentBytes) throw new Error('Choose a configuration file within the document limit');
+  const text=new TextDecoder('utf-8',{fatal:true}).decode(await file.arrayBuffer());
+  const result=await transfer.prepare(text,$('import-mode').value);
+  draft=structuredClone(result.candidate); changed(); renderConfiguration($('configuration'),reader,draft,base,changed);
+  $('transfer-result').textContent=transferSummary(result);
+  status('Imported settings into the draft. Review addresses, identity changes and credential bindings before applying.');
+});
 $('export-diagnostics').onclick=()=>action(async()=>{
   const snapshot={format:'regainHubSetupDiagnostics',version:1,exportedAtUtc:new Date().toISOString(),instanceId:base.instanceId,editorState:uncertain?'Uncertain':reviewed?'Reviewed':'Editing',savedRevision:base.revision,savedHostStatus:publicHostStatus,observation:null,outputObservation:outputDiagnostics.observation};
   const url=URL.createObjectURL(new Blob([JSON.stringify(snapshot,null,2)],{type:'application/json'}));

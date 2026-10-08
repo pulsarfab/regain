@@ -495,7 +495,14 @@ impl SourceConfig {
 }
 
 impl IdentityLedger {
-    fn register(
+    pub(crate) fn output_numbers(&self) -> BTreeSet<(DeviceType, u32)> {
+        self.outputs
+            .values()
+            .map(|output| (output.device_type, output.number))
+            .collect()
+    }
+
+    pub(crate) fn register(
         &mut self,
         sources: &[SourceConfig],
         outputs: &[OutputConfig],

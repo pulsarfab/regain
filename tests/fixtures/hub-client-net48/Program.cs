@@ -163,6 +163,22 @@ internal static class Program
             }
             using var editor = await HubEditorSession.AttachAsync(args[0], args[1], attached.InstanceId, deadline.Token);
             await editor.ReloadAsync(deadline.Token);
+            var transferFile = await editor.ExportConfigurationAsync(deadline.Token);
+            var transferDocument = JsonNode.Parse(transferFile)!;
+            transferDocument["configuration"]!["outputs"]![0]!["label"] = "net48 imported draft [SIMULATION]";
+            var transferSaved = editor.SavedConfiguration!.Value.GetRawText();
+            var imported = await editor.PrepareImportAsync(transferDocument.ToJsonString(), "restore", deadline.Token);
+            if (!editor.Draft!.Dirty || editor.State != HubEditorState.Editing ||
+                editor.SavedConfiguration.Value.GetRawText() != transferSaved ||
+                editor.Draft.Candidate.GetProperty("outputs")[0].GetProperty("label").GetString() != "net48 imported draft [SIMULATION]" ||
+                !HubEditorSession.ImportSummary(imported).Contains("Saved configuration is unchanged"))
+                throw new InvalidOperationException("net48 restore changed saved configuration or failed draft preparation");
+            var copied = await editor.PrepareImportAsync(transferFile, "copy", deadline.Token);
+            if (copied.GetProperty("remappedIds").GetArrayLength() == 0 || copied.GetProperty("renumberedOutputs").GetArrayLength() != editor.SavedConfiguration.Value.GetProperty("outputs").GetArrayLength())
+                throw new InvalidOperationException("net48 copy lost identities or failed to reserve every current device number");
+            if (!await editor.ReviewAsync(deadline.Token)) throw new InvalidOperationException("net48 imported copy failed ordinary review: " + editor.Errors.GetRawText());
+            await editor.ReloadAsync(deadline.Token);
+            if (editor.LastImport.HasValue) throw new InvalidOperationException("net48 reload retained an imported draft report");
             var recoverySchema = editor.Draft!.Description.Root.GetProperty("$defs").GetProperty("CameraRecovery");
             var recoveryFields = editor.Draft.Description.Fields(recoverySchema);
             if (recoveryFields.Count != 14 || recoveryFields.Single(f => f.Key == "maxRetries").Value!.Value.GetInt32() != 3 ||

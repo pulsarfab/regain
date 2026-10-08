@@ -138,6 +138,16 @@ pub enum Command {
         expected_revision: Uuid,
     },
     GetConfig {},
+    ExportConfig {
+        #[serde(rename = "expectedRevision")]
+        expected_revision: Uuid,
+    },
+    PrepareImport {
+        #[serde(rename = "expectedRevision")]
+        expected_revision: Uuid,
+        document: String,
+        mode: crate::transfer::ImportMode,
+    },
     DiscoverLocal {
         target: crate::discovery::Target,
         #[serde(rename = "expectedRevision")]
@@ -569,7 +579,7 @@ where
                     if !greeted {
                         if !matches!(request.command, Command::Hello {}) { return Err(ProtocolError::Handshake); }
                         greeted = true;
-                        let mut operations = vec!["cameraImage","cameraGroupImage","cameraTiming","cameraCaptureTiming","cameraControl","describeConfig","getConfig","discoverAlpaca","discoverLocal","searchAlpaca","validateConfig","listDevices","sourceStatus","outputStatus","inspectSource","updateSimulation","startFocuserGroup","focuserGroupStatus","cancelFocuserGroup","startCameraGroup","cameraGroupStatus","cancelCameraGroup","connect","disconnect","changeConnection","get","put","hostStatus"];
+                        let mut operations = vec!["cameraImage","cameraGroupImage","cameraTiming","cameraCaptureTiming","cameraControl","describeConfig","getConfig","exportConfig","prepareImport","discoverAlpaca","discoverLocal","searchAlpaca","validateConfig","listDevices","sourceStatus","outputStatus","inspectSource","updateSimulation","startFocuserGroup","focuserGroupStatus","cancelFocuserGroup","startCameraGroup","cameraGroupStatus","cancelCameraGroup","connect","disconnect","changeConnection","get","put","hostStatus"];
                         if service.can_apply() { operations.push("applyConfig"); }
                         if service.credential_description().is_some() { operations.extend(["createCredential", "credentialStatus", "deleteCredential"]); }
                         let hello = json!({"protocolVersion":VERSION, "instanceId":service.instance_id(),
@@ -894,6 +904,18 @@ async fn dispatch_service(
             Ok(json!(service.delete_credential(reference).await?))
         }
         Command::GetConfig {} => Ok(json!(service.configuration())),
+        Command::ExportConfig { expected_revision } => {
+            Ok(json!(service.export_configuration(expected_revision)?))
+        }
+        Command::PrepareImport {
+            expected_revision,
+            document,
+            mode,
+        } => Ok(json!(service.prepare_import(
+            expected_revision,
+            &document,
+            mode
+        )?)),
         Command::SearchAlpaca { expected_revision } => {
             Ok(json!(service.search_alpaca(expected_revision).await?))
         }
@@ -944,6 +966,8 @@ async fn dispatch(
     }
     Ok(match command {
         Command::ApplyConfig { .. }
+        | Command::ExportConfig { .. }
+        | Command::PrepareImport { .. }
         | Command::CameraImage { .. }
         | Command::CameraGroupImage { .. }
         | Command::CameraTiming { .. }

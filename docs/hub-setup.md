@@ -6,6 +6,37 @@ outputs through Alpaca, native NINA providers and native ASCOM. Their setup uses
 the shared configuration. Broader proxy devices and acceptance remain in progress;
 this is not a released feature.
 
+To save settings, open **Import / export** in native setup or **Import or export
+configuration** in web setup, then choose **Export saved configuration**. This
+saves the current host configuration, excluding unsaved edits and credential
+bindings. Device addresses and serials remain in the file.
+
+Select a file and an import mode. **Restore this hub** retains that hub's IDs,
+device numbers, local identity history and matching existing credentials.
+**Copy settings with new identities** creates new IDs and unused device numbers
+for a destination hub, rewrites source/output/group references and reports
+credentials that need new bindings. Copy replaces the draft; it does not append
+to it. Review the hardware addresses, changed numbers and credential report,
+then use the ordinary **Review changes** and **Apply** actions.
+
+Import preparation leaves saved settings and equipment untouched. Files cannot
+replace the destination's identity history or supply credential references.
+Restore requires the same hub instance; use Copy to transfer to another hub.
+The file limit is 4 MiB, with an additional 1 MiB encoded request/response limit.
+An oversized file fails without truncating the draft. Transfer files contain
+settings, not active sessions or protected credential values.
+
+![Configuration copy prepared in private simulation](images/hub-native-configuration-transfer-simulation.png)
+
+This native setup capture uses the explicit simulated observatory. It shows
+new IDs and reserved-number changes in a draft; no source lease or save occurs.
+
+![Web configuration copy prepared in private simulation](images/hub-web-configuration-transfer-simulation.png)
+
+Web setup uses the same file format, import modes and host validation. The
+browser fixture downloads a file, uploads Restore and Copy variants, rejects
+duplicate keys, reviews and explicitly applies Restore, then leaves Copy unsaved.
+
 The [conformance playbook](hub-conformance.md) runs external protocol and interface
 checks against a private simulated hub and records the remaining acceptance issues.
 

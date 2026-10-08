@@ -6,9 +6,49 @@ import { CredentialSetup, credentialContract } from '../crates/regain-alpaca/web
 import { SimulationSetup, simulationControls, validateSimulationValue, parseSimulationArray } from '../crates/regain-alpaca/web/hub-simulation.mjs';
 import { OutputDiagnostics, diagnosticSummary, validateDiagnosticSchema } from '../crates/regain-alpaca/web/hub-diagnostics.mjs';
 import { AlpacaDiscovery, AlpacaNetworkDiscovery, LocalDiscovery, catalogSummary } from '../crates/regain-alpaca/web/hub-discovery.mjs';
+import { ConfigurationTransfer, transferSummary } from '../crates/regain-alpaca/web/hub-transfer.mjs';
 
 const description = JSON.parse(readFileSync(new URL('../contracts/hub-config.json', import.meta.url), 'utf8'));
 const reader = configurationContract(description);
+{
+  const saved=JSON.parse(readFileSync(new URL('../crates/regain-hub/examples/simulated-observatory.json',import.meta.url),'utf8'));
+  saved.identities={sources:{},outputs:{},channels:{},groups:[],cameraGroups:[]};
+  const document={formatVersion:1,configuration:structuredClone(saved),credentialSources:[]};
+  const response={configurationRevision:saved.revision,mode:'restore',sourceInstanceId:saved.instanceId,candidate:structuredClone(saved),remappedIds:[],renumberedOutputs:[],preservedCredentials:[],missingCredentials:[]};
+  response.candidate.outputs[0].label='Imported controls [SIMULATION]';
+  const requests=[], transfer=new ConfigurationTransfer(async command=>{requests.push(command);return structuredClone(command.op==='exportConfig'?document:response);});
+  transfer.load(description,saved);
+  assert.deepEqual(JSON.parse(await transfer.export()),document);
+  const text=JSON.stringify(document), prepared=await transfer.prepare(text,'restore');
+  assert.equal(prepared.candidate.outputs[0].label,'Imported controls [SIMULATION]');
+  assert.equal(saved.outputs[0].label,'Simulation controls');
+  assert.deepEqual(requests[1],{op:'prepareImport',expectedRevision:saved.revision,document:text,mode:'restore'});
+  assert.match(transferSummary(prepared),/Saved configuration is unchanged/);
+  await assert.rejects(transfer.prepare(text,'merge'));assert.equal(requests.length,2);
+  for (const fault of ['revision','instance','history','mode','schema','credential','duplicate','mapping']) {
+    const bad=structuredClone(response);
+    switch(fault) {
+      case 'revision':bad.configurationRevision=newIdentity();break;
+      case 'instance':bad.candidate.instanceId=newIdentity();break;
+      case 'history':bad.candidate.identities.groups.push(newIdentity());break;
+      case 'mode':bad.mode='copy';break;
+      case 'schema':bad.candidate.outputs[0].label=[];break;
+      case 'credential':bad.missingCredentials=[newIdentity()];break;
+      case 'duplicate':bad.missingCredentials=[saved.sources[0].id,saved.sources[0].id];break;
+      case 'mapping':bad.remappedIds=[{original:newIdentity(),replacement:newIdentity()}];break;
+    }
+    const client=new ConfigurationTransfer(async()=>bad);client.load(description,saved);
+    await assert.rejects(client.prepare(text,'restore'),undefined,fault);
+    assert.equal(client.busy,false);
+  }
+  const leaking=structuredClone(document);leaking.configuration.sources[0].backend={kind:'alpaca',baseUrl:'http://localhost:11111/',deviceType:'switch',deviceNumber:0,credentialReference:'private-binding'};
+  const client=new ConfigurationTransfer(async()=>leaking);client.load(description,saved);
+  await assert.rejects(client.export(),/redacted configuration export/);
+  let original;
+  const duplicate='{"formatVersion":1,'+text.slice(1);
+  const forwarding=new ConfigurationTransfer(async command=>{original=command.document;throw Object.assign(new Error('Invalid file'),{detail:{code:'invalidConfig'}});});forwarding.load(description,saved);
+  await assert.rejects(forwarding.prepare(duplicate,'restore'));assert.equal(original,duplicate);
+}
 const groupField = reader.fields(reader.root).find(field => field.key === 'focuserGroups');
 assert.equal(groupField.enabled, false);
 assert.equal(reader.fields(reader.root, {}, ['focuserGroups']).find(field => field.key === 'focuserGroups').enabled, true);

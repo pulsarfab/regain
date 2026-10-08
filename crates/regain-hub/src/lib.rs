@@ -35,6 +35,7 @@ pub mod service;
 pub mod simulated;
 pub mod source;
 pub mod switch;
+pub mod transfer;
 mod typed_source;
 mod virtual_source;
 pub mod weather;

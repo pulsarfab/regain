@@ -175,6 +175,47 @@ fn connect(output: Uuid) -> Value {
     json!({"op":"connect","output":output})
 }
 
+#[tokio::test]
+async fn ipc_transfer_never_opens_sources_or_persists_an_import() {
+    let f = fixture();
+    let mut peer = Peer::start(f.runtime.clone(), Limits::default()).await;
+    for operation in ["exportConfig", "prepareImport"] {
+        assert!(
+            peer.hello["operations"]
+                .as_array()
+                .unwrap()
+                .contains(&json!(operation))
+        );
+    }
+    let exported = peer
+        .call(json!({"op":"exportConfig","expectedRevision":f.config.revision}))
+        .await;
+    let document = exported["result"].to_string();
+    let prepared = peer.call(json!({"op":"prepareImport","expectedRevision":f.config.revision,"mode":"copy","document":document})).await;
+    assert_eq!(prepared["result"]["mode"], "copy");
+    assert!(
+        !prepared["result"]["remappedIds"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(
+        peer.call(json!({"op":"getConfig"})).await["result"],
+        serde_json::to_value(&f.config).unwrap()
+    );
+    let duplicate = format!("{{\"formatVersion\":1,{}", &document[1..]);
+    let rejected = peer.call(json!({"op":"prepareImport","expectedRevision":f.config.revision,"mode":"restore","document":duplicate})).await;
+    assert_eq!(rejected["error"]["code"], "invalidConfig");
+    assert_eq!(
+        peer.call(json!({"op":"exportConfig","expectedRevision":Uuid::new_v4()}))
+            .await["error"]["code"],
+        "revisionConflict"
+    );
+    assert_eq!(f.runtime.active_connections(), 0);
+    assert!(f.devices.iter().all(|d| d.connects.load(SeqCst) == 0));
+    f.runtime.shutdown().await.unwrap();
+}
+
 #[tokio::test(start_paused = true)]
 async fn ipc_output_diagnostics_negotiate_read_only_revision_fenced_pages() {
     let f = fixture();

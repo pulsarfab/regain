@@ -3,6 +3,89 @@
 This records local review and tests for the single hub PR. Passing a foundation
 test does not imply that a frontend, transport, or hardware gate has passed.
 
+## 2026-10-07: shared configuration import/export
+
+Implemented revision-owned `exportConfig` and `prepareImport`, one generated
+versioned file/response contract and native NINA/ASCOM plus web controls. Export
+uses saved settings and omits all credential references. Restore requires the
+same hub instance; destination history and matching local bindings survive even
+when a file lacks their credential flag. Copy replaces the draft with new IDs for
+sources, outputs, channels and both group types, rewrites typed graph references,
+and allocates numbers outside active and retired destination slots. Missing
+bindings are reported using destination source IDs. Import preparation never
+replaces history, accepts supplied bindings, persists host settings, activates
+adapters or opens equipment.
+
+Review covered duplicate keys at every object/map level, malformed and future
+files, foreign restore, immutable targets/numbers/pins, virtual/group references,
+retired numbering, credential redaction/rebinding, revision/apply contention,
+malformed responses, late draft edits, bounded strict UTF-8 reads and ordinary
+Review/Apply. Native replacement preserves its saved baseline and read-only
+identity behavior. An embedded runtime with an unstaged ledger also checks its
+current active IDs before accepting a restore. Import errors leave the old draft
+intact; valid replacement revokes its previous review. Neither operation is an
+equipment mutation, and neither is automatically retried.
+
+Construction findings retained:
+
+- The first HTTP regression found that the publisher allowlist omitted transfer
+  commands and the preceding increment's local catalog command. Both are now
+  admitted explicitly; tests prove transfer reaches the protected host and a stale
+  native catalog request reaches its revision fence without probing equipment.
+- A duplicate-map test initially used an invalid first measurement value, so the
+  ordinary typed parser rejected it before demonstrating duplicate behavior. Both
+  repeated values are now valid; the ordinary parser accepts them and the strict
+  import parser rejects the duplicate. Ledger and weather maps are covered.
+- The first MSRV invocation used `+1.89` instead of installed `+1.89.0`, triggering
+  an unsuccessful toolchain download. The installed exact version passes.
+- The first inspected native render called Copy through the shared import helper
+  while leaving its mode selector on Restore. The fixture now selects Copy before
+  invoking the helper. The initial image remains under artifacts; the final
+  capture reflects the selected mode. Both captures use private simulation.
+- The first net48 transfer check assumed the base observatory's three outputs,
+  but that fixture also adds private accessory outputs. The assertion now checks
+  the actual saved output count, requiring every occupied number to be replaced;
+  ordinary Review is checked separately with structured diagnostics on failure.
+
+Local evidence (all logs under `artifacts/hub-transfer-*`):
+
+- `rust.log` retains the initial HTTP allowlist failure. `rust-final.log` passes
+  all Alpaca tests (including 48 HTTP cases) and hub tests through transfer, then
+  stops at the invalid duplicate-test assertion. `rust-tail.log` passes its
+  corrected transfer and all remaining virtual/weather suites; `doc-tests.log`
+  completes both doc-test targets. `core-final.log` passes all 45 runtime/IPC and
+  six final transfer cases after the embedded-ledger review correction.
+  `http-final.log` passes protected HTTP transfer and local-catalog admission.
+- `clippy-final.log` passes warning-denied all-target checks;
+  `msrv-verified.log` passes Rust 1.89.0. `schema-final.log` passes eighteen
+  independent JSON Schema cases; `node-final.log` passes shared browser contracts
+  and transfer faults. The generated fixture comes from the live Rust types.
+- `browser.log` passes a real headless Chrome flow against a caller-owned,
+  loopback-only simulated host: download, original-text file upload, duplicate
+  rejection, preserved review on rejected input, review invalidation on restore,
+  explicit Apply, remapped Copy, unchanged saved state and zero source leases.
+  `scripts/test-hub-transfer-browser.ps1` starts only its own simulated processes,
+  disables UDP discovery and closes those processes in cleanup.
+- `nina-full.log` passes 515 tests with one explicit registered-COM-fixture skip.
+  After correcting the rendered mode selection, `native-final.log` passes all
+  fourteen transfer/editor/actual-host/render cases. Both final native and web
+  screenshots are visually inspected and explicitly identify simulation.
+- `net48-final.log` passes both full real x86/x64 suites, including restore/copy,
+  dynamic reserved-number assertions, ordinary review, unchanged saved state,
+  reload, and existing ASCOM/camera/group compatibility. The initial x86 fixture
+  failure remains in `net48.log`. `freshness-final.log` verifies the generated
+  fixture; `runtime.json` audits all three rebuilt Rust workers with no VC++
+  runtime imports. Whitespace and Rust/JavaScript syntax/format checks pass.
+
+The file limit is 4 MiB, with the existing 1 MiB encoded IPC/HTTP frame budget also
+applied to requests and responses. This is explicit in both editors and docs;
+there is no chunking or truncation. Settings transfer does not restore credentials
+or live sessions into another installation. Actual OS resume, camera recovery
+metadata migration, LAN/conformance/interactive/signing/upgrades/physical
+acceptance, README/site, main reconciliation and original final review/CI/audit/
+merge gates remain open. No attached hardware or installed vendor driver was
+opened. No intermediate CI was awaited.
+
 ## 2026-10-07: local native/COM catalogs and draft adoption
 
 Implemented one revision-owned `discoverLocal` operation and generated

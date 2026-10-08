@@ -17,6 +17,25 @@ def example(name):
 
 
 class SchemaContractTests(unittest.TestCase):
+    def test_configuration_transfer_document_and_response_contracts(self):
+        description = DESCRIPTION["configurationTransfer"]
+        document_validator = Draft202012Validator(description["documentSchema"], format_checker=FormatChecker())
+        response_validator = Draft202012Validator(description["responseSchema"], format_checker=FormatChecker())
+        config = example("two-source-safety")
+        document = {"formatVersion": 1, "configuration": config, "credentialSources": []}
+        document_validator.validate(document)
+        response = {"configurationRevision": config["revision"], "sourceInstanceId": config["instanceId"], "mode": "restore",
+                    "candidate": config, "remappedIds": [], "renumberedOutputs": [], "preservedCredentials": [], "missingCredentials": []}
+        response_validator.validate(response)
+        for key, value in [("formatVersion", 2), ("credentialSources", [config["sources"][0]["id"]] * 257), ("unknown", True)]:
+            invalid = copy.deepcopy(document)
+            invalid[key] = value
+            self.assertTrue(list(document_validator.iter_errors(invalid)))
+        for key, value in [("mode", "merge"), ("candidate", {}), ("missingCredentials", ["not-an-id"]), ("unknown", True)]:
+            invalid = copy.deepcopy(response)
+            invalid[key] = value
+            self.assertTrue(list(response_validator.iter_errors(invalid)))
+
     def test_local_catalog_contract_bounds_targets_and_source_backends(self):
         description = DESCRIPTION["discovery"]["local"]
         target_validator = Draft202012Validator(description["targetSchema"], format_checker=FormatChecker())

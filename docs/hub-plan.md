@@ -20,7 +20,28 @@ ASCOM worker tree before packaging. Local ZWO library tests (99), seven runtime
 gate cases, PowerShell parsing and whitespace checks pass. This does not close
 the final main reconciliation or acceptance gates.
 
-Current increment: native/COM catalogs and draft adoption. Shared host IPC,
+Current increment: configuration import/export. The shared host supplies one
+versioned redacted file format and inert, revision-owned preparation for both
+native NINA/ASCOM and web setup. Restore keeps this hub's active identities,
+destination history and matching local credentials. Copy creates new graph IDs,
+rewrites typed references and avoids active and retired class-specific numbers.
+Only the draft changes; normal Review/Apply remains separate. Strict duplicate-key
+and identity checks reject ambiguous files. The web publisher now admits both
+transfer and local catalog commands, with protected HTTP regressions. Native and
+real browser simulation screenshots are included. Verification and construction
+findings are recorded in hub-review.md. Rust regression/final transfer checks,
+strict Clippy/Rust 1.89, freshness, eighteen independent schema cases and Node
+contracts pass. Full NINA passes 515 tests plus one explicit skip; the final
+fourteen focused cases and complete real net48 x86/x64 suites pass. Inspected
+native/web renders and fresh-worker runtime audits pass.
+Next: actual OS resume, camera recovery
+metadata, remaining conformance/installed-client/physical acceptance, README/site,
+main reconciliation and the original final review/CI/audit/merge gates. The
+existing 1 MiB encoded transport budget also bounds file transfer; no chunking or
+cross-installation credential/session restoration is claimed. Keep PR #21 draft;
+no intermediate CI waiting.
+
+Previous increment: native/COM catalogs and draft adoption. Shared host IPC,
 native NINA/ASCOM setup and the web editor use one generated target/response
 contract. Explicit native probes use the existing owned workers and require
 disconnected outputs and closed source transports. COM catalogs read the chosen
@@ -2636,3 +2657,5 @@ then cameras/coordination and every original remaining acceptance/final gate.
 | 2026-10-07 | Implemented and reviewed scoped IPv6 HTTP through catalog, scalar and image transport, native/web search selection and pinned source adoption. Kept scope in saved endpoint identity, exact socket routing, verified TLS, no replay and cancellation cleanup. | Full Rust hub/Alpaca regression; final 104 hub unit, 23 configuration, five credential and six catalog cases; strict Clippy/Rust 1.89; freshness, sixteen schema and Node checks; 45 native discovery/adoption checks, final inspected renders, real net48 x86/x64 and fresh-worker runtime audits pass. Initial header-limit and construction findings are retained in hub-review.md. Next: native/COM enumeration and configuration transfer, then OS resume, recovery metadata and all original acceptance/documentation/final gates. Actual LAN routing remains open. No intermediate CI waiting. |
 
 | 2026-10-07 | Implemented and reviewed shared native/COM catalogs and draft-only adoption through host IPC, native NINA/ASCOM setup and the web editor. Reused owned workers, source defaults/capabilities and identity rules; added finite collection, registry-only COM enumeration, blocked registration reasons and retained discovery drains. | Full Rust hub/Alpaca/core regression, strict Clippy/Rust 1.89, freshness, seventeen schema cases, Node contracts, both full net48 suites and final sixteen focused native cases pass. Nine native backends use production simulations; real x86/x64 COM catalogs and private registry/process fixtures pass. The native render and runtime imports are inspected. Initial findings, the interrupted all-activity drain run and corrected GUI simulation fixture are retained in hub-review.md. Next: configuration import/export, then OS resume, camera recovery metadata and every original acceptance/documentation/main/review/CI/audit/merge gate. No intermediate CI waiting. |
+
+| 2026-10-07 | Implemented and reviewed shared redacted configuration export and inert Restore/Copy preparation through host IPC, protected HTTP, native NINA/ASCOM setup and the web editor. Reused graph validation, identity history and ordinary Review/Apply; corrected the web local-catalog allowlist and protected embedded active IDs. | Rust regression plus final six transfer/45 runtime cases, protected HTTP, strict Clippy/Rust 1.89, freshness, eighteen schema cases and Node contracts pass. Real browser file download/upload/review/apply, full NINA 515 passed plus one explicit skip, final fourteen focused native checks, both full net48 architectures and runtime audits pass. Both simulation renders are inspected; initial HTTP, duplicate-fixture, mode-render, tool invocation and net48 count findings are retained in hub-review.md. Next: actual OS resume, camera recovery metadata and every original conformance/installed-client/physical/documentation/main/final review/CI/audit/merge gate. No intermediate CI waiting. |

@@ -1237,6 +1237,70 @@ async fn setup_routes_share_metadata_validate_and_apply_with_revision_and_connec
 }
 
 #[tokio::test]
+async fn setup_transfer_uses_protected_revision_owned_host_commands_and_inert_drafts() {
+    let f = Fixture::new().await;
+    let invoke = async |command| {
+        setup(
+            &f.router,
+            command,
+            "application/json",
+            "http://127.0.0.1:11111",
+        )
+        .await
+    };
+    let (_, original) = invoke(json!({"op":"getConfig"})).await;
+    let revision = original["result"]["revision"].clone();
+    let command = json!({"op":"exportConfig","expectedRevision":revision});
+    assert_eq!(
+        setup(
+            &f.router,
+            command.clone(),
+            "application/json",
+            "https://elsewhere.invalid"
+        )
+        .await
+        .0,
+        StatusCode::FORBIDDEN
+    );
+    let (status, export) = invoke(command).await;
+    assert_eq!(status, StatusCode::OK, "{export}");
+    assert_eq!(export["result"]["formatVersion"], 1);
+    let mut document = export["result"].clone();
+    document["configuration"]["outputs"][0]["label"] = "Imported HTTP draft".into();
+    let command = json!({"op":"prepareImport","expectedRevision":revision,"document":document.to_string(),"mode":"restore"});
+    assert_eq!(
+        setup(
+            &f.router,
+            command.clone(),
+            "application/json",
+            "https://elsewhere.invalid"
+        )
+        .await
+        .0,
+        StatusCode::FORBIDDEN
+    );
+    let (status, prepared) = invoke(command).await;
+    assert_eq!(status, StatusCode::OK, "{prepared}");
+    assert_eq!(
+        prepared["result"]["candidate"]["outputs"][0]["label"],
+        "Imported HTTP draft"
+    );
+    assert_eq!(invoke(json!({"op":"getConfig"})).await.1, original);
+    let stale = invoke(json!({"op":"exportConfig","expectedRevision":uuid::Uuid::new_v4()})).await;
+    assert_eq!(stale.1["error"]["code"], "revisionConflict");
+    let (_, invalid) = invoke(
+        json!({"op":"prepareImport","expectedRevision":revision,"document":"{}","mode":"restore"}),
+    )
+    .await;
+    assert_eq!(invalid["error"]["code"], "invalidConfig");
+    // A stale local discovery query must reach the host's revision fence. It
+    // must not be rejected by the web allowlist or start a native probe.
+    let (_, stale_local) = invoke(json!({"op":"discoverLocal","expectedRevision":uuid::Uuid::new_v4(),"target":{"kind":"native","device":"eaf"}})).await;
+    assert_eq!(stale_local["error"]["code"], "invalidValue");
+    f.finish().await;
+}
+
+#[tokio::test]
 async fn web_credentials_share_private_storage_and_reject_cross_site_mutations() {
     let f = Fixture::new().await;
     let id = uuid::Uuid::new_v4();

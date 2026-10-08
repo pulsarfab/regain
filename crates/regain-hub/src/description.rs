@@ -14,6 +14,7 @@ pub fn describe_config(capabilities: &[&str]) -> Value {
         "schema": schema,
         "capabilities": capabilities,
         "simulationControl": crate::simulated::description(),
+        "configurationTransfer": crate::transfer::description(),
         "outputDiagnostics": crate::diagnostics::description(),
         "coordination": {
             "cameraGroups": {

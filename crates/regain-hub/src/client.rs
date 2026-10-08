@@ -344,6 +344,8 @@ fn operation(command: &Command) -> &'static str {
         Command::FocuserGroupStatus { .. } => "focuserGroupStatus",
         Command::CancelFocuserGroup { .. } => "cancelFocuserGroup",
         Command::GetConfig {} => "getConfig",
+        Command::ExportConfig { .. } => "exportConfig",
+        Command::PrepareImport { .. } => "prepareImport",
         Command::DiscoverAlpaca { .. } => "discoverAlpaca",
         Command::SearchAlpaca { .. } => "searchAlpaca",
         Command::DiscoverLocal { .. } => "discoverLocal",

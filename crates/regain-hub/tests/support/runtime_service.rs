@@ -48,6 +48,52 @@ fn managed(f: &Fixture, path: Option<PathBuf>) -> Arc<HubService> {
 }
 
 #[tokio::test]
+async fn configuration_transfer_is_revision_owned_inert_and_uses_ordinary_apply() {
+    use regain_hub::transfer::ImportMode;
+    let f = fixture();
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("hub.json");
+    let service = managed(&f, Some(path.clone()));
+    let before = service.configuration();
+    let mut document = service.export_configuration(before.revision).unwrap();
+    document.configuration.outputs[0].label = "Imported switch label".into();
+    let text = serde_json::to_string(&document).unwrap();
+    assert!(matches!(
+        service.export_configuration(Uuid::new_v4()),
+        Err(UpdateError::Conflict)
+    ));
+    assert!(matches!(
+        service.prepare_import(Uuid::new_v4(), &text, ImportMode::Restore),
+        Err(UpdateError::Conflict)
+    ));
+    let prepared = service
+        .prepare_import(before.revision, &text, ImportMode::Restore)
+        .unwrap();
+    assert_eq!(service.configuration(), before);
+    assert!(!path.exists());
+    assert_eq!(service.runtime().unwrap().active_connections(), 0);
+    assert!(
+        f.devices
+            .iter()
+            .all(|d| d.connects.load(SeqCst) == 0 && d.disconnects.load(SeqCst) == 0)
+    );
+    let applied = service
+        .apply(before.revision, prepared.candidate)
+        .await
+        .unwrap();
+    assert!(applied.applied && applied.ready);
+    assert_eq!(
+        ConfigStore::load(&path).unwrap().snapshot().outputs[0].label,
+        "Imported switch label"
+    );
+    assert!(matches!(
+        service.prepare_import(before.revision, &text, ImportMode::Restore),
+        Err(UpdateError::Conflict)
+    ));
+    service.shutdown().await.unwrap();
+}
+
+#[tokio::test]
 async fn apply_replaces_file_and_runtime_and_rebinds_client_identity_without_opening_sources() {
     let f = fixture();
     let dir = tempfile::tempdir().unwrap();
