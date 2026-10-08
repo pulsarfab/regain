@@ -1,6 +1,8 @@
 $ErrorActionPreference = 'Stop'
 Push-Location (Join-Path $PSScriptRoot '..')
 try {
+    python -m unittest discover -s scripts -p test_windows_runtime.py
+    if ($LASTEXITCODE) { throw 'Windows runtime dependency checks failed' }
     foreach ($architecture in 'System32','SysWOW64') {
         & "$env:WINDIR/$architecture/WindowsPowerShell/v1.0/powershell.exe" -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'test-com-property.ps1')
         if ($LASTEXITCODE) { throw 'Strict COM property tests failed' }
