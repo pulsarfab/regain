@@ -603,10 +603,36 @@ Selection fills a candidate address and clears the prior credential reference;
 it makes no further request. Catalog lookup and identity-pinned draft adoption
 remain explicit. Search never resolves credentials, opens source leases,
 connects equipment, creates outputs or saves configuration. HTTPS/reverse-proxy
-prefixes require manual entry. Scoped IPv6 HTTP remains incomplete: link-local
-candidates have a null `baseUrl`, their exact `scopeId`, and a generated reason
-instead of an unusable unscoped URL. Transport support and final network
-acceptance remain open; loopback fixtures do not prove LAN multicast routing.
+prefixes require manual entry. Link-local candidates carry an unscoped literal
+`baseUrl` and their exact positive `scopeId`. Catalog queries, results and adopted
+sources retain that separate field; non-link-local endpoints omit source/catalog
+scope and report zero in network candidates. Final network
+acceptance remains open; loopback fixtures do not prove LAN multicast routing.
+
+### Scoped IPv6 HTTP
+
+`url::Url` cannot represent an IPv6 zone, so `scopeId` supplies routing context
+separately. It must be positive for a literal link-local IPv6 server and absent
+for other addresses. The scope participates in source identity and the retired
+identity ledger: a saved source ID cannot be retargeted to another interface.
+An identical address on a different interface can identify a different device;
+globally duplicate catalog pins still cannot create aliases.
+
+The shared client keeps ordinary requests on reqwest. Scoped requests use an
+exact `SocketAddrV6`, HTTP/1 and verified rustls HTTPS, with no DNS substitute,
+proxy, redirects, unscoped fallback or retry. The URL's literal address remains
+the HTTP authority and TLS IP SAN identity. Credentials stay on that route.
+The connection budget includes TLS; scalar headers and body share an absolute
+deadline. Images retain the existing caller-owned download deadline and codecs.
+Parsed response headers and custom reason phrases have a conservative 32 KiB
+budget, with at most 100 headers. Dropping a response or cancelling before its
+headers aborts the owned connection driver. No task continues receiving images.
+
+The private transport tests inject only a loopback dial while preserving the
+advertised link-local URL. They exercise HTTP, TLS and existing ImageBytes
+decoding without modifying network interfaces or certificates. Exact scoped
+socket construction is tested separately. These checks do not establish real
+link-local routing acceptance on Windows or Linux.
 
 ### Catalog identity pins
 

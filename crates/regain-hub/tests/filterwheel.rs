@@ -582,6 +582,7 @@ async fn alpaca_wheel(version: u16, lose_reply: bool, case: WheelTransportCase) 
             ..PollPolicy::default()
         },
         backend: SourceBackend::Alpaca {
+            scope_id: None,
             unique_id: None,
             base_url: format!("http://{address}/private/"),
             device_type: DeviceType::FilterWheel,

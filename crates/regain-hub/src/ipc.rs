@@ -145,6 +145,8 @@ pub enum Command {
     DiscoverAlpaca {
         #[serde(rename = "baseUrl")]
         base_url: String,
+        #[serde(rename = "scopeId")]
+        scope_id: Option<u32>,
         #[serde(rename = "credentialReference")]
         credential_reference: Option<String>,
         #[serde(rename = "expectedRevision")]
@@ -892,11 +894,12 @@ async fn dispatch_service(
         }
         Command::DiscoverAlpaca {
             base_url,
+            scope_id,
             credential_reference,
             expected_revision,
         } => Ok(json!(
             service
-                .discover_alpaca(base_url, credential_reference, expected_revision)
+                .discover_alpaca_scoped(base_url, scope_id, credential_reference, expected_revision)
                 .await?
         )),
         Command::HostStatus {} => Ok(json!(service.status())),

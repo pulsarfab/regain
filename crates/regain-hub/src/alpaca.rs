@@ -14,7 +14,7 @@ use crate::{
 };
 use futures_util::TryStreamExt;
 use reqwest::{
-    Client, Method,
+    Method,
     header::{AUTHORIZATION, HeaderValue, RETRY_AFTER},
 };
 use serde::Deserialize;
@@ -28,6 +28,8 @@ use uuid::Uuid;
 
 pub const MAX_RESPONSE_BYTES: usize = 1024 * 1024;
 pub mod discovery;
+pub(crate) mod http;
+use http::HttpClient;
 pub mod network_discovery;
 use crate::sampling::PropertyPoll;
 pub use crate::sampling::{SampleRequest, SampleType};
@@ -45,8 +47,8 @@ enum ConnectionPhase {
 }
 
 pub struct AlpacaBackend {
-    client: Client,
-    image_client: Option<Client>,
+    client: HttpClient,
+    image_client: Option<HttpClient>,
     root: Url,
     identity_pin: Option<IdentityPin>,
     client_id: u32,
@@ -78,6 +80,7 @@ impl AlpacaBackend {
     ) -> Result<Self, SourceError> {
         let SourceBackend::Alpaca {
             base_url,
+            scope_id,
             device_type,
             device_number,
             unique_id,
@@ -131,11 +134,11 @@ impl AlpacaBackend {
             headers.insert(AUTHORIZATION, authorization);
         }
         let deadline = Duration::from_secs_f64(config.polling.request_timeout_seconds);
-        let client = http_client(headers.clone(), deadline, true)?;
+        let client = HttpClient::new(&root, *scope_id, headers.clone(), deadline, true)?;
         // Image bodies have the caller's separately bounded download deadline.
         // Applying the scalar timeout here would truncate ordinary long reads.
         let image_client = (source_device_type == DeviceType::Camera)
-            .then(|| http_client(headers, deadline, false))
+            .then(|| HttpClient::new(&root, *scope_id, headers, deadline, false))
             .transpose()?;
         Ok(Self {
             client,
@@ -181,7 +184,11 @@ impl AlpacaBackend {
         } else {
             builder.query(&parameters)
         };
-        let response = request.send().await.map_err(|_| transport_error(write))?;
+        let response = self
+            .client
+            .send(request)
+            .await
+            .map_err(|_| transport_error(write))?;
         read_response(response, self.transaction, write, member).await
     }
     async fn image(&mut self, budget: ImageBudget) -> Result<CameraImage, SourceError> {
@@ -201,14 +208,15 @@ impl AlpacaBackend {
             .root
             .join("imagearray")
             .map_err(|_| invalid("Invalid Alpaca member"))?;
-        let response = client
+        let request = client
             .get(url)
             .header(reqwest::header::ACCEPT, "application/imagebytes")
             .query(&[
                 ("ClientID", self.client_id),
                 ("ClientTransactionID", transaction),
-            ])
-            .send()
+            ]);
+        let response = client
+            .send(request)
             .await
             .map_err(|_| transport_error(false))?;
         if response.status().as_u16() != 200 {
@@ -635,27 +643,6 @@ fn image_error(error: ImageReadError) -> SourceError {
         ImageReadError::Io(_) => transport_error(false),
         ImageReadError::Upstream { code, .. } => upstream_error(code as i32),
     }
-}
-fn http_client(
-    headers: reqwest::header::HeaderMap,
-    deadline: Duration,
-    scalar: bool,
-) -> Result<Client, SourceError> {
-    let builder = Client::builder()
-        .default_headers(headers)
-        .redirect(reqwest::redirect::Policy::none())
-        .retry(reqwest::retry::never())
-        .no_proxy()
-        .connect_timeout(deadline)
-        .pool_max_idle_per_host(1);
-    let builder = if scalar {
-        builder.timeout(deadline)
-    } else {
-        builder
-    };
-    builder
-        .build()
-        .map_err(|_| invalid("Could not initialize Alpaca HTTP client"))
 }
 fn http_error(response: &reqwest::Response, member: &str) -> SourceError {
     let status = response.status().as_u16();

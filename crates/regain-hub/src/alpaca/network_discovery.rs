@@ -28,11 +28,6 @@ const REQUEST: &[u8] = b"alpacadiscovery1";
 const GROUP: Ipv6Addr = Ipv6Addr::new(0xff12, 0, 0, 0, 0, 0, 0xa1, 0x9aca);
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub enum UnavailableReason {
-    ScopedIpv6RequiresTransportSupport,
-}
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Server {
     #[schemars(length(min = 2, max = 45))]
@@ -42,8 +37,7 @@ pub struct Server {
     #[schemars(range(min = 1, max = 65535))]
     pub port: u16,
     #[schemars(length(min = 1, max = 128))]
-    pub base_url: Option<String>,
-    pub unavailable_reason: Option<UnavailableReason>,
+    pub base_url: String,
 }
 #[derive(Debug, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -66,8 +60,7 @@ pub fn description() -> Value {
         "maximumServers":MAX_SERVERS, "maximumDatagrams":MAX_DATAGRAMS, "maximumReplyBytes":MAX_REPLY_BYTES,
         "responseSchema":schemars::schema_for!(Search),
         "label":"Find Alpaca servers on the host's local networks",
-        "description":"Search from the shared host using IPv4 broadcast and IPv6 multicast. Select a candidate, then explicitly read its device catalog. UDP replies do not prove server or device identity. Reverse-proxy prefixes and HTTPS must be entered manually.",
-        "unavailableReasons":{"scopedIpv6RequiresTransportSupport":"This IPv6 link-local address requires scoped HTTP transport support. Enter another address for this server."}})
+        "description":"Search from the shared host using IPv4 broadcast and IPv6 multicast. Select a candidate, then explicitly read its device catalog. UDP replies do not prove server or device identity. Reverse-proxy prefixes and HTTPS must be entered manually. IPv6 link-local addresses keep their host interface scope separately."})
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -216,7 +209,6 @@ fn candidate(bytes: &[u8], sender: SocketAddr, interface: Target) -> Option<(Soc
             SocketAddr::V6(address)
         }
     };
-    let scoped = matches!(endpoint, SocketAddr::V6(a) if a.scope_id() != 0);
     Some((
         endpoint,
         Server {
@@ -226,9 +218,10 @@ fn candidate(bytes: &[u8], sender: SocketAddr, interface: Target) -> Option<(Soc
                 _ => 0,
             },
             port: reply.port,
-            base_url: (!scoped).then(|| format!("http://{endpoint}")),
-            unavailable_reason: scoped
-                .then_some(UnavailableReason::ScopedIpv6RequiresTransportSupport),
+            base_url: match endpoint {
+                SocketAddr::V6(address) => format!("http://[{}]:{}", address.ip(), address.port()),
+                SocketAddr::V4(address) => format!("http://{address}"),
+            },
         },
     ))
 }
@@ -428,7 +421,7 @@ mod tests {
     #[test]
     fn strict_port_decoder_allows_extensions_but_not_ambiguous_or_invalid_fields() {
         let server = decode(br#"{"AlpacaPort":11111,"FutureExtension":{"value":true}}"#).unwrap();
-        assert_eq!(server.base_url.as_deref(), Some("http://192.0.2.3:11111"));
+        assert_eq!(server.base_url, "http://192.0.2.3:11111");
         assert_eq!(server.scope_id, 0);
         for body in [
             r#"{"AlpacaPort":0}"#,
@@ -470,7 +463,7 @@ mod tests {
         }
     }
     #[test]
-    fn ipv6_zones_are_retained_and_never_turn_into_an_unscoped_url() {
+    fn ipv6_zones_are_retained_separately_from_the_http_url() {
         let interface = Target {
             bind: "[fe80::2%7]:0".parse().unwrap(),
             destination: "[ff12::a1:9aca%7]:32227".parse().unwrap(),
@@ -483,11 +476,7 @@ mod tests {
         .unwrap();
         assert_eq!(key, "[fe80::42%7]:11111".parse().unwrap());
         assert_eq!(server.scope_id, 7);
-        assert!(server.base_url.is_none());
-        assert_eq!(
-            server.unavailable_reason,
-            Some(UnavailableReason::ScopedIpv6RequiresTransportSupport)
-        );
+        assert_eq!(server.base_url, "http://[fe80::42]:11111");
         assert!(
             candidate(
                 br#"{"AlpacaPort":1}"#,
@@ -503,7 +492,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(global.scope_id, 0);
-        assert_eq!(global.base_url.as_deref(), Some("http://[2001:db8::42]:1"));
+        assert_eq!(global.base_url, "http://[2001:db8::42]:1");
     }
     #[test]
     fn ipc_search_accepts_only_revision_and_never_arbitrary_targets_or_credentials() {
@@ -555,10 +544,7 @@ mod tests {
             result.servers.iter().map(|s| s.port).collect::<Vec<_>>(),
             vec![11111, 22222]
         );
-        assert_eq!(
-            result.servers[0].base_url.as_deref(),
-            Some("http://127.0.0.1:11111")
-        );
+        assert_eq!(result.servers[0].base_url, "http://127.0.0.1:11111");
         assert_eq!(result.ignored_datagrams, 2);
         assert_eq!(result.interfaces_failed, 0);
         assert!(!result.incomplete);
@@ -591,10 +577,7 @@ mod tests {
         )
         .await;
         responder.await.unwrap();
-        assert_eq!(
-            result.servers[0].base_url.as_deref(),
-            Some("http://[::1]:12345")
-        );
+        assert_eq!(result.servers[0].base_url, "http://[::1]:12345");
     }
     #[tokio::test]
     async fn deadline_and_interface_limits_report_partial_results_without_orphan_tasks() {

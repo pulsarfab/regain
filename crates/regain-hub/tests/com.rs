@@ -1149,6 +1149,7 @@ async fn mixed_native_alpaca_and_com_gauges_share_the_same_controller() {
             id: Uuid::new_v4(),
             label: "Loopback Alpaca fixture".into(),
             backend: SourceBackend::Alpaca {
+                scope_id: None,
                 unique_id: None,
                 base_url: format!("http://{address}"),
                 device_type: DeviceType::Switch,

@@ -802,6 +802,7 @@ async fn alpaca_panel_case(version: u16, lose_ack: bool, nested: Option<panel_vi
             ..PollPolicy::default()
         },
         backend: SourceBackend::Alpaca {
+            scope_id: None,
             unique_id: None,
             base_url: format!("http://{address}/private/"),
             device_type: DeviceType::CoverCalibrator,

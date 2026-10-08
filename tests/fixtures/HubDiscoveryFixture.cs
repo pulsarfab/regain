@@ -60,6 +60,7 @@ internal static class HubDiscoveryFixture
         using var server = new HubCatalogServer();
         await editor.ReloadAsync();
         await NetworkReply(editor.Description!.Value, editor.SavedConfiguration!.Value);
+        await ScopedReply(editor.Description!.Value, editor.SavedConfiguration!.Value);
         var before = editor.SavedConfiguration!.Value.GetRawText();
         Check(await editor.ReviewAsync(), "Private configuration did not review");
         foreach (var invalid in new[] { "file:///secret", "http://user:secret@localhost/", "http://localhost/?secret", "http://localhost/#secret" }) {
@@ -114,10 +115,10 @@ internal static class HubDiscoveryFixture
                     return Task.FromResult(JsonSerializer.SerializeToElement(new {
                         configurationRevision=revision,interfacesTried=3,interfacesFailed=0,ignoredDatagrams=0,incomplete=false,
                         servers=new object[] {
-                            new {address="192.0.2.3",scopeId=0,port=80,baseUrl="http://192.0.2.3:80",unavailableReason=(string?)null},
-                            new {address="2001:db8::42",scopeId=0,port=11111,baseUrl="http://[2001:db8::42]:11111",unavailableReason=(string?)null},
-                            new {address="fe80::42",scopeId=7,port=11111,baseUrl=(string?)null,unavailableReason="scopedIpv6RequiresTransportSupport"},
-                            new {address="::c000:203",scopeId=0,port=1,baseUrl="http://[::c000:203]:1",unavailableReason=(string?)null}
+                            new {address="192.0.2.3",scopeId=0,port=80,baseUrl="http://192.0.2.3:80"},
+                            new {address="2001:db8::42",scopeId=0,port=11111,baseUrl="http://[2001:db8::42]:11111"},
+                            new {address="fe80::42",scopeId=7,port=11111,baseUrl="http://[fe80::42]:11111"},
+                            new {address="::c000:203",scopeId=0,port=1,baseUrl="http://[::c000:203]:1"}
                         }
                     }));
                 default: throw new InvalidOperationException("Network search performed other I/O");
@@ -125,6 +126,29 @@ internal static class HubDiscoveryFixture
         },()=>{});
         await search.ReloadAsync(); var result=await search.SearchAlpacaAsync();
         Check(queries==1 && !search.Draft!.Dirty && search.LastDiscovery is null,"Network search changed configuration or read a catalog");
-        Check(result.GetProperty("servers")[2].GetProperty("scopeId").GetUInt32()==7 && result.GetProperty("servers")[2].GetProperty("baseUrl").ValueKind==JsonValueKind.Null,"Network search erased an IPv6 zone");
+        Check(result.GetProperty("servers")[2].GetProperty("scopeId").GetUInt32()==7 && result.GetProperty("servers")[2].GetProperty("baseUrl").GetString()=="http://[fe80::42]:11111","Network search erased an IPv6 zone");
+    }
+    private static async Task ScopedReply(JsonElement description, JsonElement saved)
+    {
+        var revision = saved.GetProperty("revision").GetGuid(); var queries = 0;
+        using var editor = new HubEditorSession(saved.GetProperty("instanceId").GetGuid(), (command, _) => {
+            switch (command.GetProperty("op").GetString()) {
+                case "describeConfig": return Task.FromResult(description);
+                case "getConfig": return Task.FromResult(saved);
+                case "hostStatus": return Task.FromResult(JsonSerializer.SerializeToElement(new { phase = "ready", configurationRevision = revision }));
+                case "discoverAlpaca":
+                    queries++; Check(command.GetProperty("scopeId").GetUInt32() == 7, "Catalog query lost its interface");
+                    return Task.FromResult(JsonSerializer.SerializeToElement(new {
+                        configurationRevision = revision, baseUrl = "http://[fe80::42]:11111", scopeId = 7,
+                        devices = new[] { new { name = "[SIMULATION] scoped camera", reportedDeviceType = "Camera", supportedDeviceType = "camera", number = 0, uniqueId = "scoped camera" } }
+                    }));
+                default: throw new InvalidOperationException("Scoped catalog performed other I/O");
+            }
+        }, () => { });
+        await editor.ReloadAsync();
+        await editor.DiscoverAlpacaScopedAsync("http://[fe80::42]:11111", 7);
+        var id = editor.AddDiscoveredAlpacaSource(0);
+        var source = editor.Draft!.Candidate.GetProperty("sources").EnumerateArray().Single(s => s.GetProperty("id").GetGuid() == id);
+        Check(queries == 1 && source.GetProperty("backend").GetProperty("scopeId").GetUInt32() == 7, "Scoped adoption lost its interface or repeated a query");
     }
 }

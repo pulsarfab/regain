@@ -3,6 +3,52 @@
 This records local review and tests for the single hub PR. Passing a foundation
 test does not imply that a frontend, transport, or hardware gate has passed.
 
+## 2026-10-07: scoped IPv6 catalog, control and image transport
+
+Link-local endpoints now carry a separate positive host interface `scopeId`
+alongside an unscoped literal URL. Native/web discovery, catalog queries,
+successful-query echoes and draft adoption retain it. Source identity includes
+scope, so a saved ID cannot switch interfaces. Matching catalog pins remain
+aliases across interfaces; distinct devices with the same address may use
+different scopes. Invalid scope/URL combinations fail before credentials or
+network access. Scoped saved credentials remain protected from deletion.
+
+Reviewed exact socket routing, authority and credential confinement, verified
+TLS IP SAN identity, connect/handshake deadlines, scalar whole-response
+deadlines, response/body disposal and cancellation, and reuse of the ordinary
+scalar/ImageBytes/JSON-image codecs. Scoped requests use a fresh HTTP/1
+connection with no proxy, DNS alias, redirect, fallback or replay. Images keep
+their caller-owned download deadline and retained-image budget. Ordinary
+reqwest transport keeps its existing behavior.
+
+The initial wire tests found that Hyper's buffer limit did not reject a complete
+oversized header block. Explicit parsed header/reason-phrase accounting now
+rejects it before returning the response, alongside the 100-header parser limit.
+The private tests cover requests, redirects, authority mismatch, malformed-size
+responses, TLS trust/IP mismatches, handshake/header/body deadlines, connection
+cancellation/disposal and existing ImageBytes decoding/budget release. Test
+construction initially used the wrapper image response instead of its image
+field; corrected without changing the codec. Review also caught a bulk field
+insertion accidentally restricting a credential match to unscoped sources;
+the pattern was corrected and scoped deletion protection has a regression case.
+Initial and final logs remain separate in artifacts.
+
+The test dial targets private IPv6 loopback while retaining an advertised
+link-local URL and certificate identity. Scoped socket construction is checked
+separately. This proves transport behavior without configuring host interfaces
+or trust stores; it does not prove actual Windows/Linux link-local LAN routing.
+No broadcast search, attached hardware or installed vendor driver is exercised.
+Local validation passes: full Rust hub/Alpaca regression; final 104 hub unit
+cases (14 transport), 23 configuration, five credential and six catalog cases;
+strict all-target Clippy and Rust 1.89; generated-contract freshness, sixteen
+independent schema cases, Node contracts and JavaScript syntax. The 45 relevant
+native discovery/adoption/private-IPC cases and final WPF render pass. Refreshed
+search/catalog screenshots are inspected. Full real net48 x86/x64 suites pass,
+including the shared scoped catalog/adoption fixture. Fresh Windows workers
+pass the runtime import audit. This batch does not rerun unrelated ordinary NINA
+classes or close LAN, installed-client, hardware or final merge gates. No
+intermediate CI wait.
+
 ## 2026-10-07: bounded Alpaca UDP candidate search
 
 The shared Rust host exposes revision-fenced `searchAlpaca`, using IPv4 directed

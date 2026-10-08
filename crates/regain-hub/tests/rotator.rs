@@ -700,6 +700,7 @@ async fn alpaca_transport(version: u16, uncertain_reply: bool, case: TransportCa
             ..PollPolicy::default()
         },
         backend: SourceBackend::Alpaca {
+            scope_id: None,
             unique_id: None,
             base_url: format!("http://{address}/prefix/"),
             device_type: DeviceType::Rotator,

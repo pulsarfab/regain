@@ -119,6 +119,11 @@ pub enum SourceBackend {
         /// Server base URL. Credentials, query strings, and fragments are not allowed.
         #[schemars(title = "Server URL", url)]
         base_url: String,
+        /// Interface index on this host for a literal IPv6 link-local server.
+        /// Keep the URL unscoped and set this separately. Other URLs omit it.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[schemars(title = "IPv6 interface scope", range(min = 1, max = 4294967295u64))]
+        scope_id: Option<u32>,
         /// ASCOM device class advertised by the source.
         device_type: DeviceType,
         /// Stable device number on that server.
@@ -457,12 +462,13 @@ impl SourceConfig {
         Ok(match &self.backend {
             SourceBackend::Alpaca {
                 base_url,
+                scope_id,
                 device_type,
                 device_number,
                 ..
             } => format!(
                 "alpaca:{}:{device_type:?}:{device_number}",
-                normalized_url(base_url)?
+                normalized_alpaca_url(base_url, *scope_id)?
             ),
             SourceBackend::Native {
                 device, identity, ..
@@ -649,6 +655,15 @@ pub fn normalized_url(input: &str) -> Result<String, &'static str> {
     url.set_path(&path);
     Ok(url.to_string())
 }
+pub fn normalized_alpaca_url(input: &str, scope: Option<u32>) -> Result<String, &'static str> {
+    let normalized = normalized_url(input)?;
+    let root = url::Url::parse(&normalized).map_err(|_| "Use an absolute HTTP(S) URL")?;
+    let address = crate::alpaca::http::scoped_address(&root, scope)?;
+    Ok(match address {
+        Some(address) => format!("{normalized}|scope={}", address.scope_id()),
+        None => normalized,
+    })
+}
 
 impl HubConfig {
     /// Include retired slots so clients never shift channel identities after an
@@ -775,6 +790,7 @@ impl HubConfig {
             let identity = match &source.backend {
                 SourceBackend::Alpaca {
                     base_url,
+                    scope_id,
                     device_type,
                     device_number,
                     unique_id,
@@ -801,7 +817,7 @@ impl HubConfig {
                             "Use a local credential reference, never inline credentials",
                         );
                     }
-                    match normalized_url(base_url) {
+                    match normalized_alpaca_url(base_url, *scope_id) {
                         Ok(url) => {
                             if let Some(id) = unique_id
                                 && !alpaca_pins.insert(normalize_alpaca_id(id))

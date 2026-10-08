@@ -10,11 +10,11 @@ public sealed class HubNetworkDiscoveryTests
     private static JsonElement Reply(Guid revision) => JsonSerializer.SerializeToElement(new {
         configurationRevision = revision, interfacesTried = 4, interfacesFailed = 1, ignoredDatagrams = 2, incomplete = true,
         servers = new object[] {
-            new { address = "192.0.2.3", scopeId = 0, port = 80, baseUrl = "http://192.0.2.3:80", unavailableReason = (string?)null },
-            new { address = "2001:db8::42", scopeId = 0, port = 11111, baseUrl = "http://[2001:db8::42]:11111", unavailableReason = (string?)null },
-            new { address = "fe80::42", scopeId = 7, port = 11111, baseUrl = (string?)null, unavailableReason = "scopedIpv6RequiresTransportSupport" },
-            new { address = "fe80::42", scopeId = 8, port = 11111, baseUrl = (string?)null, unavailableReason = "scopedIpv6RequiresTransportSupport" },
-            new { address = "::c000:203", scopeId = 0, port = 1, baseUrl = "http://[::c000:203]:1", unavailableReason = (string?)null }
+            new { address = "192.0.2.3", scopeId = 0, port = 80, baseUrl = "http://192.0.2.3:80" },
+            new { address = "2001:db8::42", scopeId = 0, port = 11111, baseUrl = "http://[2001:db8::42]:11111" },
+            new { address = "fe80::42", scopeId = 7, port = 11111, baseUrl = "http://[fe80::42]:11111" },
+            new { address = "fe80::42", scopeId = 8, port = 11111, baseUrl = "http://[fe80::42]:11111" },
+            new { address = "::c000:203", scopeId = 0, port = 1, baseUrl = "http://[::c000:203]:1" }
         }
     });
     private static HubEditorSession Editor(Func<JsonElement, CancellationToken, Task<JsonElement>> search)
@@ -40,7 +40,7 @@ public sealed class HubNetworkDiscoveryTests
         Assert.Equal(5, result.GetProperty("servers").GetArrayLength());
         Assert.Equal(7u, result.GetProperty("servers")[2].GetProperty("scopeId").GetUInt32());
         Assert.Equal(8u, result.GetProperty("servers")[3].GetProperty("scopeId").GetUInt32());
-        Assert.Equal(JsonValueKind.Null, result.GetProperty("servers")[2].GetProperty("baseUrl").ValueKind);
+        Assert.Equal("http://[fe80::42]:11111", result.GetProperty("servers")[2].GetProperty("baseUrl").GetString());
         Assert.Equal(before, editor.Draft.Candidate.GetRawText()); Assert.False(editor.Draft.Dirty);
         Assert.Equal(HubEditorState.Reviewed, editor.State); Assert.Null(editor.LastDiscovery); Assert.Equal(1, calls);
         await editor.ReloadAsync(); Assert.Null(editor.LastNetworkDiscovery);
@@ -61,7 +61,7 @@ public sealed class HubNetworkDiscoveryTests
             if (fault == "port") server["port"] = 0;
             if (fault == "address") server["address"] = "127.1";
             if (fault == "scope") reply["servers"]![2]!["scopeId"] = 0;
-            if (fault == "url") reply["servers"]![2]!["baseUrl"] = "http://[fe80::42]:11111";
+            if (fault == "url") reply["servers"]![2]!["baseUrl"] = "http://[fe80::43]:11111";
             if (fault == "reason") reply["servers"]![2]!["unavailableReason"] = null;
             if (fault == "duplicate") reply["servers"]!.AsArray().Add(server.DeepClone());
             if (fault == "extra") reply["authorization"] = "must-not-escape";

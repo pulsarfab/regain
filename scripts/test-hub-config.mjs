@@ -817,15 +817,15 @@ console.log('Catalog adoption passed: generated defaults, fixed identity/credent
 console.log('Catalog identity comparison preserves opaque strings and normalizes only core UUID forms.');
 
 // Server search has no URL/credential inputs and leaves device catalog reads
-// separate. Preserve IPv6 zones even when the HTTP transport cannot use them.
+// separate. Preserve IPv6 zones as distinct routing context alongside the URL.
 {
   const revision='11111111-1111-4111-8111-111111111111', saved={revision};
   const good={configurationRevision:revision,interfacesTried:4,interfacesFailed:1,ignoredDatagrams:2,incomplete:true,servers:[
-    {address:'192.0.2.3',scopeId:0,port:80,baseUrl:'http://192.0.2.3:80',unavailableReason:null},
-    {address:'2001:db8::42',scopeId:0,port:11111,baseUrl:'http://[2001:db8::42]:11111',unavailableReason:null},
-    {address:'fe80::42',scopeId:7,port:11111,baseUrl:null,unavailableReason:'scopedIpv6RequiresTransportSupport'},
-    {address:'fe80::42',scopeId:8,port:11111,baseUrl:null,unavailableReason:'scopedIpv6RequiresTransportSupport'},
-    {address:'::c000:203',scopeId:0,port:1,baseUrl:'http://[::c000:203]:1',unavailableReason:null}
+    {address:'192.0.2.3',scopeId:0,port:80,baseUrl:'http://192.0.2.3:80'},
+    {address:'2001:db8::42',scopeId:0,port:11111,baseUrl:'http://[2001:db8::42]:11111'},
+    {address:'fe80::42',scopeId:7,port:11111,baseUrl:'http://[fe80::42]:11111'},
+    {address:'fe80::42',scopeId:8,port:11111,baseUrl:'http://[fe80::42]:11111'},
+    {address:'::c000:203',scopeId:0,port:1,baseUrl:'http://[::c000:203]:1'}
   ]};
   const requests=[], setup=new AlpacaNetworkDiscovery(async(command,path,deadline)=>{
     requests.push(command); assert.equal(deadline,8); return structuredClone(good);
@@ -841,7 +841,7 @@ console.log('Catalog identity comparison preserves opaque strings and normalizes
     if (fault==='port') server.port=0;
     if (fault==='address') server.address='127.1';
     if (fault==='scope') reply.servers[2].scopeId=0;
-    if (fault==='url') reply.servers[2].baseUrl='http://[fe80::42]:11111';
+    if (fault==='url') reply.servers[2].baseUrl='http://[fe80::43]:11111';
     if (fault==='reason') reply.servers[2].unavailableReason=null;
     if (fault==='duplicate') reply.servers.push(structuredClone(server));
     if (fault==='extra') reply.authorization='must-not-escape';
@@ -860,3 +860,31 @@ console.log('Catalog identity comparison preserves opaque strings and normalizes
   assert.throws(()=>blocked.load(description,saved),/pending/); release(structuredClone(good)); await pending;
 }
 console.log('Network search preserves candidate scopes, bounds, revision checks and separation from catalog/device I/O.');
+
+{
+  const revision='11111111-1111-4111-8111-111111111111', reader=configurationContract({...description,capabilities:['alpacaSources']});
+  const catalog={configurationRevision:revision,baseUrl:'http://[fe80::42]:11111',scopeId:7,devices:[
+    {name:'[SIMULATION] scoped camera',reportedDeviceType:'Camera',supportedDeviceType:'camera',number:0,uniqueId:'scoped camera 7'}]};
+  const requests=[], setup=new AlpacaDiscovery(async command=>{requests.push(command);return structuredClone(catalog);});
+  setup.load(description,{revision});
+  for (const [url,scope] of [[catalog.baseUrl,null],[catalog.baseUrl,0],[catalog.baseUrl,4294967296],
+      ['http://localhost',7],['http://[::1]',7],['http://[fe80::42%7]',7]])
+    await assert.rejects(()=>setup.query(url,null,scope));
+  assert.equal(requests.length,0);
+  await setup.query(catalog.baseUrl,'protected-reference',7);
+  assert.equal(requests[0].scopeId,7);
+  const draft={revision,sources:[]}; setup.adopt(reader,draft,0);
+  assert.equal(draft.sources[0].backend.scopeId,7);
+  assert.equal(draft.sources[0].backend.credentialReference,'protected-reference');
+  catalog.scopeId=8;
+  await setup.query(catalog.baseUrl,null,8);
+  assert.throws(()=>setup.adopt(reader,draft,0),/already has a source/,'a matching pin is still an alias across interfaces');
+  catalog.devices[0].uniqueId='different camera';
+  await setup.query(catalog.baseUrl,null,8); setup.adopt(reader,draft,0);
+  delete draft.sources[1].backend.uniqueId;
+  assert.throws(()=>setup.adopt(reader,draft,0),/already has a source/,'same scoped address cannot be duplicated');
+  const broken=new AlpacaDiscovery(async()=>({...catalog,scopeId:9}));broken.load(description,{revision});
+  await assert.rejects(()=>broken.query(catalog.baseUrl,null,8),/Invalid Alpaca catalog/);
+  assert.equal(broken.uncertain,true); assert.equal(broken.catalog,null);
+}
+console.log('Scoped catalogs retain interface routing context through requests and adoption, reject mismatched echoes and keep pin/address identity rules.');

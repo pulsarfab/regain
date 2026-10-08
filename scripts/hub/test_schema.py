@@ -17,15 +17,29 @@ def example(name):
 
 
 class SchemaContractTests(unittest.TestCase):
+    def test_optional_scopes_are_uint32_in_sources_and_catalogs(self):
+        config = example("two-source-safety")
+        config["sources"][0]["backend"].update(baseUrl="http://[fe80::42]:11111", scopeId=7)
+        VALIDATOR.validate(config)
+        schema = DESCRIPTION["discovery"]["alpaca"]["responseSchema"]
+        validator = Draft202012Validator(schema, format_checker=FormatChecker())
+        catalog = {"configurationRevision": config["revision"], "baseUrl": "http://[fe80::42]:11111", "scopeId": 7, "devices": []}
+        validator.validate(catalog)
+        for scope in [0, -1, 4294967296, 1.5, "7"]:
+            config["sources"][0]["backend"]["scopeId"] = scope
+            catalog["scopeId"] = scope
+            self.assertTrue(list(VALIDATOR.iter_errors(config)))
+            self.assertTrue(list(validator.iter_errors(catalog)))
+
     def test_network_search_bounds_addresses_ports_counts_and_extensions(self):
         schema = DESCRIPTION["discovery"]["network"]["responseSchema"]
         validator = Draft202012Validator(schema, format_checker=FormatChecker())
         good = {"configurationRevision": "11111111-1111-4111-8111-111111111111",
                 "interfacesTried": 3, "interfacesFailed": 1, "ignoredDatagrams": 4, "incomplete": True,
                 "servers": [{"address": "192.0.2.3", "scopeId": 0, "port": 11111,
-                             "baseUrl": "http://192.0.2.3:11111", "unavailableReason": None},
+                             "baseUrl": "http://192.0.2.3:11111"},
                             {"address": "fe80::42", "scopeId": 7, "port": 11111,
-                             "baseUrl": None, "unavailableReason": "scopedIpv6RequiresTransportSupport"}]}
+                             "baseUrl": "http://[fe80::42]:11111"}]}
         validator.validate(good)
         for patch in [{"interfacesTried": 65}, {"interfacesFailed": -1}, {"ignoredDatagrams": 4097},
                       {"incomplete": "false"}, {"authorization": "must-not-escape"},

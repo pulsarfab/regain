@@ -17,6 +17,54 @@ fn invalid(config: &HubConfig, code: &str) {
     );
 }
 
+#[test]
+fn link_local_scopes_distinguish_endpoints_and_cannot_retarget_saved_sources() {
+    let mut value = serde_json::to_value(safety()).unwrap();
+    for (index, source) in value["sources"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .enumerate()
+    {
+        source["backend"]["baseUrl"] = "http://[fe80::42]:11111/prefix".into();
+        source["backend"]["scopeId"] = (7 + index as u32).into();
+        source["backend"]["deviceNumber"] = 0.into();
+    }
+    let config: HubConfig = serde_json::from_value(value.clone()).unwrap();
+    assert!(config.validate().is_empty(), "{:?}", config.validate());
+    assert_eq!(
+        normalized_alpaca_url("http://localhost:11111/", None).unwrap(),
+        "http://localhost:11111/"
+    );
+    assert_ne!(
+        normalized_alpaca_url("http://[fe80::42]", Some(7)).unwrap(),
+        normalized_alpaca_url("http://[fe80::42]", Some(8)).unwrap()
+    );
+    let store = ConfigStore::new(None, config).unwrap();
+    let mut changed = value.clone();
+    changed["sources"][0]["backend"]["scopeId"] = 9.into();
+    let changed: HubConfig = serde_json::from_value(changed).unwrap();
+    assert!(
+        store.prepare(changed.revision, changed, false).is_err(),
+        "saved ID must not switch interfaces"
+    );
+    for (url, scope) in [
+        ("http://[fe80::42]", serde_json::Value::Null),
+        ("http://[fe80::42]", 0.into()),
+        ("http://[::1]", 7.into()),
+        ("http://localhost", 7.into()),
+        ("http://[fe80::42%7]", 7.into()),
+    ] {
+        let mut bad = value.clone();
+        bad["sources"][0]["backend"]["baseUrl"] = url.into();
+        bad["sources"][0]["backend"]["scopeId"] = scope;
+        let bad: HubConfig = serde_json::from_value(bad).unwrap();
+        invalid(&bad, "url");
+    }
+    value["sources"][1]["backend"]["scopeId"] = 7.into();
+    invalid(&serde_json::from_value(value).unwrap(), "duplicate");
+}
+
 fn paired_focusers() -> HubConfig {
     serde_json::from_str(include_str!("../examples/paired-focusers.json")).unwrap()
 }

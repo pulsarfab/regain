@@ -18,6 +18,7 @@ public sealed partial class HubConfigurationDraft
         var type = device.GetProperty("supportedDeviceType").GetString()!;
         var number = device.GetProperty("number").GetUInt32(); var identity = device.GetProperty("uniqueId").GetString()!;
         var server = catalog.GetProperty("baseUrl").GetString()!;
+        var scope = catalog.TryGetProperty("scopeId", out var scoped) && scoped.ValueKind != JsonValueKind.Null ? scoped.GetUInt32() : (uint?)null;
         var sources = value["sources"]!.AsArray(); var arraySchema = Field("/sources").Schema;
         if (sources.Count >= arraySchema.GetProperty("maxItems").GetInt32()) throw new InvalidOperationException("Configuration source limit reached");
         foreach (var existing in sources) {
@@ -25,6 +26,7 @@ public sealed partial class HubConfigurationDraft
             if (backend["kind"]!.GetValue<string>() != "alpaca") continue;
             if (backend["uniqueId"] is JsonNode pin && HubAlpacaIdentity.Normalize(pin.GetValue<string>()) == HubAlpacaIdentity.Normalize(identity) ||
                 new Uri(backend["baseUrl"]!.GetValue<string>()).AbsoluteUri.TrimEnd('/') == new Uri(server).AbsoluteUri.TrimEnd('/') &&
+                (backend["scopeId"] is JsonNode existingScope ? existingScope.GetValue<uint>() : (uint?)null) == scope &&
                 backend["deviceType"]!.GetValue<string>() == type && backend["deviceNumber"]!.GetValue<uint>() == number)
                 throw new InvalidOperationException("This Alpaca device already has a source. Share its existing source ID");
         }
@@ -38,6 +40,7 @@ public sealed partial class HubConfigurationDraft
         var prepared = JsonNode.Parse(InitialValue(choice.Schema).GetRawText())!.AsObject();
         prepared["baseUrl"] = server; prepared["deviceType"] = type; prepared["deviceNumber"] = number;
         prepared["uniqueId"] = identity;
+        if (scope.HasValue) prepared["scopeId"] = scope.Value;
         if (credentialReference is not null) prepared["credentialReference"] = credentialReference;
         source["backend"] = prepared;
         var maximum = schema.GetProperty("properties").GetProperty("label").GetProperty("maxLength").GetInt32();

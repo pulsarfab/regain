@@ -42,10 +42,8 @@ public sealed partial class HubEditorSession
                         ip.IsIPv6Multicast || ip.IsIPv4MappedToIPv6 ||
                         ip.AddressFamily == AddressFamily.InterNetwork && (ip.GetAddressBytes()[0] == 0 || ip.GetAddressBytes()[0] is >= 224 and <= 239) ||
                         !endpoints.Add(ip.ToString() + ":" + scope + ":" + port)) throw new FormatException();
-                    var url = server.GetProperty("baseUrl"); var reason = server.GetProperty("unavailableReason");
-                    if (ip.IsIPv6LinkLocal) {
-                        if (scope == 0 || url.ValueKind != JsonValueKind.Null || reason.GetString() != "scopedIpv6RequiresTransportSupport") throw new FormatException();
-                    } else if (scope != 0 || reason.ValueKind != JsonValueKind.Null || url.GetString() !=
+                    var url = server.GetProperty("baseUrl");
+                    if ((ip.IsIPv6LinkLocal ? scope == 0 : scope != 0) || url.GetString() !=
                         "http://" + (ip.AddressFamily == AddressFamily.InterNetworkV6 ? "[" + address + "]" : address) + ":" + port)
                         throw new FormatException();
                 }

@@ -1,7 +1,7 @@
 //! Explicit server catalog discovery. No source lease, device GET/PUT, retry,
 //! automatic configuration or safety observation is created by this path.
 use super::{
-    bad_response, http_client, invalid, parse_response, read_body, server_root, transport_error,
+    HttpClient, bad_response, invalid, parse_response, read_body, server_root, transport_error,
 };
 use crate::{
     config::{DeviceType, normalize_alpaca_id, valid_alpaca_id},
@@ -37,6 +37,9 @@ pub struct Catalog {
     pub configuration_revision: Uuid,
     #[schemars(length(min = 1, max = 4096))]
     pub base_url: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schemars(range(min = 1, max = 4294967295u64))]
+    pub scope_id: Option<u32>,
     #[schemars(length(max = 256))]
     pub devices: Vec<Device>,
 }
@@ -62,11 +65,20 @@ pub fn description() -> Value {
     "responseSchema":schemars::schema_for!(Catalog),
     "parameters":{
         "baseUrl":{"type":"string","label":"Alpaca server URL","description":"Query this server's configured device catalog without connecting equipment.","maxLength":4096},
+        "scopeId":{"type":"integer","label":"IPv6 interface scope","description":"For a literal IPv6 link-local URL, enter its interface index on the shared host. Leave empty for other addresses.","minimum":1,"maximum":u32::MAX},
         "credentialReference":{"type":"string","label":"Credential reference","description":"Optional protected credential reference for this server. The secret is never included in discovery results.","sensitive":true}
     }})
 }
 pub async fn discover(
     base_url: &str,
+    authorization: Option<HeaderValue>,
+    revision: Uuid,
+) -> Result<Catalog, SourceError> {
+    discover_scoped(base_url, None, authorization, revision).await
+}
+pub async fn discover_scoped(
+    base_url: &str,
+    scope_id: Option<u32>,
     authorization: Option<HeaderValue>,
     revision: Uuid,
 ) -> Result<Catalog, SourceError> {
@@ -81,18 +93,19 @@ pub async fn discover(
         authorization.set_sensitive(true);
         headers.insert(AUTHORIZATION, authorization);
     }
-    let client = http_client(headers, TIMEOUT, true)?;
+    let client = HttpClient::new(&root, scope_id, headers, TIMEOUT, true)?;
     let devices = query(&client, root, 1, 1).await?;
     Ok(Catalog {
         configuration_revision: revision,
         base_url,
+        scope_id,
         devices,
     })
 }
 // Source pins use the ordinary source client, scalar timeout and transaction
 // counter. Catalog setup and runtime identity checks share one strict decoder.
 pub(super) async fn query(
-    client: &reqwest::Client,
+    client: &HttpClient,
     mut root: url::Url,
     client_id: u32,
     transaction: u32,
@@ -101,13 +114,12 @@ pub(super) async fn query(
         "{}/management/v1/configureddevices",
         root.path().trim_end_matches('/')
     ));
+    let request = client.get(root).query(&[
+        ("ClientID", client_id),
+        ("ClientTransactionID", transaction),
+    ]);
     let mut response = client
-        .get(root)
-        .query(&[
-            ("ClientID", client_id),
-            ("ClientTransactionID", transaction),
-        ])
-        .send()
+        .send(request)
         .await
         .map_err(|_| transport_error(false))?;
     let body = read_body(&mut response, false, "configureddevices").await?;

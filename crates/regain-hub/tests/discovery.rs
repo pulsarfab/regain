@@ -291,6 +291,19 @@ async fn discovery_is_bounded_and_revision_fenced_without_blocking_configuration
         ErrorKind::InvalidValue
     );
     assert!(server.requests.lock().unwrap().is_empty());
+    for (url, scope) in [
+        ("http://[fe80::42]:11111", None),
+        ("http://[fe80::42]:11111", Some(0)),
+        ("http://localhost:11111", Some(7)),
+        ("http://[fe80::42%7]:11111", Some(7)),
+    ] {
+        // Rejected before credential resolution or any socket operation.
+        let error = service
+            .discover_alpaca_scoped(url.into(), scope, Some("absent-reference".into()), revision)
+            .await
+            .unwrap_err();
+        assert_eq!(error.kind, ErrorKind::InvalidValue);
+    }
     let mut tasks = vec![];
     for _ in 0..4 {
         let service = service.clone();

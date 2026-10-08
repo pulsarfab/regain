@@ -813,6 +813,13 @@
           "label": "Credential reference",
           "sensitive": true,
           "type": "string"
+        },
+        "scopeId": {
+          "description": "For a literal IPv6 link-local URL, enter its interface index on the shared host. Leave empty for other addresses.",
+          "label": "IPv6 interface scope",
+          "maximum": 4294967295,
+          "minimum": 1,
+          "type": "integer"
         }
       },
       "persistsConfiguration": false,
@@ -896,6 +903,15 @@
             },
             "maxItems": 256,
             "type": "array"
+          },
+          "scopeId": {
+            "format": "uint32",
+            "maximum": 4294967295,
+            "minimum": 1,
+            "type": [
+              "integer",
+              "null"
+            ]
           }
         },
         "required": [
@@ -910,7 +926,7 @@
       "writesEquipment": false
     },
     "network": {
-      "description": "Search from the shared host using IPv4 broadcast and IPv6 multicast. Select a candidate, then explicitly read its device catalog. UDP replies do not prove server or device identity. Reverse-proxy prefixes and HTTPS must be entered manually.",
+      "description": "Search from the shared host using IPv4 broadcast and IPv6 multicast. Select a candidate, then explicitly read its device catalog. UDP replies do not prove server or device identity. Reverse-proxy prefixes and HTTPS must be entered manually. IPv6 link-local addresses keep their host interface scope separately.",
       "label": "Find Alpaca servers on the host's local networks",
       "maximumDatagrams": 4096,
       "maximumInterfaces": 64,
@@ -934,10 +950,7 @@
               "baseUrl": {
                 "maxLength": 128,
                 "minLength": 1,
-                "type": [
-                  "string",
-                  "null"
-                ]
+                "type": "string"
               },
               "port": {
                 "format": "uint16",
@@ -950,30 +963,15 @@
                 "maximum": 4294967295,
                 "minimum": 0,
                 "type": "integer"
-              },
-              "unavailableReason": {
-                "anyOf": [
-                  {
-                    "$ref": "#/$defs/UnavailableReason"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
               }
             },
             "required": [
               "address",
               "scopeId",
-              "port"
+              "port",
+              "baseUrl"
             ],
             "type": "object"
-          },
-          "UnavailableReason": {
-            "enum": [
-              "scopedIpv6RequiresTransportSupport"
-            ],
-            "type": "string"
           }
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -1024,9 +1022,6 @@
         "type": "object"
       },
       "timeoutSeconds": 3,
-      "unavailableReasons": {
-        "scopedIpv6RequiresTransportSupport": "This IPv6 link-local address requires scoped HTTP transport support. Enter another address for this server."
-      },
       "usesCredentials": false,
       "writesEquipment": false
     }
@@ -5025,6 +5020,20 @@
                 "const": "alpaca",
                 "title": "Kind",
                 "type": "string",
+                "x-regain": {
+                  "apply": "reconnect"
+                }
+              },
+              "scopeId": {
+                "description": "Interface index on this host for a literal IPv6 link-local server.\nKeep the URL unscoped and set this separately. Other URLs omit it.",
+                "format": "uint32",
+                "maximum": 4294967295,
+                "minimum": 1,
+                "title": "IPv6 interface scope",
+                "type": [
+                  "integer",
+                  "null"
+                ],
                 "x-regain": {
                   "apply": "reconnect"
                 }

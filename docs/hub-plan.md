@@ -20,7 +20,24 @@ ASCOM worker tree before packaging. Local ZWO library tests (99), seven runtime
 gate cases, PowerShell parsing and whitespace checks pass. This does not close
 the final main reconciliation or acceptance gates.
 
-Current increment: bounded user-requested Alpaca network search. Shared Rust
+Current increment: scoped IPv6 HTTP. A separate optional `scopeId` carries a
+literal link-local server's interface index on the shared host. Catalog, control
+and image requests use the exact scoped socket while preserving HTTP authority,
+verified TLS IP identity, existing codecs, scalar deadlines and image budgets.
+Native/web search selection, catalog queries and draft adoption retain scope;
+saved source identity includes it. There is no DNS alias, proxy, unscoped fallback,
+redirect or retry. Connection drivers close on cancellation/body disposal.
+Full Rust hub/Alpaca regression passes. Final checks pass 104 hub unit cases
+(including 14 transport cases), 23 configuration, five credential and six catalog
+cases, strict Clippy/Rust 1.89, freshness, sixteen schema cases and Node contracts.
+The 45 relevant native checks, final render and real net48 x86/x64 suites pass.
+Refreshed screenshots are inspected; fresh workers pass the runtime audit.
+LAN routing acceptance remains open; private loopback does not prove it.
+Next construction: native/COM enumeration and configuration import/export, then
+actual OS resume, camera recovery metadata, remaining acceptance, README/site
+and final main/review/CI/audit/merge. No intermediate CI waiting.
+
+Previous increment: bounded user-requested Alpaca network search. Shared Rust
 discovery queries operational IPv4 broadcast and IPv6 multicast interfaces plus
 loopback, retaining sender addresses, advertised HTTP ports and IPv6 scopes.
 One absolute deadline and shared catalog/search admission bound enumeration,
@@ -2598,3 +2615,5 @@ then cameras/coordination and every original remaining acceptance/final gate.
 | 2026-10-07 | Implemented and reviewed identity-pinned Alpaca catalog adoption through shared native/web draft editing. Generated defaults, fixed query credentials, atomic duplicate/capacity/stale rejection and immutable saved pins are shared with the existing host/configuration model. Runtime catalog checks guard every device request and retain owned-cleanup uncertainty; separate HTTP calls do not promise atomic identity. | Full Rust hub/Alpaca, final six pin and 22 configuration cases, strict Clippy/Rust 1.89, contract freshness, 14 schema cases, Node contracts, full NINA 466 passed plus one explicit registered-COM skip, final native render and real net48 x86/x64 suites pass. UUID/opaque-ID parser alignment and initial failures are retained in hub-review.md. Next: network/native/COM discovery and configuration import/export, then OS resume, camera recovery metadata and every original acceptance/documentation/final merge gate. No intermediate CI waiting. |
 
 | 2026-10-07 | Implemented and reviewed bounded UDP Alpaca candidate search through shared host IPC, protected setup HTTP, native NINA/ASCOM setup and the web editor. Preserved IPv6 scopes, separate catalog/adoption actions, inert drafts and cleared credential context on address selection. | Full Rust hub/Alpaca, final nine network/IPC cases, strict Clippy/Rust 1.89, freshness, fifteen schema cases, Node contracts, full NINA 482 passed plus one explicit registered-COM skip, real net48 x86/x64 and fresh-worker runtime audits pass. Native simulation render inspected and documented. Initial parser, Windows oversize/timer, schema, IP formatting, command and analyzer findings are retained in hub-review.md. Scoped IPv6 HTTP, LAN acceptance, native/COM enumeration, configuration transfer, OS resume, recovery metadata and every original acceptance/documentation/final gate remain open. No intermediate CI waiting. |
+
+| 2026-10-07 | Implemented and reviewed scoped IPv6 HTTP through catalog, scalar and image transport, native/web search selection and pinned source adoption. Kept scope in saved endpoint identity, exact socket routing, verified TLS, no replay and cancellation cleanup. | Full Rust hub/Alpaca regression; final 104 hub unit, 23 configuration, five credential and six catalog cases; strict Clippy/Rust 1.89; freshness, sixteen schema and Node checks; 45 native discovery/adoption checks, final inspected renders, real net48 x86/x64 and fresh-worker runtime audits pass. Initial header-limit and construction findings are retained in hub-review.md. Next: native/COM enumeration and configuration transfer, then OS resume, recovery metadata and all original acceptance/documentation/final gates. Actual LAN routing remains open. No intermediate CI waiting. |

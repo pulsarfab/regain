@@ -93,9 +93,10 @@ function renderDiscovery() {
     const schema=d.parameters[key], label=document.createElement('label'), input=document.createElement('input');
     label.textContent=schema.label; input.type='text'; input.autocomplete='off'; input.id=`discovery-${key}`;
     if (schema.maxLength) input.maxLength=schema.maxLength;
+    if (schema.type==='integer') { input.type='number'; input.step='1'; input.min=schema.minimum; input.max=schema.maximum; }
     input.title=schema.description; label.append(input); fields.append(label); return input;
   };
-  const url=field('baseUrl'), credential=field('credentialReference');
+  const url=field('baseUrl'), scope=field('scopeId'), credential=field('credentialReference');
   const note=document.createElement('p'); note.className='hint'; note.textContent=`One query, up to ${d.timeoutSeconds} seconds and ${d.maximumDevices} devices. Include any reverse-proxy prefix. Credentials are protected references from the Credentials section.`; fields.append(note);
   const button=document.createElement('button'); button.type='button'; button.textContent='Read Alpaca device catalog'; fields.append(button);
   const selection=document.createElement('select'); selection.id='discovery-selection'; selection.setAttribute('aria-label','Catalog device'); fields.append(selection);
@@ -103,16 +104,17 @@ function renderDiscovery() {
   selection.onchange=()=>{add.disabled=selection.selectedIndex<0 || selection.selectedOptions[0].disabled;};
   choose.onclick=()=>{
     if (candidates.selectedIndex<0 || candidates.selectedOptions[0].disabled) return;
-    url.value=candidates.value; credential.value='';
+    const server=networkDiscovery.result.servers[Number(candidates.value)];
+    url.value=server.baseUrl; scope.value=server.scopeId===0?'':String(server.scopeId); credential.value='';
     selection.replaceChildren(); add.disabled=true; $('discovery-result').textContent='';
     status('Server address selected. Choose a credential reference if needed, then read its catalog.');
   };
   search.onclick=()=>action(async()=>{
     candidates.replaceChildren(); choose.disabled=true; searchStatus.textContent='';
     const found=await networkDiscovery.search();
-    for (const server of found.servers) {
-      const option=document.createElement('option'); option.disabled=server.baseUrl===null; option.value=server.baseUrl??'';
-      option.textContent=server.baseUrl??`[${server.address}%${server.scopeId}]:${server.port} — ${network.unavailableReasons[server.unavailableReason]}`;
+    for (const [index,server] of found.servers.entries()) {
+      const option=document.createElement('option'); option.value=String(index);
+      option.textContent=server.baseUrl+(server.scopeId===0?'':` (interface ${server.scopeId})`);
       candidates.append(option);
     }
     candidates.selectedIndex=-1;
@@ -125,7 +127,7 @@ function renderDiscovery() {
   });
   button.onclick=()=>action(async()=>{
     $('discovery-result').textContent=''; selection.replaceChildren(); add.disabled=true;
-    const catalog=await discovery.query(url.value,credential.value.trim()?credential.value:null);
+    const catalog=await discovery.query(url.value,credential.value.trim()?credential.value:null,scope.value===''?null:Number(scope.value));
     $('discovery-result').textContent=catalogSummary(catalog);
     catalog.devices.forEach((device,index)=>{
       const option=document.createElement('option'); option.value=String(index); option.textContent=`${device.name} — ${device.reportedDeviceType} ${device.number}`;

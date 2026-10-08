@@ -7,6 +7,56 @@ namespace Regain.NINA.Tests;
 
 public sealed class HubAdoptionTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ScopedCatalogFreezesItsInterfaceAndRejectsWrongScopeEcho(bool wrongEcho)
+    {
+        var saved = HubDraftTests.Configuration(); var revision = saved.GetProperty("revision").GetGuid(); int queries = 0;
+        using var editor = new HubEditorSession(saved.GetProperty("instanceId").GetGuid(), (command, _) => {
+            switch (command.GetProperty("op").GetString()) {
+                case "describeConfig": return Task.FromResult(HubDraftTests.Description());
+                case "getConfig": return Task.FromResult(saved);
+                case "hostStatus": return Task.FromResult(JsonSerializer.SerializeToElement(new { phase = "ready", configurationRevision = revision }));
+                case "discoverAlpaca":
+                    queries++; Assert.Equal(7u, command.GetProperty("scopeId").GetUInt32());
+                    var catalog = JsonNode.Parse(Catalog(revision).GetRawText())!;
+                    catalog["baseUrl"] = "http://[fe80::42]:11111/prefix"; catalog["scopeId"] = wrongEcho ? 8 : 7;
+                    return Task.FromResult(JsonSerializer.SerializeToElement(catalog));
+                default: throw new Exception("Unexpected equipment/configuration I/O");
+            }
+        }, () => { });
+        await editor.ReloadAsync();
+        foreach (var pair in new (string, uint?)[] { ("http://[fe80::42]", null), ("http://[fe80::42]", 0),
+            ("http://localhost", 7), ("http://[::1]", 7), ("http://[fe80::42%7]", 7), ("http://[fe80::42%257]", 7) })
+            await Assert.ThrowsAsync<InvalidOperationException>(() => editor.DiscoverAlpacaScopedAsync(pair.Item1, pair.Item2));
+        Assert.Equal(0, queries);
+        if (wrongEcho) {
+            await Assert.ThrowsAsync<HubException>(() => editor.DiscoverAlpacaScopedAsync("http://[fe80::42]:11111/prefix", 7));
+            Assert.Null(editor.LastDiscovery); Assert.Equal(HubEditorState.Uncertain, editor.State);
+        } else {
+            await editor.DiscoverAlpacaScopedAsync("http://[fe80::42]:11111/prefix", 7, "frozen-reference");
+            var id = editor.AddDiscoveredAlpacaSource(0);
+            var backend = editor.Draft!.Candidate.GetProperty("sources").EnumerateArray().Single(s => s.GetProperty("id").GetGuid() == id).GetProperty("backend");
+            Assert.Equal(7u, backend.GetProperty("scopeId").GetUInt32());
+            Assert.Equal("frozen-reference", backend.GetProperty("credentialReference").GetString());
+        }
+        Assert.Equal(1, queries);
+    }
+    [Fact]
+    public void DifferentInterfaceScopesPermitDifferentDevicesButNeverAliasTheSamePin()
+    {
+        var draft = new HubConfigurationDraft(HubDraftTests.Description(), HubDraftTests.Configuration());
+        var catalog = JsonNode.Parse(Catalog(draft.Revision).GetRawText())!;
+        catalog["baseUrl"] = "http://[fe80::42]:11111"; catalog["scopeId"] = 7;
+        draft.AddDiscoveredAlpacaSource(JsonSerializer.SerializeToElement(catalog), 0, null);
+        catalog["scopeId"] = 8;
+        Assert.Throws<InvalidOperationException>(() => draft.AddDiscoveredAlpacaSource(JsonSerializer.SerializeToElement(catalog), 0, null));
+        catalog["devices"]![0]!["uniqueId"] = "different camera";
+        draft.AddDiscoveredAlpacaSource(JsonSerializer.SerializeToElement(catalog), 0, null);
+        draft.RemoveOptional("/sources/4/backend/uniqueId");
+        Assert.Throws<InvalidOperationException>(() => draft.AddDiscoveredAlpacaSource(JsonSerializer.SerializeToElement(catalog), 0, null));
+    }
     private static JsonElement Catalog(Guid revision) => JsonSerializer.SerializeToElement(new {
         configurationRevision = revision, baseUrl = "http://localhost:11111/prefix",
         devices = new object[] {

@@ -12,6 +12,12 @@ function serverUrl(text) {
     invalid('Enter a server URL without credentials, query or fragment');
   return url.href.replace(/\/+$/,'');
 }
+function serverScope(url,scope) {
+  const host=new URL(url).hostname, first=parseInt(host.slice(1).split(':')[0],16);
+  const local=host.startsWith('[') && first>=0xfe80 && first<=0xfebf;
+  if (local ? !Number.isInteger(scope) || scope<1 || scope>4294967295 : scope!==null)
+    invalid('A literal IPv6 link-local server requires a positive interface scope; leave it empty for other addresses');
+}
 export class AlpacaDiscovery {
   constructor(rpc) { this.rpc=rpc; this.busy=false; this.catalog=null; this.uncertain=false; }
   load(description,saved) {
@@ -22,17 +28,20 @@ export class AlpacaDiscovery {
         !Number.isInteger(d.timeoutSeconds) || d.timeoutSeconds<1 || d.timeoutSeconds>300)
       throw new Error('Invalid catalog discovery description');
   }
-  async query(baseUrl,credentialReference=null) {
+  async query(baseUrl,credentialReference=null,scopeId=null) {
     if (this.busy || this.uncertain || !this.description) invalid('Reload before querying a catalog');
     const d=this.description;
     if (typeof baseUrl!=='string' || baseUrl.length>d.parameters.baseUrl.maxLength) invalid('Invalid server URL');
     const requested=serverUrl(baseUrl);
+    serverScope(requested,scopeId);
     this.busy=true; this.catalog=null;
     try {
-      const result=await this.rpc({op:d.operation,baseUrl,credentialReference,expectedRevision:this.revision},undefined,d.timeoutSeconds+5);
+      const command={op:d.operation,baseUrl,credentialReference,expectedRevision:this.revision};
+      if (scopeId!==null) command.scopeId=scopeId;
+      const result=await this.rpc(command,undefined,d.timeoutSeconds+5);
       try {
         validateDiagnosticSchema(d.responseSchema,result);
-        if (result.configurationRevision!==this.revision || serverUrl(result.baseUrl)!==requested) throw new Error();
+        if (result.configurationRevision!==this.revision || serverUrl(result.baseUrl)!==requested || (result.scopeId??null)!==scopeId) throw new Error();
         const addresses=new Set(), identities=new Set(), known=d.responseSchema.$defs.DeviceType.enum;
         for (const device of result.devices) {
           const type=device.reportedDeviceType.toLowerCase(), address=`${type}:${device.number}`;
@@ -61,13 +70,14 @@ export class AlpacaDiscovery {
     for (const source of draft.sources) {
       const b=source.backend;
       if (b.kind==='alpaca' && (b.uniqueId!=null && catalogIdentity(b.uniqueId)===catalogIdentity(identity) ||
-          serverUrl(b.baseUrl)===serverUrl(server) && b.deviceType===type && b.deviceNumber===device.number))
+          serverUrl(b.baseUrl)===serverUrl(server) && (b.scopeId??null)===(this.catalog.scopeId??null) && b.deviceType===type && b.deviceNumber===device.number))
         invalid('This Alpaca device already has a source. Share its existing source ID');
     }
     const choice=reader.variants(schema.properties.backend).find(v=>v.kind==='alpaca' && v.enabled);
     if (!choice) invalid('Alpaca sources are unavailable in this host');
     const source=initialValue(reader,schema,uuid), backend=initialValue(reader,choice.schema,uuid);
     backend.baseUrl=server; backend.deviceType=type; backend.deviceNumber=device.number; backend.uniqueId=identity;
+    if (this.catalog.scopeId!=null) backend.scopeId=this.catalog.scopeId;
     if (this.credentialReference!==null) backend.credentialReference=this.credentialReference;
     source.backend=backend;
     source.label=[...device.name].slice(0,schema.properties.label.maxLength).join('');
@@ -100,14 +110,13 @@ export class AlpacaNetworkDiscovery {
             result.interfacesFailed && !result.incomplete) throw new Error();
         const endpoints=new Set();
         for (const server of result.servers) {
-          const {address,scopeId,port,baseUrl,unavailableReason}=server, ipv6=address.includes(':');
+          const {address,scopeId,port,baseUrl}=server, ipv6=address.includes(':');
           const authority=ipv6?`[${address}]`:address, parsed=new URL(`http://${authority}:${port}`);
           if (address.includes('%') || parsed.hostname!==authority || address==='::' || /^::ffff:/i.test(address) ||
               (ipv6?parseInt(address.split(':')[0],16)>=0xff00:!/^\d+\.\d+\.\d+\.\d+$/.test(address) ||
                 Number(address.split('.')[0])===0 || Number(address.split('.')[0])>=224 && Number(address.split('.')[0])<=239 || address==='255.255.255.255')) throw new Error();
           const linkLocal=ipv6 && parseInt(address.split(':')[0],16)>=0xfe80 && parseInt(address.split(':')[0],16)<=0xfebf;
-          if (linkLocal ? scopeId===0 || baseUrl!==null || unavailableReason!=='scopedIpv6RequiresTransportSupport' :
-              scopeId!==0 || unavailableReason!==null || baseUrl!==`http://${authority}:${port}`) throw new Error();
+          if ((linkLocal ? scopeId===0 : scopeId!==0) || baseUrl!==`http://${authority}:${port}`) throw new Error();
           const key=`${address}%${scopeId}:${port}`;
           if (endpoints.has(key)) throw new Error(); endpoints.add(key);
         }

@@ -681,9 +681,18 @@ it does not show discovered equipment or establish LAN routing acceptance.
 If search is incomplete, an interface was unavailable or a search limit was
 reached. You can still enter a known URL manually. HTTPS and reverse-proxy paths
 must be entered manually because UDP discovery reports only an address and port.
-IPv6 link-local candidates retain their interface scope and remain visible, but
-cannot yet be selected: scoped HTTP transport support remains planned. Use an
-IPv4 or other usable address for that server in the meantime.
+IPv6 link-local candidates fill both the URL and **IPv6 interface scope**. The
+scope is the interface index on the shared host, not the browser's computer.
+For manual entry, use a URL such as `http://[fe80::42]:11111` and enter the index
+separately; leave scope empty for other addresses. Catalog adoption preserves
+both fields. Changing a saved source's interface requires a new source ID.
+If a configuration moves to another host, check its interface indexes first.
+
+Scoped catalog, control and image requests connect directly through that
+interface. HTTPS verifies the literal IP address in the server certificate;
+the interface index is local routing context and is not sent in HTTP headers.
+Private loopback tests cover the transport. LAN routing acceptance remains an
+open plan gate.
 
 ## Move a calibrated focuser group
 

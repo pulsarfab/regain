@@ -16,6 +16,12 @@ public sealed partial class HubNativeTests
         await using var host = await Host.Open(); using var editor = await Editor(host);
         var stale = await Assert.ThrowsAsync<HubException>(() => host.Command(new { op = "searchAlpaca", expectedRevision = Guid.Empty }));
         Assert.Equal("invalidValue", stale.Remote?.Code);
+        await editor.ReloadAsync();
+        foreach (var pair in new (string, uint?)[] { ("http://[fe80::42]:11111", null), ("http://[fe80::42]:11111", 0), ("http://localhost:11111", 7) }) {
+            var invalid = await Assert.ThrowsAsync<HubException>(() => host.Command(new { op = "discoverAlpaca", baseUrl = pair.Item1,
+                scopeId = pair.Item2, credentialReference = "absent-reference", expectedRevision = editor.Draft!.Revision }));
+            Assert.Equal("invalidValue", invalid.Remote?.Code);
+        }
         await HubDiscoveryFixture.Run(editor);
     }
     [Theory]
@@ -76,12 +82,13 @@ public sealed partial class HubNativeTests
             using var server = new HubCatalogServer(); await using var host = await Host.Open();
             var window = new HubConfigurationWindow(host.Executable, host.ConfigPath, host.Selection(0, "switch").InstanceId);
             try {
-                window.Height = 960;
+                window.Height = 1040;
                 window.Show(); var review = Controls<Button>(window).Single(b => (string)b.Content == "Review changes");
                 await UiUntil(() => review.IsEnabled);
                 var tabs = Controls<TabControl>(window).Single();
                 tabs.SelectedItem = tabs.Items.Cast<TabItem>().Single(tab => (string)tab.Header == "Discover devices");
                 Assert.Single(Controls<Button>(window), b => (string)b.Content == "Find Alpaca servers");
+                Assert.Single(Controls<TextBox>(window), box => (string?)box.Tag == "discovery-scope");
                 Assert.False(Controls<Button>(window).Single(b => (string)b.Content == "Use selected server address").IsEnabled);
                 await Capture(window, "hub-native-network-search-simulation.png");
                 Controls<TextBox>(window).Single(box => (string?)box.Tag == "discovery-url").Text = server.Url;

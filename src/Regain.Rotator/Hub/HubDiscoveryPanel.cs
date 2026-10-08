@@ -7,7 +7,7 @@ namespace Regain.Hub;
 public sealed partial class HubConfigurationWindow
 {
     private readonly StackPanel discoveryPanel = new() { Margin = new Thickness(8) };
-    private TextBox? discoveryUrl, discoveryCredential;
+    private TextBox? discoveryUrl, discoveryCredential, discoveryScope;
     private void RenderDiscovery()
     {
         discoveryPanel.Children.Clear();
@@ -25,12 +25,9 @@ public sealed partial class HubConfigurationWindow
             candidates.Items.Clear(); choose.IsEnabled = false; searchStatus.Text = "";
             var found = await session.SearchAlpacaAsync(lifetime.Token);
             foreach (var server in found.GetProperty("servers").EnumerateArray()) {
-                var url = server.GetProperty("baseUrl"); var reason = server.GetProperty("unavailableReason");
-                candidates.Items.Add(new ComboBoxItem { IsEnabled = url.ValueKind == JsonValueKind.String,
-                    Tag = url.ValueKind == JsonValueKind.String ? url.GetString() : "",
-                    Content = url.ValueKind == JsonValueKind.String ? url.GetString() :
-                        "[" + server.GetProperty("address").GetString() + "%" + server.GetProperty("scopeId").GetUInt32() + "]:" + server.GetProperty("port").GetUInt16() + " — " +
-                        network.GetProperty("unavailableReasons").GetProperty(reason.GetString()!).GetString() });
+                var scope = server.GetProperty("scopeId").GetUInt32();
+                candidates.Items.Add(new ComboBoxItem { Tag = server.Clone(),
+                    Content = server.GetProperty("baseUrl").GetString() + (scope == 0 ? "" : " (interface " + scope + ")") });
             }
             searchStatus.Text = found.GetProperty("servers").GetArrayLength() + " server candidates. " +
                 (found.GetProperty("incomplete").GetBoolean() ? "Search was incomplete; an interface failed or a limit was reached. " : "") +
@@ -42,6 +39,10 @@ public sealed partial class HubConfigurationWindow
         discoveryPanel.Children.Add(Text(url.GetProperty("label").GetString()!));
         discoveryUrl = new TextBox { Margin = new Thickness(4), MaxLength = url.GetProperty("maxLength").GetInt32(), Tag = "discovery-url" };
         discoveryPanel.Children.Add(discoveryUrl);
+        var scopeParameter = parameters.GetProperty("scopeId");
+        discoveryPanel.Children.Add(Text(scopeParameter.GetProperty("label").GetString()!));
+        discoveryPanel.Children.Add(Text(scopeParameter.GetProperty("description").GetString()!));
+        discoveryScope = new TextBox { Margin = new Thickness(4), Tag = "discovery-scope" }; discoveryPanel.Children.Add(discoveryScope);
         var credential = parameters.GetProperty("credentialReference");
         discoveryPanel.Children.Add(Text(credential.GetProperty("label").GetString()!));
         discoveryPanel.Children.Add(Text(credential.GetProperty("description").GetString()!));
@@ -56,7 +57,9 @@ public sealed partial class HubConfigurationWindow
         selection.SelectionChanged += (_, _) => add.IsEnabled = selection.SelectedItem is ComboBoxItem item && item.IsEnabled;
         choose.Click += (_, _) => {
             if (candidates.SelectedItem is not ComboBoxItem item || !item.IsEnabled) return;
-            discoveryUrl!.Text = (string)item.Tag;
+            var server = (JsonElement)item.Tag; var scope = server.GetProperty("scopeId").GetUInt32();
+            discoveryUrl!.Text = server.GetProperty("baseUrl").GetString()!;
+            discoveryScope!.Text = scope == 0 ? "" : scope.ToString(System.Globalization.CultureInfo.InvariantCulture);
             discoveryCredential!.Clear();
             result.Clear(); selection.Items.Clear(); add.IsEnabled = false;
             status.Text = "Server address selected. Choose a credential reference if needed, then read its catalog.";
@@ -70,7 +73,15 @@ public sealed partial class HubConfigurationWindow
         });
         query.Click += async (_, _) => await Run(async () => {
             result.Clear(); selection.Items.Clear(); add.IsEnabled = false;
-            var catalog = await session!.DiscoverAlpacaAsync(discoveryUrl.Text,
+            uint? scope = null;
+            if (!string.IsNullOrWhiteSpace(discoveryScope.Text)) {
+                if (!uint.TryParse(discoveryScope.Text, System.Globalization.NumberStyles.None,
+                    System.Globalization.CultureInfo.InvariantCulture, out var entered) ||
+                    entered < scopeParameter.GetProperty("minimum").GetUInt32() || entered > scopeParameter.GetProperty("maximum").GetUInt32())
+                    throw new InvalidOperationException("Enter a valid IPv6 interface index or leave it empty");
+                scope = entered;
+            }
+            var catalog = await session!.DiscoverAlpacaScopedAsync(discoveryUrl.Text, scope,
                 string.IsNullOrWhiteSpace(discoveryCredential.Text) ? null : discoveryCredential.Text, lifetime.Token);
             result.Text = string.Join("\n\n", catalog.GetProperty("devices").EnumerateArray().Select(device =>
                 device.GetProperty("name").GetString() + " — " + device.GetProperty("reportedDeviceType").GetString() +

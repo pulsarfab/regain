@@ -66,6 +66,7 @@ impl Peer {
                     ..Default::default()
                 },
                 backend: SourceBackend::Alpaca {
+                    scope_id: None,
                     base_url: url,
                     device_type: DeviceType::Camera,
                     device_number: 7,

@@ -158,8 +158,20 @@ impl HubService {
         credential_reference: Option<String>,
         expected: Uuid,
     ) -> Result<crate::alpaca::discovery::Catalog, SourceError> {
+        self.discover_alpaca_scoped(base_url, None, credential_reference, expected)
+            .await
+    }
+    pub async fn discover_alpaca_scoped(
+        &self,
+        base_url: String,
+        scope_id: Option<u32>,
+        credential_reference: Option<String>,
+        expected: Uuid,
+    ) -> Result<crate::alpaca::discovery::Catalog, SourceError> {
         use crate::factory::CredentialProvider;
-        crate::alpaca::server_root(&base_url)?;
+        let root = crate::alpaca::server_root(&base_url)?;
+        crate::alpaca::http::scoped_address(&root, scope_id)
+            .map_err(|why| SourceError::new(ErrorKind::InvalidValue, why))?;
         let _permit = self
             .discovery
             .clone()
@@ -204,7 +216,8 @@ impl HubService {
             None
         };
         let catalog =
-            crate::alpaca::discovery::discover(&base_url, authorization, expected).await?;
+            crate::alpaca::discovery::discover_scoped(&base_url, scope_id, authorization, expected)
+                .await?;
         if self.runtime()?.configuration().revision != expected {
             return Err(SourceError::new(
                 ErrorKind::InvalidValue,

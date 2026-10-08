@@ -33,6 +33,12 @@ sha2 = "0.10"
 zeroize = "1"
 if-addrs = "0.15.0"
 socket2 = "0.6"
+hyper = { version = "1", features = ["client", "http1"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
+http-body-util = "0.1"
+bytes = "1"
+webpki-roots = "1"
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
@@ -42,4 +48,5 @@ windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Securit
 
 [dev-dependencies]
 axum = "0.8"
+rcgen = "0.14"
 tokio = { version = "1", features = ["test-util"] }

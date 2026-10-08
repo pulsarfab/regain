@@ -14,6 +14,34 @@ use tokio::io::{AsyncWriteExt, DuplexStream};
 const FAKE: &str = "Bearer private-ipc-fixture-value";
 
 #[tokio::test]
+async fn scoped_alpaca_credentials_remain_protected_from_deletion() {
+    let dir = tempfile::tempdir().unwrap();
+    let credentials = Arc::new(CredentialStore::at_directory(dir.path(), &"7".repeat(64)).unwrap());
+    let reference = credentials
+        .create(SecretAuthorization::new(FAKE.into()))
+        .unwrap()
+        .reference;
+    let mut config = HubConfig::empty();
+    add_source(&mut config, &reference);
+    let mut value = serde_json::to_value(config).unwrap();
+    value["sources"][0]["backend"]["baseUrl"] = "http://[fe80::42]:11111".into();
+    value["sources"][0]["backend"]["scopeId"] = 7.into();
+    let config: HubConfig = serde_json::from_value(value).unwrap();
+    let service = HubService::persistent_with_credentials(
+        ConfigStore::new(None, config).unwrap(),
+        builder(credentials.clone()),
+        credentials.clone(),
+    )
+    .unwrap();
+    assert!(matches!(
+        service.delete_credential(reference.clone()).await,
+        Err(CredentialError::InUse)
+    ));
+    assert!(credentials.status(&reference).unwrap().present);
+    service.shutdown().await.unwrap();
+}
+
+#[tokio::test]
 async fn chosen_reference_survives_a_lost_reply_and_cannot_replace_a_secret() {
     use regain_hub::factory::CredentialProvider;
     let dir = tempfile::tempdir().unwrap();

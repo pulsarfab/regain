@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Net;
 
 namespace Regain.Hub;
 
@@ -11,8 +12,11 @@ public sealed partial class HubEditorSession
 
     // A catalog read owns no equipment lease and does not invalidate a reviewed
     // draft. Applying a selection remains a separate configuration operation.
-    public async Task<JsonElement> DiscoverAlpacaAsync(string baseUrl, string? credentialReference = null,
-        CancellationToken cancellation = default)
+    public Task<JsonElement> DiscoverAlpacaAsync(string baseUrl, string? credentialReference = null,
+        CancellationToken cancellation = default) => DiscoverAlpacaScopedAsync(baseUrl, null, credentialReference, cancellation);
+
+    public async Task<JsonElement> DiscoverAlpacaScopedAsync(string baseUrl, uint? scopeId,
+        string? credentialReference = null, CancellationToken cancellation = default)
     {
         using var operation = Borrow();
         await operations.WaitAsync(cancellation).ConfigureAwait(false);
@@ -23,6 +27,8 @@ public sealed partial class HubEditorSession
             var maximum = description.GetProperty("parameters").GetProperty("baseUrl").GetProperty("maxLength").GetInt32();
             if (baseUrl.Length > maximum || !CatalogUrl(baseUrl, out var requested))
                 throw new InvalidOperationException("Enter an HTTP or HTTPS server URL without credentials, query or fragment");
+            if (!CatalogScope(requested!, scopeId))
+                throw new InvalidOperationException("A literal IPv6 link-local server requires a positive interface scope; leave it empty for other addresses");
             if (description.GetProperty("opensSource").GetBoolean() || description.GetProperty("writesEquipment").GetBoolean() ||
                 description.GetProperty("persistsConfiguration").GetBoolean() ||
                 !description.GetProperty("timeoutSeconds").TryGetInt32(out var seconds) || seconds < 1 || seconds > 300)
@@ -31,14 +37,18 @@ public sealed partial class HubEditorSession
             LastDiscovery = null;
             using var timer = CancellationTokenSource.CreateLinkedTokenSource(cancellation, lifetime.Token);
             timer.CancelAfter(TimeSpan.FromSeconds(seconds + 5)); started = true;
-            var result = await Rpc(new { op = description.GetProperty("operation").GetString(), baseUrl,
-                credentialReference, expectedRevision = revision }, timer.Token).ConfigureAwait(false);
+            var command = new Dictionary<string, object?> { ["op"] = description.GetProperty("operation").GetString(),
+                ["baseUrl"] = baseUrl, ["credentialReference"] = credentialReference, ["expectedRevision"] = revision };
+            if (scopeId.HasValue) command["scopeId"] = scopeId.Value;
+            var result = await Rpc(command, timer.Token).ConfigureAwait(false);
             Alive();
             try {
                 HubDiagnosticContract.Schema(description.GetProperty("responseSchema"), result);
                 if (result.GetProperty("configurationRevision").GetGuid() != revision || Draft.Revision != revision ||
                     !CatalogUrl(result.GetProperty("baseUrl").GetString()!, out var returned) ||
-                    requested!.AbsoluteUri.TrimEnd('/') != returned!.AbsoluteUri.TrimEnd('/'))
+                    requested!.AbsoluteUri.TrimEnd('/') != returned!.AbsoluteUri.TrimEnd('/') ||
+                    (result.TryGetProperty("scopeId", out var returnedScope) && returnedScope.ValueKind != JsonValueKind.Null
+                        ? returnedScope.GetUInt32() : (uint?)null) != scopeId)
                     throw new FormatException();
                 var addresses = new HashSet<string>(StringComparer.Ordinal);
                 var identities = new HashSet<string>(StringComparer.Ordinal);
@@ -74,7 +84,18 @@ public sealed partial class HubEditorSession
         var id = Draft!.AddDiscoveredAlpacaSource(catalog, index, discoveryCredentialReference);
         Changed(); return id;
     }
-    private static bool CatalogUrl(string text, out Uri? url) => Uri.TryCreate(text, UriKind.Absolute, out url) &&
-        (url.Scheme == Uri.UriSchemeHttp || url.Scheme == Uri.UriSchemeHttps) &&
-        url.UserInfo.Length == 0 && url.Query.Length == 0 && url.Fragment.Length == 0;
+    private static bool CatalogScope(Uri url, uint? scope) {
+        var local = IPAddress.TryParse(url.Host.Trim('[', ']'), out var ip) && ip.IsIPv6LinkLocal;
+        return local ? scope.HasValue && scope.Value > 0 : !scope.HasValue;
+    }
+    private static bool CatalogUrl(string text, out Uri? url) {
+        if (!Uri.TryCreate(text, UriKind.Absolute, out url) ||
+            (url.Scheme != Uri.UriSchemeHttp && url.Scheme != Uri.UriSchemeHttps) ||
+            url.UserInfo.Length != 0 || text.Contains('?') || text.Contains('#')) return false;
+        // Uri can discard a zone suffix. The wire URL must never contain one;
+        // scope travels separately and applies to the shared host's interface.
+        var start = text.IndexOf("://", StringComparison.Ordinal) + 3;
+        var end = text.IndexOf('/', start);
+        return !text.Substring(start, (end < 0 ? text.Length : end) - start).Contains('%');
+    }
 }
