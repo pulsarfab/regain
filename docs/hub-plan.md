@@ -20,7 +20,19 @@ ASCOM worker tree before packaging. Local ZWO library tests (99), seven runtime
 gate cases, PowerShell parsing and whitespace checks pass. This does not close
 the final main reconciliation or acceptance gates.
 
-Current increment: complete eight-class installer acceptance construction.
+Current increment: remove the CI lint blocker before installed acceptance.
+Completed push run 37729000130 fails Windows and all four portable jobs at Rust
+1.99's constant-size chunk lint in the identity-pin test; those jobs never reach
+installer/portable execution. Package/MSRV, research and standalone Windows COM
+activation jobs pass. The test now uses fixed-size array chunks and explicitly
+rejects a remainder, preserving every pairing/credential assertion. Six pinning
+cases pass on Rust 1.89; explicit Rust 1.99 workspace all-target strict lint and
+formatting pass locally. This machine's stable alias still selects 1.97.1, so it
+cannot prove the new lint is fixed. Freshly fetched
+main remains 475d817, already integrated. No intermediate CI waiting or NINA/
+equipment access is involved; all original acceptance and final gates remain.
+
+Previous increment: complete eight-class installer acceptance construction.
 The disposable-runner fixture now generates all eight classes for two separate
 installations, checks both registry views and critical activation/inventory
 values, and hashes the saved config/bindings/metadata identities. Installed

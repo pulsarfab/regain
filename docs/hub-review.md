@@ -3,6 +3,35 @@
 This records local review and tests for the single hub PR. Passing a foundation
 test does not imply that a frontend, transport, or hardware gate has passed.
 
+## 2026-10-07: Rust 1.99 CI lint blocker
+
+Completed push run `37729000130` at `a12a265` fails Windows and all four portable
+jobs at `clippy::chunks_exact_to_as_chunks` in `tests/alpaca_pin.rs`. It never
+reaches their later execution/installer gates. Package/MSRV, research and
+standalone Windows COM activation jobs pass. The raw failing log is retained in
+`artifacts/hub-ci-a12a265-failed.log`. No running CI job was waited on.
+
+The test now obtains array pairs with `as_chunks::<2>()` and asserts an empty
+remainder together with its original minimum request count. Catalog/device order
+and shared credential assertions are unchanged. All six identity-pin tests pass
+on Rust 1.89, including replacement fencing, image/cleanup guards and bounded
+identity timeouts. Local stable lint passes, but that alias is Rust 1.97.1; it is
+insufficient evidence for the reported 1.99 lint. Explicit Rust 1.99 workspace
+all-target strict Clippy passes (`hub-ci-rust199-clippy.log`), as does its format
+check. The missing 1.99 rustfmt component was installed locally; no default
+toolchain was changed. Review confirms the fixed-array API compiles and executes
+on the 1.89 MSRV, with no suppressed lint or dropped request. Fresh main remains
+`475d817`, already integrated. Exact commands:
+
+```powershell
+cargo +1.89.0 test -p regain-hub --test alpaca_pin --locked -j2
+cargo +1.99.0 clippy --workspace --all-targets --locked -j2 -- -D warnings
+cargo +1.99.0 fmt --check
+```
+
+No production behavior, deadline, platform requirement or external finding is
+changed; actual installed/physical/OS/LAN and final gates stay open.
+
 ## 2026-10-07: eight-class installer lifecycle fixture
 
 The installer fixture previously registered three scalar classes for the primary

@@ -60,7 +60,7 @@ worker hash are `hub-audit-mixed-source.log` and `hub-audit-native-provenance.js
 | Real LAN/scoped IPv6 | Separate-host routing/discovery plus actual scoped IPv6 interface use, with host/interface identities and failure behavior recorded | Private loopback/TLS/routing fixtures are covered; they do not prove a real LAN. |
 | External standards findings | Resolve or explicitly accept the recorded standards discrepancies without suppressing raw failures; retain the panel timing evidence and investigate its cause | Original raw findings remain visible. |
 | Documentation/publication | Final release copy, README/setup/site consistency, correct stable/preview boundary, screenshots, then publish the companion site | Stable 0.5.11 and preview branch alignment passes; website branch 57dff44 is not deployed. |
-| Final reconciliation/review/CI/merge | Fresh main, full requirement audit, relevant final local regression, final CI/review, then merge the single PR #21 | Main was still 475d817 when inspected; PR is open/draft. Intermediate CI is not a waiting gate. |
+| Final reconciliation/review/CI/merge | Fresh main, full requirement audit, relevant final local regression, final CI/review, then merge the single PR #21 | Fresh fetch still has main at 475d817, already integrated. Completed a12a265 push CI failed at the new Rust 1.99 chunk lint, before installer/portable execution; the correction passes explicit local 1.99 all-target lint/format and six 1.89 tests. Fresh final CI remains required. PR is open/draft; intermediate CI is not a waiting gate. |
 
 ## Independent external Alpaca application
 

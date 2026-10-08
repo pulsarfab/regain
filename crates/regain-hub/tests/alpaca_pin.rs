@@ -159,8 +159,9 @@ async fn matching_pin_guards_connect_reads_writes_images_and_cleanup_with_the_sa
     backend.disconnect().await.unwrap();
     assert!(!backend.connection_info().unwrap().owns_connection);
     let requests = peer.fixture.requests.lock().unwrap();
-    assert!(requests.len() >= 12 && requests.len() % 2 == 0);
-    for pair in requests.chunks_exact(2) {
+    let (pairs, remainder) = requests.as_chunks::<2>();
+    assert!(requests.len() >= 12 && remainder.is_empty());
+    for pair in pairs {
         assert_eq!(pair[0].0, "GET");
         assert_eq!(pair[0].1, "/prefix/management/v1/configureddevices");
         assert!(!pair[1].1.contains("/management/"));
