@@ -20,7 +20,28 @@ ASCOM worker tree before packaging. Local ZWO library tests (99), seven runtime
 gate cases, PowerShell parsing and whitespace checks pass. This does not close
 the final main reconciliation or acceptance gates.
 
-Current increment: repair release license collection and avoid duplicate CI.
+Current increment: real cross-kernel IPv4 and scoped IPv6 transport acceptance.
+A private Perl endpoint in the existing Debian WSL2 distro receives production
+Windows Hub traffic over its virtual NIC, with no loopback routing substitution.
+Both address families pass catalog identity pinning, safety polling, a 4×3 camera
+capture, exact JSON/ImageBytes comparisons and surviving-second-client reads.
+Each run performs one upstream exposure and one image download. Stopping only
+the owned Linux endpoint withdraws safety within the configured three-second
+evidence lifetime (observed 3.000/2.984 seconds). All owned processes stop.
+The harness records interface/peer identities, fixture/binary hashes, traffic,
+images and cleanup; it neither installs packages nor changes routing/firewalls.
+Review corrected WSL address lifetime and made cleanup failures remain failures.
+This advances actual scoped socket/routing evidence across Windows and Linux
+kernels. Physical LAN, UDP discovery, TLS on that LAN, actual OS sleep/wake,
+installed clients/hardware and the remaining final gates are still open.
+NINA and its connected devices remain untouched. See hub-review.md and
+hub-conformance.md for the exact command and evidence boundary.
+This fixture/docs-only commit skips intermediate CI to let production run
+37731689797 finish. Its Linux x86/ARM and macOS ARM jobs now pass full packaging;
+Windows and Intel macOS are still running. Fresh final-head CI remains a merge
+gate; the existing run is evidence only for its own afb6721 revision.
+
+Previous increment: repair release license collection and avoid duplicate CI.
 The corrected Linux jobs pass strict lint, workspace tests and worker/SDK checks,
 then fail packaging because asn1-rs-impl 0.2.0 omits its shared root license texts.
 Windows and portable packaging now use one collector. Its exact-version repair

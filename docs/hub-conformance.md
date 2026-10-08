@@ -1,5 +1,32 @@
 # Hub conformance checks
 
+## Cross-kernel virtual-network checks
+
+On Windows with an existing WSL distro, identify the Windows WSL virtual
+interface index and run:
+
+```powershell
+Get-NetIPAddress -AddressFamily IPv6 | Select-Object InterfaceAlias, InterfaceIndex, IPAddress
+cargo build -p regain-alpaca --locked -j2
+python scripts/test-hub-wsl-network.py --distro Debian --interface eth0 --windows-scope 63
+```
+
+Replace 63 with this machine's WSL interface index. The distro needs its existing
+Perl `IO::Socket::IP`/`IO::Select` modules and `ip`; the script installs nothing.
+It starts a private Linux listener and production Windows Hub/publisher, checks
+actual IPv4 and scoped link-local IPv6 traffic, and records server-side peer and
+interface identities under `artifacts/hub-wsl-network-<id>/`. Simulated camera
+pixels must match across JSON/ImageBytes and two clients, with one upstream
+capture/download. Stopping the owned endpoint must withdraw cached safety.
+Cleanup stops only owned processes; it never terminates the distro, changes
+firewalls/routes, registers drivers or uses NINA. Do not run Python with `-O`.
+
+This is same-machine traffic across separate Windows/Linux kernels and virtual
+interfaces. It advances actual socket/scope acceptance beyond loopback fixtures;
+it does not prove a physical LAN, UDP discovery, TLS, real equipment, installed
+clients or OS sleep/wake. The [acceptance matrix](hub-acceptance.md) retains those
+gates and links to the recorded results.
+
 ## Independent external inputs
 
 To exercise an already running ASCOM OmniSimulator as an upstream application:

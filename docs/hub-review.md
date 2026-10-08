@@ -3,6 +3,71 @@
 This records local review and tests for the single hub PR. Passing a foundation
 test does not imply that a frontend, transport, or hardware gate has passed.
 
+## 2026-10-07: cross-kernel IPv4 and scoped IPv6 acceptance
+
+Reviewed coordination cancellation, preflight reservation cleanup, exact image
+pins and native NINA save/reconciliation paths. No production correction arose
+from that inspection. The remaining network gate had a safe available step:
+the existing Debian WSL2 distro has a distinct virtual NIC and reachable
+link-local address. Added `scripts/test-hub-wsl-network.py` and its small Perl
+fixture, using the distro's existing socket modules without installing packages.
+
+The fixture accepts only private generated routes, owns one bounded listener,
+and has no device/driver/backend access. The production Windows Hub and Alpaca
+publisher use fresh configuration identities, pinned catalog IDs, empty ordinary
+profiles and disabled UDP discovery. Its two sources are explicitly simulated
+remote camera/safety devices. The runtime does not use a test dial override:
+IPv4 crosses the virtual network and IPv6 uses the actual Windows interface
+scope. Server-side peer addresses prove traffic is not loopback.
+
+Final evidence: `hub-wsl-network-eb55edbd694f47f18c84395512be0206/summary.json`
+and each family's `upstream.tsv`, `upstream-interface.json`, `traffic.json`,
+`published-image.bin`, private config, logs and cleanup summary. Linux kernel
+is `6.6.87.2-microsoft-standard-WSL2`; Windows interface scope is 63. Peers are
+`172.27.128.1` and `fe80::57e9:e55b:7262:1e33%eth0`. For both families:
+
+- The source's ordinary management catalog pinning and scalar requests reach
+  the Linux endpoint. A 4×3 capture preserves all twelve asymmetric test pixels
+  across JSON, ImageBytes and two downstream clients. Releasing the first camera
+  client preserves the second's connection and exact retained frame.
+- Upstream counters show exactly one exposure and one image download despite
+  repeated downstream reads. The recorded request is ImageBytes over that same
+  real socket path.
+- Normal shutdown of the owned Linux endpoint leaves frontend leases alive;
+  safety becomes false in 3.000 seconds (IPv4) and 2.984 seconds (IPv6), within
+  the fixture's bounded observation window for three-second safe evidence.
+- Both Linux fixtures exit normally with code zero. Both owned Windows host/
+  publisher pairs stop, with no cleanup failures. The distro is not terminated.
+
+Review fixed a WSL lifecycle assumption: the distro may restart between short
+commands and receive a different MAC/link-local address. Address discovery now
+runs inside the listener's own lifetime. The ready file publishes atomically.
+An initial invalid safety fixture (request timeout plus polling exceeded its
+safe lifetime) was correctly rejected by the production host; its failed record
+`hub-wsl-network-ca979f5ae1544b70a9cdd1e85d93a41a/ipv4/summary.json` verifies
+owned process cleanup. The policy now respects the shared timing invariant.
+Cleanup attempts remain independent, retain failures and fail the command.
+Fallback Linux signaling requires the recorded PID and exact `/proc` command
+identity; a forced stop is still failure. The fixture has a total lifetime bound
+and a separate request deadline. No distro-wide stop or firewall changes occur.
+
+Current-source `cargo build -p regain-alpaca --locked -j2`, Python compilation,
+Perl syntax and the final actual two-family harness pass. Optimized Python and
+scope zero are rejected before starting any child. No product logic changed, so
+another full Rust/managed regression was not needed. This is same-machine,
+cross-kernel virtual-network acceptance with simulated data, not physical LAN,
+UDP discovery, external vendor/device, TLS, installed NINA/ASCOM or sleep/wake
+acceptance. Those original gates remain open. NINA was left untouched; PR #21
+stays draft and no intermediate CI wait was used.
+
+One compact CI observation finds run `37731689797` at `afb6721` has completed
+Linux x86/ARM and macOS ARM successfully, including the shared license repair's
+full packaging paths. Research, crates/MSRV/package verification and standalone
+Windows COM activation also pass. Windows and Intel macOS remain live. This
+fixture/docs-only increment skips its intermediate matrix to preserve those
+running acceptance jobs; it does not count their earlier head as final-head CI
+or remove the required final CI/review/merge gate.
+
 ## 2026-10-07: shared license collection and CI queue reduction
 
 PR run `37729978412` at `0ab34e2` gets past the previous lint blocker. Linux x86
