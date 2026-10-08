@@ -423,7 +423,19 @@ impl CameraSupervisor {
     }
     pub(crate) fn status_with_source(&self) -> (crate::source::SourceSnapshot, AcquisitionStatus) {
         let source = self.source.snapshot();
-        let state = self.state.lock().unwrap();
+        let mut state = self.state.lock().unwrap();
+        if let Some(active) = state.active.as_mut()
+            && active.generation != source.generation
+            && active.phase != AcquisitionPhase::Uncertain
+        {
+            active.phase = AcquisitionPhase::Uncertain;
+            active.command_pending = false;
+            state.error = Some(SourceError::new(
+                ErrorKind::Uncertain,
+                "Camera source generation changed; reconcile the interrupted acquisition",
+            ));
+            self.changed.notify_waiters();
+        }
         let completed = state.completed.as_ref().filter(|image| {
             image.identity.generation == source.generation && source.transport_connected
         });
@@ -745,6 +757,17 @@ impl CameraSupervisor {
             let Some(active) = state.active.as_mut().filter(|a| a.id == id) else {
                 return;
             };
+            if active.phase == AcquisitionPhase::Uncertain {
+                // Status may already have observed a source-generation change
+                // after a pre-sleep acknowledgement. Never restore ownership
+                // certainty merely because its waiter was scheduled later.
+                let _ = reply.send(
+                    dispatched_at,
+                    acknowledged_at,
+                    Err(SourceError::uncertain()),
+                );
+                return;
+            }
             active.phase = AcquisitionPhase::Exposing;
             state.completed = None;
             state.error = None;
@@ -889,7 +912,10 @@ impl CameraSupervisor {
         ))
     }
     async fn wait_ready(&self, source: &TypedSourceSession, id: Uuid) -> Result<bool, SourceError> {
+        let mut source_changes = source.changes();
         loop {
+            source.snapshot()?;
+            source_changes.borrow_and_update();
             let changed = self.changed.notified();
             tokio::pin!(changed);
             changed.as_mut().enable();
@@ -942,6 +968,9 @@ impl CameraSupervisor {
                 }
             }
             tokio::select! {
+                changed = source_changes.changed() => {
+                    if changed.is_err() { return Err(unavailable("Camera source stopped during exposure")); }
+                },
                 _ = tokio::time::sleep(self.timing.poll_interval) => {},
                 _ = changed => {},
             }

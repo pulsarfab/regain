@@ -528,6 +528,56 @@ late generations, and replayed sequences cannot establish permission. Runtime
 timestamps are monotonic durations relative to a host clock and are never saved.
 Explicit resume/clock discontinuity invalidates generations and evidence.
 
+The production private host installs one resume-aware clock before constructing
+its first runtime and shares it across configuration Apply. Windows registers a
+process-lifetime headless callback for suspend and automatic resume. It also
+compares interrupt time with unbiased interrupt time. Linux compares
+`CLOCK_BOOTTIME` with `CLOCK_MONOTONIC`; macOS compares `CLOCK_MONOTONIC_RAW` with
+`CLOCK_UPTIME_RAW`. These compare elapsed sleep, not adjustable wall time. The
+clock-pair check runs every 250 ms and synchronously on evidence access. Awake
+reads bracket each continuous read, so scheduling delays widen the possible
+clock gap rather than falsely reporting sleep. The detector intersects those
+gap intervals; disjoint intervals invalidate the epoch. Unix clocks allow only
+nanosecond rounding, while Windows' coarse-clock fallback allows 50 ms per bound;
+native Windows callbacks invalidate even short sleeps. Clock-probe failure withdraws
+evidence and blocks new source I/O until a valid clock pair is available.
+Construction fails explicitly when the platform monitor cannot be installed.
+
+Source snapshots and safety observations carry a private resume epoch. Cached
+source, safety and weather readers reject the old epoch even before asynchronous
+consumers run. Weather drops averaging history and last-valid sensor times.
+Safety clears permission and confirmation/hold progress; queued old observations
+cannot seed the replacement policy, including a consumer racing a source reset.
+An independent notification wakes the source actor and safety expiry task.
+
+Source leases and control ownership survive. Adapter reset retires only the
+host's local I/O/session according to its existing owned/borrowed connection
+policy. Pending I/O is cancelled locally, and replies crossing the epoch are
+discarded. Old queued commands require a new explicit request; lease/control
+release and shutdown still perform cleanup. Backoff and Retry-After are not
+shortened. Dispatched writes interrupted by resume are uncertain and are not
+replayed or cleared by later polls/resumes. Existing last-lease reconciliation
+rules still apply. Typed accessory/camera sessions fence their old connection
+generation and require explicit reconnect; scalar safety/weather/switch outputs
+remain available while their sources reacquire observations.
+
+Resume never starts, aborts, stops or repeats an exposure. An interrupted capture
+keeps uncertain ownership for explicit reconciliation. Readiness polling wakes
+on source changes rather than waiting for a long exposure polling interval.
+Ordinary camera image requests cannot obtain old-generation images; already pinned
+immutable copies remain valid for their readers. A retained camera-group result
+also keeps its explicitly identified historical images under the existing exact
+group/operation/generation/acquisition contract. Saved settings, device identity, revision,
+credentials and configured hardware recovery allowances do not change.
+
+Platform references: [Windows power notifications](https://learn.microsoft.com/en-us/windows/win32/api/powerbase/nf-powerbase-powerregistersuspendresumenotification),
+[Linux sleep-clock semantics](https://man7.org/linux/man-pages/man2/clock_gettime.2.html),
+and Apple's [continuous](https://developer.apple.com/documentation/driverkit/mach_continuous_time)
+and [awake](https://developer.apple.com/documentation/driverkit/mach_absolute_time)
+clock documentation.
+Local deterministic faults and Windows monitor construction do not prove physical
+sleep/wake behavior on every supported platform; that acceptance gate stays open.
+
 Sampling belongs to a source; policy belongs to each output membership. All unsafe
 readings and failed attempts clear recovery progress immediately. Confirmations
 are counted no faster than that membership's configured cadence, measured from
@@ -3138,8 +3188,8 @@ supports explicit status/start/cancel. The NINA sequence instruction waits for
 per-member exact completion and retains an interrupted/failed-step flag across
 clone/save, requiring explicit reconciliation before another operation. Native
 ASCOM/Alpaca standard Focuser outputs continue to represent individual devices;
-coordination does not invent a standard multi-device interface. Camera groups,
-real OS resume integration and final acceptance remain open.
+coordination does not invent a standard multi-device interface. Camera groups and
+OS resume integration are implemented below/above; final acceptance remains open.
 
 ### Explicit camera coordination
 

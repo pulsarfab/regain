@@ -99,6 +99,7 @@ mod ipc;
 mod service;
 
 struct Fixture {
+    clock: Arc<regain_hub::resume::ResumeClock>,
     config: HubConfig,
     registry: Arc<SourceRegistry>,
     runtime: Arc<HubRuntime>,
@@ -156,7 +157,7 @@ fn fixture_with(change: impl FnOnce(&mut HubConfig)) -> Fixture {
         .iter()
         .map(|_| Arc::new(Device::default()))
         .collect();
-    let clock = Arc::new(MonotonicClock::default());
+    let clock = regain_hub::resume::ResumeClock::manual(Arc::new(MonotonicClock::default()));
     let registry = Arc::new(
         SourceRegistry::build(&config, clock.clone(), |source| {
             let index = config
@@ -175,8 +176,10 @@ fn fixture_with(change: impl FnOnce(&mut HubConfig)) -> Fixture {
         })
         .unwrap(),
     );
-    let runtime = HubRuntime::from_registry(config.clone(), registry.clone(), clock).unwrap();
+    let runtime =
+        HubRuntime::from_registry(config.clone(), registry.clone(), clock.clone()).unwrap();
     Fixture {
+        clock,
         config,
         registry,
         runtime,
@@ -194,6 +197,8 @@ async fn settle() {
 
 #[path = "support/runtime_diagnostics.rs"]
 mod diagnostics;
+#[path = "support/runtime_resume.rs"]
+mod resume;
 
 #[tokio::test(start_paused = true)]
 async fn asynchronous_connection_admission_is_bounded_and_failures_remain_visible_until_reconciled()

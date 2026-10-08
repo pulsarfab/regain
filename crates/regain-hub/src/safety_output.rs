@@ -110,7 +110,8 @@ async fn consume(
         if *stop.borrow() {
             break;
         }
-        let latest = status.borrow_and_update().clone();
+        status.borrow_and_update();
+        let latest = source.snapshot();
         if current != fence(&latest) {
             current = fence(&latest);
             watermark = 0;
@@ -161,7 +162,7 @@ async fn consume(
                     // A local virtual poll may expose still-valid evidence from
                     // before this output existed. It cannot seed a new policy.
                     if outcome == Outcome::Safe && event.started < not_before { continue; }
-                    runtime.observe(id, Observation { fence: current, sequence: event.sequence,
+                    runtime.observe(id, Observation { resume_epoch: latest.resume_epoch, fence: current, sequence: event.sequence,
                         request_started: event.started, received: event.received, outcome });
                 }
             }
@@ -292,6 +293,7 @@ mod tests {
         runtime.observe(
             id,
             Observation {
+                resume_epoch: 0,
                 fence: fence(&state),
                 sequence: 1,
                 request_started: Duration::ZERO,

@@ -31,6 +31,7 @@ pub enum Outcome {
 
 #[derive(Clone, Copy, Debug)]
 pub struct Observation {
+    pub resume_epoch: u64,
     pub fence: Fence,
     pub sequence: u64,
     pub request_started: Duration,
@@ -311,13 +312,34 @@ pub struct HubSnapshot {
 pub struct SafetyHub {
     endpoints: BTreeMap<Uuid, Endpoint>,
     aggregate_safe: bool,
+    resume_epoch: u64,
 }
 impl SafetyHub {
     pub fn new(endpoints: BTreeMap<Uuid, Endpoint>) -> Self {
         Self {
             endpoints,
             aggregate_safe: false,
+            resume_epoch: 0,
         }
+    }
+    fn sync_resume(&mut self, clock: &dyn Clock) {
+        let epoch = clock.resume_epoch();
+        if self.resume_epoch == epoch && clock.resume_clock_valid() {
+            return;
+        }
+        self.resume_epoch = epoch;
+        for endpoint in self.endpoints.values_mut() {
+            *endpoint = Endpoint::new(
+                endpoint.policy.clone(),
+                Fence {
+                    revision: endpoint.fence.revision,
+                    generation: Uuid::new_v4(),
+                },
+            )
+            .expect("Previously validated safety policy");
+            endpoint.reason = "Host resumed; waiting for new confirmed safe evidence";
+        }
+        self.aggregate_safe = false;
     }
     /// Reconnect, configuration replacement, and resume invalidate all prior
     /// evidence. Late polls from the former generation are rejected afterward.
@@ -383,6 +405,16 @@ impl SafetyHub {
 /// A local clock can be replaced by a deterministic clock in integration tests.
 pub trait Clock: Send + Sync {
     fn now(&self) -> Duration;
+    /// A host sleep/resume discontinuity, independent of elapsed-time semantics.
+    fn resume_epoch(&self) -> u64 {
+        0
+    }
+    fn resume_notifications(&self) -> Option<watch::Receiver<u64>> {
+        None
+    }
+    fn resume_clock_valid(&self) -> bool {
+        true
+    }
 }
 pub struct MonotonicClock(tokio::time::Instant);
 impl Default for MonotonicClock {
@@ -409,16 +441,22 @@ impl SafetyRuntime {
         self.clock.now()
     }
     pub fn new(mut hub: SafetyHub, clock: Arc<dyn Clock>) -> Self {
+        hub.resume_epoch = clock.resume_epoch();
         let initial = hub.snapshot(clock.now());
         let hub = Arc::new(Mutex::new(hub));
         let (updates, _) = watch::channel(initial);
         let (task_hub, task_clock, task_updates) = (hub.clone(), clock.clone(), updates.clone());
         let expiry = tokio::spawn(async move {
+            let mut notifications = task_clock.resume_notifications();
             let mut interval = tokio::time::interval(Duration::from_millis(250));
             interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
             loop {
-                interval.tick().await;
+                tokio::select! { biased;
+                    _ = crate::resume::changed(&mut notifications) => {},
+                    _ = interval.tick() => {},
+                }
                 let mut hub = task_hub.lock().unwrap();
+                hub.sync_resume(task_clock.as_ref());
                 task_updates.send_replace(hub.snapshot(task_clock.now()));
             }
         });
@@ -431,25 +469,37 @@ impl SafetyRuntime {
     }
     pub fn observe(&self, source: Uuid, observation: Observation) -> bool {
         let mut hub = self.hub.lock().unwrap();
+        hub.sync_resume(self.clock.as_ref());
         let now = self.clock.now();
-        let accepted = hub.observe(source, observation, now);
+        // reset_source itself can race with resume. A caller holding a former
+        // source fence cannot re-admit a pre-sleep observation after that reset.
+        let accepted = observation.resume_epoch == hub.resume_epoch
+            && self.clock.resume_clock_valid()
+            && hub.observe(source, observation, now);
         self.updates.send_replace(hub.snapshot(now));
         accepted
     }
     pub fn snapshot(&self) -> HubSnapshot {
-        self.hub.lock().unwrap().snapshot(self.clock.now())
+        let mut hub = self.hub.lock().unwrap();
+        hub.sync_resume(self.clock.as_ref());
+        let snapshot = hub.snapshot(self.clock.now());
+        self.updates.send_replace(snapshot.clone());
+        snapshot
     }
     pub fn subscribe(&self) -> watch::Receiver<HubSnapshot> {
+        self.snapshot();
         self.updates.subscribe()
     }
     pub fn reset_generation(&self, fence: Fence) -> Result<(), Vec<FieldError>> {
         let mut hub = self.hub.lock().unwrap();
+        hub.sync_resume(self.clock.as_ref());
         hub.reset_generation(fence)?;
         self.updates.send_replace(hub.snapshot(self.clock.now()));
         Ok(())
     }
     pub fn reset_source(&self, source: Uuid, fence: Fence) -> Result<(), Vec<FieldError>> {
         let mut hub = self.hub.lock().unwrap();
+        hub.sync_resume(self.clock.as_ref());
         hub.reset_source(source, fence)?;
         self.updates.send_replace(hub.snapshot(self.clock.now()));
         Ok(())
@@ -473,6 +523,36 @@ impl Drop for SafetyRuntime {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[tokio::test(start_paused = true)]
+    async fn resume_rejects_old_evidence_even_after_a_racing_old_source_reset() {
+        let id = Uuid::new_v4();
+        let old_fence = fence();
+        let mut policy = policy();
+        policy.safe_readings_to_safe = 1;
+        policy.return_to_safe_hold_seconds = 0.0;
+        let clock = crate::resume::ResumeClock::manual(Arc::new(MonotonicClock::default()));
+        let runtime = SafetyRuntime::new(
+            SafetyHub::new(BTreeMap::from([(
+                id,
+                Endpoint::new(policy, old_fence).unwrap(),
+            )])),
+            clock.clone(),
+        );
+        assert!(runtime.observe(id, obs(old_fence, 1, 0, Outcome::Safe)));
+        assert!(runtime.snapshot().is_safe);
+        clock.notify_resume();
+        // Model a consumer fetching the old source before resume, then only
+        // reaching reset_source after it. Its queued result is still obsolete.
+        runtime.reset_source(id, old_fence).unwrap();
+        assert!(!runtime.observe(id, obs(old_fence, 2, 0, Outcome::Safe)));
+        assert!(!runtime.snapshot().is_safe);
+        let new_fence = fence();
+        runtime.reset_source(id, new_fence).unwrap();
+        let mut fresh = obs(new_fence, 1, 0, Outcome::Safe);
+        fresh.resume_epoch = clock.resume_epoch();
+        assert!(runtime.observe(id, fresh));
+        assert!(runtime.snapshot().is_safe);
+    }
     fn t(seconds: u64) -> Duration {
         Duration::from_secs(seconds)
     }
@@ -490,6 +570,7 @@ mod tests {
     }
     fn obs(fence: Fence, sequence: u64, seconds: u64, outcome: Outcome) -> Observation {
         Observation {
+            resume_epoch: 0,
             fence,
             sequence,
             request_started: t(seconds),

@@ -310,7 +310,8 @@ pub(crate) async fn inspect(
         let lease = SourceLease::acquire(source).await?;
         let mut status = lease.source.status();
         let connected = loop {
-            let state = status.borrow_and_update().clone();
+            status.borrow_and_update();
+            let state = lease.source.snapshot();
             if state.transport_connected {
                 break state;
             }

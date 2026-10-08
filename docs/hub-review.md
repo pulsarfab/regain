@@ -3,6 +3,67 @@
 This records local review and tests for the single hub PR. Passing a foundation
 test does not imply that a frontend, transport, or hardware gate has passed.
 
+## 2026-10-07: shared OS sleep/resume fences
+
+Implemented one production `ResumeClock` shared across private-host configuration
+replacements. Windows uses headless suspend/automatic-resume notifications and a
+bracketed interrupt/unbiased clock fallback. Linux/macOS use bracketed continuous/
+awake clock reads. The detector intersects possible clock-gap intervals, so
+scheduling delays do not masquerade as sleep; Unix detection does not impose a
+fixed millisecond sleep threshold. Windows callbacks and their sender deliberately
+live for the process lifetime, with no borrowed callback context or unregister/
+callback lifetime race. Probe/registration failure cannot silently start an
+unmonitored production host; a later clock fault clears evidence and blocks I/O.
+
+Actors retain client leases and control ownership, invalidate generation/caches,
+cancel obsolete local I/O and reset their own adapter/worker. Existing borrowed
+and managed cleanup policy still applies. Queued pre-sleep commands are rejected
+without dispatch, while release/shutdown remain available. Existing Retry-After/
+backoff deadlines survive. Actual interrupted writes retain their uncertainty
+latch across polling and further resumes. No exposure, movement or power command
+is replayed. Typed sessions require explicit reconnect; scalar outputs remain
+available while upstream recovery is pending.
+
+Safety and weather invalidate evidence on synchronous reads as well as task
+notifications. Review found and fixed a racing consumer that fetched an old
+source before resume and submitted it after the engine reset: explicit epoch
+checks reject that evidence even if the consumer reset an old source fence.
+Weather clears averaging and last-valid timestamps. Another review finding was
+an already queued acknowledgement whose waiter resumed later; source read/image/
+write waiters now fence that reply too. Camera status cannot restore a capture
+already marked uncertain, and long readiness polling wakes on source changes.
+Ordinary image getters reject old generations. Existing pinned copies and exact
+historical camera-group images retain their immutable bytes and identities.
+
+Local evidence (all logs under `artifacts/hub-resume-*`):
+
+- `regression.log` passes the complete Rust hub/Alpaca regression before the final
+  clock/reply refinements. `core-verified.log` passes the final 112 hub unit,
+  79 camera acquisition and 52 runtime/IPC cases. These include cached evidence,
+  stalled polls, pre-sleep queues, interrupted and late acknowledged writes,
+  retained leases, delayed downloads, pinned bytes and long camera readiness waits.
+- `alpaca-verified.log` passes 19 unit, ten production-process and 48 HTTP cases
+  against the rebuilt executable. Windows monitor construction/registration is
+  tested without suspending the machine. Portable clock tests still require CI;
+  neither construction nor injected epochs establishes physical sleep acceptance.
+- `clippy-verified.log` and `msrv-verified.log` pass strict all-target Clippy and
+  Rust 1.89.0. `freshness.log`, `schema.log` and `node.log` pass generated freshness,
+  eighteen independent schema cases and browser contracts. `runtime.json` audits
+  the fresh production host, including its power APIs, without VC redistributable
+  imports. No managed frontend or wire contract changed in this increment; the
+  preceding full managed suites and inspected renders remain checkpoint evidence.
+
+Initial retained findings include the weather age fixture expecting an error
+rather than the standard `-1` unknown result, and a Cargo invocation supplying two
+positional filters. Neither was a product failure.
+
+No physical device, production COM registration, installer, LAN discovery or
+system sleep was triggered. Actual sleep/wake acceptance on Windows/Linux/macOS,
+installed NINA/Chooser/UAC/signing/upgrades, remaining conformance and physical
+acceptance, camera recovery metadata, README/site, main reconciliation and final
+CI/review/completion audit remain open. PR #21 stays draft; intermediate CI was
+not polled or used as a waiting gate.
+
 ## 2026-10-07: shared configuration import/export
 
 Implemented revision-owned `exportConfig` and `prepareImport`, one generated

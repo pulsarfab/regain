@@ -20,7 +20,27 @@ ASCOM worker tree before packaging. Local ZWO library tests (99), seven runtime
 gate cases, PowerShell parsing and whitespace checks pass. This does not close
 the final main reconciliation or acceptance gates.
 
-Current increment: configuration import/export. The shared host supplies one
+Current increment: OS sleep/resume fencing. The shared host installs a resume
+clock before constructing sources and shares it through configuration Apply.
+Windows uses native suspend/automatic-resume callbacks and a sleep-clock check;
+Linux/macOS compare suspend-inclusive and awake clocks. Cached source, safety and
+weather readers withdraw old evidence synchronously, while actor notifications
+cancel obsolete I/O and retire local adapters. Scalar output clients keep their
+leases and recover only from new observations. Queued pre-sleep commands are
+rejected; interrupted writes and camera captures retain uncertainty. Typed
+equipment sessions require explicit reconnect. Images already pinned by a reader
+stay immutable, while ordinary new reads reject old-generation images; exact
+retained camera-group images remain historical copies. Full Rust regression and
+final 112 hub unit, 79 camera acquisition, 52 runtime/IPC, 19 Alpaca unit, ten
+production-process and 48 HTTP cases pass. Strict Clippy/Rust 1.89, freshness,
+eighteen schema cases, Node contracts and the fresh-host runtime audit pass.
+Review fixes and evidence are recorded in hub-review.md. Actual system sleep/wake
+acceptance remains open.
+Next: camera recovery metadata, remaining conformance/installed-client/physical
+acceptance, README/site, main reconciliation and original final review/CI/audit/
+merge gates. Keep PR #21 draft; no intermediate CI waiting.
+
+Previous increment: configuration import/export. The shared host supplies one
 versioned redacted file format and inert, revision-owned preparation for both
 native NINA/ASCOM and web setup. Restore keeps this hub's active identities,
 destination history and matching local credentials. Copy creates new graph IDs,
@@ -1948,10 +1968,10 @@ identity rules. They do not duplicate equipment keys or safety policy.
 Independent JSON Schema validation and both reader tests passed. Local Rust
 1.89.0 compatibility, standalone packaging, multi-source AND, independent
 membership cadence, and getter/retry counting also have tests.
-The source poll scheduler will attach its real attempts/backoff to these tested
-events in milestone 2. The host must call generation reset on resume and relevant
-configuration changes; the engine's reset behavior is tested, not yet wired to OS
-notifications. The final product gate still requires actual frontend behavior.
+At this foundation checkpoint, scheduler integration and OS notifications were
+still pending. They are now implemented in the shared source runtime and resume
+clock described above. Actual sleep/wake and installed-frontend acceptance remain
+part of the final product gate.
 
 Review findings fixed in this checkpoint:
 
@@ -2659,3 +2679,5 @@ then cameras/coordination and every original remaining acceptance/final gate.
 | 2026-10-07 | Implemented and reviewed shared native/COM catalogs and draft-only adoption through host IPC, native NINA/ASCOM setup and the web editor. Reused owned workers, source defaults/capabilities and identity rules; added finite collection, registry-only COM enumeration, blocked registration reasons and retained discovery drains. | Full Rust hub/Alpaca/core regression, strict Clippy/Rust 1.89, freshness, seventeen schema cases, Node contracts, both full net48 suites and final sixteen focused native cases pass. Nine native backends use production simulations; real x86/x64 COM catalogs and private registry/process fixtures pass. The native render and runtime imports are inspected. Initial findings, the interrupted all-activity drain run and corrected GUI simulation fixture are retained in hub-review.md. Next: configuration import/export, then OS resume, camera recovery metadata and every original acceptance/documentation/main/review/CI/audit/merge gate. No intermediate CI waiting. |
 
 | 2026-10-07 | Implemented and reviewed shared redacted configuration export and inert Restore/Copy preparation through host IPC, protected HTTP, native NINA/ASCOM setup and the web editor. Reused graph validation, identity history and ordinary Review/Apply; corrected the web local-catalog allowlist and protected embedded active IDs. | Rust regression plus final six transfer/45 runtime cases, protected HTTP, strict Clippy/Rust 1.89, freshness, eighteen schema cases and Node contracts pass. Real browser file download/upload/review/apply, full NINA 515 passed plus one explicit skip, final fourteen focused native checks, both full net48 architectures and runtime audits pass. Both simulation renders are inspected; initial HTTP, duplicate-fixture, mode-render, tool invocation and net48 count findings are retained in hub-review.md. Next: actual OS resume, camera recovery metadata and every original conformance/installed-client/physical/documentation/main/final review/CI/audit/merge gate. No intermediate CI waiting. |
+
+| 2026-10-07 | Implemented and reviewed shared OS suspend/resume monitoring, synchronous cache withdrawal, actor I/O cancellation, preserved scalar leases and typed-session reconnect fences. Closed stale consumer and late acknowledgement races; interrupted writes/captures retain uncertainty without replay. | Complete Rust hub/Alpaca regression plus final 112 hub unit, 79 camera acquisition, 52 runtime/IPC, 19 Alpaca unit, ten production-process and 48 HTTP cases pass. Strict Clippy/Rust 1.89, freshness, eighteen schema cases, Node contracts and fresh-host runtime audit pass. Physical sleep/wake acceptance remains open. Next: camera recovery metadata and every original conformance/installed-client/physical/documentation/main/final review/CI/audit/merge gate. No intermediate CI waiting. |

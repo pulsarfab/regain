@@ -179,6 +179,7 @@ struct History {
     points: VecDeque<Point>,
 }
 pub struct WeatherEngine {
+    resume_epoch: u64,
     measurements: BTreeMap<WeatherMetric, Measurement>,
     states: BTreeMap<Uuid, SourceSnapshot>,
     history: BTreeMap<WeatherMetric, History>,
@@ -209,6 +210,7 @@ impl WeatherEngine {
                 .insert(readout.sample_key());
         }
         Self {
+            resume_epoch: self.resume_epoch,
             measurements,
             states: keys
                 .iter()
@@ -241,6 +243,7 @@ impl WeatherEngine {
             .find(|(metric, _)| **metric != WeatherMetric::WindGust)
             .map_or(0.0, |(_, measurement)| measurement.average_seconds);
         Self {
+            resume_epoch: 0,
             measurements,
             states: BTreeMap::new(),
             history: BTreeMap::new(),
@@ -248,6 +251,15 @@ impl WeatherEngine {
             last_now: 0.0,
             clock_fault: false,
             last_valid: BTreeMap::new(),
+        }
+    }
+    fn sync_resume(&mut self, clock: &dyn Clock) {
+        let epoch = clock.resume_epoch();
+        if self.resume_epoch != epoch || !clock.resume_clock_valid() {
+            self.resume_epoch = epoch;
+            self.states.clear();
+            self.history.clear();
+            self.last_valid.clear();
         }
     }
     fn tick(&mut self, now: Duration) -> Result<(), SourceError> {
@@ -263,6 +275,11 @@ impl WeatherEngine {
         Ok(())
     }
     pub fn observe(&mut self, state: SourceSnapshot, now: Duration) {
+        // A reader may have fetched a source just before resume and acquired
+        // this engine lock just after it. Never seed the new epoch with it.
+        if state.resume_epoch != self.resume_epoch {
+            return;
+        }
         if self.tick(now).is_err() {
             return;
         }
@@ -503,7 +520,8 @@ impl WeatherOutput {
         let engine = Arc::new(Mutex::new(WeatherEngine::new(measurements.clone())));
         let (stop, _) = watch::channel(false);
         for source in &sources {
-            let mut status = registry.get(*source)?.status();
+            let source = registry.get(*source)?;
+            let mut status = source.status();
             let engine = engine.clone();
             let clock = clock.clone();
             let mut stop = stop.subscribe();
@@ -512,10 +530,12 @@ impl WeatherOutput {
                     if *stop.borrow() {
                         break;
                     }
-                    engine
-                        .lock()
-                        .unwrap()
-                        .observe(status.borrow_and_update().clone(), clock.now());
+                    status.borrow_and_update();
+                    {
+                        let mut engine = engine.lock().unwrap();
+                        engine.sync_resume(clock.as_ref());
+                        engine.observe(source.snapshot(), clock.now());
+                    }
                     tokio::select! {biased;_=stop.changed()=>break,changed=status.changed()=>if changed.is_err(){break;}}
                 }
             });
@@ -544,9 +564,11 @@ impl WeatherOutput {
         end: u32,
         now: Duration,
     ) -> (f64, Vec<crate::diagnostics::WeatherMeasurement>) {
-        // Read the same averaging/fallback engine on a private copy. Inspection
-        // cannot prune, seed or change the live history/last-valid clocks.
-        let engine = self.engine.lock().unwrap();
+        // Resume must withdraw old evidence in every cached view. After that,
+        // inspect averaging/fallback on a private copy without pruning, seeding
+        // or changing live history/last-valid clocks through diagnostic reads.
+        let mut engine = self.engine.lock().unwrap();
+        engine.sync_resume(self.clock.as_ref());
         let measurements: Vec<_> = engine
             .measurements
             .iter()
@@ -603,6 +625,7 @@ impl WeatherSession {
     /// A failed sensor does not suppress valid readings from another sensor.
     pub(crate) fn device_state(&self) -> BTreeMap<WeatherMetric, f64> {
         let mut engine = self.output.engine.lock().unwrap();
+        engine.sync_resume(self.output.clock.as_ref());
         let now = self.output.clock.now();
         let metrics: Vec<_> = engine.measurements.keys().copied().collect();
         metrics
@@ -651,18 +674,14 @@ impl WeatherSession {
         error.map_or(Ok(()), Err)
     }
     pub fn read(&self, metric: WeatherMetric) -> Result<WeatherReading, SourceError> {
-        self.output
-            .engine
-            .lock()
-            .unwrap()
-            .read(metric, self.output.clock.now())
+        let mut engine = self.output.engine.lock().unwrap();
+        engine.sync_resume(self.output.clock.as_ref());
+        engine.read(metric, self.output.clock.now())
     }
     pub fn time_since_last_update(&self, property: &str) -> Result<f64, SourceError> {
-        self.output
-            .engine
-            .lock()
-            .unwrap()
-            .time_since_last_update(property, self.output.clock.now())
+        let mut engine = self.output.engine.lock().unwrap();
+        engine.sync_resume(self.output.clock.as_ref());
+        engine.time_since_last_update(property, self.output.clock.now())
     }
     pub fn average_period_hours(&self) -> f64 {
         self.output.engine.lock().unwrap().average_period_hours()
@@ -680,6 +699,77 @@ impl WeatherSession {
 mod diagnostic_tests {
     use super::*;
     use serde_json::json;
+    #[tokio::test]
+    async fn resume_rejects_a_snapshot_fetched_before_the_engine_lock() {
+        let source = Uuid::new_v4();
+        let clock =
+            crate::resume::ResumeClock::manual(Arc::new(crate::safety::MonotonicClock::default()));
+        let mut engine = WeatherEngine::new(BTreeMap::from([(
+            WeatherMetric::Temperature,
+            Measurement {
+                sources: vec![Readout::Property {
+                    source,
+                    property: "temperature".into(),
+                    unit: None,
+                }],
+                maximum_age_seconds: 60.0,
+                average_seconds: 10.0,
+            },
+        )]));
+        let mut old = SourceSnapshot {
+            resume_epoch: 0,
+            source,
+            revision: Uuid::new_v4(),
+            generation: Uuid::new_v4(),
+            sequence: 1,
+            transport_connected: true,
+            write_uncertain: false,
+            connection_info: None,
+            simulated: false,
+            simulation: None,
+            lease_count: 1,
+            values: BTreeMap::from([("temperature".into(), json!(20))]),
+            sample_errors: BTreeMap::new(),
+            sample_ages_seconds: BTreeMap::new(),
+            sample_started_seconds: BTreeMap::new(),
+            sample_sequences: BTreeMap::new(),
+            completed_passes: 1,
+            sampled_at_seconds: Some(0.0),
+            error: None,
+            polling: Default::default(),
+        };
+        engine.observe(old.clone(), Duration::ZERO);
+        assert_eq!(
+            engine
+                .read(WeatherMetric::Temperature, Duration::ZERO)
+                .unwrap()
+                .value,
+            20.0
+        );
+        clock.notify_resume();
+        engine.sync_resume(clock.as_ref());
+        engine.observe(old.clone(), Duration::ZERO);
+        assert!(
+            engine
+                .read(WeatherMetric::Temperature, Duration::ZERO)
+                .is_err()
+        );
+        assert_eq!(
+            engine
+                .time_since_last_update("temperature", Duration::ZERO)
+                .unwrap(),
+            -1.0
+        );
+        old.resume_epoch = clock.resume_epoch();
+        old.generation = Uuid::new_v4();
+        old.values.insert("temperature".into(), json!(30));
+        engine.observe(old, Duration::ZERO);
+        let fresh = engine
+            .read(WeatherMetric::Temperature, Duration::ZERO)
+            .unwrap();
+        assert_eq!(fresh.value, 30.0);
+        assert_eq!(fresh.sample_count, 1);
+    }
 
     #[test]
     fn diagnostic_copy_retains_sample_identity_and_cannot_mutate_live_history_or_clocks() {
@@ -699,6 +789,7 @@ mod diagnostic_tests {
             },
         )]));
         let state = SourceSnapshot {
+            resume_epoch: 0,
             source,
             revision,
             generation,

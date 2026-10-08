@@ -25,6 +25,7 @@ fn measurement(sources: Vec<Readout>, average: f64) -> Measurement {
 }
 fn snapshot(source: Uuid, sequence: u64, seconds: u64, values: Values) -> SourceSnapshot {
     SourceSnapshot {
+        resume_epoch: 0,
         source,
         revision: Uuid::from_u128(1),
         generation: Uuid::from_u128(source.as_u128() + 100),

@@ -26,6 +26,7 @@ pub mod native_reference;
 mod output;
 pub mod parameters;
 pub mod readout;
+pub mod resume;
 pub mod rotator;
 pub mod runtime;
 pub mod safety;

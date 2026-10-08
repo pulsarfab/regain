@@ -301,6 +301,9 @@ impl Default for PollingStatus {
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SourceSnapshot {
+    /// Internal host sleep fence; never part of configuration or IPC metadata.
+    #[serde(skip)]
+    pub resume_epoch: u64,
     pub source: Uuid,
     pub revision: Uuid,
     pub generation: Uuid,
@@ -323,6 +326,21 @@ pub struct SourceSnapshot {
     pub polling: PollingStatus,
 }
 impl SourceSnapshot {
+    fn invalidate_resume(&mut self, epoch: u64) {
+        self.resume_epoch = epoch;
+        self.generation = Uuid::new_v5(&self.generation, &epoch.to_le_bytes());
+        self.sequence = 0;
+        self.transport_connected = false;
+        self.connection_info = None;
+        self.values.clear();
+        self.sample_errors.clear();
+        self.sample_ages_seconds.clear();
+        self.sample_started_seconds.clear();
+        self.sample_sequences.clear();
+        self.completed_passes = 0;
+        self.sampled_at_seconds = None;
+        self.error = Some(crate::resume::interrupted());
+    }
     /// A cached scalar reader needs only its selected keys. Do not copy vendor
     /// text, connection data or simulation controls into a diagnostic engine.
     pub(crate) fn project_samples(&self, keys: &BTreeSet<String>) -> Self {
@@ -335,6 +353,7 @@ impl SourceSnapshot {
                 .collect()
         }
         Self {
+            resume_epoch: self.resume_epoch,
             source: self.source,
             revision: self.revision,
             generation: self.generation,
@@ -425,13 +444,42 @@ enum Command {
         reply: Reply<Value>,
     },
 }
+struct QueuedCommand {
+    epoch: u64,
+    command: Command,
+}
+impl Command {
+    fn reject(self, error: SourceError) {
+        match self {
+            Self::CameraImage { reply, .. } => {
+                let _ = reply.send(Err(error));
+            }
+            Self::UpdateSimulation { reply, .. } => {
+                let _ = reply.send(Err(error));
+            }
+            Self::Acquire { reply, .. } => {
+                let _ = reply.send(Err(error));
+            }
+            Self::Read { reply, .. } | Self::Write { reply, .. } => {
+                let _ = reply.send(Err(error));
+            }
+            Self::Refresh { reply, .. }
+            | Self::Release { reply, .. }
+            | Self::Control { reply, .. } => {
+                let _ = reply.send(Err(error));
+            }
+            Self::Shutdown => {}
+        }
+    }
+}
 
 pub struct SourceHandle {
+    clock: Arc<dyn Clock>,
     native_camera_resources: Option<crate::camera::runtime::CameraResources>,
     native_camera_timing: Option<regain_core::timing::NativeCameraTiming>,
     connection_allowance: Duration,
     request_allowance: Duration,
-    commands: mpsc::Sender<Command>,
+    commands: mpsc::Sender<QueuedCommand>,
     snapshot: watch::Receiver<SourceSnapshot>,
     events: broadcast::Sender<PollEvent>,
     completion: watch::Receiver<Option<Result<(), SourceError>>>,
@@ -540,6 +588,7 @@ impl SourceHandle {
             return Err(errors);
         }
         let initial = SourceSnapshot {
+            resume_epoch: clock.resume_epoch(),
             source,
             revision,
             generation: Uuid::new_v4(),
@@ -572,6 +621,7 @@ impl SourceHandle {
         let (events, _) = broadcast::channel(64);
         let (completion, completed) = watch::channel(None);
         let handle = Arc::new(Self {
+            clock: clock.clone(),
             native_camera_resources: backend.native_camera_resources(),
             native_camera_timing: native_camera_timing.clone(),
             connection_allowance,
@@ -614,7 +664,7 @@ impl SourceHandle {
         Ok(handle)
     }
     pub fn snapshot(&self) -> SourceSnapshot {
-        self.snapshot.borrow().clone()
+        self.with_snapshot(Clone::clone)
     }
     pub(crate) fn native_camera_timing(&self) -> Option<&regain_core::timing::NativeCameraTiming> {
         self.native_camera_timing.as_ref()
@@ -638,7 +688,17 @@ impl SourceHandle {
         )
     }
     pub(crate) fn with_snapshot<T>(&self, read: impl FnOnce(&SourceSnapshot) -> T) -> T {
-        read(&self.snapshot.borrow())
+        let epoch = self.clock.resume_epoch();
+        let state = self.snapshot.borrow();
+        if state.resume_epoch == epoch && self.clock.resume_clock_valid() {
+            read(&state)
+        } else {
+            // Synchronous readers cannot expose old evidence while the source
+            // actor is still waiting to be scheduled or cancelling its I/O.
+            let mut state = state.clone();
+            state.invalidate_resume(epoch);
+            read(&state)
+        }
     }
     /// The terminal cleanup result is retained, making concurrent/repeated
     /// shutdown idempotent without replaying an upstream Disconnect.
@@ -646,7 +706,7 @@ impl SourceHandle {
         let mut completion = self.completion.clone();
         if completion.borrow().is_none() {
             // If already closing, wait for its terminal result below.
-            let _ = self.commands.send(Command::Shutdown).await;
+            let _ = self.commands.send(self.queued(Command::Shutdown)).await;
         }
         loop {
             if let Some(result) = completion.borrow_and_update().clone() {
@@ -673,7 +733,7 @@ impl SourceHandle {
         // Cleanup must not be dropped merely because ordinary requests filled
         // the bounded queue. Each running request has a backend deadline.
         self.commands
-            .send(Command::Release { lease, reply })
+            .send(self.queued(Command::Release { lease, reply }))
             .await
             .map_err(|_| closed())?;
         response.await.map_err(|_| closed())?
@@ -722,14 +782,21 @@ impl SourceHandle {
         expected_generation: Option<Uuid>,
     ) -> Result<Value, SourceError> {
         let (reply, response) = oneshot::channel();
-        self.enqueue(Command::Read {
+        let epoch = self.enqueue(Command::Read {
             lease,
             expected_generation,
             member: member.into(),
             parameters,
             reply,
         })?;
-        response.await.map_err(|_| closed())?
+        let result = response.await.map_err(|_| closed())?;
+        if result.is_ok()
+            && (self.clock.resume_epoch() != epoch || !self.clock.resume_clock_valid())
+        {
+            Err(crate::resume::interrupted())
+        } else {
+            result
+        }
     }
     pub async fn write(
         &self,
@@ -758,14 +825,21 @@ impl SourceHandle {
             ));
         }
         let (reply, response) = oneshot::channel();
-        self.enqueue(Command::CameraImage {
+        let epoch = self.enqueue(Command::CameraImage {
             lease,
             expected_generation,
             budget,
             deadline,
             reply,
         })?;
-        response.await.map_err(|_| closed())?
+        let result = response.await.map_err(|_| closed())?;
+        if result.is_ok()
+            && (self.clock.resume_epoch() != epoch || !self.clock.resume_clock_valid())
+        {
+            Err(crate::resume::interrupted())
+        } else {
+            result
+        }
     }
     pub async fn write_fenced(
         &self,
@@ -775,22 +849,42 @@ impl SourceHandle {
         expected_generation: Option<Uuid>,
     ) -> Result<Value, SourceError> {
         let (reply, response) = oneshot::channel();
-        self.enqueue(Command::Write {
+        let epoch = self.enqueue(Command::Write {
             lease,
             expected_generation,
             member: member.into(),
             parameters,
             reply,
         })?;
-        response.await.map_err(|_| closed())?
+        let result = response.await.map_err(|_| closed())?;
+        if result.is_ok()
+            && (self.clock.resume_epoch() != epoch || !self.clock.resume_clock_valid())
+        {
+            // The actor may have acknowledged before sleep, while this waiter
+            // was suspended. Do not turn a late acknowledgement into success.
+            Err(SourceError::uncertain())
+        } else {
+            result
+        }
     }
-    fn enqueue(&self, command: Command) -> Result<(), SourceError> {
-        self.commands.try_send(command).map_err(|e| match e {
-            mpsc::error::TrySendError::Full(_) => {
-                SourceError::new(ErrorKind::Busy, "Source command queue is full")
-            }
-            mpsc::error::TrySendError::Closed(_) => closed(),
-        })
+    fn enqueue(&self, command: Command) -> Result<u64, SourceError> {
+        let queued = self.queued(command);
+        let epoch = queued.epoch;
+        self.commands
+            .try_send(queued)
+            .map(|()| epoch)
+            .map_err(|e| match e {
+                mpsc::error::TrySendError::Full(_) => {
+                    SourceError::new(ErrorKind::Busy, "Source command queue is full")
+                }
+                mpsc::error::TrySendError::Closed(_) => closed(),
+            })
+    }
+    fn queued(&self, command: Command) -> QueuedCommand {
+        QueuedCommand {
+            epoch: self.clock.resume_epoch(),
+            command,
+        }
     }
 }
 fn closed() -> SourceError {
@@ -836,6 +930,28 @@ fn write_allowance(
     })
 }
 impl Actor {
+    fn resume(&mut self) {
+        let epoch = self.clock.resume_epoch();
+        if self.state.resume_epoch == epoch {
+            return;
+        }
+        self.state.invalidate_resume(epoch);
+        // Reset only our local adapter/worker. Managed/borrowed adapters retain
+        // their existing rule against disconnecting somebody else's device.
+        self.backend.reset();
+        self.backend.restart_poll();
+        self.connection_started = None;
+        self.poll_operation = None;
+        self.attempt = 0;
+        self.last_attempt = 0;
+        self.last_cycle_exhausted = None;
+        // Keep leases, command ownership and an uncertain mutation latch.
+        // Keep an existing Retry-After/backoff deadline as well.
+        if !self.retrying {
+            self.next_poll = Some(Instant::now());
+        }
+        self.publish();
+    }
     fn deadline(&self) -> Duration {
         Duration::from_secs_f64(self.policy.request_timeout_seconds)
     }
@@ -914,9 +1030,13 @@ impl Actor {
         let result = if remaining.is_zero() {
             Err(SourceError::timeout())
         } else {
-            timeout(self.deadline().min(remaining), self.backend.connect_step())
-                .await
-                .unwrap_or_else(|_| Err(SourceError::timeout()))
+            let deadline = self.deadline().min(remaining);
+            crate::resume::fence(self.clock.as_ref(), self.state.resume_epoch, async {
+                timeout(deadline, self.backend.connect_step())
+                    .await
+                    .unwrap_or_else(|_| Err(SourceError::timeout()))
+            })
+            .await
         };
         self.poll_operation = None;
         match result {
@@ -961,9 +1081,13 @@ impl Actor {
             return result.clone();
         }
         self.connection_started = None;
-        let result = timeout(self.cleanup_deadline(), self.backend.disconnect())
-            .await
-            .unwrap_or_else(|_| Err(SourceError::uncertain()));
+        let deadline = self.cleanup_deadline();
+        let result = crate::resume::fence(self.clock.as_ref(), self.state.resume_epoch, async {
+            timeout(deadline, self.backend.disconnect())
+                .await
+                .unwrap_or_else(|_| Err(SourceError::uncertain()))
+        })
+        .await;
         if result.is_err() {
             self.backend.reset();
         }
@@ -1009,15 +1133,26 @@ impl Actor {
         }
         Ok(())
     }
-    async fn run(mut self, mut commands: mpsc::Receiver<Command>) {
+    async fn run(mut self, mut commands: mpsc::Receiver<QueuedCommand>) {
+        let mut notifications = self.clock.resume_notifications();
         loop {
+            self.resume();
             tokio::select! {
                 // Due sampling cannot be starved by clients flooding the queue.
                 biased;
+                _=crate::resume::changed(&mut notifications) => {},
                 _=wait_until(self.next_poll), if !self.leases.is_empty() => self.poll().await,
                 command=commands.recv() => match command {
-                    Some(Command::Shutdown) | None => break,
-                    Some(command)=>self.command(command).await,
+                    Some(QueuedCommand { command: Command::Shutdown, .. }) | None => break,
+                    Some(queued) => {
+                        self.resume();
+                        // Cleanup is valid across sleep. Everything else queued
+                        // before it must be requested anew, never replayed.
+                        if queued.epoch != self.state.resume_epoch && !matches!(queued.command,
+                            Command::Release { .. } | Command::Control { acquire: false, .. }) {
+                            queued.command.reject(crate::resume::interrupted());
+                        } else { self.command(queued.command).await; }
+                    },
                 }
             }
         }
@@ -1098,9 +1233,15 @@ impl Actor {
                     Ok(())
                 });
                 let result = match result {
-                    Ok(()) => timeout(self.deadline(), self.backend.refresh())
+                    Ok(()) => {
+                        let deadline = self.deadline();
+                        crate::resume::fence(self.clock.as_ref(), self.state.resume_epoch, async {
+                            timeout(deadline, self.backend.refresh())
+                                .await
+                                .unwrap_or_else(|_| Err(SourceError::timeout()))
+                        })
                         .await
-                        .unwrap_or_else(|_| Err(SourceError::timeout())),
+                    }
                     Err(error) => Err(error),
                 };
                 match &result {
@@ -1264,9 +1405,16 @@ impl Actor {
                         }
                         Ok(()) => {
                             dispatched = true;
-                            timeout(deadline, self.backend.camera_image(budget))
-                                .await
-                                .unwrap_or_else(|_| Err(SourceError::timeout()))
+                            crate::resume::fence(
+                                self.clock.as_ref(),
+                                self.state.resume_epoch,
+                                async {
+                                    timeout(deadline, self.backend.camera_image(budget))
+                                        .await
+                                        .unwrap_or_else(|_| Err(SourceError::timeout()))
+                                },
+                            )
+                            .await
                         }
                     },
                 };
@@ -1306,9 +1454,17 @@ impl Actor {
                                 return;
                             }
                             dispatched = true;
-                            timeout(self.deadline(), self.backend.read(member, parameters))
-                                .await
-                                .unwrap_or_else(|_| Err(SourceError::timeout()))
+                            let deadline = self.deadline();
+                            crate::resume::fence(
+                                self.clock.as_ref(),
+                                self.state.resume_epoch,
+                                async {
+                                    timeout(deadline, self.backend.read(member, parameters))
+                                        .await
+                                        .unwrap_or_else(|_| Err(SourceError::timeout()))
+                                },
+                            )
+                            .await
                         }
                     },
                 };
@@ -1346,12 +1502,22 @@ impl Actor {
                                 return;
                             }
                             dispatched = true;
-                            timeout(
-                                self.write_deadline(&member),
-                                self.backend.write(member, parameters),
+                            let deadline = self.write_deadline(&member);
+                            let result = crate::resume::fence(
+                                self.clock.as_ref(),
+                                self.state.resume_epoch,
+                                async {
+                                    timeout(deadline, self.backend.write(member, parameters))
+                                        .await
+                                        .unwrap_or_else(|_| Err(SourceError::uncertain()))
+                                },
                             )
-                            .await
-                            .unwrap_or_else(|_| Err(SourceError::uncertain()))
+                            .await;
+                            if self.clock.resume_epoch() != self.state.resume_epoch {
+                                Err(SourceError::uncertain())
+                            } else {
+                                result
+                            }
                         }
                     },
                 };
@@ -1418,14 +1584,24 @@ impl Actor {
         }
         let result = match connection {
             Err(e) => Err(e),
-            Ok(()) => timeout(self.deadline(), self.backend.sample())
+            Ok(()) => {
+                let deadline = self.deadline();
+                crate::resume::fence(self.clock.as_ref(), self.state.resume_epoch, async {
+                    timeout(deadline, self.backend.sample())
+                        .await
+                        .unwrap_or_else(|_| Err(SourceError::timeout()))
+                })
                 .await
-                .unwrap_or_else(|_| Err(SourceError::timeout())),
+            }
         }
         .and_then(|batch| {
             validate_batch(&self.state, &batch)?;
             Ok(batch)
         });
+        if self.clock.resume_epoch() != self.state.resume_epoch {
+            self.resume();
+            return;
+        }
         self.poll_operation = None;
         let received = self.clock.now();
         let observed = result.as_ref().ok().and_then(|b| b.safety_observed_at);

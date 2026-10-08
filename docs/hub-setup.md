@@ -221,9 +221,19 @@ If the outcome is uncertain, select **Reload saved configuration** before anothe
 change. Reload explicitly opens a new setup connection and reads the saved
 configuration and host status. It never repeats Apply, connects equipment or
 starts the host. Other clients retain their leases. After host loss, equipment
-clients still need explicit reconnect or HTTP frontend restart; broader
-reconnect/resume controls remain in development. Stopping the HTTP frontend
-leaves the shared host running.
+clients still need explicit reconnect or HTTP frontend restart. Stopping the HTTP
+frontend leaves the shared host running.
+
+After host sleep/resume, scalar SafetyMonitor, Switch and ObservingConditions
+connections remain available, but old evidence is discarded. Safety returns
+unsafe until new observations satisfy its configured confirmations and hold;
+weather and switch values stay unavailable until sampled again. Weather averaging
+and last-update history start afresh. Typed camera/accessory sessions require
+explicit reconnect after their source generation changes. Interrupted camera or
+write operations retain an uncertain outcome: reconcile before issuing another
+command. Resume never repeats exposures, movements or power commands. System
+sleep/wake acceptance is still required; deterministic fault tests do not prove
+every machine's power-management behavior.
 
 Select **Manage upstream credentials** to save a complete Authorization header.
 The masked input is cleared before sending; configuration holds only the resulting

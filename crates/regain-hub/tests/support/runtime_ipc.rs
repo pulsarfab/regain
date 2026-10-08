@@ -175,6 +175,74 @@ fn connect(output: Uuid) -> Value {
     json!({"op":"connect","output":output})
 }
 
+#[tokio::test(start_paused = true)]
+async fn ipc_resume_keeps_scalar_clients_available_while_new_sources_are_stalled() {
+    let f = fixture();
+    let mut first = Peer::start(f.runtime.clone(), Limits::default()).await;
+    let mut second = Peer::start(f.runtime.clone(), Limits::default()).await;
+    for output in [f.safety, f.weather, f.switch] {
+        assert!(first.call(connect(output)).await.get("error").is_none());
+    }
+    assert!(second.call(connect(f.safety)).await.get("error").is_none());
+    settle().await;
+    assert_eq!(
+        first.call(get(f.safety, json!({"member":"isSafe"}))).await["result"],
+        true
+    );
+    assert_eq!(
+        first
+            .call(get(
+                f.weather,
+                json!({"member":"measurement","metric":"temperature"})
+            ))
+            .await["result"]["value"],
+        20.0
+    );
+    for device in &f.devices {
+        device.hang_connect.store(true, SeqCst);
+    }
+    f.clock.notify_resume();
+    settle().await;
+    for peer in [&mut first, &mut second] {
+        assert_eq!(
+            peer.call(get(f.safety, json!({"member":"connected"})))
+                .await["result"],
+            true
+        );
+        assert_eq!(
+            peer.call(get(f.safety, json!({"member":"isSafe"}))).await["result"],
+            false
+        );
+    }
+    assert!(
+        first
+            .call(get(
+                f.weather,
+                json!({"member":"measurement","metric":"temperature"})
+            ))
+            .await
+            .get("error")
+            .is_some()
+    );
+    assert!(
+        first
+            .call(get(f.switch, json!({"member":"getSwitchValue","id":0})))
+            .await
+            .get("error")
+            .is_some()
+    );
+    assert!(
+        f.devices
+            .iter()
+            .all(|device| device.writes.load(SeqCst) == 0)
+    );
+    for device in &f.devices {
+        device.hang_connect.store(false, SeqCst);
+    }
+    drop((first, second));
+    f.runtime.shutdown().await.unwrap();
+}
+
 #[tokio::test]
 async fn ipc_transfer_never_opens_sources_or_persists_an_import() {
     let f = fixture();

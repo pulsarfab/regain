@@ -19,7 +19,8 @@ impl TypedSourceSession {
         let lease = SourceLease::acquire(source.clone()).await?;
         let mut status = source.status();
         let generation = loop {
-            let state = status.borrow_and_update().clone();
+            status.borrow_and_update();
+            let state = source.snapshot();
             if state.transport_connected {
                 break state.generation;
             }
@@ -37,6 +38,9 @@ impl TypedSourceSession {
     }
     pub(crate) fn generation(&self) -> Uuid {
         self.generation
+    }
+    pub(crate) fn changes(&self) -> tokio::sync::watch::Receiver<SourceSnapshot> {
+        self.lease.source.status()
     }
     pub(crate) fn source_id(&self) -> Uuid {
         self.lease.source.snapshot().source

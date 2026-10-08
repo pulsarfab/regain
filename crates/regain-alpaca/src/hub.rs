@@ -3,7 +3,7 @@ use anyhow::{Context, Result, bail};
 use regain_core::CancellationToken;
 use regain_hub::{
     config::ConfigStore, credentials::CredentialStore, endpoint::Endpoint, factory::NoCredentials,
-    host, ipc::Limits, native::NativeRuntime, runtime::HubRuntime, safety::MonotonicClock,
+    host, ipc::Limits, native::NativeRuntime, resume::ResumeClock, runtime::HubRuntime,
     service::HubService,
 };
 use std::{future::Future, path::Path, sync::Arc, time::Duration};
@@ -90,6 +90,7 @@ pub async fn run(
             regain_hub::native_reference::NativeReferenceStore::for_endpoint(&endpoint).ok();
     }
     let provider = credentials.clone();
+    let clock = ResumeClock::start().context("Monitor host sleep/resume")?;
     let builder: Arc<regain_hub::service::RuntimeBuilder> = Arc::new(move |config| {
         HubRuntime::build(
             config,
@@ -98,7 +99,7 @@ pub async fn run(
                 .as_deref()
                 .map(|store| store as &dyn regain_hub::factory::CredentialProvider)
                 .unwrap_or(&NoCredentials),
-            Arc::new(MonotonicClock::default()),
+            clock.clone(),
         )
     });
     let state = match credentials {

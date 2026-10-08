@@ -356,6 +356,7 @@ impl Backend for Mock {
     }
 }
 struct Fixture {
+    clock: Arc<regain_hub::resume::ResumeClock>,
     device: Arc<Device>,
     source: Arc<SourceHandle>,
     supervisor: Arc<CameraSupervisor>,
@@ -371,12 +372,13 @@ impl Fixture {
     }
     fn with_timing(memory: usize, poll_interval: Duration, readiness_grace: Duration) -> Self {
         let device = Arc::new(Device::default());
+        let clock = regain_hub::resume::ResumeClock::manual(Arc::new(MonotonicClock::default()));
         let source = SourceHandle::spawn(
             Uuid::new_v4(),
             Uuid::new_v4(),
             PollPolicy::default(),
             Box::new(Mock(device.clone())),
-            Arc::new(MonotonicClock::default()),
+            clock.clone(),
         )
         .unwrap();
         let budget = ImageBudget::new(memory).unwrap();
@@ -392,6 +394,7 @@ impl Fixture {
             CameraSupervisor::new(source.clone(), budget.clone(), timing, activity.clone())
                 .unwrap();
         Self {
+            clock,
             device,
             source,
             supervisor,
@@ -440,6 +443,8 @@ mod camera_group_host;
 mod camera_groups;
 #[path = "support/camera_guiding.rs"]
 mod camera_guiding;
+#[path = "support/camera_resume.rs"]
+mod camera_resume;
 
 #[test]
 fn camera_properties_reject_coercion_invalid_bounds_and_unbounded_metadata() {
