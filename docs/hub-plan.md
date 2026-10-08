@@ -20,7 +20,33 @@ ASCOM worker tree before packaging. Local ZWO library tests (99), seven runtime
 gate cases, PowerShell parsing and whitespace checks pass. This does not close
 the final main reconciliation or acceptance gates.
 
-Current increment: external native ASCOM conformance and standards review. The
+Current increment: stable website alignment. The companion website branch is
+committed and pushed at
+[`57dff44`](https://github.com/pulsarfab/pulsarfab-www/commit/57dff44f7b6d96a95c8a241311c735b81c71bc3c).
+Stable guides now document verified public release 0.5.11.0, while the Hub guide
+retains its separate 0.6 development banner. Shared generated camera tables cover
+ASI662MC, ASI585MM Pro and Duo sensors; ASI676's accepted still limit is corrected
+to 2,000 seconds without expanding the physical-validation claim. Continuous
+Rust/worker APIs remain distinct from frontend still capture and retained rereads.
+Cooler/heater, model, USB-reset and platform limits are explicit. A new Falcon V2
+guide includes the physical screenshot, native NINA/shared ASCOM, stable Alpaca
+slots and origin/multi-turn behavior. Other integration guides and use cases agree.
+
+The downloaded plugin ZIP matches the live feed and release manifest; the
+installer has a valid StackFoundry LLC signature. Published 0.5.11 downloads
+still require the VC runtime; the source static-link fix ships next. Website
+build/freshness and all 27 HTML link/landmark checks pass. Actual Chrome checks
+pass all 16 current routes in desktop and mobile layouts, shared table equality,
+image decoding, navigation, no document overflow, stable/preview banners and no
+page errors. Inspected renders retain honest physical/simulation captions.
+No website main push, deployment or product runtime change occurred; original
+documentation acceptance stays open for final release copy and publication.
+Next: audit the construction checkboxes against current source/test evidence,
+then remaining actual OS/LAN, installed-client/physical acceptance, fresh main
+reconciliation and final review/CI/audit/merge. Keep the single PR #21 draft;
+no intermediate CI waiting.
+
+Previous increment: external native ASCOM conformance and standards review. The
 existing simulation-only runner now publishes private production COM exports
 for x86/x64 servers, preserving the same configuration, host, simulation controls,
 full validator tests and raw failure criteria. Temporary per-user aliases allow

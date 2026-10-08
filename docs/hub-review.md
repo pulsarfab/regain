@@ -3,6 +3,62 @@
 This records local review and tests for the single hub PR. Passing a foundation
 test does not imply that a frontend, transport, or hardware gate has passed.
 
+## 2026-10-07: stable website hardware and release alignment
+
+Companion website commit
+[`57dff44f7b6d96a95c8a241311c735b81c71bc3c`](https://github.com/pulsarfab/pulsarfab-www/commit/57dff44f7b6d96a95c8a241311c735b81c71bc3c)
+is pushed only to `codex/regain-hub-docs`. Reviewed stable copy against tag
+v0.5.11.0's README, Falcon guide, ASI585MM Pro/ASI662MC guides, camera settings and
+CLI. Shared camera data now generates both support tables plus the capture-limit
+table. Added ASI662MC/ASI585MM Pro/Duo sensors; corrected ASI676's accepted still
+maximum from 30 to 2,000 seconds. Accepted limits do not establish a complete
+hardware matrix. The existing 600-second reread evidence remains scoped to the
+two tested models. No ASI585MC direct support, controllable ASI585MM heater,
+video-frame rereads or new NINA/ASCOM/Alpaca video controls are claimed.
+
+Added the scoped Falcon V2 guide and existing physical screenshot, with the
+shared Pegasus COM server, independent client leases, dynamic Alpaca rotator
+slots and origin/multi-turn semantics. Overview, NINA, ASCOM, Alpaca and hardware
+guides now agree. ETA's pending movement validation and Linux/macOS physical
+limits remain. Existing historical and simulation captions remain honest.
+Generator-owned navigation/metadata/footer/release blocks were regenerated,
+including the sitemap; `/docs/` remains the multi-product index.
+
+Release verification retained under `artifacts/site-release-0-5-11/`:
+
+- Downloaded GitHub plugin ZIP SHA-256
+  `AF37ACF677E197642079A144631EA229EE7CE51F5CDD9ED7EF542AE59AE6C49C`
+  matches both the release manifest and live NINA feed entry, including URL and
+  plugin GUID. The downloaded ASCOM installer signature is Valid, signer
+  StackFoundry LLC. `verified.json` retains the signer, checksum and feed entry.
+- Stable release banners now identify 0.5.11.0. The Hub page keeps its distinct
+  unreleased 0.6 banner. Windows instructions explicitly state that public
+  0.5.11 packages predate the static CRT fix merged into main/release/0.5; source
+  builds at tag 0.5.11 still need that runtime. The Microsoft prerequisite link
+  targets the official current v14 redistributable guide.
+
+Local validation:
+
+- `npm run build` and `npm run check` pass in `hub-site-stable-build.log` and
+  `hub-site-stable-check.log`: generated freshness plus local links, fragments,
+  images, IDs and landmarks across 27 HTML pages.
+- `artifacts/hub-site-stable-render.cjs` passes all 16 current routes at desktop
+  and mobile sizes (32 page checks) in `hub-site-stable-browser.log`. It checks
+  release boundaries, shared support-table equality, all six direct rows,
+  ASI676's accepted limit, successful image decode, current navigation,
+  collapsed mobile navigation, no document overflow and no page errors.
+- Six full-page captures cover hardware, Falcon and Hub in both layouts.
+  Inspected Falcon desktop and hardware/Hub mobile renders; the actual physical
+  Falcon screenshot was also inspected before reuse. Both repositories pass
+  whitespace checks. Review corrected two new chooser sentences before commit.
+
+No product logic changed; no broad Rust/.NET rebuild or CI waiting was needed.
+No attached device was opened. The earlier question about camera availability
+remains unanswered, so active ASIStudio equipment was left alone. Website main
+was not pushed or deployed. Final release copy/publication, construction audit,
+actual OS/LAN/installed-client/physical acceptance, main reconciliation and final
+review/CI/audit/merge remain required.
+
 ## 2026-10-07: external native COM conformance and standards review
 
 Extended the existing ConformU runner rather than creating another device host or
