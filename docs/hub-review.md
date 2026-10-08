@@ -3,6 +3,21 @@
 This records local review and tests for the single hub PR. Passing a foundation
 test does not imply that a frontend, transport, or hardware gate has passed.
 
+## 2026-10-07: main integration and standalone Windows runtime
+
+Merged main through `475d817`, incorporating PR #22's estimated continuous-frame
+timing and PR #24's Windows static CRT linkage. The runtime fix is also merged
+into `release/0.5` as PR #25. The independent runtime worktree records optimized
+worker import inspection, simulator checks, MSRV checks, packaging and negative
+tests that reject the previous dynamically linked workers before archive writes.
+
+Resolved the workflow conflict by retaining hub schema/browser checks alongside
+the runtime gate. Resolved ASCOM staging by copying the complete private worker
+tree before auditing every staged EXE/DLL. Reviewed both resolutions; local
+ZWO library tests pass (99), all seven runtime-gate tests pass, all four changed
+PowerShell scripts parse, and whitespace checks pass. This integration does not
+claim a fresh full hub/package acceptance run or close any final merge gate.
+
 ## 2026-10-07: failure-only proxy camera preflight diagnostics
 
 The pixels-fault case in push Windows job 112872018908 fails during MaxBinY

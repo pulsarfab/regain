@@ -15,6 +15,8 @@ try {
     $stage = Join-Path $out 'stage'
     if ($PackageOnly) {
         if (!(Test-Path -LiteralPath $stage)) { throw 'Run build.ps1 -StageOnly first.' }
+        python scripts/check-windows-runtime.py $stage
+        if ($LASTEXITCODE) { throw 'Windows payload requires an unbundled VC++ runtime' }
     } else {
     cargo build --release --locked
     if ($LASTEXITCODE) { throw 'Rust build failed' }
@@ -63,6 +65,8 @@ try {
     }
     $rustRoot = rustc --print sysroot
     Copy-Item -LiteralPath (Join-Path $rustRoot 'share/doc/rust/COPYRIGHT-library.html') -Destination (Join-Path $licenses 'Rust-Standard-Library.html')
+    python scripts/check-windows-runtime.py $stage
+    if ($LASTEXITCODE) { throw 'Windows payload requires an unbundled VC++ runtime' }
     if ($StageOnly) { Write-Output "Staged: $stage"; return }
     }
     $archiveName = "Regain-$version.zip"

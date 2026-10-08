@@ -123,6 +123,8 @@ jobs:
         with:
           node-version: '22'
       - run: node scripts/test-hub-config.mjs
+      - name: Test Windows runtime dependency gate
+        run: python -m unittest discover -s scripts -p test_windows_runtime.py
       - name: Test release branch and tag validation
         run: ./scripts/test-release-ref.ps1
         shell: pwsh

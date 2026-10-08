@@ -32,6 +32,8 @@ try {
     # Refresh the complete private worker tree after release signing, including
     # architecture-specific JSON/runtime dependencies and license texts.
     Copy-Item -LiteralPath (Join-Path $plugin 'hub-ascom') -Destination $stage -Recurse -Force
+    python scripts/check-windows-runtime.py $stage
+    if ($LASTEXITCODE) { throw 'ASCOM payload requires an unbundled VC++ runtime' }
     if ($StageOnly) { Write-Output "Staged: $stage"; return }
     $archive = Join-Path $repo "artifacts/Regain-ASCOM-$version-win-x64.zip"
     Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $archive -Force

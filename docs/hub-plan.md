@@ -13,6 +13,13 @@ increments. Push those increments to the same draft PR without waiting for slow
 CI between steps. Final CI, review and the original acceptance/completion audit
 remain merge gates.
 
+Upstream integration: merged main through `475d817`, including estimated camera
+exposure timing and the Windows static CRT fix already shipped to main and
+`release/0.5`. Preserved hub schema/browser checks and audit the complete private
+ASCOM worker tree before packaging. Local ZWO library tests (99), seven runtime
+gate cases, PowerShell parsing and whitespace checks pass. This does not close
+the final main reconciliation or acceptance gates.
+
 Current increment: identity-pinned Alpaca catalog adoption. Shared native/web
 setup adds a selected supported device to the draft using generated defaults and
 the successful query's endpoint, class, number, unique ID and credential reference.

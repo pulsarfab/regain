@@ -18,6 +18,8 @@ PulsarFab regain is independent software and is not affiliated with or supported
 On Windows, extract the `Regain-ASCOM-...-win-x64.zip` release asset. On Linux or
 macOS, extract the matching `regain-rust-*` artifact. Keep the server, workers,
 and SDK library together. The server and workers need no .NET installation.
+Windows release workers include their C runtime through static linking, so they
+also need no separate Visual C++ Redistributable installation.
 
 ```sh
 ./regain-alpaca --port 11111
