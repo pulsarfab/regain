@@ -3,8 +3,33 @@
 Regain Hub combines source devices into shared Switch, SafetyMonitor,
 ObservingConditions, Focuser, Rotator, FilterWheel, CoverCalibrator and Camera outputs. The development branch publishes those
 outputs through Alpaca, native NINA providers and native ASCOM. Their setup uses
-the shared configuration. Broader proxy devices and acceptance remain in progress;
-this is not a released feature.
+the shared configuration. This is the 0.6 preview; published 0.5 packages do not
+include it. External conformance, installed-client and physical acceptance remain
+on the [hub plan](hub-plan.md).
+
+## What do you want to do?
+
+| Task | Configure |
+| --- | --- |
+| Combine gauges and switches | A Switch output with explicit source/channel mappings, labels and units |
+| Require several monitors to agree it is safe | A SafetyMonitor output with freshness, confirmations and a recovery hold |
+| Combine weather instruments | An ObservingConditions output with source priorities and fallbacks per metric |
+| Share a camera, focuser, rotator, wheel or flat panel | Several Proxy outputs referencing one source ID |
+| Use an installed Windows ASCOM driver from Alpaca | A COM source with the driver's ProgID and bitness, then an output of the same class |
+| Capture with several cameras or move several focusers | An explicit camera or focuser group, invoked from NINA's Regain sequence items |
+
+The native NINA providers use private local IPC; they do not need an ASCOM output
+or an HTTP server. ASCOM and Alpaca can publish the same saved outputs. Each
+frontend uses the host's parameter definitions and validation. Shared connections
+do not imply simultaneous captures or motion; groups are explicit operations
+with per-member outcomes. Camera proxies retain upstream capabilities, while
+native Regain cameras use the existing SDK/direct recovery engine.
+
+Start with the [simulated editor walkthrough](#try-the-editor), or create an
+empty file using the initialization command below. Find sources, add the outputs
+you need, then review and apply. Connecting an output acquires its source leases.
+
+## Save or transfer configuration
 
 To save settings, open **Import / export** in native setup or **Import or export
 configuration** in web setup, then choose **Export saved configuration**. This
@@ -74,6 +99,8 @@ Representable scalar pixels become UInt16 or Int32 NINA images; fractional,
 out-of-range and multi-plane frames fail explicitly. ASCOM/Alpaca retain their
 broader numeric and image layouts. Camera proxy sources do not acquire native
 same-frame download recovery just by being republished.
+
+## Try the editor
 
 To try the editor without equipment, copy
 [`simulated-observatory.json`](../crates/regain-hub/examples/simulated-observatory.json)
@@ -163,9 +190,13 @@ Pinned sources require a working management catalog within their scalar request
 budget, so account for the extra catalog query when choosing polling settings.
 
 Network search and native/COM catalogs are available in this development preview.
-Configuration import/export remains on the implementation plan.
+Configuration import/export uses the shared workflow described above.
 
 ![Native Alpaca catalog discovery with a private simulated camera and unsupported mount](images/hub-native-discovery-simulation.png)
+
+This render uses a private management-only peer. The test verifies string IDs,
+unsupported classes, draft-only adoption, unchanged saved configuration and zero
+equipment leases.
 
 ### Find native devices and installed ASCOM drivers
 
@@ -202,10 +233,6 @@ shared by source ID rather than added twice.
 
 This render uses the production EAF simulator. Direct camera simulation lists
 alternative models with one simulated serial; select one model per source.
-
-This render uses a private management-only peer. The test verifies string IDs,
-unsupported classes, draft-only adoption, unchanged saved configuration and zero
-equipment leases.
 
 1. Expand a source or output to edit its fields. Available choices and parameter
    descriptions come from the host. Saved IDs and device numbers stay fixed.
@@ -261,7 +288,7 @@ not real-device acceptance. Interactive acceptance and
 conformance remain on
 the [hub plan](hub-plan.md).
 
-The current preview offers Switch v3, SafetyMonitor v3 and ObservingConditions v2
+The scalar outputs offer Switch v3, SafetyMonitor v3 and ObservingConditions v2
 with nonblocking Connect/Disconnect and Connecting. Legacy Connected also works.
 DeviceState reads cached operational values and omits unavailable Switch/Weather
 readings; it never makes stale measurements fresh. Switch channels report
@@ -292,7 +319,8 @@ This is the actual WPF selector in a private automated fixture. The production
 executable created an empty file; the fixture discarded its reply to verify the
 reconciliation flow. No equipment was activated by creation or file reading.
 
-The plugin exports Switch, SafetyMonitor and Weather choices using NINA's
+The plugin exports Camera, Focuser, Rotator, FilterWheel, Flat Device (the
+CoverCalibrator output), Switch, SafetyMonitor and Weather choices using NINA's
 3.2.0.9001 interfaces. Each class includes a **configure** choice. Open its setup,
 browse to the saved hub configuration, select **Load hub outputs**, then save the
 desired output. Rescan equipment to see all saved choices, or connect the chosen
@@ -391,8 +419,7 @@ diagnostics** in native setup, saves the completed observation with its time and
 revision plus public host status from Reload. Native exports can also include
 the last source observation. Editable configuration and credentials are excluded.
 Exporting does not refresh data; Reload clears the previous output observation.
-Actual next-retry scheduling will be added separately; no countdown is inferred
-from configured polling or backoff.
+Scheduled waits describe the host's observation time, not a live countdown.
 
 ![Native cached safety diagnostics during simulation](images/hub-native-output-diagnostics.png)
 
@@ -476,7 +503,7 @@ conformance and real-device acceptance remain pending before release.
 Open **Hub outputs setup** in the Regain ASCOM Start menu group, or run the
 installed `Regain.ASCOM.Register.exe /hubsetup`. The manager reads saved choices
 and machine registration inventory without attaching to the host or equipment.
-Choose a Switch, SafetyMonitor, ObservingConditions or Focuser output using the same
+Choose a saved output of any of the eight supported classes using the same
 selector and configuration editor as native NINA. Loading outputs and editing
 configuration explicitly attach to the local host without equipment leases.
 

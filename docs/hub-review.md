@@ -3,6 +3,52 @@
 This records local review and tests for the single hub PR. Passing a foundation
 test does not imply that a frontend, transport, or hardware gate has passed.
 
+## 2026-10-07: hub documentation and separate website preview
+
+Reviewed README, architecture, setup and CLI help against the eight NINA
+providers, supported source factories and shared host. Replaced stale scalar-only
+lists and claims that import/export or retry scheduling were unfinished. Moved
+the private Alpaca catalog caption back to its own screenshot. The overview now
+explains switch/safety/weather composition, Windows ASCOM republishing, direct
+NINA attachment, shared camera ownership and explicit groups. Proxy cameras do
+not gain native rereads; standalone 0.5 integrations and the 0.6 preview remain
+distinct. The runtime note no longer implies that already-published 0.5.11.0
+packages contain the subsequently merged static CRT fix.
+
+Prepared the website in its own repository branch `codex/regain-hub-docs`, commit
+`b2804191299878554ecd933fff474cf1351e44b3`. The hub guide stays under
+`/docs/regain/`; shared navigation, page links, metadata and sitemap are generated.
+Per-page preview metadata gives it an explicit unreleased banner while preserving
+the stable guides' release banner. The guide includes setup, supported classes,
+connection ownership, groups, transfer and recovery, plus two existing labeled
+simulation captures from f40cd86. Overview/NINA/Alpaca guides link to the preview.
+No website main push, deployment, release-version bump or new code PR occurred.
+The older stable hardware guides still need alignment with later 0.5 releases.
+
+Local validation:
+
+- `cargo run --locked -j 2 -p regain-alpaca -- --help` passes and prints the
+  corrected publication description (`artifacts/hub-docs-cli-help.log`). This
+  exits before constructing a host or opening equipment.
+- `artifacts/hub-docs-links.py` checks 91 local Markdown links, images and
+  fragments across the three edited guides (`hub-docs-links.log`).
+- Website `npm run build` and `npm run check` pass, including freshness and
+  local links, fragments, images, IDs and landmarks across 26 HTML pages
+  (`hub-docs-site-build.log`, `hub-docs-site-check.log`).
+- `artifacts/hub-docs-render.cjs` serves only the local clone and checks actual
+  Chrome desktop/mobile layouts, both images, no document overflow, collapsed
+  mobile navigation, the separate release banners, overview navigation and
+  no page errors (`hub-docs-browser.log`). Both full-page captures are inspected.
+- Both repositories pass `git diff --check`. No runtime logic or hardware
+  commands changed; no broad Rust/.NET regression rerun was warranted.
+
+Retain the initial browser assertion in `hub-docs-browser-initial.log`: it read
+lazy image completion before scrolling the images into view. The final fixture
+scrolls and waits for successful decode; it does not remove the image assertion.
+Source review also corrected the new page to use the site's existing `docs-wrap`
+layout before the accepted renders. All original acceptance/final gates remain
+open; no CI waiting was introduced.
+
 ## 2026-10-07: shared standalone camera recovery metadata
 
 Completed the remaining configuration migration from the earlier core/hub

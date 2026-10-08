@@ -1,7 +1,46 @@
 # Architecture and protocol
 
-The [Regain Hub plan](hub-plan.md) and [hub contracts](hub-contract.md) track
-multi-source devices and shared frontend configuration under development.
+The 0.6 development branch adds a shared hub alongside the standalone device
+integrations. The [Regain Hub plan](hub-plan.md) tracks remaining acceptance;
+[hub contracts](hub-contract.md) define its configuration and IPC.
+
+## Shared hub (0.6 preview)
+
+```text
+Native Regain workers / Alpaca / Windows ASCOM / virtual outputs
+                              |
+                    regain-hub source actors
+              shared leases, caches and command ownership
+                              |
+           configured virtual devices and explicit groups
+                              |
+           native NINA / native ASCOM / Alpaca HTTP
+```
+
+`regain-hub` owns configuration, source lifetimes, freshness, recovery fences and
+output identities. `regain-alpaca` hosts it; `--hub-host` runs the shared local
+host without an HTTP listener. NINA and ASCOM attach over private IPC. HTTP
+publication attaches to that same host, so multiple frontends reuse one source
+actor rather than opening competing device connections.
+
+The eight output classes are Camera, Focuser, Rotator, FilterWheel,
+CoverCalibrator, Switch, SafetyMonitor and ObservingConditions. Switch channels,
+safety policies and weather metrics can combine sources; typed device proxies
+preserve their source's capabilities. Focuser and camera groups coordinate
+explicit operations and report per-member results rather than promising atomic
+hardware action. Camera outputs share acquisition ownership and immutable images.
+
+Native sources reuse the existing vendor workers and camera core. Windows COM
+sources run in bounded, isolated x86/x64 helpers. Alpaca sources use bounded
+network transport. Source generations and suspend/resume fences withdraw old
+observations; uncertain commands require reconciliation and are never replayed.
+Republishing an upstream camera does not add native same-frame reread support.
+
+One generated parameter contract supplies labels, defaults, limits and descriptions
+to the native and browser editors. Discovery creates reviewed drafts; saving a
+configuration does not connect equipment. See [Hub setup](hub-setup.md).
+
+## Standalone devices
 
 ```text
 NINA / ASCOM / Alpaca
@@ -27,6 +66,7 @@ NINA / ASCOM / Alpaca
 | `regain-transport` | Serial candidate enumeration, explicit port settings and bounded frame reads |
 | `regain-worker` | Bounded accessory JSON-line input, reply envelopes and polling loop |
 | `regain-core` | Camera sessions, capture recovery and child-process ownership |
+| `regain-hub` | Shared sources, virtual devices, coordination, configuration and local IPC |
 | `regain-device` | One hardware worker executable; dispatch only |
 | `regain-alpaca` | Universal Alpaca server and native camera supervisor frontends |
 
@@ -60,9 +100,11 @@ cargo build --workspace --release --locked
 ./target/release/regain-device wanderer eta serve --serial SIMULATION --simulate
 ```
 
-Each device session still has its own process and private pipes. Sharing an
-executable does not share serial ports between frontends; native ASCOM retains
-its existing per-device connection leases. Camera recovery can replace a failed
+Each standalone device session still has its own process and private pipes.
+Standalone native ASCOM retains its per-device connection leases; direct NINA
+and standalone Alpaca sessions need exclusive access. The hub shares sources
+across its frontends through the common host described above.
+Camera recovery can replace a failed
 worker without restarting other devices. `regain-alpaca` remains the network
 server; `regain-camera` remains the local ASCOM camera supervisor.
 

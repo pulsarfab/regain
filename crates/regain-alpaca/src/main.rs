@@ -25,7 +25,7 @@ async fn main() -> Result<()> {
                 "  --hub-attach --hub-config ABSOLUTE_PATH\n                      Start/find the shared hub and print endpoint JSON"
             );
             println!(
-                "  --hub-config ABSOLUTE_PATH\n                      Publish shared hub Switch, SafetyMonitor and Weather over HTTP"
+                "  --hub-config ABSOLUTE_PATH\n                      Publish configured shared hub devices over HTTP"
             );
             return Ok(());
         }

@@ -20,7 +20,35 @@ ASCOM worker tree before packaging. Local ZWO library tests (99), seven runtime
 gate cases, PowerShell parsing and whitespace checks pass. This does not close
 the final main reconciliation or acceptance gates.
 
-Current increment: shared camera recovery metadata. Standalone NINA and native
+Current increment: hub documentation and preview boundaries. README and
+architecture now describe the eight-class shared host, native NINA/private IPC,
+Windows COM import, source sharing, scalar composition and explicit groups.
+The setup guide corrects the old scalar-only provider/registration lists,
+import/export status, polling diagnostics and misplaced discovery caption.
+Rebuilt CLI help describes all configured hub devices. Local link checks cover
+91 links/images/fragments; the actual executable's help passes.
+
+Website preview work is committed and pushed at
+[`pulsarfab-www` b280419](https://github.com/pulsarfab/pulsarfab-www/commit/b2804191299878554ecd933fff474cf1351e44b3)
+on `codex/regain-hub-docs`, without publishing main. Generated navigation adds
+`/docs/regain/hub.html`; its per-page development banner cannot be confused with
+the stable 0.5 guides. Setup, input/output coverage, use cases, groups, recovery
+and labeled simulation screenshots match the implementation. Generator/freshness
+and all 26 HTML link checks pass. Actual Chrome desktop/mobile renders, image
+loads, navigation, overflow, preview/stable banner distinction and console checks
+pass; both renders are inspected. This is a companion website branch, not a
+second code PR or a live-site update.
+
+Review also makes the Windows runtime release boundary explicit: current source
+contains the static CRT fix; published 0.5.11.0 downloads predate it. No product
+behavior changed in this increment. Keep the documentation checklist open until
+the website's older stable hardware/mode guides are reconciled, preview copy is
+updated for the final release state and the site is published at the appropriate
+gate. Next: conformance reconciliation, actual OS/LAN/installed-client/physical
+acceptance, remaining stable site alignment, main reconciliation and original
+final review/CI/audit/merge. Keep PR #21 draft; no intermediate CI waiting.
+
+Previous increment: shared camera recovery metadata. Standalone NINA and native
 ASCOM use one generated form; Alpaca uses the same live core schema and server
 platform. The generated managed options retain the existing public/file format,
 defaults and ranges. Editors now accept the core's full positive timeout range,
