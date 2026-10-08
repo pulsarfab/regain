@@ -31,6 +31,8 @@ httpdate = "1"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 sha2 = "0.10"
 zeroize = "1"
+if-addrs = "0.15.0"
+socket2 = "0.6"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

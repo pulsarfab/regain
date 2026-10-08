@@ -13,6 +13,29 @@ public sealed partial class HubConfigurationWindow
         discoveryPanel.Children.Clear();
         var description = session!.DiscoveryDescription;
         var parameters = description.GetProperty("parameters");
+        var network = session.NetworkDiscoveryDescription;
+        discoveryPanel.Children.Add(Text(network.GetProperty("label").GetString()!, 22));
+        discoveryPanel.Children.Add(Text(network.GetProperty("description").GetString()!));
+        var search = CredentialButton("Find Alpaca servers"); discoveryPanel.Children.Add(search);
+        var candidates = new ComboBox { Margin = new Thickness(4), Tag = "network-discovery-selection" }; discoveryPanel.Children.Add(candidates);
+        var choose = CredentialButton("Use selected server address"); choose.IsEnabled = false; discoveryPanel.Children.Add(choose);
+        var searchStatus = Text(""); discoveryPanel.Children.Add(searchStatus);
+        candidates.SelectionChanged += (_, _) => choose.IsEnabled = candidates.SelectedItem is ComboBoxItem item && item.IsEnabled;
+        search.Click += async (_, _) => await Run(async () => {
+            candidates.Items.Clear(); choose.IsEnabled = false; searchStatus.Text = "";
+            var found = await session.SearchAlpacaAsync(lifetime.Token);
+            foreach (var server in found.GetProperty("servers").EnumerateArray()) {
+                var url = server.GetProperty("baseUrl"); var reason = server.GetProperty("unavailableReason");
+                candidates.Items.Add(new ComboBoxItem { IsEnabled = url.ValueKind == JsonValueKind.String,
+                    Tag = url.ValueKind == JsonValueKind.String ? url.GetString() : "",
+                    Content = url.ValueKind == JsonValueKind.String ? url.GetString() :
+                        "[" + server.GetProperty("address").GetString() + "%" + server.GetProperty("scopeId").GetUInt32() + "]:" + server.GetProperty("port").GetUInt16() + " — " +
+                        network.GetProperty("unavailableReasons").GetProperty(reason.GetString()!).GetString() });
+            }
+            searchStatus.Text = found.GetProperty("servers").GetArrayLength() + " server candidates. " +
+                (found.GetProperty("incomplete").GetBoolean() ? "Search was incomplete; an interface failed or a limit was reached. " : "") +
+                "No catalog was read and no equipment connection was opened.";
+        });
         discoveryPanel.Children.Add(Text("Find devices on an Alpaca server", 22));
         discoveryPanel.Children.Add(Text("Read the server's device catalog without connecting equipment. Select a supported device to add a source to your draft, then review its settings and apply."));
         var url = parameters.GetProperty("baseUrl");
@@ -31,6 +54,13 @@ public sealed partial class HubConfigurationWindow
         var selection = new ComboBox { Margin = new Thickness(4), Tag = "discovery-selection" }; discoveryPanel.Children.Add(selection);
         var add = CredentialButton("Add selected source to draft"); add.IsEnabled = false; discoveryPanel.Children.Add(add);
         selection.SelectionChanged += (_, _) => add.IsEnabled = selection.SelectedItem is ComboBoxItem item && item.IsEnabled;
+        choose.Click += (_, _) => {
+            if (candidates.SelectedItem is not ComboBoxItem item || !item.IsEnabled) return;
+            discoveryUrl!.Text = (string)item.Tag;
+            discoveryCredential!.Clear();
+            result.Clear(); selection.Items.Clear(); add.IsEnabled = false;
+            status.Text = "Server address selected. Choose a credential reference if needed, then read its catalog.";
+        };
         add.Click += async (_, _) => await Run(() => {
             if (selection.SelectedItem is not ComboBoxItem item || !item.IsEnabled) throw new InvalidOperationException("Select a supported catalog entry");
             var id = session!.AddDiscoveredAlpacaSource((int)item.Tag);

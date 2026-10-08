@@ -59,6 +59,7 @@ internal static class HubDiscoveryFixture
     {
         using var server = new HubCatalogServer();
         await editor.ReloadAsync();
+        await NetworkReply(editor.Description!.Value, editor.SavedConfiguration!.Value);
         var before = editor.SavedConfiguration!.Value.GetRawText();
         Check(await editor.ReviewAsync(), "Private configuration did not review");
         foreach (var invalid in new[] { "file:///secret", "http://user:secret@localhost/", "http://localhost/?secret", "http://localhost/#secret" }) {
@@ -97,5 +98,33 @@ internal static class HubDiscoveryFixture
         Check(pinnedStatus.GetProperty("leaseCount").GetInt32() == 0 && !pinnedStatus.GetProperty("transportConnected").GetBoolean() && server.Requests.Count == 1,
             "Review/apply of a pinned source contacted equipment");
         await editor.ReloadAsync(); Check(editor.LastDiscovery is null, "Reload retained stale catalog");
+    }
+    // Run in both .NET 8 and real net48 x86/x64 clients without broadcasting
+    // on the user's LAN. Exercise IP canonicalization and zone preservation.
+    private static async Task NetworkReply(JsonElement description, JsonElement saved)
+    {
+        var revision=saved.GetProperty("revision").GetGuid(); var queries=0;
+        using var search=new HubEditorSession(saved.GetProperty("instanceId").GetGuid(), (command, _) => {
+            switch (command.GetProperty("op").GetString()) {
+                case "describeConfig": return Task.FromResult(description);
+                case "getConfig": return Task.FromResult(saved);
+                case "hostStatus": return Task.FromResult(JsonSerializer.SerializeToElement(new {phase="ready",configurationRevision=revision}));
+                case "searchAlpaca":
+                    queries++; Check(command.EnumerateObject().Count()==2 && command.GetProperty("expectedRevision").GetGuid()==revision,"Search changed its inputs");
+                    return Task.FromResult(JsonSerializer.SerializeToElement(new {
+                        configurationRevision=revision,interfacesTried=3,interfacesFailed=0,ignoredDatagrams=0,incomplete=false,
+                        servers=new object[] {
+                            new {address="192.0.2.3",scopeId=0,port=80,baseUrl="http://192.0.2.3:80",unavailableReason=(string?)null},
+                            new {address="2001:db8::42",scopeId=0,port=11111,baseUrl="http://[2001:db8::42]:11111",unavailableReason=(string?)null},
+                            new {address="fe80::42",scopeId=7,port=11111,baseUrl=(string?)null,unavailableReason="scopedIpv6RequiresTransportSupport"},
+                            new {address="::c000:203",scopeId=0,port=1,baseUrl="http://[::c000:203]:1",unavailableReason=(string?)null}
+                        }
+                    }));
+                default: throw new InvalidOperationException("Network search performed other I/O");
+            }
+        },()=>{});
+        await search.ReloadAsync(); var result=await search.SearchAlpacaAsync();
+        Check(queries==1 && !search.Draft!.Dirty && search.LastDiscovery is null,"Network search changed configuration or read a catalog");
+        Check(result.GetProperty("servers")[2].GetProperty("scopeId").GetUInt32()==7 && result.GetProperty("servers")[2].GetProperty("baseUrl").ValueKind==JsonValueKind.Null,"Network search erased an IPv6 zone");
     }
 }

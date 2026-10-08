@@ -14,6 +14,8 @@ public sealed partial class HubNativeTests
     public async Task NativeDiscoveryUsesRealPrivateIpcWithoutOpeningSourcesOrChangingReview()
     {
         await using var host = await Host.Open(); using var editor = await Editor(host);
+        var stale = await Assert.ThrowsAsync<HubException>(() => host.Command(new { op = "searchAlpaca", expectedRevision = Guid.Empty }));
+        Assert.Equal("invalidValue", stale.Remote?.Code);
         await HubDiscoveryFixture.Run(editor);
     }
     [Theory]
@@ -79,6 +81,9 @@ public sealed partial class HubNativeTests
                 await UiUntil(() => review.IsEnabled);
                 var tabs = Controls<TabControl>(window).Single();
                 tabs.SelectedItem = tabs.Items.Cast<TabItem>().Single(tab => (string)tab.Header == "Discover devices");
+                Assert.Single(Controls<Button>(window), b => (string)b.Content == "Find Alpaca servers");
+                Assert.False(Controls<Button>(window).Single(b => (string)b.Content == "Use selected server address").IsEnabled);
+                await Capture(window, "hub-native-network-search-simulation.png");
                 Controls<TextBox>(window).Single(box => (string?)box.Tag == "discovery-url").Text = server.Url;
                 var query = Controls<Button>(window).Single(b => (string)b.Content == "Read Alpaca device catalog");
                 query.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));

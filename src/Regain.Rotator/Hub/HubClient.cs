@@ -77,7 +77,7 @@ public sealed partial class HubClient : IDisposable
     private sealed class Connection
     {
         private static readonly string[] knownOperations = ["startCameraGroup", "cameraGroupStatus", "cancelCameraGroup", "startFocuserGroup", "focuserGroupStatus", "cancelFocuserGroup", "cameraTiming", "cameraCaptureTiming", "cameraControl", "describeConfig", "getConfig", "validateConfig", "applyConfig",
-            "listDevices", "sourceStatus", "outputStatus", "hostStatus", "inspectSource", "discoverAlpaca", "updateSimulation", "createCredential",
+            "listDevices", "sourceStatus", "outputStatus", "hostStatus", "inspectSource", "discoverAlpaca", "searchAlpaca", "updateSimulation", "createCredential",
             "credentialStatus", "deleteCredential", "connect", "disconnect", "changeConnection", "get", "put"];
         private readonly object gate = new();
         private readonly Stream stream;

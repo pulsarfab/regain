@@ -79,3 +79,45 @@ export function catalogSummary(catalog) {
   if (!catalog.devices.length) return 'The server reports no configured devices.';
   return catalog.devices.map(device=>`${device.name} — ${device.reportedDeviceType} ${device.number}\nID: ${device.uniqueId}${device.supportedDeviceType===null?'\nThis device class is not supported by Regain Hub.':''}`).join('\n\n');
 }
+
+export class AlpacaNetworkDiscovery {
+  constructor(rpc) { this.rpc=rpc; this.busy=false; this.uncertain=false; this.result=null; }
+  load(description,saved) {
+    if (this.busy) invalid('A network search is still pending');
+    this.description=description.discovery.network; this.revision=saved.revision; this.result=null; this.uncertain=false;
+    const d=this.description;
+    if (['opensSource','writesEquipment','persistsConfiguration','readsCatalog','usesCredentials'].some(key=>d[key]!==false) ||
+        !Number.isInteger(d.timeoutSeconds) || d.timeoutSeconds<1 || d.timeoutSeconds>300) throw new Error('Invalid network discovery description');
+  }
+  async search() {
+    if (this.busy || this.uncertain || !this.description) invalid('Reload before searching for servers');
+    this.busy=true; this.result=null; const d=this.description;
+    try {
+      const result=await this.rpc({op:d.operation,expectedRevision:this.revision},undefined,d.timeoutSeconds+5);
+      try {
+        validateDiagnosticSchema(d.responseSchema,result);
+        if (result.configurationRevision!==this.revision || result.interfacesFailed>result.interfacesTried ||
+            result.interfacesFailed && !result.incomplete) throw new Error();
+        const endpoints=new Set();
+        for (const server of result.servers) {
+          const {address,scopeId,port,baseUrl,unavailableReason}=server, ipv6=address.includes(':');
+          const authority=ipv6?`[${address}]`:address, parsed=new URL(`http://${authority}:${port}`);
+          if (address.includes('%') || parsed.hostname!==authority || address==='::' || /^::ffff:/i.test(address) ||
+              (ipv6?parseInt(address.split(':')[0],16)>=0xff00:!/^\d+\.\d+\.\d+\.\d+$/.test(address) ||
+                Number(address.split('.')[0])===0 || Number(address.split('.')[0])>=224 && Number(address.split('.')[0])<=239 || address==='255.255.255.255')) throw new Error();
+          const linkLocal=ipv6 && parseInt(address.split(':')[0],16)>=0xfe80 && parseInt(address.split(':')[0],16)<=0xfebf;
+          if (linkLocal ? scopeId===0 || baseUrl!==null || unavailableReason!=='scopedIpv6RequiresTransportSupport' :
+              scopeId!==0 || unavailableReason!==null || baseUrl!==`http://${authority}:${port}`) throw new Error();
+          const key=`${address}%${scopeId}:${port}`;
+          if (endpoints.has(key)) throw new Error(); endpoints.add(key);
+        }
+      } catch { throw new Error('Invalid Alpaca network search response'); }
+      this.result=structuredClone(result); return structuredClone(result);
+    } catch (error) {
+      if (!error.detail || ['revisionConflict','disconnected','invalidValue'].includes(error.detail.code)) {
+        this.uncertain=true; error.uncertain=true;
+      }
+      throw error;
+    } finally { this.busy=false; }
+  }
+}

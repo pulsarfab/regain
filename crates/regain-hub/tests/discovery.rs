@@ -279,6 +279,10 @@ async fn discovery_is_bounded_and_revision_fenced_without_blocking_configuration
     let gate = Arc::new(Semaphore::new(0));
     let (server, entered) = Server::open(200, body(json!([])), Some(gate.clone())).await;
     assert_eq!(
+        service.search_alpaca(Uuid::nil()).await.unwrap_err().kind,
+        ErrorKind::InvalidValue
+    );
+    assert_eq!(
         service
             .discover_alpaca(server.url.clone(), None, Uuid::new_v4())
             .await
@@ -296,6 +300,12 @@ async fn discovery_is_bounded_and_revision_fenced_without_blocking_configuration
         }));
     }
     wait_count(&entered, 4).await;
+    // UDP and HTTP discovery share admission. This rejects before interface
+    // enumeration or any network broadcast; the fixture only uses loopback HTTP.
+    assert_eq!(
+        service.search_alpaca(revision).await.unwrap_err().kind,
+        ErrorKind::Busy
+    );
     assert_eq!(
         service
             .discover_alpaca(server.url.clone(), None, revision)

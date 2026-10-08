@@ -91,6 +91,7 @@ impl Publisher {
                 | Command::OutputStatus { .. }
                 | Command::InspectSource { .. }
                 | Command::DiscoverAlpaca { .. }
+                | Command::SearchAlpaca { .. }
                 | Command::ValidateConfig { .. }
                 | Command::ApplyConfig { .. }
                 | Command::UpdateSimulation { .. }

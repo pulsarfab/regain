@@ -28,6 +28,7 @@ use uuid::Uuid;
 
 pub const MAX_RESPONSE_BYTES: usize = 1024 * 1024;
 pub mod discovery;
+pub mod network_discovery;
 use crate::sampling::PropertyPoll;
 pub use crate::sampling::{SampleRequest, SampleType};
 

@@ -90,6 +90,13 @@ internal static class Program
             using (var discovery = await HubEditorSession.AttachAsync(args[0], args[1], attached.InstanceId, deadline.Token))
                 await HubDiscoveryFixture.Run(discovery);
             var saved = await first.RequestAsync(JsonSerializer.SerializeToElement(new { op = "getConfig" }), deadline.Token);
+            // A stale revision must reject over real IPC before any OS
+            // enumeration or UDP broadcast. Successful packets use loopback
+            // Rust fixtures; the managed parser is exercised above.
+            try {
+                await first.RequestAsync(JsonSerializer.SerializeToElement(new { op = "searchAlpaca", expectedRevision = Guid.NewGuid() }), deadline.Token);
+                throw new InvalidOperationException("Stale network search was accepted");
+            } catch (HubException error) when (error.Remote?.Code == "invalidValue") { }
             var output = saved.GetProperty("outputs")[0].GetProperty("id").GetGuid();
             var outputStatus = JsonSerializer.SerializeToElement(new { op = "outputStatus", output,
                 expectedRevision = saved.GetProperty("revision").GetGuid(), start = 0, limit = 1 });

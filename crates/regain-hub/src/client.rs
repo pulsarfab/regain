@@ -345,6 +345,7 @@ fn operation(command: &Command) -> &'static str {
         Command::CancelFocuserGroup { .. } => "cancelFocuserGroup",
         Command::GetConfig {} => "getConfig",
         Command::DiscoverAlpaca { .. } => "discoverAlpaca",
+        Command::SearchAlpaca { .. } => "searchAlpaca",
         Command::ValidateConfig { .. } => "validateConfig",
         Command::ApplyConfig { .. } => "applyConfig",
         Command::HostStatus {} => "hostStatus",

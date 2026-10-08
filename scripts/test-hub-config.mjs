@@ -5,7 +5,7 @@ import { initialValue, newIdentity, previewValue, renderConfiguration } from '..
 import { CredentialSetup, credentialContract } from '../crates/regain-alpaca/web/hub-credentials.mjs';
 import { SimulationSetup, simulationControls, validateSimulationValue, parseSimulationArray } from '../crates/regain-alpaca/web/hub-simulation.mjs';
 import { OutputDiagnostics, diagnosticSummary, validateDiagnosticSchema } from '../crates/regain-alpaca/web/hub-diagnostics.mjs';
-import { AlpacaDiscovery, catalogSummary } from '../crates/regain-alpaca/web/hub-discovery.mjs';
+import { AlpacaDiscovery, AlpacaNetworkDiscovery, catalogSummary } from '../crates/regain-alpaca/web/hub-discovery.mjs';
 
 const description = JSON.parse(readFileSync(new URL('../contracts/hub-config.json', import.meta.url), 'utf8'));
 const reader = configurationContract(description);
@@ -815,3 +815,48 @@ console.log('Catalog adoption passed: generated defaults, fixed identity/credent
   }
 }
 console.log('Catalog identity comparison preserves opaque strings and normalizes only core UUID forms.');
+
+// Server search has no URL/credential inputs and leaves device catalog reads
+// separate. Preserve IPv6 zones even when the HTTP transport cannot use them.
+{
+  const revision='11111111-1111-4111-8111-111111111111', saved={revision};
+  const good={configurationRevision:revision,interfacesTried:4,interfacesFailed:1,ignoredDatagrams:2,incomplete:true,servers:[
+    {address:'192.0.2.3',scopeId:0,port:80,baseUrl:'http://192.0.2.3:80',unavailableReason:null},
+    {address:'2001:db8::42',scopeId:0,port:11111,baseUrl:'http://[2001:db8::42]:11111',unavailableReason:null},
+    {address:'fe80::42',scopeId:7,port:11111,baseUrl:null,unavailableReason:'scopedIpv6RequiresTransportSupport'},
+    {address:'fe80::42',scopeId:8,port:11111,baseUrl:null,unavailableReason:'scopedIpv6RequiresTransportSupport'},
+    {address:'::c000:203',scopeId:0,port:1,baseUrl:'http://[::c000:203]:1',unavailableReason:null}
+  ]};
+  const requests=[], setup=new AlpacaNetworkDiscovery(async(command,path,deadline)=>{
+    requests.push(command); assert.equal(deadline,8); return structuredClone(good);
+  });
+  setup.load(description,saved); const result=await setup.search();
+  assert.deepEqual(requests,[{op:'searchAlpaca',expectedRevision:revision}]);
+  assert.equal(result.servers[2].scopeId,7); assert.equal(result.servers[3].scopeId,8);
+  result.servers.length=0; assert.equal(setup.result.servers.length,5);
+  setup.load(description,saved); assert.equal(setup.result,null);
+  for (const fault of ['revision','port','address','scope','url','reason','duplicate','extra','counts','incomplete','limit','mapped','multicast']) {
+    const reply=structuredClone(good), server=reply.servers[0];
+    if (fault==='revision') reply.configurationRevision='22222222-2222-4222-8222-222222222222';
+    if (fault==='port') server.port=0;
+    if (fault==='address') server.address='127.1';
+    if (fault==='scope') reply.servers[2].scopeId=0;
+    if (fault==='url') reply.servers[2].baseUrl='http://[fe80::42]:11111';
+    if (fault==='reason') reply.servers[2].unavailableReason=null;
+    if (fault==='duplicate') reply.servers.push(structuredClone(server));
+    if (fault==='extra') reply.authorization='must-not-escape';
+    if (fault==='counts') reply.interfacesFailed=5;
+    if (fault==='incomplete') reply.incomplete=false;
+    if (fault==='limit') reply.servers=Array.from({length:257},(_,i)=>({...server,port:i+1,baseUrl:`http://192.0.2.3:${i+1}`}));
+    if (fault==='mapped') {server.address='::ffff:c000:203';server.baseUrl='http://[::ffff:c000:203]:80';}
+    if (fault==='multicast') {server.address='ff12::42';server.baseUrl='http://[ff12::42]:80';}
+    let calls=0; const broken=new AlpacaNetworkDiscovery(async()=>{calls++;return reply;}); broken.load(description,saved);
+    await assert.rejects(()=>broken.search(),/Invalid Alpaca network/);
+    assert.equal(broken.result,null);assert.equal(broken.uncertain,true);
+    await assert.rejects(()=>broken.search(),/Reload/);assert.equal(calls,1);
+  }
+  let release; const blocked=new AlpacaNetworkDiscovery(()=>new Promise(resolve=>{release=resolve;})); blocked.load(description,saved);
+  const pending=blocked.search(); await assert.rejects(()=>blocked.search(),/Reload/);
+  assert.throws(()=>blocked.load(description,saved),/pending/); release(structuredClone(good)); await pending;
+}
+console.log('Network search preserves candidate scopes, bounds, revision checks and separation from catalog/device I/O.');

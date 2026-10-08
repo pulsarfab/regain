@@ -3,6 +3,52 @@
 This records local review and tests for the single hub PR. Passing a foundation
 test does not imply that a frontend, transport, or hardware gate has passed.
 
+## 2026-10-07: bounded Alpaca UDP candidate search
+
+The shared Rust host exposes revision-fenced `searchAlpaca`, using IPv4 directed
+broadcast, IPv6 interface-scoped multicast and loopback. Native NINA/ASCOM setup
+and web setup consume the generated `discovery.network` contract. Search neither
+reads catalogs nor resolves credentials or opens equipment. Address selection
+clears the prior credential reference and visible catalog selection. Catalog
+reads and identity-pinned draft adoption remain separate.
+
+Reviewed the absolute deadline, shared four-query admission, cancellation,
+deterministic interface selection, full-size UDP buffers on Windows, reply type
+validation, capacity limits and IPv6 scope identity. An abandoned OS enumeration
+retains admission until its blocking worker finishes. Receive futures own sockets
+directly; no detached socket task survives cancellation. Results retain partial
+search status, failure counts and ignored packets without exposing raw replies or
+OS errors. Link-local addresses cannot yet enter HTTP transport: they retain
+their scopes, a null base URL and a generated explanation. This is an open
+construction requirement, not completed IPv6 transport or LAN acceptance.
+
+Initial failures and corrections are retained in artifacts: Serde also accepted
+a positional array for a one-field struct, so replies now require an object;
+Windows oversize reception can fail the socket read, so buffers receive whole
+UDP packets before enforcing the 1024-byte limit; the candidate-capacity fixture
+incorrectly assumed a one-millisecond Windows timer tick and now yields between
+packets; schema generation omitted UInt32's upper scope bound, now explicit.
+Review also found .NET formats IPv4-compatible IPv6 differently from Rust; native
+validation now compares parsed identities while accepting Rust's hex form.
+Warning-denied managed execution caught an xUnit predicate-overload issue, fixed
+without relaxing analysis. The first host build named regain-camera as a package;
+it is a binary of regain-alpaca, and the corrected command selects that package.
+Initial and final logs remain separate. Validation is batched locally; CI is not
+polled between construction increments.
+
+Local validation passes: full Rust hub/Alpaca regression (including eight UDP
+cases and shared search/catalog admission), final nine network/IPC cases,
+strict all-target Clippy, Rust 1.89,
+generated-contract freshness, fifteen independent schema cases, Node contracts
+and JavaScript syntax checks. Fresh workers pass the PE runtime dependency audit.
+Warning-denied full NINA execution passes 482 tests with the existing explicit
+registered-COM-fixture skip. Real net48 x86/x64 suites pass, including shared
+IPv4/IPv6 reply-contract parsing and stale network-search rejection over actual
+private IPC before broadcasting. The final native render test passes, its actual
+simulation screenshot is inspected and included in setup documentation. Only
+loopback/private simulations were exercised; no LAN search, attached hardware,
+installed vendor driver, installer or production registry entry was activated.
+
 ## 2026-10-07: main integration and standalone Windows runtime
 
 Merged main through `475d817`, incorporating PR #22's estimated continuous-frame

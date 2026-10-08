@@ -908,6 +908,127 @@
       },
       "timeoutSeconds": 5,
       "writesEquipment": false
+    },
+    "network": {
+      "description": "Search from the shared host using IPv4 broadcast and IPv6 multicast. Select a candidate, then explicitly read its device catalog. UDP replies do not prove server or device identity. Reverse-proxy prefixes and HTTPS must be entered manually.",
+      "label": "Find Alpaca servers on the host's local networks",
+      "maximumDatagrams": 4096,
+      "maximumInterfaces": 64,
+      "maximumReplyBytes": 1024,
+      "maximumServers": 256,
+      "opensSource": false,
+      "operation": "searchAlpaca",
+      "persistsConfiguration": false,
+      "port": 32227,
+      "readsCatalog": false,
+      "responseSchema": {
+        "$defs": {
+          "Server": {
+            "additionalProperties": false,
+            "properties": {
+              "address": {
+                "maxLength": 45,
+                "minLength": 2,
+                "type": "string"
+              },
+              "baseUrl": {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "port": {
+                "format": "uint16",
+                "maximum": 65535,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "scopeId": {
+                "format": "uint32",
+                "maximum": 4294967295,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "unavailableReason": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/UnavailableReason"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "address",
+              "scopeId",
+              "port"
+            ],
+            "type": "object"
+          },
+          "UnavailableReason": {
+            "enum": [
+              "scopedIpv6RequiresTransportSupport"
+            ],
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "configurationRevision": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "ignoredDatagrams": {
+            "format": "uint32",
+            "maximum": 4096,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "incomplete": {
+            "type": "boolean"
+          },
+          "interfacesFailed": {
+            "format": "uint32",
+            "maximum": 64,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "interfacesTried": {
+            "format": "uint32",
+            "maximum": 64,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "servers": {
+            "items": {
+              "$ref": "#/$defs/Server"
+            },
+            "maxItems": 256,
+            "type": "array"
+          }
+        },
+        "required": [
+          "configurationRevision",
+          "servers",
+          "interfacesTried",
+          "interfacesFailed",
+          "ignoredDatagrams",
+          "incomplete"
+        ],
+        "title": "Search",
+        "type": "object"
+      },
+      "timeoutSeconds": 3,
+      "unavailableReasons": {
+        "scopedIpv6RequiresTransportSupport": "This IPv6 link-local address requires scoped HTTP transport support. Enter another address for this server."
+      },
+      "usesCredentials": false,
+      "writesEquipment": false
     }
   },
   "outputDiagnostics": {

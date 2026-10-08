@@ -3,7 +3,7 @@ import { renderConfiguration, previewValue } from './hub-form.mjs';
 import { CredentialSetup } from './hub-credentials.mjs';
 import { SimulationSetup, parseSimulationArray } from './hub-simulation.mjs';
 import { OutputDiagnostics, diagnosticSummary } from './hub-diagnostics.mjs';
-import { AlpacaDiscovery, catalogSummary } from './hub-discovery.mjs';
+import { AlpacaDiscovery, AlpacaNetworkDiscovery, catalogSummary } from './hub-discovery.mjs';
 const $ = id => document.getElementById(id);
 let base, draft, reader, description, reviewed, dirty = false, busy = false, uncertain = false;
 let publicHostStatus;
@@ -14,6 +14,7 @@ function changed() { dirty = true; revokeReview(); status('Unsaved changes. Revi
 const credentials = new CredentialSetup(rpc, reference => { $('credential-reference').value = reference; }, revokeReview);
 const outputDiagnostics = new OutputDiagnostics(rpc,revokeReview);
 const discovery = new AlpacaDiscovery(rpc);
+const networkDiscovery = new AlpacaNetworkDiscovery(rpc);
 function controls() {
   $('editor-fields').disabled = busy || !reader || uncertain; $('validate').disabled = busy || !reader || uncertain; $('apply').disabled = busy || !reviewed || uncertain; $('reload').disabled = busy;
   for (const button of $('sources').querySelectorAll('button')) button.disabled = busy || uncertain;
@@ -22,7 +23,7 @@ function controls() {
   $('export-diagnostics').disabled = busy || !outputDiagnostics.observation;
   const fields = $('credential-fields'); if (fields) fields.disabled = busy || uncertain || credentials.uncertain;
   const create = $('credential-create'); if (create) create.disabled = busy || uncertain || credentials.description?.clientChosenReferences !== true;
-  const catalog = $('discovery-fields'); if (catalog) catalog.disabled = busy || uncertain || discovery.uncertain;
+  const catalog = $('discovery-fields'); if (catalog) catalog.disabled = busy || uncertain || discovery.uncertain || networkDiscovery.uncertain;
 }
 async function rpc(command, path = '/setup/api/hub', deadlineSeconds = 40) {
   const abort = new AbortController(); const timer = setTimeout(() => abort.abort(),deadlineSeconds * 1000);
@@ -80,6 +81,14 @@ function renderCredentials() {
 function renderDiscovery() {
   const root=$('discovery-controls'); root.replaceChildren();
   const d=discovery.description, fields=document.createElement('fieldset'); fields.id='discovery-fields'; root.append(fields);
+  const network=networkDiscovery.description;
+  const heading=document.createElement('h3'); heading.textContent=network.label; fields.append(heading);
+  const networkNote=document.createElement('p'); networkNote.textContent=network.description; fields.append(networkNote);
+  const search=document.createElement('button'); search.type='button'; search.textContent='Find Alpaca servers'; fields.append(search);
+  const candidates=document.createElement('select'); candidates.id='network-discovery-selection'; candidates.setAttribute('aria-label','Server candidate'); fields.append(candidates);
+  const choose=document.createElement('button'); choose.type='button'; choose.textContent='Use selected server address'; choose.disabled=true; fields.append(choose);
+  const searchStatus=document.createElement('p'); fields.append(searchStatus);
+  candidates.onchange=()=>{choose.disabled=candidates.selectedIndex<0 || candidates.selectedOptions[0].disabled;};
   const field=(key)=>{
     const schema=d.parameters[key], label=document.createElement('label'), input=document.createElement('input');
     label.textContent=schema.label; input.type='text'; input.autocomplete='off'; input.id=`discovery-${key}`;
@@ -92,6 +101,23 @@ function renderDiscovery() {
   const selection=document.createElement('select'); selection.id='discovery-selection'; selection.setAttribute('aria-label','Catalog device'); fields.append(selection);
   const add=document.createElement('button'); add.type='button'; add.textContent='Add selected source to draft'; add.disabled=true; fields.append(add);
   selection.onchange=()=>{add.disabled=selection.selectedIndex<0 || selection.selectedOptions[0].disabled;};
+  choose.onclick=()=>{
+    if (candidates.selectedIndex<0 || candidates.selectedOptions[0].disabled) return;
+    url.value=candidates.value; credential.value='';
+    selection.replaceChildren(); add.disabled=true; $('discovery-result').textContent='';
+    status('Server address selected. Choose a credential reference if needed, then read its catalog.');
+  };
+  search.onclick=()=>action(async()=>{
+    candidates.replaceChildren(); choose.disabled=true; searchStatus.textContent='';
+    const found=await networkDiscovery.search();
+    for (const server of found.servers) {
+      const option=document.createElement('option'); option.disabled=server.baseUrl===null; option.value=server.baseUrl??'';
+      option.textContent=server.baseUrl??`[${server.address}%${server.scopeId}]:${server.port} — ${network.unavailableReasons[server.unavailableReason]}`;
+      candidates.append(option);
+    }
+    candidates.selectedIndex=-1;
+    searchStatus.textContent=`${found.servers.length} server candidates. ${found.incomplete?'Search was incomplete; an interface failed or a limit was reached. ':''}No catalog was read and no equipment connection was opened.`;
+  });
   add.onclick=()=>action(async()=>{
     const id=discovery.adopt(reader,draft,Number(selection.value));
     changed(); renderConfiguration($('configuration'),reader,draft,base,changed);
@@ -202,6 +228,7 @@ async function load() {
   credentials.load(description.credentialStorage);
   outputDiagnostics.load(description,saved); publicHostStatus=structuredClone(host);
   discovery.load(description,saved);
+  networkDiscovery.load(description,saved);
   uncertain = host.phase !== 'ready'; dirty = false;
   $('host-state').textContent = `Host: ${host.phase}${host.persistenceWarning ? ` · ${host.persistenceWarning}` : ''}`;
   $('revision').textContent = `Saved revision: ${base.revision}`;

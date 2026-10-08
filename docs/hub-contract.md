@@ -571,6 +571,43 @@ waits for its Connecting state to finish before claiming another connection.
 Snapshots report negotiated version/method, ownership, and uncertainty. These
 diagnostics do not imply broader device capabilities have been discovered.
 
+### User-requested UDP server search
+
+`searchAlpaca` requires the current `expectedRevision` and accepts no URL or
+credential input. It shares four-query admission with explicit catalog reads.
+The host checks the revision before enumeration and after collection; it does
+not hold the configuration update gate over network I/O. Abandoned blocking
+interface enumeration retains admission until the OS call finishes. Dropping
+collection closes its sockets without spawning detached receive tasks.
+
+The generated `discovery.network` descriptor carries labels, explanations,
+limits and the result schema for the native NINA/ASCOM and web editors. Search
+sends `alpacadiscovery1` to port 32227 using each operational IPv4 interface's
+broadcast address and IPv6 interface's `ff12::a1:9aca` multicast group, plus
+loopback. IPv6 scope indexes remain part of link-local endpoint identity. The
+reply's sender address and advertised `AlpacaPort` determine a candidate; its
+UDP source port does not determine the HTTP port. See the official
+[Alpaca discovery specification](https://ascom-standards.org/AlpacaDeveloper/ASCOMAlpacaAPIReference.html).
+
+One absolute three-second deadline covers enumeration, sends and collection.
+At most 64 interface queries, 4096 received datagrams and 256 distinct endpoints
+are retained; replies over 1024 bytes are ignored. Typed object decoding rejects
+duplicate known keys, invalid ports, arrays and malformed JSON while permitting
+unknown extension fields. Datagram buffers cover full UDP packets so Windows'
+oversize error cannot retire an otherwise healthy query socket. Failed interfaces
+or exhausted capacity set `incomplete`; malformed replies increment a bounded
+counter. Normal expiry only ends this observation window, not a claim that all
+servers were found. UDP has no authenticated identity or request nonce.
+
+Selection fills a candidate address and clears the prior credential reference;
+it makes no further request. Catalog lookup and identity-pinned draft adoption
+remain explicit. Search never resolves credentials, opens source leases,
+connects equipment, creates outputs or saves configuration. HTTPS/reverse-proxy
+prefixes require manual entry. Scoped IPv6 HTTP remains incomplete: link-local
+candidates have a null `baseUrl`, their exact `scopeId`, and a generated reason
+instead of an unusable unscoped URL. Transport support and final network
+acceptance remain open; loopback fixtures do not prove LAN multicast routing.
+
 ### Catalog identity pins
 
 Alpaca sources may carry an optional `uniqueId`. Explicit catalog adoption in the

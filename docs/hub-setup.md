@@ -660,6 +660,31 @@ net48 clients and NINA verify shared state and independent connection ownership.
 Panel hardware, interactive installed-client and conformance acceptance remain
 separate plan gates.
 
+## Find a server on the host's networks (development)
+
+Open **Discover devices** and choose **Find Alpaca servers**. The shared host
+searches its local networks for three seconds. This is useful when the host is
+on a small headless computer: it searches that computer's interfaces, rather
+than the browser's computer. Search results are candidates, not verified devices.
+
+Choose a candidate and select **Use selected server address**. This fills the URL
+and clears any previous credential reference. Select a protected reference if
+needed, then choose **Read Alpaca device catalog**. Catalog selection, adding a
+source to the draft, and review/apply remain separate actions. Search performs no
+catalog read, device connection or configuration change.
+
+![Server-search controls in the native simulation setup](images/hub-native-network-search-simulation.png)
+
+This private simulation capture shows the controls before a network search;
+it does not show discovered equipment or establish LAN routing acceptance.
+
+If search is incomplete, an interface was unavailable or a search limit was
+reached. You can still enter a known URL manually. HTTPS and reverse-proxy paths
+must be entered manually because UDP discovery reports only an address and port.
+IPv6 link-local candidates retain their interface scope and remain visible, but
+cannot yet be selected: scoped HTTP transport support remains planned. Use an
+IPv4 or other usable address for that server in the meantime.
+
 ## Move a calibrated focuser group
 
 Add **Focuser groups** in Configuration and define a group label, logical travel

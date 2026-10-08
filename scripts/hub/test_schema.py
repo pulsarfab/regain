@@ -17,6 +17,31 @@ def example(name):
 
 
 class SchemaContractTests(unittest.TestCase):
+    def test_network_search_bounds_addresses_ports_counts_and_extensions(self):
+        schema = DESCRIPTION["discovery"]["network"]["responseSchema"]
+        validator = Draft202012Validator(schema, format_checker=FormatChecker())
+        good = {"configurationRevision": "11111111-1111-4111-8111-111111111111",
+                "interfacesTried": 3, "interfacesFailed": 1, "ignoredDatagrams": 4, "incomplete": True,
+                "servers": [{"address": "192.0.2.3", "scopeId": 0, "port": 11111,
+                             "baseUrl": "http://192.0.2.3:11111", "unavailableReason": None},
+                            {"address": "fe80::42", "scopeId": 7, "port": 11111,
+                             "baseUrl": None, "unavailableReason": "scopedIpv6RequiresTransportSupport"}]}
+        validator.validate(good)
+        for patch in [{"interfacesTried": 65}, {"interfacesFailed": -1}, {"ignoredDatagrams": 4097},
+                      {"incomplete": "false"}, {"authorization": "must-not-escape"},
+                      {"servers": [good["servers"][0]] * 257}]:
+            changed = copy.deepcopy(good)
+            changed.update(patch)
+            with self.subTest(patch=patch):
+                self.assertTrue(list(validator.iter_errors(changed)))
+        for patch in [{"address": ""}, {"address": "x" * 46}, {"port": 0}, {"port": 65536},
+                      {"scopeId": -1}, {"scopeId": 4294967296}, {"unavailableReason": "unknown"},
+                      {"authorization": "must-not-escape"}]:
+            changed = copy.deepcopy(good)
+            changed["servers"][0].update(patch)
+            with self.subTest(patch=patch):
+                self.assertTrue(list(validator.iter_errors(changed)))
+
     def test_alpaca_sources_accept_optional_string_pins_and_bound_device_numbers(self):
         config = example("two-source-safety")
         VALIDATOR.validate(config)

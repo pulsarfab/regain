@@ -213,6 +213,36 @@ impl HubService {
         }
         Ok(catalog)
     }
+    pub async fn search_alpaca(
+        &self,
+        expected: Uuid,
+    ) -> Result<crate::alpaca::network_discovery::Search, SourceError> {
+        let permit = self
+            .discovery
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| SourceError::new(ErrorKind::Busy, "Discovery is busy"))?;
+        let guard = self
+            .update
+            .clone()
+            .try_lock_owned()
+            .map_err(|_| SourceError::new(ErrorKind::Busy, "Configuration is being updated"))?;
+        if expected.is_nil() || self.runtime()?.configuration().revision != expected {
+            return Err(SourceError::new(
+                ErrorKind::InvalidValue,
+                "Reload the saved configuration before discovery",
+            ));
+        }
+        drop(guard);
+        let search = crate::alpaca::network_discovery::search(expected, permit).await?;
+        if self.runtime()?.configuration().revision != expected {
+            return Err(SourceError::new(
+                ErrorKind::InvalidValue,
+                "Configuration changed during discovery; reload before using these results",
+            ));
+        }
+        Ok(search)
+    }
     pub async fn credential_status(
         &self,
         reference: String,
