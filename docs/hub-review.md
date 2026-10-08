@@ -3,6 +3,67 @@
 This records local review and tests for the single hub PR. Passing a foundation
 test does not imply that a frontend, transport, or hardware gate has passed.
 
+## 2026-10-07: external native COM conformance and standards review
+
+Extended the existing ConformU runner rather than creating another device host or
+changing the validator. The same fixed private eight-class configuration, Rust
+host, HTTP simulation controls and SDK/direct worker simulations now also feed
+native COM exports. The helper uses the production deterministic CLSIDs and bound
+export executable; disposable per-user ProgID aliases only satisfy ConformU's
+CLI suffix inference. It does not create production registrations or exercise
+installed Chooser/UAC behavior. Both full runs use the unchanged 64-bit validator
+against x86 or x64 out-of-process servers, not a claim of both validator bitnesses.
+
+Review confined registry writes to fresh private identities, checked both hives
+and views for collisions, and removed/verified only owned roots. A manually owned
+server uses an absent registry launch target so a crash cannot create an unowned
+SCM replacement. Cleanup attempts registry removal even if process cleanup fails,
+records all failures and never turns cleanup failure into success. The final
+summary includes aliases, roots, server architecture and hashes. Full test and
+raw issue/timing criteria remain unchanged. Mode/platform misuse is rejected
+before startup; elevated private registration is refused. HTTP-only imports stay
+portable because the Windows module is loaded only for native mode.
+
+Authoritative local evidence under `artifacts/hub-conformance-<suffix>/`:
+
+- `547a9ca24e13412a86d3ddf984357db8`: all eight native x86 classes have zero
+  errors/configuration/timing findings; seven pass and Focuser retains four
+  endpoint issues. `acfaf77a260b4f809f38571fe0a9836a`: native x64 has the same
+  Focuser issues plus one panel DeviceState timing result (0.139 seconds against
+  0.1). Six classes pass. Neither full run is called a complete pass.
+- `51973b71ab924addbb24d5f46d01cc29`: native direct camera simulation through x86
+  COM passes every full interface check, including image arrays.
+  `f739010ae5744d088bb77f4356b9de04`: SDK simulation through x64 COM reports only
+  the same ten unsupported-bin-3 issues; no errors/timing/configuration findings.
+- `b9497daca46342d68aae337350c386ff`: isolated x64 panel passes, including
+  DeviceState timing. Retain the original timing result; parallel load or cold
+  JIT is plausible but unproved, and no target or product code was changed.
+- `b8949bff1c9c48feb20c16c38c78960d` (x86) and
+  `419e1f83091b4cd08db2e69345e044e7` (x64): forced one-second validator timeouts
+  remain failed runs and independently verify the owned server stopped, all 34
+  logical registry roots removed and zero cleanup failures.
+- `ccb9dc47a31140e3989767c0d35695ae`: final x64 safety check passes and records
+  the final publication/bitness/root provenance plus successful cleanup.
+  `93a076735db040ef9644f16b99e41ddc`: existing strict HTTP safety protocol passes
+  after extracting the shared result runner. Python compilation and argument
+  rejection pass; `artifacts/hub-native-conformance-audit.py` independently checks
+  report counts, exact known issue keys/messages and absent fixture CLSIDs/aliases.
+
+Standards review inspected the installed ASCOM.DeviceInterfaces 7.1.2 XML
+documentation, the current official IFocuserV4/ICameraV4 reference (1.0.27), and
+the pinned unmodified ConformU 4.5 source. Focuser endpoint tests ignore the
+advertised per-move bound and expect clamping despite Move's InvalidValue
+contract. Camera loops assume a contiguous bin set although the interface permits
+unsupported-value rejection. Existing production behavior is retained: no silent
+clamping/splitting, no invented bins, no remapping and no lost bin-4 capability.
+The detailed decisions are recorded in hub-conformance.md; raw findings remain
+visible and failing. They do not exempt new failures or close original acceptance.
+
+No Rust/.NET product logic changed, so another complete regression rebuild was
+not warranted. No real equipment, vendor activation, production registration,
+installer or CI wait was used. Actual OS/LAN and installed/physical acceptance,
+stable site alignment, main reconciliation and final review/CI/audit/merge remain.
+
 ## 2026-10-07: hub documentation and separate website preview
 
 Reviewed README, architecture, setup and CLI help against the eight NINA

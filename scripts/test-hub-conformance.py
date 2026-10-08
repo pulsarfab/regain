@@ -2,9 +2,11 @@
 
 Requires an already built Regain server and an unmodified ConformU installation.
 Never accepts an upstream URI, COM ProgID, existing hub config or hardware source.
+Optional native ASCOM publication uses temporary per-user COM fixture aliases.
 Logs/settings/results are retained in a fresh private artifacts directory.
 """
 import argparse
+from contextlib import ExitStack
 import hashlib
 import json
 import os
@@ -38,9 +40,13 @@ def main():
     parser.add_argument("--camera-backend", choices=("simulated", "sdk-simulated", "direct-simulated"),
                         default="simulated", help="Explicit simulation only; never opens an SDK or USB device")
     parser.add_argument("--timeout-seconds", type=int, default=900)
+    parser.add_argument("--native-ascom", choices=("x86", "x64"),
+                        help="Check private native ASCOM exports; Windows, unelevated, interface mode only")
     args = parser.parse_args()
     if args.timeout_seconds <= 0:
         parser.error("--timeout-seconds must be positive")
+    if args.native_ascom and (os.name != "nt" or args.mode != "interface"):
+        parser.error("--native-ascom requires Windows and --mode interface")
     tool = args.conformu.resolve(strict=True)
     binary = args.bin_dir.resolve() / ("regain-alpaca.exe" if os.name == "nt" else "regain-alpaca")
     if not binary.is_file():
@@ -153,44 +159,13 @@ def main():
                         raise RuntimeError(f"Private simulation control failed: {applied}")
                     controls.append({"request": command, "response": applied})
                 (directory / f"{mode}-simulation-controls.json").write_text(json.dumps(controls, indent=2), encoding="utf-8")
-                for kind in args.classes:
-                    stem = f"{kind}-{mode}"
-                    log = directory / f"{stem}.log"
-                    console = directory / f"{stem}-console.log"
-                    report = directory / f"{stem}.json"
-                    command = [str(tool), "alpacaprotocol" if mode == "protocol" else "conformance",
-                               f"{base}/api/v1/{kind}/40", "-s", str(settings), "-n", str(log), "-r", str(report)]
-                    record = {"class": kind, "mode": mode, "command": command, "log": str(log)}
-                    results.append(record)
-                    with console.open("w", encoding="utf-8") as output:
-                        try:
-                            completed = subprocess.run(command, stdout=output, stderr=subprocess.STDOUT,
-                                                       timeout=args.timeout_seconds)
-                            record["exitCode"] = completed.returncode
-                        except subprocess.TimeoutExpired:
-                            record.update(exitCode=None, timedOut=True)
-                    text = console.read_text(encoding="utf-8")
-                    if mode == "protocol":
-                        # ConformU 4.5's protocol command does not write --resultsfile.
-                        counts = re.search(r"Found (\d+) errors?, (\d+) issues? and (\d+) information messages?", text)
-                        if counts:
-                            record.update(errors=int(counts[1]), issues=int(counts[2]), information=int(counts[3]))
-                        elif "Congratulations there were no errors, issues or information alerts - Your device passes ASCOM Alpaca protocol validation!!" in text:
-                            record.update(errors=0, issues=0, information=0)
-                        else:
-                            record["missingSummary"] = True
-                    elif report.is_file():
-                        detail = json.loads(report.read_text(encoding="utf-8-sig"))
-                        record.update(errors=detail["ErrorCount"], issues=detail["IssueCount"],
-                                      configurationAlerts=detail["ConfigurationAlertCount"],
-                                      timingIssues=detail["TimingIssuesCount"], report=str(report))
-                    else:
-                        record["missingSummary"] = True
-                    record["passed"] = (record["exitCode"] == 0 and not record.get("missingSummary")
-                                        and record.get("errors") == 0 and record.get("issues") == 0
-                                        and record.get("configurationAlerts", 0) == 0
-                                        and record.get("timingIssues", 0) == 0)
-                    print(f"{stem}: {'PASS' if record['passed'] else 'FAIL'} {json.dumps(record)}", flush=True)
+                with ExitStack() as publication:
+                    native = None
+                    if args.native_ascom:
+                        from hub_conformance_com import publish
+                        native = publication.enter_context(publish(binary, config, directory, args.native_ascom))
+                        provenance.update(nativeAscom=native, nativeAscomSha256=sha256(Path(native["serverPath"])))
+                    run_checks(args, tool, base, settings, directory, mode, results, native)
             finally:
                 for process in (server, host):
                     if process is not None:
@@ -203,9 +178,53 @@ def main():
                             process.wait(timeout=5)
                 (directory / "summary.json").write_text(json.dumps({"toolVersion": version, "simulationOnly": True,
                                                                     "cameraBackend": args.camera_backend,
+                                                                    "publication": "native-ascom" if args.native_ascom else "alpaca",
+                                                                    "nativeAscomArchitecture": args.native_ascom,
                                                                     "config": str(config_file), "provenance": provenance,
                                                                     "results": results}, indent=2), encoding="utf-8")
     return 0 if results and all(result["passed"] for result in results) else 1
+
+
+def run_checks(args, tool, base, settings, directory, mode, results, native):
+    for kind in args.classes:
+        stem = f"{kind}-{mode}"
+        log = directory / f"{stem}.log"
+        console = directory / f"{stem}-console.log"
+        report = directory / f"{stem}.json"
+        target = native["devices"][kind] if native else f"{base}/api/v1/{kind}/40"
+        command = [str(tool), "alpacaprotocol" if mode == "protocol" else "conformance",
+                   target, "-s", str(settings), "-n", str(log), "-r", str(report)]
+        record = {"class": kind, "mode": mode, "command": command, "log": str(log)}
+        results.append(record)
+        with console.open("w", encoding="utf-8") as output:
+            try:
+                completed = subprocess.run(command, stdout=output, stderr=subprocess.STDOUT,
+                                           timeout=args.timeout_seconds)
+                record["exitCode"] = completed.returncode
+            except subprocess.TimeoutExpired:
+                record.update(exitCode=None, timedOut=True)
+        text = console.read_text(encoding="utf-8")
+        if mode == "protocol":
+            # ConformU 4.5's protocol command does not write --resultsfile.
+            counts = re.search(r"Found (\d+) errors?, (\d+) issues? and (\d+) information messages?", text)
+            if counts:
+                record.update(errors=int(counts[1]), issues=int(counts[2]), information=int(counts[3]))
+            elif "Congratulations there were no errors, issues or information alerts - Your device passes ASCOM Alpaca protocol validation!!" in text:
+                record.update(errors=0, issues=0, information=0)
+            else:
+                record["missingSummary"] = True
+        elif report.is_file():
+            detail = json.loads(report.read_text(encoding="utf-8-sig"))
+            record.update(errors=detail["ErrorCount"], issues=detail["IssueCount"],
+                          configurationAlerts=detail["ConfigurationAlertCount"],
+                          timingIssues=detail["TimingIssuesCount"], report=str(report))
+        else:
+            record["missingSummary"] = True
+        record["passed"] = (record["exitCode"] == 0 and not record.get("missingSummary")
+                            and record.get("errors") == 0 and record.get("issues") == 0
+                            and record.get("configurationAlerts", 0) == 0
+                            and record.get("timingIssues", 0) == 0)
+        print(f"{stem}: {'PASS' if record['passed'] else 'FAIL'} {json.dumps(record)}", flush=True)
 
 
 if __name__ == "__main__":

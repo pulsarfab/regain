@@ -20,7 +20,37 @@ ASCOM worker tree before packaging. Local ZWO library tests (99), seven runtime
 gate cases, PowerShell parsing and whitespace checks pass. This does not close
 the final main reconciliation or acceptance gates.
 
-Current increment: hub documentation and preview boundaries. README and
+Current increment: external native ASCOM conformance and standards review. The
+existing simulation-only runner now publishes private production COM exports
+for x86/x64 servers, preserving the same configuration, host, simulation controls,
+full validator tests and raw failure criteria. Temporary per-user aliases allow
+the validator's CLI to infer device classes without changing production output
+identities. No Chooser/profile/production inventory registration occurs. Owned
+server and registry cleanup are verified even when the validator times out;
+summary provenance records server bitness, hashes and private roots.
+
+Both full eight-class native runs have zero interface errors or configuration
+alerts. Seven x86 classes pass; Focuser retains its four endpoint findings.
+Six x64 classes pass; Focuser retains the same findings and the panel has one
+0.139-second DeviceState timing result. An isolated x64 panel rerun passes but
+does not establish that timing's cause. Native direct camera simulation through
+x86 COM passes the full interface; native SDK camera simulation through x64 COM
+retains only the ten sparse-bin findings. The standards decisions preserve
+InvalidValue, advertised per-move limits and actual supported bins; raw findings
+remain failing rather than being waived or hidden. See hub-conformance.md and
+hub-review.md for exact evidence.
+
+Both forced-timeout cases retain failure and verify stopped servers plus all 34
+logical private registry roots removed. A final safety run verifies the final
+provenance/cleanup shape; existing HTTP protocol regression and Python compilation
+pass. Independent inspection matches exact known findings and absent private
+registrations. This increment changes only acceptance tooling and documentation;
+no product logic, hardware or CI waiting is involved. Next: physical/installed
+acceptance, actual OS/LAN behavior, remaining stable website alignment, main
+reconciliation and the original final review/CI/audit/merge. Keep PR #21 draft;
+the original conformance and acceptance gates are not declared passed.
+
+Previous increment: hub documentation and preview boundaries. README and
 architecture now describe the eight-class shared host, native NINA/private IPC,
 Windows COM import, source sharing, scalar composition and explicit groups.
 The setup guide corrects the old scalar-only provider/registration lists,

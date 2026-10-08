@@ -16,6 +16,31 @@ Ordinary client disconnect continues to retain completed images.
 It accepts no existing device configuration, upstream URI or COM ProgID. Never
 rebuild the running server executable until the script finishes.
 
+For native Windows ASCOM publication, use an unelevated terminal and matching
+native helper builds under `target/debug/hub-ascom/{x86,x64}`:
+
+```powershell
+python scripts/test-hub-conformance.py --conformu C:/path/to/conformu.exe --mode interface --native-ascom x64
+python scripts/test-hub-conformance.py --conformu C:/path/to/conformu.exe --mode interface --native-ascom x86
+```
+
+`--native-ascom` selects the server bitness. The validator retains its own build
+bitness; the recorded runs below use the same 64-bit ConformU client against both
+servers. Existing separate COM fixtures cover both client bitnesses. The runner
+still owns a private loopback HTTP frontend for simulation controls, but all
+conformance device calls go through COM and private host IPC.
+
+Temporary per-user CLSID/ProgID aliases point to the production export classes.
+ConformU's CLI requires a device-class suffix to infer the interface, whereas
+Regain's stable 39-character ProgIDs preserve the complete output UUID. The
+aliases change only CLI selection, not behavior, classes, bindings or tests.
+No ASCOM Chooser/profile or production inventory registration is created.
+The fixture owns its manually started COM server; its registry launch target is
+deliberately absent so a failed server cannot spawn an unowned SCM replacement.
+Cleanup stops that process, removes and verifies all owned registry roots in both
+views, and writes `com-<bitness>-cleanup.json`, including after validator timeout.
+This does not test installed-driver activation, signing, UAC or Chooser upgrades.
+
 For native camera transport acceptance, select `--classes camera --camera-backend
 sdk-simulated` or `--camera-backend direct-simulated`. These use only fixed private
 simulation identities and models with `--simulate` on the host/frontend; native
@@ -132,7 +157,7 @@ zero-alert success sentence, which the runner now recognises explicitly.
 These passes cover the private simulated Alpaca slice. Native ASCOM conformance,
 other source/backend combinations and the original acceptance gates remain open.
 
-## Focuser findings still under review
+## Focuser standards decision
 
 The default simulated absolute focuser starts at 50000, has MaxStep 100000 and
 MaxIncrement 1000. ConformU 4.5 issues direct moves to both endpoints without
@@ -146,9 +171,19 @@ validator's expectations and the method contract therefore need reconciliation.
 Regain currently rejects invalid targets and excessive travel before dispatch.
 Existing `absolute_target_and_per_move_travel_are_separate_limits` coverage
 verifies zero upstream writes for both failures and a valid boundary move.
-This is an open acceptance finding, not a conformance pass or an excuse to
-remove movement protections. No validator tests or production limits are changed
-to suppress it.
+Review against ASCOM.DeviceInterfaces 7.1.2 and the published IFocuserV4 reference
+retains the method's InvalidValue behavior and advertised per-move bound. The
+MaxStep note's automatic-stop wording conflicts with Move's out-of-range error;
+it does not justify silently changing a requested target in a proxy. Regain
+rejects the request instead of clamping, splitting or replaying movement. A client
+must issue valid bounded moves itself. The unmodified validator's endpoint tests
+remain reported as four issues; they are not converted into passes. This is a
+documented standards discrepancy, with original external acceptance still tracked.
+
+The pinned validator's `FocuserTester.cs` lines 500–611 contain the endpoint and
+clamping expectations. Its ordinary move test at lines 694–709 does respect
+MaxIncrement. Future validator versions must be reviewed afresh; this decision
+does not exempt arbitrary errors or other movement failures.
 
 ## Native camera acceptance in progress
 
@@ -175,3 +210,35 @@ Native SDK simulation passes protocol and retains only the ten sparse-bin findin
 in `artifacts/hub-native-sdk-conformu-second.log` and
 `artifacts/hub-conformance-cd0c6cf385d14787bf54ad84550644fa/summary.json`.
 The SDK interface gate remains open. Neither native simulation opens hardware.
+
+### Sparse binning standards decision
+
+The [camera interface](https://ascom-standards.org/newdocs/camera.html#Camera.BinX)
+allows InvalidValue for an unsupported bin. MaxBinX/MaxBinY describe the largest
+supported factor in the current mode; they do not guarantee every intervening
+integer. Regain preserves the SDK's `[1, 2, 4]` set, reports maximum 4 and rejects
+3 before changing geometry. It does not hide bin 4, fabricate bin 3, remap the
+requested factor or emulate binning in the proxy. ConformU 4.5 iterates every
+integer through the maximum, so its ten bin-3 findings remain visible and failing
+in the raw report. This decision preserves upstream capabilities; it does not
+declare the SDK interface gate passed.
+
+## Native ASCOM external checks (2026-10-07)
+
+The full unmodified interface suite now runs against actual private native COM
+exports. Results are retained separately from the earlier Alpaca checks:
+
+| Server | Source mode | Result | Evidence directory suffix |
+| --- | --- | --- | --- |
+| x86 | Eight dedicated simulated classes | Seven classes pass; Focuser retains four endpoint issues; no timing/configuration findings | `547a9ca24e13412a86d3ddf984357db8` |
+| x64 | Eight dedicated simulated classes | Six classes pass; Focuser retains four endpoint issues; panel has one DeviceState timing finding | `acfaf77a260b4f809f38571fe0a9836a` |
+| x86 | Native direct camera simulation | Full camera interface pass, including image arrays; zero findings | `51973b71ab924addbb24d5f46d01cc29` |
+| x64 | Native SDK camera simulation | Only ten sparse-bin findings; no errors, timing issues or configuration alerts | `f739010ae5744d088bb77f4356b9de04` |
+
+These runs use `artifacts/hub-conformance-<suffix>/summary.json` plus individual
+reports and executable hashes. The original x64 panel DeviceState call took
+0.139 seconds against a 0.1-second target; retain that timing finding rather than
+discarding it or relaxing the target. The isolated panel rerun passes with zero
+findings in `b9497daca46342d68aae337350c386ff`; it does not prove the first timing's
+cause. Forced-timeout and final cleanup evidence are recorded in the review log.
+No installed vendor driver or physical device was opened.
