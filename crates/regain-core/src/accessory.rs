@@ -8,7 +8,7 @@ use serde::de::DeserializeOwned;
 use serde_json::Value;
 use std::{fmt, future::Future, pin::Pin, time::Duration};
 use tokio::{
-    io::{AsyncBufRead, AsyncBufReadExt, AsyncWriteExt, BufReader},
+    io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
     process::{Child, ChildStdin, ChildStdout},
 };
 
@@ -45,6 +45,11 @@ pub struct AccessoryWorker {
     input: Option<ChildStdin>,
     output: BufReader<ChildStdout>,
     _guard: ProcessGuard,
+}
+/// A finite, owned worker command. Diagnostic text is never returned to callers.
+pub struct Collected<T> {
+    pub value: T,
+    pub diagnostics_present: bool,
 }
 impl AccessoryWorker {
     /// Adopt a child with piped stdin/stdout. Windows ownership also attaches a
@@ -87,6 +92,64 @@ impl AccessoryWorker {
     pub async fn request(&mut self, request: Value) -> Result<Value> {
         self.request_with_timeout(request, Duration::from_secs(10))
             .await
+    }
+    /// Release a one-shot worker's stdin startup barrier only after ownership is
+    /// attached, then collect bounded JSON and reap it. Consuming self makes
+    /// timeout/cancellation terminal. Neither stdout nor diagnostics are logged.
+    pub async fn collect_json_with_timeout<T: DeserializeOwned>(
+        mut self,
+        request: Value,
+        deadline: Duration,
+    ) -> Result<Collected<T>> {
+        let bytes = encode_request(request)?;
+        let operation = async {
+            let input = self.input.as_mut().ok_or(AccessoryError::Disconnected)?;
+            input.write_all(&bytes).await?;
+            input.flush().await?;
+            self.input.take();
+            let diagnostics = self.child.stderr.take();
+            let stdout = async {
+                let mut bytes = Vec::new();
+                (&mut self.output)
+                    .take((MAX_RESPONSE_BYTES + 1) as u64)
+                    .read_to_end(&mut bytes)
+                    .await?;
+                if bytes.len() > MAX_RESPONSE_BYTES {
+                    return Err(AccessoryError::Transport.into());
+                }
+                serde_json::from_slice::<T>(&bytes).map_err(|_| AccessoryError::Transport.into())
+            };
+            let stderr = async {
+                let Some(mut stream) = diagnostics else {
+                    return Ok::<_, anyhow::Error>(false);
+                };
+                let mut total = 0usize;
+                let mut buffer = [0; 4096];
+                loop {
+                    let count = stream.read(&mut buffer).await?;
+                    if count == 0 {
+                        return Ok(total != 0);
+                    }
+                    total += count;
+                    if total > MAX_RESPONSE_BYTES {
+                        return Err(AccessoryError::Transport.into());
+                    }
+                }
+            };
+            let (value, diagnostics_present, status) = tokio::try_join!(stdout, stderr, async {
+                Ok::<_, anyhow::Error>(self.child.wait().await?)
+            })?;
+            if !status.success() {
+                return Err(AccessoryError::Transport.into());
+            }
+            Ok(Collected {
+                value,
+                diagnostics_present,
+            })
+        };
+        tokio::time::timeout(deadline, operation)
+            .await
+            .unwrap_or_else(|_| Err(AccessoryError::Timeout.into()))
     }
     pub async fn request_with_timeout(
         &mut self,

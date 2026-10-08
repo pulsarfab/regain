@@ -12,6 +12,7 @@ internal static class Program {
 
     [STAThread]
     private static int Main(string[] args) {
+        if (args.Length != 0 && args[0] == "--discover") return Discover(args);
         if (args.Length == 0 || args[0] != "--import") return ExportServer.Run(args);
         Options options;
         try { options = Options.Parse(args); }
@@ -28,6 +29,22 @@ internal static class Program {
         reader.Start();
         Dispatcher.Run();
         return 0;
+    }
+    private static int Discover(string[] args) {
+        try {
+            if (args.Length != 5 || args[1] != "--device-type" || !HubSelection.Types.Contains(args[2]) ||
+                args[3] != "--bitness" || args[4] != (Environment.Is64BitProcess ? "x64" : "x86")) return 2;
+            // The parent attaches ownership before releasing this barrier.
+            var input = ReadFrame(Console.OpenStandardInput());
+            if (input is null || Encoding.UTF8.GetString(input) != "{\"command\":\"discover\"}") return 2;
+            using var registry = new HubSystemDriverRegistry();
+            var catalog = HubDriverCatalog.Read(registry, args[2]);
+            var bytes = JsonSerializer.SerializeToUtf8Bytes(new { entries = catalog.Entries.Select(entry => new {
+                name = entry.Name, progId = entry.ProgId, classId = entry.ClassId }), incomplete = catalog.Incomplete });
+            if (bytes.Length >= MaxResponseBytes) return 2;
+            var output = Console.OpenStandardOutput(); output.Write(bytes, 0, bytes.Length); output.Flush();
+            return 0;
+        } catch { return 2; }
     }
 
     private static void Serve(Stream input, Stream output, Dispatcher dispatcher, ImportDriver driver) {

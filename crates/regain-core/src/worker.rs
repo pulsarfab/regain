@@ -178,6 +178,18 @@ impl Worker {
         self.call_bounded(method, params, seconds, token, 512 * 1024 * 1024)
             .await
     }
+    /// JSON-only commands reject any announced binary body before allocating it.
+    pub async fn call_json(
+        &mut self,
+        method: &str,
+        params: Value,
+        seconds: f64,
+        token: &CancellationToken,
+    ) -> Result<Value> {
+        self.call_bounded(method, params, seconds, token, 0)
+            .await
+            .map(|(value, _)| value)
+    }
     /// Bound an image reply by the caller's admitted ROI before allocating pixels.
     /// A zero-length streaming poll remains valid; capture checks exact length.
     pub async fn call_image(
@@ -403,6 +415,25 @@ mod tests {
         let mut bytes = (header.len() as u32).to_le_bytes().to_vec();
         bytes.extend(header);
         bytes
+    }
+
+    #[tokio::test]
+    async fn json_only_admission_rejects_announced_pixels_before_reading_a_body() {
+        let zero = response(0, true);
+        assert!(
+            read_reply(&mut zero.as_slice(), "list", 7, 0)
+                .await
+                .unwrap()
+                .1
+                .is_empty()
+        );
+        // No body follows this header. Reject its announced size rather than
+        // attempting an allocation or reporting a later partial-body failure.
+        let binary = response(1, true);
+        let error = read_reply(&mut binary.as_slice(), "download", 7, 0)
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("Invalid worker image length"));
     }
 
     #[tokio::test]

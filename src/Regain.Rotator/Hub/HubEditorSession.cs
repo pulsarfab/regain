@@ -49,7 +49,7 @@ public sealed partial class HubEditorSession : IDisposable
         try {
             Alive(); using var timer = CancellationTokenSource.CreateLinkedTokenSource(cancellation, lifetime.Token);
             timer.CancelAfter(TimeSpan.FromSeconds(15));
-            reviewed = null; LastSourceObservation = null; LastOutputObservation = null; LastDiscovery = null; LastNetworkDiscovery = null; State = HubEditorState.Loading;
+            reviewed = null; LastSourceObservation = null; LastOutputObservation = null; LastDiscovery = null; LastNetworkDiscovery = null; LastLocalDiscovery = null; State = HubEditorState.Loading;
             var description = await Rpc(new { op = "describeConfig" }, timer.Token).ConfigureAwait(false);
             var saved = await Rpc(new { op = "getConfig" }, timer.Token).ConfigureAwait(false);
             var status = await Rpc(new { op = "hostStatus" }, timer.Token).ConfigureAwait(false);

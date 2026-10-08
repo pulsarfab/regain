@@ -346,6 +346,7 @@ fn operation(command: &Command) -> &'static str {
         Command::GetConfig {} => "getConfig",
         Command::DiscoverAlpaca { .. } => "discoverAlpaca",
         Command::SearchAlpaca { .. } => "searchAlpaca",
+        Command::DiscoverLocal { .. } => "discoverLocal",
         Command::ValidateConfig { .. } => "validateConfig",
         Command::ApplyConfig { .. } => "applyConfig",
         Command::HostStatus {} => "hostStatus",

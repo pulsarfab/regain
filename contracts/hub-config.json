@@ -925,6 +925,939 @@
       "timeoutSeconds": 5,
       "writesEquipment": false
     },
+    "local": {
+      "blockedReasons": {
+        "missingRegistration": "The selected architecture has no valid class registration.",
+        "selfProxy": "This registration points back to an output of this hub."
+      },
+      "clientCancellation": "The finite owned catalog job finishes or times out even if its client disconnects. It is never retried automatically.",
+      "com": {
+        "activatesDrivers": false,
+        "description": "Read the selected architecture's registrations on the shared host without activating drivers. Select an entry to add a draft source; connection and setup remain separate.",
+        "label": "Find installed ASCOM drivers",
+        "requiresCapability": "comSources"
+      },
+      "maximumEntries": 256,
+      "native": {
+        "description": "Disconnect all hub outputs and wait for transports to close. Briefly open matching devices to read identity using the selected backend. Other applications may make devices unavailable. No motion or exposure is requested.",
+        "label": "Find native Regain devices",
+        "probesIdentity": true,
+        "requiresCapability": "nativeSources",
+        "requiresDisconnect": true
+      },
+      "opensSource": false,
+      "operation": "discoverLocal",
+      "persistsConfiguration": false,
+      "responseSchema": {
+        "$defs": {
+          "Bitness": {
+            "enum": [
+              "x86",
+              "x64"
+            ],
+            "type": "string"
+          },
+          "BlockedReason": {
+            "enum": [
+              "missingRegistration",
+              "selfProxy"
+            ],
+            "type": "string"
+          },
+          "CameraRecovery": {
+            "additionalProperties": false,
+            "default": {
+              "commandTimeoutSeconds": 15.0,
+              "coolingSampleSeconds": 2.0,
+              "coolingStableSamples": 3,
+              "coolingTimeoutSeconds": 300.0,
+              "directReadRetries": 2,
+              "downloadTimeoutSeconds": 60.0,
+              "exposureGraceSeconds": 30.0,
+              "maxRetries": 3,
+              "maximumRetryExposureSeconds": 30.0,
+              "readyFrameDownloadRetries": 2,
+              "reconnectDelaySeconds": 5.0,
+              "temperatureToleranceC": 2.0,
+              "usbPortCycle": false,
+              "usbResetAfterFailures": 0
+            },
+            "properties": {
+              "commandTimeoutSeconds": {
+                "default": 15.0,
+                "description": "Deadline for a native worker command. Gain, offset and cooler changes include readback within the same deadline.",
+                "exclusiveMinimum": 0.0,
+                "maximum": 3600.0,
+                "title": "Command timeout",
+                "type": "number",
+                "x-regain": {
+                  "apply": "reconnect",
+                  "description": "Deadline for a native worker command. Gain, offset and cooler changes include readback within the same deadline.",
+                  "group": "Native camera recovery",
+                  "key": "commandTimeoutSeconds",
+                  "label": "Command timeout",
+                  "sensitive": false,
+                  "step": 1.0,
+                  "units": "s"
+                }
+              },
+              "coolingSampleSeconds": {
+                "default": 2.0,
+                "description": "Time between temperature and cooler-power checks while recovering a camera connection.",
+                "exclusiveMinimum": 0.0,
+                "maximum": 3600.0,
+                "title": "Cooling check interval",
+                "type": "number",
+                "x-regain": {
+                  "apply": "reconnect",
+                  "description": "Time between temperature and cooler-power checks while recovering a camera connection.",
+                  "group": "Native camera recovery",
+                  "key": "coolingSampleSeconds",
+                  "label": "Cooling check interval",
+                  "sensitive": false,
+                  "step": 0.1,
+                  "units": "s"
+                }
+              },
+              "coolingStableSamples": {
+                "default": 3,
+                "description": "Consecutive acceptable temperature and cooler-power observations required during recovery.",
+                "maximum": 60,
+                "minimum": 1,
+                "title": "Stable cooling samples",
+                "type": "integer",
+                "x-regain": {
+                  "apply": "reconnect",
+                  "description": "Consecutive acceptable temperature and cooler-power observations required during recovery.",
+                  "group": "Native camera recovery",
+                  "key": "coolingStableSamples",
+                  "label": "Stable cooling samples",
+                  "sensitive": false,
+                  "step": 1.0,
+                  "units": "samples"
+                }
+              },
+              "coolingTimeoutSeconds": {
+                "default": 300.0,
+                "description": "Maximum thermal settling time after reconnecting an enabled cooler before a replacement exposure.",
+                "exclusiveMinimum": 0.0,
+                "maximum": 3600.0,
+                "title": "Cooling recovery timeout",
+                "type": "number",
+                "x-regain": {
+                  "apply": "reconnect",
+                  "description": "Maximum thermal settling time after reconnecting an enabled cooler before a replacement exposure.",
+                  "group": "Native camera recovery",
+                  "key": "coolingTimeoutSeconds",
+                  "label": "Cooling recovery timeout",
+                  "sensitive": false,
+                  "step": 1.0,
+                  "units": "s"
+                }
+              },
+              "directReadRetries": {
+                "default": 2,
+                "description": "Additional direct USB read attempts under the selected camera's capabilities. Retained-frame support is device-specific; this does not grant rereads to proxy cameras.",
+                "maximum": 5,
+                "minimum": 0,
+                "title": "Direct USB rereads",
+                "type": "integer",
+                "x-regain": {
+                  "apply": "reconnect",
+                  "description": "Additional direct USB read attempts under the selected camera's capabilities. Retained-frame support is device-specific; this does not grant rereads to proxy cameras.",
+                  "group": "Native camera recovery",
+                  "key": "directReadRetries",
+                  "label": "Direct USB rereads",
+                  "sensitive": false,
+                  "step": 1.0,
+                  "units": "retries"
+                }
+              },
+              "downloadTimeoutSeconds": {
+                "default": 60.0,
+                "description": "Deadline for one image download attempt. Native same-frame rereads retain their own bounded attempts.",
+                "exclusiveMinimum": 0.0,
+                "maximum": 3600.0,
+                "title": "Download timeout",
+                "type": "number",
+                "x-regain": {
+                  "apply": "reconnect",
+                  "description": "Deadline for one image download attempt. Native same-frame rereads retain their own bounded attempts.",
+                  "group": "Native camera recovery",
+                  "key": "downloadTimeoutSeconds",
+                  "label": "Download timeout",
+                  "sensitive": false,
+                  "step": 1.0,
+                  "units": "s"
+                }
+              },
+              "exposureGraceSeconds": {
+                "default": 30.0,
+                "description": "Additional time beyond the requested exposure for the native worker to report a ready frame.",
+                "exclusiveMinimum": 0.0,
+                "maximum": 3600.0,
+                "title": "Exposure grace",
+                "type": "number",
+                "x-regain": {
+                  "apply": "reconnect",
+                  "description": "Additional time beyond the requested exposure for the native worker to report a ready frame.",
+                  "group": "Native camera recovery",
+                  "key": "exposureGraceSeconds",
+                  "label": "Exposure grace",
+                  "sensitive": false,
+                  "step": 1.0,
+                  "units": "s"
+                }
+              },
+              "maxRetries": {
+                "default": 3,
+                "description": "Maximum replacement exposures after a recoverable failure. Zero disables replacement exposures.",
+                "maximum": 20,
+                "minimum": 0,
+                "title": "Replacement exposures",
+                "type": "integer",
+                "x-regain": {
+                  "apply": "reconnect",
+                  "description": "Maximum replacement exposures after a recoverable failure. Zero disables replacement exposures.",
+                  "group": "Native camera recovery",
+                  "key": "maxRetries",
+                  "label": "Replacement exposures",
+                  "sensitive": false,
+                  "step": 1.0,
+                  "units": "retries"
+                }
+              },
+              "maximumRetryExposureSeconds": {
+                "default": 30.0,
+                "description": "Only exposures at or below this duration may be replaced. Same-frame rereads do not start a replacement exposure.",
+                "maximum": 86400.0,
+                "minimum": 0.0,
+                "title": "Replacement exposure limit",
+                "type": "number",
+                "x-regain": {
+                  "apply": "reconnect",
+                  "description": "Only exposures at or below this duration may be replaced. Same-frame rereads do not start a replacement exposure.",
+                  "group": "Native camera recovery",
+                  "key": "maximumRetryExposureSeconds",
+                  "label": "Replacement exposure limit",
+                  "sensitive": false,
+                  "step": 1.0,
+                  "units": "s"
+                }
+              },
+              "readyFrameDownloadRetries": {
+                "default": 2,
+                "description": "Additional SDK download attempts only while the same exposure still reports a ready frame. No new exposure is started by a reread.",
+                "maximum": 5,
+                "minimum": 0,
+                "title": "SDK ready-frame rereads",
+                "type": "integer",
+                "x-regain": {
+                  "apply": "reconnect",
+                  "description": "Additional SDK download attempts only while the same exposure still reports a ready frame. No new exposure is started by a reread.",
+                  "group": "Native camera recovery",
+                  "key": "readyFrameDownloadRetries",
+                  "label": "SDK ready-frame rereads",
+                  "sensitive": false,
+                  "step": 1.0,
+                  "units": "retries"
+                }
+              },
+              "reconnectDelaySeconds": {
+                "default": 5.0,
+                "description": "Wait before restoring a camera worker after a recoverable failure or explicit abort.",
+                "exclusiveMinimum": 0.0,
+                "maximum": 3600.0,
+                "title": "Reconnect delay",
+                "type": "number",
+                "x-regain": {
+                  "apply": "reconnect",
+                  "description": "Wait before restoring a camera worker after a recoverable failure or explicit abort.",
+                  "group": "Native camera recovery",
+                  "key": "reconnectDelaySeconds",
+                  "label": "Reconnect delay",
+                  "sensitive": false,
+                  "step": 0.1,
+                  "units": "s"
+                }
+              },
+              "temperatureToleranceC": {
+                "default": 2.0,
+                "description": "Allowed temperature difference from the pre-failure reading while checking cooling recovery.",
+                "exclusiveMinimum": 0.0,
+                "maximum": 3600.0,
+                "title": "Temperature tolerance",
+                "type": "number",
+                "x-regain": {
+                  "apply": "reconnect",
+                  "description": "Allowed temperature difference from the pre-failure reading while checking cooling recovery.",
+                  "group": "Native camera recovery",
+                  "key": "temperatureToleranceC",
+                  "label": "Temperature tolerance",
+                  "sensitive": false,
+                  "step": 0.1,
+                  "units": "Â°C"
+                }
+              },
+              "usbPortCycle": {
+                "default": false,
+                "description": "On Linux, use a downstream port power cycle instead of USBDEVFS_RESET when configured USB recovery is triggered.",
+                "title": "Linux USB port cycle",
+                "type": "boolean",
+                "x-regain": {
+                  "apply": "reconnect",
+                  "description": "On Linux, use a downstream port power cycle instead of USBDEVFS_RESET when configured USB recovery is triggered.",
+                  "group": "Native camera recovery",
+                  "key": "usbPortCycle",
+                  "label": "Linux USB port cycle",
+                  "sensitive": false,
+                  "step": 1.0,
+                  "units": ""
+                }
+              },
+              "usbResetAfterFailures": {
+                "default": 0,
+                "description": "After this many recoverable failures, permit at most one USB reset per capture. Zero disables it; the selected camera must have a verified reset target and required OS permissions.",
+                "maximum": 20,
+                "minimum": 0,
+                "title": "USB reset threshold",
+                "type": "integer",
+                "x-regain": {
+                  "apply": "reconnect",
+                  "description": "After this many recoverable failures, permit at most one USB reset per capture. Zero disables it; the selected camera must have a verified reset target and required OS permissions.",
+                  "group": "Native camera recovery",
+                  "key": "usbResetAfterFailures",
+                  "label": "USB reset threshold",
+                  "sensitive": false,
+                  "step": 1.0,
+                  "units": "failures"
+                }
+              }
+            },
+            "type": "object"
+          },
+          "ConnectionPolicy": {
+            "oneOf": [
+              {
+                "const": "externallyManaged",
+                "description": "Read an upstream connection managed by another application. Never disconnect it.",
+                "type": "string"
+              },
+              {
+                "const": "managed",
+                "description": "Connect while the hub holds leases; release only connections the hub opened.",
+                "type": "string"
+              }
+            ]
+          },
+          "DeviceType": {
+            "enum": [
+              "camera",
+              "switch",
+              "safetymonitor",
+              "observingconditions",
+              "focuser",
+              "rotator",
+              "filterwheel",
+              "covercalibrator"
+            ],
+            "type": "string"
+          },
+          "Entry": {
+            "additionalProperties": false,
+            "properties": {
+              "backend": {
+                "$ref": "#/$defs/SourceBackend"
+              },
+              "blockedReason": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/BlockedReason"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "name": {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              "registeredClass": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "name",
+              "backend"
+            ],
+            "type": "object"
+          },
+          "NativeCameraConfig": {
+            "additionalProperties": false,
+            "properties": {
+              "model": {
+                "description": "Exact camera model name. The source identity selects its physical serial;\ndiscovery order is never used to choose a replacement camera.",
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              "recovery": {
+                "$ref": "#/$defs/CameraRecovery",
+                "default": {
+                  "commandTimeoutSeconds": 15.0,
+                  "coolingSampleSeconds": 2.0,
+                  "coolingStableSamples": 3,
+                  "coolingTimeoutSeconds": 300.0,
+                  "directReadRetries": 2,
+                  "downloadTimeoutSeconds": 60.0,
+                  "exposureGraceSeconds": 30.0,
+                  "maxRetries": 3,
+                  "maximumRetryExposureSeconds": 30.0,
+                  "readyFrameDownloadRetries": 2,
+                  "reconnectDelaySeconds": 5.0,
+                  "temperatureToleranceC": 2.0,
+                  "usbPortCycle": false,
+                  "usbResetAfterFailures": 0
+                },
+                "description": "Native capture recovery. These settings do not apply to Alpaca or COM inputs."
+              },
+              "sdkFallback": {
+                "default": false,
+                "description": "Permit SDK fallback only when explicitly selecting a direct USB source.\nFallback does not retain the direct backend's reread capabilities.",
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "model"
+            ],
+            "type": "object"
+          },
+          "NativeDevice": {
+            "enum": [
+              "camera-direct",
+              "camera-sdk",
+              "caa",
+              "efw",
+              "eaf",
+              "fc3",
+              "falcon",
+              "ofp2",
+              "eta"
+            ],
+            "type": "string"
+          },
+          "NativeFilterWheelMetadata": {
+            "additionalProperties": false,
+            "description": "Saved metadata for a direct wheel whose USB protocol has no filter names or\noptical offsets. Imported ASCOM/Alpaca drivers continue to own their arrays.",
+            "properties": {
+              "focusOffsets": {
+                "contains": {
+                  "const": 0
+                },
+                "description": "Signed focuser offsets in slot order; at least one must be zero. The hub\nreports these values and does not move a focuser when the filter changes.",
+                "items": {
+                  "default": 0,
+                  "format": "int32",
+                  "maximum": 2147483647,
+                  "minimum": -2147483648,
+                  "type": "integer"
+                },
+                "maxItems": 1024,
+                "minItems": 1,
+                "type": "array"
+              },
+              "names": {
+                "description": "Filter names in zero-based slot order. Keep this array aligned with offsets.",
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 1024,
+                "minItems": 1,
+                "type": "array"
+              }
+            },
+            "required": [
+              "names",
+              "focusOffsets"
+            ],
+            "type": "object"
+          },
+          "SourceBackend": {
+            "oneOf": [
+              {
+                "additionalProperties": false,
+                "allOf": [
+                  {
+                    "else": {
+                      "properties": {
+                        "camera": {
+                          "type": "null"
+                        }
+                      }
+                    },
+                    "if": {
+                      "properties": {
+                        "device": {
+                          "enum": [
+                            "camera-direct",
+                            "camera-sdk"
+                          ]
+                        }
+                      }
+                    },
+                    "then": {
+                      "properties": {
+                        "camera": {
+                          "type": "object"
+                        }
+                      },
+                      "required": [
+                        "camera"
+                      ]
+                    }
+                  },
+                  {
+                    "if": {
+                      "properties": {
+                        "device": {
+                          "const": "camera-sdk"
+                        }
+                      }
+                    },
+                    "then": {
+                      "properties": {
+                        "camera": {
+                          "properties": {
+                            "sdkFallback": {
+                              "const": false
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                ],
+                "description": "Use the existing Rust worker and its device-specific recovery behavior.",
+                "properties": {
+                  "camera": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/$defs/NativeCameraConfig"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "description": "Required only for native cameras. Shared recovery definitions retain\nthe existing camera defaults; camera setup remains capability gated.",
+                    "x-regain": {
+                      "requiresCapability": "nativeCameraSources"
+                    }
+                  },
+                  "device": {
+                    "$ref": "#/$defs/NativeDevice",
+                    "description": "Hardware driver and backend to use.",
+                    "x-regain": {
+                      "enumCapabilities": {
+                        "camera-direct": "nativeCameraSources",
+                        "camera-sdk": "nativeCameraSources"
+                      }
+                    }
+                  },
+                  "filterWheel": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/$defs/NativeFilterWheelMetadata"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "description": "Optional metadata for a direct EFW only. Leave absent to use numbered\nfilter names and zero offsets. Explicit arrays must match hardware\nslots; calibration/reconnect never silently replace saved metadata.",
+                    "title": "Direct EFW filter metadata"
+                  },
+                  "identity": {
+                    "description": "Stable hardware serial or device identity; never a discovery-list index.",
+                    "maxLength": 200,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "native",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "device",
+                  "identity"
+                ],
+                "title": "Direct Regain driver",
+                "type": "object",
+                "x-regain": {
+                  "requiresCapability": "nativeSources"
+                }
+              },
+              {
+                "additionalProperties": false,
+                "description": "Read or control an ASCOM Alpaca device over HTTP or HTTPS.",
+                "properties": {
+                  "baseUrl": {
+                    "description": "Server base URL. Credentials, query strings, and fragments are not allowed.",
+                    "format": "uri",
+                    "title": "Server URL",
+                    "type": "string"
+                  },
+                  "connectionPolicy": {
+                    "$ref": "#/$defs/ConnectionPolicy",
+                    "default": "externallyManaged",
+                    "description": "Whether the hub or another application manages the upstream connection."
+                  },
+                  "credentialReference": {
+                    "default": null,
+                    "description": "Name of a credential in local protected storage. Never enter the credential itself.",
+                    "maxLength": 200,
+                    "minLength": 1,
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "x-regain": {
+                      "export": "omit",
+                      "sensitive": true
+                    }
+                  },
+                  "deviceNumber": {
+                    "description": "Stable device number on that server.",
+                    "format": "uint32",
+                    "maximum": 4294967295,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "deviceType": {
+                    "$ref": "#/$defs/DeviceType",
+                    "description": "ASCOM device class advertised by the source."
+                  },
+                  "kind": {
+                    "const": "alpaca",
+                    "type": "string"
+                  },
+                  "scopeId": {
+                    "description": "Interface index on this host for a literal IPv6 link-local server.\nKeep the URL unscoped and set this separately. Other URLs omit it.",
+                    "format": "uint32",
+                    "maximum": 4294967295,
+                    "minimum": 1,
+                    "title": "IPv6 interface scope",
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "uniqueId": {
+                    "description": "Optional upstream catalog identity. Pinned sources verify this identity\nbefore device requests; changing or removing a saved pin is refused.",
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "pattern": "^[ -~]+$",
+                    "title": "Upstream unique ID",
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "kind",
+                  "baseUrl",
+                  "deviceType",
+                  "deviceNumber"
+                ],
+                "title": "Remote Alpaca",
+                "type": "object",
+                "x-regain": {
+                  "requiresCapability": "alpacaSources"
+                }
+              },
+              {
+                "additionalProperties": false,
+                "description": "Import a registered driver in an isolated Windows COM worker.",
+                "properties": {
+                  "bitness": {
+                    "$ref": "#/$defs/Bitness",
+                    "description": "Match the architecture in which the source driver is registered.",
+                    "x-regain": {
+                      "enumCapabilities": {
+                        "x64": "comX64Sources",
+                        "x86": "comX86Sources"
+                      }
+                    }
+                  },
+                  "connectionPolicy": {
+                    "$ref": "#/$defs/ConnectionPolicy",
+                    "default": "externallyManaged",
+                    "description": "Whether the hub or another application manages the upstream connection."
+                  },
+                  "deviceType": {
+                    "$ref": "#/$defs/DeviceType",
+                    "description": "ASCOM interface exposed by this source.",
+                    "x-regain": {
+                      "enumCapabilities": {
+                        "camera": "cameraComSources"
+                      }
+                    }
+                  },
+                  "kind": {
+                    "const": "com",
+                    "type": "string"
+                  },
+                  "progId": {
+                    "description": "Registered ASCOM ProgID, for example ASCOM.Example.SafetyMonitor.",
+                    "maxLength": 200,
+                    "minLength": 1,
+                    "title": "Driver ProgID",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "progId",
+                  "deviceType",
+                  "bitness"
+                ],
+                "title": "Windows ASCOM driver",
+                "type": "object",
+                "x-regain": {
+                  "requiresCapability": "comSources"
+                }
+              },
+              {
+                "additionalProperties": false,
+                "description": "Reference a virtual output by its stable ID. Cyclic references are rejected.",
+                "properties": {
+                  "kind": {
+                    "const": "virtual",
+                    "type": "string"
+                  },
+                  "output": {
+                    "description": "Stable ID of the virtual output to read.",
+                    "format": "uuid",
+                    "type": "string",
+                    "x-regain": {
+                      "reference": "output"
+                    }
+                  }
+                },
+                "required": [
+                  "kind",
+                  "output"
+                ],
+                "title": "Another hub device",
+                "type": "object",
+                "x-regain": {
+                  "requiresCapability": "virtualSources"
+                }
+              },
+              {
+                "additionalProperties": false,
+                "description": "A visibly labelled simulated source for configuration and failure testing.",
+                "properties": {
+                  "deviceType": {
+                    "$ref": "#/$defs/DeviceType",
+                    "description": "Simulated device interface.",
+                    "x-regain": {
+                      "enumCapabilities": {
+                        "camera": "cameraSimulation"
+                      }
+                    }
+                  },
+                  "kind": {
+                    "const": "simulated",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "deviceType"
+                ],
+                "title": "Simulation",
+                "type": "object",
+                "x-regain": {
+                  "requiresCapability": "simulation"
+                }
+              }
+            ]
+          },
+          "Target": {
+            "oneOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "device": {
+                    "$ref": "#/$defs/NativeDevice"
+                  },
+                  "kind": {
+                    "const": "native",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "device"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "bitness": {
+                    "$ref": "#/$defs/Bitness"
+                  },
+                  "deviceType": {
+                    "$ref": "#/$defs/DeviceType"
+                  },
+                  "kind": {
+                    "const": "com",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "deviceType",
+                  "bitness"
+                ],
+                "type": "object"
+              }
+            ]
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "configurationRevision": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "entries": {
+            "items": {
+              "$ref": "#/$defs/Entry"
+            },
+            "maxItems": 256,
+            "type": "array"
+          },
+          "ignoredEntries": {
+            "format": "uint32",
+            "maximum": 256,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "incomplete": {
+            "type": "boolean"
+          },
+          "simulated": {
+            "type": "boolean"
+          },
+          "target": {
+            "$ref": "#/$defs/Target"
+          }
+        },
+        "required": [
+          "configurationRevision",
+          "target",
+          "simulated",
+          "entries",
+          "ignoredEntries",
+          "incomplete"
+        ],
+        "title": "Catalog",
+        "type": "object"
+      },
+      "targetSchema": {
+        "$defs": {
+          "Bitness": {
+            "enum": [
+              "x86",
+              "x64"
+            ],
+            "type": "string"
+          },
+          "DeviceType": {
+            "enum": [
+              "camera",
+              "switch",
+              "safetymonitor",
+              "observingconditions",
+              "focuser",
+              "rotator",
+              "filterwheel",
+              "covercalibrator"
+            ],
+            "type": "string"
+          },
+          "NativeDevice": {
+            "enum": [
+              "camera-direct",
+              "camera-sdk",
+              "caa",
+              "efw",
+              "eaf",
+              "fc3",
+              "falcon",
+              "ofp2",
+              "eta"
+            ],
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "device": {
+                "$ref": "#/$defs/NativeDevice"
+              },
+              "kind": {
+                "const": "native",
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "device"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "bitness": {
+                "$ref": "#/$defs/Bitness"
+              },
+              "deviceType": {
+                "$ref": "#/$defs/DeviceType"
+              },
+              "kind": {
+                "const": "com",
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "deviceType",
+              "bitness"
+            ],
+            "type": "object"
+          }
+        ],
+        "title": "Target"
+      },
+      "timeoutSeconds": 20,
+      "writesEquipment": false
+    },
     "network": {
       "description": "Search from the shared host using IPv4 broadcast and IPv6 multicast. Select a candidate, then explicitly read its device catalog. UDP replies do not prove server or device identity. Reverse-proxy prefixes and HTTPS must be entered manually. IPv6 link-local addresses keep their host interface scope separately.",
       "label": "Find Alpaca servers on the host's local networks",

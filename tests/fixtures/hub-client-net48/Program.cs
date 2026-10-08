@@ -14,6 +14,10 @@ internal static class Program
     {
         uint? candidate = null;
         try {
+            if (args.Length == 2 && args[0] == "--local-registry") {
+                if (IntPtr.Size * 8 != int.Parse(args[1])) throw new InvalidOperationException("Wrong registry fixture bitness");
+                HubLocalRegistryFixture.Run(); return 0;
+            }
             if (args.Length == 4 && args[0] == "--camera-group") {
                 if (IntPtr.Size * 8 != int.Parse(args[3])) throw new InvalidOperationException("Wrong camera group fixture bitness");
                 await CameraGroupFixture.Run(args[1], args[2]); return 0;

@@ -2,6 +2,8 @@ $ErrorActionPreference = 'Stop'
 $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $workers = if ($env:REGAIN_TEST_WORKERS) { [IO.Path]::GetFullPath($env:REGAIN_TEST_WORKERS) } else { Join-Path $repo 'target/debug' }
 & (Join-Path $PSScriptRoot 'build-hub-ascom.ps1') -Destination $workers -WarningsAsErrors
+& python (Join-Path $PSScriptRoot 'test-hub-local-catalog.py') --workers $workers
+if ($LASTEXITCODE) { throw 'Read-only ASCOM catalog tests failed' }
 $fixture = Join-Path $repo 'artifacts/hub-com-fixture'
 dotnet build (Join-Path $repo 'tests/fixtures/hub-com-driver') -c Release -o $fixture -warnaserror
 if ($LASTEXITCODE) { throw 'Hub COM fixture build failed' }

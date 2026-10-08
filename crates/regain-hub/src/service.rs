@@ -256,6 +256,64 @@ impl HubService {
         }
         Ok(search)
     }
+    pub async fn discover_local(
+        &self,
+        target: crate::discovery::Target,
+        expected: Uuid,
+    ) -> Result<crate::discovery::Catalog, SourceError> {
+        let permit = self
+            .discovery
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| SourceError::new(ErrorKind::Busy, "Discovery is busy"))?;
+        let guard = self
+            .update
+            .clone()
+            .try_lock_owned()
+            .map_err(|_| SourceError::new(ErrorKind::Busy, "Configuration is being updated"))?;
+        let runtime = self.runtime()?;
+        if expected.is_nil() || runtime.revision() != expected {
+            return Err(SourceError::new(
+                ErrorKind::InvalidValue,
+                "Reload the saved configuration before discovery",
+            ));
+        }
+        let native = runtime.native_discovery_runtime().ok_or_else(|| {
+            SourceError::new(
+                ErrorKind::Unsupported,
+                "Local discovery is unavailable in this host",
+            )
+        })?;
+        let lease = runtime
+            .reserve_local_discovery(matches!(target, crate::discovery::Target::Native { .. }))?;
+        let denied = crate::ascom_export::classes(runtime.configuration());
+        drop(guard);
+        // Retain the finite probe and its lifecycle reservation after RPC loss.
+        // Shutdown drains activity; apply/new native leases cannot overlap it.
+        let result = tokio::spawn(async move {
+            let (_permit, _lease) = (permit, lease);
+            tokio::time::timeout(
+                crate::discovery::TIMEOUT,
+                crate::discovery::discover(native, target, expected, denied),
+            )
+            .await
+            .map_err(|_| {
+                SourceError::new(
+                    ErrorKind::Unavailable,
+                    "Local discovery timed out; no probe was retried",
+                )
+            })?
+        })
+        .await
+        .map_err(|_| SourceError::new(ErrorKind::Unavailable, "Local discovery worker failed"))??;
+        if self.runtime()?.revision() != expected {
+            return Err(SourceError::new(
+                ErrorKind::InvalidValue,
+                "Configuration changed during discovery; reload before using these results",
+            ));
+        }
+        Ok(result)
+    }
     pub async fn credential_status(
         &self,
         reference: String,

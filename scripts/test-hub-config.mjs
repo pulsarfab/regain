@@ -5,7 +5,7 @@ import { initialValue, newIdentity, previewValue, renderConfiguration } from '..
 import { CredentialSetup, credentialContract } from '../crates/regain-alpaca/web/hub-credentials.mjs';
 import { SimulationSetup, simulationControls, validateSimulationValue, parseSimulationArray } from '../crates/regain-alpaca/web/hub-simulation.mjs';
 import { OutputDiagnostics, diagnosticSummary, validateDiagnosticSchema } from '../crates/regain-alpaca/web/hub-diagnostics.mjs';
-import { AlpacaDiscovery, AlpacaNetworkDiscovery, catalogSummary } from '../crates/regain-alpaca/web/hub-discovery.mjs';
+import { AlpacaDiscovery, AlpacaNetworkDiscovery, LocalDiscovery, catalogSummary } from '../crates/regain-alpaca/web/hub-discovery.mjs';
 
 const description = JSON.parse(readFileSync(new URL('../contracts/hub-config.json', import.meta.url), 'utf8'));
 const reader = configurationContract(description);
@@ -888,3 +888,37 @@ console.log('Network search preserves candidate scopes, bounds, revision checks 
   assert.equal(broken.uncertain,true); assert.equal(broken.catalog,null);
 }
 console.log('Scoped catalogs retain interface routing context through requests and adoption, reject mismatched echoes and keep pin/address identity rules.');
+
+{
+  const revision='11111111-1111-4111-8111-111111111111', d={...description,capabilities:['nativeSources','nativeCameraSources','comSources','comX64Sources','comX86Sources']}, reader=configurationContract(d);
+  for (const com of [false,true]) {
+    const target=com?{kind:'com',deviceType:'focuser',bitness:'x64'}:{kind:'native',device:'eaf'};
+    const entry={name:'[SIMULATION/FIXTURE] focuser',backend:com?{kind:'com',progId:'Fixture.Focuser',deviceType:'focuser',bitness:'x64',connectionPolicy:'externallyManaged'}:
+      {kind:'native',device:'eaf',identity:'0102030405060708'},registeredClass:com?'22222222-2222-4222-8222-222222222222':null,blockedReason:null};
+    const catalog={configurationRevision:revision,target,simulated:!com,ignoredEntries:0,incomplete:false,entries:[entry]}, requests=[];
+    const setup=new LocalDiscovery(async(command,path,deadline)=>{requests.push(command);assert.equal(deadline,25);return structuredClone(catalog);});setup.load(d,{revision});
+    const draft={revision,sources:[]};assert.throws(()=>setup.adopt(reader,draft,0),/Query/);
+    await setup.query(target);assert.deepEqual(requests[0],{op:'discoverLocal',target,expectedRevision:revision});
+    setup.adopt(reader,draft,0);assert.equal(draft.sources.length,1);assert.deepEqual(draft.sources[0].backend,entry.backend);assert.equal(draft.sources[0].polling.pollSeconds,30);
+    assert.throws(()=>setup.adopt(reader,draft,0),/already has a source/);assert.equal(draft.sources.length,1);
+    const duplicate=structuredClone(draft);if(com)duplicate.sources[0].backend.bitness='x86';
+    assert.throws(()=>setup.adopt(reader,duplicate,0),/already has a source/);
+    assert.throws(()=>setup.adopt(reader,{revision:newIdentity(),sources:[]},0),/Query/);
+    for (const mutate of [c=>c.configurationRevision=newIdentity(),c=>c.target.kind='virtual',c=>c.entries.push(structuredClone(c.entries[0])),
+      c=>c.entries[0].name=' ',c=>c.ignoredEntries=1,c=>c.entries[0].backend.kind='virtual']) {
+      const broken=structuredClone(catalog);mutate(broken);
+      const invalid=new LocalDiscovery(async()=>broken);invalid.load(d,{revision});
+      await assert.rejects(()=>invalid.query(target),/Invalid local catalog/);assert.equal(invalid.catalog,null);assert.equal(invalid.uncertain,true);
+      await assert.rejects(()=>invalid.query(target),/Reload/);
+    }
+    if(com)for(const reason of ['missingRegistration','selfProxy']) {
+      const blocked=structuredClone(catalog);blocked.entries[0].blockedReason=reason;if(reason==='missingRegistration')blocked.entries[0].registeredClass=null;
+      const view=new LocalDiscovery(async()=>blocked);view.load(d,{revision});await view.query(target);
+      assert.throws(()=>view.adopt(reader,{revision,sources:[]},0),/cannot be adopted/);
+    }
+    setup.load(d,{revision});assert.equal(setup.catalog,null);
+  }
+  let calls=0;const disabled=new LocalDiscovery(async()=>{calls++;});disabled.load({...d,capabilities:[]},{revision});
+  await assert.rejects(()=>disabled.query({kind:'native',device:'eaf'}),/unavailable/);assert.equal(calls,0);
+}
+console.log('Local discovery validates whole catalogs and target/revision echoes, preserves blocked registrations and adopts only unique sources into a reviewed draft.');

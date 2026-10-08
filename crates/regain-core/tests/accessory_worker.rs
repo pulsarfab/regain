@@ -13,6 +13,28 @@ fn fixture() {
     for line in std::io::stdin().lock().lines() {
         let request: Value = serde_json::from_str(&line.unwrap()).unwrap();
         match request["command"].as_str().unwrap() {
+            "collect" => {
+                print!("{{\"id\":7}}");
+                return;
+            }
+            "collect_diagnostics" => {
+                eprintln!("private diagnostic");
+                print!("{{\"id\":7}}");
+                return;
+            }
+            "collect_duplicate" => {
+                print!("{{\"id\":7,\"id\":8}}");
+                return;
+            }
+            "collect_failed" => {
+                print!("{{\"id\":7}}");
+                std::io::stdout().flush().unwrap();
+                std::process::exit(2);
+            }
+            "collect_stderr" => {
+                eprint!("{}", "x".repeat(MAX_RESPONSE_BYTES + 1));
+                return;
+            }
             "hang" => std::thread::sleep(Duration::from_secs(30)),
             "malformed" => println!("not-json"),
             "oversized" => println!("{}", "x".repeat(MAX_RESPONSE_BYTES + 1)),
@@ -44,7 +66,7 @@ fn spawn() -> AccessoryWorker {
         .arg("--fixture")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::inherit())
+        .stderr(Stdio::piped())
         .kill_on_drop(true);
     #[cfg(windows)]
     command.creation_flags(0x08000000);
@@ -70,6 +92,64 @@ async fn main() {
         fixture();
         return;
     }
+    #[derive(serde::Deserialize)]
+    struct Collected {
+        id: u64,
+    }
+    for (command, diagnostics) in [("collect", false), ("collect_diagnostics", true)] {
+        let result = spawn()
+            .collect_json_with_timeout::<Collected>(
+                json!({"command":command}),
+                Duration::from_secs(3),
+            )
+            .await
+            .unwrap();
+        assert_eq!(result.value.id, 7);
+        assert_eq!(result.diagnostics_present, diagnostics);
+    }
+    for command in [
+        "collect_duplicate",
+        "collect_failed",
+        "collect_stderr",
+        "oversized",
+        "partial",
+        "malformed",
+    ] {
+        assert!(
+            spawn()
+                .collect_json_with_timeout::<Collected>(
+                    json!({"command":command}),
+                    Duration::from_secs(3)
+                )
+                .await
+                .is_err(),
+            "{command}"
+        );
+    }
+    let expired = spawn()
+        .collect_json_with_timeout::<Collected>(
+            json!({"command":"hang"}),
+            Duration::from_millis(100),
+        )
+        .await
+        .err()
+        .unwrap();
+    assert!(matches!(
+        expired.downcast_ref::<AccessoryError>(),
+        Some(AccessoryError::Timeout)
+    ));
+    let cancelled = tokio::time::timeout(
+        Duration::from_millis(100),
+        spawn().collect_json_with_timeout::<Collected>(
+            json!({"command":"hang"}),
+            Duration::from_secs(30),
+        ),
+    )
+    .await;
+    assert!(cancelled.is_err());
+    println!(
+        "Finite collector: JSON, diagnostic redaction, duplicate fields, nonzero exit, pipe bounds, EOF, timeout and cancellation passed"
+    );
     let mut worker = spawn();
     assert_eq!(
         worker.request(json!({"command":"status"})).await.unwrap()["command"],

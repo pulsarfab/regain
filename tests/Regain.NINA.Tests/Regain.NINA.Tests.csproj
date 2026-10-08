@@ -3,6 +3,7 @@
  <ItemGroup>
   <Compile Include="../fixtures/HubAccessoryServer.cs" Link="HubAccessoryServer.cs" />
   <Compile Include="../fixtures/HubDiscoveryFixture.cs" Link="HubDiscoveryFixture.cs" />
+  <Compile Include="../fixtures/HubLocalRegistryFixture.cs" Link="HubLocalRegistryFixture.cs" />
   <Compile Include="../fixtures/HubImageFixture.cs" Link="HubImageFixture.cs" />
   <Compile Include="../fixtures/HubCameraHostFixture.cs" Link="HubCameraHostFixture.cs" />
   <Compile Include="../fixtures/HubTimingFixture.cs" Link="HubTimingFixture.cs" />

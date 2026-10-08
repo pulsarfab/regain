@@ -3,6 +3,80 @@
 This records local review and tests for the single hub PR. Passing a foundation
 test does not imply that a frontend, transport, or hardware gate has passed.
 
+## 2026-10-07: local native/COM catalogs and draft adoption
+
+Implemented one revision-owned `discoverLocal` operation and generated
+target/response metadata for native NINA/ASCOM setup and the browser. Native
+probing reuses the nine existing backends; accessory/COM one-shot workers wait
+on an ownership barrier, and camera lists use a JSON-only worker call with zero
+binary admission. COM listing reads registry profiles and class registrations
+without activating drivers. Missing classes and own-hub CLSID aliases remain
+visible but blocked. No arbitrary executable, path, serial command or registry
+root is accepted from setup clients.
+
+Reviewed shared admission, revision checks, lifecycle locking, native lease
+exclusion, transport closure, finite stdout/stderr/entry limits, diagnostic
+redaction, process exit and cancellation. Accepted jobs retain their permit and
+activity after RPC loss. A separate discovery counter drains those jobs during
+shutdown: waiting on the entire activity counter was rejected because a
+caller-held output reader could otherwise prevent shutdown. A regression keeps
+such a reader alive while shutdown completes. Native probes prevent new leases;
+COM registry reads can coexist with equipment connections but block apply.
+
+Both editors validate the whole generated response plus target/revision echoes,
+identity uniqueness and backend/class semantics. Adoption reuses shared source
+defaults, capability choices, label limits and atomic append. It rejects stale,
+blocked, duplicate and full drafts without invalidating a previously reviewed
+candidate. Direct/SDK camera aliases and COM bitness alternatives cannot become
+separate owners. Changing discovery inputs clears visible selections. Selecting
+a source never persists, connects equipment, creates outputs or activates COM.
+
+Construction findings retained in separate logs: two missing Rust dispatch/error
+cases, an incompatible registry handle signature, and a COM startup barrier that
+incorrectly retained LF after the existing reader stripped it. The camera catalog
+initially used image-only admission for a list command; it now uses an explicit
+JSON-only call and tests reject announced pixels before reading/allocating a body.
+The direct simulator lists alternative models for one serial; this exception is
+explicitly simulation-only, while adoption still permits one owner. The first
+WPF assertion used the EFW serial and fallback EAF label instead of the EAF
+simulator's actual serial ending `09` and model `EAFN`; assertions were corrected
+without deadline changes. The initial GUI host had simulated sources but did not
+pass `--simulate` to native workers, so its native query returned an empty hardware
+catalog. The fixture now explicitly launches `--hub-host --simulate`, waits for
+readiness and verifies attachment did not start a replacement host. Final native
+discovery checks therefore use production simulations, not attached devices.
+An overlapping managed fixture prevented Cargo from
+replacing a Windows executable; managed execution and binary rebuilds are now
+sequenced. An early broad run against the rejected all-activity drain was stopped
+after its observed hang; its preceding native-owner failure remains recorded,
+and the final complete regression must independently pass.
+
+Local evidence already passes: all nine production native catalog simulations;
+three lifecycle cases; private COM parent framing/identity/fault cases and retained
+RPC-loss/apply/shutdown execution; finite collector limits, exit, EOF, cancellation
+and timeout; fourteen managed catalog/registry cases; Node adoption/fault checks;
+both real COM worker architectures across all eight classes and invalid barriers;
+actual private registry API fixtures in net48 x86/x64. The COM worker smoke reads
+installed registrations but never activates drivers. All registry writes are
+confined to unique private fixture roots. Final regression/render/freshness/MSRV
+results: full Rust hub/Alpaca/core regression passes, including the previously
+failing native retirement case, all three new lifecycle cases, production
+catalog simulations and retained-process fixtures. Strict all-target Clippy,
+Rust 1.89, contract freshness, seventeen independent schema cases, Node contracts
+and JavaScript syntax pass. Both complete real net48 suites pass, including their
+new private registry cases. The first full NINA run passed 500 cases with one
+registered-COM skip and the GUI fixture failure recorded above; the final focused
+sixteen cases pass with the corrected explicit-simulation fixture and inspected
+820-pixel native render. Unrelated generated screenshots were restored. Fresh
+Rust workers and the private x86/x64 COM worker trees pass the runtime import
+audit. Logs are `artifacts/hub-local-discovery-*.log`; no CI was polled or awaited.
+The final suite uses no hardware or LAN search; the earlier empty hardware
+catalog is retained above.
+
+Configuration transfer is next. OS resume, camera recovery metadata migration,
+remaining conformance/interactive/hardware acceptance, README/site, final main
+reconciliation/review/CI/audit and merge remain open. No intermediate CI wait.
+
 ## 2026-10-07: scoped IPv6 catalog, control and image transport
 
 Link-local endpoints now carry a separate positive host interface `scopeId`

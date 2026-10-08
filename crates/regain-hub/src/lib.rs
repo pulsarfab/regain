@@ -13,6 +13,7 @@ pub mod covercalibrator;
 pub mod credentials;
 pub mod description;
 pub mod diagnostics;
+pub mod discovery;
 pub mod endpoint;
 pub mod factory;
 pub mod filterwheel;

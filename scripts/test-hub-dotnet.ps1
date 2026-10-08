@@ -10,6 +10,8 @@ foreach ($architecture in 'x86', 'x64') {
     dotnet build (Join-Path $repo 'tests/fixtures/hub-client-net48/HubClientFixture.csproj') -c Release -warnaserror -p:PlatformTarget=$architecture -p:IntermediateOutputPath="obj/hub-dotnet-$architecture/Release/" -o $buildDirectory
     if ($LASTEXITCODE) { throw "net48 $architecture fixture build failed" }
     $bitness = if ($architecture -eq 'x86') { '32' } else { '64' }
+    & (Join-Path $buildDirectory 'Regain.Hub.Client.Fixture.exe') --local-registry $bitness
+    if ($LASTEXITCODE) { throw "net48 $architecture private registry catalog fixture failed" }
     & (Join-Path $buildDirectory 'Regain.Hub.Client.Fixture.exe') --image-codec $bitness
     if ($LASTEXITCODE) { throw "net48 $architecture image codec fixture failed" }
     & (Join-Path $buildDirectory 'Regain.Hub.Client.Fixture.exe') --camera-timing $bitness

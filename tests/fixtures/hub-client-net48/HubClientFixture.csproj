@@ -12,6 +12,7 @@
   <ItemGroup>
     <Compile Include="../HubAccessoryServer.cs" Link="HubAccessoryServer.cs" />
     <Compile Include="../HubDiscoveryFixture.cs" Link="HubDiscoveryFixture.cs" />
+    <Compile Include="../HubLocalRegistryFixture.cs" Link="HubLocalRegistryFixture.cs" />
     <Compile Include="../HubImageFixture.cs" Link="HubImageFixture.cs" />
     <Compile Include="../HubCameraHostFixture.cs" Link="HubCameraHostFixture.cs" />
     <Compile Include="../HubCameraOutputFixture.cs" Link="HubCameraOutputFixture.cs" />

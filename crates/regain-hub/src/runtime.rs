@@ -61,6 +61,7 @@ enum Output {
 }
 
 pub struct HubRuntime {
+    native_discovery: Option<NativeRuntime>,
     com_architectures: Vec<Bitness>,
     native_camera_sources: bool,
     runtime_id: Uuid,
@@ -70,6 +71,7 @@ pub struct HubRuntime {
     outputs: BTreeMap<Uuid, Output>,
     cameras: BTreeMap<Uuid, Arc<CameraSupervisor>>,
     activity: ActivityCounter,
+    discovery_activity: ActivityCounter,
     groups: GroupCoordinator,
     camera_groups: CameraGroupCoordinator,
     lifecycle: Mutex<Lifecycle>,
@@ -139,6 +141,7 @@ impl HubRuntime {
         let unpublished = Arc::get_mut(&mut runtime).expect("Unpublished runtime");
         unpublished.com_architectures = crate::com::available_architectures(native);
         unpublished.native_camera_sources = native.cameras.is_some();
+        unpublished.native_discovery = Some(native.clone());
         binding
             .set(Arc::downgrade(&runtime))
             .expect("New runtime binding");
@@ -339,6 +342,7 @@ impl HubRuntime {
             camera_groups: CameraGroupCoordinator::new(&config, &cameras, resources.activity()),
             com_architectures: Vec::new(),
             native_camera_sources: false,
+            native_discovery: None,
             runtime_id: Uuid::new_v4(),
             config,
             registry,
@@ -346,6 +350,7 @@ impl HubRuntime {
             outputs,
             cameras,
             activity: resources.activity(),
+            discovery_activity: ActivityCounter::default(),
             lifecycle: Mutex::new(Lifecycle {
                 closed: false,
                 frozen: false,
@@ -741,6 +746,43 @@ impl HubRuntime {
     pub fn active_connections(&self) -> usize {
         self.activity.active()
     }
+    pub(crate) fn native_discovery_runtime(&self) -> Option<NativeRuntime> {
+        self.native_discovery.clone()
+    }
+    /// A finite catalog job owns activity through client loss. Native probes
+    /// also freeze new leases after proving every configured transport is idle.
+    pub(crate) fn reserve_local_discovery(
+        self: &Arc<Self>,
+        native: bool,
+    ) -> Result<LocalDiscoveryLease, SourceError> {
+        let mut lifecycle = self.lifecycle.lock().unwrap();
+        if lifecycle.closed {
+            return Err(disconnected());
+        }
+        if lifecycle.frozen
+            || native
+                && (self.active_connections() != 0
+                    || self
+                        .registry
+                        .snapshots()
+                        .iter()
+                        .any(|source| source.transport_connected || source.lease_count != 0))
+        {
+            return Err(SourceError::new(
+                ErrorKind::Busy,
+                "Disconnect all outputs and wait for source transports to close before native discovery",
+            ));
+        }
+        if native {
+            lifecycle.frozen = true;
+        }
+        Ok(LocalDiscoveryLease {
+            runtime: self.clone(),
+            frozen: native,
+            _activity: Activity::new(self.activity.clone()),
+            _drain: Activity::new(self.discovery_activity.clone()),
+        })
+    }
     pub fn start_focuser_group(
         &self,
         host: Uuid,
@@ -910,6 +952,9 @@ impl HubRuntime {
                 for camera in self.cameras.values() {
                     camera.retire_after_source_shutdown().await;
                 }
+                // Discovery tasks own finite workers independently of their RPC
+                // waiters. Do not wait for unrelated caller-held connection Arcs.
+                self.discovery_activity.wait_idle().await;
                 result
             })
             .await
@@ -996,6 +1041,20 @@ fn wrong_type() -> SourceError {
 }
 
 pub(crate) struct Quiescent(Arc<HubRuntime>);
+pub(crate) struct LocalDiscoveryLease {
+    runtime: Arc<HubRuntime>,
+    frozen: bool,
+    _activity: Activity,
+    _drain: Activity,
+}
+impl Drop for LocalDiscoveryLease {
+    fn drop(&mut self) {
+        if self.frozen {
+            self.runtime.lifecycle.lock().unwrap().frozen = false;
+        }
+    }
+}
+
 impl Drop for Quiescent {
     fn drop(&mut self) {
         self.0.lifecycle.lock().unwrap().frozen = false;
@@ -1391,5 +1450,109 @@ impl Drop for Pending {
                 state.connections.remove(&self.output);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod local_discovery_tests {
+    use super::*;
+    #[tokio::test]
+    async fn native_probe_blocks_new_connections_and_shutdown_does_not_wait_on_a_retained_reader() {
+        let native = NativeRuntime {
+            directory: Default::default(),
+            simulate: true,
+            references: None,
+            cameras: None,
+        };
+        let config: HubConfig =
+            serde_json::from_str(include_str!("../examples/simulated-observatory.json")).unwrap();
+        let output = config.outputs[0].id;
+        let runtime = HubRuntime::build(
+            config,
+            &native,
+            &crate::factory::NoCredentials,
+            Arc::new(crate::safety::MonotonicClock::default()),
+        )
+        .unwrap();
+        let client = runtime.client();
+        let probe = runtime.reserve_local_discovery(true).unwrap();
+        assert_eq!(
+            client.connect(output).await.unwrap_err().kind,
+            ErrorKind::Busy
+        );
+        drop(probe);
+        client.connect(output).await.unwrap();
+        assert!(runtime.reserve_local_discovery(true).is_err());
+        let held = client.connection(output).unwrap();
+        tokio::time::timeout(std::time::Duration::from_secs(3), runtime.shutdown())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(runtime.active_connections(), 1);
+        drop(held);
+        assert_eq!(runtime.active_connections(), 0);
+    }
+    #[tokio::test]
+    async fn identity_probe_excludes_new_connections_and_apply_and_shutdown_drains_its_owner() {
+        let native = NativeRuntime {
+            directory: Default::default(),
+            simulate: true,
+            references: None,
+            cameras: None,
+        };
+        let runtime = HubRuntime::build(
+            HubConfig::empty(),
+            &native,
+            &crate::factory::NoCredentials,
+            Arc::new(crate::safety::MonotonicClock::default()),
+        )
+        .unwrap();
+        let lease = runtime.reserve_local_discovery(true).unwrap();
+        assert_eq!(runtime.active_connections(), 1);
+        assert!(runtime.quiesce().is_err());
+        assert!(runtime.reserve_local_discovery(false).is_err());
+        assert!(runtime.reserve_local_discovery(true).is_err());
+        let closing = tokio::spawn({
+            let runtime = runtime.clone();
+            async move { runtime.shutdown().await }
+        });
+        tokio::task::yield_now().await;
+        assert!(!closing.is_finished());
+        drop(lease);
+        tokio::time::timeout(std::time::Duration::from_secs(3), closing)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        assert_eq!(runtime.active_connections(), 0);
+        assert!(runtime.reserve_local_discovery(true).is_err());
+    }
+    #[tokio::test]
+    async fn registry_reads_share_activity_without_freezing_connections_but_prevent_native_probes()
+    {
+        let native = NativeRuntime {
+            directory: Default::default(),
+            simulate: true,
+            references: None,
+            cameras: None,
+        };
+        let runtime = HubRuntime::build(
+            HubConfig::empty(),
+            &native,
+            &crate::factory::NoCredentials,
+            Arc::new(crate::safety::MonotonicClock::default()),
+        )
+        .unwrap();
+        let first = runtime.reserve_local_discovery(false).unwrap();
+        let second = runtime.reserve_local_discovery(false).unwrap();
+        assert!(!runtime.lifecycle.lock().unwrap().frozen);
+        assert_eq!(runtime.active_connections(), 2);
+        assert!(runtime.quiesce().is_err());
+        assert!(runtime.reserve_local_discovery(true).is_err());
+        drop((first, second));
+        let probe = runtime.reserve_local_discovery(true).unwrap();
+        drop(probe);
+        assert!(runtime.quiesce().is_ok());
+        runtime.shutdown().await.unwrap();
     }
 }

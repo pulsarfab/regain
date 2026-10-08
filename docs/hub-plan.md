@@ -20,7 +20,24 @@ ASCOM worker tree before packaging. Local ZWO library tests (99), seven runtime
 gate cases, PowerShell parsing and whitespace checks pass. This does not close
 the final main reconciliation or acceptance gates.
 
-Current increment: scoped IPv6 HTTP. A separate optional `scopeId` carries a
+Current increment: native/COM catalogs and draft adoption. Shared host IPC,
+native NINA/ASCOM setup and the web editor use one generated target/response
+contract. Explicit native probes use the existing owned workers and require
+disconnected outputs and closed source transports. COM catalogs read the chosen
+architecture's registrations without activating drivers; missing registrations
+and aliases of this hub remain visible but cannot be adopted. Queries are bounded,
+never retried, and retain their owner after RPC loss. Adoption creates only a
+draft source using shared defaults, capabilities and duplicate identity rules.
+Full Rust hub/Alpaca/core regression, strict Clippy/Rust 1.89, freshness,
+seventeen independent schema cases, Node contracts, both complete net48 suites
+and the final sixteen focused native cases pass. The initial full NINA run's
+500 passes, one skip and corrected GUI-fixture failure remain recorded in
+hub-review.md. The final native simulation render is inspected; fresh workers
+pass their runtime audit. Configuration
+import/export is the next construction step; the original resume, recovery,
+acceptance, README/site and final main/review/CI/audit/merge gates remain open.
+
+Previous increment: scoped IPv6 HTTP. A separate optional `scopeId` carries a
 literal link-local server's interface index on the shared host. Catalog, control
 and image requests use the exact scoped socket while preserving HTTP authority,
 verified TLS IP identity, existing codecs, scalar deadlines and image budgets.
@@ -33,7 +50,7 @@ cases, strict Clippy/Rust 1.89, freshness, sixteen schema cases and Node contrac
 The 45 relevant native checks, final render and real net48 x86/x64 suites pass.
 Refreshed screenshots are inspected; fresh workers pass the runtime audit.
 LAN routing acceptance remains open; private loopback does not prove it.
-Next construction: native/COM enumeration and configuration import/export, then
+Next construction after local catalog verification: configuration import/export, then
 actual OS resume, camera recovery metadata, remaining acceptance, README/site
 and final main/review/CI/audit/merge. No intermediate CI waiting.
 
@@ -2617,3 +2634,5 @@ then cameras/coordination and every original remaining acceptance/final gate.
 | 2026-10-07 | Implemented and reviewed bounded UDP Alpaca candidate search through shared host IPC, protected setup HTTP, native NINA/ASCOM setup and the web editor. Preserved IPv6 scopes, separate catalog/adoption actions, inert drafts and cleared credential context on address selection. | Full Rust hub/Alpaca, final nine network/IPC cases, strict Clippy/Rust 1.89, freshness, fifteen schema cases, Node contracts, full NINA 482 passed plus one explicit registered-COM skip, real net48 x86/x64 and fresh-worker runtime audits pass. Native simulation render inspected and documented. Initial parser, Windows oversize/timer, schema, IP formatting, command and analyzer findings are retained in hub-review.md. Scoped IPv6 HTTP, LAN acceptance, native/COM enumeration, configuration transfer, OS resume, recovery metadata and every original acceptance/documentation/final gate remain open. No intermediate CI waiting. |
 
 | 2026-10-07 | Implemented and reviewed scoped IPv6 HTTP through catalog, scalar and image transport, native/web search selection and pinned source adoption. Kept scope in saved endpoint identity, exact socket routing, verified TLS, no replay and cancellation cleanup. | Full Rust hub/Alpaca regression; final 104 hub unit, 23 configuration, five credential and six catalog cases; strict Clippy/Rust 1.89; freshness, sixteen schema and Node checks; 45 native discovery/adoption checks, final inspected renders, real net48 x86/x64 and fresh-worker runtime audits pass. Initial header-limit and construction findings are retained in hub-review.md. Next: native/COM enumeration and configuration transfer, then OS resume, recovery metadata and all original acceptance/documentation/final gates. Actual LAN routing remains open. No intermediate CI waiting. |
+
+| 2026-10-07 | Implemented and reviewed shared native/COM catalogs and draft-only adoption through host IPC, native NINA/ASCOM setup and the web editor. Reused owned workers, source defaults/capabilities and identity rules; added finite collection, registry-only COM enumeration, blocked registration reasons and retained discovery drains. | Full Rust hub/Alpaca/core regression, strict Clippy/Rust 1.89, freshness, seventeen schema cases, Node contracts, both full net48 suites and final sixteen focused native cases pass. Nine native backends use production simulations; real x86/x64 COM catalogs and private registry/process fixtures pass. The native render and runtime imports are inspected. Initial findings, the interrupted all-activity drain run and corrected GUI simulation fixture are retained in hub-review.md. Next: configuration import/export, then OS resume, camera recovery metadata and every original acceptance/documentation/main/review/CI/audit/merge gate. No intermediate CI waiting. |

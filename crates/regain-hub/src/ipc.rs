@@ -138,6 +138,11 @@ pub enum Command {
         expected_revision: Uuid,
     },
     GetConfig {},
+    DiscoverLocal {
+        target: crate::discovery::Target,
+        #[serde(rename = "expectedRevision")]
+        expected_revision: Uuid,
+    },
     SearchAlpaca {
         #[serde(rename = "expectedRevision")]
         expected_revision: Uuid,
@@ -564,7 +569,7 @@ where
                     if !greeted {
                         if !matches!(request.command, Command::Hello {}) { return Err(ProtocolError::Handshake); }
                         greeted = true;
-                        let mut operations = vec!["cameraImage","cameraGroupImage","cameraTiming","cameraCaptureTiming","cameraControl","describeConfig","getConfig","discoverAlpaca","searchAlpaca","validateConfig","listDevices","sourceStatus","outputStatus","inspectSource","updateSimulation","startFocuserGroup","focuserGroupStatus","cancelFocuserGroup","startCameraGroup","cameraGroupStatus","cancelCameraGroup","connect","disconnect","changeConnection","get","put","hostStatus"];
+                        let mut operations = vec!["cameraImage","cameraGroupImage","cameraTiming","cameraCaptureTiming","cameraControl","describeConfig","getConfig","discoverAlpaca","discoverLocal","searchAlpaca","validateConfig","listDevices","sourceStatus","outputStatus","inspectSource","updateSimulation","startFocuserGroup","focuserGroupStatus","cancelFocuserGroup","startCameraGroup","cameraGroupStatus","cancelCameraGroup","connect","disconnect","changeConnection","get","put","hostStatus"];
                         if service.can_apply() { operations.push("applyConfig"); }
                         if service.credential_description().is_some() { operations.extend(["createCredential", "credentialStatus", "deleteCredential"]); }
                         let hello = json!({"protocolVersion":VERSION, "instanceId":service.instance_id(),
@@ -903,6 +908,12 @@ async fn dispatch_service(
                 .await?
         )),
         Command::HostStatus {} => Ok(json!(service.status())),
+        Command::DiscoverLocal {
+            target,
+            expected_revision,
+        } => Ok(json!(
+            service.discover_local(target, expected_revision).await?
+        )),
         Command::ApplyConfig {
             expected_revision,
             candidate,
@@ -947,6 +958,7 @@ async fn dispatch(
         | Command::HostStatus {}
         | Command::DescribeConfig {}
         | Command::DiscoverAlpaca { .. }
+        | Command::DiscoverLocal { .. }
         | Command::SearchAlpaca { .. }
         | Command::CreateCredential { .. }
         | Command::CredentialStatus { .. }

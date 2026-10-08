@@ -48,7 +48,8 @@ pub fn describe_config(capabilities: &[&str]) -> Value {
             }
         },
         "discovery": { "alpaca": crate::alpaca::discovery::description(),
-            "network": crate::alpaca::network_discovery::description() },
+            "network": crate::alpaca::network_discovery::description(),
+            "local": crate::discovery::description() },
         "apply": "disconnect",
         "validation": "The hub validates relationships, identities, capabilities and revisions before applying. Schema validation alone does not authorize an update."
     })

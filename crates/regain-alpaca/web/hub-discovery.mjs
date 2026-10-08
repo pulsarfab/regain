@@ -75,13 +75,85 @@ export class AlpacaDiscovery {
     }
     const choice=reader.variants(schema.properties.backend).find(v=>v.kind==='alpaca' && v.enabled);
     if (!choice) invalid('Alpaca sources are unavailable in this host');
-    const source=initialValue(reader,schema,uuid), backend=initialValue(reader,choice.schema,uuid);
+    const backend=initialValue(reader,choice.schema,uuid);
     backend.baseUrl=server; backend.deviceType=type; backend.deviceNumber=device.number; backend.uniqueId=identity;
     if (this.catalog.scopeId!=null) backend.scopeId=this.catalog.scopeId;
     if (this.credentialReference!==null) backend.credentialReference=this.credentialReference;
-    source.backend=backend;
-    source.label=[...device.name].slice(0,schema.properties.label.maxLength).join('');
-    draft.sources.push(source); return source.id;
+    return appendCatalogSource(reader,draft,schema,backend,device.name,uuid);
+  }
+}
+
+function appendCatalogSource(reader,draft,schema,backend,name,uuid) {
+  if (draft.sources.length>=reader.resolve(reader.root.properties.sources).maxItems) invalid('Configuration source limit reached');
+  const source=initialValue(reader,schema,uuid);
+  source.backend=structuredClone(backend); source.label=[...name].slice(0,schema.properties.label.maxLength).join('');
+  draft.sources.push(source); return source.id;
+}
+const nativeClass=device=>['camera-direct','camera-sdk'].includes(device)?'camera':device;
+export class LocalDiscovery {
+  constructor(rpc) { this.rpc=rpc; this.busy=false; this.catalog=null; this.uncertain=false; }
+  load(description,saved) {
+    if (this.busy) invalid('A local catalog query is still pending');
+    this.description=description.discovery.local; this.capabilities=description.capabilities; this.revision=saved.revision; this.catalog=null; this.uncertain=false;
+    const d=this.description;
+    if (['opensSource','writesEquipment','persistsConfiguration'].some(key=>d[key]!==false) || !Number.isInteger(d.timeoutSeconds) || d.timeoutSeconds<1 || d.timeoutSeconds>300)
+      throw new Error('Invalid local discovery description');
+  }
+  async query(target) {
+    if (this.busy || this.uncertain || !this.description) invalid('Reload before querying a catalog');
+    const d=this.description;
+    validateDiagnosticSchema(d.targetSchema,target); target=structuredClone(target);
+    if (!this.capabilities.includes(d[target.kind].requiresCapability)) invalid('This discovery backend is unavailable in the host');
+    this.busy=true; this.catalog=null;
+    try {
+      const result=await this.rpc({op:d.operation,target,expectedRevision:this.revision},undefined,d.timeoutSeconds+5);
+      try {
+        validateDiagnosticSchema(d.responseSchema,result);
+        if (result.configurationRevision!==this.revision || result.target.kind!==target.kind ||
+            (target.kind==='native'?result.target.device!==target.device:result.target.deviceType!==target.deviceType || result.target.bitness!==target.bitness) ||
+            target.kind==='com' && result.simulated || result.ignoredEntries && !result.incomplete) throw new Error();
+        const identities=new Set();
+        for (const entry of result.entries) {
+          const b=entry.backend;
+          if (!entry.name.trim() || /\p{Cc}/u.test(entry.name) || b.kind!==target.kind) throw new Error();
+          let identity;
+          if (target.kind==='native') {
+            if (b.device!==target.device || !b.identity.trim() || /\p{Cc}/u.test(b.identity) || entry.registeredClass!==null || entry.blockedReason!==null || b.filterWheel!=null) throw new Error();
+            if (nativeClass(b.device)==='camera'? !b.camera || b.camera.model!==entry.name || b.camera.sdkFallback!==false:b.camera!=null) throw new Error();
+            identity=b.identity.toLowerCase();
+            if (b.device==='camera-direct' && result.simulated) identity+=`:${entry.name}`;
+          } else {
+            if (!/^[a-z0-9._-]+$/i.test(b.progId) || b.deviceType!==target.deviceType || b.bitness!==target.bitness || b.connectionPolicy!=='externallyManaged' ||
+                (entry.registeredClass===null?entry.blockedReason!=='missingRegistration':
+                  /^0{8}-0{4}-0{4}-0{4}-0{12}$/.test(entry.registeredClass) || ![null,'selfProxy'].includes(entry.blockedReason))) throw new Error();
+            identity=b.progId.toLowerCase();
+          }
+          if (identities.has(identity)) throw new Error(); identities.add(identity);
+        }
+      } catch { throw new Error('Invalid local catalog response'); }
+      this.catalog=structuredClone(result); return structuredClone(result);
+    } catch (error) {
+      if (!error.detail || ['revisionConflict','disconnected','invalidValue'].includes(error.detail.code)) { this.uncertain=true; error.uncertain=true; }
+      throw error;
+    } finally { this.busy=false; }
+  }
+  adopt(reader,draft,index,uuid=newIdentity) {
+    if (this.busy || this.uncertain || !this.catalog || draft.revision!==this.revision) invalid('Query the current catalog before adding a source');
+    if (!Number.isInteger(index) || index<0 || index>=this.catalog.entries.length) invalid('Select a catalog entry');
+    const entry=this.catalog.entries[index], b=entry.backend;
+    if (entry.blockedReason!==null) invalid('This registration cannot be adopted');
+    const schema=reader.resolve(reader.resolve(reader.root.properties.sources).items);
+    const choice=reader.variants(schema.properties.backend).find(v=>v.kind===b.kind && v.enabled);
+    if (!choice) invalid('This source backend is unavailable in the host');
+    for (const key of b.kind==='native'?['device']:['deviceType','bitness'])
+      if (!reader.choices(choice.schema.properties[key]).some(c=>c.enabled && c.value===b[key])) invalid('This source choice is unavailable in the host');
+    for (const source of draft.sources) {
+      const other=source.backend;
+      if (other.kind!==b.kind) continue;
+      if (b.kind==='native'?nativeClass(other.device)===nativeClass(b.device) && other.identity.toLowerCase()===b.identity.toLowerCase():
+          other.deviceType===b.deviceType && other.progId.toLowerCase()===b.progId.toLowerCase()) invalid('This device already has a source. Share its existing source ID');
+    }
+    return appendCatalogSource(reader,draft,schema,b,entry.name,uuid);
   }
 }
 

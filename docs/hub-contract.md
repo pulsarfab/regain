@@ -87,6 +87,38 @@ to their interface's error conventions.
 
 ### Implemented scalar wire protocol
 
+`discoverLocal` lists one explicit native backend or one COM class/architecture:
+
+```json
+{"op":"discoverLocal","expectedRevision":"11111111-1111-4111-8111-111111111111","target":{"kind":"native","device":"eaf"}}
+{"op":"discoverLocal","expectedRevision":"11111111-1111-4111-8111-111111111111","target":{"kind":"com","deviceType":"focuser","bitness":"x64"}}
+```
+
+`describeConfig.discovery.local` supplies the target/response schemas, capability
+keys, labels, side effects, bounds and blocked reasons used by all setup frontends.
+The response echoes `configurationRevision` and `target`, identifies explicit
+simulation, and contains bounded `entries`, `ignoredEntries` and `incomplete`.
+Each entry has a name, inert source `backend`, current nullable `registeredClass`
+and nullable `blockedReason`. It is not a source lease or configuration update.
+
+The host reserves one of the four shared discovery slots before launching work.
+Native probes additionally freeze new leases and require idle outputs and closed
+transports. Existing camera workers accept a JSON-only list command; accessory
+and COM workers wait for a fixed stdin barrier until process ownership is attached.
+One-shot stdout/stderr are each bounded to 1 MiB; diagnostics are represented only
+by an incomplete flag. Unexpected JSON, duplicate identities, nonzero exit and
+oversized output fail without fallback or replay. One total 20-second deadline
+spans startup, collection and exit. The accepted job outlives RPC loss; a separate
+discovery drain joins it during shutdown without waiting on caller-held readers.
+
+COM `missingRegistration` and `selfProxy` entries cannot be adopted. Native
+identities reuse existing backend selection; COM class IDs are query-time
+registration observations rather than saved identity pins. Native/web adoption
+uses shared defaults and capability choices, checks capacity/revision/duplicates,
+and appends one source atomically to the draft. It creates no output and requires
+ordinary review/apply. Simulation-only alternative direct camera models may share
+one serial in a catalog, while draft adoption still rejects duplicate owners.
+
 Each JSON message is prefixed by its unsigned 32-bit little-endian byte length.
 Frames are limited to 1 MiB. The first request must be `hello`; request IDs are
 positive unsigned integers and must strictly increase on that connection.

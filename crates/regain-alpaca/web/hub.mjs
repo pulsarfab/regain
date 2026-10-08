@@ -3,7 +3,7 @@ import { renderConfiguration, previewValue } from './hub-form.mjs';
 import { CredentialSetup } from './hub-credentials.mjs';
 import { SimulationSetup, parseSimulationArray } from './hub-simulation.mjs';
 import { OutputDiagnostics, diagnosticSummary } from './hub-diagnostics.mjs';
-import { AlpacaDiscovery, AlpacaNetworkDiscovery, catalogSummary } from './hub-discovery.mjs';
+import { AlpacaDiscovery, AlpacaNetworkDiscovery, LocalDiscovery, catalogSummary } from './hub-discovery.mjs';
 const $ = id => document.getElementById(id);
 let base, draft, reader, description, reviewed, dirty = false, busy = false, uncertain = false;
 let publicHostStatus;
@@ -15,6 +15,7 @@ const credentials = new CredentialSetup(rpc, reference => { $('credential-refere
 const outputDiagnostics = new OutputDiagnostics(rpc,revokeReview);
 const discovery = new AlpacaDiscovery(rpc);
 const networkDiscovery = new AlpacaNetworkDiscovery(rpc);
+const localDiscovery = new LocalDiscovery(rpc);
 function controls() {
   $('editor-fields').disabled = busy || !reader || uncertain; $('validate').disabled = busy || !reader || uncertain; $('apply').disabled = busy || !reviewed || uncertain; $('reload').disabled = busy;
   for (const button of $('sources').querySelectorAll('button')) button.disabled = busy || uncertain;
@@ -23,7 +24,8 @@ function controls() {
   $('export-diagnostics').disabled = busy || !outputDiagnostics.observation;
   const fields = $('credential-fields'); if (fields) fields.disabled = busy || uncertain || credentials.uncertain;
   const create = $('credential-create'); if (create) create.disabled = busy || uncertain || credentials.description?.clientChosenReferences !== true;
-  const catalog = $('discovery-fields'); if (catalog) catalog.disabled = busy || uncertain || discovery.uncertain || networkDiscovery.uncertain;
+  const catalog = $('discovery-fields'); if (catalog) catalog.disabled = busy || uncertain || discovery.uncertain || networkDiscovery.uncertain || localDiscovery.uncertain;
+  const local = $('local-discovery-fields'); if (local) local.disabled = busy || uncertain || localDiscovery.uncertain;
 }
 async function rpc(command, path = '/setup/api/hub', deadlineSeconds = 40) {
   const abort = new AbortController(); const timer = setTimeout(() => abort.abort(),deadlineSeconds * 1000);
@@ -137,6 +139,48 @@ function renderDiscovery() {
     status(`Read ${catalog.devices.length} catalog entries. No equipment connection was opened; configuration is unchanged.`);
   });
   $('discovery-result').textContent='';
+  renderLocalDiscovery(root);
+}
+function renderLocalDiscovery(root) {
+  const d=localDiscovery.description, defs=d.targetSchema.$defs, fields=document.createElement('fieldset'); fields.id='local-discovery-fields';root.append(fields);
+  const heading=document.createElement('h3');heading.textContent='Find devices on this host';fields.append(heading);
+  const kind=document.createElement('select');kind.id='local-discovery-kind';kind.setAttribute('aria-label','Discovery backend');fields.append(kind);
+  for (const key of ['native','com']) { const option=new Option(d[key].label,key);option.disabled=!description.capabilities.includes(d[key].requiresCapability);kind.append(option); }
+  const hint=document.createElement('p');hint.className='hint';fields.append(hint);
+  const device=choices('NativeDevice','Native backend','device'), type=choices('DeviceType','ASCOM device class','type'), bitness=choices('Bitness','ASCOM architecture','bitness');
+  const query=document.createElement('button');query.type='button';query.textContent='Read local device catalog';fields.append(query);
+  const summary=document.createElement('pre');summary.id='local-discovery-result';fields.append(summary);
+  const selection=document.createElement('select');selection.id='local-discovery-selection';selection.setAttribute('aria-label','Local catalog device');fields.append(selection);
+  const add=document.createElement('button');add.type='button';add.textContent='Add local source to draft';add.disabled=true;fields.append(add);
+  for (const input of [device.select,type.select,bitness.select]) input.onchange=()=>{selection.replaceChildren();summary.textContent='';add.disabled=true;};
+  selection.onchange=()=>add.disabled=!selection.selectedOptions.length || selection.selectedOptions[0].disabled;
+  kind.onchange=()=>{
+    hint.textContent=d[kind.value].description;device.label.hidden=kind.value!=='native';type.label.hidden=bitness.label.hidden=kind.value!=='com';
+    selection.replaceChildren();summary.textContent='';add.disabled=true;query.disabled=kind.selectedOptions[0].disabled;
+  };kind.onchange();
+  query.onclick=()=>action(async()=>{
+    selection.replaceChildren();summary.textContent='';add.disabled=true;
+    if (kind.selectedOptions[0].disabled) throw new Error('Select an available discovery backend');
+    const target=kind.value==='native'?{kind:'native',device:device.select.value}:{kind:'com',deviceType:type.select.value,bitness:bitness.select.value};
+    const catalog=await localDiscovery.query(target), lines=[];
+    if (catalog.simulated) lines.push('SIMULATION — generated identities.'+(target.device==='camera-direct'?' Direct camera models are alternatives for one simulated serial.':''));
+    if (catalog.incomplete) lines.push('Catalog incomplete: a probe, registration or scan limit prevented complete results.');
+    catalog.entries.forEach((entry,index)=>{
+      const identity=entry.backend[target.kind==='native'?'identity':'progId'], option=new Option(`${entry.name} — ${identity}`,String(index));option.disabled=entry.blockedReason!==null;selection.append(option);
+      lines.push(`${entry.name}\nID: ${identity}${entry.blockedReason===null?'':`\n${d.blockedReasons[entry.blockedReason]}`}`);
+    });selection.selectedIndex=-1;
+    summary.textContent=lines.length?lines.join('\n\n'):'No matching devices or registrations were reported.';
+    status(`Read ${catalog.entries.length} local catalog entries. Configuration is unchanged; no source lease was created.`);
+  });
+  add.onclick=()=>action(async()=>{
+    if (!selection.selectedOptions.length || selection.selectedOptions[0].disabled) throw new Error('Select an available catalog entry');
+    const id=localDiscovery.adopt(reader,draft,Number(selection.value));changed();renderConfiguration($('configuration'),reader,draft,base,changed);renderSources();
+    status(`Added source ${id} to the draft. Review settings and apply before connecting equipment.`);
+  });
+  function choices(definition,text,key) {
+    const label=document.createElement('label');label.textContent=text;const select=document.createElement('select');select.id=`local-discovery-${key}`;
+    for (const value of defs[definition].enum) select.append(new Option(value,value));label.append(select);fields.append(label);return {label,select};
+  }
 }
 function renderSources() {
   $('sources').replaceChildren(...base.sources.map(source => {
@@ -231,6 +275,7 @@ async function load() {
   outputDiagnostics.load(description,saved); publicHostStatus=structuredClone(host);
   discovery.load(description,saved);
   networkDiscovery.load(description,saved);
+  localDiscovery.load(description,saved);
   uncertain = host.phase !== 'ready'; dirty = false;
   $('host-state').textContent = `Host: ${host.phase}${host.persistenceWarning ? ` · ${host.persistenceWarning}` : ''}`;
   $('revision').textContent = `Saved revision: ${base.revision}`;

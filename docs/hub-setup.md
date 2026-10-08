@@ -131,10 +131,46 @@ Regain retains uncertainty rather than disconnecting replacement equipment.
 Pinned sources require a working management catalog within their scalar request
 budget, so account for the extra catalog query when choosing polling settings.
 
-Network discovery, native/COM enumeration and configuration import/export remain
-on the implementation plan.
+Network search and native/COM catalogs are available in this development preview.
+Configuration import/export remains on the implementation plan.
 
 ![Native Alpaca catalog discovery with a private simulated camera and unsupported mount](images/hub-native-discovery-simulation.png)
+
+### Find native devices and installed ASCOM drivers
+
+In **Discover devices**, scroll to **Find devices on this host**. Choose a native
+backend or an ASCOM device class and architecture, then **Read local device
+catalog**. Choose an available entry and **Add local source to draft**. Review
+the source settings and apply separately; discovery does not save configuration,
+create outputs, connect a source lease, move equipment or request an exposure.
+
+Native identity probes briefly open matching devices through the existing Rust
+workers. Disconnect all hub outputs and allow transports to close first; other
+applications can keep devices unavailable. SDK camera identity discovery also
+initializes each camera through the SDK before reading its serial and closing it.
+The nine native choices are direct and SDK cameras, CAA, EFW, EAF, FocusCube3,
+Falcon V2, OFP2 and ETA. Identities retain each worker's existing meaning; a
+serial-device identity may select a port rather than a unique hardware serial.
+
+COM listing reads registrations in the selected worker architecture without
+activating drivers. Missing class registrations and aliases of this hub's own
+outputs remain visible with a reason and cannot be added. The reported class ID
+describes the registration at query time; connection resolves and checks it again.
+The draft starts with **Externally managed** connection policy. Review that policy
+and the driver's own setup before connecting.
+
+Each query has a 20-second total deadline and at most 256 entries. An incomplete
+catalog can contain usable results, but is not a complete inventory. A lost client
+does not cancel or replay an accepted probe: its finite worker remains owned until
+completion or timeout, and configuration apply waits for it to finish. Reload
+after an uncertain outcome before another query. Existing physical sources,
+including camera direct/SDK alternatives and COM bitness alternatives, must be
+shared by source ID rather than added twice.
+
+![Native local catalog and draft adoption using the explicit EAF simulation](images/hub-native-local-discovery-simulation.png)
+
+This render uses the production EAF simulator. Direct camera simulation lists
+alternative models with one simulated serial; select one model per source.
 
 This render uses a private management-only peer. The test verifies string IDs,
 unsupported classes, draft-only adoption, unchanged saved configuration and zero

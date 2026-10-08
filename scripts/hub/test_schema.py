@@ -17,6 +17,29 @@ def example(name):
 
 
 class SchemaContractTests(unittest.TestCase):
+    def test_local_catalog_contract_bounds_targets_and_source_backends(self):
+        description = DESCRIPTION["discovery"]["local"]
+        target_validator = Draft202012Validator(description["targetSchema"], format_checker=FormatChecker())
+        validator = Draft202012Validator(description["responseSchema"], format_checker=FormatChecker())
+        target = {"kind": "native", "device": "eaf"}
+        target_validator.validate(target)
+        catalog = {"configurationRevision": example("two-source-safety")["revision"], "target": target,
+                   "simulated": True, "entries": [{"name": "[SIMULATION] EAFN", "backend": {
+                       "kind": "native", "device": "eaf", "identity": "0102030405060709"},
+                       "registeredClass": None, "blockedReason": None}], "ignoredEntries": 0, "incomplete": False}
+        validator.validate(catalog)
+        for bad in [{"kind": "native", "device": "eaf", "path": "COM3"},
+                    {"kind": "com", "deviceType": "camera", "bitness": "arm64"}]:
+            self.assertTrue(list(target_validator.iter_errors(bad)))
+        for field, value in [("entries", catalog["entries"] * 257), ("ignoredEntries", 257), ("ignoredEntries", -1)]:
+            invalid = copy.deepcopy(catalog)
+            invalid[field] = value
+            self.assertTrue(list(validator.iter_errors(invalid)))
+        invalid = copy.deepcopy(catalog)
+        invalid["entries"][0]["backend"]["camera"] = {"model": "bad accessory camera"}
+        self.assertTrue(list(validator.iter_errors(invalid)))
+        target_validator.validate({"kind": "com", "deviceType": "focuser", "bitness": "x86"})
+
     def test_optional_scopes_are_uint32_in_sources_and_catalogs(self):
         config = example("two-source-safety")
         config["sources"][0]["backend"].update(baseUrl="http://[fe80::42]:11111", scopeId=7)

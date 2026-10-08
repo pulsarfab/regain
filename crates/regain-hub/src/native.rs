@@ -547,7 +547,9 @@ impl Backend for NativeAccessoryBackend {
         self.observed_reverse = None;
     }
 }
-fn worker_arguments(device: NativeDevice) -> Result<(&'static str, &'static str), SourceError> {
+pub(crate) fn worker_arguments(
+    device: NativeDevice,
+) -> Result<(&'static str, &'static str), SourceError> {
     use NativeDevice::*;
     Ok(match device {
         Caa => ("zwo", "caa"),

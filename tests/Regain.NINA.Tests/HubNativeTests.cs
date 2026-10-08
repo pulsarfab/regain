@@ -443,9 +443,11 @@ public sealed partial class HubNativeTests
     {
         internal string DirectoryPath = "", ConfigPath = "", Workers = "", Executable = "";
         private uint? candidate;
+        private Process? explicitHost;
+        private Task<string>? explicitErrors, explicitOutput;
         internal JsonObject Config = null!;
         internal HubClient Client = null!;
-        internal static async Task<Host> Open(Action<JsonObject>? amend = null)
+        internal static async Task<Host> Open(Action<JsonObject>? amend = null, bool nativeSimulation = false)
         {
             var directory = new DirectoryInfo(AppContext.BaseDirectory);
             while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "Cargo.toml"))) directory = directory.Parent;
@@ -464,8 +466,21 @@ public sealed partial class HubNativeTests
                 foreach (var measurement in host.Config["outputs"]![2]!["device"]!["measurements"]!.AsObject()) measurement.Value!["maximumAgeSeconds"] = 2.0;
                 amend?.Invoke(host.Config);
                 await File.WriteAllTextAsync(host.ConfigPath, host.Config.ToJsonString());
+                if (nativeSimulation) {
+                    host.explicitHost = new Process { StartInfo = new ProcessStartInfo(host.Executable,
+                        "--hub-host --simulate --hub-config " + HubAttachment.Quote(host.ConfigPath) +
+                        " --workers " + HubAttachment.Quote(host.Workers) + " --sdk " + HubAttachment.Quote(Path.Combine(host.DirectoryPath, "absent-sdk.dll"))) {
+                        UseShellExecute = false, CreateNoWindow = true, WindowStyle = ProcessWindowStyle.Hidden,
+                        RedirectStandardOutput = true, RedirectStandardError = true } };
+                    Assert.True(host.explicitHost.Start()); host.candidate = checked((uint)host.explicitHost.Id);
+                    host.explicitErrors = host.explicitHost.StandardError.ReadToEndAsync();
+                    var readiness = await host.explicitHost.StandardOutput.ReadLineAsync().WaitAsync(TimeSpan.FromSeconds(10));
+                    Assert.StartsWith("Regain hub ready:", readiness);
+                    host.explicitOutput = host.explicitHost.StandardOutput.ReadToEndAsync();
+                }
                 var attachment = await HubAttachment.AttachAsync(host.Executable, host.ConfigPath, host.Workers);
-                host.candidate = attachment.StartedProcessId; Assert.NotNull(host.candidate);
+                if (nativeSimulation) Assert.Null(attachment.StartedProcessId);
+                else { host.candidate = attachment.StartedProcessId; Assert.NotNull(host.candidate); }
                 host.Client = await HubClient.ConnectAsync(attachment);
                 return host;
             } catch { await host.DisposeAsync(); throw; }
@@ -488,6 +503,11 @@ public sealed partial class HubNativeTests
                 process.Kill(); await process.WaitForExitAsync();
             } catch (ArgumentException) { }
             candidate = null;
+            if (explicitHost is not null) {
+                if (explicitErrors is not null) await explicitErrors;
+                if (explicitOutput is not null) await explicitOutput;
+                explicitHost.Dispose(); explicitHost = null;
+            }
         }
         public async ValueTask DisposeAsync() { Client?.Dispose(); await Stop(); Directory.Delete(DirectoryPath, true); }
     }

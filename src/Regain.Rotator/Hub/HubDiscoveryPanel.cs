@@ -94,6 +94,7 @@ public sealed partial class HubConfigurationWindow
             });
             status.Text = "Read " + catalog.GetProperty("devices").GetArrayLength() + " catalog entries. No equipment connection was opened; configuration is unchanged.";
         });
+        RenderLocalDiscovery();
     }
     private void DiscoveryControls(bool editable) => discoveryPanel.IsEnabled = !busy && !closed && editable;
 }
