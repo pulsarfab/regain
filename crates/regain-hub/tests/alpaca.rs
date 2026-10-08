@@ -1489,6 +1489,6 @@ async fn weather_sensor_ages_and_partial_errors_survive_the_http_source_and_outp
     assert_eq!(second.read(WeatherMetric::Temperature).unwrap().value, 12.5);
     let requests = server.fixture.requests.lock().unwrap();
     assert_eq!(requests.len(), 4);
-    assert!(requests[1].1.contains("SensorName=temperature"));
-    assert!(requests[3].1.contains("SensorName=pressure"));
+    assert!(requests[1].1.contains("SensorName=Temperature"));
+    assert!(requests[3].1.contains("SensorName=Pressure"));
 }

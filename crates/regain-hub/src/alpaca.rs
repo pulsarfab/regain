@@ -279,7 +279,10 @@ impl AlpacaBackend {
             self.request(
                 false,
                 "timesincelastupdate",
-                Values::from([("SensorName".into(), Value::from(property.clone()))]),
+                Values::from([(
+                    "SensorName".into(),
+                    Value::from(crate::config::WeatherMetric::sensor_name(property)),
+                )]),
             )
             .await?
             .as_f64()

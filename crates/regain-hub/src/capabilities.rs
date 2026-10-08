@@ -256,7 +256,7 @@ impl Reader {
             WindSpeed,
         ] {
             let property = metric.property();
-            let parameters = Values::from([("SensorName".into(), json!(property))]);
+            let parameters = Values::from([("SensorName".into(), json!(metric.state_name()))]);
             let description = self
                 .read("sensordescription", parameters.clone(), ValueType::Text)
                 .await?;

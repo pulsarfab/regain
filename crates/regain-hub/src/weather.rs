@@ -17,6 +17,17 @@ use tokio::sync::watch;
 use uuid::Uuid;
 
 impl WeatherMetric {
+    /// Prefer the interface's spelling on the wire. Names remain caseless in
+    /// configuration; this also works with drivers that incorrectly use a
+    /// case-sensitive sensor dictionary. Unknown property names are preserved.
+    pub(crate) fn sensor_name(property: &str) -> &str {
+        match serde_json::from_value::<Self>(serde_json::Value::String(
+            property.to_ascii_lowercase(),
+        )) {
+            Ok(metric) => metric.state_name(),
+            Err(_) => property,
+        }
+    }
     pub(crate) fn state_name(self) -> &'static str {
         match self {
             Self::CloudCover => "CloudCover",
@@ -699,6 +710,46 @@ impl WeatherSession {
 mod diagnostic_tests {
     use super::*;
     use serde_json::json;
+    #[test]
+    fn canonical_sensor_parameters_preserve_configuration_and_cache_keys() {
+        use crate::sampling::{PropertyPoll, SampleRequest};
+        for (key, name) in [
+            ("cloudcover", "CloudCover"),
+            ("dewpoint", "DewPoint"),
+            ("humidity", "Humidity"),
+            ("pressure", "Pressure"),
+            ("rainrate", "RainRate"),
+            ("skybrightness", "SkyBrightness"),
+            ("skyquality", "SkyQuality"),
+            ("skytemperature", "SkyTemperature"),
+            ("starfwhm", "StarFWHM"),
+            ("temperature", "Temperature"),
+            ("winddirection", "WindDirection"),
+            ("windgust", "WindGust"),
+            ("windspeed", "WindSpeed"),
+        ] {
+            assert_eq!(WeatherMetric::sensor_name(key), name);
+            assert_eq!(WeatherMetric::sensor_name(&key.to_ascii_uppercase()), name);
+            let sample = SampleRequest::readout(
+                &Readout::Property {
+                    source: Uuid::new_v4(),
+                    property: key.into(),
+                    unit: None,
+                },
+                true,
+            );
+            assert_eq!(sample.key, key);
+            assert_eq!(sample.member, key);
+            assert_eq!(sample.sensor_age.as_deref(), Some(key));
+            let poll = PropertyPoll::new(DeviceType::ObservingConditions, vec![sample], 1).unwrap();
+            let request = poll.prepare().unwrap();
+            assert_eq!(request.member, "timesincelastupdate");
+            assert_eq!(request.parameters["SensorName"], name);
+        }
+        for unknown in ["gain", "CustomSensor", ""] {
+            assert_eq!(WeatherMetric::sensor_name(unknown), unknown);
+        }
+    }
     #[tokio::test]
     async fn resume_rejects_a_snapshot_fetched_before_the_engine_lock() {
         let source = Uuid::new_v4();

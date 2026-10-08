@@ -3,6 +3,101 @@
 This records local review and tests for the single hub PR. Passing a foundation
 test does not imply that a frontend, transport, or hardware gate has passed.
 
+## 2026-10-07: installed external Alpaca inputs and connection failure isolation
+
+The installed independent ASCOM OmniSimulator, version
+`0.5.0+1c01cfc6660e71c336291261dba7806028129659`, owns loopback port 32323.
+The new [acceptance harness](../scripts/test-hub-omnisimulator.py) verifies its
+identity/catalog and requires all eight inputs disconnected with no pending
+connection. It owns a private host/publisher with pinned source identities,
+empty ordinary camera profiles, explicit native-worker simulation and no UDP
+discovery. It preserves configuration, binary hashes, traffic, image payloads,
+source diagnostics and cleanup in a fresh artifact directory. It accepts no
+hardware, COM identity or arbitrary upstream URL. Python optimization is rejected
+because it would disable acceptance assertions.
+
+The first external wheel connection failed because its six focus offsets
+`[3237,1467,6508,3805,2028,708]` have no zero reference. The
+[ASCOM contract](https://ascom-standards.org/newdocs/filterwheel.html#FilterWheel.FocusOffsets)
+requires one. Regain neither normalizes those offsets nor fabricates a reference.
+The harness records the rejection, continues gathering other classes' evidence,
+and still fails the overall run. The simulator's pinned source initializes
+offset defaults randomly; its setup page returned an application error. Its
+configuration was not edited or its process restarted.
+
+This exposed a Regain bug: the wheel's acknowledged metadata rejection closed
+the private session and removed healthy Switch/safety/weather/focuser/rotator
+leases sharing that Alpaca ClientID. Scoped structured rejections now preserve
+other outputs. Transport/protocol/unknown/uncertain outcomes keep their existing
+terminal cleanup and never replay commands. Connection progress is keyed by the
+validated output UUID, bounded by the catalog; failures survive unrelated
+successful operations until the affected output is explicitly reconciled.
+
+The new HTTP regression failed with the healthy switch disconnected before the
+fix (`hub-omnisimulator-isolation-red.log`). It then passed synchronous and
+asynchronous cases, retained errors across another connection, explicit failed
+output disconnect, unchanged healthy lease counts, no wheel movement and final
+cleanup (`hub-omnisimulator-isolation-green.log`). Classification coverage keeps
+uncertain, transport and future remote codes terminal and preserves sanitized
+error codes. Initial full Alpaca regression passed 19 unit, ten executable and
+50 HTTP cases in `hub-omnisimulator-alpaca-regression.log`.
+
+The rebuilt external run
+`hub-omnisimulator-cf7a88dcdce04e84b29ce834670c1c7d` passes the other seven
+classes' exercised checks, the native/network Switch gauge and a 32×24 camera
+capture. JSON and ImageBytes preserve all 768 pixels exactly across two clients;
+the second retains its connection and rereads the image after the first leaves.
+Its summary verifies restored camera settings, all eight upstream devices
+disconnected, all owned leases released and both owned processes stopped.
+Overall exit remains failure for the wheel's invalid offsets. The simulator
+configuration/process and attached physical equipment remain untouched.
+
+Review found a further bookkeeping edge: with no healthy outputs left, a
+synchronous rejection could retire the stream and erase another output's
+retained asynchronous failure. A new red regression preserves that observation
+in `hub-omnisimulator-retained-error-red.log`. Retirement now requires that the
+synchronous failure is the only retained result. The final Alpaca suite passes
+20 unit, ten executable and 51 HTTP cases in
+`hub-omnisimulator-alpaca-reviewed.log`; strict all-target Clippy and Rust 1.89
+checks pass in `hub-omnisimulator-clippy-reviewed.log` and
+`hub-omnisimulator-msrv-reviewed.log`. The rebuilt server/worker PE audit passes
+in `hub-omnisimulator-pe.log`. Formatting and whitespace checks pass.
+
+The external run predates that no-healthy-output retirement refinement and the
+harness's added restoration readback assertion; its existing traffic and
+cleanup observations remain evidence for the operations it performed. After
+cleanup, NINA 3.2.0.9001 started and the external camera was observed connected
+again. The user confirmed that session is in use and must be left alone. No
+repeated external run or installed-NINA pass is claimed from that state.
+
+Weather polling then revealed a separate interoperability issue. A direct probe
+records error 1279 for lowercase `temperature`/`pressure` sensor-age queries and
+valid ages for `Temperature`/`Pressure` in
+`hub-omnisimulator-weather-case-probe.json`. Although ASCOM requires
+[case-insensitive sensor names](https://ascom-standards.org/newdocs/observingconditions.html#ObservingConditions.TimeSinceLastUpdate),
+the installed simulator indexes a case-sensitive dictionary. Regain now prefers
+canonical interface spellings in both shared incremental Alpaca/COM polling,
+full Alpaca polling and capability inspection. Saved properties/cache keys stay
+lowercase; unknown property names pass through. No age, value, unit, freshness,
+retry or fallback semantics change. The existing interface-name table is reused.
+
+The wire-name regression fails before the change
+(`hub-omnisimulator-weather-red.log`). Final focused coverage passes 113 hub unit,
+27 Alpaca transport, seven capability, 26 COM, eight factory, nine virtual-source
+and six weather cases (`hub-omnisimulator-weather-green-final.log`). An initial
+Rust lifetime inference error remains in `hub-omnisimulator-weather-green.log`;
+the explicit match fixes it. Three harness tests cover pending-open/quiet-gap
+cleanup, invalid flags and a legacy ICameraV3 without Connecting
+(`hub-omnisimulator-harness-tests.log`). Cleanup requires three quiet observations
+of both modern connection flags; Connected=false alone is insufficient.
+
+An earlier ad hoc PowerShell probe returned transaction ID zero because its form
+was encoded incorrectly. Explicit form encoding returned the supplied ID. No
+transaction validation was weakened. Earlier harness method/interface-version
+errors and subsequent failing external runs remain retained, including verified
+owned-process/connection cleanup. External acceptance, installed-client,
+physical, OS/LAN and final review/CI/merge gates remain open.
+
 ## 2026-10-07: construction audit and camera/panel self-proxy regression
 
 Inspected original checklist items against current source/test assertions and

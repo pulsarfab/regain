@@ -34,10 +34,9 @@ struct Session {
     outputs: Mutex<BTreeSet<Uuid>>,
     camera_timings: Mutex<HashMap<Uuid, regain_hub::camera::ipc_timing::CameraOperationTiming>>,
     retired: AtomicBool,
-    progress: Mutex<Option<ConnectionProgress>>,
+    progress: Mutex<HashMap<Uuid, ConnectionProgress>>,
 }
 struct ConnectionProgress {
-    output: Uuid,
     error: Option<(i32, String)>,
 }
 impl Session {
@@ -48,7 +47,7 @@ impl Session {
             outputs: Mutex::new(BTreeSet::new()),
             camera_timings: Mutex::new(HashMap::new()),
             retired: AtomicBool::new(false),
-            progress: Mutex::new(None),
+            progress: Mutex::new(HashMap::new()),
         }
     }
     fn close(&self) {
@@ -304,10 +303,11 @@ impl Publisher {
             .try_lock_owned()
             .map_err(|_| error(0x40b, "This client's hub connection is changing"))?;
         let owner = self.clone();
-        *session.progress.lock().unwrap() = Some(ConnectionProgress {
-            output,
-            error: None,
-        });
+        session
+            .progress
+            .lock()
+            .unwrap()
+            .insert(output, ConnectionProgress { error: None });
         let mut progress = ConnectionGuard {
             owner: owner.clone(),
             session: session.clone(),
@@ -366,18 +366,21 @@ impl Publisher {
                     Command::Disconnect { output }
                 };
                 if camera && on {
-                    let timing = client.camera_timing(output).await.map_err(translate)?;
+                    let timing = client
+                        .camera_timing(output)
+                        .await
+                        .map_err(connection_failure)?;
                     client
                         .request_camera(&timing, command)
                         .await
-                        .map_err(translate)?;
+                        .map_err(connection_failure)?;
                     session
                         .camera_timings
                         .lock()
                         .unwrap()
                         .insert(output, timing);
                 } else {
-                    client.request(command).await.map_err(translate)?;
+                    client.request(command).await.map_err(connection_failure)?;
                     if camera {
                         session.camera_timings.lock().unwrap().remove(&output);
                     }
@@ -432,9 +435,7 @@ impl Publisher {
             let Some(session) = self.existing(id) else {
                 return Ok(json!(false));
             };
-            if let Some(progress) = &*session.progress.lock().unwrap()
-                && progress.output == device.id
-            {
+            if let Some(progress) = session.progress.lock().unwrap().get(&device.id) {
                 if let Some((code, message)) = &progress.error {
                     return Err(error(*code, message.clone()));
                 }
@@ -653,6 +654,25 @@ impl Publisher {
         Ok(value)
     }
 }
+#[derive(Debug)]
+struct OutputConnectionRejected;
+impl std::fmt::Display for OutputConnectionRejected {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Host rejected this output connection")
+    }
+}
+impl std::error::Error for OutputConnectionRejected {}
+
+fn connection_failure(failure: ClientError) -> anyhow::Error {
+    let rejected = matches!(&failure, ClientError::Remote(remote) if matches!(remote.code.as_str(),
+        "unsupported" | "invalidValue" | "unavailable" | "busy" | "permanent" | "disconnected" | "connecting"));
+    let failure = translate(failure);
+    if rejected {
+        failure.context(OutputConnectionRejected)
+    } else {
+        failure
+    }
+}
 struct ConnectionGuard {
     owner: Arc<Publisher>,
     session: Arc<Session>,
@@ -668,21 +688,36 @@ impl ConnectionGuard {
                 .downcast_ref::<crate::device::Error>()
                 .map(|failure| (failure.0, failure.1.clone()))
                 .unwrap_or((0x500, "Hub connection failed; outcome is uncertain".into()));
-            *self.session.progress.lock().unwrap() = Some(ConnectionProgress {
-                output: self.output,
-                error: Some((code, message)),
-            });
-            // Revoke every private lease on failure. Retain an asynchronous
-            // failure in the bounded client slot until explicit reconciliation,
-            // so polling Connecting cannot mistake failure for success.
-            self.session.close();
-            self.session.outputs.lock().unwrap().clear();
-            if !self.asynchronous {
-                self.owner.retire(self.id, &self.session);
+            self.session.progress.lock().unwrap().insert(
+                self.output,
+                ConnectionProgress {
+                    error: Some((code, message)),
+                },
+            );
+            if failure.is::<OutputConnectionRejected>() {
+                // A structured host rejection leaves this stream and its
+                // other output leases intact. Keep async failure per output
+                // until that output is explicitly connected/disconnected again.
+                if !self.asynchronous
+                    && self.session.outputs.lock().unwrap().is_empty()
+                    && self.session.progress.lock().unwrap().len() == 1
+                {
+                    self.owner.retire(self.id, &self.session);
+                }
+            } else {
+                // Unknown or lost outcomes still revoke the entire stream;
+                // never adopt a possibly completed operation or replay it.
+                self.session.close();
+                self.session.outputs.lock().unwrap().clear();
+                if !self.asynchronous {
+                    self.owner.retire(self.id, &self.session);
+                }
             }
         } else {
-            *self.session.progress.lock().unwrap() = None;
-            if self.session.outputs.lock().unwrap().is_empty() {
+            self.session.progress.lock().unwrap().remove(&self.output);
+            if self.session.outputs.lock().unwrap().is_empty()
+                && self.session.progress.lock().unwrap().is_empty()
+            {
                 self.owner.retire(self.id, &self.session);
             }
         }
@@ -895,6 +930,36 @@ fn translate(failure: ClientError) -> anyhow::Error {
 #[cfg(test)]
 mod setup_tests {
     use super::*;
+    #[test]
+    fn connection_rejection_does_not_adopt_transport_or_unknown_remote_outcomes() {
+        let remote = |code: &str| {
+            ClientError::Remote(regain_hub::client::RemoteError {
+                code: code.into(),
+                message: "Untrusted driver text".into(),
+                upstream_code: None,
+                retry_after_seconds: None,
+                fields: Vec::new(),
+            })
+        };
+        let definite = connection_failure(remote("unavailable"));
+        assert!(definite.is::<OutputConnectionRejected>());
+        assert_eq!(
+            definite.downcast_ref::<crate::device::Error>().unwrap().0,
+            0x402
+        );
+        for failure in [
+            ClientError::Uncertain,
+            ClientError::Timeout,
+            ClientError::Protocol,
+            ClientError::Disconnected,
+            remote("uncertain"),
+            remote("futureOutcome"),
+        ] {
+            let failure = connection_failure(failure);
+            assert!(!failure.is::<OutputConnectionRejected>());
+            assert!(!format!("{failure:#}").contains("Untrusted driver text"));
+        }
+    }
     #[tokio::test]
     async fn explicit_setup_reload_recovers_only_setup_and_respects_admission_and_shutdown() {
         use regain_hub::{

@@ -2,7 +2,7 @@
 //! Transport adapters issue one request at a time; this state owns type checks,
 //! conservative sensor ages and same-key retry accounting, not source ownership.
 use crate::{
-    config::{DeviceType, Readout},
+    config::{DeviceType, Readout, WeatherMetric},
     source::{ErrorKind, MAX_SAMPLE_KEYS, SampleBatch, SampleBudget, SourceError, Values},
 };
 use serde_json::{Value, json};
@@ -160,7 +160,10 @@ impl PropertyPoll {
                 sample.member.clone()
             },
             parameters: if needs_age {
-                Values::from([("SensorName".into(), json!(sample.sensor_age))])
+                Values::from([(
+                    "SensorName".into(),
+                    json!(sample.sensor_age.as_deref().map(WeatherMetric::sensor_name)),
+                )])
             } else {
                 sample.parameters.clone()
             },

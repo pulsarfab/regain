@@ -45,7 +45,7 @@ worker hash are `hub-audit-mixed-source.log` and `hub-audit-native-provenance.js
 
 | Gate | Evidence required to close it | Current boundary |
 | --- | --- | --- |
-| Installed native NINA | Actual plugin load/chooser/setup and device/group operations, with exact application version; direct use without HTTP and native/network use without installed ASCOM Platform | Provider fixtures, real assemblies and NINA sequence serialization are covered; installed application acceptance is not. |
+| Installed native NINA | Actual plugin load/chooser/setup and device/group operations, with exact application version; direct use without HTTP and native/network use without installed ASCOM Platform | Provider fixtures, real assemblies and NINA sequence serialization are covered; installed application acceptance is not. NINA 3.2.0.9001 is currently in use; the user asked that session be left alone. |
 | Installed COM/installer lifecycle | Actual signed payloads, Chooser/UAC, x86/x64 activation, owned registration preservation through upgrade/uninstall, profile compatibility | Private registry/export and installer construction coverage does not prove this. |
 | Mixed physical inputs and sharing | Identify idle, authorized hardware; exercise native/network/COM combinations, short safe operations, disconnect/reconnect, per-client command conflicts and recovery | ASI585MM Pro/ASI662MC are attached but ASIStudio is open; availability question remains unanswered. No camera was opened during this audit. |
 | Real sleep/wake | Actual suspend/resume on supported OSes, independent safety/weather withdrawal, session reconnect, uncertain-command fencing and retained image behavior | Injected clocks and Windows/Linux/macOS implementation checks exist; real OS acceptance is open. |
@@ -54,9 +54,30 @@ worker hash are `hub-audit-mixed-source.log` and `hub-audit-native-provenance.js
 | Documentation/publication | Final release copy, README/setup/site consistency, correct stable/preview boundary, screenshots, then publish the companion site | Stable 0.5.11 and preview branch alignment passes; website branch 57dff44 is not deployed. |
 | Final reconciliation/review/CI/merge | Fresh main, full requirement audit, relevant final local regression, final CI/review, then merge the single PR #21 | Main was still 475d817 when inspected; PR is open/draft. Intermediate CI is not a waiting gate. |
 
-The running external ASCOM OmniSimulator was inspected read-only: version
-`0.5.0+1c01cfc6660e71c336291261dba7806028129659`, loopback port 32323,
-all eight supported classes present and initially disconnected. Catalog and
-before-state are retained in `hub-omnisimulator-catalog.json` and
-`hub-omnisimulator-before.json`. This is preparation for testing a real external
-application; catalog inspection alone is not an acceptance pass.
+## Independent external Alpaca application
+
+Installed ASCOM OmniSimulator
+`0.5.0+1c01cfc6660e71c336291261dba7806028129659` on loopback port 32323
+was exercised through a private production Hub with pinned identities. The
+[harness](../scripts/test-hub-omnisimulator.py) preserves the original app settings
+and requires idle/disconnected inputs. The current external record is
+`hub-omnisimulator-cf7a88dcdce04e84b29ce834670c1c7d/summary.json`.
+
+Seven classes pass their exercised operations: scalar Switch, safety and weather
+readback; focuser/rotator/panel readback; and camera acquisition. The Switch also
+combines an explicit native FocusCube3 worker simulation with the external
+network channel. A 32×24 camera exposure preserves all 768 pixels across JSON,
+ImageBytes and two clients; disconnecting the first preserves the second's
+connection and exact image reread. This does not test physical camera recovery,
+device motion, installed NINA/COM or a real LAN.
+
+The eighth class remains rejected: the wheel's six focus offsets contain no
+required zero reference. No reference was fabricated and the overall command
+returns failure. The record verifies restored camera settings, released owned
+leases, all eight upstream devices disconnected after asynchronous completion,
+and both owned processes stopped. The pre-existing simulator remains running.
+
+This slice fixed shared-ClientID failure isolation and canonical weather sensor
+parameters; local regression and review evidence are in [the review](hub-review.md).
+It advances external application acceptance without closing the all-class or
+original final acceptance gates.

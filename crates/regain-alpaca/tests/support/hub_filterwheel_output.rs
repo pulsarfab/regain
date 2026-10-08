@@ -2,6 +2,182 @@ use super::*;
 use std::sync::atomic::Ordering::SeqCst;
 
 #[tokio::test]
+async fn synchronous_rejection_without_healthy_outputs_cannot_erase_another_async_failure() {
+    let wheel = AccessoryUpstream::filterwheel(3).await;
+    wheel
+        .values
+        .lock()
+        .unwrap()
+        .insert("focusoffsets".into(), json!([1, 2, 3]));
+    let f = Fixture::from_config(wheel.config(&[40, 41])).await;
+    f.ok("PUT", "/api/v1/filterwheel/40/connect", "ClientID=73")
+        .await;
+    eventually(async || {
+        f.call("GET", "/api/v1/filterwheel/40/connecting", "ClientID=73")
+            .await["ErrorNumber"]
+            == 0x402
+    })
+    .await;
+    assert_eq!(
+        f.call(
+            "PUT",
+            "/api/v1/filterwheel/41/connected",
+            "ClientID=73&Connected=true"
+        )
+        .await["ErrorNumber"],
+        0x402
+    );
+    assert_eq!(
+        f.call("GET", "/api/v1/filterwheel/40/connecting", "ClientID=73")
+            .await["ErrorNumber"],
+        0x402
+    );
+    f.ok(
+        "PUT",
+        "/api/v1/filterwheel/40/connected",
+        "ClientID=73&Connected=false",
+    )
+    .await;
+    f.ok(
+        "PUT",
+        "/api/v1/filterwheel/41/connected",
+        "ClientID=73&Connected=false",
+    )
+    .await;
+    eventually(async || f.hub.active_connections() == 0 && !wheel.connected.load(SeqCst)).await;
+    f.finish().await;
+}
+
+#[tokio::test]
+async fn rejected_wheel_connection_preserves_same_clients_other_outputs_and_retained_failure() {
+    for asynchronous in [false, true] {
+        let wheel = AccessoryUpstream::filterwheel(3).await;
+        wheel
+            .values
+            .lock()
+            .unwrap()
+            .insert("focusoffsets".into(), json!([3237, 1467, 6508]));
+        let mut config: HubConfig = serde_json::from_str(include_str!(
+            "../../../regain-hub/examples/simulated-observatory.json"
+        ))
+        .unwrap();
+        config.outputs[1].number = 1;
+        let extra = wheel.config(&[40]);
+        config.sources.extend(extra.sources);
+        config.outputs.extend(extra.outputs);
+        let f = Fixture::from_config(config).await;
+        let switch_number = f.config.outputs[0].number;
+        let switch = format!("/api/v1/switch/{switch_number}");
+        f.ok(
+            "PUT",
+            &format!("{switch}/connected"),
+            "ClientID=73&Connected=true",
+        )
+        .await;
+        let lease_count = f
+            .hub
+            .source_snapshot(f.config.sources[0].id)
+            .unwrap()
+            .lease_count;
+        let failure = if asynchronous {
+            f.ok("PUT", "/api/v1/filterwheel/40/connect", "ClientID=73")
+                .await;
+            eventually(async || {
+                f.call("GET", "/api/v1/filterwheel/40/connecting", "ClientID=73")
+                    .await["ErrorNumber"]
+                    != 0
+            })
+            .await;
+            f.call("GET", "/api/v1/filterwheel/40/connecting", "ClientID=73")
+                .await
+        } else {
+            f.call(
+                "PUT",
+                "/api/v1/filterwheel/40/connected",
+                "ClientID=73&Connected=true",
+            )
+            .await
+        };
+        assert_eq!(failure["ErrorNumber"], 0x402);
+        assert_eq!(
+            f.ok("GET", &format!("{switch}/connected"), "ClientID=73")
+                .await,
+            true
+        );
+        assert_eq!(
+            f.hub
+                .source_snapshot(f.config.sources[0].id)
+                .unwrap()
+                .lease_count,
+            lease_count
+        );
+        // Another successful operation must neither erase the failed wheel's
+        // asynchronous result nor disconnect the healthy switch on reconciliation.
+        f.ok(
+            "PUT",
+            "/api/v1/safetymonitor/1/connected",
+            "ClientID=73&Connected=true",
+        )
+        .await;
+        if asynchronous {
+            assert_eq!(
+                f.call("GET", "/api/v1/filterwheel/40/connecting", "ClientID=73")
+                    .await["ErrorNumber"],
+                0x402
+            );
+        }
+        f.ok(
+            "PUT",
+            "/api/v1/filterwheel/40/connected",
+            "ClientID=73&Connected=false",
+        )
+        .await;
+        assert_eq!(
+            f.ok("GET", "/api/v1/filterwheel/40/connecting", "ClientID=73")
+                .await,
+            false
+        );
+        assert_eq!(
+            f.ok("GET", &format!("{switch}/connected"), "ClientID=73")
+                .await,
+            true
+        );
+        assert_eq!(
+            f.ok("GET", "/api/v1/safetymonitor/1/connected", "ClientID=73")
+                .await,
+            true
+        );
+        eventually(async || {
+            f.hub.source_snapshot(wheel.source.id).unwrap().lease_count == 0
+                && !wheel.connected.load(SeqCst)
+        })
+        .await;
+        assert!(
+            wheel
+                .writes
+                .lock()
+                .unwrap()
+                .iter()
+                .all(|(member, _)| matches!(member.as_str(), "connect" | "disconnect"))
+        );
+        f.ok(
+            "PUT",
+            "/api/v1/safetymonitor/1/connected",
+            "ClientID=73&Connected=false",
+        )
+        .await;
+        f.ok(
+            "PUT",
+            &format!("{switch}/connected"),
+            "ClientID=73&Connected=false",
+        )
+        .await;
+        eventually(async || f.hub.active_connections() == 0).await;
+        f.finish().await;
+    }
+}
+
+#[tokio::test]
 async fn dedicated_wheel_simulation_publishes_arrays_timed_position_and_shared_faults() {
     let mut config = HubConfig::empty();
     let source = uuid::Uuid::new_v4();

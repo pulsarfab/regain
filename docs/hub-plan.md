@@ -20,7 +20,33 @@ ASCOM worker tree before packaging. Local ZWO library tests (99), seven runtime
 gate cases, PowerShell parsing and whitespace checks pass. This does not close
 the final main reconciliation or acceptance gates.
 
-Current increment: construction audit and self-proxy validation correction.
+Current increment: independent OmniSimulator integration and failure isolation.
+An installed ASCOM Alpaca Simulators 0.5.0 instance exposed a connection bug:
+rejecting one output retired every output sharing that HTTP ClientID. Definite
+host rejections now preserve other leases; lost, malformed, unknown and uncertain
+outcomes still revoke the private stream. Connection progress/errors are per
+output, so another successful connection cannot erase an asynchronous failure.
+The regression fails before the fix and passes for synchronous/asynchronous
+connection, later sibling connection, explicit reconciliation and final cleanup.
+
+The simulator also rejects lowercase weather sensor names despite the caseless
+interface contract. A direct probe preserves both failing lowercase replies and
+successful canonical replies. Shared polling and capability inspection now send
+canonical interface spellings while retaining lowercase saved/cache keys and
+preserving unknown property names. Local core/transport/COM/weather checks pass.
+The external wheel reports six nonzero offsets, violating the required zero
+reference; Regain continues to reject it. External acceptance is not declared
+complete. See [the acceptance matrix](hub-acceptance.md) and
+[the review record](hub-review.md) for bounded evidence and remaining gates.
+Seven external classes' exercised operations pass, including exact 768-pixel
+camera data across JSON/ImageBytes and two clients. Final local checks pass 196
+focused hub cases, 20 Alpaca unit, ten executable and 51 HTTP cases, strict
+Clippy, Rust 1.89 and the PE runtime audit. A review regression also preserves
+older asynchronous failures when no healthy outputs remain. The later NINA
+3.2.0.9001 session is in use; the user requested it be left alone. Continue
+independent work without disturbing NINA or its connected simulator camera.
+
+Previous increment: construction audit and self-proxy validation correction.
 The [construction/acceptance matrix](hub-acceptance.md) maps the original items
 to current implementation and inspected test assertions. Eleven stale
 construction checkboxes are now checked; actual installed/physical/OS/LAN,
@@ -39,12 +65,10 @@ all-target Clippy and Rust 1.89 checks pass. A fresh mixed native/HTTP test uses
 an explicitly supplied production-worker directory with simulation and records
 the worker hash. It verifies shared temperature, independent leases and release
 order without opening hardware. No broad regression or CI wait was repeated.
-Read-only inspection identifies the running external OmniSimulator and its
-eight initially disconnected supported classes for the next real-application
-acceptance slice. Cameras remain untouched while ASIStudio is open and their
-availability question remains unanswered. Next: external simulator integration,
-installed/physical and real OS/LAN acceptance, fresh main and final review/CI/
-audit/merge. Keep the single PR #21 draft.
+The later external integration slice builds on its read-only catalog and
+initial-state inspection. Physical cameras remain untouched while ASIStudio is
+open and their availability question remains unanswered. Installed/physical,
+real OS/LAN, final main/review/CI/audit/merge gates remain open. Keep PR #21 draft.
 
 Previous increment: stable website alignment. The companion website branch is
 committed and pushed at

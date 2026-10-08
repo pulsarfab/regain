@@ -94,7 +94,7 @@ impl Backend for Mock {
                         json!(true)
                     }
                 }
-                "sensordescription" if args["SensorName"] == "humidity" => {
+                "sensordescription" if args["SensorName"] == "Humidity" => {
                     return Err(SourceError::new(
                         ErrorKind::Unsupported,
                         "Fixture sensor not implemented",

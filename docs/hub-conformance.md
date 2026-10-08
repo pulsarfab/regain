@@ -1,5 +1,32 @@
 # Hub conformance checks
 
+## Independent external inputs
+
+To exercise an already running ASCOM OmniSimulator as an upstream application:
+
+```powershell
+cargo build -p regain-alpaca --locked -j2
+python scripts/test-hub-omnisimulator.py --simulator-port 32323
+python -m unittest discover -s scripts -p test_hub_omnisimulator.py
+```
+
+The harness accepts only a loopback port, checks the simulator's identity and
+requires all eight supported devices disconnected with no pending connection.
+It owns a separate Hub and HTTP publisher with pinned inputs, empty ordinary
+camera profiles, no discovery, and one explicitly simulated native FocusCube3
+gauge. It checks scalar/typed readback and a small camera exposure, comparing
+exact JSON/ImageBytes pixels and a surviving second client. It restores camera
+settings, releases its leases, waits for both modern connection flags to become
+quiet, and stops only its owned processes. Do not run Python with `-O`.
+
+Evidence is retained under `artifacts/hub-omnisimulator-<id>/`. A known invalid
+external wheel offset array is recorded as a rejection while other checks
+continue; the command still fails overall. The current external record and its
+limits are in [the acceptance matrix](hub-acceptance.md). This is distinct from
+ConformU validating Regain's outputs and from physical/installed-client acceptance.
+
+## Regain output validation
+
 Run external protocol and interface checks against an isolated simulated hub:
 
 ```powershell
