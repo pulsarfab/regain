@@ -8,6 +8,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
   <ItemGroup><Resource Include="../../assets/regain.png" Link="Assets/regain.png" /></ItemGroup>
+  <ItemGroup><EmbeddedResource Include="../../contracts/camera-recovery.json" LogicalName="Regain.CameraRecovery.json" /></ItemGroup>
   <ItemGroup><InternalsVisibleTo Include="Regain.NINA.Tests" /><InternalsVisibleTo Include="Regain.Hub.Client.Fixture" /></ItemGroup>
   <ItemGroup Condition="'$(TargetFramework)' != 'net48'"><PackageReference Include="System.Text.Json" Version="9.0.5" /></ItemGroup>
   <ItemGroup Condition="'$(TargetFramework)' == 'net48'"><PackageReference Include="System.Text.Json" Version="10.0.8" /></ItemGroup>

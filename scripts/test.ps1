@@ -9,6 +9,10 @@ try {
     }
     cargo fmt --check
     if ($LASTEXITCODE) { throw 'Rust formatting failed' }
+    cargo run -p regain-core --example export_recovery --locked -- contracts/camera-recovery.json src/Regain.Core/RecoveryOptions.g.cs --check
+    if ($LASTEXITCODE) { throw 'Generated camera recovery contracts are stale' }
+    node scripts/test-camera-recovery.mjs
+    if ($LASTEXITCODE) { throw 'Camera recovery browser contract failed' }
     cargo clippy --all-targets --locked -- -D warnings
     if ($LASTEXITCODE) { throw 'Rust lint failed' }
     cargo build --locked

@@ -45,31 +45,3 @@ public sealed record CameraDescriptor(string Name, int Width, int Height, bool C
         return e with {x=horizontal.origin, y=vertical.origin, width=horizontal.size, height=vertical.size};
     }
 }
-public sealed record RecoveryOptions
-{
-    public int MaxRetries { get; init; } = 3;
-    public double MaximumRetryExposureSeconds { get; init; } = 30;
-    public double ReconnectDelaySeconds { get; init; } = 5;
-    public double CommandTimeoutSeconds { get; init; } = 15;
-    public double DownloadTimeoutSeconds { get; init; } = 60;
-    public double ExposureGraceSeconds { get; init; } = 30;
-    public double CoolingTimeoutSeconds { get; init; } = 300;
-    public double TemperatureToleranceC { get; init; } = 2;
-    public int CoolingStableSamples { get; init; } = 3;
-    public double CoolingSampleSeconds { get; init; } = 2;
-    // Retry the same download only while the SDK still reports a ready frame.
-    public int ReadyFrameDownloadRetries { get; init; } = 2;
-    public int DirectReadRetries { get; init; } = 2;
-    public int UsbResetAfterFailures { get; init; } = 0;
-    public bool UsbPortCycle { get; init; } = false;
-    public void Validate()
-    {
-        if (!double.IsFinite(MaximumRetryExposureSeconds) || MaximumRetryExposureSeconds < 0 || MaximumRetryExposureSeconds > 86400)
-            throw new ArgumentOutOfRangeException(nameof(MaximumRetryExposureSeconds));
-        if (MaxRetries is < 0 or > 20 || ReadyFrameDownloadRetries is < 0 or > 5 || DirectReadRetries is < 0 or > 5 || UsbResetAfterFailures is < 0 or > 20 || CoolingStableSamples is < 1 or > 60)
-            throw new ArgumentOutOfRangeException(nameof(MaxRetries));
-        foreach (double v in new[] { ReconnectDelaySeconds, CommandTimeoutSeconds, DownloadTimeoutSeconds, ExposureGraceSeconds, CoolingTimeoutSeconds, TemperatureToleranceC, CoolingSampleSeconds })
-            if (!double.IsFinite(v) || v <= 0 || v > 3600)
-                throw new ArgumentOutOfRangeException(nameof(v));
-    }
-}

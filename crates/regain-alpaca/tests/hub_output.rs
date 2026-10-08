@@ -1031,6 +1031,46 @@ impl Fixture {
 }
 
 #[tokio::test]
+async fn standalone_recovery_description_uses_core_metadata_without_equipment_leases() {
+    let f = Fixture::new().await;
+    let (status, metadata) = request(&f.router, "GET", "/setup/api/camera-recovery", "").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(metadata["contractVersion"], 1);
+    assert_eq!(metadata["platform"], std::env::consts::OS);
+    assert_eq!(metadata["schema"], regain_core::RecoveryOptions::schema());
+    for path in ["/setup.js", "/camera-recovery.mjs", "/setup"] {
+        let response = f
+            .router
+            .clone()
+            .oneshot(Request::builder().uri(path).body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK, "{path}");
+        let text = String::from_utf8(
+            response
+                .into_body()
+                .collect()
+                .await
+                .unwrap()
+                .to_bytes()
+                .to_vec(),
+        )
+        .unwrap();
+        assert!(!text.is_empty());
+        if path == "/setup" {
+            assert!(text.contains("type=\"module\""));
+        }
+    }
+    assert!(
+        f.hub
+            .source_snapshots()
+            .iter()
+            .all(|s| s.lease_count == 0 && !s.transport_connected)
+    );
+    f.finish().await;
+}
+
+#[tokio::test]
 async fn accessory_only_setup_has_no_dummy_cameras_and_can_add_its_first_slot() {
     let f = Fixture::new().await;
     assert_eq!(

@@ -45,6 +45,8 @@ jobs:
       - run: cargo fmt --check
       - name: Verify generated hub configuration contract
         run: cargo run -p regain-hub --example export_config --locked -- contracts/hub-config.json --check
+      - name: Verify generated camera recovery contracts
+        run: cargo run -p regain-core --example export_recovery --locked -- contracts/camera-recovery.json src/Regain.Core/RecoveryOptions.g.cs --check
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - run: cargo build --workspace --release --locked
       - run: cargo test --workspace --locked
@@ -123,6 +125,7 @@ jobs:
         with:
           node-version: '22'
       - run: node scripts/test-hub-config.mjs
+      - run: node scripts/test-camera-recovery.mjs
       - name: Test Windows runtime dependency gate
         run: python -m unittest discover -s scripts -p test_windows_runtime.py
       - name: Test release branch and tag validation

@@ -88,43 +88,11 @@ internal static class Settings
             HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 2, 0, 8) };
         panel.Children.Add(fallback);
         fallback.ToolTip = "If direct capture fails or is unsupported, use the SDK until disconnect. Retry limits still apply.";
-        var entries = new Dictionary<string, TextBox>();
         var current = Load();
-        void AddFields(StackPanel body, params (string Property, string Label)[] fields)
-        {
-            foreach (var (name, label) in fields)
-            {
-                var property = typeof(RecoveryOptions).GetProperty(name)!;
-                var row = new Grid { Margin = new Thickness(0, 0, 0, 14) };
-                row.ColumnDefinitions.Add(new ColumnDefinition());
-                row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(110) });
-                row.Children.Add(new TextBlock { Text = label, TextWrapping = TextWrapping.Wrap,
-                    VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 16, 0) });
-                var field = new TextBox { Text = Convert.ToString(property.GetValue(current), System.Globalization.CultureInfo.InvariantCulture),
-                    VerticalContentAlignment = VerticalAlignment.Center, MinHeight = 28 };
-                System.Windows.Automation.AutomationProperties.SetName(field, label);
-                Grid.SetColumn(field, 1);
-                row.Children.Add(field);
-                entries[name] = field;
-                body.Children.Add(row);
-            }
-        }
-        var recovery = AddTab("Recovery", "Reconnect and repeat failed exposures within these limits.");
-        AddFields(recovery,
-            (nameof(RecoveryOptions.MaxRetries), "Full recapture retries"),
-            (nameof(RecoveryOptions.MaximumRetryExposureSeconds), "Recapture exposure limit (s; 0 disables)"),
-            (nameof(RecoveryOptions.ReconnectDelaySeconds), "Reconnect delay (s)"),
-            (nameof(RecoveryOptions.UsbResetAfterFailures), "USB reset after failed attempts (0 disables)"));
-        entries[nameof(RecoveryOptions.UsbResetAfterFailures)].ToolTip = "Opt-in, at most once per capture. Use 2 to try reconnecting first. Only runs when another replacement exposure is allowed. Windows may request administrator approval; this does not switch the camera's 12 V supply.";
-        var cooling = AddTab("Cooling", "Restore the setpoint; wait for the previous temperature and cooler output.");
-        AddFields(cooling,
-            (nameof(RecoveryOptions.TemperatureToleranceC), "Temperature tolerance (°C)"),
-            (nameof(RecoveryOptions.CoolingStableSamples), "Stable readings"),
-            (nameof(RecoveryOptions.CoolingSampleSeconds), "Sample interval (s)"),
-            (nameof(RecoveryOptions.CoolingTimeoutSeconds), "Recovery timeout (s)"));
-        entries[nameof(RecoveryOptions.TemperatureToleranceC)].ToolTip = "Further cooling toward the setpoint is accepted. Cooler output must reach at least its previous value minus 10 percentage points, if reported.";
+        var recovery = AddTab("Recovery", "Replacement exposures and same-frame rereads use separate limits.");
+        var cooling = AddTab("Cooling", "Recovery restores the prior cooler state before a replacement exposure.");
         var advanced = AddTab("Advanced");
-        advanced.Children.Add(new TextBlock { Text = "Fan and LED settings require a P25 camera.",
+        advanced.Children.Add(new TextBlock { Text = "Available fan and LED controls depend on the selected camera.",
             TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 10) });
         TextBox OptionalCameraControl(string label, int? value) {
             advanced.Children.Add(new TextBlock {Text=label, Margin=new Thickness(0,0,0,2)});
@@ -142,14 +110,10 @@ internal static class Settings
         }
         picker.SelectionChanged += (_,_) => UpdateAuxiliaryControls();
         UpdateAuxiliaryControls();
-        AddFields(advanced,
-            (nameof(RecoveryOptions.CommandTimeoutSeconds), "Command timeout (s)"),
-            (nameof(RecoveryOptions.DownloadTimeoutSeconds), "Download timeout (s)"),
-            (nameof(RecoveryOptions.ExposureGraceSeconds), "Exposure grace period (s)"),
-            (nameof(RecoveryOptions.ReadyFrameDownloadRetries), "SDK read retries (0-5)"),
-            (nameof(RecoveryOptions.DirectReadRetries), "Direct read retries (0-5)"));
-        entries[nameof(RecoveryOptions.ReadyFrameDownloadRetries)].ToolTip = "Default: 2. Requires a ready frame in the SDK. Independent of the recapture exposure limit.";
-        entries[nameof(RecoveryOptions.DirectReadRetries)].ToolTip = "Default: 2. ASI585, ASI2600, ASI6200, ASI662 and ASI676 retry the same retained frame at any exposure length. Guide retries read a new frame and obey the exposure limit.";
+        var recoveryJson = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+        var recoveryForm = new Regain.Rotator.CameraRecoveryForm(
+            JsonSerializer.SerializeToElement(current, recoveryJson),
+            section => section == "Cooling" ? cooling : section == "Timeouts" ? advanced : recovery);
         var status = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 8) };
         footer.Children.Add(status);
         var actions = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
@@ -204,8 +168,7 @@ internal static class Settings
         {
             try
             {
-                var values = entries.ToDictionary(k => k.Key, k => double.Parse(k.Value.Text, System.Globalization.CultureInfo.InvariantCulture));
-                var options = JsonSerializer.Deserialize<RecoveryOptions>(JsonSerializer.Serialize(values))! with { UsbPortCycle = current.UsbPortCycle };
+                var options = JsonSerializer.Deserialize<RecoveryOptions>(recoveryForm.Read().GetRawText(), recoveryJson)!;
                 options.Validate();
                 if (picker.SelectedItem is not CameraChoice choice)
                     throw new InvalidOperationException("Choose a camera before saving.");

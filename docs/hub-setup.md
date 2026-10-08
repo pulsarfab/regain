@@ -771,6 +771,30 @@ the interface index is local routing context and is not sent in HTTP headers.
 Private loopback tests cover the transport. LAN routing acceptance remains an
 open plan gate.
 
+## Set native camera recovery limits
+
+For a native SDK/direct camera, edit its **Recovery** fields in shared setup and
+review/apply before reconnecting. The standalone NINA, native ASCOM and Alpaca
+camera editors use the same field descriptions and limits. Replacement exposures
+and same-frame rereads remain separate: a long exposure may allow a retained-frame
+reread on a supported camera without allowing a replacement exposure. Proxy
+cameras do not gain that capability by being republished.
+
+USB reset stays disabled at zero. The Linux port-cycle option appears only for a
+Linux host; editing on Windows preserves its saved value. These settings do not
+change external camera power. Set limits for the chosen equipment; small positive
+timeouts are accepted by the format, but do not imply that hardware can finish
+within them. See [camera recovery](hub-contract.md#native-camera-recovery-configuration)
+for defaults, platform rules and compatibility.
+
+![Shared recovery form preview with no equipment](images/camera-recovery-native.png)
+
+This render exercises the component used by NINA and native ASCOM. It opens no
+camera. The actual Alpaca setup below uses a private simulated server with no
+camera selected; its simulation notice is intentional.
+
+![Alpaca recovery editor on a private simulated server](images/camera-recovery-web-simulation.png)
+
 ## Move a calibrated focuser group
 
 Add **Focuser groups** in Configuration and define a group label, logical travel

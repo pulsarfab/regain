@@ -10,6 +10,9 @@
     <GenerateBindingRedirectsOutputType>true</GenerateBindingRedirectsOutputType>
   </PropertyGroup>
   <ItemGroup>
+    <Reference Include="PresentationFramework" />
+    <Reference Include="PresentationCore" />
+    <Reference Include="WindowsBase" />
     <Compile Include="../HubAccessoryServer.cs" Link="HubAccessoryServer.cs" />
     <Compile Include="../HubDiscoveryFixture.cs" Link="HubDiscoveryFixture.cs" />
     <Compile Include="../HubLocalRegistryFixture.cs" Link="HubLocalRegistryFixture.cs" />

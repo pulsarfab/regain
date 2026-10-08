@@ -26,6 +26,18 @@ pub struct RecoveryField {
     pub value_type: RecoveryType,
 }
 impl RecoveryField {
+    pub fn section(&self) -> &'static str {
+        match self.key {
+            "coolingTimeoutSeconds"
+            | "temperatureToleranceC"
+            | "coolingStableSamples"
+            | "coolingSampleSeconds" => "Cooling",
+            "commandTimeoutSeconds" | "downloadTimeoutSeconds" | "exposureGraceSeconds" => {
+                "Timeouts"
+            }
+            _ => "Recovery",
+        }
+    }
     pub fn accepts(&self, value: &Value) -> bool {
         match self.value_type {
             RecoveryType::Boolean => value.is_boolean(),
@@ -46,7 +58,8 @@ impl RecoveryField {
             "title":self.label,"description":self.description,"default":self.default,
             "x-regain":{"key":self.key,"label":self.label,"description":self.description,
                 "group":"Native camera recovery","units":self.units,"step":self.step,
-                "apply":"reconnect","sensitive":false}
+                "apply":"reconnect","sensitive":false,"section":self.section(),
+                "platforms":if self.key == "usbPortCycle" {vec!["linux"]} else {vec!["windows","linux","macos"]}}
         });
         match self.value_type {
             RecoveryType::Boolean => schema["type"] = json!("boolean"),
@@ -94,7 +107,11 @@ macro_rules! recovery {
             /// Strict hub/frontend schema without a schema/compiler dependency.
             /// Legacy profile loading intentionally still tolerates unknown keys.
             pub fn schema() -> Value {
-                let properties: serde_json::Map<String, Value> = Self::fields().into_iter().map(|field| (field.key.into(),field.schema())).collect();
+                let properties: serde_json::Map<String, Value> = Self::fields().into_iter().enumerate().map(|(order, field)| {
+                    let mut schema = field.schema();
+                    schema["x-regain"]["order"] = json!(order);
+                    (field.key.into(),schema)
+                }).collect();
                 json!({"type":"object","additionalProperties":false,"default":Self::default(),"properties":properties})
             }
         }
@@ -109,11 +126,11 @@ recovery! {
     download_timeout_seconds: f64 = 60.0 => ("downloadTimeoutSeconds", "Download timeout", "Deadline for one image download attempt. Native same-frame rereads retain their own bounded attempts.", "s", 1.0, Number {minimum:0.0,exclusive:true,maximum:3600.0}),
     exposure_grace_seconds: f64 = 30.0 => ("exposureGraceSeconds", "Exposure grace", "Additional time beyond the requested exposure for the native worker to report a ready frame.", "s", 1.0, Number {minimum:0.0,exclusive:true,maximum:3600.0}),
     cooling_timeout_seconds: f64 = 300.0 => ("coolingTimeoutSeconds", "Cooling recovery timeout", "Maximum thermal settling time after reconnecting an enabled cooler before a replacement exposure.", "s", 1.0, Number {minimum:0.0,exclusive:true,maximum:3600.0}),
-    temperature_tolerance_c: f64 = 2.0 => ("temperatureToleranceC", "Temperature tolerance", "Allowed temperature difference from the pre-failure reading while checking cooling recovery.", "Â°C", 0.1, Number {minimum:0.0,exclusive:true,maximum:3600.0}),
+    temperature_tolerance_c: f64 = 2.0 => ("temperatureToleranceC", "Temperature tolerance", "Allowed temperature difference from the pre-failure reading while checking cooling recovery. Further cooling toward the setpoint is accepted.", "Â°C", 0.1, Number {minimum:0.0,exclusive:true,maximum:3600.0}),
     cooling_stable_samples: u32 = 3 => ("coolingStableSamples", "Stable cooling samples", "Consecutive acceptable temperature and cooler-power observations required during recovery.", "samples", 1.0, Integer(1,60)),
     cooling_sample_seconds: f64 = 2.0 => ("coolingSampleSeconds", "Cooling check interval", "Time between temperature and cooler-power checks while recovering a camera connection.", "s", 0.1, Number {minimum:0.0,exclusive:true,maximum:3600.0}),
     ready_frame_download_retries: u32 = 2 => ("readyFrameDownloadRetries", "SDK ready-frame rereads", "Additional SDK download attempts only while the same exposure still reports a ready frame. No new exposure is started by a reread.", "retries", 1.0, Integer(0,5)),
     direct_read_retries: u32 = 2 => ("directReadRetries", "Direct USB rereads", "Additional direct USB read attempts under the selected camera's capabilities. Retained-frame support is device-specific; this does not grant rereads to proxy cameras.", "retries", 1.0, Integer(0,5)),
-    usb_reset_after_failures: u32 = 0 => ("usbResetAfterFailures", "USB reset threshold", "After this many recoverable failures, permit at most one USB reset per capture. Zero disables it; the selected camera must have a verified reset target and required OS permissions.", "failures", 1.0, Integer(0,20)),
+    usb_reset_after_failures: u32 = 0 => ("usbResetAfterFailures", "USB reset threshold", "After this many recoverable failures, permit at most one USB reset per capture when a replacement exposure is allowed. Zero disables it; two tries reconnecting first. Requires a verified camera target and OS permissions. Windows may request administrator approval; external camera power is unchanged.", "failures", 1.0, Integer(0,20)),
     usb_port_cycle: bool = false => ("usbPortCycle", "Linux USB port cycle", "On Linux, use a downstream port power cycle instead of USBDEVFS_RESET when configured USB recovery is triggered.", "", 1.0, Boolean),
 }

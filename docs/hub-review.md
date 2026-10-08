@@ -3,6 +3,68 @@
 This records local review and tests for the single hub PR. Passing a foundation
 test does not imply that a frontend, transport, or hardware gate has passed.
 
+## 2026-10-07: shared standalone camera recovery metadata
+
+Completed the remaining configuration migration from the earlier core/hub
+checkpoint. One Rust declaration now generates the standalone JSON contract and
+managed `RecoveryOptions`, including defaults, finite numeric limits and public
+property names. NINA retains its PascalCase saved file format and existing IPC
+serialization. Both native editors use the same net48/net8 form and embedded
+contract. Alpaca serves the live core schema with its server platform; its module
+renders the same labels, descriptions, units, order and sections. No new runtime
+library or crate is introduced.
+
+Review removed the editors' separate 0.001 timeout floor, retained strict integer
+validation and preserved hidden Linux port-cycle values and legacy extensions in
+the form's inert read. Sparse/default loading behavior stays unchanged; strict hub
+configuration still rejects unknown keys. Native USB permissions, at-most-once
+reset, replacement eligibility, deadlines and capture behavior are unchanged.
+Proxy cameras acquire no native same-frame recovery promise. Useful cooler/USB
+guidance now belongs to the shared descriptions rather than individual tooltips.
+
+Review also found that a failed or future metadata contract could leave the old
+page's Add/Save controls available. Initial controls now stay disabled until the
+contract and state load successfully. The real browser test proves future-contract
+rejection with editing disabled, in addition to saving a small positive timeout,
+rejecting zero/fractional integers and retaining the hidden Linux value. It never
+selects or connects a camera.
+
+Local evidence (logs under `artifacts/hub-recovery-*`):
+
+- `rust.log` passes 55 core unit and four independent legacy configuration cases,
+  the accessory process harness, and 19 Alpaca unit, ten executable-host and 49
+  HTTP cases. The new route returns the live core schema without source leases.
+  `core-config-final.log` passes the legacy cases again after description edits.
+- `core-suite.log` passes all 96 managed core cases. `nina-suite.log` passes all
+  516 NINA cases plus one explicit registered-COM skip. `nina-focused-final.log`
+  passes 22 relevant camera/configuration/form cases. `form-verified.log` passes
+  the final warning-denied form render after the description refinement.
+- `net48-verified.log` passes both complete real x86/x64 suites, including the new
+  recovery form fixture. `net48-metadata-final.log` rebuilds both architectures
+  and passes that fixture after final description edits. The ASCOM build passes
+  without warnings in `ascom-build-final.log`.
+- `browser-verified.log` passes real Chrome field rendering, strict input, save,
+  hidden values and unknown-contract disable against a rebuilt private simulated
+  server. Native and web renders are inspected and included in hub-setup.md. The
+  native capture is a shared-component preview with no equipment; the web capture
+  deliberately shows Simulation and no selected camera.
+- Final strict all-target Clippy, Rust 1.89.0, both generated freshness checks,
+  eighteen independent schema cases, existing hub and new recovery Node contracts
+  and the fresh-host PE runtime audit pass in their `*-verified` logs. The model,
+  standalone contract and hub schema are checked for parity and legacy defaults.
+
+Retain the initial managed build's in-use Core DLL error during overlapping
+builds; the exact holder was not proved. Serialized builds pass. The first net48
+fixture lacked WPF references. Enabling the WPF SDK changed console implicit
+usings, so the final console fixture instead adds explicit WPF assembly references.
+Both failed builds remain recorded. These are fixture/build corrections rather
+than changes to capture behavior.
+
+No production registration, installer or physical hardware was used. Remaining
+work includes conformance reconciliation, actual OS/LAN/installed-client/physical
+acceptance, README/site, main reconciliation and final CI/review/completion audit.
+PR #21 remains draft; no intermediate CI wait was introduced.
+
 ## 2026-10-07: shared OS sleep/resume fences
 
 Implemented one production `ResumeClock` shared across private-host configuration

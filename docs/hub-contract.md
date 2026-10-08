@@ -2735,6 +2735,24 @@ threshold includes zero. This preserves the existing acceptance range rather
 than inventing a new UI minimum. Semantic validation reports paths under
 `sources[i].backend.camera.recovery.<key>`.
 
+Standalone editors now consume that same definition. The core example
+`export_recovery` generates `contracts/camera-recovery.json` and the managed
+`RecoveryOptions.g.cs`; CI checks both for freshness. Generated managed options
+keep their public names, PascalCase NINA file format, defaults and numeric ranges.
+The shared net48/net8 `CameraRecoveryForm` renders NINA and native ASCOM fields
+from the embedded contract. Alpaca serves the live core schema and server platform
+at `/setup/api/camera-recovery`, and its browser module uses the same labels,
+descriptions, units, order, sections and strict numeric limits. None of these
+metadata reads discovers equipment or obtains a source lease.
+
+UI step sizes are hints, not extra acceptance limits: positive timeout/tolerance
+values below 0.001 remain valid. Integer fields reject fractions. The Linux port
+cycle option is shown only when applicable; Windows editors preserve a saved
+value while hiding it. Sparse and legacy-extension loading retain their existing
+behavior; the strict hub schema still rejects unknown keys. Display metadata does
+not add recovery abilities to COM/Alpaca proxy cameras or change capture dispatch,
+recovery deadlines, reconnect rules, USB permission checks or hardware selection.
+
 Descriptions distinguish replacement exposures, SDK ready-frame rereads and
 device-specific direct USB reads. Republished drivers do not gain retained-frame
 rereads from this metadata. USB recovery remains disabled by default and keeps

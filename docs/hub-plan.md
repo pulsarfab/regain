@@ -20,7 +20,21 @@ ASCOM worker tree before packaging. Local ZWO library tests (99), seven runtime
 gate cases, PowerShell parsing and whitespace checks pass. This does not close
 the final main reconciliation or acceptance gates.
 
-Current increment: OS sleep/resume fencing. The shared host installs a resume
+Current increment: shared camera recovery metadata. Standalone NINA and native
+ASCOM use one generated form; Alpaca uses the same live core schema and server
+platform. The generated managed options retain the existing public/file format,
+defaults and ranges. Editors now accept the core's full positive timeout range,
+reject fractional integers and preserve hidden Linux settings. Rust/core/Alpaca
+regressions, all 96 managed core and 516 NINA tests (one explicit skip), both full
+net48 suites, final form/browser/platform checks, strict Clippy/Rust 1.89,
+freshness/schema/Node contracts and the rebuilt-host runtime audit pass. Both
+renders are inspected; review and initial build findings are in hub-review.md.
+Capture behavior/deadlines are unchanged. Next:
+remaining conformance/installed-client/physical acceptance, README/site, main
+reconciliation and original final review/CI/audit/merge gates. Keep PR #21 draft;
+no intermediate CI waiting.
+
+Previous increment: OS sleep/resume fencing. The shared host installs a resume
 clock before constructing sources and shares it through configuration Apply.
 Windows uses native suspend/automatic-resume callbacks and a sleep-clock check;
 Linux/macOS compare suspend-inclusive and awake clocks. Cached source, safety and
@@ -2681,3 +2695,5 @@ then cameras/coordination and every original remaining acceptance/final gate.
 | 2026-10-07 | Implemented and reviewed shared redacted configuration export and inert Restore/Copy preparation through host IPC, protected HTTP, native NINA/ASCOM setup and the web editor. Reused graph validation, identity history and ordinary Review/Apply; corrected the web local-catalog allowlist and protected embedded active IDs. | Rust regression plus final six transfer/45 runtime cases, protected HTTP, strict Clippy/Rust 1.89, freshness, eighteen schema cases and Node contracts pass. Real browser file download/upload/review/apply, full NINA 515 passed plus one explicit skip, final fourteen focused native checks, both full net48 architectures and runtime audits pass. Both simulation renders are inspected; initial HTTP, duplicate-fixture, mode-render, tool invocation and net48 count findings are retained in hub-review.md. Next: actual OS resume, camera recovery metadata and every original conformance/installed-client/physical/documentation/main/final review/CI/audit/merge gate. No intermediate CI waiting. |
 
 | 2026-10-07 | Implemented and reviewed shared OS suspend/resume monitoring, synchronous cache withdrawal, actor I/O cancellation, preserved scalar leases and typed-session reconnect fences. Closed stale consumer and late acknowledgement races; interrupted writes/captures retain uncertainty without replay. | Complete Rust hub/Alpaca regression plus final 112 hub unit, 79 camera acquisition, 52 runtime/IPC, 19 Alpaca unit, ten production-process and 48 HTTP cases pass. Strict Clippy/Rust 1.89, freshness, eighteen schema cases, Node contracts and fresh-host runtime audit pass. Physical sleep/wake acceptance remains open. Next: camera recovery metadata and every original conformance/installed-client/physical/documentation/main/final review/CI/audit/merge gate. No intermediate CI waiting. |
+
+| 2026-10-07 | Completed and reviewed standalone camera recovery metadata migration. Generated managed options and one native form plus the Alpaca module share core keys/defaults/descriptions/limits. Preserved legacy files and hidden Linux values; removed the extra timeout floor and fenced failed metadata startup. | Rust core/Alpaca regression, 96 managed core, 516 NINA plus one explicit skip, both full net48 suites, final rendered form/browser/platform checks, strict Clippy/Rust 1.89, freshness/eighteen schema/Node contracts and fresh-host runtime audit pass. Inspected component/simulation screenshots are included; initial build/reference findings are retained. Next: conformance reconciliation, actual OS/LAN/installed-client/physical acceptance, README/site, main reconciliation and original final review/CI/audit/merge. No intermediate CI waiting. |

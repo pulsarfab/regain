@@ -2,6 +2,7 @@
 target/
 **/bin/
 **/obj/
+**/TestResults/
 artifacts/
 .vs/
 *.user

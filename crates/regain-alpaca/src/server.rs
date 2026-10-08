@@ -371,6 +371,23 @@ impl Server {
                     )
                 }),
             )
+            .route(
+                "/camera-recovery.mjs",
+                get(|| async {
+                    (
+                        [("Content-Type", "application/javascript")],
+                        include_str!("../web/camera-recovery.mjs"),
+                    )
+                }),
+            )
+            .route(
+                "/setup/api/camera-recovery",
+                get(|| async {
+                    Json(json!({"contractVersion":1,
+                        "platform":std::env::consts::OS,
+                        "schema":regain_core::RecoveryOptions::schema()}))
+                }),
+            )
             .route("/management/apiversions", get(management_versions))
             .route("/management/v1/{member}", get(management))
             .route(
