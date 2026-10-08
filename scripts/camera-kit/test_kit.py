@@ -103,7 +103,8 @@ class ProtocolTests(unittest.TestCase):
 
 
 class PackagingTests(unittest.TestCase):
-    def test_package_hashes_the_finished_signed_payload(self):
+    @patch('build.check_worker_runtime')
+    def test_package_hashes_the_finished_signed_payload(self, runtime_check):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             kit = root / 'kit'
@@ -115,6 +116,8 @@ class PackagingTests(unittest.TestCase):
             package(kit, root, '0.1.0.0')
             (kit / 'Regain-CameraKit.exe').write_bytes(b'payload with appended signature')
             package(kit, root, '0.1.0.0')
+            self.assertEqual(runtime_check.call_count, 2)
+            runtime_check.assert_called_with(kit)
             archive = root / 'artifacts/Regain-CameraKit-0.1.0.0-win-x64.zip'
             self.assertEqual(archive.with_suffix('.zip.sha256').read_text().split()[0], sha(archive))
             with zipfile.ZipFile(archive) as zipped:

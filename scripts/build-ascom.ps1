@@ -62,6 +62,8 @@ THE SOFTWARE.
     }
     # On releases these are copied after signing the shared Rust payload.
     foreach ($file in 'regain-camera.exe','regain-alpaca.exe','regain-device.exe') { Copy-Item -LiteralPath (Join-Path $plugin $file) -Destination $stage -Force }
+    python scripts/check-windows-runtime.py $stage
+    if ($LASTEXITCODE) { throw 'ASCOM payload requires an unbundled VC++ runtime' }
     if ($StageOnly) { Write-Output "Staged: $stage"; return }
     $archive = Join-Path $repo "artifacts/Regain-ASCOM-$version-win-x64.zip"
     Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $archive -Force

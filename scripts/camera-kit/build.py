@@ -16,6 +16,11 @@ from verify_host import verify_host
 from verify_kit import verify_kit
 
 
+def check_worker_runtime(kit):
+    subprocess.run([sys.executable, str(Path(__file__).resolve().parents[1] / 'check-windows-runtime.py'),
+                    str(kit / 'regain-device.exe'), str(kit / 'ASICamera2.dll')], check=True)
+
+
 def package(kit, root, version):
     build = json.loads((kit / 'camera-kit-build.json').read_text())
     if build['version'] != version:
@@ -23,6 +28,7 @@ def package(kit, root, version):
     for name in ('Regain-CameraKit.exe', 'regain-device.exe', 'ASICamera2.dll', 'README.md'):
         if not (kit / name).is_file():
             raise ValueError(f'Prepared kit is missing {name}')
+    check_worker_runtime(kit)
     # Recompute after signing. The checksums cover the exact distributed bytes.
     (kit / 'SHA256SUMS').write_text(''.join(f'{sha(p)}  {p.relative_to(kit).as_posix()}\n'
                                          for p in sorted(kit.rglob('*')) if p.is_file() and p.name != 'SHA256SUMS'), encoding='utf-8')
@@ -60,11 +66,11 @@ def main():
         shutil.copy2(stage / name, kit / name)
     shutil.copytree(stage / 'licenses', kit / 'licenses')
     for name in ('vcruntime140.dll', 'vcruntime140_1.dll'):
+        # Python/Frida may use these; the Rust worker links its CRT statically.
         source = Path(sys.base_prefix) / name
         if source.exists():
             shutil.copy2(source, kit / name)
-    if not (kit / 'vcruntime140.dll').exists():
-        raise RuntimeError('Python installation must supply vcruntime140.dll for the Rust host')
+    check_worker_runtime(kit)
     shutil.copy2(Path(sys.base_prefix) / 'LICENSE.txt', kit / 'licenses/Python.txt')
     for name in ('frida', 'pyinstaller', 'pyinstaller-hooks-contrib', 'altgraph', 'packaging', 'pefile', 'pywin32-ctypes', 'setuptools'):
         dist = importlib.metadata.distribution(name)
