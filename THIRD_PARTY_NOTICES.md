@@ -33,6 +33,10 @@ dynamic library. Linux packages use the system libusb installation.
 Rust dependencies retain their original licenses. The build script packages
 their license/copyright texts and the Rust standard-library copyright bundle
 under `licenses/`. Cargo.lock records exact versions.
+Known published-crate omissions use the exact upstream license texts under
+`vendor/rust-licenses/`, pinned to the crate's source commit, original manifest
+and file hashes. Packages include that provenance and a Rust license manifest.
+Missing or changed license evidence still fails packaging.
 
 The OFP2 and FocusCube3 drivers use the unmodified `serialport` Rust crate under MPL-2.0.
 Its corresponding source is available from

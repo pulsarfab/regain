@@ -20,7 +20,20 @@ ASCOM worker tree before packaging. Local ZWO library tests (99), seven runtime
 gate cases, PowerShell parsing and whitespace checks pass. This does not close
 the final main reconciliation or acceptance gates.
 
-Current increment: investigate the retained panel timing finding.
+Current increment: repair release license collection and avoid duplicate CI.
+The corrected Linux jobs pass strict lint, workspace tests and worker/SDK checks,
+then fail packaging because asn1-rs-impl 0.2.0 omits its shared root license texts.
+Windows and portable packaging now use one collector. Its exact-version repair
+pins the published source commit, original manifest and upstream license bytes;
+unknown or changed evidence still fails. Seven regression cases and actual
+license staging for Windows, Linux x86/ARM and macOS x86/ARM pass. Full signed/
+portable packaging acceptance still needs the corresponding jobs.
+Feature branches now use PR CI once; main/release branches and version tags retain
+push CI, and manual runs remain available. Superseded runs cancel automatically.
+No test job, final CI gate or release-train coverage is removed. NINA, SDK device
+enumeration and physical equipment were not accessed locally.
+
+Previous increment: investigate the retained panel timing finding.
 Code inspection confirms one IPC request reads cached panel samples without
 upstream I/O. A new private diagnostic uses the unchanged ConformU facade, then
 separately measures getter/UI dispatch, COM enumeration and value cleaning.

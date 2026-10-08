@@ -3,6 +3,48 @@
 This records local review and tests for the single hub PR. Passing a foundation
 test does not imply that a frontend, transport, or hardware gate has passed.
 
+## 2026-10-07: shared license collection and CI queue reduction
+
+PR run `37729978412` at `0ab34e2` gets past the previous lint blocker. Linux x86
+job `113156658178` passes strict Clippy, workspace tests and the subsequent
+worker/SDK checks, then fails packaging at missing license text for
+`asn1-rs-impl`. ARM job `113156658100` reports the same omission. Logs are retained
+as `hub-ci-0ab34e2-linux.log` and `hub-ci-0ab34e2-linux-arm.raw.log`. These job
+results are not a full workflow success or installed-driver acceptance.
+
+Published version 0.2.0 declares `MIT/Apache-2.0` and records commit
+`a20e5f7319c896737ad0f2557037817b91ad854f`, path `impl`, but contains no root
+license files. The repository's MIT and Apache texts from that exact commit are
+retained in [the pinned repair](../vendor/rust-licenses/asn1-rs-impl-0.2.0/PROVENANCE.json),
+including Pierre Chifflier's original notice, source URLs, published checksum,
+original-manifest hash and exact text hashes. No license is inferred from an
+unrelated crate or a generic SPDX template.
+
+[One collector](../scripts/rust_licenses.py) now serves Windows and portable
+packaging. It preserves the resolved target graph, ordinary notices and declared
+license files, including nested paths whose filenames match a root notice.
+Repairs require exact package/source/manifest/text identity, are
+offline, and include provenance. Unknown omissions fail before any copying;
+delivered bytes must match preflight hashes. A manifest records the shipped
+license files. Seven tests pass for graph selection/notices, declared paths,
+preflight failure, copy corruption, exact repairs and changed evidence.
+
+Final local staging under `artifacts/hub-license-audit-final/` passes all five
+resolved target graphs: Windows x64 172 packages, Linux x64 176, Linux ARM64 175,
+macOS x64 180 and macOS ARM64 179. This checks license staging, not complete
+native archive execution/signing. PowerShell parsing and workflow YAML checks
+pass. The YAML parser was added only to an ignored local validation venv; no new
+runtime or build dependency is required by the collector. Python tests use only
+temporary fixtures. No hardware or installed NINA process is touched.
+
+Inspection also found duplicate feature-branch push and PR matrices occupying the
+queue. Build CI now runs feature changes through PRs once, while main and
+`release/**` pushes, `v*` tags and manual dispatch retain coverage. Concurrency
+cancels superseded runs for the same PR/ref; different release tags stay separate.
+Job names, tests, release workflows and final merge gates remain intact. The
+collector regression is included in the research job. No intermediate CI wait
+was used; remaining actual acceptance and final gates remain open.
+
 ## 2026-10-07: panel DeviceState timing decomposition
 
 The retained 139 ms ConformU finding times more than the Regain getter. The
