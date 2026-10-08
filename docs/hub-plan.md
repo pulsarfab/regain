@@ -20,7 +20,19 @@ ASCOM worker tree before packaging. Local ZWO library tests (99), seven runtime
 gate cases, PowerShell parsing and whitespace checks pass. This does not close
 the final main reconciliation or acceptance gates.
 
-Current increment: independent OmniSimulator integration and failure isolation.
+Current increment: complete eight-class installer acceptance construction.
+The disposable-runner fixture now generates all eight classes for two separate
+installations, checks both registry views and critical activation/inventory
+values, and hashes the saved config/bindings/metadata identities. Installed
+32/64-bit metadata activation is scheduled before and after upgrade using the
+existing client, with no Connect or Rust host startup. Uninstall must remove only
+the primary installation, preserve its remaining config and retain the other
+installation's full registration/settings. Missing bindings and conflicting
+commands still exercise production cleanup. Local file-only fixture checks and
+PowerShell parsing pass; actual installer/UAC/Chooser execution remains pending
+on a disposable runner. NINA and connected equipment remain untouched.
+
+Previous increment: independent OmniSimulator integration and failure isolation.
 An installed ASCOM Alpaca Simulators 0.5.0 instance exposed a connection bug:
 rejecting one output retired every output sharing that HTTP ClientID. Definite
 host rejections now preserve other leases; lost, malformed, unknown and uncertain

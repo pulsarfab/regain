@@ -3,6 +3,38 @@
 This records local review and tests for the single hub PR. Passing a foundation
 test does not imply that a frontend, transport, or hardware gate has passed.
 
+## 2026-10-07: eight-class installer lifecycle fixture
+
+The installer fixture previously registered three scalar classes for the primary
+installation and one Switch for the second. It now creates independent saved
+identities for all eight classes in both installations. The existing metadata
+client checks interface versions, simulation labels and disconnected state from
+both client bitnesses before and after upgrade. Exact installed server retirement
+and absence of its Rust host remain required; no Connect is issued. Typed
+accessory bindings target an inactive loopback endpoint solely for metadata.
+Camera and scalar sources are explicit simulation.
+
+Both registry views must retain CLSID/ProgID/AppID/Chooser/inventory, the exact
+launch command and executable, owner/config/binding identities and RunAs policy.
+SHA-256 snapshots detect any saved config, selection revision or metadata file
+change. Uninstall still uses the production owned helper when primary bindings
+are missing; another complete installation must survive unchanged. The conflict
+fixture now targets the final Camera entry. Disposable elevated GitHub-runner
+and path guards remain intact; optimized Python is rejected because it would
+disable acceptance assertions. The fixture reads the example explicitly as
+UTF-8, preserving the temperature unit on Windows locales.
+
+Five file-only tests pass: independent known UUID/ProgID/Chooser vectors for
+every class, schema-valid eight-class config/bindings/client identities, disjoint
+installations, settings mutation/deletion detection and refusal to run locally
+or with assertions disabled. PowerShell parsing and whitespace checks pass.
+These tests use temporary files, without registration, host or equipment
+activation. They are wired into the Windows research job. Review compared the
+fixture values with production registration and reused the existing metadata
+client rather than constructing another COM client. Actual machine-wide
+installer, signing/UAC/Chooser and upgrade acceptance remain open; no local
+installer execution, NINA manipulation or intermediate CI wait occurred.
+
 ## 2026-10-07: installed external Alpaca inputs and connection failure isolation
 
 The installed independent ASCOM OmniSimulator, version

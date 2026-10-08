@@ -5,6 +5,14 @@ or waive its gates. Checked construction items mean the feature exists and has
 the stated local coverage. They do not establish installed-client, physical,
 portable OS or external conformance acceptance. Final completion is unproven.
 
+Installer fixture expansion, 2026-10-07: all eight classes now have independent
+registrations in two installations. The disposable-runner workflow checks both
+client bitnesses' metadata activation before/after upgrade and preserves saved
+config/binding hashes through uninstall and other-install isolation. Five local
+file-only tests and PowerShell parsing pass. The machine-wide installer was not
+run locally; installed signing/UAC/Chooser/upgrade acceptance remains open.
+The in-use NINA session and its connected devices were left alone.
+
 ## Construction audit, 2026-10-07
 
 The audit inspected current implementations and test assertions, then matched

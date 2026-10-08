@@ -82,6 +82,29 @@ function Hub-Fixture([string]$Phase) {
     python (Join-Path $PSScriptRoot 'test-hub-installer.py') $Phase --install $destination --fixture (Join-Path $testDir 'Hub fixture')
     if ($LASTEXITCODE) { throw "Hub installer fixture failed: $Phase" }
 }
+function Wait-HubRetirement([string]$InstallDirectory) {
+    $serverPath = [IO.Path]::GetFullPath((Join-Path $InstallDirectory 'hub-ascom/x64/Regain.Hub.ASCOM.exe'))
+    $deadline = [DateTime]::UtcNow.AddSeconds(45)
+    while (Get-CimInstance Win32_Process -Filter "Name='Regain.Hub.ASCOM.exe'" | Where-Object ExecutablePath -eq $serverPath) {
+        if ([DateTime]::UtcNow -gt $deadline) { throw 'Installed hub server did not retire after its metadata clients released it' }
+        Start-Sleep -Milliseconds 500
+    }
+}
+function Assert-HubMetadata {
+    $states = Get-Content -LiteralPath (Join-Path $testDir 'Hub fixture/fixture.json') -Raw | ConvertFrom-Json
+    foreach ($state in $states) {
+        foreach ($architecture in 'System32','SysWOW64') {
+            & "$env:WINDIR/$architecture/WindowsPowerShell/v1.0/powershell.exe" -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'test-hub-export-client.ps1') -Directory (Split-Path -Parent $state.bindings) -Role installer -MetadataOnly
+            if ($LASTEXITCODE) { throw "Installed hub metadata activation failed: $architecture / $($state.install)" }
+        }
+        Wait-HubRetirement $state.install
+        $hostPath = Join-Path $state.install 'regain-alpaca.exe'
+        if (Get-CimInstance Win32_Process -Filter "Name='regain-alpaca.exe'" | Where-Object ExecutablePath -eq $hostPath) {
+            throw 'Installed hub metadata started the Rust host'
+        }
+    }
+    Write-Output 'Installed hub metadata: all eight classes, both client bitnesses, two installations; no host/equipment activation.'
+}
 function Run-Setup([string]$Label, [bool]$Success = $true, [string]$Directory = $destination) {
     $p = Start-Process -FilePath $installer -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',('/DIR="' + $Directory + '"'),('/LOG="' + (Join-Path $testDir "$Label.log") + '"') -WindowStyle Hidden -Wait -PassThru
     if (($p.ExitCode -eq 0) -ne $Success) { throw "$Label returned $($p.ExitCode); see installer-test logs" }
@@ -180,6 +203,7 @@ try {
     Assert-EtaActivation
     try { Hub-Fixture 'prepare' }
     finally { $hubPrepared = Test-Path -LiteralPath (Join-Path $testDir 'Hub fixture/fixture.json') }
+    Assert-HubMetadata
     # Hold an actual installed hub COM object without Connect. Its nested EXE
     # and DLL must block maintenance even though no Rust host is running.
     $hubState = Get-Content -LiteralPath (Join-Path $testDir 'Hub fixture/fixture.json') -Raw | ConvertFrom-Json
@@ -200,12 +224,7 @@ try {
         }
         $hubClient = $null
     }
-    $hubServerPath = [IO.Path]::GetFullPath((Join-Path $destination 'hub-ascom/x64/Regain.Hub.ASCOM.exe'))
-    $deadline = [DateTime]::UtcNow.AddSeconds(45)
-    while (Get-CimInstance Win32_Process -Filter "Name='Regain.Hub.ASCOM.exe'" | Where-Object ExecutablePath -eq $hubServerPath) {
-        if ([DateTime]::UtcNow -gt $deadline) { throw 'Installed hub server did not retire after its metadata client released it' }
-        Start-Sleep -Milliseconds 500
-    }
+    Wait-HubRetirement $destination
     Write-Output 'Installed hub metadata, nested helper busy guards and idle retirement passed without host/equipment activation.'
     $registered = Get-ItemPropertyValue 'HKLM:\SOFTWARE\Classes\CLSID\{D1DB6F94-5CC0-4752-A758-F849098874A1}\InprocServer32' -Name CodeBase
     if (([Uri]$registered).LocalPath -ne (Join-Path $destination 'Regain.ASCOM.dll')) { throw 'Wrong installed registration path' }
@@ -273,6 +292,7 @@ try {
     foreach ($name in $obsoleteWorkers) { Set-Content -LiteralPath (Join-Path $destination $name) -Value 'old worker fixture' }
     Run-Setup 'upgrade'
     Hub-Fixture 'assert'
+    Assert-HubMetadata
     foreach ($name in $obsoleteWorkers) { if (Test-Path -LiteralPath (Join-Path $destination $name)) { throw "Upgrade left $name" } }
     if (!(Test-Path -LiteralPath (Join-Path $destination 'regain-device.exe'))) { throw 'Unified device worker missing after upgrade' }
     if (Test-Path (Join-Path $destination 'zwogain-alpaca.exe')) { throw 'Upgrade left the obsolete worker executable' }
