@@ -15,6 +15,17 @@ PulsarFab regain code and the original logo are Apache-2.0. `LICENSE` contains t
 license; Cargo and .NET metadata declare it. Packages include that license and
 third-party notices/licenses. The vendor ASI SDK retains its bundled license.
 
+Windows Rust workers link the MSVC C runtime statically through
+`.cargo/config.toml`. This applies to ordinary local builds and both release
+trains; Linux/macOS linkage is unchanged. NINA and ASCOM ZIP/installer staging
+and packaging run `scripts/check-windows-runtime.py` on every shipped EXE/DLL,
+including vendor libraries and nested helpers. Ordinary and delay-load imports
+of versioned VC++ runtime DLLs fail packaging even on a build machine that has
+the Redistributable installed. `-PackageOnly` rechecks existing staged files;
+environment flags that override static linking cannot bypass this gate.
+The separate Python camera kit checks its worker/SDK and continues to bundle
+its Python/Frida runtime dependencies. See [runtime investigation](windows-runtime.md).
+
 The source for the logo is `assets/regain.svg`; the 256 × 256 PNG is embedded
 as a WPF resource. `FeaturedImageURL` uses a pack URI for installed plugins,
 so the logo does not depend on GitHub access. Registry manifests instead use

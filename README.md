@@ -166,6 +166,10 @@ alone do not establish hardware compatibility.
 
 ## Get started
 
+Windows release workers link the Visual C++ runtime statically; no separate VC++
+Redistributable installation is needed. NINA, ASCOM and camera-driver requirements
+below still apply.
+
 ### Install in NINA
 
 Add `https://nina-plugins.pulsarfab.com/` as a plugin source, install

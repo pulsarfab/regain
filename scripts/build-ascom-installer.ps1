@@ -12,6 +12,8 @@ foreach ($file in 'Regain.ASCOM.Register.exe','Regain.Pegasus.ASCOM.exe','Regain
     if (!(Test-Path -LiteralPath (Join-Path $stage $file))) { throw "Missing $file. Run scripts/build-ascom.ps1 first." }
 }
 $assembly = [Reflection.AssemblyName]::GetAssemblyName((Join-Path $stage 'Regain.ASCOM.dll'))
+python (Join-Path $PSScriptRoot 'check-windows-runtime.py') $stage
+if ($LASTEXITCODE) { throw 'Installer payload requires an unbundled VC++ runtime' }
 $registry = [Collections.Generic.List[string]]::new()
 # These are the CLR activation entries emitted by RegAsm /regfile, plus the
 # Chooser entries. Inno owns them so registry failures roll back with the files.
