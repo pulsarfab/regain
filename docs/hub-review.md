@@ -3,6 +3,50 @@
 This records local review and tests for the single hub PR. Passing a foundation
 test does not imply that a frontend, transport, or hardware gate has passed.
 
+## 2026-10-07: companion documentation publication
+
+The companion `pulsarfab/pulsarfab-www` branch was clean at reviewed commit
+`57dff44f7b6d96a95c8a241311c735b81c71bc3c`; fresh fetch confirmed main remained
+its ancestor `e299e0f`, with no intervening changes. No repository AGENTS.md
+applies. Inspected the generated navigation/data changes, Hub use cases, setup,
+recovery/coordination boundaries and stable installation/hardware copy. Fresh
+`npm run check` passes generation for 17 pages and links/fragments/images/IDs/
+landmarks for all 27 HTML pages. The two branch commits' website CI is green.
+The GitHub release API still identifies published, non-prerelease `v0.5.11.0`
+as latest stable, with the same recorded package digests. Previous signed-package,
+feed verification and 32 desktop/mobile route checks remain scoped evidence;
+they were not repeated for unchanged files.
+
+Fast-forwarded website main to 57dff44, using its documented existing flotswarm
+deployment. No deployment settings, routes, TLS, analytics, feed or binaries
+changed. The actual public pages now serve the reviewed content. The Hub page
+and shared navigation explicitly say 0.6 development preview, not included in
+published 0.5 packages; stable guides retain the published VC runtime requirement
+and source-only static-link-fix boundary. `/docs/` remains the project link index
+and Regain guides remain scoped to `/docs/regain/`. Screenshots preserve physical
+versus private simulation captions.
+
+Retained live evidence in `artifacts/hub-site-publication/verified-results.json`:
+27 HTML pages, sitemap and robots return HTTP 200 and match source, accounting
+only for exact reviewed host-injected analytics and shared-footer blocks.
+`host-injections.json` preserves those blocks and their hashes; all other page
+content must match. The initial raw comparison in `content-results.json` correctly
+reported differences and was not treated as a failed deployment or ignored
+wholesale. Four image HEAD responses match expected source sizes; this is serving
+evidence, not another decoded-image/render check. Existing local render evidence
+still applies to those unchanged assets. Web-tool fetching was unavailable;
+direct HTTPS verification succeeded. The artifact verifier and raw inspected
+Hub response are retained alongside the results.
+
+Website publication is now achieved for the stable corrections and honest Hub
+preview. Final 0.6 release-copy alignment, installed/physical/OS/LAN/conformance,
+main reconciliation and final review/CI/single-PR merge remain open. The source
+Hub PR #21 stays draft and is the only Hub implementation PR. One compact build
+snapshot confirms Windows is still in test.ps1 and Intel macOS in workspace
+tests at afb6721; other six jobs pass. This documentation-only commit skips
+intermediate CI so those jobs can finish. Earlier-head checks cannot establish
+final-head CI. NINA, attached equipment and user sessions were untouched.
+
 ## 2026-10-07: cross-kernel IPv4 and scoped IPv6 acceptance
 
 Reviewed coordination cancellation, preflight reservation cleanup, exact image

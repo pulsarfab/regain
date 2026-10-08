@@ -20,7 +20,21 @@ ASCOM worker tree before packaging. Local ZWO library tests (99), seven runtime
 gate cases, PowerShell parsing and whitespace checks pass. This does not close
 the final main reconciliation or acceptance gates.
 
-Current increment: real cross-kernel IPv4 and scoped IPv6 transport acceptance.
+Current increment: publish the reviewed companion documentation.
+The website's main branch now contains 57dff44 and the live site serves its stable
+0.5.11 corrections, Falcon guide and separately labeled 0.6 Hub preview. Fresh
+generation/link checks pass 17 generated and 27 total HTML pages. Live verification
+matches all 27 HTML pages plus sitemap/robots to the checked source apart from
+the host's recorded analytics/footer additions; four image HEAD checks match
+expected sizes. Existing inspected desktop/mobile renders and simulation
+captions are preserved. GitHub still reports 0.5.11 as the latest stable release.
+No Hub package, installer or plugin feed is published and no 0.6 completion is
+claimed. Final release-copy alignment remains open until the original acceptance
+gates pass. This documentation-only increment skips intermediate CI to preserve
+the live Windows/Intel macOS jobs; final-head CI remains required. NINA and all
+equipment remain untouched. See hub-review.md for publication evidence.
+
+Previous increment: real cross-kernel IPv4 and scoped IPv6 transport acceptance.
 A private Perl endpoint in the existing Debian WSL2 distro receives production
 Windows Hub traffic over its virtual NIC, with no loopback routing substitution.
 Both address families pass catalog identity pinning, safety polling, a 4×3 camera
