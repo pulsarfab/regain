@@ -21,7 +21,8 @@ pub fn prog_id(instance: Uuid, output: Uuid, device: DeviceType) -> Option<Strin
         DeviceType::Focuser => "Rgn.HF.",
         DeviceType::Rotator => "Rgn.HR.",
         DeviceType::FilterWheel => "Rgn.HL.",
-        _ => return None,
+        DeviceType::CoverCalibrator => "Rgn.HC.",
+        DeviceType::Camera => "Rgn.HA.",
     };
     Some(format!(
         "{prefix}{}",

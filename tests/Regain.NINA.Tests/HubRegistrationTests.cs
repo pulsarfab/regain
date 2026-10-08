@@ -5,6 +5,26 @@ using Xunit;
 
 public sealed class HubRegistrationTests
 {
+    [Theory]
+    [InlineData("switch", "S", "69a5917f-8d71-5a9d-b3e7-8d5a53f88e0b")]
+    [InlineData("safetymonitor", "M", "14421c22-3804-5450-91c1-211547b06944")]
+    [InlineData("observingconditions", "W", "f3d3f0d7-9c8d-5b4d-834c-04b0805a56ff")]
+    [InlineData("focuser", "F", "e8862a89-95df-5b67-8555-142cfcdc810f")]
+    [InlineData("rotator", "R", "7c9d3910-2aa2-5ef1-addd-f2db0c7dd14f")]
+    [InlineData("filterwheel", "L", "1419052d-9e99-5c56-b922-ea0157112e83")]
+    [InlineData("covercalibrator", "C", "f09687bc-5ccd-5e1d-ac89-5ef12b5a8ed3")]
+    [InlineData("camera", "A", "a2575d79-310e-5296-8c5e-4a48acdbf6dc")]
+    public void EveryOutputIdentityMatchesTheRustConfigurationGuard(string kind, string prefix, string expected)
+    {
+        var binding = new HubSelection {
+            InstanceId = Guid.Parse("10000000-0000-0000-0000-000000000001"),
+            OutputId = Guid.Parse("20000000-0000-0000-0000-000000000002"), DeviceType = kind
+        };
+        Assert.Equal(Guid.Parse(expected), OutputIdentity.ClassId(binding));
+        Assert.Equal("Rgn.H" + prefix + "." + expected.Replace("-", ""), OutputIdentity.ProgId(binding));
+        Assert.Equal(39, OutputIdentity.ProgId(binding).Length);
+    }
+
     internal sealed class Fixture : IDisposable
     {
         internal readonly string Directory = Path.Combine(Path.GetTempPath(), "regain registration " + Guid.NewGuid().ToString("N"));

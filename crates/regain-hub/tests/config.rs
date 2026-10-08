@@ -359,6 +359,16 @@ fn native_ascom_export_identities_match_cross_language_vectors_and_reject_canoni
             "Rgn.HL.",
             "1419052d-9e99-5c56-b922-ea0157112e83",
         ),
+        (
+            DeviceType::CoverCalibrator,
+            "Rgn.HC.",
+            "f09687bc-5ccd-5e1d-ac89-5ef12b5a8ed3",
+        ),
+        (
+            DeviceType::Camera,
+            "Rgn.HA.",
+            "a2575d79-310e-5296-8c5e-4a48acdbf6dc",
+        ),
     ] {
         assert_eq!(class_id(instance, output, device).to_string(), expected);
         assert_eq!(
@@ -402,6 +412,8 @@ fn native_ascom_export_identities_match_cross_language_vectors_and_reject_canoni
         DeviceType::Focuser,
         DeviceType::Rotator,
         DeviceType::FilterWheel,
+        DeviceType::CoverCalibrator,
+        DeviceType::Camera,
     ] {
         let source = Uuid::new_v4();
         let mut typed = HubConfig::empty();
@@ -434,6 +446,66 @@ fn native_ascom_export_identities_match_cross_language_vectors_and_reject_canoni
             *value = prog_id(Uuid::new_v4(), output, device_type).unwrap();
         }
         assert!(typed.validate().is_empty());
+    }
+}
+
+#[test]
+fn camera_and_panel_com_self_proxies_fail_before_configuration_can_be_saved() {
+    // Fixed cross-language registration vectors, independent of prog_id().
+    let instance = "10000000-0000-0000-0000-000000000001".parse().unwrap();
+    let output = "20000000-0000-0000-0000-000000000002".parse().unwrap();
+    for (device_type, own) in [
+        (
+            DeviceType::Camera,
+            "Rgn.HA.a2575d79310e52968c5e4a48acdbf6dc",
+        ),
+        (
+            DeviceType::CoverCalibrator,
+            "Rgn.HC.f09687bc5ccd5e1dac895ef12b5a8ed3",
+        ),
+    ] {
+        let mut base = HubConfig::empty();
+        base.instance_id = instance;
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("hub.json");
+        let saved = serde_json::to_vec_pretty(&base).unwrap();
+        std::fs::write(&path, &saved).unwrap();
+        let store = ConfigStore::load(&path).unwrap();
+        let before = store.snapshot();
+        let mut candidate = before.clone();
+        let source = Uuid::new_v4();
+        candidate.sources.push(SourceConfig {
+            id: source,
+            label: "Private self-proxy regression".into(),
+            polling: PollPolicy::default(),
+            backend: SourceBackend::Com {
+                prog_id: own.to_uppercase(),
+                device_type,
+                bitness: Bitness::X64,
+                connection_policy: ConnectionPolicy::Managed,
+            },
+        });
+        candidate.outputs.push(OutputConfig {
+            id: output,
+            number: 42,
+            label: "Private output".into(),
+            device: VirtualDevice::Proxy {
+                source,
+                device_type,
+            },
+        });
+        assert!(
+            candidate.validate().iter().any(|error| {
+                error.code == "cycle" && error.path == "sources[0].backend.progId"
+            })
+        );
+        assert!(matches!(
+            store.apply(before.revision, candidate, false),
+            Err(ApplyError::Invalid(_))
+        ));
+        assert_eq!(store.snapshot(), before);
+        assert_eq!(std::fs::read(&path).unwrap(), saved);
+        assert_eq!(ConfigStore::load(&path).unwrap().snapshot(), before);
     }
 }
 

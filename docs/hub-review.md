@@ -3,6 +3,61 @@
 This records local review and tests for the single hub PR. Passing a foundation
 test does not imply that a frontend, transport, or hardware gate has passed.
 
+## 2026-10-07: construction audit and camera/panel self-proxy regression
+
+Inspected original checklist items against current source/test assertions and
+retained results. The new [acceptance matrix](hub-acceptance.md) records the
+evidence and its scope. Eleven construction items had remained unchecked despite
+implementation. They are now checked; installed NINA/no-Platform, installed
+registration/upgrades, conformance, actual OS/LAN and physical acceptance remain
+open. The working/release checklist is not declared complete.
+
+The audit found a genuine validation omission: `ascom_export::prog_id` covered
+six classes, while managed registration covers eight. Camera and CoverCalibrator
+canonical self-imports could therefore pass configuration validation. Factory
+and COM runtime CLSID exclusions were already present; the gap was early
+rejection, not removal of every runtime cycle defense. Added the two missing
+prefixes and made the match exhaustive, so a future DeviceType addition cannot
+silently fall through. Public return type, saved IDs, UUID algorithm, COM
+registration, operation ownership and remote/other-instance behavior are unchanged.
+
+Tests use fixed independent registration vectors, not the production ProgID
+helper, to construct camera/panel self-proxies. They require a field-addressable
+cycle error before Apply and unchanged saved revision/configuration afterward,
+including byte-for-byte file preservation and an independent reload.
+The existing typed self-proxy test now includes both classes and still accepts
+another instance. Managed tests independently verify all eight UUID/ProgID
+vectors and COM's 39-character length without registering a real COM class.
+
+Local evidence:
+
+- `hub-audit-self-proxy-red.log`: the new behavioral regression fails against
+  the original production map because validation has no cycle error.
+- `hub-audit-self-proxy-green.log`: all 24 configuration cases pass after the
+  fix, including both new-class vectors, early rejection and other-instance
+  preservation.
+- `hub-audit-managed-identities.log`: warning-denied managed build and all 24
+  registration/identity cases pass, including eight new cross-language vectors.
+- `hub-audit-clippy.log` and `hub-audit-msrv.log`: strict all-target Clippy and
+  Rust 1.89 all-target checks pass. Formatting and whitespace checks pass.
+- `hub-audit-mixed-source.log`: fresh production-worker/HTTP mixed-source case
+  passes with explicit `REGAIN_TEST_WORKERS`; it cannot silently return for a
+  missing variable. `hub-audit-native-provenance.json` records the directory,
+  worker SHA-256 and simulation context. This checks shared readings and leases,
+  not attached hardware.
+
+Retain `hub-audit-self-proxy-test-compile.log`: the first test draft used `field`
+instead of FieldError's `path`. Corrected the assertion before obtaining the
+behavioral red result; no product change was made to satisfy that typo.
+
+No broad regression or CI wait was repeated for this localized validator change.
+The real external OmniSimulator is running on port 32323, reports version
+0.5.0+1c01cfc6660e71c336291261dba7806028129659 and advertises all eight supported
+classes, initially disconnected. Only management/Connected/InterfaceVersion
+reads occurred; no simulator state or camera hardware was changed. This prepares
+the next external-application slice and does not itself close acceptance.
+Main remains 475d817 and PR #21 remains draft/open. Original final gates remain.
+
 ## 2026-10-07: stable website hardware and release alignment
 
 Companion website commit

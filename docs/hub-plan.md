@@ -20,7 +20,33 @@ ASCOM worker tree before packaging. Local ZWO library tests (99), seven runtime
 gate cases, PowerShell parsing and whitespace checks pass. This does not close
 the final main reconciliation or acceptance gates.
 
-Current increment: stable website alignment. The companion website branch is
+Current increment: construction audit and self-proxy validation correction.
+The [construction/acceptance matrix](hub-acceptance.md) maps the original items
+to current implementation and inspected test assertions. Eleven stale
+construction checkboxes are now checked; actual installed/physical/OS/LAN,
+registration/upgrade and conformance acceptance remain open. The audit found
+that Rust's canonical ASCOM ProgID map omitted Camera and CoverCalibrator even
+though managed registration already supports them. Runtime CLSID exclusion was
+present, but these self-proxies could pass configuration validation. All eight
+classes now have exhaustive mappings, matching cross-language identity vectors.
+New tests reject camera/panel cycles before saving and preserve the old revision;
+other hub instances remain permitted. Existing source ownership and COM runtime
+guards are unchanged.
+
+The behavioral regression fails before the fix and passes afterward. All 24
+configuration cases and 24 managed registration/identity cases pass; strict
+all-target Clippy and Rust 1.89 checks pass. A fresh mixed native/HTTP test uses
+an explicitly supplied production-worker directory with simulation and records
+the worker hash. It verifies shared temperature, independent leases and release
+order without opening hardware. No broad regression or CI wait was repeated.
+Read-only inspection identifies the running external OmniSimulator and its
+eight initially disconnected supported classes for the next real-application
+acceptance slice. Cameras remain untouched while ASIStudio is open and their
+availability question remains unanswered. Next: external simulator integration,
+installed/physical and real OS/LAN acceptance, fresh main and final review/CI/
+audit/merge. Keep the single PR #21 draft.
+
+Previous increment: stable website alignment. The companion website branch is
 committed and pushed at
 [`57dff44`](https://github.com/pulsarfab/pulsarfab-www/commit/57dff44f7b6d96a95c8a241311c735b81c71bc3c).
 Stable guides now document verified public release 0.5.11.0, while the Hub guide
@@ -2084,21 +2110,25 @@ Review findings fixed in this checkpoint:
 
 ### 2. Source registry and first Alpaca vertical slice
 
-- [ ] Implement native worker adapters and bounded Alpaca source adapters.
-- [ ] Persist stable mappings, reject duplicates/cycles, and share connection leases.
-- [ ] Implement combined Switch channels with immutable IDs, access flags, units,
+- [x] Implement native worker adapters and bounded Alpaca source adapters.
+- [x] Persist stable mappings, reject duplicates/cycles, and share connection leases.
+- [x] Implement combined Switch channels with immutable IDs, access flags, units,
   ranges, step validation, and channel provenance.
-- [ ] Implement SafetyMonitor and ObservingConditions; define per-measurement
+- [x] Implement SafetyMonitor and ObservingConditions; define per-measurement
   freshness, fallback, units, and averaging semantics before exposing weather.
-- [ ] Expose these virtual devices through the existing Alpaca server and setup UI.
+- [x] Expose these virtual devices through the existing Alpaca server and setup UI.
 - [x] Permit an accessory-only HTTP server with zero camera profiles; retain normal
   camera defaults for new ordinary installations. Verify startup, catalog, setup,
   invalid camera requests and restart without dummy camera slots.
-- [ ] Test mixed native/network sources, disconnects, slow sources, restart mapping,
+- [x] Test mixed native/network sources, disconnects, slow sources, restart mapping,
   uncertain writes, and two simultaneous clients.
 
 Gate: one server publishes a working mixed-source switch hub, safety hub, and
 weather hub; unrelated devices remain responsive during an upstream failure.
+
+Construction was audited against current sources, assertions and retained local
+results in [hub-acceptance.md](hub-acceptance.md). Checked items do not close the
+later installed-client, real-device or final external acceptance gates.
 
 Current checkpoint: the shared source registry validates configuration before
 constructing adapters, returns one actor per source ID, and shares connection
@@ -2108,8 +2138,8 @@ uncertain writes. Poll attempts/cycles, connection generations, jitter, and
 Retry-After are connected to the safety engine. Each safety output owns its own
 policy and leases; shutdown, transport reset, and lost observations invalidate
 permission. A loopback HTTP fixture exercises Alpaca through this complete
-source-to-policy path. The initial HTTP output adapter is now implemented below;
-shared setup and final protocol/hardware acceptance remain pending.
+source-to-policy path. HTTP publication and shared setup are implemented;
+final external protocol/installed-client/hardware acceptance remains pending.
 
 The Alpaca adapter has bounded scalar requests/responses, typed poll samples,
 sanitized errors, no redirects or automatic HTTP retries, and explicit external
@@ -2434,9 +2464,9 @@ complete frontend gate or the remaining original milestones.
 
 ### 4. Native ASCOM outputs and broader republishing
 
-- [ ] Add native ASCOM hub outputs with the shared setup styling and descriptors.
+- [x] Add native ASCOM hub outputs with the shared setup styling and descriptors.
 - [ ] Preserve dynamic output identity and selection across registration/upgrades.
-- [ ] Extend typed proxy coverage to focusers, rotators, filter wheels, flat panels,
+- [x] Extend typed proxy coverage to focusers, rotators, filter wheels, flat panels,
   and cameras in separately reviewable increments.
 
 Focuser controller increment: shared leases, bounded connection readiness,
@@ -2446,10 +2476,9 @@ are implemented in Rust. Private actor/HTTP tests and EAF/FC3/ETA production-wor
 simulation pass. Native/Alpaca focuser runtime admission, typed private IPC,
 deduplicated polling and cached typed diagnostics/DeviceState are implemented.
 All three frontend publications, Windows COM imports and virtual inputs are
-implemented. Dedicated focuser simulation is implemented. Broader simulation, general typed
-setup and conformance remain required.
-Shared setup now enables Focuser, Rotator, FilterWheel and CoverCalibrator proxy creation, with other proxy classes
-gated until their interfaces are implemented and verified.
+implemented. Dedicated focuser simulation and shared typed setup are implemented;
+conformance and broader installed/physical acceptance remain required.
+Shared setup enables all eight implemented output classes through host capabilities.
 Existing camera proxies now publish through Alpaca, native NINA and native ASCOM; their setup
 links open the shared hub editor. Native ASCOM uses the shared camera session,
 negotiated operation deadlines, protected image reader and budgeted managed arrays.
@@ -2472,12 +2501,12 @@ Dedicated rotator simulation now uses shared timed
 motion, atomic controls and retained uncertainty through all three outputs.
 Conformance and broader acceptance stay open.
 
-- [ ] Specify camera buffer lifetime, image transport, capability passthrough, and
+- [x] Specify camera buffer lifetime, image transport, capability passthrough, and
   acquisition ownership before enabling camera proxies.
-- [ ] Complete shared controlled PulseGuide and its frontend implementations
+- [x] Complete shared controlled PulseGuide and its frontend implementations
   before publishing proxy cameras that advertise that upstream capability.
 - [ ] Run relevant ASCOM/Alpaca conformance checks and multi-client failure tests.
-- [ ] Migrate existing camera recovery configuration metadata without changing its
+- [x] Migrate existing camera recovery configuration metadata without changing its
   saved behavior or claiming proxy cameras support retained-frame rereads.
 
 Gate: all three outputs use the same engine/configuration; conformance and image
