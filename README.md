@@ -33,6 +33,9 @@ Use **PulsarFab regain Retryable Camera** in NINA, a native ASCOM camera entry,
 or an Alpaca camera slot. All three use the same recovery engine.
 [Choose a camera mode](https://pulsarfab.com/docs/regain/cameras.html#backend).
 
+NINA FITS files record the camera model in `INSTRUME`; connection labels and
+slot names stay separate. [Camera metadata and verification](docs/nina-camera-fits.md).
+
 ### Keep using your camera in SDK mode
 
 The default **ZWO SDK** mode supports cameras covered by the bundled SDK. Regain

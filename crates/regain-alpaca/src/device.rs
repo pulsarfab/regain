@@ -240,7 +240,12 @@ impl Device {
     pub fn get(&self, member: &str, client: u32) -> Result<Value> {
         let s = self.state.lock().unwrap();
         match member {
-            "name" => return Ok(json!(self.profiles.get(self.slot)?.label)),
+            "name" => {
+                if let Some(status) = &s.status {
+                    return Ok(status.lock().unwrap().info["name"].clone());
+                }
+                return Ok(json!(self.profiles.get(self.slot)?.camera_name()));
+            }
             "description" => return Ok(json!("ZWO camera driver with automatic retries")),
             "driverinfo" => {
                 return Ok(json!(format!(
