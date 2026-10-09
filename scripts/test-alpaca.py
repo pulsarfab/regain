@@ -60,11 +60,17 @@ def main():
                     descriptors = request("/setup/api/discover", {"direct": direct})
                     descriptor = next(c for c in descriptors if c["name"] == selected) if selected else descriptors[0]
                     profile = request("/setup/api/state")["cameras"][0]["profile"]
-                    profile.update(camera=descriptor, serial=None, direct=direct)
+                    profile.update(camera=descriptor, serial=None, direct=direct, label="My imaging train")
                     profile["recovery"]["reconnectDelaySeconds"] = 0.05
                     request("/setup/api/cameras/0", profile)
+                    published = request("/management/v1/configureddevices")["Value"]
+                    published_camera = next(d for d in published if d["DeviceType"] == "Camera" and d["DeviceNumber"] == 0)
+                    assert published_camera["DeviceName"] == descriptor["name"]
+                    assert published_camera["UniqueID"] == profile["uniqueId"]
+                    assert request("/setup/api/state")["cameras"][0]["profile"]["label"] == "My imaging train"
                     assert request("/setup/api/state")["cameras"][0]["profile"]["camera"]["name"] == descriptor["name"]
                     camera("connected", {"Connected": "true", "ClientID": 1})
+                    assert camera("name") == camera("sensorname") == descriptor["name"]
                     if selected == "ZWO ASI2600MM Pro":
                         assert camera("cameraxsize") == 6248 and camera("cameraysize") == 4176
                         assert camera("maxbinx") == 4 and camera("exposuremax") == 2000

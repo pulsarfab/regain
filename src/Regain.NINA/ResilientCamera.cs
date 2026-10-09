@@ -56,7 +56,9 @@ public sealed class ResilientCamera : BaseINPC, ICamera
         RaiseAllPropertiesChanged();
     }
     public string Id => "ZwoGain";
-    public string Name => Settings.CameraLabel(descriptor.Name);
+    // NINA copies Name into CameraInfo and the FITS INSTRUME header. Keep the
+    // connected backend's model here; friendly setup labels may rename models.
+    public string Name => descriptor.Name;
     public string DisplayName => "PulsarFab regain Retryable Camera";
     public string Category => "PulsarFab regain";
     public string Description => "ZWO camera driver with automatic retries";
