@@ -15,7 +15,9 @@ public abstract partial class CameraBase : ICameraV4, IDisposable
     private readonly object sync = new();
     protected CameraBase(int slot) { this.slot = slot; }
     private LocalCamera Client { get { lock (sync) { if (disposed) throw new ObjectDisposedException(nameof(CameraBase)); return client ??= new LocalCamera(slot); } } }
-    public string Name => $"PulsarFab regain Retryable Camera {slot + 1}";
+    // NINA records the connected ASCOM Name as FITS INSTRUME. Keep the
+    // registration/chooser label separate from the selected camera model.
+    public string Name => client?.Get<string>("name") ?? $"PulsarFab regain Retryable Camera {slot + 1}";
     public string Description => "ZWO camera driver with automatic retries";
     public string DriverInfo => "PulsarFab regain native Rust camera driver";
     public string DriverVersion => typeof(CameraBase).Assembly.GetName().Version.ToString();
