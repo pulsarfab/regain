@@ -55,12 +55,12 @@ worker hash are `hub-audit-mixed-source.log` and `hub-audit-native-provenance.js
 | --- | --- | --- |
 | Installed native NINA | Actual plugin load/chooser/setup and device/group operations, with exact application version; direct use without HTTP and native/network use without installed ASCOM Platform | NINA 3.2.0.9001 passes all eight native classes, both coordinated instructions, shared setup and explicit host-loss reconnect using labeled simulation without HTTP. Separate COM-source weather/safety isolation also passes. An environment without ASCOM Platform remains unverified. See the 2026-10-09 records below. |
 | Installed COM/installer lifecycle | Actual signed payloads, Chooser/UAC, x86/x64 activation, owned registration preservation through upgrade/uninstall, profile compatibility | Private registry/export and installer construction coverage does not prove this. |
-| Mixed physical inputs and sharing | Identify idle, authorized hardware; exercise native/network/COM combinations, short safe operations, disconnect/reconnect, per-client command conflicts and recovery | The user authorized unrestricted local NINA use and the ASI585MM Pro. Its separate native-camera FITS tests pass; installed Hub passes use explicit COM fixtures and built-in simulation. Mixed physical Hub acceptance remains open. |
+| Mixed physical inputs and sharing | Identify idle, authorized hardware; exercise native/network/COM combinations, short safe operations, disconnect/reconnect, per-client command conflicts and recovery | Installed NINA now exercises the physical ASI585MM Pro through direct USB alongside explicit COM weather and loopback Alpaca safety fixtures. Exact image parity, both frontend disconnect directions, command conflicts and source-failure isolation pass. This covers the tested mixed path; physical multi-device coordination and interrupted-download recovery remain separate acceptance work. |
 | Real sleep/wake | Actual suspend/resume on supported OSes, independent safety/weather withdrawal, session reconnect, uncertain-command fencing and retained image behavior | Injected clocks and Windows/Linux/macOS implementation checks exist; real OS acceptance is open. |
 | Real LAN/scoped IPv6 | Separate-host routing/discovery plus actual scoped IPv6 interface use, with host/interface identities and failure behavior recorded | Production Windows Hub traffic now crosses the Debian WSL2 virtual NIC over IPv4 and actual link-local IPv6 scope 63: pinned catalogs, exact shared images and safety withdrawal on remote loss pass, with peer identities and cleanup recorded. This same-machine, cross-kernel simulation advances scoped routing evidence; physical LAN, UDP discovery and TLS on that LAN remain open. |
 | External standards findings | Resolve or explicitly accept the recorded standards discrepancies without suppressing raw failures; retain the panel timing evidence and investigate its cause | Original raw findings remain visible. The panel getter uses one cached IPC read. Three fresh clients of the unchanged ConformU facade measure first reads at 17.79–29.13 ms and split getters below 3.58 ms; this does not reproduce/explain the original 139 ms finding, which remains open. |
 | Documentation/publication | Final release copy, README/setup/site consistency, correct stable/preview boundary, screenshots, then publish the companion site | Website main/deployment now serves 57dff44: stable 0.5.11 corrections and a separate 0.6 Hub preview with honest screenshot captions. Fresh generation/27-page link checks pass; all 29 live documents match checked source apart from recorded host injections, and four image HEAD sizes match. Prior inspected desktop/mobile renders are retained. Final 0.6 release-copy alignment remains open; no Hub package/feed was published. |
-| Final reconciliation/review/CI/merge | Fresh main, full requirement audit, relevant final local regression, final CI/review, then merge the single PR #21 | Main is integrated through merge 1cc526d. Run 37949257756 at fec9234 passes all jobs, including the repaired COM parent cases. The later NINA acceptance fixes have focused local coverage; that earlier CI cannot substitute for final-head CI. PR remains draft; intermediate CI is not a waiting gate. |
+| Final reconciliation/review/CI/merge | Fresh main, full requirement audit, relevant final local regression, final CI/review, then merge the single PR #21 | Main is integrated through merge 351c751, including retry diagnostics and exact internal package versions. Local core/Hub/Alpaca suites pass 849 tests; NINA passes 532 with one explicit COM-fixture skip. CI 37983930950 tests production/test code at 7e6d2bb; its result is pending at this checkpoint. PR remains draft; the original environment and conformance gates are still open. |
 
 ## Installed native NINA acceptance, 2026-10-09
 
@@ -200,3 +200,57 @@ This slice fixed shared-ClientID failure isolation and canonical weather sensor
 parameters; local regression and review evidence are in [the review](hub-review.md).
 It advances external application acceptance without closing the all-class or
 original final acceptance gates.
+
+## Physical camera with COM and network sources, 2026-10-09
+
+Installed NINA **3.2.0.9001** loaded the 0.6 development plugin against the
+production Hub at `7e6d2bb` (production binaries built from merge `351c751`).
+The physical **ZWO ASI585MM Pro**, serial `2805960a19020900`, used the direct
+USB backend with SDK fallback disabled. The other inputs were explicitly labeled
+fixtures: x64 COM weather and a separate loopback Alpaca safety publisher.
+These weather/safety observations do not establish physical sensor or LAN acceptance.
+
+NINA connected before the main Hub's HTTP publisher started. The publisher was
+then started for sharing checks. NINA's 0.1-second, 3840 × 2160 FITS image records `INSTRUME='ZWO ASI585MM Pro'`
+and the complete output UUID as `CAMERAID`. All **8,294,400 pixels** match the
+subsequent Alpaca ImageBytes response after converting FITS row order and signed
+storage. Repeated downloads retain identical pixels. A later 64 × 64 physical
+exposure also matches JSON and ImageBytes exactly.
+
+With NINA and Alpaca connected together, the physical source reports two leases.
+Disconnecting NINA preserves the Alpaca connection and exact retained image.
+After reconnecting NINA, disconnecting Alpaca preserves NINA's connection and
+another successful full-frame capture. Two additional Alpaca clients reject a
+competing exposure and geometry setter with busy errors; releasing the capture
+owner preserves the other client's image. Geometry is restored afterward.
+
+COM weather displays 12.5 °C, 45% humidity and 0.5 °C dew point alongside the
+physical camera. Injecting a humidity error removes only humidity; NINA still
+saves another physical capture. Stopping only the owned upstream Alpaca publisher
+changes NINA safety from safe to unsafe while weather and the physical camera
+remain connected. Restarting that publisher restores safe after fresh confirmation.
+The upstream fixture retains its default confirmation and recovery policies;
+the test does not shorten them to bypass recovery.
+
+Local evidence is retained in `artifacts/hub-final-physical/`: exact configuration
+and bindings, binary hashes, NINA log, FITS headers, ImageBytes, source/lease
+readbacks, conflict replies and process cleanup. Initial harness mistakes
+(reading FITS pixels before stopping at END, comparing different array orders,
+querying without a client lease, and requesting a 48-pixel-high ROI below the
+direct driver's 64-pixel minimum) are retained and corrected. They are not
+reported as successful checks or product fixes.
+
+NINA closed normally. Owned hosts/publishers and private COM fixtures were
+retired; temporary frontend bindings and the development installation were
+preserved outside the active plugin directory. The newly published, signed
+**0.5.13.0** stable plugin is installed, with all **241 files** matching the
+verified release package. SDK inspection afterward confirms cooler off and
+the original target temperature unchanged.
+
+The separate **0.5.13.0** release passed signing, installer and package checks;
+its manifest is live on both public NINA registry addresses and all nine Rust
+crates are published at 0.5.13. This does not publish the 0.6 Hub. The user reports
+that an ASCOM-free Windows system and a second LAN host are not yet available.
+Those checks, actual OS sleep/wake, outstanding external standards findings,
+physical coordination/recovery and final Hub installer/release audit remain open.
+PR #21 remains draft.

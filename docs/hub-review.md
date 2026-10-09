@@ -8297,3 +8297,40 @@ camera/recovery settings and unrelated plugins were preserved. Corrected stale
 construction claims in the contract/setup and updated acceptance boundaries.
 Review found no further production change needed in this increment. Continue
 installed activation/lifecycle acceptance and the original final gates on PR #21.
+
+## Maintenance reconciliation and physical acceptance, 2026-10-09
+
+Merged current main through `351c751`, preserving the Hub's 0.6 version and
+pinning internal workspace dependencies exactly to `=0.6.0`. This includes the
+reviewed standalone NINA/ASCOM retry DriverInfo changes from main. No capture
+retry budget or Hub acquisition semantics changed in this acceptance increment.
+
+CI at `36739be` failed the saved camera cancellation-policy test because its
+two-second exposures could complete before a busy runner delivered cancellation.
+The fixture now holds both exposures with the existing explicit
+`stalledExposure` fault. It still checks both policies, cancellation, retained
+state and no replay; production timing, assertions and timeouts are unchanged.
+Both focused cases and the full NINA suite pass: 532 tests, one explicit
+registered-COM skip. The warning-denied NINA/helper builds and 849 Rust
+core/Hub/Alpaca tests also pass. Run `37983930950` tests code at `7e6d2bb`;
+its full Windows lifecycle result is pending at this documentation checkpoint.
+
+The [physical mixed-source acceptance](hub-acceptance.md#physical-camera-with-com-and-network-sources-2026-10-09)
+uses actual installed NINA with direct USB ASI585MM Pro, private COM weather and
+loopback Alpaca safety. It verifies full-image FITS/ImageBytes parity, model and
+UUID headers, both frontend disconnect directions, competing-command rejection,
+JSON/ImageBytes parity, humidity isolation and safe/unsafe/fresh recovery on
+network publisher loss. Geometry and cooling state are preserved; the attached
+ASI662MC is not opened. No physical recovery, multiple-device coordination,
+physical LAN or ASCOM-free OS result is inferred from those observations.
+
+Reviewed the acquisition/conflict replies and retained source generations against
+the configuration and trace. Corrected harness assumptions about FITS/ASCOM array
+order and the direct driver's minimum ROI rather than changing product behavior.
+NINA, owned helpers and fixture registrations were retired. The signed stable
+0.5.13.0 plugin replaces the development build with package-identical hashes;
+the development files and old stable backup are retained outside NINA.
+
+The maintenance release is public on GitHub, both registry URLs and crates.io.
+The Hub remains a 0.6 draft. Remaining environment, standards, lifecycle and
+final review gates in the acceptance matrix remain required.
