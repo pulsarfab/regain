@@ -290,11 +290,14 @@ internal sealed partial class ImportDriver {
                 var sensor = Parameter(parameters, "SensorName");
                 if (sensor.ValueKind != JsonValueKind.String) throw new InvalidInput();
                 var name = sensor.GetString();
-                if (name == null || name.Length != 0 && !properties.ContainsKey(name)) throw new InvalidInput();
+                if (name == null) throw new InvalidInput();
+                var canonical = name.Length == 0 ? "" : properties.Values.FirstOrDefault(
+                    propertyName => string.Equals(propertyName, name, StringComparison.OrdinalIgnoreCase))
+                    ?? throw new InvalidInput();
                 // ASCOM uses canonical property spelling; upstream case quirks
                 // must not be exposed to configuration or duplicated frontends.
                 var result = Call(member == "timesincelastupdate" ? "TimeSinceLastUpdate" : "SensorDescription",
-                    name.Length == 0 ? "" : properties[name]);
+                    canonical);
                 return member == "sensordescription" ? Text(result) : Number(result);
             }
         }

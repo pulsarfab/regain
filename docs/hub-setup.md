@@ -360,8 +360,10 @@ do not acquire equipment leases.
 ![Native hub configuration review before applying](images/hub-native-review-simulation.png)
 
 These are renders of the actual WPF window during an automated simulation test
-against the production host. They demonstrate setup; interactive NINA and
-real-device acceptance remain pending. Broader device support remains on the plan.
+against the production host. They demonstrate setup; installed NINA coverage and
+its remaining boundaries are recorded in [the acceptance matrix](hub-acceptance.md).
+Real-device acceptance remains pending. The editor now supports all eight output
+classes through the host's capability gates.
 
 ![Native setup inspection of simulated Switch channels](images/hub-native-inspection-simulation.png)
 

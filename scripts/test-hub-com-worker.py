@@ -760,6 +760,30 @@ class ImportTests(unittest.TestCase):
                 self.assertEqual(worker.send("read", "temperature")["value"], 12.5)
                 self.assertEqual(worker.count("SetupDialog"), 0)
 
+    def test_weather_sensor_names_are_caseless_and_only_known_sensors_dispatch(self):
+        sensors = ("CloudCover", "DewPoint", "Humidity", "Pressure", "RainRate",
+                   "SkyBrightness", "SkyQuality", "SkyTemperature", "StarFWHM",
+                   "Temperature", "WindDirection", "WindGust", "WindSpeed", "")
+        for architecture in self.each():
+            with self.subTest(architecture=architecture), Worker(architecture, device="observingconditions") as worker:
+                worker.connect()
+                for sensor in sensors:
+                    for spelling in (sensor.lower(), sensor, sensor.swapcase()):
+                        with self.subTest(sensor=spelling):
+                            age = worker.send("read", "timesincelastupdate", {"SensorName": spelling})
+                            self.assertIsNone(age["error"])
+                            self.assertEqual(age["value"], 3.5)
+                            description = worker.send("read", "sensordescription", {"SensorName": spelling})
+                            self.assertIsNone(description["error"])
+                            self.assertEqual(description["value"], "Fixture " + sensor)
+                before = worker.count("TimeSinceLastUpdate") + worker.count("SensorDescription")
+                for sensor in ("Temperature ", " Temperature", "Unknown", "SetupDialog", None, 1):
+                    for member in ("timesincelastupdate", "sensordescription"):
+                        error = worker.send("read", member, {"SensorName": sensor})["error"]
+                        self.assertEqual(error["kind"], "invalidValue")
+                self.assertEqual(worker.count("TimeSinceLastUpdate") + worker.count("SensorDescription"), before)
+                self.assertEqual(worker.count("SetupDialog"), 0)
+
     def test_invalid_parameters_never_dispatch_and_members_are_whitelisted(self):
         for architecture in self.each():
             with self.subTest(architecture=architecture), Worker(architecture) as worker:

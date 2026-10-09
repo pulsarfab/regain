@@ -6,21 +6,40 @@ milestone gates and the final completion audit pass.
 This branch uses development version `0.6.0` / Windows `0.6.0.0`; it has not been
 tagged or published. Changed cross-crate APIs require an unpublished version so
 Cargo package verification uses the new workspace packages.
-Last updated: 2026-10-07.
+Last updated: 2026-10-09.
 
 Construction pacing: batch relevant local tests and review around useful feature
 increments. Push those increments to the same draft PR without waiting for slow
 CI between steps. Final CI, review and the original acceptance/completion audit
 remain merge gates.
 
-Upstream integration: merged main through `475d817`, including estimated camera
+Upstream integration: merged main through `21fdb0d`, including camera model names
+in NINA FITS metadata, estimated camera
 exposure timing and the Windows static CRT fix already shipped to main and
 `release/0.5`. Preserved hub schema/browser checks and audit the complete private
 ASCOM worker tree before packaging. Local ZWO library tests (99), seven runtime
 gate cases, PowerShell parsing and whitespace checks pass. This does not close
 the final main reconciliation or acceptance gates.
 
-Current increment: publish the reviewed companion documentation.
+Current increment: repair COM weather polling and exercise installed NINA.
+The importer now accepts case-insensitive ASCOM sensor parameters while retaining
+its fixed property whitelist. Both previously failing registered-COM parent tests
+pass without changing deadlines or assertions. Fresh coverage passes 35 worker,
+26 parent and eight NINA camera-import cases. Actual NINA 3.2.0.9001 loads native
+weather, safety and Switch outputs over private IPC without an HTTP publisher.
+Weather fault isolation, stalled-safety withdrawal and fresh safety recovery are
+observed interactively; the ASCOM weather output also passes sensor isolation
+through NINA with an explicitly started bound COM server. Private per-user SCM
+activation failed; production cold activation requires machine registration,
+as enforced by the disposable-runner test in test.ps1. This run does
+not establish signed machine registration/upgrade acceptance. All inputs were
+explicit COM fixtures, no physical device was opened. Temporary registrations,
+bindings and owned processes were removed; the signed 0.5.12.0 plugin is installed.
+The maintenance release and all nine 0.5.12 Rust crates are published, and the
+shared NINA feed update passes. See hub-acceptance.md and hub-review.md. Continue
+the original acceptance gates on the same draft PR; do not wait on intermediate CI.
+
+Previous increment: publish the reviewed companion documentation.
 The website's main branch now contains 57dff44 and the live site serves its stable
 0.5.11 corrections, Falcon guide and separately labeled 0.6 Hub preview. Fresh
 generation/link checks pass 17 generated and 27 total HTML pages. Live verification

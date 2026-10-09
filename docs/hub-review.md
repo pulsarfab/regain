@@ -8238,3 +8238,62 @@ by actual OS resume, camera recovery metadata, conformance/interactive/signing/
 upgrade/physical acceptance, README/site, main reconciliation and original final
 review/CI/audit/merge gates. No attached hardware or installed vendor driver was
 opened. No intermediate CI was awaited; keep the single PR draft.
+
+## 2026-10-09 — COM weather regression and actual installed NINA
+
+Integrated main through `21fdb0d` in merge `1cc526d`; the camera FITS model-name
+fix stays on both main and maintenance. Published signed maintenance release
+`v0.5.12.0` from `23b9a41` (PR #28), including that fix and static-CRT deployment.
+Release run 37945765627 passes, including signature verification and actual
+installer install/removal. Downloaded all ten assets; the plugin/ASCOM/camera-kit
+ZIPs and installer match their recorded checksums. Regain DLLs/executables and
+the installer have valid signatures; the unchanged vendor SDK has its existing
+unsigned status. Registry publication run 37948121042 passes and writes
+`e983781` in the shared NINA registry. Clean-tag workspace publication dry run
+and upload pass for all nine 0.5.12 crates. No Hub package was published.
+
+Reproduced both Windows failures from run 37731689797: incremental weather
+discarded expected sensor errors, and the stalled-COM safety test never reached
+healthy weather. Both came from the importer rejecting the canonical SensorName
+now emitted by PropertyPoll. Accept only case-insensitive matches against the
+existing canonical property list, then dispatch that canonical spelling. Empty
+means all sensors. The new worker test fails 52 subcases before the correction,
+and also proves malformed/unknown names cannot dispatch arbitrary methods.
+No source deadline, safety evidence lifetime or assertion changed.
+
+Fresh `scripts/test-hub-com.ps1` passes 35 actual worker tests (both bitnesses),
+26 registered-COM parent cases and eight NINA camera-import cases. The before/
+after logs are `artifacts/hub-com-resume-before.log` and
+`artifacts/hub-com-resume-after.log`; the focused red test is
+`artifacts/hub-weather-caseless-before.log`. Fresh Rust host/device and warning-
+denied managed NINA builds pass. All other jobs in the original CI run passed;
+final-head CI is still a merge gate, not an intermediate waiting step.
+
+Actual NINA 3.2.0.9001 then loaded the installed development plugin. Three native
+Hub outputs used a local-only production host with explicit private COM fixtures:
+x64 weather/Switch and x86 safety. The UI shows healthy weather, isolated humidity
+failure, unsafe on a stalled IsSafe call and safe again on fresh recovery.
+ASCOM weather also connects through NINA after explicitly starting its bound
+server, with the same healthy values and isolated sensor failure. One weather
+worker PID survives the frontend handoff while native Switch/safety remain
+connected. A stale Switch temperature gauge correctly returns unavailable; its
+3.1-second configured bound is below the fixture's 3.5-second sensor age.
+
+The private per-user SCM launch failed with REGDB_E_CLASSNOTREG, including after
+removing its machine-only RunAs value. A fresh private `--scm` fixture also fails
+at metadata activation (`hub-com-scm-after.log`). Production cold activation uses
+machine registration; test.ps1 already restricts that check to disposable
+Windows CI. Manual bound-server activation does not prove production machine
+registration, signing, upgrade or UAC acceptance. No writable
+Switch, physical input, remaining device class/group or no-ASCOM-Platform test
+is claimed. See [the acceptance record](hub-acceptance.md) for screenshots and
+exact scope. Local artifacts retain the original activation error and NINA log.
+
+NINA closed normally. Private input/output COM registrations, the three owned
+machine Chooser entries, temporary bindings, host and worker/server processes
+were cleaned up. Temporary files were retained under the test artifact folder.
+The signed stable 0.5.12.0 plugin is installed with package-identical hashes;
+camera/recovery settings and unrelated plugins were preserved. Corrected stale
+construction claims in the contract/setup and updated acceptance boundaries.
+Review found no further production change needed in this increment. Continue
+installed activation/lifecycle acceptance and the original final gates on PR #21.

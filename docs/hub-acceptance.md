@@ -53,14 +53,61 @@ worker hash are `hub-audit-mixed-source.log` and `hub-audit-native-provenance.js
 
 | Gate | Evidence required to close it | Current boundary |
 | --- | --- | --- |
-| Installed native NINA | Actual plugin load/chooser/setup and device/group operations, with exact application version; direct use without HTTP and native/network use without installed ASCOM Platform | Provider fixtures, real assemblies and NINA sequence serialization are covered; installed application acceptance is not. NINA 3.2.0.9001 is currently in use; the user asked that session be left alone. |
+| Installed native NINA | Actual plugin load/chooser/setup and device/group operations, with exact application version; direct use without HTTP and native/network use without installed ASCOM Platform | NINA 3.2.0.9001 now loads native weather, safety and Switch outputs backed by explicit COM fixtures, without HTTP. Weather isolation and safety withdrawal/recovery pass. All-class/group operations and an environment without ASCOM Platform remain open. See the 2026-10-09 record below. |
 | Installed COM/installer lifecycle | Actual signed payloads, Chooser/UAC, x86/x64 activation, owned registration preservation through upgrade/uninstall, profile compatibility | Private registry/export and installer construction coverage does not prove this. |
-| Mixed physical inputs and sharing | Identify idle, authorized hardware; exercise native/network/COM combinations, short safe operations, disconnect/reconnect, per-client command conflicts and recovery | ASI585MM Pro/ASI662MC are attached but ASIStudio is open; availability question remains unanswered. No camera was opened during this audit. |
+| Mixed physical inputs and sharing | Identify idle, authorized hardware; exercise native/network/COM combinations, short safe operations, disconnect/reconnect, per-client command conflicts and recovery | The user authorized unrestricted local NINA use and the ASI585MM Pro. Its separate native-camera FITS tests pass; this Hub increment uses explicit COM fixtures only. Mixed physical Hub acceptance remains open. |
 | Real sleep/wake | Actual suspend/resume on supported OSes, independent safety/weather withdrawal, session reconnect, uncertain-command fencing and retained image behavior | Injected clocks and Windows/Linux/macOS implementation checks exist; real OS acceptance is open. |
 | Real LAN/scoped IPv6 | Separate-host routing/discovery plus actual scoped IPv6 interface use, with host/interface identities and failure behavior recorded | Production Windows Hub traffic now crosses the Debian WSL2 virtual NIC over IPv4 and actual link-local IPv6 scope 63: pinned catalogs, exact shared images and safety withdrawal on remote loss pass, with peer identities and cleanup recorded. This same-machine, cross-kernel simulation advances scoped routing evidence; physical LAN, UDP discovery and TLS on that LAN remain open. |
 | External standards findings | Resolve or explicitly accept the recorded standards discrepancies without suppressing raw failures; retain the panel timing evidence and investigate its cause | Original raw findings remain visible. The panel getter uses one cached IPC read. Three fresh clients of the unchanged ConformU facade measure first reads at 17.79–29.13 ms and split getters below 3.58 ms; this does not reproduce/explain the original 139 ms finding, which remains open. |
 | Documentation/publication | Final release copy, README/setup/site consistency, correct stable/preview boundary, screenshots, then publish the companion site | Website main/deployment now serves 57dff44: stable 0.5.11 corrections and a separate 0.6 Hub preview with honest screenshot captions. Fresh generation/27-page link checks pass; all 29 live documents match checked source apart from recorded host injections, and four image HEAD sizes match. Prior inspected desktop/mobile renders are retained. Final 0.6 release-copy alignment remains open; no Hub package/feed was published. |
-| Final reconciliation/review/CI/merge | Fresh main, full requirement audit, relevant final local regression, final CI/review, then merge the single PR #21 | Fresh main remains 475d817, already integrated. The license repair passes seven cases/five target staging graphs and now full Linux x86/ARM plus macOS ARM packaging in run 37731689797 at afb6721. Windows and Intel macOS remain running. The network fixture/docs-only increment skips intermediate CI so that run can finish; earlier-head success cannot substitute for fresh final-head CI. Feature PRs get one matrix, with main/release/tag push coverage preserved. PR is open/draft; intermediate CI is not a waiting gate. |
+| Final reconciliation/review/CI/merge | Fresh main, full requirement audit, relevant final local regression, final CI/review, then merge the single PR #21 | Main through 21fdb0d is integrated. Run 37731689797 at afb6721 completed with seven jobs passing and Windows failing two COM parent cases; both failures are now reproduced and repaired locally. Fresh COM coverage passes 35 worker, 26 parent and eight NINA camera-import tests. Earlier-head results cannot substitute for final-head CI. PR remains draft; intermediate CI is not a waiting gate. |
+
+## Installed NINA and COM weather regression, 2026-10-09
+
+NINA 3.2.0.9001 loaded the current 0.6 development plugin from its actual plugin
+directory. One production Rust Hub ran in local-IPC-only mode. Three explicitly
+labeled private COM fixtures supplied x64 weather and Switch inputs and an x86
+safety input; no vendor driver, physical device or HTTP publisher was used.
+
+Native weather displayed 12.5 °C, 45% humidity and 0.5 °C dew point. Injecting a
+humidity failure removed only that measurement. Stalling `IsSafe` changed NINA to
+unsafe while weather remained available; clearing the stall restored safe after
+fresh observations. Switch displayed its upstream level. Its shared temperature
+gauge correctly remained unavailable: the fixture's 3.5-second sensor age exceeds
+the configured 3.1-second Switch freshness bound. This is not a successful
+fresh-gauge or writable-channel acceptance test.
+
+![Actual installed NINA showing explicit COM simulation weather through the native Hub provider](images/hub-nina-com-weather-simulation.jpg)
+
+![Actual installed NINA withdrawing safety when the explicit COM simulation stalls](images/hub-nina-com-safety-stall-simulation.jpg)
+
+NINA also connected through the bound native ASCOM weather output, displaying
+the same healthy values and preserving temperature/dew point during a humidity
+failure. Native Switch and safety remained connected. The weather trace retains
+one upstream worker PID across the native-to-ASCOM handoff, demonstrating shared
+source ownership. This output test required explicitly starting the bound COM
+server. SCM activation with the private HKCU registration returned
+`REGDB_E_CLASSNOTREG`, including after removing the machine-only `RunAs` fixture
+value. A separate fresh private `test-hub-exports.py --scm` attempt also failed
+at metadata activation. Production cold activation uses machine registration;
+`test.ps1` deliberately restricts that test to disposable Windows CI. This local
+fixture does not prove production machine registration or installer acceptance.
+
+Local evidence is in `artifacts/hub-installed-nina-20261009/`: installed binary
+hashes, exact configuration/bindings, upstream traces, NINA log and screenshots.
+NINA closed normally; owned host/server/workers stopped, private COM and Chooser
+entries were removed, and temporary frontend bindings were retired. The signed
+0.5.12.0 stable plugin then replaced the development build, with matching package
+hashes. Existing camera/recovery settings and other installed plugins remain.
+
+The CI failures were canonical `SensorName` parameters rejected by the importer's
+lowercase-only whitelist. The importer now canonicalizes known names using
+ordinal case-insensitive comparison; unknown names and arbitrary COM members
+remain rejected before dispatch. The new worker regression covers every weather
+sensor and empty/all-sensors queries in both bitnesses, including invalid types
+and whitespace. It fails 52 subcases before the fix. `test-hub-com.ps1` then passes
+35 worker tests, all 26 registered-COM parent tests and eight NINA camera-import
+tests. No timeouts, freshness limits or failing assertions were relaxed.
 
 ## Independent external Alpaca application
 

@@ -1,7 +1,10 @@
-# Hub contracts (implementation baseline)
+# Hub runtime contracts
 
-This is the milestone 0 design for [the hub plan](hub-plan.md). Changes to these
-contracts must be recorded in that plan and covered by compatibility tests.
+These contracts describe the current development implementation of
+[the hub plan](hub-plan.md). They retain the ownership and compatibility rules
+established in milestone 0. Changes must be recorded in the plan and covered by
+compatibility tests. Construction coverage does not establish installed-client,
+physical-device or OS acceptance; see [the acceptance matrix](hub-acceptance.md).
 
 Executable configuration examples: [mixed switch](../crates/regain-hub/examples/mixed-switch.json)
 and [two-source safety](../crates/regain-hub/examples/two-source-safety.json).
@@ -15,8 +18,8 @@ sources, polling, and policies without opening HTTP or UDP discovery. It accepts
 `--workers DIRECTORY` and explicit `--simulate`; ordinary HTTP/stdio options are
 rejected in this mode. It requires an existing valid configuration file and does
 not connect sources until clients request outputs. Ordinary Alpaca HTTP mode can
-now attach using `--hub-config ABSOLUTE_PATH`; native NINA/ASCOM adoption remains
-pending against this same local host.
+attach using `--hub-config ABSOLUTE_PATH`; native NINA and native ASCOM outputs
+attach directly to this same local host over private IPC.
 Existing direct camera/accessory frontend behavior remains compatible.
 
 Use one host per canonical configuration path and operating-system user. Windows
@@ -69,7 +72,8 @@ These runtime contracts have local lifecycle/fault tests. Scalar framing and
 dispatch now use this runtime through a host-supplied stream. Protected local
 endpoints and OS ownership locks are implemented separately below. The executable
 host and configuration replacement are integrated. A Rust client and attachment
-helper are implemented below; frontend adoption and resume handling remain open.
+helper, frontend sessions and shared resume fencing are implemented below.
+Actual installed-client and sleep/wake acceptance remain open.
 
 Use the existing convention: little-endian 32-bit JSON length followed by UTF-8
 JSON; responses may carry separately bounded binary image data. Version the hub
@@ -174,14 +178,15 @@ optional `upstreamCode`; configuration failures may include field-addressable
 concurrency limits, and the implemented operations/capabilities. Client IDs in
 requests are rejected, rather than interpreted as another client's authority.
 
-Currently implemented: describeConfig, getConfig, validateConfig, listDevices,
-sourceStatus, hostStatus, connect, disconnect, changeConnection, and typed get/put for Switch, SafetyMonitor,
-and Weather. `validateConfig` reports persisted configuration/relationship errors
+Implemented scalar operations include describeConfig, getConfig, validateConfig,
+listDevices, sourceStatus, hostStatus, connect, disconnect, changeConnection and
+typed get/put for all eight output classes. `validateConfig` reports persisted configuration/relationship errors
 with `scope: "configuration"`; it does not authorize durable apply or establish
 live hardware capabilities. `getConfig` retains credential references for local
 editing, but contains no credential values. The executable's persistent service
 also advertises `applyConfig`. A read-only embedded runtime does not advertise it
-and returns unsupported. Camera image transport remains a separate pending feature.
+and returns unsupported. Camera payloads use the separately bounded
+[frontend image stream](#dedicated-frontend-image-ipc), not ordinary JSON frames.
 
 Requests start in arrival order but do not wait for earlier I/O to complete.
 This lets legacy Disconnect cancel a pending legacy Connect while cached safety
@@ -313,9 +318,9 @@ client closes both transport halves so stream-owned leases can drain.
 
 Explicit reattachment negotiates new host/client identities. A closed client
 cannot become connected again. Closing a client is not proof that server-side
-cleanup has completed. The shared .NET client is now implemented below; actual
-native providers, frontend reconnection policy, complete shared setup, and OS
-resume invalidation remain required.
+cleanup has completed. Native providers and shared setup use the .NET client
+described below. Reattachment is explicit; shared resume fencing invalidates old
+observations and sessions. Installed-client and actual OS acceptance remain open.
 
 ### Shared .NET attachment and client
 
@@ -416,7 +421,8 @@ are unsupported. The initial shared setup UI is described below.
 Host loss fails requests and does not reconnect or replay mutations. Reattach the
 HTTP frontend explicitly to obtain a new catalog/session set. Server shutdown or
 process death closes its private streams; the shared host and other clients remain
-alive. Restart/configuration-edit UI and OS resume handling remain pending.
+alive. Shared setup supports explicit reattachment and revision-checked editing;
+the shared resume clock fences old source observations and requests.
 
 ### Shared web configuration editor
 
@@ -662,9 +668,9 @@ before spawning any actors. It does not open devices or make network requests.
 Each source gets one actor regardless of the number of outputs. A host without
 a protected credential provider rejects credential-bearing source configuration.
 The executable supplies the user-scoped credential provider described below.
-The factory also prepares Windows scalar COM imports, explicit simulation and
-local virtual-output sources. Native-camera and broader COM classes remain later
-implementation work; no unavailable backend falls back to another transport.
+The factory also prepares Windows COM imports for all eight classes, native
+cameras, explicit simulation and local virtual-output sources. Those typed paths
+are described below. No unavailable backend falls back to another transport.
 
 Read InterfaceVersion before opening a source. Modern connection methods start
 at Camera/Focuser/Rotator V4, Switch/SafetyMonitor/FilterWheel V3, and
@@ -959,8 +965,8 @@ Simulation marking propagates through the dependency graph, including mixed
 outputs. Setup inspection and scalar IPC use the same typed output operation
 handlers as virtual sources. This implementation covers local composition of the
 first three classes; typed accessory and camera extensions are described below.
-Each implemented frontend uses the same controllers. Camera COM imports and
-Alpaca/NINA/ASCOM camera publication remain pending.
+Each implemented frontend uses the same controllers. Camera COM imports and all
+three camera outputs are described in their typed sections below.
 
 ### Virtual camera inputs
 
@@ -1041,11 +1047,11 @@ scenario, while configuration replacement or process restart restores defaults.
 There is no persisted "start safe" option.
 
 Use [simulated-observatory.json](../crates/regain-hub/examples/simulated-observatory.json)
-with `regain-alpaca --hub-host --hub-config ABSOLUTE_PATH` to run all three classes
-without attached equipment. This currently exposes private IPC; HTTP publication
+with `regain-alpaca --hub-host --hub-config ABSOLUTE_PATH` to run its three scalar
+classes without attached equipment. This mode exposes private IPC; HTTP publication
 and native NINA outputs also use the same host. Ordinary HTTP mode publishes the
-configured classes; `--hub-host` opens no HTTP listener. Complete native setup
-editing and ASCOM output adoption remain pending.
+configured classes; `--hub-host` opens no HTTP listener. Native setup and native
+ASCOM outputs attach to the same private host.
 
 ### Native scalar adapters
 
@@ -1100,7 +1106,8 @@ its actual interface and conformance tool before declaring support.
 
 The private executable accepts `--import --prog-id PROGID --device-type TYPE
 --connection-policy POLICY --bitness x86|x64`. TYPE currently admits `switch`,
-`safetymonitor`, `observingconditions`, `focuser`, `rotator` and `filterwheel`;
+`safetymonitor`, `observingconditions`, `focuser`, `rotator`, `filterwheel`,
+`covercalibrator` and `camera`;
 POLICY is `managed` or
 `externallyManaged`. Bitness must match the worker before activation. The helper
 is built under `hub-ascom/x86|x64/Regain.Hub.ASCOM.exe` alongside the Rust workers.
@@ -1202,7 +1209,8 @@ The store accepts at most 64 bindings and 512 KiB of strict JSON, rejects duplic
 keys/identities and unknown members, and serializes saves under a persistent OS
 lock file. Save checks the exact expected revision and writes a fresh revision by
 flushed atomic replacement. An unreadable file is not treated as an empty file
-and native setup cannot overwrite it. Native ASCOM registration management remains pending.
+and native setup cannot overwrite it. Native ASCOM uses the separate
+[owned registration manager](#native-ascom-output-increment) described below.
 
 Saved-choice removal uses the same lock and revision-checked atomic persistence
 as selection save. It identifies the instance/output pair, preserves other
@@ -1243,7 +1251,7 @@ prevent a pre-write response from restoring invalidated cached state.
 
 `HubConfigurationDraft`, `HubEditorSession` and the themed WPF window live in the
 same .NET 8/net48 frontend assembly. NINA's output selector opens this editor
-through private IPC; native ASCOM adoption is still required. The editor client
+through private IPC; native ASCOM uses this same editor. The editor client
 has no output lease and never disconnects another frontend to make Apply succeed.
 
 Draft fields, tagged transport/device variants and described scalar choices come
@@ -1674,8 +1682,8 @@ Shared configuration setup admits Focuser sources through native, Alpaca, Window
 COM, virtual and explicit simulation transports. COM source availability and
 bitness still come from the actual staged import workers. Frontends consume the
 same tagged choices and class capability annotations; they do not duplicate a
-list of supported proxy classes. Proxy initialization chooses the first available
-class, currently Focuser, rather than defaulting to an unsupported Camera. Source
+list of supported proxy classes. Proxy initialization chooses an available class
+from the host's current capability descriptors. Source
 references and matching device classes remain subject to host validation before
 Apply; schema choices alone cannot authorize a configuration. Creation, review
 and persistence do not acquire equipment leases.
@@ -1954,8 +1962,8 @@ This is metadata support; camera image buffers require separate ownership and
 transport. Existing scalar adapters/controllers still enforce their own types.
 
 The controller has private actor and actual loopback Alpaca V2/V3 coverage.
-Wheel runtime/IPC is implemented. Publication remains gated pending all frontends
-and remaining import/simulation/setup acceptance.
+Wheel runtime/IPC, all three publications, imports, simulation and shared setup
+are implemented below. Installed/physical and external acceptance remain open.
 
 ### Direct EFW metadata
 
@@ -2548,13 +2556,13 @@ failure instead of leaving a permanent Busy marker. Task activity survives even
 the loss of external owner references. The source adapter must close the owner
 on ordinary last-source-lease teardown, independently of frontend waiters.
 
-The owner is not yet wired into the source factory/runtime, frontend authorization
-or any image output. A native adapter must derive its allowance from all core
-recovery/cooling settings and share the host's budget/activity counter. The owner
+The source factory/runtime wires this owner into the typed camera paths described
+below. A native adapter derives its allowance from all core
+recovery/cooling settings and shares the host's budget/activity counter. The owner
 adds no outer deadline and preserves existing core recovery. Frontend disconnect
-must not map to its core cancellation token. Native cooling writes need a common
-acknowledged path: core queue_control currently records desired values, while
-capture environment refresh reads only temperature/power. The direct worker's
+must not map to its core cancellation token. Native cooling writes use the common
+acknowledged control path described below; queuing desired values alone cannot
+establish an applied write. The direct worker's
 bounded cooling slot now admits target/enable writes at existing USB-owner
 environment checkpoints and exposes only acknowledged cached targets. Unsent
 expiry skips USB; dispatched failures/timeouts fence new cooling writes and
@@ -2586,10 +2594,10 @@ already-buffered ACK to modify the replacement generation. Pending cooling block
 capture/abort and image publication. Uncertainty retains a redacted source fence
 and upstream code until explicit reset/close; capture completion cannot overwrite
 it or publish pixels. Existing image readers remain valid. Unsent expiry is
-transient without claiming transport loss. Source authorization and typed adapter/
-runtime/config integration remain required. Queuing a desired cooler value alone must
-not be reported as an applied in-exposure write. Implement and test SDK/direct
-cooling application and recovery-setting preservation before enabling cameras.
+transient without claiming transport loss. Typed source authorization and
+runtime/configuration integration are described below. Queuing a desired cooler
+value alone must not be reported as an applied in-exposure write. SDK/direct
+cooling acknowledgement and preserved recovery settings use those same paths.
 
 Acquisitions and publications carry source identity, source generation and a
 unique acquisition ID. Old-generation completions cannot replace current state.
@@ -2632,9 +2640,9 @@ other setters, Abort and image publication, including waiters for an older frame
 Reset/close synchronously fence late results and buffered acknowledgements.
 Unknown outcomes preserve the source error until explicit reset/close; existing
 readers remain valid. Unexpected setting-task loss is uncertain rather than a
-usable connection. Source adapter/runtime/configuration wiring, preserving
-observation freshness through publication and every remaining camera gate are
-still required.
+usable connection. Source adapter/runtime/configuration wiring preserves these
+observations through publication, as described below. Installed and physical
+camera acceptance remain separate gates.
 
 Worker `get-observation` replies carry a strict `{value, ageSeconds}` object;
 legacy `get` replies remain integers. Core subtracts the worker age from its own
@@ -2666,10 +2674,10 @@ and replay that control. Other legacy controls keep their existing paths.
 Direct gain/offset observations describe accepted worker configuration for the
 next capture. Sensor register programming occurs at StartExposure; these replies
 do not claim immediate sensor register readback. Capture overrides and immutable
-completed-image settings remain distinct. The future hub source adapter must
-preserve these evidence semantics through SampleBatch and frontend diagnostics.
-That runtime integration, all camera publications and every original acceptance
-gate remain required; this primitive does not enable camera setup choices.
+completed-image settings remain distinct. The hub source adapter preserves these
+evidence semantics through SampleBatch and frontend diagnostics. Runtime
+integration, all three publications and shared creation are described below;
+their implementation does not close the remaining original acceptance gates.
 
 The shared camera property/setting layer now implements 53 typed properties and
 13 standard setters in the source supervisor. It preserves booleans, Int32 values,
@@ -2704,15 +2712,16 @@ ImageReady and last-exposure timing are derived from the hub's published image,
 not an upstream driver's later unowned buffer. Optional timing errors retain their
 upstream codes independently; no requested duration/start time replaces unavailable
 actual timing. Other properties remain live generation-fenced source readings.
-The layer alone does not enable camera runtime, adapters, IPC or frontend choices.
+The property layer feeds the runtime, adapters, IPC and frontends described below.
 
 Capabilities and optional property errors pass through from the admitted source;
 SDK, COM, Alpaca and virtual inputs do not gain direct retained-frame rereads.
 Native recovery remains in regain-core and reports its actual backend/fallback,
 replacement exposures and retained-frame read attempts. Published images freeze
-that acquisition's geometry, timing and recovery metadata. Camera setup choices
-remain disabled until native/network/COM/virtual/simulation inputs, all three
-outputs, bounded image transport and multi-client failure checks are implemented.
+that acquisition's geometry, timing and recovery metadata. Shared camera setup
+choices use the capability gates described below; native/network/COM/virtual/
+simulation inputs, three outputs and bounded image transport are implemented.
+Multi-client fault coverage does not replace installed/physical acceptance.
 
 ### Native camera recovery configuration
 
@@ -2785,10 +2794,10 @@ The shared executable accepts `--sdk PATH` in explicit `--hub-host` mode.
 `--hub-attach` cannot override SDK or simulation settings of an existing host.
 Explicit simulation with a nonexistent SDK path does not load a vendor library.
 A native camera can supply selected scalar observations to an existing read-only
-Switch gauge with shared connection leases. This is not a camera image output.
-Camera proxy poll plans deduplicate all typed properties. The runtime admits
-configured camera outputs; public setup capability and frontend publication
-remain disabled until the complete camera path is implemented and verified.
+Switch gauge with shared connection leases. Image publication uses the separate
+camera acquisition and image-transfer paths described below. Camera proxy poll
+plans deduplicate all typed properties. Setup admits camera outputs through the
+same host capability descriptors as the other seven device classes.
 
 Factory integration preserves persisted polling settings. Core-derived native
 timing and retirement are described below. Runtime-owned supervisors now share
@@ -2800,10 +2809,9 @@ without SDK settings. The cached acquisition-status API performs no device I/O.
 After a source actor stops and drains, runtime shutdown retires the supervisor,
 releases its cache and local acquisition ownership, and retains diagnostic errors.
 It cannot clear live uncertainty; externally pinned buffers remain charged.
-Camera output connection ownership and scalar IPC are described below. Remaining
-input adapters, bounded binary IPC, frontend operation timing and camera
-publication in Alpaca, NINA and ASCOM are still required before enabling camera
-choices.
+Camera output connection ownership, input adapters, scalar/binary IPC, frontend
+operation timing and all three publications are described below. Shared creation
+uses their explicit runtime capabilities; it does not establish physical readiness.
 
 ### Camera runtime connections and scalar IPC
 
@@ -2819,9 +2827,10 @@ ownership. An observer can retain the source connection and receive the result.
 The scalar Get contract adds typed camera properties and CameraAcquisition.
 Put adds typed camera settings, StartExposure, StopExposure, AbortExposure and
 AbandonCameraAcquisition. Start returns the acquisition UUID. No JSON control or
-diagnostic reply contains pixel data or an encoded image. Existing scalar IPC
-deadlines still apply; native recovery allowances are not yet negotiated with
-frontend callers. The hello advertises cameraAcquisition, not cameraOutputs.
+diagnostic reply contains pixel data or an encoded image. Ordinary scalar IPC
+deadlines still apply. Camera controls negotiate the native recovery allowances
+described below; hello advertises the corresponding acquisition, output and
+timing capabilities.
 
 Camera DeviceState contains only available, valid cached operational properties
 from the [ASCOM Camera DeviceState contract](https://ascom-standards.org/newdocs/camera.html#Camera.DeviceState):
@@ -2835,8 +2844,8 @@ Health and acquisition generation derive from one source snapshot. Web/native
 readers require the saved output/source/revision, coherent generation and
 ownership, completed-image readiness and exact page occupancy. They reject
 unknown fields, including unexpected pixels. Diagnostic reads acquire no lease
-and cannot admit a capture. These runtime and diagnostic APIs do not yet provide
-an Alpaca camera, native ASCOM camera or native NINA camera provider.
+and cannot admit a capture. Alpaca, native ASCOM and native NINA camera providers
+use the shared acquisition runtime and dedicated image transport described below.
 
 ### Dedicated frontend image IPC
 
@@ -2943,8 +2952,8 @@ frame deadlines, exposure readiness or image-transfer limits. Cancellation of a
 dispatched waiter retains its slot and ownership until reply/deadline; transport
 loss retains mutation uncertainty and no command is automatically replayed.
 Timed-out Connect/Disconnect RPCs are also treated as uncertain mutations.
-Camera providers still need to adopt this shared API when published; no public
-camera capability is enabled by deadline negotiation alone.
+Camera providers use this shared API for synchronous connection and control;
+deadline negotiation alone does not authorize acquisition or image transfer.
 
 The native core declares validated supervision allowances from its actual
 recovery policy. Connection includes old-generation cleanup, permitted SDK
@@ -3027,9 +3036,9 @@ reread promises. Shared managed property keys match generated Rust metadata;
 managed validators also preserve the upstream UTC forms accepted by Rust. Bounded string-list
 admission is shared with filter-wheel imports.
 
-Camera frontend publication/setup and full standard-command coverage remain
-separate gates. The shared PulseGuide command is implemented below; its frontend
-implementations remain required before publishing a camera that advertises it.
+Camera frontend publication/setup and shared PulseGuide are implemented below.
+All three outputs use that guiding contract when the upstream advertises it.
+External conformance and installed/physical acceptance remain separate gates.
 Private registered fixtures do
 not establish installed-driver, conformance or physical-camera acceptance.
 
@@ -3062,15 +3071,15 @@ and retains uncertainty if completion cannot be established. Shutdown first
 drains source actors, then wakes/joins guide monitors; cancellation does not lose
 their retirement handles. The explicit simulator models monotonic pulses when
 its shared canPulseGuide control is enabled (default false). A false capability
-leaves guiding commands/properties unsupported. Frontend camera publication and
-its conformance/acceptance remain required separately.
+leaves guiding commands/properties unsupported. Frontend camera publications
+are described below; conformance/acceptance remain separate requirements.
 
 ### Alpaca camera publication
 
 Configured camera outputs now publish at their stable camera device numbers in
 the ordinary HTTP server. Every local camera slot reserves its number; conflicting
 hub configuration fails explicitly. Camera output setup opens the common hub
-editor. Shared creation remains gated pending native NINA/native ASCOM support.
+editor. Shared creation uses the capability gates described below.
 
 Connected outputs retain their host/client/revision-bound camera operation timing.
 Camera setters and Start/Stop/Abort/PulseGuide use cameraControl and return null
@@ -3092,8 +3101,8 @@ frontend/acceptance gates remain separate.
 Saved camera bindings publish Camera V2/V3/V4 through the existing shared local
 COM server, with stable UUID-derived identities and both Camera chooser views.
 Metadata remains inert. Setup uses the same configuration editor as other hub
-outputs. General camera creation remains gated until native NINA publication and
-shared creation are also implemented and verified.
+outputs. General camera creation uses the same generated capability gates as
+native NINA and browser setup, as described below.
 
 The shared native camera session negotiates host/client/revision-bound timing
 before acquiring a connection. Synchronous connection and camera writes use that
