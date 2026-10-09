@@ -153,6 +153,7 @@ pub struct Status {
     pub sdk_fallback: bool,
     pub phase: String,
     pub error: Option<String>,
+    pub retry: RetryStatus,
     pub controls: BTreeMap<i32, Control>,
     pub values: BTreeMap<i32, i64>,
     pub connected: bool,
@@ -162,6 +163,36 @@ pub struct Status {
     pub process_id: Option<u32>,
     pub white_balance_capabilities: Value,
     pub white_balance: Option<crate::white_balance::Settings>,
+}
+/// Attempts made for the current/latest capture; the last failure survives
+/// successful recovery and subsequent healthy captures in this connection.
+#[derive(Clone, Debug, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RetryStatus {
+    pub recaptures: u32,
+    pub downloads: u32,
+    pub usb_reads: u32,
+    pub last_failure: Option<String>,
+}
+impl Status {
+    pub fn recovery_info(&self) -> String {
+        let retry = &self.retry;
+        let failure = retry.last_failure.as_deref().unwrap_or("none");
+        let failure = failure.split_whitespace().collect::<Vec<_>>().join(" ");
+        format!(
+            "state: {}; retries: {} (recaptures: {}, downloads: {}, USB reads: {}); last failure: {}",
+            if self.phase.is_empty() {
+                "Disconnected"
+            } else {
+                &self.phase
+            },
+            u64::from(retry.recaptures) + u64::from(retry.downloads) + u64::from(retry.usb_reads),
+            retry.recaptures,
+            retry.downloads,
+            retry.usb_reads,
+            failure
+        )
+    }
 }
 pub type SharedStatus = Arc<Mutex<Status>>;
 pub type Diagnostic = Arc<dyn Fn(&str, &str, &str) + Send + Sync>;

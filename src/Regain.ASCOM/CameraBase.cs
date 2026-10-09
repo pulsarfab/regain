@@ -19,7 +19,8 @@ public abstract partial class CameraBase : ICameraV4, IDisposable
     // registration/chooser label separate from the selected camera model.
     public string Name => client?.Get<string>("name") ?? $"PulsarFab regain Retryable Camera {slot + 1}";
     public string Description => "ZWO camera driver with automatic retries";
-    public string DriverInfo => "PulsarFab regain native Rust camera driver";
+    public string DriverInfo => client?.Get<string>("driverinfo") ??
+        "PulsarFab regain native Rust camera driver; state: Disconnected; retries: 0 (recaptures: 0, downloads: 0, USB reads: 0); last failure: none";
     public string DriverVersion => typeof(CameraBase).Assembly.GetName().Version.ToString();
     public short InterfaceVersion => 4;
     public ArrayList SupportedActions => new() { "Regain.Diagnostics", "Regain.Controls", "Regain.SetControl" };

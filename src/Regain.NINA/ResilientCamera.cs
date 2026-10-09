@@ -62,7 +62,8 @@ public sealed class ResilientCamera : BaseINPC, ICamera
     public string DisplayName => "PulsarFab regain Retryable Camera";
     public string Category => "PulsarFab regain";
     public string Description => "ZWO camera driver with automatic retries";
-    public string DriverInfo => $"PulsarFab regain {DriverVersion} / {session?.SdkVersion} [{session?.Backend}{(session?.UsingSdkFallback == true ? " fallback" : "")}]; {session?.Phase}";
+    public string DriverInfo => $"PulsarFab regain {DriverVersion} / {session?.SdkVersion ?? "unknown"} [{session?.Backend ?? "unselected"}{(session?.UsingSdkFallback == true ? " fallback" : "")}]; " +
+        (session?.RecoveryInfo ?? new CameraRetryStatus().DriverInfo("Disconnected"));
     public string DriverVersion => typeof(ResilientCamera).Assembly.GetName().Version!.ToString();
     public bool Connected
     {
@@ -101,7 +102,7 @@ public sealed class ResilientCamera : BaseINPC, ICamera
             throw new NotSupportedException("Direct capture is unavailable for this camera. Turn off Direct USB driver to use the SDK.");
         var factory = useConfiguredBackend && direct ? CameraProvider.NewDirectHost : hostFactory;
         var candidate = new CameraSession(descriptor, factory, recoveryOptions ?? Settings.Load(), selected?.Serial, direct && selected?.AllowSdkFallback == true ? hostFactory : null);
-        candidate.Diagnostic += text => CameraLog.Session(Name, text);
+        candidate.Diagnostic += text => { CameraLog.Session(Name, text); RaisePropertyChanged(nameof(DriverInfo)); };
         try
         {
             await candidate.ConnectAsync(token).ConfigureAwait(false);
@@ -377,7 +378,7 @@ public sealed class ResilientCamera : BaseINPC, ICamera
         timeoutSettings = null;
     }
     public IList<string> SupportedActions => new List<string> { "Regain.Diagnostics" };
-    public string Action(string actionName, string actionParameters) => Regain.Rotator.RegainPaths.ActionName(actionName) == "regain.diagnostics" ? System.Text.Json.JsonSerializer.Serialize(new { phase = session?.Phase, error = session?.LastError, sdkErrorCode = session?.LastSdkErrorCode, sdkExposureState = session?.LastSdkExposureState, serial = session?.Serial, sdk = session?.SdkVersion, backend = session?.Backend, sdkFallback = session?.UsingSdkFallback }) : throw new NotSupportedException();
+    public string Action(string actionName, string actionParameters) => Regain.Rotator.RegainPaths.ActionName(actionName) == "regain.diagnostics" ? System.Text.Json.JsonSerializer.Serialize(new { phase = session?.Phase, retry = session?.RetryStatus, error = session?.LastError, sdkErrorCode = session?.LastSdkErrorCode, sdkExposureState = session?.LastSdkExposureState, serial = session?.Serial, sdk = session?.SdkVersion, backend = session?.Backend, sdkFallback = session?.UsingSdkFallback }) : throw new NotSupportedException();
     public string SendCommandString(string command, bool raw = true) => throw new NotSupportedException();
     public bool SendCommandBool(string command, bool raw = true) => throw new NotSupportedException();
     public void SendCommandBlind(string command, bool raw = true) => throw new NotSupportedException();
