@@ -11,8 +11,10 @@ do {
 } while ($true)
 try {
     if ($camera.InterfaceVersion -ne 4) { throw 'Wrong camera interface' }
+    if ($camera.Name -ne "PulsarFab regain Retryable Camera $($Slot + 1)") { throw 'Disconnected ASCOM slot identity changed' }
     if ($MetadataOnly) { Write-Output $camera.Name; return }
     $camera.Connected = $true
+    if ($camera.Name -ne $camera.SensorName) { throw 'Connected ASCOM Name must be the camera model for FITS metadata' }
     $camera.BinX = 1
     $camera.BinY = 1
     $camera.NumX = 64

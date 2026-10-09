@@ -37,6 +37,15 @@ impl Default for Profile {
     }
 }
 impl Profile {
+    /// Alpaca clients such as NINA cache the discovery name as FITS INSTRUME.
+    /// Keep user labels in setup, and publish the selected camera model.
+    pub fn camera_name(&self) -> &str {
+        self.camera
+            .as_ref()
+            .and_then(|camera| camera["name"].as_str())
+            .unwrap_or(&self.label)
+    }
+
     pub fn validate(&self) -> Result<()> {
         self.recovery.validate()?;
         ensure!(

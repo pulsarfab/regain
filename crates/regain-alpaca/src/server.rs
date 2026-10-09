@@ -554,7 +554,7 @@ async fn management(
             json!({"ServerName":"PulsarFab regain","Manufacturer":"PulsarFab","ManufacturerVersion":env!("CARGO_PKG_VERSION"),"Location":"Astronomy equipment server"})
         }
         "configureddevices" => {
-            let mut devices = s.profiles.all().into_iter().enumerate().filter(|(_,p)|p.camera.is_some()).map(|(slot,p)|json!({"DeviceName":p.label,"DeviceType":"Camera","DeviceNumber":slot,"UniqueID":p.unique_id})).collect::<Vec<_>>();
+            let mut devices = s.profiles.all().into_iter().enumerate().filter(|(_,p)|p.camera.is_some()).map(|(slot,p)|json!({"DeviceName":p.camera_name(),"DeviceType":"Camera","DeviceNumber":slot,"UniqueID":p.unique_id})).collect::<Vec<_>>();
             for slot in s.profiles.rotators.all() {
                 match match s.rotator(slot.number) {
                     Ok(r) => r.configured().await,
