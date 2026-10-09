@@ -3,7 +3,7 @@ members = ["crates/regain-device", "crates/regain-core", "crates/regain-alpaca",
 resolver = "3"
 
 [workspace.package]
-version = "0.5.12"
+version = "0.5.13"
 edition = "2024"
 rust-version = "1.89"
 license = "Apache-2.0"
@@ -13,10 +13,10 @@ homepage = "https://pulsarfab.com/docs/regain/"
 
 # Pin internal crates to this workspace version so release trains cannot mix.
 [workspace.dependencies]
-regain-core = { path = "crates/regain-core", version = "=0.5.12" }
-regain-deepskydad = { path = "crates/regain-deepskydad", version = "=0.5.12" }
-regain-pegasus = { path = "crates/regain-pegasus", version = "=0.5.12" }
-regain-transport = { path = "crates/regain-transport", version = "=0.5.12" }
-regain-wanderer = { path = "crates/regain-wanderer", version = "=0.5.12" }
-regain-worker = { path = "crates/regain-worker", version = "=0.5.12" }
-regain-zwo = { path = "crates/regain-zwo", version = "=0.5.12" }
+regain-core = { path = "crates/regain-core", version = "=0.5.13" }
+regain-deepskydad = { path = "crates/regain-deepskydad", version = "=0.5.13" }
+regain-pegasus = { path = "crates/regain-pegasus", version = "=0.5.13" }
+regain-transport = { path = "crates/regain-transport", version = "=0.5.13" }
+regain-wanderer = { path = "crates/regain-wanderer", version = "=0.5.13" }
+regain-worker = { path = "crates/regain-worker", version = "=0.5.13" }
+regain-zwo = { path = "crates/regain-zwo", version = "=0.5.13" }
