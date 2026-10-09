@@ -47,9 +47,10 @@ def exercise(binary, directory, prepare=False):
             direct = slot != 0
             profile = camera.call('profile')
             choices = camera.call('discover', params={'direct': direct})
-            profile.update(camera=choices[slot if direct else 0], serial=None, direct=direct)
+            profile.update(camera=choices[slot if direct else 0], serial=None, direct=direct, label='My imaging train')
             profile['recovery']['reconnectDelaySeconds'] = .05
             camera.call('configure', params=profile)
+            assert camera.call('get', 'name') == profile['camera']['name']
             if prepare:
                 continue
             camera.call('get', 'imageready', error=0x407)
@@ -62,6 +63,7 @@ def exercise(binary, directory, prepare=False):
             finally:
                 other.close()
             camera.call('put', 'connected', {'Connected': True})
+            assert camera.call('get', 'name') == camera.call('get', 'sensorname') == profile['camera']['name']
             assert camera.call('get', 'gain') == 101
             camera.call('configure', params=profile, error=0x40B)
             camera.call('put', 'numx', {'NumX': 64})
