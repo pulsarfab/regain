@@ -13,7 +13,7 @@ function Invoke-FixtureGit {
 function Set-Version([string]$value) {
     [IO.File]::WriteAllText((Join-Path $fixture 'Directory.Build.props'), "<Project><PropertyGroup><Version>$value</Version></PropertyGroup></Project>")
     $rust = $value.Split('.')[0..2] -join '.'
-    [IO.File]::WriteAllText((Join-Path $fixture 'Cargo.toml'), "[workspace.package]`nversion = `"$rust`"`n")
+    [IO.File]::WriteAllText((Join-Path $fixture 'Cargo.toml'), "[workspace.package]`nversion = `"$rust`"`n[workspace.dependencies]`nregain-core = { path = `"crates/regain-core`", version = `"=$rust`" }`n")
 }
 function Accept([string]$name, [hashtable]$parameters, [string]$expected) {
     $actual = & $check @parameters
@@ -43,6 +43,13 @@ Invoke-FixtureGit update-ref refs/remotes/origin/main HEAD
 Invoke-FixtureGit update-ref refs/remotes/origin/release/0.5 HEAD
 Accept 'main build' @{RefType='branch'; RefName='main'} '0.5.10.0'
 Accept 'maintenance build' @{RefType='branch'; RefName='release/0.5'} '0.5.10.0'
+$manifest = Join-Path $fixture 'Cargo.toml'
+$validManifest = [IO.File]::ReadAllText($manifest)
+[IO.File]::WriteAllText($manifest, $validManifest.Replace('=0.5.10', '0.5.10'))
+Reject 'unbounded internal crate dependency' @{RefType='branch'; RefName='main'} 'must pin version =0.5.10'
+[IO.File]::WriteAllText($manifest, $validManifest.Replace('=0.5.10', '=0.5.9'))
+Reject 'mismatched internal crate dependency' @{RefType='branch'; RefName='main'} 'must pin version =0.5.10'
+[IO.File]::WriteAllText($manifest, $validManifest)
 Accept 'maintenance tag' @{RefType='tag'; RefName='v0.5.10.0'} '0.5.10.0'
 Accept 'maintenance registry publication' @{RefType='branch'; RefName='release/0.5'; RegistryTag='v0.5.10.0'} '0.5.10.0'
 Reject 'feature branch' @{RefType='branch'; RefName='codex/feature'} 'require main or'

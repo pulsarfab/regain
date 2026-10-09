@@ -51,6 +51,7 @@ def exercise(binary, directory, prepare=False):
             profile['recovery']['reconnectDelaySeconds'] = .05
             camera.call('configure', params=profile)
             assert camera.call('get', 'name') == profile['camera']['name']
+            assert 'state: Disconnected; retries: 0' in camera.call('get', 'driverinfo')
             if prepare:
                 continue
             camera.call('get', 'imageready', error=0x407)
@@ -65,6 +66,7 @@ def exercise(binary, directory, prepare=False):
             camera.call('put', 'connected', {'Connected': True})
             assert camera.call('get', 'name') == camera.call('get', 'sensorname') == profile['camera']['name']
             assert camera.call('get', 'gain') == 101
+            assert 'state: Idle; retries: 0' in camera.call('get', 'driverinfo')
             camera.call('configure', params=profile, error=0x40B)
             camera.call('put', 'numx', {'NumX': 64})
             camera.call('put', 'numy', {'NumY': 64})
@@ -75,6 +77,8 @@ def exercise(binary, directory, prepare=False):
                 time.sleep(.02)
             dimensions, pixels = camera.call('get', 'imagearray')
             assert dimensions == {'width': 64, 'height': 64} and len(pixels) == 8192
+            assert 'state: Idle; retries: 0' in camera.call('get', 'driverinfo')
+            assert 'last failure: none' in camera.call('get', 'driverinfo')
             camera.call('put', 'startexposure', {'Duration': 5, 'Light': False})
             camera.call('put', 'abortexposure')
             assert not camera.call('get', 'imageready')

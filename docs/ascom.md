@@ -130,6 +130,13 @@ ImageReady becomes true only for a completed image. Allow enough overall time
 in the client for reconnects and cooler recovery. Recovered failures are logged;
 an exhausted retry budget returns an ASCOM driver error.
 
+**Driver Info** in NINA and ASCOM reports the current recovery state, total retry
+count, a breakdown of replacement exposures, download retries and USB frame
+rereads, and the last failure. Counts cover the current or most recent capture
+and reset when a new capture starts. The last failure remains visible after a
+successful recovery or subsequent healthy capture, until disconnect/reconnect.
+This status uses the shared recovery engine and does not start another exposure.
+
 By default, ready-frame downloads get two retries at any exposure length.
 Replacement exposures get three retries only at 30 seconds or less. Reconnects
 restore the prior setpoint and wait near the prior measured temperature, with
