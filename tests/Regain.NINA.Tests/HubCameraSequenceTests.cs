@@ -151,6 +151,11 @@ public sealed partial class HubNativeTests
     public async Task CameraSequenceCancellationUsesSavedPolicyAndDoesNotAutomaticallyReplay(string policy)
     {
         await using var host = await Host.Open(config => { PairedCameras(config); config["cameraGroups"]![0]!["cancellationPolicy"] = policy; });
+        // Keep both exposures pending until the saved cancellation policy acts.
+        // A short wall-clock exposure can finish while a busy CI client observes
+        // the exposing state and checks the no-replay fences.
+        await host.Update(0, new { fault = "stalledExposure" });
+        await host.Update(1, new { fault = "stalledExposure" });
         var writer = new RecordingGroupImages(host.DirectoryPath); var step = CameraStep(host, writer);
         foreach (var member in step.Members) member.DurationSeconds = 2;
         using var cancel = new CancellationTokenSource();
