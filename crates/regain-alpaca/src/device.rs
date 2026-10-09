@@ -248,9 +248,15 @@ impl Device {
             }
             "description" => return Ok(json!("ZWO camera driver with automatic retries")),
             "driverinfo" => {
+                let recovery = s
+                    .status
+                    .as_ref()
+                    .map(|status| status.lock().unwrap().recovery_info())
+                    .unwrap_or_else(|| Status::default().recovery_info());
                 return Ok(json!(format!(
-                    "PulsarFab regain {} / Rust camera recovery",
-                    env!("CARGO_PKG_VERSION")
+                    "PulsarFab regain {} / Rust camera recovery; {}",
+                    env!("CARGO_PKG_VERSION"),
+                    recovery
                 )));
             }
             "driverversion" => return Ok(json!(env!("CARGO_PKG_VERSION"))),

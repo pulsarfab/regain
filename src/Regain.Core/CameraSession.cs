@@ -41,6 +41,10 @@ public sealed class CameraSession : IDisposable
     private double readRetryOverheadSeconds;
     public string? Serial => serial;
     public string Phase { get; private set; } = "Disconnected";
+    private CameraRetryStatus retryStatus = new();
+    public CameraRetryStatus RetryStatus { get { lock (sync) return retryStatus; } }
+    public string RecoveryInfo { get { lock (sync) return retryStatus.DriverInfo(Phase); } }
+    private void RecordFailure(string? failure) { if (failure is not null) lock (sync) retryStatus = retryStatus with { LastFailure = failure }; }
     public string? LastError
     {
         get; private set;
@@ -75,7 +79,7 @@ public sealed class CameraSession : IDisposable
     }
     private void State(string phase)
     {
-        Phase = phase;
+        lock (sync) Phase = phase;
         Log(phase);
     }
     private Task<Reply> Call(string method, object? p, CancellationToken token, double? timeout = null) =>
@@ -100,7 +104,7 @@ public sealed class CameraSession : IDisposable
                 State("Idle");
             }
         }
-        catch (Exception error) { Log($"Connection failed: {error.Message}"); KillHost(); throw; }
+        catch (Exception error) { if (error is not OperationCanceledException) RecordFailure(error.Message); Log($"Connection failed: {error.Message}"); KillHost(); throw; }
         finally { operation.Release(); }
     }
     private bool CanFallback => sdkFallbackFactory is not null && !usingFallback;
@@ -261,7 +265,7 @@ public sealed class CameraSession : IDisposable
                         observed[c] = v;
                 }
         }
-        catch { KillHost(); throw; }
+        catch (Exception error) { if (error is not OperationCanceledException) RecordFailure(error.Message); KillHost(); throw; }
         finally { operation.Release(); }
     }
     // Re-establish control without taking a new exposure or consuming its retry budget.
@@ -301,6 +305,7 @@ public sealed class CameraSession : IDisposable
                     if (acquired) KillHost();
                     if (!shutdown.IsCancellationRequested) {
                         LastError = error.Message;
+                        RecordFailure(error.Message);
                         Log($"Camera control recovery failed: {error.Message}");
                         State("Camera controls unavailable");
                     }
@@ -335,9 +340,10 @@ public sealed class CameraSession : IDisposable
         {
             if (!hasConnected)
                 throw new InvalidOperationException("Connect first");
+            Validate(exposure);
+            lock (sync) retryStatus = new(LastFailure: retryStatus.LastFailure);
             if (supervised)
                 return await CaptureSupervised(exposure, token).ConfigureAwait(false);
-            Validate(exposure);
             var settings = Snapshot();
             double? prior = null;
             long? priorPower = null;
@@ -358,6 +364,7 @@ public sealed class CameraSession : IDisposable
             for (int attempt = 0; attempt <= retries; attempt++)
             {
                 token.ThrowIfCancellationRequested();
+                lock (sync) retryStatus = retryStatus with { Recaptures = attempt };
                 try
                 {
                     if (attempt > 0 || host is null || requiresReconnect)
@@ -434,6 +441,7 @@ public sealed class CameraSession : IDisposable
                         catch (SdkException e)
                         {
                             LastError = e.Message;
+                            RecordFailure(e.Message);
                             LastSdkErrorCode = e.Code;
                             Log($"Transfer failure: {e.Message}");
                             if (!e.Retryable)
@@ -442,6 +450,7 @@ public sealed class CameraSession : IDisposable
                             Log($"Post-transfer SDK state: {LastSdkExposureState}");
                             if (transferRetry++ >= downloadRetries || LastSdkExposureState != 2)
                                 throw;
+                            lock (sync) retryStatus = retryStatus with { Downloads = retryStatus.Downloads + 1 };
                             State($"Rereading ready frame ({transferRetry}/{downloadRetries})");
                             await Task.Delay(TimeSpan.FromSeconds(Options.ReconnectDelaySeconds), token).ConfigureAwait(false);
                         }
@@ -452,10 +461,18 @@ public sealed class CameraSession : IDisposable
                     Buffer.BlockCopy(reply.Pixels, 0, pixels, 0, reply.Pixels.Length);
                     int retainedReads = SupportsRetainedFrameReads && reply.Result.TryGetProperty("readRecoveries", out var reads)
                         ? reads.GetInt32() : 0;
+                    lock (sync) retryStatus = retryStatus with { UsbReads = retryStatus.UsbReads + retainedReads };
+                    if (retainedReads > 0) {
+                        var errors = reply.Result.TryGetProperty("readErrors", out var readErrors) ? readErrors :
+                            reply.Result.TryGetProperty("readoutErrors", out var readoutErrors) ? readoutErrors : default;
+                        RecordFailure(errors.ValueKind == JsonValueKind.Array && errors.GetArrayLength() > 0 ? errors[errors.GetArrayLength() - 1].GetString() :
+                            "USB frame read failed; frame recovered (worker supplied no failure detail)");
+                    }
                     if (retainedReads > 0)
                         Log($"Recovered retained frame after {retainedReads} transfer retries; no new exposure");
                     if (reply.Result.TryGetProperty("cleanupError", out var cleanup)) {
                         LastError = cleanup.GetString();
+                        RecordFailure(LastError);
                         Log($"Frame preserved; reconnect required after cleanup failure: {LastError}");
                         KillHost();
                     }
@@ -471,6 +488,7 @@ public sealed class CameraSession : IDisposable
                         LastSdkErrorCode = sdk.Code;
                     last = e;
                     LastError = e.Message;
+                    RecordFailure(e.Message);
                     Log($"Attempt {attempt + 1}/{retries + 1} failed using {Backend}, phase {Phase}: {e.Message}");
                     if (attempt < retries)
                         Log($"Scheduling replacement exposure {attempt + 1}/{retries}: {exposure.microseconds / 1e6:G} s, {exposure.width}x{exposure.height}, bin {exposure.bin}; reconnect delay {Options.ReconnectDelaySeconds:G} s");
@@ -487,14 +505,13 @@ public sealed class CameraSession : IDisposable
             throw new IOException($"Exposure failed after {retries + 1} attempts. {last?.Message}", last);
         }
         catch (OperationCanceledException) { if (!supervised || host?.IsAlive != true) KillHost(); State("Aborted"); throw; }
-        catch (Exception error) { Log($"Capture failed; no image returned: {error.Message}"); if (!supervised || host?.IsAlive != true) KillHost(); State("Error"); throw; }
+        catch (Exception error) { RecordFailure(error.Message); Log($"Capture failed; no image returned: {error.Message}"); if (!supervised || host?.IsAlive != true) KillHost(); State("Error"); throw; }
         finally { operation.Release(); ScheduleControlRecovery(); }
     }
     private async Task<Frame> CaptureSupervised(Exposure exposure, CancellationToken token)
     {
         // Production frontends share Rust recovery. The original transaction above
         // remains available for raw-worker diagnostics and its regression fixtures.
-        Validate(exposure);
         if (host is null || requiresReconnect) await RestoreControlConnection(token).ConfigureAwait(false);
         var requested = Snapshot();
         try
@@ -525,7 +542,12 @@ public sealed class CameraSession : IDisposable
                     ControlConnectionAvailable = status.GetProperty("controlConnectionAvailable").GetBoolean();
                 }
                 string phase = status.GetProperty("phase").GetString() ?? "Exposing";
-                if (phase != Phase) State(phase);
+                bool retryChanged = false;
+                if (status.TryGetProperty("retry", out var retry)) {
+                    var current = retry.Deserialize<CameraRetryStatus>(new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
+                    lock (sync) { retryChanged = current != retryStatus; retryStatus = current; }
+                }
+                if (phase != Phase || retryChanged) State(phase);
                 int state = status.GetProperty("state").GetInt32();
                 if (state == 2) {
                     var snapshot = status.GetProperty("snapshot");
