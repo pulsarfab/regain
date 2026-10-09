@@ -15,6 +15,29 @@ namespace Regain.NINA.Tests;
 public sealed partial class HubNativeTests
 {
     [Fact]
+    public async Task SetupFailureIsReportedWithoutEscapingNinasPoolThread()
+    {
+        using var device = new HubSafetyDevice(null);
+        string? notice = null;
+        device.SetupNotice = message => notice = message;
+        device.SelectSetupOutput = _ => throw new IOException("Unavailable saved configuration");
+        var id = device.Id;
+        await Task.Run(device.SetupDialog);
+        Assert.Contains("Could not open Hub setup", notice);
+        Assert.Equal(id, device.Id); Assert.False(device.Connected);
+    }
+    [Fact]
+    public async Task DisposedSetupReportsAClosedDeviceWithoutOpeningAnEditor()
+    {
+        var device = new HubSafetyDevice(null);
+        string? notice = null;
+        device.SetupNotice = message => notice = message;
+        device.SelectSetupOutput = _ => throw new IOException("Must not open setup");
+        device.Dispose();
+        await Task.Run(device.SetupDialog);
+        Assert.Contains("device has been closed", notice);
+    }
+    [Fact]
     public async Task SafetyFixtureContinuesAfterAnAbortedPoll()
     {
         await using var server = new SafetyServer();

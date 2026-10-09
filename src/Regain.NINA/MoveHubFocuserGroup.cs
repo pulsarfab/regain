@@ -9,7 +9,7 @@ namespace Regain.NINA;
 
 [ExportMetadata("Name", "Move Regain focuser group")]
 [ExportMetadata("Description", "Move calibrated absolute focusers through the shared Regain host and report each member's result")]
-[ExportMetadata("Icon", "FocuserSVG")]
+[ExportMetadata("Icon", "FocusSVG")]
 [ExportMetadata("Category", "PulsarFab regain")]
 [Export(typeof(ISequenceItem))]
 [JsonObject(MemberSerialization.OptIn)]

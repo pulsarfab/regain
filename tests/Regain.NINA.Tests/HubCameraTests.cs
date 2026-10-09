@@ -54,6 +54,8 @@ public sealed class HubCameraTests
             Assert.Equal(16, owner.BitDepth);
             Assert.Equal(owner.CameraXSize, sibling.CameraXSize);
             var expectedBayer = owner.SensorType != SensorType.Monochrome;
+            var expectedCameraName = owner.SensorName;
+            var expectedCameraId = first.OutputId.ToString();
             Assert.NotEmpty(owner.ReadoutModes);
             if (owner.CanSetTemperature) {
                 owner.TemperatureSetPoint = -5; owner.CoolerOn = true;
@@ -77,6 +79,8 @@ public sealed class HubCameraTests
             Assert.Equal(96 * 64, frame.Pixels.Length);
             Assert.Equal(0.2, frame.MetaData.Image.ExposureTime, 5);
             Assert.Equal(1, frame.MetaData.Camera.BinX);
+            Assert.Equal(expectedCameraName, frame.MetaData.Camera.Name);
+            Assert.Equal(expectedCameraId, frame.MetaData.Camera.Id);
             Assert.Equal(1, settings.Object.Timeout);
             var imageData = await frame.ToImageData(null!, limit.Token);
             Assert.Same(frame.Pixels, signed ? imageData.Data.FlatArrayInt : imageData.Data.FlatArray);

@@ -53,14 +53,78 @@ worker hash are `hub-audit-mixed-source.log` and `hub-audit-native-provenance.js
 
 | Gate | Evidence required to close it | Current boundary |
 | --- | --- | --- |
-| Installed native NINA | Actual plugin load/chooser/setup and device/group operations, with exact application version; direct use without HTTP and native/network use without installed ASCOM Platform | NINA 3.2.0.9001 now loads native weather, safety and Switch outputs backed by explicit COM fixtures, without HTTP. Weather isolation and safety withdrawal/recovery pass. All-class/group operations and an environment without ASCOM Platform remain open. See the 2026-10-09 record below. |
+| Installed native NINA | Actual plugin load/chooser/setup and device/group operations, with exact application version; direct use without HTTP and native/network use without installed ASCOM Platform | NINA 3.2.0.9001 passes all eight native classes, both coordinated instructions, shared setup and explicit host-loss reconnect using labeled simulation without HTTP. Separate COM-source weather/safety isolation also passes. An environment without ASCOM Platform remains unverified. See the 2026-10-09 records below. |
 | Installed COM/installer lifecycle | Actual signed payloads, Chooser/UAC, x86/x64 activation, owned registration preservation through upgrade/uninstall, profile compatibility | Private registry/export and installer construction coverage does not prove this. |
-| Mixed physical inputs and sharing | Identify idle, authorized hardware; exercise native/network/COM combinations, short safe operations, disconnect/reconnect, per-client command conflicts and recovery | The user authorized unrestricted local NINA use and the ASI585MM Pro. Its separate native-camera FITS tests pass; this Hub increment uses explicit COM fixtures only. Mixed physical Hub acceptance remains open. |
+| Mixed physical inputs and sharing | Identify idle, authorized hardware; exercise native/network/COM combinations, short safe operations, disconnect/reconnect, per-client command conflicts and recovery | The user authorized unrestricted local NINA use and the ASI585MM Pro. Its separate native-camera FITS tests pass; installed Hub passes use explicit COM fixtures and built-in simulation. Mixed physical Hub acceptance remains open. |
 | Real sleep/wake | Actual suspend/resume on supported OSes, independent safety/weather withdrawal, session reconnect, uncertain-command fencing and retained image behavior | Injected clocks and Windows/Linux/macOS implementation checks exist; real OS acceptance is open. |
 | Real LAN/scoped IPv6 | Separate-host routing/discovery plus actual scoped IPv6 interface use, with host/interface identities and failure behavior recorded | Production Windows Hub traffic now crosses the Debian WSL2 virtual NIC over IPv4 and actual link-local IPv6 scope 63: pinned catalogs, exact shared images and safety withdrawal on remote loss pass, with peer identities and cleanup recorded. This same-machine, cross-kernel simulation advances scoped routing evidence; physical LAN, UDP discovery and TLS on that LAN remain open. |
 | External standards findings | Resolve or explicitly accept the recorded standards discrepancies without suppressing raw failures; retain the panel timing evidence and investigate its cause | Original raw findings remain visible. The panel getter uses one cached IPC read. Three fresh clients of the unchanged ConformU facade measure first reads at 17.79–29.13 ms and split getters below 3.58 ms; this does not reproduce/explain the original 139 ms finding, which remains open. |
 | Documentation/publication | Final release copy, README/setup/site consistency, correct stable/preview boundary, screenshots, then publish the companion site | Website main/deployment now serves 57dff44: stable 0.5.11 corrections and a separate 0.6 Hub preview with honest screenshot captions. Fresh generation/27-page link checks pass; all 29 live documents match checked source apart from recorded host injections, and four image HEAD sizes match. Prior inspected desktop/mobile renders are retained. Final 0.6 release-copy alignment remains open; no Hub package/feed was published. |
-| Final reconciliation/review/CI/merge | Fresh main, full requirement audit, relevant final local regression, final CI/review, then merge the single PR #21 | Main through 21fdb0d is integrated. Run 37731689797 at afb6721 completed with seven jobs passing and Windows failing two COM parent cases; both failures are now reproduced and repaired locally. Fresh COM coverage passes 35 worker, 26 parent and eight NINA camera-import tests. Earlier-head results cannot substitute for final-head CI. PR remains draft; intermediate CI is not a waiting gate. |
+| Final reconciliation/review/CI/merge | Fresh main, full requirement audit, relevant final local regression, final CI/review, then merge the single PR #21 | Main is integrated through merge 1cc526d. Run 37949257756 at fec9234 passes all jobs, including the repaired COM parent cases. The later NINA acceptance fixes have focused local coverage; that earlier CI cannot substitute for final-head CI. PR remains draft; intermediate CI is not a waiting gate. |
+
+## Installed native NINA acceptance, 2026-10-09
+
+Actual NINA **3.2.0.9001** loaded the 0.6 development plugin from its installed
+plugin directory. A production Rust Hub supplied ten saved outputs across all
+eight device classes, using explicitly labeled built-in simulation. The host
+used private local IPC; no HTTP publisher was running. These results establish
+installed frontend behavior, not physical device or ASCOM-free OS acceptance.
+
+| Installed NINA operation | Observed result |
+| --- | --- |
+| Camera | Connected the saved output, displayed a 320 × 240 monochrome 16-bit frame and saved a 0.1-second FITS exposure. After the metadata fix, `INSTRUME` is `Regain simulated sensor` and `CAMERAID` is the complete output UUID. |
+| FilterWheel | Selected Blue and applied the change; source readback confirmed position 2. |
+| Focuser | Moved from 50000 to 50025 and read the resulting position in NINA. |
+| Rotator | Set mechanical angle to 15 degrees and read 15 degrees back. |
+| CoverCalibrator | Set brightness to 1200 of 4096, turned the light off, opened the cover and completed a close command. |
+| Switch | Displayed the read-only temperature gauge, switched a relay on and applied/read back an analog level of 37. |
+| ObservingConditions | Displayed 12 °C and 1013 hPa. |
+| SafetyMonitor | Started unsafe, became safe after the configured fresh-observation hold, then became unsafe after an injected source read failure. |
+| Focuser group instruction | The actual Advanced Sequencer completed a group target of 50050; member readbacks were 50050 and 50250 with the configured offset of 200. |
+| Camera group instruction | The actual Advanced Sequencer saved two separate 320 × 240 FITS files at 0.1 and 0.2 seconds, with the upstream model and distinct source UUIDs in their headers. |
+| Shared setup | Connected setup now shows a disconnect-first notice while preserving the camera connection. After disconnect, saved outputs load and the common configuration editor opens within NINA. |
+| Host loss | Stopping the owned Hub disabled camera controls. Explicit reconnect started a new host and connected the same saved output; NINA closed normally afterward. |
+
+![Installed NINA completing both coordinated instructions with explicit simulation](images/hub-nina-groups-simulation.jpg)
+
+![Installed NINA controlling simulated Hub Switch channels and displaying its gauge](images/hub-nina-switch-simulation.jpg)
+
+The pass found two product defects and verified their fixes in the installed
+plugin. Native Hub camera downloads omitted camera metadata; each accepted
+capture now retains its upstream sensor/model name and compact output UUID.
+Using the UUID also avoids NINA's FITS writer truncating the longer chooser ID.
+Connected setup threw an exception on NINA's unhandled pool thread, terminating
+the application. Setup now dispatches WPF work to the UI thread, reports blocked
+or failed setup visibly, and preserves the active binding if a connection
+changes while the editor is open.
+
+The focuser group instruction's blank palette icon was also traced to the
+nonexistent `FocuserSVG` resource. It now names NINA's installed `FocusSVG`
+resource. The retained group screenshot predates this cosmetic correction.
+
+![Installed NINA preserving the connected simulated camera when setup is requested](images/hub-nina-connected-setup-simulation.jpg)
+
+Fresh focused coverage passes four camera capture cases (SDK simulation, direct
+USB simulation, ASCOM fixture and nested Hub fixture), four typed-output setup
+cases including a connection change during setup, and two setup error/disposal
+cases invoked from a pool thread. The Release build succeeds without warnings.
+The pre-fix missing FITS headers and fatal setup exception remain in the local
+record; neither is treated as an earlier pass.
+
+Evidence is retained in `artifacts/hub-nina-acceptance/`: configuration and
+bindings, installed binary hashes, source readbacks, group sequence and images,
+FITS headers, NINA logs, screenshots and regression results. The Switch screenshot
+contains a malformed degree symbol caused by this fixture's initial text
+decoding; weather and camera UI show the correct unit. No product unit change
+was required. The stable signed **0.5.12.0** plugin was restored with all 241
+backup files matching hashes. Temporary frontend bindings and the development
+installation were preserved outside the plugin directory, and the owned test
+host was stopped.
+
+Physical mixed-source testing, machine-wide ASCOM activation/installer testing,
+an OS without ASCOM Platform, real suspend/resume and the other acceptance gates
+above remain open. PR #21 remains a development draft; this pass publishes no
+Hub release.
 
 ## Installed NINA and COM weather regression, 2026-10-09
 

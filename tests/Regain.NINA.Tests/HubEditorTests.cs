@@ -136,6 +136,14 @@ public sealed partial class HubNativeTests
         using var first = Device(0);
         using var second = Device(1);
         await first.Connect(CancellationToken.None); await second.Connect(CancellationToken.None);
+        string? setupNotice = null;
+        first.SetupNotice = message => setupNotice = message;
+        first.SelectSetupOutput = _ => throw new InvalidOperationException("Connected setup must not open an editor");
+        var originalId = first.Id;
+        first.SetupDialog(); // NINA invokes this without an exception handler.
+        Assert.Contains("Disconnect", setupNotice);
+        Assert.True(first.Connected); Assert.True(second.Connected);
+        Assert.Equal(originalId, first.Id);
         await Eventually(async () => (await editor.SourceStatusAsync(source)).GetProperty("leaseCount").GetInt32() == 2);
         if (first is HubCameraDevice camera) {
             camera.EnableSubSample = true; camera.SubSampleWidth = 96; camera.SubSampleHeight = 64;
@@ -164,7 +172,18 @@ public sealed partial class HubNativeTests
             Assert.Equal(41.0f,((HubRotatorDevice)second).Position);
             Assert.Equal(358.5f,((HubRotatorDevice)second).MechanicalPosition);
         }
-        first.Disconnect(); Assert.True(second.Connected); second.Disconnect();
+        first.Disconnect(); Assert.True(second.Connected);
+        // A connection can complete while a modal editor is open. Its result
+        // must not rebind an already connected device or escape into NINA.
+        setupNotice = null;
+        first.SelectSetupOutput = _ => {
+            first.Connect(CancellationToken.None).GetAwaiter().GetResult();
+            return Selection(1);
+        };
+        first.SetupDialog();
+        Assert.Contains("connection changed", setupNotice);
+        Assert.Equal(originalId, first.Id); Assert.True(first.Connected);
+        first.Disconnect(); second.Disconnect();
         await Eventually(async () => (await editor.SourceStatusAsync(source)).GetProperty("leaseCount").GetInt32() == 0);
     }
     [Fact]

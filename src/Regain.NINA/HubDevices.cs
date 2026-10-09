@@ -121,16 +121,43 @@ public abstract class HubDevice : BaseINPC, IDevice, IDisposable
     }
     public void SetupDialog()
     {
-        lock (gate) {
-            if (connecting || disconnecting != 0 || (ready && Session.Connected)) throw new InvalidOperationException("Disconnect this NINA device before changing its saved output");
-            if (disposed) throw new ObjectDisposedException(nameof(HubDevice));
+        // NINA calls setup on a pool thread and does not catch exceptions there.
+        // WPF setup and notices belong to the application's UI dispatcher.
+        try {
+            var dispatcher = System.Windows.Application.Current?.Dispatcher;
+            if (dispatcher is not null && !dispatcher.CheckAccess()) dispatcher.Invoke(SetupCore);
+            else SetupCore();
+        } catch (Exception error) {
+            Logger.Error(error);
+            try { SetupNotice("Could not open Hub setup. Check the saved configuration and try again."); }
+            catch (Exception noticeError) { Logger.Error(noticeError); }
         }
-        var chosen = HubSelectionWindow.Select(HubEquipment.Executable, HubEquipment.Store, type, Selection);
+    }
+    internal Action<string> SetupNotice { get; set; } = message => {
+        void Show() => System.Windows.MessageBox.Show(message, "PulsarFab regain Hub setup",
+            System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+        var dispatcher = System.Windows.Application.Current?.Dispatcher;
+        if (dispatcher is not null && !dispatcher.CheckAccess()) dispatcher.Invoke(Show);
+        else Show();
+    };
+    internal Func<HubSelection?, HubSelection?>? SelectSetupOutput { get; set; }
+    private void SetupCore()
+    {
+        string? blocked;
+        lock (gate) {
+            blocked = disposed ? "This device has been closed. Select it again before opening setup." :
+                connecting || disconnecting != 0 || (ready && Session.Connected) ? "Disconnect this NINA device before changing its saved output." : null;
+        }
+        if (blocked is not null) { SetupNotice(blocked); return; }
+        var chosen = SelectSetupOutput is { } select ? select(Selection) :
+            HubSelectionWindow.Select(HubEquipment.Executable, HubEquipment.Store, type, Selection);
         if (chosen is not null) {
             lock (gate) {
-                if (connecting || disconnecting != 0 || (ready && Session.Connected) || disposed) throw new InvalidOperationException("The device connection changed while setup was open");
-                selection = chosen.Copy();
+                if (connecting || disconnecting != 0 || (ready && Session.Connected) || disposed)
+                    blocked = "The device connection changed while setup was open. Disconnect it and reopen setup.";
+                else selection = chosen.Copy();
             }
+            if (blocked is not null) { SetupNotice(blocked); return; }
         }
         RaiseAllPropertiesChanged();
     }

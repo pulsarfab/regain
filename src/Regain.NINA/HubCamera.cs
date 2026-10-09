@@ -40,7 +40,8 @@ public sealed class HubCameraDevice : HubTypedDevice, ICamera
     private int originalTimeout, extendedTimeout;
     private short snapMode, normalMode;
     private sealed record Capture(Guid Epoch, Guid Acquisition, Task<JsonElement> Completed,
-        int Width, int Height, short BinX, short BinY, int X, int Y, int Depth, SensorType Sensor, short BayerX, short BayerY);
+        int Width, int Height, short BinX, short BinY, int X, int Y, int Depth, SensorType Sensor, short BayerX, short BayerY,
+        string CameraName, string CameraId);
     public HubCameraDevice(HubSelection? selection, IImageDataFactory images, IProfileService? profiles = null,
         string? executable = null, string? workers = null) : base("camera", selection, executable, workers)
     { this.images = images; this.profiles = profiles; }
@@ -196,12 +197,17 @@ public sealed class HubCameraDevice : HubTypedDevice, ICamera
             if (sequence.Gain >= 0 && CanSetGain) Gain = sequence.Gain;
             if (sequence.Offset >= 0 && CanSetOffset) Offset = sequence.Offset;
             var depth = BitDepth; var bayerX = BayerOffsetX; var bayerY = BayerOffsetY;
+            // Freeze the upstream model separately from the Hub chooser label.
+            // A completed frame must retain its identity across profile edits.
+            // NINA's FITS string writer truncates the long chooser identity.
+            // The immutable output UUID fits completely in CAMERAID.
+            var cameraName = SensorName; var cameraId = context.Binding.OutputId.ToString();
             RestoreTimeout(); ExtendTimeout(timing);
             try {
                 var light = !sequence.IsDarkSequence();
                 var accepted = Put(HubCameraProtocol.Start(sequence.ExposureTime, light), token).GetGuid();
                 if (accepted == Guid.Empty) throw new IOException("Camera returned an empty acquisition identity");
-                var current = new Capture(context.Epoch, accepted, AwaitCompleted(context.Epoch, accepted, timing, light, token), width, height, bx, by, x, y, depth, sensor, bayerX, bayerY);
+                var current = new Capture(context.Epoch, accepted, AwaitCompleted(context.Epoch, accepted, timing, light, token), width, height, bx, by, x, y, depth, sensor, bayerX, bayerY, cameraName, cameraId);
                 capture = current;
                 _ = current.Completed.ContinueWith(failed => {
                     _ = failed.Exception; // Observe failures even if NINA never waits.
@@ -259,6 +265,8 @@ public sealed class HubCameraDevice : HubTypedDevice, ICamera
                 || geometry.GetProperty("startX").GetInt32() != current.X || geometry.GetProperty("startY").GetInt32() != current.Y)
                 throw new IOException("Accepted camera geometry differs from the requested NINA frame");
             var metadata = HubCameraFrames.Metadata(geometry, completed.GetProperty("exposure"), current.Sensor, current.BayerX, current.BayerY);
+            metadata.Camera.Name = current.CameraName;
+            metadata.Camera.Id = current.CameraId;
             var bayered = current.Sensor is SensorType.RGGB or SensorType.BGGR or SensorType.GRBG or SensorType.GBRG;
             using var image = await Session.DownloadCameraImageAsync(current.Epoch, HubImageBudget.Shared, current.Acquisition, token).ConfigureAwait(false);
             if (image.Descriptor.Width != current.Width || image.Descriptor.Height != current.Height) throw new IOException("Camera image dimensions differ from frozen metadata");
