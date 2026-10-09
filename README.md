@@ -56,6 +56,11 @@ with reread support also apply to longer exposures. Recovery requires the image
 to remain available; it cannot restore a frame lost when camera power is removed.
 [Configure recovery](https://pulsarfab.com/docs/regain/cameras.html#recovery).
 
+In NINA and ASCOM, **Driver Info** shows the current recovery state, retry count
+and last failure. Counts distinguish replacement exposures, download retries
+and USB frame rereads for the current or latest capture. A new capture resets
+the counts; the last failure stays visible until disconnect, even after recovery.
+
 ### Run the whole rig from a small headless computer
 
 One **regain Alpaca server** exposes supported cameras, rotators, filter wheels,

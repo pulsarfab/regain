@@ -33,8 +33,29 @@ pub struct Session {
 impl Session {
     pub fn new(selection: Selection, runtime: Runtime, log: Diagnostic) -> Result<Self> {
         selection.recovery.validate()?;
+        let status = Arc::new(Mutex::new(Status::default()));
+        let observed = status.clone();
+        let log: Diagnostic = Arc::new(move |level, event, message| {
+            // The direct worker reports transfer retries while its status call
+            // is still pending. Surface those records without parsing prose or
+            // changing any recovery decisions. Final frame metadata reconciles
+            // successful reads if stderr delivery lagged behind the reply.
+            if matches!(event, "transfer.retry" | "transfer.exhausted") {
+                let mut state = observed.lock().unwrap();
+                if matches!(
+                    state.phase.as_str(),
+                    "Starting exposure" | "Exposing" | "Downloading"
+                ) {
+                    if event == "transfer.retry" {
+                        state.retry.usb_reads = state.retry.usb_reads.saturating_add(1);
+                    }
+                    state.retry.last_failure = Some(message.into());
+                }
+            }
+            log(level, event, message);
+        });
         Ok(Self {
-            status: Arc::new(Mutex::new(Status::default())),
+            status,
             direct: selection.direct,
             selection,
             runtime,
@@ -410,6 +431,7 @@ impl Session {
         self.status.lock().unwrap().process_id = None;
     }
     async fn fallback(&mut self, reason: &str, token: &CancellationToken) -> Result<()> {
+        self.status.lock().unwrap().retry.last_failure = Some(reason.into());
         self.emit(
             "warning",
             "backend.fallback",
@@ -444,6 +466,9 @@ impl Session {
         }
         .await;
         if let Err(error) = &result {
+            if !token.is_cancelled() {
+                self.status.lock().unwrap().retry.last_failure = Some(format!("{error:#}"));
+            }
             self.emit("warning", "connection.failed", format!("{error:#}"));
             self.invalidate().await;
         }
@@ -801,6 +826,9 @@ impl Session {
         }
         .await;
         if let Err(error) = &result {
+            if !token.is_cancelled() {
+                self.status.lock().unwrap().retry.last_failure = Some(format!("{error:#}"));
+            }
             self.emit("warning", "controls.failed", format!("{error:#}"));
             self.invalidate().await;
         }
@@ -858,12 +886,34 @@ impl Session {
             .or_else(|| state.values.get(&15).copied());
         let mut last = None;
         let mut usb_resets = 0;
+        {
+            let mut status = self.status.lock().unwrap();
+            status.retry.recaptures = 0;
+            status.retry.downloads = 0;
+            status.retry.usb_reads = 0;
+        }
         for attempt in 0..=retries {
+            if attempt > 0 && !token.is_cancelled() {
+                self.status.lock().unwrap().retry.recaptures = attempt;
+            }
+            let usb_reads_before = self.snapshot().retry.usb_reads;
             let result = self
                 .attempt(&e, &mut settings, &mut prior, &mut power, attempt, token)
                 .await;
             match result {
                 Ok(mut frame) => {
+                    {
+                        let reads = frame.metadata["readRecoveries"]
+                            .as_u64()
+                            .unwrap_or(0)
+                            .min(u32::MAX as u64) as u32;
+                        let mut status = self.status.lock().unwrap();
+                        // Close the diagnostic-counting window atomically with
+                        // reconciliation: late stderr records must not count
+                        // the same successful retry a second time.
+                        status.retry.usb_reads = usb_reads_before.saturating_add(reads);
+                        status.phase = "Idle".into();
+                    }
                     frame.metadata["recoveries"] = json!(attempt);
                     frame.metadata["usbResets"] = json!(usb_resets);
                     self.phase("Idle");
@@ -873,6 +923,9 @@ impl Session {
                     {
                         let mut state = self.status.lock().unwrap();
                         state.error = Some(format!("{error:#}"));
+                        if !token.is_cancelled() {
+                            state.retry.last_failure = Some(format!("{error:#}"));
+                        }
                         state.sdk_error_code = match error.downcast_ref::<Failure>() {
                             Some(
                                 Failure::Worker { code, .. }
@@ -1040,6 +1093,7 @@ impl Session {
             {
                 Ok(frame) => break frame,
                 Err(error) if !self.retained() && retryable(&error) && !token.is_cancelled() => {
+                    self.status.lock().unwrap().retry.last_failure = Some(format!("{error:#}"));
                     self.emit("warning", "transfer.failed", format!("{error:#}"));
                     let state = self
                         .call("status", Value::Null, None, token)
@@ -1052,6 +1106,7 @@ impl Session {
                         return Err(error);
                     }
                     reads += 1;
+                    self.status.lock().unwrap().retry.downloads += 1;
                     self.phase(format!(
                         "Rereading ready frame ({reads}/{})",
                         options.ready_frame_download_retries
@@ -1061,6 +1116,29 @@ impl Session {
                 Err(error) => return Err(error),
             }
         };
+        {
+            let mut state = self.status.lock().unwrap();
+            let recovered = metadata["readRecoveries"]
+                .as_u64()
+                .unwrap_or(0)
+                .min(u32::MAX as u64) as u32;
+            if let Some(failure) = metadata["readErrors"]
+                .as_array()
+                .or_else(|| metadata["readoutErrors"].as_array())
+                .and_then(|errors| errors.last())
+                .and_then(Value::as_str)
+            {
+                state.retry.last_failure = Some(failure.into());
+            } else if recovered > 0 && state.retry.usb_reads == 0 {
+                state.retry.last_failure = Some(
+                    "USB frame read failed; frame recovered (worker supplied no failure detail)"
+                        .into(),
+                );
+            }
+            if let Some(failure) = metadata["cleanupError"].as_str() {
+                state.retry.last_failure = Some(failure.into());
+            }
+        }
         ensure!(
             pixels.len() == e.bytes()?,
             Failure::Invalid("Image length differs from requested ROI".into())
@@ -2259,6 +2337,14 @@ mod tests {
         assert_eq!(frame.metadata["recoveries"], 0);
         assert_eq!(frame.metadata["downloadRetries"], 1);
         assert_eq!(frame.pixels.len(), 8192);
+        let status = s.snapshot();
+        assert_eq!(status.retry.downloads, 1);
+        assert_eq!(status.retry.recaptures, 0);
+        assert!(status.recovery_info().contains("state: Idle; retries: 1"));
+        assert!(status.retry.last_failure.as_deref().unwrap().contains("11"));
+        s.capture(exposure(), &token).await.unwrap();
+        assert_eq!(s.snapshot().retry.downloads, 0);
+        assert_eq!(s.snapshot().retry.last_failure, status.retry.last_failure);
         s.close().await;
     }
     #[tokio::test]
@@ -2287,6 +2373,19 @@ mod tests {
             if let Ok(frame) = result {
                 assert_eq!(frame.metadata["recoveries"], 1);
                 assert_eq!(frame.metadata["controls"]["0"], 250);
+                assert_eq!(s.snapshot().retry.recaptures, 1);
+                assert!(
+                    s.snapshot()
+                        .recovery_info()
+                        .contains("state: Idle; retries: 1")
+                );
+            } else {
+                assert_eq!(s.snapshot().retry.recaptures, 0);
+                assert!(
+                    s.snapshot()
+                        .recovery_info()
+                        .contains("state: Error; retries: 0")
+                );
             }
             s.close().await;
         }
@@ -2302,6 +2401,12 @@ mod tests {
         let frame = s.capture(exposure(), &token).await.unwrap();
         assert_eq!(frame.metadata["readRecoveries"], 2);
         assert_eq!(frame.metadata["recoveries"], 0);
+        assert_eq!(s.snapshot().retry.usb_reads, 2);
+        assert!(
+            s.snapshot()
+                .recovery_info()
+                .contains("state: Idle; retries: 2")
+        );
         let abort = CancellationToken::new();
         let cancel = abort.clone();
         tokio::spawn(async move {
