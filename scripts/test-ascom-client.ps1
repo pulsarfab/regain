@@ -12,9 +12,11 @@ do {
 try {
     if ($camera.InterfaceVersion -ne 4) { throw 'Wrong camera interface' }
     if ($camera.Name -ne "PulsarFab regain Retryable Camera $($Slot + 1)") { throw 'Disconnected ASCOM slot identity changed' }
+    if ($camera.DriverInfo -notmatch 'state: Disconnected; retries: 0.*last failure: none') { throw 'Missing disconnected retry status' }
     if ($MetadataOnly) { Write-Output $camera.Name; return }
     $camera.Connected = $true
     if ($camera.Name -ne $camera.SensorName) { throw 'Connected ASCOM Name must be the camera model for FITS metadata' }
+    if ($camera.DriverInfo -notmatch 'state: Idle; retries: 0.*last failure: none') { throw 'Missing connected retry status' }
     $camera.BinX = 1
     $camera.BinY = 1
     $camera.NumX = 64
@@ -32,6 +34,7 @@ try {
     $variant = $camera.ImageArrayVariant
     if ($variant.GetLength(0) -ne 64 -or $variant[3,5] -ne $pixels[3,5]) { throw 'Variant image mismatch' }
     if ($camera.DriverInfo -match 'Alpaca') { throw 'COM still uses the Alpaca bridge' }
+    if ($camera.DriverInfo -notmatch 'state: Idle; retries: 0.*last failure: none') { throw 'Missing completed capture retry status' }
     $camera.StartExposure(2.0, $false)
     $camera.AbortExposure()
     if ($camera.CameraState -ne 0 -or $camera.ImageReady) { throw 'Abort did not return idle' }

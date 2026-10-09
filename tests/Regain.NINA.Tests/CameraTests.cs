@@ -101,6 +101,10 @@ public class CameraTests
                 CoolingStableSamples = 1,
                 CoolingSampleSeconds = .01
             }, profiles.Object);
+        var infoUpdates = new System.Collections.Concurrent.ConcurrentQueue<string>();
+        camera.PropertyChanged += (_, change) => {
+            if (change.PropertyName == nameof(camera.DriverInfo)) infoUpdates.Enqueue(camera.DriverInfo);
+        };
         try
         {
             Assert.True(await camera.Connect(default));
@@ -108,7 +112,20 @@ public class CameraTests
             Assert.True(settings.Object.Timeout > 1);
             // Model NINA's outer readiness deadline. Recovery exceeds the original limit.
             using var ninaDeadline = new CancellationTokenSource(TimeSpan.FromSeconds(seconds + settings.Object.Timeout));
-            await camera.WaitUntilExposureIsReady(ninaDeadline.Token);
+            var ready = camera.WaitUntilExposureIsReady(ninaDeadline.Token);
+            bool sawRecovery = false;
+            while (!ready.IsCompleted) {
+                var info = camera.DriverInfo;
+                sawRecovery |= info.Contains("retries: 1") && (info.Contains("Rereading ready frame") || info.Contains("Reconnect delay"));
+                await Task.Delay(20, ninaDeadline.Token);
+            }
+            await ready;
+            Assert.True(sawRecovery, "Driver Info should expose the active recovery, not only its final result");
+            Assert.Contains(infoUpdates, info => info.Contains("retries: 1") && info.Contains("last failure:") &&
+                (info.Contains("Rereading ready frame") || info.Contains("Reconnect delay")));
+            Assert.Contains("state: Idle; retries: 1", camera.DriverInfo);
+            Assert.Contains("last failure:", camera.DriverInfo);
+            Assert.Contains("ASI error 11", camera.DriverInfo);
             camera.Gain = 222; // Image metadata must represent the completed exposure, not the next one.
             var image = Assert.IsType<ImageArrayExposureData>(await camera.DownloadExposure(default));
             Assert.Equal(1, settings.Object.Timeout);

@@ -101,7 +101,7 @@ jobs:
         run: cargo check --workspace --all-targets --locked
       - uses: dtolnay/rust-toolchain@stable
       - name: Package and verify every crate
-        run: cargo package --workspace --locked
+        run: cargo package --workspace --locked --registry crates-io
   research-tests:
     runs-on: windows-latest
     timeout-minutes: 10

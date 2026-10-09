@@ -11,7 +11,7 @@ if ($cargo -notmatch '(?m)^version\s*=\s*"([^"]+)"') { throw 'Cargo workspace ve
 $rust = $Matches[1]
 if ($rust -ne ($version.Split('.')[0..2] -join '.')) { throw 'Rust version must match the first three NINA version components.' }
 foreach ($dependency in [regex]::Matches($cargo, '(?m)^(regain-[a-z]+) = \{[^}]*version = "([^"]+)"')) {
-    if ($dependency.Groups[2].Value -ne $rust) { throw "Workspace dependency $($dependency.Groups[1].Value) must use version $rust." }
+    if ($dependency.Groups[2].Value -ne "=$rust") { throw "Workspace dependency $($dependency.Groups[1].Value) must pin version =$rust." }
 }
 if ($Tag -and $Tag -cne "v$version") { throw "Tag $Tag does not match source version v$version." }
 $version

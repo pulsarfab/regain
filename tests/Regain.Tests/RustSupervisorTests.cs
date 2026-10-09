@@ -30,11 +30,19 @@ public class RustSupervisorTests
         int replacement = (await host.CallAsync("diagnostics", null, TimeSpan.FromSeconds(15), default)).Result.GetProperty("processId").GetInt32();
         Assert.NotEqual(child, replacement);
         Assert.Equal(1, frame.Recoveries);
+        Assert.Equal(1, session.RetryStatus.Recaptures);
+        Assert.Equal(2, session.RetryStatus.UsbReads);
+        Assert.Contains("state: Idle; retries: 3", session.RecoveryInfo);
+        Assert.Contains("retry budget", session.RetryStatus.LastFailure);
         Assert.Equal(4096, frame.Pixels.Length);
         Assert.Equal(200, frame.Controls[0]);
         Assert.True(host.IsAlive);
         Assert.Contains(log, m => m.Contains("capture.retry"));
         Assert.Equal(usbThreshold, log.Count(m => m.Contains("\"event\":\"usb.reset\"")));
+        var lastFailure = session.RetryStatus.LastFailure;
+        await session.CaptureAsync(Request, default);
+        Assert.Equal(0, session.RetryStatus.Count);
+        Assert.Equal(lastFailure, session.RetryStatus.LastFailure);
     }
     [Fact]
     public async Task AbortKeepsSupervisorAliveAndRecoversForNextExposure()
@@ -57,6 +65,9 @@ public class RustSupervisorTests
         await session.ConnectAsync(default);
         await host!.CallAsync("simulate-read-failures", new { count = 3 }, TimeSpan.FromSeconds(15), default);
         await Assert.ThrowsAsync<IOException>(() => session.CaptureAsync(Request, default));
+        Assert.Contains("state: Error; retries: 2", session.RecoveryInfo);
+        Assert.Equal(0, session.RetryStatus.Recaptures);
+        Assert.Contains("retry budget", session.RetryStatus.LastFailure);
         Assert.True(host.IsAlive);
     }
 }
