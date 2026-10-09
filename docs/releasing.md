@@ -149,9 +149,13 @@ notice in `LICENSE-ZWO`. Keep the per-crate README text self-contained and use
 absolute links; crates.io cannot resolve links into `docs/`.
 
 The **crates.io packages** job in **Build and test** builds the workspace with
-the declared minimum Rust version (1.89) and runs `cargo package --workspace`,
-which packages and builds every crate against the others as crates.io would see
-them. Raise `rust-version` and that job together.
+the declared minimum Rust version (1.89) and runs
+`cargo package --workspace --locked --registry crates-io`. The explicit registry
+lets Cargo verify dependencies using the newly packaged workspace crates before
+they are published. Internal dependency versions use exact `=VERSION` pins so
+main and maintenance crates cannot mix during resolution. Keep those pins equal
+to the workspace version when preparing a release. Raise `rust-version` and
+that job together.
 
 Publish after the tag exists and its **Release** run has passed. From a clean
 checkout of the tag, with a crates.io token that can publish these crates

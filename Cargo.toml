@@ -11,12 +11,12 @@ authors = ["Yann Ramin"]
 repository = "https://github.com/pulsarfab/regain"
 homepage = "https://pulsarfab.com/docs/regain/"
 
-# Keep these versions equal to workspace.package.version; crates.io needs them.
+# Pin internal crates to this workspace version so release trains cannot mix.
 [workspace.dependencies]
-regain-core = { path = "crates/regain-core", version = "0.5.10" }
-regain-deepskydad = { path = "crates/regain-deepskydad", version = "0.5.10" }
-regain-pegasus = { path = "crates/regain-pegasus", version = "0.5.10" }
-regain-transport = { path = "crates/regain-transport", version = "0.5.10" }
-regain-wanderer = { path = "crates/regain-wanderer", version = "0.5.10" }
-regain-worker = { path = "crates/regain-worker", version = "0.5.10" }
-regain-zwo = { path = "crates/regain-zwo", version = "0.5.10" }
+regain-core = { path = "crates/regain-core", version = "=0.5.10" }
+regain-deepskydad = { path = "crates/regain-deepskydad", version = "=0.5.10" }
+regain-pegasus = { path = "crates/regain-pegasus", version = "=0.5.10" }
+regain-transport = { path = "crates/regain-transport", version = "=0.5.10" }
+regain-wanderer = { path = "crates/regain-wanderer", version = "=0.5.10" }
+regain-worker = { path = "crates/regain-worker", version = "=0.5.10" }
+regain-zwo = { path = "crates/regain-zwo", version = "=0.5.10" }
