@@ -1,5 +1,15 @@
 # Transport experiments
 
+## Direct USB read-size acceptance
+
+`validate_read_chunk_size.py --hardware --output artifacts/read-size-check`
+owns the direct CLI worker and captures only an unambiguous ASI585MM Pro.
+Run only with that camera idle and authorized for captures. It checks 1, 4, 16,
+64, 256 and 1024 KiB host reads plus the omitted default, validating retained
+replay after partial reads and recovery of injected host interruptions.
+It records metadata, hashes and transfer diagnostics; pixels are discarded.
+See [host request sizing versus SDK USB Traffic](../../docs/transfer-recovery.md#limit-the-size-of-direct-usb-reads).
+
 ## ASI662MC video (explicit manual hardware checks)
 
 `trace_video.py` owns a disposable SDK 1.41 process and passively records video

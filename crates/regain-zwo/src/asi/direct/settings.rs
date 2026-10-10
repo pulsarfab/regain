@@ -4,6 +4,15 @@ use anyhow::{Result, ensure};
 // sensor frame/shutter registers do not grow with the requested duration.
 pub const MAX_EXPOSURE_US: u32 = 2_000_000_000;
 
+/// Host request size, independent of camera-side FPGA bandwidth and USB speed.
+pub fn read_chunk_bytes(kib: u32) -> Result<usize> {
+    ensure!(
+        (1..=1024).contains(&kib) && kib.is_power_of_two(),
+        "Direct USB read size must be a power of two from 1 to 1024 KiB"
+    );
+    Ok(kib as usize * 1024)
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Settings {
     pub width: u32,
@@ -18,6 +27,7 @@ pub struct Settings {
     pub timeout_read_after_bytes: u32,
     pub read_retries: u32,
     pub transfer_timeout_seconds: f64,
+    pub read_chunk_kib: u32,
     /// CLI experiment only; never enabled by the server protocol.
     pub reopen_after_bytes: u32,
     pub reopen_delay_ms: u32,
@@ -42,6 +52,7 @@ impl Default for Settings {
             timeout_read_after_bytes: 0,
             read_retries: 2,
             transfer_timeout_seconds: 60.0,
+            read_chunk_kib: 1024,
             reopen_after_bytes: 0,
             reopen_delay_ms: 1000,
             keep_retained: false,
