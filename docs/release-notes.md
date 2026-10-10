@@ -1,23 +1,20 @@
-# PulsarFab regain 0.5.13.0
+# PulsarFab regain 0.5.13.1
 
-Maintenance release from the 0.5 branch.
+Fixes cooling-chart axes disappearing in NINA after a retryable camera fault.
+During reconnection the driver retains the last measured temperature and cooler
+power and marks them **telemetry held**. Fresh readings resume after recovery;
+held values do not imply that camera temperature stayed constant.
 
-- NINA and native ASCOM camera Driver Info now show live recovery state, the
-  retry count, and the last failure. Counts distinguish replacement exposures,
-  ready-frame download retries, and direct USB frame rereads.
-- Counts reset for the next validated capture. The last failure remains visible
-  after successful recovery, until disconnect. Retry budgets and exposure
-  behavior are unchanged.
-- Crate packaging verifies matching workspace versions together, preventing
-  an older published core or another release train from being used by mistake.
+NINA Driver Info now shows a compact recovery state, retry count and shortened
+last failure. Full failure messages and retry breakdowns remain available in
+diagnostics and NINA logs under `%LOCALAPPDATA%\NINA\Logs`. Search the logs for
+`PulsarFab regain`; the README and camera guide explain how to inspect them later.
 
-Focused validation covers SDK and direct USB recovery, exhausted retries,
-NINA live Driver Info notifications, and all four native ASCOM camera slots
-in both 32-bit and 64-bit clients. All nine crate packages build successfully.
-These recovery checks use explicit simulation; physical camera support is
-unchanged from 0.5.12.0.
+Regression checks reproduce the invalid chart bounds with the previous code
+and cover both camera recovery paths, worker replacement through the Rust
+supervisor, zero cooler power, updated readings and bounded status text.
 
-Use `Regain-ASCOM-0.5.13.0-win-x64-setup.exe` for the signed Windows installer,
-or install `Regain-0.5.13.0.zip` through either public NINA plugin feed.
-Minimum NINA version and plugin identity are unchanged. Rust workspace version
-is 0.5.13. Windows release programs are signed by StackFoundry LLC.
+Use `Regain-0.5.13.1.zip` for NINA, or update through either public plugin feed.
+The signed Windows ASCOM installer is `Regain-ASCOM-0.5.13.1-win-x64-setup.exe`.
+This is a .NET/plugin revision: Rust crates remain at 0.5.13 and need no new
+crates.io publication. Hardware support and recovery limits are unchanged.

@@ -51,10 +51,13 @@ with reread support also apply to longer exposures. Recovery requires the image
 to remain available; it cannot restore a frame lost when camera power is removed.
 [Configure recovery](https://pulsarfab.com/docs/regain/cameras.html#recovery).
 
-In NINA and ASCOM, **Driver Info** shows the current recovery state, retry count
-and last failure. Counts distinguish replacement exposures, download retries
-and USB frame rereads for the current or latest capture. A new capture resets
-the counts; the last failure stays visible until disconnect, even after recovery.
+In NINA and ASCOM, **Driver Info** shows recovery state, retry count and the last
+failure. NINA uses a compact summary; full errors and counts by retry type remain
+in diagnostics. A new capture resets the counts; the last failure stays visible
+until disconnect, even after recovery. During reconnection, NINA keeps the last
+temperature and cooler-power readings and labels them **telemetry held**, so
+the cooling chart keeps its axes. Regain records failures and recovery in NINA's
+logs under `%LOCALAPPDATA%\NINA\Logs`; search for `PulsarFab regain`.
 
 ### Run the whole rig from a small headless computer
 
