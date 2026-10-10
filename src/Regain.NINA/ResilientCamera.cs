@@ -62,8 +62,9 @@ public sealed class ResilientCamera : BaseINPC, ICamera
     public string DisplayName => "PulsarFab regain Retryable Camera";
     public string Category => "PulsarFab regain";
     public string Description => "ZWO camera driver with automatic retries";
-    public string DriverInfo => $"PulsarFab regain {DriverVersion} / {session?.SdkVersion ?? "unknown"} [{session?.Backend ?? "unselected"}{(session?.UsingSdkFallback == true ? " fallback" : "")}]; " +
-        (session?.RecoveryInfo ?? new CameraRetryStatus().DriverInfo("Disconnected"));
+    public string DriverInfo => (session?.RecoveryInfo ?? new CameraRetryStatus().DriverInfo("Disconnected")) +
+        (session is { } owner ? $" [{owner.Backend}{(owner.UsingSdkFallback ? " fallback" : "")}]" +
+            (owner.ControlConnectionAvailable ? "" : " (telemetry held)") : "");
     public string DriverVersion => typeof(ResilientCamera).Assembly.GetName().Version!.ToString();
     public bool Connected
     {
@@ -188,7 +189,11 @@ public sealed class ResilientCamera : BaseINPC, ICamera
         RaisePropertyChanged(nameof(BinX));
         RaisePropertyChanged(nameof(BinY));
     }
-    public double Temperature => session?.ControlConnectionAvailable != true || !session.Controls.ContainsKey(8) ? double.NaN : Val(8) / 10.0;
+    // NINA feeds these values into Math.Min/Max for its chart axes. A transient
+    // NaN poisons the bounds until disconnect. The session retains actual last
+    // readings during recovery; expose those, with "telemetry held" in DriverInfo.
+    // Unsupported/disconnected measurements remain unavailable, never invented zeroes.
+    public double Temperature => session is { } owner && owner.Controls.ContainsKey(8) ? owner.Value(8) / 10.0 : double.NaN;
     public double TemperatureSetPoint
     {
         get => CanSetTemperature ? Val(16) : double.NaN; set => Set(16, (long)Math.Clamp(Math.Round(value), Min(16), Max(16)));
@@ -198,7 +203,7 @@ public sealed class ResilientCamera : BaseINPC, ICamera
     {
         get => Val(17) != 0; set => Set(17, value ? 1 : 0);
     }
-    public double CoolerPower => session?.ControlConnectionAvailable == true ? Val(15) : double.NaN;
+    public double CoolerPower => session is { } owner && owner.Controls.ContainsKey(15) ? (double)owner.Value(15) : double.NaN;
     public bool HasDewHeater => Has(21);
     public bool DewHeaterOn
     {

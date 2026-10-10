@@ -100,7 +100,7 @@ public sealed class SelectionTests : IDisposable
             Assert.False(camera.CanSetUSBLimit);
             Assert.False(camera.CanSetTemperature);
             Assert.True(double.IsNaN(camera.Temperature));
-            Assert.Contains("SDK-less", camera.DriverInfo);
+            Assert.Contains("[direct]", camera.DriverInfo);
             Assert.True(Store.Load()!.UseDirectDriver);
             Assert.Equal("direct-simulator", Store.Load()!.Serial);
         }
