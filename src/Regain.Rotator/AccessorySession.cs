@@ -11,6 +11,7 @@ public sealed class AccessoryProfile
     public bool Unidirectional { get; set; }
     public string[] Names { get; set; } = [];
     public int[] FocusOffsets { get; set; } = [];
+    public Dictionary<string, JsonElement> TemperatureCompensation { get; set; } = [];
 }
 public sealed class AccessoryStatus
 {
@@ -27,6 +28,9 @@ public sealed class AccessoryStatus
     [JsonPropertyName("reverse")] public bool Reverse { get; set; }
     [JsonPropertyName("hand_control")] public bool HandControl { get; set; }
     [JsonPropertyName("temperature_c")] public double? Temperature { get; set; }
+    [JsonPropertyName("temp_comp_available")] public bool TempCompAvailable { get; set; }
+    [JsonPropertyName("temp_comp")] public bool TempComp { get; set; }
+    [JsonPropertyName("temperature_compensation")] public JsonElement TemperatureCompensation { get; set; }
     [JsonPropertyName("error")] public int Error { get; set; }
     [JsonPropertyName("fault")] public string? Fault { get; set; }
 }
@@ -137,6 +141,7 @@ public sealed class AccessorySession : IDisposable, IDeviceSession
                 var identity = Request(new { command = "identity" });
                 if (!string.Equals(identity.GetProperty("serial").GetString(), Profile.Serial, StringComparison.OrdinalIgnoreCase)) throw new IOException("USB device identity changed");
                 var status = Status();
+                if (Kind is "eaf" or "fc3") Request(new { command = "temperature-compensation", options = Profile.TemperatureCompensation });
                 if (Kind == "efw") {
                     if (Profile.Names.Length != status.Slots || Profile.FocusOffsets.Length != status.Slots) {
                         Profile.Names = Enumerable.Range(1, status.Slots).Select(i => "Filter " + i).ToArray();
@@ -184,9 +189,31 @@ public sealed class AccessorySession : IDisposable, IDeviceSession
     {
         var s = Status();
         if (position < 0 || position > (Kind == "efw" ? s.Slots - 1 : s.MaxStep)) throw new ArgumentOutOfRangeException(nameof(position));
+        if (Kind is "eaf" or "fc3") {
+            var check = Request(new { command = "validate-move", position });
+            if (!check.GetProperty("valid").GetBoolean()) throw new ArgumentOutOfRangeException(nameof(position), position, check.GetProperty("reason").GetString());
+        }
         Request(new { command = "move", position, unidirectional = Profile.Unidirectional });
     }
     public void Halt() => Request(new { command = "halt" });
+    public void SetTempComp(bool enabled)
+    {
+        lock (gate) {
+            if (!Status().TempCompAvailable) throw new NotSupportedException("Configure continuous mode and a nonzero coefficient, and connect a valid temperature sensor");
+            Request(new { command = "temperature-compensation", enabled });
+        }
+    }
+    public void ConfigureTemperatureCompensation(Dictionary<string, JsonElement> options)
+    {
+        lock (gate) {
+            FocuserCompensationConfiguration.Validate(options);
+            var previous = Profile.TemperatureCompensation;
+            if (Connected) Request(new { command = "temperature-compensation", options });
+            Profile.TemperatureCompensation = new(options);
+            try { Save(); }
+            catch { Profile.TemperatureCompensation = previous; if (Connected) Request(new { command = "temperature-compensation", options = previous }); throw; }
+        }
+    }
     public void Calibrate()
     {
         if (Kind != "efw") throw new NotSupportedException("Calibration applies to EFW only");

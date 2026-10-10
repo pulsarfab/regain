@@ -97,7 +97,8 @@ with tempfile.TemporaryDirectory(prefix='regain-accessories-') as directory:
                         time.sleep(.1)
                 else:
                     api(device,'action',{'Action':'Regain.Calibrate','Parameters':''},error=0x40c)
-                    assert api(device,'absolute') and not api(device,'tempcompavailable')
+                    assert api(device,'absolute') and not api(device,'tempcompavailable') and not api(device,'tempcomp')
+                    api(device,'tempcomp',{'TempComp':False},error=0x400)
                     assert api(device,'maxstep')==60000
                     assert -50<api(device,'temperature')<100
                     target=original['position']+50

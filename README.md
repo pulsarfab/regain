@@ -227,11 +227,15 @@ tested on Windows USB 3 only. See [USB 2 support and validation](docs/usb2-camer
 | --- | --- | --- |
 | **ZWO CAA** | USB HID | Rotation, sync, reverse, limits |
 | **ZWO EFW** | USB HID | Filter selection, names, offsets, direction, calibration |
-| **ZWO EAF** | USB HID | Focus, halt, reverse, backlash, travel limit, temperature |
-| **Pegasus Astro FocusCube3** | USB serial | Focus, halt, temperature, reverse, backlash, speed |
+| **ZWO EAF** | USB HID | Focus, halt, reverse, backlash, travel limit, temperature, optional continuous TempComp |
+| **Pegasus Astro FocusCube3** | USB serial | Focus, halt, temperature, reverse, backlash, speed, optional continuous TempComp |
 | **[Pegasus Astro Falcon V2](docs/falcon-v2.md)** | USB serial | Rotation, sync, reverse, origin reset and explicit multi-turn; hardware tested on Windows through NINA, ASCOM and Alpaca |
 | **Deep Sky Dad OFP2** | USB serial | Cover open/close/halt and panel brightness |
 | **Wanderer Astro ETA M54** | USB serial | Back focus preserving tilt, three point targets; no hardware halt. Physical movement validation pending. |
+
+EAF and FocusCube3 offer optional [continuous temperature compensation](docs/focuser-temperature-compensation.md)
+with a calibrated signed slope and one backlash owner. It can move during
+exposures, starts off after reconnect, and accepts explicit moves while enabled.
 
 See [hardware support](https://pulsarfab.com/docs/regain/hardware.html) for supported
 accessory variants and setup requirements. SDK-free cameras still need the OS

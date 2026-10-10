@@ -1142,6 +1142,7 @@ async fn mixed_native_alpaca_and_com_gauges_share_the_same_controller() {
                 device: NativeDevice::Fc3,
                 identity: "00:00:00:00:00:03".into(),
                 filter_wheel: None,
+                temperature_compensation: None,
             },
             polling: com.polling.clone(),
         };

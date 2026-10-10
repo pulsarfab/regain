@@ -18,4 +18,11 @@ failure, but either may follow a dispatched command. Neither is replayed. Window
 same kill-on-close job support as camera workers.
 
 Part of [PulsarFab regain](https://github.com/pulsarfab/regain). Apache-2.0.
+
+`focuser::Controller` provides opt-in continuous temperature compensation,
+absolute reference tracking, noise filtering and one-owner backlash plans for
+EAF and FocusCube3 workers. Its generated configuration schema serves native
+NINA/ASCOM, Alpaca and direct Hub sources. Explicit moves remain supported with
+TempComp enabled; Halt disables tracking. See the
+[focuser guide](https://github.com/pulsarfab/regain/blob/main/docs/focuser-temperature-compensation.md).
 This project is not affiliated with the hardware vendors it supports.

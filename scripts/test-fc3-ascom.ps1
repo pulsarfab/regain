@@ -20,6 +20,8 @@ try {
     if ($Hardware) {
         if (!$Serial) { throw 'Hardware test requires explicit USB serial' }
         @{Serial=$Serial} | ConvertTo-Json | Set-Content (Join-Path $directory 'fc3-ascom.json') -Encoding UTF8
+    } else {
+        @{Serial='00:00:00:00:00:03';TemperatureCompensation=@{continuous=$true;stepsPerCelsius=100;backlash='regain';backlashSteps=10}} | ConvertTo-Json | Set-Content (Join-Path $directory 'fc3-ascom.json') -Encoding UTF8
     }
     foreach ($view in [Microsoft.Win32.RegistryView]::Registry32,[Microsoft.Win32.RegistryView]::Registry64) {
         $root = [Microsoft.Win32.RegistryKey]::OpenBaseKey($hive,$view)

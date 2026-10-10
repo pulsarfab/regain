@@ -24,6 +24,7 @@ pub struct NativeAccessoryBackend {
     device: NativeDevice,
     identity: String,
     filter_wheel: Option<crate::filterwheel::NativeFilterWheelMetadata>,
+    temperature_compensation: Option<regain_core::focuser::Options>,
     deadline: Duration,
     worker: Option<AccessoryWorker>,
     verified_identity: Option<Value>,
@@ -40,12 +41,19 @@ impl NativeAccessoryBackend {
             device,
             identity,
             filter_wheel,
+            temperature_compensation,
             camera,
         } = &config.backend
         else {
             return Err(invalid("Expected a native source"));
         };
         worker_arguments(*device)?;
+        if let Some(options) = temperature_compensation
+            && (!matches!(device, NativeDevice::Eaf | NativeDevice::Fc3)
+                || options.validate().is_err())
+        {
+            return Err(invalid("Invalid native focuser compensation settings"));
+        }
         if camera.is_some() {
             return Err(invalid(
                 "Camera settings are not valid for accessory sources",
@@ -69,6 +77,7 @@ impl NativeAccessoryBackend {
             device: *device,
             identity: identity.clone(),
             filter_wheel: filter_wheel.clone(),
+            temperature_compensation: temperature_compensation.clone(),
             deadline: Duration::from_secs_f64(config.polling.request_timeout_seconds),
             worker: None,
             verified_identity: None,
@@ -223,14 +232,12 @@ impl NativeAccessoryBackend {
             }
         }
         if self.device_type() == DeviceType::Focuser {
-            for (member, value) in [
-                ("absolute", true),
-                ("tempcompavailable", false),
-                ("tempcomp", false),
-            ] {
-                batch.values.insert(member.into(), json!(value));
-            }
+            batch.values.insert("absolute".into(), json!(true));
             if self.device == NativeDevice::Eta {
+                batch
+                    .values
+                    .insert("tempcompavailable".into(), json!(false));
+                batch.values.insert("tempcomp".into(), json!(false));
                 batch.values.insert("stepsize".into(), json!(1.0));
                 batch.errors.insert("temperature".into(), unsupported());
             } else {
@@ -306,6 +313,19 @@ impl Backend for NativeAccessoryBackend {
                 ));
             }
             identity["simulation"] = json!(self.runtime.simulate);
+            if matches!(self.device, NativeDevice::Eaf | NativeDevice::Fc3) {
+                let options = self.temperature_compensation.clone().unwrap_or_default();
+                if let Err(error) = self
+                    .request(
+                        json!({"command":"temperature-compensation","options":options}),
+                        false,
+                    )
+                    .await
+                {
+                    self.reset();
+                    return Err(error);
+                }
+            }
             if let Some(ReferenceState::Known { offset, reverse }) =
                 self.reference.as_ref().map(|record| record.state.clone())
             {
@@ -365,12 +385,13 @@ impl Backend for NativeAccessoryBackend {
                         "Native source is disconnected",
                     ));
                 }
-                // These native protocols provide absolute coordinates and no
-                // automatic temperature compensation. ETA coordinates are µm;
-                // EAF/FC3 motor steps have no known optical travel conversion.
+                // ETA coordinates are µm; EAF/FC3 motor steps have no known
+                // optical travel conversion. Their shared worker owns TempComp.
                 match member.as_str() {
                     "absolute" => return Ok(json!(true)),
-                    "tempcompavailable" | "tempcomp" => return Ok(json!(false)),
+                    "tempcompavailable" | "tempcomp" if self.device == NativeDevice::Eta => {
+                        return Ok(json!(false));
+                    }
                     "stepsize" if self.device == NativeDevice::Eta => return Ok(json!(1.0)),
                     "stepsize" => return Err(unsupported()),
                     _ => {}
@@ -394,6 +415,19 @@ impl Backend for NativeAccessoryBackend {
     fn write(&mut self, member: String, parameters: Values) -> BackendFuture<'_, Value> {
         Box::pin(async move {
             let request = command_request(self.device, &member, &parameters)?;
+            if matches!(self.device, NativeDevice::Eaf | NativeDevice::Fc3) && member == "move" {
+                let check = self
+                    .request(
+                        json!({"command":"validate-move","position":parameters["Position"]}),
+                        false,
+                    )
+                    .await?;
+                if check["valid"] != true {
+                    return Err(invalid(
+                        "Focuser target or backlash approach is outside the configured limits",
+                    ));
+                }
+            }
             if self.device == NativeDevice::Ofp2
                 && matches!(member.as_str(), "opencover" | "closecover")
             {
@@ -571,6 +605,8 @@ pub(crate) fn properties(device: NativeDevice) -> &'static [(&'static str, &'sta
     use NativeDevice::*;
     match device {
         Eaf | Fc3 => &[
+            ("tempcompavailable", "temp_comp_available", true),
+            ("tempcomp", "temp_comp", true),
             ("position", "position", false),
             ("ismoving", "moving", true),
             ("temperature", "temperature_c", false),
@@ -628,6 +664,12 @@ fn command_request(
             .get(key)
             .ok_or_else(|| invalid("Required command parameter is missing"))
     };
+    if matches!(device, Eaf | Fc3) && member == "tempcomp" {
+        let enabled = single("TempComp")?
+            .as_bool()
+            .ok_or_else(|| invalid("TempComp must be boolean"))?;
+        return Ok(json!({"command":"temperature-compensation","enabled":enabled}));
+    }
     if matches!(device, Eaf | Fc3 | Eta) && member == "move"
         || device == Efw && member == "position"
     {

@@ -1,5 +1,11 @@
 # Pegasus Astro FocusCube3
 
+Optional [continuous temperature compensation](focuser-temperature-compensation.md)
+uses the same controller and settings as EAF across NINA, ASCOM, Alpaca and
+direct Hub sources. Calibrate a signed steps-per-degree coefficient, choose
+one backlash owner, and explicitly enable TempComp after connecting. This
+mode can move during exposures and stays off after reconnect.
+
 `regain-pegasus::fc3` is an independent Rust library, exposed through `regain-device pegasus fc3`, that speaks directly to
 the FocusCube3 USB serial port. It requires neither Pegasus Unity nor an ASCOM
 driver. Native NINA, native Windows ASCOM, and Alpaca use this same crate.
@@ -41,8 +47,9 @@ software range, not a measured mechanical limit. Hardware backlash is
 **even integers from 2 through 400**. Firmware 1.8.2 rounds odd values down,
 including 1 to 0. A device reporting speed 0 can connect for repair but cannot
 move until a valid speed is set. Direction reversal and backlash are hardware
-settings. Microns per step and temperature compensation are left to the host
-application; an absent/out-of-range temperature probe reports unavailable.
+settings. Optical microns per step are unknown. Optional continuous temperature
+compensation requires calibration for the attached focuser; an absent or
+out-of-range temperature probe reports unavailable.
 
 Native profiles live in `%LOCALAPPDATA%\Regain\Accessories\fc3-nina.json`
 and `fc3-ascom.json`. Alpaca stores `cameras.fc3.json` beside `cameras.json`

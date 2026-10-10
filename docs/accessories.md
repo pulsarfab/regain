@@ -53,9 +53,12 @@ device can be selected and saved on connection.
   imaging application supplies backlash compensation.
 
 The focuser reports absolute positioning. Its microns per step depend on the
-attached mechanics, so ASCOM StepSize is not implemented. TempCompAvailable is
-false; use the imaging application's compensation. Temperature is reported
-when valid. These behaviors follow the [ASCOM focuser interface](https://ascom-standards.org/newdocs/focuser.html).
+attached mechanics, so ASCOM StepSize is not implemented. With a valid sensor,
+it offers optional [continuous temperature compensation](focuser-temperature-compensation.md)
+through TempComp in native NINA, ASCOM, Alpaca and direct Hub sources. Tracking
+starts off and requires a calibrated signed coefficient and explicit enable.
+Temperature is reported when valid. These behaviors follow the
+[ASCOM focuser interface](https://ascom-standards.org/newdocs/focuser.html).
 Filter names, focus offsets, and moving-position behavior follow the
 [ASCOM filter-wheel interface](https://ascom-standards.org/newdocs/filterwheel.html).
 

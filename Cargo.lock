@@ -1195,6 +1195,7 @@ name = "regain-pegasus"
 version = "0.6.0"
 dependencies = [
  "anyhow",
+ "regain-core",
  "regain-transport",
  "regain-worker",
  "serde",

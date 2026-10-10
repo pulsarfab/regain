@@ -190,13 +190,17 @@ async fn shared_clients_observe_motion_and_only_last_disconnect_releases_source(
     first.move_to(800).await.unwrap();
     assert!(second.is_moving().await.unwrap());
     assert!(second.temp_comp().await.unwrap());
-    assert_eq!(second.move_to(700).await.unwrap_err().kind, ErrorKind::Busy);
+    assert_eq!(
+        second.move_to(700).await.unwrap_err().kind,
+        ErrorKind::InvalidValue
+    );
+    second.move_to(790).await.unwrap(); // enabled compensation must not block takeover
     second.halt().await.unwrap();
     assert!(!first.is_moving().await.unwrap());
-    assert_eq!(first.position().await.unwrap(), 800);
+    assert_eq!(first.position().await.unwrap(), 790);
     second.set_temp_comp(false).await.unwrap();
     assert!(!first.temp_comp().await.unwrap());
-    assert_eq!(device.writes.lock().unwrap().len(), 3);
+    assert_eq!(device.writes.lock().unwrap().len(), 4);
     drop(first);
     settle().await;
     assert_eq!(source.snapshot().lease_count, 1);
@@ -738,6 +742,7 @@ fn runtime_setup(
             device: NativeDevice::Fc3,
             identity: "PRIVATE-TEST".into(),
             filter_wheel: None,
+            temperature_compensation: None,
         },
     });
     for number in [4, 7] {

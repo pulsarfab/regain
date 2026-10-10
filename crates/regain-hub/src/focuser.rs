@@ -317,7 +317,13 @@ impl FocuserSession {
         if !valid {
             return Err(invalid("Focuser movement is outside the source limits"));
         }
-        if self.is_moving().await? {
+        // A v3/v4 source must accept explicit Move with TempComp enabled,
+        // including taking over its autonomous correction. Let the source
+        // distinguish that from a conflicting explicit move; never halt/retry
+        // a foreign source speculatively.
+        if self.is_moving().await?
+            && !(capabilities.temp_comp_available && self.temp_comp().await?)
+        {
             return Err(SourceError::new(
                 ErrorKind::Busy,
                 "Focuser is already moving",

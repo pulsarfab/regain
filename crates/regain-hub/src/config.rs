@@ -19,6 +19,13 @@ pub const MAX_SWITCH_CHANNELS: usize = 1024;
 pub const MAX_MEASUREMENT_SOURCES: usize = 16;
 pub const MAX_HISTORY_SECONDS: f64 = 3600.0;
 
+fn focuser_compensation_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+    serde_json::from_value(
+        serde_json::json!({"anyOf":[regain_core::focuser::schema(),{"type":"null"}]}),
+    )
+    .expect("Static focuser schema")
+}
+
 #[derive(
     Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
 )]
@@ -91,7 +98,9 @@ pub enum SourceBackend {
          "then":{"required":["camera"],"properties":{"camera":{"type":"object"}}},
          "else":{"properties":{"camera":{"type":"null"}}}},
         {"if":{"properties":{"device":{"const":"camera-sdk"}}},
-         "then":{"properties":{"camera":{"properties":{"sdkFallback":{"const":false}}}}}}
+         "then":{"properties":{"camera":{"properties":{"sdkFallback":{"const":false}}}}}},
+        {"if":{"properties":{"device":{"enum":["eaf","fc3"]}}},
+         "then":{},"else":{"properties":{"temperatureCompensation":{"type":"null"}}}}
     ]))]
     Native {
         /// Hardware driver and backend to use.
@@ -106,6 +115,11 @@ pub enum SourceBackend {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[schemars(title = "Direct EFW filter metadata")]
         filter_wheel: Option<crate::filterwheel::NativeFilterWheelMetadata>,
+        /// Optional continuous compensation for a direct EAF or FocusCube3.
+        /// Settings are shared with native NINA/ASCOM and Alpaca; tracking starts off.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[schemars(schema_with = "focuser_compensation_schema")]
+        temperature_compensation: Option<regain_core::focuser::Options>,
         /// Required only for native cameras. Shared recovery definitions retain
         /// the existing camera defaults; camera setup remains capability gated.
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -847,6 +861,7 @@ impl HubConfig {
                     device,
                     identity,
                     filter_wheel,
+                    temperature_compensation,
                     camera,
                 } => {
                     if identity.trim().is_empty() || identity.chars().count() > MAX_LABEL_CHARS {
@@ -873,6 +888,22 @@ impl HubConfig {
                         }
                     }
                     let is_camera = device.device_type() == DeviceType::Camera;
+                    if let Some(options) = temperature_compensation {
+                        if !matches!(device, NativeDevice::Eaf | NativeDevice::Fc3) {
+                            error(
+                                format!("{p}.backend.temperatureCompensation"),
+                                "type",
+                                "Temperature compensation requires a direct EAF or FocusCube3",
+                            );
+                        }
+                        if let Err(why) = options.validate() {
+                            error(
+                                format!("{p}.backend.temperatureCompensation"),
+                                "value",
+                                &why.to_string(),
+                            );
+                        }
+                    }
                     match camera {
                         Some(camera) if is_camera => {
                             for field in camera.validate(*device == NativeDevice::CameraDirect) {

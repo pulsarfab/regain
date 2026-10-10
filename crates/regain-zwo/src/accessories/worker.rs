@@ -7,6 +7,58 @@ use std::{
 };
 type Device = Accessory<Box<dyn Transport>>;
 
+struct Controlled(Device);
+impl regain_core::focuser::Device for Controlled {
+    fn status(&mut self) -> Result<Value> {
+        Ok(json!(self.0.status()?))
+    }
+    fn move_to(&mut self, position: i32) -> Result<()> {
+        self.0.move_to(position, false)
+    }
+    fn halt(&mut self) -> Result<()> {
+        self.0.halt()
+    }
+    fn extra(&mut self, request: Value) -> Result<Value> {
+        match request["command"].as_str().unwrap_or("") {
+            "identity" => Ok(json!(self.0.identity)),
+            "settings" => {
+                ensure!(
+                    request.as_object().is_some_and(|o| o
+                        .keys()
+                        .all(|k| ["command", "beep", "reverse", "backlash", "max_step"]
+                            .contains(&k.as_str()))),
+                    "Unknown setting"
+                );
+                fn boolean(v: &Value, key: &str) -> Result<Option<bool>> {
+                    v.get(key)
+                        .map(|v| v.as_bool().context("Invalid boolean"))
+                        .transpose()
+                }
+                let backlash = request
+                    .get("backlash")
+                    .map(|v| -> Result<u8> {
+                        Ok(u8::try_from(v.as_u64().context("Invalid backlash")?)?)
+                    })
+                    .transpose()?;
+                let maximum = request
+                    .get("max_step")
+                    .map(|v| -> Result<u32> {
+                        Ok(u32::try_from(v.as_u64().context("Invalid travel limit")?)?)
+                    })
+                    .transpose()?;
+                self.0.settings(
+                    boolean(&request, "beep")?,
+                    boolean(&request, "reverse")?,
+                    backlash,
+                    maximum,
+                )?;
+                self.status()
+            }
+            command => bail!("Unknown EAF command {command}"),
+        }
+    }
+}
+
 fn observe_calibration(
     calibration: &mut Option<Calibration>,
     status: &Status,
@@ -83,6 +135,23 @@ pub fn run(args: Vec<String>) -> Result<()> {
         return Ok(());
     }
     ensure!(command == "serve", "unknown command");
+    if kind == Kind::Eaf {
+        let started = Instant::now();
+        let mut controller = regain_core::focuser::Controller::new(Controlled(device));
+        regain_worker::serve(
+            &mut controller,
+            Duration::from_millis(250),
+            |state, value| {
+                state.poll(started.elapsed());
+                state.request(value, started.elapsed())
+            },
+            |state| state.poll(started.elapsed()),
+        );
+        // Preserve the EAF worker's existing disconnect halt policy.
+        controller.shutdown()?;
+        controller.device.0.halt()?;
+        return Ok(());
+    }
     ensure!(
         kind != Kind::Efw || !device.status()?.moving,
         "Wait for the EFW to stop before connecting; slot detection may be in progress"
