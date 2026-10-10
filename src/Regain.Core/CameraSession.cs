@@ -172,7 +172,10 @@ public sealed class CameraSession : IDisposable
         {
             foreach (var c in Controls.Values)
             {
-                observed[c.Type] = c.Value;
+                // A replacement worker's open defaults are not live telemetry.
+                // Keep the last measurement until get/settling refreshes it.
+                if (!hasConnected || c.Type is not (8 or 15))
+                    observed[c.Type] = c.Value;
                 // Persistent imaging/environment controls only: never replay reset, GPS, or auto controllers.
                 if ((c.Writable || c.Type == 6) && new[] { 0, 2, 3, 4, 5, 6, 7, 9, 13, 14, 16, 17, 18, 19, 20, 21, 22, 23 }.Contains(c.Type))
                     desired.TryAdd(c.Type, c.Value);
