@@ -666,6 +666,12 @@ impl SourceHandle {
     pub fn snapshot(&self) -> SourceSnapshot {
         self.with_snapshot(Clone::clone)
     }
+    /// Read the cache before its observation clock. A poll published between
+    /// these reads must never make a valid sample appear to come from the future.
+    pub(crate) fn timed_snapshot(&self) -> (SourceSnapshot, Duration) {
+        let state = self.snapshot();
+        (state, self.clock.now())
+    }
     pub(crate) fn native_camera_timing(&self) -> Option<&regain_core::timing::NativeCameraTiming> {
         self.native_camera_timing.as_ref()
     }
@@ -1792,4 +1798,90 @@ fn validate_batch(state: &SourceSnapshot, batch: &SampleBatch) -> Result<(), Sou
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod timed_snapshot_tests {
+    use super::*;
+    use std::sync::{
+        Mutex,
+        atomic::{AtomicU64, Ordering::SeqCst},
+    };
+
+    struct PublishingClock {
+        seconds: AtomicU64,
+        publication: Mutex<Option<watch::Sender<SourceSnapshot>>>,
+    }
+    impl Clock for PublishingClock {
+        fn now(&self) -> Duration {
+            let now = self.seconds.load(SeqCst);
+            if let Some(publication) = self.publication.lock().unwrap().as_ref() {
+                // Deterministically publish a poll after the caller's clock has
+                // been sampled, but before now() returns. Clock-first readers
+                // would subsequently consume this newer sample with an old now.
+                self.seconds.store(now + 1, SeqCst);
+                publication.send_modify(|state| {
+                    state.sampled_at_seconds = Some((now + 1) as f64);
+                    state.sequence += 1;
+                });
+            }
+            Duration::from_secs(now)
+        }
+    }
+    struct NoIo;
+    impl Backend for NoIo {
+        fn connect(&mut self) -> BackendFuture<'_, ()> {
+            panic!("Unexpected I/O")
+        }
+        fn disconnect(&mut self) -> BackendFuture<'_, ()> {
+            panic!("Unexpected I/O")
+        }
+        fn read(&mut self, _: String, _: Values) -> BackendFuture<'_, Value> {
+            panic!("Unexpected I/O")
+        }
+        fn write(&mut self, _: String, _: Values) -> BackendFuture<'_, Value> {
+            panic!("Unexpected I/O")
+        }
+        fn poll(&mut self) -> BackendFuture<'_, Values> {
+            panic!("Unexpected I/O")
+        }
+        fn reset(&mut self) {
+            panic!("Unexpected I/O")
+        }
+    }
+
+    #[tokio::test]
+    async fn concurrent_publication_cannot_make_cached_typed_samples_disappear() {
+        let clock = Arc::new(PublishingClock {
+            seconds: AtomicU64::new(1),
+            publication: Mutex::default(),
+        });
+        let mut source = SourceHandle::spawn(
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+            PollPolicy::default(),
+            Box::new(NoIo),
+            clock.clone(),
+        )
+        .unwrap();
+        let mut initial = source.snapshot();
+        initial.sampled_at_seconds = Some(1.0);
+        initial.sequence = 1;
+        let (publication, reader) = watch::channel(initial);
+        Arc::get_mut(&mut source).unwrap().snapshot = reader;
+        *clock.publication.lock().unwrap() = Some(publication.clone());
+        for expected in 1..=2 {
+            let (state, now) = source.timed_snapshot();
+            let sample = crate::readout::typed_sample(&state, "brightness", now, 0).unwrap();
+            assert_eq!(sample.sequence, expected);
+            assert_eq!(sample.age_seconds, 0.0);
+            assert_eq!(source.snapshot().sequence, expected + 1);
+        }
+        // Real future timestamps must still fail; ordering is not age clamping.
+        *clock.publication.lock().unwrap() = None;
+        publication.send_modify(|state| state.sampled_at_seconds = Some(99.0));
+        let (state, now) = source.timed_snapshot();
+        assert!(crate::readout::typed_sample(&state, "brightness", now, 0).is_err());
+        source.shutdown().await.unwrap();
+    }
 }

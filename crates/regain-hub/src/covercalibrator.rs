@@ -231,13 +231,13 @@ impl CoverCalibratorSession {
     pub(crate) fn cached_sample(
         &self,
         property: CoverCalibratorProperty,
-        now: Duration,
     ) -> Result<CoverCalibratorSample, SourceError> {
-        cached_property(&self.source.snapshot()?, property, now)
+        let (state, now) = self.source.timed_snapshot()?;
+        cached_property(&state, property, now)
     }
-    pub(crate) fn device_state(&self, now: Duration) -> Values {
+    pub(crate) fn device_state(&self) -> Values {
         use CoverCalibratorProperty::*;
-        let Ok(state) = self.source.snapshot() else {
+        let Ok((state, now)) = self.source.timed_snapshot() else {
             return Values::new();
         };
         [

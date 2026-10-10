@@ -85,6 +85,9 @@ public sealed class HubCameraComTests
                 owner.Disconnect(); Assert.True(sibling.Connected); Assert.Equal(6144, frame.Pixels.Length);
             }
             Assert.Equal(1, settings.Object.Timeout);
+            // End both source leases before reading the completed trace. A live
+            // sibling can still append polling calls while File.ReadLines opens.
+            owner.Disconnect(); sibling.Disconnect();
             var calls = File.ReadLines(trace).Select(line => JsonDocument.Parse(line)).ToArray();
             try {
                 Assert.Single(calls, call => call.RootElement.GetProperty("member").GetString() == "StartExposure");

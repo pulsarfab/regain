@@ -203,12 +203,12 @@ impl RotatorSession {
     pub(crate) fn cached_sample(
         &self,
         property: RotatorProperty,
-        now: Duration,
     ) -> Result<RotatorSample, SourceError> {
-        cached_property(&self.source.snapshot()?, property, now)
+        let (state, now) = self.source.timed_snapshot()?;
+        cached_property(&state, property, now)
     }
-    pub(crate) fn device_state(&self, now: Duration) -> Values {
-        let Ok(state) = self.source.snapshot() else {
+    pub(crate) fn device_state(&self) -> Values {
+        let Ok((state, now)) = self.source.timed_snapshot() else {
             return Values::new();
         };
         [

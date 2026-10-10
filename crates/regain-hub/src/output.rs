@@ -37,23 +37,23 @@ impl OutputConnection {
                         });
                     }
                 } else if let Ok(focuser) = self.focuser() {
-                    for (name, value) in focuser.device_state(self.now()) {
+                    for (name, value) in focuser.device_state() {
                         values.push(StateValue { name, value });
                     }
                 } else if let Ok(rotator) = self.rotator() {
-                    for (name, value) in rotator.device_state(self.now()) {
+                    for (name, value) in rotator.device_state() {
                         values.push(StateValue { name, value });
                     }
                 } else if let Ok(wheel) = self.filterwheel() {
-                    for (name, value) in wheel.device_state(self.now()) {
+                    for (name, value) in wheel.device_state() {
                         values.push(StateValue { name, value });
                     }
                 } else if let Ok(panel) = self.covercalibrator() {
-                    for (name, value) in panel.device_state(self.now()) {
+                    for (name, value) in panel.device_state() {
                         values.push(StateValue { name, value });
                     }
                 } else if let Ok(camera) = self.camera() {
-                    for (name, value) in camera.device_state(self.now()) {
+                    for (name, value) in camera.device_state() {
                         values.push(StateValue { name, value });
                     }
                 } else {

@@ -477,20 +477,12 @@ impl Backend for VirtualBackend {
                                 )
                                 .ok_or_else(unsupported)
                             })
-                            .and_then(|property| {
-                                connection
-                                    .camera()?
-                                    .cached_sample(property, self.clock.now())
-                            })
+                            .and_then(|property| connection.camera()?.cached_sample(property))
                             .map(|sample| (sample.value.into_value(), sample.age_seconds))
                     } else if self.kind == DeviceType::Focuser {
                         no_args(&request.parameters)
                             .and_then(|()| focuser_property(&request.member))
-                            .and_then(|property| {
-                                connection
-                                    .focuser()?
-                                    .cached_sample(property, self.clock.now())
-                            })
+                            .and_then(|property| connection.focuser()?.cached_sample(property))
                             .map(|sample| {
                                 let value = match sample.value {
                                     FocuserValue::Boolean { value } => json!(value),
@@ -502,11 +494,7 @@ impl Backend for VirtualBackend {
                     } else if self.kind == DeviceType::Rotator {
                         no_args(&request.parameters)
                             .and_then(|()| rotator_property(&request.member))
-                            .and_then(|property| {
-                                connection
-                                    .rotator()?
-                                    .cached_sample(property, self.clock.now())
-                            })
+                            .and_then(|property| connection.rotator()?.cached_sample(property))
                             .map(|sample| {
                                 let value = match sample.value {
                                     RotatorValue::Boolean { value } => json!(value),
@@ -517,11 +505,7 @@ impl Backend for VirtualBackend {
                     } else if self.kind == DeviceType::FilterWheel {
                         no_args(&request.parameters)
                             .and_then(|()| filterwheel_property(&request.member))
-                            .and_then(|property| {
-                                connection
-                                    .filterwheel()?
-                                    .cached_sample(property, self.clock.now())
-                            })
+                            .and_then(|property| connection.filterwheel()?.cached_sample(property))
                             .map(|sample| {
                                 let value = match sample.value {
                                     FilterWheelValue::Strings { value } => json!(value),
@@ -534,9 +518,7 @@ impl Backend for VirtualBackend {
                         no_args(&request.parameters)
                             .and_then(|()| panel_property(&request.member))
                             .and_then(|property| {
-                                connection
-                                    .covercalibrator()?
-                                    .cached_sample(property, self.clock.now())
+                                connection.covercalibrator()?.cached_sample(property)
                             })
                             .map(|sample| {
                                 let value = match sample.value {

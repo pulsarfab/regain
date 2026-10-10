@@ -300,15 +300,17 @@ impl FilterWheelSession {
     pub(crate) fn cached_sample(
         &self,
         property: FilterWheelProperty,
-        now: Duration,
     ) -> Result<FilterWheelSample, SourceError> {
-        cached_property(&self.source.snapshot()?, property, now)
+        let (state, now) = self.source.timed_snapshot()?;
+        cached_property(&state, property, now)
     }
-    pub(crate) fn device_state(&self, now: Duration) -> Values {
+    pub(crate) fn device_state(&self) -> Values {
         self.source
-            .snapshot()
+            .timed_snapshot()
             .ok()
-            .and_then(|state| cached_property(&state, FilterWheelProperty::Position, now).ok())
+            .and_then(|(state, now)| {
+                cached_property(&state, FilterWheelProperty::Position, now).ok()
+            })
             .map(|sample| match sample.value {
                 FilterWheelValue::Integer { value } => {
                     Values::from([("Position".into(), json!(value))])

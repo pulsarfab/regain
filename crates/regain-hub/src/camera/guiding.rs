@@ -377,7 +377,7 @@ mod tests {
     use crate::{
         config::DeviceType,
         parameters::PollPolicy,
-        safety::{Clock, MonotonicClock},
+        safety::MonotonicClock,
         simulated::{SimulatedBackend, SimulationUpdate},
         source::Backend,
     };
@@ -452,16 +452,12 @@ mod tests {
         );
         assert_eq!(
             session
-                .cached_sample(CameraProperty::IsPulseGuiding, clock.now())
+                .cached_sample(CameraProperty::IsPulseGuiding)
                 .unwrap_err()
                 .kind,
             ErrorKind::Uncertain
         );
-        assert!(
-            !session
-                .device_state(clock.now())
-                .contains_key("IsPulseGuiding")
-        );
+        assert!(!session.device_state().contains_key("IsPulseGuiding"));
         source.shutdown().await.unwrap();
         camera.retire_after_source_shutdown().await;
     }

@@ -1184,9 +1184,8 @@ impl CameraSession {
     pub(crate) fn cached_sample(
         &self,
         property: CameraProperty,
-        now: Duration,
     ) -> Result<crate::readout::TypedSample<CameraValue>, SourceError> {
-        let source = self.source.snapshot()?;
+        let (source, now) = self.source.timed_snapshot()?;
         self.guide_property_error(property)?;
         if let Some(error) = source.error {
             return Err(error);
@@ -1205,8 +1204,8 @@ impl CameraSession {
     }
     /// Operational state only. No getter refreshes telemetry or copies pixels;
     /// ImageReady describes this supervisor's published acquisition.
-    pub(crate) fn device_state(&self, now: Duration) -> Values {
-        let Ok(source) = self.source.snapshot() else {
+    pub(crate) fn device_state(&self) -> Values {
+        let Ok((source, now)) = self.source.timed_snapshot() else {
             return Values::new();
         };
         let mut values = Values::new();

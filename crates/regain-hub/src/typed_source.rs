@@ -5,7 +5,7 @@ use crate::{
     source::{ErrorKind, SourceError, SourceHandle, SourceSnapshot, Values},
 };
 use serde_json::Value;
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 use uuid::Uuid;
 
 pub(crate) struct TypedSourceSession {
@@ -47,6 +47,13 @@ impl TypedSourceSession {
     }
     pub(crate) fn snapshot(&self) -> Result<SourceSnapshot, SourceError> {
         let state = self.lease.source.snapshot();
+        self.validate_snapshot(state)
+    }
+    pub(crate) fn timed_snapshot(&self) -> Result<(SourceSnapshot, Duration), SourceError> {
+        let (state, now) = self.lease.source.timed_snapshot();
+        Ok((self.validate_snapshot(state)?, now))
+    }
+    fn validate_snapshot(&self, state: SourceSnapshot) -> Result<SourceSnapshot, SourceError> {
         if state.generation != self.generation || !state.transport_connected {
             return Err(disconnected());
         }

@@ -1079,8 +1079,6 @@ enum ConnectedDevice {
 pub struct OutputConnection {
     device: ConnectedDevice,
     _activity: Activity,
-    // DeviceState uses the same monotonic clock as the source observations.
-    clock: Arc<dyn Clock>,
 }
 impl OutputConnection {
     pub fn connected(&self) -> bool {
@@ -1122,9 +1120,6 @@ impl OutputConnection {
             ConnectedDevice::Focuser(value) => Ok(value),
             _ => Err(wrong_type()),
         }
-    }
-    pub(crate) fn now(&self) -> std::time::Duration {
-        self.clock.now()
     }
     pub fn safety(&self) -> Result<&SafetyOutput, SourceError> {
         match &self.device {
@@ -1254,7 +1249,6 @@ impl ClientSession {
             ClientConnection::Ready(Arc::new(OutputConnection {
                 device,
                 _activity: pending.activity.take().expect("Connection reservation"),
-                clock: self.runtime.clock.clone(),
             })),
         );
         pending.armed = false;
