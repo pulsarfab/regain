@@ -38,6 +38,11 @@ Use **PulsarFab regain Retryable Camera** in NINA, a native ASCOM camera entry,
 or an Alpaca camera slot. All three use the same recovery engine.
 [Choose a camera mode](https://pulsarfab.com/docs/regain/cameras.html#backend).
 
+**Direct USB read size** optionally limits each host request, from 1 KiB to the
+default 1 MiB. Smaller requests add overhead; this is separate from the SDK's
+USB Traffic percentage and does not change USB speed.
+[USB read sizing and measurements](docs/transfer-recovery.md#limit-the-size-of-direct-usb-reads).
+
 NINA FITS files record the camera model in `INSTRUME`; connection labels and
 slot names stay separate. [Camera metadata and verification](docs/nina-camera-fits.md).
 
@@ -56,10 +61,13 @@ with reread support also apply to longer exposures. Recovery requires the image
 to remain available; it cannot restore a frame lost when camera power is removed.
 [Configure recovery](https://pulsarfab.com/docs/regain/cameras.html#recovery).
 
-In NINA and ASCOM, **Driver Info** shows the current recovery state, retry count
-and last failure. Counts distinguish replacement exposures, download retries
-and USB frame rereads for the current or latest capture. A new capture resets
-the counts; the last failure stays visible until disconnect, even after recovery.
+In NINA and ASCOM, **Driver Info** shows recovery state, retry count and the last
+failure. NINA uses a compact summary; full errors and counts by retry type remain
+in diagnostics. A new capture resets the counts; the last failure stays visible
+until disconnect, even after recovery. During reconnection, NINA keeps the last
+temperature and cooler-power readings and labels them **telemetry held**, so
+the cooling chart keeps its axes. Regain records failures and recovery in NINA's
+logs under `%LOCALAPPDATA%\NINA\Logs`; search for `PulsarFab regain`.
 
 ### Run the whole rig from a small headless computer
 

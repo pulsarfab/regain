@@ -9,6 +9,7 @@ use serde_json::{Value, json};
 #[derive(Clone, Copy)]
 pub enum RecoveryType {
     Integer(u32, u32),
+    PowerOfTwo(u32, u32),
     Number {
         minimum: f64,
         exclusive: bool,
@@ -32,15 +33,19 @@ impl RecoveryField {
             | "temperatureToleranceC"
             | "coolingStableSamples"
             | "coolingSampleSeconds" => "Cooling",
-            "commandTimeoutSeconds" | "downloadTimeoutSeconds" | "exposureGraceSeconds" => {
-                "Timeouts"
-            }
+            "commandTimeoutSeconds"
+            | "downloadTimeoutSeconds"
+            | "exposureGraceSeconds"
+            | "directReadChunkKiB" => "Timeouts",
             _ => "Recovery",
         }
     }
     pub fn accepts(&self, value: &Value) -> bool {
         match self.value_type {
             RecoveryType::Boolean => value.is_boolean(),
+            RecoveryType::PowerOfTwo(min, max) => value
+                .as_u64()
+                .is_some_and(|v| (min as u64..=max as u64).contains(&v) && v.is_power_of_two()),
             RecoveryType::Integer(min, max) => value
                 .as_u64()
                 .is_some_and(|v| (min as u64..=max as u64).contains(&v)),
@@ -63,6 +68,16 @@ impl RecoveryField {
         });
         match self.value_type {
             RecoveryType::Boolean => schema["type"] = json!("boolean"),
+            RecoveryType::PowerOfTwo(min, max) => {
+                schema["type"] = json!("integer");
+                schema["minimum"] = json!(min);
+                schema["maximum"] = json!(max);
+                schema["enum"] = json!(
+                    (min..=max)
+                        .filter(|v| v.is_power_of_two())
+                        .collect::<Vec<_>>()
+                );
+            }
             RecoveryType::Integer(min, max) => {
                 schema["type"] = json!("integer");
                 schema["minimum"] = json!(min);
@@ -117,7 +132,7 @@ macro_rules! recovery {
         }
     }
 }
-use RecoveryType::{Boolean, Integer, Number};
+use RecoveryType::{Boolean, Integer, Number, PowerOfTwo};
 recovery! {
     max_retries: u32 = 3 => ("maxRetries", "Replacement exposures", "Maximum replacement exposures after a recoverable failure. Zero disables replacement exposures.", "retries", 1.0, Integer(0,20)),
     maximum_retry_exposure_seconds: f64 = 30.0 => ("maximumRetryExposureSeconds", "Replacement exposure limit", "Only exposures at or below this duration may be replaced. Same-frame rereads do not start a replacement exposure.", "s", 1.0, Number {minimum:0.0,exclusive:false,maximum:86400.0}),
@@ -131,6 +146,7 @@ recovery! {
     cooling_sample_seconds: f64 = 2.0 => ("coolingSampleSeconds", "Cooling check interval", "Time between temperature and cooler-power checks while recovering a camera connection.", "s", 0.1, Number {minimum:0.0,exclusive:true,maximum:3600.0}),
     ready_frame_download_retries: u32 = 2 => ("readyFrameDownloadRetries", "SDK ready-frame rereads", "Additional SDK download attempts only while the same exposure still reports a ready frame. No new exposure is started by a reread.", "retries", 1.0, Integer(0,5)),
     direct_read_retries: u32 = 2 => ("directReadRetries", "Direct USB rereads", "Additional direct USB read attempts under the selected camera's capabilities. Retained-frame support is device-specific; this does not grant rereads to proxy cameras.", "retries", 1.0, Integer(0,5)),
+    direct_read_chunk_kib: u32 = 1024 => ("directReadChunkKiB", "Direct USB read size", "Maximum host USB read size in direct mode. Choose a power of two from 1 to 1024 KiB; the default is 1024. Smaller requests add overhead. SDK mode ignores this option. Separate from camera-side SDK USB Traffic; does not select USB speed or set a fixed MB/s cap.", "KiB", 1.0, PowerOfTwo(1,1024)),
     usb_reset_after_failures: u32 = 0 => ("usbResetAfterFailures", "USB reset threshold", "After this many recoverable failures, permit at most one USB reset per capture when a replacement exposure is allowed. Zero disables it; two tries reconnecting first. Requires a verified camera target and OS permissions. Windows may request administrator approval; external camera power is unchanged.", "failures", 1.0, Integer(0,20)),
     usb_port_cycle: bool = false => ("usbPortCycle", "Linux USB port cycle", "On Linux, use a downstream port power cycle instead of USBDEVFS_RESET when configured USB recovery is triggered.", "", 1.0, Boolean),
 }

@@ -10,7 +10,7 @@ fn managed_options() -> String {
     for field in &fields {
         let name = format!("{}{}", field.key[..1].to_uppercase(), &field.key[1..]);
         let ty = match field.value_type {
-            RecoveryType::Integer(_, _) => "int",
+            RecoveryType::Integer(_, _) | RecoveryType::PowerOfTwo(_, _) => "int",
             RecoveryType::Number { .. } => "double",
             RecoveryType::Boolean => "bool",
         };
@@ -26,6 +26,9 @@ fn managed_options() -> String {
         let name = format!("{}{}", field.key[..1].to_uppercase(), &field.key[1..]);
         let condition = match field.value_type {
             RecoveryType::Integer(min, max) => format!("{name} < {min} || {name} > {max}"),
+            RecoveryType::PowerOfTwo(min, max) => {
+                format!("{name} < {min} || {name} > {max} || ({name} & ({name} - 1)) != 0")
+            }
             RecoveryType::Number {
                 minimum,
                 exclusive,

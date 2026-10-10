@@ -25,6 +25,7 @@ enum Work {
         mpsc::SyncSender<Result<Frame>>,
     ),
     Environment(u32, Option<i64>, mpsc::SyncSender<Result<i64>>),
+    ResumeCooling(i64, f64, i64, mpsc::SyncSender<Result<()>>),
     StopVideo(mpsc::SyncSender<Result<()>>),
 }
 #[derive(Clone, Copy, Default, PartialEq)]
@@ -589,6 +590,32 @@ impl Worker {
                     }
                 };
                 match work {
+                    Work::ResumeCooling(power, prior, previous_target, reply) => {
+                        let _ = watchdog.send(Some(Duration::from_secs(15)));
+                        let result = if let Some((camera, _, _)) = &device {
+                            camera.resume_cooling(power, prior, previous_target)
+                        } else if sim_environment.borrow()[&17] != 0 {
+                            let mut environment = sim_environment.borrow_mut();
+                            let (output, _) = super::environment::recovery_state(
+                                power as f64,
+                                prior,
+                                environment[&8] as f64 / 10.0,
+                                environment[&16] as f64,
+                                previous_target as f64,
+                            );
+                            let power = output.round() as i64;
+                            environment.insert(15, power);
+                            let mut sample = telemetry.lock().unwrap();
+                            let sample = sample.as_mut().expect("simulation telemetry");
+                            sample.values[1] = power;
+                            sample.observed_at[1] = Instant::now();
+                            Ok(())
+                        } else {
+                            Err(anyhow::anyhow!("cooler is disabled"))
+                        };
+                        let _ = watchdog.send(None);
+                        let _ = reply.send(result);
+                    }
                     Work::StopVideo(reply) => {
                         let _ = watchdog.send(Some(Duration::from_secs(15)));
                         let result = if let Some(mut video) = video.take()
@@ -636,6 +663,7 @@ impl Worker {
                     ) => {
                         // Never free live I/O buffers if a kernel operation becomes stuck.
                         let _ = watchdog.send(Some(timeout));
+                        let read_chunk_kib = settings.read_chunk_kib;
                         let result = (|| -> Result<Frame> {
                             if video_mode && !settings.continuous_drain {
                                 video_pacer.wait_servicing(
@@ -654,6 +682,8 @@ impl Worker {
                                 camera
                                     .transfer_timeout(settings.transfer_timeout_seconds)
                                     .expect("validated transfer timeout");
+                                camera.read_chunk_size(settings.read_chunk_kib)
+                                    .expect("validated USB read size");
                                 if video_mode {
                                     let requested = settings.clone();
                                     let settings = if model == Model::Asi585 {
@@ -817,7 +847,10 @@ impl Worker {
                                     pixels,
                                 ))
                             }
-                        })();
+                        })().map(|(mut metadata, pixels)| {
+                            metadata["readChunkKiB"] = json!(read_chunk_kib);
+                            (metadata, pixels)
+                        });
                         if video_mode && result.is_ok() {
                             video_pacer.completed();
                         }
@@ -882,6 +915,15 @@ impl Worker {
         receiver
             .recv_timeout(Duration::from_secs(15))
             .map_err(|_| anyhow::anyhow!("environment worker unavailable"))?
+    }
+    fn resume_cooling(&self, power: i64, prior: f64, previous_target: i64) -> Result<()> {
+        let (sender, receiver) = mpsc::sync_channel(1);
+        self.sender
+            .send(Work::ResumeCooling(power, prior, previous_target, sender))
+            .map_err(|_| anyhow::anyhow!("direct worker exited"))?;
+        receiver
+            .recv_timeout(Duration::from_secs(15))
+            .map_err(|_| anyhow::anyhow!("cooling recovery worker unavailable"))?
     }
     fn close(mut self) {
         self.cancel_video
@@ -1157,6 +1199,33 @@ impl Host {
                 };
                 serde_json::to_value(observation)?
             }
+            "resume-cooling" => {
+                ensure!(
+                    self.model.cooled()
+                        && self.pending.is_none()
+                        && self.frame.is_none()
+                        && !self.video_active,
+                    "cooling recovery requires an idle cooled camera"
+                );
+                let power = params["power"]
+                    .as_i64()
+                    .filter(|v| (0..=100).contains(v))
+                    .ok_or_else(|| anyhow::anyhow!("invalid recovery power"))?;
+                let prior = params["temperature"]
+                    .as_f64()
+                    .filter(|v| v.is_finite() && (-50.0..=85.0).contains(v))
+                    .ok_or_else(|| anyhow::anyhow!("invalid recovery temperature"))?;
+                let previous_target = params["previousTarget"]
+                    .as_i64()
+                    .filter(|v| (-40..=30).contains(v))
+                    .ok_or_else(|| anyhow::anyhow!("invalid recovery target"))?;
+                self.worker
+                    .as_ref()
+                    .ok_or_else(|| anyhow::anyhow!("camera is not open"))?
+                    .resume_cooling(power, prior, previous_target)
+                    .map_err(hardware)?;
+                Value::Null
+            }
             "get" | "set" => {
                 let worker = self
                     .worker
@@ -1267,6 +1336,10 @@ impl Host {
                             .as_f64()
                             .ok_or_else(|| anyhow::anyhow!("invalid transfer deadline"))?;
                 }
+                settings.read_chunk_kib = params
+                    .get("readChunkKiB")
+                    .map_or(Ok(1024), |_| number("readChunkKiB"))?;
+                super::settings::read_chunk_bytes(settings.read_chunk_kib)?;
                 ensure!(
                     settings.transfer_timeout_seconds.is_finite()
                         && settings.transfer_timeout_seconds > 0.0
@@ -1378,7 +1451,7 @@ impl Host {
                         } else {
                             Ok((
                                 json!({"width":settings.width,"height":settings.height,"simulated":true,
-                                "readRecoveries":failures}),
+                                "readRecoveries":failures,"readChunkKiB":settings.read_chunk_kib}),
                                 vec![0; (settings.width * settings.height * 2) as usize],
                             ))
                         });
@@ -1659,6 +1732,55 @@ mod cooling_tests {
 }
 
 #[cfg(test)]
+mod recovery_cooling_tests {
+    use super::*;
+
+    #[test]
+    fn recovery_command_is_validated_and_does_not_make_power_publicly_writable() {
+        let mut host = Host {
+            simulate: true,
+            ..Host::default()
+        };
+        host.command("open", &json!({"name":"ZWO ASI585MM Pro"}))
+            .unwrap();
+        let recovery = json!({"power":40,"temperature":25.0,"previousTarget":25});
+        assert!(host.command("resume-cooling", &recovery).is_err()); // Disabled.
+        host.command("set", &json!({"control":17,"value":1}))
+            .unwrap();
+        for (key, bad) in [
+            ("power", json!(-1)),
+            ("power", json!(101)),
+            ("power", json!(1.5)),
+            ("temperature", Value::Null),
+            ("temperature", json!(100)),
+            ("previousTarget", json!(31)),
+        ] {
+            let mut invalid = recovery.clone();
+            invalid[key] = bad;
+            assert!(host.command("resume-cooling", &invalid).is_err());
+            assert_eq!(host.command("get", &json!({"control":15})).unwrap().0, 0);
+        }
+        host.command("resume-cooling", &recovery).unwrap();
+        assert_eq!(host.command("get", &json!({"control":15})).unwrap().0, 40);
+        assert!(
+            host.command("set", &json!({"control":15,"value":80}))
+                .is_err()
+        );
+        host.command("set", &json!({"control":16,"value":26}))
+            .unwrap();
+        host.command("resume-cooling", &recovery).unwrap();
+        assert_eq!(host.command("get", &json!({"control":15})).unwrap().0, 0);
+        host.command(
+            "start",
+            &json!({"width":64,"height":64,"bin":1,"x":0,"y":0,"microseconds":2000000,"dark":true}),
+        )
+        .unwrap();
+        assert!(host.command("resume-cooling", &recovery).is_err());
+        host.worker.take().unwrap().close();
+    }
+}
+
+#[cfg(test)]
 mod video_tests {
     use super::*;
     fn parameters() -> Value {
@@ -1685,6 +1807,33 @@ mod video_tests {
             std::thread::sleep(Duration::from_millis(1));
         }
         host.command("download", &Value::Null).unwrap()
+    }
+    #[test]
+    fn read_chunk_size_rejects_invalid_requests_before_capture_and_defaults_per_request() {
+        let mut host = open();
+        let mut params = parameters();
+        for value in [
+            json!(0),
+            json!(-1),
+            json!(3),
+            json!(2048),
+            json!(1.5),
+            json!("64"),
+            Value::Null,
+        ] {
+            params["readChunkKiB"] = value;
+            assert!(host.command("validate", &params).is_err());
+            assert!(host.command("start", &params).is_err());
+        }
+        for mode in ["still", "video"] {
+            params["mode"] = json!(mode);
+            params["readChunkKiB"] = json!(64);
+            assert_eq!(frame(&mut host, &params).0["readChunkKiB"], 64);
+            params.as_object_mut().unwrap().remove("readChunkKiB");
+            assert_eq!(frame(&mut host, &params).0["readChunkKiB"], 1024);
+        }
+        host.command("stop", &Value::Null).unwrap();
+        host.command("close", &Value::Null).unwrap();
     }
     #[test]
     fn video_reuses_session_reconfigures_and_preserves_still_default() {

@@ -15,16 +15,22 @@ fn legacy_defaults() -> Value {
     })
 }
 
+fn current_defaults() -> Value {
+    let mut values = legacy_defaults();
+    values["directReadChunkKiB"] = json!(1024);
+    values
+}
+
 #[test]
 fn legacy_defaults_sparse_profiles_and_public_paths_remain_compatible() {
     let defaults: regain_core::model::RecoveryOptions = RecoveryOptions::default();
-    assert_eq!(serde_json::to_value(defaults).unwrap(), legacy_defaults());
+    assert_eq!(serde_json::to_value(defaults).unwrap(), current_defaults());
     let sparse: RecoveryOptions = serde_json::from_value(json!({
         "maxRetries":0, "directReadRetries":5, "usbPortCycle":true,
         "unknownLegacyExtension":"preserved loader behavior"
     }))
     .unwrap();
-    let mut expected = legacy_defaults();
+    let mut expected = current_defaults();
     expected["maxRetries"] = json!(0);
     expected["directReadRetries"] = json!(5);
     expected["usbPortCycle"] = json!(true);
@@ -140,10 +146,10 @@ fn legacy_float_boundaries_including_nonfinite_values_remain_compatible() {
 #[test]
 fn descriptor_defaults_and_serialized_keys_match_the_shipped_profile() {
     let schema = RecoveryOptions::schema();
-    let defaults = legacy_defaults();
+    let defaults = current_defaults();
     assert_eq!(schema["default"], defaults);
     assert_eq!(schema["additionalProperties"], false);
-    assert_eq!(schema["properties"].as_object().unwrap().len(), 14);
+    assert_eq!(schema["properties"].as_object().unwrap().len(), 15);
     for (key, default) in defaults.as_object().unwrap() {
         let property = &schema["properties"][key];
         assert_eq!(&property["default"], default);

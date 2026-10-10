@@ -15,6 +15,7 @@ public sealed record RecoveryOptions
     public double CoolingSampleSeconds { get; init; } = 2.0;
     public int ReadyFrameDownloadRetries { get; init; } = 2;
     public int DirectReadRetries { get; init; } = 2;
+    public int DirectReadChunkKiB { get; init; } = 1024;
     public int UsbResetAfterFailures { get; init; } = 0;
     public bool UsbPortCycle { get; init; } = false;
     public void Validate()
@@ -43,6 +44,8 @@ public sealed record RecoveryOptions
             throw new System.ArgumentOutOfRangeException(nameof(ReadyFrameDownloadRetries));
         if (DirectReadRetries < 0 || DirectReadRetries > 5)
             throw new System.ArgumentOutOfRangeException(nameof(DirectReadRetries));
+        if (DirectReadChunkKiB < 1 || DirectReadChunkKiB > 1024 || (DirectReadChunkKiB & (DirectReadChunkKiB - 1)) != 0)
+            throw new System.ArgumentOutOfRangeException(nameof(DirectReadChunkKiB));
         if (UsbResetAfterFailures < 0 || UsbResetAfterFailures > 20)
             throw new System.ArgumentOutOfRangeException(nameof(UsbResetAfterFailures));
     }

@@ -4,12 +4,12 @@ import {recoveryFields,parseRecoveryValue,readRecovery} from '../crates/regain-a
 
 const description=JSON.parse(fs.readFileSync(new URL('../contracts/camera-recovery.json',import.meta.url)));
 const all=recoveryFields(description,'linux'), windows=recoveryFields(description,'windows');
-assert.equal(all.length,14); assert.equal(windows.length,13);
+assert.equal(all.length,15); assert.equal(windows.length,14);
 assert(!windows.some(f=>f.key==='usbPortCycle'));
 assert.deepEqual(all.map(f=>f.key), ['maxRetries','maximumRetryExposureSeconds','reconnectDelaySeconds',
   'commandTimeoutSeconds','downloadTimeoutSeconds','exposureGraceSeconds','coolingTimeoutSeconds',
   'temperatureToleranceC','coolingStableSamples','coolingSampleSeconds','readyFrameDownloadRetries',
-  'directReadRetries','usbResetAfterFailures','usbPortCycle']);
+  'directReadRetries','directReadChunkKiB','usbResetAfterFailures','usbPortCycle']);
 assert.throws(()=>recoveryFields({...description,contractVersion:2},'windows'));
 for(const f of all) {
   assert(f.description); assert(['Recovery','Cooling','Timeouts'].includes(f['x-regain'].section));
@@ -32,3 +32,7 @@ assert.equal(read.legacyExtension,'keep'); assert.equal(original.reconnectDelayS
 const hub=JSON.parse(fs.readFileSync(new URL('../contracts/hub-config.json',import.meta.url)));
 assert.deepEqual(description.schema,hub.schema.$defs.CameraRecovery);
 console.log('Recovery metadata: ordered platform fields, legacy defaults, positive/integer limits, hidden values and hub parity pass.');
+
+const chunks=all.find(f=>f.key==='directReadChunkKiB');
+for(const size of chunks.enum) assert.equal(parseRecoveryValue(chunks,String(size)),size);
+for(const size of ['0','3','63','2048']) assert.throws(()=>parseRecoveryValue(chunks,size));

@@ -92,6 +92,7 @@
             "coolingSampleSeconds": 2.0,
             "coolingStableSamples": 3,
             "coolingTimeoutSeconds": 300.0,
+            "directReadChunkKiB": 1024,
             "directReadRetries": 2,
             "downloadTimeoutSeconds": 60.0,
             "exposureGraceSeconds": 30.0,
@@ -202,6 +203,44 @@
                 "sensitive": false,
                 "step": 1.0,
                 "units": "s"
+              }
+            },
+            "directReadChunkKiB": {
+              "default": 1024,
+              "description": "Maximum host USB read size in direct mode. Choose a power of two from 1 to 1024 KiB; the default is 1024. Smaller requests add overhead. SDK mode ignores this option. Separate from camera-side SDK USB Traffic; does not select USB speed or set a fixed MB/s cap.",
+              "enum": [
+                1,
+                2,
+                4,
+                8,
+                16,
+                32,
+                64,
+                128,
+                256,
+                512,
+                1024
+              ],
+              "maximum": 1024,
+              "minimum": 1,
+              "title": "Direct USB read size",
+              "type": "integer",
+              "x-regain": {
+                "apply": "reconnect",
+                "description": "Maximum host USB read size in direct mode. Choose a power of two from 1 to 1024 KiB; the default is 1024. Smaller requests add overhead. SDK mode ignores this option. Separate from camera-side SDK USB Traffic; does not select USB speed or set a fixed MB/s cap.",
+                "group": "Native camera recovery",
+                "key": "directReadChunkKiB",
+                "label": "Direct USB read size",
+                "order": 12,
+                "platforms": [
+                  "windows",
+                  "linux",
+                  "macos"
+                ],
+                "section": "Timeouts",
+                "sensitive": false,
+                "step": 1.0,
+                "units": "KiB"
               }
             },
             "directReadRetries": {
@@ -415,7 +454,7 @@
                 "group": "Native camera recovery",
                 "key": "usbPortCycle",
                 "label": "Linux USB port cycle",
-                "order": 13,
+                "order": 14,
                 "platforms": [
                   "linux"
                 ],
@@ -438,7 +477,7 @@
                 "group": "Native camera recovery",
                 "key": "usbResetAfterFailures",
                 "label": "USB reset threshold",
-                "order": 12,
+                "order": 13,
                 "platforms": [
                   "windows",
                   "linux",
@@ -844,6 +883,7 @@
                 "coolingSampleSeconds": 2.0,
                 "coolingStableSamples": 3,
                 "coolingTimeoutSeconds": 300.0,
+                "directReadChunkKiB": 1024,
                 "directReadRetries": 2,
                 "downloadTimeoutSeconds": 60.0,
                 "exposureGraceSeconds": 30.0,
@@ -2109,6 +2149,7 @@
             "coolingSampleSeconds": 2.0,
             "coolingStableSamples": 3,
             "coolingTimeoutSeconds": 300.0,
+            "directReadChunkKiB": 1024,
             "directReadRetries": 2,
             "downloadTimeoutSeconds": 60.0,
             "exposureGraceSeconds": 30.0,
@@ -2219,6 +2260,44 @@
                 "sensitive": false,
                 "step": 1.0,
                 "units": "s"
+              }
+            },
+            "directReadChunkKiB": {
+              "default": 1024,
+              "description": "Maximum host USB read size in direct mode. Choose a power of two from 1 to 1024 KiB; the default is 1024. Smaller requests add overhead. SDK mode ignores this option. Separate from camera-side SDK USB Traffic; does not select USB speed or set a fixed MB/s cap.",
+              "enum": [
+                1,
+                2,
+                4,
+                8,
+                16,
+                32,
+                64,
+                128,
+                256,
+                512,
+                1024
+              ],
+              "maximum": 1024,
+              "minimum": 1,
+              "title": "Direct USB read size",
+              "type": "integer",
+              "x-regain": {
+                "apply": "reconnect",
+                "description": "Maximum host USB read size in direct mode. Choose a power of two from 1 to 1024 KiB; the default is 1024. Smaller requests add overhead. SDK mode ignores this option. Separate from camera-side SDK USB Traffic; does not select USB speed or set a fixed MB/s cap.",
+                "group": "Native camera recovery",
+                "key": "directReadChunkKiB",
+                "label": "Direct USB read size",
+                "order": 12,
+                "platforms": [
+                  "windows",
+                  "linux",
+                  "macos"
+                ],
+                "section": "Timeouts",
+                "sensitive": false,
+                "step": 1.0,
+                "units": "KiB"
               }
             },
             "directReadRetries": {
@@ -2432,7 +2511,7 @@
                 "group": "Native camera recovery",
                 "key": "usbPortCycle",
                 "label": "Linux USB port cycle",
-                "order": 13,
+                "order": 14,
                 "platforms": [
                   "linux"
                 ],
@@ -2455,7 +2534,7 @@
                 "group": "Native camera recovery",
                 "key": "usbResetAfterFailures",
                 "label": "USB reset threshold",
-                "order": 12,
+                "order": 13,
                 "platforms": [
                   "windows",
                   "linux",
@@ -2886,6 +2965,7 @@
                 "coolingSampleSeconds": 2.0,
                 "coolingStableSamples": 3,
                 "coolingTimeoutSeconds": 300.0,
+                "directReadChunkKiB": 1024,
                 "directReadRetries": 2,
                 "downloadTimeoutSeconds": 60.0,
                 "exposureGraceSeconds": 30.0,
@@ -5068,6 +5148,7 @@
               "coolingSampleSeconds": 2.0,
               "coolingStableSamples": 3,
               "coolingTimeoutSeconds": 300.0,
+              "directReadChunkKiB": 1024,
               "directReadRetries": 2,
               "downloadTimeoutSeconds": 60.0,
               "exposureGraceSeconds": 30.0,
@@ -5178,6 +5259,44 @@
                   "sensitive": false,
                   "step": 1.0,
                   "units": "s"
+                }
+              },
+              "directReadChunkKiB": {
+                "default": 1024,
+                "description": "Maximum host USB read size in direct mode. Choose a power of two from 1 to 1024 KiB; the default is 1024. Smaller requests add overhead. SDK mode ignores this option. Separate from camera-side SDK USB Traffic; does not select USB speed or set a fixed MB/s cap.",
+                "enum": [
+                  1,
+                  2,
+                  4,
+                  8,
+                  16,
+                  32,
+                  64,
+                  128,
+                  256,
+                  512,
+                  1024
+                ],
+                "maximum": 1024,
+                "minimum": 1,
+                "title": "Direct USB read size",
+                "type": "integer",
+                "x-regain": {
+                  "apply": "reconnect",
+                  "description": "Maximum host USB read size in direct mode. Choose a power of two from 1 to 1024 KiB; the default is 1024. Smaller requests add overhead. SDK mode ignores this option. Separate from camera-side SDK USB Traffic; does not select USB speed or set a fixed MB/s cap.",
+                  "group": "Native camera recovery",
+                  "key": "directReadChunkKiB",
+                  "label": "Direct USB read size",
+                  "order": 12,
+                  "platforms": [
+                    "windows",
+                    "linux",
+                    "macos"
+                  ],
+                  "section": "Timeouts",
+                  "sensitive": false,
+                  "step": 1.0,
+                  "units": "KiB"
                 }
               },
               "directReadRetries": {
@@ -5391,7 +5510,7 @@
                   "group": "Native camera recovery",
                   "key": "usbPortCycle",
                   "label": "Linux USB port cycle",
-                  "order": 13,
+                  "order": 14,
                   "platforms": [
                     "linux"
                   ],
@@ -5414,7 +5533,7 @@
                   "group": "Native camera recovery",
                   "key": "usbResetAfterFailures",
                   "label": "USB reset threshold",
-                  "order": 12,
+                  "order": 13,
                   "platforms": [
                     "windows",
                     "linux",
@@ -5507,6 +5626,7 @@
                   "coolingSampleSeconds": 2.0,
                   "coolingStableSamples": 3,
                   "coolingTimeoutSeconds": 300.0,
+                  "directReadChunkKiB": 1024,
                   "directReadRetries": 2,
                   "downloadTimeoutSeconds": 60.0,
                   "exposureGraceSeconds": 30.0,
@@ -8671,6 +8791,7 @@
           "coolingSampleSeconds": 2.0,
           "coolingStableSamples": 3,
           "coolingTimeoutSeconds": 300.0,
+          "directReadChunkKiB": 1024,
           "directReadRetries": 2,
           "downloadTimeoutSeconds": 60.0,
           "exposureGraceSeconds": 30.0,
@@ -8781,6 +8902,44 @@
               "sensitive": false,
               "step": 1.0,
               "units": "s"
+            }
+          },
+          "directReadChunkKiB": {
+            "default": 1024,
+            "description": "Maximum host USB read size in direct mode. Choose a power of two from 1 to 1024 KiB; the default is 1024. Smaller requests add overhead. SDK mode ignores this option. Separate from camera-side SDK USB Traffic; does not select USB speed or set a fixed MB/s cap.",
+            "enum": [
+              1,
+              2,
+              4,
+              8,
+              16,
+              32,
+              64,
+              128,
+              256,
+              512,
+              1024
+            ],
+            "maximum": 1024,
+            "minimum": 1,
+            "title": "Direct USB read size",
+            "type": "integer",
+            "x-regain": {
+              "apply": "reconnect",
+              "description": "Maximum host USB read size in direct mode. Choose a power of two from 1 to 1024 KiB; the default is 1024. Smaller requests add overhead. SDK mode ignores this option. Separate from camera-side SDK USB Traffic; does not select USB speed or set a fixed MB/s cap.",
+              "group": "Native camera recovery",
+              "key": "directReadChunkKiB",
+              "label": "Direct USB read size",
+              "order": 12,
+              "platforms": [
+                "windows",
+                "linux",
+                "macos"
+              ],
+              "section": "Timeouts",
+              "sensitive": false,
+              "step": 1.0,
+              "units": "KiB"
             }
           },
           "directReadRetries": {
@@ -8994,7 +9153,7 @@
               "group": "Native camera recovery",
               "key": "usbPortCycle",
               "label": "Linux USB port cycle",
-              "order": 13,
+              "order": 14,
               "platforms": [
                 "linux"
               ],
@@ -9017,7 +9176,7 @@
               "group": "Native camera recovery",
               "key": "usbResetAfterFailures",
               "label": "USB reset threshold",
-              "order": 12,
+              "order": 13,
               "platforms": [
                 "windows",
                 "linux",
@@ -9412,6 +9571,7 @@
               "coolingSampleSeconds": 2.0,
               "coolingStableSamples": 3,
               "coolingTimeoutSeconds": 300.0,
+              "directReadChunkKiB": 1024,
               "directReadRetries": 2,
               "downloadTimeoutSeconds": 60.0,
               "exposureGraceSeconds": 30.0,

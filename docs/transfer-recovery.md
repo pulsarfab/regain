@@ -41,6 +41,64 @@ It does not advertise retained-frame capability and remains subject to the
 exposure cutoff. These guarantees must not be transferred between the two
 devices merely because they share an enclosure.
 
+## Limit the size of direct USB reads
+
+**Direct USB read size (KiB)** limits each host read request in SDK-less mode.
+Set it in NINA's Advanced camera settings, native ASCOM's Timeouts tab, or the
+Alpaca camera setup page. All three use the recovery key `directReadChunkKiB`.
+The default is **1024 KiB (1 MiB)**; supported sizes are 1, 2, 4, 8, 16, 32,
+64, 128, 256, 512 and 1024 KiB. Existing configurations keep the default.
+SDK mode ignores this setting, including when SDK fallback is active.
+
+Smaller requests can reduce throughput by adding host overhead. They do not
+set a fixed MB/s cap, reserve bandwidth for other devices, change sensor timing,
+or select USB 2 instead of USB 3. Request size stays fixed for an entire capture
+and its retained-frame retries, including after worker replacement. The normal
+download deadline and cancellation rules still apply. Native video and
+continuous acquisition accept the worker's same `readChunkKiB` parameter.
+
+For a direct CLI capture:
+
+```powershell
+regain-device zwo camera-direct --capture-585 --read-chunk-kib 64 --replay
+```
+
+ZWO's SDK **USB limit / USB Traffic** is a separate camera-side bandwidth
+percentage that affects frame rate. [ZWO explains the control here](https://bbs.zwoastro.com/d/13881-what-does-the-usb-limit-control-do).
+Our SDK traces show it programs an FPGA output divider; see the
+[bandwidth analysis](usb2-coverage-spike.md). Direct mode retains its traced
+camera-side bandwidth setting and exposes host read size separately. Its SDK
+USB-limit control remains read-only; the two values have different units.
+
+On the attached ASI585MM Pro over USB 3 on Windows, three full-resolution RAW16
+captures per size and byte-identical retained replays after a partial read gave:
+
+| Host read size | Median full-frame USB read |
+| --- | ---: |
+| 1 MiB | 42 ms |
+| 256 KiB | 48 ms |
+| 64 KiB | 48 ms |
+| 16 KiB | 69 ms |
+| 4 KiB | 210 ms |
+| 1 KiB | 823 ms |
+
+A 512-byte research request failed immediately, below this USB 3 endpoint's
+1,024-byte packet size. Subsequent normal captures passed without a USB reset.
+The option therefore starts at 1 KiB. These are short measurements on
+one camera and driver, not evidence of improved fault recovery or physical
+USB 2 validation. Frame size was 16,588,800 bytes; medians include six full reads
+per size and exclude exposure and processing. `transfer.complete` diagnostics
+record the configured size, request count and elapsed read time.
+
+The production CLI acceptance tool repeats captures at 1, 4, 16, 64, 256 and
+1024 KiB and with the size omitted. Each capture recovers a deliberately
+interrupted host read and verifies a retained replay after another partial read.
+Run only with an idle, operator-authorized ASI585MM Pro:
+
+```powershell
+python scripts/inspection/validate_read_chunk_size.py --hardware --output artifacts/read-size-check
+```
+
 ## Hardware evidence
 
 Tests used the attached capped ASI2600MM Pro main interface, full 6248 × 4176
@@ -104,7 +162,7 @@ interruptions from actual USB bus faults.
 | Camera coverage | ASI585MM Pro, ASI662MC, ASI676MC, ASI2600MM Pro/Duo main, ASI6200MM Pro, and ASI220MM Mini guide; see each device guide and [USB 2 results](usb2-cameras.md) | Other models/revisions need their own initialization, format and recovery evidence; a shared driver package is insufficient |
 | Single-frame imaging | RAW16, ROI, gain/offset, factory correction; main bins 1–4 and long integrations | SDK format/control coverage is broader; unverified correction-map classes and modes must not be assumed equivalent |
 | Acquisition modes | NINA, ASCOM, and Alpaca deliver RAW16 still frames; worker APIs add [continuous acquisition](continuous-acquisition.md) and [software WB/AWB](white-balance.md) | Direct native video covers ASI585/662/676 through 30 s and has no retained replay. Other direct models use repeated stills. Neither Regain backend captures RAW8/RGB; automatic exposure, external triggering, and ST4 are not surfaced. |
-| Transfer throughput | Sequential 1 MiB bulk requests, fixed USB limit 40 | SDK traces show queued overlapped transfers. Queue depth and bandwidth tuning need measurements and cancellation tests |
+| Transfer throughput | Sequential bulk requests, configurable 1–1024 KiB (default 1 MiB), fixed camera-side USB limit 40 | SDK traces show queued overlapped transfers. Queue depth and camera bandwidth tuning need measurements and cancellation tests |
 | Cooling | Temperature, target, enablement, power and supported dew controls; bounded Rust PI regulator | Capability depends on the camera: ASI585 exposes cooling but no controllable heater. It is not the SDK regulator and needs more environmental and hardware validation |
 | ASI6200 auxiliary controls | Fan speed and power-LED brightness, 0–255, with readback and restoration | Momentary USB hub reset is not exposed or replayed automatically |
 | Acquisition lifecycle | Observed readiness registers, retained state and framing checks; P25 cameras additionally wait a full programmed sensor frame plus 100 ms before standby | These guards are time based. Full-frame control transitions caught stale rows that valid framing and repeated dark frames did not. A definitive firmware completion indicator remains open |
@@ -143,3 +201,30 @@ performed for this transfer matrix. Recovery currently relies on a responsive
 device with retained DDR. A USB offload host could additionally retain a
 completed frame for reliable network retrieval, but cannot recover camera
 pixels that were never successfully transferred to that host.
+## Cooling recovery tuning
+
+The direct controller now resumes the last cooler output after a worker restart,
+then adds 8 percentage points per degree of measured warming since the last
+sample, capped at 100%. Its PI state is reconstructed from the previous output
+and temperature. It ramps up by at most 8 percentage points/second and down by
+12, with proportional gain 8 and integral gain 0.12. Elapsed controller time is
+still capped at two seconds after blocked USB I/O; saturation stops integral
+windup. Missing temperature feedback disables cooling. A disabled cooler or a
+warmer requested setpoint takes precedence over restoration.
+
+The shared Rust session restores this demand once per replacement worker,
+after restoring the selected target and enable state. This applies to direct
+camera capture through NINA, native ASCOM and Alpaca. SDK cooling remains owned
+by the vendor SDK. Retained-frame handle recovery continues to preserve its
+existing controller history.
+
+Focused tests cover restoration, warming boost, 100% saturation, disabled and
+warmer targets, repeated refreshes, malformed recovery requests, bounded response
+and thermal models with different loads and actuator delays. The ASI585MM Pro
+hardware probe is `scripts/inspection/validate_cooler_recovery.py`; it requires
+`--hardware`, `--serial`, `--workers`, `--output`, and optionally `--target`.
+It runs an owned supervisor, kills only its selected worker during a short
+exposure and disables cooling before exit. Results are written as JSONL with
+worker diagnostics. Hardware validation at a 15 C target reproduced the old
+restart dropping 15% output to zero, warming from 14.0 to 17.6 C and taking
+117 seconds to return the replacement image.

@@ -47,6 +47,38 @@ pub enum CoolerOutput {
     Dac,
 }
 
+const PROPORTIONAL: f64 = 8.0;
+const INTEGRAL: f64 = 0.12;
+
+pub(super) fn recovery_state(
+    power: f64,
+    prior: f64,
+    current: f64,
+    target: f64,
+    previous_target: f64,
+) -> (f64, f64) {
+    if target > previous_target {
+        return (0.0, 0.0);
+    }
+    let integral = (power - PROPORTIONAL * (prior - target)).clamp(0.0, 100.0);
+    let boosted = (power + PROPORTIONAL * (current - prior).max(0.0)).clamp(0.0, 100.0);
+    (boosted, integral)
+}
+
+// Percentage points per second, with bounded elapsed time after blocked USB.
+fn regulate(power: f64, integral: &mut f64, error: f64, elapsed: f64) -> f64 {
+    let dt = elapsed.clamp(0.0, 2.0);
+    let candidate = (*integral + error * INTEGRAL * dt).clamp(0.0, 100.0);
+    let demand = candidate + PROPORTIONAL * error;
+    // Do not accumulate demand the actuator cannot deliver. Allow unwinding.
+    if (demand <= 100.0 || error < 0.0) && (demand >= 0.0 || error > 0.0) {
+        *integral = candidate;
+    }
+    (*integral + PROPORTIONAL * error)
+        .clamp(0.0, 100.0)
+        .clamp((power - 12.0 * dt).max(0.0), (power + 8.0 * dt).min(100.0))
+}
+
 pub struct Environment {
     pub target: i64,
     pub enabled: bool,
@@ -73,6 +105,54 @@ fn flags(camera: &Camera, mask: u8, enabled: bool) -> Result<()> {
 }
 
 impl Environment {
+    /// Resume the last measured demand after worker replacement. The remembered
+    /// temperature separates the old proportional demand from its steady load.
+    /// A warmer requested target must never reinstate unwanted cooling.
+    pub fn resume_cooling(
+        &mut self,
+        camera: &Camera,
+        power: i64,
+        prior: f64,
+        previous_target: i64,
+    ) -> Result<()> {
+        ensure!(
+            (0..=100).contains(&power)
+                && prior.is_finite()
+                && (-50.0..=85.0).contains(&prior)
+                && (-40..=30).contains(&previous_target),
+            "invalid cooling recovery sample"
+        );
+        ensure!(self.enabled, "cooler is disabled");
+        self.temperature = match Self::read_temperature(camera) {
+            Ok(t) => t,
+            Err(error) => {
+                let _ = self.set(camera, 17, 0);
+                return Err(error);
+            }
+        };
+        let (power, integral) = recovery_state(
+            power as f64,
+            prior,
+            self.temperature,
+            self.target as f64,
+            previous_target as f64,
+        );
+        self.write_power(camera, power)?;
+        self.power = power;
+        self.integral = integral;
+        self.tick = Instant::now();
+        self.observed_at[0] = self.tick;
+        self.observed_at[1] = self.tick;
+        crate::asi::direct::diagnostics::log(
+            "info",
+            "cooling.resumed",
+            format_args!(
+                "Resumed output {power:.1}% at {:.2} C (prior {prior:.2} C), target {} C",
+                self.temperature, self.target
+            ),
+        );
+        Ok(())
+    }
     /// Restore actuator state after a handle reconnect without replacing the
     /// saved setpoint, regulator history, or the frame retained in DDR.
     pub fn restore(&mut self, camera: &Camera) -> Result<()> {
@@ -248,16 +328,9 @@ impl Environment {
         self.observed_at[0] = observed;
         if self.enabled {
             // Limit elapsed time after blocked USB I/O: no accumulated power jump.
-            let dt = elapsed.min(2.0);
             let error = self.temperature - self.target as f64;
-            self.integral = (self.integral + error * 0.08 * dt).clamp(0.0, 100.0);
-            let demand = (self.integral + 2.0 * error).clamp(0.0, 100.0);
-            let power = demand.clamp(
-                (self.power - 2.0 * dt).max(0.0),
-                (self.power + 2.0 * dt).min(100.0),
-            );
-            self.write_power(camera, power)?;
-            self.power = power;
+            self.power = regulate(self.power, &mut self.integral, error, elapsed);
+            self.write_power(camera, self.power)?;
             self.observed_at[1] = observed;
         }
         Ok(())
@@ -267,6 +340,65 @@ impl Environment {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn recovery_restores_previous_output_and_boosts_for_warming() {
+        assert_eq!(
+            recovery_state(40.0, -10.0, -10.0, -10.0, -10.0),
+            (40.0, 40.0)
+        );
+        assert_eq!(
+            recovery_state(40.0, -10.0, -8.0, -10.0, -10.0),
+            (56.0, 40.0)
+        );
+        assert_eq!(
+            recovery_state(90.0, -10.0, -5.0, -10.0, -10.0),
+            (100.0, 90.0)
+        );
+        assert_eq!(recovery_state(40.0, -10.0, -9.0, -9.0, -10.0), (0.0, 0.0));
+        let (power, mut integral) = recovery_state(40.0, -10.0, -8.0, -10.0, -10.0);
+        assert!(regulate(power, &mut integral, 2.0, 1.0) >= power);
+    }
+    #[test]
+    fn responds_promptly_without_windup_or_unbounded_elapsed_time() {
+        let mut integral = 0.0;
+        let mut power = 0.0;
+        for _ in 0..20 {
+            power = regulate(power, &mut integral, 100.0, 1.0);
+        }
+        assert_eq!(power, 100.0);
+        assert_eq!(integral, 0.0);
+        assert_eq!(regulate(power, &mut integral, 0.0, 1.0), 88.0);
+        assert_eq!(regulate(0.0, &mut integral, 100.0, 600.0), 16.0);
+        assert_eq!(regulate(0.0, &mut integral, -10.0, 1.0), 0.0);
+    }
+
+    #[test]
+    fn simulated_thermal_load_recovers_without_large_overshoot() {
+        for (thermal_seconds, cooling, lag_seconds) in
+            [(20.0, 0.03, 5.0), (60.0, 0.01, 8.0), (180.0, 0.0025, 10.0)]
+        {
+            let target = 0.0;
+            let mut temperature = 20.0;
+            let mut power = 0.0;
+            let mut integral = 0.0;
+            let mut actuator = 0.0;
+            let mut minimum = temperature;
+            for second in 0..1200 {
+                power = regulate(power, &mut integral, temperature - target, 1.0);
+                actuator += (power - actuator) / lag_seconds;
+                temperature += (20.0 - temperature) / thermal_seconds - cooling * actuator;
+                minimum = temperature.min(minimum);
+                assert!((0.0..=100.0).contains(&power));
+                if second > 600 {
+                    assert!(
+                        (temperature - target).abs() < 0.5,
+                        "temperature {temperature}"
+                    );
+                }
+            }
+            assert!(minimum > target - 2.0, "overshoot {minimum}");
+        }
+    }
     #[test]
     fn observed_current_conversion_is_bounded_and_monotonic() {
         assert_eq!(power_dac(0.0), 255);

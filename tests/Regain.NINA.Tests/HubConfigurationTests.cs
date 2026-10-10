@@ -12,7 +12,7 @@ public sealed class HubConfigurationTests
         var reader = new HubConfiguration(Contract());
         var schema = reader.Root.GetProperty("$defs").GetProperty("CameraRecovery");
         var fields = reader.Fields(schema);
-        Assert.Equal(14, fields.Count);
+        Assert.Equal(15, fields.Count);
         Assert.Equal(3, fields.Single(f => f.Key == "maxRetries").Value!.Value.GetInt32());
         Assert.Equal(60, fields.Single(f => f.Key == "downloadTimeoutSeconds").Value!.Value.GetDouble());
         Assert.False(fields.Single(f => f.Key == "usbPortCycle").Value!.Value.GetBoolean());

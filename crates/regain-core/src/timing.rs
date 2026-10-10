@@ -287,7 +287,9 @@ mod tests {
             values.insert(
                 field.key.into(),
                 match field.value_type {
-                    RecoveryType::Integer(_, max) => serde_json::json!(max),
+                    RecoveryType::Integer(_, max) | RecoveryType::PowerOfTwo(_, max) => {
+                        serde_json::json!(max)
+                    }
                     RecoveryType::Number { maximum, .. } => serde_json::json!(maximum),
                     RecoveryType::Boolean => serde_json::json!(true),
                 },

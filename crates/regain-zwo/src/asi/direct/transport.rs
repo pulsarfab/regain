@@ -62,6 +62,7 @@ pub struct Camera {
     cooling: super::environment::CoolingQueue,
     identity: DeviceInfo,
     transfer_timeout: Cell<Duration>,
+    read_chunk_bytes: Cell<usize>,
     phase: Cell<&'static str>,
 }
 impl Camera {
@@ -76,6 +77,7 @@ impl Camera {
             cooling: super::environment::CoolingQueue::default(),
             identity: info.clone(),
             transfer_timeout: Cell::new(Duration::from_secs(60)),
+            read_chunk_bytes: Cell::new(1024 * 1024),
             phase: Cell::new("idle"),
         })
     }
@@ -122,6 +124,14 @@ impl Camera {
         }
         self.publish_environment()?;
         Ok(())
+    }
+    pub fn resume_cooling(&self, power: i64, prior: f64, previous_target: i64) -> Result<()> {
+        self.environment
+            .borrow_mut()
+            .as_mut()
+            .ok_or_else(|| anyhow::anyhow!("environment unavailable"))?
+            .resume_cooling(self, power, prior, previous_target)?;
+        self.publish_environment()
     }
     pub fn environment_control(&self, control: u32, value: Option<i64>) -> Result<i64> {
         let mut state = self.environment.borrow_mut();
@@ -180,6 +190,11 @@ impl Camera {
             "invalid transfer deadline"
         );
         self.transfer_timeout.set(Duration::from_secs_f64(seconds));
+        Ok(())
+    }
+    pub fn read_chunk_size(&self, kib: u32) -> Result<()> {
+        self.read_chunk_bytes
+            .set(super::settings::read_chunk_bytes(kib)?);
         Ok(())
     }
     pub fn phase(&self, phase: &'static str) {
@@ -265,9 +280,12 @@ impl Camera {
             "invalid frame size"
         );
         let mut data = vec![0; length];
+        // Keep the request boundaries identical throughout retained-frame retries.
+        let chunk_bytes = self.read_chunk_bytes.get();
+        let started = std::time::Instant::now();
         let budget = Budget::new(self.transfer_timeout.get());
         self.phase("downloading");
-        for (number, chunk) in data.chunks_mut(1024 * 1024).enumerate() {
+        for (number, chunk) in data.chunks_mut(chunk_bytes).enumerate() {
             ensure!(
                 !cancel.is_some_and(|c| c.load(std::sync::atomic::Ordering::Relaxed)),
                 "video read cancelled"
@@ -297,7 +315,7 @@ impl Camera {
                 }
                 failure["phase"] = serde_json::json!(self.phase.get());
                 failure["chunk"] = serde_json::json!(number);
-                failure["completedBytes"] = serde_json::json!(number * 1024 * 1024);
+                failure["completedBytes"] = serde_json::json!(number * chunk_bytes);
                 failure["frameBytes"] = serde_json::json!(length);
                 crate::asi::direct::diagnostics::details(
                     "warning",
@@ -309,10 +327,17 @@ impl Camera {
                 return Err(Failure(failure).into());
             }
             if let Some(proof) = continuity.as_mut() {
-                proof.observe(number, number * 1024 * 1024, length, chunk)?;
+                proof.observe(number, number * chunk_bytes, length, chunk)?;
             }
         }
         self.phase("transfer_complete");
+        crate::asi::direct::diagnostics::details(
+            "debug",
+            "transfer.complete",
+            "USB frame read completed",
+            serde_json::json!({"readChunkKiB":chunk_bytes / 1024,"frameBytes":length,
+                "requests":length.div_ceil(chunk_bytes),"elapsedUs":started.elapsed().as_micros()}),
+        );
         Ok(data)
     }
 }

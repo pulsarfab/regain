@@ -19,7 +19,7 @@ public sealed class RecoveryConfigurationTests
         Assert.Equal(new RecoveryOptions(),old);
         var sparse=JsonSerializer.Deserialize<RecoveryOptions>("""{"MaxRetries":0,"UsbPortCycle":true,"legacyExtension":1}""")!;
         Assert.Equal(old with {MaxRetries=0,UsbPortCycle=true},sparse);
-        Assert.Equal(14,JsonSerializer.SerializeToElement(old).EnumerateObject().Count());
+        Assert.Equal(15,JsonSerializer.SerializeToElement(old).EnumerateObject().Count());
         sparse.Validate();
     }
 

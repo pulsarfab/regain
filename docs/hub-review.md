@@ -8393,3 +8393,26 @@ Its signed installer installation/upgrade/uninstall and registry-publication
 fixture checks pass. The signing job is finalizing the separate camera kit;
 branch CI 38010332483 has seven green jobs and Windows regression still running
 at this checkpoint. Local UAC/Chooser acceptance remains open.
+
+## Main merge reconciliation (2026-10-09)
+
+The user requested merging Hub into main while keeping the next 0.5 patch on
+its separate maintenance train. Main now includes the 0.5.14 cooling/telemetry
+fixes and configurable direct USB read sizing. Conflicts retain Hub's generated
+recovery metadata and shared native/web forms. The read-size key, defaults,
+power-of-two choices and validation are declared in recovery.rs and exported
+to the Hub schema, standalone contract and managed options. Cooling resume
+updates real observation timestamps; simulation preserves the Hub telemetry
+sample format. Cached observations are cleared on worker replacement while the
+new cooling seed is also reset. Both get-observation and resume-cooling remain
+available. Historical environment gaps and acceptance limitations above remain
+open; this merge does not declare ASCOM-free Windows, physical LAN, sleep/wake
+or multi-device recovery validated, and does not release the 0.6 Hub.
+
+Reconciliation validation passes 296 Rust library tests across core, ZWO, Hub
+and Alpaca; four recovery compatibility tests; both browser contract suites;
+533 NINA tests (one existing skip); 13 focused managed recovery tests; x86/x64
+net48 recovery metadata fixtures; and the native ASCOM build. Formatting and
+all-target Clippy for the four changed Rust crates pass with warnings denied.
+The earlier full managed core run passed 102 cases; its sole field-count
+expectation was updated and passes in the focused rerun.

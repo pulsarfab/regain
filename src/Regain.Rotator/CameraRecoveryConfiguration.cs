@@ -52,7 +52,8 @@ public sealed class CameraRecoveryField(string key, JsonElement schema)
                 (Type == "integer" && (number != Math.Truncate(number) || number < int.MinValue || number > int.MaxValue)) ||
                 (Schema.TryGetProperty("minimum", out var minimum) && number < minimum.GetDouble()) ||
                 (Schema.TryGetProperty("exclusiveMinimum", out var exclusive) && number <= exclusive.GetDouble()) ||
-                (Schema.TryGetProperty("maximum", out var maximum) && number > maximum.GetDouble())) throw Invalid();
+                (Schema.TryGetProperty("maximum", out var maximum) && number > maximum.GetDouble()) ||
+                (Schema.TryGetProperty("enum", out var choices) && !choices.EnumerateArray().Any(choice => choice.GetDouble() == number))) throw Invalid();
             value = Type == "integer" ? (object)(int)number : number;
         }
         return JsonSerializer.SerializeToElement(value);

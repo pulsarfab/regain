@@ -25,6 +25,7 @@ public sealed class CameraSession : IDisposable
     private bool requiresReconnect, requiresCoolingSettle;
     private double? recoveryTemperature;
     private long? recoveryPower;
+    private long? recoveryTarget;
     public bool ControlConnectionAvailable { get; private set; }
     public CameraDescriptor Camera
     {
@@ -139,7 +140,7 @@ public sealed class CameraSession : IDisposable
             serial,
             recovery = JsonSerializer.SerializeToElement(Options, new JsonSerializerOptions(JsonSerializerDefaults.Web)),
             allowSdkFallback = sdkFallbackFactory is not null,
-            recoveryState = new { temperature = recoveryTemperature, power = recoveryPower, settle = requiresCoolingSettle }
+            recoveryState = new { temperature = recoveryTemperature, power = recoveryPower, target = recoveryTarget, settle = requiresCoolingSettle }
         }, token, Options.CommandTimeoutSeconds + (Options.UsbResetAfterFailures > 0 ? 60 : 0)).ConfigureAwait(false)).Result;
         var identity = result.GetProperty("serial");
         string? found = identity.ValueKind == JsonValueKind.String ? identity.GetString() : null;
@@ -403,6 +404,7 @@ public sealed class CameraSession : IDisposable
                     requiresReconnect = requiresCoolingSettle = false;
                     recoveryTemperature = null;
                     recoveryPower = null;
+                    recoveryTarget = null;
                     ControlConnectionAvailable = true;
                     State("Starting exposure");
                     DateTime started = DateTime.UtcNow;
@@ -411,6 +413,7 @@ public sealed class CameraSession : IDisposable
                         exposure.microseconds, exposure.dark,
                         readRetries = SupportsRetainedFrameReads || eligibleForRecapture ? Options.DirectReadRetries : 0,
                         transferTimeoutSeconds = Options.DownloadTimeoutSeconds,
+                        readChunkKiB = Options.DirectReadChunkKiB,
                         captureTimeoutSeconds = ReadyTimeoutSeconds(exposure.microseconds / 1e6) + Options.CommandTimeoutSeconds
                     } : exposure;
                     await Call("start", parameters, token).ConfigureAwait(false);
@@ -642,6 +645,7 @@ public sealed class CameraSession : IDisposable
             if (hasConnected && !requiresCoolingSettle) {
                 recoveryTemperature = observed.TryGetValue(8, out var t) ? t / 10.0 : null;
                 recoveryPower = observed.TryGetValue(15, out var p) ? p : null;
+                recoveryTarget = applied.TryGetValue(16, out var target) ? target : desired.GetValueOrDefault(16);
                 requiresCoolingSettle = true;
             }
             requiresReconnect = hasConnected;

@@ -76,7 +76,7 @@ assert.equal(description.coordination.cameraGroups.statusOpensSources, false);
 assert.equal(description.coordination.cameraGroups.cancellationPolicy, 'savedGroupPolicy');
 const recoverySchema = reader.root.$defs.CameraRecovery;
 const recoveryFields = reader.fields(recoverySchema);
-assert.equal(recoveryFields.length, 14);
+assert.equal(recoveryFields.length, 15);
 assert.equal(recoveryFields.find(f => f.key === 'maxRetries').value, 3);
 assert.equal(recoveryFields.find(f => f.key === 'downloadTimeoutSeconds').value, 60);
 assert.equal(recoveryFields.find(f => f.key === 'usbPortCycle').value, false);

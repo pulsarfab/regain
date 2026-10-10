@@ -58,6 +58,8 @@ and `$XDG_CONFIG_HOME/Regain/Alpaca/cameras.json` on Unix, falling back to
 `$HOME/.config/Regain/Alpaca/cameras.json`. The log lives beside the settings
 and is also visible on the setup page. Keep the settings file when upgrading.
 
+**Direct USB read size (KiB)** is available in camera recovery settings (the Timeouts tab in native ASCOM, Advanced in NINA). It defaults to 1024 and accepts powers of two from 1 to 1024. The shared key is `recovery.directReadChunkKiB`; SDK mode ignores it. See [host read sizing versus SDK USB Traffic](transfer-recovery.md#limit-the-size-of-direct-usb-reads).
+
 ## Windows COM frontend
 
 Requires Windows x64, .NET Framework 4.8, the ASCOM Platform, and the ZWO Windows
@@ -130,12 +132,37 @@ ImageReady becomes true only for a completed image. Allow enough overall time
 in the client for reconnects and cooler recovery. Recovered failures are logged;
 an exhausted retry budget returns an ASCOM driver error.
 
-**Driver Info** in NINA and ASCOM reports the current recovery state, total retry
-count, a breakdown of replacement exposures, download retries and USB frame
-rereads, and the last failure. Counts cover the current or most recent capture
+**Driver Info** reports recovery state, total retry count and the last failure.
+NINA uses a short failure summary; full errors and the breakdown of replacement
+exposures, download retries and USB frame rereads remain in `Regain.Diagnostics`
+and the logs. ASCOM also includes the breakdown in Driver Info.
+Counts cover the current or most recent capture
 and reset when a new capture starts. The last failure remains visible after a
 successful recovery or subsequent healthy capture, until disconnect/reconnect.
 This status uses the shared recovery engine and does not start another exposure.
+
+### NINA cooling charts and logs
+
+While reconnecting, the retryable NINA camera returns its last observed
+temperature and cooler power. **Telemetry held** in Driver Info marks readings
+that cannot currently be refreshed. Fresh readings resume when controls recover.
+An unsupported measurement or a disconnected camera remains unavailable.
+This avoids sending a transient `NaN` into NINA's chart-axis calculation;
+held readings do not indicate that the camera maintained its temperature.
+
+The plugin forwards session events and worker diagnostics to NINA's log files
+in `%LOCALAPPDATA%\NINA\Logs`. Search for `PulsarFab regain` to find failures,
+worker processes, reconnects, cooling recovery and returned images. These files
+remain after disconnect or application exit, subject to NINA's log cleanup.
+Copy the relevant session log if you need to preserve it for a later investigation.
+Normal failure/recovery events use Information or Warning; Debug adds routine
+capture phases. Regain does not require a separate camera log directory.
+
+```powershell
+$logs = Get-ChildItem "$env:LOCALAPPDATA\NINA\Logs" -File |
+    Sort-Object LastWriteTime -Descending | Select-Object -First 5
+Select-String -Path $logs.FullName -Pattern 'PulsarFab regain'
+```
 
 By default, ready-frame downloads get two retries at any exposure length.
 Replacement exposures get three retries only at 30 seconds or less. Reconnects

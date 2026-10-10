@@ -12,7 +12,7 @@ internal static class RecoveryFixture
             try {
                 var original=JsonDocument.Parse("{\"usbPortCycle\":true,\"legacyExtension\":\"keep\"}").RootElement;
                 var form=new CameraRecoveryForm(original,_=>new StackPanel());
-                if(form.Editors.Count!=13) throw new InvalidOperationException("Wrong Windows recovery field set");
+                if(form.Editors.Count!=14) throw new InvalidOperationException("Wrong Windows recovery field set");
                 var reconnect=form.Editors.OfType<TextBox>().Single(e=>AutomationProperties.GetAutomationId(e)=="recovery-reconnectDelaySeconds");
                 reconnect.Text="0.000001";
                 var changed=form.Read();

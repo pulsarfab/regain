@@ -15,7 +15,8 @@ export function parseRecoveryValue(field, input) {
   if (!Number.isFinite(value) || (field.type === 'integer' && !Number.isInteger(value)) ||
       (field.minimum !== undefined && value < field.minimum) ||
       (field.exclusiveMinimum !== undefined && value <= field.exclusiveMinimum) ||
-      (field.maximum !== undefined && value > field.maximum)) return invalid();
+      (field.maximum !== undefined && value > field.maximum) ||
+      (field.enum !== undefined && !field.enum.includes(value))) return invalid();
   return value;
 }
 

@@ -25,7 +25,7 @@ public sealed partial class HubNativeTests
             var values=JsonSerializer.SerializeToElement(new RecoveryOptions {UsbPortCycle=true},
                 new JsonSerializerOptions {PropertyNamingPolicy=JsonNamingPolicy.CamelCase});
             var form=new CameraRecoveryForm(values,Section);
-            Assert.Equal(13,form.Editors.Count);
+            Assert.Equal(14,form.Editors.Count);
             var reader=new HubConfiguration(JsonDocument.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory,"hub-config.json"))).RootElement);
             var schema=reader.Root.GetProperty("$defs").GetProperty("CameraRecovery");
             Assert.Equal(JsonSerializer.Serialize(schema),JsonSerializer.Serialize(CameraRecoveryConfiguration.Schema));
@@ -36,6 +36,8 @@ public sealed partial class HubNativeTests
             Assert.True(changed.GetProperty("usbPortCycle").GetBoolean());
             var typed=JsonSerializer.Deserialize<RecoveryOptions>(changed.GetRawText(),new JsonSerializerOptions {PropertyNamingPolicy=JsonNamingPolicy.CamelCase})!;
             typed.Validate(); Assert.Equal(.000001,typed.ReconnectDelaySeconds);
+            Input("directReadChunkKiB").Text="3"; Assert.Throws<ArgumentException>(()=>form.Read());
+            Input("directReadChunkKiB").Text="64"; Assert.Equal(64,form.Read().GetProperty("directReadChunkKiB").GetInt32());
             Input("maxRetries").Text="1.5"; Assert.Throws<ArgumentException>(()=>form.Read());
             Input("maxRetries").Text="3";
             Input("reconnectDelaySeconds").Text="0"; Assert.Throws<ArgumentException>(()=>form.Read());

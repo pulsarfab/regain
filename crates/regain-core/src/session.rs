@@ -26,7 +26,9 @@ pub struct Session {
     applied: BTreeMap<i32, i64>,
     recovery_temperature: Option<f64>,
     recovery_power: Option<i64>,
+    recovery_target: Option<i64>,
     settle_required: bool,
+    cooling_seeded: bool,
     usb_target: Option<String>,
     cooling: cooling::Mailbox,
 }
@@ -65,7 +67,9 @@ impl Session {
             applied: BTreeMap::new(),
             recovery_temperature: None,
             recovery_power: None,
+            recovery_target: None,
             settle_required: false,
+            cooling_seeded: false,
             usb_target: None,
             cooling: cooling::Mailbox::default(),
         })
@@ -371,6 +375,9 @@ impl Session {
         self.recovery_power = power;
         self.settle_required = true;
     }
+    pub fn seed_recovery_target(&mut self, target: Option<i64>) {
+        self.recovery_target = target.filter(|v| (-40..=30).contains(v));
+    }
     pub fn queue_control(status: &SharedStatus, kind: i32, value: i64) -> Result<()> {
         let mut state = status.lock().unwrap();
         ensure!(
@@ -422,6 +429,11 @@ impl Session {
             let state = self.snapshot();
             self.recovery_temperature = state.values.get(&8).map(|v| *v as f64 / 10.);
             self.recovery_power = state.values.get(&15).copied();
+            self.recovery_target = self
+                .applied
+                .get(&16)
+                .copied()
+                .or_else(|| state.values.get(&16).copied());
             self.settle_required = true;
         }
         self.status.lock().unwrap().control_connection_available = false;
@@ -577,6 +589,7 @@ impl Session {
         // Values retain desired recovery settings; old evidence cannot describe
         // a replacement worker or its newly negotiated capabilities.
         self.status.lock().unwrap().observations.clear();
+        self.cooling_seeded = false;
         let (result, _) = self
             .call(
                 "open",
@@ -759,6 +772,30 @@ impl Session {
                     .observations
                     .insert(kind, observation);
             }
+        }
+        if self.direct
+            && self.settle_required
+            && !self.cooling_seeded
+            && values.get(&17).is_some_and(|v| *v != 0)
+            && let (Some(power), Some(temperature)) =
+                (self.recovery_power, self.recovery_temperature)
+        {
+            self.call(
+                "resume-cooling",
+                json!({"power":power,"temperature":temperature,"previousTarget":self.recovery_target.or_else(|| values.get(&16).copied()).unwrap_or(0)}),
+                None,
+                token,
+            )
+            .await?;
+            self.cooling_seeded = true;
+            self.emit(
+                "info",
+                "cooling.resumed",
+                format!(
+                    "Resumed prior cooler demand {power}% at restored target {} C",
+                    values.get(&16).unwrap_or(&0)
+                ),
+            );
         }
         Ok(())
     }
@@ -1031,6 +1068,7 @@ impl Session {
         self.settle_required = false;
         self.recovery_temperature = None;
         self.recovery_power = None;
+        self.recovery_target = None;
         self.phase("Starting exposure");
         let started = Utc::now();
         let seconds = e.microseconds as f64 / 1e6;
@@ -1046,6 +1084,7 @@ impl Session {
             params["captureTimeoutSeconds"] =
                 json!(self.ready_timeout(seconds) + options.command_timeout_seconds);
             params["transferTimeoutSeconds"] = json!(options.download_timeout_seconds);
+            params["readChunkKiB"] = json!(options.direct_read_chunk_kib);
         }
         self.call("start", params, None, token).await?;
         self.phase("Exposing");
@@ -2040,6 +2079,96 @@ mod tests {
             session.close().await;
         }
     }
+    #[tokio::test]
+    async fn direct_usb_read_size_survives_worker_replacement_and_leaves_sdk_bandwidth_unchanged() {
+        let token = CancellationToken::new();
+        let mut sel = selection(true);
+        sel.recovery.direct_read_chunk_kib = 64;
+        let mut s = Session::new(sel, runtime(), log()).unwrap();
+        s.connect(&token).await.unwrap();
+        assert!(!s.snapshot().controls[&6].writable);
+        assert_eq!(s.snapshot().values[&6], 40);
+        assert_eq!(
+            s.capture(exposure(), &token).await.unwrap().metadata["readChunkKiB"],
+            64
+        );
+        s.call("simulate-read-failures", json!({"count":3}), None, &token)
+            .await
+            .unwrap();
+        let frame = s.capture(exposure(), &token).await.unwrap();
+        assert_eq!(frame.metadata["recoveries"], 1);
+        assert_eq!(frame.metadata["readChunkKiB"], 64);
+        s.close().await;
+    }
+    #[test]
+    fn direct_usb_read_size_configuration_preserves_key_default_and_bounds() {
+        let old: RecoveryOptions = serde_json::from_value(json!({"directReadRetries":1})).unwrap();
+        assert_eq!(old.direct_read_chunk_kib, 1024);
+        let current: RecoveryOptions =
+            serde_json::from_value(json!({"directReadChunkKiB":64})).unwrap();
+        assert_eq!(current.direct_read_chunk_kib, 64);
+        assert_eq!(
+            serde_json::to_value(current).unwrap()["directReadChunkKiB"],
+            64
+        );
+        for value in [0, 3, 512, 1024, 2048, u32::MAX] {
+            let options = RecoveryOptions {
+                direct_read_chunk_kib: value,
+                ..RecoveryOptions::default()
+            };
+            assert_eq!(options.validate().is_ok(), matches!(value, 512 | 1024));
+        }
+    }
+    #[tokio::test]
+    async fn cooled_worker_recovery_restores_output_once_and_honors_warming_or_disable() {
+        let token = CancellationToken::new();
+        let mut sel = selection(true);
+        sel.name = "ZWO ASI585MM Pro".into();
+        let mut s = Session::new(sel, runtime(), log()).unwrap();
+        s.connect(&token).await.unwrap();
+        Session::queue_control(&s.status, 16, 10).unwrap();
+        Session::queue_control(&s.status, 17, 1).unwrap();
+        s.refresh(&token).await.unwrap();
+        s.call(
+            "resume-cooling",
+            json!({"power":40,"temperature":25.0,"previousTarget":10}),
+            None,
+            &token,
+        )
+        .await
+        .unwrap();
+        s.refresh(&token).await.unwrap();
+        assert_eq!(s.snapshot().values[&15], 40);
+        s.call("simulate-read-failures", json!({"count":3}), None, &token)
+            .await
+            .unwrap();
+        let frame = s.capture(exposure(), &token).await.unwrap();
+        assert_eq!(frame.metadata["recoveries"], 1);
+        assert_eq!(s.snapshot().values[&15], 40);
+        assert!(s.cooling_seeded);
+        // Ordinary refreshes must not repeatedly reseed the regulator.
+        s.call(
+            "resume-cooling",
+            json!({"power":30,"temperature":25.0,"previousTarget":10}),
+            None,
+            &token,
+        )
+        .await
+        .unwrap();
+        s.refresh(&token).await.unwrap();
+        assert_eq!(s.snapshot().values[&15], 30);
+        s.invalidate().await;
+        Session::queue_control(&s.status, 16, 11).unwrap();
+        s.refresh(&token).await.unwrap();
+        assert_eq!(s.snapshot().values[&15], 0); // A warmer requested target wins.
+        s.invalidate().await;
+        Session::queue_control(&s.status, 17, 0).unwrap();
+        s.refresh(&token).await.unwrap();
+        assert_eq!(s.snapshot().values[&17], 0);
+        assert!(!s.cooling_seeded);
+        s.close().await;
+    }
+
     #[tokio::test]
     async fn managed_white_balance_survives_worker_recovery_and_retains_locked_gains() {
         use crate::white_balance::{Gains, Mode, Output, Settings};
