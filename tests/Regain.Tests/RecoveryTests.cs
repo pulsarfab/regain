@@ -170,6 +170,31 @@ public class RecoveryTests
         Assert.Equal("Idle", session.Phase);
     }
     [Fact]
+    public async Task ReplacementOpenPreservesMeasuredTelemetryUntilFreshReads()
+    {
+        int starts = 0;
+        using var session = new CameraSession(Camera, () => {
+            var host = Host();
+            bool first = starts++ == 0;
+            host.CallAsync("simulation", new { temperature = first ? -123 : -124, coolerPower = first ? 0 : 5 },
+                TimeSpan.FromSeconds(15), default).GetAwaiter().GetResult();
+            if (first) host.CallAsync("fault", new { kind = "download" }, TimeSpan.FromSeconds(15), default).GetAwaiter().GetResult();
+            return host;
+        }, Fast with { MaxRetries = 1 });
+        var beforeFreshReads = new List<(long Temperature, long Power)>();
+        session.Diagnostic += text => {
+            if (text.StartsWith("Restoring cooling near"))
+                beforeFreshReads.Add((session.Value(8), session.Value(15)));
+        };
+        await session.ConnectAsync(default);
+        await session.RefreshAsync(default);
+        Assert.Equal(0, session.Value(15));
+        await session.CaptureAsync(Exposure, default);
+        Assert.Equal((-123L, 0L), Assert.Single(beforeFreshReads));
+        Assert.Equal(-124, session.Value(8));
+        Assert.Equal(5, session.Value(15));
+    }
+    [Fact]
     public async Task ExhaustionIsBounded()
     {
         int starts = 0;
