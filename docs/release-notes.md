@@ -1,4 +1,4 @@
-# PulsarFab regain 0.6.0.2
+# PulsarFab regain 0.6.0.3
 
 Regain 0.6 adds the **Regain Hub preview** and improves camera cancellation,
 live cooler control and recovery diagnostics. Standalone camera and accessory
@@ -29,7 +29,7 @@ integrations remain available alongside the Hub.
 
 The attached ASI585MM Pro passes the real NINA plugin API checks in SDK and
 direct mode: live cooler changes, abort/cancel cleanup, preserved worker and
-subsequent image downloads. See [physical acceptance](https://github.com/pulsarfab/regain/blob/v0.6.0.2/docs/camera-abort-acceptance.md)
+subsequent image downloads. See [physical acceptance](https://github.com/pulsarfab/regain/blob/v0.6.0.3/docs/camera-abort-acceptance.md)
 for measurements and test boundaries.
 
 ## Regain Hub preview
@@ -48,20 +48,20 @@ native NINA, Windows ASCOM, Alpaca, or several frontends together.
 
 Hub remains a preview. Installed NINA and mixed physical-camera/COM/Alpaca
 acceptance evidence is recorded in the repository; environment and conformance
-limits remain in [Hub acceptance](https://github.com/pulsarfab/regain/blob/v0.6.0.2/docs/hub-acceptance.md) and [the plan](https://github.com/pulsarfab/regain/blob/v0.6.0.2/docs/hub-plan.md).
+limits remain in [Hub acceptance](https://github.com/pulsarfab/regain/blob/v0.6.0.3/docs/hub-acceptance.md) and [the plan](https://github.com/pulsarfab/regain/blob/v0.6.0.3/docs/hub-plan.md).
 An ASCOM-free Windows host and a second LAN host have not been available for
 acceptance. Preview status does not waive the release's signing, package or
 installer lifecycle checks.
 
 ## Installation and support
 
-Use `Regain-0.6.0.2.zip` for NINA or
-`Regain-ASCOM-0.6.0.2-win-x64-setup.exe` for Windows ASCOM and Alpaca.
+Use `Regain-0.6.0.3.zip` for NINA or
+`Regain-ASCOM-0.6.0.3-win-x64-setup.exe` for Windows ASCOM and Alpaca.
 Windows programs and the installer are signed by StackFoundry LLC. Rust crates
 use version 0.6.0, including the new `regain-hub` crate. Minimum NINA version and
 plugin identity are unchanged.
 
 Direct USB support remains experimental and model-specific. See
-[supported hardware](https://github.com/pulsarfab/regain/blob/v0.6.0.2/README.md#supported-hardware),
-[capture behavior](https://github.com/pulsarfab/regain/blob/v0.6.0.2/docs/ascom.md#capture-behavior),
-[transfer recovery](https://github.com/pulsarfab/regain/blob/v0.6.0.2/docs/transfer-recovery.md) and [Hub setup](https://github.com/pulsarfab/regain/blob/v0.6.0.2/docs/hub-setup.md).
+[supported hardware](https://github.com/pulsarfab/regain/blob/v0.6.0.3/README.md#supported-hardware),
+[capture behavior](https://github.com/pulsarfab/regain/blob/v0.6.0.3/docs/ascom.md#capture-behavior),
+[transfer recovery](https://github.com/pulsarfab/regain/blob/v0.6.0.3/docs/transfer-recovery.md) and [Hub setup](https://github.com/pulsarfab/regain/blob/v0.6.0.3/docs/hub-setup.md).

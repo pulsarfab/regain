@@ -134,8 +134,10 @@ async fn cancelled_dispatched_requests_keep_capacity_until_reply_and_commands_ar
     assert_eq!(c.await.unwrap().unwrap(), false);
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn connection_loss_and_deadlines_make_dispatched_mutations_uncertain() {
+    // Advance deadlines only after the in-memory peer has received dispatch.
+    // A busy host must not turn this into an unsent-request/EOF race.
     for lose_peer in [false, true] {
         let (client, mut peer) = fake(
             ClientLimits {
