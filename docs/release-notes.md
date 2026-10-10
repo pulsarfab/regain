@@ -1,4 +1,4 @@
-# PulsarFab regain 0.5.15.0
+# PulsarFab regain 0.5.15.1
 
 Adds optional host USB read sizing for SDK-less cameras.
 
@@ -23,5 +23,11 @@ Includes the 0.5.14 cooler-recovery, retained NINA cooling telemetry and compact
 retry-status fixes. Hardware support and retry budgets are unchanged.
 The Hub remains on main for the 0.6 train and is not included in this 0.5 release.
 
-Use `Regain-0.5.15.0.zip` for NINA, or the signed Windows ASCOM installer
-`Regain-ASCOM-0.5.15.0-win-x64-setup.exe`. Rust crates use version 0.5.15.
+Use `Regain-0.5.15.1.zip` for NINA, or the signed Windows ASCOM installer
+`Regain-ASCOM-0.5.15.1-win-x64-setup.exe`. Rust crates use version 0.5.15.
+
+
+Managed telemetry stays at its last measured temperature and cooler power while
+opening a replacement worker. Open-response defaults no longer briefly replace
+those readings before fresh telemetry arrives. The NINA recovery acceptance
+fixture now holds the reconnect phase explicitly instead of racing fresh reads.
