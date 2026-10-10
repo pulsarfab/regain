@@ -413,6 +413,7 @@ public sealed class CameraSession : IDisposable
                         exposure.microseconds, exposure.dark,
                         readRetries = SupportsRetainedFrameReads || eligibleForRecapture ? Options.DirectReadRetries : 0,
                         transferTimeoutSeconds = Options.DownloadTimeoutSeconds,
+                        readChunkKiB = Options.DirectReadChunkKiB,
                         captureTimeoutSeconds = ReadyTimeoutSeconds(exposure.microseconds / 1e6) + Options.CommandTimeoutSeconds
                     } : exposure;
                     await Call("start", parameters, token).ConfigureAwait(false);

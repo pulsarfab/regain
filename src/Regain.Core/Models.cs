@@ -60,10 +60,13 @@ public sealed record RecoveryOptions
     // Retry the same download only while the SDK still reports a ready frame.
     public int ReadyFrameDownloadRetries { get; init; } = 2;
     public int DirectReadRetries { get; init; } = 2;
+    public int DirectReadChunkKiB { get; init; } = 1024;
     public int UsbResetAfterFailures { get; init; } = 0;
     public bool UsbPortCycle { get; init; } = false;
     public void Validate()
     {
+        if (DirectReadChunkKiB is < 1 or > 1024 || (DirectReadChunkKiB & (DirectReadChunkKiB - 1)) != 0)
+            throw new ArgumentOutOfRangeException(nameof(DirectReadChunkKiB), "Direct USB read size must be a power of two from 1 to 1024 KiB.");
         if (!double.IsFinite(MaximumRetryExposureSeconds) || MaximumRetryExposureSeconds < 0 || MaximumRetryExposureSeconds > 86400)
             throw new ArgumentOutOfRangeException(nameof(MaximumRetryExposureSeconds));
         if (MaxRetries is < 0 or > 20 || ReadyFrameDownloadRetries is < 0 or > 5 || DirectReadRetries is < 0 or > 5 || UsbResetAfterFailures is < 0 or > 20 || CoolingStableSamples is < 1 or > 60)

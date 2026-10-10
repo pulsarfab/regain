@@ -33,6 +33,11 @@ Use **PulsarFab regain Retryable Camera** in NINA, a native ASCOM camera entry,
 or an Alpaca camera slot. All three use the same recovery engine.
 [Choose a camera mode](https://pulsarfab.com/docs/regain/cameras.html#backend).
 
+**Direct USB read size** optionally limits each host request, from 1 KiB to the
+default 1 MiB. Smaller requests add overhead; this is separate from the SDK's
+USB Traffic percentage and does not change USB speed.
+[USB read sizing and measurements](docs/transfer-recovery.md#limit-the-size-of-direct-usb-reads).
+
 NINA FITS files record the camera model in `INSTRUME`; connection labels and
 slot names stay separate. [Camera metadata and verification](docs/nina-camera-fits.md).
 

@@ -240,6 +240,22 @@ public class RecoveryTests
         Assert.Throws<ArgumentOutOfRangeException>(() => (Fast with { MaxRetries = 100 }).Validate());
         Assert.Throws<ArgumentOutOfRangeException>(() => (Fast with { DownloadTimeoutSeconds = double.NaN }).Validate());
     }
+    [Theory]
+    [InlineData(0, false)]
+    [InlineData(1, true)]
+    [InlineData(3, false)]
+    [InlineData(64, true)]
+    [InlineData(1024, true)]
+    [InlineData(2048, false)]
+    public void DirectUsbReadSizeUsesPacketSafeBoundsAndStableJsonKey(int size, bool valid)
+    {
+        var options = Fast with { DirectReadChunkKiB = size };
+        if (valid) options.Validate();
+        else Assert.Throws<ArgumentOutOfRangeException>(() => options.Validate());
+        var json = System.Text.Json.JsonSerializer.SerializeToElement(options, new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web));
+        Assert.Equal(size, json.GetProperty("directReadChunkKiB").GetInt32());
+        Assert.Equal(1024, System.Text.Json.JsonSerializer.Deserialize<RecoveryOptions>("{}")!.DirectReadChunkKiB);
+    }
     [Fact]
     public async Task WarmCameraDoesNotResumeBeforeCoolingDeadlineAndFailsBoundedly()
     {

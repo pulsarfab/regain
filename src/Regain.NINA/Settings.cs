@@ -145,12 +145,14 @@ internal static class Settings
         AddFields(advanced,
             (nameof(RecoveryOptions.CommandTimeoutSeconds), "Command timeout (s)"),
             (nameof(RecoveryOptions.DownloadTimeoutSeconds), "Download timeout (s)"),
+            (nameof(RecoveryOptions.DirectReadChunkKiB), "Direct USB read size (KiB)"),
             (nameof(RecoveryOptions.ExposureGraceSeconds), "Exposure grace period (s)"),
             (nameof(RecoveryOptions.ReadyFrameDownloadRetries), "SDK read retries (0-5)"),
             (nameof(RecoveryOptions.DirectReadRetries), "Direct read retries (0-5)"));
         entries[nameof(RecoveryOptions.ReadyFrameDownloadRetries)].ToolTip = "Default: 2. Requires a ready frame in the SDK. Independent of the recapture exposure limit.";
         entries[nameof(RecoveryOptions.DirectReadRetries)].ToolTip = "Default: 2. ASI585, ASI2600, ASI6200, ASI662 and ASI676 retry the same retained frame at any exposure length. Guide retries read a new frame and obey the exposure limit.";
         var status = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 8) };
+        entries[nameof(RecoveryOptions.DirectReadChunkKiB)].ToolTip = "Direct mode only. Power of two from 1 to 1024 KiB; default 1024. Smaller host requests add overhead. This is not the SDK USB Traffic percentage, a fixed MB/s cap, or a USB speed selector.";
         footer.Children.Add(status);
         var actions = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
         var cancelButton = new Button { Content = "Cancel", IsCancel = true, MinWidth = 88, Padding = new Thickness(16, 6, 16, 6), Margin = new Thickness(0, 0, 8, 0) };

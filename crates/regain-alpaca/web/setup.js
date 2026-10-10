@@ -10,6 +10,7 @@ const fields = [
   ['retry-fields','reconnectDelaySeconds','Reconnect delay (s)',.001,3600,.1],
   ['timeout-fields','commandTimeoutSeconds','Command timeout (s)',.001,3600,1],
   ['timeout-fields','downloadTimeoutSeconds','Download timeout (s)',.001,3600,1],
+  ['timeout-fields','directReadChunkKiB','Direct USB read size (KiB; powers of two, 1-1024)',1,1024,1],
   ['timeout-fields','exposureGraceSeconds','Exposure grace (s)',.001,3600,1],
   ['cooling-fields','coolingTimeoutSeconds','Cooling timeout (s)',.001,3600,1],
   ['cooling-fields','temperatureToleranceC','Temperature tolerance (°C)',.001,3600,.1],
@@ -17,7 +18,7 @@ const fields = [
   ['cooling-fields','coolingSampleSeconds','Sample interval (s)',.001,3600,.1]
 ];
 const controls = [[0,'Gain'],[5,'Offset'],[6,'USB limit'],[21,'Dew heater (0–1)'],[22,'Fan speed'],[23,'Power LED brightness']];
-for(const [parent,key,text,min,max,step] of fields){const label=document.createElement('label');label.textContent=text;const input=document.createElement('input');Object.assign(input,{type:'number',id:key,min,max,step:min===.001?'any':step,required:true});label.append(input);$(parent).append(label);}
+for(const [parent,key,text,min,max,step] of fields){const label=document.createElement('label');label.textContent=text;const input=document.createElement(key==='directReadChunkKiB'?'select':'input');if(key==='directReadChunkKiB'){for(let size=1;size<=1024;size*=2)input.add(new Option(`${size} KiB${size===1024?' (default)':''}`,size));input.title='Direct mode only. Smaller host requests add overhead. Separate from SDK USB Traffic; does not select USB speed or set a fixed MB/s cap.';}else Object.assign(input,{type:'number',min,max,step:min===.001?'any':step});Object.assign(input,{id:key,required:true});label.append(input);$(parent).append(label);}
 for(const [id,text] of controls){const label=document.createElement('label');label.textContent=text;const input=document.createElement('input');Object.assign(input,{type:'number',id:'control-'+id,step:1,placeholder:'Keep camera setting'});label.append(input);$('control-fields').append(label);}
 async function api(url,body){const response=await fetch(url,body===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const text=await response.text();let value;try{value=text?JSON.parse(text):null;}catch{throw Error(text||response.statusText);}if(!response.ok)throw Error(value?.error||response.statusText);return value;}
 function status(text,error=false){$('status').textContent=text;$('status').classList.toggle('error',error);}

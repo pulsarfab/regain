@@ -62,7 +62,19 @@ def main():
                     profile = request("/setup/api/state")["cameras"][0]["profile"]
                     profile.update(camera=descriptor, serial=None, direct=direct, label="My imaging train")
                     profile["recovery"]["reconnectDelaySeconds"] = 0.05
+                    profile["recovery"]["directReadChunkKiB"] = 64
                     request("/setup/api/cameras/0", profile)
+                    assert request("/setup/api/state")["cameras"][0]["profile"]["recovery"]["directReadChunkKiB"] == 64
+                    if selected == "ZWO ASI585MM Pro":
+                        invalid = json.loads(json.dumps(profile))
+                        invalid["recovery"]["directReadChunkKiB"] = 3
+                        try:
+                            request("/setup/api/cameras/0", invalid)
+                        except urllib.error.HTTPError as error:
+                            assert error.code == 400, error.code
+                        else:
+                            raise AssertionError('Invalid USB read size accepted')
+                        assert request("/setup/api/state")["cameras"][0]["profile"]["recovery"]["directReadChunkKiB"] == 64
                     published = request("/management/v1/configureddevices")["Value"]
                     published_camera = next(d for d in published if d["DeviceType"] == "Camera" and d["DeviceNumber"] == 0)
                     assert published_camera["DeviceName"] == descriptor["name"]
