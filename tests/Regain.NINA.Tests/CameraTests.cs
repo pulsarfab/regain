@@ -105,6 +105,8 @@ public class CameraTests
         string root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
         int starts = 0;
         var loggedFailure = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var replacementOpening = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseReplacement = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var settings = new Mock<ICameraSettings>();
         settings.SetupProperty(s => s.Timeout, 1);
         var profiles = new Mock<IProfileService>();
@@ -139,7 +141,13 @@ public class CameraTests
             }, profiles.Object);
         var infoUpdates = new System.Collections.Concurrent.ConcurrentQueue<string>();
         camera.PropertyChanged += (_, change) => {
-            if (change.PropertyName == nameof(camera.DriverInfo)) infoUpdates.Enqueue(camera.DriverInfo);
+            if (change.PropertyName != nameof(camera.DriverInfo)) return;
+            var info = camera.DriverInfo;
+            infoUpdates.Enqueue(info);
+            if (starts > 1 && info.StartsWith("state: Opening;")) {
+                replacementOpening.TrySetResult();
+                releaseReplacement.Task.GetAwaiter().GetResult();
+            }
         };
         try
         {
@@ -155,6 +163,17 @@ public class CameraTests
             var ready = camera.WaitUntilExposureIsReady(ninaDeadline.Token);
             bool sawRecovery = false;
             bool sawHeldTelemetry = false;
+            if (!reread) {
+                // Hold the opening diagnostic so these assertions cannot race
+                // a legitimate fresh telemetry read during cooling recovery.
+                await replacementOpening.Task.WaitAsync(ninaDeadline.Token);
+                Assert.Contains("telemetry held", camera.DriverInfo);
+                Assert.Equal(priorTemperature, camera.Temperature);
+                Assert.Equal(priorPower, camera.CoolerPower);
+                sawHeldTelemetry = true;
+                sawRecovery = true;
+                releaseReplacement.TrySetResult();
+            }
             while (!ready.IsCompleted) {
                 var info = camera.DriverInfo;
                 sawRecovery |= info.Contains("retries: 1") && (info.Contains("Rereading ready frame") || info.Contains("Reconnect delay"));
@@ -164,11 +183,7 @@ public class CameraTests
                 axisMax = Math.Max(camera.Temperature, axisMax);
                 Assert.True(double.IsFinite(axisMin) && double.IsFinite(axisMax));
                 Assert.True(double.IsFinite(camera.CoolerPower));
-                if (info.Contains("telemetry held")) {
-                    sawHeldTelemetry = true;
-                    Assert.Equal(priorTemperature, camera.Temperature);
-                    Assert.Equal(priorPower, camera.CoolerPower);
-                }
+                sawHeldTelemetry |= info.Contains("telemetry held");
                 await Task.Delay(20, ninaDeadline.Token);
             }
             await ready;
@@ -201,7 +216,7 @@ public class CameraTests
             Assert.Contains("[command.failed]", diagnostic);
             Assert.Contains("ASI error 11", diagnostic);
         }
-        finally { camera.Disconnect(); }
+        finally { releaseReplacement.TrySetResult(); camera.Disconnect(); }
     }
     [Theory]
     [InlineData(false)]
