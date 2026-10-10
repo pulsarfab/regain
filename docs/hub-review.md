@@ -8389,4 +8389,7 @@ checks. Final stock panel passes remain separate from this diagnostic result.
 Candidate `38010328546` at `262d1bb` is downloaded and signature-verified as
 StackFoundry LLC, SHA256
 `9FF016B9F2DFD452A9C2DEC916D868D38DBD2CC4D6703E660AF7DB315EDCF53D`.
-Its signed installer lifecycle and branch CI are pending at this checkpoint.
+Its signed installer installation/upgrade/uninstall and registry-publication
+fixture checks pass. The signing job is finalizing the separate camera kit;
+branch CI 38010332483 has seven green jobs and Windows regression still running
+at this checkpoint. Local UAC/Chooser acceptance remains open.
