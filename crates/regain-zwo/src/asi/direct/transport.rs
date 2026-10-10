@@ -64,6 +64,7 @@ pub struct Camera {
     transfer_timeout: Cell<Duration>,
     read_chunk_bytes: Cell<usize>,
     phase: Cell<&'static str>,
+    capture_cancel: RefCell<Option<std::sync::Arc<std::sync::atomic::AtomicBool>>>,
 }
 impl Camera {
     pub fn locator(&self) -> String {
@@ -79,6 +80,7 @@ impl Camera {
             transfer_timeout: Cell::new(Duration::from_secs(60)),
             read_chunk_bytes: Cell::new(1024 * 1024),
             phase: Cell::new("idle"),
+            capture_cancel: RefCell::new(None),
         })
     }
     pub fn enable_environment(
@@ -117,12 +119,30 @@ impl Camera {
         self.environment.borrow().is_some()
     }
     pub fn service_environment(&self) -> Result<()> {
+        self.check_capture_cancelled()?;
         self.cooling
             .service(|control, value| self.environment_control(control, Some(value)));
         if let Some(environment) = self.environment.borrow_mut().as_mut() {
             environment.service(self)?;
         }
         self.publish_environment()?;
+        Ok(())
+    }
+    pub(super) fn capture_cancellation(
+        &self,
+        cancel: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
+    ) {
+        *self.capture_cancel.borrow_mut() = cancel;
+    }
+    fn check_capture_cancelled(&self) -> Result<()> {
+        if self
+            .capture_cancel
+            .borrow()
+            .as_ref()
+            .is_some_and(|flag| flag.load(std::sync::atomic::Ordering::Relaxed))
+        {
+            return Err(super::completion::CaptureCancelled.into());
+        }
         Ok(())
     }
     pub fn resume_cooling(&self, power: i64, prior: f64, previous_target: i64) -> Result<()> {

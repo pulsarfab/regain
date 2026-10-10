@@ -1,3 +1,23 @@
+# PulsarFab regain 0.6 — camera fixes (unreleased)
+
+- Preserve the camera worker and cooler after an acknowledged capture abort.
+  Failed or timed-out stops still retire the worker before another capture.
+- Wait for abort cleanup before NINA restarts capture, and distinguish explicit
+  client aborts from readiness timeouts. Capture numbers identify start and
+  cancellation events in NINA logs.
+- Apply cooler target and enable changes during long exposures through the
+  shared acknowledged control path. Direct cooling responds immediately to
+  enable and setpoint changes, retains steady load through reconnect, and adds
+  output for a colder target or a warming sensor. SDK mode retains its vendor
+  regulator.
+- Report retries across abandoned and successful attempts in recovery logs,
+  while keeping the delivered frame's retained-read count separately.
+
+Regression checks use SDK/direct simulated workers, NINA capture/abort/restart
+flows and thermal models. These changes have not yet had physical camera
+validation. See [capture behavior](ascom.md#capture-behavior) and
+[transfer recovery](transfer-recovery.md).
+
 # PulsarFab regain 0.5.10.0
 
 Adds experimental SDK-free support for the **ZWO ASI585MM Pro** in NINA,

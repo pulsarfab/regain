@@ -183,9 +183,17 @@ compatible ROI. PulsarFab regain does not pad images with invented edge pixels.
 
 StopExposure, asymmetric binning, pulse guiding, fast readout, live view, and
 trigger modes are not implemented. Capability properties report this. Abort
-discards the incomplete image. Temperature and cooler power update during
-exposures; pending cooler changes apply afterward. Disconnect every client
-before editing setup.
+discards the incomplete image. An acknowledged abort preserves the worker and
+cooling state; a failed or timed-out stop retires the worker before reuse.
+NINA waits for abort cleanup before allowing the next capture, and records an
+explicit client abort separately from a readiness timeout. Capture start and
+cancellation records include a capture number in NINA's log.
+
+Temperature and cooler power update during exposures. Cooler target and enable
+changes use the shared acknowledged control path during capture: setters return
+after hardware write and readback, rather than reporting queued intent as applied.
+They can fail if the camera is unavailable or the command deadline expires.
+Disconnect every client before editing setup.
 
 ## Build and test
 

@@ -549,6 +549,9 @@ fn capture_native(
             match attempt {
                 Ok(data) => break data,
                 Err(error) => {
+                    if error.is::<super::completion::CaptureCancelled>() {
+                        return Err(error);
+                    }
                     crate::asi::direct::diagnostics::read_failure(
                         "ASI2600MM Pro",
                         &error,

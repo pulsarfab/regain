@@ -1,7 +1,24 @@
 //! A cleanup failure does not invalidate pixels already in host memory.
 use anyhow::Result;
 use serde_json::Value;
+/// Only a successfully stopped acquisition can acknowledge cooperative abort.
+#[derive(Debug)]
+pub(super) struct CaptureCancelled;
+impl std::fmt::Display for CaptureCancelled {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Capture cancelled; camera stopped")
+    }
+}
+impl std::error::Error for CaptureCancelled {}
 pub fn finish(result: Result<(Value, Vec<u8>)>, cleanup: Result<()>) -> Result<(Value, Vec<u8>)> {
+    if result
+        .as_ref()
+        .err()
+        .is_some_and(|e| e.is::<CaptureCancelled>())
+        && let Err(error) = &cleanup
+    {
+        anyhow::bail!("Capture cancelled but camera stop failed: {error:#}");
+    }
     if let Err(error) = &cleanup {
         crate::asi::direct::diagnostics::log(
             "warning",
@@ -42,6 +59,21 @@ pub fn finish(result: Result<(Value, Vec<u8>)>, cleanup: Result<()>) -> Result<(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn cancellation_only_acknowledges_successful_cleanup() {
+        assert!(
+            finish(Err(CaptureCancelled.into()), Ok(()))
+                .unwrap_err()
+                .is::<CaptureCancelled>()
+        );
+        let error = finish(
+            Err(CaptureCancelled.into()),
+            Err(anyhow::anyhow!("stop failed")),
+        )
+        .unwrap_err();
+        assert!(!error.is::<CaptureCancelled>());
+        assert!(error.to_string().contains("stop failed"));
+    }
     #[test]
     fn preserves_valid_pixels_and_original_acquisition_errors() {
         let (meta, pixels) = finish(

@@ -13,6 +13,7 @@ public sealed class CameraSession : IDisposable
     public bool UsingSdkFallback => usingFallback;
     private readonly SemaphoreSlim operation = new(1);
     private readonly object sync = new();
+    private readonly object coolingSync = new();
     private readonly Dictionary<int, long> desired = new();
     private readonly Dictionary<int, long> observed = new();
     private readonly Dictionary<int, long> applied = new();
@@ -193,6 +194,34 @@ public sealed class CameraSession : IDisposable
             throw new NotSupportedException($"Control {control} unavailable");
         if (value < cap.Min || value > cap.Max)
             throw new ArgumentOutOfRangeException(nameof(value));
+        if (supervised && control is 16 or 17)
+        {
+            // The Rust owner services this acknowledged mailbox during capture.
+            // Do not report queued intent as applied hardware state.
+            lock (coolingSync)
+            {
+                HostClient owner;
+                lock (sync)
+                {
+                    ObjectDisposedException.ThrowIf(disposed, this);
+                    if (!ControlConnectionAvailable || host is null)
+                        throw new IOException("Camera cooling controls are unavailable");
+                    owner = host;
+                }
+                using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(Options.CommandTimeoutSeconds + 2));
+                var reply = owner.CallAsync("set-cooling", new { control, value, timeoutSeconds = Options.CommandTimeoutSeconds },
+                    TimeSpan.FromSeconds(Options.CommandTimeoutSeconds + 2), deadline.Token).GetAwaiter().GetResult();
+                long acknowledged = reply.Result.GetInt64();
+                if (acknowledged != value) throw new IOException("Camera cooler readback differs from request");
+                lock (sync)
+                {
+                    ObjectDisposedException.ThrowIf(disposed, this);
+                    if (host != owner) throw new IOException("Camera connection changed during cooler command");
+                    desired[control] = observed[control] = acknowledged;
+                }
+            }
+            return;
+        }
         lock (sync)
         {
             ObjectDisposedException.ThrowIf(disposed, this);
@@ -204,10 +233,11 @@ public sealed class CameraSession : IDisposable
         lock (sync)
             return new(desired);
     }
-    private async Task Apply(Dictionary<int, long> values, CancellationToken token)
+    private async Task Apply(Dictionary<int, long> values, CancellationToken token, bool restoreCooling = false)
     {
         foreach (var (c, v) in values.OrderBy(k => k.Key == 17 ? 100 : k.Key).ToArray())
         {
+            if (supervised && !restoreCooling && c is 16 or 17) continue;
             if (applied.TryGetValue(c, out var previous) && previous == v)
                 continue;
             // A direct fixed USB limit becomes writable on SDK fallback; preserve it.
@@ -280,7 +310,7 @@ public sealed class CameraSession : IDisposable
         KillHost();
         await Task.Delay(TimeSpan.FromSeconds(Options.ReconnectDelaySeconds), token).ConfigureAwait(false);
         await OpenAsync(token).ConfigureAwait(false);
-        await Apply(Snapshot(), token).ConfigureAwait(false);
+        await Apply(Snapshot(), token, restoreCooling: true).ConfigureAwait(false);
         requiresReconnect = false;
         ControlConnectionAvailable = true;
         Log($"Camera controls restored using {Backend}; no replacement exposure taken");
@@ -525,6 +555,8 @@ public sealed class CameraSession : IDisposable
             token.ThrowIfCancellationRequested();
             // Drain each bounded supervisor reply before sending abort. Cancelling
             // a pipe read mid-message would force HostClient to kill the supervisor.
+            // Cooler settings were already acknowledged by Set. Replaying a
+            // capture-start snapshot could overwrite a newer live cooler edit.
             await Apply(requested, CancellationToken.None).ConfigureAwait(false);
             token.ThrowIfCancellationRequested();
             await Call("start", exposure, CancellationToken.None).ConfigureAwait(false);
@@ -648,7 +680,7 @@ public sealed class CameraSession : IDisposable
             if (hasConnected && !requiresCoolingSettle) {
                 recoveryTemperature = observed.TryGetValue(8, out var t) ? t / 10.0 : null;
                 recoveryPower = observed.TryGetValue(15, out var p) ? p : null;
-                recoveryTarget = applied.TryGetValue(16, out var target) ? target : desired.GetValueOrDefault(16);
+                recoveryTarget = !supervised && applied.TryGetValue(16, out var target) ? target : desired.GetValueOrDefault(16);
                 requiresCoolingSettle = true;
             }
             requiresReconnect = hasConnected;

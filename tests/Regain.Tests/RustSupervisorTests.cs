@@ -38,6 +38,7 @@ public class RustSupervisorTests
         Assert.Equal(200, frame.Controls[0]);
         Assert.True(host.IsAlive);
         Assert.Contains(log, m => m.Contains("capture.retry"));
+        Assert.Contains(log, m => m.Contains("capture.recovered") && m.Contains("2 retained-frame retries across all attempts"));
         Assert.Equal(usbThreshold, log.Count(m => m.Contains("\"event\":\"usb.reset\"")));
         var lastFailure = session.RetryStatus.LastFailure;
         await session.CaptureAsync(Request, default);

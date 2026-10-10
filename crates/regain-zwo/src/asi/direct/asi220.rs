@@ -209,6 +209,9 @@ pub fn capture(c: &Camera, info: &Value, s: &Settings, bin: u32) -> Result<(Valu
             let frame = match c.read_frame_wait(bytes as usize, wait) {
                 Ok(frame) => frame,
                 Err(error) => {
+                    if error.is::<super::completion::CaptureCancelled>() {
+                        return Err(error);
+                    }
                     crate::asi::direct::diagnostics::read_failure(
                         "ASI220MM Mini",
                         &error,

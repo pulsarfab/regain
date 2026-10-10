@@ -20,6 +20,7 @@ struct Capture {
 struct Supervisor {
     engine: Arc<AsyncMutex<Option<Session>>>,
     status: Option<SharedStatus>,
+    cooling: Option<regain_core::cooling::CoolingHandle>,
     capture: Arc<Mutex<Capture>>,
     task: Option<tokio::task::JoinHandle<()>>,
     runtime: Runtime,
@@ -44,6 +45,7 @@ impl Supervisor {
             session.close().await;
         }
         self.status = None;
+        self.cooling = None;
     }
     async fn command(&mut self, method: &str, p: Value) -> Result<(Value, Arc<[u8]>)> {
         let mut pixels: Arc<[u8]> = Arc::from([]);
@@ -106,6 +108,7 @@ impl Supervisor {
                     session.seed_recovery_target(p["recoveryState"]["target"].as_i64());
                 }
                 let state = session.snapshot();
+                self.cooling = Some(session.cooling());
                 self.status = Some(session.status.clone());
                 *self.engine.lock().await = Some(session);
                 json!({"info":state.info,"serial":state.serial,"sdkVersion":state.sdk_version,"backend":state.backend,"sdkFallback":state.sdk_fallback,"supervised":true,"controls":state.controls.values().collect::<Vec<_>>()})
@@ -147,6 +150,31 @@ impl Supervisor {
                     session.refresh(&token).await?;
                 }
                 Value::Null
+            }
+            "set-cooling" => {
+                let kind = p["control"]
+                    .as_i64()
+                    .and_then(|v| i32::try_from(v).ok())
+                    .ok_or_else(|| invalid("Missing cooler control"))?;
+                let value = p["value"]
+                    .as_i64()
+                    .ok_or_else(|| invalid("Missing cooler value"))?;
+                let seconds = p["timeoutSeconds"].as_f64().unwrap_or(15.);
+                ensure!(
+                    seconds.is_finite() && seconds > 0. && seconds <= 3600.,
+                    invalid("Invalid cooler deadline")
+                );
+                let receipt = self
+                    .cooling
+                    .as_ref()
+                    .ok_or_else(|| invalid("Camera not open"))?
+                    .submit(kind, value, std::time::Duration::from_secs_f64(seconds))?;
+                if let Ok(mut engine) = self.engine.try_lock()
+                    && let Some(session) = engine.as_mut()
+                {
+                    session.service_cooling(&token).await?;
+                }
+                json!(receipt.wait().await?)
             }
             "start" => {
                 let exposure: Exposure = serde_json::from_value(p)?;
@@ -233,6 +261,7 @@ pub async fn run(runtime: Runtime, direct: bool, log: Diagnostic) -> Result<()> 
     let mut supervisor = Supervisor {
         engine: Arc::new(AsyncMutex::new(None)),
         status: None,
+        cooling: None,
         capture: Arc::new(Mutex::new(Capture::default())),
         task: None,
         runtime,
