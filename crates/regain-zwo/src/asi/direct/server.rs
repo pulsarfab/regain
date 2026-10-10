@@ -25,6 +25,7 @@ enum Work {
         mpsc::SyncSender<Result<Frame>>,
     ),
     Environment(u32, Option<i64>, mpsc::SyncSender<Result<i64>>),
+    ResumeCooling(i64, f64, i64, mpsc::SyncSender<Result<()>>),
     StopVideo(mpsc::SyncSender<Result<()>>),
 }
 #[derive(Clone, Copy, Default, PartialEq)]
@@ -574,6 +575,26 @@ impl Worker {
                     }
                 };
                 match work {
+                    Work::ResumeCooling(power, prior, previous_target, reply) => {
+                        let _ = watchdog.send(Some(Duration::from_secs(15)));
+                        let result = if let Some((camera, _, _)) = &device {
+                            camera.resume_cooling(power, prior, previous_target)
+                        } else if sim_environment[&17] != 0 {
+                            let (output, _) = super::environment::recovery_state(
+                                power as f64,
+                                prior,
+                                sim_environment[&8] as f64 / 10.0,
+                                sim_environment[&16] as f64,
+                                previous_target as f64,
+                            );
+                            sim_environment.insert(15, output.round() as i64);
+                            Ok(())
+                        } else {
+                            Err(anyhow::anyhow!("cooler is disabled"))
+                        };
+                        let _ = watchdog.send(None);
+                        let _ = reply.send(result);
+                    }
                     Work::StopVideo(reply) => {
                         let _ = watchdog.send(Some(Duration::from_secs(15)));
                         let result = if let Some(mut video) = video.take()
@@ -814,6 +835,15 @@ impl Worker {
             .recv_timeout(Duration::from_secs(15))
             .map_err(|_| anyhow::anyhow!("environment worker unavailable"))?
     }
+    fn resume_cooling(&self, power: i64, prior: f64, previous_target: i64) -> Result<()> {
+        let (sender, receiver) = mpsc::sync_channel(1);
+        self.sender
+            .send(Work::ResumeCooling(power, prior, previous_target, sender))
+            .map_err(|_| anyhow::anyhow!("direct worker exited"))?;
+        receiver
+            .recv_timeout(Duration::from_secs(15))
+            .map_err(|_| anyhow::anyhow!("cooling recovery worker unavailable"))?
+    }
     fn close(mut self) {
         self.cancel_video
             .store(true, std::sync::atomic::Ordering::Relaxed);
@@ -1025,6 +1055,33 @@ impl Host {
                 json!({"capabilities":WhiteBalance::capabilities(self.model.descriptor()["color"] == true),
                     "managed":self.white_balance.is_some(),
                     "settings":self.white_balance.as_ref().map(WhiteBalance::settings)})
+            }
+            "resume-cooling" => {
+                ensure!(
+                    self.model.cooled()
+                        && self.pending.is_none()
+                        && self.frame.is_none()
+                        && !self.video_active,
+                    "cooling recovery requires an idle cooled camera"
+                );
+                let power = params["power"]
+                    .as_i64()
+                    .filter(|v| (0..=100).contains(v))
+                    .ok_or_else(|| anyhow::anyhow!("invalid recovery power"))?;
+                let prior = params["temperature"]
+                    .as_f64()
+                    .filter(|v| v.is_finite() && (-50.0..=85.0).contains(v))
+                    .ok_or_else(|| anyhow::anyhow!("invalid recovery temperature"))?;
+                let previous_target = params["previousTarget"]
+                    .as_i64()
+                    .filter(|v| (-40..=30).contains(v))
+                    .ok_or_else(|| anyhow::anyhow!("invalid recovery target"))?;
+                self.worker
+                    .as_ref()
+                    .ok_or_else(|| anyhow::anyhow!("camera is not open"))?
+                    .resume_cooling(power, prior, previous_target)
+                    .map_err(hardware)?;
+                Value::Null
             }
             "get" | "set" => {
                 let worker = self
@@ -1351,6 +1408,55 @@ pub fn run(simulate: bool) -> Result<()> {
             })
         },
     )
+}
+
+#[cfg(test)]
+mod cooling_tests {
+    use super::*;
+
+    #[test]
+    fn recovery_command_is_validated_and_does_not_make_power_publicly_writable() {
+        let mut host = Host {
+            simulate: true,
+            ..Host::default()
+        };
+        host.command("open", &json!({"name":"ZWO ASI585MM Pro"}))
+            .unwrap();
+        let recovery = json!({"power":40,"temperature":25.0,"previousTarget":25});
+        assert!(host.command("resume-cooling", &recovery).is_err()); // Disabled.
+        host.command("set", &json!({"control":17,"value":1}))
+            .unwrap();
+        for (key, bad) in [
+            ("power", json!(-1)),
+            ("power", json!(101)),
+            ("power", json!(1.5)),
+            ("temperature", Value::Null),
+            ("temperature", json!(100)),
+            ("previousTarget", json!(31)),
+        ] {
+            let mut invalid = recovery.clone();
+            invalid[key] = bad;
+            assert!(host.command("resume-cooling", &invalid).is_err());
+            assert_eq!(host.command("get", &json!({"control":15})).unwrap().0, 0);
+        }
+        host.command("resume-cooling", &recovery).unwrap();
+        assert_eq!(host.command("get", &json!({"control":15})).unwrap().0, 40);
+        assert!(
+            host.command("set", &json!({"control":15,"value":80}))
+                .is_err()
+        );
+        host.command("set", &json!({"control":16,"value":26}))
+            .unwrap();
+        host.command("resume-cooling", &recovery).unwrap();
+        assert_eq!(host.command("get", &json!({"control":15})).unwrap().0, 0);
+        host.command(
+            "start",
+            &json!({"width":64,"height":64,"bin":1,"x":0,"y":0,"microseconds":2000000,"dark":true}),
+        )
+        .unwrap();
+        assert!(host.command("resume-cooling", &recovery).is_err());
+        host.worker.take().unwrap().close();
+    }
 }
 
 #[cfg(test)]
