@@ -143,3 +143,35 @@ performed for this transfer matrix. Recovery currently relies on a responsive
 device with retained DDR. A USB offload host could additionally retain a
 completed frame for reliable network retrieval, but cannot recover camera
 pixels that were never successfully transferred to that host.
+## Cooling recovery tuning
+
+The direct controller now resumes the last cooler output after a worker restart,
+then adds 8 percentage points per degree of measured warming since the last
+sample, capped at 100%. Its PI state is reconstructed from the previous output
+and temperature. It ramps up by at most 8 percentage points/second and down by
+12, with proportional gain 8 and integral gain 0.12. Elapsed controller time is
+still capped at two seconds after blocked USB I/O; saturation stops integral
+windup. Missing temperature feedback disables cooling. A disabled cooler or a
+warmer requested setpoint takes precedence over restoration.
+
+The shared Rust session restores this demand once per replacement worker,
+after restoring the selected target and enable state. This applies to direct
+camera capture through NINA, native ASCOM and Alpaca. SDK cooling remains owned
+by the vendor SDK. Retained-frame handle recovery continues to preserve its
+existing controller history.
+
+Focused tests cover restoration, warming boost, 100% saturation, disabled and
+warmer targets, repeated refreshes, malformed recovery requests, bounded response
+and thermal models with different loads and actuator delays. The ASI585MM Pro
+hardware probe is `scripts/inspection/validate_cooler_recovery.py`; it requires
+`--hardware`, `--serial`, `--workers`, `--output`, and optionally `--target`.
+It runs an owned supervisor, kills only its selected worker during a short
+exposure and disables cooling before exit. Results are written as JSONL with
+worker diagnostics. Hardware validation at a 15 C target reproduced the old
+restart dropping 15% output to zero, warming from 14.0 to 17.6 C and taking
+117 seconds to return the replacement image.
+
+The tuned ASI585MM Pro run at the same target resumed at least its prior 13%
+output, held 14.9–15.1 C throughout recovery and returned the replacement image
+in 7 seconds. The two runs began at different temperatures and outputs; this is
+a local recovery comparison, not overnight stability or cross-model validation.

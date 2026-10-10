@@ -103,6 +103,7 @@ impl Supervisor {
                         p["recoveryState"]["temperature"].as_f64(),
                         p["recoveryState"]["power"].as_i64(),
                     );
+                    session.seed_recovery_target(p["recoveryState"]["target"].as_i64());
                 }
                 let state = session.snapshot();
                 self.status = Some(session.status.clone());
