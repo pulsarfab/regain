@@ -14,6 +14,40 @@ namespace Regain.NINA.Tests;
 
 public class CameraTests
 {
+    [Fact]
+    public async Task SharedRustSupervisorKeepsCoolingChartFiniteDuringWorkerReplacement()
+    {
+        string root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
+        HostClient? host = null;
+        var camera = new ResilientCamera(new("ZWO ASI585MM Pro", 3840, 2160, false, 0, 2.9, 12, true, false, [1, 2, 3, 4]),
+            Mock.Of<IExposureDataFactory>(), () => host = new HostClient(Path.Combine(root, "target/debug/regain-alpaca.exe"),
+                "unused", simulate: true, direct: true, supervised: true),
+            new() { MaxRetries = 1, ReconnectDelaySeconds = 1.2, CoolingStableSamples = 1, CoolingSampleSeconds = .01 });
+        try {
+            Assert.True(await camera.Connect(default));
+            await host!.CallAsync("simulate-read-failures", new { count = 3 }, TimeSpan.FromSeconds(15), default);
+            camera.EnableSubSample = true;
+            camera.SubSampleWidth = camera.SubSampleHeight = 64;
+            camera.StartExposure(new CaptureSequence { ExposureTime = .01, Binning = new BinningMode(1, 1) });
+            using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            var ready = camera.WaitUntilExposureIsReady(deadline.Token);
+            double min = -20, max = 20;
+            bool sawHeld = false;
+            while (!ready.IsCompleted) {
+                min = Math.Min(min, camera.Temperature);
+                max = Math.Max(max, camera.Temperature);
+                Assert.True(double.IsFinite(min) && double.IsFinite(max) && double.IsFinite(camera.CoolerPower));
+                sawHeld |= camera.DriverInfo.Contains("telemetry held");
+                await Task.Delay(20, deadline.Token);
+            }
+            await ready;
+            Assert.True(sawHeld);
+            Assert.DoesNotContain("telemetry held", camera.DriverInfo);
+            Assert.Contains("retries: 3", camera.DriverInfo);
+        }
+        finally { camera.Disconnect(); }
+    }
+
     [Theory]
     [InlineData(1)] [InlineData(2)] [InlineData(3)] [InlineData(4)]
     public async Task DirectRoiUsesAlignedRectangleInNinaAndImageMetadata(short bin)
@@ -82,6 +116,8 @@ public class CameraTests
         {
             var host = new HostClient(Path.Combine(root, "target/debug/regain-device.exe"), "unused", true, log: line =>
                 CameraLog.Forward(CameraLog.Parse("SDK", line), _ => { }, text => loggedFailure.TrySetResult(text), _ => { }));
+            host.CallAsync("simulation", new { temperature = starts == 0 ? -100 : -110, coolerPower = starts == 0 ? 0 : 5 },
+                TimeSpan.FromSeconds(15), default).GetAwaiter().GetResult();
             if (reread) host.CallAsync("simulation", new { instant = true }, TimeSpan.FromSeconds(15), default).GetAwaiter().GetResult();
             if (sdkClampsOffset)
                 host.CallAsync("simulation", new { clampControl = 5, clampMinimum = 20 }, TimeSpan.FromSeconds(15), default).GetAwaiter().GetResult();
@@ -108,24 +144,45 @@ public class CameraTests
         try
         {
             Assert.True(await camera.Connect(default));
+            double axisMin = Math.Min(-20, camera.Temperature), axisMax = Math.Max(20, camera.Temperature);
+            var priorTemperature = camera.Temperature;
+            var priorPower = camera.CoolerPower;
+            Assert.Equal(0, priorPower); // A real zero is a valid measurement.
             camera.StartExposure(new CaptureSequence { ExposureTime = seconds, Gain = 123, Offset = 17, Binning = new BinningMode(2, 2) });
             Assert.True(settings.Object.Timeout > 1);
             // Model NINA's outer readiness deadline. Recovery exceeds the original limit.
             using var ninaDeadline = new CancellationTokenSource(TimeSpan.FromSeconds(seconds + settings.Object.Timeout));
             var ready = camera.WaitUntilExposureIsReady(ninaDeadline.Token);
             bool sawRecovery = false;
+            bool sawHeldTelemetry = false;
             while (!ready.IsCompleted) {
                 var info = camera.DriverInfo;
                 sawRecovery |= info.Contains("retries: 1") && (info.Contains("Rereading ready frame") || info.Contains("Reconnect delay"));
+                // Match NINA CameraVM's axis calculation: even one NaN makes
+                // all later bounds NaN, including after a successful recovery.
+                axisMin = Math.Min(camera.Temperature, axisMin);
+                axisMax = Math.Max(camera.Temperature, axisMax);
+                Assert.True(double.IsFinite(axisMin) && double.IsFinite(axisMax));
+                Assert.True(double.IsFinite(camera.CoolerPower));
+                if (info.Contains("telemetry held")) {
+                    sawHeldTelemetry = true;
+                    Assert.Equal(priorTemperature, camera.Temperature);
+                    Assert.Equal(priorPower, camera.CoolerPower);
+                }
                 await Task.Delay(20, ninaDeadline.Token);
             }
             await ready;
             Assert.True(sawRecovery, "Driver Info should expose the active recovery, not only its final result");
-            Assert.Contains(infoUpdates, info => info.Contains("retries: 1") && info.Contains("last failure:") &&
+            Assert.Equal(!reread, sawHeldTelemetry);
+            Assert.Contains(infoUpdates, info => info.Contains("retries: 1") && info.Contains("last:") &&
                 (info.Contains("Rereading ready frame") || info.Contains("Reconnect delay")));
-            Assert.Contains("state: Idle; retries: 1", camera.DriverInfo);
-            Assert.Contains("last failure:", camera.DriverInfo);
+            Assert.Contains("Idle; retries: 1", camera.DriverInfo);
+            Assert.Contains("last:", camera.DriverInfo);
             Assert.Contains("ASI error 11", camera.DriverInfo);
+            Assert.DoesNotContain("telemetry held", camera.DriverInfo);
+            Assert.True(camera.DriverInfo.Length < 100);
+            Assert.Equal(reread ? -10 : -11, camera.Temperature);
+            Assert.Equal(reread ? 0 : 5, camera.CoolerPower);
             camera.Gain = 222; // Image metadata must represent the completed exposure, not the next one.
             var image = Assert.IsType<ImageArrayExposureData>(await camera.DownloadExposure(default));
             Assert.Equal(1, settings.Object.Timeout);
