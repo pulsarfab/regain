@@ -13,6 +13,11 @@ use std::{
 };
 use tokio::time::Instant;
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum OpenPurpose {
+    Acquisition,
+    ThermalShutdown,
+}
 /// One owner per camera. All public entry points are serialized by the frontend.
 /// Status and queued controls remain readable while capture owns the worker.
 pub struct Session {
@@ -578,12 +583,19 @@ impl Session {
         Ok(())
     }
     async fn open(&mut self, token: &CancellationToken) -> Result<()> {
+        self.open_worker(token, OpenPurpose::Acquisition).await
+    }
+    async fn open_worker(&mut self, token: &CancellationToken, purpose: OpenPurpose) -> Result<()> {
         if self.ever_opened && self.selection.serial.is_none() {
             return Err(invalid(
                 "Automatic recovery requires a camera serial number",
             ));
         }
-        self.phase("Opening");
+        self.phase(if purpose == OpenPurpose::ThermalShutdown {
+            "Closing camera"
+        } else {
+            "Opening"
+        });
         self.worker = Some(self.runtime.spawn(self.direct, self.log.clone()).await?);
         self.applied.clear();
         // Values retain desired recovery settings; old evidence cannot describe
@@ -658,11 +670,13 @@ impl Session {
                     state.values.insert(c.kind, c.value);
                 }
             }
-            state.control_connection_available = true;
+            state.control_connection_available = purpose == OpenPurpose::Acquisition;
             state.process_id = self.worker.as_ref().and_then(Worker::pid);
             state.white_balance_capabilities = result["whiteBalance"].clone();
         }
-        if let Some(settings) = previous.white_balance {
+        if purpose == OpenPurpose::Acquisition
+            && let Some(settings) = previous.white_balance
+        {
             // A new worker has no previous estimate for Locked to freeze.
             if settings.mode == crate::white_balance::Mode::Locked {
                 self.set_white_balance(
@@ -678,19 +692,30 @@ impl Session {
         }
         self.emit(
             "info",
-            "connection.opened",
+            if purpose == OpenPurpose::ThermalShutdown {
+                "camera.cleanup_opened"
+            } else {
+                "connection.opened"
+            },
             format!(
-                "Camera opened using {}{}; serial {}",
+                "Camera opened using {}{}; serial {}{}",
                 if self.direct { "direct" } else { "SDK" },
                 if self.selection.direct && !self.direct {
                     " fallback"
                 } else {
                     ""
                 },
-                self.selection.serial.as_deref().unwrap_or("unavailable")
+                self.selection.serial.as_deref().unwrap_or("unavailable"),
+                if purpose == OpenPurpose::ThermalShutdown {
+                    "; thermal shutdown only"
+                } else {
+                    ""
+                }
             ),
         );
-        self.cooling.activate();
+        if purpose == OpenPurpose::Acquisition {
+            self.cooling.activate();
+        }
         Ok(())
     }
     fn settings(&self) -> BTreeMap<i32, i64> {
@@ -1346,7 +1371,8 @@ impl Session {
             let cleanup = async {
                 self.delay(self.selection.recovery.reconnect_delay_seconds, &token)
                     .await?;
-                self.open(&token).await?;
+                self.open_worker(&token, OpenPurpose::ThermalShutdown)
+                    .await?;
                 // Backend close disables each supported thermal actuator and
                 // attempts both even if one write fails. Never restore settings.
                 self.call("close", Value::Null, Some(CLOSE_SECONDS), &token)
@@ -2682,6 +2708,37 @@ mod tests {
             );
             s.close().await;
         }
+    }
+    #[tokio::test]
+    async fn thermal_cleanup_does_not_restore_white_balance_or_reactivate_controls() {
+        let token = CancellationToken::new();
+        let mut s = Session::new(selection(false), runtime(), log()).unwrap();
+        s.connect(&token).await.unwrap();
+        s.set_white_balance(
+            crate::white_balance::Settings {
+                mode: crate::white_balance::Mode::Manual,
+                ..Default::default()
+            },
+            &token,
+        )
+        .await
+        .unwrap();
+        s.invalidate().await;
+        s.status.lock().unwrap().connected = false;
+        s.open_worker(&token, OpenPurpose::ThermalShutdown)
+            .await
+            .unwrap();
+        assert!(!s.snapshot().connected);
+        assert!(!s.snapshot().control_connection_available);
+        assert_eq!(s.snapshot().phase, "Closing camera");
+        assert!(s.cooling().submit(17, 1, Duration::from_secs(1)).is_err());
+        let actual = s
+            .call("white-balance", Value::Null, None, &token)
+            .await
+            .unwrap()
+            .0;
+        assert_eq!(actual["managed"], false);
+        s.close().await;
     }
     #[tokio::test]
     async fn failed_abort_retires_worker_before_another_capture() {

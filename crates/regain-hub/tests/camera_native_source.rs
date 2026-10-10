@@ -520,6 +520,18 @@ async fn unknown_initial_setting_fences_actor_reconnect_until_last_lease_disconn
             ErrorKind::Uncertain
         );
     }
+    // Shutdown may reopen the same serial solely to switch thermal actuators
+    // off. That must not publish an acquisition connection or lift the fence.
+    until(|| {
+        events
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|line| line.starts_with("camera.cleanup_opened:"))
+    })
+    .await;
+    assert!(!owner.snapshot().core.control_connection_available);
+    assert!(source.snapshot().write_uncertain);
     assert_eq!(
         events
             .lock()
