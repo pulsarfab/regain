@@ -255,3 +255,10 @@ exposure and disables cooling before exit. Results are written as JSONL with
 worker diagnostics. Hardware validation at a 15 C target reproduced the old
 restart dropping 15% output to zero, warming from 14.0 to 17.6 C and taking
 117 seconds to return the replacement image.
+
+The updated ASI585MM Pro probe restored output after worker loss and returned
+the replacement image in 8.02 seconds at a 15 C target. Physical NINA plugin API
+checks also preserve output across clean aborts, apply colder targets during
+exposure, and disable the cooler on disconnect in both backends.
+See [physical acceptance](camera-abort-acceptance.md) for measurements and limits;
+this is not convergence evidence for an ASI6200 or a deep subzero target.

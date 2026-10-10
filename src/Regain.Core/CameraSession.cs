@@ -707,24 +707,24 @@ public sealed class CameraSession : IDisposable
                 using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(2));
                 closing.CallAsync("close", null, TimeSpan.FromSeconds(2), deadline.Token).GetAwaiter().GetResult();
                 closed = true;
-            } catch { /* Terminate active or unresponsive acquisition before cleanup. */ }
+            } catch (Exception error) { Log($"Camera close failed; attempting thermal cleanup: {error.Message}"); }
             finally { closing.Dispose(); }
         }
         // Disconnect immediately after Abort must not cancel the only path capable
-        // of switching off a direct camera's last PWM output. Reopen for cleanup only.
-        if (!closed && hasConnected && Backend == "direct" && Camera.Cooled && serial is not null) {
+        // of switching off thermal actuators. Reopen the same serial for cleanup
+        // only in either backend; do not restore its desired enabled settings.
+        if (!closed && hasConnected && Controls.Values.Any(c => c.Writable && c.Type is 17 or 21) && serial is not null) {
             try {
                 using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(
                     Options.ReconnectDelaySeconds + 3 * Options.CommandTimeoutSeconds));
                 Task.Delay(TimeSpan.FromSeconds(Options.ReconnectDelaySeconds), deadline.Token).GetAwaiter().GetResult();
-                using var cleanup = factory();
+                using var cleanup = usingFallback && sdkFallbackFactory is not null ? sdkFallbackFactory() : factory();
                 var timeout = TimeSpan.FromSeconds(Options.CommandTimeoutSeconds);
                 cleanup.CallAsync("open", new { name = Camera.Name, serial }, timeout, deadline.Token).GetAwaiter().GetResult();
-                cleanup.CallAsync("set", new { control = 17, value = 0 }, timeout, deadline.Token).GetAwaiter().GetResult();
                 cleanup.CallAsync("close", null, timeout, deadline.Token).GetAwaiter().GetResult();
             } catch (Exception error) {
                 LastError = error.Message;
-                Log($"Could not disable cooling on disconnect: {error.Message}");
+                Log($"Could not disable cooler/dew heater on disconnect: {error.Message}");
             }
         }
     }

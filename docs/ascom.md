@@ -127,6 +127,15 @@ camera registrations.
 
 ## Capture behavior
 
+An explicit camera disconnect turns off the cooler and any advertised dew heater
+before releasing the device, in both SDK and direct mode. Shutdown checks
+readback and attempts each actuator independently. If the worker is unavailable,
+Regain attempts bounded cleanup of the same serial and logs any failure. This
+does not guarantee shutdown after physical removal or loss of camera power.
+An intentional exposure abort keeps cooling enabled; internal recovery restores
+the requested thermal settings. Shared outputs release the device on their last
+owning connection.
+
 StartExposure returns promptly. The camera stays busy while Rust recovers, and
 ImageReady becomes true only for a completed image. Allow enough overall time
 in the client for reconnects and cooler recovery. Recovered failures are logged;

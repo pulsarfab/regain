@@ -49,12 +49,16 @@ public class ReviewRegressionTests
         else await Assert.ThrowsAsync<IOException>(()=>session.CaptureAsync(Request,default));
     }
 
-    [Fact]
-    public async Task DisconnectAfterAbortOpensCleanupWorkerAndLeavesNoWorkerRunning()
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task DisconnectAfterAbortOpensCleanupWorkerAndLeavesNoWorkerRunning(bool direct)
     {
         var pids=new System.Collections.Concurrent.ConcurrentQueue<int>();
-        using var session=new CameraSession(Camera,()=>{
-            var host=Direct(); pids.Enqueue(host.ProcessId); return host;
+        var descriptor=direct ? Camera : new CameraDescriptor("ZWO Simulated",960,640,true,0,3.76,16,true,false,[1,2,4]);
+        using var session=new CameraSession(descriptor,()=>{
+            var host=direct ? Direct() : new HostClient(Path.Combine(Root,"target/debug/regain-device.exe"),"unused",simulate:true);
+            pids.Enqueue(host.ProcessId); return host;
         },new(){MaxRetries=0,ReconnectDelaySeconds=.2});
         await session.ConnectAsync(default);
         session.Set(17,1); await session.RefreshAsync(default);

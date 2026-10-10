@@ -546,14 +546,39 @@ impl Host {
                 json!(null)
             }
             "close" => {
-                self.stop_video()?;
-                if let Some(s) = &mut self.sdk {
-                    s.close()?;
+                let mut failures = Vec::new();
+                if let Err(error) = self.stop_video() {
+                    failures.push(format!("stop video: {error:#}"));
+                }
+                if self.exposure.is_some()
+                    && let Some(s) = &self.sdk
+                    && let Err(error) = s.stop()
+                {
+                    failures.push(format!("stop exposure: {error:#}"));
+                }
+                let caps = self.camera["controls"]
+                    .as_array()
+                    .cloned()
+                    .unwrap_or_default();
+                if let Err(error) = crate::asi::shutdown_thermal_controls(&caps, |kind| {
+                    self.command("set", json!({"control":kind,"value":0}))?;
+                    self.command("get", json!({"control":kind}))?
+                        .0
+                        .as_i64()
+                        .ok_or_else(|| anyhow::anyhow!("invalid thermal readback"))
+                }) {
+                    failures.push(format!("{error:#}"));
+                }
+                if let Some(s) = &mut self.sdk
+                    && let Err(error) = s.close()
+                {
+                    failures.push(format!("close: {error:#}"));
                 }
                 self.opened = false;
                 self.exposure = None;
                 self.white_balance = None;
                 self.camera = Value::Null;
+                ensure!(failures.is_empty(), "{}", failures.join("; "));
                 json!(null)
             }
             "fault" if self.sdk.is_none() => {
@@ -678,6 +703,33 @@ pub fn run(args: Vec<String>) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sdk_close_disables_supported_thermal_controls_even_when_one_readback_fails() {
+        for fail in [false, true] {
+            let mut host = simulated();
+            host.command("open", json!({"name":"test camera"})).unwrap();
+            host.camera["controls"]
+                .as_array_mut()
+                .unwrap()
+                .push(json!({"type":21,"min":0,"max":1,"writable":true}));
+            for kind in [17, 21] {
+                host.command("set", json!({"control":kind,"value":1}))
+                    .unwrap();
+            }
+            host.command("stop", Value::Null).unwrap();
+            assert_eq!(host.values["17"], 1);
+            assert_eq!(host.values["21"], 1);
+            if fail {
+                host.values["clampMinimum:17"] = json!(1);
+            }
+            assert_eq!(host.command("close", Value::Null).is_err(), fail);
+            assert_eq!(host.values["17"], i64::from(fail));
+            assert_eq!(host.values["21"], 0);
+            assert!(!host.opened);
+            assert!(host.command("get", json!({"control":17})).is_err());
+        }
+    }
 
     #[test]
     fn video_deadline_retains_old_integration_for_two_reads_after_decrease() {

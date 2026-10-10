@@ -584,7 +584,16 @@ impl Worker {
                             && model.cooled()
                         {
                             let _ = watchdog.send(Some(Duration::from_secs(15)));
-                            let _ = camera.environment_control(17, Some(0));
+                            if let Err(error) = crate::asi::shutdown_thermal_controls(
+                                &model.controls(false),
+                                |kind| camera.environment_control(kind as u32, Some(0)),
+                            ) {
+                                crate::asi::direct::diagnostics::log(
+                                    "warning",
+                                    "camera.cleanup_failed",
+                                    format_args!("{error:#}"),
+                                );
+                            }
                         }
                         return;
                     }
@@ -1631,11 +1640,10 @@ impl Host {
                     // Report failed cooler shutdown to the supervisor so its bounded
                     // reconnect-for-cleanup path can run. Channel teardown is still
                     // unconditional, even if the explicit off command fails.
-                    let cooling = if self.model.cooled() {
-                        worker.environment(17, Some(0)).map(|_| ())
-                    } else {
-                        Ok(())
-                    };
+                    let cooling = crate::asi::shutdown_thermal_controls(
+                        &self.model.controls(false),
+                        |kind| worker.environment(kind as u32, Some(0)),
+                    );
                     worker.close();
                     cooling.map_err(hardware)?;
                 }
@@ -1790,6 +1798,41 @@ mod cooling_tests {
     #[test]
     fn acknowledged_cooling_during_still_and_retained_frame() {
         capture("still");
+    }
+    #[test]
+    fn direct_close_disables_cooler_and_supported_dew_heater() {
+        for name in ["ZWO ASI6200MM Pro", "ZWO ASI585MM Pro", "ZWO ASI662MC"] {
+            let mut host = Host {
+                simulate: true,
+                ..Host::default()
+            };
+            let opened = host.command("open", &json!({"name":name})).unwrap().0;
+            let thermal: Vec<i32> = opened["controls"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter_map(|c| c["type"].as_i64().map(|v| v as i32))
+                .filter(|k| matches!(k, 17 | 21))
+                .collect();
+            let telemetry = host.worker.as_ref().unwrap().telemetry.clone();
+            for kind in &thermal {
+                host.command("set", &json!({"control":kind,"value":1}))
+                    .unwrap();
+            }
+            host.command("stop", &Value::Null).unwrap();
+            for kind in &thermal {
+                assert_eq!(host.command("get", &json!({"control":kind})).unwrap().0, 1);
+            }
+            host.command("close", &Value::Null).unwrap();
+            if let Some(sample) = telemetry.lock().unwrap().as_ref() {
+                for kind in thermal {
+                    if let Ok(index) = transport::TelemetrySample::index(kind as u32) {
+                        assert_eq!(sample.values[index], 0);
+                    }
+                }
+            }
+            assert!(host.worker.is_none());
+        }
     }
     #[test]
     fn acknowledged_cooling_during_video_and_retained_frame() {

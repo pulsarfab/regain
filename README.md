@@ -17,9 +17,9 @@ vendor SDK in a separate process.
 [Install & upgrade](https://pulsarfab.com/docs/regain/install.html) ·
 [Supported hardware](#supported-hardware)
 
-**Development branch: 0.6 Hub preview.** The hub features below are implemented
-here and remain under acceptance testing. Published 0.5 packages provide the
-standalone integrations; they do not include the hub. See the
+**0.6 includes the Regain Hub preview.** The hub features below are implemented
+and remain under acceptance testing. The 0.5 packages contain standalone
+integrations only. See the
 [setup guide](docs/hub-setup.md) and [remaining gates](docs/hub-plan.md).
 
 ## What do you want to do?
@@ -45,6 +45,9 @@ USB Traffic percentage and does not change USB speed.
 
 NINA FITS files record the camera model in `INSTRUME`; connection labels and
 slot names stay separate. [Camera metadata and verification](docs/nina-camera-fits.md).
+
+An explicit camera disconnect disables the cooler and any supported dew heater.
+A clean exposure abort preserves cooling and the camera worker.
 
 ### Keep using your camera in SDK mode
 
@@ -170,7 +173,7 @@ For a hardware-free walkthrough and source-specific setup, see
 This browser capture uses simulated equipment. Installed-client, physical-device
 and external conformance acceptance remain tracked in the hub plan.
 
-### Standalone integrations (0.5 release train)
+### Standalone integrations (0.5 and 0.6)
 
 | Integration | Where it runs | Equipment |
 | --- | --- | --- |
@@ -240,9 +243,9 @@ alone do not establish hardware compatibility.
 
 ## Get started
 
-Windows builds from current main and the 0.5 maintenance branch link the Visual
-C++ runtime statically. This fix ships in the next release; existing 0.5.11.0
-downloads still need the Visual C++ runtime. NINA, ASCOM and camera-driver
+Windows builds in 0.6 and the 0.5 maintenance train link the Visual
+C++ runtime statically. Downloads from 0.5.11.0 and earlier
+still need the Visual C++ runtime. NINA, ASCOM and camera-driver
 requirements below still apply. See [Windows runtime details](docs/windows-runtime.md).
 
 ### Install in NINA

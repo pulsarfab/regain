@@ -1336,16 +1336,19 @@ impl Session {
         self.invalidate().await;
         if !closed
             && self.ever_opened
-            && self.direct
-            && self.snapshot().info["cooled"] == true
+            && self
+                .snapshot()
+                .controls
+                .values()
+                .any(|c| c.writable && matches!(c.kind, 17 | 21))
             && self.selection.serial.is_some()
         {
             let cleanup = async {
                 self.delay(self.selection.recovery.reconnect_delay_seconds, &token)
                     .await?;
                 self.open(&token).await?;
-                self.call("set", json!({"control":17,"value":0}), None, &token)
-                    .await?;
+                // Backend close disables each supported thermal actuator and
+                // attempts both even if one write fails. Never restore settings.
                 self.call("close", Value::Null, Some(CLOSE_SECONDS), &token)
                     .await?;
                 Result::<()>::Ok(())
@@ -1355,7 +1358,7 @@ impl Session {
                 self.emit(
                     "warning",
                     "cooling.cleanup_failed",
-                    format!("Could not disable cooling: {error:#}"),
+                    format!("Could not disable cooler/dew heater: {error:#}"),
                 );
             }
             self.invalidate().await;
