@@ -9,20 +9,43 @@ try {
     }
     cargo fmt --check
     if ($LASTEXITCODE) { throw 'Rust formatting failed' }
+    cargo run -p regain-core --example export_recovery --locked -- contracts/camera-recovery.json src/Regain.Core/RecoveryOptions.g.cs --check
+    if ($LASTEXITCODE) { throw 'Generated camera recovery contracts are stale' }
+    node scripts/test-camera-recovery.mjs
+    if ($LASTEXITCODE) { throw 'Camera recovery browser contract failed' }
     cargo clippy --all-targets --locked -- -D warnings
     if ($LASTEXITCODE) { throw 'Rust lint failed' }
     cargo build --locked
     if ($LASTEXITCODE) { throw 'Test host build failed' }
     python scripts/test-device.py
     if ($LASTEXITCODE) { throw 'Unified device CLI tests failed' }
-    cargo test --locked
-    if ($LASTEXITCODE) { throw 'Rust tests failed' }
+    $previousWorkerDirectory = $env:REGAIN_TEST_WORKERS
+    try {
+        $env:REGAIN_TEST_WORKERS = (Resolve-Path target/debug).Path
+        cargo test --locked
+        if ($LASTEXITCODE) { throw 'Rust tests failed' }
+    } finally { $env:REGAIN_TEST_WORKERS = $previousWorkerDirectory }
     rustc --crate-type cdylib tests/fixtures/selection_sdk.rs -o target/debug/selection_sdk.dll
     if ($LASTEXITCODE) { throw 'SDK selection fixture build failed' }
     dotnet test tests/Regain.Tests -c Release
     if ($LASTEXITCODE) { throw 'Recovery tests failed' }
     dotnet test tests/Regain.NINA.Tests -c Release
     if ($LASTEXITCODE) { throw 'NINA contract tests failed' }
+    & (Join-Path $PSScriptRoot 'test-hub-dotnet.ps1')
+    & (Join-Path $PSScriptRoot 'test-hub-com.ps1')
+    python scripts/test-hub-exports.py
+    if ($LASTEXITCODE) { throw 'Hub native COM output tests failed' }
+    # Production chooser registration is machine-wide. Cold SCM launch is
+    # checked with private HKLM entries only on the disposable Windows runner;
+    # local fixtures retain HKCU and never alter the installed ASCOM entries.
+    if ($env:GITHUB_ACTIONS -eq 'true' -and $env:RUNNER_OS -eq 'Windows') {
+        python scripts/test-hub-exports.py --scm
+        if ($LASTEXITCODE) { throw 'Hub bound COM launch tests failed' }
+        dotnet build src/Regain.ASCOM.Register -c Release -o target/debug -warnaserror
+        if ($LASTEXITCODE) { throw 'Hub registration helper build failed' }
+        python scripts/test-hub-exports.py --registered
+        if ($LASTEXITCODE) { throw 'Hub production registration tests failed' }
+    }
     python scripts/test-native-camera.py
     if ($LASTEXITCODE) { throw 'Native camera IPC tests failed' }
     python scripts/test-usb-recovery.py

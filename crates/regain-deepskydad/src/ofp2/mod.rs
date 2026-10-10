@@ -41,6 +41,9 @@ pub enum CoverState {
 #[derive(Debug, Clone, Serialize)]
 pub struct Status {
     pub cover: CoverState,
+    /// Separate motion evidence: a stopped cover can be between endpoints.
+    /// Unknown firmware reports do not prove that movement has stopped.
+    pub cover_moving: Option<bool>,
     pub position_degrees: u16,
     pub light_on: bool,
     /// ASCOM logical on state, including a successful CalibratorOn(0).
@@ -146,6 +149,11 @@ impl<T: Transport> Panel<T> {
         let brightness = self.number("GLBR", MAX_BRIGHTNESS)?;
         Ok(Status {
             cover,
+            cover_moving: match report {
+                0 | 1 => Some(false),
+                2 => Some(true),
+                _ => None,
+            },
             position_degrees,
             light_on,
             calibrator_on: light_on || (self.zero_on && brightness == 0),

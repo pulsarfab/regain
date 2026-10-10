@@ -1,3 +1,7 @@
+use crate::timing::{
+    ACKNOWLEDGED_CONTROLS, CLOSE_SECONDS, MAX_READ_RETRY_OVERHEAD_SECONDS, PERSISTENT_CONTROLS,
+    USB_BIND_SECONDS, USB_REBIND_PAUSE_SECONDS, USB_RESET_SECONDS,
+};
 use crate::*;
 use anyhow::{Context, Result, ensure};
 use chrono::Utc;
@@ -26,6 +30,7 @@ pub struct Session {
     settle_required: bool,
     cooling_seeded: bool,
     usb_target: Option<String>,
+    cooling: cooling::Mailbox,
 }
 impl Session {
     pub fn new(selection: Selection, runtime: Runtime, log: Diagnostic) -> Result<Self> {
@@ -66,6 +71,7 @@ impl Session {
             settle_required: false,
             cooling_seeded: false,
             usb_target: None,
+            cooling: cooling::Mailbox::default(),
         })
     }
     fn emit(&self, level: &str, event: &str, message: impl AsRef<str>) {
@@ -91,6 +97,235 @@ impl Session {
     }
     pub fn snapshot(&self) -> Status {
         self.status.lock().unwrap().clone()
+    }
+    pub fn cooling(&self) -> cooling::CoolingHandle {
+        cooling::CoolingHandle {
+            mailbox: self.cooling.clone(),
+            status: self.status.clone(),
+        }
+    }
+    /// Drive one reserved command while idle. Capture drives the same mailbox
+    /// at safe worker checkpoints. Frontends retain/serialize this operation.
+    pub async fn service_cooling(&mut self, token: &CancellationToken) -> Result<()> {
+        self.service_cooling_with(&mut self.settings(), token).await
+    }
+    async fn service_cooling_with(
+        &mut self,
+        settings: &mut BTreeMap<i32, i64>,
+        token: &CancellationToken,
+    ) -> Result<()> {
+        let Some(request) = self.cooling.claim() else {
+            return Ok(());
+        };
+        let (kind, value, deadline) = {
+            let request = request.lock().unwrap();
+            (request.kind, request.value, request.deadline)
+        };
+        let deadline = deadline.min(
+            Instant::now()
+                + Duration::from_secs_f64(self.selection.recovery.command_timeout_seconds),
+        );
+        let mailbox = self.cooling.clone();
+        if let Err(error) = cooling::validate(&self.status, kind, value) {
+            let _ = mailbox.finish(&request, Err(error), || {});
+            return Ok(());
+        }
+        if token.is_cancelled() {
+            let _ = mailbox.finish(&request, Err(cooling::CoolingError::Cancelled), || {});
+            return Err(Failure::Cancelled.into());
+        }
+        let remaining = deadline
+            .saturating_duration_since(Instant::now())
+            .as_secs_f64();
+        if remaining == 0. {
+            let _ = mailbox.finish(&request, Err(cooling::CoolingError::Expired), || {});
+            return Ok(());
+        }
+        if !mailbox.dispatch(&request) {
+            return Ok(());
+        }
+        let result = self
+            .write_control(kind, value, deadline, token, false)
+            .await;
+        let observation = result.as_ref().ok().copied();
+        let result = mailbox.finish(&request, result.map(|observed| observed.value), || {
+            self.applied.insert(kind, value);
+            settings.insert(kind, value);
+            let mut state = self.status.lock().unwrap();
+            state.values.insert(kind, value);
+            if let Some(observation) = observation {
+                state.observations.insert(kind, observation);
+            }
+        });
+        match result {
+            Err(error @ cooling::CoolingError::Uncertain { .. }) => {
+                self.control_result(Err(error)).await.map(|_| ())
+            }
+            Err(cooling::CoolingError::Cancelled) => Err(Failure::Cancelled.into()),
+            _ => Ok(()), // Unsent expiry/failure belongs to the command receipt.
+        }
+    }
+    /// Acknowledge gain/offset while idle, using the same serialized worker as
+    /// capture. The caller must retain this future through dispatch/cleanup.
+    /// Unlike queue_control, success means write plus readback, not desired intent.
+    /// The absolute deadline includes time spent waiting for owner admission.
+    pub async fn set_imaging_control(
+        &mut self,
+        kind: i32,
+        value: i64,
+        deadline: Instant,
+        token: &CancellationToken,
+    ) -> Result<i64> {
+        ensure!(
+            matches!(kind, 0 | 5),
+            invalid("Only gain and offset are supported")
+        );
+        let state = self.snapshot();
+        ensure!(
+            state.connected && state.control_connection_available && self.worker.is_some(),
+            invalid("Camera controls are unavailable")
+        );
+        ensure!(
+            !self.cooling().pending(),
+            invalid("A cooler command is pending")
+        );
+        let cap = state
+            .controls
+            .get(&kind)
+            .ok_or_else(|| invalid("Control is unavailable"))?;
+        ensure!(
+            cap.kind == kind
+                && cap.writable
+                && cap.min <= cap.max
+                && (cap.min..=cap.max).contains(&value),
+            invalid("Control value is outside writable capabilities")
+        );
+        if token.is_cancelled() {
+            return Err(Failure::Cancelled.into());
+        }
+        if Instant::now() >= deadline {
+            return Err(cooling::CoolingError::Expired.into());
+        }
+        let deadline = deadline.min(
+            Instant::now()
+                + Duration::from_secs_f64(self.selection.recovery.command_timeout_seconds),
+        );
+        let result = self.write_control(kind, value, deadline, token, true).await;
+        let observation = self.control_result(result).await?;
+        self.applied.insert(kind, observation.value);
+        let mut state = self.status.lock().unwrap();
+        state.values.insert(kind, observation.value);
+        state.observations.insert(kind, observation);
+        Ok(observation.value)
+    }
+    async fn write_control(
+        &mut self,
+        kind: i32,
+        value: i64,
+        deadline: Instant,
+        token: &CancellationToken,
+        allow_sdk_offset_clamp: bool,
+    ) -> std::result::Result<ControlObservation, cooling::CoolingError> {
+        let mut set_acknowledged = false;
+        let result = async {
+            self.worker
+                .as_mut()
+                .context("Camera worker is disconnected")?
+                .control_call(
+                    "set",
+                    json!({"control":kind,"value":value}),
+                    deadline,
+                    token,
+                )
+                .await?;
+            set_acknowledged = true;
+            self.emit(
+                "debug",
+                "control.write_acknowledged",
+                format!("Control {kind}; readback pending"),
+            );
+            let remaining = deadline
+                .saturating_duration_since(Instant::now())
+                .as_secs_f64();
+            ensure!(remaining > 0., "Control deadline expired before readback");
+            let request_started = Instant::now();
+            let reply = self
+                .worker
+                .as_mut()
+                .context("Camera worker is disconnected")?
+                .control_call("get-observation", json!({"control":kind}), deadline, token)
+                .await?
+                .0;
+            let observation = serde_json::from_value::<ControlObservationReply>(reply)
+                .map_err(|_| invalid("Invalid control readback"))?
+                .normalize(request_started)?;
+            let actual = observation.value;
+            if actual != value {
+                let cap = self.snapshot().controls.get(&kind).cloned();
+                ensure!(
+                    allow_sdk_offset_clamp
+                        && !self.direct
+                        && kind == 5
+                        && cap.is_some_and(|cap| (cap.min..=cap.max).contains(&actual)),
+                    "Control readback differs from request"
+                );
+                self.emit(
+                    "info",
+                    "control.clamped",
+                    format!("SDK applied offset {actual} instead of {value}"),
+                );
+            }
+            ensure!(
+                Instant::now() < deadline,
+                "Control readback exceeded its deadline"
+            );
+            Ok::<_, anyhow::Error>(observation)
+        }
+        .await;
+        result.map_err(|error| {
+            if !set_acknowledged
+                && matches!(
+                    error.downcast_ref::<cooling::CoolingError>(),
+                    Some(cooling::CoolingError::Expired)
+                )
+            {
+                cooling::CoolingError::Expired
+            } else if !set_acknowledged
+                && matches!(error.downcast_ref::<Failure>(), Some(Failure::Cancelled))
+            {
+                cooling::CoolingError::Cancelled
+            } else {
+                let code = match error.downcast_ref::<Failure>() {
+                    Some(Failure::Worker { code, .. } | Failure::UncertainControl { code, .. }) => {
+                        *code
+                    }
+                    _ => None,
+                };
+                cooling::CoolingError::Uncertain {
+                    message: format!("{error:#}"),
+                    code,
+                }
+            }
+        })
+    }
+    async fn control_result(
+        &mut self,
+        result: std::result::Result<ControlObservation, cooling::CoolingError>,
+    ) -> Result<ControlObservation> {
+        match result {
+            Err(cooling::CoolingError::Uncertain { message, code }) => {
+                self.invalidate().await;
+                Err(Failure::UncertainControl { message, code }.into())
+            }
+            Err(cooling::CoolingError::Cancelled) => {
+                // Worker cancellation can retire an otherwise untouched process.
+                // Withdraw its core availability before another owner operation.
+                self.invalidate().await;
+                Err(Failure::Cancelled.into())
+            }
+            Err(error) => Err(error.into()),
+            Ok(actual) => Ok(actual),
+        }
     }
     /// Opt into Regain-owned WB. The caller serializes this with capture, like
     /// all Session operations. Settings and effective AWB gains survive recovery.
@@ -161,10 +396,7 @@ impl Session {
             ))
         );
         ensure!(
-            matches!(
-                kind,
-                0 | 2 | 3 | 4 | 5 | 6 | 7 | 9 | 13 | 14 | 16 | 17 | 18 | 19 | 20 | 21 | 22 | 23
-            ),
+            PERSISTENT_CONTROLS.contains(&kind),
             Failure::Invalid("Control is not a persistent imaging setting".into())
         );
         state.values.insert(kind, value);
@@ -192,6 +424,7 @@ impl Session {
         tokio::select! {biased;_=token.cancelled()=>Err(Failure::Cancelled.into()),_=tokio::time::sleep(Duration::from_secs_f64(seconds))=>Ok(())}
     }
     async fn invalidate(&mut self) {
+        self.cooling.retire();
         if self.ever_opened && !self.settle_required {
             let state = self.snapshot();
             self.recovery_temperature = state.values.get(&8).map(|v| *v as f64 / 10.);
@@ -207,6 +440,7 @@ impl Session {
         if let Some(mut worker) = self.worker.take() {
             worker.kill().await;
         }
+        self.status.lock().unwrap().process_id = None;
     }
     async fn fallback(&mut self, reason: &str, token: &CancellationToken) -> Result<()> {
         self.status.lock().unwrap().retry.last_failure = Some(reason.into());
@@ -272,7 +506,7 @@ impl Session {
             &self.selection.name,
             serial,
         ];
-        let command = self.runtime.usb_command(&args, 30);
+        let command = self.runtime.usb_command(&args, USB_BIND_SECONDS);
         let encoded = tokio::select! { biased; _=token.cancelled()=>return Err(Failure::Cancelled.into()), r=command=>r? };
         let target = regain_transport::usb::Target::decode(&encoded)?;
         ensure!(
@@ -319,7 +553,7 @@ impl Session {
                         },
                         target,
                     ],
-                    80,
+                    USB_RESET_SECONDS,
                 )
                 .await?;
         }
@@ -328,12 +562,12 @@ impl Session {
             return Err(Failure::Cancelled.into());
         }
         self.phase("Waiting for USB camera");
-        let deadline = Instant::now() + Duration::from_secs(30);
+        let deadline = Instant::now() + Duration::from_secs(USB_BIND_SECONDS);
         loop {
             match self.bind_usb(token).await {
                 Ok(()) => break,
                 Err(e) if token.is_cancelled() || Instant::now() >= deadline => return Err(e),
-                Err(_) => self.delay(0.5, token).await?,
+                Err(_) => self.delay(USB_REBIND_PAUSE_SECONDS, token).await?,
             }
         }
         self.emit(
@@ -352,6 +586,9 @@ impl Session {
         self.phase("Opening");
         self.worker = Some(self.runtime.spawn(self.direct, self.log.clone()).await?);
         self.applied.clear();
+        // Values retain desired recovery settings; old evidence cannot describe
+        // a replacement worker or its newly negotiated capabilities.
+        self.status.lock().unwrap().observations.clear();
         self.cooling_seeded = false;
         let (result, _) = self
             .call(
@@ -415,28 +652,7 @@ impl Session {
             state.sdk_fallback = self.selection.direct && !self.direct;
             state.controls = controls.into_iter().map(|c| (c.kind, c)).collect();
             for c in state.controls.values().cloned().collect::<Vec<_>>() {
-                if (c.writable || c.kind == 6)
-                    && matches!(
-                        c.kind,
-                        0 | 2
-                            | 3
-                            | 4
-                            | 5
-                            | 6
-                            | 7
-                            | 9
-                            | 13
-                            | 14
-                            | 16
-                            | 17
-                            | 18
-                            | 19
-                            | 20
-                            | 21
-                            | 22
-                            | 23
-                    )
-                {
+                if (c.writable || c.kind == 6) && PERSISTENT_CONTROLS.contains(&c.kind) {
                     state.values.entry(c.kind).or_insert(c.value);
                 } else {
                     state.values.insert(c.kind, c.value);
@@ -474,6 +690,7 @@ impl Session {
                 self.selection.serial.as_deref().unwrap_or("unavailable")
             ),
         );
+        self.cooling.activate();
         Ok(())
     }
     fn settings(&self) -> BTreeMap<i32, i64> {
@@ -484,26 +701,7 @@ impl Session {
             .filter(|(k, _)| {
                 (state.white_balance.is_none() || !matches!(k, 3 | 4 | 9))
                     && state.controls.get(k).is_some_and(|c| c.writable || *k == 6)
-                    && matches!(
-                        k,
-                        0 | 2
-                            | 3
-                            | 4
-                            | 5
-                            | 6
-                            | 7
-                            | 9
-                            | 13
-                            | 14
-                            | 16
-                            | 17
-                            | 18
-                            | 19
-                            | 20
-                            | 21
-                            | 22
-                            | 23
-                    )
+                    && PERSISTENT_CONTROLS.contains(k)
             })
             .collect()
     }
@@ -534,24 +732,32 @@ impl Session {
                 self.applied.insert(kind, value);
                 continue;
             }
-            self.call("set", json!({"control":kind,"value":value}), None, token)
-                .await?;
-            let actual = self
-                .call("get", json!({"control":kind}), None, token)
-                .await?
-                .0
-                .as_i64()
-                .ok_or_else(|| invalid("Invalid control readback"))?;
+            let observation = if ACKNOWLEDGED_CONTROLS.contains(&kind) {
+                let deadline = Instant::now()
+                    + Duration::from_secs_f64(self.selection.recovery.command_timeout_seconds);
+                let result = self.write_control(kind, value, deadline, token, true).await;
+                Some(self.control_result(result).await?)
+            } else {
+                self.call("set", json!({"control":kind,"value":value}), None, token)
+                    .await?;
+                None
+            };
+            let actual = if let Some(observation) = observation {
+                observation.value
+            } else {
+                self.call("get", json!({"control":kind}), None, token)
+                    .await?
+                    .0
+                    .as_i64()
+                    .ok_or_else(|| invalid("Invalid control readback"))?
+            };
             if actual != value {
                 ensure!(
                     !self.direct && kind == 5 && actual >= cap.min && actual <= cap.max,
                     "Control {kind} readback {actual} differs from requested {value}"
                 );
-                self.emit(
-                    "info",
-                    "control.clamped",
-                    format!("SDK applied offset {actual} instead of {value}"),
-                );
+                // Acknowledged controls already emit their clamp diagnostic in
+                // the shared helper; other controls cannot use this policy.
                 values.insert(kind, actual);
                 let mut shared = self.status.lock().unwrap();
                 if shared.values.get(&kind) == Some(&value) {
@@ -559,6 +765,13 @@ impl Session {
                 }
             }
             self.applied.insert(kind, actual);
+            if let Some(observation) = observation {
+                self.status
+                    .lock()
+                    .unwrap()
+                    .observations
+                    .insert(kind, observation);
+            }
         }
         if self.direct
             && self.settle_required
@@ -586,19 +799,33 @@ impl Session {
         }
         Ok(())
     }
+    async fn observe_control(
+        &mut self,
+        kind: i32,
+        token: &CancellationToken,
+    ) -> Result<ControlObservation> {
+        let request_started = Instant::now();
+        let (reply, pixels) = self
+            .call("get-observation", json!({"control":kind}), None, token)
+            .await?;
+        ensure!(
+            pixels.is_empty(),
+            invalid("Unexpected observation image payload")
+        );
+        serde_json::from_value::<ControlObservationReply>(reply)
+            .map_err(|_| invalid("Invalid control observation"))?
+            .normalize(request_started)
+    }
     async fn read_environment(
         &mut self,
         token: &CancellationToken,
     ) -> Result<(Option<f64>, Option<i64>)> {
         for kind in [8, 15] {
             if self.snapshot().controls.contains_key(&kind) {
-                let value = self
-                    .call("get", json!({"control":kind}), None, token)
-                    .await?
-                    .0
-                    .as_i64()
-                    .ok_or_else(|| invalid("Invalid environment value"))?;
-                self.status.lock().unwrap().values.insert(kind, value);
+                let observation = self.observe_control(kind, token).await?;
+                let mut state = self.status.lock().unwrap();
+                state.values.insert(kind, observation.value);
+                state.observations.insert(kind, observation);
             }
         }
         let state = self.snapshot();
@@ -606,6 +833,21 @@ impl Session {
             state.values.get(&8).map(|v| *v as f64 / 10.),
             state.values.get(&15).copied(),
         ))
+    }
+    /// Read-only idle telemetry on the existing worker. Unlike refresh, this
+    /// never opens a replacement worker or applies desired configuration.
+    pub async fn refresh_environment(&mut self, token: &CancellationToken) -> Result<()> {
+        let state = self.snapshot();
+        ensure!(
+            state.connected && state.control_connection_available && self.worker.is_some(),
+            invalid("Camera controls are unavailable")
+        );
+        let result = self.read_environment(token).await.map(|_| ());
+        if let Err(error) = &result {
+            self.emit("warning", "environment.failed", format!("{error:#}"));
+            self.invalidate().await;
+        }
+        result
     }
     pub async fn refresh(&mut self, token: &CancellationToken) -> Result<()> {
         let result = async {
@@ -644,7 +886,7 @@ impl Session {
                         * self.snapshot().info["readRetryOverheadSeconds"]
                             .as_f64()
                             .unwrap_or(0.)
-                            .clamp(0., 15.)
+                            .clamp(0., MAX_READ_RETRY_OVERHEAD_SECONDS)
             } else {
                 0.
             }
@@ -671,11 +913,7 @@ impl Session {
         )?;
         let options = self.selection.recovery.clone();
         let seconds = e.microseconds as f64 / 1e6;
-        let retries = if seconds <= options.maximum_retry_exposure_seconds {
-            options.max_retries
-        } else {
-            0
-        };
+        let retries = options.replacement_exposures(e.microseconds);
         let mut settings = self.settings();
         let mut prior = self
             .recovery_temperature
@@ -726,7 +964,10 @@ impl Session {
                             state.retry.last_failure = Some(format!("{error:#}"));
                         }
                         state.sdk_error_code = match error.downcast_ref::<Failure>() {
-                            Some(Failure::Worker { code, .. }) => *code,
+                            Some(
+                                Failure::Worker { code, .. }
+                                | Failure::UncertainControl { code, .. },
+                            ) => *code,
                             _ => None,
                         };
                     }
@@ -791,13 +1032,13 @@ impl Session {
             self.delay(options.reconnect_delay_seconds, token).await?;
             self.open(token).await?;
         }
+        self.service_cooling_with(settings, token).await?;
         self.apply(settings, token).await?;
         if self.settle_required
             && settings.get(&17).copied().unwrap_or(0) != 0
             && let Some(t) = *prior
         {
-            self.settle(t, *power, *settings.get(&16).unwrap_or(&0) as f64, token)
-                .await?;
+            self.settle(t, *power, settings, token).await?;
         }
         let observed = self.read_environment(token).await?;
         *prior = observed.0.or(*prior);
@@ -817,8 +1058,7 @@ impl Session {
                     if settings.get(&17).copied().unwrap_or(0) != 0
                         && let Some(t) = *prior
                     {
-                        self.settle(t, *power, *settings.get(&16).unwrap_or(&0) as f64, token)
-                            .await?;
+                        self.settle(t, *power, settings, token).await?;
                     }
                 } else {
                     return Err(error);
@@ -851,6 +1091,7 @@ impl Session {
         let clock = Instant::now();
         let mut environment_sample = Instant::now();
         loop {
+            self.service_cooling_with(settings, token).await?;
             let state = self
                 .call("status", Value::Null, None, token)
                 .await?
@@ -872,15 +1113,20 @@ impl Session {
             }
             self.delay(0.025, token).await?;
         }
+        self.service_cooling_with(settings, token).await?;
         self.phase("Downloading");
         let mut reads = 0;
         let (mut metadata, pixels) = loop {
             match self
-                .call(
+                .worker
+                .as_mut()
+                .context("Camera worker is disconnected")?
+                .call_image(
                     "download",
                     Value::Null,
-                    Some(options.download_timeout_seconds),
+                    options.download_timeout_seconds,
                     token,
+                    e.bytes()?,
                 )
                 .await
             {
@@ -949,6 +1195,8 @@ impl Session {
                 format!("Frame preserved; reconnect required: {error}"),
             );
             self.invalidate().await;
+        } else {
+            self.service_cooling_with(settings, token).await?;
         }
         metadata["startedUtc"] = json!(started);
         if self.snapshot().white_balance.is_some() {
@@ -976,7 +1224,7 @@ impl Session {
         &mut self,
         prior: f64,
         prior_power: Option<i64>,
-        target: f64,
+        settings: &mut BTreeMap<i32, i64>,
         token: &CancellationToken,
     ) -> Result<()> {
         let o = self.selection.recovery.clone();
@@ -985,6 +1233,11 @@ impl Session {
         let mut hold = CoolingHold::default();
         self.phase(format!("Restoring cooling near {prior:.1} C"));
         while clock.elapsed().as_secs_f64() < o.cooling_timeout_seconds {
+            self.service_cooling_with(settings, token).await?;
+            if settings.get(&17).copied().unwrap_or(0) == 0 {
+                return Ok(());
+            }
+            let target = *settings.get(&16).unwrap_or(&0) as f64;
             let (temperature, power) = self.read_environment(token).await?;
             let output = prior_power.is_none_or(|p| p <= 10 || power.is_some_and(|v| v >= p - 10));
             let near = temperature.is_some_and(|t| {
@@ -1018,9 +1271,14 @@ impl Session {
         anyhow::bail!("Camera did not recover its prior cooling temperature and output")
     }
     pub async fn close(&mut self) {
+        self.cooling.retire();
+        self.status.lock().unwrap().connected = false;
         let token = CancellationToken::new();
         let closed = if self.worker.is_some() {
-            match self.call("close", Value::Null, Some(2.), &token).await {
+            match self
+                .call("close", Value::Null, Some(CLOSE_SECONDS), &token)
+                .await
+            {
                 Ok(_) => true,
                 Err(error) => {
                     let message = format!("Camera close or settings restoration failed: {error:#}");
@@ -1045,7 +1303,8 @@ impl Session {
                 self.open(&token).await?;
                 self.call("set", json!({"control":17,"value":0}), None, &token)
                     .await?;
-                self.call("close", Value::Null, Some(2.), &token).await?;
+                self.call("close", Value::Null, Some(CLOSE_SECONDS), &token)
+                    .await?;
                 Result::<()>::Ok(())
             }
             .await;
@@ -1059,8 +1318,15 @@ impl Session {
             self.invalidate().await;
         }
         self.status.lock().unwrap().connected = false;
+        self.cooling.retire();
         self.usb_target = None;
         self.phase("Disconnected");
+    }
+}
+
+impl Drop for Session {
+    fn drop(&mut self) {
+        self.cooling.retire();
     }
 }
 
@@ -1151,6 +1417,667 @@ mod tests {
     }
     fn log() -> Diagnostic {
         Arc::new(|_, _, _| {})
+    }
+    async fn exposing(status: &SharedStatus) {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            if status.lock().unwrap().phase == "Exposing" {
+                return;
+            }
+            assert!(Instant::now() < deadline, "Capture never reached Exposing");
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+    }
+    #[tokio::test]
+    async fn worker_evidence_age_survives_core_refresh_and_invalid_readback_is_uncertain() {
+        let token = CancellationToken::new();
+        let mut session = Session::new(selection(false), runtime(), log()).unwrap();
+        session.connect(&token).await.unwrap();
+        session.refresh(&token).await.unwrap();
+        session
+            .call(
+                "simulation",
+                json!({"observationControl":8,
+            "observationReply":{"value":-100,"ageSeconds":120.25}}),
+                None,
+                &token,
+            )
+            .await
+            .unwrap();
+        let requested = Instant::now();
+        session.read_environment(&token).await.unwrap();
+        let received = Instant::now();
+        let observed = session.snapshot().observations[&8];
+        assert_eq!(observed.value, -100);
+        // The internal request admission lies between these two boundaries.
+        let age = Duration::from_secs_f64(120.25);
+        assert!(observed.observed_at >= requested - age);
+        assert!(observed.observed_at <= received - age);
+        let previous = session.snapshot().observations[&0];
+        session
+            .call(
+                "simulation",
+                json!({"observationControl":0,
+            "observationReply":{"value":123,"ageSeconds":-1}}),
+                None,
+                &token,
+            )
+            .await
+            .unwrap();
+        let error = session
+            .set_imaging_control(0, 123, Instant::now() + Duration::from_secs(5), &token)
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            error.downcast_ref::<Failure>(),
+            Some(Failure::UncertainControl { .. })
+        ));
+        assert!(!retryable(&error));
+        assert_eq!(session.snapshot().observations[&0], previous);
+        assert!(!session.snapshot().control_connection_available);
+        assert!(session.worker.is_none());
+        session.close().await;
+    }
+    #[tokio::test]
+    async fn queued_persistent_control_invalid_observation_never_replays_or_starts_exposure() {
+        for (kind, value) in [(0, 123), (5, 20), (16, -15), (17, 0)] {
+            let token = CancellationToken::new();
+            let events = Arc::new(Mutex::new(Vec::new()));
+            let sink = events.clone();
+            let mut session = Session::new(
+                selection(false),
+                runtime(),
+                Arc::new(move |_, event, _| sink.lock().unwrap().push(event.to_owned())),
+            )
+            .unwrap();
+            session.connect(&token).await.unwrap();
+            session.refresh(&token).await.unwrap();
+            let previous = session.snapshot().observations[&kind];
+            assert_ne!(
+                previous.value, value,
+                "The test must dispatch a changed setting"
+            );
+            let writes = events
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|event| event.as_str() == "control.write_acknowledged")
+                .count();
+            session
+                .call(
+                    "simulation",
+                    json!({"observationControl":kind,
+                "observationReply":{"value":value,"ageSeconds":-1}}),
+                    None,
+                    &token,
+                )
+                .await
+                .unwrap();
+            Session::queue_control(&session.status, kind, value).unwrap();
+            let error = session.capture(exposure(), &token).await.err().unwrap();
+            assert!(matches!(
+                error.downcast_ref::<Failure>(),
+                Some(Failure::UncertainControl { .. })
+            ));
+            assert!(!retryable(&error));
+            assert_eq!(session.snapshot().observations[&kind], previous);
+            assert!(!session.snapshot().control_connection_available);
+            assert!(session.worker.is_none());
+            let observed = events.lock().unwrap().clone();
+            assert_eq!(
+                observed
+                    .iter()
+                    .filter(|event| event.as_str() == "control.write_acknowledged")
+                    .count(),
+                writes + 1
+            );
+            assert_eq!(
+                observed
+                    .iter()
+                    .filter(|event| event.as_str() == "connection.opened")
+                    .count(),
+                1
+            );
+            assert!(!observed.iter().any(|event| event == "capture.retry"));
+            assert_ne!(session.snapshot().phase, "Exposing");
+            session.close().await;
+        }
+    }
+    #[tokio::test]
+    async fn idle_environment_read_never_applies_queued_settings_or_reopens_lost_worker() {
+        for direct in [false, true] {
+            let token = CancellationToken::new();
+            let mut selected = selection(direct);
+            if direct {
+                selected.name = "ZWO ASI585MM Pro".into();
+            }
+            let mut session = Session::new(selected, runtime(), log()).unwrap();
+            session.connect(&token).await.unwrap();
+            session.refresh(&token).await.unwrap();
+            let before = session.snapshot();
+            Session::queue_control(&session.status, 0, 234).unwrap();
+            Session::queue_control(&session.status, 16, -20).unwrap();
+            session.refresh_environment(&token).await.unwrap();
+            let after = session.snapshot();
+            assert_eq!(after.process_id, before.process_id);
+            for kind in [0, 5, 16, 17] {
+                assert_eq!(after.observations[&kind], before.observations[&kind]);
+                assert_eq!(
+                    session
+                        .call("get", json!({"control":kind}), None, &token)
+                        .await
+                        .unwrap()
+                        .0,
+                    before.observations[&kind].value
+                );
+            }
+            assert_eq!(after.values[&0], 234);
+            assert_eq!(after.values[&16], -20);
+            for kind in [8, 15] {
+                assert!(
+                    after.observations[&kind].observed_at > before.observations[&kind].observed_at
+                );
+            }
+            session.invalidate().await;
+            assert!(session.refresh_environment(&token).await.is_err());
+            assert!(session.worker.is_none());
+            assert!(session.snapshot().process_id.is_none());
+            assert_eq!(session.snapshot().observations, after.observations);
+            session.close().await;
+        }
+    }
+    #[tokio::test]
+    async fn failed_idle_environment_read_retires_worker_without_reopening_or_applying_settings() {
+        let token = CancellationToken::new();
+        let mut session = Session::new(selection(false), runtime(), log()).unwrap();
+        session.connect(&token).await.unwrap();
+        session.refresh(&token).await.unwrap();
+        let before = session.snapshot();
+        Session::queue_control(&session.status, 0, 234).unwrap();
+        session
+            .call(
+                "simulation",
+                json!({"observationControl":8,
+            "observationReply":{"value":100,"ageSeconds":-1}}),
+                None,
+                &token,
+            )
+            .await
+            .unwrap();
+        assert!(session.refresh_environment(&token).await.is_err());
+        assert!(!session.snapshot().control_connection_available);
+        assert!(session.worker.is_none());
+        assert_eq!(session.snapshot().observations, before.observations);
+        assert_eq!(session.snapshot().values[&0], 234);
+        assert!(session.refresh_environment(&token).await.is_err());
+        assert!(session.worker.is_none());
+        assert_eq!(session.snapshot().observations, before.observations);
+        session.close().await;
+    }
+    #[tokio::test]
+    async fn observations_are_acknowledged_evidence_not_desired_settings_or_new_worker_defaults() {
+        for direct in [false, true] {
+            let token = CancellationToken::new();
+            let mut selected = selection(direct);
+            if direct {
+                selected.name = "ZWO ASI585MM Pro".into();
+            }
+            let mut session = Session::new(selected, runtime(), log()).unwrap();
+            session.connect(&token).await.unwrap();
+            assert!(session.snapshot().observations.is_empty());
+            Session::queue_control(&session.status, 0, 123).unwrap();
+            assert!(session.snapshot().observations.is_empty());
+            session.refresh(&token).await.unwrap();
+            let observed = session.snapshot().observations;
+            for kind in [0, 5, 8, 15, 16, 17] {
+                assert!(observed[&kind].observed_at <= Instant::now());
+            }
+            assert_eq!(observed[&0].value, 123);
+            Session::queue_control(&session.status, 0, 234).unwrap();
+            let queued = session.snapshot();
+            assert_eq!(queued.values[&0], 234);
+            assert_eq!(queued.observations[&0], observed[&0]);
+            let json = serde_json::to_value(&queued).unwrap();
+            assert!(json.get("observations").is_none());
+            assert!(json.to_string().find("observedAt").is_none());
+            session.refresh(&token).await.unwrap();
+            let acknowledged = session.snapshot().observations[&0];
+            assert_eq!(acknowledged.value, 234);
+            assert!(acknowledged.observed_at >= observed[&0].observed_at);
+            session.invalidate().await;
+            // Diagnostics can retain known aged evidence while unavailable.
+            assert_eq!(session.snapshot().observations[&0], acknowledged);
+            session.open(&token).await.unwrap();
+            assert!(session.snapshot().observations.is_empty());
+            assert_eq!(session.snapshot().values[&0], 234);
+            session.refresh(&token).await.unwrap();
+            assert_eq!(session.snapshot().observations[&0].value, 234);
+            session.close().await;
+        }
+    }
+    #[tokio::test]
+    async fn acknowledged_imaging_controls_apply_before_success_and_survive_worker_recovery() {
+        for direct in [false, true] {
+            let token = CancellationToken::new();
+            let mut session = Session::new(selection(direct), runtime(), log()).unwrap();
+            session.connect(&token).await.unwrap();
+            session.refresh(&token).await.unwrap();
+            for (kind, value) in [(0, 123), (5, 20)] {
+                assert_eq!(
+                    session
+                        .set_imaging_control(
+                            kind,
+                            value,
+                            Instant::now() + Duration::from_secs(5),
+                            &token
+                        )
+                        .await
+                        .unwrap(),
+                    value
+                );
+                assert_eq!(session.snapshot().values[&kind], value);
+                let observation = session.snapshot().observations[&kind];
+                assert_eq!(observation.value, value);
+                assert!(observation.observed_at <= Instant::now());
+                assert_eq!(session.applied[&kind], value);
+                assert_eq!(
+                    session
+                        .call("get", json!({"control":kind}), None, &token)
+                        .await
+                        .unwrap()
+                        .0,
+                    value
+                );
+            }
+            session.invalidate().await;
+            let frame = session.capture(exposure(), &token).await.unwrap();
+            assert_eq!(frame.metadata["controls"]["0"], 123);
+            assert_eq!(frame.metadata["controls"]["5"], 20);
+            for (kind, value) in [(0, 123), (5, 20)] {
+                assert_eq!(
+                    session
+                        .call("get", json!({"control":kind}), None, &token)
+                        .await
+                        .unwrap()
+                        .0,
+                    value
+                );
+            }
+            session.close().await;
+        }
+    }
+    #[tokio::test]
+    async fn imaging_control_mismatch_retires_worker_without_publishing_or_retrying() {
+        let token = CancellationToken::new();
+        let mut rt = runtime();
+        rt.sdk_simulation = Some(json!({"instant":true,"clampControl":0,"clampMinimum":200}));
+        let mut session = Session::new(selection(false), rt, log()).unwrap();
+        session.connect(&token).await.unwrap();
+        let before = session.snapshot().values[&0];
+        let error = session
+            .set_imaging_control(0, 100, Instant::now() + Duration::from_secs(5), &token)
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            error.downcast_ref::<Failure>(),
+            Some(Failure::UncertainControl { .. })
+        ));
+        assert!(!retryable(&error));
+        assert_eq!(session.snapshot().values[&0], before);
+        assert!(!session.snapshot().control_connection_available);
+        assert!(session.worker.is_none());
+        assert!(session.applied.is_empty());
+        session.close().await;
+    }
+    #[tokio::test]
+    async fn acknowledged_sdk_offset_preserves_existing_bounded_clamp_policy() {
+        let token = CancellationToken::new();
+        let mut rt = runtime();
+        rt.sdk_simulation = Some(json!({"instant":true,"clampControl":5,"clampMinimum":20}));
+        let mut session = Session::new(selection(false), rt, log()).unwrap();
+        session.connect(&token).await.unwrap();
+        assert_eq!(
+            session
+                .set_imaging_control(5, 0, Instant::now() + Duration::from_secs(5), &token)
+                .await
+                .unwrap(),
+            20
+        );
+        assert_eq!(session.snapshot().values[&5], 20);
+        assert_eq!(session.applied[&5], 20);
+        let frame = session.capture(exposure(), &token).await.unwrap();
+        assert_eq!(frame.metadata["controls"]["5"], 20);
+        let maximum = session.snapshot().controls[&5].max;
+        session
+            .call(
+                "simulation",
+                json!({"clampControl":5,"clampMinimum":maximum+1}),
+                None,
+                &token,
+            )
+            .await
+            .unwrap();
+        let error = session
+            .set_imaging_control(5, 0, Instant::now() + Duration::from_secs(5), &token)
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            error.downcast_ref::<Failure>(),
+            Some(Failure::UncertainControl { .. })
+        ));
+        assert_eq!(session.snapshot().values[&5], 20);
+        assert!(session.worker.is_none());
+        session.close().await;
+    }
+    #[tokio::test]
+    async fn imaging_control_preflight_rejects_without_io_or_desired_state_changes() {
+        let token = CancellationToken::new();
+        let mut session = Session::new(selection(false), runtime(), log()).unwrap();
+        session.connect(&token).await.unwrap();
+        session.refresh(&token).await.unwrap();
+        let before = session.snapshot();
+        let applied = session.applied.clone();
+        for (kind, value) in [(1, 1000), (16, -10), (0, before.controls[&0].max + 1)] {
+            let error = session
+                .set_imaging_control(kind, value, Instant::now() + Duration::from_secs(5), &token)
+                .await
+                .unwrap_err();
+            assert!(matches!(
+                error.downcast_ref::<Failure>(),
+                Some(Failure::Invalid(_))
+            ));
+        }
+        for malformed in 0..4 {
+            {
+                let mut state = session.status.lock().unwrap();
+                let cap = state.controls.get_mut(&0).unwrap();
+                match malformed {
+                    0 => cap.kind = 5,
+                    1 => cap.min = cap.max + 1,
+                    2 => cap.writable = false,
+                    _ => {
+                        state.controls.remove(&0);
+                    }
+                }
+            }
+            assert!(
+                session
+                    .set_imaging_control(0, 123, Instant::now() + Duration::from_secs(5), &token)
+                    .await
+                    .is_err()
+            );
+            session
+                .status
+                .lock()
+                .unwrap()
+                .controls
+                .insert(0, before.controls[&0].clone());
+        }
+        let cancelled = CancellationToken::new();
+        cancelled.cancel();
+        let error = session
+            .set_imaging_control(0, 123, Instant::now() + Duration::from_secs(5), &cancelled)
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            error.downcast_ref::<Failure>(),
+            Some(Failure::Cancelled)
+        ));
+        let error = session
+            .set_imaging_control(0, 123, Instant::now(), &token)
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            error.downcast_ref::<cooling::CoolingError>(),
+            Some(cooling::CoolingError::Expired)
+        ));
+        let cooler = session
+            .cooling()
+            .submit(16, -15, Duration::from_secs(5))
+            .unwrap();
+        assert!(
+            session
+                .set_imaging_control(0, 123, Instant::now() + Duration::from_secs(5), &token)
+                .await
+                .is_err()
+        );
+        drop(cooler);
+        assert_eq!(session.snapshot().values, before.values);
+        assert_eq!(session.applied, applied);
+        assert_eq!(session.snapshot().process_id, before.process_id);
+        for kind in [0, 5] {
+            assert_eq!(
+                session
+                    .call("get", json!({"control":kind}), None, &token)
+                    .await
+                    .unwrap()
+                    .0,
+                before.values[&kind]
+            );
+        }
+        session.close().await;
+    }
+    async fn acknowledged_cooling(direct: bool) {
+        let token = CancellationToken::new();
+        let mut sel = selection(direct);
+        if direct {
+            sel.name = "ZWO ASI585MM Pro".into();
+        }
+        sel.recovery.ready_frame_download_retries = 0;
+        let mut rt = runtime();
+        rt.sdk_simulation = Some(json!({"instant":false}));
+        let mut session = Session::new(sel, rt, log()).unwrap();
+        session.connect(&token).await.unwrap();
+        let handle = session.cooling();
+        let shared = session.status.clone();
+        let original = shared.lock().unwrap().values[&16];
+        Session::queue_control(&shared, 0, 123).unwrap();
+        if !direct {
+            session
+                .call("fault", json!({"kind":"download"}), None, &token)
+                .await
+                .unwrap();
+        }
+        let capture = session.capture(
+            Exposure {
+                microseconds: 6_000_000,
+                ..exposure()
+            },
+            &token,
+        );
+        let commands = async {
+            exposing(&shared).await;
+            let first = handle.submit(16, -10, Duration::from_secs(5)).unwrap();
+            assert_eq!(shared.lock().unwrap().values[&16], original);
+            assert_eq!(first.wait().await, Ok(-10));
+            for (kind, value) in [(17, 1), (16, -15)] {
+                assert_eq!(
+                    handle
+                        .submit(kind, value, Duration::from_secs(5))
+                        .unwrap()
+                        .wait()
+                        .await,
+                    Ok(value)
+                );
+            }
+            drop(handle.submit(16, -20, Duration::from_secs(5)).unwrap());
+            // Legacy deferred imaging intent must not change frozen capture or
+            // replacement settings. Only acknowledged cooler keys are live.
+            Session::queue_control(&shared, 0, 200).unwrap();
+        };
+        let (frame, ()) = tokio::join!(capture, commands);
+        let frame = frame.unwrap();
+        assert_eq!(frame.metadata["controls"]["16"], -15);
+        assert_eq!(frame.metadata["controls"]["17"], 1);
+        assert_eq!(frame.metadata["controls"]["0"], 123);
+        assert_eq!(frame.metadata["recoveries"], if direct { 0 } else { 1 });
+        assert_eq!(
+            frame.pixels.as_ref(),
+            (0..4096u16).flat_map(u16::to_le_bytes).collect::<Vec<_>>()
+        );
+        assert_eq!(session.snapshot().values[&16], -15);
+        assert_eq!(session.snapshot().values[&17], 1);
+        assert!(!handle.pending());
+        session.invalidate().await;
+        // A later capture restores the acknowledged target after worker loss.
+        let next = session.capture(exposure(), &token).await.unwrap();
+        assert_eq!(next.metadata["controls"]["16"], -15);
+        assert_eq!(next.metadata["controls"]["17"], 1);
+        assert_eq!(next.metadata["controls"]["0"], 200);
+        session.close().await;
+    }
+    #[tokio::test]
+    async fn acknowledged_sdk_cooling_survives_replacement_and_preserves_imaging_settings() {
+        acknowledged_cooling(false).await;
+    }
+    #[tokio::test]
+    async fn acknowledged_direct_cooling_survives_worker_recovery() {
+        acknowledged_cooling(true).await;
+    }
+    #[tokio::test]
+    async fn cooler_readback_mismatch_stops_capture_without_retry_or_target_publication() {
+        let token = CancellationToken::new();
+        let mut rt = runtime();
+        rt.sdk_simulation = Some(json!({"instant":false}));
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let sink = events.clone();
+        let mut session = Session::new(
+            selection(false),
+            rt,
+            Arc::new(move |_, event, _| sink.lock().unwrap().push(event.to_owned())),
+        )
+        .unwrap();
+        session.connect(&token).await.unwrap();
+        session.refresh(&token).await.unwrap();
+        session
+            .call(
+                "simulation",
+                json!({"clampControl":16,"clampMinimum":5}),
+                None,
+                &token,
+            )
+            .await
+            .unwrap();
+        let handle = session.cooling();
+        let shared = session.status.clone();
+        let original = shared.lock().unwrap().values[&16];
+        let capture = session.capture(
+            Exposure {
+                microseconds: 6_000_000,
+                ..exposure()
+            },
+            &token,
+        );
+        let commands = async {
+            exposing(&shared).await;
+            assert!(matches!(
+                handle
+                    .submit(16, -10, Duration::from_secs(5))
+                    .unwrap()
+                    .wait()
+                    .await,
+                Err(cooling::CoolingError::Uncertain { .. })
+            ));
+        };
+        let (result, ()) = tokio::join!(capture, commands);
+        let error = result.err().unwrap();
+        assert!(matches!(
+            error.downcast_ref::<Failure>(),
+            Some(Failure::UncertainControl { .. })
+        ));
+        assert!(!retryable(&error));
+        assert_eq!(session.snapshot().values[&16], original);
+        assert_eq!(session.snapshot().observations[&16].value, original);
+        assert!(!session.snapshot().control_connection_available);
+        assert!(
+            !events
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|event| event == "capture.retry")
+        );
+        assert!(matches!(
+            handle.submit(17, 1, Duration::from_secs(1)),
+            Err(cooling::CoolingError::Unavailable)
+        ));
+        session.close().await;
+    }
+    #[tokio::test]
+    async fn idle_cooling_acknowledges_and_teardown_rejects_queued_requests() {
+        for direct in [false, true] {
+            let token = CancellationToken::new();
+            let mut sel = selection(direct);
+            if direct {
+                sel.name = "ZWO ASI585MM Pro".into();
+            }
+            let mut session = Session::new(sel, runtime(), log()).unwrap();
+            session.connect(&token).await.unwrap();
+            let handle = session.cooling();
+            let receipt = handle.submit(16, -10, Duration::from_secs(5)).unwrap();
+            session.service_cooling(&token).await.unwrap();
+            assert_eq!(receipt.wait().await, Ok(-10));
+            assert_eq!(session.snapshot().values[&16], -10);
+            let receipt = handle.submit(16, -20, Duration::from_secs(5)).unwrap();
+            session.close().await;
+            assert_eq!(
+                receipt.wait().await,
+                Err(cooling::CoolingError::Unavailable)
+            );
+            assert!(!handle.pending());
+        }
+    }
+    #[tokio::test]
+    async fn live_cooler_target_and_disable_are_acknowledged_during_recovery_settle() {
+        for direct in [false, true] {
+            let token = CancellationToken::new();
+            let mut sel = selection(direct);
+            if direct {
+                sel.name = "ZWO ASI585MM Pro".into();
+            }
+            let mut session = Session::new(sel, runtime(), log()).unwrap();
+            session.connect(&token).await.unwrap();
+            let handle = session.cooling();
+            let shared = session.status.clone();
+            let enabled = handle.submit(17, 1, Duration::from_secs(5)).unwrap();
+            session.service_cooling(&token).await.unwrap();
+            assert_eq!(enabled.wait().await, Ok(1));
+            // Neither simulator meets this prior temperature/output, so settle
+            // must remain active until the caller explicitly disables cooling.
+            session.seed_recovery(Some(-30.), Some(80));
+            let capture = session.capture(exposure(), &token);
+            let commands = async {
+                let deadline = Instant::now() + Duration::from_secs(10);
+                loop {
+                    if shared
+                        .lock()
+                        .unwrap()
+                        .phase
+                        .starts_with("Restoring cooling")
+                    {
+                        break;
+                    }
+                    assert!(Instant::now() < deadline);
+                    tokio::time::sleep(Duration::from_millis(1)).await;
+                }
+                for (kind, value) in [(16, -15), (17, 0)] {
+                    assert_eq!(
+                        handle
+                            .submit(kind, value, Duration::from_secs(5))
+                            .unwrap()
+                            .wait()
+                            .await,
+                        Ok(value)
+                    );
+                }
+            };
+            let (frame, ()) = tokio::join!(capture, commands);
+            let frame = frame.unwrap();
+            assert_eq!(frame.metadata["controls"]["16"], -15);
+            assert_eq!(frame.metadata["controls"]["17"], 0);
+            assert_eq!(frame.metadata["recoveries"], 0);
+            assert!(!handle.pending());
+            session.close().await;
+        }
     }
     #[tokio::test]
     async fn direct_usb_read_size_survives_worker_replacement_and_leaves_sdk_bandwidth_unchanged() {
@@ -1321,6 +2248,77 @@ mod tests {
         assert!(!hold.observe(Some(-10.), Some(20), -10., 2., 2., 100.));
         assert!(!hold.observe(Some(-10.), Some(0), -10., 2., 2., 102.));
     }
+    #[tokio::test]
+    async fn direct_worker_acknowledges_capture_cooling_over_production_framing() {
+        // Transport primitive only: Session's common acknowledged control queue
+        // is a separate requirement. Never discover or activate physical cameras.
+        for mode in ["still", "video"] {
+            let token = CancellationToken::new();
+            let mut worker = runtime().spawn(true, log()).await.unwrap();
+            worker
+                .call("open", json!({"name":"ZWO ASI585MM Pro"}), 15., &token)
+                .await
+                .unwrap();
+            worker
+                .call(
+                    "start",
+                    json!({"mode":mode,"maxFps":120.0,"width":64,"height":64,
+                "x":0,"y":0,"bin":1,"microseconds":6_000_000,"dark":false}),
+                    15.,
+                    &token,
+                )
+                .await
+                .unwrap();
+            for (control, value) in [(16, -10), (17, 1), (16, -15)] {
+                worker
+                    .call("set", json!({"control":control,"value":value}), 15., &token)
+                    .await
+                    .unwrap();
+                assert_eq!(
+                    worker
+                        .call("get", json!({"control":control}), 15., &token)
+                        .await
+                        .unwrap()
+                        .0,
+                    value
+                );
+                assert_eq!(
+                    worker
+                        .call("status", Value::Null, 15., &token)
+                        .await
+                        .unwrap()
+                        .0,
+                    1
+                );
+            }
+            let deadline = Instant::now() + Duration::from_secs(15);
+            while worker
+                .call("status", Value::Null, 15., &token)
+                .await
+                .unwrap()
+                .0
+                == 1
+            {
+                assert!(Instant::now() < deadline);
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+            let (metadata, pixels) = worker
+                .call_image("download", Value::Null, 15., &token, 8192)
+                .await
+                .unwrap();
+            assert_eq!(metadata["mode"], mode);
+            assert_eq!(
+                pixels,
+                (0..4096u16).flat_map(u16::to_le_bytes).collect::<Vec<_>>()
+            );
+            worker
+                .call("close", Value::Null, 15., &token)
+                .await
+                .unwrap();
+            worker.kill().await;
+        }
+    }
+
     #[tokio::test]
     async fn environment_refreshes_before_sdk_and_direct_exposures_finish() {
         for direct in [false, true] {

@@ -17,6 +17,11 @@ vendor SDK in a separate process.
 [Install & upgrade](https://pulsarfab.com/docs/regain/install.html) ·
 [Supported hardware](#supported-hardware)
 
+**Development branch: 0.6 Hub preview.** The hub features below are implemented
+here and remain under acceptance testing. Published 0.5 packages provide the
+standalone integrations; they do not include the hub. See the
+[setup guide](docs/hub-setup.md) and [remaining gates](docs/hub-plan.md).
+
 ## What do you want to do?
 
 ### Save an exposure after a failed download
@@ -114,6 +119,59 @@ new video or AWB controls.
 
 ## Integration points
 
+### Combine equipment with Regain Hub (0.6 preview)
+
+Choose the sources once, then publish the outputs you need through native NINA,
+Windows ASCOM, Alpaca, or several of those frontends together:
+
+- **Build one switch panel:** combine writable switches and read-only gauges
+  from several drivers, with explicit channel mappings and units.
+- **Combine safety monitors:** require fresh safe observations from selected
+  monitors, with confirmations and a recovery hold before returning safe.
+  Missing or expired evidence returns unsafe.
+- **Combine weather instruments:** choose sources and fallbacks per metric;
+  unavailable readings stay unavailable rather than becoming zero.
+- **Bring an installed ASCOM driver to Alpaca:** run the hub on Windows and
+  import it through an isolated 32-bit or 64-bit helper.
+- **Share a device across applications:** several virtual outputs can use one
+  source connection. Camera captures and motion commands have explicit ownership;
+  coordinated multi-camera captures and focuser moves use configured groups.
+
+| Hub input | Hub outputs | Frontends |
+| --- | --- | --- |
+| Supported native Regain devices, Alpaca devices, Windows ASCOM drivers, another hub output, or explicit simulation | Camera, Focuser, Rotator, FilterWheel, CoverCalibrator, Switch, SafetyMonitor and ObservingConditions | Native NINA providers, native Windows ASCOM entries and Alpaca |
+
+Each source must implement its selected device class. Native hardware support
+is listed below; arbitrary mounts and domes are outside this hub's scope.
+Republishing a camera does not add SDK-free rereads to an upstream SDK or proxy.
+Only native Regain camera sources use Regain's camera recovery engine.
+
+Native NINA and ASCOM attach to the same local host over private IPC; HTTP is
+optional. They share one configuration, parameter descriptions and validation
+with the web editor. Discovery and configuration edits do not acquire equipment
+leases. Saved UUIDs and device numbers preserve output identity across renaming
+and reordering.
+
+Create an empty configuration with a development build:
+
+```text
+regain-alpaca --hub-init --hub-config ABSOLUTE_NEW_FILE_PATH
+```
+
+In NINA, open a hub **configure** choice, select that file and choose **Load hub
+outputs**, then **Edit shared configuration**. For browser setup, run
+`regain-alpaca --hub-config ABSOLUTE_FILE_PATH --port 11111` and open
+`http://127.0.0.1:11111/setup/hub`. Sources connect only when explicitly leased.
+For a hardware-free walkthrough and source-specific setup, see
+[Hub setup](docs/hub-setup.md).
+
+![Shared hub editor with explicit simulated equipment](docs/images/hub-setup-simulation.jpg)
+
+This browser capture uses simulated equipment. Installed-client, physical-device
+and external conformance acceptance remain tracked in the hub plan.
+
+### Standalone integrations (0.5 release train)
+
 | Integration | Where it runs | Equipment |
 | --- | --- | --- |
 | **Native NINA plugin** | Windows x64, NINA ≥3.2.0.9001 | Cameras, CAA, EFW, EAF, FocusCube3, Falcon V2, ETA M54 |
@@ -182,9 +240,10 @@ alone do not establish hardware compatibility.
 
 ## Get started
 
-Windows release workers link the Visual C++ runtime statically; no separate VC++
-Redistributable installation is needed. NINA, ASCOM and camera-driver requirements
-below still apply.
+Windows builds from current main and the 0.5 maintenance branch link the Visual
+C++ runtime statically. This fix ships in the next release; existing 0.5.11.0
+downloads still need the Visual C++ runtime. NINA, ASCOM and camera-driver
+requirements below still apply. See [Windows runtime details](docs/windows-runtime.md).
 
 ### Install in NINA
 
@@ -296,6 +355,7 @@ needed and nothing uploads automatically.
 [Opt-in USB reset recovery](docs/usb-recovery.md) ·
 [Multiple Alpaca focusers](docs/focusers.md) ·
 [Architecture and worker protocols](docs/architecture.md) ·
+[Regain Hub implementation plan](docs/hub-plan.md) ·
 [Camera bring-up](docs/camera-bringup.md) ·
 [Accessory tracing](docs/accessories.md) ·
 [Release process](docs/releasing.md).

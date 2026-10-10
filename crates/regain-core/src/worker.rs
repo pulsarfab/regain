@@ -3,7 +3,7 @@ use anyhow::{Context, Result, ensure};
 use serde_json::{Value, json};
 use std::{path::PathBuf, process::Stdio, time::Duration};
 use tokio::{
-    io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
+    io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWriteExt, BufReader},
     process::{Child, ChildStdin, ChildStdout, Command},
 };
 use tokio_util::sync::CancellationToken;
@@ -111,7 +111,7 @@ impl Runtime {
                 .call(
                     "simulation",
                     settings.clone(),
-                    5.,
+                    crate::timing::SIMULATION_SETUP_SECONDS,
                     &CancellationToken::new(),
                 )
                 .await?;
@@ -175,12 +175,113 @@ impl Worker {
         seconds: f64,
         token: &CancellationToken,
     ) -> Result<(Value, Vec<u8>)> {
+        self.call_bounded(method, params, seconds, token, 512 * 1024 * 1024)
+            .await
+    }
+    /// JSON-only commands reject any announced binary body before allocating it.
+    pub async fn call_json(
+        &mut self,
+        method: &str,
+        params: Value,
+        seconds: f64,
+        token: &CancellationToken,
+    ) -> Result<Value> {
+        self.call_bounded(method, params, seconds, token, 0)
+            .await
+            .map(|(value, _)| value)
+    }
+    /// Bound an image reply by the caller's admitted ROI before allocating pixels.
+    /// A zero-length streaming poll remains valid; capture checks exact length.
+    pub async fn call_image(
+        &mut self,
+        method: &str,
+        params: Value,
+        seconds: f64,
+        token: &CancellationToken,
+        maximum_bytes: usize,
+    ) -> Result<(Value, Vec<u8>)> {
+        ensure!(
+            matches!(method, "download" | "stream-download" | "stream-poll")
+                && (1..=512 * 1024 * 1024).contains(&maximum_bytes),
+            Failure::Invalid("Invalid worker image admission".into())
+        );
+        self.call_bounded(method, params, seconds, token, maximum_bytes)
+            .await
+    }
+    async fn call_bounded(
+        &mut self,
+        method: &str,
+        params: Value,
+        seconds: f64,
+        token: &CancellationToken,
+        maximum_bytes: usize,
+    ) -> Result<(Value, Vec<u8>)> {
+        self.call_until(
+            method,
+            params,
+            tokio::time::Instant::now() + Duration::from_secs_f64(seconds),
+            token,
+            maximum_bytes,
+        )
+        .await
+    }
+    /// Persistent camera controls share absolute-deadline/framed-write tracking.
+    pub(crate) async fn control_call(
+        &mut self,
+        method: &str,
+        params: Value,
+        deadline: tokio::time::Instant,
+        token: &CancellationToken,
+    ) -> Result<(Value, Vec<u8>)> {
+        self.call_until(method, params, deadline, token, 0).await
+    }
+    async fn call_until(
+        &mut self,
+        method: &str,
+        params: Value,
+        deadline: tokio::time::Instant,
+        token: &CancellationToken,
+        maximum_bytes: usize,
+    ) -> Result<(Value, Vec<u8>)> {
+        let control =
+            method == "set" && matches!(params["control"].as_i64(), Some(0 | 5 | 16 | 17));
+        let mut dispatched = false;
         let result = tokio::select! {
             biased;
             _=token.cancelled()=>Err(Failure::Cancelled.into()),
-            result=tokio::time::timeout(Duration::from_secs_f64(seconds),self.exchange(method,params))=>result.unwrap_or_else(|_|Err(anyhow::anyhow!("Worker {method} timed out after {seconds} seconds"))),
+            result=tokio::time::timeout_at(deadline,self.exchange(method,params,maximum_bytes,&mut dispatched,deadline))=>result.unwrap_or_else(|_|{
+                if control && !dispatched {Err(crate::cooling::CoolingError::Expired.into())}
+                else {Err(anyhow::anyhow!("Worker {method} acknowledgement timed out"))}
+            }),
         };
+        let result = result.map_err(|error| {
+            if control
+                && dispatched
+                && !matches!(
+                    error.downcast_ref::<Failure>(),
+                    Some(Failure::Worker { .. } | Failure::UncertainControl { .. })
+                )
+            {
+                // The process may have consumed a partial/complete command. A
+                // timeout, cancellation or malformed/lost reply cannot prove
+                // this persistent hardware write was not applied.
+                Failure::UncertainControl {
+                    message: format!("{error:#}"),
+                    code: None,
+                }
+                .into()
+            } else {
+                error
+            }
+        });
         if result.is_err()
+            && !(!dispatched
+                && result.as_ref().err().is_some_and(|error| {
+                    matches!(
+                        error.downcast_ref::<crate::cooling::CoolingError>(),
+                        Some(crate::cooling::CoolingError::Expired)
+                    )
+                }))
             && !matches!(
                 result
                     .as_ref()
@@ -193,60 +294,409 @@ impl Worker {
         }
         result
     }
-    async fn exchange(&mut self, method: &str, params: Value) -> Result<(Value, Vec<u8>)> {
-        self.id += 1;
+    async fn exchange(
+        &mut self,
+        method: &str,
+        params: Value,
+        maximum_bytes: usize,
+        dispatched: &mut bool,
+        deadline: tokio::time::Instant,
+    ) -> Result<(Value, Vec<u8>)> {
+        let id = self
+            .id
+            .checked_add(1)
+            .ok_or_else(|| invalid("Worker command counter exhausted"))?;
         let bytes =
-            serde_json::to_vec(&json!({"version":1,"id":self.id,"method":method,"params":params}))?;
+            serde_json::to_vec(&json!({"version":1,"id":id,"method":method,"params":params}))?;
         ensure!(
             bytes.len() <= 65536,
             Failure::Invalid("Command too large".into())
         );
+        ensure!(
+            tokio::time::Instant::now() < deadline,
+            crate::cooling::CoolingError::Expired
+        );
+        self.id = id;
+        *dispatched = true;
         self.input.write_u32_le(bytes.len() as u32).await?;
         self.input.write_all(&bytes).await?;
         self.input.flush().await?;
-        let length = self.output.read_u32_le().await? as usize;
-        ensure!(
-            (1..=65536).contains(&length),
-            Failure::Invalid("Invalid worker response length".into())
-        );
-        let mut header = vec![0; length];
-        self.output.read_exact(&mut header).await?;
-        let reply: Value =
-            serde_json::from_slice(&header).map_err(|_| invalid("Malformed worker JSON"))?;
-        ensure!(
-            reply["id"] == self.id && reply["version"] == 1,
-            Failure::Invalid("Stale worker response".into())
-        );
-        let count = reply["binaryLength"]
-            .as_u64()
-            .ok_or_else(|| invalid("Missing frame length"))?;
-        ensure!(
-            count <= 512 * 1024 * 1024
-                && (matches!(method, "download" | "stream-download" | "stream-poll") || count == 0),
-            Failure::Invalid("Invalid worker image length".into())
-        );
-        if reply["ok"] == false {
-            ensure!(
-                count == 0,
-                Failure::Invalid("Error response contains pixels".into())
-            );
-            return Err(Failure::Worker {
-                message: reply["error"].as_str().unwrap_or("Worker error").into(),
-                code: reply["sdkCode"].as_i64().map(|v| v as i32),
-            }
-            .into());
-        }
-        ensure!(
-            reply["ok"] == true,
-            Failure::Invalid("Missing worker status".into())
-        );
-        let mut pixels = vec![0; count as usize];
-        self.output.read_exact(&mut pixels).await?;
-        Ok((reply["result"].clone(), pixels))
+        read_reply(&mut self.output, method, self.id, maximum_bytes).await
     }
+}
+
+async fn read_reply<R: AsyncRead + Unpin>(
+    output: &mut R,
+    method: &str,
+    id: u64,
+    maximum_bytes: usize,
+) -> Result<(Value, Vec<u8>)> {
+    let length = output.read_u32_le().await? as usize;
+    ensure!(
+        (1..=65536).contains(&length),
+        Failure::Invalid("Invalid worker response length".into())
+    );
+    let mut header = vec![0; length];
+    output.read_exact(&mut header).await?;
+    let reply: Value =
+        serde_json::from_slice(&header).map_err(|_| invalid("Malformed worker JSON"))?;
+    ensure!(
+        reply["id"] == id && reply["version"] == 1,
+        Failure::Invalid("Stale worker response".into())
+    );
+    let count = reply["binaryLength"]
+        .as_u64()
+        .ok_or_else(|| invalid("Missing frame length"))?;
+    ensure!(
+        count <= maximum_bytes as u64
+            && count <= 512 * 1024 * 1024
+            && (matches!(method, "download" | "stream-download" | "stream-poll") || count == 0),
+        Failure::Invalid("Invalid worker image length".into())
+    );
+    if reply["ok"] == false {
+        ensure!(
+            count == 0,
+            Failure::Invalid("Error response contains pixels".into())
+        );
+        let message = reply["error"].as_str().unwrap_or("Worker error").into();
+        let code = reply["sdkCode"]
+            .as_i64()
+            .and_then(|v| i32::try_from(v).ok());
+        return Err(if reply["controlUncertain"] == true {
+            Failure::UncertainControl { message, code }
+        } else {
+            Failure::Worker { message, code }
+        }
+        .into());
+    }
+    ensure!(
+        reply["ok"] == true,
+        Failure::Invalid("Missing worker status".into())
+    );
+    let mut pixels = Vec::new();
+    pixels
+        .try_reserve_exact(count as usize)
+        .context("Worker image allocation failed")?;
+    pixels.resize(count as usize, 0);
+    output.read_exact(&mut pixels).await?;
+    // Move the result out, avoiding a second decoded metadata tree.
+    let mut reply = reply;
+    Ok((reply["result"].take(), pixels))
 }
 impl Drop for Worker {
     fn drop(&mut self) {
         self.diagnostic.abort();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn simulated_runtime(settings: Value) -> Runtime {
+        Runtime {
+            directory: std::env::var_os("REGAIN_TEST_WORKERS")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| {
+                    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/debug")
+                }),
+            sdk: "unused".into(),
+            simulate: true,
+            sdk_simulation: Some(settings),
+        }
+    }
+
+    fn response(count: u64, ok: bool) -> Vec<u8> {
+        let header = serde_json::to_vec(&json!({
+            "version":1,"id":7,"ok":ok,"binaryLength":count,
+            "result":{"width":3,"height":2,"readRecoveries":2},
+            "error":"private SDK error","sdkCode":11,
+        }))
+        .unwrap();
+        let mut bytes = (header.len() as u32).to_le_bytes().to_vec();
+        bytes.extend(header);
+        bytes
+    }
+
+    #[tokio::test]
+    async fn json_only_admission_rejects_announced_pixels_before_reading_a_body() {
+        let zero = response(0, true);
+        assert!(
+            read_reply(&mut zero.as_slice(), "list", 7, 0)
+                .await
+                .unwrap()
+                .1
+                .is_empty()
+        );
+        // No body follows this header. Reject its announced size rather than
+        // attempting an allocation or reporting a later partial-body failure.
+        let binary = response(1, true);
+        let error = read_reply(&mut binary.as_slice(), "download", 7, 0)
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("Invalid worker image length"));
+    }
+
+    #[tokio::test]
+    async fn timestamped_control_observations_cross_production_worker_framing() {
+        for direct in [false, true] {
+            let runtime = simulated_runtime(json!({"instant":true}));
+            let token = CancellationToken::new();
+            let mut worker = runtime
+                .spawn(direct, std::sync::Arc::new(|_, _, _| {}))
+                .await
+                .unwrap();
+            worker
+                .call(
+                    "open",
+                    json!({"name":if direct {"ZWO ASI585MM Pro"} else {"ZWO Simulated"}}),
+                    15.,
+                    &token,
+                )
+                .await
+                .unwrap();
+            worker
+                .call("set", json!({"control":0,"value":123}), 15., &token)
+                .await
+                .unwrap();
+            for control in [0, 8, 15, 16, 17] {
+                let requested = tokio::time::Instant::now();
+                let (reply, pixels) = worker
+                    .call("get-observation", json!({"control":control}), 15., &token)
+                    .await
+                    .unwrap();
+                let observation: crate::ControlObservationReply =
+                    serde_json::from_value(reply).unwrap();
+                assert!(pixels.is_empty());
+                assert!(observation.age_seconds.is_finite() && observation.age_seconds >= 0.);
+                assert!(observation.observed_at(requested).unwrap() <= requested);
+                assert_eq!(
+                    worker
+                        .call("get", json!({"control":control}), 15., &token)
+                        .await
+                        .unwrap()
+                        .0,
+                    observation.value
+                );
+                if control == 0 {
+                    assert_eq!(observation.value, 123);
+                }
+            }
+            let pid = worker.pid();
+            for control in [json!(999), json!("8"), json!(4294967296u64)] {
+                assert!(
+                    worker
+                        .call("get-observation", json!({"control":control}), 15., &token)
+                        .await
+                        .is_err()
+                );
+            }
+            assert_eq!(worker.pid(), pid);
+            worker
+                .call("get-observation", json!({"control":0}), 15., &token)
+                .await
+                .unwrap();
+            worker
+                .call("close", Value::Null, 15., &token)
+                .await
+                .unwrap();
+            worker.kill().await;
+        }
+    }
+
+    #[tokio::test]
+    async fn persistent_control_transport_loss_retires_simulated_worker_without_retry() {
+        let runtime = simulated_runtime(json!({"instant":true,"fault":"hang"}));
+        for control in [0, 5, 16, 17] {
+            for cancel_after_dispatch in [false, true] {
+                let token = CancellationToken::new();
+                let mut worker = runtime
+                    .spawn(false, std::sync::Arc::new(|_, _, _| {}))
+                    .await
+                    .unwrap();
+                worker
+                    .call("open", json!({"name":"ZWO Simulated"}), 15., &token)
+                    .await
+                    .unwrap();
+                worker.call("start",json!({"width":64,"height":64,"bin":1,"x":0,"y":0,"microseconds":1000,"dark":false}),15.,&token).await.unwrap();
+                // Deliberately park the simulated owner in download. Its serial
+                // command queue then cannot acknowledge the following control write.
+                worker.id += 1;
+                let header = serde_json::to_vec(
+                    &json!({"version":1,"id":worker.id,"method":"download","params":null}),
+                )
+                .unwrap();
+                worker
+                    .input
+                    .write_u32_le(header.len() as u32)
+                    .await
+                    .unwrap();
+                worker.input.write_all(&header).await.unwrap();
+                worker.input.flush().await.unwrap();
+                let mut call =
+                    Box::pin(worker.call("set", json!({"control":control,"value":0}), 1., &token));
+                if cancel_after_dispatch {
+                    // Poll through write admission before cancellation, rather than
+                    // using a scheduling-sensitive sleep to guess dispatch timing.
+                    std::future::poll_fn(|cx| {
+                        assert!(std::future::Future::poll(call.as_mut(), cx).is_pending());
+                        std::task::Poll::Ready(())
+                    })
+                    .await;
+                    token.cancel();
+                }
+                let error = call.await.unwrap_err();
+                assert!(
+                    matches!(
+                        error.downcast_ref::<Failure>(),
+                        Some(Failure::UncertainControl { .. })
+                    ),
+                    "{error:#}"
+                );
+                assert!(!crate::retryable(&error));
+                assert!(worker.child.try_wait().unwrap().is_some());
+            }
+        }
+        // Before-dispatch cancellation is still distinguishable from a write
+        // whose acknowledgement was lost. No command ID is consumed.
+        let mut worker = runtime
+            .spawn(false, std::sync::Arc::new(|_, _, _| {}))
+            .await
+            .unwrap();
+        let id = worker.id;
+        let token = CancellationToken::new();
+        token.cancel();
+        let error = worker
+            .call("set", json!({"control":17,"value":0}), 1., &token)
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            error.downcast_ref::<Failure>(),
+            Some(Failure::Cancelled)
+        ));
+        assert_eq!(worker.id, id);
+        assert!(worker.child.try_wait().unwrap().is_some());
+    }
+
+    #[tokio::test]
+    async fn expired_control_write_preserves_worker_and_framing_without_dispatch() {
+        let mut worker = simulated_runtime(json!({"instant":true}))
+            .spawn(false, std::sync::Arc::new(|_, _, _| {}))
+            .await
+            .unwrap();
+        let token = CancellationToken::new();
+        let id = worker.id;
+        for control in [0, 5, 16, 17] {
+            let error = worker
+                .control_call(
+                    "set",
+                    json!({"control":control,"value":0}),
+                    tokio::time::Instant::now(),
+                    &token,
+                )
+                .await
+                .unwrap_err();
+            assert!(matches!(
+                error.downcast_ref::<crate::cooling::CoolingError>(),
+                Some(crate::cooling::CoolingError::Expired)
+            ));
+            assert_eq!(worker.id, id);
+            assert!(worker.child.try_wait().unwrap().is_none());
+        }
+        worker
+            .call("open", json!({"name":"ZWO Simulated"}), 15., &token)
+            .await
+            .unwrap();
+        worker
+            .call("close", Value::Null, 15., &token)
+            .await
+            .unwrap();
+        worker.kill().await;
+    }
+
+    #[tokio::test]
+    async fn uncertain_control_reply_is_typed_and_never_retryable() {
+        for code in [Some(11), None] {
+            let header=serde_json::to_vec(&json!({"version":1,"id":7,"ok":false,
+                "binaryLength":0,"error":"private cooling failure","sdkCode":code,"controlUncertain":true})).unwrap();
+            let mut bytes = (header.len() as u32).to_le_bytes().to_vec();
+            bytes.extend(header);
+            let error = read_reply(&mut bytes.as_slice(), "set", 7, 0)
+                .await
+                .unwrap_err();
+            assert!(
+                matches!(error.downcast_ref::<Failure>(),Some(Failure::UncertainControl {code:actual,message}) if *actual==code && message=="private cooling failure")
+            );
+            assert!(!crate::retryable(&error));
+        }
+    }
+
+    #[tokio::test]
+    async fn oversized_admitted_reply_is_rejected_before_reading_any_body() {
+        let (mut writer, mut reader) = tokio::io::duplex(1024);
+        writer.write_all(&response(13, true)).await.unwrap();
+        // Writer stays open and sends no body: waiting for pixels would time out.
+        let error = tokio::time::timeout(
+            Duration::from_secs(1),
+            read_reply(&mut reader, "download", 7, 12),
+        )
+        .await
+        .unwrap()
+        .unwrap_err();
+        assert!(
+            matches!(error.downcast_ref::<Failure>(), Some(Failure::Invalid(message)) if message == "Invalid worker image length")
+        );
+        assert!(!crate::retryable(&error));
+    }
+
+    #[tokio::test]
+    async fn bounded_reply_preserves_pixels_metadata_and_empty_stream_poll() {
+        let mut bytes = response(12, true);
+        bytes.extend(0u8..12);
+        let (metadata, pixels) = read_reply(&mut bytes.as_slice(), "download", 7, 12)
+            .await
+            .unwrap();
+        assert_eq!(pixels, (0u8..12).collect::<Vec<_>>());
+        assert_eq!(metadata["readRecoveries"], 2);
+        let bytes = response(0, true);
+        assert!(
+            read_reply(&mut bytes.as_slice(), "stream-poll", 7, 12)
+                .await
+                .unwrap()
+                .1
+                .is_empty()
+        );
+    }
+
+    #[tokio::test]
+    async fn bounded_reply_keeps_error_codes_and_rejects_stale_or_non_image_pixels() {
+        let bytes = response(0, false);
+        let error = read_reply(&mut bytes.as_slice(), "download", 7, 12)
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(error.downcast_ref::<Failure>(), Some(Failure::Worker {code:Some(11), message}) if message == "private SDK error")
+        );
+        for (count, ok, method, id) in [
+            (1, false, "download", 7),
+            (1, true, "status", 7),
+            (0, true, "download", 8),
+        ] {
+            let bytes = response(count, ok);
+            let error = read_reply(&mut bytes.as_slice(), method, id, 12)
+                .await
+                .unwrap_err();
+            assert!(matches!(
+                error.downcast_ref::<Failure>(),
+                Some(Failure::Invalid(_))
+            ));
+        }
+        let bytes = response(12, true);
+        let error = read_reply(&mut bytes.as_slice(), "download", 7, 12)
+            .await
+            .unwrap_err();
+        assert_eq!(
+            error.downcast_ref::<std::io::Error>().unwrap().kind(),
+            std::io::ErrorKind::UnexpectedEof
+        );
     }
 }

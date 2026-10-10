@@ -9,6 +9,13 @@ internal static class Program
     {
         string logDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Regain", "ASCOM");
         try {
+            if (args.Length == 1 && args[0].Equals("/hubsetup", StringComparison.OrdinalIgnoreCase)) {
+                Regain.Hub.ASCOM.HubAscomManagerWindow.Show(Path.GetDirectoryName(typeof(Camera1).Assembly.Location)!,
+                    new Regain.Hub.HubSelectionStore(Regain.Rotator.RegainPaths.Profile("hub-frontends.json")));
+                return 0;
+            }
+            if (args.Length > 0 && args[0].StartsWith("/hub", StringComparison.OrdinalIgnoreCase))
+                return HubRegistration.Run(args, Path.GetDirectoryName(typeof(Camera1).Assembly.Location)!);
             if (args.Length == 2 && args[0].Equals("/checkinuse", StringComparison.OrdinalIgnoreCase)) {
                 var running = InUseCheck.Find(args[1]);
                 if (running.Length == 0) return 0;
@@ -30,6 +37,7 @@ internal static class Program
                 using var camera = new Camera1(); camera.SetupDialog(); return 0;
             }
             string assembly = typeof(Camera1).Assembly.Location;
+            if (remove) HubRegistration.Run(["/hubunregisterall"], Path.GetDirectoryName(assembly)!);
             foreach (var view in new[] { RegistryView.Registry32, RegistryView.Registry64 }) {
                 using var root = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, view);
                 // Uninstall only this copy; an older directory must not remove a newer install.

@@ -17,6 +17,7 @@ struct State {
     moves: usize,
     references: usize,
     stops: usize,
+    reverse_writes: usize,
 }
 #[derive(Clone)]
 struct Sim(Rc<RefCell<State>>);
@@ -27,6 +28,7 @@ impl Transport for Sim {
             s.query = r[4];
         }
         if r[3] == 9 {
+            s.reverse_writes += 1;
             s.reverse = r[4] != 0;
         }
         if r[3] == 3 {
@@ -88,11 +90,42 @@ fn setup() -> (Controller<Sim>, Rc<RefCell<State>>) {
         moves: 0,
         references: 0,
         stops: 0,
+        reverse_writes: 0,
     }));
     (
         Controller::new(Caa::connect(Sim(s.clone())).unwrap()).unwrap(),
         s,
     )
+}
+#[test]
+fn restore_and_sync_keep_target_logical_without_any_hardware_mutation() {
+    let (mut c, s) = setup();
+    s.borrow_mut().reverse = true;
+    c.request(&json!({"command":"settings"})).unwrap();
+    c.request(&json!({"command":"restore-reference", "offset":194.5}))
+        .unwrap();
+    let state = c.request(&json!({"command":"status"})).unwrap();
+    assert_eq!(state["logical_degrees"], 42.5);
+    assert_eq!(state["target_degrees"], 42.5);
+    assert_eq!(state["mechanical_degrees"], 152.0);
+    c.request(&json!({"command":"sync", "degrees":0.0}))
+        .unwrap();
+    let state = c.request(&json!({"command":"status"})).unwrap();
+    assert_eq!(state["logical_degrees"], 0.0);
+    assert_eq!(state["target_degrees"], 0.0);
+    for offset in [json!(-1), json!(360), json!("0"), serde_json::Value::Null] {
+        assert!(
+            c.request(&json!({"command":"restore-reference", "offset":offset}))
+                .is_err()
+        );
+    }
+    let s = s.borrow();
+    assert!(s.reverse);
+    assert_eq!(s.position, 1_520_000);
+    assert_eq!(
+        (s.moves, s.references, s.stops, s.reverse_writes),
+        (0, 0, 0, 0)
+    );
 }
 #[test]
 fn segmented_travel_preserves_sky_coordinates_in_both_directions() {

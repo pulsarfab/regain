@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+from rust_licenses import stage as stage_licenses
 
 
 def output(*args):
@@ -20,14 +21,6 @@ host = next(line.removeprefix("host: ") for line in output("rustc", "-vV").split
             if line.startswith("host: "))
 metadata = json.loads(output("cargo", "metadata", "--locked", "--format-version", "1",
                              "--filter-platform", host))
-nodes = {node["id"]: node for node in metadata["resolve"]["nodes"]}
-resolved = set()
-pending = list(metadata["workspace_members"])
-while pending:
-    node = pending.pop()
-    if node not in resolved:
-        resolved.add(node)
-        pending.extend(dependency["pkg"] for dependency in nodes[node]["deps"])
 prefix = 'regain-rust'
 archive = root / f'{prefix}-{host}.tar.gz'
 with tempfile.TemporaryDirectory(prefix="regain-package-") as temporary:
@@ -64,17 +57,7 @@ with tempfile.TemporaryDirectory(prefix="regain-package-") as temporary:
     for name in ("alpaca-fc3.png", "native-fc3.png", "native-falcon.png"):
         shutil.copy2(root / "docs/images" / name, stage / "images" / name)
     shutil.copy2(root / "docs/accessory-evidence.json", stage / "accessory-evidence.json")
-    for package in metadata["packages"]:
-        if package["id"] not in resolved or package["source"] is None:
-            continue
-        source = Path(package["manifest_path"]).parent
-        texts = [p for p in source.iterdir() if p.is_file()
-                 and p.name.upper().startswith(("LICENSE", "COPYING", "NOTICE", "COPYRIGHT"))]
-        assert texts, f"Missing license text: {package['name']}"
-        destination = licenses / f"{package['name']}-{package['version']}"
-        destination.mkdir()
-        for text in texts:
-            shutil.copy2(text, destination / text.name)
+    stage_licenses(metadata, licenses)
     sysroot = Path(output("rustc", "--print", "sysroot"))
     shutil.copy2(sysroot / "share/doc/rust/COPYRIGHT-library.html",
                  licenses / "Rust-Standard-Library.html")

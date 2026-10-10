@@ -1,6 +1,17 @@
 <Project Sdk="Microsoft.NET.Sdk">
  <PropertyGroup><TargetFramework>net8.0-windows7.0</TargetFramework><EnableWindowsTargeting>true</EnableWindowsTargeting><PlatformTarget>x64</PlatformTarget><NoWarn>$(NoWarn);NU1701</NoWarn><IsTestProject>true</IsTestProject><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable></PropertyGroup>
  <ItemGroup>
+  <Compile Include="../fixtures/HubAccessoryServer.cs" Link="HubAccessoryServer.cs" />
+  <Compile Include="../fixtures/HubDiscoveryFixture.cs" Link="HubDiscoveryFixture.cs" />
+  <Compile Include="../fixtures/HubLocalRegistryFixture.cs" Link="HubLocalRegistryFixture.cs" />
+  <Compile Include="../fixtures/HubImageFixture.cs" Link="HubImageFixture.cs" />
+  <Compile Include="../fixtures/HubCameraHostFixture.cs" Link="HubCameraHostFixture.cs" />
+  <Compile Include="../fixtures/HubTimingFixture.cs" Link="HubTimingFixture.cs" />
+  <!-- Test-only: allow short WPF renders in CI/disconnected desktop sessions. -->
+  <RuntimeHostConfigurationOption Include="Switch.System.Windows.Media.ShouldRenderEvenWhenNoDisplayDevicesAreAvailable" Value="true" />
+  <None Include="../../contracts/hub-config.json" Link="hub-config.json" CopyToOutputDirectory="PreserveNewest" />
+  <!-- Test-only NINA astronomy dependency; see fixtures/nina/README.md. -->
+  <None Include="../fixtures/nina/NOVAS31lib.dll" Link="NOVAS31lib.dll" CopyToOutputDirectory="PreserveNewest" />
   <ProjectReference Include="../../src/Regain.NINA/Regain.NINA.csproj" />
   <PackageReference Include="NINA.Plugin" Version="3.2.0.9001" PrivateAssets="all" />
   <PackageReference Include="System.Text.Json" Version="9.0.5" />

@@ -1,0 +1,204 @@
+import { validateDiagnosticSchema } from './hub-diagnostics.mjs';
+import { initialValue, newIdentity } from './hub-form.mjs';
+
+const invalid = message => { const error = new Error(message); error.detail = {code:'invalidValue',message}; throw error; };
+function catalogIdentity(id) {
+  const value=id.length===45 && id.startsWith('urn:uuid:')?id.slice(9):/^\{.{36}\}$/.test(id)?id.slice(1,-1):id;
+  return /^([0-9a-f]{32}|[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12})$/i.test(value)?value.toLowerCase().replaceAll('-',''):id;
+}
+function serverUrl(text) {
+  let url; try { url = new URL(text); } catch { invalid('Enter an HTTP or HTTPS server URL'); }
+  if (!['http:','https:'].includes(url.protocol) || url.username || url.password || text.includes('?') || text.includes('#'))
+    invalid('Enter a server URL without credentials, query or fragment');
+  return url.href.replace(/\/+$/,'');
+}
+function serverScope(url,scope) {
+  const host=new URL(url).hostname, first=parseInt(host.slice(1).split(':')[0],16);
+  const local=host.startsWith('[') && first>=0xfe80 && first<=0xfebf;
+  if (local ? !Number.isInteger(scope) || scope<1 || scope>4294967295 : scope!==null)
+    invalid('A literal IPv6 link-local server requires a positive interface scope; leave it empty for other addresses');
+}
+export class AlpacaDiscovery {
+  constructor(rpc) { this.rpc=rpc; this.busy=false; this.catalog=null; this.uncertain=false; }
+  load(description,saved) {
+    if (this.busy) invalid('A catalog query is still pending');
+    this.description=description.discovery.alpaca; this.revision=saved.revision; this.catalog=null; this.uncertain=false;
+    const d=this.description;
+    if (d.opensSource!==false || d.writesEquipment!==false || d.persistsConfiguration!==false ||
+        !Number.isInteger(d.timeoutSeconds) || d.timeoutSeconds<1 || d.timeoutSeconds>300)
+      throw new Error('Invalid catalog discovery description');
+  }
+  async query(baseUrl,credentialReference=null,scopeId=null) {
+    if (this.busy || this.uncertain || !this.description) invalid('Reload before querying a catalog');
+    const d=this.description;
+    if (typeof baseUrl!=='string' || baseUrl.length>d.parameters.baseUrl.maxLength) invalid('Invalid server URL');
+    const requested=serverUrl(baseUrl);
+    serverScope(requested,scopeId);
+    this.busy=true; this.catalog=null;
+    try {
+      const command={op:d.operation,baseUrl,credentialReference,expectedRevision:this.revision};
+      if (scopeId!==null) command.scopeId=scopeId;
+      const result=await this.rpc(command,undefined,d.timeoutSeconds+5);
+      try {
+        validateDiagnosticSchema(d.responseSchema,result);
+        if (result.configurationRevision!==this.revision || serverUrl(result.baseUrl)!==requested || (result.scopeId??null)!==scopeId) throw new Error();
+        const addresses=new Set(), identities=new Set(), known=d.responseSchema.$defs.DeviceType.enum;
+        for (const device of result.devices) {
+          const type=device.reportedDeviceType.toLowerCase(), address=`${type}:${device.number}`;
+          const identity=catalogIdentity(device.uniqueId);
+          if (!device.name.trim() || /\p{Cc}/u.test(device.name) || !device.uniqueId.trim() ||
+              addresses.has(address) || identities.has(identity) || device.supportedDeviceType!==(known.includes(type)?type:null)) throw new Error();
+          addresses.add(address); identities.add(identity);
+        }
+      } catch { throw new Error('Invalid Alpaca catalog response'); }
+      this.catalog=structuredClone(result); this.credentialReference=credentialReference; return structuredClone(result);
+    } catch (error) {
+      if (!error.detail || ['revisionConflict','disconnected','invalidValue'].includes(error.detail.code)) {
+        this.uncertain=true; error.uncertain=true;
+      }
+      throw error;
+    } finally { this.busy=false; }
+  }
+  adopt(reader,draft,index,uuid=newIdentity) {
+    if (this.busy || this.uncertain || !this.catalog || draft.revision!==this.revision) invalid('Query the current catalog before adding a source');
+    if (!Number.isInteger(index) || index<0 || index>=this.catalog.devices.length) invalid('Select a catalog entry');
+    const device=this.catalog.devices[index];
+    if (device.supportedDeviceType===null) invalid('This device class is not supported by Regain Hub');
+    const server=this.catalog.baseUrl, type=device.supportedDeviceType, identity=device.uniqueId;
+    const array=reader.resolve(reader.root.properties.sources), schema=reader.resolve(array.items);
+    if (draft.sources.length>=array.maxItems) invalid('Configuration source limit reached');
+    for (const source of draft.sources) {
+      const b=source.backend;
+      if (b.kind==='alpaca' && (b.uniqueId!=null && catalogIdentity(b.uniqueId)===catalogIdentity(identity) ||
+          serverUrl(b.baseUrl)===serverUrl(server) && (b.scopeId??null)===(this.catalog.scopeId??null) && b.deviceType===type && b.deviceNumber===device.number))
+        invalid('This Alpaca device already has a source. Share its existing source ID');
+    }
+    const choice=reader.variants(schema.properties.backend).find(v=>v.kind==='alpaca' && v.enabled);
+    if (!choice) invalid('Alpaca sources are unavailable in this host');
+    const backend=initialValue(reader,choice.schema,uuid);
+    backend.baseUrl=server; backend.deviceType=type; backend.deviceNumber=device.number; backend.uniqueId=identity;
+    if (this.catalog.scopeId!=null) backend.scopeId=this.catalog.scopeId;
+    if (this.credentialReference!==null) backend.credentialReference=this.credentialReference;
+    return appendCatalogSource(reader,draft,schema,backend,device.name,uuid);
+  }
+}
+
+function appendCatalogSource(reader,draft,schema,backend,name,uuid) {
+  if (draft.sources.length>=reader.resolve(reader.root.properties.sources).maxItems) invalid('Configuration source limit reached');
+  const source=initialValue(reader,schema,uuid);
+  source.backend=structuredClone(backend); source.label=[...name].slice(0,schema.properties.label.maxLength).join('');
+  draft.sources.push(source); return source.id;
+}
+const nativeClass=device=>['camera-direct','camera-sdk'].includes(device)?'camera':device;
+export class LocalDiscovery {
+  constructor(rpc) { this.rpc=rpc; this.busy=false; this.catalog=null; this.uncertain=false; }
+  load(description,saved) {
+    if (this.busy) invalid('A local catalog query is still pending');
+    this.description=description.discovery.local; this.capabilities=description.capabilities; this.revision=saved.revision; this.catalog=null; this.uncertain=false;
+    const d=this.description;
+    if (['opensSource','writesEquipment','persistsConfiguration'].some(key=>d[key]!==false) || !Number.isInteger(d.timeoutSeconds) || d.timeoutSeconds<1 || d.timeoutSeconds>300)
+      throw new Error('Invalid local discovery description');
+  }
+  async query(target) {
+    if (this.busy || this.uncertain || !this.description) invalid('Reload before querying a catalog');
+    const d=this.description;
+    validateDiagnosticSchema(d.targetSchema,target); target=structuredClone(target);
+    if (!this.capabilities.includes(d[target.kind].requiresCapability)) invalid('This discovery backend is unavailable in the host');
+    this.busy=true; this.catalog=null;
+    try {
+      const result=await this.rpc({op:d.operation,target,expectedRevision:this.revision},undefined,d.timeoutSeconds+5);
+      try {
+        validateDiagnosticSchema(d.responseSchema,result);
+        if (result.configurationRevision!==this.revision || result.target.kind!==target.kind ||
+            (target.kind==='native'?result.target.device!==target.device:result.target.deviceType!==target.deviceType || result.target.bitness!==target.bitness) ||
+            target.kind==='com' && result.simulated || result.ignoredEntries && !result.incomplete) throw new Error();
+        const identities=new Set();
+        for (const entry of result.entries) {
+          const b=entry.backend;
+          if (!entry.name.trim() || /\p{Cc}/u.test(entry.name) || b.kind!==target.kind) throw new Error();
+          let identity;
+          if (target.kind==='native') {
+            if (b.device!==target.device || !b.identity.trim() || /\p{Cc}/u.test(b.identity) || entry.registeredClass!==null || entry.blockedReason!==null || b.filterWheel!=null) throw new Error();
+            if (nativeClass(b.device)==='camera'? !b.camera || b.camera.model!==entry.name || b.camera.sdkFallback!==false:b.camera!=null) throw new Error();
+            identity=b.identity.toLowerCase();
+            if (b.device==='camera-direct' && result.simulated) identity+=`:${entry.name}`;
+          } else {
+            if (!/^[a-z0-9._-]+$/i.test(b.progId) || b.deviceType!==target.deviceType || b.bitness!==target.bitness || b.connectionPolicy!=='externallyManaged' ||
+                (entry.registeredClass===null?entry.blockedReason!=='missingRegistration':
+                  /^0{8}-0{4}-0{4}-0{4}-0{12}$/.test(entry.registeredClass) || ![null,'selfProxy'].includes(entry.blockedReason))) throw new Error();
+            identity=b.progId.toLowerCase();
+          }
+          if (identities.has(identity)) throw new Error(); identities.add(identity);
+        }
+      } catch { throw new Error('Invalid local catalog response'); }
+      this.catalog=structuredClone(result); return structuredClone(result);
+    } catch (error) {
+      if (!error.detail || ['revisionConflict','disconnected','invalidValue'].includes(error.detail.code)) { this.uncertain=true; error.uncertain=true; }
+      throw error;
+    } finally { this.busy=false; }
+  }
+  adopt(reader,draft,index,uuid=newIdentity) {
+    if (this.busy || this.uncertain || !this.catalog || draft.revision!==this.revision) invalid('Query the current catalog before adding a source');
+    if (!Number.isInteger(index) || index<0 || index>=this.catalog.entries.length) invalid('Select a catalog entry');
+    const entry=this.catalog.entries[index], b=entry.backend;
+    if (entry.blockedReason!==null) invalid('This registration cannot be adopted');
+    const schema=reader.resolve(reader.resolve(reader.root.properties.sources).items);
+    const choice=reader.variants(schema.properties.backend).find(v=>v.kind===b.kind && v.enabled);
+    if (!choice) invalid('This source backend is unavailable in the host');
+    for (const key of b.kind==='native'?['device']:['deviceType','bitness'])
+      if (!reader.choices(choice.schema.properties[key]).some(c=>c.enabled && c.value===b[key])) invalid('This source choice is unavailable in the host');
+    for (const source of draft.sources) {
+      const other=source.backend;
+      if (other.kind!==b.kind) continue;
+      if (b.kind==='native'?nativeClass(other.device)===nativeClass(b.device) && other.identity.toLowerCase()===b.identity.toLowerCase():
+          other.deviceType===b.deviceType && other.progId.toLowerCase()===b.progId.toLowerCase()) invalid('This device already has a source. Share its existing source ID');
+    }
+    return appendCatalogSource(reader,draft,schema,b,entry.name,uuid);
+  }
+}
+
+export function catalogSummary(catalog) {
+  if (!catalog.devices.length) return 'The server reports no configured devices.';
+  return catalog.devices.map(device=>`${device.name} — ${device.reportedDeviceType} ${device.number}\nID: ${device.uniqueId}${device.supportedDeviceType===null?'\nThis device class is not supported by Regain Hub.':''}`).join('\n\n');
+}
+
+export class AlpacaNetworkDiscovery {
+  constructor(rpc) { this.rpc=rpc; this.busy=false; this.uncertain=false; this.result=null; }
+  load(description,saved) {
+    if (this.busy) invalid('A network search is still pending');
+    this.description=description.discovery.network; this.revision=saved.revision; this.result=null; this.uncertain=false;
+    const d=this.description;
+    if (['opensSource','writesEquipment','persistsConfiguration','readsCatalog','usesCredentials'].some(key=>d[key]!==false) ||
+        !Number.isInteger(d.timeoutSeconds) || d.timeoutSeconds<1 || d.timeoutSeconds>300) throw new Error('Invalid network discovery description');
+  }
+  async search() {
+    if (this.busy || this.uncertain || !this.description) invalid('Reload before searching for servers');
+    this.busy=true; this.result=null; const d=this.description;
+    try {
+      const result=await this.rpc({op:d.operation,expectedRevision:this.revision},undefined,d.timeoutSeconds+5);
+      try {
+        validateDiagnosticSchema(d.responseSchema,result);
+        if (result.configurationRevision!==this.revision || result.interfacesFailed>result.interfacesTried ||
+            result.interfacesFailed && !result.incomplete) throw new Error();
+        const endpoints=new Set();
+        for (const server of result.servers) {
+          const {address,scopeId,port,baseUrl}=server, ipv6=address.includes(':');
+          const authority=ipv6?`[${address}]`:address, parsed=new URL(`http://${authority}:${port}`);
+          if (address.includes('%') || parsed.hostname!==authority || address==='::' || /^::ffff:/i.test(address) ||
+              (ipv6?parseInt(address.split(':')[0],16)>=0xff00:!/^\d+\.\d+\.\d+\.\d+$/.test(address) ||
+                Number(address.split('.')[0])===0 || Number(address.split('.')[0])>=224 && Number(address.split('.')[0])<=239 || address==='255.255.255.255')) throw new Error();
+          const linkLocal=ipv6 && parseInt(address.split(':')[0],16)>=0xfe80 && parseInt(address.split(':')[0],16)<=0xfebf;
+          if ((linkLocal ? scopeId===0 : scopeId!==0) || baseUrl!==`http://${authority}:${port}`) throw new Error();
+          const key=`${address}%${scopeId}:${port}`;
+          if (endpoints.has(key)) throw new Error(); endpoints.add(key);
+        }
+      } catch { throw new Error('Invalid Alpaca network search response'); }
+      this.result=structuredClone(result); return structuredClone(result);
+    } catch (error) {
+      if (!error.detail || ['revisionConflict','disconnected','invalidValue'].includes(error.detail.code)) {
+        this.uncertain=true; error.uncertain=true;
+      }
+      throw error;
+    } finally { this.busy=false; }
+  }
+}

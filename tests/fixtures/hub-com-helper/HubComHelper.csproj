@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework><OutputType>WinExe</OutputType>
+    <AssemblyName>Regain.Hub.Shared.Helper.Fixture</AssemblyName><LangVersion>latest</LangVersion>
+  </PropertyGroup>
+</Project>

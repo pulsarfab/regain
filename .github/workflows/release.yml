@@ -14,6 +14,11 @@ on:
   push:
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      candidate:
+        description: 'Build signed review artifacts from this branch; never create a release or publish the registry'
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency:
@@ -22,7 +27,7 @@ concurrency:
 jobs:
   release:
     runs-on: windows-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     # Load-bearing: the Entra federated credential subject must match
     # repo:pulsarfab@279567456/regain@1369114153:environment:release. Without
     # this line the OIDC token carries a different subject and azure/login
@@ -53,10 +58,14 @@ jobs:
         env:
           REF_TYPE: ${{ github.ref_type }}
           REF_NAME: ${{ github.ref_name }}
+          CANDIDATE: ${{ inputs.candidate == true }}
         run: |
-          $version = ./scripts/check-release-ref.ps1 -RefType $env:REF_TYPE -RefName $env:REF_NAME
+          $version = ./scripts/check-release-ref.ps1 -RefType $env:REF_TYPE -RefName $env:REF_NAME -Candidate:($env:CANDIDATE -eq 'true')
           "value=$version" >> $env:GITHUB_OUTPUT
       - name: Test capture recovery and NINA integration contract
+        # Candidates are review artifacts alongside the branch's full CI run.
+        # Keep signed installer lifecycle/package checks below unconditional.
+        if: inputs.candidate != true
         run: ./scripts/test.ps1
 
       # ---- 1. build and stage (unsigned) ----------------------------------
@@ -85,6 +94,10 @@ jobs:
             ${{ github.workspace }}\artifacts\stage\regain-device.exe
             ${{ github.workspace }}\artifacts\stage\regain-alpaca.exe
             ${{ github.workspace }}\artifacts\stage\regain-camera.exe
+            ${{ github.workspace }}\artifacts\stage\hub-ascom\x86\Regain.Hub.ASCOM.exe
+            ${{ github.workspace }}\artifacts\stage\hub-ascom\x64\Regain.Hub.ASCOM.exe
+            ${{ github.workspace }}\artifacts\stage\hub-ascom\x86\Regain.Rotator.dll
+            ${{ github.workspace }}\artifacts\stage\hub-ascom\x64\Regain.Rotator.dll
             ${{ github.workspace }}\artifacts\ascom-stage\Regain.ASCOM.dll
             ${{ github.workspace }}\artifacts\ascom-stage\Regain.ASCOM.Register.exe
             ${{ github.workspace }}\artifacts\ascom-stage\Regain.Pegasus.ASCOM.exe
@@ -98,7 +111,7 @@ jobs:
       # to the wrong publisher, must not reach the archive.
       - name: Verify every signature
         run: |
-          foreach ($f in 'Regain.NINA.dll','Regain.Core.dll','Regain.Rotator.dll','regain-device.exe','regain-camera.exe','regain-alpaca.exe') {
+          foreach ($f in 'Regain.NINA.dll','Regain.Core.dll','Regain.Rotator.dll','regain-device.exe','regain-camera.exe','regain-alpaca.exe','hub-ascom/x86/Regain.Hub.ASCOM.exe','hub-ascom/x64/Regain.Hub.ASCOM.exe','hub-ascom/x86/Regain.Rotator.dll','hub-ascom/x64/Regain.Rotator.dll') {
             $sig = Get-AuthenticodeSignature -LiteralPath "artifacts/stage/$f"
             if ($sig.Status -ne 'Valid') { throw "$f signature is $($sig.Status)" }
             if ($sig.SignerCertificate.Subject -notmatch 'StackFoundry LLC') { throw "$f has unexpected signer: $($sig.SignerCertificate.Subject)" }
@@ -187,7 +200,7 @@ jobs:
             artifacts/Regain-ASCOM-${{ steps.version.outputs.value }}-win-x64-setup.exe.sha256
           if-no-files-found: error
       - name: Create or refresh draft release
-        if: github.ref_type == 'tag'
+        if: github.ref_type == 'tag' && inputs.candidate != true
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_VERSION: ${{ steps.version.outputs.value }}

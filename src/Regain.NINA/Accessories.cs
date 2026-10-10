@@ -90,6 +90,7 @@ public abstract class NativeFocuser(string kind) : AccessoryDevice(kind), IFocus
             while (true) {
                 ct.ThrowIfCancellationRequested();
                 var status = await Task.Run(Session.Status, ct); RaiseAllPropertiesChanged();
+                ct.ThrowIfCancellationRequested();
                 if (!status.Moving) {
                     if (Math.Abs(status.Position - position) > (Session.Kind == "eta" ? 2 : 0)) throw new IOException("Focuser stopped before reaching the requested position");
                     if (waitInMs > 0) await Task.Delay(waitInMs, ct);

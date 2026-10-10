@@ -1,0 +1,573 @@
+//! In-process output composition. The graph is validated before construction;
+//! connections use the same controllers and source leases as external clients.
+use crate::{
+    alpaca::SampleRequest,
+    config::{DeviceType, WeatherMetric},
+    covercalibrator::{CoverCalibratorProperty, CoverCalibratorValue},
+    filterwheel::{FilterWheelProperty, FilterWheelValue},
+    focuser::{FocuserProperty, FocuserValue},
+    ipc::{Get, Put},
+    readout::invalid,
+    rotator::{RotatorProperty, RotatorValue},
+    runtime::{ClientSession, HubRuntime, OutputConnection},
+    safety::Clock,
+    source::{Backend, BackendFuture, ErrorKind, SampleBatch, SourceError, Values},
+};
+use serde_json::{Value, json};
+use std::sync::{Arc, OnceLock, Weak};
+use uuid::Uuid;
+
+mod camera;
+
+pub(crate) type Binding = Arc<OnceLock<Weak<HubRuntime>>>;
+pub(crate) struct VirtualBackend {
+    binding: Binding,
+    output: Uuid,
+    kind: DeviceType,
+    samples: Vec<SampleRequest>,
+    clock: Arc<dyn Clock>,
+    simulated: bool,
+    client: Option<Arc<ClientSession>>,
+    camera: camera::Camera,
+}
+impl VirtualBackend {
+    fn typed_proxy(&self) -> bool {
+        matches!(
+            self.kind,
+            DeviceType::Camera
+                | DeviceType::Focuser
+                | DeviceType::Rotator
+                | DeviceType::FilterWheel
+                | DeviceType::CoverCalibrator
+        )
+    }
+    pub(crate) fn new(
+        binding: Binding,
+        output: Uuid,
+        kind: DeviceType,
+        samples: Vec<SampleRequest>,
+        clock: Arc<dyn Clock>,
+        simulated: bool,
+    ) -> Self {
+        Self {
+            binding,
+            output,
+            kind,
+            samples,
+            clock,
+            simulated,
+            client: None,
+            camera: camera::Camera::default(),
+        }
+    }
+    fn connection(&self) -> Result<Arc<OutputConnection>, SourceError> {
+        let connection = self
+            .client
+            .as_ref()
+            .ok_or_else(disconnected)?
+            .connection(self.output)?;
+        if self.typed_proxy() && !connection.connected() {
+            // Retire this virtual transport instead of adopting another inner
+            // generation for an already-connected outer session.
+            return Err(SourceError {
+                transport_lost: true,
+                ..disconnected()
+            });
+        }
+        Ok(connection)
+    }
+    fn close(&mut self) {
+        self.camera.clear();
+        if let Some(client) = self.client.take() {
+            client.close();
+        }
+    }
+}
+fn disconnected() -> SourceError {
+    SourceError::new(ErrorKind::Disconnected, "Virtual output is disconnected")
+}
+fn unsupported() -> SourceError {
+    SourceError::new(
+        ErrorKind::Unsupported,
+        "Virtual output member is not supported",
+    )
+}
+fn no_args(args: &Values) -> Result<(), SourceError> {
+    if args.is_empty() {
+        Ok(())
+    } else {
+        Err(invalid("Unexpected virtual output parameters"))
+    }
+}
+fn id(args: &Values, count: usize) -> Result<u32, SourceError> {
+    if args.len() != count {
+        return Err(invalid("Unexpected virtual channel parameters"));
+    }
+    args.get("Id")
+        .and_then(Value::as_u64)
+        .and_then(|n| u32::try_from(n).ok())
+        .ok_or_else(|| invalid("Expected virtual channel Id"))
+}
+fn sensor(args: &Values) -> Result<String, SourceError> {
+    if args.len() != 1 {
+        return Err(invalid("Expected SensorName"));
+    }
+    args.get("SensorName")
+        .and_then(Value::as_str)
+        .map(str::to_owned)
+        .ok_or_else(|| invalid("Expected SensorName"))
+}
+fn metric(member: &str) -> Result<WeatherMetric, SourceError> {
+    serde_json::from_value(json!(member)).map_err(|_| unsupported())
+}
+fn focuser_property(member: &str) -> Result<FocuserProperty, SourceError> {
+    FocuserProperty::ALL
+        .into_iter()
+        .find(|property| property.member() == member)
+        .ok_or_else(unsupported)
+}
+fn rotator_property(member: &str) -> Result<RotatorProperty, SourceError> {
+    RotatorProperty::ALL
+        .into_iter()
+        .find(|property| property.member() == member)
+        .ok_or_else(unsupported)
+}
+fn filterwheel_property(member: &str) -> Result<FilterWheelProperty, SourceError> {
+    FilterWheelProperty::ALL
+        .into_iter()
+        .find(|property| property.member() == member)
+        .ok_or_else(unsupported)
+}
+fn panel_property(member: &str) -> Result<CoverCalibratorProperty, SourceError> {
+    CoverCalibratorProperty::ALL
+        .into_iter()
+        .find(|property| property.member() == member)
+        .ok_or_else(unsupported)
+}
+fn integer(args: &Values, key: &str) -> Result<i32, SourceError> {
+    if args.len() != 1 {
+        return Err(invalid("Expected one integer parameter"));
+    }
+    args.get(key)
+        .and_then(Value::as_i64)
+        .and_then(|value| i32::try_from(value).ok())
+        .ok_or_else(|| invalid("Expected Int32 parameter"))
+}
+fn number(args: &Values, key: &str) -> Result<f64, SourceError> {
+    if args.len() != 1 {
+        return Err(invalid("Expected one numeric parameter"));
+    }
+    args.get(key)
+        .and_then(Value::as_f64)
+        .ok_or_else(|| invalid("Expected numeric parameter"))
+}
+impl Backend for VirtualBackend {
+    fn simulated(&self) -> bool {
+        self.simulated
+    }
+    fn connect(&mut self) -> BackendFuture<'_, ()> {
+        Box::pin(async {
+            if self.client.is_none() {
+                let runtime = self
+                    .binding
+                    .get()
+                    .and_then(Weak::upgrade)
+                    .ok_or_else(disconnected)?;
+                self.client = Some(runtime.client());
+            }
+            self.client
+                .as_ref()
+                .expect("Created client")
+                .connect(self.output)
+                .await
+        })
+    }
+    fn connect_step(&mut self) -> BackendFuture<'_, bool> {
+        Box::pin(async {
+            if !self.typed_proxy() {
+                return self.connect().await.map(|()| true);
+            }
+            if self.client.is_none() {
+                let runtime = self
+                    .binding
+                    .get()
+                    .and_then(Weak::upgrade)
+                    .ok_or_else(disconnected)?;
+                let client = runtime.client();
+                self.client = Some(client.clone());
+                // Start exactly one supervised inner connection. Poll readiness
+                // in bounded steps rather than consuming the outer request
+                // deadline while the inner transport negotiates its connection.
+                client.change_connection(self.output, true, true).await?;
+            }
+            let client = self.client.as_ref().expect("Created client");
+            if client.connecting(self.output)? {
+                return Ok(false);
+            }
+            self.connection()?;
+            Ok(true)
+        })
+    }
+    fn disconnect(&mut self) -> BackendFuture<'_, ()> {
+        Box::pin(async {
+            self.close();
+            Ok(())
+        })
+    }
+    fn reset(&mut self) {
+        self.close();
+    }
+    fn read(&mut self, member: String, args: Values) -> BackendFuture<'_, Value> {
+        Box::pin(async move {
+            let connection = self.connection()?;
+            if member == "interfaceversion" {
+                no_args(&args)?;
+                return Ok(json!(match self.kind {
+                    DeviceType::ObservingConditions | DeviceType::CoverCalibrator => 2,
+                    DeviceType::Camera | DeviceType::Focuser | DeviceType::Rotator => 4,
+                    _ => 3,
+                }));
+            }
+            if member == "connected" {
+                no_args(&args)?;
+                return Ok(json!(true));
+            }
+            if member == "connecting" {
+                no_args(&args)?;
+                return Ok(json!(false));
+            }
+            if member == "devicestate" {
+                no_args(&args)?;
+                return connection.get(Get::DeviceState {}).await;
+            }
+            if self.kind == DeviceType::Camera {
+                return self.camera.read(connection.camera()?, &member, &args).await;
+            }
+            let get = match self.kind {
+                DeviceType::SafetyMonitor if member == "issafe" => {
+                    no_args(&args)?;
+                    Get::IsSafe {}
+                }
+                DeviceType::Switch => {
+                    if member == "maxswitch" {
+                        no_args(&args)?;
+                        Get::MaxSwitch {}
+                    } else {
+                        let id = id(&args, 1)?;
+                        match member.as_str() {
+                            "getswitch" => Get::GetSwitch { id },
+                            "getswitchvalue" => Get::GetSwitchValue { id },
+                            "getswitchname" => Get::GetSwitchName { id },
+                            "getswitchdescription" => Get::GetSwitchDescription { id },
+                            "canwrite" => Get::CanWrite { id },
+                            "canasync" => Get::CanAsync { id },
+                            "statechangecomplete" => Get::StateChangeComplete { id },
+                            "minswitchvalue" => Get::MinSwitchValue { id },
+                            "maxswitchvalue" => Get::MaxSwitchValue { id },
+                            "switchstep" => Get::SwitchStep { id },
+                            _ => return Err(unsupported()),
+                        }
+                    }
+                }
+                DeviceType::ObservingConditions => match member.as_str() {
+                    "timesincelastupdate" => Get::TimeSinceLastUpdate {
+                        sensor: sensor(&args)?,
+                    },
+                    "sensordescription" => {
+                        return Ok(json!(
+                            connection.weather()?.sensor_description(&sensor(&args)?)?
+                        ));
+                    }
+                    "averageperiod" => {
+                        no_args(&args)?;
+                        Get::AveragePeriod {}
+                    }
+                    _ => {
+                        no_args(&args)?;
+                        return Ok(json!(connection.weather()?.read(metric(&member)?)?.value));
+                    }
+                },
+                DeviceType::Focuser => {
+                    no_args(&args)?;
+                    Get::Focuser {
+                        property: focuser_property(&member)?,
+                    }
+                }
+                DeviceType::Rotator => {
+                    no_args(&args)?;
+                    Get::Rotator {
+                        property: rotator_property(&member)?,
+                    }
+                }
+                DeviceType::FilterWheel => {
+                    no_args(&args)?;
+                    Get::FilterWheel {
+                        property: filterwheel_property(&member)?,
+                    }
+                }
+                DeviceType::CoverCalibrator => {
+                    no_args(&args)?;
+                    Get::CoverCalibrator {
+                        property: panel_property(&member)?,
+                    }
+                }
+                _ => return Err(unsupported()),
+            };
+            connection.get(get).await
+        })
+    }
+    fn write(&mut self, member: String, args: Values) -> BackendFuture<'_, Value> {
+        Box::pin(async move {
+            let connection = self.connection()?;
+            if self.kind == DeviceType::Camera {
+                self.camera
+                    .write(connection.camera()?, &member, &args)
+                    .await?;
+                return Ok(Value::Null);
+            }
+            let put = match (self.kind, member.as_str()) {
+                (DeviceType::Rotator, "move") => Put::MoveRotator {
+                    degrees: number(&args, "Position")?,
+                },
+                (DeviceType::Rotator, "moveabsolute") => Put::MoveAbsoluteRotator {
+                    degrees: number(&args, "Position")?,
+                },
+                (DeviceType::Rotator, "movemechanical") => Put::MoveMechanicalRotator {
+                    degrees: number(&args, "Position")?,
+                },
+                (DeviceType::Rotator, "sync") => Put::SyncRotator {
+                    degrees: number(&args, "Position")?,
+                },
+                (DeviceType::Rotator, "halt") => {
+                    no_args(&args)?;
+                    Put::HaltRotator {}
+                }
+                (DeviceType::Rotator, "reverse") => {
+                    if args.len() != 1 {
+                        return Err(invalid("Expected only Reverse"));
+                    }
+                    Put::RotatorReverse {
+                        enabled: args
+                            .get("Reverse")
+                            .and_then(Value::as_bool)
+                            .ok_or_else(|| invalid("Expected boolean Reverse"))?,
+                    }
+                }
+                (DeviceType::Focuser, "move") => Put::MoveFocuser {
+                    position: integer(&args, "Position")?,
+                },
+                (DeviceType::FilterWheel, "position") => Put::MoveFilterWheel {
+                    position: integer(&args, "Position")?,
+                },
+                (DeviceType::CoverCalibrator, "calibratoron") => Put::CalibratorOn {
+                    brightness: integer(&args, "Brightness")?,
+                },
+                (DeviceType::CoverCalibrator, "opencover") => {
+                    no_args(&args)?;
+                    Put::OpenCover {}
+                }
+                (DeviceType::CoverCalibrator, "closecover") => {
+                    no_args(&args)?;
+                    Put::CloseCover {}
+                }
+                (DeviceType::CoverCalibrator, "haltcover") => {
+                    no_args(&args)?;
+                    Put::HaltCover {}
+                }
+                (DeviceType::CoverCalibrator, "calibratoroff") => {
+                    no_args(&args)?;
+                    Put::CalibratorOff {}
+                }
+                (DeviceType::Focuser, "halt") => {
+                    no_args(&args)?;
+                    Put::HaltFocuser {}
+                }
+                (DeviceType::Focuser, "tempcomp") => {
+                    if args.len() != 1 {
+                        return Err(invalid("Expected only TempComp"));
+                    }
+                    Put::FocuserTempComp {
+                        enabled: args
+                            .get("TempComp")
+                            .and_then(Value::as_bool)
+                            .ok_or_else(|| invalid("Expected boolean TempComp"))?,
+                    }
+                }
+                (DeviceType::Switch, "cancelasync") => Put::CancelAsync { id: id(&args, 1)? },
+                (DeviceType::Switch, "setswitchvalue") => Put::SetSwitchValue {
+                    id: id(&args, 2)?,
+                    value: args
+                        .get("Value")
+                        .and_then(Value::as_f64)
+                        .ok_or_else(|| invalid("Expected Value"))?,
+                },
+                (DeviceType::Switch, "setswitch") => Put::SetSwitch {
+                    id: id(&args, 2)?,
+                    state: args
+                        .get("State")
+                        .and_then(Value::as_bool)
+                        .ok_or_else(|| invalid("Expected State"))?,
+                },
+                (DeviceType::ObservingConditions, "averageperiod") if args.len() == 1 => {
+                    Put::AveragePeriod {
+                        hours: args
+                            .get("AveragePeriod")
+                            .and_then(Value::as_f64)
+                            .ok_or_else(|| invalid("Expected AveragePeriod"))?,
+                    }
+                }
+                (DeviceType::ObservingConditions, "refresh") => {
+                    no_args(&args)?;
+                    Put::Refresh {}
+                }
+                _ => return Err(unsupported()),
+            };
+            connection.put(put).await?;
+            Ok(Value::Null)
+        })
+    }
+    fn camera_image(
+        &mut self,
+        budget: crate::camera::image::ImageBudget,
+    ) -> BackendFuture<'_, crate::camera::image::CameraImage> {
+        Box::pin(async move {
+            let connection = self.connection()?;
+            self.camera.image(connection.camera()?, &budget)
+        })
+    }
+    fn poll(&mut self) -> BackendFuture<'_, Values> {
+        Box::pin(async { Ok(self.sample().await?.values) })
+    }
+    fn sample(&mut self) -> BackendFuture<'_, SampleBatch> {
+        Box::pin(async {
+            let connection = self.connection()?;
+            let mut batch = SampleBatch::default();
+            if self.kind == DeviceType::SafetyMonitor {
+                let snapshot = connection.safety()?.snapshot();
+                if snapshot.is_safe
+                    && snapshot.endpoints.values().any(|endpoint| {
+                        endpoint.phase != crate::safety::Phase::FreshSafe
+                            || !endpoint.recovery_confirmed
+                    })
+                {
+                    // Permission retained under an inner grace policy is not a
+                    // new successful observation. Preserve the outer policy's
+                    // grace/expiry rules and block aggregate recovery from it.
+                    return Err(SourceError::transient());
+                }
+                batch
+                    .values
+                    .insert("issafe".into(), json!(snapshot.is_safe));
+                batch.safety_observed_at = snapshot.safe_observed_at;
+                if let Some(at) = snapshot.safe_observed_at {
+                    batch.ages_seconds.insert(
+                        "issafe".into(),
+                        self.clock.now().saturating_sub(at).as_secs_f64(),
+                    );
+                }
+                return Ok(batch);
+            }
+            for request in &self.samples {
+                if self.typed_proxy() {
+                    let result = if self.kind == DeviceType::Camera {
+                        no_args(&request.parameters)
+                            .and_then(|()| {
+                                crate::camera::properties::CameraProperty::from_member(
+                                    &request.member,
+                                )
+                                .ok_or_else(unsupported)
+                            })
+                            .and_then(|property| connection.camera()?.cached_sample(property))
+                            .map(|sample| (sample.value.into_value(), sample.age_seconds))
+                    } else if self.kind == DeviceType::Focuser {
+                        no_args(&request.parameters)
+                            .and_then(|()| focuser_property(&request.member))
+                            .and_then(|property| connection.focuser()?.cached_sample(property))
+                            .map(|sample| {
+                                let value = match sample.value {
+                                    FocuserValue::Boolean { value } => json!(value),
+                                    FocuserValue::Integer { value } => json!(value),
+                                    FocuserValue::Number { value } => json!(value),
+                                };
+                                (value, sample.age_seconds)
+                            })
+                    } else if self.kind == DeviceType::Rotator {
+                        no_args(&request.parameters)
+                            .and_then(|()| rotator_property(&request.member))
+                            .and_then(|property| connection.rotator()?.cached_sample(property))
+                            .map(|sample| {
+                                let value = match sample.value {
+                                    RotatorValue::Boolean { value } => json!(value),
+                                    RotatorValue::Number { value } => json!(value),
+                                };
+                                (value, sample.age_seconds)
+                            })
+                    } else if self.kind == DeviceType::FilterWheel {
+                        no_args(&request.parameters)
+                            .and_then(|()| filterwheel_property(&request.member))
+                            .and_then(|property| connection.filterwheel()?.cached_sample(property))
+                            .map(|sample| {
+                                let value = match sample.value {
+                                    FilterWheelValue::Strings { value } => json!(value),
+                                    FilterWheelValue::Integers { value } => json!(value),
+                                    FilterWheelValue::Integer { value } => json!(value),
+                                };
+                                (value, sample.age_seconds)
+                            })
+                    } else {
+                        no_args(&request.parameters)
+                            .and_then(|()| panel_property(&request.member))
+                            .and_then(|property| {
+                                connection.covercalibrator()?.cached_sample(property)
+                            })
+                            .map(|sample| {
+                                let value = match sample.value {
+                                    CoverCalibratorValue::Boolean { value } => json!(value),
+                                    CoverCalibratorValue::Integer { value } => json!(value),
+                                };
+                                (value, sample.age_seconds)
+                            })
+                    };
+                    match result {
+                        Ok((value, age)) => {
+                            batch.values.insert(request.key.clone(), value);
+                            batch.ages_seconds.insert(request.key.clone(), age);
+                        }
+                        Err(error) => {
+                            batch.errors.insert(request.key.clone(), error);
+                        }
+                    }
+                    continue;
+                }
+                let result = match self.kind {
+                    DeviceType::Switch if request.member == "getswitchvalue" => connection
+                        .switch()?
+                        .sample(id(&request.parameters, 1)?)
+                        .map(|s| (s.value, s.age_seconds)),
+                    DeviceType::ObservingConditions => metric(&request.member)
+                        .and_then(|m| connection.weather()?.read(m))
+                        .map(|s| (s.value, s.age_seconds)),
+                    _ => Err(unsupported()),
+                };
+                match result {
+                    Ok((value, age)) => {
+                        batch.values.insert(request.key.clone(), json!(value));
+                        batch.ages_seconds.insert(request.key.clone(), age);
+                    }
+                    Err(error) => {
+                        batch.errors.insert(request.key.clone(), error);
+                    }
+                }
+            }
+            Ok(batch)
+        })
+    }
+    fn refresh(&mut self) -> BackendFuture<'_, ()> {
+        Box::pin(async { self.connection()?.weather()?.refresh().await })
+    }
+}
+impl Drop for VirtualBackend {
+    fn drop(&mut self) {
+        self.close();
+    }
+}

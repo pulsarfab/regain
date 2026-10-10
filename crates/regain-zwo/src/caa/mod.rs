@@ -148,6 +148,10 @@ impl<T: Transport> Caa<T> {
         if let Some((mechanical, logical)) = self.pending_reverse.take() {
             self.reverse = settings.reverse;
             self.offset = logical - self.sign() * mechanical;
+        } else {
+            // Observe an external direction change without guessing a new sky
+            // reference. A host retaining a reference must reconcile that change.
+            self.reverse = settings.reverse;
         }
         Ok(settings)
     }
@@ -255,6 +259,18 @@ impl<T: Transport> Caa<T> {
         angle(degrees)?;
         let s = self.idle()?;
         self.offset = degrees - self.sign() * s.mechanical_degrees;
+        Ok(())
+    }
+
+    /// Restore a persisted logical transform without writing a hardware setting,
+    /// moving equipment or changing its mechanical reference.
+    pub fn restore_logical_offset(&mut self, offset: f64) -> Result<()> {
+        ensure!(
+            offset.is_finite() && (0.0..360.0).contains(&offset),
+            "Invalid saved logical offset"
+        );
+        self.idle()?;
+        self.offset = offset;
         Ok(())
     }
 

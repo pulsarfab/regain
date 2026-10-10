@@ -100,23 +100,12 @@ internal static class CameraSetupWindow
         var recovery = Tab("Recovery", "Retry limits apply to this camera. Long exposures are replaced only within the configured duration limit.");
         var cooler = Tab("Cooler", "Recovery restores the prior cooler state and waits near its previous measured temperature.");
         var timeouts = Tab("Timeouts", "Maximum time allowed for camera commands, downloads and recovery.");
-        void Recovery(Panel parent, string key, string label, double min, double max, bool integer = false) => Field(parent, label, profile["recovery"]![key]!.ToJsonString(), v => { double n = Number(v, label, min, max, integer); profile["recovery"]![key] = integer ? JsonValue.Create((int)n) : JsonValue.Create(n); });
-        Recovery(recovery, "maxRetries", "Replacement exposures", 0, 20, true);
-        Recovery(recovery, "maximumRetryExposureSeconds", "Maximum exposure to replace (s)", 0, 86400);
-        Recovery(recovery, "readyFrameDownloadRetries", "SDK read retries", 0, 5, true);
-        Recovery(recovery, "directReadRetries", "Direct read retries", 0, 5, true);
-        Recovery(recovery, "reconnectDelaySeconds", "Reconnect delay (s)", .001, 3600);
-        Recovery(recovery, "usbResetAfterFailures", "USB reset after failed attempts (0 disables; 2 tries reconnect first)", 0, 20, true);
-        recovery.Children.Add(new TextBlock { Text = "USB recovery runs at most once per capture and only when a replacement exposure is allowed. Windows may request administrator approval. External camera power is unchanged.", TextWrapping = TextWrapping.Wrap });
-        Recovery(cooler, "coolingTimeoutSeconds", "Cooling timeout (s)", .001, 3600);
-        Recovery(cooler, "temperatureToleranceC", "Temperature tolerance (°C)", .001, 3600);
-        Recovery(cooler, "coolingStableSamples", "Stable samples", 1, 60, true);
-        Recovery(cooler, "coolingSampleSeconds", "Sample interval (s)", .001, 3600);
-        Recovery(timeouts, "commandTimeoutSeconds", "Command timeout (s)", .001, 3600);
-        Recovery(timeouts, "downloadTimeoutSeconds", "Download timeout (s)", .001, 3600);
-        Recovery(timeouts, "directReadChunkKiB", "Direct USB read size (KiB; powers of two, 1-1024)", 1, 1024, true);
-        timeouts.Children.Add(new TextBlock { Text = "Direct USB read size limits each host request. Smaller requests add overhead; this is separate from SDK USB Traffic and does not change USB speed or set a fixed MB/s cap.", TextWrapping = TextWrapping.Wrap });
-        Recovery(timeouts, "exposureGraceSeconds", "Exposure grace (s)", .001, 3600);
+        var recoveryForm = new CameraRecoveryForm(
+            JsonSerializer.SerializeToElement(profile["recovery"]),
+            section => section == "Cooling" ? cooler : section == "Timeouts" ? timeouts : recovery,
+            TrySave);
+        editors.AddRange(recoveryForm.Editors);
+        readers.Add(() => profile["recovery"] = JsonNode.Parse(recoveryForm.Read().GetRawText()));
         var controls = Tab("Controls", "Optional connection defaults. Leave a value blank to keep the camera setting.");
         void Control(Panel parent, string key, string label) => Field(parent, label, profile["controls"]![key]?.ToJsonString() ?? "", v => {
             if (v == "") profile["controls"]!.AsObject().Remove(key);

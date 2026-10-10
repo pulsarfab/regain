@@ -10,12 +10,23 @@ use std::{
 pub enum Failure {
     Invalid(String),
     Cancelled,
-    Worker { message: String, code: Option<i32> },
+    Worker {
+        message: String,
+        code: Option<i32>,
+    },
+    /// A dispatched control has no known acknowledgement. Retire its worker;
+    /// retrying the command or capture could repeat an already applied write.
+    UncertainControl {
+        message: String,
+        code: Option<i32>,
+    },
 }
 impl std::fmt::Display for Failure {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Invalid(m) | Self::Worker { message: m, .. } => f.write_str(m),
+            Self::Invalid(m)
+            | Self::Worker { message: m, .. }
+            | Self::UncertainControl { message: m, .. } => f.write_str(m),
             Self::Cancelled => f.write_str("Exposure aborted"),
         }
     }
@@ -26,7 +37,7 @@ pub fn invalid(message: impl Into<String>) -> anyhow::Error {
 }
 pub fn retryable(error: &anyhow::Error) -> bool {
     match error.downcast_ref::<Failure>() {
-        Some(Failure::Invalid(_) | Failure::Cancelled) => false,
+        Some(Failure::Invalid(_) | Failure::Cancelled | Failure::UncertainControl { .. }) => false,
         Some(Failure::Worker { code: Some(c), .. }) => {
             matches!(c, 1 | 2 | 4 | 5 | 11 | 12 | 15 | 16)
         }
@@ -45,7 +56,10 @@ pub struct Exposure {
 }
 impl Exposure {
     pub fn bytes(&self) -> Result<usize> {
-        let count = u64::from(self.width) * u64::from(self.height) * 2;
+        let count = u64::from(self.width)
+            .checked_mul(u64::from(self.height))
+            .and_then(|pixels| pixels.checked_mul(2))
+            .ok_or_else(|| invalid("Invalid frame size"))?;
         ensure!(
             count > 0 && count <= 512 * 1024 * 1024,
             Failure::Invalid("Invalid frame size".into())
@@ -62,89 +76,7 @@ pub struct Control {
     pub value: i64,
     pub writable: bool,
 }
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(default, rename_all = "camelCase")]
-pub struct RecoveryOptions {
-    pub max_retries: u32,
-    pub maximum_retry_exposure_seconds: f64,
-    pub reconnect_delay_seconds: f64,
-    pub command_timeout_seconds: f64,
-    pub download_timeout_seconds: f64,
-    pub exposure_grace_seconds: f64,
-    pub cooling_timeout_seconds: f64,
-    pub temperature_tolerance_c: f64,
-    pub cooling_stable_samples: u32,
-    pub cooling_sample_seconds: f64,
-    pub ready_frame_download_retries: u32,
-    pub direct_read_retries: u32,
-    /// Maximum host USB read size in KiB; not an SDK bandwidth percentage.
-    #[serde(rename = "directReadChunkKiB")]
-    pub direct_read_chunk_kib: u32,
-    /// Zero disables hardware recovery. At most one operation per capture.
-    pub usb_reset_after_failures: u32,
-    /// Linux: cycle the downstream port instead of USBDEVFS_RESET.
-    pub usb_port_cycle: bool,
-}
-impl Default for RecoveryOptions {
-    fn default() -> Self {
-        Self {
-            max_retries: 3,
-            maximum_retry_exposure_seconds: 30.,
-            reconnect_delay_seconds: 5.,
-            command_timeout_seconds: 15.,
-            download_timeout_seconds: 60.,
-            exposure_grace_seconds: 30.,
-            cooling_timeout_seconds: 300.,
-            temperature_tolerance_c: 2.,
-            cooling_stable_samples: 3,
-            cooling_sample_seconds: 2.,
-            ready_frame_download_retries: 2,
-            direct_read_retries: 2,
-            direct_read_chunk_kib: 1024,
-            usb_reset_after_failures: 0,
-            usb_port_cycle: false,
-        }
-    }
-}
-impl RecoveryOptions {
-    pub fn validate(&self) -> Result<()> {
-        ensure!(
-            (1..=1024).contains(&self.direct_read_chunk_kib)
-                && self.direct_read_chunk_kib.is_power_of_two(),
-            Failure::Invalid(
-                "Direct USB read size must be a power of two from 1 to 1024 KiB".into()
-            )
-        );
-        ensure!(
-            self.max_retries <= 20
-                && self.ready_frame_download_retries <= 5
-                && self.direct_read_retries <= 5
-                && self.usb_reset_after_failures <= 20
-                && (1..=60).contains(&self.cooling_stable_samples),
-            Failure::Invalid("Invalid retry limits".into())
-        );
-        ensure!(
-            self.maximum_retry_exposure_seconds.is_finite()
-                && (0.0..=86400.).contains(&self.maximum_retry_exposure_seconds),
-            Failure::Invalid("Invalid replacement exposure limit".into())
-        );
-        for v in [
-            self.reconnect_delay_seconds,
-            self.command_timeout_seconds,
-            self.download_timeout_seconds,
-            self.exposure_grace_seconds,
-            self.cooling_timeout_seconds,
-            self.temperature_tolerance_c,
-            self.cooling_sample_seconds,
-        ] {
-            ensure!(
-                v.is_finite() && v > 0. && v <= 3600.,
-                Failure::Invalid("Invalid recovery timeout or tolerance".into())
-            );
-        }
-        Ok(())
-    }
-}
+pub use crate::recovery::RecoveryOptions;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Selection {
@@ -167,6 +99,10 @@ pub struct Status {
     pub retry: RetryStatus,
     pub controls: BTreeMap<i32, Control>,
     pub values: BTreeMap<i32, i64>,
+    /// Acknowledged values, separate from queued desired settings. Monotonic
+    /// timestamps belong to this process and never enter the status JSON.
+    #[serde(skip)]
+    pub observations: BTreeMap<i32, ControlObservation>,
     pub connected: bool,
     pub control_connection_available: bool,
     pub sdk_exposure_state: Option<i64>,
@@ -207,6 +143,40 @@ impl Status {
 }
 pub type SharedStatus = Arc<Mutex<Status>>;
 pub type Diagnostic = Arc<dyn Fn(&str, &str, &str) + Send + Sync>;
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ControlObservation {
+    pub value: i64,
+    pub observed_at: tokio::time::Instant,
+}
+/// Worker-relative age; never transfer a process-local monotonic timestamp.
+/// Receivers must also account for the request/response transit time.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ControlObservationReply {
+    pub value: i64,
+    pub age_seconds: f64,
+}
+impl ControlObservationReply {
+    pub fn normalize(&self, request_started: tokio::time::Instant) -> Result<ControlObservation> {
+        Ok(ControlObservation {
+            value: self.value,
+            observed_at: self.observed_at(request_started)?,
+        })
+    }
+    /// Conservatively include all IPC/worker time by subtracting the reported
+    /// age from request admission, never from response receipt. Process-local
+    /// monotonic clock epochs do not need to agree across the pipe.
+    pub fn observed_at(
+        &self,
+        request_started: tokio::time::Instant,
+    ) -> Result<tokio::time::Instant> {
+        let age = std::time::Duration::try_from_secs_f64(self.age_seconds)
+            .map_err(|_| invalid("Invalid control observation age"))?;
+        request_started
+            .checked_sub(age)
+            .ok_or_else(|| invalid("Unrepresentable control observation time"))
+    }
+}
 #[derive(Clone)]
 pub struct Frame {
     pub exposure: Exposure,
@@ -268,4 +238,53 @@ pub fn validate_capture(
     info["originAlignmentX"] = serde_json::json!(1);
     info["originAlignmentY"] = serde_json::json!(1);
     validate_exposure(&info, controls, e)
+}
+
+#[cfg(test)]
+mod observation_tests {
+    use super::*;
+    use std::time::Duration;
+    use tokio::time::Instant;
+
+    #[test]
+    fn worker_age_normalization_includes_transit_and_rejects_invalid_times() {
+        let request = Instant::now();
+        let reply = ControlObservationReply {
+            value: -100,
+            age_seconds: 20.25,
+        };
+        let observed = reply.observed_at(request).unwrap();
+        let received = request + Duration::from_secs(5);
+        assert_eq!(
+            received.duration_since(observed),
+            Duration::from_secs_f64(25.25)
+        );
+        for invalid_age in [-1.0, f64::NAN, f64::INFINITY, f64::NEG_INFINITY, f64::MAX] {
+            assert!(
+                ControlObservationReply {
+                    value: 0,
+                    age_seconds: invalid_age
+                }
+                .observed_at(request)
+                .is_err()
+            );
+        }
+        assert_eq!(
+            ControlObservationReply {
+                value: 0,
+                age_seconds: 0.0
+            }
+            .observed_at(request)
+            .unwrap(),
+            request
+        );
+        for invalid in [
+            serde_json::json!({"value":true,"ageSeconds":0}),
+            serde_json::json!({"value":0,"ageSeconds":"0"}),
+            serde_json::json!({"value":0}),
+            serde_json::json!({"value":0,"ageSeconds":0,"timestamp":"private clock epoch"}),
+        ] {
+            assert!(serde_json::from_value::<ControlObservationReply>(invalid).is_err());
+        }
+    }
 }

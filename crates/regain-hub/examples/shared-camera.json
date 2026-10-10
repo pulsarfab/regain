@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "revision": "50000000-0000-4000-8000-000000000001",
+  "instanceId": "50000000-0000-4000-8000-000000000002",
+  "sources": [
+    {
+      "id": "50000000-0000-4000-8000-000000000011",
+      "label": "Explicit camera simulation",
+      "backend": { "kind": "simulated", "deviceType": "camera" }
+    }
+  ],
+  "outputs": [
+    {
+      "id": "50000000-0000-4000-8000-000000000101",
+      "number": 4,
+      "label": "Shared camera A",
+      "device": {
+        "kind": "proxy", "deviceType": "camera",
+        "source": "50000000-0000-4000-8000-000000000011"
+      }
+    },
+    {
+      "id": "50000000-0000-4000-8000-000000000102",
+      "number": 17,
+      "label": "Shared camera B",
+      "device": {
+        "kind": "proxy", "deviceType": "camera",
+        "source": "50000000-0000-4000-8000-000000000011"
+      }
+    }
+  ]
+}

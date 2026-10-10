@@ -132,12 +132,7 @@ impl Profiles {
                 },
             ],
         };
-        ensure!(!values.is_empty(), "No camera slots in settings");
-        let mut ids = std::collections::HashSet::new();
-        for p in &values {
-            p.validate()?;
-            ensure!(ids.insert(&p.unique_id), "Duplicate camera ID");
-        }
+        Self::validate(&values)?;
         let profiles = Self {
             focusers: crate::focuser::Slots::new(path.clone())?,
             rotators: crate::slots::Slots::new_rotators(path.clone())?,
@@ -161,10 +156,7 @@ impl Profiles {
     pub fn reload(&self) -> Result<()> {
         if let Some(path) = &self.path {
             let values: Vec<Profile> = serde_json::from_slice(&std::fs::read(path)?)?;
-            ensure!(!values.is_empty(), "No camera slots in settings");
-            for p in &values {
-                p.validate()?;
-            }
+            Self::validate(&values)?;
             *self.values.lock().unwrap() = values;
         }
         Ok(())
@@ -217,5 +209,77 @@ impl Profiles {
             temp.persist(path)?;
         }
         Ok(())
+    }
+    fn validate(values: &[Profile]) -> Result<()> {
+        // An explicit empty list is an accessory-only installation. Missing
+        // settings retain the ordinary main/guide defaults in new().
+        let mut ids = std::collections::HashSet::new();
+        for profile in values {
+            profile.validate()?;
+            ensure!(ids.insert(&profile.unique_id), "Duplicate camera ID");
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn explicit_empty_profiles_survive_restart_and_can_gain_a_first_camera() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("profiles.json");
+        std::fs::write(&path, b"[]").unwrap();
+        let profiles = Profiles::new(Some(path.clone())).unwrap();
+        assert!(profiles.all().is_empty());
+        assert!(profiles.get(0).is_err());
+        assert!(Profiles::new(Some(path.clone())).unwrap().all().is_empty());
+        assert_eq!(profiles.add().unwrap(), 0);
+        let id = profiles.get(0).unwrap().unique_id;
+        let reopened = Profiles::new(Some(path)).unwrap();
+        assert_eq!(reopened.all().len(), 1);
+        assert_eq!(reopened.get(0).unwrap().unique_id, id);
+    }
+
+    #[test]
+    fn missing_settings_keep_normal_camera_defaults() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("profiles.json");
+        let profiles = Profiles::new(Some(path.clone())).unwrap();
+        assert_eq!(profiles.all().len(), 2);
+        let ids: Vec<_> = profiles.all().into_iter().map(|p| p.unique_id).collect();
+        assert_ne!(ids[0], ids[1]);
+        assert_eq!(Profiles::new(None).unwrap().all().len(), 2);
+        assert_eq!(
+            Profiles::new(Some(path)).unwrap().get(0).unwrap().unique_id,
+            ids[0]
+        );
+    }
+
+    #[test]
+    fn reload_validates_before_replacing_slots_and_accepts_an_empty_list() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("profiles.json");
+        let profiles = Profiles::new(Some(path.clone())).unwrap();
+        let original = serde_json::to_value(profiles.all()).unwrap();
+        for invalid in [
+            serde_json::json!({}),
+            serde_json::to_value(vec![profiles.get(0).unwrap(); 2]).unwrap(),
+            serde_json::to_value(vec![Profile {
+                label: String::new(),
+                ..Profile::default()
+            }])
+            .unwrap(),
+        ] {
+            std::fs::write(&path, serde_json::to_vec(&invalid).unwrap()).unwrap();
+            assert!(profiles.reload().is_err());
+            assert_eq!(serde_json::to_value(profiles.all()).unwrap(), original);
+            assert!(Profiles::new(Some(path.clone())).is_err());
+        }
+        std::fs::write(&path, b"[]").unwrap();
+        profiles.reload().unwrap();
+        assert!(profiles.all().is_empty());
+        assert_eq!(profiles.add().unwrap(), 0);
     }
 }

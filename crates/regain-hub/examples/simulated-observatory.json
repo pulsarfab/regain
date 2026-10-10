@@ -1,0 +1,76 @@
+{
+  "schemaVersion": 1,
+  "revision": "40000000-0000-0000-0000-000000000001",
+  "instanceId": "40000000-0000-0000-0000-000000000002",
+  "sources": [
+    {
+      "id": "40000000-0000-0000-0000-000000000011",
+      "label": "Simulation switches",
+      "backend": { "kind": "simulated", "deviceType": "switch" }
+    },
+    {
+      "id": "40000000-0000-0000-0000-000000000012",
+      "label": "Simulation safety (starts unsafe)",
+      "backend": { "kind": "simulated", "deviceType": "safetymonitor" }
+    },
+    {
+      "id": "40000000-0000-0000-0000-000000000013",
+      "label": "Simulation weather",
+      "backend": { "kind": "simulated", "deviceType": "observingconditions" }
+    }
+  ],
+  "outputs": [
+    {
+      "id": "40000000-0000-0000-0000-000000000101",
+      "number": 0, "label": "Simulation controls",
+      "device": {
+        "kind": "switch",
+        "channels": [
+          {
+            "id": "40000000-0000-0000-0000-000000000201", "number": 0,
+            "label": "Simulation relay", "writable": true,
+            "readout": { "kind": "channel", "source": "40000000-0000-0000-0000-000000000011", "channel": 0 },
+            "minimum": 0, "maximum": 1, "step": 1, "units": ""
+          },
+          {
+            "id": "40000000-0000-0000-0000-000000000202", "number": 1,
+            "label": "Simulation level", "writable": true,
+            "readout": { "kind": "channel", "source": "40000000-0000-0000-0000-000000000011", "channel": 1 },
+            "minimum": 0, "maximum": 100, "step": 1, "units": "%"
+          },
+          {
+            "id": "40000000-0000-0000-0000-000000000203", "number": 2,
+            "label": "Simulation temperature", "writable": false,
+            "readout": { "kind": "channel", "source": "40000000-0000-0000-0000-000000000011", "channel": 2 },
+            "minimum": -40, "maximum": 80, "step": 0.1, "units": "°C"
+          }
+        ]
+      }
+    },
+    {
+      "id": "40000000-0000-0000-0000-000000000102",
+      "number": 0, "label": "Simulation safety",
+      "device": {
+        "kind": "safety",
+        "members": [{ "source": "40000000-0000-0000-0000-000000000012", "enabled": true }]
+      }
+    },
+    {
+      "id": "40000000-0000-0000-0000-000000000103",
+      "number": 0, "label": "Simulation weather",
+      "device": {
+        "kind": "weather",
+        "measurements": {
+          "temperature": {
+            "sources": [{ "kind": "property", "source": "40000000-0000-0000-0000-000000000013", "property": "temperature" }],
+            "maximumAgeSeconds": 90, "averageSeconds": 0
+          },
+          "pressure": {
+            "sources": [{ "kind": "property", "source": "40000000-0000-0000-0000-000000000013", "property": "pressure" }],
+            "maximumAgeSeconds": 90, "averageSeconds": 0
+          }
+        }
+      }
+    }
+  ]
+}

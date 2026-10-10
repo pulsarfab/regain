@@ -15,6 +15,18 @@ async fn main() -> Result<()> {
             println!(
                 "PulsarFab regain ASCOM Alpaca (Rust)\n  --listen 127.0.0.1   IPv4 address (0.0.0.0 for LAN)\n  --port 11111\n  --profiles PATH     Saved equipment profiles\n  --workers DIRECTORY Rust workers and SDK\n  --sdk PATH          SDK library override\n  --simulate          Simulated equipment\n  --no-discovery      Disable UDP discovery\n  --stdio             Private pipe frontend\n  --backend sdk|direct Backend for private pipe frontend\nOpen http://127.0.0.1:11111/setup to configure equipment."
             );
+            println!(
+                "  --hub-init --hub-config ABSOLUTE_PATH\n                      Create an empty hub configuration without starting equipment"
+            );
+            println!(
+                "  --hub-host --hub-config ABSOLUTE_PATH\n                      Shared local hub host (no HTTP listener)"
+            );
+            println!(
+                "  --hub-attach --hub-config ABSOLUTE_PATH\n                      Start/find the shared hub and print endpoint JSON"
+            );
+            println!(
+                "  --hub-config ABSOLUTE_PATH\n                      Publish configured shared hub devices over HTTP"
+            );
             return Ok(());
         }
         ensure!(
@@ -29,10 +41,22 @@ async fn main() -> Result<()> {
                     | "--no-discovery"
                     | "--stdio"
                     | "--backend"
+                    | "--hub-host"
+                    | "--hub-init"
+                    | "--hub-attach"
+                    | "--hub-config"
             ),
             "Unknown option: {arg}"
         );
-        let value = if matches!(arg.as_str(), "--simulate" | "--no-discovery" | "--stdio") {
+        let value = if matches!(
+            arg.as_str(),
+            "--simulate"
+                | "--no-discovery"
+                | "--stdio"
+                | "--hub-host"
+                | "--hub-attach"
+                | "--hub-init"
+        ) {
             String::new()
         } else {
             args.next()
@@ -40,12 +64,72 @@ async fn main() -> Result<()> {
         };
         options.insert(arg, value);
     }
+    if options.contains_key("--hub-init") {
+        ensure!(
+            options.len() == 2 && options.contains_key("--hub-config"),
+            "Hub initialization accepts only --hub-init --hub-config ABSOLUTE_PATH"
+        );
+        let configuration = regain_hub::config::ConfigStore::create(
+            &PathBuf::from(&options["--hub-config"]),
+        ).map_err(|error| match error {
+            regain_hub::config::ApplyError::Committed { .. } => anyhow::anyhow!(
+                "Hub configuration was created but durability is uncertain; inspect the file before any further action"
+            ),
+            _ => anyhow::anyhow!(
+                "Cannot create hub configuration; choose an absolute new filename in an existing writable directory. Existing files are never replaced"
+            ),
+        })?.snapshot();
+        println!("{}", serde_json::to_string(&configuration)?);
+        return Ok(());
+    }
+    if options.contains_key("--hub-host") || options.contains_key("--hub-attach") {
+        ensure!(
+            !(options.contains_key("--hub-host") && options.contains_key("--hub-attach")),
+            "Choose hub host or attachment mode"
+        );
+        ensure!(
+            options.contains_key("--hub-config"),
+            "Hub mode requires --hub-config ABSOLUTE_PATH"
+        );
+        ensure!(
+            options.keys().all(|key| matches!(
+                key.as_str(),
+                "--hub-host"
+                    | "--hub-attach"
+                    | "--hub-config"
+                    | "--workers"
+                    | "--simulate"
+                    | "--sdk"
+            )),
+            "Hub host mode accepts only --hub-config, --workers, --sdk and --simulate"
+        );
+        ensure!(
+            !(options.contains_key("--hub-attach")
+                && (options.contains_key("--simulate") || options.contains_key("--sdk"))),
+            "Attachment uses the existing host settings; configure explicit simulated sources for tests"
+        );
+    } else {
+        ensure!(
+            !(options.contains_key("--hub-config") && options.contains_key("--stdio")),
+            "--hub-config is unavailable in private camera stdio mode"
+        );
+    }
     let executable = std::env::current_exe()?;
     let directory = options
         .get("--workers")
         .map(PathBuf::from)
         .unwrap_or(executable.parent().unwrap().to_path_buf())
         .canonicalize()?;
+    if options.contains_key("--hub-attach") {
+        let attached = regain_alpaca::hub::attach(
+            &PathBuf::from(&options["--hub-config"]),
+            &directory,
+            &executable,
+        )
+        .await?;
+        println!("{}", serde_json::to_string(&attached)?);
+        return Ok(());
+    }
     let sdk = options.get("--sdk").map(PathBuf::from).unwrap_or_else(|| {
         directory.join(if cfg!(windows) {
             "ASICamera2.dll"
@@ -55,9 +139,28 @@ async fn main() -> Result<()> {
             "libASICamera2.so"
         })
     });
+    let sdk = std::path::absolute(sdk)?;
+    if options.contains_key("--hub-host") {
+        return regain_alpaca::hub::run(
+            &PathBuf::from(&options["--hub-config"]),
+            regain_hub::native::NativeRuntime {
+                cameras: Some(regain_hub::camera::runtime::NativeCameraRuntime {
+                    sdk,
+                    sdk_simulation: None,
+                    resources: Default::default(),
+                    diagnostic: Log::new(None).diagnostic(None),
+                }),
+                directory,
+                simulate: options.contains_key("--simulate"),
+                references: None,
+            },
+            shutdown_signal(),
+        )
+        .await;
+    }
     let runtime = Runtime {
         directory,
-        sdk: std::path::absolute(sdk)?,
+        sdk,
         simulate: options.contains_key("--simulate"),
         sdk_simulation: None,
     };
@@ -103,7 +206,25 @@ async fn main() -> Result<()> {
             .unwrap_or(std::path::Path::new("."))
             .join("logs"),
     ));
-    let server = Server::new(Arc::new(Profiles::new(Some(path))?), runtime, log.clone());
+    let hub = if let Some(config) = options.get("--hub-config") {
+        let config = PathBuf::from(config);
+        let attached = regain_alpaca::hub::attach(&config, &runtime.directory, &executable).await?;
+        Some(
+            regain_alpaca::hub_output::Publisher::connect(
+                regain_hub::endpoint::Endpoint::for_config(&config)?,
+                attached.instance_id,
+            )
+            .await?,
+        )
+    } else {
+        None
+    };
+    let server = Server::with_hub(
+        Arc::new(Profiles::new(Some(path))?),
+        runtime,
+        log.clone(),
+        hub,
+    );
     let stop = CancellationToken::new();
     let poll = tokio::spawn(server.clone().poll(stop.clone()));
     let discovery = if !options.contains_key("--no-discovery") {

@@ -1,13 +1,11 @@
 //! ASCOM CoverCalibrator V1 over the native OFP2 serial worker.
-use crate::{
-    device::{Params, error, unsupported},
-    rotator::Worker,
-};
+use crate::device::{Params, error, unsupported};
 use anyhow::{Result, ensure};
+use regain_core::accessory::AccessoryWorker as Worker;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{collections::HashSet, io::Write, path::PathBuf, process::Stdio, time::Duration};
-use tokio::{io::BufReader, process::Command, sync::Mutex};
+use tokio::{process::Command, sync::Mutex};
 
 const NAME: &str = "Deep Sky Dad OFP2 Â· PulsarFab regain";
 #[derive(Clone, Serialize, Deserialize)]
@@ -181,12 +179,8 @@ impl FlatPanel {
             .serial
             .as_ref()
             .ok_or_else(|| error(0x40b, "Select an OFP2 on its setup page first"))?;
-        let mut child = self.command("serve").arg("--serial").arg(serial).spawn()?;
-        let mut worker = Worker {
-            input: child.stdin.take(),
-            output: BufReader::new(child.stdout.take().unwrap()),
-            child,
-        };
+        let child = self.command("serve").arg("--serial").arg(serial).spawn()?;
+        let mut worker = Worker::new(child)?;
         let result: Result<()> = async {
             let identity = worker.request(json!({"command":"identity"})).await?;
             ensure!(

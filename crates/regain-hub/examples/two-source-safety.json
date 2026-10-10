@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "revision": "10000000-0000-0000-0000-000000000001",
+  "instanceId": "10000000-0000-0000-0000-000000000002",
+  "sources": [
+    {
+      "id": "10000000-0000-0000-0000-000000000011",
+      "label": "Example roof safety",
+      "backend": {
+        "kind": "alpaca", "baseUrl": "http://127.0.0.1:32301/",
+        "deviceType": "safetymonitor", "deviceNumber": 0
+      }
+    },
+    {
+      "id": "10000000-0000-0000-0000-000000000012",
+      "label": "Example weather safety",
+      "backend": {
+        "kind": "alpaca", "baseUrl": "http://127.0.0.1:32302/",
+        "deviceType": "safetymonitor", "deviceNumber": 0
+      }
+    }
+  ],
+  "outputs": [
+    {
+      "id": "10000000-0000-0000-0000-000000000101",
+      "number": 0, "label": "Example combined safety",
+      "device": {
+        "kind": "safety",
+        "members": [
+          { "source": "10000000-0000-0000-0000-000000000011", "enabled": true },
+          { "source": "10000000-0000-0000-0000-000000000012", "enabled": true }
+        ]
+      }
+    }
+  ]
+}

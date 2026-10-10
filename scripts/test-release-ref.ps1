@@ -40,6 +40,7 @@ Invoke-FixtureGit add .
 Invoke-FixtureGit commit --quiet -m 'Current release'
 Invoke-FixtureGit tag v0.5.10.0
 Invoke-FixtureGit update-ref refs/remotes/origin/main HEAD
+Invoke-FixtureGit update-ref refs/remotes/origin/codex/feature HEAD
 Invoke-FixtureGit update-ref refs/remotes/origin/release/0.5 HEAD
 Accept 'main build' @{RefType='branch'; RefName='main'} '0.5.10.0'
 Accept 'maintenance build' @{RefType='branch'; RefName='release/0.5'} '0.5.10.0'
@@ -53,6 +54,10 @@ Reject 'mismatched internal crate dependency' @{RefType='branch'; RefName='main'
 Accept 'maintenance tag' @{RefType='tag'; RefName='v0.5.10.0'} '0.5.10.0'
 Accept 'maintenance registry publication' @{RefType='branch'; RefName='release/0.5'; RegistryTag='v0.5.10.0'} '0.5.10.0'
 Reject 'feature branch' @{RefType='branch'; RefName='codex/feature'} 'require main or'
+Accept 'signed candidate on a feature branch' @{RefType='branch'; RefName='codex/feature'; Candidate=$true} '0.5.10.0'
+Reject 'candidate tag' @{RefType='tag'; RefName='v0.5.10.0'; Candidate=$true} 'require a branch'
+Reject 'candidate registry publication' @{RefType='branch'; RefName='codex/feature'; Candidate=$true; RegistryTag='v0.5.10.0'} 'cannot publish'
+Reject 'missing candidate branch' @{RefType='branch'; RefName='codex/missing'; Candidate=$true} 'branch is missing'
 Reject 'malformed maintenance branch' @{RefType='branch'; RefName='release/0.5/feature'} 'require main or'
 Reject 'wrong maintenance train' @{RefType='branch'; RefName='release/0.6'} 'does not belong'
 Reject 'wrong source version' @{RefType='tag'; RefName='v0.5.11.0'} 'does not match source'
@@ -62,6 +67,7 @@ Reject 'registry dispatched on tag' @{RefType='tag'; RefName='v0.5.10.0'; Regist
 
 # Main has moved ahead, but a maintenance tag must remain on its release branch.
 Invoke-FixtureGit commit --quiet --allow-empty -m 'Main-only change'
+Reject 'candidate commit outside remote branch' @{RefType='branch'; RefName='codex/feature'; Candidate=$true} 'not contained'
 Invoke-FixtureGit update-ref refs/remotes/origin/main HEAD
 Invoke-FixtureGit tag v0.5.11.0
 Reject 'main-only maintenance release' @{RefType='branch'; RefName='release/0.5'; RegistryTag='v0.5.11.0'} 'not contained'

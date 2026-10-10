@@ -24,6 +24,7 @@ try {
     if ($LASTEXITCODE) { throw 'Plugin build failed' }
     if (Test-Path -LiteralPath $stage) { Remove-Item -LiteralPath $stage -Recurse -Force }
     New-Item -ItemType Directory -Force $stage | Out-Null
+    & (Join-Path $PSScriptRoot 'build-hub-ascom.ps1') -Destination $stage -WarningsAsErrors
     foreach ($file in @('Regain.NINA.dll','Regain.Core.dll','Regain.Rotator.dll')) {
         Copy-Item -LiteralPath (Join-Path $repo "src/Regain.NINA/bin/Release/net8.0-windows7.0/$file") -Destination $stage
     }
@@ -42,26 +43,8 @@ try {
     Copy-Item -LiteralPath (Join-Path $repo 'vendor/zwo/LICENSE.txt') -Destination (Join-Path $licenses 'ZWO-ASI-SDK.txt')
     Copy-Item -LiteralPath (Join-Path $repo 'crates/regain-zwo/LICENSE-ZWO') -Destination (Join-Path $licenses 'ZWO-CAA-NTC.txt')
     $target = (rustc -vV | Select-String '^host: ').ToString().Substring(6)
-    $metadata = cargo metadata --locked --format-version 1 --filter-platform $target | ConvertFrom-Json
-    if ($LASTEXITCODE) { throw 'Cargo metadata failed' }
-    $nodes = @{}
-    foreach ($node in $metadata.resolve.nodes) { $nodes[$node.id] = $node }
-    $resolved = [Collections.Generic.HashSet[string]]::new()
-    $pending = [Collections.Generic.Stack[string]]::new()
-    foreach ($member in $metadata.workspace_members) { $pending.Push($member) }
-    while ($pending.Count) {
-        $id = $pending.Pop()
-        if ($resolved.Add($id)) { foreach ($dependency in $nodes[$id].deps) { $pending.Push($dependency.pkg) } }
-    }
-    foreach ($package in $metadata.packages) {
-        if ($null -eq $package.source -or !$resolved.Contains($package.id)) { continue }
-        $dir = Split-Path $package.manifest_path
-        $texts = @(Get-ChildItem -LiteralPath $dir -File | Where-Object { $_.Name -match '^(LICENSE|COPYING|NOTICE|COPYRIGHT)' })
-        if ($texts.Count -eq 0) { throw "Missing license text: $($package.name)" }
-        $dest = Join-Path $licenses "rust/$($package.name)-$($package.version)"
-        New-Item -ItemType Directory -Force $dest | Out-Null
-        foreach ($text in $texts) { Copy-Item -LiteralPath $text.FullName -Destination $dest }
-    }
+    python scripts/rust_licenses.py --target $target --destination (Join-Path $licenses 'rust')
+    if ($LASTEXITCODE) { throw 'Rust license collection failed' }
     $rustRoot = rustc --print sysroot
     Copy-Item -LiteralPath (Join-Path $rustRoot 'share/doc/rust/COPYRIGHT-library.html') -Destination (Join-Path $licenses 'Rust-Standard-Library.html')
     python scripts/check-windows-runtime.py $stage

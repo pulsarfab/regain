@@ -448,6 +448,7 @@ struct Worker {
     sender: mpsc::Sender<Work>,
     thread: Option<std::thread::JoinHandle<()>>,
     telemetry: transport::Telemetry,
+    cooling: super::environment::CoolingQueue,
     auxiliary: bool,
     locator: String,
     cancel_video: std::sync::Arc<std::sync::atomic::AtomicBool>,
@@ -491,10 +492,15 @@ impl Worker {
                 let _ = ready_tx.send(Err(anyhow::anyhow!("camera identity differs")));
                 return;
             }
-            let telemetry = device
+            let telemetry = device.as_ref().map(|d| d.0.telemetry()).unwrap_or_else(|| {
+                std::sync::Arc::new(std::sync::Mutex::new(Some(
+                    transport::TelemetrySample::new([250, 0, 25, 0], Instant::now()),
+                )))
+            });
+            let cooling = device
                 .as_ref()
-                .map(|d| d.0.telemetry())
-                .unwrap_or_else(|| std::sync::Arc::new(std::sync::Mutex::new(Some([250, 0]))));
+                .map(|d| d.0.cooling_queue())
+                .unwrap_or_default();
             let auxiliary = device
                 .as_ref()
                 .map(|d| d.1["auxiliaryControls"] == true)
@@ -504,11 +510,18 @@ impl Worker {
                 .map(|d| d.0.locator())
                 .unwrap_or_else(|| "simulated-interface".into());
             if ready_tx
-                .send(Ok((identity, telemetry, auxiliary, locator)))
+                .send(Ok((
+                    identity,
+                    telemetry.clone(),
+                    auxiliary,
+                    locator,
+                    cooling.clone(),
+                )))
                 .is_err()
             {
                 return;
             }
+            let _cooling_owner = cooling.owner();
             let (watchdog, deadlines) = mpsc::channel::<Option<Duration>>();
             std::thread::spawn(move || {
                 let mut timeout = None;
@@ -527,7 +540,7 @@ impl Worker {
                     }
                 }
             });
-            let mut sim_environment = std::collections::HashMap::from([
+            let sim_environment = std::cell::RefCell::new(std::collections::HashMap::from([
                 (8, 250_i64),
                 (15, 0),
                 (16, 25),
@@ -535,7 +548,7 @@ impl Worker {
                 (21, 0),
                 (22, 255),
                 (23, 255),
-            ]);
+            ]));
             let mut video: Option<bayer_video::Video> = None;
             let mut simulated_video: Option<Settings> = None;
             let mut simulated_sequence = 0_u64;
@@ -555,6 +568,8 @@ impl Worker {
                                 return;
                             }
                             let _ = watchdog.send(None);
+                        } else {
+                            service_simulated_cooling(&cooling, &sim_environment, &telemetry);
                         }
                         continue;
                     }
@@ -579,15 +594,21 @@ impl Worker {
                         let _ = watchdog.send(Some(Duration::from_secs(15)));
                         let result = if let Some((camera, _, _)) = &device {
                             camera.resume_cooling(power, prior, previous_target)
-                        } else if sim_environment[&17] != 0 {
+                        } else if sim_environment.borrow()[&17] != 0 {
+                            let mut environment = sim_environment.borrow_mut();
                             let (output, _) = super::environment::recovery_state(
                                 power as f64,
                                 prior,
-                                sim_environment[&8] as f64 / 10.0,
-                                sim_environment[&16] as f64,
+                                environment[&8] as f64 / 10.0,
+                                environment[&16] as f64,
                                 previous_target as f64,
                             );
-                            sim_environment.insert(15, output.round() as i64);
+                            let power = output.round() as i64;
+                            environment.insert(15, power);
+                            let mut sample = telemetry.lock().unwrap();
+                            let sample = sample.as_mut().expect("simulation telemetry");
+                            sample.values[1] = power;
+                            sample.observed_at[1] = Instant::now();
                             Ok(())
                         } else {
                             Err(anyhow::anyhow!("cooler is disabled"))
@@ -615,9 +636,16 @@ impl Worker {
                             camera.environment_control(control, value)
                         } else {
                             if let Some(value) = value {
-                                sim_environment.insert(control, value);
+                                sim_environment.borrow_mut().insert(control, value);
                             }
-                            Ok(*sim_environment.get(&control).unwrap_or(&0))
+                            let value = *sim_environment.borrow().get(&control).unwrap_or(&0);
+                            if let Ok(index) = transport::TelemetrySample::index(control)
+                                && let Some(sample) = telemetry.lock().unwrap().as_mut()
+                            {
+                                sample.values[index] = value;
+                                sample.observed_at[index] = Instant::now();
+                            }
+                            Ok(value)
                         };
                         let _ = watchdog.send(None);
                         let _ = reply.send(result);
@@ -733,12 +761,20 @@ impl Worker {
                                         &mut simulated_framing_failures,
                                         &cancelled,
                                         |remaining| {
-                                            bayer_video::wait_until(
+                                            bayer_video::wait_until_servicing(
                                                 Instant::now(),
                                                 Duration::from_micros(u64::from(
                                                     settings.microseconds,
                                                 )),
                                                 &cancelled,
+                                                || {
+                                                    service_simulated_cooling(
+                                                        &cooling,
+                                                        &sim_environment,
+                                                        &telemetry,
+                                                    );
+                                                    Ok(())
+                                                },
                                             )?;
                                             if *remaining > 0 {
                                                 *remaining -= 1;
@@ -753,12 +789,20 @@ impl Worker {
                                             if settings.continuous_drain {
                                                 return Ok(());
                                             }
-                                            bayer_video::wait_until(
+                                            bayer_video::wait_until_servicing(
                                                 Instant::now(),
                                                 bayer_video::frame_interval(
                                                     settings.video_max_fps,
                                                 )?,
                                                 &cancelled,
+                                                || {
+                                                    service_simulated_cooling(
+                                                        &cooling,
+                                                        &sim_environment,
+                                                        &telemetry,
+                                                    );
+                                                    Ok(())
+                                                },
                                             )
                                         },
                                     )?;
@@ -766,11 +810,33 @@ impl Worker {
                                     simulated_sequence += 1;
                                 } else {
                                     simulated_video = None;
-                                    std::thread::sleep(Duration::from_micros(u64::from(
-                                        settings.microseconds,
-                                    )));
+                                    bayer_video::wait_until_servicing(
+                                        Instant::now(),
+                                        Duration::from_micros(u64::from(settings.microseconds)),
+                                        &cancelled,
+                                        || {
+                                            service_simulated_cooling(
+                                                &cooling,
+                                                &sim_environment,
+                                                &telemetry,
+                                            );
+                                            Ok(())
+                                        },
+                                    )?;
                                 }
-                                std::thread::sleep(simulated_delay);
+                                bayer_video::wait_until_servicing(
+                                    Instant::now(),
+                                    simulated_delay,
+                                    &cancelled,
+                                    || {
+                                        service_simulated_cooling(
+                                            &cooling,
+                                            &sim_environment,
+                                            &telemetry,
+                                        );
+                                        Ok(())
+                                    },
+                                )?;
                                 let pixels: Vec<_> = (0..settings.width * settings.height)
                                     .flat_map(|i| (i as u16).to_le_bytes())
                                     .collect();
@@ -815,11 +881,12 @@ impl Worker {
             .recv()
             .map_err(|_| anyhow::anyhow!("direct worker exited during open"))?
         {
-            Ok((identity, telemetry, auxiliary, locator)) => Ok((
+            Ok((identity, telemetry, auxiliary, locator, cooling)) => Ok((
                 Self {
                     sender,
                     thread: Some(thread),
                     telemetry,
+                    cooling,
                     auxiliary,
                     locator,
                     cancel_video,
@@ -833,6 +900,14 @@ impl Worker {
         }
     }
     fn environment(&self, control: u32, value: Option<i64>) -> Result<i64> {
+        if matches!(control, 16 | 17)
+            && let Some(value) = value
+        {
+            return self
+                .cooling
+                .call(control, value, Duration::from_secs(15))
+                .map_err(Into::into);
+        }
         let (sender, receiver) = mpsc::sync_channel(1);
         self.sender
             .send(Work::Environment(control, value, sender))
@@ -871,6 +946,24 @@ impl Worker {
     }
 }
 
+fn service_simulated_cooling(
+    cooling: &super::environment::CoolingQueue,
+    environment: &std::cell::RefCell<std::collections::HashMap<u32, i64>>,
+    telemetry: &transport::Telemetry,
+) {
+    cooling.service(|control, value| {
+        environment.borrow_mut().insert(control, value);
+        let index = transport::TelemetrySample::index(control)?;
+        let mut telemetry = telemetry.lock().unwrap();
+        let sample = telemetry
+            .as_mut()
+            .ok_or_else(|| anyhow::anyhow!("Simulation telemetry is unavailable"))?;
+        sample.values[index] = value;
+        sample.observed_at[index] = Instant::now();
+        Ok(value)
+    });
+}
+
 #[derive(Default)]
 struct Host {
     worker: Option<Worker>,
@@ -880,6 +973,7 @@ struct Host {
     simulate: bool,
     model: Model,
     gain: i32,
+    configured_at: std::collections::BTreeMap<u32, Instant>,
     simulated_read_failures: Option<u32>,
     reconnect_required: bool,
     simulated_delay: Duration,
@@ -1021,6 +1115,10 @@ impl Host {
                     Model::Asi2600P25 => 1,
                 };
                 self.gain = 0;
+                self.configured_at = [0, 5]
+                    .into_iter()
+                    .map(|kind| (kind, Instant::now()))
+                    .collect();
                 let mut controls = model.controls(worker.auxiliary);
                 if model.cooled() {
                     for cap in &mut controls {
@@ -1062,6 +1160,45 @@ impl Host {
                     "managed":self.white_balance.is_some(),
                     "settings":self.white_balance.as_ref().map(WhiteBalance::settings)})
             }
+            "get-observation" => {
+                let worker = self
+                    .worker
+                    .as_ref()
+                    .ok_or_else(|| anyhow::anyhow!("camera is not open"))?;
+                let control = number("control")?;
+                let observation = if matches!(control, 0 | 5) {
+                    let observed = self
+                        .configured_at
+                        .get(&control)
+                        .ok_or_else(|| anyhow::anyhow!("configuration observation unavailable"))?;
+                    regain_core::ControlObservationReply {
+                        value: if control == 0 {
+                            i64::from(self.gain)
+                        } else {
+                            i64::from(self.settings.offset)
+                        },
+                        age_seconds: observed.elapsed().as_secs_f64(),
+                    }
+                } else {
+                    ensure!(
+                        self.model.cooled() && matches!(control, 8 | 15 | 16 | 17),
+                        "unsupported observation control"
+                    );
+                    if self.pending.is_none() && self.frame.is_none() {
+                        // Idle service may refresh the sensor. During capture,
+                        // only the existing USB owner may service it.
+                        worker.environment(control, None).map_err(hardware)?;
+                    }
+                    worker
+                        .telemetry
+                        .lock()
+                        .unwrap()
+                        .as_ref()
+                        .ok_or_else(|| anyhow::anyhow!("environment unavailable"))?
+                        .observation(control)?
+                };
+                serde_json::to_value(observation)?
+            }
             "resume-cooling" => {
                 ensure!(
                     self.model.cooled()
@@ -1096,7 +1233,7 @@ impl Host {
                     .ok_or_else(|| anyhow::anyhow!("camera is not open"))?;
                 let control = number("control")?;
                 if method == "get"
-                    && matches!(control, 8 | 15)
+                    && matches!(control, 8 | 15 | 16 | 17)
                     && self.model.cooled()
                     && (self.pending.is_some() || self.frame.is_some())
                 {
@@ -1107,10 +1244,18 @@ impl Host {
                         .lock()
                         .unwrap()
                         .ok_or_else(|| anyhow::anyhow!("environment unavailable"))?;
-                    return Ok((json!(sample[if control == 8 { 0 } else { 1 }]), pixels));
+                    let index = match control {
+                        8 => 0,
+                        15 => 1,
+                        16 => 2,
+                        17 => 3,
+                        _ => unreachable!(),
+                    };
+                    return Ok((json!(sample.values[index]), pixels));
                 }
                 ensure!(
-                    self.pending.is_none() && self.frame.is_none(),
+                    (self.pending.is_none() && self.frame.is_none())
+                        || (self.model.cooled() && matches!(control, 16 | 17)),
                     "cannot access controls during capture"
                 );
                 let caps = self.model.controls(worker.auxiliary);
@@ -1136,8 +1281,19 @@ impl Host {
                         1 => self.settings.microseconds = value as u32,
                         5 => self.settings.offset = value as u32,
                         _ => {
-                            worker.environment(control, Some(value)).map_err(hardware)?;
+                            if let Err(error) = worker.environment(control, Some(value)) {
+                                if matches!(
+                                    error.downcast_ref::<super::environment::CoolingError>(),
+                                    Some(super::environment::CoolingError::Uncertain(_))
+                                ) {
+                                    self.reconnect_required = true;
+                                }
+                                return Err(hardware(error));
+                            }
                         }
+                    }
+                    if matches!(control, 0 | 5) {
+                        self.configured_at.insert(control, Instant::now());
                     }
                     Value::Null
                 } else {
@@ -1411,17 +1567,172 @@ pub fn run(simulate: bool) -> Result<()> {
             transport::require_sdk_absent()?;
             host.command(method, &params)
         },
-        |error| {
-            json!({
-                "sdkCode":if error.is::<HardwareFailure>() { None } else {Some(8)},
-                "sdkOperation":"direct", "transportFailure":crate::asi::direct::transfer::Failure::details(error)
-            })
-        },
+        error_details,
     )
+}
+
+fn error_details(error: &anyhow::Error) -> Value {
+    json!({
+        "sdkCode":if error.is::<HardwareFailure>() { None } else {Some(8)},
+        "sdkOperation":"direct", "transportFailure":crate::asi::direct::transfer::Failure::details(error),
+        "controlUncertain":matches!(error.downcast_ref::<super::environment::CoolingError>(),Some(super::environment::CoolingError::Uncertain(_)))
+    })
 }
 
 #[cfg(test)]
 mod cooling_tests {
+    use super::*;
+
+    fn capture(mode: &str) {
+        let mut host = Host {
+            simulate: true,
+            ..Host::default()
+        };
+        host.command("open", &json!({"name":"ZWO ASI585MM Pro"}))
+            .unwrap();
+        host.command(
+            "start",
+            &json!({"mode":mode,"maxFps":120.0,"width":64,"height":64,
+            "x":0,"y":0,"bin":1,"microseconds":6_000_000,"dark":false}),
+        )
+        .unwrap();
+        let aged = Instant::now() - Duration::from_secs(20);
+        {
+            let mut telemetry = host.worker.as_ref().unwrap().telemetry.lock().unwrap();
+            let sample = telemetry.as_mut().unwrap();
+            sample.observed_at[0] = aged;
+            sample.observed_at[1] = aged;
+        }
+        for (control, value) in [(16, -10), (17, 1), (16, -15)] {
+            host.command("set", &json!({"control":control,"value":value}))
+                .unwrap();
+            assert_eq!(
+                host.command("get", &json!({"control":control})).unwrap().0,
+                value
+            );
+            assert_eq!(host.command("status", &Value::Null).unwrap().0, 1);
+            let observation: regain_core::ControlObservationReply = serde_json::from_value(
+                host.command("get-observation", &json!({"control":control}))
+                    .unwrap()
+                    .0,
+            )
+            .unwrap();
+            assert_eq!(observation.value, value);
+            assert!(observation.age_seconds >= 0.0 && observation.age_seconds.is_finite());
+            for environment in [8, 15] {
+                let reading: regain_core::ControlObservationReply = serde_json::from_value(
+                    host.command("get-observation", &json!({"control":environment}))
+                        .unwrap()
+                        .0,
+                )
+                .unwrap();
+                assert!(reading.age_seconds >= 20.0);
+            }
+            let telemetry = host.worker.as_ref().unwrap().telemetry.lock().unwrap();
+            assert_eq!(telemetry.unwrap().observed_at[0], aged);
+            assert_eq!(telemetry.unwrap().observed_at[1], aged);
+        }
+        // Accepted capture configuration is readable without queuing hardware
+        // work. The legacy get restrictions and return type stay unchanged.
+        assert_eq!(
+            host.command("get-observation", &json!({"control":0}))
+                .unwrap()
+                .0["value"],
+            0
+        );
+        assert!(host.command("get", &json!({"control":0})).is_err());
+        for control in [json!(21), json!("8"), json!(-1), json!(4294967296u64)] {
+            assert!(
+                host.command("get-observation", &json!({"control":control}))
+                    .is_err()
+            );
+        }
+        for (control, value) in [(16, 31), (17, 2), (8, 0), (0, 10), (21, 1)] {
+            assert!(
+                host.command("set", &json!({"control":control,"value":value}))
+                    .is_err()
+            );
+        }
+        assert_eq!(host.command("get", &json!({"control":16})).unwrap().0, -15);
+        assert_eq!(host.command("get", &json!({"control":17})).unwrap().0, 1);
+        for control in [8, 15] {
+            assert!(
+                host.command("get", &json!({"control":control}))
+                    .unwrap()
+                    .0
+                    .is_i64()
+            );
+        }
+        let deadline = Instant::now() + Duration::from_secs(15);
+        while host.command("status", &Value::Null).unwrap().0 == 1 {
+            assert!(Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        // Retaining a completed image also permits cooling without consuming it.
+        host.command("set", &json!({"control":17,"value":0}))
+            .unwrap();
+        assert_eq!(host.command("get", &json!({"control":17})).unwrap().0, 0);
+        assert_eq!(host.command("status", &Value::Null).unwrap().0, 2);
+        assert!(
+            host.command("get-observation", &json!({"control":8}))
+                .unwrap()
+                .0["ageSeconds"]
+                .as_f64()
+                .unwrap()
+                >= 20.0
+        );
+        let (metadata, pixels) = host.command("download", &Value::Null).unwrap();
+        assert_eq!(metadata["mode"], mode);
+        assert_eq!(
+            pixels,
+            (0..4096u16).flat_map(u16::to_le_bytes).collect::<Vec<_>>()
+        );
+        if mode == "video" {
+            assert_eq!(metadata["deliveredFrames"], 1);
+        }
+        host.command("close", &Value::Null).unwrap();
+        assert!(
+            host.command("get-observation", &json!({"control":8}))
+                .is_err()
+        );
+    }
+    #[test]
+    fn acknowledged_cooling_during_still_and_retained_frame() {
+        capture("still");
+    }
+    #[test]
+    fn acknowledged_cooling_during_video_and_retained_frame() {
+        capture("video");
+    }
+    #[test]
+    fn uncooled_camera_rejects_cooling_and_errors_preserve_uncertainty() {
+        let mut host = Host {
+            simulate: true,
+            ..Host::default()
+        };
+        host.command("open", &json!({"name":"ZWO ASI662MC"}))
+            .unwrap();
+        for control in [16, 17] {
+            assert!(
+                host.command("set", &json!({"control":control,"value":0}))
+                    .is_err()
+            );
+        }
+        host.command("close", &Value::Null).unwrap();
+        let uncertain = hardware(anyhow::Error::new(
+            super::super::environment::CoolingError::Uncertain("USB write failed".into()),
+        ));
+        assert_eq!(error_details(&uncertain)["controlUncertain"], true);
+        assert_eq!(error_details(&uncertain)["sdkCode"], Value::Null);
+        let unsent = hardware(anyhow::Error::new(
+            super::super::environment::CoolingError::Expired,
+        ));
+        assert_eq!(error_details(&unsent)["controlUncertain"], false);
+    }
+}
+
+#[cfg(test)]
+mod recovery_cooling_tests {
     use super::*;
 
     #[test]

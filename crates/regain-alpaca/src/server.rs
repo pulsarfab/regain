@@ -28,6 +28,7 @@ use std::{
 use tokio::net::UdpSocket;
 
 pub struct Server {
+    pub hub: Option<Arc<crate::hub_output::Publisher>>,
     pub profiles: Arc<Profiles>,
     pub runtime: Runtime,
     rotators: Mutex<HashMap<usize, Arc<crate::rotator::Rotator>>>,
@@ -102,7 +103,16 @@ impl Log {
 }
 impl Server {
     pub fn new(profiles: Arc<Profiles>, runtime: Runtime, log: Arc<Log>) -> Arc<Self> {
+        Self::with_hub(profiles, runtime, log, None)
+    }
+    pub fn with_hub(
+        profiles: Arc<Profiles>,
+        runtime: Runtime,
+        log: Arc<Log>,
+        hub: Option<Arc<crate::hub_output::Publisher>>,
+    ) -> Arc<Self> {
         Arc::new(Self {
+            hub,
             flatpanel: crate::flatpanel::FlatPanel::new(
                 profiles.accessory_path("ofp2"),
                 runtime.directory.clone(),
@@ -260,6 +270,9 @@ impl Server {
             .wrapping_add(1)
     }
     pub async fn shutdown(&self) {
+        if let Some(hub) = &self.hub {
+            hub.close();
+        }
         self.flatpanel.shutdown().await;
         let rotators: Vec<_> = self.rotators.lock().unwrap().values().cloned().collect();
         for rotator in rotators {
@@ -282,8 +295,46 @@ impl Server {
     fn state(&self) -> Value {
         json!({"simulation":self.runtime.simulate,"version":env!("CARGO_PKG_VERSION"),"cameras":self.profiles.all().into_iter().enumerate().map(|(slot,profile)|json!({"slot":slot,"profile":profile,"connected":self.device(slot).is_ok_and(|d|d.in_use())})).collect::<Vec<_>>(),"logs":self.log.events()})
     }
+    pub(crate) async fn hub_devices(&self) -> Result<Vec<regain_hub::runtime::OutputDescriptor>> {
+        let Some(hub) = &self.hub else {
+            return Ok(Vec::new());
+        };
+        let devices = hub.devices().await?;
+        for device in &devices {
+            let conflict = match device.device_type {
+                regain_hub::config::DeviceType::Camera => {
+                    self.profiles.get(device.number as usize).is_ok()
+                }
+                regain_hub::config::DeviceType::Focuser => {
+                    self.profiles.focusers.get(device.number as usize).is_some()
+                }
+                regain_hub::config::DeviceType::Rotator => {
+                    self.profiles.rotators.get(device.number as usize).is_some()
+                }
+                regain_hub::config::DeviceType::FilterWheel => {
+                    device.number == 0 && self.filterwheel.configured().await?.is_some()
+                }
+                regain_hub::config::DeviceType::CoverCalibrator => {
+                    device.number == 0 && self.flatpanel.configured().await?.is_some()
+                }
+                _ => false,
+            };
+            anyhow::ensure!(
+                !conflict,
+                error(
+                    0x401,
+                    format!(
+                        "Hub {} number conflicts with a local slot; choose distinct device numbers",
+                        crate::hub_output::class_name(device.device_type).to_lowercase()
+                    )
+                )
+            );
+        }
+        Ok(devices)
+    }
     pub fn router(self: &Arc<Self>) -> Router {
         Router::new()
+            .merge(crate::hub_setup::routes())
             .route(
                 "/",
                 get(|| async { axum::response::Redirect::temporary("/setup") }),
@@ -292,10 +343,7 @@ impl Server {
                 "/setup",
                 get(|| async { axum::response::Html(include_str!("../web/index.html")) }),
             )
-            .route(
-                "/setup/v1/camera/{slot}/setup",
-                get(|| async { axum::response::Html(include_str!("../web/index.html")) }),
-            )
+            .route("/setup/v1/camera/{slot}/setup", get(camera_page))
             .route(
                 "/style.css",
                 get(|| async {
@@ -323,6 +371,23 @@ impl Server {
                     )
                 }),
             )
+            .route(
+                "/camera-recovery.mjs",
+                get(|| async {
+                    (
+                        [("Content-Type", "application/javascript")],
+                        include_str!("../web/camera-recovery.mjs"),
+                    )
+                }),
+            )
+            .route(
+                "/setup/api/camera-recovery",
+                get(|| async {
+                    Json(json!({"contractVersion":1,
+                        "platform":std::env::consts::OS,
+                        "schema":regain_core::RecoveryOptions::schema()}))
+                }),
+            )
             .route("/management/apiversions", get(management_versions))
             .route("/management/v1/{member}", get(management))
             .route(
@@ -340,10 +405,7 @@ impl Server {
                 "/api/v1/rotator/{slot}/{member}",
                 get(rotator_get).put(rotator_put),
             )
-            .route(
-                "/setup/v1/rotator/{slot}/setup",
-                get(|| async { axum::response::Html(include_str!("../web/rotator.html")) }),
-            )
+            .route("/setup/v1/rotator/{slot}/setup", get(rotator_page))
             .route(
                 "/rotator.js",
                 get(|| async {
@@ -384,7 +446,7 @@ impl Server {
                 "/api/v1/{accessory}/{slot}/{member}",
                 get(accessory_get).put(accessory_put),
             )
-            .route("/setup/v1/filterwheel/0/setup", get(accessory_page))
+            .route("/setup/v1/filterwheel/{slot}/setup", get(filterwheel_page))
             .route("/setup/v1/focuser/{slot}/setup", get(focuser_page))
             .route(
                 "/setup/focusers",
@@ -413,8 +475,8 @@ impl Server {
                 post(focuser_settings),
             )
             .route(
-                "/setup/v1/covercalibrator/0/setup",
-                get(|| async { axum::response::Html(include_str!("../web/flatpanel.html")) }),
+                "/setup/v1/covercalibrator/{slot}/setup",
+                get(covercalibrator_page),
             )
             .route(
                 "/flatpanel.js",
@@ -470,7 +532,7 @@ pub(crate) fn error_code(e: &anyhow::Error) -> i32 {
     }
 }
 fn failure(e: anyhow::Error, client: u32, server: u32) -> Value {
-    json!({"ClientTransactionID":client,"ServerTransactionID":server,"ErrorNumber":error_code(&e),"ErrorMessage":format!("{e:#}")})
+    json!({"Value":null,"ClientTransactionID":client,"ServerTransactionID":server,"ErrorNumber":error_code(&e),"ErrorMessage":format!("{e:#}")})
 }
 async fn management_versions(State(s): State<Arc<Server>>, RawQuery(q): RawQuery) -> Json<Value> {
     let p = Params::parse(q.as_deref().unwrap_or(""));
@@ -522,11 +584,68 @@ async fn management(
                 Ok(None) => (),
                 Err(e) => return Json(failure(e, id, s.next())).into_response(),
             }
+            if s.hub.is_some() {
+                match s.hub_devices().await {
+                    Ok(outputs) => {
+                        devices.extend(outputs.iter().map(crate::hub_output::configured_device))
+                    }
+                    Err(e) => return Json(failure(e, id, s.next())).into_response(),
+                }
+            }
             json!(devices)
         }
         _ => return StatusCode::NOT_FOUND.into_response(),
     };
     Json(envelope(value, id, s.next())).into_response()
+}
+async fn hub_request(
+    s: Arc<Server>,
+    kind: String,
+    slot: u32,
+    member: String,
+    put: bool,
+    params: Result<Params>,
+) -> Response {
+    let Some(hub) = &s.hub else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    if !matches!(
+        kind.as_str(),
+        "switch"
+            | "safetymonitor"
+            | "observingconditions"
+            | "focuser"
+            | "rotator"
+            | "filterwheel"
+            | "covercalibrator"
+    ) || member != member.to_lowercase()
+    {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    let server = s.next();
+    let mut transaction = 0;
+    let result = async {
+        let params = params?;
+        transaction = params.optional_id("ClientTransactionID")?;
+        params.optional_id("ClientID")?;
+        let device = s.hub_devices().await?.into_iter().find(|d| {
+            d.number == slot && crate::hub_output::class_name(d.device_type).to_lowercase() == kind
+        });
+        let Some(device) = device else {
+            return Ok(StatusCode::NOT_FOUND.into_response());
+        };
+        Ok(Json(envelope(
+            hub.request(&device, &member, put, &params).await?,
+            transaction,
+            server,
+        ))
+        .into_response())
+    }
+    .await;
+    match result {
+        Ok(response) => response,
+        Err(e) => Json(failure(e, transaction, server)).into_response(),
+    }
 }
 async fn camera_get(
     State(s): State<Arc<Server>>,
@@ -534,15 +653,11 @@ async fn camera_get(
     RawQuery(q): RawQuery,
     headers: HeaderMap,
 ) -> Response {
-    camera(
-        s,
-        slot,
-        member,
-        Method::GET,
-        Params::parse(q.as_deref().unwrap_or("")),
-        headers,
-    )
-    .await
+    let params = match crate::protocol::query(q.as_deref().unwrap_or("")) {
+        Ok(params) => params,
+        Err(status) => return status.into_response(),
+    };
+    camera(s, slot, member, Method::GET, Ok(params), headers).await
 }
 async fn camera_put(
     State(s): State<Arc<Server>>,
@@ -557,7 +672,11 @@ async fn camera_put(
     {
         return StatusCode::BAD_REQUEST.into_response();
     }
-    camera(s, slot, member, Method::PUT, Params::parse(&body), headers).await
+    let params = match crate::protocol::form("camera", &member, &body) {
+        Ok(params) => params,
+        Err(status) => return status.into_response(),
+    };
+    camera(s, slot, member, Method::PUT, Ok(params), headers).await
 }
 async fn camera(
     s: Arc<Server>,
@@ -567,25 +686,50 @@ async fn camera(
     params: Result<Params>,
     headers: HeaderMap,
 ) -> Response {
+    if !crate::protocol::known_member("camera", &member, method == Method::PUT) {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    if s.hub.is_some() {
+        match s.hub_devices().await {
+            Ok(devices) => {
+                if let Some(device) = devices.into_iter().find(|device| {
+                    device.device_type == regain_hub::config::DeviceType::Camera
+                        && device.number as usize == slot
+                }) {
+                    return hub_camera(s, device, member, method == Method::PUT, params, headers)
+                        .await;
+                }
+            }
+            Err(failure) => {
+                let transaction = params
+                    .as_ref()
+                    .ok()
+                    .and_then(|p| p.optional_id("ClientTransactionID").ok())
+                    .unwrap_or(0);
+                let server = s.next();
+                if method == Method::GET
+                    && matches!(member.as_str(), "imagearray" | "imagearrayvariant")
+                    && accepts_imagebytes(&headers)
+                {
+                    return image_error(
+                        error_code(&failure),
+                        &format!("{failure:#}"),
+                        transaction,
+                        server,
+                    );
+                }
+                return Json(self::failure(failure, transaction, server)).into_response();
+            }
+        }
+    }
     let Ok(device) = s.device(slot) else {
         return StatusCode::NOT_FOUND.into_response();
     };
-    if member != member.to_lowercase() {
-        return StatusCode::NOT_FOUND.into_response();
-    }
     let server = s.next();
     let mut client_transaction = 0;
     let image =
         method == Method::GET && matches!(member.as_str(), "imagearray" | "imagearrayvariant");
-    let binary = headers
-        .get("accept")
-        .and_then(|s| s.to_str().ok())
-        .is_some_and(|s| {
-            s.split(',').any(|m| {
-                let mut parts = m.trim().split(';');
-                parts.next() == Some("application/imagebytes") && !parts.any(|v| v.trim() == "q=0")
-            })
-        });
+    let binary = accepts_imagebytes(&headers);
     let result=async {
         let p=params?;let client=p.optional_id("ClientID")?;client_transaction=p.optional_id("ClientTransactionID")?;
         if image{return Ok(image_response(device.image(client)?,binary,client_transaction,server))}
@@ -611,6 +755,80 @@ async fn camera(
                 Json(failure(e, client_transaction, server)).into_response()
             }
         }
+    }
+}
+fn accepts_imagebytes(headers: &HeaderMap) -> bool {
+    headers
+        .get("accept")
+        .and_then(|s| s.to_str().ok())
+        .is_some_and(|s| {
+            s.split(',').any(|m| {
+                let mut parts = m.trim().split(';');
+                if !parts
+                    .next()
+                    .is_some_and(|mime| mime.trim().eq_ignore_ascii_case("application/imagebytes"))
+                {
+                    return false;
+                }
+                let mut quality = None;
+                for parameter in parts {
+                    if let Some((name, value)) = parameter.trim().split_once('=')
+                        && name.trim().eq_ignore_ascii_case("q")
+                    {
+                        if quality.is_some() {
+                            return false;
+                        }
+                        let Ok(value) = value.trim().parse::<f64>() else {
+                            return false;
+                        };
+                        if !value.is_finite() || !(0.0..=1.0).contains(&value) {
+                            return false;
+                        }
+                        quality = Some(value);
+                    }
+                }
+                quality.unwrap_or(1.0) > 0.0
+            })
+        })
+}
+async fn hub_camera(
+    s: Arc<Server>,
+    device: regain_hub::runtime::OutputDescriptor,
+    member: String,
+    put: bool,
+    params: Result<Params>,
+    headers: HeaderMap,
+) -> Response {
+    let server = s.next();
+    let mut transaction = 0;
+    let image = !put && matches!(member.as_str(), "imagearray" | "imagearrayvariant");
+    let binary = accepts_imagebytes(&headers);
+    let result = async {
+        let params = params?;
+        transaction = params.optional_id("ClientTransactionID")?;
+        let hub = s.hub.as_ref().unwrap();
+        if image {
+            return hub
+                .image(&device, &params, binary, transaction, server)
+                .await;
+        }
+        Ok(Json(envelope(
+            hub.request(&device, &member, put, &params).await?,
+            transaction,
+            server,
+        ))
+        .into_response())
+    }
+    .await;
+    match result {
+        Ok(response) => response,
+        Err(error) if image && binary => image_error(
+            error_code(&error),
+            &format!("{error:#}"),
+            transaction,
+            server,
+        ),
+        Err(error) => Json(failure(error, transaction, server)).into_response(),
     }
 }
 pub fn image_header(width: u32, height: u32, client: u32, server: u32, error: u32) -> Vec<u8> {
@@ -706,7 +924,7 @@ pub fn image_response(frame: Arc<Frame>, binary: bool, client: u32, server: u32)
     }
     response
 }
-fn setup_allowed(headers: &HeaderMap) -> bool {
+pub(crate) fn setup_allowed(headers: &HeaderMap) -> bool {
     headers
         .get("content-type")
         .and_then(|v| v.to_str().ok())
@@ -776,14 +994,11 @@ async fn rotator_get(
     Path((slot, member)): Path<(usize, String)>,
     RawQuery(q): RawQuery,
 ) -> Response {
-    rotator_request(
-        s,
-        slot,
-        member,
-        false,
-        Params::parse(q.as_deref().unwrap_or("")),
-    )
-    .await
+    let params = match crate::protocol::query(q.as_deref().unwrap_or("")) {
+        Ok(params) => params,
+        Err(status) => return status.into_response(),
+    };
+    rotator_request(s, slot, member, false, Ok(params)).await
 }
 async fn rotator_put(
     State(s): State<Arc<Server>>,
@@ -798,7 +1013,11 @@ async fn rotator_put(
     {
         return StatusCode::BAD_REQUEST.into_response();
     }
-    rotator_request(s, slot, member, true, Params::parse(&body)).await
+    let params = match crate::protocol::form("rotator", &member, &body) {
+        Ok(params) => params,
+        Err(status) => return status.into_response(),
+    };
+    rotator_request(s, slot, member, true, Ok(params)).await
 }
 async fn rotator_request(
     s: Arc<Server>,
@@ -807,6 +1026,30 @@ async fn rotator_request(
     put: bool,
     params: Result<Params>,
 ) -> Response {
+    if !crate::protocol::known_member("rotator", &member, put) {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    if s.hub.is_some() {
+        match s.hub_devices().await {
+            Ok(devices)
+                if devices.iter().any(|device| {
+                    device.device_type == regain_hub::config::DeviceType::Rotator
+                        && device.number as usize == slot
+                }) =>
+            {
+                return hub_request(s, "rotator".into(), slot as u32, member, put, params).await;
+            }
+            Ok(_) => (),
+            Err(e) => {
+                let transaction = params
+                    .as_ref()
+                    .ok()
+                    .and_then(|p| p.optional_id("ClientTransactionID").ok())
+                    .unwrap_or(0);
+                return Json(failure(e, transaction, s.next())).into_response();
+            }
+        }
+    }
     if s.profiles.rotators.get(slot).is_none() || member != member.to_lowercase() {
         return StatusCode::NOT_FOUND.into_response();
     }
@@ -829,6 +1072,15 @@ async fn rotator_request(
         Err(e) => failure(e, id, s.next()),
     })
     .into_response()
+}
+async fn rotator_page(State(s): State<Arc<Server>>, Path(slot): Path<usize>) -> Response {
+    if let Some(page) = hub_device_page(&s, regain_hub::config::DeviceType::Rotator, slot).await {
+        return page;
+    }
+    if s.profiles.rotators.get(slot).is_none() {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    axum::response::Html(include_str!("../web/rotator.html")).into_response()
 }
 async fn rotators_setup(State(s): State<Arc<Server>>) -> Response {
     setup_result(
@@ -925,20 +1177,61 @@ async fn rotator_discover_slot(
 async fn accessory_page() -> axum::response::Html<&'static str> {
     axum::response::Html(include_str!("../web/accessory.html"))
 }
+async fn camera_page(State(s): State<Arc<Server>>, Path(slot): Path<usize>) -> Response {
+    if let Some(page) = hub_device_page(&s, regain_hub::config::DeviceType::Camera, slot).await {
+        return page;
+    }
+    axum::response::Html(include_str!("../web/index.html")).into_response()
+}
+async fn hub_device_page(
+    s: &Server,
+    kind: regain_hub::config::DeviceType,
+    slot: usize,
+) -> Option<Response> {
+    s.hub.as_ref()?;
+    match s.hub_devices().await {
+        Ok(devices)
+            if devices
+                .iter()
+                .any(|device| device.device_type == kind && device.number as usize == slot) =>
+        {
+            Some(axum::response::Html(include_str!("../web/hub.html")).into_response())
+        }
+        Ok(_) => None,
+        Err(_) => Some(StatusCode::SERVICE_UNAVAILABLE.into_response()),
+    }
+}
+async fn filterwheel_page(State(s): State<Arc<Server>>, Path(slot): Path<usize>) -> Response {
+    if let Some(page) = hub_device_page(&s, regain_hub::config::DeviceType::FilterWheel, slot).await
+    {
+        return page;
+    }
+    if slot != 0 {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    accessory_page().await.into_response()
+}
+async fn covercalibrator_page(State(s): State<Arc<Server>>, Path(slot): Path<usize>) -> Response {
+    if let Some(page) =
+        hub_device_page(&s, regain_hub::config::DeviceType::CoverCalibrator, slot).await
+    {
+        return page;
+    }
+    if slot != 0 {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    axum::response::Html(include_str!("../web/flatpanel.html")).into_response()
+}
 async fn accessory_get(
     State(s): State<Arc<Server>>,
     Path((kind, slot, member)): Path<(String, usize, String)>,
     RawQuery(q): RawQuery,
 ) -> Response {
-    accessory_request(
-        s,
-        kind,
-        slot,
-        member,
-        false,
-        Params::parse(q.as_deref().unwrap_or("")),
-    )
-    .await
+    let params = match crate::protocol::query(q.as_deref().unwrap_or("")) {
+        Ok(params) => params,
+        Err(status) => return status.into_response(),
+    };
+    accessory_request(s, kind, slot, member, false, Ok(params)).await
 }
 async fn accessory_put(
     State(s): State<Arc<Server>>,
@@ -953,7 +1246,11 @@ async fn accessory_put(
     {
         return StatusCode::BAD_REQUEST.into_response();
     }
-    accessory_request(s, kind, slot, member, true, Params::parse(&body)).await
+    let params = match crate::protocol::form(&kind, &member, &body) {
+        Ok(params) => params,
+        Err(status) => return status.into_response(),
+    };
+    accessory_request(s, kind, slot, member, true, Ok(params)).await
 }
 async fn accessory_request(
     s: Arc<Server>,
@@ -963,6 +1260,39 @@ async fn accessory_request(
     put: bool,
     params: Result<Params>,
 ) -> Response {
+    if !crate::protocol::known_member(&kind, &member, put) {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    if matches!(kind.as_str(), "focuser" | "filterwheel" | "covercalibrator") && s.hub.is_some() {
+        match s.hub_devices().await {
+            Ok(devices)
+                if devices.iter().any(|device| {
+                    crate::hub_output::class_name(device.device_type).to_lowercase() == kind
+                        && device.number as usize == slot
+                }) =>
+            {
+                return hub_request(s, kind, slot as u32, member, put, params).await;
+            }
+            Ok(_) => (),
+            Err(e) => {
+                let transaction = params
+                    .as_ref()
+                    .ok()
+                    .and_then(|p| p.optional_id("ClientTransactionID").ok())
+                    .unwrap_or(0);
+                return Json(failure(e, transaction, s.next())).into_response();
+            }
+        }
+    }
+    if matches!(
+        kind.as_str(),
+        "switch" | "safetymonitor" | "observingconditions"
+    ) {
+        let Ok(slot) = u32::try_from(slot) else {
+            return StatusCode::NOT_FOUND.into_response();
+        };
+        return hub_request(s, kind, slot, member, put, params).await;
+    }
     if !((slot == 0 && kind != "focuser")
         || (kind == "focuser" && s.profiles.focusers.get(slot).is_some()))
         || member != member.to_lowercase()
@@ -1075,6 +1405,9 @@ async fn accessory_settings(
 }
 
 async fn focuser_page(State(s): State<Arc<Server>>, Path(slot): Path<usize>) -> Response {
+    if let Some(page) = hub_device_page(&s, regain_hub::config::DeviceType::Focuser, slot).await {
+        return page;
+    }
     if s.profiles.focusers.get(slot).is_none() {
         return StatusCode::NOT_FOUND.into_response();
     }
@@ -1184,6 +1517,24 @@ mod tests {
     use super::*;
     use http_body_util::BodyExt;
     use tower::ServiceExt;
+    #[test]
+    fn imagebytes_negotiation_respects_quality_zero_case_and_malformed_values() {
+        for (value, expected) in [
+            ("application/imagebytes", true),
+            ("application/json, Application/ImageBytes; Q = 0.25", true),
+            ("application/imagebytes;q=0", false),
+            ("application/imagebytes;q=0.000, application/json", false),
+            ("application/imagebytes;q=NaN", false),
+            ("application/imagebytes;q=2", false),
+            ("application/imagebytes;q=invalid", false),
+            ("application/imagebytes;q=0;q=1", false),
+            ("application/json", false),
+        ] {
+            let mut headers = HeaderMap::new();
+            headers.insert("Accept", value.parse().unwrap());
+            assert_eq!(accepts_imagebytes(&headers), expected, "{value}");
+        }
+    }
     fn runtime() -> Runtime {
         Runtime {
             directory: std::env::var_os("REGAIN_TEST_WORKERS")
@@ -1247,6 +1598,24 @@ mod tests {
             .map(|v| u16::from_le_bytes([v[0], v[1]]))
             .collect();
         assert_eq!(values, [1, 4, 2, 50000, 65535, 6]);
+        let budget = regain_hub::camera::image::ImageBudget::new(12).unwrap();
+        let decoded =
+            regain_hub::camera::image::read_imagebytes(&mut data.as_ref(), &budget, u32::MAX)
+                .await
+                .unwrap();
+        assert_eq!(decoded.image.descriptor().width(), 3);
+        assert_eq!(decoded.image.descriptor().height(), 2);
+        assert_eq!(
+            decoded.image.descriptor().element_type(),
+            regain_hub::camera::image::ElementType::Int32
+        );
+        assert_eq!(
+            decoded.image.descriptor().transmission_type(),
+            regain_hub::camera::image::ElementType::UInt16
+        );
+        assert_eq!(decoded.image.imagebytes_chunk(0, 12).unwrap(), data[44..]);
+        drop(decoded);
+        assert_eq!(budget.used_bytes(), 0);
         let response = image_response(frame, false, 7, 8);
         let data = response.into_body().collect().await.unwrap().to_bytes();
         let value: Value = serde_json::from_slice(&data).unwrap();

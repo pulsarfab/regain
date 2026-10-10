@@ -5,6 +5,9 @@ impl ProcessGuard {
     pub fn attach(_: u32) -> anyhow::Result<Self> {
         Ok(Self)
     }
+    pub fn attach_independent(_: u32) -> anyhow::Result<Self> {
+        Ok(Self)
+    }
 }
 
 #[cfg(windows)]
@@ -22,6 +25,17 @@ mod windows {
     unsafe impl Sync for ProcessGuard {}
     impl ProcessGuard {
         pub fn attach(pid: u32) -> anyhow::Result<Self> {
+            Self::attach_with_flags(pid, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE)
+        }
+        /// Own only this worker. A COM driver can start a shared vendor helper;
+        /// let descendants break away from OUR job without terminating them.
+        pub fn attach_independent(pid: u32) -> anyhow::Result<Self> {
+            Self::attach_with_flags(
+                pid,
+                JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK,
+            )
+        }
+        fn attach_with_flags(pid: u32, flags: u32) -> anyhow::Result<Self> {
             unsafe {
                 let job = CreateJobObjectW(std::ptr::null(), std::ptr::null());
                 if job.is_null() {
@@ -29,7 +43,7 @@ mod windows {
                 }
                 let guard = Self(job);
                 let mut limits: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = std::mem::zeroed();
-                limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+                limits.BasicLimitInformation.LimitFlags = flags;
                 if SetInformationJobObject(
                     job,
                     JobObjectExtendedLimitInformation,

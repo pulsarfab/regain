@@ -8,6 +8,8 @@ public sealed class ComPropertyFixture {
     public int BusyReads;
     public int ErrorCode = unchecked((int)0x8001010A);
     public string Value = "expected";
+    public object[] DeviceState { get { return new object[] { "state" }; } }
+    public object[] EmptyState { get { return new object[0]; } }
     public string Name {
         get {
             Calls++;
@@ -40,4 +42,8 @@ if (!$rejected -or $fixture.Calls -ne 1) { throw 'Non-busy COM error was hidden/
 $rejected = $false
 try { Get-ComTestProperty $fixture Missing | Out-Null } catch { $rejected = $true }
 if (!$rejected) { throw 'Missing property must fail' }
-Write-Output 'Strict COM property reads: busy recovery, deadline, empty value and terminal errors passed.'
+$state = Get-ComTestProperty $fixture DeviceState
+if ($state -isnot [object[]] -or $state.Length -ne 1 -or $state[0] -ne 'state') { throw 'Single-item collection was enumerated by the property helper' }
+$state = Get-ComTestProperty $fixture EmptyState
+if ($state -isnot [object[]] -or $state.Length -ne 0) { throw 'Empty collection was discarded by the property helper' }
+Write-Output 'Strict COM property reads: busy recovery, deadline, empty value, collections and terminal errors passed.'

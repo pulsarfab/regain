@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "revision": "20000000-0000-0000-0000-000000000001",
+  "instanceId": "20000000-0000-0000-0000-000000000002",
+  "sources": [
+    {
+      "id": "20000000-0000-0000-0000-000000000011",
+      "label": "Example remote switch",
+      "backend": {
+        "kind": "alpaca", "baseUrl": "http://127.0.0.1:32301/",
+        "deviceType": "switch", "deviceNumber": 0
+      }
+    },
+    {
+      "id": "20000000-0000-0000-0000-000000000012",
+      "label": "Example FocusCube3 temperature",
+      "backend": { "kind": "native", "device": "fc3", "identity": "EXAMPLE-FOCUSER-SERIAL" }
+    }
+  ],
+  "outputs": [
+    {
+      "id": "20000000-0000-0000-0000-000000000101",
+      "number": 0, "label": "Example equipment controls",
+      "device": {
+        "kind": "switch",
+        "channels": [
+          {
+            "id": "20000000-0000-0000-0000-000000000201", "number": 0,
+            "label": "Example lamp", "writable": true,
+            "readout": { "kind": "channel", "source": "20000000-0000-0000-0000-000000000011", "channel": 0 },
+            "minimum": 0, "maximum": 1, "step": 1, "units": ""
+          },
+          {
+            "id": "20000000-0000-0000-0000-000000000202", "number": 1,
+            "label": "Example focuser temperature", "writable": false,
+            "readout": { "kind": "property", "source": "20000000-0000-0000-0000-000000000012", "property": "temperature" },
+            "minimum": -100, "maximum": 100, "step": 0.1, "units": "°C"
+          }
+        ]
+      }
+    }
+  ]
+}

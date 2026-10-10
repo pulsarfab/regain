@@ -15,6 +15,7 @@ default-run = "regain-alpaca"
 
 [dependencies]
 regain-core.workspace = true
+regain-hub.workspace = true
 anyhow = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

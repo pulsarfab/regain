@@ -1,0 +1,81 @@
+{
+  "schemaVersion": 1,
+  "revision": "00000000-0000-4000-8000-000000000008",
+  "instanceId": "00000000-0000-4000-8000-000000000007",
+  "sources": [
+    {
+      "id": "00000000-0000-4000-8000-000000000001",
+      "label": "Primary focuser [SIMULATION]",
+      "backend": {
+        "kind": "simulated",
+        "deviceType": "focuser"
+      }
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000002",
+      "label": "Secondary focuser [SIMULATION]",
+      "backend": {
+        "kind": "simulated",
+        "deviceType": "focuser"
+      }
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000003",
+      "label": "Primary shared alias [SIMULATION]",
+      "backend": {
+        "kind": "virtual",
+        "output": "00000000-0000-4000-8000-000000000004"
+      }
+    }
+  ],
+  "outputs": [
+    {
+      "id": "00000000-0000-4000-8000-000000000004",
+      "number": 0,
+      "label": "Primary focuser [SIMULATION]",
+      "device": {
+        "kind": "proxy",
+        "source": "00000000-0000-4000-8000-000000000001",
+        "deviceType": "focuser"
+      }
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000005",
+      "number": 1,
+      "label": "Secondary focuser [SIMULATION]",
+      "device": {
+        "kind": "proxy",
+        "source": "00000000-0000-4000-8000-000000000002",
+        "deviceType": "focuser"
+      }
+    }
+  ],
+  "focuserGroups": [
+    {
+      "id": "00000000-0000-4000-8000-000000000006",
+      "label": "Paired focusers [SIMULATION]",
+      "minimum": 49000,
+      "maximum": 51000,
+      "timeoutSeconds": 10.0,
+      "pollSeconds": 0.1,
+      "members": [
+        {
+          "source": "00000000-0000-4000-8000-000000000003",
+          "scaleNumerator": 1,
+          "scaleDenominator": 1,
+          "offset": 0,
+          "minimum": 0,
+          "maximum": 100000
+        },
+        {
+          "source": "00000000-0000-4000-8000-000000000002",
+          "scaleNumerator": 1,
+          "scaleDenominator": 1,
+          "offset": 200,
+          "minimum": 0,
+          "maximum": 100000
+        }
+      ]
+    }
+  ]
+}

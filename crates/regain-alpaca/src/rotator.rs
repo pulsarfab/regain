@@ -1,14 +1,11 @@
 //! Alpaca rotator backed by the same exclusive USB worker as the native frontends.
 use crate::device::{Params, error, unsupported};
 use anyhow::{Result, ensure};
+use regain_core::accessory::AccessoryWorker as Worker;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{collections::HashSet, io::Write, path::PathBuf, process::Stdio, time::Duration};
-use tokio::{
-    io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
-    process::{Child, ChildStdin, ChildStdout, Command},
-    sync::Mutex,
-};
+use tokio::{process::Command, sync::Mutex};
 
 const ACTIONS: &[&str] = &[
     "Regain.CAA.Status",
@@ -36,58 +33,6 @@ impl Default for Profile {
             unique_id: uuid::Uuid::new_v4().to_string(),
             logical_offset: 0.,
             coordinates_uncertain: false,
-        }
-    }
-}
-pub(crate) struct Worker {
-    pub(crate) child: Child,
-    pub(crate) input: Option<ChildStdin>,
-    pub(crate) output: BufReader<ChildStdout>,
-}
-impl Worker {
-    pub(crate) async fn request(&mut self, request: Value) -> Result<Value> {
-        let result = tokio::time::timeout(Duration::from_secs(10), async {
-            let bytes = format!("{request}\n");
-            self.input
-                .as_mut()
-                .ok_or_else(|| error(0x407, "USB accessory is disconnected"))?
-                .write_all(bytes.as_bytes())
-                .await?;
-            let mut line = String::new();
-            ensure!(
-                self.output.read_line(&mut line).await? > 0,
-                "USB accessory worker exited; movement was not retried"
-            );
-            let reply: Value = serde_json::from_str(&line)?;
-            ensure!(
-                reply["ok"] == true,
-                "{}",
-                reply["error"]
-                    .as_str()
-                    .unwrap_or("USB accessory command failed")
-            );
-            Ok(reply["result"].clone())
-        })
-        .await;
-        match result {
-            Ok(v) => v,
-            Err(_) => {
-                self.input.take();
-                let _ = self.child.kill().await;
-                Err(error(
-                    0x500,
-                    "USB accessory worker timed out; movement was not retried",
-                ))
-            }
-        }
-    }
-    pub(crate) async fn close(mut self) {
-        self.input.take();
-        if tokio::time::timeout(Duration::from_secs(5), self.child.wait())
-            .await
-            .is_err()
-        {
-            let _ = self.child.kill().await;
         }
     }
 }
@@ -317,12 +262,8 @@ impl Rotator {
             .as_ref()
             .ok_or_else(|| error(0x40B, "Select a rotator on the setup page first"))?
             .clone();
-        let mut child = self.command("serve").arg("--serial").arg(&serial).spawn()?;
-        let mut worker = Worker {
-            input: child.stdin.take(),
-            output: BufReader::new(child.stdout.take().unwrap()),
-            child,
-        };
+        let child = self.command("serve").arg("--serial").arg(&serial).spawn()?;
+        let mut worker = Worker::new(child)?;
         let result: Result<()> = async {
             let identity = worker.request(json!({"command":"identity"})).await?;
             ensure!(

@@ -1,0 +1,8418 @@
+# Hub review record
+
+This records local review and tests for the single hub PR. Passing a foundation
+test does not imply that a frontend, transport, or hardware gate has passed.
+
+## 2026-10-07: companion documentation publication
+
+The companion `pulsarfab/pulsarfab-www` branch was clean at reviewed commit
+`57dff44f7b6d96a95c8a241311c735b81c71bc3c`; fresh fetch confirmed main remained
+its ancestor `e299e0f`, with no intervening changes. No repository AGENTS.md
+applies. Inspected the generated navigation/data changes, Hub use cases, setup,
+recovery/coordination boundaries and stable installation/hardware copy. Fresh
+`npm run check` passes generation for 17 pages and links/fragments/images/IDs/
+landmarks for all 27 HTML pages. The two branch commits' website CI is green.
+The GitHub release API still identifies published, non-prerelease `v0.5.11.0`
+as latest stable, with the same recorded package digests. Previous signed-package,
+feed verification and 32 desktop/mobile route checks remain scoped evidence;
+they were not repeated for unchanged files.
+
+Fast-forwarded website main to 57dff44, using its documented existing flotswarm
+deployment. No deployment settings, routes, TLS, analytics, feed or binaries
+changed. The actual public pages now serve the reviewed content. The Hub page
+and shared navigation explicitly say 0.6 development preview, not included in
+published 0.5 packages; stable guides retain the published VC runtime requirement
+and source-only static-link-fix boundary. `/docs/` remains the project link index
+and Regain guides remain scoped to `/docs/regain/`. Screenshots preserve physical
+versus private simulation captions.
+
+Retained live evidence in `artifacts/hub-site-publication/verified-results.json`:
+27 HTML pages, sitemap and robots return HTTP 200 and match source, accounting
+only for exact reviewed host-injected analytics and shared-footer blocks.
+`host-injections.json` preserves those blocks and their hashes; all other page
+content must match. The initial raw comparison in `content-results.json` correctly
+reported differences and was not treated as a failed deployment or ignored
+wholesale. Four image HEAD responses match expected source sizes; this is serving
+evidence, not another decoded-image/render check. Existing local render evidence
+still applies to those unchanged assets. Web-tool fetching was unavailable;
+direct HTTPS verification succeeded. The artifact verifier and raw inspected
+Hub response are retained alongside the results.
+
+Website publication is now achieved for the stable corrections and honest Hub
+preview. Final 0.6 release-copy alignment, installed/physical/OS/LAN/conformance,
+main reconciliation and final review/CI/single-PR merge remain open. The source
+Hub PR #21 stays draft and is the only Hub implementation PR. One compact build
+snapshot confirms Windows is still in test.ps1 and Intel macOS in workspace
+tests at afb6721; other six jobs pass. This documentation-only commit skips
+intermediate CI so those jobs can finish. Earlier-head checks cannot establish
+final-head CI. NINA, attached equipment and user sessions were untouched.
+
+## 2026-10-07: cross-kernel IPv4 and scoped IPv6 acceptance
+
+Reviewed coordination cancellation, preflight reservation cleanup, exact image
+pins and native NINA save/reconciliation paths. No production correction arose
+from that inspection. The remaining network gate had a safe available step:
+the existing Debian WSL2 distro has a distinct virtual NIC and reachable
+link-local address. Added `scripts/test-hub-wsl-network.py` and its small Perl
+fixture, using the distro's existing socket modules without installing packages.
+
+The fixture accepts only private generated routes, owns one bounded listener,
+and has no device/driver/backend access. The production Windows Hub and Alpaca
+publisher use fresh configuration identities, pinned catalog IDs, empty ordinary
+profiles and disabled UDP discovery. Its two sources are explicitly simulated
+remote camera/safety devices. The runtime does not use a test dial override:
+IPv4 crosses the virtual network and IPv6 uses the actual Windows interface
+scope. Server-side peer addresses prove traffic is not loopback.
+
+Final evidence: `hub-wsl-network-eb55edbd694f47f18c84395512be0206/summary.json`
+and each family's `upstream.tsv`, `upstream-interface.json`, `traffic.json`,
+`published-image.bin`, private config, logs and cleanup summary. Linux kernel
+is `6.6.87.2-microsoft-standard-WSL2`; Windows interface scope is 63. Peers are
+`172.27.128.1` and `fe80::57e9:e55b:7262:1e33%eth0`. For both families:
+
+- The source's ordinary management catalog pinning and scalar requests reach
+  the Linux endpoint. A 4×3 capture preserves all twelve asymmetric test pixels
+  across JSON, ImageBytes and two downstream clients. Releasing the first camera
+  client preserves the second's connection and exact retained frame.
+- Upstream counters show exactly one exposure and one image download despite
+  repeated downstream reads. The recorded request is ImageBytes over that same
+  real socket path.
+- Normal shutdown of the owned Linux endpoint leaves frontend leases alive;
+  safety becomes false in 3.000 seconds (IPv4) and 2.984 seconds (IPv6), within
+  the fixture's bounded observation window for three-second safe evidence.
+- Both Linux fixtures exit normally with code zero. Both owned Windows host/
+  publisher pairs stop, with no cleanup failures. The distro is not terminated.
+
+Review fixed a WSL lifecycle assumption: the distro may restart between short
+commands and receive a different MAC/link-local address. Address discovery now
+runs inside the listener's own lifetime. The ready file publishes atomically.
+An initial invalid safety fixture (request timeout plus polling exceeded its
+safe lifetime) was correctly rejected by the production host; its failed record
+`hub-wsl-network-ca979f5ae1544b70a9cdd1e85d93a41a/ipv4/summary.json` verifies
+owned process cleanup. The policy now respects the shared timing invariant.
+Cleanup attempts remain independent, retain failures and fail the command.
+Fallback Linux signaling requires the recorded PID and exact `/proc` command
+identity; a forced stop is still failure. The fixture has a total lifetime bound
+and a separate request deadline. No distro-wide stop or firewall changes occur.
+
+Current-source `cargo build -p regain-alpaca --locked -j2`, Python compilation,
+Perl syntax and the final actual two-family harness pass. Optimized Python and
+scope zero are rejected before starting any child. No product logic changed, so
+another full Rust/managed regression was not needed. This is same-machine,
+cross-kernel virtual-network acceptance with simulated data, not physical LAN,
+UDP discovery, external vendor/device, TLS, installed NINA/ASCOM or sleep/wake
+acceptance. Those original gates remain open. NINA was left untouched; PR #21
+stays draft and no intermediate CI wait was used.
+
+One compact CI observation finds run `37731689797` at `afb6721` has completed
+Linux x86/ARM and macOS ARM successfully, including the shared license repair's
+full packaging paths. Research, crates/MSRV/package verification and standalone
+Windows COM activation also pass. Windows and Intel macOS remain live. This
+fixture/docs-only increment skips its intermediate matrix to preserve those
+running acceptance jobs; it does not count their earlier head as final-head CI
+or remove the required final CI/review/merge gate.
+
+## 2026-10-07: shared license collection and CI queue reduction
+
+PR run `37729978412` at `0ab34e2` gets past the previous lint blocker. Linux x86
+job `113156658178` passes strict Clippy, workspace tests and the subsequent
+worker/SDK checks, then fails packaging at missing license text for
+`asn1-rs-impl`. ARM job `113156658100` reports the same omission. Logs are retained
+as `hub-ci-0ab34e2-linux.log` and `hub-ci-0ab34e2-linux-arm.raw.log`. These job
+results are not a full workflow success or installed-driver acceptance.
+
+Published version 0.2.0 declares `MIT/Apache-2.0` and records commit
+`a20e5f7319c896737ad0f2557037817b91ad854f`, path `impl`, but contains no root
+license files. The repository's MIT and Apache texts from that exact commit are
+retained in [the pinned repair](../vendor/rust-licenses/asn1-rs-impl-0.2.0/PROVENANCE.json),
+including Pierre Chifflier's original notice, source URLs, published checksum,
+original-manifest hash and exact text hashes. No license is inferred from an
+unrelated crate or a generic SPDX template.
+
+[One collector](../scripts/rust_licenses.py) now serves Windows and portable
+packaging. It preserves the resolved target graph, ordinary notices and declared
+license files, including nested paths whose filenames match a root notice.
+Repairs require exact package/source/manifest/text identity, are
+offline, and include provenance. Unknown omissions fail before any copying;
+delivered bytes must match preflight hashes. A manifest records the shipped
+license files. Seven tests pass for graph selection/notices, declared paths,
+preflight failure, copy corruption, exact repairs and changed evidence.
+
+Final local staging under `artifacts/hub-license-audit-final/` passes all five
+resolved target graphs: Windows x64 172 packages, Linux x64 176, Linux ARM64 175,
+macOS x64 180 and macOS ARM64 179. This checks license staging, not complete
+native archive execution/signing. PowerShell parsing and workflow YAML checks
+pass. The YAML parser was added only to an ignored local validation venv; no new
+runtime or build dependency is required by the collector. Python tests use only
+temporary fixtures. No hardware or installed NINA process is touched.
+
+Inspection also found duplicate feature-branch push and PR matrices occupying the
+queue. Build CI now runs feature changes through PRs once, while main and
+`release/**` pushes, `v*` tags and manual dispatch retain coverage. Concurrency
+cancels superseded runs for the same PR/ref; different release tags stay separate.
+Job names, tests, release workflows and final merge gates remain intact. The
+collector regression is included in the research job. No intermediate CI wait
+was used; remaining actual acceptance and final gates remain open.
+
+## 2026-10-07: panel DeviceState timing decomposition
+
+The retained 139 ms ConformU finding times more than the Regain getter. The
+unchanged validator's `FacadeBaseClass.DeviceState` dispatches to its WinForms
+STA, gets the COM collection, enumerates each Name/Value through COM and calls
+`OperationalStateProperty.Clean` before returning its local list. Regain's
+`OutputDriver.DeviceState` makes one IPC request; Rust panel `device_state`
+reads a source snapshot and filters cached samples without upstream I/O.
+
+The new [diagnostic](../scripts/test-hub-state-timing.py) reuses the private COM
+publication helper and references the built, unmodified ConformU assembly. A
+single explicit simulated panel runs in an owned host with no HTTP listener.
+Three fresh .NET 10.0.10 clients first read the original facade five times, then
+measure twenty getter/enumeration/cleaning sequences. Every read validates the
+five expected idle panel values. Split diagnostics run afterward, so they cannot
+warm the preceding original-facade call. They include client dispatch costs and
+are not pure server CPU timings or a replacement for ConformU.
+
+Final reproducible evidence:
+`artifacts/hub-state-timing-4034d34c9c3e4b0da3c2605de71f6b14/summary.json`.
+The three first facade reads take 29.1251, 17.7915 and 18.6126 ms; later facade
+reads are at most 3.1878 ms. Split getters are at most 3.5747 ms, enumeration at
+most 5.1381 ms and cleaning at most 0.0486 ms. These measurements do not
+reproduce the initial 139 ms or identify its cause. That raw timing finding and
+the original acceptance boundary remain open; no production optimization,
+warm-up workaround, threshold change or conformance waiver follows from this.
+
+The final client build has zero warnings/errors; all three client processes exit
+successfully. The host stops, and the COM helper verifies its server stopped and
+all six private registry roots were removed. Executable/facade hashes, config,
+bindings, per-client output and cleanup are retained. An earlier one-off probe
+and its missing-namespace compile error are retained under `hub-state-timing/`;
+the committed diagnostic is the final reproducible source. No installed driver,
+NINA session or physical device was touched. Next useful reproduction requires
+capturing the actual slow call; repeated isolated passes cannot close that gate.
+
+## 2026-10-07: Rust 1.99 CI lint blocker
+
+Completed push run `37729000130` at `a12a265` fails Windows and all four portable
+jobs at `clippy::chunks_exact_to_as_chunks` in `tests/alpaca_pin.rs`. It never
+reaches their later execution/installer gates. Package/MSRV, research and
+standalone Windows COM activation jobs pass. The raw failing log is retained in
+`artifacts/hub-ci-a12a265-failed.log`. No running CI job was waited on.
+
+The test now obtains array pairs with `as_chunks::<2>()` and asserts an empty
+remainder together with its original minimum request count. Catalog/device order
+and shared credential assertions are unchanged. All six identity-pin tests pass
+on Rust 1.89, including replacement fencing, image/cleanup guards and bounded
+identity timeouts. Local stable lint passes, but that alias is Rust 1.97.1; it is
+insufficient evidence for the reported 1.99 lint. Explicit Rust 1.99 workspace
+all-target strict Clippy passes (`hub-ci-rust199-clippy.log`), as does its format
+check. The missing 1.99 rustfmt component was installed locally; no default
+toolchain was changed. Review confirms the fixed-array API compiles and executes
+on the 1.89 MSRV, with no suppressed lint or dropped request. Fresh main remains
+`475d817`, already integrated. Exact commands:
+
+```powershell
+cargo +1.89.0 test -p regain-hub --test alpaca_pin --locked -j2
+cargo +1.99.0 clippy --workspace --all-targets --locked -j2 -- -D warnings
+cargo +1.99.0 fmt --check
+```
+
+No production behavior, deadline, platform requirement or external finding is
+changed; actual installed/physical/OS/LAN and final gates stay open.
+
+## 2026-10-07: eight-class installer lifecycle fixture
+
+The installer fixture previously registered three scalar classes for the primary
+installation and one Switch for the second. It now creates independent saved
+identities for all eight classes in both installations. The existing metadata
+client checks interface versions, simulation labels and disconnected state from
+both client bitnesses before and after upgrade. Exact installed server retirement
+and absence of its Rust host remain required; no Connect is issued. Typed
+accessory bindings target an inactive loopback endpoint solely for metadata.
+Camera and scalar sources are explicit simulation.
+
+Both registry views must retain CLSID/ProgID/AppID/Chooser/inventory, the exact
+launch command and executable, owner/config/binding identities and RunAs policy.
+SHA-256 snapshots detect any saved config, selection revision or metadata file
+change. Uninstall still uses the production owned helper when primary bindings
+are missing; another complete installation must survive unchanged. The conflict
+fixture now targets the final Camera entry. Disposable elevated GitHub-runner
+and path guards remain intact; optimized Python is rejected because it would
+disable acceptance assertions. The fixture reads the example explicitly as
+UTF-8, preserving the temperature unit on Windows locales.
+
+Five file-only tests pass: independent known UUID/ProgID/Chooser vectors for
+every class, schema-valid eight-class config/bindings/client identities, disjoint
+installations, settings mutation/deletion detection and refusal to run locally
+or with assertions disabled. PowerShell parsing and whitespace checks pass.
+These tests use temporary files, without registration, host or equipment
+activation. They are wired into the Windows research job. Review compared the
+fixture values with production registration and reused the existing metadata
+client rather than constructing another COM client. Actual machine-wide
+installer, signing/UAC/Chooser and upgrade acceptance remain open; no local
+installer execution, NINA manipulation or intermediate CI wait occurred.
+
+## 2026-10-07: installed external Alpaca inputs and connection failure isolation
+
+The installed independent ASCOM OmniSimulator, version
+`0.5.0+1c01cfc6660e71c336291261dba7806028129659`, owns loopback port 32323.
+The new [acceptance harness](../scripts/test-hub-omnisimulator.py) verifies its
+identity/catalog and requires all eight inputs disconnected with no pending
+connection. It owns a private host/publisher with pinned source identities,
+empty ordinary camera profiles, explicit native-worker simulation and no UDP
+discovery. It preserves configuration, binary hashes, traffic, image payloads,
+source diagnostics and cleanup in a fresh artifact directory. It accepts no
+hardware, COM identity or arbitrary upstream URL. Python optimization is rejected
+because it would disable acceptance assertions.
+
+The first external wheel connection failed because its six focus offsets
+`[3237,1467,6508,3805,2028,708]` have no zero reference. The
+[ASCOM contract](https://ascom-standards.org/newdocs/filterwheel.html#FilterWheel.FocusOffsets)
+requires one. Regain neither normalizes those offsets nor fabricates a reference.
+The harness records the rejection, continues gathering other classes' evidence,
+and still fails the overall run. The simulator's pinned source initializes
+offset defaults randomly; its setup page returned an application error. Its
+configuration was not edited or its process restarted.
+
+This exposed a Regain bug: the wheel's acknowledged metadata rejection closed
+the private session and removed healthy Switch/safety/weather/focuser/rotator
+leases sharing that Alpaca ClientID. Scoped structured rejections now preserve
+other outputs. Transport/protocol/unknown/uncertain outcomes keep their existing
+terminal cleanup and never replay commands. Connection progress is keyed by the
+validated output UUID, bounded by the catalog; failures survive unrelated
+successful operations until the affected output is explicitly reconciled.
+
+The new HTTP regression failed with the healthy switch disconnected before the
+fix (`hub-omnisimulator-isolation-red.log`). It then passed synchronous and
+asynchronous cases, retained errors across another connection, explicit failed
+output disconnect, unchanged healthy lease counts, no wheel movement and final
+cleanup (`hub-omnisimulator-isolation-green.log`). Classification coverage keeps
+uncertain, transport and future remote codes terminal and preserves sanitized
+error codes. Initial full Alpaca regression passed 19 unit, ten executable and
+50 HTTP cases in `hub-omnisimulator-alpaca-regression.log`.
+
+The rebuilt external run
+`hub-omnisimulator-cf7a88dcdce04e84b29ce834670c1c7d` passes the other seven
+classes' exercised checks, the native/network Switch gauge and a 32×24 camera
+capture. JSON and ImageBytes preserve all 768 pixels exactly across two clients;
+the second retains its connection and rereads the image after the first leaves.
+Its summary verifies restored camera settings, all eight upstream devices
+disconnected, all owned leases released and both owned processes stopped.
+Overall exit remains failure for the wheel's invalid offsets. The simulator
+configuration/process and attached physical equipment remain untouched.
+
+Review found a further bookkeeping edge: with no healthy outputs left, a
+synchronous rejection could retire the stream and erase another output's
+retained asynchronous failure. A new red regression preserves that observation
+in `hub-omnisimulator-retained-error-red.log`. Retirement now requires that the
+synchronous failure is the only retained result. The final Alpaca suite passes
+20 unit, ten executable and 51 HTTP cases in
+`hub-omnisimulator-alpaca-reviewed.log`; strict all-target Clippy and Rust 1.89
+checks pass in `hub-omnisimulator-clippy-reviewed.log` and
+`hub-omnisimulator-msrv-reviewed.log`. The rebuilt server/worker PE audit passes
+in `hub-omnisimulator-pe.log`. Formatting and whitespace checks pass.
+
+The external run predates that no-healthy-output retirement refinement and the
+harness's added restoration readback assertion; its existing traffic and
+cleanup observations remain evidence for the operations it performed. After
+cleanup, NINA 3.2.0.9001 started and the external camera was observed connected
+again. The user confirmed that session is in use and must be left alone. No
+repeated external run or installed-NINA pass is claimed from that state.
+
+Weather polling then revealed a separate interoperability issue. A direct probe
+records error 1279 for lowercase `temperature`/`pressure` sensor-age queries and
+valid ages for `Temperature`/`Pressure` in
+`hub-omnisimulator-weather-case-probe.json`. Although ASCOM requires
+[case-insensitive sensor names](https://ascom-standards.org/newdocs/observingconditions.html#ObservingConditions.TimeSinceLastUpdate),
+the installed simulator indexes a case-sensitive dictionary. Regain now prefers
+canonical interface spellings in both shared incremental Alpaca/COM polling,
+full Alpaca polling and capability inspection. Saved properties/cache keys stay
+lowercase; unknown property names pass through. No age, value, unit, freshness,
+retry or fallback semantics change. The existing interface-name table is reused.
+
+The wire-name regression fails before the change
+(`hub-omnisimulator-weather-red.log`). Final focused coverage passes 113 hub unit,
+27 Alpaca transport, seven capability, 26 COM, eight factory, nine virtual-source
+and six weather cases (`hub-omnisimulator-weather-green-final.log`). An initial
+Rust lifetime inference error remains in `hub-omnisimulator-weather-green.log`;
+the explicit match fixes it. Three harness tests cover pending-open/quiet-gap
+cleanup, invalid flags and a legacy ICameraV3 without Connecting
+(`hub-omnisimulator-harness-tests.log`). Cleanup requires three quiet observations
+of both modern connection flags; Connected=false alone is insufficient.
+
+An earlier ad hoc PowerShell probe returned transaction ID zero because its form
+was encoded incorrectly. Explicit form encoding returned the supplied ID. No
+transaction validation was weakened. Earlier harness method/interface-version
+errors and subsequent failing external runs remain retained, including verified
+owned-process/connection cleanup. External acceptance, installed-client,
+physical, OS/LAN and final review/CI/merge gates remain open.
+
+## 2026-10-07: construction audit and camera/panel self-proxy regression
+
+Inspected original checklist items against current source/test assertions and
+retained results. The new [acceptance matrix](hub-acceptance.md) records the
+evidence and its scope. Eleven construction items had remained unchecked despite
+implementation. They are now checked; installed NINA/no-Platform, installed
+registration/upgrades, conformance, actual OS/LAN and physical acceptance remain
+open. The working/release checklist is not declared complete.
+
+The audit found a genuine validation omission: `ascom_export::prog_id` covered
+six classes, while managed registration covers eight. Camera and CoverCalibrator
+canonical self-imports could therefore pass configuration validation. Factory
+and COM runtime CLSID exclusions were already present; the gap was early
+rejection, not removal of every runtime cycle defense. Added the two missing
+prefixes and made the match exhaustive, so a future DeviceType addition cannot
+silently fall through. Public return type, saved IDs, UUID algorithm, COM
+registration, operation ownership and remote/other-instance behavior are unchanged.
+
+Tests use fixed independent registration vectors, not the production ProgID
+helper, to construct camera/panel self-proxies. They require a field-addressable
+cycle error before Apply and unchanged saved revision/configuration afterward,
+including byte-for-byte file preservation and an independent reload.
+The existing typed self-proxy test now includes both classes and still accepts
+another instance. Managed tests independently verify all eight UUID/ProgID
+vectors and COM's 39-character length without registering a real COM class.
+
+Local evidence:
+
+- `hub-audit-self-proxy-red.log`: the new behavioral regression fails against
+  the original production map because validation has no cycle error.
+- `hub-audit-self-proxy-green.log`: all 24 configuration cases pass after the
+  fix, including both new-class vectors, early rejection and other-instance
+  preservation.
+- `hub-audit-managed-identities.log`: warning-denied managed build and all 24
+  registration/identity cases pass, including eight new cross-language vectors.
+- `hub-audit-clippy.log` and `hub-audit-msrv.log`: strict all-target Clippy and
+  Rust 1.89 all-target checks pass. Formatting and whitespace checks pass.
+- `hub-audit-mixed-source.log`: fresh production-worker/HTTP mixed-source case
+  passes with explicit `REGAIN_TEST_WORKERS`; it cannot silently return for a
+  missing variable. `hub-audit-native-provenance.json` records the directory,
+  worker SHA-256 and simulation context. This checks shared readings and leases,
+  not attached hardware.
+
+Retain `hub-audit-self-proxy-test-compile.log`: the first test draft used `field`
+instead of FieldError's `path`. Corrected the assertion before obtaining the
+behavioral red result; no product change was made to satisfy that typo.
+
+No broad regression or CI wait was repeated for this localized validator change.
+The real external OmniSimulator is running on port 32323, reports version
+0.5.0+1c01cfc6660e71c336291261dba7806028129659 and advertises all eight supported
+classes, initially disconnected. Only management/Connected/InterfaceVersion
+reads occurred; no simulator state or camera hardware was changed. This prepares
+the next external-application slice and does not itself close acceptance.
+Main remains 475d817 and PR #21 remains draft/open. Original final gates remain.
+
+## 2026-10-07: stable website hardware and release alignment
+
+Companion website commit
+[`57dff44f7b6d96a95c8a241311c735b81c71bc3c`](https://github.com/pulsarfab/pulsarfab-www/commit/57dff44f7b6d96a95c8a241311c735b81c71bc3c)
+is pushed only to `codex/regain-hub-docs`. Reviewed stable copy against tag
+v0.5.11.0's README, Falcon guide, ASI585MM Pro/ASI662MC guides, camera settings and
+CLI. Shared camera data now generates both support tables plus the capture-limit
+table. Added ASI662MC/ASI585MM Pro/Duo sensors; corrected ASI676's accepted still
+maximum from 30 to 2,000 seconds. Accepted limits do not establish a complete
+hardware matrix. The existing 600-second reread evidence remains scoped to the
+two tested models. No ASI585MC direct support, controllable ASI585MM heater,
+video-frame rereads or new NINA/ASCOM/Alpaca video controls are claimed.
+
+Added the scoped Falcon V2 guide and existing physical screenshot, with the
+shared Pegasus COM server, independent client leases, dynamic Alpaca rotator
+slots and origin/multi-turn semantics. Overview, NINA, ASCOM, Alpaca and hardware
+guides now agree. ETA's pending movement validation and Linux/macOS physical
+limits remain. Existing historical and simulation captions remain honest.
+Generator-owned navigation/metadata/footer/release blocks were regenerated,
+including the sitemap; `/docs/` remains the multi-product index.
+
+Release verification retained under `artifacts/site-release-0-5-11/`:
+
+- Downloaded GitHub plugin ZIP SHA-256
+  `AF37ACF677E197642079A144631EA229EE7CE51F5CDD9ED7EF542AE59AE6C49C`
+  matches both the release manifest and live NINA feed entry, including URL and
+  plugin GUID. The downloaded ASCOM installer signature is Valid, signer
+  StackFoundry LLC. `verified.json` retains the signer, checksum and feed entry.
+- Stable release banners now identify 0.5.11.0. The Hub page keeps its distinct
+  unreleased 0.6 banner. Windows instructions explicitly state that public
+  0.5.11 packages predate the static CRT fix merged into main/release/0.5; source
+  builds at tag 0.5.11 still need that runtime. The Microsoft prerequisite link
+  targets the official current v14 redistributable guide.
+
+Local validation:
+
+- `npm run build` and `npm run check` pass in `hub-site-stable-build.log` and
+  `hub-site-stable-check.log`: generated freshness plus local links, fragments,
+  images, IDs and landmarks across 27 HTML pages.
+- `artifacts/hub-site-stable-render.cjs` passes all 16 current routes at desktop
+  and mobile sizes (32 page checks) in `hub-site-stable-browser.log`. It checks
+  release boundaries, shared support-table equality, all six direct rows,
+  ASI676's accepted limit, successful image decode, current navigation,
+  collapsed mobile navigation, no document overflow and no page errors.
+- Six full-page captures cover hardware, Falcon and Hub in both layouts.
+  Inspected Falcon desktop and hardware/Hub mobile renders; the actual physical
+  Falcon screenshot was also inspected before reuse. Both repositories pass
+  whitespace checks. Review corrected two new chooser sentences before commit.
+
+No product logic changed; no broad Rust/.NET rebuild or CI waiting was needed.
+No attached device was opened. The earlier question about camera availability
+remains unanswered, so active ASIStudio equipment was left alone. Website main
+was not pushed or deployed. Final release copy/publication, construction audit,
+actual OS/LAN/installed-client/physical acceptance, main reconciliation and final
+review/CI/audit/merge remain required.
+
+## 2026-10-07: external native COM conformance and standards review
+
+Extended the existing ConformU runner rather than creating another device host or
+changing the validator. The same fixed private eight-class configuration, Rust
+host, HTTP simulation controls and SDK/direct worker simulations now also feed
+native COM exports. The helper uses the production deterministic CLSIDs and bound
+export executable; disposable per-user ProgID aliases only satisfy ConformU's
+CLI suffix inference. It does not create production registrations or exercise
+installed Chooser/UAC behavior. Both full runs use the unchanged 64-bit validator
+against x86 or x64 out-of-process servers, not a claim of both validator bitnesses.
+
+Review confined registry writes to fresh private identities, checked both hives
+and views for collisions, and removed/verified only owned roots. A manually owned
+server uses an absent registry launch target so a crash cannot create an unowned
+SCM replacement. Cleanup attempts registry removal even if process cleanup fails,
+records all failures and never turns cleanup failure into success. The final
+summary includes aliases, roots, server architecture and hashes. Full test and
+raw issue/timing criteria remain unchanged. Mode/platform misuse is rejected
+before startup; elevated private registration is refused. HTTP-only imports stay
+portable because the Windows module is loaded only for native mode.
+
+Authoritative local evidence under `artifacts/hub-conformance-<suffix>/`:
+
+- `547a9ca24e13412a86d3ddf984357db8`: all eight native x86 classes have zero
+  errors/configuration/timing findings; seven pass and Focuser retains four
+  endpoint issues. `acfaf77a260b4f809f38571fe0a9836a`: native x64 has the same
+  Focuser issues plus one panel DeviceState timing result (0.139 seconds against
+  0.1). Six classes pass. Neither full run is called a complete pass.
+- `51973b71ab924addbb24d5f46d01cc29`: native direct camera simulation through x86
+  COM passes every full interface check, including image arrays.
+  `f739010ae5744d088bb77f4356b9de04`: SDK simulation through x64 COM reports only
+  the same ten unsupported-bin-3 issues; no errors/timing/configuration findings.
+- `b9497daca46342d68aae337350c386ff`: isolated x64 panel passes, including
+  DeviceState timing. Retain the original timing result; parallel load or cold
+  JIT is plausible but unproved, and no target or product code was changed.
+- `b8949bff1c9c48feb20c16c38c78960d` (x86) and
+  `419e1f83091b4cd08db2e69345e044e7` (x64): forced one-second validator timeouts
+  remain failed runs and independently verify the owned server stopped, all 34
+  logical registry roots removed and zero cleanup failures.
+- `ccb9dc47a31140e3989767c0d35695ae`: final x64 safety check passes and records
+  the final publication/bitness/root provenance plus successful cleanup.
+  `93a076735db040ef9644f16b99e41ddc`: existing strict HTTP safety protocol passes
+  after extracting the shared result runner. Python compilation and argument
+  rejection pass; `artifacts/hub-native-conformance-audit.py` independently checks
+  report counts, exact known issue keys/messages and absent fixture CLSIDs/aliases.
+
+Standards review inspected the installed ASCOM.DeviceInterfaces 7.1.2 XML
+documentation, the current official IFocuserV4/ICameraV4 reference (1.0.27), and
+the pinned unmodified ConformU 4.5 source. Focuser endpoint tests ignore the
+advertised per-move bound and expect clamping despite Move's InvalidValue
+contract. Camera loops assume a contiguous bin set although the interface permits
+unsupported-value rejection. Existing production behavior is retained: no silent
+clamping/splitting, no invented bins, no remapping and no lost bin-4 capability.
+The detailed decisions are recorded in hub-conformance.md; raw findings remain
+visible and failing. They do not exempt new failures or close original acceptance.
+
+No Rust/.NET product logic changed, so another complete regression rebuild was
+not warranted. No real equipment, vendor activation, production registration,
+installer or CI wait was used. Actual OS/LAN and installed/physical acceptance,
+stable site alignment, main reconciliation and final review/CI/audit/merge remain.
+
+## 2026-10-07: hub documentation and separate website preview
+
+Reviewed README, architecture, setup and CLI help against the eight NINA
+providers, supported source factories and shared host. Replaced stale scalar-only
+lists and claims that import/export or retry scheduling were unfinished. Moved
+the private Alpaca catalog caption back to its own screenshot. The overview now
+explains switch/safety/weather composition, Windows ASCOM republishing, direct
+NINA attachment, shared camera ownership and explicit groups. Proxy cameras do
+not gain native rereads; standalone 0.5 integrations and the 0.6 preview remain
+distinct. The runtime note no longer implies that already-published 0.5.11.0
+packages contain the subsequently merged static CRT fix.
+
+Prepared the website in its own repository branch `codex/regain-hub-docs`, commit
+`b2804191299878554ecd933fff474cf1351e44b3`. The hub guide stays under
+`/docs/regain/`; shared navigation, page links, metadata and sitemap are generated.
+Per-page preview metadata gives it an explicit unreleased banner while preserving
+the stable guides' release banner. The guide includes setup, supported classes,
+connection ownership, groups, transfer and recovery, plus two existing labeled
+simulation captures from f40cd86. Overview/NINA/Alpaca guides link to the preview.
+No website main push, deployment, release-version bump or new code PR occurred.
+The older stable hardware guides still need alignment with later 0.5 releases.
+
+Local validation:
+
+- `cargo run --locked -j 2 -p regain-alpaca -- --help` passes and prints the
+  corrected publication description (`artifacts/hub-docs-cli-help.log`). This
+  exits before constructing a host or opening equipment.
+- `artifacts/hub-docs-links.py` checks 91 local Markdown links, images and
+  fragments across the three edited guides (`hub-docs-links.log`).
+- Website `npm run build` and `npm run check` pass, including freshness and
+  local links, fragments, images, IDs and landmarks across 26 HTML pages
+  (`hub-docs-site-build.log`, `hub-docs-site-check.log`).
+- `artifacts/hub-docs-render.cjs` serves only the local clone and checks actual
+  Chrome desktop/mobile layouts, both images, no document overflow, collapsed
+  mobile navigation, the separate release banners, overview navigation and
+  no page errors (`hub-docs-browser.log`). Both full-page captures are inspected.
+- Both repositories pass `git diff --check`. No runtime logic or hardware
+  commands changed; no broad Rust/.NET regression rerun was warranted.
+
+Retain the initial browser assertion in `hub-docs-browser-initial.log`: it read
+lazy image completion before scrolling the images into view. The final fixture
+scrolls and waits for successful decode; it does not remove the image assertion.
+Source review also corrected the new page to use the site's existing `docs-wrap`
+layout before the accepted renders. All original acceptance/final gates remain
+open; no CI waiting was introduced.
+
+## 2026-10-07: shared standalone camera recovery metadata
+
+Completed the remaining configuration migration from the earlier core/hub
+checkpoint. One Rust declaration now generates the standalone JSON contract and
+managed `RecoveryOptions`, including defaults, finite numeric limits and public
+property names. NINA retains its PascalCase saved file format and existing IPC
+serialization. Both native editors use the same net48/net8 form and embedded
+contract. Alpaca serves the live core schema with its server platform; its module
+renders the same labels, descriptions, units, order and sections. No new runtime
+library or crate is introduced.
+
+Review removed the editors' separate 0.001 timeout floor, retained strict integer
+validation and preserved hidden Linux port-cycle values and legacy extensions in
+the form's inert read. Sparse/default loading behavior stays unchanged; strict hub
+configuration still rejects unknown keys. Native USB permissions, at-most-once
+reset, replacement eligibility, deadlines and capture behavior are unchanged.
+Proxy cameras acquire no native same-frame recovery promise. Useful cooler/USB
+guidance now belongs to the shared descriptions rather than individual tooltips.
+
+Review also found that a failed or future metadata contract could leave the old
+page's Add/Save controls available. Initial controls now stay disabled until the
+contract and state load successfully. The real browser test proves future-contract
+rejection with editing disabled, in addition to saving a small positive timeout,
+rejecting zero/fractional integers and retaining the hidden Linux value. It never
+selects or connects a camera.
+
+Local evidence (logs under `artifacts/hub-recovery-*`):
+
+- `rust.log` passes 55 core unit and four independent legacy configuration cases,
+  the accessory process harness, and 19 Alpaca unit, ten executable-host and 49
+  HTTP cases. The new route returns the live core schema without source leases.
+  `core-config-final.log` passes the legacy cases again after description edits.
+- `core-suite.log` passes all 96 managed core cases. `nina-suite.log` passes all
+  516 NINA cases plus one explicit registered-COM skip. `nina-focused-final.log`
+  passes 22 relevant camera/configuration/form cases. `form-verified.log` passes
+  the final warning-denied form render after the description refinement.
+- `net48-verified.log` passes both complete real x86/x64 suites, including the new
+  recovery form fixture. `net48-metadata-final.log` rebuilds both architectures
+  and passes that fixture after final description edits. The ASCOM build passes
+  without warnings in `ascom-build-final.log`.
+- `browser-verified.log` passes real Chrome field rendering, strict input, save,
+  hidden values and unknown-contract disable against a rebuilt private simulated
+  server. Native and web renders are inspected and included in hub-setup.md. The
+  native capture is a shared-component preview with no equipment; the web capture
+  deliberately shows Simulation and no selected camera.
+- Final strict all-target Clippy, Rust 1.89.0, both generated freshness checks,
+  eighteen independent schema cases, existing hub and new recovery Node contracts
+  and the fresh-host PE runtime audit pass in their `*-verified` logs. The model,
+  standalone contract and hub schema are checked for parity and legacy defaults.
+
+Retain the initial managed build's in-use Core DLL error during overlapping
+builds; the exact holder was not proved. Serialized builds pass. The first net48
+fixture lacked WPF references. Enabling the WPF SDK changed console implicit
+usings, so the final console fixture instead adds explicit WPF assembly references.
+Both failed builds remain recorded. These are fixture/build corrections rather
+than changes to capture behavior.
+
+No production registration, installer or physical hardware was used. Remaining
+work includes conformance reconciliation, actual OS/LAN/installed-client/physical
+acceptance, README/site, main reconciliation and final CI/review/completion audit.
+PR #21 remains draft; no intermediate CI wait was introduced.
+
+## 2026-10-07: shared OS sleep/resume fences
+
+Implemented one production `ResumeClock` shared across private-host configuration
+replacements. Windows uses headless suspend/automatic-resume notifications and a
+bracketed interrupt/unbiased clock fallback. Linux/macOS use bracketed continuous/
+awake clock reads. The detector intersects possible clock-gap intervals, so
+scheduling delays do not masquerade as sleep; Unix detection does not impose a
+fixed millisecond sleep threshold. Windows callbacks and their sender deliberately
+live for the process lifetime, with no borrowed callback context or unregister/
+callback lifetime race. Probe/registration failure cannot silently start an
+unmonitored production host; a later clock fault clears evidence and blocks I/O.
+
+Actors retain client leases and control ownership, invalidate generation/caches,
+cancel obsolete local I/O and reset their own adapter/worker. Existing borrowed
+and managed cleanup policy still applies. Queued pre-sleep commands are rejected
+without dispatch, while release/shutdown remain available. Existing Retry-After/
+backoff deadlines survive. Actual interrupted writes retain their uncertainty
+latch across polling and further resumes. No exposure, movement or power command
+is replayed. Typed sessions require explicit reconnect; scalar outputs remain
+available while upstream recovery is pending.
+
+Safety and weather invalidate evidence on synchronous reads as well as task
+notifications. Review found and fixed a racing consumer that fetched an old
+source before resume and submitted it after the engine reset: explicit epoch
+checks reject that evidence even if the consumer reset an old source fence.
+Weather clears averaging and last-valid timestamps. Another review finding was
+an already queued acknowledgement whose waiter resumed later; source read/image/
+write waiters now fence that reply too. Camera status cannot restore a capture
+already marked uncertain, and long readiness polling wakes on source changes.
+Ordinary image getters reject old generations. Existing pinned copies and exact
+historical camera-group images retain their immutable bytes and identities.
+
+Local evidence (all logs under `artifacts/hub-resume-*`):
+
+- `regression.log` passes the complete Rust hub/Alpaca regression before the final
+  clock/reply refinements. `core-verified.log` passes the final 112 hub unit,
+  79 camera acquisition and 52 runtime/IPC cases. These include cached evidence,
+  stalled polls, pre-sleep queues, interrupted and late acknowledged writes,
+  retained leases, delayed downloads, pinned bytes and long camera readiness waits.
+- `alpaca-verified.log` passes 19 unit, ten production-process and 48 HTTP cases
+  against the rebuilt executable. Windows monitor construction/registration is
+  tested without suspending the machine. Portable clock tests still require CI;
+  neither construction nor injected epochs establishes physical sleep acceptance.
+- `clippy-verified.log` and `msrv-verified.log` pass strict all-target Clippy and
+  Rust 1.89.0. `freshness.log`, `schema.log` and `node.log` pass generated freshness,
+  eighteen independent schema cases and browser contracts. `runtime.json` audits
+  the fresh production host, including its power APIs, without VC redistributable
+  imports. No managed frontend or wire contract changed in this increment; the
+  preceding full managed suites and inspected renders remain checkpoint evidence.
+
+Initial retained findings include the weather age fixture expecting an error
+rather than the standard `-1` unknown result, and a Cargo invocation supplying two
+positional filters. Neither was a product failure.
+
+No physical device, production COM registration, installer, LAN discovery or
+system sleep was triggered. Actual sleep/wake acceptance on Windows/Linux/macOS,
+installed NINA/Chooser/UAC/signing/upgrades, remaining conformance and physical
+acceptance, camera recovery metadata, README/site, main reconciliation and final
+CI/review/completion audit remain open. PR #21 stays draft; intermediate CI was
+not polled or used as a waiting gate.
+
+## 2026-10-07: shared configuration import/export
+
+Implemented revision-owned `exportConfig` and `prepareImport`, one generated
+versioned file/response contract and native NINA/ASCOM plus web controls. Export
+uses saved settings and omits all credential references. Restore requires the
+same hub instance; destination history and matching local bindings survive even
+when a file lacks their credential flag. Copy replaces the draft with new IDs for
+sources, outputs, channels and both group types, rewrites typed graph references,
+and allocates numbers outside active and retired destination slots. Missing
+bindings are reported using destination source IDs. Import preparation never
+replaces history, accepts supplied bindings, persists host settings, activates
+adapters or opens equipment.
+
+Review covered duplicate keys at every object/map level, malformed and future
+files, foreign restore, immutable targets/numbers/pins, virtual/group references,
+retired numbering, credential redaction/rebinding, revision/apply contention,
+malformed responses, late draft edits, bounded strict UTF-8 reads and ordinary
+Review/Apply. Native replacement preserves its saved baseline and read-only
+identity behavior. An embedded runtime with an unstaged ledger also checks its
+current active IDs before accepting a restore. Import errors leave the old draft
+intact; valid replacement revokes its previous review. Neither operation is an
+equipment mutation, and neither is automatically retried.
+
+Construction findings retained:
+
+- The first HTTP regression found that the publisher allowlist omitted transfer
+  commands and the preceding increment's local catalog command. Both are now
+  admitted explicitly; tests prove transfer reaches the protected host and a stale
+  native catalog request reaches its revision fence without probing equipment.
+- A duplicate-map test initially used an invalid first measurement value, so the
+  ordinary typed parser rejected it before demonstrating duplicate behavior. Both
+  repeated values are now valid; the ordinary parser accepts them and the strict
+  import parser rejects the duplicate. Ledger and weather maps are covered.
+- The first MSRV invocation used `+1.89` instead of installed `+1.89.0`, triggering
+  an unsuccessful toolchain download. The installed exact version passes.
+- The first inspected native render called Copy through the shared import helper
+  while leaving its mode selector on Restore. The fixture now selects Copy before
+  invoking the helper. The initial image remains under artifacts; the final
+  capture reflects the selected mode. Both captures use private simulation.
+- The first net48 transfer check assumed the base observatory's three outputs,
+  but that fixture also adds private accessory outputs. The assertion now checks
+  the actual saved output count, requiring every occupied number to be replaced;
+  ordinary Review is checked separately with structured diagnostics on failure.
+
+Local evidence (all logs under `artifacts/hub-transfer-*`):
+
+- `rust.log` retains the initial HTTP allowlist failure. `rust-final.log` passes
+  all Alpaca tests (including 48 HTTP cases) and hub tests through transfer, then
+  stops at the invalid duplicate-test assertion. `rust-tail.log` passes its
+  corrected transfer and all remaining virtual/weather suites; `doc-tests.log`
+  completes both doc-test targets. `core-final.log` passes all 45 runtime/IPC and
+  six final transfer cases after the embedded-ledger review correction.
+  `http-final.log` passes protected HTTP transfer and local-catalog admission.
+- `clippy-final.log` passes warning-denied all-target checks;
+  `msrv-verified.log` passes Rust 1.89.0. `schema-final.log` passes eighteen
+  independent JSON Schema cases; `node-final.log` passes shared browser contracts
+  and transfer faults. The generated fixture comes from the live Rust types.
+- `browser.log` passes a real headless Chrome flow against a caller-owned,
+  loopback-only simulated host: download, original-text file upload, duplicate
+  rejection, preserved review on rejected input, review invalidation on restore,
+  explicit Apply, remapped Copy, unchanged saved state and zero source leases.
+  `scripts/test-hub-transfer-browser.ps1` starts only its own simulated processes,
+  disables UDP discovery and closes those processes in cleanup.
+- `nina-full.log` passes 515 tests with one explicit registered-COM-fixture skip.
+  After correcting the rendered mode selection, `native-final.log` passes all
+  fourteen transfer/editor/actual-host/render cases. Both final native and web
+  screenshots are visually inspected and explicitly identify simulation.
+- `net48-final.log` passes both full real x86/x64 suites, including restore/copy,
+  dynamic reserved-number assertions, ordinary review, unchanged saved state,
+  reload, and existing ASCOM/camera/group compatibility. The initial x86 fixture
+  failure remains in `net48.log`. `freshness-final.log` verifies the generated
+  fixture; `runtime.json` audits all three rebuilt Rust workers with no VC++
+  runtime imports. Whitespace and Rust/JavaScript syntax/format checks pass.
+
+The file limit is 4 MiB, with the existing 1 MiB encoded IPC/HTTP frame budget also
+applied to requests and responses. This is explicit in both editors and docs;
+there is no chunking or truncation. Settings transfer does not restore credentials
+or live sessions into another installation. Actual OS resume, camera recovery
+metadata migration, LAN/conformance/interactive/signing/upgrades/physical
+acceptance, README/site, main reconciliation and original final review/CI/audit/
+merge gates remain open. No attached hardware or installed vendor driver was
+opened. No intermediate CI was awaited.
+
+## 2026-10-07: local native/COM catalogs and draft adoption
+
+Implemented one revision-owned `discoverLocal` operation and generated
+target/response metadata for native NINA/ASCOM setup and the browser. Native
+probing reuses the nine existing backends; accessory/COM one-shot workers wait
+on an ownership barrier, and camera lists use a JSON-only worker call with zero
+binary admission. COM listing reads registry profiles and class registrations
+without activating drivers. Missing classes and own-hub CLSID aliases remain
+visible but blocked. No arbitrary executable, path, serial command or registry
+root is accepted from setup clients.
+
+Reviewed shared admission, revision checks, lifecycle locking, native lease
+exclusion, transport closure, finite stdout/stderr/entry limits, diagnostic
+redaction, process exit and cancellation. Accepted jobs retain their permit and
+activity after RPC loss. A separate discovery counter drains those jobs during
+shutdown: waiting on the entire activity counter was rejected because a
+caller-held output reader could otherwise prevent shutdown. A regression keeps
+such a reader alive while shutdown completes. Native probes prevent new leases;
+COM registry reads can coexist with equipment connections but block apply.
+
+Both editors validate the whole generated response plus target/revision echoes,
+identity uniqueness and backend/class semantics. Adoption reuses shared source
+defaults, capability choices, label limits and atomic append. It rejects stale,
+blocked, duplicate and full drafts without invalidating a previously reviewed
+candidate. Direct/SDK camera aliases and COM bitness alternatives cannot become
+separate owners. Changing discovery inputs clears visible selections. Selecting
+a source never persists, connects equipment, creates outputs or activates COM.
+
+Construction findings retained in separate logs: two missing Rust dispatch/error
+cases, an incompatible registry handle signature, and a COM startup barrier that
+incorrectly retained LF after the existing reader stripped it. The camera catalog
+initially used image-only admission for a list command; it now uses an explicit
+JSON-only call and tests reject announced pixels before reading/allocating a body.
+The direct simulator lists alternative models for one serial; this exception is
+explicitly simulation-only, while adoption still permits one owner. The first
+WPF assertion used the EFW serial and fallback EAF label instead of the EAF
+simulator's actual serial ending `09` and model `EAFN`; assertions were corrected
+without deadline changes. The initial GUI host had simulated sources but did not
+pass `--simulate` to native workers, so its native query returned an empty hardware
+catalog. The fixture now explicitly launches `--hub-host --simulate`, waits for
+readiness and verifies attachment did not start a replacement host. Final native
+discovery checks therefore use production simulations, not attached devices.
+An overlapping managed fixture prevented Cargo from
+replacing a Windows executable; managed execution and binary rebuilds are now
+sequenced. An early broad run against the rejected all-activity drain was stopped
+after its observed hang; its preceding native-owner failure remains recorded,
+and the final complete regression must independently pass.
+
+Local evidence already passes: all nine production native catalog simulations;
+three lifecycle cases; private COM parent framing/identity/fault cases and retained
+RPC-loss/apply/shutdown execution; finite collector limits, exit, EOF, cancellation
+and timeout; fourteen managed catalog/registry cases; Node adoption/fault checks;
+both real COM worker architectures across all eight classes and invalid barriers;
+actual private registry API fixtures in net48 x86/x64. The COM worker smoke reads
+installed registrations but never activates drivers. All registry writes are
+confined to unique private fixture roots. Final regression/render/freshness/MSRV
+results: full Rust hub/Alpaca/core regression passes, including the previously
+failing native retirement case, all three new lifecycle cases, production
+catalog simulations and retained-process fixtures. Strict all-target Clippy,
+Rust 1.89, contract freshness, seventeen independent schema cases, Node contracts
+and JavaScript syntax pass. Both complete real net48 suites pass, including their
+new private registry cases. The first full NINA run passed 500 cases with one
+registered-COM skip and the GUI fixture failure recorded above; the final focused
+sixteen cases pass with the corrected explicit-simulation fixture and inspected
+820-pixel native render. Unrelated generated screenshots were restored. Fresh
+Rust workers and the private x86/x64 COM worker trees pass the runtime import
+audit. Logs are `artifacts/hub-local-discovery-*.log`; no CI was polled or awaited.
+The final suite uses no hardware or LAN search; the earlier empty hardware
+catalog is retained above.
+
+Configuration transfer is next. OS resume, camera recovery metadata migration,
+remaining conformance/interactive/hardware acceptance, README/site, final main
+reconciliation/review/CI/audit and merge remain open. No intermediate CI wait.
+
+## 2026-10-07: scoped IPv6 catalog, control and image transport
+
+Link-local endpoints now carry a separate positive host interface `scopeId`
+alongside an unscoped literal URL. Native/web discovery, catalog queries,
+successful-query echoes and draft adoption retain it. Source identity includes
+scope, so a saved ID cannot switch interfaces. Matching catalog pins remain
+aliases across interfaces; distinct devices with the same address may use
+different scopes. Invalid scope/URL combinations fail before credentials or
+network access. Scoped saved credentials remain protected from deletion.
+
+Reviewed exact socket routing, authority and credential confinement, verified
+TLS IP SAN identity, connect/handshake deadlines, scalar whole-response
+deadlines, response/body disposal and cancellation, and reuse of the ordinary
+scalar/ImageBytes/JSON-image codecs. Scoped requests use a fresh HTTP/1
+connection with no proxy, DNS alias, redirect, fallback or replay. Images keep
+their caller-owned download deadline and retained-image budget. Ordinary
+reqwest transport keeps its existing behavior.
+
+The initial wire tests found that Hyper's buffer limit did not reject a complete
+oversized header block. Explicit parsed header/reason-phrase accounting now
+rejects it before returning the response, alongside the 100-header parser limit.
+The private tests cover requests, redirects, authority mismatch, malformed-size
+responses, TLS trust/IP mismatches, handshake/header/body deadlines, connection
+cancellation/disposal and existing ImageBytes decoding/budget release. Test
+construction initially used the wrapper image response instead of its image
+field; corrected without changing the codec. Review also caught a bulk field
+insertion accidentally restricting a credential match to unscoped sources;
+the pattern was corrected and scoped deletion protection has a regression case.
+Initial and final logs remain separate in artifacts.
+
+The test dial targets private IPv6 loopback while retaining an advertised
+link-local URL and certificate identity. Scoped socket construction is checked
+separately. This proves transport behavior without configuring host interfaces
+or trust stores; it does not prove actual Windows/Linux link-local LAN routing.
+No broadcast search, attached hardware or installed vendor driver is exercised.
+Local validation passes: full Rust hub/Alpaca regression; final 104 hub unit
+cases (14 transport), 23 configuration, five credential and six catalog cases;
+strict all-target Clippy and Rust 1.89; generated-contract freshness, sixteen
+independent schema cases, Node contracts and JavaScript syntax. The 45 relevant
+native discovery/adoption/private-IPC cases and final WPF render pass. Refreshed
+search/catalog screenshots are inspected. Full real net48 x86/x64 suites pass,
+including the shared scoped catalog/adoption fixture. Fresh Windows workers
+pass the runtime import audit. This batch does not rerun unrelated ordinary NINA
+classes or close LAN, installed-client, hardware or final merge gates. No
+intermediate CI wait.
+
+## 2026-10-07: bounded Alpaca UDP candidate search
+
+The shared Rust host exposes revision-fenced `searchAlpaca`, using IPv4 directed
+broadcast, IPv6 interface-scoped multicast and loopback. Native NINA/ASCOM setup
+and web setup consume the generated `discovery.network` contract. Search neither
+reads catalogs nor resolves credentials or opens equipment. Address selection
+clears the prior credential reference and visible catalog selection. Catalog
+reads and identity-pinned draft adoption remain separate.
+
+Reviewed the absolute deadline, shared four-query admission, cancellation,
+deterministic interface selection, full-size UDP buffers on Windows, reply type
+validation, capacity limits and IPv6 scope identity. An abandoned OS enumeration
+retains admission until its blocking worker finishes. Receive futures own sockets
+directly; no detached socket task survives cancellation. Results retain partial
+search status, failure counts and ignored packets without exposing raw replies or
+OS errors. Link-local addresses cannot yet enter HTTP transport: they retain
+their scopes, a null base URL and a generated explanation. This is an open
+construction requirement, not completed IPv6 transport or LAN acceptance.
+
+Initial failures and corrections are retained in artifacts: Serde also accepted
+a positional array for a one-field struct, so replies now require an object;
+Windows oversize reception can fail the socket read, so buffers receive whole
+UDP packets before enforcing the 1024-byte limit; the candidate-capacity fixture
+incorrectly assumed a one-millisecond Windows timer tick and now yields between
+packets; schema generation omitted UInt32's upper scope bound, now explicit.
+Review also found .NET formats IPv4-compatible IPv6 differently from Rust; native
+validation now compares parsed identities while accepting Rust's hex form.
+Warning-denied managed execution caught an xUnit predicate-overload issue, fixed
+without relaxing analysis. The first host build named regain-camera as a package;
+it is a binary of regain-alpaca, and the corrected command selects that package.
+Initial and final logs remain separate. Validation is batched locally; CI is not
+polled between construction increments.
+
+Local validation passes: full Rust hub/Alpaca regression (including eight UDP
+cases and shared search/catalog admission), final nine network/IPC cases,
+strict all-target Clippy, Rust 1.89,
+generated-contract freshness, fifteen independent schema cases, Node contracts
+and JavaScript syntax checks. Fresh workers pass the PE runtime dependency audit.
+Warning-denied full NINA execution passes 482 tests with the existing explicit
+registered-COM-fixture skip. Real net48 x86/x64 suites pass, including shared
+IPv4/IPv6 reply-contract parsing and stale network-search rejection over actual
+private IPC before broadcasting. The final native render test passes, its actual
+simulation screenshot is inspected and included in setup documentation. Only
+loopback/private simulations were exercised; no LAN search, attached hardware,
+installed vendor driver, installer or production registry entry was activated.
+
+## 2026-10-07: main integration and standalone Windows runtime
+
+Merged main through `475d817`, incorporating PR #22's estimated continuous-frame
+timing and PR #24's Windows static CRT linkage. The runtime fix is also merged
+into `release/0.5` as PR #25. The independent runtime worktree records optimized
+worker import inspection, simulator checks, MSRV checks, packaging and negative
+tests that reject the previous dynamically linked workers before archive writes.
+
+Resolved the workflow conflict by retaining hub schema/browser checks alongside
+the runtime gate. Resolved ASCOM staging by copying the complete private worker
+tree before auditing every staged EXE/DLL. Reviewed both resolutions; local
+ZWO library tests pass (99), all seven runtime-gate tests pass, all four changed
+PowerShell scripts parse, and whitespace checks pass. This integration does not
+claim a fresh full hub/package acceptance run or close any final merge gate.
+
+## 2026-10-07: failure-only proxy camera preflight diagnostics
+
+The pixels-fault case in push Windows job 112872018908 fails during MaxBinY
+preflight, before fault injection. The private fixture now records the structured
+HubException failure, remote code/message/fields and exact relay command sequence,
+then rethrows. All seven focused actual-Alpaca cases pass with warnings denied in
+artifacts/hub-camera-preflight-diagnostics-focused.log. The change does not retry,
+relax deadlines, change assertions or alter production behavior.
+
+An ignored child-process scheduler probe uses the actual private relay, an
+independent raw TCP upstream/caller and four occupied managed pool workers.
+The baseline cannot finish forwarding before releasing the workers. A proposed
+HttpClient.Send change passes the ordinary seven cases but also fails this probe;
+it was discarded. Preserve artifacts/hub-relay-scheduler-baseline.log,
+hub-relay-scheduler-synchronous.log and hub-relay-synchronous-focused.log.
+The probe runs under PowerShell's bundled runtime, not the .NET 8 test runner;
+it establishes a dependency in that probe, not the cause of the CI failure.
+The fixture comment now accurately distinguishes dedicated request-handler
+threads from asynchronous HTTP forwarding.
+
+Both preceding 8ab8611 runs (37644612391 and 37644620829) are terminal/red.
+PR Windows job 112872048688 passes preceding NINA/net48/COM checks, then fails
+OFP2's old PUT Brightness expectation; evidence is
+artifacts/hub-conformance-ci-pr-windows.log. The portable jobs fail the same
+expectation. Local 48ca3ff corrects that fixture and passes its complete private
+simulation; fresh CI is required. Push Windows' separate preflight failure stays
+open. Mac ARM confirms final-owner lock reacquisition and the duplicated-descriptor
+regression now pass. No new CI result is inferred from local success.
+
+## 2026-10-07: OFP2 script follows HTTP method admission
+
+8ab8611 portable jobs pass the Rust regression and then fail test-ofp2.py at PUT
+Brightness. Brightness is read-only, so the reviewed common admission layer now
+rejects that HTTP verb with 404; the old script expected HTTP 200 with ASCOM
+Unsupported. The fixture now requires exactly 404 and checks brightness and
+calibrator state are unchanged. Supported CalibratorOn/Off, invalid brightness
+ranges, unknown actions and recognised optional commands retain their existing
+semantic assertions. Production code and deadlines are unchanged.
+
+The complete private default simulation run passes:
+`python scripts/test-ofp2.py --bin-dir target/debug --report artifacts/hub-ofp2-protocol-contract.json`.
+Evidence is artifacts/hub-ofp2-protocol-contract.log and its JSON report. It
+exercises native brightness/on/off, open/close/halt/resume, actual HTTP routes,
+discovery/identity, independent clients, reconnect, persistent profiles and origin
+checks. No --hardware or serial argument was supplied. Preserve the Linux and
+Mac ARM initial CI logs. Fresh CI is required; push Windows' separate MaxBinY
+proxy preflight failure remains open and occurred before pixel-fault injection.
+
+## 2026-10-07: native FITS metadata and idle camera commands
+
+Reviewed native publication against the same FITS timestamp contract as the
+dedicated simulator. Core frames retain their original metadata JSON and UTC
+precision. Native LastExposureStartTime validates the original value, then
+removes only a UTC Z/+00:00 suffix for standard property presentation. It does
+not convert nonzero offsets or normalise imported proxy frame identity. Tests
+cover implicit UTC, nanoseconds, explicit zero offset, leap-second spelling and
+unchanged retained metadata; existing malformed/missing/non-UTC rejection remains.
+Actual SDK/direct owner tests parse the property as UTC and compare its instant
+to the original frame metadata, then verify subsequent settings do not alter it.
+
+The private conformance runner now offers only fixed sdk-simulated and
+direct-simulated camera choices, requires the production worker and records its
+hash. Both host/frontend always have --simulate. Reviewed core Runtime.spawn:
+the worker receives --simulate, and no SDK-path argument is supplied in that mode.
+No existing config, serial, SDK path or upstream URI is accepted by this runner.
+The ordinary management response must still label all eight outputs Simulation.
+
+Initial native SDK protocol passes; interface reports eleven issues: idle
+unsupported StopExposure plus ten assumptions that bin 3 is supported below
+MaxBin 4. Initial direct protocol passes and its only interface finding is idle
+StopExposure. The shared supervisor previously returned success before checking
+capabilities when no acquisition existed. Idle Stop/Abort now validate supported
+capabilities without dispatching or changing completed pixels. During a retained
+setting or guide, they use generation-fenced observed capabilities rather than
+queueing behind unrelated driver work; missing/malformed/error evidence is not
+invented as support. Active owner/phase/uncertainty checks remain unchanged, and
+Stop during an existing image readout keeps its original inert path.
+
+Preserve the first regression in artifacts/hub-native-camera-admission-rust.log:
+fresh capability reads blocked behind a held transfer and setting preflight. The
+new fixture also omitted its explicit device.complete signal. The correction
+restores inert download behavior, uses cached capabilities for retained unrelated
+operations and supplies the missing simulated completion. A second compile
+attempt records a missing Value import; the final code uses the existing value's
+boolean accessor. The 43-case acquisition suite then passes, including true/false
+observed capability during a held setting and unsupported idle commands before/
+after capture with zero actuator writes and the exact retained image Arc.
+
+Final focused evidence is artifacts/hub-native-camera-admission-rust-final.log:
+81 library, 43 acquisition, 22 native owner, 13 native source and three native
+capture cases pass. Strict Clippy and Rust 1.89 checks pass in
+artifacts/hub-native-camera-clippy.log and artifacts/hub-native-camera-msrv.log.
+The rebuilt native direct external check passes full protocol/interface with zero
+findings at artifacts/hub-conformance-adac0f3488d143e8a6cf12c03d0ece63. SDK protocol
+passes and its interface retains only ten sparse-bin findings at
+artifacts/hub-conformance-cd0c6cf385d14787bf54ad84550644fa. Those remain an open
+standards/validator review; no unsupported bin is invented and MaxBin is not
+lowered to hide an advertised native capability. Full regressions pass in
+artifacts/hub-native-camera-rust-full.log (hub/Alpaca),
+artifacts/hub-native-camera-nina.log (319 ordinary cases, one explicit registered
+fixture skip) and artifacts/hub-native-camera-net48.log (real x86/x64 suites).
+Rust formatting, diff checks and Python syntax pass.
+
+The preceding HTTP/CI/camera checkpoints are pushed at 8ab8611 and PR #21 remains
+draft. Push CI 37644612391 is terminal/red and PR CI 37644620829 is still active;
+hold this increment locally until both finish. New portable failures are the OFP2
+script's old expectation for PUT to read-only Brightness (HTTP 404 now); push
+Windows fails MaxBinY during proxy preflight before pixel-fault dispatch. Keep
+artifacts/hub-conformance-ci-pr-linux.log and
+artifacts/hub-conformance-ci-push-windows.log for the next CI corrections. Mac ARM
+log artifacts/hub-conformance-ci-pr-macos-arm.log verifies both the new duplicate
+descriptor regression and formerly failing camera endpoint reacquisition pass;
+the job later fails at OFP2's old expectation. Do not treat the new preflight
+failure as resolved by the local NINA pass. All original coordination, discovery/transfer, OS resume,
+broader acceptance, README/site and final audit/merge gates remain open.
+
+## 2026-10-07: camera geometry/metadata and external panel acceptance
+
+Reviewed the camera findings against the pinned ASCOM camera interface and the
+unmodified ConformU 4.5.0 source. The simulator now rejects monochrome Bayer
+queries as unsupported and identifies its three-plane RGB layout as Color. Its
+start metadata records actual UTC in the interface's implicit-UTC FITS format;
+the monotonic start instant still controls exposure, readout and guide timing.
+Sequence numbers remain acquisition/pixel identity, never fabricated UTC.
+Chrono is already present in the workspace lock; this adds the hub dependency
+without introducing a package or changing a locked version.
+
+Native and simulated ROI setters validate scalar type/sign but preserve desired
+intermediate geometry beyond sensor bounds. StartExposure validates the whole
+configuration before replacing capture state, reserving pixels or dispatching.
+Review confirmed the native owner calls core validate_capture before its budget
+reservation and worker spawn, retaining binning, alignment and exposure limits.
+The simulator computes combined bounds with 64-bit arithmetic. Added actual
+shared-controller regression cases for oversized and Int32-max settings: rejected
+starts keep Idle/ImageReady, the same retained image Arc and unchanged byte
+budget; shutdown releases the frame. Native owner cases verify rejection before
+capture activity and preservation of the completed buffer. Existing malformed
+scalar/bin/mode checks remain. The virtual-clock exposure test bounds the frozen
+wall timestamp at actual start while still advancing integration/readout through
+virtual monotonic time. RGB and one-plane shape checks remain intact.
+
+The first selected rerun retains 22 camera issues: five first-use checks plus
+idle StopExposure reused an image captured by the protocol tests; sixteen UTC
+comparisons parsed an RFC3339 Z suffix into local time in ConformU's DateTime.Parse
+before subtraction from naive UTC. The runner now owns a fresh host/frontend per
+mode, preserving production image retention on disconnect. The final timestamp
+uses the interface's FITS spelling rather than modifying the external tool.
+The panel's default 200 ms travel completed before the validator's 500 ms Halt
+observation. The runner applies two seconds through ordinary revision-checked
+simulation control and retains its request/reply. The panel interface already
+passed in that intermediate run, but protocol result parsing missed the tool's
+alternative explicit zero-alert success sentence; both accepted summary forms
+still require exit zero and zero errors/issues. Unknown summaries still fail.
+Startup diagnostics now name the mode-specific log. No checks were disabled.
+
+Final selected evidence: artifacts/hub-interface-camera-panel-conformu-second.log
+and artifacts/hub-conformance-3d15f909af3c4cb1a07bd22877c0f4e9/summary.json. Both
+classes pass strict protocol and full interface checks with zero errors/issues,
+configuration alerts and timing issues. Keep the initial rerun at
+artifacts/hub-conformance-400ecc6d3eb448a1973bbf2278971651. The five other previously
+passing interface classes were not rerun in this selection. Focuser boundary and
+MaxIncrement findings remain open, as do native ASCOM and other backend acceptance.
+
+Local regression after the final FITS/fresh-mode changes passes:
+artifacts/hub-interface-camera-rust-full.log (full hub/Alpaca, including 22 native
+owner and 16 camera simulator cases), artifacts/hub-interface-camera-nina-final.log
+(319 ordinary NINA cases; one explicit registered-fixture skip),
+artifacts/hub-interface-camera-net48-final.log (full actual x86/x64 suites),
+artifacts/hub-interface-camera-msrv-final.log (Rust 1.89 all targets) and
+artifacts/hub-interface-camera-clippy-final.log (strict Clippy). Python syntax,
+Rust formatting and diff checks pass. Executable rebuilding finished before
+ConformU/managed fixtures used it. The earlier focused tests and first NINA run
+remain in artifacts/hub-interface-camera-focused.log and
+artifacts/hub-interface-camera-nina.log; those preceded the final FITS spelling.
+
+Publishing status: SSH pushes of the prior two reviewed commits failed twice;
+an ordinary credential-helper HTTPS push and the PR-body GraphQL edit also failed
+with GitHub server errors. Read access and remote inspection work; the remote
+remains 32a34ae and its CI is terminal/red. Preserve local commits, retry ordinary
+publication after review and require fresh CI. Do not infer acceptance from local
+passes or alter branch history to work around the service error. All original
+coordination, discovery/transfer, OS resume, broader acceptance, README/site and
+final audit/merge gates remain required. No physical hardware or installed vendor
+driver was opened.
+
+## 2026-10-07: shared camera creation and capability admission
+
+Reviewed the generated setup capability gates and runtime support boundaries.
+Camera output creation has its own capability instead of enabling the unfinished
+generic Switch/SafetyMonitor/ObservingConditions proxy classes. Dedicated combined
+outputs retain their existing behavior. Explicit camera simulation and COM camera
+imports use separate capabilities; COM bitness remains independently gated.
+Native camera choices require host-owned native camera resources. Injected/proxy-
+only runtimes do not advertise unsupported native setup choices.
+
+The actual HTTP setup route creates two camera outputs, persists UUIDs/numbers,
+checks discovery, rejects a mismatched source class, stays inert through review/
+apply and rejects apply while clients are connected. Capture publishes retained
+ImageBytes after the initiating client disconnects; the sibling stays connected.
+Managed setup uses actual lazy WPF controls/events and the native NINA provider,
+with shared cooler state, scalar images and independent leases. Browser form
+event handlers use the generated choices, including camera COM imports.
+No new frontend-specific configuration definition is introduced.
+
+Initial fixture corrections: C# uint expected values must use uint literals;
+the WPF dropdown includes a placeholder that is not a device class; NINA crop
+selection is local UI state, so shared state is verified through CoolerOn instead.
+Camera is the first enabled schema choice when its capability is present, so
+browser expectations now follow that shared ordering. A previous actual-host
+test explicitly asserted native camera setup remained hidden; it now expects the
+new implemented capability. The hello handshake now advertises the implemented
+camera output interface alongside its acquisition/image capabilities. Native
+recovery defaults already materialize from the shared schema; the inert setup
+fixture verifies them before editing instead of trying to add an existing field.
+None of these corrections relax runtime validation.
+
+Validation:
+
+- Full Rust hub/Alpaca suites pass in `artifacts/hub-camera-creation-rust-third.log`,
+  including 80 hub unit cases, 42 acquisition cases, 19 Alpaca library cases,
+  ten actual-host cases and 45 HTTP publication cases. Initial failures record
+  the old native setup and hello capability gates; final assertions verify both.
+- Strict Rust 1.99 Clippy, Rust 1.89 compatibility, contract freshness and formatting
+  pass (`hub-camera-creation-clippy`, `msrv`, `contract` logs).
+- Full NINA regression passes 319 cases with one explicit registered-fixture skip
+  in `artifacts/hub-camera-creation-nina-full-second.log`, including native SDK/
+  direct inert creation and recovery defaults. The first full run records the
+  fixture's redundant AddOptional attempt; final coverage verifies saved values.
+- Actual net48 x86/x64 suites pass with warnings denied in
+  `artifacts/hub-camera-creation-net48-first.log`, including created camera outputs,
+  image shape/lifetime and independent leases in both architectures.
+- Node form/contract checks and ten independent schema checks pass. The existing
+  private schema environment supplies jsonschema; system Python lacks it.
+- The actual in-app browser creates a simulated source and Camera output, reviews,
+  applies and shows zero leases/disconnected transport afterward. Persisted UUID,
+  number and source link match the reviewed UI. `docs/images/hub-camera-creation.jpg`
+  records the saved editor. Its private server/tab are stopped/closed afterward.
+- The new shared-camera example passes semantic roundtrip/reorder checks and the
+  independent structural validator. It shares one explicit simulation at outputs
+  4 and 17; it does not imply synchronized cameras.
+- Registered COM regression passes all 34 worker, 26 parent and eight actual NINA
+  camera cases in `artifacts/hub-camera-creation-com-first.log`. Both private HKCU
+  registry views are verified cleaned up afterward. This execution, rather than
+  the ordinary skipped theory, supplies COM acceptance evidence.
+  Full interactive/physical acceptance and every original
+  coordination/recovery/documentation/final merge gate remain open.
+
+Preceding fc7c3d7 PR Windows CI fails before the fault scenario at the one-second
+HTTP startup probe (job 112836210890, run 37634266085). The publisher readiness
+loop handled refused connections but not a timed-out first read. Local 2ec5210
+retries only read-only probes within the existing ten-second startup window and
+preserves overall cancellation. Production timeouts and fault assertions do not
+change. The fresh full local NINA suite passes this correction. Keep its initial
+CI failure visible; a new CI run is still required after both preceding runs end.
+
+The fc7c3d7 push also fails Intel macOS nested panel initial/reconnect admission
+(run 37634257580, job 112836179210). Both report transient transport timeouts in
+`covercalibrator_virtual.rs` before any actuation. The nested real-HTTP fixture
+overrode the ordinary scalar deadline with 100 ms while the leaf already used
+the normal one-second deadline. Local dbc6a4e uses the ordinary default at nested
+layers too; it leaves production code, the four-second connection bound and
+short mock timing tests unchanged. The injected hung read lasts two seconds and
+still fails preflight without motion; all 25 panel cases pass in
+`artifacts/hub-panel-ci-scalar-deadline.log`. Scheduling sensitivity is an inference
+from the short fixture deadline and failure sites; fresh Intel CI must verify the
+correction rather than treating a Windows local pass as macOS acceptance.
+
+## 2026-10-07: native NINA camera over Alpaca and registered COM
+
+Reviewed proxy camera timing, ownership, cancellation, exact frame identity,
+numeric conversion and failure handling using real production transport paths.
+These tests add acceptance evidence; no production code or deadline is changed.
+
+An actual Alpaca publisher attaches the explicitly simulated camera host with an
+empty local camera-profile list. A second actual host imports its camera through
+a loopback fault relay. Both NINA outputs share that imported source. The relay
+preserves real HTTP bodies and ImageBytes and has independent handler threads,
+a bounded queue, bounded requests/responses and cancellation-aware teardown.
+All child processes are explicitly started/owned by the fixture; attachment must
+return no newly started host. Cleanup kills only those private Process objects.
+
+Lost start acknowledgement retains an acquisition/owner and uncertainty; another
+start attempt cannot replay the exposure. Invalid duration/start-time values fail
+the host's metadata validation before requesting pixels. Geometry disagreement
+and a truncated image also retain uncertainty and publish no ready image. Traces
+require exactly one start, zero implicit Stop/Abort and the exact image-read count
+(zero for failed metadata/acknowledgement, one for the remaining cases). A separate
+case gates the actual image reply, cancels a pending NINA waiter, releases the
+reply and downloads the same accepted capture. Sibling connections and profile
+restoration remain intact. Negotiated proxy timing explicitly remains non-native.
+
+The COM script now optionally runs native NINA camera tests before releasing its
+private registration. The standard wrapper enables that option. Normal NINA runs
+explicitly skip the registered theory when its script-owned environment is absent;
+this prevents a skipped fixture from masquerading as actual COM validation.
+Registered tests check both worker architectures, source timing, lower-bound
+SAFEARRAY import, scalar row order/signs, retained pixels, source sharing, one
+exposure and no implicit controls. UInt16 values above Int16.MaxValue and negative
+Int32 values survive exactly; rank-three one-plane arrays adapt to scalar NINA.
+Fractional Single and RGB images fail explicitly instead of narrowing/dropping
+channels. Only the private fixture ProgID prefix is accepted by these tests.
+
+Validation:
+
+- Seven actual Alpaca proxy cases pass in
+  `artifacts/hub-camera-nina-alpaca-final.log`. Initial failed fixtures expected
+  metadata rejection at download, queried acquisition status without their own
+  connection lease, and expected pixels after invalid metadata. The final tests
+  assert the existing earlier uncertainty/no-image/no-download behavior and give
+  the diagnostic observer an independent lease. No production check was relaxed.
+- `scripts/test-hub-com.ps1` passes with warnings denied in
+  `artifacts/hub-camera-nina-com-registered-first.log`: 34 worker cases, 26 Rust
+  parent cases and all eight native NINA COM cases actually execute and pass.
+  A read-only check confirms the private CLSID is absent in both HKCU views after
+  completion. Script registration remains fail-if-present and finally-cleaned.
+- The initial COM test compile tripped xUnit2031; Assert.Single now uses its
+  predicate overload. `artifacts/hub-camera-nina-com-skip-first.log` records both
+  the compile diagnostic and explicit normal-run skip; neither is COM acceptance.
+- Python compilation and diff checks pass. Full ordinary NINA regression passes
+  315 cases with one explicit registered-fixture skip in
+  `artifacts/hub-camera-nina-proxies-full-first.log`. The separate registered run
+  executes and passes all eight COM camera cases.
+
+Only explicit simulation/private drivers were activated. Shared camera creation,
+schema/setup acceptance, conformance, interactive/physical acceptance and the
+original coordination, recovery, documentation and final merge gates remain open.
+Preceding c17808d PR/push CI 37629409093/37629398697 are terminal and successful.
+This local proxy acceptance increment still requires its own CI.
+
+## 2026-10-07: native NINA camera provider
+
+Reviewed the native NINA camera frontend's connection, capture settings, timing,
+identity checks, image adapter, metadata, cancellation and profile restoration.
+The MEF provider enumerates saved camera identities and the common setup choice
+without connecting. It reuses HubNativeSession and the host's acquisition engine;
+no new executable, SDK calls, HTTP requirement or ASCOM output is introduced.
+Camera connection uses the session's finite attachment/negotiated recovery bounds
+instead of a second fixed 45-second equipment timer. Preparation remains bounded.
+
+StartExposure negotiates the exact duration, validates basic bin/ROI values, sends
+controlled settings and retains the accepted acquisition ID. The independent
+completion monitor checks source/generation/request identity, fails on uncertainty
+or replacement, and preserves actual readiness. Download checks frozen geometry
+and exposure metadata before allocating scalar pixels, then requests that exact
+completed acquisition. Metadata never substitutes mutable LastExposure values or
+guesses current gain/offset as frame settings. UInt16/Int32 arrays are handed to
+NINA's real ImageArray/ImageArrayInt and BaseImageData without another narrowing
+or transpose; cached ToImageData reuses the same image object and charged array.
+
+The profile timeout covers negotiated completion plus finite protected transfer
+time. Restoration uses the original settings object and preserves a user edit.
+Caller cancellation affects waiting only; explicit Stop/Abort still go through
+host owner checks. Disconnect cancels the monitor, restores the profile and closes
+that frontend while retained host work/sibling connections keep their ownership.
+An in-flight response cannot publish through a retired NINA connection epoch.
+Fault continuations observe failures and restore the timeout even if NINA never
+waits. Readiness success retains the timeout through download completion.
+
+Review found a potential lock-order inversion: HubDevice publishes a connection
+under its base lock, while capture operations read the connection context under
+their camera lock. Camera preparation now takes its lock outside publication;
+the publication callback takes no camera lock. Monochrome Bayer offsets are zero
+without querying the optional source property. Generic hub camera contracts do
+not advertise vendor heater, USB-limit or live-video extensions. Scalar color
+layouts that NINA cannot represent fail explicitly; ASCOM/Alpaca image support
+and the existing direct camera provider are unchanged.
+
+Validation and remaining evidence:
+
+- The four actual private host modes (SDK/direct/standard/nested) pass the focused
+  provider cases in `artifacts/hub-camera-nina-provider-command-final.log`.
+  Checks include shared cooler settings, sibling busy errors, frozen exposure
+  geometry/time, retained arrays, user timeout edits, cancellation followed by
+  successful download, exact replacement rejection and independent disconnect.
+  Standard/nested sources additionally exercise explicit Stop/Abort, rejected
+  sibling Abort, retained error state and the stopped frame's actual duration.
+- Full NINA regression passes 308/308 with warnings denied in
+  `artifacts/hub-camera-nina-provider-nina-full-final.log`. The final epoch fence
+  and pending-wait disconnect refinement also passes all 308 cases in
+  `artifacts/hub-camera-nina-provider-nina-epoch-final.log`.
+- Initial compile errors were missing ElectronsPerADU and use of the shared
+  library's internal exception constructor; public frontend failures use an
+  IOException and the required property is implemented. A later fixture import
+  used the relative NINA namespace; the explicit enum import corrects it.
+- Initial direct capture used a rectangle below the traced 64x64 minimum.
+  The fixture now requests a supported asymmetric 96x64 rectangle; source
+  validation was not relaxed. The SDK simulator is color, so its real NINA
+  factory assertion now checks its actual Bayer flag instead of false.
+- Preserve the initial failed logs. The first parameter filter matched zero
+  tests (`hub-camera-nina-provider-direct-diagnostic.log`); it is not validation.
+  The corrected full theory filter produced the diagnostic used for the ROI fix.
+
+The provider is an implementation increment, not final camera frontend acceptance.
+Broader Alpaca/COM proxy cases, malformed/uncertain metadata and geometry faults,
+shared camera creation/setup, interactive NINA and all original acceptance gates
+remain open. Only explicit simulation/private fixtures were used. Pushed c17808d
+PR/push CI 37629409093/37629398697 remains active; this provider stays local.
+
+## 2026-10-07: scalar image adaptation and exact capture reads
+
+Reviewed the shared array conversion, reservation lifetime and protected native
+camera read paths before native NINA publication. RowMajorIntegers translates
+ASCOM X/Y order into scalar Y/X arrays with a bounded 64-KiB scratch buffer.
+UInt16 or Int32 is selected explicitly. All integers in either destination range
+are exactly representable by Double, so the unboxed numeric decoder can validate
+finite/integral/range conditions before casting without losing accepted values.
+Int64/UInt64 extremes remain outside the destination range and fail. A rank-three
+one-plane frame is scalar; multiple planes are rejected without dropping channels.
+Returned arrays retain independent budget reservations through collection and
+do not retain encoded images. Failure, cancellation and capacity rejection return
+their reservations. This is an adapter for NINA's scalar API, not a narrowing of
+the existing ASCOM or Alpaca image contract.
+
+ReadCameraAcquisitionAsync uses the bounded observational client path with source
+and session identity checks. Cancelling its waiter does not retire the control
+connection or send Abort/Stop. The exact-acquisition download overload rejects an
+empty identity locally and a replaced capture before reserving pixel storage.
+An immutable returned frame remains valid after another client captures again.
+The existing ASCOM latest-completed-image behavior keeps its original overload.
+
+Validation:
+
+- All 303 NINA regression tests pass with warnings denied in
+  `artifacts/hub-camera-nina-scalar-nina-full-first.log`.
+- Focused image cases pass 36/36 in
+  `artifacts/hub-camera-nina-scalar-exact-first.log`. Scalar checks cover all nine
+  numeric types, both destinations, rank two/three, asymmetric frame order across
+  multiple chunks, packed Int32, numeric boundaries and late-pixel failures.
+  GC checks hold a strong array root while checking its charge, then prove capacity
+  returns after collection. Tiny-budget and precancelled calls allocate no array.
+- Actual SDK/direct/standard/nested private hosts verify exact accepted identities,
+  replacement rejection with a one-byte budget, retained frames, invalid empty
+  identities and cancelled readiness without revoking a sibling connection.
+- Full real net48 x86/x64 fixtures pass with warnings denied in
+  `artifacts/hub-camera-nina-scalar-net48-first.log`, including all native camera
+  modes and the existing output, connection, editor and shared-host checks.
+
+Only explicit simulation/private peers were used. Native NINA publication,
+timeout/profile restoration and shared camera creation remain required. No
+original coordination, recovery, conformance, acceptance or final merge gate is
+closed by these helpers. Preceding c7deb26 push/PR CI 37624807420/37624811661
+are terminal and pass all eight jobs each. This green result covers c7deb26;
+the timing/scalar increments need their own CI after pushing.
+
+## 2026-10-07: duration-dependent camera completion timing
+
+Reviewed the camera supervisor's start acknowledgement, readiness, metadata reads,
+image copy and explicit control retirement, and both client implementations.
+cameraTiming only bounds acknowledged commands; it cannot establish a NINA capture
+readiness allowance. The new cameraCaptureTiming query is inert and revision-bound,
+with exact host/client/output/source identity and duration. It shares the readiness
+calculation used by StartExposure. Native SDK, direct and explicit SDK fallback
+derive from the saved core recovery policy, including the replacement-exposure
+threshold. Proxy timing retains configured transport/acquisition allowances and
+does not acquire native retries. The query cannot connect, capture or lease a source.
+
+After start acknowledgement, a whole completion deadline bounds readiness plus
+the finite image copy, four exposure metadata reads, control retirement and margin.
+This outer bound matters because independently finite source reads can sit behind
+an occupied queue. Expiry retains the active operation and uncertain outcome,
+drops unpublished pixel storage, and sends no Abort/Stop or replacement exposure.
+Independent guiding ownership keeps its existing lifecycle. Query timing does
+not change the native retry policy, admission deadline or ordinary IPC read bounds.
+Unrepresentable frontend timers fail explicitly before the future NINA capture.
+
+Virtual-clock fault tests queue fifteen successful reads, each within its own
+source timeout, ahead of metadata. Both before-copy and after-copy cases hit the
+whole deadline, release unpublished pixels, retain activity/ownership and reject
+a sibling start. No exposure replay, Stop or Abort occurs. Policy checks compare
+the exact core calculation at one and 600 seconds in SDK/direct/fallback modes;
+the short exposure permits replacements and the long exposure does not. Inert
+queries leave source lease counts zero and absent workers/SDKs untouched.
+
+Validation:
+
+- Full hub suite passes, including 80 unit and 42 acquisition cases, in
+  `artifacts/hub-camera-readiness-hub-full-first.log`. Expanded before/after-copy
+  queue cases, including retained lease ownership and explicit abandonment, pass
+  in `artifacts/hub-camera-readiness-completion-ownership-final.log`; the
+  final SDK/direct/fallback threshold check passes in
+  `artifacts/hub-camera-readiness-policy-final.log`.
+- Full Alpaca suite passes 19 library, ten actual-host and 44 HTTP cases in
+  `artifacts/hub-camera-readiness-alpaca-full-first.log`.
+- All 301 NINA tests pass in `artifacts/hub-camera-readiness-nina-full-first.log`.
+  The 28 focused timing cases include malformed identities, durations, shapes
+  and bounds, unchanged request IDs on local rejection and preserved control.
+- Full real net48 x86/x64 suites pass with warnings denied in
+  `artifacts/hub-camera-readiness-net48-full-first.log`. Actual SDK/direct/explicit/
+  nested host sessions exercise the new shared native query before connection.
+- Strict Rust 1.99 all-targets lint, Rust 1.89 all-targets checks and generated
+  contract freshness pass in `artifacts/hub-camera-readiness-clippy-final-2.log`,
+  `artifacts/hub-camera-readiness-msrv-final-2.log` and
+  `artifacts/hub-camera-readiness-contract-first.log`; formatting/diff checks pass.
+- Preserve `artifacts/hub-camera-readiness-managed-first.log`: initial fixture
+  compilation rejected Rust-style trailing-dot numeric literals in C#. Corrected
+  C# literals pass; no production validation or deadline was relaxed.
+
+NINA image API inspection uses the installed 3.2.0.9001 assemblies and the
+[upstream Version-3.2 image implementation](https://github.com/isbeorn/nina/blob/Version-3.2/NINA.Image/ImageData/ExposureData.cs).
+The scalar pipeline offers UInt16 and Int32 arrays; its standard multidimensional
+adapter rejects rank-three input and can narrow values. The upcoming provider
+must implement explicit representation/range/channel checks and retain pixel
+accounting rather than delegating unchecked conversion. This is evidence for a
+required frontend refinement, not completed NINA camera publication.
+
+Preceding c7deb26 PR/push CI runs 37624811661/37624807420 remain live; the PR has
+seven successful jobs and Windows in progress. Hold this increment locally. Native
+NINA camera publication/setup, coordination, discovery/config transfer, recovery/
+resume, conformance, interactive/physical acceptance, README/site and final audit
+remain required. Only explicit simulation/private fixtures were used.
+
+## 2026-10-07: native ASCOM camera publication
+
+Reviewed Camera V2/V3/V4 implementation, stable output factories/registration,
+shared native session attachment, camera timing, protected completed-image reads,
+and managed array lifetime. Camera properties/settings reuse the shared strict
+protocol. ASCOM getters preserve enum, Short, Int32, Double and Boolean contracts;
+Start/Stop/Abort/PulseGuide retain host ownership and no-replay behavior. Synchronous
+camera connection and writes use revision-bound negotiated deadlines; asynchronous
+connection uses the existing admission/completion path. Ordinary reads retain
+their existing bounds. Attachment remains finite before camera recovery begins.
+
+Images use a separate protected reader and exact completed acquisition identity.
+Reader cancellation/failure cannot send Abort or retire control. A cancelled
+status read uses the ordinary client's bounded pending-read handling rather than
+the native session wrapper that retires control on cancellation. Epoch/client
+checks reject stale downloads before returning them. Once returned, an immutable
+array remains usable after subsequent captures, disconnect or driver disposal.
+
+Managed conversion preserves all nine primitive types, packed Int32 values,
+X/Y/plane ordering, floating bits, and rank-three one-plane images. Typed and boxed
+variant arrays reserve conservative capacity against the shared frontend budget;
+scratch stays bounded to one 64-KiB chunk. A ConditionalWeakTable ties each returned
+array to its reservation; collection releases it. COM/client-side marshaling copies
+are outside this managed budget. Review/testing found an implicit numeric switch
+conversion in the boxed path; explicit boxing fixes the type/value loss. The first
+ASCOM connection fixture also passed a relative executable path, correctly rejected
+by production attachment. Its path is now normalized; no admission check changed.
+
+Final fixture review moved the initial budget assertion inside the helper that
+still strongly roots the returned array. Background GC is allowed immediately
+after that helper returns; testing an unrooted array's charge first would race
+collection. The x86/x64 codec suites and focused managed lifetime case pass after
+this test-only correction (`artifacts/hub-camera-native-array-gc-review.log`).
+
+Validation (simulation/private fixtures, no installed equipment driver):
+
+- Full `scripts/test-hub-dotnet.ps1` passes actual net48 x86/x64 with warnings
+  denied: image codecs, cancellation/accounting, negotiated timing, SDK/direct/
+  explicit/nested camera sessions and Camera V2/V3/V4 output checks, plus existing
+  output/editor regressions. Evidence: `artifacts/hub-camera-native-net48-full-first.log`.
+- All 285 NINA regression tests pass in `artifacts/hub-camera-native-nina-final.log`.
+- Both ASCOM payload architectures build with warnings denied and license staging
+  passes in `artifacts/hub-camera-native-ascom-build-final.log`.
+- Actual private COM exports pass for x86/x64 servers and both client bitnesses,
+  with ten stable outputs, inert metadata, shared camera leases/settings, Int32 and
+  variant SAFEARRAYs, RGB/one-plane rank and retained pixels across later captures.
+  Evidence: `artifacts/hub-camera-native-com-exports-first.log`.
+- Cold HKCU SCM launch fails locally at the first Switch class before camera
+  activation (0x80040154), the same previously recorded limitation. Preserve
+  `artifacts/hub-camera-native-com-scm-first.log`; this is not a successful SCM
+  test. Disposable-runner production registration/SCM acceptance remains required.
+- Generated contract freshness passes in `artifacts/hub-camera-native-contract.log`.
+- Existing COM import regressions pass all 34 private worker cases in each
+  architecture and all 26 registered parent cases in
+  `artifacts/hub-camera-native-com-import-regression.log`.
+
+The preceding 74d73a0 PR/push CI runs 37619558594/37619553321 are terminal with
+all eight jobs passing in each. New camera commits require new CI. Native NINA
+camera publication/common creation, coordination, recovery/resume, conformance,
+interactive/physical acceptance, documentation and final audit remain required.
+
+## 2026-10-07: Alpaca camera publication
+
+Reviewed the production HTTP router, publisher session lifecycle, existing camera
+supervisor, revision-bound cameraControl and protected finite image reader. The
+publisher reuses these paths instead of owning a camera actor, initiating image
+downloads upstream, adding an executable, or supplying proxy recovery promises.
+[Alpaca API reference section 8](https://ascom-standards.org/AlpacaDeveloper/ASCOMAlpacaAPIReference.html)
+defines the ImageBytes transaction fields, numeric IDs and X/Y/plane serial order.
+
+Camera discovery retains configured UUIDs and non-contiguous device numbers.
+Every existing local camera slot reserves its number, including unconfigured
+slots; collisions fail discovery/routing/setup without touching equipment.
+Shared hub setup handles existing camera outputs. Camera creation stays gated
+until native NINA/native ASCOM interfaces and selection are implemented.
+Synchronous and asynchronous connection share the existing bounded supervisor.
+Each connected camera retains negotiated timing bound to its control client and
+configuration revision. Setters and Start/Stop/Abort/PulseGuide use cameraControl;
+reads keep ordinary bounds. Standard writes return null, keeping operation UUIDs
+inside diagnostics. Lost acknowledgements retain the source/acquisition fence;
+the retired generation rejects sibling commands as disconnected without replay.
+
+Images are downloaded once from the completed host acquisition over a separate
+protected stream. Each HTTP reader pins its own immutable frontend frame and
+retains the shared pixel budget and admission permit until body completion/drop.
+Four readers bound working overhead; one 512-MiB frontend budget bounds retained
+pixels across clients. No JSON pixel Value tree is constructed. Binary and JSON
+chunks stay within 64 KiB. All nine numeric types, two-dimensional arrays and
+rank-three arrays (including one plane) preserve values/order. Nonfinite floating
+pixels remain lossless in binary and fail before JSON success headers. ImageBytes
+errors preserve client/server transactions. HTTP cancellation never aborts a
+capture or guide; a prepared body remains valid after control disconnect.
+
+Review corrected three fixture assumptions: a false guiding property can precede
+control retirement, independent HTTP responses have distinct server transaction
+IDs, and a source generation retired after a lost write returns disconnected on
+later commands while its uncertainty fence remains visible. The tests now verify
+these behaviors explicitly. ImageBytes negotiation also handles case-insensitive
+media types/quality keys and rejects zero, malformed or duplicate quality values.
+Rust 1.99 lint required the constant-size test iterator to use as_chunks_mut;
+the revised encoder tests pass without a lint suppression.
+
+Validation (explicit simulation/private endpoints only):
+
+- `REGAIN_TEST_WORKERS=target/debug cargo test -j2 -p regain-alpaca --locked`:
+  19 library, ten actual-host and 44 HTTP publication cases pass in
+  `artifacts/hub-camera-publish-final-rust-4.log`. The six new HTTP cases include
+  production SDK and direct simulations, shared capture/guiding, client loss,
+  pinned frames, reader capacity, slot collision and uncertain writes.
+- The three image tests pass again after the lint-only test edit in
+  `artifacts/hub-camera-publish-encoder-final.log`. A large UInt64 RGB image
+  crosses chunk boundaries and roundtrips through the production JSON decoder.
+- Strict Rust 1.99 all-targets Clippy passes in
+  `artifacts/hub-camera-publish-clippy-final-2.log`; Rust 1.89 all-targets check
+  passes in `artifacts/hub-camera-publish-msrv-final-2.log`.
+- Generated contract freshness passes in
+  `artifacts/hub-camera-publish-contract.log`; formatting and diff checks pass.
+
+The preceding 74d73a0 PR/push CI runs 37619558594/37619553321 subsequently
+completed with all eight jobs passing in each; those checks exclude this code.
+Native NINA/native ASCOM camera publication/setup, coordination, recovery/resume,
+conformance, interactive/physical acceptance, README/site work and final audit
+remain required. No hardware or installed vendor driver was activated.
+
+## 2026-10-07: retained camera pulse guiding
+
+Reviewed [ASCOM Camera PulseGuide and IsPulseGuiding](https://ascom-standards.org/newdocs/camera.html#Camera.PulseGuide):
+the command is normally asynchronous, short pulses can complete before the first
+read, and older cameras may block. Directions remain the upstream enum values;
+duration is a nonnegative Int32 count of milliseconds. A proxy's configured
+request deadline still applies to a blocking driver, independently of duration.
+
+The new retained operation shares the existing source actor/lease with a same-owner
+exposure. Completion/removal decisions happen under one state mutex: capture,
+Abort or rejected Start leaves a live pulse in control; pulse completion leaves
+an active capture in control. The final owner explicitly releases control before
+acknowledging success. Starting/finishing/uncertain pulses exclude competing work.
+One pulse is admitted at a time per source; no simultaneous dual-axis capability
+or synchronization guarantee is claimed. Caller cancellation before dispatch
+skips the command; after dispatch it does not cancel or replay the pulse.
+
+Review corrected COM input validation before TryGetInt32, preserving invalidValue
+for booleans/strings instead of manufacturing write uncertainty. Retained guide
+errors override ordinary and cached IsPulseGuiding reads; DeviceState omits that
+property. Source generation loss still invalidates stale sessions. Final control
+release errors are preserved, including rejected preflight/Start. Guiding tasks
+are registered under the retirement mutex, wake on shutdown without postponing
+ordinary poll deadlines, and keep cancellation-safe join handles until drained.
+
+Final five-crate Rust regressions pass. A fresh boundary run passes all 80 hub
+unit cases, 41 acquisition cases, eight loopback Alpaca camera cases and eleven
+nested virtual camera cases. These include cached-uncertainty/DeviceState,
+cancellation-safe retirement, independent final lease release, full Int32 pulse
+parameters, source/client loss and real timed IPC. All 34 private worker cases
+across x86/x64 and 26 actual registered parent cases pass. New parent cases cover
+guide/exposure sharing, client loss and an applied lost reply with no replay or
+implicit abort. Strict Rust 1.99 lint, Rust 1.89 compatibility, generated contract
+freshness, Node and ten schema checks pass. The rebuilt host passes NINA 283/283
+and the full actual net48 x86/x64 suite with warnings denied. Both managed targets
+exercise real pulse commands, shared identities, sibling Busy and capture overlap
+against explicit simulation and three-level virtual inputs.
+
+Expanded validation found a schema gap: an Int32 format alone does not enforce
+its maximum in a generic JSON Schema validator. GuideRequest now declares the
+maximum explicitly; its boundary cases pass. Web/native diagnostic readers reject
+inconsistent guide identity, owner, request and uncertainty, while preserving
+retired-generation uncertainty and displaying its error. The first broad Rust run
+stopped at an incorrect test assertion expecting zero activity while three virtual
+connections remained open; the corrected test proves the connection baseline and
+zero activity after awaited shutdown. Managed fixture runs initially failed their
+old hard-coded 13-field simulation count; the new count and canPulseGuide path are
+checked explicitly, with command coverage added instead of relaxing the check.
+Test-only compilation mistakes (missing Backend import and Remote.Code access)
+were corrected before the final passing runs. Original logs are retained.
+
+Final evidence: artifacts/hub-camera-guide-final-rust-2.log,
+artifacts/hub-camera-guide-final-boundaries.log,
+artifacts/hub-camera-guide-{clippy,msrv,contract-final,node-final,schema-final}.log,
+artifacts/hub-camera-guide-com-final.log,
+artifacts/hub-camera-guide-nina-final-2.log and
+artifacts/hub-camera-guide-net48-final.log. No physical/installed-driver acceptance
+is claimed. Camera publication/setup remains gated and every original gate stays open.
+
+Both preceding b275ce7 CI workflows 37613322368/37613316420 are terminal, all eight
+jobs passing in each. Those checks exclude the newer camera COM/PulseGuide commits.
+
+## 2026-10-07: Windows camera inputs and finite worker image transport
+
+Reviewed the existing isolated COM worker, source factory, camera supervisor and
+image accounting before extending them. Camera V2/V3 must use legacy ownership;
+V4 uses asynchronous connection methods. No vendor COM object moves off the
+message-pumping STA. Only the detached numeric array crosses to the protocol
+thread, where bounded BlockCopy preserves [X,Y,plane] and nonzero lower bounds.
+The worker releases its array after transfer; it does not cache or redownload it.
+
+The shared accessory transport now supports one typed acknowledgement followed
+by a caller-validated finite body under its existing process/cancellation guard.
+The parent validates exact device/request/connection state and typed descriptor
+before reserving/allocating pixels, checks the finite ImageBytes header and
+trailer, and publishes only the complete immutable image. Errors are structured
+with no binary body; HRESULTs remain sanitized. Capacity, truncation, corruption
+or cancellation retire the stream and release partial reservations. This path
+does not inherit native recovery or replacement-exposure policy.
+
+Review corrections: nullable image values must still be explicitly present;
+duplicate descriptor fields must fail typed deserialization before Value mapping;
+long array size checks must precede multiplication; detached worker arrays must
+be cleared before waiting for another request. Camera and wheel string-list
+validation now shares rank/count/UTF-8 admission and handles ArrayList/nonzero
+array bounds by enumeration. Shared managed UTC validation preserves the Rust
+contract's UTC suffixes, fractional precision and leap-second acceptance.
+
+Local registered tests exercise both bitnesses, all nine numeric types and ranks,
+multi-chunk arrays, scalar framing after images, V2/V3/V4 ownership, capabilities,
+cooling, setters, malformed arrays and upstream errors. Parent fixtures verify
+one shared acquisition/image, retained pixels after new capture/shutdown, full
+budget rejection, hung getter, cancellation after a real partial allocation,
+wrong binary header/trailer, and an applied setter with a lost reply fencing
+both clients without replay or Abort. Private fixtures never activate installed
+equipment drivers.
+
+Final validation passes: all 33 worker cases and 24 registered parent cases
+(including five camera cases) in actual x86/x64, full core/hub/Alpaca/ZWO/worker
+Rust regressions with all 77 hub unit cases, final guarded-transport process
+fixture, strict Rust 1.99 Clippy and Rust 1.89 checks across all five affected
+crates/targets, formatting, diff checks, generated-contract freshness, Node and
+nine schema checks. The rebuilt host passes NINA 283/283 with warnings denied
+and the full actual net48 x86/x64 suite, including protected image/timing and
+existing ASCOM output/setup/simulation regressions. Eight new managed cases
+check property-key parity and UTC timestamps. No production failure was hidden
+by fixture retries or fallback activation.
+
+Evidence logs under `artifacts/`: `hub-camera-com-final-2.log`,
+`hub-camera-com-rust.log`, `hub-camera-com-final-transport.log`,
+`hub-camera-com-final-clippy-2.log`, `hub-camera-com-final-msrv.log`,
+`hub-camera-com-exe.log`, `hub-camera-com-nina.log`, `hub-camera-com-net48.log`,
+`hub-camera-com-contract.log`, `hub-camera-com-node.log` and
+`hub-camera-com-schema.log`. The initial parent fixture compilation needed the
+existing CameraSession status generation accessor and an error extraction that
+does not require CameraImage to implement Debug; production APIs were unchanged.
+
+All three camera publications/setup, full controlled PulseGuide support for
+advertising proxies, original coordination/acceptance/documentation and final
+merge audit remain required. Do not close their gates from these import tests.
+
+## 2026-10-07: COM framing startup and terminal-exit boundaries
+
+PR CI 37609737316 fails only the Windows job: the malformed UTF-8 x86 fixture
+times out waiting for a newly spawned process to exit in three seconds. Rust,
+NINA 274/274 and preceding actual net48 fixtures pass. Retained full job log:
+`artifacts/hub-ci-37609737316-windows.log`. Startup versus shutdown is not proven.
+Do not claim the production worker is fixed by a test adjustment.
+
+Each malformed frame now runs cold and with an inert disconnected read that
+acknowledges the STA without activating COM. Warm rejection retains the exact
+three-second deadline; cold rejection gets the normal five-second request/startup
+allowance plus that exit allowance. Both require exit code zero, no reply and
+no activation. Replayed IDs retain their warm three-second exit assertion.
+Fixture-only timeout diagnostics include elapsed time, PID, process/reader state,
+queued response count and call names. No sanitized production errors are changed.
+Review checked that the warm read itself remains disconnected and cannot mask
+vendor activation, and that malformed frames receive no acknowledgement.
+
+Local `pwsh -NoProfile -File scripts/test-hub-com.ps1` passes both architectures,
+all 30 worker cases and all 19 registered parent cases with warnings denied.
+Evidence: `artifacts/hub-com-framing-local.log`. The first invocation used legacy
+Windows PowerShell and stopped at existing license staging's `-AsHashtable`;
+rerunning with the required PowerShell 7 passes. Fresh CI is still required.
+
+## 2026-10-07: virtual camera inputs
+
+Reviewed local camera composition against the existing typed virtual accessories
+and the camera supervisor's source/control/generation fences. Reused their factory
+binding, internal clients, incremental connection checks and typed observation
+envelope. Camera member lookup now comes from one shared CameraProperty method;
+native and virtual adapters use it. Strict CameraSetting decoding remains shared.
+
+Each virtual transport records the inner Start's accepted acquisition UUID. Its
+readiness/metadata/image path can pin only that exact completed acquisition;
+status/image races recheck identity before retaining pixels. Replacement before
+pinning fails rather than relabeling a later frame. A successful pin retains the
+immutable image and metadata across new inner captures. Stop/Abort refuse a later
+active UUID even if it uses the same inner session; ordinary controller ownership
+checks also remain. Failed Start preserves the previous pin. Disconnect/reset
+clears only local pins/clients and sends no implicit Abort. Generation loss retires
+the virtual transport instead of adopting another inner session silently.
+
+Image clones must share the host's exact budget identity. They allocate no pixels,
+issue no second download/exposure, and preserve native recovery metadata. Each
+layer keeps its own publication identities. Proxy deadlines remain configured at
+that layer, without acquiring native retries; an inner native operation may
+continue after an outer timeout. Cached telemetry uses the existing typed sample
+age/error envelope; published acquisition evidence uses the pinned-frame path.
+
+artifacts/hub-camera-virtual-reviewed-tests.log passes two focused unit cases and
+all eight nested factory cases, alongside all 76 hub unit cases. Cases cover
+replacement before pinning, later Stop/Abort fencing under the same inner owner,
+frozen metadata/pixels, wrong-budget rejection, one reservation through three
+levels, all image ranks/subframes/binning/cooling, partial Stop, optional errors,
+40-second observation ages, sibling ownership, client loss, retained external
+pins, capacity/image failures and retained uncertainty. Real SDK/direct workers
+run only explicit simulations; private IPC timing confirms proxies gain no native
+policy. Initial tests used the wrong simulation age key and a native ROI below
+the direct device's reported 64-by-64 minimum; fixtures now honor the common
+contract and real capabilities. Original failures remain in the initial logs.
+Final additions cover optional exposure metadata and generation/uncertainty
+propagation. The first generation fixture incorrectly required a leaf latch
+after all leaf leases had closed. artifacts/hub-camera-virtual-generation-diagnostic.log
+shows the acknowledged value 12, zero leases, a retired generation and completed
+disconnect; the existing source policy clears that last-lease latch. Independent
+observer leases now stay open at each inner layer. The same fixture verifies all
+generations change, all shared latches remain, every observer is disconnected,
+the rejected follow-up setter cannot change 12 to 13, and an external old frame
+stays charged through shutdown. No production policy/deadline was relaxed.
+
+artifacts/hub-camera-virtual-rust.log passes full hub/Alpaca regressions.
+artifacts/hub-camera-virtual-final-focused-2.log passes all 76 hub unit cases and
+ten nested factory cases after those additions. Final strict Rust 1.99 lint,
+Rust 1.89 all-target compatibility across five affected crates, formatting,
+contract freshness, Node and nine schema checks pass. artifacts/hub-camera-virtual-nina.log
+records NINA 275/275; artifacts/hub-camera-virtual-net48.log passes the complete
+actual x86/x64 suite with zero warnings/errors. The shared managed actual-host
+fixture now adds two virtual layers over the explicit camera, using the same
+protected multi-chunk transfer, repeated readers, retained pin, budget, stale
+identity and control-client checks as native SDK/direct/explicit sources. All
+local test processes are complete.
+
+The preceding simulator/lifecycle commits are pushed through ec52cc2 after both
+e51eaaf workflows became terminal. New PR/push CI 37609737316/37609727056 is active.
+Both pass the formerly failing macOS ARM job; Intel macOS and Windows are live.
+Keep this virtual-camera increment local, the same PR draft, and every original
+camera import/publication, coordination, acceptance, documentation and merge gate
+open.
+
+## 2026-10-07: IPC stream lifetime after shutdown
+
+PR CI 37606180612's macOS ARM camera image test found the endpoint still locked
+after awaited host completion. Inspection traced this to a nested reader task:
+the host aborted and joined its client tasks, but dropping their JoinSets only
+requested child cancellation. A child ReadHalf retained the accepted LocalStream
+and its ownership Arc until Tokio subsequently destroyed the task. Operation
+tasks similarly outlived their parent briefly. Accepted-stream lock retention is
+intentional; releasing it early or adding a polling assertion would hide the bug.
+
+Two in-memory regressions fail deterministically before the fix on Windows:
+protocol rejection with an open peer and cancellation while the reader is
+blocked. Both assert underlying-stream Drop synchronously, without a scheduler
+yield or eventual lock retry. artifacts/hub-ipc-drain-before.log retains both
+failures. The stream now owns its reader future and a bounded FuturesUnordered
+of operations directly. A separate select drives the reader during dispatcher
+I/O, including binary image writes; terminal reader results still drain through
+the bounded channel. The first operation poll stays in request order, so a later
+Disconnect sees a pending Connect reservation. Parent cancellation destroys all
+stream/operation futures before the host's join completes. It does not abort or
+replay work retained by the independent source actors/native owners, whose drain
+still precedes listener release. Panics remain isolated by the host's client task.
+
+artifacts/hub-ipc-drain-runtime.log passes both new regressions and all 43 runtime
+cases, including hung-request cached reads, pending Connect cancellation,
+request ordering, overload, stalled writers, atomic apply and OS endpoint cleanup.
+artifacts/hub-ipc-drain-rust.log passes full hub/Alpaca regressions, including all
+74 hub unit cases and the actual camera OS-endpoint ownership assertion.
+artifacts/hub-ipc-drain-clippy.log and artifacts/hub-ipc-drain-msrv.log pass
+strict Rust 1.99 lint and Rust 1.89 all-target checks across five affected crates.
+The rebuilt executable, formatting, generated-contract freshness, Node and nine
+schema checks pass. artifacts/hub-ipc-drain-nina.log passes NINA 274/274 against
+the rebuilt host; artifacts/hub-ipc-drain-net48.log passes the complete actual
+x86/x64 suite with warnings denied. These include SDK/direct/explicit camera
+images, timing, typed ASCOM, source-sharing and editor fixtures. All local test
+processes are complete. Explicit simulator 4f94bcf and this correction stay local
+until e51eaaf workflows finish. Both are now terminal: push 37606175254 passes all
+eight jobs, while PR 37606180612 has seven successes and only the macOS ARM
+ownership failure. Simulator 4f94bcf and correction 47be4d2 are ready for the same
+draft PR. A fresh CI run must verify the correction on macOS ARM; no failed job
+is cancelled or rerun here. Subsequent virtual camera work is separate and local.
+Keep the single PR draft and all original acceptance gates open.
+
+## 2026-10-07: explicit camera simulator
+
+The simulator joins the existing source factory and shared simulation controls;
+it uses no workers, SDK, vendor activation or native recovery allowance. Camera
+settings use the existing strict parameter decoder; the ordinary supervisor
+owns acquisition control, publishes immutable images and retains uncertainty.
+Its bounded fixed sensor generates deterministic packed Int32/UInt16 rows after
+host-budget admission. Mono, RGB and rank-three-one-plane modes exercise image
+layout. Synthetic seven-fractional-digit timestamps distinguish test exposures;
+integration/readout use Tokio's monotonic clock. Temperature controls inject
+readings without claiming a thermal model.
+
+Review corrected a future stall fault retroactively reopening a completed frame;
+completion now latches until explicit Abort or a new exposure. Simulator status
+contains only described injection fields; ordinary settings/acquisition state
+remain typed camera properties and diagnostics. Capability changes cannot leave
+FastReadout or cooling enabled after removing their support. Unknown setters,
+invalid subframes and malformed parameters fail before a new exposure.
+
+The real runtime tests found that simulation-update acknowledgement raced Drop's
+asynchronous control release. The common runtime now explicitly releases control
+before acknowledging successful or rejected updates. It still refuses test
+updates while an acquisition owns control and never clears uncertain-write
+fences. Tests were corrected to respect those production rules. Initial fixture
+compilation used incorrect method names/signatures and output JSON fields; those
+were corrected without loosening production validation. The two-camera fixture
+wait now allows its requested ten-second integration plus readout. A Cell-based
+completion latch failed the backend's Send-future requirement and was replaced
+with an atomic latch.
+
+artifacts/hub-camera-simulation-focused-7.log records twelve camera cases and all
+35 existing simulator cases passing. The final focused run in
+artifacts/hub-camera-simulation-reviewed-focused.log passes thirteen, adding
+stalled readiness through the actual supervisor deadline and explicit local
+abandonment before clearing the injected fault. These cover monotonic phases, frozen
+geometry/timing, exact pixel bytes, ranks, partial Stop, Abort, optional errors,
+independent cameras, shared ownership, retained pins across capture/shutdown,
+budget/image faults, no partial publication, uncertain writes and immediate
+commands after both accepted and rejected test updates. Node and nine schema
+checks pass. artifacts/hub-camera-simulation-rust.log passes full hub/Alpaca
+regressions. artifacts/hub-camera-simulation-final-clippy.log and
+artifacts/hub-camera-simulation-msrv.log pass strict Rust 1.99 lint and Rust 1.89
+all-target compatibility for five affected crates. Lint found a test-only
+constant chunks_exact call; it now uses as_chunks with the correct array-reference
+comparison, without suppression. The final thirteen cases pass again in
+artifacts/hub-camera-simulation-final-focused.log after that correction.
+artifacts/hub-camera-simulation-exe.log and the contract/fmt checks pass.
+artifacts/hub-camera-simulation-nina.log records NINA 274/274 passing against the
+rebuilt host. artifacts/hub-camera-simulation-net48.log passes the complete
+actual x86/x64 suite with zero warnings/errors. The shared host fixture adds the
+explicit simulator alongside SDK/direct, verifies shared injection descriptions,
+strict malformed-status rejection, unchanged saved revision, timed camera
+commands, protected multi-chunk image IPC, repeated reads, capacity failure,
+retained pins across captures/client loss and exact stale-image rejection.
+Camera setup/publications and every original gate stay open.
+
+The preceding image head 5b39476 passes all eight jobs in both workflows
+37601691962 and 37601685235. Reviewed deadline commit e51eaaf is pushed to the
+same draft PR #21. PR CI 37606180612 fails macOS ARM job 112742092072 at
+runtime_tests.rs:528: the endpoint lock remains held after the host task returns.
+The full job log is retained in artifacts/hub-ci-37606180612-macos-arm.log.
+The corresponding push job passes; the cleanup contract still needs correction.
+Inspection found nested reader/operation JoinSets dropped without awaiting their
+task destruction. That lifecycle correction is a separate increment. This
+simulator increment remains local while both preceding workflows are live.
+Final fixture review establishes the editor update's asynchronous connection
+lease retirement before testing inert camera timing metadata; it does not change
+production deadlines or retry an equipment command.
+The final baseline/name refinements pass thirteen Rust camera cases, all three
+real-host NINA image cases and SDK/direct/explicit image cases in actual net48
+x86/x64: artifacts/hub-camera-simulation-commit-focused.log,
+artifacts/hub-camera-simulation-commit-nina.log and
+artifacts/hub-camera-simulation-commit-net48.log.
+
+## 2026-10-07: camera frontend operation deadlines
+
+Reviewed the existing fixed 30-second server/35-second client deadlines against
+the core-derived native connection/control/cleanup allowances. A valid native
+operation can outlive those RPC bounds. Added inert per-camera controller
+metadata and explicit Rust/managed timed request APIs. They preserve independent
+scalar, frame, acquisition and image bounds and do not grant native retries to
+proxies. Source write allowance calculation is shared with actor execution;
+integer milliseconds round upward and leave room within the real net48 timer.
+
+Review found that a client-only revision check would not prevent a retained
+descriptor being used after apply: a service client can rebind to a new runtime
+under the same stream identity. cameraControl now carries expectedRevision on
+the wire. The host checks the selected runtime before binding and dispatches
+through that same runtime. Nested wrappers and commands outside the five finite
+acknowledged camera operation classes are rejected. Ordinary callers retain
+their existing API; future camera providers must adopt the negotiated path.
+Connect/Disconnect timeout classification now agrees with the clients' existing
+mutation uncertainty rules. No operation is replayed or implicitly aborted.
+
+Initial local evidence:
+
+- artifacts/hub-camera-front-timing-reviewed-runtime.log: four cases pass. A
+  private native-policy backend spends 40 virtual seconds connecting and writing
+  once while server/client ordinary deadlines are one/two seconds. A scalar read
+  still receives the one-second server timeout. Extreme SDK/direct policy
+  metadata is inert; proxy metadata preserves only its configured transport
+  bounds. Actual configuration apply followed by the old timed connection
+  rejects revisionConflict before any new source lease or connection.
+- artifacts/hub-camera-front-timing-reviewed-focused.log: twelve managed cases
+  pass after the wire revision correction. Private peers verify the wrapper,
+  eleven identity/timer/shape faults, local command rejection without consuming
+  request IDs, acknowledgement beyond the ordinary deadline, cancellation and
+  the unchanged scalar timeout.
+- Initial full hub unit run passes 73 cases before the final apply refinement.
+  Initial .NET 8 image/timing cases pass 43/43 and both net48 architecture suites
+  pass before the revision wrapper. These earlier passes do not validate that
+  final correction. An inert native metadata fixture initially retained SDK
+  simulation while disabling simulation, then used a relative SDK path; both
+  invalid fixture configurations were corrected. Strict lint identified one
+  test-only single-pattern match and it is corrected without lint suppression.
+
+Final local evidence after review corrections:
+
+- artifacts/hub-camera-front-timing-rust.log: full hub/Alpaca regressions pass,
+  including all 74 hub unit cases.
+- artifacts/hub-camera-front-timing-reviewed-clippy.log and
+  artifacts/hub-camera-front-timing-msrv.log: strict Rust 1.99 Clippy and Rust
+  1.89 all-target checks pass across core, hub, Alpaca, ZWO and worker crates.
+  Formatting, generated contract freshness, Node and eight schema checks pass.
+- artifacts/hub-camera-front-timing-reviewed-exe.log: the real host is rebuilt
+  with the revision-fenced wire operation before managed acceptance fixtures run.
+- artifacts/hub-camera-front-timing-nina-final.log: NINA 273/273 passes.
+- artifacts/hub-camera-front-timing-net48-final.log: actual x86/x64 timing,
+  image and complete existing typed-driver/client fixtures pass, with warnings
+  denied. Cross-client descriptors reject locally before connection. Native
+  simulation host fixtures use timed commands and the revision wrapper.
+
+PR/push CI 37601691962/37601685235 for image head 5b39476 each have seven
+successful jobs with Windows running. Keep this timing increment local until
+both are terminal. No physical hardware or installed equipment driver is used;
+the original publication, acceptance, documentation and completion gates remain.
+
+## 2026-10-07: shared managed image reader
+
+Reviewed the .NET 8/net48 implementation against the Rust manifest, binary
+descriptor, protected endpoint and image ownership contract. The separate pipe
+borrows the existing control client's identities; it does not create equipment
+leases, reconnect, capture, abort or replay. Both instance and host identities,
+revision, advertised operation and capability are checked before transfer.
+Header validation precedes reservation and allocation. Exact little-endian
+numeric bytes are retained; rank-three one-plane data is not collapsed.
+
+One atomic frontend budget accounts for complete and partial encoded buffers.
+Reader pins share storage and charge once; bounded copies never expose the
+backing array. Disposal and copying serialize per handle, while storage lifetime
+uses independent references. The last reference clears pixels before releasing
+capacity. Review corrected reservation rollback if its handle allocation fails,
+allocation before pin-reference acquisition, partially constructed finalization,
+and disposal of an image when outer cancellation wins just after the download.
+The budget excludes CLR/COM conversions; actual camera providers must separately
+bound those allocations. No camera publication or setup capability is enabled.
+
+Local evidence:
+
+- artifacts/hub-managed-image-host.log: 31 focused .NET 8 cases pass. The shared
+  private peer covers all nine numeric types, ranks two/three including one plane,
+  three packed Int32 forms, full receiver capacity and 24 malformed transfers.
+  Invalid manifest/header cases use a one-byte budget to prove Protocol precedes
+  allocation rather than a misleading Busy result.
+- artifacts/hub-managed-image-nina.log: full NINA 261/261 passes with warnings
+  denied. The two real Rust host cases use mandatory explicit SDK/direct
+  simulation, unique temporary configurations and an absent SDK. Protected pipes,
+  multi-chunk UInt16 wire spelling, repeated image identity/bytes, two source
+  leases, usable control clients, capacity rejection, retained pins across a new
+  capture and stale acquisition rejection pass.
+- artifacts/hub-managed-image-net48-final.log: real x86/x64 shared codec and
+  SDK/direct host fixtures pass, along with the complete existing managed client
+  and typed ASCOM output regressions. Builds have zero warnings/errors.
+- artifacts/hub-managed-image-reviewed-focused.log: all 31 cases pass after
+  strengthening cancellation/deadline checks to first receive nonzero partial
+  pixels and explicitly verifying an abandoned pin is collected without freeing
+  a live sibling. artifacts/hub-managed-image-reviewed-net48.log passes these
+  strengthened cases in real x86/x64 processes with warnings denied.
+
+No installed vendor driver or physical equipment is activated. The private host
+fixture kills only the Process it started, never an attachment-provided PID.
+These results do not close camera publication, operation timing, remaining
+inputs, conformance, interactive or physical acceptance gates.
+
+PR CI 37596918826 is terminal with eight successful jobs at edc5a59; push CI
+37596912932 is terminal with six successes and the two separately diagnosed
+timeout failures. New image/diagnostic changes still require fresh CI.
+
+## 2026-10-07: dedicated frontend image stream
+
+Reviewed the binary path against existing ownership and budget rules. An image
+request is only legal directly after hello on a separate protected stream; the
+normal scalar clients reject it locally. Host/revision/control-client/output/
+source/generation/acquisition identities must match. The host borrows an existing
+output connection instead of creating a new camera session or rereading the leaf
+image. Its immutable image and connection pin survive a later control disconnect.
+The protected endpoint provides authorization; UUIDs provide identity fencing.
+
+Transfer scratch is reserved before acknowledgement and reused for transposition
+in chunks of at most 64 KiB. It competes with captures and pinned images in the
+same host budget. The reader validates the echoed manifest and exact binary
+descriptor before pixel allocation; the existing finite ImageBytes decoder
+retains lossless numeric/rank semantics and rejects truncation/trailing bytes.
+Each host write and the entire transfer have independent bounds. EOF/additional
+commands or caller loss release only transfer resources, without hardware Abort,
+Stop, reconnect or capture replay. Review also enforces advertised scalar frame
+limits and requires an owned stream in the Rust reader API.
+
+Initial artifacts/hub-camera-image-ipc-codec.log passes four cases: all nine
+numeric types with rank-three one-plane data; nine malformed manifest/header/body
+faults; accounted scratch/order preservation and full-budget rejection for all
+nine types; and deadline cleanup of a partial receiver allocation. Initial
+runtime.log and runtime-final.log pass ten cases, including SDK/direct multi-chunk
+transfers, all seven identity fences, receiver budget rejection and a reader pin
+surviving control disconnect. Added host full-budget and stalled-reader deadline
+checks and full regressions are still running; initial passes do not cover these
+last refinements. Managed image transport and actual camera frontend publication
+are still required. No equipment or installed vendor driver is activated.
+
+Runtime/scalar output edc5a59 is pushed to the same draft PR; its PR/push CI
+37596918826/37596912932 is live. This image-stream increment remains local.
+
+Review subsequently found that the shared HTTP ImageBytes reader permits a
+bounded metadata extension, whereas the new IPC manifest declares an exact
+44-byte header. A same-descriptor binary body with an extension could therefore
+exceed the declared body length and still pass. IPC now rejects extensions,
+wrong server transactions and mismatched descriptors before reserving pixels;
+ordinary HTTP extension behavior remains unchanged. New small-budget cases
+distinguish protocol rejection from a later allocation failure. A private actual
+OS endpoint case also
+passes, transferring pixels while the original control client remains usable.
+Final full hub/Alpaca regressions pass in
+artifacts/hub-camera-image-ipc-reviewed-rust.log. Strict Rust 1.99 Clippy across
+five affected crates/all targets, Rust 1.89 compatibility, formatting and actual
+contract freshness pass in reviewed-{clippy,msrv,contract}.log. After the final
+owned-stream/API and fixture refinements, all 69 hub unit tests (five binary
+cases and eleven runtime cases) pass in unit-reviewed.log; final hub all-target
+lint/MSRV pass in final-{lint,msrv}.log. This suite includes host-full-budget
+rejection before acknowledgement, all seven identity fences, receiver budget
+rejection, source-lease/image retention through control disconnect and separate
+EOF/writer-deadline cleanup. The deadline fixture uses a one-second stream limit;
+it asserts the timeout classification and resource release, not a subsecond
+scheduling guarantee. All logs in this paragraph use artifacts/hub-camera-image-ipc-.
+Node and eight schema checks pass in node.log/schema.log. NINA passes 230/230
+with warnings denied; actual net48 x86/x64 pass in nina.log/net48.log after the
+new operation/capability was added. The later Rust reader-only header refinement
+does not change the advertised or managed scalar contract. Managed camera image
+clients remain unimplemented; these checks do not establish camera publication.
+
+CI inspection: push macOS Intel job 112711683350 is terminal and fails
+virtual_wheel::nested_wheel_v3_preserves_arrays_motion_ages_and_ownership at the
+first moving-position read after a successful move. It reports Transient,
+transport_lost=true and no timing/source trace. Raw evidence is retained at
+artifacts/hub-ci-37596912932-macos-intel.log. The same PR macOS Intel job passes;
+both Windows jobs are still live. Cause is unproved. The failed assertion now
+reports elapsed read time, complete source snapshots, private requests and writes
+without changing deadlines, adding retries or accepting a different result.
+Local passes cannot establish the cause or close this CI gate.
+All 22 filter-wheel cases pass locally with the unchanged assertion semantics in
+artifacts/hub-ci-filterwheel-diagnostic.log; final strict lint and Rust 1.89 checks
+also pass. The error trace still requires fresh CI evidence.
+
+## 2026-10-07: retain timed-out COM metadata client output
+
+Push 37596912932 finishes with six successes and failures in macOS Intel and
+Windows. Windows job 112711683126 passes all 19 parent COM cases, then its first
+20-second PowerShell metadata subprocess expires. The raw log is retained in
+artifacts/hub-ci-37596912932-windows.log. The Python parent captures stdout but
+did not print TimeoutExpired.stdout, so the launch trace needed to distinguish
+activation, properties, WMI inspection and cleanup is absent. No root cause is
+established. PR Windows passes test.ps1 and is now building/packaging.
+
+The parent now prints captured partial output before re-raising the same timeout.
+TraceLaunch marks each private activation, metadata property, WMI check and
+cleanup boundary. No production driver, timeout, retry or expected value changes.
+Local private real-export checks pass in artifacts/hub-ci-export-metadata-trace.log:
+x86/x64 servers, both client architectures, inert metadata, eight stable outputs,
+independent leases and typed accessory state. The added traces reach every
+activation/property/WMI/cleanup stage.
+
+A private fault harness in artifacts/hub-ci-metadata-timeout-fixture.py runs the
+actual export playbook with only its metadata child replaced by an inert child
+that prints once and sleeps. It preserves the real 20-second subprocess timeout,
+PIPE collection and playbook cleanup. The deadline expires, partial output is
+printed, the original TimeoutExpired propagates and private registration/server
+cleanup completes. Evidence: artifacts/hub-ci-metadata-timeout-fixture.log. The
+first harness incorrectly assumed TimeoutExpired.stdout was bytes; this Windows
+runtime supplies text. Its TypeError is retained in the -initial.log, and the
+corrected assertion accepts both representations. Production logging already
+handles both forms. Fresh CI evidence remains required to establish either
+original failure's cause. No live run is cancelled or restarted.
+
+## 2026-10-07: camera runtime outputs and scalar IPC
+
+Reviewed source identity and acquisition sharing: camera output controllers reuse
+the runtime map by source UUID, rather than constructing a supervisor per output.
+Output sessions retain the existing host pending-connection/activity admission
+and their own source lease. Typed Get/Put delegates to the reviewed supervisor;
+it adds no replay, takeover, image copy or implicit Abort on disconnect. Both
+native SDK and direct production-worker simulations exercise the runtime path.
+
+Camera diagnostics initially read source health separately from acquisition
+status. Review replaces those reads with status_with_source, so one source
+snapshot supplies both generations. Web/native readers enforce saved identities,
+generation, readiness/completed-image agreement, active ownership and paging.
+Camera DeviceState uses valid cached scalar samples and the supervisor's readiness,
+without refreshing hardware ages or inventing a TimeStamp. Its property list was
+checked against the [official Camera contract](https://ascom-standards.org/newdocs/camera.html).
+
+Eight focused cases pass in artifacts/hub-camera-output-runtime.log. New cases
+cover shared SDK/direct output leases and owner disconnect, independent simultaneous
+camera sources, and actual multiplexed IPC stream loss with scalar-only metadata.
+The web checks pass in artifacts/hub-camera-output-node.log, including seven
+malformed camera diagnostic/page cases. Full hub/Alpaca Rust regressions pass.
+Strict Clippy found a large diagnostics enum variant; acquisition status now
+uses a boxed optional value without changing its JSON/schema representation.
+After that refinement, all eight runtime cases pass again, generated contracts
+are fresh, strict installed-stable/Rust 1.99 lint and Rust 1.89 all-target
+compatibility pass. Formatting, eight independent schema checks, NINA 230/230
+with warnings denied and actual net48 x86/x64 checks pass. Evidence uses
+artifacts/hub-camera-output-{rust-final,runtime-final,clippy,clippy-1.99,msrv,
+contract,schema,node,nina,net48}.log. The initial Clippy failure is retained in
+hub-camera-output-clippy-initial.log. A check command also named a nonexistent
+regain-protocol package; its rejection is retained separately and the actual
+workspace checks use regain-worker. Neither rejected invocation is pass evidence.
+These local checks do not establish frontend camera or physical acceptance.
+
+Both preceding 0ba47ec CI runs now finish all eight jobs successfully: PR
+37592319880 and push 37592313062. New local work is not covered by those runs.
+Public camera setup/publication remains gated. Bounded binary image transport,
+operation timing, remaining camera inputs and all original milestone gates remain
+required. No physical equipment or installed vendor drivers are activated.
+
+## 2026-10-07: reject a missing contract-export path
+
+Final status inspection found an untracked file named --check. The verification
+command omitted the contract path; export_config interpreted --check as an output
+filename and returned success without checking freshness. That success is not
+validation evidence. Retain the original log in
+artifacts/hub-camera-runtime-contract-invalid-command.log. The correctly invoked
+`cargo run -j2 -p regain-hub --example export_config --locked -- contracts/hub-config.json --check`
+passes and replaces artifacts/hub-camera-runtime-contract.log with actual check
+evidence. Only the file created by this invocation was removed after verifying
+its resolved workspace path.
+
+The exporter now rejects --check in place of PATH before any write. Actual
+executable cases in artifacts/hub-contract-cli-65da57ef9ab047bd852e979fff01ec5b
+prove missing-path rejection with no artifact, valid generation/fresh acceptance,
+and stale rejection after modifying the generated fixture. Strict Rust 1.99
+Clippy and Rust 1.89 all-target checks for regain-hub pass, as does formatting;
+logs use artifacts/hub-contract-cli-{build,clippy,msrv}.log. This changes only the
+example CLI's invalid invocation; runtime/managed validation remains applicable.
+Runtime increment 74bea3a and this correction stay local while both preceding
+CI Windows test.ps1 steps remain authoritatively live.
+
+## 2026-10-07: runtime-owned camera supervisors
+
+Reviewed construction order and resource identity. HubRuntime previously changed
+its activity counter after controller construction. It now selects resources
+first and constructs a map of acquisition supervisors keyed by camera source
+UUID, independently of camera output count. Each supervisor and its native owner
+must share both the image budget and activity counter. Matching only one is
+rejected before connection or exposure. Source handles carry inert resource
+references from their native backend. Injected registries adopt that existing
+accounting and reject mixed native hosts with a precise source field error.
+Explicit-resource build/from-registry entry points let proxy-only hosts retain
+accounting across revisions without requiring native SDK configuration.
+
+The new camera_acquisition_status method is a cached read with no lease, exposure
+admission or image transfer. Camera outputs remain rejected by runtime validation;
+setup camera capabilities are still disabled. Production frontend connections
+are not implemented by this map alone and remain required.
+
+Runtime retirement follows registry shutdown, never precedes native task drain.
+Only a Stopped, disconnected source permits the supervisor to retire. A mutex
+fences later acquisition/setting/command admission; completed buffers and local
+acquisition ownership are released without Abort or replay. Original diagnostic
+errors remain, and externally pinned image references retain their budget charge.
+Queued tasks cannot publish a later image into the retired supervisor because
+the acquisition identity has been removed. The live-source check prevents this
+path from clearing uncertain equipment ownership before actual shutdown.
+
+Five focused cases pass: distinct inert camera sources with missing worker/SDK
+paths; native resource adoption and rejection of both identity mismatches and
+mixed hosts; SDK/direct capture ownership with an observer, cross-revision image
+charges and capacity rejection; proxy-only resource sharing without any HTTP/SDK
+I/O; and retained uncertainty until real source drain. The first fixture dropped
+every lease and then waited for readiness in a disconnected generation. Its
+timeout is preserved in artifacts/hub-camera-runtime-focused.log; the corrected
+case keeps its observer connected. Three initial focused cases pass in
+artifacts/hub-camera-runtime-focused-final.log; all five reviewed lifecycle cases
+pass in artifacts/hub-camera-runtime-lifecycle.log. Full hub/Alpaca regressions
+passed before the retirement/API refinement. After it, final full hub/Alpaca
+regressions, strict Rust 1.99 Clippy across all five affected crates/targets,
+Rust 1.89 all-target compatibility, formatting and contract freshness pass.
+Node configuration and eight independent schema checks pass. NINA passes 229/229
+with warnings denied; actual net48 x86/x64 client checks pass. Final evidence:
+artifacts/hub-camera-runtime-{rust-final,clippy,msrv,contract,node,schema,nina,
+net48}.log. These final logs were refreshed after this increment; earlier logs
+with the same prefix do not substitute for the current validation.
+
+Preceding 0ba47ec CI PR/push 37592319880/37592313062 each have seven successful
+jobs, including Linux x64/ARM64 and both macOS architectures. Only Windows
+remains live. This is fresh evidence for the portable worker-directory fix,
+not an all-platform green result. Do not publish this increment while those
+runs are live. No equipment or installed vendor drivers are activated.
+
+Camera output connection ownership, remaining inputs, bounded frontend image
+IPC/operation timing, all three publications, coordination and every original
+acceptance/documentation/final gate remain required.
+
+## 2026-10-07: native recovery supervision allowances
+
+Reviewed the actual core open/refresh/apply/capture/settle/download/USB/close paths
+against the actor and camera supervisor's outer deadlines. A scalar request bound
+could previously cut off valid multi-command restoration; duration plus proxy
+grace did not cover native rereads or replacement exposures. Core now owns the
+allowance calculation. Its eighteen persistent controls and four shared-deadline
+acknowledged controls produce a conservative restoration bound. Open includes
+software-white-balance restoration and explicit simulation configuration. USB
+rebinding includes one deadline overshoot; settling includes one final service,
+environment-read and delay overshoot. SDK fallback can require a second restore
+and settle in one attempt. Download retries include ready-state confirmation and
+configured delays. USB reset is budgeted at most once within reachable permitted
+replacement attempts. Core replacement eligibility and the calculator share the
+same microsecond-based inclusive limit. Existing retry counts/keys/defaults and
+actual command deadlines remain unchanged.
+Cooling tolerance and stable-sample count do not multiply the settling ceiling:
+the core's existing thermal timeout bounds that loop, including its last sample.
+
+NativeCameraBackend supplies immutable validated timing to its actor/handle.
+Only native actors enlarge connection, write and disconnect bounds; scalar
+read/poll bounds stay fixed. The camera supervisor validates proxy timing first,
+then uses native connection and per-exposure readiness allowances. Representation
+checks run before acquisition admission. Proxies supply no native policy. Shared
+polling descriptions and generated contract explain this behavior without
+rewriting saved polling values. Conservative ceilings do not delay early errors.
+OS startup/reaping and scheduling are not claimed strictly bounded: retained
+retirement from d428f6e remains necessary after any outer timeout.
+
+Five pure boundary cases cover inclusive replacement eligibility, long-exposure
+retained-read allowance, reachable single USB reset, direct-only SDK fallback,
+all policy maxima and invalid values. Production-pipe fixtures prove a connection
+outlives both a 10 ms supervisor and one-second scalar connection bound; a failed
+download returns one shared image after its permitted 300 ms same-frame reread,
+with one exposure and no replacement; and a new gain setting restores an
+Abort-retired worker beyond the 50 ms scalar request bound. The held-host test
+first passes that scalar deadline, then deliberately expires the derived outer
+cleanup ceiling while retaining its endpoint lock, uncertainty and owned drain.
+Focused logs: artifacts/hub-camera-timing-{core,connect,drain,capture}-focused.log.
+A separate direct-worker case injects one failed read into the existing worker;
+the replacement restores gain/cooling, collects three stable samples and publishes
+one shared image with recoveries=1. Its initial missing Value import fails fixture
+compilation and is corrected without production changes; retain both logs in
+artifacts/hub-camera-timing-replacement-focused{,-final}.log. Full core/hub/Alpaca/
+ZWO regressions, strict Rust 1.99 Clippy, Rust 1.89 all-target checks, formatting,
+contract freshness and Node/eight schema checks pass. Managed frontend checks
+pass NINA 229/229 and actual net48 x86/x64. Final replacement-test compilation/
+integration passes separately. Review then catches a longer saved source
+connection allowance being ignored by the supervisor when the calculated native
+ceiling is lower. The actor and handle now share that effective allowance; the
+native supervisor respects it. An inert constructor regression verifies a saved
+300-second source allowance with no worker, leases, activity or image allocation.
+Final hub/Alpaca regressions, strict Clippy, Rust 1.89 all-target checks,
+formatting/contract freshness, NINA 229/229 and actual net48 x86/x64 all pass
+after that correction. Evidence: artifacts/hub-camera-timing-{rust,clippy,msrv,
+contract,nina,net48}-final.log. Earlier full core/ZWO and Node/eight schema checks
+remain valid; those inputs have not changed since their passing runs.
+
+Preceding edbafa7 CI is terminal: PR/push 37587543962/37587539552 each pass four
+jobs, including Windows, and fail four portable Rust jobs. All eight original
+job logs show the attempted missing target/debug/regain-device launch before
+the telemetry timeout. PR logs use artifacts/hub-status-{linux,linux-arm,macos,
+macos-intel}-job.log; push logs use artifacts/hub-status-push-portable-JOBID.log.
+The worker-directory correction is committed locally at d428f6e. Publish it and
+this reviewed timing increment together to the same draft PR; local checks pass
+and fresh CI remains required.
+
+Camera runtime/output admission, remaining inputs, bounded frontend image IPC,
+frontend operation timing, coordination and every original remaining acceptance/
+final gate remain required.
+No physical equipment or installed vendor driver is activated.
+
+## 2026-10-07: portable camera workers and retained native retirement
+
+CI evidence: edbafa7 PR/push runs 37587543962/37587539552 fail portable Rust
+checks. Original downloaded PR job logs in artifacts/hub-status-{linux,
+linux-arm,macos}-job.log show an attempted target/debug/regain-device launch
+failing with OS error 2, followed by the camera telemetry timeout. Portable CI
+sets REGAIN_TEST_WORKERS to its release build; this new executable test omitted
+the override. It now passes --workers explicitly, checks the selected executable
+before launch and includes the latest source status in timeout failures. No
+production deadline or assertion is relaxed. The focused default-directory case
+and all ten host cases with a separate worker directory containing spaces pass
+locally; evidence: artifacts/hub-camera-workers-location.log. Fresh portable CI
+must confirm the correction. Windows CI is still running at this checkpoint.
+
+Reviewed native retirement: a source disconnect deadline can expire while an
+owned core task is still retiring a worker. Actor shutdown previously reported
+completion immediately after reset; the host could then release its OS lock
+while that retained task still used equipment. A backend finish_shutdown barrier
+now runs after command admission closes and disconnect/reset fences the source.
+Native cameras join a per-owner retained counter, including obsolete generations;
+ordinary backends preserve their existing shutdown behavior. The original
+disconnect error survives successful draining, and no command is replayed.
+
+Counter waiters register before observing zero; the final decrement notifies only
+after releasing activity. Global activity drops before local retirement. All
+native owner work uses a common reservation. Review found the adapter connection
+task also needs a reservation before spawning: otherwise shutdown could observe
+zero before that task starts. It now retires without opening when its receiver
+has already closed. Public cached state is not used as proof of worker drain.
+Core clears the PID after killing/reaping and dropping the worker.
+
+The held-engine regression exercises real simulated worker pipes, multiple reset
+generations, disconnect uncertainty, cancellation of a shutdown waiter, repeated
+shutdown and unrelated host activity. Its final extension verifies the actual
+endpoint lock remains owned until retirement. A separate current-thread adapter
+case checks disconnect before the queued connection task runs causes no open.
+Initial test setup omitted acquiring the source lease, so its intentionally inert
+actor skipped disconnect; corrected setup uses a real lease. The subsequent PID
+assertion exposed stale core diagnostic state after retirement; clearing that
+state after actual worker cleanup corrects the diagnostic. The host extension's
+first Clippy run also catches a fixture config passed as Arc instead of the API's
+owned value; corrected without a production API change. Preserve the initial
+PID failure in artifacts/hub-camera-retirement-focused.log and that compiler
+failure in artifacts/hub-camera-retirement-clippy.log.
+
+Final verification passes: cargo test -j2 -p regain-core -p regain-hub -p
+regain-alpaca -p regain-zwo --locked; final held-host retirement case; strict
+Rust 1.99 Clippy and Rust 1.89 all-target checks for those four crates plus
+regain-device; formatting; generated configuration freshness; Node/eight schema
+checks; warnings-denied NINA 229/229; actual net48 x86/x64 complete client and
+isolated HTTP scheduler fixtures. Logs use artifacts/hub-camera-retirement-
+{rust,host-final,clippy-final,msrv,contract,node,schema,nina,net48}.log.
+No production code changed after the complete Rust run; the final host extension
+is verified separately. Preceding Windows CI jobs remain live, so retain this
+reviewed increment locally until they finish before updating the same draft PR.
+
+No physical equipment or installed vendor driver is activated. Derived native
+connection/control/capture allowances, the remaining camera inputs/publications,
+coordination, conformance, interactive acceptance, documentation and final merge
+audit remain required; this does not enable camera setup choices.
+
+## 2026-10-06: cached output diagnostic API
+
+Reviewed controller ownership, saved-revision fencing, pagination, sample epochs,
+expiry/recovery, write uncertainty, weather averaging and exportable field scope.
+The negotiated `outputStatus` operation uses the existing host and protected setup
+endpoint without constructing output sessions, capability requests or source leases.
+Pages are bounded to 32; an empty terminal page is explicit and invalid cursors
+are rejected. Safety's whole-output decision includes members outside the page.
+
+Corrections made during implementation/review:
+
+- Reuse Switch's actual scalar age/range interpretation instead of a second
+  diagnostic freshness rule. Expose configured write intent without implying
+  runtime CanWrite or probing its capabilities.
+- Keep an inactive safety controller unknown/unsafe even if another client has
+  cached safe input. Preserve live raw/effective state, independent counters,
+  reason/hold/age and policy. Reads cannot finish recovery; expired evidence can
+  withdraw permission without waiting for another poll.
+- Read weather on a private engine copy so diagnostics cannot modify live
+  history or last-valid clocks. Project only selected scalar keys and relevant
+  histories, retaining wind-speed dependencies for wind direction. Large unrelated
+  vendor text stays outside the copy and reply.
+- Include decision/sample generation and revision identities rather than
+  implying atomic consistency between an engine cache and current source health.
+  Retain uncertain writes without another command or reset.
+- The initial pagination test accidentally duplicated an Alpaca source identity.
+  Production validation correctly rejected it; the private mock fixture now uses
+  a distinct device number and tests the real whole-output aggregation.
+
+Verification: full `cargo test -p regain-hub -p regain-alpaca --locked` passes,
+including 41 runtime tests and 13 HTTP publication/setup tests. Ten new tests
+cover diagnostic invariants, recovery/expiry, inactive cached safe, whole-output
+aggregation, sparse/reserved slots, weather fallback and independent sensor
+failures, private history/clock preservation, uncertain writes and IPC/HTTP guards.
+Strict Clippy, Rust 1.89.0 all-target checks, generated contract freshness, Node
+contract suites and four independent schema checks pass. All 155 NINA regressions
+pass. Actual net48 x86/x64 production-host fixtures now call this negotiated API
+before connection and with two sibling leases; both pass with zero build warnings.
+Logs: `artifacts/hub-output-diagnostics-{rust,clippy,msrv,nina,net48}.log`.
+
+CI evidence from earlier increments: CLI creation eeb9208 passes both complete
+runs 37466565218/37466555917. Native creation 3dd86b4 PR run 37468454801 is still
+active, with seven completed jobs passing and Windows at installer checks. Its
+push run 37468447863 fails the first x86 COM import fixture's five-second response
+wait. NINA 155 and both net48 fixtures passed first. Full failure output is retained
+at `artifacts/hub-native-creation-push-ci-failure.log`; do not infer a cause or
+consider this checkpoint fully accepted before investigation.
+
+Next required diagnostic work: native/web presentation and protected exports
+using shared descriptors, and actual source actor retry scheduling. The API is
+not evidence of rendered diagnostics, interactive acceptance or any remaining
+typed-device/camera/coordination/conformance/hardware milestone. All original
+gates remain required before merging the single PR.
+
+## 2026-10-05: contracts and safety/configuration foundation
+
+Reviewed against main `c8fd7c4`, the original hub plan, the installed ASCOM/NINA
+interface packages, and the pinned Field Kit safety source and license.
+
+Review covered source/worker ownership boundaries, canonical source identity,
+stable output/channel IDs, update revision conflicts, persistence failure,
+credential redaction, graph cycles, observation ordering, freshness, aggregate
+restoration, shutdown, and per-consumer confirmation cadence.
+
+Findings fixed:
+
+1. An active-only identity map allowed deleted numbers to be reused. Persist an
+   append-only assignment ledger and reject edits to it through apply. Tests
+   delete, restart, restore the original identity, and reject a different one.
+2. A watch subscriber could outlive its safety publisher and keep the last safe
+   result. Drop now publishes unsafe. The expiry task and shutdown publication
+   share a lock so the task cannot overwrite that final result with safe.
+3. Counting every shared sample could accelerate confirmation. Each membership
+   enforces its own cadence; unsafe/failure observations still clear recovery
+   progress immediately. Tests compare independent policies on the same stream.
+4. Completing the recovery hold in a getter could authorize safety without a new
+   observation. Permission and recovery confirmation are established only by
+   eligible observations. Late safe results cannot erase an earlier expiry.
+5. A removed source, wrong type, dependency cycle, or stale config revision could
+   misroute or ambiguously apply an edit. Validation and serialized compare/apply
+   now reject these; disk errors before replacement leave the live state intact.
+
+Local verification:
+
+- `cargo test -p regain-hub --locked`: 17 policy/runtime/metadata unit tests and
+  10 configuration integration tests passed.
+- `cargo clippy -p regain-hub --all-targets --locked -- -D warnings`: passed.
+- `cargo fmt --all` applied; final diff/format checks run before commit.
+- `cargo +1.89.0 check -p regain-hub --all-targets --locked`: passed.
+- `cargo package -p regain-hub --allow-dirty --locked`: passed; packaged crate
+  independently compiles and includes the JSON example fixtures and license.
+
+Pending review gates: complete source/output descriptor coverage and generated
+frontend contracts, source sampling/ownership and IPC, Windows COM isolation,
+native NINA/ASCOM outputs, protocol conformance, camera images/coordination,
+real-device acceptance, and user-facing documentation/screenshots. These remain
+required by the plan and are not covered by the current 27 tests.
+
+## 2026-10-05: shared configuration description and frontend contracts
+
+The complete source/output structure now derives JSON Schema from its Rust
+types. Existing policy schemas plug into that derivation, retaining the one
+declaration for defaults, bounds, labels, descriptions, groups, and units.
+The native .NET reader (shared by NINA and ASCOM) and JavaScript reader interpret
+the same document. Tagged variants provide conditional fields without evaluating
+arbitrary expressions. Runtime capability names gate choices/fields, while the
+engine remains authoritative for semantic validation and applying changes.
+
+Review corrections: align Unicode label lengths with JSON Schema's character
+counts; preserve hidden identity history rather than rebuilding configuration
+from visible fields; lock stable numbers after creation; keep unsupported
+capabilities disabled instead of treating missing information as support.
+
+Verification: 28 Rust tests, 4 independent Draft 2020-12 validation tests,
+JavaScript contract tests, 2 native .NET reader tests, net48 build, Clippy with
+warnings denied, Rust 1.89.0 check, and generated-file freshness check passed.
+The tests cover defaults, units, types, conditional fields, capability gates,
+immutable identities, unknown contracts/references, malformed documents and
+structural-versus-semantic validation. CI runs the contract freshness check and
+independent schema/web tests; native tests are part of the existing NINA suite.
+
+This closes descriptor coverage at the library/reader layer. Actual setup windows,
+runtime capabilities, host IPC, source polling, and frontend acceptance remain
+milestones 2–4; the reader tests do not substitute for those gates.
+
+## 2026-10-05: shared source actors, Alpaca adapter, and safety binding
+
+Reviewed ownership and cancellation at the source boundary. One bounded actor
+serializes each source's I/O while cached snapshots remain independently readable.
+An immutable registry validates the complete graph before constructing adapters.
+Clients share connection leases but require exclusive control for writes. The
+safety output owns membership policy and leases; it does not duplicate polling.
+
+Findings fixed:
+
+1. Acquiring another lease could force an early poll, bypassing an upstream
+   Retry-After. Additional clients now reuse the existing schedule, and initial
+   connection failure also respects that delay. Unrepresentable deadlines suspend
+   automatic polling rather than shortening the server's requested delay.
+2. Timed-out reads could reuse a desynchronized transport. Reset retires its
+   generation, clears cached values, and invalidates safety before another poll.
+   Plain HTTP errors retain the generation so bounded communication grace works.
+3. A timed-out write could be replayed after reconnect or control transfer. The
+   actor latches uncertainty across both; an acknowledged rejection preserves its
+   upstream code and remains distinct from an ambiguous operation.
+4. A cancelled connection acquisition could leak a lease. Failed reply delivery
+   removes only the newly acquired lease; a cancelled repeated control claim
+   preserves the client's previous ownership.
+5. A lagging subscriber could miss unsafe and consume only a later safe tail.
+   The safety binding invalidates evidence, discards that tail, and waits for new
+   observations. A deterministic overflow test exercises this exact sequence.
+6. JSON map parsing would silently accept the last of duplicate `Value` fields.
+   Typed envelope parsing rejects duplicates and malformed present fields. The
+   explicit Field Kit compatibility allowance for omitted ErrorNumber remains;
+   a safety sample still requires a JSON Boolean. Arbitrary response/error text
+   never enters diagnostics.
+7. A source owner could accidentally disconnect an externally managed device.
+   Cleanup only writes disconnect after this adapter acknowledged opening the
+   connection. An ambiguous connection write is not retried or claimed as owned.
+8. Per-response limits alone did not bound a multi-sample text cache. Both the
+   streamed response and aggregate scalar text storage now have size limits.
+
+Verification:
+
+- 50 Rust tests: 19 unit tests, 10 configuration tests, 13 actor/safety integration
+  tests using virtual time, and 8 tests against a real loopback HTTP server.
+- Tests cover two clients/outputs sharing sources, independent recovery policies,
+  offline recovery, stalled unrelated sources, queue overload, cancelled requests,
+  final-lease cleanup, uncertain writes, retries/exhausted cycles, long and dated
+  Retry-After, streamed oversized replies, malformed/duplicate JSON, non-Boolean
+  safety, no redirect/retry, HTTP-to-safety transitions, and independent expiry.
+- `cargo clippy -p regain-hub --all-targets --locked -- -D warnings`, Rust 1.89.0
+  compatibility, standalone crate packaging, formatting/diff checks, and the
+  generated configuration freshness check passed.
+
+Remaining gates are unchanged: typed switch/weather behavior and partial sensor
+failures, capability discovery and modern connection negotiation, native worker
+adapters, protected credential resolution, process ownership/IPC and resume,
+Alpaca setup/publication, COM imports, NINA/ASCOM outputs, broader proxies and
+camera coordination, conformance, hardware trials, and user documentation. These
+tests use simulated devices and a local HTTP fixture, not attached hardware.
+
+## 2026-10-05: typed switch/weather controllers and scalar sample status
+
+Reviewed against the ASCOM canonical [Switch](https://ascom-standards.org/newdocs/switch.html)
+and [ObservingConditions](https://ascom-standards.org/newdocs/observingconditions.html)
+interfaces. These are library controllers; frontend conformance is still pending.
+
+Corrections and refinements:
+
+1. Stable channel IDs cannot be represented by compacting an active channel list.
+   MaxSwitch now includes retired slots; removed slots are unavailable and never
+   target a different device. Active and historical slot numbers are bounded.
+2. An output's writable flag cannot confer source capability. Writes check
+   CanWrite and live limits/steps, round to the exposed step, and hold a unique
+   operation lease. Scalar properties remain read-only. Generation checks occur
+   inside the actor immediately before dispatch, not only in the caller.
+3. Cancelling a write must release its control/connection lease without replaying
+   it. Cancellation tests exposed that reconnect could hide uncertainty behind a
+   metadata error. The uncertainty latch is now explicit in source status and
+   survives successful reads/reconnects while any session remains connected.
+4. Successful writes invalidate cached state and schedule a confirmation poll;
+   they never publish an optimistic value or report pre-command state as current.
+5. A missing sensor previously failed a whole multi-property poll. Sample batches
+   now carry per-property errors/ages. An HTTP test verifies one failed pressure
+   sensor alongside a usable temperature and two shared weather clients.
+6. Treating every HTTP read as a new sensor update would rejuvenate stale weather.
+   ObservingConditions samples query sensor age before the value, reject unknown
+   ages, and add local elapsed time. Expiry/fallback preserve last-update age.
+7. Averaging incompatible units or two fallback sensors would fabricate a result.
+   Unit validation, history reset on source/generation changes, time weighting,
+   and circular wind averaging now have tests. WindGust retains its upstream peak
+   statistic. Humidity/dew point pairing and one output-wide averaging period are
+   validated before configuration apply. Boolean/nonfinite weather readings fail.
+8. Multiplying a large finite sample by its duration could overflow before division.
+   Normalize weights first, and reject any nonfinite result. Tests include large
+   finite values and confirm repeated getters do not grow history.
+
+Verification: 63 Rust tests (19 unit, 10 config, 13 source/safety, 9 HTTP,
+6 switch, 6 weather), Clippy with warnings denied, Rust 1.89 compatibility,
+generated schema freshness, 4 independent schema tests, JavaScript reader tests,
+and 2 native .NET reader tests. The mixed-weather example joins executable
+configuration fixtures. All device I/O here uses simulation or loopback HTTP.
+
+Outstanding review work: whole-batch polling budgets need latency/large-source
+testing before frontend exposure; capability/connection negotiation, Refresh,
+native worker transport, protected credential resolution, host IPC/resume,
+frontend error mappings, conformance and hardware acceptance remain open.
+
+## 2026-10-05: incremental polling and weather refresh
+
+1. One deadline covering a whole weather batch rejected healthy individual
+   requests. Alpaca sample steps now issue one request each; sensor age/value
+   requests are separate, with a conservative shared age anchor. Commands can
+   run between steps without waiting for all channels.
+2. A single batch timestamp/sequence would rejuvenate cached fields and multiply
+   averaging observations as other fields arrived. Cache entries now retain their
+   own timestamps and sequences. Transport resets clear both; writes invalidate
+   samples and restart confirmation polling.
+3. Incremental updates could evade the previous aggregate response limit. The
+   actor validates scalar batches and bounds the combined text cache, key count,
+   and historical sequence keys before publishing changes.
+4. Transient per-field failures must retry that field and retain Retry-After.
+   Exhaustion advances the poll plan; manual Refresh cannot bypass the delay.
+   Safety remains one Boolean IsSafe observation per attempt, preserving its
+   existing failed-cycle and recovery semantics.
+5. An initial Refresh draft waited for a complete pass. The canonical
+   [ObservingConditions interface](https://ascom-standards.org/newdocs/observingconditions.html#ASCOM.ObservingConditions.Refresh)
+   requires a short trigger instead. Weather Refresh now invokes the upstream
+   trigger, schedules local polling, and returns without waiting for sensor data.
+   Multiple sources trigger concurrently; cached ages remain unchanged until
+   actual readings arrive. Trigger failures are returned without replay.
+
+Verification: 70 Rust tests (19 unit, 10 config, 16 source/safety, 13 HTTP,
+6 switch, 6 weather), Clippy with warnings denied, Rust 1.89.0 compatibility,
+standalone packaging, formatting/diff checks, and schema freshness passed.
+New tests cover a polling pass longer than the request deadline, intervening
+commands, unchanged earlier sample evidence, same-key retry, Retry-After during
+partial polling and Refresh, a hung sensor after Refresh, aggregate text limits,
+and rotating keys. Fixtures use virtual time or loopback HTTP, not hardware.
+
+Next: shared native accessory worker transport and hub adapters, followed by
+capability negotiation and host IPC. Frontend conformance, hardware acceptance,
+and all later milestones remain required; no milestone gate closes here.
+
+## 2026-10-05: common native accessory transport
+
+Moved the existing Alpaca accessory worker client into `regain-core::accessory`
+so the hub can use the same process transport without depending on HTTP frontend
+code. Existing CAA/Falcon, EFW/EAF/FC3/ETA, and OFP2 endpoints now use it.
+
+Review corrections:
+
+1. The old client bounded elapsed time but not response memory. Both directions
+   now enforce framing limits (4096-byte request, 1 MiB response); partial EOF,
+   malformed replies, duplicate envelope fields, and oversized data fail.
+2. Cancelling an awaited request could leave its delayed response in the stream.
+   A request guard now closes stdin and retires the child on cancellation,
+   deadline, or invalid framing. A subsequent request reports disconnected.
+3. Workers now use the existing Windows kill-on-close job ownership. Ordinary
+   close still offers the device worker its EOF shutdown policy before a bounded
+   forced termination. No operation is retried by this client.
+4. An `ok:false` reply only proves that a worker answered; the underlying USB
+   command may already have been sent. `CommandFailed` remains distinct from
+   framing/transport failure but must be treated conservatively for writes by
+   the forthcoming native hub adapter. It is not a proof of pre-dispatch rejection.
+5. Package verification resolved published regain-core 0.5.10, which lacks the
+   new API, even when packaging the workspace. Development now uses 0.6.0 and
+   Windows 0.6.0.0; maintenance remains on release/0.5. Nothing was published.
+
+Local verification: 18 core unit tests plus a self-hosted process fixture covering
+valid replies, command errors, local rejection, graceful EOF, malformed/oversized
+responses, partial EOF, deadlines, and cancellation. Clippy and Rust 1.89.0 checks
+pass for core and Alpaca. Seven simulation suites pass: EFW/EAF, CAA, Falcon,
+FocusCube3, ETA, OFP2, and dynamic focuser slots. These use the production workers
+with simulation enabled and exercise client sharing, motion/settings, calibration,
+coordinate persistence, and error paths. Native hub source mapping is next.
+After the version correction, `cargo package --workspace --allow-dirty --locked`
+verified all ten package archives against the unpublished workspace dependencies;
+`cargo +1.89.0 check --workspace --all-targets --locked` also passed.
+
+## 2026-10-05: native accessory sources and mixed-source controller integration
+
+Implemented a single native adapter over the common worker client for CAA, EFW,
+EAF, FocusCube3, Falcon, OFP2, and ETA. Hardware protocol and motion/calibration
+coordination stay in their existing workers. Reviewed against those workers and
+the current Alpaca property/command mappings.
+
+Corrections and deliberate boundaries:
+
+1. Connect verifies the selected identity. Failed identity requests must retire
+   their worker slot; otherwise a second connect could mistake a partially opened
+   session for a verified connection. No implicit selection or simulation fallback
+   is permitted. Simulation is explicit in returned identity for every vendor.
+2. Missing temperature is a per-field error; position/motion remains usable.
+   Whole-device fault/error fields stop publication of normal telemetry. Cached
+   values and freshness still belong to the shared source actor.
+3. Movement and brightness parameters are validated before dispatch. Focuser and
+   wheel targets also use current hardware limits. Worker failures after a write
+   map to uncertain, including framed worker errors; arbitrary worker exception
+   text never enters hub diagnostics. Transport loss retires the generation.
+4. ETA and EFW have no supported hardware halt command. Rotator sync/reference
+   and related settings require persistent coordinate state before enablement;
+   camera backends require Session rather than this scalar accessory adapter.
+   These remain explicit later gates, not silently approximated capabilities.
+5. Worker requests use the configured deadline, rather than the legacy client's
+   fixed default. Windows local/CI test orchestration supplies the built worker
+   directory so native integration tests do not silently skip there.
+
+Verification: 79 Rust hub tests (21 unit, 14 HTTP/mixed-source, 10 configuration,
+6 native-worker integration, 16 source/safety, 6 switch, 6 weather) pass locally
+with `REGAIN_TEST_WORKERS` selecting the built production workers in simulation.
+The native matrix checks all seven families, short moves, local validation,
+identity mismatch, no fallback, illumination including zero, full cover motion
+and halt, EFW calibration/provisional slot count, shared leases, and independent
+client disconnect. A mixed source test writes a remote Alpaca switch while two
+Switch clients and one Weather client share native FocusCube3 temperature.
+Clippy, Rust 1.89.0, schema freshness, and formatting/diff checks pass.
+
+The host factory, capability/connection negotiation, protected credentials,
+cross-process ownership/IPC/resume, actual frontend devices, and all later
+conformance/hardware/documentation gates remain open. No hardware was moved by
+these tests, and this checkpoint does not close milestone 2.
+
+## 2026-10-05: bounded Alpaca connection negotiation
+
+Reviewed incremental connection state transitions against modern ASCOM interface
+declarations and the existing source actor. InterfaceVersion now selects modern
+Connect/Disconnect/Connecting or the legacy Connected property. Shared snapshots
+expose the negotiated method, version, ownership, and connection uncertainty.
+
+Corrections from review:
+
+1. Already-connected modern hardware may belong to another client. Managed mode
+   explicitly claims its own ClientID; externally managed mode sends no connection
+   writes. A legacy connection already open remains borrowed.
+2. Per-request timeouts alone cannot bound a driver reporting Connecting forever.
+   A separate schema-described connection deadline bounds all handshake steps,
+   including slow metadata. Pending steps admit queued commands and do not count
+   as failed safety polls or successful recovery observations.
+3. Disconnect previously could be retried after an ambiguous reply. Mark the
+   cleanup attempt before awaiting it and retain uncertainty across resets.
+   Cancelled Connect is likewise never retried or claimed for cleanup without
+   an acknowledgement. Reconnect waits for a preceding asynchronous Disconnect.
+4. A handshake failure was reset once by connect and again by poll/read/write.
+   Only operations actually dispatched after connection now perform their own
+   transport reset. The pending-adapter fixture verifies one reset at expiry.
+5. Legacy metadata fallback is limited to explicit absence. HTTP 404 is distinct
+   from an ASCOM ErrorNumber of 404. Unsupported modern Connect does not authorize
+   a second connection write through the legacy property.
+
+Verification: 89 hub tests pass (21 unit, 23 HTTP/mixed-source, 10 configuration,
+6 native-worker, 17 source/safety, 6 switch, 6 weather). New cases exercise modern
+and legacy ownership, cancellation, stalled/slow handshakes, uncertain cleanup,
+reconnect during disconnect, and source polling after an incremental handshake.
+Clippy, Rust 1.89.0, package verification for transport/core/hub, schema freshness,
+web and independent JSON Schema readers, and both .NET HubConfiguration tests
+pass. Production worker tests remain simulation only. Device-specific capability
+discovery, host construction/IPC, protected credentials, frontend conformance,
+hardware acceptance, and all later gates remain open.
+
+## 2026-10-05: configuration-driven source construction
+
+The source factory now derives a single polling plan from every output mapping
+and prepares the existing native/Alpaca adapters before starting the registry.
+The mixed native/HTTP controller test uses this path instead of hand-written
+backend selection. Reviewed construction order, cadence, sample limits, and
+credential handling.
+
+1. Shared output mappings must not multiply polls or safe confirmation counts.
+   Readouts are deduplicated by canonical sample key, while every SafetyMonitor
+   plan contains exactly one strict IsSafe observation per attempt. Unrelated
+   properties on a SafetyMonitor are rejected instead of mixed into safety polls.
+2. A weather property used as a Switch gauge still needs its upstream sensor age.
+   Age requests follow source type, not the frontend consuming the reading.
+3. Enabled safety memberships select the fastest required shared cadence.
+   Disabled memberships cannot speed up polling. Each output retains its own
+   confirmation interval, and the persisted configuration is not rewritten.
+4. Individually valid outputs can jointly exceed a source's sample limit. The
+   limit applies to the union, and insertion stops at the first excess sample
+   rather than allocating an unbounded temporary plan before rejecting it.
+5. Invalid configuration is rejected before credential resolution. Adapters are
+   prepared without hardware/network I/O, and credentials are resolved once per
+   source. Missing providers fail closed; protected OS storage is not yet present.
+   Actual HTTP requests carry the resolved header while source diagnostics omit
+   both the secret and the reference. No backend failure enables simulation.
+
+Verification: 95 hub tests (including five factory tests and one authenticated
+loopback integration) pass with production accessory workers in simulation.
+Clippy, Rust 1.89.0, generated-contract freshness, and package checks pass.
+The runtime still needs output/session ownership, virtual and simulated sources,
+protected credential storage, IPC, and actual frontend publication. COM/native
+camera adapters and the remaining original milestone gates also remain open.
+
+## 2026-10-05: shared output sessions and explicit shutdown
+
+Added the per-revision output runtime for Switch, SafetyMonitor, and Weather,
+with host-generated client identities and independent connection maps. The
+mixed native/HTTP test now builds this runtime and connects three clients.
+Reviewed reservation ownership, lock scope, policy lifetime, and source teardown.
+
+1. Creating a safety policy per client would restart recovery and make clients
+   disagree. One active policy is shared per output. A weak cache releases it
+   after the last output guard, immediately invalidating retained subscribers;
+   reconnect starts without permission inherited from source caches.
+2. Weather clients share averaging settings and history. Source leases remain
+   independent across clients and output types, so removing Switch clients does
+   not interrupt Weather's source or change its connection generation.
+3. A pending connect cannot hold a global mutex during source I/O. Client maps
+   reserve a token, release the lock, then await construction. Cancellation and
+   EOF remove only that reservation; an old task cannot delete its replacement.
+   Duplicate ready connects are idempotent and duplicate pending ones are busy.
+4. Disconnect while a write is in flight is not rollback. The command's guard
+   retains its activity and source leases until its bounded result, including
+   an uncertain outcome. Another client's connection is unaffected.
+5. Dropping client references is insufficient evidence that workers have closed.
+   Runtime shutdown closes admission and revokes safety synchronously before
+   draining actors. Actors finish bounded I/O, reject queued/future commands,
+   clear caches, and retain terminal cleanup results. All source cleanup is
+   awaited even after a failure. A cancelled shutdown can resume without a new
+   Disconnect attempt; runtime admission remains closed.
+
+Verification: 104 hub tests pass, including eight runtime lifecycle/fault cases
+and a queued-command/source-shutdown case. The latter verifies that shutdown
+does not dispatch a queued read after an uncertain in-flight write. Runtime
+tests also cover retained safety subscribers, independent expiry during a source
+stall, cancelled connection replacement, an uncertain disconnect, resumed drain,
+and stale-registry rejection. The mixed runtime test uses a real loopback Alpaca
+server and production FocusCube3 worker in simulation. Clippy, Rust 1.89.0,
+generated-contract freshness, and package verification pass.
+
+This is still an in-process runtime. IPC framing/endpoints, OS ownership/resume,
+configuration replacement, protected credentials, virtual/simulated source
+adapters, frontend publication, conformance, and hardware acceptance remain open.
+No milestone 2 completion or later milestone completion is claimed.
+
+## 2026-10-05: bounded scalar IPC and typed dispatch
+
+Added the versioned hello, bounded length-prefixed JSON transport, and controller
+dispatch over a host-supplied stream. Each stream creates its own runtime client.
+Configuration descriptions, local configuration reads, schema/relationship
+validation, device/source status, and typed Switch/Safety/Weather operations use
+the existing engine. Durable apply is not advertised by this dispatcher.
+
+Review findings and corrections:
+
+1. A source request must not block detection of EOF or another cached getter.
+   A dedicated reader, bounded input buffer, and at most eight operation futures
+   let cached safety results overtake stalled source capability reads. A slow
+   reader still has a bounded response-write deadline and releases its leases.
+2. Spawning requests in order does not prove their tasks start in order. Each
+   operation is polled once before the next request is accepted. Disconnect thus
+   sees a preceding Connect reservation, without waiting for its driver I/O.
+3. Strict enum deserialization did not reject extra fields on no-argument unit
+   variants. A malformed-message test exposed the gap. Empty struct variants now
+   enforce unknown-field rejection, including nested get/put members. The test
+   has its own deadline so a parser regression cannot leave the suite waiting.
+4. Request IDs strictly increase; a repeated ID closes the stream without
+   dispatching another write. Client identity fields are rejected. Unknown
+   versions/commands and malformed typed values cannot reach a backend.
+5. Frame reads and response serialization enforce the same 1 MiB bound. Escaped
+   strings can make a valid source snapshot too large when encoded; a bounded
+   serializer returns responseTooLarge while preserving framing and usability.
+6. Put deadlines return uncertain rather than inviting retry. EOF/server-task
+   cancellation closes only that stream's client, including pending connections.
+   Validated configuration is not confused with successful runtime preparation
+   or durable apply; validation explicitly reports its configuration-only scope.
+
+Verification: 114 hub tests pass, including ten duplex-stream integration/fault
+tests using the complete runtime and fault-injected sources. Tests exercise all
+three output types, shared settings, configuration reads, unknown IDs/classes,
+out-of-order responses, pending-connect cancellation, timed-out writes, request
+replay, malformed/oversized/partial frames, overload, and a stalled reader.
+Clippy, Rust 1.89.0, and package verification for transport/core/hub pass.
+
+No listener is opened by this module. User-only OS endpoints, startup ownership,
+separate-process tests, durable configuration replacement, protected credentials,
+resume handling, executable integration, and all frontend/conformance/hardware
+gates remain open. Camera buffers/images retain their separate planned contract.
+
+## 2026-10-05: protected local endpoints and OS ownership
+
+Added named pipes/Unix sockets keyed by canonical configuration path and OS user.
+Binding consumes an OS-held exclusive lock on a separate persistent file. Atomic
+config replacement cannot replace that lock, and process death releases it.
+
+Review findings and corrections:
+
+1. Listener lifetime alone is insufficient: accepted streams retain the ownership
+   guard. The executable host must still retain ownership until runtime/source
+   shutdown completes, including commands whose initiating client has disconnected.
+2. Windows creation permissions do not prove existing storage or a connected
+   server is private. Validate owner and protected user-only DACL on opened handles;
+   reject reparse points and permissive ACLs without modifying them. Inspect ACE
+   type/size before casting to an allowed ACE. Use identification-only client
+   impersonation rights and reject remote named-pipe clients.
+3. Unix directory/socket/lock modes and effective UID are checked; peer credentials
+   verify both connection directions. Reject links and multi-link lock files. Only
+   an actual owned socket can be removed as stale. Drop checks device/inode so it
+   cannot remove an unrelated replacement at the same path.
+4. Readiness retries are bounded and limited to absent/busy/refused endpoints.
+   Permission errors do not enter the retry loop. A later launcher must validate
+   hello rather than equating successful connect with readiness or compatibility.
+5. Process fixtures use real child processes and OS locks: a competing process is
+   denied before and after atomic config replacement; killing the owner permits a
+   new owner. Another child serves real versioned IPC and drains on client EOF.
+
+Windows endpoint/process tests pass, including anonymous access denial and an
+explicit Everyone ACL fixture for directory/lock rejection. Unix mode, symlink,
+hard-link, and replaced-socket tests are implemented but not locally executed:
+the installed WSL distribution has no Rust toolchain. Portable CI must verify them.
+No hardware is accessed by endpoint fixtures.
+
+Full local verification: 120 hub tests plus the separate-process fixture pass.
+Clippy with warnings denied, Rust 1.89.0 all-target checks, transport/core/hub
+package verification, generated-contract freshness, formatting and diff checks
+also pass. Existing production native-worker tests use explicit simulation.
+
+Executable host startup/attach, global client admission, durable configuration
+apply, protected credentials, resume, and all frontend/conformance/hardware gates
+remain pending. These endpoints do not yet expose a user-facing hub service.
+
+## 2026-10-05: shared executable host and bounded service lifetime
+
+Added `regain-alpaca --hub-host --hub-config ABSOLUTE_PATH`. Ownership is acquired
+before preparing sources; a losing invocation only verifies the existing owner's
+bounded hello and exits. This mode opens no HTTP/discovery listener. It rejects
+ambiguous normal-server/stdio options and invalid configs without echoing JSON.
+Protected credential references remain unavailable until their provider lands.
+
+Review findings and corrections:
+
+1. Aborting a caller that awaits service shutdown must not abandon cleanup and
+   release ownership. The supervisor starts immediately; dropping its waiter
+   cancels admission but lets cleanup run independently, retaining the listener
+   until all source actors finish. Its Tokio runtime must remain alive. Tests
+   retain unsafe subscribers and force an uncertain disconnect during cancellation.
+2. Closing safety leases could race actor Shutdown, causing two Disconnect calls.
+   The actor now retains its last cleanup result until a new connection lifetime.
+   Tests verify uncertainty survives shutdown without replay and that a later
+   connection still receives its own cleanup.
+3. A fixed Windows pipe-instance limit counts instances whose server handle closed
+   while the former client retains its handle. This could prevent creation of the
+   next listener and stop the host. Bound live service tasks at 32 instead; the
+   listener remains replaceable. Admission tests retain malformed-client handles
+   while successfully opening another client.
+4. Readiness verifies reply correlation, protocol, instance UUID, runtime/client
+   UUIDs, and supported frame/concurrency bounds under one overall deadline. A
+   silent endpoint or wrong hub identity cannot masquerade as a ready owner.
+5. Individual IPC failures are isolated. Shutdown stops admission, closes clients,
+   drains source cleanup, and reports cleanup/listener failures without replay.
+
+Local verification: 124 hub tests plus the process fixture and 14 Alpaca tests
+pass. Three tests launch the production executable, proving duplicate-launch
+handling, crash/restart, invalid arguments/config rejection, and real loopback
+Alpaca safety changes delivered over protected IPC. Existing standalone HTTP
+ImageBytes tests pass for SDK simulation and all four direct camera simulations.
+Clippy, Rust 1.89.0 checks, and transport/core/hub/Alpaca package verification pass.
+Endpoint commit `0c8bfe7` passed Linux x64/ARM64 and macOS Intel/ARM64 CI; the newly
+integrated host still needs its own portable CI results.
+
+Frontend automatic launch/attach, durable applyConfig, protected credentials,
+capability discovery, resume handling, virtual/simulated source adapters, and
+Alpaca/NINA/ASCOM publication remain pending. No milestone 2 or later gate is closed.
+
+## 2026-10-05: supervised configuration apply and revisioned runtime publication
+
+The persistent service now handles applyConfig and hostStatus through IPC and the
+shared executable. A read-only embedded runtime advertises only its supported
+operations. Configuration errors retain field paths; disk/backend details and
+credential values are not exported as arbitrary exception text.
+
+Review findings and corrections:
+
+1. Checking connection counts without excluding a concurrent reservation races.
+   Quiescence and connect reservations now share the lifecycle mutex. Pending
+   connects and guards retained by in-flight commands count as active. The current
+   whole-runtime replacement affects all outputs, so all must be disconnected.
+2. Validation alone does not prove that adapters can be built. Stage the candidate
+   file, prepare the next runtime without device I/O, verify it matches the entire
+   candidate configuration, and recheck revision/store identity at atomic
+   replacement. Rejecting/dropping prepared values removes
+   their temporary files. Unused actors dispatch no Disconnect on retirement.
+3. Device cleanup must not precede a fallible replacement that promises to preserve
+   the old running configuration. After commit, drain the old runtime and only then
+   enable the new one. Uncertain cleanup retains the new persisted revision but
+   blocks device admission; this is an explicit applied/not-ready outcome.
+4. RPC timeout, EOF, and caller cancellation must not split commit from activation.
+   A supervised transaction retains the update gate until completion, and host
+   shutdown waits for it. Unexpected task failure closes the old runtime and blocks
+   admission. Clients inspect getConfig/hostStatus to resolve uncertain replies.
+5. Stream client IDs and the host process ID stay stable through apply; bindings
+   move to the new runtime on the next request. Retired runtime clients cannot
+   reopen sources. All new safety policy starts without cached safe permission.
+6. A flush failure after replacement is not rollback. Return a distinct committed
+   result from the store and a persistence warning from the service. The saved file
+   is flushed, as is its parent directory on Unix: file flush alone does not ensure
+   directory-entry persistence ([Linux fsync documentation](https://man7.org/linux/man-pages/man2/fsync.2.html)).
+   No hardware power-loss guarantee is inferred from these tests.
+7. Configuration reads now enforce the size bound while reading, rather than
+   relying on metadata that could become stale as a file grows. Staging happens
+   outside the configuration snapshot mutex; filesystem work runs off the async
+   executor and no service-state mutex is held during driver I/O.
+8. macOS CI for `e283472` failed admission recovery after a queued client had
+   disconnected. Unix accept now discards aborted connections and failed/mismatched
+   peer credentials per connection. Listener errors still stop the service. The
+   existing saturation/recovery test now reports the supervisor result on failure;
+   the correction needs its portable CI result before claiming macOS recovery.
+
+Local checks: 132 hub tests plus the endpoint process fixture, 14 Alpaca tests,
+Clippy with warnings denied, and Rust 1.89.0 checks pass. Tests cover pre-commit
+file/construction failures, competing editors, stale and foreign prepared updates,
+pending connections, retained writes, cancelled/deadline-expired applies, blocked
+cleanup, and an injected task panic. Production-executable tests apply a network
+safety edit through IPC, reuse that stream, reject stale edits, reconnect, and
+reload the committed revision after restart. A Unix permission fixture covers
+post-rename directory-flush failure and awaits portable CI. Transport/core/hub/Alpaca
+package verification and generated-contract freshness pass. Packaging used a fresh
+target directory after Cargo's temporary registry reused an older archive with
+the same unreleased 0.6.0 version.
+
+Protected credentials, capabilities, automatic frontend attachment, OS resume,
+virtual/simulated sources, publication/setup, COM/NINA/ASCOM integration, broader
+proxies, coordination, conformance, hardware checks, docs/screenshots, and final
+merge remain required by the original plan.
+
+## 2026-10-05: user-scoped credentials and shared-host rotation
+
+The shared executable now resolves credentials through user storage and exposes
+write-only creation, status, and deletion over its existing private IPC. Metadata
+includes common input keys/descriptions and the actual protection method.
+Windows uses user DPAPI and protected user-only ACLs. Unix deliberately uses
+private plaintext files (0600 under 0700), without requiring a desktop keyring.
+This distinction is part of the frontend contract, not an encryption claim for Unix.
+
+Review findings and corrections:
+
+1. An in-place secret update would leave existing adapters using the old header
+   while config still identified the same reference. References are immutable:
+   create, revision-checked apply, then delete the unused old record. Existing
+   adapters keep their resolved value until their runtime is replaced.
+2. Deletion must not race configuration preparation or remove a credential still
+   used by an old draining runtime. Mutations share the service update gate,
+   inspect every configured source, and retain the gate in the blocking task even
+   after cancellation. Shutdown also waits for it. A paused-builder test cancels
+   the apply waiter and proves deletion remains busy, then becomes in-use.
+3. Configuration files can be copied, and separate hosts can use the same reference
+   text. Storage is scoped by canonical config path and OS user; record contents
+   bind scope/reference, with matching DPAPI entropy on Windows. Copied records
+   cannot resolve under another reference or scope. Moved configs need new records.
+4. Private endpoint file checks are reused for storage. Windows checks the opened
+   handle's owner/protected ACL and rejects reparse points. Unix checks owner,
+   mode, regular-file type, and link count, uses O_NOFOLLOW, and opens nonblocking
+   so an invalid FIFO cannot stall before type validation. Reads are bounded.
+5. Secrets and raw frame buffers use clearing wrappers; HTTP headers are marked
+   sensitive. Responses/errors contain no secret values. This does not promise
+   complete erasure of third-party parser/HTTP or OS copies. No secret-read IPC
+   operation exists. Invalid inputs fail before storage creation.
+6. Disk and DPAPI operations run off the async executor, including adapter
+   preparation during apply. Constructor errors/panics retain the existing
+   transaction failure rules. A missing user storage location does not prevent
+   credential-free hosting; authenticated sources fail closed without a provider.
+7. Creation uses private staged files with no-clobber publication and flushes.
+   A lost/failed creation response can leave a private orphan, never an in-place
+   rotation. Deletion reports post-delete directory-flush uncertainty separately;
+   neither operation promises forensic deletion or power-loss durability.
+
+Local validation: 141 Windows hub tests plus the separate endpoint-process fixture
+and 14 Alpaca tests pass. Added tests cover DPAPI round trips/wrong entropy,
+anonymous denial and unprotected replacement rejection, immutable references,
+corruption/oversize/scope/rebinding, IPC rotation/redaction, unavailable providers,
+and cancellation during a competing apply. The production executable creates a
+credential through IPC, authenticates a real loopback HTTP source, restarts and
+authenticates again, then rejects in-use deletion and removes an unused record.
+All values are explicit fake fixtures. Clippy with warnings denied, Rust 1.89.0,
+generated-contract freshness, and transport/core/hub/Alpaca package verification
+pass. Packaging used `target/hub-credentials-package` to avoid stale archives of
+the same unreleased version. No config schema change was needed.
+
+Prior checkpoint `d8ab064` now passes Linux x64/ARM64 and macOS Intel/ARM64 CI,
+verifying the aborted-peer correction and Unix directory-flush fixture. Portable
+CI is still required for the new credential permission/link checks. Device
+capabilities, virtual/simulated sources, frontend attachment/publication, COM,
+native NINA/ASCOM outputs, broader proxies, coordination, conformance, hardware,
+docs/screenshots, and the final merge audit remain open.
+
+## 2026-10-05: bounded setup inspection on shared sources
+
+Added explicit inspectSource IPC for Switch/SafetyMonitor/ObservingConditions
+network sources and native accessories, with shared request metadata. Inspection
+uses the source actor and temporary lease rather than opening another transport.
+It is an observation for setup; it does not authorize commands or seed safety.
+
+Review findings and corrections:
+
+1. A large switch bank cannot produce unlimited requests or metadata. Pages allow
+   at most eight channels under one 20-second overall deadline, with the source's
+   individual deadlines still enforced. Preserve upstream IDs and next-start;
+   reject bad counts/pages. Bounded text and strict value types prevent malformed
+   metadata from appearing as supported capabilities.
+2. A failed read is not evidence of unsupported hardware. Keep observed,
+   unsupported, and unavailable states distinct; only definitive NotImplemented
+   maps to unsupported. Weather descriptions, ages, and values remain independent.
+   Retry-After ends the scan without retry and reaches IPC as retryAfterSeconds.
+3. An initial permissive range check differed from the write path. Inspection now
+   reuses Switch Grid validation, including whole, representable step counts.
+   Weather units and native property lists also use existing definitions. Native
+   Boolean properties are not suggested as scalar mappings until those consumers
+   support them. Do not infer Switch units from text.
+4. Inspection reads can straddle a reconnect. Added an optional read generation
+   fence at actor dispatch; the inspector also checks before/after every read and
+   at completion. A changed connection invalidates the whole report. This does
+   not promise an atomic snapshot of equipment values or across separate pages.
+5. Temporary setup leases must count toward configuration quiescence, including
+   pending connection attempts. Runtime activity is reserved under the same
+   lifecycle mutex as apply/connect. Cancellation releases the temporary lease;
+   already-dispatched reads retain their source deadline and registry drain rules.
+6. Setup must preserve ownership. A real loopback modern Switch fixture runs two
+   inspections while another lease remains, proves one Connect and no early
+   Disconnect, then verifies exactly one owned cleanup. No motion or switch-write
+   commands are dispatched by discovery. All native worker trials are explicit
+   simulation and retain that fact in the result.
+
+Local tests: 152 hub tests plus the endpoint process fixture and 14 Alpaca tests
+pass. New cases cover Switch IDs/pagination/grid checks, strict safety values,
+partial weather support, connection changes, Retry-After, cancellation versus
+apply, the total deadline, fenced reads, private IPC dispatch/metadata, managed
+HTTP sharing, and inspection of all seven simulated native accessory families.
+Clippy with warnings denied, Rust 1.89.0, generated-contract freshness, and
+transport/core/hub/Alpaca package verification pass. Packaging used the fresh
+`target/hub-capabilities-package` registry. Credential checkpoint `c472922` now
+passes Linux x64/ARM64 and macOS Intel/ARM64 CI, including private-file/link checks.
+Setup inspection requires its own portable CI result.
+
+Inspection of unconfigured devices, virtual/simulated source implementation,
+frontend attachment/publication, complete proxy capabilities, COM/NINA/ASCOM
+integration, coordination, conformance, hardware trials, documentation/screenshots,
+and final merge remain open. This checkpoint does not close milestone 2.
+
+## 2026-10-05: explicit scalar simulators and safety startup fencing
+
+Implemented simulated Switch, SafetyMonitor, and ObservingConditions sources on
+the shared source actor/runtime. Typed updateSimulation IPC and describeConfig
+metadata supply common controls for future frontends; production executable tests
+exercise their actual private endpoint. No physical device was used in this step.
+
+Review findings and corrections:
+
+1. A simulator must retain the production connection/control rules. Updates use
+   temporary source leases and exclusive command control, participate in apply
+   quiescence, and reject native sources before opening their transports. Patches
+   validate a cloned state before replacement, preventing partial updates.
+2. Injected uncertain writes change the simulated device once, then return an
+   uncertain result. Clearing the injected fault leaves the actor latch intact;
+   new commands remain blocked until every source lease is disconnected.
+3. Simulation must remain visible and deliberate. Source/output diagnostics and
+   capability inspection mark it, including native workers explicitly launched
+   in simulation. No error path switches real hardware to a simulator.
+4. Safety injection changes the raw source, not the policy result. Invalid types,
+   read failures, and timeouts cannot count as safe; normal confirmation is still
+   required. Restart/configuration replacement starts unsafe. Weather injection
+   exercises actual age/fallback rules and represents missing sensors as errors.
+5. Fast simulated connections exposed a real safety startup race. The policy was
+   initialized from the construction generation, while its delayed consumer began
+   from the latest generation and could reject every future observation. Carry
+   the construction fence/sequence into the consumer so its normal transition
+   handling synchronizes the policy. Regression tests cover the intervening
+   connection and retain the earlier lost-unsafe-event/tail-discard test.
+
+Local validation: 160 hub tests plus the endpoint process fixture and 15 Alpaca
+tests pass. Seven simulator integration cases cover shared clients, safety
+faults/recovery, stale/absent weather, atomic validation, read-only channels, and
+rejection of real sources. The executable test verifies descriptor exposure,
+updates, shared safety polling, and unsafe state after restart. The checked-in
+simulated observatory example passes validation, identity, and round-trip checks.
+Clippy with warnings denied, Rust 1.89.0 checks, and generated-contract freshness
+pass. Transport/core/hub/Alpaca package verification passes using the fresh
+`target/hub-simulation-package` registry. Setup inspection checkpoint 9ae966e now passes Linux x64/ARM64 and macOS
+Intel/ARM64 CI; its Windows job is still running at this review.
+
+Virtual sources, frontend attachment/publication, OS resume, COM imports,
+NINA/ASCOM outputs, broader proxies and coordination, conformance/hardware checks,
+documentation/screenshots, and final merge remain open under the original plan.
+
+
+## 2026-10-05: local virtual sources
+
+Implemented in-process Switch/SafetyMonitor/ObservingConditions composition,
+bound once to the applied runtime through a weak reference. Internal clients use
+the same output controllers and source actors as frontend clients. Extracted typed
+scalar dispatch into shared handlers instead of duplicating IPC behavior.
+
+Review findings and corrections:
+
+1. Recursively recomputing simulation markers can revisit shared subgraphs
+   exponentially. Propagate markers in bounded graph passes after cycle validation.
+   Standalone factories reject unbound virtual sources before actors start.
+2. A virtual read must not refresh stale evidence. Switch/Weather samples carry
+   their existing ages through every layer. Weather metadata stays available when
+   the reading is stale; Refresh reaches the actual source. Averaging remains an
+   explicit per-output stage, including when multiple stages are chained.
+3. Polling an already-safe inner policy must not manufacture confirmations or a
+   longer lifetime. Propagate the oldest contributing safe request timestamp.
+   Tests prove three confirmations cannot arise from one cached inner observation
+   and a shorter outer safe deadline expires while the inner output is still safe.
+4. A newly connected policy could accept old inner evidence on its first virtual
+   poll. Capture a minimum evidence time at construction, generation transitions,
+   and event loss. Ignore earlier safe evidence; do not seed new permission from
+   a cache. Existing generation and lost-unsafe-event regressions remain passing.
+5. Connected internal clients temporarily retain the runtime. Close them on reset,
+   disconnect, and drop; retain the weak binding while idle. Tests prove complete
+   reference release after normal disconnect, active-graph shutdown, and cancelled
+   nested connection attempts against a stalled loopback source. Other direct
+   clients keep their source connection when a nested client disconnects.
+6. Preserve uncertainty and actual write permissions at every layer. A nested
+   ambiguous write changes the simulated leaf once, blocks subsequent commands,
+   and leaves another direct client's leaf uncertainty latch intact. No operation
+   is automatically replayed to recover the virtual adapter.
+7. Inner grace permission is not a new successful observation. A loopback HTTP
+   failure test verifies the virtual source conveys read failure through the outer
+   grace/expiry policy, clears recovery confirmation, and recovers only after fresh
+   upstream evidence resumes.
+8. Internal connections participate in apply quiescence. A production-executable
+   test rejects an edit while connected, drains nested leases after disconnect,
+   applies the edit, and uses the same IPC stream against the replacement graph.
+
+Validation: 169 hub tests plus the endpoint process fixture and 16 Alpaca tests
+pass locally, including nine new virtual-source cases and one new production-host
+case. Clippy with warnings denied, Rust 1.89.0, generated-contract freshness, and
+transport/core/hub/Alpaca package verification pass. The package check used the
+fresh target/hub-virtual-final-package directory. Simulation checkpoint 6a607e5 passes
+all four portable CI platforms; Windows remains in progress at this review.
+This new checkpoint still requires its own CI results.
+
+Frontend automatic attachment/reconnection, OS resume, unconfigured discovery,
+Alpaca publication/setup, COM imports, native NINA/ASCOM outputs, broader device
+proxies and camera/focuser coordination, conformance/hardware checks, documentation
+and screenshots, and final audit/merge remain required. Milestone 2 is not complete.
+
+## 2026-10-05: frontend client and shared-host attachment
+
+Added a bounded Rust IPC client and an executable attachment helper. This is
+shared infrastructure for the actual frontends, whose adoption remains pending.
+
+Review findings and corrections:
+
+1. Cancelled callers must not free a dispatched request's capacity or replay it.
+   Retain permits through reply/deadline, skip unsent cancelled requests, and mark
+   dispatched mutations uncertain on transport failure. A failed client is terminal.
+2. A detached read task could retain leases after its client disappeared. Use an
+   abort-on-drop task set and close both transport halves; a real runtime test
+   verifies last-client drop releases the simulated source lease.
+3. JSON value parsing hides duplicate envelope keys. Parse the envelope strictly,
+   distinguish null results from absent results, reject unknown reply IDs, and
+   retain structured remote errors and Retry-After without logging request bytes.
+4. Bound encoding, negotiated concurrency, frame I/O, and total request lifetime.
+   Keep cancelled-but-dispatched operations within the same limit. Reject invalid
+   operations before writing and preserve zeroizing request buffers on failures.
+5. The first Windows process test hung after its helper exited: the shared child
+   inherited a capture pipe despite null standard handles. Use CreateProcessW
+   with handle inheritance disabled and CREATE_NO_WINDOW. Production tests now
+   prove the helper exits while its shared host survives, including paths with
+   spaces and Unicode. Argument quoting has a separate Windows unit test.
+6. A candidate PID cannot prove ownership. The attachment helper probes a held
+   lock instead of replacing its owner, launches at most one candidate, validates
+   hello, and never kills an owner on readiness failure or client disconnect.
+   Test-only cleanup terminates only the newly launched empty fixture host.
+7. Host loss requires explicit reattachment with a new host/client identity. Two
+   clients share one host, disconnect independently, and cannot reuse the failed
+   client after restart. Wait for the ownership lock to release before testing
+   restart; closed client streams alone do not prove host cleanup has finished.
+
+Validation: 177 Windows hub tests plus the endpoint process fixture and 18 Alpaca
+tests pass. This adds seven client integration tests, one Windows quoting test,
+and two production attachment tests. Clippy with warnings denied, Rust 1.89.0,
+generated-contract freshness, and fresh transport/core/hub/Alpaca packaging pass
+(`target/hub-client-package`). No test host processes remain. Unix launch behavior
+still requires portable CI. Simulation checkpoint 6a607e5 has completed successful
+push CI; virtual-source checkpoint 14abfc9 remains in progress at this review.
+
+Alpaca HTTP/setup adoption, native .NET attachment, reconnection/resume behavior,
+COM imports, broader proxies and coordination, conformance/hardware acceptance,
+documentation/screenshots, and final audit/merge remain required.
+
+## 2026-10-05: initial Alpaca HTTP outputs
+
+Ordinary HTTP mode now attaches to the shared host and publishes dynamic Switch,
+SafetyMonitor, and ObservingConditions outputs alongside existing equipment.
+The initial mapping was checked against the
+[Alpaca API](https://ascom-standards.org/api/) and
+[Switch interface](https://www.ascom-standards.org/library/html/T_ASCOM_Common_DeviceInterfaces_ISwitchV2.htm).
+It advertises the synchronous interface versions it implements. Modern interfaces,
+complete protocol/error conformance, and shared setup are explicitly still required.
+
+Review findings and corrections:
+
+1. The server already has a generic accessory route. A second generic hub route
+   conflicted at router construction. Route the three hub classes through the
+   existing dispatcher, leaving existing native class handlers in place.
+2. HTTP ClientIDs need independent private sessions, not one shared connection
+   whose disconnect would revoke every client. Preserve configured UUIDs/numbers;
+   cap sessions at 24, close the last-output session, and leave host capacity for
+   native clients. Standard IDs remain correlation values, not authentication.
+3. A per-client mutex alone would allow unlimited connection tasks to queue.
+   Admit connection changes with a nonblocking gate before spawning. Keep accepted
+   operations supervised through caller cancellation and retire the session after
+   connection uncertainty/failure. No global mutex spans source I/O.
+4. Hub Connected means a virtual-output lease. A stalled upstream must not turn
+   into a valid cached reading or prevent another safety output from responding.
+   The loopback upstream fixture verifies unavailable switch reads and independent
+   safety while a managed upstream connection is stalled.
+5. Weather properties need scalar values, while IPC retains age/provenance.
+   Add SensorDescription through shared typed dispatch and advertise its capability
+   so older hosts are not sent an unrecognized request. Missing sensors remain
+   unsupported; average period and Refresh use the shared controller.
+6. Forward uncertainty without raw driver text or retries. A simulated write
+   changes its value once, returns uncertainty, and blocks another client's write
+   after the injected fault clears. Neither HTTP nor the client resets that latch.
+7. HTTP shutdown/process death must release only its own leases. Router tests
+   retain a separate local client; the executable test kills its own HTTP child,
+   verifies the same host instance survives, and observes its leases drain.
+8. A successful write invalidates the old sample before the next poll. Correct
+   the test to await a new valid reading, rather than assuming an immediate cache
+   hit. Do not suppress the production unavailable error to satisfy the test.
+
+Validation: the full local hub/Alpaca suite passed, followed by all five current
+HTTP/private-endpoint tests and all eleven IPC tests after the capability addition.
+Coverage now totals 177 Windows hub tests plus the endpoint fixture and 24 Alpaca
+tests. The added production executable test uses a real loopback TCP listener.
+Clippy with warnings denied, Rust 1.89.0, schema freshness, formatting/diff checks,
+and fresh transport/core/hub/Alpaca package verification pass
+(`target/hub-http-package`). No hardware was actuated. Virtual-source commit
+14abfc9 passed both complete CI runs. Client/launcher commit 90037bb has passed
+all four portable platforms; its Windows job is still running at this review.
+
+Remaining: shared setup and configuration/reconnection UI, modern asynchronous
+interfaces and conformance, native .NET clients/providers, COM imports, broader
+proxies, camera/focuser coordination, OS resume, discovery, hardware acceptance,
+documentation/screenshots, and final audit/merge. Milestone 2 remains open.
+
+## 2026-10-05: shared web setup editor
+
+The first `/setup/hub` editor uses the generated configuration schema and host
+capabilities. It supports drafts, host validation, a redacted review, revision-
+checked durable apply, cached source status, and explicit paged inspection.
+The three published hub classes also expose their standard per-device setup URL.
+
+Review findings and corrections:
+
+1. Keep field keys, descriptions, units, bounds, defaults, references and choice
+   gates in shared metadata. Add source/output reference hints and enum capability
+   gates to the Rust schema; both JavaScript and .NET readers consume them.
+   Unsupported camera/broader simulation/proxy choices remain visibly unavailable.
+2. A required JSON property may contain an empty string. Browser validation
+   incorrectly rejected empty unit labels. Require nonempty strings only when the
+   schema supplies a positive `minLength`; leave host validation authoritative.
+3. `crypto.randomUUID` is unavailable on ordinary LAN HTTP. Generate RFC 4122 v4
+   identities with `crypto.getRandomValues`, preserve existing UUIDs and numbers,
+   and keep saved identities read-only. Do not use a weak random fallback.
+4. Serve a bounded, JSON-only, POST-only setup API with the existing same-origin
+   check, exact media-type validation and no CORS grant. Whitelist configuration,
+   status, inspection and simulation commands. Device connection/control and
+   credential operations cannot be invoked through this initial setup API.
+   This remains the server's existing trusted-network setup surface; the origin
+   check is not remote-user authentication.
+5. Edits invalidate the reviewed snapshot. Apply uses its loaded revision and
+   never retries after a lost/uncertain reply. Reload saved revision and host
+   status for reconciliation. Connected/stale configurations fail without writes;
+   applied-but-blocked and persistence-warning outcomes remain visible.
+6. Use shared inspection descriptors rather than duplicating bounds in the page.
+   Inspection is an explicit temporary connection; ordinary status is cached.
+   Preview redaction follows metadata and does not mutate the draft.
+7. Chrome verified edit, review, apply, the new revision, and the updated output
+   label. The screenshot in `docs/images/hub-setup-simulation.jpg` uses explicit
+   simulation. No hardware was used. A blocked in-app browser dialog did not
+   establish UI acceptance; the successful Chrome flow did.
+8. PR CI exposed the existing response-size test's 50 ms deadline on macOS Intel:
+   it timed out before receiving oversized headers. Give size validation its own
+   3-second budget and the stalled mutation a separate 1-second deadline against
+   a 5-second server delay. Retain permanent-size failure, uncertain-write and
+   exactly-one-request assertions; production deadlines are unchanged.
+
+Validation: the full local suite passes with 177 Windows hub tests plus the
+endpoint process fixture and 26 Alpaca tests (`artifacts/hub-setup-tests.log`).
+After the final test changes, all seven HTTP/setup integration tests and the
+response-size/stalled-write test pass. JavaScript contract/draft checks, four
+independent Python schema tests, two .NET 8 reader tests, a net48 build, Clippy
+with warnings denied, Rust 1.89.0, generated-schema freshness, and fresh package
+verification pass (`target/hub-setup-package`). HTTP checkpoint e27ad31 passed
+complete push CI; its PR run failed only the timing-coupled test corrected here.
+Disposable preview host/HTTP processes have been stopped.
+
+Remaining: setup initialization, credential controls, simulation controls,
+richer safety/cleanup diagnostics, reconnect/resume, modern interface conformance,
+native NINA/ASCOM frontends, COM imports, broader proxies and coordination,
+hardware acceptance, documentation/site updates, and the final audit/merge.
+The setup/IPC 1 MiB frame limit is smaller than the store's 4 MiB file limit;
+large-configuration transfer needs an explicit refinement. Milestone 2 stays open.
+
+## 2026-10-05: modern scalar state and connection interfaces
+
+The shared host now supplies cached DeviceState and supervised connection changes.
+Alpaca publishes Switch v3, SafetyMonitor v3 and ObservingConditions v2 when their
+capabilities are negotiated. This checkpoint adds the methods, not a conformance
+certification or a completed frontend/hardware gate.
+
+Review findings and corrections:
+
+1. DeviceState must not perform source I/O or renew evidence. Clone each Switch
+   source cache once and use the same sample for its boolean/numeric pair. Read
+   Weather under one engine lock and time. Omit stale, failed, retired or absent
+   readings independently, preserve real slot numbers, and use canonical ASCOM
+   names. Safety evaluates its current shared policy rather than cached permission.
+2. TimeStamp is optional measurement time. Mixed cached values have no single UTC
+   measurement timestamp, so omit it rather than reporting query time as fresh
+   evidence. Empty collections return []. Primary references are linked in the
+   hub contract; the tests verify that repeated getters cannot defeat expiry.
+3. An asynchronous acknowledgment must not leave an unbounded detached task.
+   Reserve one operation per client before spawning, count it toward apply
+   quiescence, impose an independent 30-second deadline, and retain failure.
+   Overlapping legacy/modern changes return busy. EOF cancels pending reservations;
+   a lost request waiter does not replay an admitted change.
+4. The HTTP adapter must include pipe initialization in Connecting. Keep a bounded
+   per-client supervisor, revoke every private lease on failed changes, and retain
+   asynchronous errors until explicit connect/disconnect reconciliation. A polling
+   caller must not mistake failure for Connecting=false. Reuse capacity after
+   explicit disconnect and preserve other clients' leases.
+5. Connected is a virtual-output lease, not a promise that every upstream is
+   healthy. An initial failure fixture using an unavailable worker incorrectly
+   expected lease acquisition to fail. Replace it with actual host admission
+   exhaustion, await its bounded initialization deadline, then verify retained
+   errors and recovery. No production health/connection semantics were changed.
+6. Negotiate new capabilities before sending typed members to older hosts. Retain
+   legacy versions there. Switch CanAsync=false is honest about scalar writes;
+   async setters and StateChangeComplete are unsupported, while mandatory
+   CancelAsync validates its channel and succeeds as a no-op. Local virtual-source
+   reads use the same state/async contract. DriverVersion uses major.minor.
+7. Review cancellation, queued operation admission, panic/drop guards, EOF before
+   task start, and explicit failure clearing. There is no global lock across I/O,
+   automatic replay, or cancellation claim about physical rollback. Successful
+   lease disconnect does not claim all backend cleanup has completed.
+
+Validation: 181 Windows hub tests plus the endpoint process fixture and 29 Alpaca
+tests pass (`artifacts/hub-modern-tests.log`). Four shared-runtime/IPC and three
+HTTP tests were added. They cover cached bundles without source reads, expiry,
+slot tombstones, partial weather failures, canonical names, separate clients,
+overlap, queued-task EOF, retained failure and reconciliation, and capacity reuse
+across 26 client IDs. Clippy with warnings denied, Rust 1.89.0, generated-contract
+freshness, formatting/diff checks and fresh transport/core/hub/Alpaca package
+verification pass (`target/hub-modern-package`). Setup checkpoint f0962d9 passes
+all four portable platforms, package and COM checks; Windows jobs are still
+running at this review. No hardware was actuated.
+
+Remaining: native .NET/NINA/ASCOM attachment and providers, complete scalar error
+and conformance-tool checks, setup refinements, COM imports, broader proxies and
+camera/focuser coordination, OS resume/recovery, hardware trials, documentation
+and site updates, and final audit/merge. Original milestones 2–5 remain open.
+
+## 2026-10-05: shared native frontend attachment and IPC
+
+Added `Regain.Hub.HubAttachment` and `HubClient` to the existing shared frontend
+assembly for .NET 8 and net48. These are transport/attachment APIs, not exported
+NINA or ASCOM providers. Native setup and device adoption remain required.
+
+Review findings and corrections:
+
+1. Reuse the Rust attachment helper rather than introducing another source owner.
+   Bound helper output/error capture and its lifetime, launch hidden without a
+   worker job, and stop only the helper on cancellation. A candidate PID cannot
+   authorize killing a shared host. Require fully qualified paths; rooted drive-
+   relative paths such as C:config.json are insufficient.
+2. Authenticate the opened pipe before hello. Verify owner, protected DACL and a
+   single ordinary current-user allow ACE. Use identification rights and disable
+   handle inheritance. Actual permissive-pipe rejection is tested before any
+   handshake bytes are sent; the positive path uses the real Rust private endpoint.
+3. Negotiate request/frame bounds, assign IDs under the writer gate, and reject
+   unknown/repeated IDs, duplicate JSON keys and invalid envelopes. Null is a
+   valid result, distinct from a missing result. Preserve structured remote fields
+   without placing arbitrary response text in exceptions.
+4. An advertised future operation cannot safely default to read-only. Refuse
+   operations outside the known command set until their semantics are implemented.
+   Bound outgoing tokens before encoding and clear temporary wire/helper buffers
+   on success and failure. Configuration input retains credential references only.
+5. Queued cancellation must free capacity without dispatch. Dispatched cancellation
+   only ends the caller wait; retain its capacity and deadline until reply/loss.
+   Frame/request deadlines close stalled transports even after caller cancellation.
+   Dispatched writes fail uncertain and are never replayed.
+6. An idle read task must not keep an abandoned public client alive forever. Pumps
+   retain separate connection state; finalization closes the stream. Explicit
+   Dispose and GC/EOF tests prove local release. Neither Closed nor Dispose claims
+   physical rollback or completed server-side cleanup.
+7. The first real-host test expected hostInstance in hostStatus, but that member
+   belongs to hello. Correct the fixture to use negotiated identity and current
+   service revision/phase; verify actual source lease counts after one client closes.
+8. net48 x86 runtime passed, then x64 loaded a stale x86 dependency: SDK default
+   intermediate paths do not distinguish PlatformTarget. Give each bitness a
+   separate intermediate directory. Both fixtures now execute the public API,
+   verify separate clients/leases and a surviving host, and clean up only their
+   newly launched simulation-only test process after verifying its executable.
+
+Validation: all 73 NINA regression/contract tests pass, including 32 hub-client
+checks (`artifacts/hub-dotnet-all-tests.log`). Final targeted checks also pass after
+fully qualified path and final deadline validation (`artifacts/hub-dotnet-final-tests.log`). Both
+net48 x86/x64 runtime fixtures pass (`artifacts/hub-net48-tests.log`), and both
+shared library targets build with warnings denied. The new net48 fixture script
+is included in the normal Windows test playbook. Scalar checkpoint bb55313 passed
+both complete push/PR CI runs, including all four portable platforms and Windows.
+No hardware was actuated, and disposable host processes were cleaned up.
+
+Next: native NINA Switch/SafetyMonitor/ObservingConditions providers and shared
+native setup, then isolated COM imports, native ASCOM outputs, broader proxies and
+coordination, reconnect/resume, conformance, hardware trials, documentation/site
+updates and final audit/merge. This checkpoint does not close those gates.
+
+## Native NINA scalar outputs and saved selections
+
+The native providers implement the interfaces shipped with NINA.Plugin
+3.2.0.9001. Reviewed the pinned NINA source at commit
+[`2393eae581145ed5b8114bf07c48ca2580540fd5`](https://github.com/isbeorn/nina/tree/2393eae581145ed5b8114bf07c48ca2580540fd5):
+ISwitchHub/ISwitch/IWritableSwitch, ISafetyMonitor, IWeatherData and their view
+models. This is interface/behavior research; no upstream implementation was copied.
+
+1. Equipment enumeration must read saved bindings only. No network/device discovery
+   or host launch occurs in GetEquipment. MEF exports use the three exact NINA
+   device interfaces. Choices retain instance/output UUIDs independently of labels,
+   file paths and list order; a configuration choice remains available for setup.
+2. Check a saved instance before launching the attachment helper, then check the
+   live catalog's output UUID/class before acquiring its private client lease.
+   Clone mutable caller selections before awaits. Missing/changed identities fail
+   instead of falling back to another output. Setup discovery intentionally has no
+   previously selected instance; saving is an explicit selection.
+3. Keep connection initialization private until metadata is ready. A disconnect
+   cancels the entire attempt, including the gap before session attachment. Reject
+   overlapping transitions. Cancellation callbacks must run outside lifecycle
+   locks; tolerate the attempt CTS being disposed after an already completed wait.
+   Dispose closes only this private client and never kills the shared host.
+4. Fence channel objects and getter contexts with the connection epoch. An object
+   retained by NINA across reconnect cannot read/write a newly mapped session.
+   Host tombstones preserve channel IDs after durable apply. Publish an immutable
+   collection, including removed slots, instead of compacting the NINA list.
+5. Read safety from the host on every getter; local failure/disconnection is unsafe.
+   Weather failures remain per metric and return NaN. A timeout injection resets
+   the source generation, so it cannot prove expiry alone. The strengthened test
+   uses actual HTTP 503 responses: generation remains unchanged, the failed-cycle
+   threshold is not reached, and the host policy becomes stale while weather works.
+6. NINA SwitchVM polls channels but ignores a false Poll result. Its completion loop
+   checks `Math.Abs(Value - TargetValue) > tolerance`, where NaN would wrongly look
+   complete. Writable Value therefore throws when readback is invalid. SetValue
+   invalidates the old sample and sends once; uncertainty remains an error and the
+   host latch prevents another command. Target rounding matches the configured
+   Rust grid, anchored at minimum with ties away from zero.
+7. Do not hold a channel lock across I/O. Version poll results against writes so a
+   pre-write response cannot restore an old value. Reject overlapping local writes;
+   the shared host remains the authority for control, permissions and source limits.
+   Capability failures create a read-only channel with a reconnect diagnostic;
+   unrelated Weather/Safety outputs remain available. Initial targets come from
+   cached readback and never send a command.
+8. Frontend bindings store identities only, with bounded strict JSON, unique IDs,
+   an OS file lock, revision compare-and-swap and flushed atomic replacement.
+   Do not serialize the computed NINA Id. Reject null/invalid selections and
+   unsupported fields. Native setup uses the existing theme, saves an explicitly
+   chosen output, acquires no equipment lease and cannot overwrite unreadable state.
+9. A first tombstone fixture asserted hostStatus's phase on an applyConfig result.
+   Correct it to the actual applied/ready outcome, then verify the persisted update,
+   renamed stable identity, removed slot and retired writable object after reconnect.
+
+Validation: all 88 NINA tests pass (`artifacts/hub-nina-native-all-tests.log`),
+including 15 native checks (`artifacts/hub-nina-native-tests.log`). Production
+process tests cover native adapters without HTTP, actual Alpaca publication sharing
+and independent EOF cleanup, safety/backoff, unavailable capabilities, uncertainty,
+weather ages, cancellation, retarget refusal, and tombstones after durable apply.
+Both shared library targets build with warnings denied
+(`artifacts/hub-nina-native-build.log`); real net48 x86/x64 attachment fixtures pass
+(`artifacts/hub-nina-native-net48-tests.log`). Both complete CI runs for client
+checkpoint 9006a99 passed all eight jobs. No hardware was actuated.
+
+The shared native output selector is implemented. Complete shared-descriptor native
+configuration editing, selection removal/management, diagnostics and interactive
+NINA acceptance remain required. Milestone 3 is not complete: COM imports and their
+hung-driver isolation are still pending. All broader original gates stay open.
+
+## Shared native configuration editor
+
+1. Keep native setup in the existing frontend assembly and reuse the setup theme.
+   A private editor client reads the host description/config/status, validates
+   drafts and sends one revision-checked Apply. It acquires no equipment lease,
+   starts no HTTP publisher and cannot disconnect a NINA client to save changes.
+2. Schema `oneOf` is not always a tagged object: ConnectionPolicy contains
+   described scalar constants. Both JavaScript and .NET readers now distinguish
+   these cases, preserve per-choice descriptions/capability gates, and initialize
+   an available scalar choice without inventing a `kind` property. Chrome verifies
+   the actual remote-source control changes to managed and reaches a valid review.
+3. Protect identity through the draft API as well as disabled controls. Scalar
+   setters cannot replace records/collections containing immutable descendants;
+   structural APIs create new UUIDs, while baseline lookup uses stable record IDs.
+   The host's ledger remains the final authority for retired IDs/numbers and
+   cross-field constraints. Unknown/hidden metadata survives in the candidate but
+   does not appear in the ordinary preview; credential references are redacted.
+4. Invalid scalar text must survive collapse and remain an error. Refuse structural
+   redraws while errors exist so removing/reordering fields cannot discard an
+   invalid draft silently. Expander events bubble; only the originating expander
+   may unload its content, otherwise collapsing a child destroys its ancestor.
+5. Review binds to a cloned candidate/version. Apply checks both again and sends
+   once. A committed response still requires reload; a lost committed response
+   cannot be cleared by another Review. A competing editor produces a conflict,
+   and an active output client produces a rejection without being disconnected.
+   If another commit wins after Apply, display the applied and current revisions.
+6. Dispose must remain terminal under late responses or queued review requests.
+   Cancel outside the lifecycle lock, retain the token source through active
+   operations and cancellation callbacks, then dispose it. Closing the setup
+   window closes only its private client; malformed review results require reload
+   instead of enabling Apply. Cancellation of a dispatched review can retire the
+   pipe and therefore requires explicit reconciliation too. A terminal cached-health
+   read failure also revokes any earlier review; diagnostic reads serialize with
+   the editor's review/apply operations so they cannot restore a stale review.
+7. Use lazy controls and 32-item pages, expandable readonly identities and a
+   single cached-health source picker. Do not create a button for every source
+   or pre-render every channel. Live inspection and richer policy diagnostics
+   remain separate setup refinements.
+8. The first WPF render returned transparent pixels despite a passing workflow.
+   Inspecting the pixels prevented treating an empty screenshot as evidence.
+   WPF throttles rendering when a desktop session has no display; the
+   [upstream compatibility guidance](https://github.com/dotnet/wpf/issues/2811#issuecomment-604764804)
+   documents a switch for short renders. Enable it only in the test runtime,
+   render the actual laid-out WPF content and reject empty captures. Production
+   rendering settings are unchanged. The verified images show automated
+   simulation, not interactive NINA or hardware acceptance.
+9. Push CI for 8e73b27 exposed the deliberately stalled writer in the queued
+   cancellation ordering test hitting its 2-second fixture frame deadline.
+   Increase that fixture to 10-second frames/20-second requests. Separate deadline
+   tests retain their short bounds, and production transport limits are unchanged.
+   PR CI for the same head passed all eight jobs; do not describe the failed push
+   as a green checkpoint.
+
+Validation: all 109 NINA tests pass (`artifacts/hub-native-editor-all-tests.log`),
+including 21 additional draft/editor/window checks. The real production-host
+fixtures cover saved edits, field errors, competing revisions, active clients,
+and no equipment leases. Fault tests cover committed reply loss, malformed
+validation, health transport failure and disposal while requests wait. The actual WPF window executes
+edit/review/apply/saved-health and host-survival checks; reviewed renders are in
+`docs/images/hub-native-*-simulation.png`. net48 x86/x64 public editor fixtures
+pass (`artifacts/hub-native-editor-net48.log`), as do warning-denied net48/net8/NINA
+builds (`artifacts/hub-native-editor-build.log`), 29 Alpaca checks after rebuilding
+the web resources, JavaScript contract/draft checks and four independent JSON
+Schema tests. Chrome verifies the actual scalar policy picker and host validation
+(`artifacts/hub-web-policy-reviewed.jpg`). Its disposable publisher/host were
+stopped after checking their executable and unique config path. No hardware was
+actuated. This increment still requires complete CI and interactive acceptance.
+
+Next: native setup initialization/credential management/inspection/simulation
+controls/selection management, interactive NINA acceptance, isolated COM imports,
+native ASCOM outputs, broader proxies and camera/coordination contracts, recovery,
+conformance and real-device trials, README/site/screenshots and final audit/merge.
+The full original plan remains in scope; milestone 3's complete gate is still open.
+
+## Isolated Windows COM worker boundary, 2026-10-06
+
+Reviewed the first three import interfaces against the pinned
+ASCOM.DeviceInterfaces/Exception.Library 7.1.2 declarations. Use the existing
+bounded accessory response envelope; do not add an HTTP hop or per-class host.
+The one hub ASCOM project reserves future native-output server work and builds
+distinct x86/x64 workers with separate intermediate directories.
+
+Findings and corrections:
+
+1. Defer activation until the first connect step so the Rust parent can attach
+   its process ownership guard first. The input reader dispatches serial requests
+   to one STA with a WPF message pump; activation/calls/RCW release share that STA.
+   Real COM fixture traces verify thread/apartment/bitness and a queued callback.
+2. Do not let reflection turn a caller-supplied name into an arbitrary operation.
+   Whitelist and type-check members/parameters; connection changes belong only
+   to handshake operations. SetupDialog, Action/Command and Dispose cannot be
+   reached by ordinary imports. Ignore vendor Console output, but any native
+   stdout corruption must still retire the parent transport.
+3. Negotiate legacy versus modern ownership. Borrow legacy/global connections
+   that were already open; claim the modern private connection even if shared
+   hardware is connected. Never fall back from rejected modern Connect to a
+   Connected setter. EOF cleanup consumes owned Disconnect once, without replay.
+4. Initial review found failed verification blocked cleanup of an acknowledged
+   connection. Permit Disconnect after a definitive verification failure while
+   continuing to reject uncertain connection changes. A fixture verifies owned
+   cleanup runs once; uncertain Connect/Disconnect tests prove no replay.
+5. A generic failed mutation can follow a hardware change. Return uncertain and
+   latch later worker writes; permit diagnostic reads. The shared actor must
+   still enforce its existing control leases, uncertainty latch and generation
+   fences when it adopts this worker. The worker does not replace that policy.
+   Only internal pre-dispatch checks and the defined ASCOM InvalidValue HRESULT
+   prove rejection; an arbitrary vendor ArgumentException remains uncertain.
+6. Preserve known ASCOM HRESULTs, including missing/unsupported/not-connected
+   and per-sensor unavailable errors, without returning arbitrary messages or
+   stack traces. Invalid/nonfinite input is rejected before dispatch, and
+   non-Boolean safety data is unavailable rather than coerced to permission.
+7. Treat malformed frames, duplicate keys, non-increasing IDs and unsupported
+   protocol versions as terminal. Bound requests/response size and parser depth.
+   EOF releases only acknowledged ownership and never calls vendor Dispose,
+   which can disconnect globally shared equipment.
+8. Use real private HKCU COM registration, not a production fixture activation
+   hook. Fail if the private CLSID/ProgID already exists; remove only those exact
+   registrations in finally. Explicit pointer-sized Win32 arguments keep cleanup
+   correct in a 64-bit Python host. Test fixture configuration/hooks reside only
+   in the fixture assembly, and no installed hardware driver is activated.
+
+Validation: `scripts/test-hub-com.ps1` passes both warnings-denied worker builds,
+the AnyCPU fixture build, and 16 test cases exercised in both x86/x64, logged in
+`artifacts/hub-com-worker-tests.log`. Actual COM cases cover metadata, switch
+writes, legacy/modern ownership, safety types, weather ages/canonical names/
+per-sensor errors/Refresh/AveragePeriod, sanitized HRESULTs, command uncertainty,
+EOF cleanup, missing registration, wrong bitness, malformed frames and stalled
+worker isolation. Test registration is removed afterward. No hardware is moved
+or disconnected. The normal Windows playbook now runs these fixtures.
+
+Native-editor checkpoint 2171bec passed complete push CI 37432217328 and PR CI
+37432225426 (all eight jobs each). This worker increment requires its own CI.
+Rust factory/adapter adoption, process-guard/deadline/cancellation and generation
+tests, cached safety expiry during a COM stall, mixed COM/native/network outputs,
+private payload/signing, native ASCOM outputs and every original remaining gate
+remain required. The host still rejects COM sources and does not advertise them.
+
+## Rust COM adoption and private payload, 2026-10-06
+
+Reviewed the Rust factory, parent transport, actor generations and shared scalar
+polling against the preceding worker contract. COM sources now use the same
+runtime and output policies as native/Alpaca sources. No installed equipment
+driver is activated by these tests.
+
+Findings and corrections:
+
+1. Deserialize typed inner replies directly from bounded frame bytes. Converting
+   first to a generic JSON object would discard duplicate fields. Retire corrupt
+   framing, wrong identity/types or contradictory connection ownership; preserve
+   null versus absent fields and complete signed HRESULT values.
+2. Attach worker ownership before activation. The existing kill-tree job is
+   correct for direct hardware workers, but a COM driver can spawn a shared vendor
+   helper. Add an explicit independent-worker policy with silent descendant
+   breakaway. The real child-process fixture proves parent cancellation kills
+   the private worker while its helper stays alive; the test ends that helper
+   through its own stop marker.
+3. Arm connection uncertainty before awaiting a managed handshake. Cancellation
+   must not permit a replacement worker to replay Connect or Disconnect. Bound
+   the total handshake as well as each RPC: a driver can return Connecting=true
+   forever without individually timing out. Incomplete cleanup also remains
+   uncertain after reset.
+4. A lost write retires the worker, but does not clear the actor's uncertainty
+   latch. A real fixture records one dispatch before stalling, then proves a
+   replacement generation cannot replay it or accept a later mutation. Normal
+   read faults may recover in a new private worker, without claiming confirmed
+   upstream cleanup or terminating a vendor server.
+5. Factor scalar plans, one-request polling, same-key retries, weather ages and
+   per-sensor failures into `sampling.rs`, shared with Alpaca. Safety retains its
+   single typed IsSafe observation rather than counting getters as evidence. A
+   COM stall test expires cached permission while the blocked worker is still
+   alive, without resetting its generation; unrelated weather remains usable.
+6. Capability metadata must reflect installed x86/x64 helpers and the three
+   supported COM classes. Both generic setup readers disable unimplemented
+   classes/architectures. Configuration preparation checks paths/types without
+   activation, discovery, simulation substitution or connecting equipment.
+7. Stage both helper architectures, all runtime DLLs/config and dependency
+   licenses. Reuse the existing .NET license extraction for ASCOM and COM
+   payloads. The ASCOM package refreshes the helper tree after signing; release
+   signing/verification lists both EXEs. ZIP validation checks worker presence,
+   assembly version and architecture. A local variable collision initially
+   broke the validator build and was corrected before package acceptance.
+8. Foundation CI 1bc1d7b failed Windows activation before any fixture trace with
+   HRESULT 0x80070002; all seven other jobs passed. Add fixture-only merged
+   registry/direct managed-load diagnostics after failures. Do not weaken the
+   production error boundary, add a production activation bypass or infer the
+   runner root cause from successful local tests. A local diagnostic invocation
+   initially hit Windows PowerShell execution policy; its test-only subprocess
+   now uses scoped Bypass, and both probes pass. Run fixture registration
+   playbooks sequentially: they intentionally share one private fail-if-present
+   CLSID, and overlapping probes can remove another test's registration. A clean
+   sequential staged run passes; registration is removed afterward.
+
+Validation: `artifacts/hub-com-parent-tests.log` and
+`artifacts/hub-com-staged-tests.log` pass 16 worker cases plus ten Rust-parent
+cases, each exercised in both architectures. Parent cases include modern/legacy
+ownership, weather ages/partial errors, factory sharing and last disconnect,
+cancelled reads, surviving vendor child, lost writes, uncertain connections,
+independent safety expiry, mixed native-simulation/loopback-Alpaca/COM gauges,
+corrupt stdout and permanently pending cleanup. Staged helpers use the actual
+package paths and dependencies. Clippy, full core/hub/Alpaca tests, Rust 1.89,
+110 NINA tests, JavaScript/schema checks and net48 x86/x64 fixtures pass locally.
+Unsigned NINA/ASCOM packages validate (`artifacts/hub-com-package-retry.log`,
+`artifacts/hub-com-ascom-package.log`). Both local loader probes pass
+(`artifacts/hub-com-loader-probe.log`). Updated CI and signed release validation
+remain required; local success does not resolve the observed runner failure.
+
+Runner follow-up: adapter 9dfdb82 failed Windows in push 37438671971 and PR
+37438682468; the other seven jobs passed in each run. The probes show both direct
+managed loads succeed, with failed COM class-factory activation in elevated
+32/64-bit PowerShell. HKCR displays the correct private keys and codebase, so
+its merged view does not prove elevated COM can load them.
+[Microsoft's elevated COM guidance](https://learn.microsoft.com/en-us/windows/win32/com/the-com-elevation-moniker)
+explains why per-user registration is insufficient. The test playbook now
+explicitly selects private HKLM registration only on elevated disposable GitHub
+Windows runners; Python verifies both environment and elevation. Preflight checks
+both hives and architectures, and finally removes only the exact private keys
+created. Local HKCU runs still cover both worker/parent architectures, and the
+machine option is rejected locally. Keep ProgIDs within the
+[documented 39-character bound](https://learn.microsoft.com/en-us/windows/win32/com/-progid--key),
+including fixture aliases. Production activation and error sanitization are
+unchanged. This correction still requires new CI evidence.
+
+## Common native saved-choice management, 2026-10-06
+
+Added removal to the shared selection store and the same themed selector used by
+native setup. This is a user-scoped chooser operation, not deletion of a hub
+output or source. Review focused on independent client leases, configuration
+identity, concurrent saves and uncertain outcomes.
+
+1. Save and Remove share one bounded, revision-checked atomic update path and
+   persistent OS lock. Remove identifies both instance and output UUID; missing
+   identities and stale revisions do not produce a new saved revision. Empty
+   chooser lists remain valid and retain their revision for subsequent saves.
+2. Never attach to a host or revoke equipment leases from the manager. Connected
+   native devices retain their private selection and session. Rescan enumerates
+   the reduced chooser list; explicitly saving the output restores the same ID.
+   Production-host and actual net48 tests verify connected leases survive removal.
+3. A failed/conflicting removal disables mutation until explicit reload. The
+   selector reconciles its own revision after returning from management; another
+   later save still fails CAS. An unreadable selection file cannot be overwritten.
+4. Show label, simulation marking, config path and both identities. The first
+   render clipped the long path/instance detail horizontally; reviewing it led
+   to wrapping row content and disabling the horizontal scrollbar. The verified
+   actual WPF render is `docs/images/hub-native-selections-simulation.png`, clearly
+   labeled automated simulation. No installed NINA/ASCOM acceptance is claimed.
+
+Validation: all 114 NINA checks pass (`artifacts/hub-selection-all-tests.log`),
+including four new store/live-lease/WPF cases. Tests cover competing saves,
+missing/empty identities, unreadable files, empty lists/restoration, actual chooser
+enumeration and continued production-host leases. net48 x86/x64 public fixtures
+exercise the same removal/CAS/retained-lease behavior
+(`artifacts/hub-selection-net48.log`); both native framework builds pass with
+warnings denied (`artifacts/hub-selection-build.log`). New CI remains required.
+
+## 2026-10-06: typed native ASCOM outputs and common COM server
+
+Reviewed current/legacy interface metadata against the pinned ASCOM 7.1.2 assembly
+and async completion/error semantics against the primary interface documentation.
+The existing helper serves both isolated imports and bound native outputs; no
+per-class executable/project was added.
+
+1. Separate verified host attachment from equipment acquisition. ASCOM delegates
+   modern/legacy connection operations to the Rust host and retains failures in
+   Connecting. Admission is reserved before dispatch; no automatic retry occurs.
+   Each COM object checks required interface capabilities before acquiring equipment
+   and retains a private client and immutable selection. Dispose and
+   disconnect preserve sibling leases. Added logical connection epochs as well
+   as transport epochs so responses cannot become fresh after a connection change.
+2. Convert scalar values to current/legacy ASCOM interfaces, including DeviceState
+   collections. Unavailable weather raises ValueNotSet, unimplemented properties
+   and methods have distinct ASCOM errors, and invalid/non-finite writes fail.
+   General source failures retain full HRESULTs with sanitized diagnostics.
+   No measurement TimeStamp is synthesized. Review fixed stale simulation display
+   metadata by replacing it from the authenticated catalogue on attachment.
+3. Derive dynamic CLSIDs with UUIDv5 from instance/output/class and 39-character
+   ProgIDs. An independent Python implementation verifies the actual factory IDs
+   through COM activation. Four outputs include two Switch outputs sharing a
+   source; names/order do not establish identity. Register fixture keys only after
+   both-hive/bitness preflight and remove only exact private keys in finally. Machine
+   fixture registration remains restricted to elevated disposable GitHub runners.
+4. Extract the pumping STA, metadata warmup, weak object tracking, factory/QI and
+   shutdown into LocalComServer shared by hub, Pegasus, OFP2 and ETA frontends.
+   Actual 32/64-bit COM simulation regressions pass for the existing drivers.
+   Shared native setup opens the same editor; interactive COM SetupDialog and
+   production registration/SCM lifecycle remain pending.
+5. Checkpoint 64178eb passed all eight jobs in both CI runs, verifying the private
+   HKLM runner correction. Subsequent 1adcafe PR CI found the queued-writer fixture
+   still used the peer's short default deadline despite a longer client deadline.
+   Give only that deliberate 100 kB/tiny-buffer exchange a bounded ten-second peer
+   allowance; production limits and separate deadline/fault tests are unchanged.
+   The earlier safety fixture fix tolerates only expected socket abort/reset/EOF.
+
+Local evidence: all 117 NINA checks (`artifacts/hub-output-nina-tests.log`), actual
+net48 adapters/current+legacy COM QI in both bitnesses
+(`artifacts/hub-ascom-output-tests.log`), real exported COM dispatch to each server
+architecture from both client bitnesses (`artifacts/hub-exports-com-tests.log`),
+and serial-driver regressions (`artifacts/hub-shared-server-{ofp2,pegasus,eta,falcon}.log`).
+The 16 import-worker cases and ten Rust-parent cases each cover both architectures
+again (`artifacts/hub-output-import-regression.log`). Unsigned NINA and ASCOM
+packages build with the new private assembly (`artifacts/hub-output-package.log`
+and `artifacts/hub-output-ascom-package.log`).
+The same export playbook passes with the actual staged helpers and release Rust
+host (`artifacts/hub-exports-staged-tests.log`); publication checks pass without
+remote writes (`artifacts/hub-output-release-checks.log`).
+The new private frontend DLL is explicitly signed/verified alongside both helper
+EXEs; package validation requires its version and architecture. Signed development
+payload validation remains pending.
+
+Next: new CI and remaining production registration/removal, identifiable export
+self-proxy/alias checks, setup/SCM/conformance acceptance, then every original
+broader proxy, camera/acquisition, coordination, recovery, hardware and
+README/site/screenshots/final merge gate. PR #21 remains draft.
+
+## 2026-10-06: native export aliases and startup diagnostics
+
+1. Configuration rejects canonical native ASCOM self-proxy names case-insensitively.
+   Rust UUIDv5 and the existing .NET identity algorithm agree on fixed vectors for
+   all three scalar classes. Renames and output order do not retarget an identity;
+   different hub instances remain allowed. The .NET helper moved unchanged to the
+   common frontend assembly so registration can use the same implementation.
+2. The production factory supplies all configured output class IDs to the isolated
+   COM worker. Resolve the actual registry binding before activation and activate
+   the checked CLSID. Review/testing rejected Type.GUID: a registered managed alias
+   can expose its managed class GUID instead of the alias's registered CLSID.
+   Lookup follows bitness and elevation; no driver constructor or automatic ProgID
+   installation runs as part of self-proxy rejection. Rejected sources report an
+   invalid value and empty readings while scalar clients retain diagnostics.
+   This covers local aliases, not arbitrary cross-host dependency cycles.
+3. Both native-output CI runs for 779737f failed Windows export condition waits.
+   Existing logs hid the second client's failure. Collect both peer outputs and
+   name each wait without increasing the deadlines or swallowing COM exceptions.
+   The fixture passes locally; the runner-specific cause remains unresolved.
+4. Push CI also failed macOS Intel process startup at the strict socket permission
+   check. Inspection found bind exposed the public inode before chmod. Stage the
+   socket privately on the same filesystem and publish after mode 0600 is set,
+   retaining peer admission, stale-path checks and inode-based cleanup. Added an
+   actual renamed-socket exchange and rejection after broadening permissions.
+   This Unix test awaits portable CI; local cross-target checking could not proceed
+   because the Linux C compiler required by ring is absent. No security check was
+   weakened and no global umask was changed.
+
+Local evidence: `artifacts/hub-export-alias-tests.log` has 17 registered worker and
+11 Rust-parent cases passing in both architectures, including zero activation
+calls for a registered self alias and repeat connection. Cross-language config
+vectors pass (`hub-export-identity-tests.log`, `hub-export-identity-dotnet.log`).
+The hub/Alpaca suites pass (`hub-export-guard-rust-tests.log`), along with 117 NINA
+checks (`hub-export-guard-nina.log`), strict Clippy and Rust 1.89 checks. Real export
+fixtures pass after the diagnostic changes (`hub-export-guard-diagnostics.log`).
+Unsigned NINA and ASCOM packages validate (`hub-export-guard-package.log`,
+`hub-export-guard-ascom-package.log`). No installed equipment was activated.
+
+Next: verify portable publication and diagnose Windows using the new peer logs,
+then production registration/removal and every original remaining gate. This
+checkpoint does not close native ASCOM acceptance or the broader plan.
+
+## 2026-10-06: explicit bound launch and strict collection checks
+
+f94c85c push CI 37447788480 and PR CI 37447794795 passed all four portable platforms,
+packages, research and COM activation. Both Windows jobs failed the export test.
+The new peer logs show the second client failed DeviceState, while the first only
+timed out waiting for its completion signal. This is not a connection deadline
+failure and increasing waits would not address it.
+
+Review found the PowerShell property helper returned enumerable properties through
+the pipeline, losing the collection wrapper. Preserve the original value with a
+non-enumerating return, including through the export fixture's wrapper. Actual COM
+tests now use reflection for Count and Item, and verify IsSafe's name and boolean
+false value. Both framework client bitnesses pass locally; helper regressions also
+preserve empty and single-item arrays. New CI must confirm the original failure is
+resolved; local installed ASCOM metadata alone cannot establish a runner result.
+
+The export helper accepts explicit absolute binding and host paths for SCM commands,
+validates file presence/duplicates/relative paths before factory publication and
+ignores inherited binding/host values for an explicit registered launch. Manual
+bound fixtures prove metadata does not start a host, then exercise four outputs
+with both client/server bitnesses and independent leases. Warnings-denied helper
+builds pass (`artifacts/hub-bound-launch-build.log`), and the actual exchanges,
+collection members, invalid-argument cases and CIM/OS-handle process identity
+checks pass (`artifacts/hub-bound-manual-tests.log`).
+
+Cold SCM activation using private HKCU entries fails locally with 0x80040154 before
+any startup phase is written, despite a matching merged registry entry. Native
+CoGetClassObject also failed during diagnosis; no activation bypass is retained.
+The production machine-registration case remains unverified. Add a private HKLM
+SCM variant on the disposable runner, following the existing elevated fixture
+guard, AppID/Interactive User model and ServerExecutable registration. That test
+does not activate installed equipment entries. It discovers only the unique fixture
+binding command, verifies creation time and executable through an opened process
+handle before termination, and attempts every exact-key cleanup even when a child
+or diagnostic operation fails. All entries still have collision preflight in both
+hives/views. Local tests keep HKCU; they never attempt elevation or machine writes.
+
+Next: corrected Windows CI and cold machine launch, then production ownership/
+registration/removal, interactive setup and every original remaining plan gate.
+
+## 2026-10-06: production registration and ownership foundation
+
+d51abac push CI 37449772668 and PR CI 37449781613 passed all eight jobs.
+Windows logs verify strict DeviceState values and cold SCM launch from both
+client bitnesses against both server architectures. Unix publication passes all
+four platforms. The collection wrapper and socket publication failures are
+resolved at that checkpoint; production registration is a new increment.
+
+Review of registration/removal addressed:
+
+1. Use the existing helper/shared identity rather than adding an executable or
+   duplicating GUID derivation. Both chooser views launch the installed x64
+   helper with explicit paths and original SID. Different-account elevation and
+   activation fail before factories/equipment acquisition.
+2. Hold the selection CAS writer lock and machine registration mutex through
+   preflight/publication. A second-view collision, user overlay, changed command,
+   foreign owner/install or newer version cannot authorize a first-view write.
+3. Persist pending ownership before keys and ready after publication. Explicit
+   retry can repair owned partial entries. Removal uses inventory after selection
+   deletion and installer removal is scoped to the exact installation.
+4. Capture registry kinds and custom owner/group/DACL/protection for rollback.
+   Ordinary read/write handles lack security-write rights; reopen only the same
+   key with required rights, enabling no privileges and broadening no ACL.
+   SACL/audit metadata and process-crash atomicity are not claimed. Attempt every
+   restoration and report partial rollback rather than hiding cleanup errors.
+5. Bound the whole snapshot to 512 keys, depth 16 and 1 MiB, before any mutation.
+   Oversized/deep trees leave both views untouched. Fixture cleanup also accepts
+   missing parents after a failed registration but still reports other failures.
+
+Local evidence: all 126 NINA tests pass, including nine private-registry cases
+(`artifacts/hub-registration-nina-tests.log`). net48 x86/x64 selection/editor/
+adapter fixtures pass (`hub-registration-net48-tests.log`); the registration
+helper builds with warnings denied (`hub-registration-build.log`) and unsigned
+ASCOM package validates (`hub-registration-package.log`). Owner-mismatch and
+manual COM fixtures passed earlier (`hub-registration-owner-tests.log`). No
+installed hardware driver was activated. A new disposable-runner-only fixture
+uses the actual helper for publication, cold SCM activation and inventory-based
+removal after deleting selections; its result is still pending new CI.
+
+Next: production fixture CI, themed registration manager, installer lifecycle,
+conformance and all original remaining plan gates. The backend/CLI alone does
+not complete milestone 4's native setup or wider proxy/coordination requirements.
+
+## 2026-10-06: themed ASCOM registration manager
+
+The existing setup executable now opens the shared themed manager with `/hubsetup`
+and a Start menu shortcut. It reconciles saved choices against both registry
+inventories, including orphaned entries. The existing native selector/editor
+serve all scalar classes; initial manager load never opens equipment or a host.
+Immutable registration requests carry the observed selection revision and original
+SID to the installed helper through Windows elevation. Foreign ownership, install,
+selection file or newer version disables register/remove. Removing a saved choice
+requires registration removal first. While waiting, all competing actions are
+disabled; errors and unknown completion require reload, with no replay or helper
+termination. Closing the window cannot revive controls or start another operation.
+
+Review expanded installer in-use checks to cover nested hub executables/DLLs.
+It also found dynamic registrations are not included in Inno's generated registry
+table, and `/unregserver` is not the installer uninstall path. The backend's manual
+inventory-removal command therefore does not prove installer cleanup. Add the
+proper uninstall lifecycle hook and failure/preservation tests before that gate.
+
+All 129 NINA tests pass (`artifacts/hub-registration-ui-tests.log`), including
+three actual WPF workflows using private registry roots and no real elevation.
+They cover registration, orphan removal, foreign-owner protection, unreadable
+settings, busy admission, timeout/no-replay and explicit reload. Actual rendered
+simulation screenshot is `docs/images/hub-ascom-registration-simulation.png`;
+it was visually inspected for theme, controls, wrapping and simulation marking.
+net48 x86/x64 fixtures pass (`hub-registration-ui-net48.log`), the existing setup
+helper builds with warnings denied (`hub-registration-ui-build.log`), and unsigned
+ASCOM packaging validates (`hub-registration-ui-package.log`). These do not prove
+interactive UAC, installed Chooser, installer lifecycle or conformance acceptance.
+Unsigned installer compilation also passes using the existing pinned compiler
+(`hub-registration-ui-installer-build.log`); no installer was run on this machine.
+
+Next: production fixture CI and installer lifecycle, then complete remaining
+setup, broader proxies/cameras/coordination and every original acceptance gate.
+
+## 2026-10-06: installer lifecycle and complete-install cleanup
+
+b76d2fc PR CI 37452667674 and push CI 37452661961 failed Windows; the other seven
+jobs passed. The PR log shows `UnboundLocalError` for `created` in the new
+registered-export fixture, before helper publication. Review found that block
+also skipped collision preflight and sat outside finally. Move registration
+inside the guarded cleanup after all hives/views are checked; reserve exact paths
+only then, skip raw fixture writes for this mode and retain collision refusals.
+Local manual COM exchanges still pass (`hub-registration-fixture-order-local.log`).
+Production helper activation/removal must be proved by new CI, not these manual
+tests. 434db2f inherits the fixture fault until this correction lands.
+
+Inno's pinned [6.7.3 uninstall source](https://github.com/jrsoftware/issrc/blob/is-6_7_3/Projects/Src/Setup.Uninstall.pas)
+calls `usUninstall` after confirmation and invokes it with fatal exception handling
+before `PerformUninstall`. Wire owned inventory cleanup into this event; nonzero
+helper completion aborts before file deletion. Do not unregister on initialization
+or cancellation. The existing in-use guard still runs first and never stops clients.
+
+Complete-install removal now preflights every output and both views before any
+deletion, with one bounded rollback batch. A later conflicting output cannot
+leave an earlier one removed. Caught failures attempt every restoration, including
+custom security. A foreign install's future schema is skipped by its installation
+marker; this helper must not interpret or remove it. Individual snapshot limits
+remain; batch limits are 256 outputs, 4096 keys and 8 MiB, and inventory enumeration
+admits 4096 entries. Partial restoration and crash limits remain explicit.
+
+The disposable-only actual installer fixture registers three scalar outputs plus
+a separate real helper/payload with another identity. It checks same-directory
+upgrade preservation, failed uninstall on a changed command with all files/entries
+retained, removal after deleting the selection file, and preservation of the other
+install/settings. Cleanup uses owned helpers, not raw key deletion. Paths stay
+inside the named installer fixture directory; manifests are written only after
+collision preflight. Even a partially failed preparation attempts cleanup, and
+cleanup errors do not skip restoring the existing test environment. The initial
+lifecycle fixture does not activate COM or acquire equipment. The extension below
+adds only private installed metadata activation, with no equipment connection.
+
+Local evidence: 131 NINA tests passed (`artifacts/hub-installer-batch-tests.log`);
+all 11 registry tests passed after final scope refinement
+(`hub-installer-registry-review-tests.log`). net48 x86/x64 fixtures pass
+(`hub-installer-net48-tests.log`), unsigned packaging validates
+(`hub-installer-package.log`) and the hooked installer compiles
+(`hub-installer-build.log`). Python and PowerShell syntax checks pass. The new
+machine fixture refuses local invocation before filesystem/registry mutation
+(`hub-installer-local-guard.log`). No actual installer was run locally and no
+installed equipment was activated. Actual machine/UAC/conformance acceptance
+and every remaining original milestone still require evidence.
+
+Next: corrected production and installer CI, then remaining shared setup,
+broader typed proxies/camera acquisition, coordination and complete original gates.
+
+Installer acceptance now also holds one actual installed hub COM object in the
+PowerShell 7 parent without Connect. Its nested helper/shared DLL must block
+upgrade and uninstall; the fixture then checks inventories are intact and no
+Rust host started. After releasing only its own RCW, it waits for natural idle
+retirement before continuing maintenance. It never kills another client's helper.
+Python/PowerShell syntax checks pass; this extension needs new machine CI and is
+not evidence of a completed in-use/installed metadata gate yet.
+
+### Shared native credentials and known-reference reconciliation
+
+NINA and ASCOM share one credential tab in the existing native editor. Labels,
+descriptions, lengths, protection text and reference prefix come from the host.
+The password input is never prefilled or placed in configuration/review. It is
+cleared before dispatch and on reload/close; managed strings and JSON/OS copies
+are not claimed to be securely erased. Returned shapes are checked strictly;
+an unexpected secret-bearing member fails protocol validation without exposing
+that response through the editor API.
+
+Creation accepts an optional caller-chosen non-nil UUID. The frontend retains
+its reference before dispatch, and old callers omitting the ID remain supported.
+Persistence never overwrites a record and never interprets a duplicate as replay
+permission. Unknown transport, malformed reply or unavailable storage outcomes
+disable further mutation until explicit reload/status. The window preserves the
+reference across reloads, but not across closing the window. Credential mutations
+invalidate a prior configuration review; apply still validates through the host.
+
+Review found that status could race a pending create/delete and report absence
+before an abandoned write completed. Status now acquires the same transaction
+gate, returning busy while storage or configuration work is pending. The blocking
+task retains that gate if the request waiter disappears. No automatic polling,
+recreation, deletion or Apply is introduced by setup.
+
+Local evidence: four Rust credential integration cases, including abandoned reply,
+read-only reconciliation, duplicate/no-overwrite, nil rejection and transaction
+admission, pass (`artifacts/hub-known-credential-rust.log`). Full Rust hub/Alpaca
+suites pass (`hub-credentials-rust-suite.log`), as do Clippy and Rust 1.89 checks.
+All 136 NINA checks pass (`hub-credential-full-nina.log`), including production
+host storage without equipment leases, uncertain/malformed/remote-unavailable
+response reconciliation, review invalidation and the actual WPF secret-clear/
+reload/removal workflow. net48 builds and x86/x64 client fixtures pass. The actual
+credential render was inspected; documentation marks simulated equipment.
+Web credential setup and interactive frontend acceptance remain required.
+
+CI checkpoint e728f55's Windows test step proves actual owned-helper publication,
+both-bit SCM clients and removal with deleted bindings; seven other jobs pass.
+The installer phase fails before setup at a registry key with no PlatformVersion
+(`artifacts/hub-metadata-ci-failure.log`). The fixture now tests value presence,
+deletes missing values without throwing and restores original kinds, using
+explicit writable handles. Parser/local pre-mutation rejection pass; actual
+installer lifecycle and nested helper in-use behavior still await CI. A temporary
+local registry-value probe was rejected by automatic approval review with
+"blocked by policy"; no result from that probe is used as validation.
+
+### Web credentials and independent setup reattachment
+
+Web setup now uses the host's write-only authorization and reference descriptors,
+including accurate protection text. It retains a chosen reference before dispatch,
+clears the masked input and never puts values into draft/review/diagnostics. Public
+response shapes are checked before consumption. Lost/malformed/unavailable replies
+invalidate write admission until explicit Reload/status; pending requests refuse
+competing changes. Local validation errors send no request. Unicode reference
+limits count scalars and reject unpaired surrogates. Secret JS/JSON/OS copies are
+not claimed to be securely erased or stored in browser persistence.
+
+Review found the permanent HTTP catalog stream also served setup, so Reload could
+not recover a failed transport without restarting the whole frontend. Setup now
+owns a separate private stream and explicit POST Reload with an empty object and
+128-byte limit. It uses the same same-origin/JSON/Fetch-Metadata checks as ordinary
+setup, shares bounded request admission, fences shutdown and replaces only its
+own stream. It never starts the host, touches equipment leases, replaces the
+catalog or replays an unknown write. Startup checks that both streams identify the
+same host. Host replacement remains an explicit equipment recovery concern.
+The existing host-capacity test needed to reserve both catalog and setup streams;
+its expected rejection/retained failure/reuse checks still pass.
+
+Local evidence: full Alpaca tests pass (`artifacts/hub-web-credentials-rust.log`),
+with final library/HTTP checks after review in `hub-web-credential-final-rust.log`.
+They prove closed setup recovery with a surviving catalog, busy/shutdown admission,
+cross-origin/Fetch-Metadata/media rejection, strict empty Reload bodies, shared
+credential storage/configured-reference protection and surviving equipment leases.
+JavaScript tests in `scripts/test-hub-config.mjs` cover lost/malformed/storage errors,
+reference retention, no replay, invalid-input admission, review invalidation,
+pending changes and scalar limits. Clippy and Rust 1.89 checks pass; 136 NINA
+regressions pass (`hub-web-credential-nina-regressions.log`).
+
+The actual browser against a copied production executable proves password clearing,
+revoked review, retained reference through Reload, protected status after an own
+fixture host restart, explicit removal/absence, zero console errors and zero
+equipment leases with unchanged configuration. Recorded evidence is
+`artifacts/hub-web-browser-verification.json`; the actual screenshot is documented
+as simulation. Both own fixture processes were stopped after identity checks, and
+the disposable credential was removed. No installed equipment was activated.
+
+Native-credential checkpoint 2a26281 passes all eight jobs in PR run 37457955380.
+`artifacts/hub-credentials-ci-windows.log` proves the actual installer phases:
+prepare/assert, installed metadata without host startup, nested helper busy guards
+and idle retirement, upgrade preservation, break/failed uninstall/repair/assert,
+deleted bindings, removed inventories preserving the second install/settings and
+owned cleanup. This closes those automated fixture checks, not interactive UAC,
+Chooser, conformance, vendor hardware or the original broader milestones. The new
+web increment still requires its own CI.
+
+### Shared native inspection and diagnostics export
+
+The native editor now uses explicit paged inspection through the existing host
+path. Parameters and deadlines come from the same descriptors as web setup. Its
+saved-source selector cannot silently target a new unsaved draft source. Inspection
+revokes review before dispatch, preserves sibling connection leases, rejects stale
+source/revision/generation and malformed cursors, and never replays after a lost
+reply. Cancellation invalidates further writes; disposal cannot restore session
+state. Per-property unavailable/unsupported results remain visible. No standalone
+probe establishes live safety permission.
+
+Review found clearing the preview before session admission could leave an accepted
+review enabled after local invalid input. The window now clears only after review
+is actually revoked; the WPF regression verifies invalid input preserves review
+and valid inspection revokes it. Export uses public saved host status and the last
+completed source observation with explicit time/revision. It excludes the draft,
+configuration, credential values and credential calls. The production credential
+test verifies its disposable secret/reference cannot enter this export. Reload
+clears prior observations. File selection remains an explicit user action.
+
+Local evidence: all 144 NINA checks pass in
+`artifacts/hub-native-inspection-final-nina.log`, including production Switch
+pagination, safety/weather inspection, sibling-lease preservation, lost/obsolete/
+malformed replies, local descriptor limits, cancellation and the actual WPF flow.
+The shared net48 warnings-denied build and actual x86/x64 inspection/export and
+ASCOM client fixtures pass (`hub-native-inspection-net48.log` and
+`hub-native-inspection-net48-fixtures.log`). The actual WPF simulation render was
+inspected. Broader diagnostics, initialization, simulation controls, interactive
+acceptance and every remaining original milestone stay required. Checkpoint
+2a26281 now passes both complete eight-job CI runs; web/native-inspection CI must
+still be checked to terminal completion.
+
+### Shared native and web simulation setup
+
+Reviewed the shared descriptors, native/WPF session, browser state model and
+production IPC/HTTP paths. Controls are limited to saved explicit simulated
+sources and sparse selected fields. Weather physical limits use the same backend
+validation; defaults and channel names derive from actual simulation. Both editors
+fence configuration revisions, validate reply identity/status, serialize operations
+and revoke review before dispatch. Reading current state clears the form selection
+without opening equipment; an uncertain update cannot be replayed. Safety polling
+and uncertain-write reconciliation retain their existing semantics.
+
+Production fixtures exposed a real wire bug: numeric Switch keys failed through
+serde's internally tagged command capture. An explicit map decoder now parses
+canonical IDs and rejects aliases, duplicates and unknown channels. Tests exercise
+actual tagged JSON and protected HTTP with successful sparse updates, stale
+revisions before any lease, sibling-lease preservation and unchanged configuration.
+Review also found invalid typed response values could be mistaken for local input
+errors in JavaScript; they now become protocol failures that block another write.
+
+The net48 build rejected a nested record lacking IsExternalInit; a simple immutable
+class avoids adding a compatibility shim. The actual net48 fixture initially left
+its injected level for a later independent contract suite; it now explicitly
+restores state and waits for its own lease cleanup. No deadline was increased and
+no live process was restarted on an observation timeout.
+
+Evidence: full hub/Alpaca suites, strict Clippy and Rust 1.89 checks pass in
+`artifacts/hub-simulation-rust-suite.log`, `hub-simulation-clippy.log` and
+`hub-simulation-msrv.log`. Generated-contract freshness, JavaScript state tests
+and all four Python schema checks pass. All 149 NINA tests pass after final review;
+the warnings-denied net48 build and real x86/x64 simulation/ASCOM client fixtures
+pass. Browser verification records sparse level updates preserving other channels,
+absent temperature and sample age, unchanged revision, no equipment leases and
+zero console errors in `artifacts/hub-web-simulation-verification.json`. The actual
+WPF/browser screenshots were inspected and labeled simulation. The owned browser
+tab and both copied fixture processes were closed after identity checks.
+
+Both a2cad0a CI runs are successful. Inspection checkpoint 94b9adc passes all eight
+jobs in PR 37462088304 and push 37462081747. Simulation CI is required after push.
+Shared initialization, broader diagnostics, typed proxies/cameras/coordination,
+interactive/conformance/hardware acceptance and every original remaining milestone
+stay open; this increment does not close the entire setup milestone.
+
+### First-time persistence and inert initialization mode
+
+Added the common Rust `ConfigStore::create` path and explicit `--hub-init` mode
+before workers/SDK/host startup. Review checked absolute paths, existing-parent
+resolution, same-directory flushed staging, no-clobber publication, fresh empty
+identity, post-publication durability uncertainty and rejection of mixed modes.
+Existing invalid files are preserved instead of treated as initialization targets.
+The returned store shares the regular revision-checked durable editing path.
+
+Tests race eight creators, verify exactly one winner and matching persisted
+identity, preserve existing invalid bytes and missing-parent state, reject relative
+paths and (on Unix) existing symlinks. The production executable test verifies
+no live endpoint/host ownership, unchanged bytes after repeated/mixed-mode calls
+and no stdout on failure. Its observation timeout is independent of the inner
+probe deadline so runner scheduling cannot imply a host started. Full Rust suites,
+strict Clippy and the installed Rust 1.89.0 check pass in
+`artifacts/hub-initialization-rust.log`, `hub-initialization-clippy.log` and
+`hub-initialization-msrv-1.89.0.log`. The Unix symlink case awaits portable CI.
+Native UI adoption and broader
+diagnostics remain next, alongside all original remaining milestones.
+
+### Shared native configuration creation and CI fixture review
+
+NINA and ASCOM now create files through the same selector and Rust CLI path.
+Attachment and creation share the bounded, hidden helper runner; neither frontend
+kills a shared host. Review checked filename retention before dispatch, serialized
+admission, blocked replay after lost/malformed/cancelled replies, buffer clearing,
+bounded file reads and no equipment activation. Reconciliation only identifies
+schema/instance/revision; normal host loading still validates settings. An empty
+catalog enables editing while keeping Save disabled. The retained filename is
+read-only but selectable/copyable after uncertainty; explicit read restores that
+target if an ordinary later Browse selected another file.
+
+All 155 NINA tests pass in `artifacts/hub-native-initialization-nina.log` after final
+review, including production creation, existing-data preservation, all three lost
+reply cases, pending-operation admission, explicit absence and an actual WPF
+creation/read/load/empty-editor flow. Both real net48 bitness fixtures execute
+creation and file reconciliation and preserve identity; their shared ASCOM/host
+regressions pass in `hub-native-initialization-net48-fixtures.log`. The warnings-denied
+net48 build passes. The actual WPF render was inspected and documented as a private
+lost-reply fixture, rather than hardware acceptance.
+
+Simulation CI 37465679424 and 37465673033 each pass seven jobs but fail Windows in
+different existing pipe fixtures. The PR failure occurs when the partial-frame
+deadline closes a pipe before its sender completion runs. That deadline test now
+uses a known delivered byte and stalled reader directly, while the real pipe still
+proves idle connections remain open. The push failure is a cold handshake timeout
+before the queued-cancellation case begins; its server read is now armed directly
+instead of through a cold Task.Run queue. Production behavior and the 200-ms/two-
+second fixture deadlines are unchanged. New disposable-runner CI must verify these
+corrections. CLI eeb9208 CI is still active; broader diagnostics and every original
+remaining milestone/acceptance gate remain required.
+
+### Shared output health, wire schema and observed exports
+
+The existing native NINA/ASCOM editor and browser now expose cached output health
+using the same host-described parameters and generated reply schema. Review
+checked whole-output safety permission outside the visible membership page,
+inactive unknown/unsafe state, configured Switch intent without granting live
+write permission, independent weather failures, saved identity/revision/cursors,
+and preservation of sibling source leases and configuration review. Read failures
+clear the current observation; lost/malformed/cancelled/obsolete results invalidate
+review and block replay until explicit Reload. Local invalid input sends no RPC.
+Exports retain observed public host/source/output data and their separate timestamps,
+not editable configuration, credentials or arbitrary backend text. Browser export
+now records Reviewed accurately when the configuration review survives a cache read.
+
+Review found that a deserialization schema permitted omission of nullable fields
+which the presentation expects. The reply now uses schemars' serialization
+contract: these fields are required but can contain null. Regression cases remove
+a nested nullable health error and require uncertainty without export/replay.
+Reference constraints and their siblings both apply; native comparison uses decoded
+strings so equivalent Unicode escapes compare equally. Neither frontend implements
+safety policy or invents retry scheduling.
+
+All 168 NINA tests pass with warnings treated as errors, including strict malformed
+reply cases, cancellation/admission and actual WPF output paging. Real net48 x86/x64
+clients pass with editor/API/export checks; builds have no warnings. Full Rust
+hub/Alpaca tests, Clippy, Rust 1.89.0, generated-contract freshness, Node and four
+independent schema tests pass in the `artifacts/hub-diagnostic-ui-*` logs. The first
+concurrent rebuild met a Windows executable lock while the native fixture was
+running; after its confirmed completion the sequential Rust build/tests passed.
+No fixture process was killed or deadline increased to work around this.
+
+The actual browser verifies safety unknown/unsafe, Switch pagination, independent
+weather errors, preserved Review/Apply state and a downloaded Reviewed diagnostic
+snapshot. The browser download-event observation timed out, but its success UI and
+saved `Downloads/regain-hub-diagnostics.json` were inspected against the private
+fixture's instance/revision. Public source status proves zero leases and no source
+connections; console warning/error inventory is empty. Evidence is retained in
+`artifacts/hub-output-browser-verification.json` and `hub-output-browser-export.json`.
+Actual WPF/browser screenshots are labeled simulation; they do not prove hardware
+or interactive vendor acceptance.
+
+Native-creation PR CI 37468454801 passes all eight jobs. Its push CI 37468447863's
+first x86 COM response timeout remains unexplained; do not erase that evidence.
+Diagnostic API de2691a PR 37471446346 and push 37471435465 pass seven jobs, including
+Windows. Intel macOS is cancelled by GitHub's outer 15-minute job limit (confirmed
+check annotation). Both logs show about three minutes generating the contract,
+5.6 minutes release compilation and about two minutes test compilation; the push
+run finishes Rust tests and reaches the device CLI. No failed or hung test is
+shown. The portable job budget is now 25 minutes; inner request/test deadlines
+remain fixed. Complete new CI is required, alongside actor retry diagnostics,
+typed proxies/cameras/coordination and every original remaining acceptance gate.
+
+### Real actor polling diagnostics
+
+Review traced publications through initial/pending connection, in-flight sampling,
+cycle completion, Retry-After, partial-pass continuation, explicit refresh,
+simulation/command state changes and disconnect/shutdown. The actor now publishes
+after scheduling the actual next deadline and updating backoff counters, before
+delivering its completed poll event. In-flight observations remain readable from
+the cache even while I/O is stalled. Reads add no lease or backend call. The new
+fields are observations only; scheduling policy and command replay rules remain
+unchanged. Review renamed the cycle counter to `attemptsStarted` because it
+includes the in-flight attempt, and retained nullable completion state rather
+than falsely reporting a finished cycle during sampling.
+
+Four paused-time actor cases prove dispatch at the observed deadline, exhausted
+cycles, Retry-After beyond the backoff cap, unchanged observations during cached
+reads, partial-pass identity, suspended unrepresentable deadlines, pending and
+stalled initial connections, sampling timeouts, lease release and stopped state.
+Native/web replies use the regenerated serialized schema and reject missing,
+negative or impossible scheduled waits. Summaries qualify the remaining wait as
+belonging to its observation time; actor work can delay it. Exports retain that
+typed observation rather than estimating a countdown in the frontend.
+
+Full Rust hub/Alpaca suites, strict Clippy, Rust 1.89.0, generated-contract checks,
+Node/four independent schema tests, all 171 warnings-denied NINA tests and actual
+net48 x86/x64 clients pass (`artifacts/hub-polling-*.log`). The actual WPF render
+was inspected. Browser verification proves a real retry observation/export,
+preservation of one independent simulated Switch lease, no console errors and
+no physical equipment activation. Evidence is in
+`artifacts/hub-polling-browser-verification.json`; cleanup disconnects only client
+701, confirms zero source leases/transport, and stops only the fixture's verified
+process identities. The temporary browser tab has already closed.
+
+Frontend 96ea4e3 CI runs 37475434423 and 37475427160 now pass seven jobs including
+Intel macOS; Windows remains live at this observation. The older COM fixture
+timeout is not explained by these successes. The browser fixture also found a
+production restriction: explicit empty camera profiles fail HTTP startup with
+`No camera slots in settings`, preventing accessory-only publication. Added that
+refinement to milestone 2; preserve ordinary new-install camera defaults while
+allowing a deliberately empty list. Broader proxies/cameras/coordination and all
+original remaining acceptance gates stay required.
+
+### Accessory-only HTTP publication and empty setup
+
+Removed the unconditional nonempty-camera requirement for explicitly persisted
+profiles. Missing files still use the ordinary two-camera defaults; no hub setting
+silently rewrites an existing installation's camera choices. The same validation
+now covers startup and reload, rejecting duplicate IDs before replacing live
+settings. The root camera editor handles no selected row, hides its unavailable
+settings/tabs/save action, retains accessory navigation and supports adding slot 0.
+Periodic status refresh also handles an empty list without an exception.
+
+Three profile cases cover empty/restart/add-first persistence, ordinary defaults,
+and invalid/duplicate reload preservation. All hub router fixtures now use empty
+profiles; a new API case proves catalog identity, rejection of absent-camera
+GET/PUT, first-slot setup, persistence and zero equipment leases. The first test
+run incorrectly expected an Alpaca JSON error for the absent slot; production
+uses HTTP 404, so the assertion now checks that existing contract. The real HTTP
+executable fixture starts and restarts on the same empty list while preserving
+its existing shared host and catalog.
+
+All 15 Alpaca unit tests, nine executable tests and 14 router tests pass. Strict
+Clippy, Rust 1.89.0, formatting and JavaScript syntax pass
+(`artifacts/hub-empty-cameras-*.log`). Actual browser verification proves the empty
+state and add/save-first-slot flow, no console errors, no advertised unselected
+camera and zero source leases/connections. Evidence is in
+`artifacts/hub-empty-camera-browser-verification.json`; the actual screenshot is
+documented as simulation. Only the fixture's verified host/publisher were stopped,
+and its browser tab was closed. Both 96ea4e3 CI runs now pass all eight jobs;
+400a74d polling CI is still live. Original remaining gates, including the earlier
+COM timeout investigation and broader proxies/cameras/coordination, stay open.
+
+### Native safety expiry fixture establishes actual HTTP backoff
+
+Polling 400a74d PR Windows job 112321024800 fails one of 171 NINA tests at the
+unchanged-generation assertion in
+`NativeSafetyExpiresDuringHttpBackoffWhileOtherReadingsRemainAvailable`. All Rust
+tests and 89 managed recovery tests pass before it. The preserved log
+`artifacts/hub-polling-pr-ci-failure.log` proves a changed generation, not the exact
+reason for the transport reset. Do not call this checkpoint green or infer a
+production reset bug from that assertion alone.
+
+Review found that the fixture called this backoff without sending Retry-After;
+it repeatedly replied 503 at the ordinary short poll cadence. It now returns a
+two-second Retry-After, longer than the 1.2-second safe lifetime, and the test
+first verifies a completed 503, retained generation, still-safe output, waiting/
+retry phase and actual scheduled wait. It then retains stale-state expiry,
+generation identity, independent weather availability, elapsed-time bound and
+recovery checks. A separate fixture test verifies the header is present only
+on failed safety polls. Existing transport-loss safety checks remain intact;
+production request deadlines, scheduling and policies did not change.
+
+All 172 warnings-denied NINA tests pass locally
+(`artifacts/hub-safety-backoff-nina.log`). Five focused repeats also pass, recorded in
+`hub-safety-backoff-repeat-*.log`; new disposable-runner CI is still required.
+The earlier empty-camera increment also passes all 171 then-current NINA checks.
+Broader typed proxies, camera ownership, coordination and every original
+remaining acceptance gate stay required.
+
+### Typed focuser controller over existing source ownership
+
+Reviewed the new controller separately from frontend admission. Construction opens
+no device. Connection waits on the actor's watch status before capturing a
+generation; strict required capability reads share the same fence. Failed setup,
+pending-connection cancellation and operation cancellation queue lease cleanup.
+All operations, including concurrent requests from one session, receive distinct
+control ownership. Existing actor deadlines, queued-request cancellation and
+mutation uncertainty remain authoritative.
+
+The review corrected two capability details before commit. Absolute MaxStep is a
+coordinate bound, while MaxIncrement limits travel for one move; relative moves
+retain signed distances and reject integer-minimum overflow without splitting or
+retrying motion. ETA's existing documented coordinate is micrometres, so its
+known 1 µm StepSize is retained; EAF/FC3 lack an optical travel conversion and
+remain unsupported. Temperature compensation is not silently changed for Move.
+Optional errors retain their source code, including unsupported ETA Halt.
+
+`cargo test -p regain-hub -p regain-alpaca --locked` passes with production workers
+provided through REGAIN_TEST_WORKERS. Thirteen new actor/actual HTTP cases cover
+independent leases, live limits, malformed capabilities, optional errors,
+asynchronous readiness/deadline, generation replacement, control conflicts,
+preflight cancellation, dispatched cancellation/uncertainty and no replay. The
+native suite now has eight cases, including the typed controller using three
+production workers in explicit simulation. Final focused checks pass after the
+ETA adjustment, as do strict Clippy, Rust 1.89 and generated-contract freshness
+checks. Logs: `artifacts/hub-focuser-{rust,integration,clippy,msrv,contract}.log`.
+
+The controller is not yet a published hub output. Current runtime still rejects
+Proxy and does not advertise proxyOutputs; no generated contract or frontend
+claim changes here. Next is runtime/IPC/typed diagnostics plus publication and
+imports. Conformance, hardware acceptance and the full original milestones remain
+required. Empty-profile push 37479602454 passes all eight CI jobs. Safety fixture
+correction 37480604743/37480593803 each pass seven jobs with Windows build/package
+still live at this checkpoint; do not call those runs fully green yet.
+
+### Focuser runtime, private IPC and observed typed diagnostics
+
+Runtime admission now accepts native/Alpaca focuser proxies, retaining independent
+output sessions over one source actor. Unsupported proxy classes and unsupported
+focuser source adapters fail explicitly. Pending sessions participate in apply
+admission; cancelled connection/EOF releases only that client's leases. Private
+IPC has typed property enums and strict command fields. It preserves the same
+control/generation checks as direct controller calls and rejects class mismatch.
+After source reset, Connected is false for the old session and commands cannot
+adopt its replacement; explicit disconnect/connect is required.
+
+Reviewed cache generation races: DeviceState rechecks the captured snapshot's
+generation and projects only known IsMoving/Position/Temperature observations.
+Neither DeviceState nor paged diagnostics starts I/O. Typed samples retain local
+ages and source identity/generation/revision/sequence; relative focusers cannot
+invent an absolute cached coordinate. Poll plans deduplicate all nine properties,
+using strict boolean requests and numeric requests with typed decoding. Native
+workers provide their known constants and explicit optional-property errors.
+Diagnostics use generated schema and host-described order/types/ranges. Both web
+and native readers reject wrong property/source/generation/sequence/type/range,
+negative ages and unexpected fields. Their summaries/exports retain observation
+ages and uncertainty without permitting a command.
+
+Full hub/Alpaca suites, strict Clippy, Rust 1.89 and generated-contract freshness
+pass. The final focuser suite has 18 cases and the native suite nine, including
+actual HTTP incremental polling, private duplex IPC and a production-worker
+runtime in explicit simulation. Node and four independent schema tests pass.
+All 173 warnings-denied NINA checks pass; the final typed fixture refinement
+also passes independently. Warning-denied net48 build and real x86/x64 client
+fixtures pass. Logs are `artifacts/hub-focuser-runtime-*.log`. Initial concurrent
+Rust/.NET checks hit Windows executable replacement denial; serialized checks
+pass. The HTTP fixture now waits for both required partial samples instead of
+assuming Position arrival means IsMoving has also arrived. Deadlines unchanged.
+
+Both safety-correction runs 37480604743/37480593803 pass all eight CI jobs.
+Focuser-controller runs 37483351644/37483341547 each pass seven with Windows build/
+packaging still active. New CI remains required. Setup does not advertise general
+proxy support, and the existing Alpaca catalog explicitly rejects classes whose
+routes are not implemented. Alpaca/NINA/ASCOM focuser publication, imports,
+conformance and every original remaining milestone remain required.
+
+### Alpaca focuser publication (2026-10-06)
+
+Reviewed publication against the [ASCOM Focuser V4 contract](https://ascom-standards.org/newdocs/focuser.html)
+and the shared controller/IPC implementation. HTTP maps all nine property names
+through the Rust enum instead of duplicating typed definitions. Move parses a
+signed Int32 and delegates live motion/range/generation checks to the controller;
+Halt and TempComp use the same command ownership. V4 advertisement requires the
+host's modern connection/DeviceState capabilities, while the catalog requires
+`focuserOutputs`. Optional unsupported readings retain a standard error and
+sanitized text. COM-only Link is not published as an Alpaca member.
+
+Review identified class-local number collisions between existing local slots and
+hub outputs. A shared server catalog check rejects collisions, including reserved
+unconfigured slots, before dispatch or setup selection. UUIDs/numbers are never
+silently rewritten. Distinct local slots retain their routes and setup pages;
+hub focuser setup opens the existing shared editor. Diagnostics and DeviceState
+remain cached and cannot initiate motion. The general proxy setup capability
+stays gated pending native frontend publication.
+
+Four private loopback HTTP cases pass through the production source adapter,
+shared host, IPC and router. They cover sparse identities, two independent sources,
+two outputs sharing one source, legacy/asynchronous connections, independent
+ClientID leases, absolute travel/relative signed limits, busy motion, strict
+types and duplicate parameters, optional errors, cached DeviceState, local slot
+coexistence/collisions and retained uncertainty after an acknowledged move's reply
+is lost. That move is dispatched exactly once; another client cannot replay it,
+and Connected=true cannot silently adopt a replacement generation. No physical
+equipment is activated. Review added the explicit non-colliding local-slot case.
+
+Full local Rust hub/Alpaca suites pass; the final four focused cases, strict Clippy,
+Rust 1.89.0 and formatting/diff checks pass. Logs are
+`artifacts/hub-focuser-alpaca-{rust,focused,clippy,msrv}.log`. These changes do not
+alter native frontend code or generated configuration. Controller push CI
+37483341547 passes all eight jobs; its PR run 37483351644 was subsequently
+cancelled. Runtime/IPC PR 37486781939 and push 37486773101 each pass seven jobs
+with Windows still live. Native NINA/ASCOM publication, imports/simulation,
+conformance and all original remaining milestone gates remain open.
+
+### Native focuser outputs (2026-10-06)
+
+Added a shared typed focuser request/value contract in the existing common .NET
+assembly, native NINA provider/device and ASCOM V4 adapter with V3/V2 QI. Attachment
+requires focuser/modern-connection/DeviceState capabilities before leasing
+equipment. Selection enumeration remains file-only; the common themed selector,
+manager and registration backend now admit Focuser with a stable 39-character
+`Rgn.HF.<uuid>` ProgID and both Chooser views. ASCOM returns after Move starts and
+uses explicit Halt; Position retains Int32 in DeviceState. Optional-property
+errors and native ASCOM translation reuse the existing implementation.
+
+NINA's interface requires absolute Position. Preparation rejects relative sources
+without inventing a coordinate or actuating a move. NINA waits for motion to stop,
+checks the exact target, then uses the requested settling delay. Failed IsMoving
+reads are errors, never fabricated idle states. Unsupported optional readings
+become NaN without falsely reporting a source failure. Cancellation does not
+automatically Halt a source that another client may now control. Source-generation
+checks and uncertain writes remain in the Rust controller; native Connected reads
+the actual generation-bound output state. Longer-lived coordinated ownership
+remains an original unfinished gate.
+
+Reviewed binding/capability admission, request epoch capture, disconnect/Dispose,
+no automatic replay, shared source uncertainty, integer state conversion and
+registration/export factory mapping. The private loopback fixture is shared by
+net8 and net48 tests and joins owned request tasks before teardown. Review
+strengthened cancellation to require OperationCanceledException and added private
+Focuser Chooser registration/removal checks. The initial net48 fixture used LINQ
+on a COM collection without IEnumerable; indexed COM access fixes it without
+changing a production deadline.
+
+All 180 warnings-denied NINA tests pass, including malformed motion reads and cancellation.
+Real net48 x86/x64 clients prove current/legacy QI, absolute/relative motion,
+typed state, independent leases, Link/asynchronous connection and lost-reply
+fencing. Warning-denied NINA/ASCOM builds and both staged worker bitnesses pass.
+Actual manual COM exports pass with five outputs and both client/server bitnesses,
+including metadata without host activation and Focuser properties/Move/Halt/TempComp.
+Logs are `artifacts/hub-focuser-frontends-*.log` and
+`artifacts/hub-focuser-nina-focused.log`. Local HKCU SCM activation fails at the
+first existing Switch class with REGDB_E_CLASSNOTREG; its cause remains unproved,
+and the fixture removes all private registrations/processes. The updated SCM and
+production-registration cases must run in disposable Windows CI. No installed
+vendor driver or physical equipment is activated.
+
+Runtime/IPC PR CI 37486781939 passes all eight jobs; its push run 37486773101 is
+cancelled after seven successes. Alpaca publication PR 37488895245 passes seven
+with Windows still live. New CI remains required. Typed focuser COM/virtual/
+dedicated simulation imports, general typed setup, conformance, interactive and
+vendor/hardware acceptance and every original remaining milestone remain open.
+
+### Windows COM focuser imports (2026-10-06)
+
+Extended the existing isolated STA import worker and Rust factory to focusers.
+The shared focuser controller, sampling plans, leases and generation fences are
+reused. Reads cover all nine typed properties; integer positions and limits retain
+Int32. Only Move(Position), Halt and TempComp are writable. Strict parameter and
+return-value validation occurs before dispatch or publication; errors remain
+sanitized. Relative Position stays unsupported. The existing uncertain-write latch
+prevents subsequent mutations, replay and automatic Halt after unknown completion.
+
+Reviewed interface version negotiation, managed/external ownership, required and
+optional property shapes, class admission, source sharing and cleanup. Focuser's
+asynchronous interface begins at V4. The initial actual parent test exposed a
+second version threshold in Rust that still expected asynchronous connection at
+V3; both sides now agree, without increasing deadlines. The test initially used a
+nonexistent fixture helper and ignored shutdown's Result; both are corrected.
+
+`scripts/test-hub-com.ps1` passes warning-denied x86/x64 worker/fixture builds,
+20 worker tests (including V3/V4 in both architectures) and 12 actual registered
+Rust parent cases. The new parent case proves shared activation/leases, limits
+above Int16, live motion/control, last-client retention and one dispatched
+uncertain vendor Move without replay. Full local Rust hub/Alpaca suites, strict
+Clippy, Rust 1.89 all-target checks, 180 warning-denied NINA tests and real net48
+x86/x64 frontend fixtures pass. Logs use `artifacts/hub-focuser-com-*.log`.
+COM parent tests require the private-registration harness; ordinary cargo runs
+without its environment do not prove those cases. Physical equipment is untouched.
+
+Native frontend PR CI 37492070586 and push CI 37492059703 each pass seven jobs,
+but Windows fails production registration before activation with KeyError:
+focuser. Both logs first prove actual cold SCM launch, five output classes and both
+client/server architectures. The production-registration fixture omitted Focuser
+from its Chooser-path collision/cleanup mapping; that mapping is corrected. Python
+syntax and diff checks pass. The actual machine-registration check requires new
+disposable Windows CI; local machine-fixture guards remain intact. Failure logs
+are `artifacts/hub-focuser-frontends-{pr,push}-ci-failure.log`.
+
+Next: dedicated typed simulation and virtual focuser inputs, general typed setup
+and remaining accessory proxies. Camera buffers/acquisition, coordination,
+conformance, resume/recovery, interactive/vendor/hardware acceptance, main
+reconciliation, documentation/site/screenshots and all original final gates remain
+required before merging PR21.
+
+### Virtual focuser composition (2026-10-06)
+
+Extended the existing virtual backend to typed focuser reads and Move/Halt/TempComp
+dispatch through the shared controller. Strict signed Int32 and boolean parameters,
+live capability/motion preflight, optional errors, leases and shared uncertainty are
+preserved. Polling uses a generation-checked cached sample accessor; boolean/integer
+values retain their types, missing/invalid properties retain errors and sample ages
+are propagated rather than refreshed by virtual polling. An invalid inner focuser
+session retires the virtual transport, fencing the old outer session. Disconnect
+does not Halt and uncertain writes do not replay.
+
+Review found that awaiting a complete inner focuser connection in Backend::connect
+would consume the outer request deadline. Focuser connect_step now starts one
+supervised inner operation and observes readiness in bounded steps. Existing scalar
+virtual connection semantics remain unchanged. Cancellation closes the private
+inner client and releases pending leases; existing graph validation and transitive
+simulation marking are reused.
+
+Seven private loopback tests cover two nested layers and a concurrent leaf client,
+Int32 positions, absolute travel/busy limits, signed relative moves with unsupported
+Position, optional properties, preserved ages/errors, a handshake longer than the
+outer request step with exactly one upstream version probe/open, cancelled pending
+connection cleanup, invalid motion reads before dispatch, and one uncertain Move
+with no replay/automatic Halt/generation adoption. Existing nine scalar composition
+cases also pass. Full Rust hub/Alpaca suites with production workers in explicit
+simulation, strict Clippy and Rust 1.89 all-target checks pass. Logs use
+`artifacts/hub-focuser-virtual-*.log`; no physical equipment is activated.
+An eighth test uses the production EAF worker with explicit simulation and proves
+motion completion and transitive simulation marking through both virtual layers,
+with no loopback fallback. It requires REGAIN_TEST_WORKERS and was run with that
+environment. All 180 warnings-denied NINA regressions and real net48 x86/x64 clients
+pass against the rebuilt host. These regression fixtures do not establish new
+interactive or vendor/hardware acceptance.
+
+The initial fixture omitted managed connection policy; the backend correctly
+refused to connect its disconnected externally managed mock. It now explicitly
+owns that private connection. A later malformed-motion assertion expected the
+live controller's Unavailable classification in the cache; the sampling adapter
+classifies malformed Alpaca wire values as Permanent, and virtual samples correctly
+preserve that error. The assertion is corrected without changing production
+classification or increasing any deadline.
+
+COM import/registration checkpoint 8c806d5 CI 37494625707 and 37494616586 remain
+active. Dedicated focuser simulation, shared typed setup, other device classes,
+cameras/acquisition, coordination and all original acceptance/final gates remain
+required. Current native/web source-choice gates are not evidence of completed
+typed setup; no general proxy capability is enabled by this increment.
+
+### Dedicated focuser simulation (2026-10-06)
+
+Added typed Focuser V4 simulation to the existing source actor. The same controller,
+leases, sampling and generation fences serve every frontend. Fifteen controls
+(thirteen state fields, fault and sample age) derive from Rust defaults/descriptors;
+native and web readers enforce strict Int32, numeric bounds, nested status members
+and sparse updates. Invalid patches validate a private candidate and leave current
+state unchanged. Existing scalar status shapes omit the new optional focuser field.
+
+Reviewed class admission, overflow, optional properties, relative coordinates,
+monotonic completion, teardown, fault mutation and uncertainty. Move acknowledges
+start; disconnect does not Halt and retained timed motion can complete without a
+lease. Relative moves never fabricate Position. Stalls, stopped-short completion
+and malformed IsMoving are explicit faults. Applying a write before an uncertain
+reply invalidates connected sessions and retains the actor's latch; clearing the
+injected fault does not replay, reconnect or clear it. Injecting coordinates,
+limits or motion replaces pending test motion; unrelated updates do not halt it.
+
+Six new Rust cases bring the simulation suite to fifteen. Full local hub/Alpaca
+suites (with production workers explicitly simulated), strict Clippy, Rust 1.89
+all-target checks, generated-contract freshness, Node and four independent schema
+checks pass. All 184 warning-denied NINA tests pass, including four new focuser
+simulation cases. Real net48 x86/x64 adapters prove shared integer controls, timed
+motion, compensation, optional errors and lease cleanup. Logs are
+`artifacts/hub-focuser-simulation-*.log`. The actual WPF capture is in the development
+setup guide and explicitly labelled simulation; new browser rendering still needs
+acceptance. No physical equipment or installed vendor driver was activated.
+
+Test review corrected an assertion that ignored source-generation invalidation
+following uncertainty; it now requires Disconnected and observes the outcome only
+through explicit simulation status. Temporary update leases are released
+asynchronously; cleanup assertions wait for that release instead of assuming it
+preceded the reply. The WPF capture waits for layout before scrolling to the changed
+integer field. Production policies and deadlines were not loosened.
+
+COM checkpoint 8c806d5 push CI 37494616586 passes all eight jobs, including actual
+worker/parent fixtures, cold SCM activation, production registration and installer
+checks. Its PR run 37494625707 was cancelled after seven successes. This closes the
+missing Focuser Chooser-path fixture correction, not the earlier unrelated COM
+response timeout or local HKCU SCM investigation. Virtual checkpoint 1af147b runs
+37496570309/37496563543 remain live at this observation. Next: shared typed setup,
+remaining accessories, camera acquisition/buffers, coordination and every original
+acceptance/final gate. PR21 remains draft.
+
+### Shared focuser configuration setup (2026-10-06)
+
+Enabled proxy creation through shared descriptors with explicit per-class gates.
+The host advertises proxyOutputs/focuserOutputs; only Focuser can be selected.
+Camera and other unfinished proxy classes require unadvertised broaderProxyOutputs.
+COM class choices now include the implemented Focuser import, while transport and
+bitness admission still depend on actual staged workers. No frontend device list
+or second schema was added. Initial proxy values select Focuser instead of Camera.
+
+Reviewed metadata/runtime agreement, default generation, stable IDs/numbers,
+source matching and no-I/O configuration semantics. Actual native editor creation
+adds one explicit simulator and two outputs, rejects an unsupported camera candidate
+in host Review, applies/reloads without equipment leases and preserves both IDs.
+The two NINA clients then share position/motion and release independent leases.
+The net48 fixture verifies the same host choices/defaults on both architectures.
+All 186 warning-denied NINA tests and real net48 x86/x64 suites pass. Full local
+hub/Alpaca suites with explicitly simulated production workers, Clippy and Rust 1.89
+checks pass; logs use artifacts/hub-focuser-setup-*.log.
+
+Actual browser acceptance found an existing tagged-choice closure reading the
+schema variable after rendering had replaced it with the selected variant. Changing
+source transport or output kind threw a TypeError. The handler now captures the
+original described choice list and refuses unavailable choices. A small DOM adapter
+runs the actual renderer/event handlers to regress transport changes, conditional
+field replacement and Focuser-only proxy defaults; it is not evidence of layout.
+Chrome acceptance separately proves simulator/output creation, review/apply/reload,
+rejected fractional Position, a sparse Position 100000 update preserving temperature
+12, unchanged revision, zero source leases and no console errors. Actual screenshots
+are in the development setup guide. In-app browser input timed out; Chrome completed
+the flow against the same private server. A default Python lacked jsonschema; the
+independent schema checks now pass all four cases in a private test environment.
+Generated-contract freshness, formatting and diff checks also pass.
+
+Automatic approval review rejected a combined background fixture launch with
+blocked by policy. The test used an inspectable foreground session instead. All
+private publisher/host processes were identified by their unique executable and
+configuration paths and stopped after verification. No physical equipment or
+installed vendor driver was activated. Virtual checkpoint push CI 37496563543
+passes all eight jobs; PR 37496570309 was cancelled. Simulation checkpoint runs
+37499571887/37499559138 remain live at this observation. All original camera,
+coordination, remaining typed interfaces, conformance, interactive/vendor/hardware,
+resume/recovery, discovery, main reconciliation and documentation/final gates remain
+required before PR21 can merge.
+
+### Typed rotator controller and shared accessory sessions (2026-10-06)
+
+Extracted only connection readiness, immutable generation checks and unique
+command admission from Focuser into TypedSourceSession. Reviewed the extraction
+against the existing implementation: the enclosing whole-handshake deadline still
+includes capability reads, uncertainty is checked before adopting any generation,
+and cancellation/drop releases only owned leases through the same actor FIFO.
+Device-specific limits, motion and optional properties remain in their controllers.
+All eighteen existing focuser actor/transport/runtime/IPC cases pass after extraction.
+
+The new rotator controller validates seven typed properties, keeps logical,
+mechanical and target angles distinct, and forwards exact signed relative angles.
+Absolute/mechanical/reference commands validate their range; malformed motion is
+not idle. Per-operation ownership arbitrates even simultaneous calls on one
+session. Live reversal capability and optional Halt/StepSize errors survive.
+Move acknowledges start; Sync does not synthesize physical motion or a private
+offset. Sync/Reverse require idle through explicit hub preflight. Native source
+reference persistence must be proved before publication; modern interface reversal
+requirements and older-source capability admission remain part of that work.
+
+Eleven tests cover shared leases, connection/capability cancellation, limits,
+malformed readings, optional errors, preflight generation loss, dispatched
+uncertainty and actual Alpaca V3/V4 transport. The HTTP fixtures verify exact
+Position/Reverse parameters, shared ClientID, unique transactions, connection
+version negotiation and one final owned cleanup. An applied move with malformed
+acknowledgment latches uncertainty without replay or automatic Halt. Initial test
+compilation fixes used the existing Backend reset/SourceError fields, actual
+connection_info snapshot field and cancellation error access; no production API
+or deadline was altered to accommodate a fixture.
+
+Full hub/Alpaca suites pass with explicitly simulated production workers. Strict
+Clippy, Rust 1.89 all-target checks, generated-contract freshness, Node and four
+independent schema cases pass. All 186 warning-denied NINA tests and real net48
+x86/x64 clients pass against the rebuilt host. Logs use artifacts/hub-rotator-*.log.
+The first freshness invocation named a nonexistent export_description example;
+the actual CI export_config command was then run and passed. No physical equipment
+or installed vendor driver was activated. Runtime/IPC, native adapter persistence,
+COM/virtual/simulated imports, frontends and setup still require implementation.
+
+Simulation checkpoint PR/push CI 37499571887/37499559138 now passes all eight jobs.
+Shared setup push 37501487430 fails an initial connection in the NINA uncertain-
+Move fixture, before any injected move. Its generic exception hides the structured
+error; this does not establish a timeout or reconnect cause. The fixture now
+reports first/second connection stage, structured code/message, actual source
+snapshot and private request start/reply/close timings on failure. It retains the
+same deadlines and does not retry. The failed log is preserved in
+artifacts/hub-focuser-setup-push-ci-failure.log. Local success cannot close this
+investigation. PR 37501496852 remains live at this observation. Preserve the older
+COM response-timeout investigation and all original acceptance/final gates.
+
+Ten separate local runs of the affected cold connection/uncertain-Move test pass
+without retries inside the test. This does not reproduce or explain the CI failure;
+the new evidence must be inspected if it recurs. Logs use
+artifacts/hub-focuser-connection-audit-1.log through -10.log.
+
+### Native rotator references and typed adapters (2026-10-06)
+
+CAA/Falcon adapters now expose CanReverse, Reverse and StepSize alongside separate
+logical/mechanical/target angles. Sync and Reverse use private durable reference
+records, an Uncertain marker before worker dispatch, strict accepted/readback
+confirmation and a revision-checked known commit. Reviewed marker/save failure,
+source recreation, corruption, identity/simulation separation, cancellation and
+cross-store races. Blocking filesystem work runs off the async executor; the OS
+lock and revision comparison prevent a late save from clearing a newer marker.
+No storage means reference writes fail before dispatch. Runtime binds the store
+to its private endpoint; an account without a usable data directory can still
+host other sources but cannot silently use transient native references.
+
+Reconnect checks actual direction and restores only worker-local offset/target.
+It does not move, change direction or reset the mechanical origin. A direction
+mismatch makes logical coordinates unavailable until explicit Sync. Unknown
+references still permit mechanical movement and Halt. Native relative commands
+retain their existing +/-360 degree limit. Final vendor-worker retirement/fault
+cleanup can attempt a stop; dropping one shared controller lease does not inject
+Halt or retire a worker still owned by another client.
+
+Five Windows storage tests pass: independent bindings, cancelled late commit,
+competing stores, malformed/oversized/foreign records and invalid inputs. A sixth
+Unix permissions/symlink case requires portable CI. All thirteen native cases
+pass with production workers in explicit simulation, including reference recovery
+and private inert-worker crashes after applied Sync. The fixture also returns
+accepted without applying Sync: readback retains uncertainty rather than saving
+a guessed offset. Both failure modes survive complete source/worker recreation;
+trace assertions prove no automatic Sync replay, direction or origin write.
+
+The new CAA local-restore test first failed with logical 346.5 instead of 42.5.
+Review found settings observed an external Reverse change without updating the
+cached direction unless the driver itself had initiated it. Settings now updates
+the direction; the hub samples settings before logical status and rejects a
+changed reference. Sync also updates CAA TargetPosition. Eight CAA controller,
+fourteen CAA protocol and eight Falcon tests pass, including wire-level proof
+that restoring offsets does not issue movement/direction/origin writes.
+
+After rebuilding both actual executables, full hub/Alpaca regressions, strict
+Clippy across hub/Alpaca/ZWO/Pegasus, Rust 1.89 all-target checks, generated-contract
+freshness, Node/four independent schema checks, all 186 warnings-denied NINA tests
+and real net48 x86/x64 clients pass. Evidence uses artifacts/hub-rotator-native-*.log;
+the final regression set uses the -final- prefix. No equipment or installed vendor
+driver was activated. Rotator runtime/IPC, imports, frontend publication, shared
+setup, conformance and all original remaining gates are still required.
+
+Shared-setup PR CI 37501496852 and controller PR CI 37503876752 pass all eight
+jobs. Controller push 37503869679 was cancelled after seven successes. Preserve
+the unexplained earlier initial-connection failure and COM timeout; later green
+runs do not establish their causes. This newer increment requires new CI.
+
+### Rotator runtime, typed IPC and cached diagnostics (2026-10-06)
+
+Admitted native/Alpaca rotator outputs through the existing runtime, private client
+leases, pending connection admission and immutable typed sessions. Reviewed all
+six explicit command dispatches, wrong-class/argument rejection, cancellation,
+generation loss, concurrent ownership, IPC EOF and no replay. Connected now uses
+one common typed-session accessor for both focusers and rotators. Frontend setup
+capabilities still enable only Focuser; the IPC capability does not promise a
+completed NINA/ASCOM/Alpaca interface or completed COM/virtual/simulated input.
+
+Seven properties deduplicate into the poll plan. Review found typed insertion
+could bypass the combined sample bound after scalar mappings; the final limit
+now covers all classes. The factory boundary test reaches exactly 1024 samples,
+then rejects 1025 with unchanged configuration for both focusers and rotators.
+Initial fixture compilation needed explicit error extraction because SourcePlan
+has no Debug implementation. Scalar property fixtures require lowercase letters;
+their initial numeric names were corrected without relaxing production validation.
+
+Cached rotator samples preserve strict types/angles, optional upstream errors,
+monotonic ages and source/revision/generation/sequence. Diagnostics stay inert and
+paged; failed properties do not erase unrelated mechanical readings. Both native
+and web readers use the generated response schema and common typed accessory
+validation, with host-described minimum/exclusive maximum/Single-range limits.
+Native tests cover identity, type, range, sequence and age faults; web tests cover
+eleven malformed reply cases. Existing summary rendering is reused; broader
+interactive acceptance and rotator frontend publication remain required.
+
+Review against [Rotator V4](https://ascom-standards.org/newdocs/rotator.html) and
+the [read-all rules](https://ascom-standards.org/newdocs/readall-faq.html) removed
+Reverse/TargetPosition from DeviceState. Only available IsMoving, MechanicalPosition
+and Position belong there; richer observations remain in diagnostics. No query
+timestamp masquerades as a measurement. Tests assert the exact names and omit
+invalid motion/position while preserving a valid mechanical position.
+
+Fifteen rotator cases now include four runtime/IPC cases and three actual V3/V4
+loopback transports built through the real configuration-derived source factory.
+They exercise sparse identities, shared leases, every command, cancellation,
+read-generation loss, EOF and applied malformed replies. Initial integration
+fixtures used the private OutputConnection get method; they now observe actual
+IPC instead of widening production access. The EOF fixture initially expected
+an actor latch after final teardown; inspection of the existing source/focuser
+contract corrected that assertion. It verifies retained uncertainty before EOF,
+no replay and final lease cleanup; native durable reference markers are separate.
+
+Fourteen native cases pass with actual production workers in explicit simulation,
+including the new runtime/factory path for both CAA and Falcon, shared sources,
+Sync/target confirmation and cached health. No physical equipment or installed
+vendor driver is activated. After rebuilding actual workers/host, full Rust
+hub/Alpaca suites, strict Clippy, Rust 1.89 all-target checks, generated-contract
+freshness, Node/four independent schema tests, all 187 warnings-denied NINA tests
+and real net48 x86/x64 clients pass. Evidence uses
+artifacts/hub-rotator-runtime-final-*.log; focused tests use
+artifacts/hub-rotator-runtime-focused.log. Native-reference PR CI 37508673278
+has seven successes and Windows still running; push 37508667983 also remains live
+at this observation. This newer runtime increment needs its own CI. All original
+remaining milestone and acceptance gates stay required before PR #21 can merge.
+
+### Alpaca rotator publication and modern readiness (2026-10-06)
+
+Reviewed the existing publisher/router rather than introducing another host or
+connection owner. Rotator catalog entries require the typed IPC capability and
+retain saved UUIDs/sparse numbers. The existing independent ClientID sessions,
+asynchronous progress, immutable source generations, uncertainty fences and
+client capacity bounds remain in use. Every typed property/command maps through
+the common IPC; the hub preserves signed relative distance and delegates source
+coordinates/reference operations. Local slots coexist at distinct numbers.
+Collisions reject reads, connection/movement writes, catalog and setup before
+opening a source. Setup serves the common editor without falsely enabling
+unfinished rotator creation. Wrong class/member/casing and malformed/range-invalid
+parameters cannot dispatch. DeviceState preserves valid mechanical data while
+omitting invalid logical/motion readings; it neither invents success nor a timestamp.
+
+Review against [IRotator V4](https://ascom-standards.org/newdocs/rotator.html)
+found that modern reversal support is required, while StepSize remains optional.
+Modern runtime admission therefore checks CanReverse=true and a strict Reverse
+reading inside the existing whole-handshake deadline. A paused-time test uses
+a 30-second source request and proves failure at the two-second connection deadline,
+then eventual lease cleanup behind the bounded actor read. No production deadline
+was increased. Generic controller capability inspection still supports legacy
+sources. Unsupported/missing reversal cannot be advertised as connected. Sync and
+async HTTP fixtures check the retained failure and fixed Regain explanation;
+arbitrary backend strings remain excluded by the existing sanitization policy.
+
+Shared private HTTP fixtures now parameterize accessory type/version instead of
+duplicating the focuser upstream. Seven rotator cases cover V3/V4 negotiation,
+dynamic identity, two shared outputs plus an independent source, all six commands,
+busy admission, optional/malformed data, cache, local coexistence/collision and
+an applied lost-reply move without replay or per-client automatic Halt. One uses
+the actual CAA and Falcon executables in explicit simulation through the complete
+factory/host/IPC/publisher/router path. It verifies acknowledged motion completion,
+shared ownership and saved logical reference after complete worker recreation.
+No physical device or installed vendor driver is activated.
+
+The first focused run passed 20 of 23 HTTP cases. Three assertions were wrong:
+the page loads hub.mjs, and unavailable values/admission already map to 0x402,
+not 0x500. The fixtures now assert those actual contracts without weakening
+production errors or deadlines. Review also strengthened catalog length, valid
+mechanical cache preservation and mutation rejection on a colliding slot.
+The expanded focused run passes all seven rotator HTTP cases; the hub rotator
+suite passes sixteen cases including modern readiness. Final evidence and CI
+status are recorded in the plan. Native NINA/ASCOM rotators, COM/virtual/simulation
+imports, shared creation and all original broader acceptance gates remain open.
+
+Final rebuilt-worker/host Rust hub/Alpaca suites, strict Clippy, Rust 1.89 all-target
+checks, generated-contract freshness, Node/four schema checks, all 187 warnings-
+denied NINA tests and real net48 x86/x64 clients pass. Evidence uses
+artifacts/hub-rotator-alpaca-final-*.log. Reference PR/push CI
+37508673278/37508667983 now passes all eight jobs. Runtime PR CI 37510990909 has
+seven successes with Windows still running; push 37510983650 also remains live.
+Neither later passing tests nor pending jobs explain the retained earlier COM
+and NINA initial-connection failures. This Alpaca increment requires new CI.
+
+### Native NINA/ASCOM rotators and relative completion (2026-10-06)
+
+Reviewed publication through the existing shared native session and COM export
+server. Rotators reuse saved identities, the themed selector, isolated host
+attachment and shared source/control ownership. Common typed NINA request handling
+now serves focusers and rotators. Strict rotator keys/value validation is shared
+between NINA and ASCOM. Private HTTP accessory fixtures also share their framing
+and connection machinery rather than duplicating the focuser fixture.
+
+NINA requires the receipt capability before connecting equipment. Review found
+that reading TargetPosition after releasing command control could observe a
+sibling's Sync, and accepting only the reported target could certify an ignored
+relative move. The host now holds control across pre-position, signed dispatch,
+ACK and target readback; the receipt includes expected and accepted targets.
+An actual two-client IPC fixture pauses that read, proves the control lease is
+retained and verifies sibling writes cannot replace it. Failed readback after
+an unambiguous ACK remains unavailable, not a fabricated uncertain-write latch.
+NINA verifies receipt agreement and actual completion with circular error and
+resolution tolerance. Cancellation/stopped-short/ignored/lost-reply cases never
+replay or implicitly Halt. Optional StepSize is read after mutation admission to
+preserve uncertainty priority. Per-connection Synced remains only an indication
+of successful Sync for that epoch; source coordinate mapping is shared.
+
+Review corrected Sync indicator lock ordering, Single rounding at 360 degrees,
+underflowed positive StepSize, ASCOM nonfinite-command exception classification
+and standard DeviceState boxing as Single. ASCOM V4/V3/V2 moves retain their
+acknowledged-start contract. Stable UUID-derived Rotator registration is covered
+alongside Focuser registration. Six private exported outputs now exercise rotator
+metadata, both server architectures and both client bitnesses. No installed vendor
+driver or physical equipment is activated.
+
+Final full Rust hub/Alpaca suites pass, including seventeen rotator cases, rebuilt
+production-worker simulation and endpoint process fixtures. Strict Clippy,
+Rust 1.89 all-target checks, contract freshness, Node/four schema checks, all 196
+warnings-denied NINA tests, real net48 x86/x64 clients, both-architecture staging
+and manual private COM exports pass. Evidence uses
+artifacts/hub-rotator-frontends-final-*.log. The first parallel Rust compilation
+failed with Windows OS1455 (paging-file exhaustion); the retained log is
+artifacts/hub-rotator-frontends-final-rust.log. Serial build retry passed without
+changing tests. A test MutexGuard's explicit drop still triggered Clippy;
+lexical scope now ends the guard before await.
+
+Alpaca checkpoint PR/push runs 37513525462/37513518205 ended cancelled after seven
+successful jobs. The Windows check annotation explicitly says the job exceeded
+25 minutes. Its retained log, artifacts/hub-rotator-alpaca-cancelled-windows.log,
+shows builds, tests, packaging and installer uploads completed before cancellation
+during standalone camera-kit dependency installation. The outer Windows workflow
+budget is now 45 minutes; device, operation and test deadlines are unchanged.
+Runtime runs 37510990909/37510983650 also ended cancelled; their exact cancellation
+cause has not been independently established here. Reference runs
+37508673278/37508667983 passed all eight jobs. New CI, including registered SCM
+exports on disposable runners, remains required. Neither this timeout finding nor
+passing local checks explains the retained older COM/NINA connection failures.
+
+Rotator COM/virtual/dedicated simulation inputs, shared creation, interactive
+acceptance and conformance remain open. Wheels, panels, camera ownership/transport,
+coordination and all other original plan gates remain required before merge.
+
+### Virtual rotator composition (2026-10-06)
+
+Extended the existing virtual accessory transport rather than adding another
+host or controller. Focuser and rotator inputs now share supervised, bounded inner
+admission and immutable-generation checks. Rotator reads/commands still go through
+the inner typed controller, including all six mutations, signed relative distance,
+separate source-owned coordinates, modern reversal readiness and optional errors.
+Strict parameter shapes cannot select another command or supply a guessed offset.
+The cached typed sampling path shares age/error forwarding and batch insertion;
+the rotator session exposes its existing generation-fenced cached decoder.
+
+Five new real factory/loopback cases extend the existing V3/V4 transport fixture
+through two virtual graph levels. They cover all commands, independent clients,
+optional StepSize, malformed motion, Busy, negative -721.5-degree dispatch,
+source-coordinate sharing and complete lease cleanup. A 700-ms leaf handshake
+outlasts each virtual source's 100-ms request step without repeated interface
+negotiation. Faster outer polling preserves increasing age while the leaf sequence
+is unchanged. Pending cancellation releases supervised inner clients without a
+move/Halt; generation loss in preflight cannot dispatch and old sessions cannot
+adopt a freshly connected generation. Applied malformed move acknowledgment is
+dispatched once and fences siblings without replay or implicit Halt.
+
+Native-worker coverage reuses the existing runtime fixture for both CAA and
+Falcon in explicit simulation. Direct and nested clients observe the same verified
+Sync/target reference and cached health; closing one retains the other's source
+lease. Simulation labels propagate to every nested output/source. No physical
+equipment or installed vendor driver is activated. This establishes native graph
+integration, not dedicated rotator simulation or hardware acceptance.
+
+Fixture review corrected an invalid 50-ms poll interval to the existing 100-ms
+minimum, retained the saved outer UUID instead of exposing private configuration,
+and added the existing cached decoder accessor. An outer cached mechanical reading
+can arrive before the optional-property error; the test now waits for both actual
+observations and still requires Unsupported with no invented StepSize. Production
+timings, error classifications and validation were not relaxed.
+
+Full rebuilt-host Rust hub/Alpaca suites pass, including twenty-two rotator and
+fifteen native cases plus existing virtual focuser/scalar regression suites.
+Strict Clippy, Rust 1.89 all-target checks, generated-contract freshness, Node
+and four schema tests pass. Evidence uses artifacts/hub-virtual-rotator-final-*.log.
+An initial host rebuild hit OS5 while a private managed fixture owned the
+executable. That fixture completed (196 NINA tests and net48 clients passed);
+the sequential rebuild then succeeded. Those earlier managed checks used the
+previous executable and cannot certify the rebuilt-host checkpoint.
+
+The rebuilt-host NINA run ended with 191 passes and five failures:
+failures: ActualAlpacaPublisherAndNativeNinaShareSwitchStateAndSeparateLeases
+(cancelled output read during cleanup), NativeEditorWindowEditsReviewsAppliesAndShowsSavedHealth
+(attachment closed), and UnknownCreationRetainsFilenameAndReadsCommittedFileWithoutReplay
+for malformed completion (read reported Missing rather than Existing),
+SharedNativeSelectorRetainsUnknownFilenameAndEnablesLoadingOnlyAfterRead (UI wait),
+and NativeCreationUsesProductionPersistenceAndPreservesExistingData (helper deadline). Preserve
+artifacts/hub-virtual-rotator-final-rebuilt-nina.log; their causes remain unproved.
+The seven-case focused run passed six and reproduced publisher readiness timeout
+before connection. The other later passes do not establish their earlier causes.
+Rebuilt-host net48 checks did not run because the sequence stopped at NINA failure.
+No production timeout or test requirement has been relaxed.
+
+Publisher fixture review found it used the installed user profile path. It now
+supplies a private persisted empty camera list and --simulate, and asserts exactly
+three scalar hub catalog entries with no cameras. This removes user-profile
+migration/discovery from the fixture independently of the readiness failure.
+Cleanup no longer masks an earlier assertion with a cancelled stdout read, and
+prints private captured output on failure. Focused runs still reproduce failure
+before readiness; captured stdout/stderr are empty. Retain
+artifacts/hub-virtual-rotator-private-publisher-diagnostics.log and the focused TRX.
+A standalone private --hub-init probe succeeded in 5.87 seconds and created its
+file. That is timing evidence, not proof of the other helper failures' causes.
+
+Frontend checkpoint 63e7ae4 CI 37518077578/37518073024 now passes all eight jobs,
+including Windows packaging and registered COM acceptance. This validates the
+outer job budget and pushed native frontend scope, not the newer local virtual
+increment. Keep the virtual checkpoint local while resolving managed failures,
+then update the same draft PR. Review
+also identified missing Focuser/Rotator ProgID generation in the Rust ASCOM identity
+helper; address and test it before enabling rotator COM imports. COM, dedicated
+simulation, shared creation and every original broader acceptance gate remain open.
+
+Follow-up private CLI probes cover worktree and Unicode temporary paths, direct
+and helper-launched hosts, and two simultaneous IPC clients with a Switch lease.
+Each publisher reports readiness about 47 ms after spawn and lists exactly three
+simulated scalar devices with zero cameras. Every newly created private host and
+publisher is retired by the probe; no vendor source or installed profile is used.
+Evidence: artifacts/hub-publisher-startup-*-probe.log. A subsequent focused native
+publisher test passes in 820 ms. Full rebuilt-host managed confirmation now passes
+all 196 NINA cases and real net48 x86/x64 clients, using
+artifacts/hub-virtual-rotator-final-confirmed-{nina,net48}.log. No production or
+fixture deadline was increased. These are new passing observations, not proof of
+the earlier startup/initialization failures' causes; retain those logs and the
+broader reliability/acceptance gate. The virtual implementation checkpoint can
+now proceed to its own CI while the remaining original plan stays in scope.
+
+### Rotator COM import review
+
+Extended the existing Windows import worker and Rust backend whitelist instead of
+adding another executable or controller. Both negotiate V2/V3 legacy Connected and
+V4 asynchronous ownership consistently. All driver access remains on one pumped
+STA, with the existing process/job isolation, connection-change uncertainty,
+sanitized HRESULT handling and bounded transport. Externally managed ownership
+never changes connection or invokes Dispose. No installed vendor class is used.
+
+The seven property readers share the existing rotator Boolean/Single-range
+validator. Six exact mutations reject unknown fields, wrong casing/types and
+out-of-range input before driver dispatch. Review caught negative absolute angles
+underflowing to zero during Single conversion; validation now checks the original
+Double and converted Single, including rounding upward to 360. Signed relative
+distance and source-owned logical/mechanical/target coordinates are preserved.
+Optional missing members stay Unsupported rather than guessed values. Dispatched
+vendor ArgumentException/COM failures remain uncertain; clearing the fixture fault
+cannot replay a move, Reverse or implicit Halt.
+
+Corrected the Rust ASCOM identity helper's missing Focuser/Rotator ProgIDs. Explicit
+cross-language class/prefix vectors and canonical case-insensitive self-cycle tests
+cover renaming and separate hub instances. Actual worker alias-denial rejects a
+registered class before activation, retaining the existing whole-output CLSID
+deny list. Shared creation remains gated until its own implementation is ready.
+
+The private fixture now selects its device class from --device-type. One VARIANT
+Move method preserves existing Int32 focuser testing and Single rotator inputs,
+without AutoDual overload aliases. Source coordinates stay separate, Sync does not
+move mechanical position, and trace records prove signed dispatch. Twenty-four
+worker tests pass across x86/x64. Fourteen actual registered Rust parent tests pass,
+including existing scalar/focuser ownership and new rotator shared leases,
+all commands, optional/malformed data, modern reversal admission and uncertainty.
+Evidence: artifacts/hub-rotator-com-local-confirmed.log. The first parent run's
+13-pass/1-fail log is retained in artifacts/hub-rotator-com-local.log: its assertion
+compared JSON 20 with 20.0. The assertion now compares strict numeric values without
+requiring a lexical representation; no production validation/deadline was relaxed.
+Broad regression/compiler checks and exact-head CI are recorded after completion.
+Vendor, conformance and all remaining original milestone gates stay open.
+
+Cross-path review also found the Rust property decoder accepted an angle that
+rounds to 360 and a positive StepSize that underflows to zero as Single, while the
+shared C# validator rejected both. Rust now checks converted representability as
+well as original ranges; absolute commands reject rounding to 360 before dispatch.
+Existing real actor regressions cover all three coordinate properties, all three
+absolute/reference commands, tiny positive StepSize, oversized values and the
+nearest valid Single below 360. Signed relative semantics are unchanged. Final
+checks use the refined code, not the preceding pre-refinement passing binaries.
+
+Refined-code acceptance passes all twenty-four worker and fourteen actual registered
+parent cases in artifacts/hub-rotator-com-single-confirmed.log. Full Rust hub/Alpaca
+regressions (including twenty-two rotator cases), warnings-denied Clippy, Rust 1.89
+all-target checks and generated-contract freshness pass in
+artifacts/hub-rotator-com-final-{rust,clippy,msrv,contract}.log. Registered proof comes
+from the script-owned COM run; ordinary Cargo COM cases without its environment
+return without activation. The production host is rebuilt before managed checks.
+Rebuilt-host managed confirmation passes all 196 warnings-denied NINA tests and
+real net48 x86/x64 clients in artifacts/hub-rotator-com-final-{nina,net48}.log.
+No source, production or fixture deadline changed. These new passes do not prove
+the causes of the previously retained intermittent failures. At this observation,
+virtual checkpoint 87ca1c1 has seven successful jobs in both PR/push CI
+37522869618/37522861252; Windows installer acceptance is still running.
+
+Both virtual-checkpoint CI runs subsequently completed successfully with all eight
+jobs, including Windows packaging, private COM imports and installer acceptance.
+This is exact-head evidence for 87ca1c1. The locally verified COM checkpoint
+89fae59 now proceeds into the same draft PR; dedicated simulation remains separate.
+
+### Dedicated rotator simulation review (2026-10-06)
+
+Added the simulator to the existing backend, actor, typed controller and output
+fixtures. A shared motion-target enum retains focuser behavior while completing
+rotator logical/mechanical angles after a monotonic duration. Sync changes only
+the source-owned logical reference; Disconnect cannot Halt. No raw motor encoder
+or persistence across new test runtimes is implied. Optional properties, modern
+reversal admission, stalled/stopped-short motion and malformed readings pass
+through ordinary controller validation. A dispatched uncertain mutation happens
+once and fences every subsequent command even after its injected fault is cleared.
+
+Simulation patches validate a cloned candidate before committing. Coordinate,
+motion and Reverse changes replace pending test motion; other fields do not.
+Source-class checks reject irrelevant controls and faults. Nested virtual fixtures
+verify source coordinates, original sample age and simulation labels. The first
+new Rust run passed twenty cases and failed an immediate zero-lease assertion:
+simulation update briefly owns a lease whose release is queued after its reply.
+The fixture now uses the existing bounded eventual assertion and then verifies
+disconnected transport. The retained failure is in
+artifacts/hub-rotator-sim-local.log; no deadline or production behavior changed.
+
+Both setup frontends consume twelve host-described controls. Shared numeric
+validation now checks exclusive upper bounds and Single representability;
+nested state groups derive from control paths instead of another device-specific
+branch. This also retains strict Switch/weather membership checks. The larger
+update exposed Clippy's large-enum warning at the IPC boundary. Boxing that payload
+preserves serialized JSON and schema while reducing the command enum's size.
+The original diagnostic remains in artifacts/hub-rotator-sim-final-clippy.log.
+
+Twenty-one simulation cases and the dedicated HTTP integration pass. The HTTP
+fixture uses actual private IPC and two independently owned published outputs.
+All 199 warnings-denied NINA tests and real net48 x86/x64 clients pass before the
+IPC representation refinement. Actual WPF acceptance selects and applies only
+Logical angle 42.5; its screenshot is explicitly labelled simulation. Runtime
+contract and final rebuilt-host confirmation for the boxed payload pass too.
+Evidence: artifacts/hub-rotator-sim-boxed-{rust,clippy,host-build,nina,net48}.log and
+artifacts/hub-rotator-sim-final-{msrv,contract,node,schema}.log. The final managed
+run again passes 199/199 NINA tests and both net48 architectures against the fresh
+production host. No test or transport deadlines changed. This increment needs its
+own CI; the preceding COM checkpoint has seven successful jobs with Windows
+installer acceptance still running in both PR/push runs. Browser interaction,
+shared rotator creation, conformance,
+equipment acceptance and every original remaining gate stay open.
+
+The preceding COM checkpoint 2ed2578 subsequently passed all eight jobs in both
+PR/push CI 37526619358/37526612935, including Windows registered import, packaging
+and installer acceptance. Publish the locally verified simulator checkpoint to
+the same draft PR; shared creation is a separate increment.
+
+### Shared rotator creation review (2026-10-06)
+
+Enabled the completed rotator class through generated configuration metadata and
+the host's `rotatorOutputs` capability. Installed COM rotator choices reuse existing
+worker/bitness gates. No frontend implements another device form, controller or
+executable. Camera, wheel and panel proxy classes remain unavailable. Configuration
+review still checks class relationships and immutable identities before Apply;
+editing choices cannot authorize unsupported source construction or bypass leases.
+
+Parameterized the existing native focuser-creation fixture to cover rotators too.
+Both cases create two outputs sharing one source, reject unsupported or mismatched
+classes, preserve IDs on reload and verify independent NINA leases. The rotator
+case checks shared Sync and signed relative movement. Real net48 x86/x64 clients
+now create and use their own rotator outputs through the same editor. Actual WPF
+button/combobox events cover source/output creation, review/apply/reload and cached
+health with zero leases. The first WPF run saved correctly but its final check used
+the fixture's original source list; the check now uses authoritative saved UUIDs.
+Retain artifacts/hub-rotator-setup-wpf.log.
+
+The initial WPF render captured an empty Review tab. Pixel diversity alone was
+insufficient evidence that settings were visible. Acceptance now explicitly selects
+Configuration, checks the saved reference value and visibility, then captures it
+after the normal dispatcher/layout pass. The first visibility assertion ran before
+that pass; retain artifacts/hub-rotator-setup-wpf-visible.log. Final visible capture
+passes in artifacts/hub-rotator-setup-wpf-visible-confirmed.log and is inspected.
+No production behavior or deadline changed to repair these fixture assertions.
+
+Actual in-app browser acceptance starts from a private empty hub with no camera
+profiles. It rejects a focuser output referencing a rotator, then saves/reloads two
+rotator outputs numbered 7/8 sharing one source. Sparse Logical angle 42.5 preserves
+mechanical angle, target and StepSize. Angles rounding to 360 and step underflow
+are rejected before dispatch; Read current state reconciles without Replay.
+Visible cached health confirms unchanged revision, zero leases and disconnected
+transport. Evidence: artifacts/hub-rotator-setup-browser-{saved,verification}.json
+and the actual screenshot. Chrome is unavailable in this session; this is in-app
+browser evidence, not a Chrome claim. Both private owned processes and the tab
+are retired after acceptance; no hardware or installed vendor driver is opened.
+
+The first Rust regression still asserted that rotator creation was hidden; update
+that earlier gate test to require the completed capability and retain rejection of
+unimplemented broader proxies. Its original failure is retained in
+artifacts/hub-rotator-setup-rust.log. Full refined-code Rust hub/Alpaca suites,
+Clippy, Rust 1.89, generated contracts, Node event checks and four schema tests pass.
+All 201 warnings-denied NINA tests pass after the visible WPF refinement, and real
+net48 x86/x64 creation/output fixtures pass. Logs use
+artifacts/hub-rotator-setup-{rust-confirmed,clippy,msrv,contract,schema,node-final,nina-final,net48}.log.
+Simulator checkpoint d4050c1 CI has six successes with Intel macOS and Windows
+still live in PR/push 37530345334/37530337700. Retain this creation checkpoint
+locally until that CI finishes, then push it to the same draft PR for its own CI.
+Broader conformance/vendor/interactive acceptance and all original remaining
+typed devices, camera ownership/transport, coordination and final gates stay open.
+
+### Accessory lost-reply CI evidence (2026-10-06)
+
+Simulator d4050c1 PR run 37530345334 completes with seven successful jobs but
+Windows fails NativeFocuserLostMoveReplyRetainsSharedUncertaintyAndNoReplay:
+expected `uncertain`, received `transient`. Retain the completed job log at
+artifacts/hub-rotator-sim-windows-failure.log. The test's connection diagnostics
+cannot explain this later failure. Review confirms FocuserSession performs live
+read-only limit/motion checks before dispatch; their transport failure can return
+Transient, whereas a dispatched timeout is retained as Uncertain by the actor.
+Existing paused-time coverage verifies that distinction. Neither a preflight
+failure nor a fixture scheduling cause is proved by the CI assertion.
+
+Added a shared failure-only helper to the focuser and rotator lost-reply tests.
+It captures write/Halt counts and private request trace before diagnostic IPC,
+then reports source health without replacing the original semantic failure if
+that diagnostic also fails. Successful assertions perform no additional I/O.
+There are no retries, deadline changes, production changes or relaxed expectations.
+The two focused cases and full warnings-denied NINA suite pass (201/201), recorded
+in artifacts/hub-accessory-move-evidence-{focused,nina}.log. These passes do not
+resolve the CI cause; push run 37530337700 remains live. Publish the evidence with
+the locally verified shared-creation increment for subsequent CI, retaining the
+failure and all original remaining gates.
+
+The preceding d4050c1 push run 37530337700 subsequently completed with all eight
+jobs successful, including Windows packaging, registration, installer and camera
+kit checks. This is retained alongside the failed PR run, not as proof of its
+cause. The creation and diagnostic increments can now proceed to their own CI.
+
+### Typed filter-wheel controller review (2026-10-06)
+
+Implemented the initial controller in the existing hub crate using the common
+TypedSourceSession, source actor and leases. Required metadata follows
+[IFilterWheelV3](https://ascom-standards.org/newdocs/filterwheel.html): ordered names,
+signed Int32 offsets with a zero reference, matching slot counts and Position -1
+during motion. Connection checks metadata/position within its configured deadline;
+moving is a valid initial state. Each move rechecks current metadata and stationary
+position while holding unique command control. Writes acknowledge start only.
+No automatic focuser offset adjustment, wheel calibration or invented Halt occurs.
+Generation loss and canceled/lost writes preserve the common fences.
+
+Resource limits are explicit Regain bounds: 1024 slots, one MiB of UTF-8 name data.
+Strict decoding rejects wrong types, mismatched arrays, overflow, missing reference
+and out-of-range readings. Duplicate, blank and Unicode source names are preserved.
+The host does not synthesize missing imported-driver metadata. Native sources and
+all wheel publication remain gated; this increment does not enable a wheel proxy.
+
+The first test compile referred to `connection` instead of `connection_info`;
+retain artifacts/hub-wheel-controller-focused.log. The first executed suite passed
+nine of ten cases but a fresh connection timed out after a failed preflight.
+Added source-state evidence reproduces the cause: the common cache rejected wheel
+arrays and scheduled its ordinary 30-second permanent-error backoff. Evidence:
+artifacts/hub-wheel-controller-{focused-confirmed,preflight-evidence}.log.
+The shared cache now accepts flat scalar metadata arrays, bounded to 1024 elements
+per array and 4096 across retained/new entries. Array/scalar strings share the
+existing one-MiB aggregate bound. Review verifies partial replacement/removal
+excludes old entries; nested arrays, objects and null remain rejected. Camera
+images are deliberately outside this cache and require the original buffer/transport
+work. No polling, connection or operation deadline changed to fix the failure.
+
+Eleven wheel cases cover independent leases, live limits, invalid/oversized data,
+pending/canceled connection, preflight cancellation versus dispatched uncertainty,
+concurrent control, generation loss, and actual loopback Alpaca V2/V3 connection
+negotiation, arrays and lost-reply no-replay behavior. Two additional source cases
+verify array bounds, partial aggregate limits and unchanged invalid-cache behavior.
+The cancellation fixture initially used unwrap_err with a non-Debug session;
+the corrected join-result match preserves the cancellation assertion. Retain
+artifacts/hub-wheel-controller-cancellation.log.
+
+Final full Rust hub/Alpaca suites pass, including all eleven wheel cases and
+twenty-six source actor cases. Clippy with warnings denied, Rust 1.89 all targets,
+generated contracts, Node and four schema tests pass. A freshly rebuilt production
+host passes all 201 warnings-denied NINA tests and real net48 clients in both
+Windows architectures. Evidence: artifacts/hub-wheel-controller-{rust,clippy,msrv,
+contract,node,schema,host,nina,net48}.log, plus focused cancellation confirmation.
+Review found no remaining controller/cache issue in this increment. New exact-head
+CI remains required. Next: native metadata/worker adapters, runtime/IPC and all
+wheel outputs, imports/virtual/simulation/setup, then panels, cameras/coordination
+and every original remaining acceptance gate.
+
+### Native filter-wheel metadata review (2026-10-06)
+
+Direct EFW sources now supply Names and FocusOffsets through the existing native
+worker adapter. Optional shared configuration preserves Unicode/blank names and
+signed offsets in slot order. Absent metadata uses numbered filter names and zero
+offsets for the actual slot count. Explicit arrays must pass common validation
+and match the hardware count; they cannot silently fall back to those defaults.
+Metadata edits preserve physical source identity, saved IDs and unrelated settings.
+Imports retain their driver-owned metadata. No new crate, worker or frontend form
+is introduced, and wheel proxy publication remains gated.
+
+Review found a bypass in the low-level native Position write path: the typed
+controller checked saved metadata, but direct writes needed the same slot-count
+check. Both now reject mismatched explicit metadata before the worker Move request.
+Constructor validation rejects metadata for other device classes or malformed
+offsets before launching a worker. Calibration and worker recreation preserve the
+saved arrays; calibration remains explicit and does not adjust a focuser.
+
+Independent schema tests reproduced acceptance of Int32 overflow because the
+generated `format: int32` is only an annotation. The common item schema now emits
+explicit minimum/maximum and default zero. Both editors and independent validators
+consume those same bounds. Retain artifacts/hub-wheel-native-schema.log and the
+successful schema-bounds/Node-bounds confirmations. Semantic class/count/text
+validation still belongs to engine review.
+
+Retain the first native focused failure at artifacts/hub-wheel-native-focused.log:
+the test incorrectly expected timed ordinary motion from the production EFW USB
+simulator, whose ordinary moves apply immediately. The corrected exact stationary
+position assertion matches that simulator; the separate two-second calibration
+case still requires moving -1, provisional slots and unchanged arrays until done.
+No timing or production behavior was changed. All eighteen native tests and
+sixteen config tests pass, including actual production workers in explicit
+simulation, independent leases, metadata reload, calibration and rejected mismatch.
+
+The first editor test had an empty source label; captured engine errors prove
+that rejection. The corrected fixture supplies a label and explicitly checks
+filterWheel field paths for class/reference failures. Pre-Apply source inspection
+is locally rejected until the source is saved; its exact exception expectation
+now follows the existing client contract. Retain the focused/review-evidence/
+focused-confirmed logs. The final focused test and all 202 warnings-denied NINA
+tests pass, including defaults, Int32 boundaries, review/apply/reload/removal,
+stable identities and zero equipment connections. Actual net48 x86/x64 regressions
+pass with zero build warnings. Full Rust hub/Alpaca suites, strict Clippy, Rust
+1.89 all-target checks, generated-contract freshness, Node and all five independent
+schema tests pass. Final evidence: artifacts/hub-wheel-native-{rust-final,clippy,
+msrv,contract-final,node-bounds,schema-bounds,nina-final,net48}.log.
+
+Exact bf15ced PR CI 37533746765 has seven successful jobs but fails Windows net48
+x86 at a rotator Sync with `uncertain`, after all 201 NINA tests pass. The short
+original message omits which of the two Sync paths failed. Retain
+artifacts/hub-wheel-controller-ci-windows-failure.log. Failure-only checkpoints now
+capture loopback versus simulated stage, private request/reply timings, dispatch
+counts, source health and full exception stack without masking diagnostic IPC
+failure or adding successful-path reads. No retry, assertion, deadline or production
+change is made. Local x86/x64 passes do not prove its cause; push CI 37533737225
+must finish, and later exact-head confirmation remains required.
+
+Push 37533737225 subsequently completes all eight jobs successfully, including
+Windows packaging, installer acceptance and camera-kit checks. Retain this beside
+the failed PR run; it does not establish a cause. Native metadata commits 0c3e22b
+and 630b302 are pushed into draft PR #21; exact-head PR/push CI
+37536023962/37536015902 is now live.
+
+Next: shared wheel poll plans, runtime/IPC, all three outputs, COM/virtual/simulation
+and creation; then panels, camera ownership/transport, coordination and every
+original acceptance/final gate. This checkpoint does not close those requirements.
+
+### Shared wheel polling review (2026-10-06, local increment)
+
+The common PropertyPoll replaces the scalar-only name and accepts bounded
+Strings/Int32s alongside existing scalar types. Wheel property descriptors build
+the poll requests; factory construction deduplicates their three keys across
+multiple proxy outputs and scalar Position mappings. Typed keys still count
+toward the union limit. Factory construction does not connect equipment or mutate
+saved config. This does not enable a wheel runtime/output or another COM class.
+
+Review identified a collection-bound issue in the proposed array path: complete
+Alpaca polling counted only scalar text, so many individually bounded arrays could
+accumulate before the source cache rejected them. SampleBudget now holds the
+existing flat-array/text admission in one place, reused for prospective cache
+contents, individual typed values and complete collected poll results. Array
+length, aggregate items and aggregate UTF-8 bounds retain saturating arithmetic;
+nested arrays/objects/null remain invalid. Partial cache validation still includes
+retained values and excludes replacements/error removals. The complete transport
+collector rejects before publishing an over-budget set. Safety/number semantics,
+per-request polling, retry accounting, ownership and deadlines are unchanged.
+
+The incremental and complete Alpaca paths now call the same typed value check.
+Malformed offset arrays produce per-key errors while names/position continue;
+the next valid sample replaces that error. Signed Int32 endpoints, Unicode/blank
+names and moving -1 are preserved. Slot-count/reference semantics stay in the
+wheel controller; generic transport array types do not invent device behavior.
+
+Focused verification passes 27 actual Alpaca transport cases, seven factory
+cases, eleven wheel-controller cases and twenty-six source-actor cases. Three new
+transport cases cover per-key recovery, element/length rejection and collected
+text/item overflow. A factory case checks two wheel outputs plus scalar Position
+share exactly three typed keys; the existing union-limit case now covers wheels.
+Strict Clippy passes. Review strengthened the collection test to leave one later
+response queued, proving admission stops at the first overflow rather than only
+rejecting after reading the whole pass; focused confirmation passes. Full Rust
+hub/Alpaca suites, Rust 1.89 all targets, contract freshness, freshly rebuilt-host
+NINA 202/202 and real net48 x86/x64 regressions pass. Evidence:
+artifacts/hub-wheel-polling-{focused,factory-confirmed,budget-confirmed,clippy,rust,
+msrv,contract,host,nina,net48}.log. This verified increment remains local while
+native metadata head 630b302 runs its own CI. The original runtime/IPC, publication,
+import/simulation/setup and later milestone gates remain required.
+
+### Wheel runtime/IPC review (2026-10-06, local increment)
+
+The common runtime now builds typed FilterWheel sessions, deduplicates polling
+through the existing factory, and routes private get/move operations. No raw
+vendor command, calibration or fabricated Halt is added. Setup creation and all
+three publications stay gated until their adapters and acceptance are complete.
+The controller continues to own command preflight and generation/uncertainty
+semantics; runtime wiring does not duplicate them.
+
+The typed sample envelope is shared with focusers and rotators, preserving wire
+fields, per-key sequences and clock/epoch semantics. Their health and value
+decoders still run first. Wheel cached reads validate matching metadata and live
+slot bounds before availability, and retain the oldest dependency age. Diagnostics
+and standard Position-only DeviceState do no I/O. Array descriptors and generated
+schema drive both frontend diagnostic readers, including zero-reference and
+signed Int32 bounds. Summaries preserve array boundaries and empty/Unicode names.
+
+Four private runtime/IPC cases cover inert cached paging, mismatched metadata,
+dependency age, cancelled connection admission, preflight generation loss,
+sparse output identities, sibling/EOF leases, unknown Move fencing and escaped
+metadata response overflow without stream loss. All fifteen wheel, eighteen
+focuser and twenty-two rotator cases pass. A new runtime test runs the actual
+production EFW worker explicitly in simulation; it verifies saved arrays,
+cached polling, shared leases, last-client cleanup and metadata after reconnection.
+Browser reader and five independent schema checks pass. Full Rust hub/Alpaca
+regressions, strict Clippy, Rust 1.89, generated-contract freshness, freshly
+rebuilt-host NINA 203/203 and actual net48 x86/x64 clients pass. Managed builds
+have zero warnings. The new managed diagnostic case uses synthetic wheel replies
+and never applies/connects a native wheel source. Both frontend readers reject
+malformed/oversized arrays, missing zero, Int32 overflow, invalid Position and
+wrong observation identities while preserving empty/Unicode names and offsets.
+
+Retain artifacts/hub-wheel-runtime-focused.log: the first new private fixture
+used a nonexistent SourceHandle::id; source identity is read from its snapshot.
+Retain artifacts/hub-wheel-runtime-native.log: the first new native fixture
+looked for the simulation flag on SourceHealth instead of SourceSnapshot. Both
+are corrected test API references; focused confirmation passes. No production
+deadlines, assertions or retry policies were weakened. Original publication,
+import/simulation/setup, conformance and later milestone gates remain open.
+
+Review strengthened the cache/IPC case with Position-only sample failure and
+recovery: metadata remains available, standard DeviceState omits Position without
+I/O, and valid polling restores availability. Overflow now checks outputStatus
+as well as a direct Names read, then verifies Position and the session survive.
+Retain artifacts/hub-wheel-runtime-cache-confirmed.log: the first added
+DeviceState assertion attempted a crate-private method from an integration test.
+The corrected fixture exercises public framed IPC instead of widening production
+visibility. All fifteen wheel cases pass in cache-final.log. Other final evidence:
+artifacts/hub-wheel-runtime-{focused-confirmed,native-confirmed,rust,clippy,msrv,
+contract-final,node,schema,managed-build,host,nina,net48}.log.
+
+Exact native-metadata head 630b302 PR/push CI 37536023962/37536015902 both complete
+all eight jobs successfully. The earlier two Windows reliability failure causes
+remain unproved; this success is not a claim to have fixed them. The reviewed
+polling and runtime increments can now proceed to their own CI in the same draft
+PR. Next: wheel Alpaca/native NINA/native ASCOM publication, then imports, virtual
+and dedicated simulation inputs/shared creation, panels, cameras/coordination and
+every original acceptance/final gate.
+
+### Wheel Alpaca publication review (2026-10-06, local increment)
+
+FilterWheel joins the existing Publisher capability gates, class naming and typed
+get/put translation. The three source properties reuse their controller
+descriptors; Position uses strict signed Int32 parsing and live controller
+preflight. Modern connection/DeviceState negotiation stays shared with other
+outputs. No vendor passthrough, calibration or fabricated Halt is exposed.
+
+Review covers route identity and coexistence: dynamic wheel numbers resolve from
+the host catalog, local wheel 0 remains available when separately configured,
+and a selected local 0 rejects a hub 0 collision before opening equipment. The
+hub can use 0 when the local profile is unselected. Setup-page routing for all
+three typed classes now shares one helper, preserving native fallback/404/503
+behavior and preventing a fixed local setup route from shadowing a hub wheel.
+This does not enable unfinished shared wheel creation.
+
+The existing private accessory upstream fixture now supports wheel V2/V3, using
+the class-specific modern connection boundary while retaining focuser/rotator
+behavior. Five new actual HTTP/private-endpoint cases cover two sources, sparse
+output identities, ordered Unicode/blank names and signed offsets, independent
+leases, modern and legacy connection methods, exact Position parameter routing,
+moving state, malformed metadata/values, sanitized upstream errors, no writes
+on failed preflight, local coexistence/collision and unknown Position replies
+without replay or extra commands. One case runs the production EFW worker in
+explicit simulation and preserves metadata/shared position through HTTP.
+
+The first four focused wheel cases pass. After factoring setup routing and
+strengthening malformed-metadata coverage, all 31 HTTP router cases pass,
+including five wheel cases and existing focuser/rotator/scalar regressions.
+Final full Rust hub/Alpaca regressions, strict Clippy, Rust 1.89, generated
+contract freshness, Node/five independent schema checks, freshly rebuilt-host
+NINA 203/203 and real net48 x86/x64 clients pass. Both managed fixture builds
+have zero warnings. Evidence: artifacts/hub-wheel-http-{focused,router,rust,
+clippy,msrv,contract,node,schema,host,nina,net48}.log. No new failures, deadline
+changes, weaker assertions or retry changes were introduced. The preceding
+runtime PR CI 37539206029 has six successes with Intel macOS and Windows live;
+push 37539201271 remains live. Keep this local increment until they finish, then
+publish into the same draft PR. The original native publication, imports,
+virtual/dedicated simulation, shared creation, conformance and later milestones
+remain required.
+
+### Native wheel publication review (2026-10-06, local increment)
+
+NINA and ASCOM share a bounded wheel request/value validator in the existing
+native hub library. Strict JSON types, 1..1024 slots, aggregate UTF-8 bounds,
+signed Int32 offsets with a zero reference, and Position -1..1023 match Rust.
+Rust remains the authority for live pairing, slot bounds, command control and
+generation fences. Existing sessions, saved choices, metadata-only factories
+and registration implement the new class without a parallel server or worker.
+Rust/C# stable identities use wheel prefix Rgn.HL.; Weather retains Rgn.HW.
+Independent UUID vectors and self-proxy checks cover wheel exports.
+
+NINA preserves existing FilterInfo objects, adds source defaults for missing
+slots and trims absent slots. Metadata is validated before publication, and a
+changed active profile rejects publication into either collection. The short
+Position setter returns on acceptance; actual reads retain -1 while moving and
+never substitute the requested target. ASCOM exports V3/V2 with actual COM QI
+coverage and Short Position in cached standard DeviceState. Neither frontend
+applies offsets, introduces calibration/Halt, nor silently retries motion.
+
+Five private NINA wheel cases and the wheel registration theory cover saved
+choices, wire/resource boundaries, profile preservation/change, malformed live
+state, nonblocking sibling motion and unknown Position replies. Real net48
+x86/x64 clients exercise both interfaces, signed metadata boundaries, actual
+Position, standard state types, independent disconnects and no-replay fencing.
+Seven-output manual export tests independently derive identities and exercise
+both server and client bitnesses, array marshaling and cached Short state. The
+PowerShell test constructs Unicode expectations from code points so Windows
+PowerShell's script encoding cannot corrupt them.
+
+The first focused run passes six of seven cases; one fails before its assertions
+because NINA's collection captures xUnit's headless synchronization context. The
+test now uses the same context-free Task.Run pattern as the runtime wheel cases.
+All seven focused cases pass; the added profile-change case passes in both full
+209-test runs. Final Rust hub/Alpaca suites, strict Clippy, Rust 1.89 all targets,
+generated-contract freshness, Node/five schema checks, freshly rebuilt-host NINA
+209/209 and real net48 x86/x64 clients pass. Both-architecture ASCOM staging has
+zero warnings. Logs: artifacts/hub-wheel-native-output-{focused,
+focused-confirmed,rust,clippy,msrv,contract,node,schema,host,nina,nina-final,
+net48,net48-final,stage,exports}.log. Cold HKCU SCM activation fails at the first
+existing Switch class before wheel activation, matching the retained local
+limitation; artifacts/hub-wheel-native-output-scm.log preserves the failure.
+Disposable registered/cold wheel CI and interactive/conformance acceptance remain
+open. No vendor driver or physical equipment was activated.
+
+Runtime push CI 37539201271 completes with two failures. Windows initial focuser
+Connect returns uncertain before the lost-Move assertion: PUT connected closes
+without a reply. Its cause is unproved; existing private failure-only traces now
+include caught transport exceptions. Intel macOS asserts final upstream cleanup
+immediately after local Connecting=false. SourceLease::drop explicitly schedules
+cleanup asynchronously, so the test now observes upstream disconnection within
+the existing three-second budget, retaining the assertion and checking the
+independent source stays connected while waiting. Full local Rust suites pass;
+portable CI must confirm. Evidence: artifacts/hub-wheel-runtime-ci-failure.log.
+PR 37539206029 has seven passing jobs with Windows installer acceptance live.
+Keep this reviewed increment local until it finishes, then publish into the same
+draft PR. Wheel COM/virtual/simulation/shared creation and all original remaining
+milestones and final acceptance gates remain required.
+
+### Windows COM wheel import review (2026-10-06, local increment)
+
+The existing isolated worker now whitelists FilterWheel Names, FocusOffsets,
+Position and the Short Position setter. V2/V3 retain the common legacy/modern
+connection state machine, borrowed ownership, strict parameters and sanitized
+errors. Before serializing vendor SAFEARRAYs, the worker bounds rank/count,
+checks every element type and counts strict UTF-8 bytes, rejecting malformed
+surrogates. It then uses the shared native validator, including a zero reference
+offset. Rust admits arrays only on wheel Names/FocusOffsets reads and applies
+the existing bounded controller decoder; unexpected arrays/objects still retire
+the corrupt transport. Shared polling, typed controller slot/metadata validation,
+leases, generations and no-replay uncertainty are reused without new processes.
+Generated wheel COM choices remain gated until shared wheel creation is complete.
+
+Private driver extensions preserve existing scalar/focuser/rotator fixtures and
+require Short wheel setters. Three new worker cases cover V2/V3 in both bitnesses,
+Unicode/blank names, signed offsets, moving -1, type/rank/count/text bounds,
+unsupported commands, strict parameters and ambiguous setter errors. Borrowed
+ownership/alias-denial coverage is shared with rotators. Two registered Rust
+parent cases prove one worker for sibling outputs, actual typed array polling,
+signed boundaries, failed admission, independent disconnects and retained source
+uncertainty without replay/Halt. No installed vendor driver was activated.
+
+The first 27-case worker run fails the wheel invalid-slot assertion in both
+architectures: the fixture used 0x80040405 instead of ASCOM InvalidValue 0x80040401.
+The worker correctly returned uncertain for that unrecognized setter failure.
+After correcting the fixture constant, all 27 worker cases pass. The first actual
+parent run then passes 14/16, with both wheel cases receiving Connecting. Review
+finds the old unconditional array rejection retires the worker at metadata reads;
+the narrowed, bounded array admission above fixes the production gap. Final
+private worker/registered parent confirmation passes 27/27 and 16/16, including
+existing timeout, cancellation, safety, corruption, alias and ownership cases.
+Evidence: artifacts/hub-wheel-com-{focused,focused-confirmed,parent-confirmed}.log.
+Full Rust hub/Alpaca, strict Clippy, Rust 1.89 all targets, generated-contract
+freshness, Node/five independent schema checks, freshly rebuilt-host NINA 209/209
+and real net48 x86/x64 clients pass. Evidence: artifacts/hub-wheel-com-{rust,
+clippy,msrv,contract,node,schema,host,nina,net48}.log. The worker/fixture and both
+managed architecture builds have zero warnings. No production/test deadlines,
+retry rules or assertions were weakened.
+
+The preceding wheel publication head 0669339 is pushed to draft PR #21. Its
+PR/push CI 37541898392/37541893308 remains live. Runtime head 08913c8 PR CI
+37539206029 passes all eight jobs; its separate push failures remain retained.
+Keep this import increment local until reviewed local checks and preceding CI
+finish. Virtual/dedicated wheel simulation/shared creation, panels, cameras,
+coordination and every original acceptance/final gate remain required.
+
+### Virtual wheel input review (2026-10-06, local increment)
+
+Virtual wheels reuse the supervised typed-accessory connection path and existing
+controllers instead of adding another worker or connection owner. Review covers
+bounded handshake readiness, cancellation, generation retirement, shared command
+leases, strict Position parameters and retained uncertainty. Cached forwarding
+uses the wheel controller's metadata pairing and oldest dependency age, preserving
+arrays and per-key errors without device I/O. The small Int32 parameter helper
+also preserves the existing focuser validation behavior and error messages.
+
+Six two-layer loopback cases exercise V2/V3 ownership, a deliberately slow
+handshake under shorter outer request budgets, cancellation, lost inner generation,
+unknown Position acknowledgment without replay, actual moving -1, metadata
+dependencies, original ages and cache recovery. The production EFW worker test is
+shared between direct and two-layer virtual cases in explicit simulation. It
+verifies saved metadata, movement, sparse output numbers, simulation diagnostics,
+independent lease release and reconnection without changing saved metadata.
+
+The first focused run passes 20/21 wheel cases. Its cache case expected
+Unavailable for malformed wire Position, although the Alpaca sampler reports
+Permanent and the virtual path correctly retains that error. The corrected
+assertion requires the original classification and intact metadata at every
+source layer, while the live getter retains its existing Unavailable result.
+All 21 wheel and 20 native cases then pass, as do Node and five schema checks.
+Evidence: artifacts/hub-wheel-virtual-{focused,cache-failure,
+focused-confirmed,node,schema}.log. Full Rust hub/Alpaca regressions, strict
+Clippy, Rust 1.89 all targets, generated-contract freshness, freshly rebuilt-host
+NINA 209/209 and real net48 x86/x64 clients pass. Managed builds have zero
+warnings. Evidence: artifacts/hub-wheel-virtual-{rust,clippy,msrv,contract,host,
+nina,net48}.log. No deadline, retry rule or production error was changed. No
+physical equipment or installed vendor driver was activated.
+
+Preceding head 0669339 PR/push CI 37541898392/37541893308 has seven successful
+jobs with Windows build/installer checks live. Both Windows test.ps1 steps have
+completed successfully, including private SCM/production wheel registration
+acceptance. Local HKCU SCM restrictions and the earlier unexplained transport
+failures remain recorded; later passes do not prove their causes resolved.
+
+Dedicated wheel simulation/shared creation, panels, cameras, coordination and
+every original acceptance/final gate remain required. Keep one draft PR #21;
+preceding publication CI must finish before these local increments are pushed.
+
+### Dedicated wheel simulation review (2026-10-06, local increment)
+
+The existing simulator now supports FilterWheel using the same actor, typed
+controller, timed motion, sampling ages, connection leases and uncertainty fence.
+Metadata validation reuses NativeFilterWheelMetadata; sparse updates validate a
+copy before assignment. Position/metadata injection replaces pending movement,
+while duration/age/fault patches retain it. Accepted moves report -1 until the
+monotonic deadline; disconnect cannot Halt or substitute a requested target.
+StoppedShort retains the prior slot, InvalidMotion corrupts only Position, and
+UncertainWrite applies once while retaining the shared fence after fault clear.
+No wheel Halt, calibration or focuser offset application was introduced.
+
+Both setup frontends consume generated bounded JSON-array controls. Validation
+retains strict Unicode byte limits, Int32 bounds, a zero offset reference, slot
+order and blank names. Status validation also checks array pairing and actual
+Position bounds. Review consolidated the typed simulator write/fault return path
+for focusers, rotators and wheels. Dedicated controls do not yet enable shared
+wheel creation in the generated forms.
+
+The first focused build failed on test-only json! repetition syntax; using Vec
+fixes it. All 26 simulator cases then pass. Independent JSON Schema validation
+finds that schema_with made optional FocusOffsets required; serde(default) now
+retains sparse patch semantics, and all six schema checks pass. The first HTTP
+case expected the generic driver code for busy; the existing adapter correctly
+maps it to 0x40b. Its corrected assertion and the HTTP case pass without changing
+production error mapping.
+
+Review also identifies an applied-but-oversized reply. A new actual framed IPC
+case proves a valid update can apply before responseTooLarge, without terminating
+the stream. Explicit smaller repair succeeds without truncation, replay or larger
+frame budgets. Both setup frontends now revoke review and require reload after
+that response. Existing no-replay frontend cases additionally exercise this error
+after one applied update. All 27 simulator cases, the HTTP case, six focused
+NINA/setup cases, Node and six schema checks pass. Evidence:
+artifacts/hub-wheel-simulation-{check,focused,focused-confirmed,contract-generate,
+schema,contract-confirmed,schema-confirmed,rpc,http,http-confirmed,host,
+node,node-confirmed,nina-focused}.log.
+
+Strict Clippy found that the larger inline simulation update inflated the actor
+command enum. Boxing that payload follows the IPC command design and avoids
+enlarging every queued command. Review also corrected local browser JSON parse
+errors to carry invalidValue; invalid input must not be presented as an unknown
+remote mutation. Full Rust hub/Alpaca suites, strict Clippy, Rust 1.89, generated
+contract freshness, Node/six schema checks, rebuilt-host NINA 212/212 and real
+net48 x86/x64 clients pass. Logs additionally include
+artifacts/hub-wheel-simulation-{clippy-confirmed,msrv,rust-confirmed,contract,
+host-final,node-final,nina,net48}.log. The actual WPF capture was visually checked;
+the workflow applies only selected Names, retains offsets/Position and verifies
+zero source leases. This is explicit simulation acceptance, not hardware proof.
+
+Preceding publication head 0669339 passes all eight jobs in both PR/push CI
+37541898392/37541893308. Reviewed COM/virtual increments are pushed at a586c76
+to the same draft PR #21; new PR/push CI 37544747351/37544741219 is live. Earlier
+unexplained Windows failures remain retained. Shared wheel creation, panels,
+cameras, coordination and every original acceptance/final gate remain required.
+
+### Shared wheel creation review (2026-10-06, local increment)
+
+The generated schema enables wheel COM/simulation choices and gates wheel proxies
+on filterWheelOutputs. The runtime advertises that configuration capability only
+now that native, Alpaca, COM, virtual and dedicated simulation paths exist. Camera
+and panel gates remain closed. Neither frontend adds a separate wheel editor.
+Parameterized WPF creation and actual net48 creation workflows reuse the rotator
+path, retaining saved identity, inert review/apply and independent source leases.
+The actual IPC test checks configuration capability publication before connecting.
+Node form events exercise both rotator and wheel transitions; six independent
+schema checks pass. The first full run caught a test request-ID error: inserting
+ID 20 before existing lower IDs correctly closed the stream. A separate sequential
+IPC capability test retains the original stream-order checks. Its cleanup now
+asserts the shutdown result. No production protocol rule or deadline changed.
+
+All 22 wheel cases and full Rust hub/Alpaca suites pass, along with strict Clippy,
+Rust 1.89, contract freshness, NINA 213/213 and real net48 x86/x64 clients.
+The latter create two wheel outputs, verify saved identities, metadata/motion and
+independent leases. Fresh WPF setup and simulation captures are visually checked.
+Review corrects stalled-motion help: clearing the fault resumes motion; Position
+injection replaces it. The generated description and both frontends agree.
+
+Actual browser acceptance uses a fresh hub with empty equipment profiles and
+only explicit simulation. It creates outputs 7/8 sharing one source, blocks Apply
+for a mismatched class, saves/reloads stable IDs, rejects local invalid JSON
+without requiring reload and applies only Names. The observed status retains
+Position 0, seven zero offsets, zero leases and disconnected transport. Private
+processes are stopped after verification; no installed driver/equipment is opened.
+Evidence: artifacts/hub-wheel-creation-{focused-confirmed,rust-confirmed,clippy,
+msrv,host,contract-final,node-final,schema-final,nina,net48,ipc-final}.log;
+artifacts/hub-wheel-creation-browser-{saved,verification}.json; actual captures
+in docs/images. Preceding a586c76 CI remains live. Panels, cameras, coordination
+and all original remaining acceptance/final gates stay required.
+
+### Typed panel controller review (2026-10-06, local increment)
+
+Reviewed the CoverCalibrator V1/V2 interface against installed ASCOM 7.1.2
+declarations and the canonical interface, then reused TypedSourceSession instead
+of adding another actor or command arbiter. Cover and light presence are separate.
+Brightness validates live positive Int32 MaxBrightness; Off requires zero and
+On(0) retains a logical Ready/NotReady state. Acknowledged movement and warm-up
+never substitute a target or Ready state. Unknown/Error retains valid presence
+and explicit command access without inventing completion.
+
+Only negotiated V1 sources derive completion from enum states. Unknown/Error
+cannot become false. Modern/unversioned sources require actual Boolean completion
+properties; missing or malformed mandatory properties reject readiness. Failed
+second handshakes release only their own leases. Source-generation changes retire
+old sessions. Concurrent calls use the existing unique operation lease. Cancelled
+preflight never dispatches; cancelled or lost-ack dispatch retains the shared
+uncertainty fence without replay, automatic Halt, Close or Off.
+
+Native OFP2 status now retains independent motion evidence from the already-read
+GOPS reply. Captured GOPS=1/GPOS=232 after STOP means stopped at an unknown endpoint.
+GOPS=3 has no captured completion meaning and remains unavailable. The explicit
+simulator models the observed stopped intermediate position. Native Open/Close
+checks movement before dispatch and returns Busy without claiming an uncertain
+mutation; imported drivers keep their own preemption policy. Native illumination
+has no reported warm-up stage, so its completion property follows the existing
+Ready/Off interpretation without a fabricated timer.
+
+Fifteen controller cases pass, including actual loopback Alpaca V1/V2 connection
+negotiation, shared clients, zero-on, warm-up and an applied-once command with a
+malformed acknowledgement. Both production-worker panel cases pass with explicit
+SIM-OFP2, including typed sibling clients, live maximum, known stopped/unknown
+endpoint and no darkening on sibling disconnect. All ten vendor protocol cases
+and the movement-timeout unit test pass. Full Rust hub/Alpaca regressions, strict
+Clippy, Rust 1.89 all targets, generated-contract freshness, Node contract/event
+checks and six independent schema cases pass. The default Python lacked
+jsonschema; the existing artifacts/hub-schema-venv passes without installing or
+changing dependencies. Fresh-host NINA 213/213 and real net48 x86/x64 regressions
+pass. The standalone OFP2 worker/HTTP simulation also passes brightness, full
+open/close, mid-travel halt/resume, discovery, persistent identity, independent
+clients, reconnect, invalid values and origin checks.
+
+Evidence: artifacts/hub-panel-{vendor,workers,native-focused}.log and
+artifacts/hub-panel-controller-{focused,rust,clippy,msrv,contract,node,
+schema,schema-confirmed,host,nina,net48,ofp2}.log. Panel runtime/IPC/diagnostics, every publication,
+COM/virtual inputs, dedicated controls and shared creation remain open. No panel
+setup gate is enabled by this checkpoint. All later plan requirements remain.
+
+Preceding a586c76 PR/push CI 37544747351/37544741219 now passes all eight jobs.
+Verified wheel simulation/shared creation is pushed at 5d0ed34; new PR/push
+CI 37547703480/37547695748 is running. Draft PR #21's body describes that pushed
+head and does not claim local panel changes are published or hardware accepted.
+
+### Panel runtime, IPC and cached diagnostics review (2026-10-06, local increment)
+
+Reviewed existing source/controller/client ownership rather than adding a panel
+host. Dynamic outputs share a source and one deduplicated six-property polling
+plan, including combined Switch brightness gauges. Typed IPC uses the existing
+Get/Put dispatch and version/capability negotiation. Pending admission,
+cancellation, generation loss, wrong-class access and uncertain writes keep the
+same lifecycle/quiescence fences. Close, Halt and Off are never invented on
+disconnect or uncertain completion.
+
+Cached light properties depend only on their required light observations.
+Brightness validates MaxBrightness and CalibratorState, including Off=0 and
+logical On(0); maximum validates presence. Ages retain the oldest dependency.
+Legacy completion uses the source enum and its age even when polling the V2
+property returns Unsupported. Unknown completion remains unavailable; modern
+errors retain their original class. Cover errors do not erase valid light data.
+DeviceState reads one cache snapshot and independently omits unavailable values;
+MaxBrightness and a fabricated measurement timestamp are excluded.
+
+Both diagnostic readers reuse their existing typed-accessory paths and generated
+types/ranges. New private tests reject Int32 overflow, invalid state enums,
+incorrect Boolean values and epoch/type/page faults, while retaining unavailable
+completion messages. This is diagnostic support, not a native NINA/ASCOM panel
+driver. Selection, creation and all publications remain gated/pending.
+
+The first added fixtures used nonexistent client/registry accessors; compilation
+caught these and the tests now use the actual public client/snapshot API. The
+first expanded actual Alpaca runtime cases asserted brightness availability as
+soon as state properties arrived. Captured snapshots in
+artifacts/hub-panel-runtime-alpaca-evidence.log prove completedPasses=0 and absent
+MaxBrightness in both V1/V2. Production correctly withheld the dependent value.
+The fixture now awaits that observation within its existing three-second budget;
+no production poll deadline, assertion or retry rule was relaxed.
+
+Verification: all 19 panel cases, eight factory cases, 22 native cases and full
+Rust hub/Alpaca suites pass. Actual loopback Alpaca V1/V2 now exercises the runtime
+and configuration-derived poll plan, shared ownership, partial legacy failures,
+zero-on, actual motion and applied-once lost acknowledgements. Production OFP2
+runtime uses explicit SIM-OFP2 with two outputs and retained light on sibling
+disconnect. Strict Clippy, Rust 1.89 all targets, generated-contract freshness,
+Node/six independent schema checks, warning-denied managed build, fresh-host NINA
+214/214 and real net48 x86/x64 regressions pass.
+
+Logs: artifacts/hub-panel-runtime-{check,focused,focused-confirmed,native,
+native-confirmed,contract-generate,contract,node,schema,rust,rust-confirmed,
+alpaca-evidence,clippy,clippy-final,msrv,msrv-final,host,managed-build,nina,net48}.log.
+Keep this locally verified increment with f622d51 until preceding 5d0ed34 CI ends.
+Both PR/push runs have seven successful jobs and Windows build/installer work
+remaining at last observation. All original remaining plan gates still apply.
+
+### Panel Alpaca publication review (2026-10-06, local increment)
+
+Reviewed the existing publisher, capability negotiation, typed Get/Put dispatch,
+common connection ownership and cached DeviceState. Panel publication adds no
+host, acquisition actor or frontend-specific state machine. Saved UUIDs and
+noncontiguous class-local numbers survive discovery/routing; independent HTTP
+clients and multiple source devices retain distinct leases. V1 completion is
+inferred only by the shared controller; mandatory modern errors stay errors.
+Brightness remains strict Int32 with live maximum/presence checks and valid On(0).
+Cover commands preserve imported-driver preemption rather than impose a generic
+Busy rule. Unknown endpoint and known stopped are independent modern properties.
+
+The shared setup-page helper scopes configured panel routes. Standalone OFP2 at
+slot zero retains its existing setup/API and identity. A collision rejects
+discovery, reads and setup without acquiring a lease or touching equipment.
+Applied-once lost acknowledgements fence sibling Close/Halt/Off/On commands,
+retire connected state and prevent idempotent Connect from silently adopting a
+new generation. Publisher/runtime shutdown sends no extra actuator command.
+
+Five new actual HTTP cases pass for loopback V1/V2 and explicitly simulated
+production OFP2. They also cover strict argument errors, absent independent
+components, malformed modern completion, live range changes, warm-up, cache
+omission, shared upstream ClientID and unique transaction IDs. The first focused
+run passed. Review simplified the cache-observation predicate without changing
+its budget or the production polling policy. All 37 router cases and full Rust
+hub/Alpaca suites pass, as do strict Clippy, Rust 1.89 all targets, generated
+contracts, Node/six independent schema checks, fresh-host NINA 214/214 and real
+net48 x86/x64 clients. Standalone OFP2 worker/HTTP simulation passes brightness,
+full open/close, mid-travel halt/resume, independent clients, discovery and
+persistent identity, reconnect, validation and origin checks.
+
+Evidence: artifacts/hub-panel-http-{focused,rust,clippy,msrv,contract,node,schema,
+host,nina,net48,ofp2}.log. No physical equipment or installed vendor drivers were
+opened. Preceding 5d0ed34 PR CI 37547703480 passes all eight jobs; push CI
+37547695748 has seven passed and Windows installer acceptance running at last
+observation. Keep panel increments local until that run ends. Native NINA/ASCOM
+panel outputs, COM/virtual inputs, dedicated simulation/shared creation and every
+original remaining gate remain required; PR #21 stays draft.
+
+Preceding push CI 37547695748 is now terminal success, so both 5d0ed34 runs pass
+all eight jobs, including Windows packaging/installer acceptance. The reviewed
+panel controller/runtime/HTTP commits may now be pushed; their own CI remains
+required. This does not establish hardware or interactive acceptance.
+
+### Native panel publication review (2026-10-06, local increment)
+
+Reviewed the installed NINA 3.2 IFlatDevice interface and ASCOM.DeviceInterfaces
+7.1.2 V2/V1 declarations. Both native outputs share one new C# protocol validator,
+existing private sessions, output selection/setup styling and registration paths.
+No HTTP bridge or second equipment owner is introduced. Provider enumeration,
+metadata and registration are inert; saved output class/identity and required
+host capabilities are checked before acquiring equipment. Native ASCOM exports
+both interfaces, keeps actuator acknowledgements nonblocking and preserves
+Brightness as Int32, states as declared enums and completion as Boolean in
+DeviceState. Unknown/absent states and independent completion stay source-owned.
+
+NINA maps enum values explicitly, waits for actual cover endpoints and light
+readiness/brightness, and bounds completion waits. Its light toggle remembers
+only a requested level for the current connection epoch, including logical On(0).
+Live readings and source polling remain authoritative. Review removed a possible
+lock-order inversion between connection publication and requested-level storage,
+and bound the explicit toggle's read/preflight/write to one captured epoch so it
+cannot retarget a replacement connection. No lock calls into ReadContext.
+Cancelled, stopped-short, invalid or uncertain operations never invent Halt,
+Close, Off or a replay. Cover/light absence has independent NINA capabilities;
+unknown light state is unavailable rather than falsely Off.
+
+The first NINA compile caught use of an internal HubException constructor outside
+its assembly; the unreachable invalid-state branch now reports InvalidDataException.
+The first net48 fixture used LINQ Cast on IStateValueCollection, which exposes an
+enumerator/indexer rather than IEnumerable; the test now enumerates its actual
+indexed interface. Both failures are retained. Seven initial panel cases passed;
+an additional actual HTTP-publisher/NINA case proves shared state and independent
+leases across processes, including surviving publisher shutdown without Off.
+The existing registration theory now covers CoverCalibrator chooser entries and
+stable identities in both private registry views.
+
+The first eight-output manual COM export test failed because the new fixture
+expected plain Int32 for state enums. Captured type evidence proves actual
+ASCOM.DeviceInterface.CalibratorStatus Ready was preserved. The corrected fixture
+requires exact declared enum types with Int32 underlying representation and
+bounds, plus strict Brightness Int32 and Boolean completion. Production behavior
+was not changed to accommodate the fixture. Both server/client bitnesses now pass
+real exported-COM metadata, state, commands, cached DeviceState and source sharing.
+
+Final verification: full Rust hub/Alpaca suites, warnings-denied NINA 223/223,
+real net48 x86/x64 clients with V1/V2 panel inputs, both-architecture warning-denied
+staging, eight-output manual COM exports with both client bitnesses, Node and six
+independent schema cases pass. Existing HTTP-head strict Clippy, Rust 1.89 and
+generated-contract checks still cover the unchanged Rust sources. Source/fixture
+Python syntax and diff checks pass. No physical device or installed vendor driver
+was activated. Cold/production panel registration requires the new head's CI;
+interactive and hardware acceptance remain separate gates.
+
+Evidence: artifacts/hub-panel-native-{build,build-confirmed,ascom-build,
+nina-focused,nina,nina-confirmed,nina-final,cross-frontend,net48,net48-confirmed,
+staging,exports,exports-type-evidence,exports-confirmed,rust,node,schema}.log.
+The local interface inspection helper is under artifacts/hub-interface-inspect.
+Panel controller/runtime/HTTP is pushed at 36a5558; PR/push CI
+37550182065/37550174221 is live. Keep this reviewed native increment local until
+those runs end. Next: panel COM imports, virtual inputs, dedicated simulation and
+shared creation, followed by every original camera/coordination/acceptance gate.
+
+### Windows panel import review (2026-10-06, local increment)
+
+Reviewed the existing STA activation, strict member whitelist, connection policy,
+request framing and uncertain-mutation behavior. CoverCalibrator now uses those
+paths in both helper architectures, sharing native property validation and the
+Rust panel controller rather than introducing another owner or transport.
+V1 negotiates Connected; V2 negotiates asynchronous Connect/Disconnect. Borrowed
+and external ownership, class alias denial and no vendor Dispose remain common.
+
+Six reads admit strict Int32, state enums 0..5 and Boolean completion. Actual
+declared ASCOM enums and COM integer representations are admitted without numeric
+string/fraction/overflow coercion. V2 completion remains mandatory; only the
+existing V1 controller derives it. Five nonblocking commands validate exact
+parameter shapes before invocation. Live presence and maximum checks remain in
+the shared controller. Unknown command outcomes fence sibling mutations without
+automatic Halt/Close/Off or replay.
+
+Thirty actual private COM worker checks pass, including panel V1/V2 connection
+thresholds, all properties/commands, strict invalid readings/arguments, STA pump,
+borrowed/external cleanup and class alias denial. The fixture uses the installed
+interface package for actual state enums. Its applied-then-failed On records
+mutation before throwing, while its applied-lost-reply mode stalls after recording
+mutation so the production Rust parent retires the worker.
+
+The first registered parent run passes 18/19 cases. The new lost-reply case passes
+its uncertainty fence and no-replay checks but incorrectly requires exactly one
+activation through shutdown. The source actor can legitimately reconnect its
+poll transport after a loss. The corrected test requires one initial shared
+activation and exactly one applied On through shutdown; all sibling commands
+remain fenced and no automatic actuator cleanup is permitted. Production recovery,
+deadlines and retry rules are unchanged. The original failure log is retained at
+artifacts/hub-panel-com-private.log. Confirmation passes all 30 worker and 19
+actual registered parent cases, covering V1/V2 in both architectures and retained
+uncertainty through sibling calls and shutdown.
+
+Full local Rust hub/Alpaca suites, strict Clippy, Rust 1.89 all targets, generated
+contract freshness, Node/six schema checks, rebuilt-host warnings-denied NINA
+223/223 and real net48 x86/x64 regressions pass. Python syntax and diff checks
+pass. No physical equipment or installed vendor driver was activated. Panel COM
+choices stay gated until virtual inputs, simulation and shared creation are
+verified. Every original later gate remains required.
+
+Evidence: artifacts/hub-panel-com-{compile,private,private-confirmed,rust,clippy,
+msrv,contract,node,schema,host,nina,net48}.log. Previous panel CI remains live;
+keep reviewed native/import increments local until that preceding run finishes.
+
+### Virtual panel input review (2026-10-06, local increment)
+
+Reviewed reuse of the existing validated composition graph, supervised bounded
+typed connection, generation-fenced sessions, IPC command mappings and source
+leases. Panels use that path with six strict properties and five commands. Their
+cached-sample accessor delegates to the existing panel cache validator; polling
+forwards values, errors and original dependency ages without leaf I/O. Int32
+parameter admission is now shared with wheel/focuser forwarding. Virtual panel
+metadata publishes V2 while the leaf retains V1/V2 ownership and completion rules.
+
+Six actual two-layer loopback cases cover legacy/modern states, independent
+completion, logical On(0), live brightness bounds, cache aging without extra leaf
+requests, partial errors/recovery, slow/cancelled connections, lost preflight
+generations and applied malformed acknowledgements. A seventh case uses the
+production OFP2 worker in explicit simulation through two virtual layers and
+checks shared illumination, cover/Halt status, simulation provenance and leases.
+All 25 panel and four focused native panel cases pass.
+
+Initial failures were fixture assumptions. A numeric zero maximum is valid to the
+scalar sampler but rejected by the typed cache validator; assertions now check the
+raw leaf sample and dependent errors in virtual layers. Captured snapshots prove
+an inner source can become idle after retiring its last lease, clearing its local
+latch under existing disconnect rules. The corrected uncertain-command assertion
+requires the outer owner and every still-owned source to remain fenced, plus one
+applied actuator command through shutdown. No production recovery or timing rules
+were changed. The first evidence compile also caught use of id instead of the
+actual SourceSnapshot.source field. Failure logs are retained.
+
+Final confirmation: all 25 panel and 23 native cases and full Rust hub/Alpaca
+suites pass, along with strict Clippy, Rust 1.89 all targets, generated contract
+freshness, Node/six schema checks, rebuilt-host warnings-denied NINA 223/223 and
+real net48 x86/x64 clients. A concurrent host build encountered a Windows lock on
+the test-owned executable; the original log is retained. After the actual Rust
+suite completed, sequential host rebuild and frontend checks passed. No process
+was killed, deadline changed or production retry added for that build collision.
+
+Evidence: artifacts/hub-panel-virtual-{check,focused,focused-confirmed,evidence,
+evidence-confirmed,native-focused,rust,clippy,msrv,contract,node,schema,host,
+host-confirmed,nina,net48}.log. No hardware or installed vendor driver was used.
+Preceding 36a5558 PR/push CI 37550182065/37550174221 now both pass all eight jobs,
+including Windows packaging/installer acceptance. Reviewed native/import/virtual
+increments may now be pushed; their own CI is still required. Dedicated panel
+simulation/shared creation and every original later gate remain required.
+
+Push checkpoint: native panel output 554794f, registered COM input 593c0de and
+virtual input 5a22737 are pushed together after both preceding 36a5558 CI runs
+complete successfully. PR #21's description now reflects their verified scope.
+New PR/push CI 37552662096/37552655796 is queued/running. Its native panel
+cold/production registration and portable acceptance remain to be established.
+
+### Dedicated panel simulation review (2026-10-06, local increment)
+
+Reviewed the explicit V2 simulated source through the existing source actor,
+typed controller, polling, virtual composition, IPC and all three outputs. Cover
+motion and light readiness have independent monotonic clocks. Atomic sparse
+updates replace only the selected component's pending operation; durations and
+faults do not cancel either operation. Strict Int32 brightness/live maximum,
+state bounds, independent completion and absent-component invariants are shared
+with generated native/browser controls. No hardware transport or worker is added.
+
+Eight panel cases cover atomic rejection, paused-clock independence, Halt/Off and
+disconnect behavior, sparse updates, On(0), absence, live bounds, fault injection,
+applied-write fencing, two-layer composition/provenance/age and actual IPC
+revision rejection without saved configuration changes. All 35 simulator cases
+pass. Actual Alpaca HTTP and real net48 x86/x64 clients verify nonblocking
+independent operations, typed cache and retained uncertainty without automatic
+actuator cleanup. Three new NINA cases cover completion, cancellation,
+stopped-short/wrong-brightness results and the rendered sparse setup form.
+Warnings-denied NINA 226/226, Node and seven independent schema checks pass.
+The actual WPF capture is visually verified and documented in the setup guide.
+
+The first simulator run failed an immediate lease-count assertion after a setup
+update. SourceLease drop schedules release; the corrected fixture awaits the
+observable zero count within its existing bound. Production ownership/timing is
+unchanged. The original failure log is retained. A full Rust check also failed
+to replace regain-alpaca.exe while the concurrently started NINA suite owned it.
+NINA was allowed to finish normally; sequential confirmation passes the full
+Rust hub/Alpaca suites, strict Clippy, Rust 1.89 all targets and generated-contract
+freshness. Formatting and diff checks pass. No process was killed or test deadline
+relaxed.
+
+Evidence: artifacts/hub-panel-simulation-{check,focused,focused-confirmed,ipc,
+http,node,schema,host,nina-focused,capture,nina,net48,rust,rust-confirmed,clippy,
+msrv,contract-generate,contract}.log. Shared panel creation stays gated until its own review/apply/reload
+acceptance. No equipment or installed vendor driver was activated; every
+original later milestone gate remains required.
+
+### Panel Automation CI review (2026-10-06)
+
+Both 5a22737 CI runs 37552662096/37552655796 finish with seven successful jobs
+and a Windows failure at the new panel DeviceState Automation assertion. All
+19 registered parent/import cases pass. The export fixture requires the boxed
+value's managed enum identity; an Object/VARIANT boundary can instead carry its
+underlying Int32. Manual exports on this machine retain the enum and pass the
+original assertion, so they do not reproduce that CI environment difference.
+The original CI failures are retained in artifacts/hub-panel-publication-{pr,push}-ci-failure.log.
+
+[Microsoft's object marshaling contract](https://learn.microsoft.com/en-us/dotnet/framework/interop/default-marshalling-for-objects)
+maps an IConvertible Int32 value to VT_I4 and back to System.Int32. New real
+net48 x86/x64 checks marshal actual CoverStatus and CalibratorStatus values to
+native VARIANTs and verify tag 3 (VT_I4), Int32 type and unchanged value on return.
+Existing managed DeviceState checks still require the declared ASCOM enums.
+The Automation fixture now accepts only that declared Int32 enum or System.Int32
+in 0..5; strings, Short, Double and unrelated enums remain rejected. Failures
+report actual assembly-qualified types and values. Driver behavior, command
+policy and time bounds are unchanged. The CI runtime type is not captured by
+the original short assertion; new CI must confirm this wire-correct assertion
+and complete the remaining registration/packaging checks.
+
+Local confirmation passes warning-denied both-architecture staging, actual
+net48 x86/x64 enum-to-native-VARIANT checks and eight-output manual COM exports
+with both server and client bitnesses. Logs:
+artifacts/hub-panel-ci-export-{build,reproduction,confirmed}.log and
+artifacts/hub-panel-creation-net48-confirmed.log. Cold/production registration
+remains a CI gate; no installed vendor driver was activated.
+
+### Shared panel creation review (2026-10-06, local increment)
+
+Reviewed reuse of generated source/output fields, runtime capability admission,
+revisioned review/apply/reload, saved identity ledger, native selectors and COM
+registration. CoverCalibrator has its own published output capability; COM and
+simulation source classes use their existing transport/bitness gates. Cameras
+remain disabled. No extra executable, transport or configuration definition is
+introduced. Typed controller/output behavior is unchanged.
+
+Existing native editor, actual WPF and real net48 creation fixtures now include
+panels. They create two outputs for one simulated source, reject mismatched
+classes before activation, retain saved identities/numbers and verify actual
+cover completion, shared On(0) and independent leases. Actual browser acceptance
+creates outputs 7/8, rejects a focuser/panel mismatch, preserves both output IDs
+on save/reload and applies a cover-only state update without changing brightness,
+light state or configuration revision. Observed status confirms zero leases and
+disconnected transport. Native/browser screenshots are visually verified and
+documented. Only the uniquely identified private browser fixture processes were
+stopped afterward; no equipment or installed vendor driver was activated.
+
+The first net48 run caught a stale expected proxy-choice list; it now requires
+the newly supported panel choice while cameras remain disabled. A focused NINA
+compile caught a test namespace qualification; global:: resolves the installed
+NINA CoverState enum. Both original logs are retained. Confirmation passes full
+Rust hub/Alpaca suites, strict Clippy, Rust 1.89 all targets, contract freshness,
+Node/seven independent schema checks, NINA 228/228 and real net48 x86/x64 clients.
+Formatting/diff checks pass. New CI for the preceding simulator/Automation fix
+is still live; keep this reviewed creation increment local until it finishes.
+
+Evidence: artifacts/hub-panel-creation-{contract-generate,node,schema,host,
+focused,focused-confirmed,net48,net48-confirmed,rust,clippy,msrv,contract,nina}.log
+and artifacts/hub-panel-creation-browser-{state,saved,verification}.json. Every
+original remaining camera, coordination, recovery, documentation, acceptance
+and final review gate remains required.
+
+## 2026-10-06: camera image buffer and ImageBytes foundation
+
+Reviewed the native core Frame/Session contracts, existing Alpaca camera image
+stream, scalar actor/IPC limits and current ASCOM/Alpaca image specifications.
+The new camera module separates binary images from bounded scalar polling and
+does not enable any camera setup gate. Its acquisition requirements are recorded
+in hub-contract.md; the source supervisor and frontend integration remain open.
+
+Implemented validated geometry/encoding, immutable shared buffers and an atomic
+payload-byte budget retained by the last reader. Consuming native adoption moves
+the existing pixel allocation. Export performs order conversion in at most
+64-KiB chunks, preserving plane order, signed/unsigned values and all nine numeric
+encodings. Int32 packed as Byte/Int16/UInt16 is explicitly supported. Unknown
+types/conversions, overflow, wrong transactions, malformed rank, partial bodies
+and trailing data fail without publishing an image. Metadata/error bounds and
+caller-owned deadlines/cancellation prevent unbounded response retention. The
+codec never sends, retries or reconciles an equipment command. Host-wide staging
+and conversion memory accounting is explicitly still required during integration.
+
+Eleven private Rust tests pass, including competing allocations, reader lifetime,
+native zero-copy adoption, non-square RGB/LRGB and one-plane rank-three arrays,
+all numeric/packed encodings, multi-chunk order conversion, malformed metadata,
+bounded UTF-8 upstream errors and cancellation during a partial download. The
+existing actual Alpaca camera response test now decodes its production image
+stream through the shared reader, preserving unsigned values 50000/65535.
+Full Rust hub/Alpaca suites, strict Clippy, Rust 1.89 all-target checks, generated
+contract freshness and formatting/diff checks pass. No frontend behavior or
+configuration changed, and no hardware or installed driver was activated.
+
+Retained initial checks: after review changed adoption to consume the native
+frame, a test partially moved its exposure before adoption; cloning its small
+exposure descriptor corrects the fixture. Clippy required is_multiple_of for
+chunk alignment. The original failed logs and successful confirmations remain
+in artifacts/hub-camera-image-{focused,focused-confirmed,rust,rust-confirmed,
+clippy,clippy-confirmed,clippy-final,msrv,msrv-confirmed,contract}.log.
+Current preceding panel CI 37554304962/37554298269 remains live with Windows
+test.ps1 still running. Keep reviewed local increments until those runs end.
+Next: source-owned acquisition supervision, binary backend/IPC paths and all
+camera inputs/outputs, followed by every original remaining plan gate.
+
+## 2026-10-06: fenced binary camera source dispatch
+
+The existing source actor now dispatches binary image reads outside scalar
+sampling. Admission requires a connection lease, exclusive control and an
+explicit matching source generation. The caller supplies the shared image
+budget and a separate positive deadline bounded to the existing core's one-hour
+download limit; the one-second default scalar request timeout is not used.
+Existing adapters return Unsupported without any image I/O until their camera
+implementations are added. No capability or configuration choice is enabled.
+
+Review covered queued and dispatched cancellation, current/old generations,
+transport retirement, command ambiguity and memory lifetime. A queued abandoned
+read is skipped. A dispatched read completes or times out within its own bound;
+an undelivered image drops its reservation. Transport loss preserves the original
+error and changes generation. Binary reads neither modify scalar cache nor replay
+a command, create a write fence or clear an existing fence. The exclusive owner
+may perform an explicit reconciliation read after uncertainty; publication still
+requires the future acquisition supervisor to prove ownership. Detached captures
+must also retain runtime activity so configuration quiescence cannot retire an
+active acquisition; that requirement is recorded for supervisor integration.
+
+Eight private actor tests and the full Rust hub/Alpaca suites pass. Tests include
+observer rejection, pre-dispatch generation fencing, independent disconnects,
+image readers surviving source shutdown, distinct image/scalar deadlines,
+partial-download timeout/cancellation, cancelled queue entries, unsupported
+existing adapters and retained uncertain writes. Strict Clippy, Rust 1.89 all
+targets, generated-contract freshness and formatting/diff checks pass. Fresh-host
+NINA passes 228/228; actual net48 x86/x64 regressions pass with zero build warnings.
+No equipment or installed vendor driver was activated.
+
+The first focused compile used unwrap_err on a task whose successful image has
+no Debug implementation; the fixture now matches the cancellation error without
+requiring a pixel debug representation. Initial and confirmed logs are retained
+at artifacts/hub-camera-source-{check,focused,focused-confirmed,focused-final,
+rust,clippy,clippy-final,msrv,msrv-final,contract,host,nina,net48}.log.
+Preceding panel CI 37554304962/37554298269 has passed its Windows test script and
+is still running installer acceptance. Keep local commits pending those terminal
+results. Next: the source-owned acquisition supervisor, camera adapters and all
+three publications, followed by every original remaining acceptance/final gate.
+
+## 2026-10-06: panel CI confirmation and camera foundation publication
+
+Exact preceding head 2f3f8c2 passes all eight jobs in both PR/push CI
+37554304962/37554298269. Windows completes its test script, registered imports,
+production exports, packaging and installer acceptance. This verifies the panel
+Automation correction in CI; it does not establish a cause for unrelated older
+connection/motion failures or replace physical/interactive acceptance.
+Reviewed shared panel creation 1c67398, image foundation b154c87 and binary source
+dispatch 56c2e7a now proceed together to the same draft PR. Their own new-head CI
+remains required. Local validation includes full Rust hub/Alpaca, all eleven image
+and eight binary actor cases, strict Clippy, Rust 1.89 all targets, generated
+contracts, fresh-host NINA 228/228 and actual net48 x86/x64. Camera acquisition,
+adapters, three outputs, coordination and every original final gate remain open.
+
+## 2026-10-06: Rust 1.99 image CI correction
+
+Both 3ed8515 runs 37556724162/37556718661 finish with five Rust/Windows lint
+failures and three successful jobs. Rust 1.99 deprecates AtomicUsize.fetch_update
+and requires fixed-size as_chunks access; local Rust 1.97 had passed. Logs are
+retained in artifacts/hub-camera-foundation-{pr,push}-ci-failure.log.
+The image budget now uses an equivalent checked compare_exchange_weak loop,
+preserving its concurrent bound and Rust 1.89 support without suppressing lints.
+Header/test parsing uses typed fixed-size chunks without redundant conversion.
+All nineteen image/binary actor cases, explicit Rust 1.99 strict Clippy and
+Rust 1.89 all-target checks pass. Initial typed-array fixture compile failure
+and corrected confirmation are retained. No command, deadline or test assertion
+was relaxed. New-head CI must confirm this correction.
+
+The acquisition supervisor and shared runtime activity guard are under local
+implementation and are not part of this CI correction. Their review/tests must
+complete before publication. All original camera and later gates remain open.
+
+## 2026-10-06: source-owned camera acquisition supervisor (local)
+
+Reviewed admission, source-generation fencing, exclusive control, caller loss,
+Stop/Abort semantics, immutable image ownership, optional timing and uncertainty.
+The runtime activity guard is factored into a shared counter; integration must
+use that same counter and one supervisor per source. No camera choice is enabled.
+
+Nineteen private virtual-clock cases pass. They cover invalid geometry/duration,
+independent observers, owner disconnect, cancelled preflight and dispatched
+waiters, shortened Stop versus discarded Abort, unsupported/malformed capability
+values, old readers pinning the memory budget, readiness/download deadlines,
+generation loss after pixel copy, identity/geometry replacement and independent
+optional metadata. Valid leap dates, fractional UTC timestamps and malformed
+date/type cases are exercised through actual acquisition publication.
+
+Review added explicit monitor notifications and synchronous control release
+before successful publication/Abort completion. A 60-second polling fixture
+proves immediate new admission after an acknowledged Abort without advancing
+time. Cancelled command preflight restores monitoring and sends no Abort; an
+already dispatched Abort completes even after its caller and session disappear.
+Uncertain start/Abort retain ownership and do not replay or send automatic cleanup.
+
+The first uncertain-Abort fixture expected the shared write fence to survive
+after every source lease was dropped. Existing last-lease teardown deliberately
+retires that epoch. The corrected fixture retains an independent observer and
+verifies that administrative abandonment does not clear its source fence or
+authorize another exposure. Production teardown behavior/deadlines are unchanged.
+Initial expanded failure and corrected confirmations are retained at
+artifacts/hub-camera-acquisition-{expanded,expanded-confirmed,final-focused}.log.
+
+Full Rust hub/Alpaca, explicit Rust 1.99 strict Clippy, Rust 1.89 all-target and
+generated-contract checks pass. A sequentially rebuilt host passes NINA 228/228
+and actual net48 x86/x64 regressions with zero build warnings. Formatting/diff
+checks pass. Logs: artifacts/hub-camera-acquisition-final-{focused,rust,clippy,
+msrv,contract,host,nina,net48}.log. No equipment or installed vendor driver was
+activated. Preceding f7cfbcd CI 37557708906/37557702178 remains live, with six jobs
+passing in each run. Keep this reviewed increment local until those runs are
+terminal. Runtime/adapters, binary frontend transport, native recovery metadata
+and every original gate remain open.
+
+## 2026-10-06: upstream Alpaca camera ImageBytes (local)
+
+Seven actual loopback cases pass, including the real source actor and acquisition
+supervisor sharing one immutable download between two independent clients.
+The image client preserves protected headers, no redirects/retries and bounded
+connection establishment; its overall deadline comes from binary source dispatch,
+not the scalar timeout. A 1.2-second body succeeds with the unchanged default
+one-second scalar deadline. Cancellation waits for an actual allocation before
+dropping the reader, then verifies released memory and one HTTP request.
+
+Malformed/truncated/trailing bodies, wrong transaction/media type, budget exhaustion,
+non-camera reads, binary/JSON device errors and HTTP retry/redirect responses are
+covered. Error classifications/codes are shared with scalar requests and arbitrary
+upstream text is redacted. The first end-to-end fixture echoed a zero transaction
+for PUT because it inspected only query parameters; production correctly rejected
+that acknowledgement as uncertain. The fixture now reads the actual form body.
+Initial and corrected logs: artifacts/hub-camera-alpaca-{check,focused,
+focused-confirmed,focused-final}.log. Stream support adds futures-io/wasm-streams
+to the lockfile without upgrading existing packages. Full Rust hub/Alpaca,
+strict Rust 1.99 Clippy, Rust 1.89 all targets and generated-contract checks pass.
+A freshly rebuilt host passes NINA 228/228 and actual net48 x86/x64 regressions
+with zero build warnings. The final focused check also verifies successful JSON
+images are explicitly gated without a second download. Logs:
+artifacts/hub-camera-alpaca-{final-focused,rust,clippy,final-clippy,msrv,contract,
+host,nina,net48}.log. Formatting/diff checks pass. New-head CI remains required.
+
+Successful JSON images still need a bounded array decoder. No camera setup choice
+is enabled and no equipment/vendor driver is used. All original camera/runtime,
+recovery, coordination and final gates remain required.
+
+## 2026-10-06: image CI result and panel failure diagnostic
+
+f7cfbcd push CI 37557702178 finishes with seven successful jobs, including all
+Rust 1.99 checks, and a Windows NINA failure in
+ActualPanelPublisherAndNativeNinaShareLightWithoutOwningEachOthersLeases.
+Its connected=true request returns 1280; the original assertion exposes only
+the number. Original output is retained at
+artifacts/hub-camera-image-ci-push-failure.log. PR CI 37557708906 has seven jobs
+passing with Windows still live. Do not cancel/restart it or infer the failure's
+cause from a later green run.
+
+The fixture keeps the same zero-error requirement and deadlines but includes the
+exact private response envelope, sourceStatus and the loopback server's existing
+request trace on failure. Targeted local confirmation passes; this diagnostic is
+not a proven production fix. Logs: artifacts/hub-panel-publisher-ci-diagnostic
+and hub-panel-publisher-ci-diagnostic-final.log. Earlier intermittent Windows
+connection/motion failures remain open for investigation.
+
+## 2026-10-06: camera foundation CI confirmation and reviewed publication
+
+Exact f7cfbcd PR CI 37557708906 finishes with all eight jobs successful, including
+Windows tests, production registration, packaging and installer acceptance. Its
+push CI 37557702178 fails the NINA panel connection case described above. The
+green PR run verifies the Rust 1.99 lint correction but does not explain or fix
+that intermittent failure. The diagnostic assertion is preserved in 457b3af.
+
+Reviewed local acquisition supervision e243a05, panel diagnostic 457b3af and
+upstream ImageBytes 119d71c proceed together to the same draft PR. Their full
+local regressions pass; new-head CI remains required. JSON decoding is being
+implemented separately and is not included in this reviewed publication.
+Camera choices and every original remaining acceptance/final gate stay open.
+
+## 2026-10-06: bounded JSON camera images (local)
+
+Reviewed the fallback required by Alpaca content-type negotiation. One finite
+JSON response is staged in reserved chunks; a shape/envelope pass precedes typed
+decoding directly into one pixel allocation. Field order is irrelevant. No
+serde_json::Value pixel tree is constructed. Raw chunks and final pixels share
+the same payload budget; pinned readers are not evicted. Small device errors can
+still report their original codes when that budget is fully pinned.
+
+Ten private JSON stream cases, two cancellation unit cases and seven updated
+actual HTTP cases pass. They verify all nine numeric encodings and signed/unsigned
+extremes, negative zero, normal/subnormal floating limits, non-square RGB/LRGB and
+rank-three one-plane data, strict ranges/types, duplicate fields/transactions,
+malformed/ragged/empty/deep shapes and finite/trailing data. A response exceeding
+one MiB decodes independently of scalar envelope limits. Actual source/supervisor
+cases share one binary or JSON Double capture between two clients and retain its
+pixels after source shutdown. No second download, exposure retry or vendor I/O
+occurs. Admission/cancellation tests prove four waiting decoders, freed slots,
+partial-staging cleanup and an abandoned queued blocking decode releasing memory
+before allocating pixels.
+
+Review corrections: use terminal ConnectionAborted instead of Interrupted in the
+blocking reader, since std::io::Bytes retries interruptions; allocate working memory
+only after decoder admission instead of embedding 64 KiB in every async future;
+retain local allocation/decoder failure classifications rather than label them as
+malformed upstream images. Numeric and string tokens, field count and raw payload
+are bounded before parser work; primitive typed deserialization avoids integer
+coercion or invented U16 packing. Errors have controlled text at the adapter.
+
+A deterministic sample of 4,000 finite Double bit patterns reproduced a one-ULP
+change at pixel 3 with default serde_json parsing. Enabling float_roundtrip fixes
+that test; no lockfile or dependency version changes are required. Retain both
+artifacts/hub-camera-json-float-fidelity.log and
+artifacts/hub-camera-json-float-fidelity-confirmed.log. This sample does not prove
+every possible floating bit pattern. Explicit yields bound work per async poll;
+cancellation also aborts queued blocking work. Staging remains budgeted until a
+cancelled queued task is consumed; this is not a whole-process RSS guarantee.
+
+Initial/final focused logs: artifacts/hub-camera-json-{check,focused,
+focused-confirmed,final-focused,cancellation,complete-focused}.log. Final full
+Rust hub/Alpaca suites, Rust 1.99 Clippy, Rust 1.89, generated contracts,
+rebuilt-host NINA 228/228 and actual net48 x86/x64 pass against all reviewed
+changes. Nineteen core camera tests also pass with feature unification; 39 hub
+unit tests include both cancellation regressions. Final logs:
+artifacts/hub-camera-json-reviewed-{rust,clippy,msrv,contract,host,nina,net48,core}.log.
+Camera choices stay gated. Runtime,
+remaining adapters/properties/settings, native recovery metadata, all outputs and
+every original later gate remain required. The latest ten JSON/seven actual HTTP
+cases pass together (artifacts/hub-camera-json-complete-focused.log).
+
+## 2026-10-06: terminal supervisor CI failures and local fixture evidence
+
+1579a90 PR CI 37560177877 finishes with seven successes and Windows failure in
+ActualPanelPublisherAndNativeNinaShareLightWithoutOwningEachOthersLeases. This
+failure is a native structured read error after On(0), not the preceding HTTP
+connection failure. The catch now retains the structured native error, private
+source status, fixture state and upstream trace with the original inner exception.
+The private fixture enqueued its command marker before changing start state;
+tests could observe the marker and complete motion before that state was written.
+Publish the marker after the start-state writes, still before any lost-reply stall.
+This corrects a fixture ordering defect without proving it caused the CI failure.
+
+Push CI 37560173015 finishes with six successes. Windows fails the queued-caller
+cancellation test while writing a private peer reply (HubWire.WriteFrame); Intel
+macOS fails a fresh nested-wheel Position read with a transport-lost Transient
+error. Failure-only diagnostics retain peer frame/elapsed/client state and wheel
+source snapshots/request trace. No deadline, expected result or command replay
+policy changes. Retain artifacts/hub-camera-supervisor-{pr,push}-ci-failure.log.
+All three causes remain unproved and reliability acceptance stays open.
+The final full Rust/228 NINA/both net48 regressions also verify the changed
+private fixtures locally. These passes do not prove the CI failures resolved.
+
+## 2026-10-06: camera JSON publication and subsequent CI evidence
+
+Reviewed JSON 07c0faa and fixture corrections 0923e51 are pushed to draft PR #21.
+PR CI 37562038506 finishes with seven successes, including all four Rust platforms,
+package verification and registered COM activation. Windows fails two NINA cases:
+invalid-hello validation receives Timeout instead of Protocol, and panel HTTP
+Connected=true returns 1280. The panel failure now retains the source snapshot
+(connection re-entry with transportConnected=false) and private response writes
+aborted with SocketException 10053. This is stronger evidence of connection loss,
+but does not prove its root cause. Retain
+artifacts/hub-camera-json-pr-ci-failure.log. Push 37562034286 remains live.
+
+The private accessory HTTP fixture now sets NoDelay on accepted sockets: it sends
+small headers/body separately and should not add Nagle/delayed-ACK latency to
+ownership/deadline tests. No source deadline or success criterion changes. This
+is fixture hardening, not a demonstrated explanation of the CI failures.
+
+## 2026-10-06: shared camera properties, settings and owner cooling (local)
+
+One property definition provides 53 typed camera members and polling plans;
+thirteen typed setters reuse source leases, generation checks and the acquisition
+supervisor. Booleans, Int32, finite numbers and budgeted strings/flat arrays keep
+their types. Optional errors remain independent, with their upstream codes.
+ImageReady and last-exposure timing use the immutable published acquisition;
+external upstream buffer changes cannot change that image's identity.
+
+Settings preflight preserves numeric/named-index Gain/Offset modes and live
+bin/readout/capability limits. Only Unsupported permits a mode fallback. ROI
+combination checks stay at StartExposure; setting one bin axis forwards one write
+and leaves symmetric propagation to the source. No fabricated counterpart write,
+rollback, exposure retry or successful-value cache is introduced.
+
+Review found and corrected source-owned setter admission. The first focused run
+passed 24/26: a second setter queued behind a held write and eventually saw a
+retired generation; an existing uncertain fence was masked by a snapshot error.
+A source-wide retained settings reservation now rejects concurrent setters and
+starts before source queueing, and uncertainty takes priority for setters. Its
+ID/owner/property are observable in shared status. Before-dispatch caller loss
+skips writes; dispatched work retains activity/ownership after caller loss.
+The original failure log remains artifacts/hub-camera-properties-focused.log.
+
+Capture settings remain frozen, while CoolerOn/SetCCDTemperature can use the
+capture owner's retained operation during exposure/readout. Siblings are blocked.
+Publication and owner Stop/Abort do not race an outstanding cooling write. Dropping
+its waiter retains work; completion wakes even a long-poll readiness monitor.
+No borrowed operation release ends the exposure. A final acquisition-state check
+prevents preflight from dispatching after a capture becomes uncertain or abandoned.
+An initial deadline test reached the shorter serial-read deadline instead; its
+corrected private timing gives the readiness deadline precedence without changing
+production bounds. Retain both final-focused and final-confirmed logs.
+
+All thirty focused cases pass: nineteen existing acquisition cases and eleven
+new property/setting/cooling cases. They cover malformed/bounded values, exact
+single writes, temporary ROI incompatibility, live modes/capabilities, old sessions,
+frozen timing, both cancellation boundaries, concurrent settings/starts, owner
+cooling, pending publication, late preflight and uncertain no-replay behavior.
+Full final hub/Alpaca Rust, strict Rust 1.99 Clippy, Rust 1.89 all targets, generated
+contracts and formatting pass. Fresh-host NINA 228/228 and real net48 x86/x64 also
+pass, including the NoDelay private fixture change. Logs:
+artifacts/hub-camera-properties-final-{confirmed,rust,clippy,
+msrv,contract,host,nina,net48}.log. Earlier Clippy found one test-only needless
+string conversion; it was removed without a lint suppression.
+
+This layer is not yet wired into camera runtime, adapters, binary IPC or frontend
+publication. Native recovery metadata and staging admission, all camera outputs,
+coordination and every original acceptance/final gate stay open. Camera choices
+remain disabled. Keep the increment local while preceding push CI remains live.
+
+## 2026-10-06: native camera admission and immutable recovery metadata (local)
+
+The preceding JSON push CI 37562034286 finishes with all eight jobs successful,
+including Windows installer/release acceptance. Its separate PR failure remains
+retained and unexplained. Reviewed properties/settings and private fixture NoDelay
+hardening are pushed through ef0748e; PR/push CI 37564346322/37564341366 is live.
+No failure was cancelled, restarted or converted into a relaxed assertion.
+
+Review of the original native image helper found admission after allocation and
+loss of Frame metadata. Its unshipped API is replaced by reserve_native followed
+by consuming adoption. The actual core Session wrapper acquires the permit before
+capture; one permit covers final pixels, the worker Vec during Vec-to-Arc conversion,
+64 KiB of raw reply header and 128 KiB of retained encoded metadata. Admission is
+one atomic reservation; error/cancellation drops it. Adoption validates the full
+Exposure (including ROI origin, binning, duration and light/dark), moves the Arc and
+releases staging. Cloned readers pin the same pixels, metadata and reservation.
+
+Core image calls now reject above-ROI replies before allocating/reading pixels;
+existing exact length/geometry checks remain. Reply parsing is factored for private
+AsyncRead fixtures, preserves SDK error codes and retires protocol failures through
+the same Worker call path. Result metadata moves out instead of cloning the Value
+tree. Pixel allocation is fallible. Checked size multiplication rejects extreme
+dimensions rather than overflowing. Generic and streaming worker calls retain
+their existing size ceiling and error/cancellation behavior.
+
+All encoded metadata survives adoption: native timestamps, actual backend/fallback,
+replacement exposures, SDK and retained-frame retries, handle reopens, USB resets,
+controls, white balance and cleanup evidence when present. A bounded writer rejects
+metadata overflow instead of truncating or dropping fields. Its fixed 128-KiB
+capacity remains charged for the final image. These are payload bounds, not decoded
+Value-tree, whole-host RSS or worker-process memory accounting. No new recovery
+attempt, deadline or exposure is introduced. The helper's caller must retain owned
+capture work; frontend disconnect must not cancel the core token. A native backend
+and its source-owned lifecycle are still required.
+
+Validation: twelve image cases, three actual worker-simulation capture cases and
+three private core reply cases pass. Tests prove a withheld oversized body is
+rejected immediately, error codes/empty stream polls remain intact, all admitted
+exposure fields match, metadata overflow frees its permit, and pixel adoption makes
+no copy. SDK/direct simulation preserves metadata and two actual retained-frame
+read recoveries. A last reader blocks a second capture before any exposure/recovery
+event; releasing it permits the next capture. Cancellation before dispatch and
+during an active exposure releases output and staging and preserves core's typed
+Cancelled failure. Every equipment-facing test uses explicit simulation.
+
+Full core/hub/Alpaca Rust, strict Rust 1.99 all-target Clippy, Rust 1.89 all-target
+checks, generated-contract freshness and formatting pass. The added active-cancel
+case also passes focused Clippy/MSRV after its addition. Fresh-host NINA 228/228 and
+real net48 x86/x64 regressions pass. Evidence:
+artifacts/hub-camera-native-admission-{focused,cancellation,rust,clippy,msrv,
+test-clippy,test-msrv,contract,host,nina,net48}.log.
+
+Next: native camera backend/configuration, retained lifecycle and recovery/cooling
+allowances, one host budget/runtime supervisor per source, all image outputs and
+remaining input adapters. Recovery metadata migration, coordination, conformance,
+hardware/client acceptance, README/site documentation, main reconciliation and all
+original final gates remain open. Camera choices stay disabled; keep this reviewed
+increment local while ef0748e CI runs.
+
+## 2026-10-06: retained native camera ownership (local)
+
+The native owner serializes one core Session while exposing a separate readable
+snapshot. Connection, capture and cleanup work retain their own Arc and runtime
+activity; waiters own neither cancellation tokens nor tasks. Concurrent connects
+join one handshake. Valid capture admission reserves payload memory and activity,
+then publishes an operation ID and clears the prior image. Invalid/busy admission
+preserves that image. Core recovery remains unchanged and no deadline/retry is
+added around it. Immutable image readers continue to pin payload and metadata.
+
+Explicit Abort cancels only the current owned core capture, discards its result
+and acknowledges after cleanup. Idle Abort is inert; Stop is not fabricated.
+Reset retires the generation synchronously, cancels pending core work and retains
+cleanup before reconnect. Stale capture/connection completions and obsolete cleanup
+cannot publish or close a replacement connection. Wait notifications are enabled
+before checking state, preventing lost completion wakes. Unexpected task loss
+withdraws connected state, reports a failure and clears its marker; reconnect
+closes the prior session before opening. Normal source teardown must call close,
+rather than relying on eventual Session/worker Drop for hardware cleanup.
+
+Review tightened two races before final validation. Activity is reserved before
+publishing any operation marker, including close/reset, so runtime replacement
+cannot see an accepted operation without retained work. Acquisition identity is
+checked separately from generation, preventing an old/unknown waiter from receiving
+a newer capture's error. Connection/abort/close acknowledgements also recheck
+their generation and do not report an unexpected task failure as success. Source
+errors retain SDK codes with fixed text; raw worker diagnostics stay in core status.
+
+Eight actual worker-simulation cases pass: joined/abandoned connection waiters,
+dropped capture waiters with live status and frozen images, invalid/budget-rejected
+admission preserving the prior frame, explicit SDK/direct Abort and fresh capture,
+reset during capture and before dispatch, repeated reset, abandoned close, typed
+SDK failure without replacement retries, and capture completion after loss of all
+external owner references. The final two normal-capture tests use six-second
+simulated exposures instead of a brief 200-ms phase window, without increasing
+test deadlines. All eight confirmed cases pass; production bounds are unchanged.
+
+Full core/hub/Alpaca Rust, strict Rust 1.99 all-target Clippy, Rust 1.89 all-target
+checks, generated contracts and formatting pass. The final test-only duration
+change also passes focused Clippy/MSRV. Fresh-host NINA 228/228 and real net48
+x86/x64 regressions pass. Logs:
+artifacts/hub-camera-native-owner-{check,focused,reviewed,confirmed,rust,clippy,
+msrv,test-clippy,test-msrv,contract,host,nina,net48}.log.
+
+The owner still needs the typed native source adapter, configuration/factory and
+runtime sharing, recovery/cooling allowances and all frontend image outputs.
+Inspection also found a required cooling refinement: Session.queue_control changes
+desired values, but capture read_environment only reads temperature/power; direct
+server get/set rejects capture-time writes except cached environmental reads.
+Implement a common acknowledged in-capture cooling path, retaining target changes
+across recovery. Do not claim queued intent is hardware application or bypass the
+worker's capture ownership. This is original scope, not an optional follow-up.
+Camera creation remains gated and all original later gates remain open.
+
+Current ef0748e PR/push CI 37564346322/37564341366 both finish with all eight
+jobs successful, including Windows packaging/installer checks. This does not
+prove NoDelay or marker ordering explains the earlier intermittent failures.
+Native admission and ownership can now proceed to their own CI together with
+the reviewed direct cooling increment after local validation.
+
+## 2026-10-06: acknowledged direct-worker cooling (reviewed; CI required)
+
+The direct worker now admits only target/enable writes during capture through one
+bounded request slot. The existing USB owner executes requests at its environment
+service checkpoints, without another USB handle or concurrent transfer thread.
+An acknowledgement follows application, environment service and readback;
+cached active getters expose the acknowledged target/enable alongside temperature
+and power. Imaging and auxiliary writes remain excluded during capture; hardware
+capability, writability and range checks still precede admission.
+
+Unsent expiry never reaches USB. A dispatched timeout retains its slot until the
+owner finishes; failures or missed acknowledgements fence later cooler writes.
+Owner retirement wakes queued waiters as unsent and dispatched waiters as
+uncertain. Review corrected late completion after retirement, so it cannot turn
+published uncertainty into a known acknowledgement. Capacity is released before
+known completion is published. No locks are held over USB operations.
+
+The framed error envelope preserves control uncertainty even through hardware
+error context. Core maps it to UncertainControl, retires the worker and marks it
+non-retryable, including SDK codes that would otherwise permit capture recovery.
+Native ownership maps it to an Uncertain source error with redacted text and the
+original code. This primitive does not supply Session's common acknowledgement
+queue or preserve changed live targets through frozen recovery settings yet.
+
+Further review found that core's outer command deadline could precede the direct
+worker's uncertainty reply and leave a cooler write retryable. Worker exchange
+now records framed write admission. Lost/malformed replies, outer timeout and
+cancellation after that point become typed non-retryable uncertainty and retire
+the process. Cancellation before dispatch remains Cancelled without consuming
+a command ID. An actual SDK-simulation worker parked in download verifies both
+timeout and post-dispatch cancellation, non-retryability and process exit. The
+cancellation test polls through dispatch instead of guessing with a sleep. The
+cooling slot uses one completion timestamp for fencing and publication, avoiding
+a deadline boundary between those decisions.
+
+Four queue cases cover known acknowledgement, before-dispatch expiry, retained
+dispatched timeout, owner loss, USB failure, fencing and late completion after
+retirement. Private Host tests exercise still/video exposure and retained-frame
+cooling, unchanged exact pixels, unsupported cameras, invalid values and excluded
+imaging/auxiliary controls. A real production worker-process framing case runs
+six-second still/video simulations with live acknowledgements and exact pixels.
+The core error parser separately verifies typed non-retryable uncertainty and
+retained codes. No physical camera or installed vendor driver is activated.
+
+Full Rust core/hub/Alpaca/ZWO regressions pass. After the final retirement review,
+all 96 ZWO library tests and all 25 core tests pass with a freshly rebuilt worker.
+The first worker build reported an unused wait_until wrapper after simulation
+moved to the existing service callback; the wrapper is now test-only. Final
+strict Rust 1.99 Clippy, Rust 1.89 all-target checks, generated contracts and
+formatting pass. After the outer-deadline correction, freshly rebuilt-host NINA
+228/228 and actual net48 x86/x64 clients pass with no build warnings.
+Logs: artifacts/hub-camera-direct-cooling-{focused,worker,rust,worker-reviewed,
+reviewed,core,outer-deadline,final-worker,final-rust,final-clippy,final-msrv,
+final-zwo,final-host,final-nina,final-net48,contract}.log.
+Both preceding ef0748e CI runs pass all eight jobs; this reviewed increment and
+the two native camera increments proceed to their own CI on the same draft PR.
+Keep every original camera/runtime/output/recovery,
+coordination and final acceptance gate open; camera creation remains disabled.
+
+## 2026-10-06: common acknowledged Session cooling (local)
+
+One bounded mailbox now serves SDK/direct cooler target and enable changes on
+Session's existing worker owner. Submit validates capabilities without changing
+shared values. Queued and claimed/preflight requests can expire or lose their
+receipt without dispatch. Dispatched commands retain ownership after receipt
+loss; uncertain outcomes fence new admission, invalidate the worker and are
+non-retryable by capture recovery. Known completion commits shared/applied values
+and the active recovery map before publishing its receipt. Only cooler keys are
+live in otherwise frozen capture/replacement settings; frame control metadata
+records the final acknowledged values rather than a thermal history.
+
+Review separated claimed/preflight ownership from worker dispatch. It also
+carries one absolute deadline through write/readback, capped by the configured
+command timeout, and checks it immediately before framed write admission. An
+unsent expiry preserves worker/framing and consumes no command ID. Cancelling a
+waiter after dispatch cannot free capacity or turn a late outcome into success.
+Identity checks prevent retired completions from modifying a replacement request.
+Close, invalidation and Drop retire queued/dispatched receipts with distinct
+certainty. No mutex is held over I/O. Existing serialized worker ownership and
+core exposure/download retry limits remain in force.
+
+Six mailbox cases cover bounded/validated admission, commit-before-receipt,
+queue/preflight expiry and caller loss, owned dispatched completion, timeout
+fencing, retirement/reactivation, stale results and retained upstream codes.
+Production worker simulations verify SDK target changes survive a replacement
+exposure while imaging settings remain frozen, direct target changes survive
+worker recovery, idle acknowledgement/teardown, readback mismatch without target
+publication or capture retry, and live target/disable commands during recovery
+settle. An expired worker command leaves the same process usable for valid framed
+commands. No physical devices or installed vendor drivers are activated.
+
+Full core/hub/Alpaca regressions and strict Rust 1.99 Clippy/Rust 1.89 all-target
+checks pass. Final core confirmation includes all 37 tests; the added settle case
+also passes and its test-only changes pass focused strict Clippy/MSRV. Generated
+contracts, formatting, rebuilt-host NINA 228/228 and actual net48 x86/x64 clients
+pass with no build warnings.
+Logs: artifacts/hub-camera-core-cooling-{mailbox,worker,focused,reviewed-worker,
+core,rust,clippy,msrv,final-core,final-clippy,final-msrv,contract,host,nina,net48}.log.
+NativeCamera still needs a retained command task for idle/capture, generation and
+activity ownership, error/publication fencing and typed source adapter integration.
+The legacy queue_control API remains deferred desired intent. Do not report it
+as hardware acknowledgement. Camera creation stays disabled; every original
+camera/output/recovery/coordination and final acceptance gate remains required.
+
+Pushed native admission/owner/direct-cooling head 6584e67 PR/push CI
+37568068870/37568064681 both now finish with all eight jobs successful, including
+Windows packaging/installer acceptance. Earlier intermittent connection/motion
+failure causes remain unproved. Session cooling and the retained NativeCamera
+integration below pass local validation and require their own CI.
+
+## 2026-10-06: retained NativeCamera cooling (reviewed locally; CI required)
+
+NativeCamera now owns a separate cooler command marker, receipt, generation,
+token and runtime activity. Its caller only owns a cancellation guard: leaving
+before dispatch withdraws the queued/claimed request, while dispatched work stays
+owned. Admission is synchronous under source state, reserves activity before
+publishing markers and rejects concurrent commands/capture/abort. The outer
+supervisor remains responsible for client/source lease authorization.
+
+The command task waits for either the receipt serviced by capture or idle engine
+access. It never drops a dispatched service future when the receipt expires; idle
+worker retirement stays owned. No second worker/handle or parallel core call is
+introduced. Reset/close cancel old work and fence completions synchronously;
+generation checks also reject a known ACK buffered before its caller resumes.
+Pending cooling pauses image publication, including waits on already completed
+images. Unknown outcomes preserve a redacted Uncertain error and upstream code,
+cancel active capture and prevent later capture completion from overwriting the
+fence. New captures, commands and connection shortcuts cannot clear uncertainty;
+explicit reset/close is required. Existing readers keep immutable pixels.
+
+Review also prevents unexpected capture-task loss from replacing an existing
+uncertainty fence, and prevents an idle cooler task from servicing a disconnected
+or uncertain source. Unsent expiry is Transient without transport_lost. Receipt
+cancellation checks request identity, so an old guard cannot cancel a later slot.
+
+Fourteen production-worker simulation owner cases pass (six new), including idle
+SDK/direct acknowledgement, validation/bounded admission, queued caller loss,
+live six-second SDK/direct capture, unchanged exact pixels/final cooler metadata,
+publication waiting, reset before dispatch/after buffered ACK, idle/capture
+readback mismatch, no retries and explicit reconciliation. Three owner unit cases
+verify queued expiry with a held engine, caller loss after owner ACK and final
+external-reference loss, redaction/code preservation and expiry classification.
+A seventh core mailbox case verifies the separate caller cancellation handle
+before claim, during preflight, after dispatch and against a later slot.
+
+Retain the initial 12/14 owner run: both failures were fixture setup errors. The
+clamp rejected the initial capture target, so the fixture now acknowledges zero
+before capture and fails only the intended later negative request. Also retain
+the terminated paused-clock expiry runs and diagnostic log. Advancing exactly to
+the timer deadline left it pending; advancing one millisecond beyond the timer
+tick resolves it. Temporary stage prints were removed and the next real command
+uses the ordinary timeout. No production deadline or success criterion changed.
+The first strict Rust 1.99 Clippy run rejects a nested conditional; the collapsed
+condition preserves behavior and passes final strict linting and owner tests.
+
+Full Rust core/hub/Alpaca regressions pass, including all 38 core tests and final
+three owner unit cases. Strict Rust 1.99 Clippy, Rust 1.89 all-target checks,
+generated contracts, formatting, freshly rebuilt-host NINA 228/228 and actual
+net48 x86/x64 clients pass with no build warnings. Logs are under
+artifacts/hub-camera-native-cooling-*.log. No physical equipment or installed
+vendor drivers were activated. Native typed properties/settings, adapters/config/
+runtime, host budget/recovery allowances, binary frontend IPC, all camera outputs,
+coordination and every original acceptance/final gate remain open. Camera creation
+stays disabled; these owner primitives alone are not frontend camera support.
+
+## 2026-10-06: native typed properties and desired geometry
+
+Reviewed native RAW16 mapping against the shared 53-property type/validation
+contract, core sensor/control capabilities and immutable completed-frame metadata.
+Missing controls and malformed types/ranges remain Unsupported or Unavailable;
+there are no fabricated zero/calibration/progress values. Cooler enable requires
+an exact Boolean control value. Bayer offsets reflect the four actual patterns;
+monochrome cameras reject Bayer properties. Optional core-absent properties remain
+Unsupported. Native StopExposure/asymmetric binning are not advertised.
+
+Connection now validates dimensions/bins and refreshes initial controls and
+environment before publishing connected state. Failure retains cleanup ownership.
+Private clamp fixtures initially rejected that new initial refresh: retain the
+12/14 failure log. Their minimum is now -10, allowing the initial target, while
+the later -15 request still proves mismatch/uncertainty without replay.
+
+Desired geometry has private fields and no deserialization bypass. Initial
+geometry selects an advertised bin rather than assuming bin one. Individual
+setters preserve intermediate ROI combinations and do not silently replace ROI
+on bin changes. Combined bounds/alignment are validated at StartExposure under
+the same state lock that freezes geometry and reserves memory. Busy/uncertain
+setters cannot change it. Hardware settings cannot use this local-only API.
+Duration and UTC start are taken from the successful immutable core frame, not
+next-capture settings or an invented frontend timestamp. Invalid/missing UTC
+fails independently of known duration. Cached property reads remain usable during
+capture, but adapter integration must preserve their true observation age.
+
+Four property unit cases and eighteen production-worker simulation owner cases
+pass, including SDK/cooled direct and uncooled direct cameras, all shared property
+types, geometry admission, frozen readers/timing, absent controls, malformed sensor
+metadata and retained uncertainty. Full core/hub/Alpaca Rust regressions, strict
+Rust 1.99 Clippy, Rust 1.89 all-target checks, generated-contract freshness,
+formatting, Node checks, seven independent schema checks, rebuilt-host NINA
+228/228 and actual net48 x86/x64 fixtures pass with no build warnings. The first
+schema command used system Python without jsonschema; the existing private schema
+venv passes. Logs: artifacts/hub-camera-native-properties-*.log. No physical
+equipment or installed vendor drivers were activated.
+
+Retained a92b8bd CI failures: push 37571649524 finishes with seven successes and
+a Windows initial focuser connection-reply failure. Its trace records an aborted
+header write; the cause is unproved. Shared fixture failure tracing now includes
+elapsed time, without changes to production code, deadlines, retries or expected
+outcomes. PR 37571654100 fails macOS at an immediate source-lease-count assertion
+after native-wheel disconnect. SourceLease release is retained/asynchronous; the
+fixture now waits for cleanup using the existing three-second test bound. The
+targeted wheel regression, NINA and both net48 clients pass. The PR's Windows job
+remains live at installer checks; preserve it and require new CI for these changes.
+CI logs: artifacts/hub-camera-native-cooling-ci-push-failed.log and
+artifacts/hub-camera-native-cooling-ci-pr-macos-job.log.
+
+Native acknowledged gain/offset commands, remaining adapters/config/runtime,
+host-wide recovery/budget wiring, binary frontend IPC, all camera outputs,
+coordination, documentation and every original acceptance/final gate remain open.
+Camera creation stays disabled and PR #21 stays draft.
+
+## 2026-10-06: acknowledged native gain/offset commands
+
+Reviewed idle imaging settings against the existing core persistent controls,
+SDK offset clamp policy, cooler mailbox, capture recovery and native task/generation
+ownership. Core gain/offset and cooler commands now share one write/readback
+helper and absolute deadline. Gain, offset, cooler target and cooler enable use
+the same framed-write tracking. A lost/malformed/timed-out/cancelled dispatched
+write is uncertain and non-retryable; unsent expiry remains distinct. Only
+write-plus-readback success updates applied/shared values. Recovery restores those
+actual values. SDK offset may retain the existing bounded clamp policy and returns
+the actual applied value; other mismatches/out-of-range readbacks retire the worker.
+Review added a final deadline check so an immediately ready late reply cannot
+become success. The original cooler receipt/expiry semantics remain unchanged.
+
+NativeCamera admits one Configuring operation and activity before dispatch. A
+queued caller loss/expiry skips engine I/O and preserves previous image/state.
+Once admitted to the engine, write, readback and retirement are owned independently
+of the frontend future. Pending settings block captures, other settings, Abort
+and image publication. Review found that waits on an older acquisition also need
+to check this pending marker; they now wait for the known setting outcome just
+like new image reads. Unknown outcomes preserve a redacted source fence/code
+until explicit reset/close; unexpected configuring-task loss is also uncertain.
+Reset rejects late completions and already-buffered acknowledgements. Known
+settings preserve the preceding immutable image and its capture metadata/timing.
+The outer supervisor still authorizes source/control leases.
+
+Four new core cases pass: SDK/direct readback and worker recovery; gain mismatch
+without publication/retry; bounded SDK offset clamp versus out-of-range readback;
+and no-I/O capability/cancellation/expiry/cooler-conflict preflight. Existing
+worker fault cases now cover all four persistent controls for dispatched deadline
+and cancellation, plus unsent expiry with unchanged process/framing/command ID.
+Three new native owner integration cases cover conflicting admission, old-reader
+publication/timing, reset/uncertainty reconciliation, buffered ACK fencing and
+capture-time imaging-write rejection. Two new owner unit cases verify queued
+caller loss/expiry and dropping the actual frontend future synchronously after
+the write ACK but before readback, including loss of all external owner references.
+That deterministic hook uses a useful core diagnostic distinguishing write ACK
+from pending readback; it introduces no timing sleeps or physical equipment.
+
+Full core/hub/Alpaca Rust regressions pass, including 42 core tests, 48 hub unit
+tests, 21 native owner integration cases and all existing camera/accessory/runtime
+suites. Strict Rust 1.99 Clippy, Rust 1.89 all-target compatibility, generated
+contracts, formatting, Node/seven independent schema checks and rebuilt-host
+NINA 228/228 pass. The first strict Clippy run identifies a test MutexGuard inside
+a polling macro; the corrected explicit poll closure releases it before returning
+and all five native owner unit cases pass again. Real net48 x86/x64 production-host
+fixtures pass with no build warnings. Logs: artifacts/hub-camera-imaging-control-*.log.
+
+Preceding a92b8bd PR CI 37571654100 is now terminal with seven successes and the
+retained macOS asynchronous-wheel-cleanup assertion failure. Its Windows job
+passes packaging/installer/release checks. Push 37571649524 retains seven successes
+and its initial focuser connection failure; the successful PR does not explain
+that cause. The reviewed local wheel cleanup correction and failure timing
+diagnostic still require new CI. The full PR failure log is retained at
+artifacts/hub-camera-native-cooling-ci-pr-failed.log.
+
+Next: native source adapter/config/factory/runtime with host-wide image budget,
+runtime activity, recovery allowances and truthful observation ages. Neither
+cached reads nor a queued desired value can be presented as new hardware evidence.
+Remaining camera inputs, binary frontend IPC, all three camera outputs, recovery
+metadata migration, coordination, documentation and every original acceptance/
+final gate remain open. Camera setup choices stay disabled; no hardware or
+installed vendor driver was activated and PR #21 remains draft.
+
+## 2026-10-06: worker/core/native observation freshness
+
+Reviewed direct environment sampling/publication, SDK reads, production worker
+framing, desired versus acknowledged core state, native cached properties,
+capture-time cooling and replacement-worker ownership. `get-observation` has a
+strict integer-value/relative-age envelope; existing `get` replies and command
+restrictions are unchanged. Direct temperature, regulator output power, accepted
+target and enable have independent evidence times. Publication copies those
+times rather than replacing them with the cache-read/publication time. During
+still/video captures and retained frames, observations use the existing owner
+cache without queueing USB work behind an exposure. Cooler changes update only
+their affected values; they cannot freshen unrelated temperature/power samples.
+Review also corrected output power publication to follow successful USB writes,
+so a failed write cannot become acknowledged demand.
+
+Core normalizes the relative age against request admission, conservatively
+including all request/response time without comparing process clock epochs.
+Review removed legacy queued gain/offset/cooler apply's duplicate write/readback
+path: these four controls use the same acknowledged helper/deadline and uncertain
+outcome retirement as retained commands. A dispatched invalid readback can no
+longer enter capture recovery and repeat a persistent control write. Other legacy
+controls retain their existing paths and are outside this timestamped contract.
+Negative, nonfinite, overflowing or malformed ages fail. `Status.observations`
+stores acknowledged values/times separately from desired `values`; it is skipped
+in JSON. Queueing desired settings cannot publish or refresh evidence. Apply and
+retained write/readback commit evidence only on success; cooling still commits
+through its receipt's final ownership/deadline check. Invalid age after a write
+is uncertain and retires the worker without new evidence or replay. Unavailable
+worker diagnostics may retain aged evidence, but opening a replacement clears
+it before capability negotiation and restoration. Native property reads now use
+acknowledged evidence, never desired values. Their observation API preserves the
+original time, rejects future/missing evidence and distinguishes host-local state
+or negotiated metadata by an absent hardware timestamp. Cached reads do no I/O.
+
+An important protocol distinction is now explicit: direct gain/offset readback
+acknowledges accepted next-capture worker configuration. Actual sensor-register
+programming occurs at exposure start, and per-capture overrides/immutable frame
+metadata remain separate. SDK observation ages timestamp the SDK call, without
+claiming knowledge of the vendor's internal caching. Continuous streaming keeps
+its pre-existing legacy-command exclusions, including the new observation call.
+
+Tests cover independent aged direct telemetry during six-second still/video
+captures and retained frames, strict SDK control parsing, unchanged legacy reply
+shapes, production worker pipes for all six controls, conservative transit-time
+normalization, desired-value isolation, replacement-worker clearing, JSON clock
+exclusion, no-I/O native cached reads, unrelated-control timestamp preservation,
+and old evidence retained after uncertain readback. A simulation-only SDK reply
+override exercises aged/invalid evidence through the actual process pipe; it
+cannot run against a physical SDK. Initial test compile errors (a misplaced
+variable and unnecessary Clone), an unused close Result, and the reply override's
+incorrect pixels identifier were corrected before final validation.
+The first aged-pipe assertion compared internal request admission to an earlier
+external clock as an upper bound. It now checks both actual admission interval
+boundaries; the exact age and pure transit-time assertion are unchanged. All four
+queued persistent controls additionally exercise invalid age, one write ACK,
+retired worker, preserved evidence and no reconnect/replacement exposure.
+The first queued-enable fixture requested its already-applied value, correctly
+causing no write or readback. It now disables the initially enabled simulated
+cooler and explicitly asserts that every fixture requests a changed setting.
+The default Python lacked jsonschema; the existing hub-schema-venv runs all seven independent
+schema checks successfully. Keep the original logs alongside corrected runs.
+
+Final combined core/hub/Alpaca/ZWO Rust regressions pass, including 47 core tests,
+49 hub unit tests, 22 native owner integration cases and 98 ZWO library tests.
+Strict Rust 1.99 Clippy, Rust 1.89 all-target checks, generated-contract freshness,
+formatting/diff checks, Node/seven independent schema checks, rebuilt-host NINA
+228/228 and actual net48 x86/x64 fixtures pass. Main evidence:
+artifacts/hub-camera-observation-core-rust-complete.log,
+artifacts/hub-camera-observation-core-clippy-complete.log,
+artifacts/hub-camera-observation-core-msrv-final.log,
+artifacts/hub-camera-observation-core-contract.log,
+artifacts/hub-camera-observation-core-nina-reviewed.log and
+artifacts/hub-camera-observation-core-net48-reviewed.log. Earlier failed runs
+remain alongside these final results. Preceding adfb9e2 PR/push CI
+37575030689/37575027240 both pass all eight jobs, including Windows installer and
+release checks; that success does not prove the earlier Windows failure's cause.
+This observation checkpoint requires new CI and is not frontend acceptance.
+Next: native camera source adapter,
+configuration/factory/runtime, shared host budget/activity/recovery allowances
+and preserving these ages through SampleBatch. Remaining inputs, binary frontend
+IPC, all camera outputs, coordination and all original acceptance/final gates
+remain open. Camera choices stay disabled; PR #21 remains draft and no physical
+equipment or installed vendor driver was activated.
+
+## 2026-10-06: native camera source actor/supervisor integration
+
+NativeCameraBackend implements the common Backend lifecycle using one retained
+NativeCamera. Construction does no discovery/I/O. Incremental handshake steps
+leave the source actor responsive; the owner keeps connection/cleanup work after
+waiter loss. Simulation identity comes from the actual core Runtime. Scalar
+reads use the existing 53 typed properties; setters share strict member/parameter
+decoding for the 13 settings. Known malformed commands fail before dispatch.
+StartExposure requires bounded Duration/Light, converts to native microseconds
+and freezes configured geometry atomically. Sub-microsecond/zero native captures
+are invalid; fractional native temperature targets are rejected rather than
+silently truncated. StopExposure remains unsupported, never an Abort alias.
+
+Sampling uses the common plan/type/aggregate bounds. Optional-property failures
+stay per key. Hardware samples retain their original evidence ages through the
+actual SourceActor; local geometry/state and negotiated metadata carry no hardware
+timestamp. A read-only core environment method uses only the existing worker,
+reads temperature/power and cannot apply queued settings or implicitly reopen.
+Failure retires the worker while retaining aged diagnostic evidence. The owner
+retains refresh activity and fences generations; it skips capture/setting work.
+Adapter commands await a running refresh before dispatch. An empty sample plan
+does not schedule telemetry. Explicit Refresh remains supported.
+
+Review found that sharing the ordinary pending marker with background telemetry
+could race ImageReady and camera_image, hiding an already immutable image.
+Refreshing is now excluded from publication fences and reports idle camera state;
+capture/setting/cooling/cleanup reservations keep their original fences. The
+image, metadata and budget charge remain unchanged through telemetry. Binary
+image dispatch verifies that native owner and caller use the exact same shared
+ImageBudget and returns the existing Arc without allocation or another download.
+
+Review also found a handshake replay risk: initialization acknowledges persistent
+settings, so a timeout/reset or invalid readback cannot automatically reopen and
+replay them. The adapter retains a conservative unknown-outcome fence through
+automatic resets. Only complete last-lease disconnect clears it. SourceActor
+publishes the normal write-uncertain latch for uncertain connection outcomes;
+typed source waiters return Uncertain promptly. No generic read-only reconnect
+behavior for other existing adapters was removed.
+
+Further review/integration tests exposed the distinction between a logical core
+Session and its current worker handle. Recovery and explicit Abort retire a worker;
+the first adapter incorrectly interpreted that as a source transport failure,
+changing generation after a known Abort. Cached reads now follow the owner's
+logical connection. Background telemetry skips an absent worker without reopening.
+Core continues its own configured recovery with the same acquisition/generation.
+A later explicit hardware control validates its requested range/capability first,
+then retains restoration of acknowledged settings before the requested setting's
+normal write/readback. Local geometry and StartExposure do not trigger a separate
+restoration; core capture owns its own restore. Reset while connecting, configuring
+or cooling conservatively retains the outcome fence, including restoration tasks.
+The integrated SDK/direct case now verifies owner-only cooling, unsupported Stop,
+known Abort, subsequent explicit gain restoration and a new capture with unchanged
+source generation. The injected failed-status case reads cached properties during
+core reconnect delay and aborts without an outer reset or replacement exposure.
+Another test resets control restoration before dispatch and proves the requested
+gain was never applied; a complete disconnect clears that conservative fence.
+
+Production worker-pipe simulations cover SDK/direct captures through actual
+SourceActor/CameraSupervisor, two clients/one connection/one capture, shared pixel
+identity, frozen native metadata, pinned readers after last disconnect, preserved
+aged temperature evidence in SampleBatch/actor caches, optional errors, malformed
+commands/no capture, foreign-budget rejection/no allocation, lost initialization
+outcomes/no automatic replay, explicit disconnect/reconnect, and refresh/capture/
+reset/publication races. Two core cases prove queued settings are not applied by
+telemetry and failed telemetry cannot reopen the worker.
+Eleven adapter integration cases pass, with production simulations only.
+
+Retained initial failures: the test helper double-wrapped SourceHandle's Arc;
+an aged-gain initialization override correctly failed write/readback freshness
+validation. The aged-cache fixture now uses read-only temperature evidence;
+production validation is unchanged. The first reconnect-delay fixture guessed
+the phase name as "SDK reconnect delay"; the actual core phase is "Reconnect
+delay" and the fixture now observes that actual state. The first Abort integration
+failure exposed the worker/logical-session bug described above. A later explicit
+restoration fixture used the default five-second reconnect delay against a
+five-second source deadline, correctly yielding uncertainty. It now uses the
+same explicit 0.01-second simulated reconnect delay as other owner fixtures;
+the source deadline and failure semantics were not relaxed. Production factory
+recovery/deadline derivation remains required. The broad unrestricted build hit Windows
+paging-file exhaustion (os error 1455), followed by compiler metadata errors.
+The same broad build succeeds with two compiler jobs. Final validation following
+the publication and worker/logical-session corrections passes: full combined
+core/hub/Alpaca/ZWO regressions (49 core tests, 49 hub unit tests, 22 native owner
+cases, eleven new adapter cases and 98 ZWO library tests, plus all integrations),
+strict Rust 1.99 Clippy for core/hub/Alpaca/ZWO/device all targets, Rust 1.89
+all-target compatibility, generated contract freshness, Node/seven independent
+schema checks, formatting/diff checks, freshly rebuilt-host NINA 228/228 and
+actual net48 x86/x64 integration fixtures. Main evidence:
+artifacts/hub-camera-native-source-rust-complete.log,
+artifacts/hub-camera-native-source-clippy-complete.log,
+artifacts/hub-camera-native-source-msrv-complete.log,
+artifacts/hub-camera-native-source-contract.log,
+artifacts/hub-camera-native-source-node.log,
+artifacts/hub-camera-native-source-schema.log,
+artifacts/hub-camera-native-source-host-final.log,
+artifacts/hub-camera-native-source-nina-final.log and
+artifacts/hub-camera-native-source-net48-final.log.
+Earlier failed runs remain alongside these final results. Code review covered
+generation/operation guards, retained cleanup/activity, pre-dispatch validation,
+read/write uncertainty, publication through telemetry, budget identity, original
+sample ages and core-owned worker recovery. New CI is required before acceptance.
+
+Preceding observation CI b038f8e is terminal: PR 37578062435 and push
+37578058561 each pass seven jobs and fail one Windows NINA case. PR fails second
+focuser initial connection, push fails shared panel read. Private upstream writes
+report SocketException 10053; root cause remains unproved. Logs and job metadata
+are saved as artifacts/hub-camera-observation-{pr,push}-ci*. The private fixture
+now records request-parse elapsed time, response-write start and thread-pool counts
+so future failures can distinguish scheduling/parse delay from reply writes.
+This adds evidence only; no deadlines/retries/assertions or production paths
+changed. Prior green runs do not prove these failures' cause.
+
+Next: native factory/config/runtime, host-wide budget/activity and native recovery
+allowances, other camera inputs, bounded binary frontend IPC and all three camera
+outputs. Discovery/config transfer, recovery metadata migration, OS resume,
+coordination, conformance, physical/interactive acceptance, README/site updates,
+main reconciliation and the original final audit remain required. Camera choices
+remain disabled and PR #21 stays draft. Only explicit simulations/private fixtures
+were activated.
+
+## 2026-10-06: canonical native recovery metadata and camera configuration
+
+Core recovery options now declare their fourteen serialized keys, typed defaults,
+ranges, units and descriptions once. The macro supplies the existing value type,
+validation and strict frontend schema data, using only existing serde/JSON
+dependencies. Root and model module reexports remain compatible. Four independent
+legacy-format tests pin the shipped default JSON, sparse overrides/unknown
+extensions, integer types/bounds and all positive/nonfinite floating boundaries.
+Validation still classifies invalid values as Failure::Invalid. Strictly positive
+fields keep their original range down to tiny positive values; no new UI floor
+changes saved policy behavior. The core schema is explicitly for strict frontend
+configuration; it does not change the tolerant legacy profile loader.
+
+Hub CameraRecovery rejects unknown keys but retains the core options/defaults.
+NativeCameraConfig adds an exact model, explicit direct-only SDK fallback and
+native recovery under SourceBackend::Native.camera. Native camera sources require
+it; accessory sources reject it. Alpaca/COM remain separate strict variants and
+do not gain native retry promises. Schema conditionals enforce camera class,
+presence and fallback constraints, independently checked by Python. Semantic
+errors use full source/camera/recovery field paths. Selection carries the source's
+exact serial and backend without discovery, launch or hardware I/O. Six config
+cases cover sparse selection, typo/type rejection, semantic paths/nonfinite
+values, class constraints, atomic persistence and duplicate direct/SDK claims.
+The older duplicate-claim regression now supplies otherwise-valid camera settings.
+Existing accessory fixtures serialize identically because absent camera settings
+are omitted. Native accessory construction also rejects class-mismatched camera
+settings when called outside the complete config validator.
+
+Review covered serialized compatibility, defaults, strict versus legacy loading,
+positive/inclusive bounds, backend/serial selection, source identity/polling
+preservation and no new recovery behavior. It corrected an overbroad deadline
+description to name gain/offset/cooler write-readback behavior. Node and native
+NINA readers verify shared defaults, descriptions, units and exclusive lower
+bounds. Real net48 x86/x64 editor clients also read the live host's recovery
+metadata. Camera choices remain capability gated.
+
+The initial full NINA run ended 228/229: publisher/native switch sharing received
+ASCOM ValueNotSet (1026) immediately after an acknowledged SetValue. Inspection
+found the source actor intentionally invalidates all cached samples after writes,
+then schedules a confirming poll. A new deterministic Rust test holds that poll,
+proves both clients get Unavailable instead of old/optimistic values, releases it
+and observes the confirmed value with exactly one write. The publisher fixture
+now treats only that post-ACK ValueNotSet/unavailable response as pending, still
+requires the exact confirmed value, retains its original deadline, rejects all
+other errors and never retries a write. This corrects the fixture's completion
+model; production cache/error/deadline behavior is unchanged. It does not explain
+the distinct earlier Windows COM/HTTP connection/reply failures. The original
+failed log remains artifacts/hub-camera-recovery-nina-final.log.
+
+Final validation passes: full combined Rust core/hub/Alpaca/ZWO regressions,
+four core recovery compatibility cases, six camera config cases, sixteen existing
+config cases and all seven switch cases; strict Rust 1.99 Clippy for core/hub/
+Alpaca/ZWO/device all targets; Rust 1.89 all-target checks; generated contract
+freshness; Node/eight independent schema checks; formatting/diff checks; fresh
+host NINA 229/229 and real net48 x86/x64 integration. Key evidence is
+artifacts/hub-camera-recovery-rust.log,
+artifacts/hub-camera-recovery-{core,config}-final.log,
+artifacts/hub-camera-recovery-switch-{transition,complete}.log,
+artifacts/hub-camera-recovery-clippy-complete.log,
+artifacts/hub-camera-recovery-msrv.log,
+artifacts/hub-camera-recovery-contract-check.log,
+artifacts/hub-camera-recovery-{node,schema}.log,
+artifacts/hub-camera-recovery-host-final.log and
+artifacts/hub-camera-recovery-{nina,net48}-complete.log.
+
+Preceding native adapter a9b3c50 PR/push CI 37581976334/37581971979 are still live.
+Both have seven successful jobs and successful Windows test.ps1/Python tests;
+Windows build/installer stages remain open. Keep this increment local until those
+runs finish, then publish to the same draft PR. No physical equipment or installed
+vendor driver was activated.
+
+Next: native factory/runtime, shared host budget/activity across config revisions,
+full core-derived recovery/connection/control allowances, other camera inputs,
+bounded frontend image IPC and all three camera outputs. Discovery/config transfer,
+OS resume, coordinated groups, conformance/interactive/physical acceptance,
+README/site updates, main reconciliation and the original final audit remain
+required. This checkpoint does not close milestone 4's full migration/runtime or
+camera acceptance gate, and does not narrow the plan.
+
+## Native camera factory and host resources (2026-10-07)
+
+The factory now builds native SDK/direct camera backends from the source's exact
+model/serial/backend/recovery selection and the host's explicit camera runtime.
+Construction performs no discovery, worker launch, SDK load or pixel allocation.
+Missing host resources fail Unsupported. A production SDK/fallback path must be
+absolute; supplying a fixture without explicit native simulation fails closed.
+Accessory fixtures explicitly omit camera resources and retain their previous
+behavior. Typed camera proxy poll plans deduplicate all 53 properties and apply
+the same combined sample bound as the other device classes.
+
+CameraResources clones share the image-budget and activity Arcs across applied
+revisions. The host builder supplies them once, and HubRuntime uses that activity
+counter for output admission/quiescence as well as retained native work. The
+registry's image dispatch still verifies budget identity. Review followed leases,
+retained capture tasks, pinned readers, reservation shrink/drop, caller loss and
+builder closure ownership. Source polling configuration is not rewritten. This
+increment does not derive recovery timing or change core retries/deadlines.
+
+Four factory cases exercise inert construction with absent worker/SDK paths,
+required resources, explicit simulation, typed poll deduplication with runtime
+camera admission still rejected, and SDK/direct production-pipe capture with two
+clients. The capture case retains a pinned image across a new configuration
+revision, fills the remaining shared budget, proves Busy before another exposure
+dispatch, then releases capacity and captures without damaging the pinned image.
+Its SDK exposure is deliberately non-instant so the retained activity assertion
+does not depend on scheduling before a completed instant capture.
+
+The actual executable fixture uses --hub-host --simulate --sdk with an absent
+library, maps CCD temperature to an existing read-only Switch gauge, and verifies
+two client leases, confirmed scalar values and independent disconnect. Setup
+still omits nativeCameraSources. A CLI rejection case prevents --hub-attach from
+overriding the SDK. Camera output and setup gates remain closed.
+
+Focused factory/executable checks, strict Rust 1.99 Clippy, Rust 1.89 all-target
+checks, Node/eight independent schema checks, fresh-host NINA 229/229 and real
+net48 x86/x64 pass. The default Python invocation lacked jsonschema; the existing
+private hub-schema-venv passes without an environment change. The first combined
+Rust invocation stopped during build with Windows error 5 deleting the executable
+while managed fixtures used it. That build did not run the full suite; its log is
+retained. Managed fixtures completed successfully before the serialized Rust
+confirmation began. Full core/hub/Alpaca/ZWO Rust regressions and generated
+contract freshness now pass. Formatting and diff checks pass as well.
+
+Evidence: artifacts/hub-camera-factory-final.log,
+artifacts/hub-camera-runtime-{host,build,clippy,msrv,node,schema-venv,nina,net48}.log.
+The original failed build is artifacts/hub-camera-runtime-rust.log; its serialized
+confirmation is artifacts/hub-camera-runtime-rust-complete.log.
+
+Validation commands (all final invocations pass):
+
+```text
+cargo build -j2 -p regain-alpaca -p regain-device --locked
+cargo test -j2 -p regain-core -p regain-hub -p regain-alpaca -p regain-zwo --locked
+cargo +1.99.0 clippy -j2 -p regain-core -p regain-hub -p regain-alpaca -p regain-zwo -p regain-device --all-targets --locked -- -D warnings
+cargo +1.89.0 check -j2 -p regain-core -p regain-hub -p regain-alpaca -p regain-zwo -p regain-device --all-targets --locked
+cargo run -j2 -p regain-hub --example export_config --locked -- contracts/hub-config.json --check
+node scripts/test-hub-config.mjs
+artifacts/hub-schema-venv/Scripts/python.exe scripts/hub/test_schema.py
+dotnet test tests/Regain.NINA.Tests -c Release -warnaserror
+scripts/test-hub-dotnet.ps1
+cargo fmt --all --check
+git diff --check
+```
+
+Preceding a9b3c50 PR/push CI both finished all eight jobs green. Recovery metadata
+6f29557 is pushed to draft PR #21; runs 37585153377/37585149444 remain live. Keep
+this factory increment local until those jobs finish. Next: full core-derived
+connection/control/readiness/cleanup allowances and runtime camera supervision,
+then remaining inputs, bounded binary frontend IPC, all camera publications,
+coordination and every original acceptance/documentation/final gate. No physical
+equipment or installed vendor driver was activated; no original milestone closes.
+
+## Private HTTP scheduler isolation after recovery CI (2026-10-07)
+
+Recovery head 6f29557 PR/push CI 37585153377/37585149444 are terminal with seven
+successful jobs and one failed Windows job each. PR NINA ends 228/229: the panel
+sharing fixture gets a transient calibrator-state read. Transaction 73 records
+692 ms before parsing/reply start, then an aborted write at 719 ms. Its source
+request deadline remains 300 ms. Push NINA ends 226/229: first focuser connection
+has an uncertain connection write, rotator initial connection fails, and ETA
+expects [590,500,510] but reads [590,600,510] after timer cancellation. Focuser
+connection transaction 3 reports a reply-write failure at 53 ms; this trace
+does not measure time queued before accept. Do not attribute every failure to
+one cause or erase their original evidence.
+
+The private HubAccessoryServer previously used shared thread-pool continuations
+for acceptance, parsing and replies. The same managed tests exercise synchronous
+native getters on that pool. A new isolated net48 child caps and occupies every
+shared worker, then makes eight synchronous HTTP requests from its main thread.
+The original fixture, compiled from ebcb704 into a private baseline project,
+reproduces a socket read timeout. The replacement passes in x86/x64 and drains
+an accepted partial request while every shared worker remains occupied. Limits
+are changed only in that disposable child, never in the test runner or product.
+
+The replacement uses one dedicated accept task, four dedicated request tasks
+and a bounded queue of 64 clients. Synchronous socket operations remain on those
+dedicated threads. The deliberate lost-reply delay is still one second and is
+cancelled on disposal; fixture/source deadlines and assertions are unchanged.
+All clients are tracked before queue admission, cancelled accept is joined before
+cleanup, partial/queued clients close, worker tasks drain, and repeated disposal
+is harmless. Unexpected protocol errors still fail the fixture. Review covered
+queue saturation, shutdown races, EOF and disposed sockets, worker ownership,
+global pool restoration and independent net48 process/bitness checks.
+
+Full NINA 229/229 and real net48 x86/x64 pass after scheduler isolation. The
+final partial-client acceptance barrier and failure cleanup also pass in the
+same complete suites. Earlier full Rust, strict Clippy/MSRV and contract
+checks remain valid: this refinement changes only managed private test fixtures
+and their script. The first baseline compile failed an unused fault-field warning;
+explicitly selecting normal replies removes that warning and the warning-denied
+baseline then reproduces the expected HTTP failure. No production code changed.
+
+Evidence: artifacts/hub-camera-recovery-ci-pr-windows-job.log,
+artifacts/hub-camera-recovery-ci-push-windows-correct.log,
+artifacts/hub-http-scheduler-baseline-build-final.log,
+artifacts/hub-http-scheduler-baseline/stderr.log,
+artifacts/hub-http-scheduler-nina-final.log and
+artifacts/hub-http-scheduler-net48-complete.log. The initially misidentified push
+job log is an ARM job and is not used as Windows evidence.
+
+New CI is required. The HTTP dependency is reproduced and removed; the ETA
+cancellation timing and distinct connection failures are not declared resolved
+by a local pass. All original acceptance gates remain required. Continue native
+core-derived timing and cleanup, runtime camera supervision, remaining camera
+inputs/outputs and coordination after publishing these reviewed increments to
+the same draft PR. No physical equipment or installed vendor driver was used.
+
+## External protocol conformance and shared HTTP admission (2026-10-07)
+
+Built unmodified official ConformU v4.5.0 from source commit
+49ab847c24c3d1a5bc11fb159ad2dd6787659098. Its reported version is
+4.5.0 (Build 55822.49ab847). The first absolute-output build failed in an upstream
+ASCOM package target; default relative output succeeds. Corrected private Git
+metadata before the final build so the tool reports its own source SHA rather
+than this parent repository's. No validator code or installed driver was changed.
+
+An explicitly simulated eight-class hub on loopback, empty ordinary camera
+profiles and disabled discovery establish the initial interface baseline. Full
+default-delay checks pass Switch, SafetyMonitor, ObservingConditions, Rotator and
+FilterWheel with no errors/issues/timing issues/configuration alerts. Focuser has
+four boundary/increment issues, CoverCalibrator one HaltCover timing issue and
+Camera 34 monochrome Bayer/timestamp/geometry-setter issues. Do not call interface
+conformance complete. The pinned Focuser definition and validator disagree in
+their treatment of some limits; investigate before changing source protections.
+The private evidence is artifacts/hub-conformance-228c321a75f8483aabb4c9a04f863dc6.
+
+The first tolerant protocol pass has 36 issues: unknown URLs return a successful
+HTTP status, and required PUT key casing is ignored. Added one HTTP syntax layer
+shared by ordinary equipment and hub paths. Recognised GET properties reuse the
+existing typed property definitions. Unknown methods return 404; malformed IDs,
+duplicate decoded keys and missing/incorrectly cased required PUT keys return 400
+before source lookup, connection or mutation. GET queries retain case-insensitive
+keys. Optional PUT ClientID/ClientTransactionID names use exact casing; other
+casings are ignored and cannot select/echo a different client identity. Required
+Switch IDs are parsed even for recognised unsupported SetSwitchName. Actual
+interface/value failures retain their ASCOM ErrorNumber/Message with HTTP 200.
+Their Value is null, without fabricating readings or successful image data.
+
+Reviewed URI/member versus interface support, optional IDs, URL-decoded duplicate
+keys, request bounds, source admission, error/value distinction, binary image
+errors, and compatibility with direct/native dispatch. HTTP parsing does not alter
+the shared source/command protocol, ownership, retry policy or production deadlines.
+Existing tests now assert the correct HTTP status for malformed/unknown requests;
+semantic bounds still assert the same ASCOM errors. Unsupported standard methods
+are checked with correctly formed arguments and still return NotImplemented.
+The all-class HTTP regression proves no leases after rejected connections, GET
+transaction round trips, ignored optional PUT IDs, and unchanged settings/position
+after rejected mutations. It observes cached scalar readiness before comparing it.
+
+The reproducible runner in scripts/test-hub-conformance.py constructs only private
+simulated sources; no URI/ProgID/config override is exposed. It enables all full
+interface tests and strict protocol checks, with shorter settling only for its
+in-memory Switch. Exit codes, summaries, settings, executable hashes and logs are
+retained. Missing evidence or any errors/issues/alerts/timing issues fails the run.
+ConformU 4.5 does not emit protocol JSON despite accepting --resultsfile, so its
+explicit console counts and exit code are recorded. Each external command has a
+finite 900-second deadline. Reviewed cleanup: an ordinary HTTP frontend deliberately
+leaves its shared host alive. The runner now launches and owns that host before
+HTTP attachment, waits for its bound-listener acknowledgement, then retires both
+owned processes. The first runner's private orphan was identified by exact config
+and PID and removed; no other host was stopped.
+
+Final strict protocol evidence: artifacts/hub-protocol-conformu-third.log and
+artifacts/hub-conformance-d178f97fbd0642a1b0d6cab1ea2df19a/summary.json. All eight
+classes have exit 0, zero errors and zero issues. Informational messages are
+retained. The runner's owned host/frontend are absent afterward. Full Alpaca
+regression passes 19 library, ten executable-host and 46 HTTP cases in
+artifacts/hub-protocol-admission-alpaca-fifth.log. Strict Clippy passes in
+artifacts/hub-protocol-admission-clippy-third.log; Rust 1.89 all-target check passes
+in artifacts/hub-protocol-msrv.log. All 319 ordinary NINA cases pass in
+artifacts/hub-protocol-nina-regression.log, with one explicit registered-COM theory
+skip; the previous separately registered run remains its execution evidence.
+Python syntax, Rust format and diff checks pass.
+
+Preserve initial fixture failures: nonexistent HubRuntime.status getter, a rebuild
+while a private host retained the executable, old JSON-status expectations for
+malformed URLs/duplicates, and a cached scalar read before its first observation.
+These are corrected without weakening no-dispatch/ownership/semantic assertions.
+The first strict run exposed optional ID casing and error Value shape, which are
+fixed in production and covered above. No physical equipment or installed vendor
+driver was activated. The simulated HTTP protocol slice passes; interface/native
+ASCOM conformance, other source combinations, coordination, discovery/transfer,
+OS resume, broader acceptance, README/site and original final audit/merge remain.
+
+## CI event ordering and endpoint lock retirement (2026-10-07)
+
+32a34ae PR/push CI 37639099147/37639086923 is terminal. PR Windows fails the
+FocusCube cancellation fixture (no cancellation observed before completion) and
+safety-backoff startup. Push Windows fails that safety test's unchanged-generation
+assertion, and macOS ARM fails immediate OS lock reacquisition after camera host
+shutdown. Preserve artifacts/hub-camera-creation-ci-pr-windows.log and
+artifacts/hub-camera-creation-ci-push-windows.log; a passing local run does not
+establish these failures are fixed.
+
+The safety fixture still scheduled asynchronous replies on the shared managed
+pool, unlike the already isolated accessory fixture. It now reuses that common
+bounded accept/worker implementation, including tracked sockets, aborted-client
+cleanup and cancelable disposal. Only IsSafe receives the injected 503 and two
+second Retry-After. Extended the isolated net48 scheduler child to exercise both
+panel and safety replies, safety failure/recovery and partial-client cleanup while
+every shared worker is occupied. Source deadlines, safe-age policy, retry delay
+and no-reset generation assertions remain unchanged.
+
+The FocusCube test replaces timer-based cancellation with synchronous cancellation
+at the acknowledged move's first status publication. A loaded pool can run a timer
+after the 400 ms simulation completes. The native provider also checks cancellation
+after status publication and before returning completion, covering cancellation
+during the asynchronous status read or its notification. No motion is replayed;
+the existing direct accessory Halt-on-failure behavior is preserved.
+
+Endpoint ownership remains an Arc held through listening, accepted streams and
+source drain. Final HostLock drop explicitly calls File.unlock rather than relying
+only on close. [Rust's File documentation](https://doc.rust-lang.org/std/fs/struct.File.html#method.unlock)
+specifies that duplicated/inherited descriptors can otherwise retain the lock.
+Concurrent fork inheritance is a plausible cause of the macOS assertion, not yet
+proven by its CI log. The Unix regression deliberately retains a duplicate: the
+accepted stream must keep ownership after listener drop, final stream release must
+permit a successor even with the old duplicate alive, and closing the duplicate
+must not release the successor's distinct lock. Existing uncertain-drain tests
+continue checking that shutdown does not release authority early. Unix execution
+and fresh CI remain required before declaring the macOS failure resolved.
+
+Local validation: artifacts/hub-ci-ordering-nina-focused.log (four cases),
+artifacts/hub-ci-ordering-nina-full.log (319 passed, one explicit registered-COM
+theory skip), artifacts/hub-ci-ordering-net48.log (full x86/x64, including safety
+and panel under pool saturation), artifacts/hub-ci-ordering-rust-full-second.log
+(full hub/Alpaca), artifacts/hub-ci-ordering-clippy.log (warnings denied) and
+artifacts/hub-ci-ordering-msrv.log (Rust 1.89 all targets) pass. The first full
+Rust attempt failed to replace regain-alpaca.exe while managed fixtures used it;
+the rerun started after those processes completed. Preserve that failed log.
+Format and diff checks pass. No physical device or installed vendor driver was
+used. Keep original conformance/coordination/recovery/documentation/final gates.
+
+
+### 2026-10-07 — CI lease observation and Windows failure context
+
+Reviewed source retirement: disconnect_checked removes the output immediately;
+SourceLease::drop schedules release on its saved Tokio runtime. A sourceStatus
+request from another stream can legitimately observe the old lease count before
+that cleanup executes. The actual-host fixture now polls for exactly one lease
+within five seconds, preserving the live sibling transport and scalar value
+checks and monotonic request IDs. It never reconnects or repeats a mutation.
+
+Terminal push 37648708041 fails that assertion on macOS ARM (2 rather than 1);
+its Windows job passes. Terminal PR 37648719635 passes all portable jobs but fails
+HubTimingFixture.Malformed(output) and native filter-wheel review. Added original
+exception/window-text context only; neither deadline nor required result changes.
+The complete local NINA run passes 319 with one explicit registered-fixture skip
+(artifacts/hub-ci-review-nina.log); updated timing/window subset passes 31
+(artifacts/hub-ci-timing-window-focused.log). Actual native simulated camera host
+passes (artifacts/hub-ci-lease-cleanup.log). The first Rust attempt hit an executable
+held by the simultaneous private NINA host; rerun after terminal NINA succeeds.
+No hardware or vendor driver was opened. Windows causes and Unix verification
+remain open; local passes do not establish CI stability.
+
+
+### 2026-10-07 — Explicit calibrated focuser-group core
+
+Reviewed the new controller against milestone 5 without closing that milestone.
+The existing FocuserSession Move validation is extracted unchanged, and the new
+crate-private reservation uses the same TypedSourceSession operation lease and
+generation-fenced write. Ordinary Move/Halt/TempComp calls remain arbitrated by
+the same source actor; there is no new transport, driver crate or executable.
+
+Calibration uses Int32 inputs and Int64 intermediates: the largest signed product
+and its offset fit Int64; target conversion and configured bounds reject overflow
+before I/O. Positive-denominator nearest rounding uses ties away from zero.
+Construction rejects duplicate/mismatched source IDs and unbounded configuration.
+Physical alias resolution is explicitly not established by this core constructor;
+the host integration must resolve/reject repeated leaves before advertising it.
+
+All member command leases are acquired before any Move. Live preflight requires
+absolute position, valid travel/increment, idle motion and disabled available
+temperature compensation. The controller rechecks before each single dispatch.
+It never disables compensation, homes, reconnects, chunks motion, retries, halts
+or rolls back implicitly. Started members retain independent results after another
+member fails. Acknowledgement with no movement cannot count as reaching a target.
+
+Review found two lifecycle refinements. The initial FuturesUnordered batch waited
+for every member before resampling a healthy moving sibling. The new hung-read
+fault test failed (artifacts/hub-focuser-coordination-batch-monitor-failure.log).
+Independent per-member rescheduling removes that barrier; healthy completion is
+now observed before the stalled member's timeout. Also, start computes the deadline
+before scheduling its owned task; the admission-delay regression prevents a fresh
+allowance after task scheduling. Cancellation/deadline never drops a mutation
+acknowledgement future: the existing actor bounds queued/backend work, and lost
+replies remain uncertain without replay. Return can exceed the group bound while
+an admitted mutation finishes, including actor queue residence; this is documented
+and not presented as one backend timeout. The explicit short-group/held-write test
+preserves the ambiguous member and leaves later members unstarted.
+
+Validation: all 34 focuser cases pass, including 16 new coordination tests
+(artifacts/hub-focuser-coordination-tests.log). Full hub/Alpaca regression passes
+(artifacts/hub-focuser-coordination-rust-full.log; before the final test-only deadline
+case). Strict Clippy for both crates/all targets passes, with the final test-only
+addition rechecked (artifacts/hub-focuser-coordination-clippy.log and
+hub-focuser-coordination-clippy-final.log). Rust 1.89 all-target check passes
+(artifacts/hub-focuser-coordination-msrv.log). Formatting and diff checks pass.
+Fixtures are private actors and explicit simulations; no hardware/vendor driver
+is opened. The intermediate initial compile had unused test imports before the
+new cases were added; final warnings-denied checks pass.
+
+Required next work remains saved/generated group config, host activity/revision
+retention, physical leaf resolution, bounded IPC operation retention/reattachment,
+shutdown/recovery and native NINA orchestration. Camera synchronization, discovery
+and transfer, OS resume, broader conformance/interactive/physical acceptance,
+README/site, main reconciliation and the final audit/merge are unchanged gates.
+
+## Saved focuser groups, host ownership and native NINA (2026-10-07)
+
+Reviewed the complete admission/retirement path, rather than treating the core
+group controller as a finished frontend feature. Saved groups use the existing
+schema, atomic store, identity ledger and generated editor. Validation follows
+only typed focuser proxy aliases to physical leaves, bounds traversal independently
+of prior graph validation, and rejects duplicate leaves. IDs cannot be repurposed
+across source/output/channel/group kinds. Old schema-1 files default to no groups.
+
+The coordinator reserves activity while holding the runtime lifecycle lock,
+before spawning or connecting. Pending connections therefore block apply just as
+admitted motion does. One retained operation per configured group bounds memory;
+new explicit starts retire the prior ID. Read/unread acknowledgement EOF tests
+prove work survives the caller and a new client can inspect/cancel the exact
+operation. Stale revision and operation IDs cannot retarget a move. Status does
+not acquire equipment. Shutdown closes admission, cancels later work, awaits
+admitted mutation acknowledgement and then drains the existing registry; it
+never sends an implicit Halt or rollback. Independent child activity retention
+also protects quiesce if its outer monitor fails, and failed/uncertain monitor
+results fence a new start in that runtime.
+
+The managed group client consumes the generated result schema, checks host,
+revision, operation, physical alias mapping, calibrated targets, generations and
+non-regressing publication sequences, and rejects changed terminal reports.
+Unknown start outcomes cannot replay through that client. Shared native controls
+require a retained-status read before a new start, keep cancel tied to the shown
+operation, and disable selection edits during an admitted request. The NINA
+sequence instruction uses native IPC, reports each member and succeeds only on
+exact complete results. Its interrupted/failed flag is saved and cloned before
+dispatch; error retry remains fenced until an explicit user reconciliation.
+Changing a group selection alone cannot clear that flag. Cancellation addresses
+only a known operation and retains the distinction between cancel and Halt.
+
+Local validation:
+
+- Full hub/Alpaca regression passes, including 39 focuser cases (five new
+  host/IPC tests) and 18 configuration cases. Evidence:
+  `artifacts/hub-group-host-full-rust.log`. Strict Clippy/all targets and Rust
+  1.89/all targets pass in `hub-group-host-clippy.log` and
+  `hub-group-host-msrv.log`. Schema freshness, formatting and diff checks pass.
+- Independent JSON Schema validation passes all 11 cases; browser contract,
+  creation/default/identity and existing frontend tests pass. The independent
+  validator found missing explicit Int32 bounds in the generated group fields;
+  those bounds are corrected. System Python lacks jsonschema; the existing
+  private `artifacts/hub-schema-venv` supplies it without changing system Python.
+- All 18 focused managed group cases pass. The first full managed run found five
+  cold setup/creation failures because `HubInitialization` rejected the new root
+  key. Its bounded, strict identity reader now admits the optional group array.
+  The complete rerun passes **337 cases with one explicit registered-COM-fixture
+  skip**, recorded in `artifacts/hub-group-managed-full.log`; the initial failed
+  log is retained as `hub-group-managed-first-failed.log`.
+- Real net48 x86/x64 full private suites pass with warnings denied, including new
+  calibrated group/alias/reattachment/member-result/lease-cleanup cases:
+  `artifacts/hub-group-net48-full.log`. NINA warnings-denied build passes.
+- The actual WPF panel was rendered, inspected and reopened to read the same
+  completed operation. The retained-results simulation screenshot is in
+  `docs/images/hub-focuser-group-results-simulation.png`. NINA's sequence template
+  is compiled/exported and its instruction executes against the real private
+  host. A standalone attempt to instantiate its SequenceBlockView encountered
+  NINA's Application-dependent drag/drop behavior; the fixture checks its typed
+  exported resource instead. Installed-NINA rendering remains an acceptance gate,
+  with no production workaround for the missing private-fixture Application.
+
+No attached hardware or installed vendor driver is used. Synchronized cameras,
+discovery/configuration transfer, actual OS resume integration, remaining
+conformance/interactive/physical acceptance, README/site updates, main
+reconciliation and final CI/audit/merge remain required. Per the user's pacing
+instruction, local checks/review are batched at useful construction increments;
+intermediate CI is not a waiting gate. Keep the one PR draft until final gates.
+
+## Explicit camera group core (2026-10-07)
+
+Reviewed shared camera admission, preflight/control cleanup, start dispatch,
+completion publication, cancellation and abort races. The implementation extends
+the existing supervisor rather than adding a second acquisition engine. Ordinary
+single-camera starts keep their existing preparation and completion paths. Group
+starts hold owned preparations until every member validates, then dispatch once
+per actor. Preflight cancellation drops only the waiter; an owned preparation
+task finishes cleanup and retains supervisor activity until it has done so.
+Prepared/cleanup Drop guards explicitly retain the whole guard through their
+spawned closures, preserving their uncertainty fallback.
+
+Completion now returns the same immutable image Arc it publishes under the state
+lock. A group's first image therefore survives a later ordinary capture while
+another member is still exposing. There is no second pixel pool or image copy.
+Start receipts retain monotonic host request/acknowledgement times separately;
+the measured skew does not claim hardware exposure synchronization. Independent
+event observation prevents a held sibling acknowledgement from hiding a healthy
+completion. Member download errors retain the ordinary supervisor's uncertain
+ownership, even for deterministic allocation/geometry failures.
+
+Failure and cancellation/deadline policies are distinct and explicit. Required
+abort capabilities are checked before any start. Once a mutation is admitted,
+cancellation awaits its acknowledgement; it cannot erase or replay a start.
+Abort checks the exact acquisition under the supervisor's admission lock, in
+addition to the existing owner/generation checks, so it cannot target a later
+capture. Review found that abort rejection during readout could discard the
+pending group image too early; the corrected coordinator waits for that image
+within the group deadline and retains the abort error independently. Completed
+images remain valid historical results after a later source generation change;
+an in-progress download crossing a generation cannot publish. An unexpected
+coordinator task exit publishes uncertainty rather than leaving active status.
+
+All **64 acquisition/guiding cases pass**, including **21 new camera-group fault
+cases**, in `artifacts/hub-camera-group-final-acquisition.log`. They cover
+all-member preflight rejection, unsupported abort, separate exact image pins,
+healthy completion during a held sibling start, measured dispatch versus delayed
+acknowledgement, continue/abort policy, cancellation before/during dispatch,
+later-capture protection, readout/abort races, overlapping reservations/settings,
+live geometry changes, dropped waiters, deadlines, uncertain abort, allocation
+failure, generation loss and invalid identity/duration/configuration bounds.
+The initial run caught Failed versus Uncertain image-error reporting; the final
+implementation preserves the supervisor fence. A second run exposed a fixture
+attempting to connect a new session through an intentionally held actor read;
+the overlapping-group fixture now creates its clients before injecting the hold.
+Initial failure logs are retained. No production deadline or assertion was weakened.
+
+Full Rust hub/Alpaca regression passes in
+`artifacts/hub-camera-coordination-full-rust.log`. Strict all-target Clippy passes
+in `hub-camera-coordination-clippy.log`; Rust 1.89 all-target checking passes in
+`hub-camera-coordination-msrv.log`. Commands:
+
+```text
+cargo test -j2 -p regain-hub -p regain-alpaca --locked
+cargo clippy -j2 -p regain-hub -p regain-alpaca --all-targets --locked -- -D warnings
+cargo +1.89.0 check -j2 -p regain-hub -p regain-alpaca --all-targets --locked
+cargo fmt --all --check
+git diff --check
+```
+
+Formatting and diff checks pass. This core-only increment changes no IPC wire
+command, frontend or generated root configuration contract, so managed/frontend
+regression remains at the preceding saved-focuser milestone; it is not counted
+as new camera-group frontend evidence.
+
+This closes only the camera core construction increment. Saved/generated camera
+group configuration, physical alias resolution, revision-owned host inventory,
+reattachment and image IPC, shared controls and native NINA orchestration remain
+required. Discovery/transfer, actual OS resume, remaining conformance and
+interactive/physical acceptance, README/site, main reconciliation and final
+review/CI/audit/merge remain unchanged gates. All fixtures are private actors;
+no attached hardware or installed vendor driver is opened. Do not wait for
+intermediate CI before continuing construction.
+
+## Saved camera groups and retained host/image IPC (2026-10-07)
+
+Reviewed the saved-schema, typed alias, identity-history, lifecycle admission,
+owned task, operation retirement and image-transfer paths. Camera groups use the
+same generated configuration editor and typed physical-leaf resolver as focuser
+groups. The common host-phase/binding definitions retain existing focuser wire
+semantics. Separate retired camera-group identities prevent cross-kind reuse;
+old schema-1 files and identity ledgers default to no camera groups.
+
+Admission reserves activity under the runtime lifecycle lock before spawning or
+connecting. The host owns one latest operation per configured group, including
+immutable per-member image pins. Losing a read or unread start acknowledgement
+cannot replay a capture or cancel it. Revision, group and exact operation IDs
+fence status/cancel/image access. A new explicit start retires old access while
+already admitted readers retain their pins and shared memory accounting. Status
+opens no source. Failed connection status identifies the physical member without
+starting any exposure. Independent core activity protects configuration retirement
+if the outer monitor fails. Shutdown now cancels both coordinators concurrently
+before awaiting them; camera cancellation follows the saved explicit policy and
+awaits admitted mutation acknowledgements.
+
+Group image streams reuse ordinary camera buffer/export/reader validation through
+generic typed request/manifest selection. The ordinary image request and wire
+shape remain unchanged. Group requests need no departed client's connection ID,
+but check all seven host/revision/group/operation/source/generation/acquisition
+identities before accepting pixels. They retrieve a retained image without a new
+exposure, source read or download. A completed image remains valid historical data
+after source transport retirement; it is not fresh evidence of live camera state.
+The focused follow-up waits for asynchronous lease cleanup and verifies that
+generations have changed before successfully exporting those exact old images.
+Image ownership stays bounded by the existing shared budget and latest-operation
+inventory; no extra retained pixel pool is introduced.
+
+The generated optional root key is admitted by the shared cold file-identity
+reader while wrong types/unknown keys remain rejected. Rust and managed clients
+classify group start/cancel as mutations and status as a read. Managed lost-reply
+tests preserve uncertainty for the first two and disconnected status for the
+third; no client retries are added. Shared camera draft tests cover immutable IDs,
+source references, policy edits, capability gating and generated timeout defaults.
+
+Local evidence:
+
+- Full Rust hub/Alpaca regression passes in
+  `artifacts/hub-camera-saved-full-rust.log`, including **71 acquisition cases**
+  (seven new saved-group/host/image cases) and **20 configuration cases**.
+- The focused retirement/image follow-up passes all eight matched cases in
+  `artifacts/hub-camera-saved-retired-image.log`, including the existing core
+  host-skew case and all seven new host cases. Source cleanup observations wait
+  for zero retained work and zero leases rather than assuming synchronous Drop.
+- Strict all-target Clippy and Rust 1.89 all-target checking pass in
+  `hub-camera-saved-clippy.log` and `hub-camera-saved-msrv.log`.
+- Independent JSON Schema validation passes **12 cases**, and browser contract,
+  defaults, references, capability and existing frontend checks pass. The generated
+  contract is refreshed from Rust. The paired-cameras example is explicit simulation.
+- Full NINA regression passes **342 cases with one explicit registered-COM-fixture
+  skip** in `artifacts/hub-camera-saved-managed-full.log`; the TRX is retained in
+  `artifacts/hub-camera-saved-regression.trx`. The five new managed cases cover
+  shared configuration/cold identity reading and lost-reply mutation classification.
+- Real **net48 x86/x64** private suites pass with warnings denied in
+  `artifacts/hub-camera-saved-net48.log`, including ordinary camera image codecs,
+  protected streams, shared acquisition and the prior calibrated-group fixtures.
+  These are compatibility checks; they do not claim new managed camera-group
+  controls or sequence orchestration. Formatting, diff and contract freshness pass.
+
+The first connection-failure fixture observed for ten virtual seconds against a
+default longer timeout and did not finish. Its initial 0.1-second configuration
+was then correctly rejected by the existing one-second minimum. The final fixture
+uses a valid one-second timeout, proves failure/member identity and passes. Both
+initial failure logs are retained; production timing limits are unchanged.
+
+Shared camera operation controls, managed image access and native NINA coordinated
+capture/image-save orchestration remain construction work. This increment does
+not close camera coordination or installed-client/physical acceptance. Discovery
+and transfer, OS resume, conformance reconciliation, README/site, main
+reconciliation and final review/CI/audit/merge remain required. All fixtures use
+private actors or explicit simulation, with no attached hardware/vendor driver.
+Continue construction without waiting for intermediate CI; keep the single PR draft.
+
+## Shared managed camera groups and retained images (2026-10-07)
+
+Reviewed managed operation admission, generated-schema/semantic reply validation,
+unknown-start fencing, revision/operation/source/image identities, monotonic
+publication, protected image attachment, budget cleanup, native window lifetime
+and the shared focuser helpers. Shared typed alias traversal, unknown-outcome
+classification and terminal immutability serve both coordination classes.
+Status/cancel never silently starts another operation. Unknown start outcomes
+remain fenced on the same client after status reads; only explicit reattachment
+can admit a subsequent deliberate start. Closing native setup does not cancel a
+capture, and reopening inspects the exact retained operation without output leases.
+
+The common ImageBytes reader now selects an immutable ordinary or group request
+identity. Ordinary wire fields are unchanged. Group requests check host, revision,
+group, operation, physical source, generation and acquisition before accepting
+pixels. Image pin/storage/conversion/budget behavior is shared, including
+contention between ordinary and group readers. The higher-level group client also
+checks descriptor geometry against its validated retained member identity and
+disposes a mismatched returned image. No new pool, implicit exposure, upstream
+redownload or SDK retry claim is introduced. The unpublished 0.6 managed image API
+uses a common request base with concrete ordinary/group identities.
+
+The themed shared native Camera groups tab accepts separate exposure duration and
+Light flag per saved member, shows both saved policies and timeout, requires a
+status read before start, cancels only the displayed operation, and reports
+individual results/image pins plus host request spread. The rendered actual WPF
+capture was inspected and is checked in as
+`docs/images/hub-camera-group-results-simulation.png`. It explicitly labels
+simulation. Reopened inputs describe the next capture; retained results describe
+the admitted requests. The screenshot is not installed-NINA or hardware evidence.
+
+Review refinements:
+
+- A pending abort can fail after the member image completes. Preserve that later
+  abort diagnostic while requiring the completed image identity/metadata to stay
+  frozen; do not freeze the whole running member record prematurely. A private
+  reply test covers the allowed race.
+- General JSON numeric equality uses Double telemetry semantics. Terminal outer
+  and inner UInt64 sequences also need exact comparisons beyond 2^53; the common
+  camera/focuser terminal check now enforces them. Two managed cases and both real
+  net48 architecture fixtures cover adjacent large sequences.
+- New operation admission retires prior image access on that client; a separate
+  already admitted image reader retains its immutable historical pin. Reading
+  images after group source leases drain performs no equipment I/O.
+
+Local evidence:
+
+- Full NINA regression passes **420 cases**, with **one explicit registered-COM
+  fixture skip**, in `artifacts/hub-camera-managed-final-full.log`. This is 78
+  new cases since the saved camera-host checkpoint: generated/semantic reply
+  corruption, lost-start fences, immutable images/terminal sequences, exact
+  transfer and geometry rejection/cleanup, real-host reattachment and both
+  cancellation policies, WPF reopen/results, and group codec fault cases.
+- All private **net48 x86/x64** suites pass with warnings denied in
+  `artifacts/hub-camera-managed-net48.log`, including new camera-group reattachment,
+  exact separate image rereads, pins/budget, aliases and zero output leases.
+  Ordinary Camera/ASCOM and calibrated focuser compatibility remain green.
+- The final focused net48 codec/group follow-up passes both architectures in
+  `artifacts/hub-camera-managed-final-net48.log`; its exact invocation is retained
+  in `artifacts/hub-camera-managed-final-net48.ps1`. It rebuilds both architectures
+  and verifies ordinary/group codecs and retained focuser/camera groups, including
+  exact terminal-sequence comparison. Only the focused checks were repeated after
+  that review refinement.
+- Final focused managed render/geometry/cross-kind budget checks pass five cases
+  in `artifacts/hub-camera-managed-final-focused.log`. The final full regression
+  includes all of them plus the sequence refinement.
+- `git diff --check` passes. No Rust/config-schema/browser contract changed;
+  their full validation evidence remains the preceding saved-host increment,
+  rather than being represented as newly rerun here.
+
+The first focused build correctly rejected an xUnit synchronous assertion around
+an async-returning method; it now awaits ThrowsAsync. The next run passed 105
+cases but exposed 24 fault fixtures attempting GetValue<Guid> on a newly created
+JsonValue<string> before reaching the client. Guid.Parse fixes the fixture and
+all 33 initial reply cases then pass. Failure logs remain in
+`hub-camera-managed-focused.log` and `hub-camera-managed-focused-2.log`; no product
+assertion, deadline or error semantics were weakened.
+
+This completes shared native operation controls and managed retained-image access,
+not native NINA coordinated capture/save. That next increment must preserve
+per-member image metadata and numeric integrity, report partial save/capture
+results, honor explicit cancellation policies, and retain failed/interrupted-step
+reconciliation through cloning/saved sequences without replay. Discovery/transfer,
+actual OS resume, conformance reconciliation, interactive NINA/UAC/Chooser/signing,
+physical acceptance, camera-recovery metadata migration, README/site, main
+reconciliation and final review/CI/audit/merge stay open. All equipment-facing
+fixtures are private peers or explicit simulations; no attached hardware or
+installed vendor driver is opened. Continue construction without intermediate CI
+waiting; keep the single PR draft.
+
+## 2026-10-07 — Native NINA camera-group capture and exact image saving
+
+Implemented `CaptureHubCameraGroup` as an exported advanced-sequencer instruction,
+with saved per-camera duration/Light settings and an optional absolute directory.
+It freezes requests, profile conversion preference and individual FileSaveInfo
+instances before awaiting attachment. Saved membership is checked before dispatch;
+write access is probed before exposure. Group and focuser instructions share the
+bounded configuration loader and themed saved-group picker.
+
+Scalar image consumers opt in through `requireScalarImage`. The existing owned
+preflight reservation reads/rechecks MaxADU, sensor type, Bayer offsets and optional
+sensor name. Only supported monochrome/RGGB scalar layouts proceed. Ordinary
+requests omit the false flag and incur no new metadata reads. The host retains
+profiles in immutable member results; managed validation rejects missing, invalid
+or subsequently changed profiles. Geometry, acquisition admission, activity,
+source control, dispatch and cleanup remain on the ordinary supervisor path.
+
+The NINA adapter shares ordinary metadata construction, protected image pins,
+lossless integer conversion and budget accounting. It uses completed authoritative
+exposure metadata, never a later live source format or a fabricated timestamp.
+NINA's real image factory/file writer saves separate files using the frozen profile
+format/compression. A per-operation directory and physical source/acquisition IDs
+prevent aliases or labels from retargeting files. Distinct settings avoid NINA's
+mutable FilePath leaking from one member to another. FITS headers identify group,
+operation, acquisition and source generation.
+
+All healthy completed members are attempted even through sibling capture or save
+failure. Success requires all captures/saves. Partial/unknown/interrupted work keeps
+the step fenced through clone and NINA's real SequenceItemCreationConverter. No
+automatic retry replays a Start. Known-operation cancellation uses the saved policy;
+an unknown acknowledgement cannot guess an abort target. Cancellation after capture
+leaves terminal status and existing files intact. Explicitly clearing the sequence
+fence does not clear ordinary source ownership or recover a failed camera.
+
+Review corrections and retained initial evidence:
+
+- Real SaveToDisk initially failed because NINA.Plugin omits NOVAS31lib.dll while
+  NINA's filename formatter always calculates MJD. Added the exact upstream x64
+  dependency under tests/fixtures/nina only, with pinned provenance, SHA-256 and
+  the complete USNO README/license statement. No installed paths, downloads during
+  tests, astronomy stub, obsolete save API or production payload change is used.
+  A subsequent NullReference was a fixture's missing CreateAnalysis result;
+  supplying an ordinary mock analysis fixes the fixture. Both real FITS cases pass
+  in `artifacts/hub-camera-profile-fits-2.log`.
+- Sequence tests first assumed alias IDs were physical filenames. Corrected that
+  assertion to preserve the host's physical binding. A simulated upstream image
+  failure retains ordinary acquisition control; its attempted fault reset correctly
+  returns Busy. The fixture now verifies that ownership instead of bypassing it.
+  Logs: `hub-camera-sequence-focused-2.log` and `hub-camera-sequence-review.log`.
+- NINA's loader populates exported instances, so Members explicitly uses collection
+  replacement to avoid appending duplicate cameras to a prepopulated instance.
+  Tests exercise the actual NINA converter/factory route and a deep cloned list.
+- The initial full regression passes 438 cases plus the explicit registered-COM skip,
+  but its command exits unsuccessfully on xUnit2031. Replaced Where+Assert.Single
+  with the analyzer-approved predicate overload. Later warning-denied builds and
+  focused suites pass; preserve `hub-camera-sequence-full-nina.log` as failed-build
+  evidence rather than calling that command green.
+- Save errors no longer promise a pin remains available after another client may
+  have replaced the latest operation. They direct inspection of that exact image.
+
+Validation:
+
+- Full hub/Alpaca Rust regression passes in
+  `artifacts/hub-camera-profile-full-rust.log`; all 75 acquisition cases pass in
+  `hub-camera-profile-acquisition.log`. Four added cases cover immutable mono/RGGB
+  metadata, malformed/unsupported profiles, pre-dispatch format changes, optional
+  SensorName and no starts/activity leaks after rejected preflight.
+- Strict all-target Clippy passes (`hub-camera-profile-clippy.log`); Rust 1.89
+  all-target check passes (`hub-camera-profile-msrv.log`). Contract freshness,
+  twelve independent schema cases, Node/browser checks, formatting and diff checks
+  pass. The ordinary executable was rebuilt after Rust tests and before managed
+  hosts, never while private hosts held it.
+- Final warning-denied managed follow-up passes 22 cases in
+  `artifacts/hub-camera-sequence-final-reviewed.log`, including real FITS writes,
+  the full sequence through NINA's writer, missing authoritative metadata with a
+  healthy sibling save, both cancellation policies, cancellation during saving,
+  lost Start replies, changed membership/format, partial capture/save, immutable
+  profiles, deep clone, actual saved-sequence loader and focuser compatibility.
+- The full real net48 x86/x64 suites pass in
+  `artifacts/hub-camera-sequence-net48.log`. Both architectures now opt into and
+  verify frozen scalar profiles while retaining existing images, aliases, reader
+  budgets, ordinary ASCOM/camera/focuser compatibility and zero output leases.
+- Final full NINA execution passes 440 cases with one explicit registered-COM
+  fixture skip (441 total), exit code zero, in
+  `artifacts/hub-camera-sequence-final-full-nina.log`. It uses the final
+  warning-denied build from the reviewed focused run; no intermediate CI wait.
+
+Construction for both coordination classes is implemented locally. Installed NINA
+and physical trials remain acceptance gates, as do discovery/config transfer,
+actual OS resume, remaining conformance/interactive/signing/upgrade acceptance,
+camera recovery metadata, README/site, main reconciliation and the original final
+review/CI/audit/merge. All equipment-facing work uses private peers or explicit
+simulation. No attached hardware or installed vendor driver is opened. Keep the
+single PR draft and continue construction without waiting for intermediate CI.
+
+
+## 2026-10-07 — Explicit Alpaca catalog discovery through shared setup
+
+Implemented the first discovery slice in the existing hub crate and host. An
+explicit HTTP(S) server selection reads only its management configured-devices
+catalog. The ordinary Alpaca URL validation, HTTP client, authorization handling,
+status/error mapping and bounded body reader are shared. No redirects, proxy
+lookup or retries are introduced. Queries have a five-second network deadline,
+a 1 MiB response bound, 256-device limit and four-query host admission limit.
+A source is never created, connected or sampled by this operation.
+
+The catalog preserves upstream ASCII string IDs, including non-UUID values,
+sparse UInt32 numbers, Unicode names and unsupported classes. Typed decoding of
+the original response rejects duplicate identity fields before Value conversion
+could erase them. Repeated class/number pairs and repeated IDs are rejected;
+recognized UUID forms are normalized for duplicate detection. Malformed values,
+upstream errors, mismatched transaction IDs and oversized/chunked bodies fail
+without returning vendor error text or credentials.
+
+Private IPC, both clients and the existing protected setup POST endpoint expose
+the operation. Rust-generated metadata supplies descriptions, deadlines, bounds,
+class choices and response schema to the native NINA/ASCOM editor and web page.
+Managed/browser clients validate revision, selected endpoint, identity uniqueness,
+class support and response shape. Successful reads retain the reviewed draft;
+reload clears the retained catalog. Stale or malformed replies cannot authorize
+another query without explicit reload. Results do not create or adopt sources.
+
+Review refinements and initial evidence:
+
+- The initial concurrency test admitted fewer than four anonymous queries because
+  credential resolution unnecessarily moved their configuration gate into a
+  blocking task. Anonymous requests now release that gate before yielding. The
+  four held requests fill capacity, reject a fifth without HTTP, allow a saved
+  configuration update, and all reject their stale results after release. The
+  initial failure remains in `artifacts/hub-alpaca-discovery-tests.log`; all four
+  initial cases then pass in `hub-alpaca-discovery-tests-2.log`.
+- Credential resolution retains its transaction guard through blocking protected
+  storage work, then releases it before HTTP. The authenticated private-store case
+  verifies the header reaches only the selected server and missing references
+  perform no HTTP. Neither results nor sanitized errors contain fixture secrets.
+- The managed operation allowlist is updated alongside host advertisement and
+  Rust client mapping. Actual private-host tests exercise negotiation and dispatch
+  rather than relying on injected reply tests alone.
+- Independent validation initially used the system Python without jsonschema;
+  its import failure remains in `hub-alpaca-discovery-schema.log`. The existing
+  isolated schema environment runs the actual 13-case suite successfully.
+
+Validation:
+
+- `cargo test -j2 --locked -p regain-hub -p regain-alpaca` passes in
+  `artifacts/hub-alpaca-discovery-full-rust.log`, including the ordinary transport
+  regression and the actual setup HTTP/private-IPC/management integration. The
+  latter verifies forbidden-origin rejection, preserved catalog/output IDs and
+  zero source/output leases. The initial four discovery cases are in this run.
+- Final `cargo test -j2 --locked -p regain-hub --test discovery` passes all six
+  cases in `hub-alpaca-discovery-final-tests.log`, adding protected credential
+  resolution and an actual stalled-response timeout with exactly one request.
+- Strict all-target Clippy passes in `hub-alpaca-discovery-clippy.log`; Rust 1.89
+  all-target check passes in `hub-alpaca-discovery-msrv.log`. Generated-contract
+  freshness passes in `hub-alpaca-discovery-freshness.log`.
+- All 13 independent schema cases pass in `hub-alpaca-discovery-schema-2.log`.
+  Node configuration/browser contract checks pass in `hub-alpaca-discovery-node.log`,
+  including string IDs, unsupported classes, endpoint/revision fences, malformed
+  replies, GUID aliases, capacity admission and no replay. Both modules pass syntax
+  checking. Native/browser semantics consume the same generated contract.
+- Full warning-denied NINA execution passes 453 cases with one explicit
+  registered-COM-fixture skip in `hub-alpaca-discovery-full-nina.log`. Thirteen new
+  cases include actual private IPC, eleven reply/transport faults and a rendered
+  WPF query. The focused eleven fault cases also pass in
+  `hub-alpaca-discovery-managed-faults.log`.
+- Full real net48 x86/x64 suites pass in `hub-alpaca-discovery-net48.log`. The same
+  catalog fixture runs before any equipment leases in both architectures, checking
+  invalid URL rejection, management-only requests, string IDs, unsupported classes,
+  preserved review/configuration and zero source connections. Ordinary image,
+  ASCOM, camera and coordination checks remain green.
+- The actual native render was inspected and is checked in as
+  `docs/images/hub-native-discovery-simulation.png`, with setup instructions.
+  All peers and displayed devices are explicitly private simulations.
+
+This increment does not complete discovery/configuration transfer. Network
+Alpaca discovery, native/COM enumeration, identity-pinned catalog adoption and
+configuration import/export remain construction work. Preserve actual OS resume,
+conformance/interactive/signing/upgrade/physical acceptance, camera recovery
+metadata, README/site, main reconciliation and every original final review/CI/
+audit/merge gate. No attached hardware or installed vendor driver was opened;
+no intermediate CI was awaited. Keep the single PR draft.
+
+## 2026-10-07 — Identity-pinned Alpaca catalog adoption
+
+Shared native/web setup can add a supported catalog selection to the draft using
+generated source/backend defaults. The copied address, class, UInt32 number,
+upstream ID and credential reference belong to the successful query, not later
+text-field edits. Adoption performs no network request, persistence, output
+creation or equipment connection. Unsupported/stale selections, capacity limits,
+missing capabilities and duplicate addresses/identity aliases preserve the whole
+candidate. A successful edit revokes review and still requires ordinary apply.
+
+Optional source `uniqueId` pins are backward compatible. Existing ledger source
+identity strings are unchanged; a separate retained pin map permits strengthening
+an unpinned source and rejects pin removal/replacement, history forgery and reuse
+after retirement. UUID forms compare canonically across server aliases, while
+opaque strings remain exact. Generated schema now also states the complete
+UInt32 device-number range explicitly.
+
+Pinned adapters share setup's bounded management decoder, the ordinary source
+HTTP client, authorization and transaction counter. Every device request checks
+the catalog first, including metadata, connection changes, reads, writes, images
+and owned cleanup. Missing/moved/replaced identities, malformed/ambiguous catalogs,
+HTTP failure and a stalled response send no device request. Replacement during
+an established session blocks all subsequent operations; failed owned disconnect
+retains ownership/uncertainty through reset. No retry, automatic renumbering or
+unpinned fallback was introduced. Legacy unpinned transport regression passes.
+
+Review refinements and limits:
+
+- Management verification and device I/O are separate HTTP requests. An upstream
+  remap between them cannot be excluded; documentation explicitly avoids an
+  atomic-identity guarantee. Both requests consume the actor's finite logical
+  budget, and management uses the source's scalar timeout.
+- .NET's broad Guid parser initially treated opaque whitespace/X/unsupported
+  wrapper strings as UUIDs. A shared managed helper and browser helper now match
+  the Rust core's actual accepted forms. Behavioral cases in all three languages
+  cover recognized aliases and preserved opaque strings.
+- First focused Rust builds exposed test-only image API/Debug assumptions; the
+  corrected test checks exact Int32 bytes and typed failure kinds. Both compiler
+  logs remain in `hub-alpaca-adoption-core-tests*.log`.
+- Initial browser/managed tests assumed a managed-connection/default integer
+  representation instead of the generated externally-managed policy and 30.0
+  seconds. Corrected assertions check the actual shared defaults; production
+  defaults were not changed. Initial logs remain in
+  `hub-alpaca-adoption-node.log` and `hub-alpaca-adoption-managed-draft-tests.log`.
+- Strict Clippy found a collapsible configuration-validation branch. The equivalent
+  let-chain passes final checks without suppressing the warning. The initial
+  diagnostic remains in `hub-alpaca-adoption-clippy.log`.
+- The first rendered capture scrolled away its explanatory text. The native test
+  now captures a taller real WPF window; the complete inspected render replaces
+  `docs/images/hub-native-discovery-simulation.png`. All peers remain private and
+  explicitly simulated.
+
+Validation:
+
+- Full `cargo test -j2 --locked -p regain-hub -p regain-alpaca` passes in
+  `artifacts/hub-alpaca-adoption-full-rust.log`. Focused final configuration and
+  pin regression passes 22 and six cases in `hub-alpaca-adoption-final-core.log`;
+  the expanded core UUID/opaque-ID cases pass in
+  `hub-alpaca-adoption-final-pin-forms.log`.
+- Final strict all-target Clippy and Rust 1.89 checks pass in
+  `hub-alpaca-adoption-clippy-complete.log` and
+  `hub-alpaca-adoption-msrv-complete.log`. Generated-contract freshness passes in
+  `hub-alpaca-adoption-freshness.log`; all 14 independent schema cases pass in
+  `hub-alpaca-adoption-schema-final.log`. Node configuration/browser contracts
+  pass in `hub-alpaca-adoption-node-final.log`, including frozen credentials,
+  generated defaults, atomic adoption and opaque IDs. Modules pass syntax checks.
+- Full warning-denied NINA passes 466 cases plus one explicit registered-COM
+  fixture skip in `hub-alpaca-adoption-full-nina.log`. Actual private IPC exercises
+  adoption, host review/apply, persisted pins and zero new connections. Thirteen
+  new managed adoption cases cover faults/defaults and UUID/opaque-ID behavior.
+  The final native window test passes in `hub-alpaca-adoption-native-final.log`,
+  verifying selection, unsupported classes, draft fields and unchanged saved
+  configuration/zero leases.
+- Full real net48 x86/x64 compatibility execution passes in
+  `hub-alpaca-adoption-net48.log`, including the shared catalog adoption fixture,
+  inert host review/apply, saved identity pins, zero source connections and
+  existing camera/group/ASCOM compatibility checks in both architectures.
+
+This finishes catalog adoption construction, not all discovery/transfer.
+Network/native/COM enumeration and configuration import/export remain, followed
+by actual OS resume, camera recovery metadata, conformance/interactive/signing/
+upgrade/physical acceptance, README/site, main reconciliation and original final
+review/CI/audit/merge gates. No attached hardware or installed vendor driver was
+opened. No intermediate CI was awaited; keep the single PR draft.
+
+## 2026-10-09 — COM weather regression and actual installed NINA
+
+Integrated main through `21fdb0d` in merge `1cc526d`; the camera FITS model-name
+fix stays on both main and maintenance. Published signed maintenance release
+`v0.5.12.0` from `23b9a41` (PR #28), including that fix and static-CRT deployment.
+Release run 37945765627 passes, including signature verification and actual
+installer install/removal. Downloaded all ten assets; the plugin/ASCOM/camera-kit
+ZIPs and installer match their recorded checksums. Regain DLLs/executables and
+the installer have valid signatures; the unchanged vendor SDK has its existing
+unsigned status. Registry publication run 37948121042 passes and writes
+`e983781` in the shared NINA registry. Clean-tag workspace publication dry run
+and upload pass for all nine 0.5.12 crates. No Hub package was published.
+
+Reproduced both Windows failures from run 37731689797: incremental weather
+discarded expected sensor errors, and the stalled-COM safety test never reached
+healthy weather. Both came from the importer rejecting the canonical SensorName
+now emitted by PropertyPoll. Accept only case-insensitive matches against the
+existing canonical property list, then dispatch that canonical spelling. Empty
+means all sensors. The new worker test fails 52 subcases before the correction,
+and also proves malformed/unknown names cannot dispatch arbitrary methods.
+No source deadline, safety evidence lifetime or assertion changed.
+
+Fresh `scripts/test-hub-com.ps1` passes 35 actual worker tests (both bitnesses),
+26 registered-COM parent cases and eight NINA camera-import cases. The before/
+after logs are `artifacts/hub-com-resume-before.log` and
+`artifacts/hub-com-resume-after.log`; the focused red test is
+`artifacts/hub-weather-caseless-before.log`. Fresh Rust host/device and warning-
+denied managed NINA builds pass. All other jobs in the original CI run passed;
+final-head CI is still a merge gate, not an intermediate waiting step.
+
+Actual NINA 3.2.0.9001 then loaded the installed development plugin. Three native
+Hub outputs used a local-only production host with explicit private COM fixtures:
+x64 weather/Switch and x86 safety. The UI shows healthy weather, isolated humidity
+failure, unsafe on a stalled IsSafe call and safe again on fresh recovery.
+ASCOM weather also connects through NINA after explicitly starting its bound
+server, with the same healthy values and isolated sensor failure. One weather
+worker PID survives the frontend handoff while native Switch/safety remain
+connected. A stale Switch temperature gauge correctly returns unavailable; its
+3.1-second configured bound is below the fixture's 3.5-second sensor age.
+
+The private per-user SCM launch failed with REGDB_E_CLASSNOTREG, including after
+removing its machine-only RunAs value. A fresh private `--scm` fixture also fails
+at metadata activation (`hub-com-scm-after.log`). Production cold activation uses
+machine registration; test.ps1 already restricts that check to disposable
+Windows CI. Manual bound-server activation does not prove production machine
+registration, signing, upgrade or UAC acceptance. No writable
+Switch, physical input, remaining device class/group or no-ASCOM-Platform test
+is claimed. See [the acceptance record](hub-acceptance.md) for screenshots and
+exact scope. Local artifacts retain the original activation error and NINA log.
+
+NINA closed normally. Private input/output COM registrations, the three owned
+machine Chooser entries, temporary bindings, host and worker/server processes
+were cleaned up. Temporary files were retained under the test artifact folder.
+The signed stable 0.5.12.0 plugin is installed with package-identical hashes;
+camera/recovery settings and unrelated plugins were preserved. Corrected stale
+construction claims in the contract/setup and updated acceptance boundaries.
+Review found no further production change needed in this increment. Continue
+installed activation/lifecycle acceptance and the original final gates on PR #21.
+
+## Maintenance reconciliation and physical acceptance, 2026-10-09
+
+Merged current main through `351c751`, preserving the Hub's 0.6 version and
+pinning internal workspace dependencies exactly to `=0.6.0`. This includes the
+reviewed standalone NINA/ASCOM retry DriverInfo changes from main. No capture
+retry budget or Hub acquisition semantics changed in this acceptance increment.
+
+CI at `36739be` failed the saved camera cancellation-policy test because its
+two-second exposures could complete before a busy runner delivered cancellation.
+The fixture now holds both exposures with the existing explicit
+`stalledExposure` fault. It still checks both policies, cancellation, retained
+state and no replay; production timing, assertions and timeouts are unchanged.
+Both focused cases and the full NINA suite pass: 532 tests, one explicit
+registered-COM skip. The warning-denied NINA/helper builds and 849 Rust
+core/Hub/Alpaca tests also pass. Run `37983930950` tests code at `7e6d2bb`;
+its full Windows lifecycle result is pending at this documentation checkpoint.
+
+The [physical mixed-source acceptance](hub-acceptance.md#physical-camera-with-com-and-network-sources-2026-10-09)
+uses actual installed NINA with direct USB ASI585MM Pro, private COM weather and
+loopback Alpaca safety. It verifies full-image FITS/ImageBytes parity, model and
+UUID headers, both frontend disconnect directions, competing-command rejection,
+JSON/ImageBytes parity, humidity isolation and safe/unsafe/fresh recovery on
+network publisher loss. Geometry and cooling state are preserved; the attached
+ASI662MC is not opened. No physical recovery, multiple-device coordination,
+physical LAN or ASCOM-free OS result is inferred from those observations.
+
+Reviewed the acquisition/conflict replies and retained source generations against
+the configuration and trace. Corrected harness assumptions about FITS/ASCOM array
+order and the direct driver's minimum ROI rather than changing product behavior.
+NINA, owned helpers and fixture registrations were retired. The signed stable
+0.5.13.0 plugin replaces the development build with package-identical hashes;
+the development files and old stable backup are retained outside NINA.
+
+The maintenance release is public on GitHub, both registry URLs and crates.io.
+The Hub remains a 0.6 draft. Remaining environment, standards, lifecycle and
+final review gates in the acceptance matrix remain required.
+
+## Conformance corrections and signed installer candidate, 2026-10-09
+
+Preserved stock ConformU 4.5 results and added a separately labelled, pinned
+review build. The proposed GPL-3.0 test-tool corrections respect focuser
+MaxIncrement/Move InvalidValue semantics and sparse camera bins. Both x86/x64
+full interface runs for the focuser and native SDK camera simulation pass with
+zero findings in the reviewed tool. A fresh stock eight-class x64 run retains
+four focuser findings; seven other classes pass, including panel DeviceState
+at 14 ms. These results do not claim upstream acceptance of the corrections.
+
+Extended cold timing diagnostics with reversed measurement order, x86 selection,
+CPU/GC observations and explicit state-value failure details. Retained a failed
+40-process run rather than retrying it into a pass. Inspection found a cache /
+clock ordering race, reproduced deterministically and fixed in `262d1bb` for
+all five typed classes and virtual inputs. Real invalid sample ages remain
+rejected. This does not establish the cause of the original 139 ms observation.
+
+CI `38007699037` found a NINA COM test trace being read while its sibling source
+lease could still append polling calls. The fixture now disconnects both leases
+before reading the completed trace; production behavior and assertions are
+unchanged. Fresh local validation passes 791 Hub/Alpaca Rust tests, 35 COM fixtures and
+all eight NINA camera imports. The Hub library passes warnings-denied Clippy.
+A broad initial compile hit Windows paging-file exhaustion; two compile jobs
+completed successfully without source or system-setting workarounds.
+
+Added an explicit branch-candidate release mode with checked remote ancestry,
+no stable tag/feed publication, retained signing and installer lifecycle checks.
+Raised the release job limit to 60 minutes; candidate signing uses branch CI
+rather than duplicating its full regression. Stable releases retain that full
+regression. Candidate `38008785600` at `4504d73` passes its entire signed job,
+including all eight installed classes, both bitnesses, upgrades, uninstall and
+two-install ownership isolation. Its downloaded installer has a valid
+StackFoundry LLC signature and SHA256
+`8EA551F1E7AD216690448E82F349C141F136B24A44C4B7920DE4A314B2D4809F`.
+The local UAC launch was canceled before installation; it is not an installer
+failure or a local acceptance pass. A replacement candidate at `262d1bb`
+includes the later cache fix. No stable 0.6 package or registry entry is published.
+
+
+The rebuilt panel passes stock ConformU in x64 (29 ms DeviceState) and x86
+(23 ms), with zero findings. Longer diagnostics exposed an independent startup
+precondition in the timing harness: Connected does not mean the first cache poll
+has finished. Retained failures include the empty first collection and the
+immediately completed healthy first poll. The harness now waits on source
+telemetry, without warming DeviceState, and preserves strict value assertions,
+source-error/generation checks and bounded readiness. See the conformance record.
+
+
+The readiness-corrected diagnostic passes 100 fresh x64 clients and six fresh
+x86 clients, with first facade reads below 31 ms and strict state-value/cleanup
+checks. Final stock panel passes remain separate from this diagnostic result.
+Candidate `38010328546` at `262d1bb` is downloaded and signature-verified as
+StackFoundry LLC, SHA256
+`9FF016B9F2DFD452A9C2DEC916D868D38DBD2CC4D6703E660AF7DB315EDCF53D`.
+Its signed installer installation/upgrade/uninstall and registry-publication
+fixture checks pass. The signing job is finalizing the separate camera kit;
+branch CI 38010332483 has seven green jobs and Windows regression still running
+at this checkpoint. Local UAC/Chooser acceptance remains open.
+
+## Main merge reconciliation (2026-10-09)
+
+The user requested merging Hub into main while keeping the next 0.5 patch on
+its separate maintenance train. Main now includes the 0.5.14 cooling/telemetry
+fixes and configurable direct USB read sizing. Conflicts retain Hub's generated
+recovery metadata and shared native/web forms. The read-size key, defaults,
+power-of-two choices and validation are declared in recovery.rs and exported
+to the Hub schema, standalone contract and managed options. Cooling resume
+updates real observation timestamps; simulation preserves the Hub telemetry
+sample format. Cached observations are cleared on worker replacement while the
+new cooling seed is also reset. Both get-observation and resume-cooling remain
+available. Historical environment gaps and acceptance limitations above remain
+open; this merge does not declare ASCOM-free Windows, physical LAN, sleep/wake
+or multi-device recovery validated, and does not release the 0.6 Hub.
+
+Reconciliation validation passes 296 Rust library tests across core, ZWO, Hub
+and Alpaca; four recovery compatibility tests; both browser contract suites;
+533 NINA tests (one existing skip); 13 focused managed recovery tests; x86/x64
+net48 recovery metadata fixtures; and the native ASCOM build. Formatting and
+all-target Clippy for the four changed Rust crates pass with warnings denied.
+The earlier full managed core run passed 102 cases; its sole field-count
+expectation was updated and passes in the focused rerun.

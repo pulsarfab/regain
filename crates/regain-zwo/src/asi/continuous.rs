@@ -1067,7 +1067,15 @@ mod tests {
                     .is_err()
             );
         }
-        for method in ["list", "get", "set", "start", "download", "white-balance"] {
+        for method in [
+            "list",
+            "get",
+            "get-observation",
+            "set",
+            "start",
+            "download",
+            "white-balance",
+        ] {
             assert!(s.command(method, Value::Null, &mut forbidden).is_err());
         }
         assert!(

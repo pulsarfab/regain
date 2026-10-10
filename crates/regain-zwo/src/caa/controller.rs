@@ -202,7 +202,17 @@ impl<T: Transport> Controller<T> {
                             segmented: false,
                         });
                     }
-                    "sync" => self.camera.sync(degrees()?)?,
+                    "sync" => {
+                        let angle = degrees()?;
+                        self.camera.sync(angle)?;
+                        self.target_logical = angle.rem_euclid(360.0);
+                    }
+                    "restore-reference" => {
+                        self.camera.restore_logical_offset(
+                            v["offset"].as_f64().context("offset required")?,
+                        )?;
+                        self.target_logical = self.camera.status()?.logical_degrees;
+                    }
                     "reference" => {
                         self.camera.set_mechanical_reference(degrees()?)?;
                         eprintln!("CAA mechanical reference changed explicitly");

@@ -279,6 +279,15 @@ impl<T: Transport> Rotator<T> {
                 self.offset = d - s.mechanical_degrees;
                 self.target = d;
             }
+            "restore-reference" => {
+                let offset = v["offset"]
+                    .as_f64()
+                    .filter(|offset| offset.is_finite() && (0.0..360.0).contains(offset))
+                    .context("Invalid saved logical offset")?;
+                let state = self.idle()?;
+                self.offset = offset;
+                self.target = (state.mechanical_degrees + offset).rem_euclid(360.0);
+            }
             "reference" => self.reference(degrees()?)?,
             "reset-origin" => self.reference(0.)?,
             "reverse" => {

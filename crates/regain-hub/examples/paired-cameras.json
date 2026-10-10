@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 1,
+  "revision": "00000000-0000-4000-8000-000000000008",
+  "instanceId": "00000000-0000-4000-8000-000000000007",
+  "sources": [
+    {
+      "id": "00000000-0000-4000-8000-000000000001",
+      "label": "Primary camera [SIMULATION]",
+      "backend": {
+        "kind": "simulated",
+        "deviceType": "camera"
+      }
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000002",
+      "label": "Secondary camera [SIMULATION]",
+      "backend": {
+        "kind": "simulated",
+        "deviceType": "camera"
+      }
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000003",
+      "label": "Primary shared alias [SIMULATION]",
+      "backend": {
+        "kind": "virtual",
+        "output": "00000000-0000-4000-8000-000000000004"
+      }
+    }
+  ],
+  "outputs": [
+    {
+      "id": "00000000-0000-4000-8000-000000000004",
+      "number": 0,
+      "label": "Primary camera [SIMULATION]",
+      "device": {
+        "kind": "proxy",
+        "source": "00000000-0000-4000-8000-000000000001",
+        "deviceType": "camera"
+      }
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000005",
+      "number": 1,
+      "label": "Secondary camera [SIMULATION]",
+      "device": {
+        "kind": "proxy",
+        "source": "00000000-0000-4000-8000-000000000002",
+        "deviceType": "camera"
+      }
+    }
+  ],
+  "cameraGroups": [
+    {
+      "id": "00000000-0000-4000-8000-000000000006",
+      "label": "Paired cameras [SIMULATION]",
+      "timeoutSeconds": 30.0,
+      "failurePolicy": "continue",
+      "cancellationPolicy": "abortStarted",
+      "members": [
+        "00000000-0000-4000-8000-000000000003",
+        "00000000-0000-4000-8000-000000000002"
+      ]
+    }
+  ]
+}

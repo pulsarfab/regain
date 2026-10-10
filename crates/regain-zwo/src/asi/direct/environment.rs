@@ -4,6 +4,8 @@
 use crate::asi::direct::transport::Camera;
 use anyhow::{Result, ensure};
 use std::time::Instant;
+mod control;
+pub(super) use control::{CoolingError, CoolingQueue};
 
 const CURRENT: [(f64, f64); 12] = [
     (0.0, 255.0),
@@ -88,6 +90,7 @@ pub struct Environment {
     auxiliary: Option<(i64, i64)>,
     heater: bool,
     output: CoolerOutput,
+    observed_at: [Instant; 4],
 }
 
 fn flags(camera: &Camera, mask: u8, enabled: bool) -> Result<()> {
@@ -138,6 +141,8 @@ impl Environment {
         self.power = power;
         self.integral = integral;
         self.tick = Instant::now();
+        self.observed_at[0] = self.tick;
+        self.observed_at[1] = self.tick;
         crate::asi::direct::diagnostics::log(
             "info",
             "cooling.resumed",
@@ -151,6 +156,7 @@ impl Environment {
     /// Restore actuator state after a handle reconnect without replacing the
     /// saved setpoint, regulator history, or the frame retained in DDR.
     pub fn restore(&mut self, camera: &Camera) -> Result<()> {
+        let observed = Instant::now();
         self.write_power(camera, if self.enabled { self.power } else { 0.0 })?;
         flags(camera, 0x80, !self.enabled)?;
         if self.heater {
@@ -175,6 +181,9 @@ impl Environment {
             );
         }
         self.temperature = Self::read_temperature(camera)?;
+        for index in [0, 1, 3] {
+            self.observed_at[index] = observed;
+        }
         self.tick = Instant::now();
         Ok(())
     }
@@ -184,6 +193,7 @@ impl Environment {
         heater: bool,
         output: CoolerOutput,
     ) -> Result<Self> {
+        let observed = Instant::now();
         let bits = camera.vendor(0xbc, 0x19, 0, 1)?[0];
         // The ASI585 DAC has no traced output readback. Establish zero demand
         // on a fresh connection while preserving the cooler enable bit.
@@ -208,6 +218,7 @@ impl Environment {
             dew: heater && bits & 0x40 != 0,
             heater,
             output,
+            observed_at: [observed; 4],
             temperature,
             power,
             integral: power,
@@ -250,21 +261,28 @@ impl Environment {
             _ => anyhow::bail!("unsupported environment control"),
         })
     }
+    pub fn observed_at(&self) -> [Instant; 4] {
+        self.observed_at
+    }
     pub fn set(&mut self, camera: &Camera, control: u32, value: i64) -> Result<()> {
+        let observed = Instant::now();
         match control {
             16 => {
                 ensure!((-40..=30).contains(&value), "invalid cooler target");
                 self.target = value;
+                self.observed_at[2] = observed;
             }
             17 => {
                 ensure!((0..=1).contains(&value), "invalid cooler enable");
                 if value == 0 || !self.enabled {
                     self.write_power(camera, 0.0)?;
                     self.power = 0.0;
+                    self.observed_at[1] = observed;
                     self.integral = 0.0;
                 }
                 flags(camera, 0x80, value == 0)?;
                 self.enabled = value != 0;
+                self.observed_at[3] = observed;
             }
             21 if self.heater => {
                 ensure!((0..=1).contains(&value), "invalid dew heater enable");
@@ -298,6 +316,7 @@ impl Environment {
             return Ok(());
         }
         self.tick = Instant::now();
+        let observed = self.tick;
         self.temperature = match Self::read_temperature(camera) {
             Ok(t) => t,
             Err(error) => {
@@ -306,11 +325,13 @@ impl Environment {
                 return Err(error);
             }
         };
+        self.observed_at[0] = observed;
         if self.enabled {
             // Limit elapsed time after blocked USB I/O: no accumulated power jump.
             let error = self.temperature - self.target as f64;
             self.power = regulate(self.power, &mut self.integral, error, elapsed);
             self.write_power(camera, self.power)?;
+            self.observed_at[1] = observed;
         }
         Ok(())
     }
@@ -404,6 +425,7 @@ mod tests {
             auxiliary: None,
             heater: false,
             output: CoolerOutput::Dac,
+            observed_at: [Instant::now(); 4],
         };
         assert_eq!(environment.get(8).unwrap(), 215);
         for control in [21, 22, 23] {

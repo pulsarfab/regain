@@ -9,6 +9,12 @@ from [AutoPierCam](https://github.com/theatrus/autopiercam), copyright 2026 Yann
 Ramin, Apache License 2.0. AutoPierCam also informed the package and process
 architecture.
 
+The hub safety policy in `crates/regain-hub` is adapted from the NINA Field Kit
+state-machine design, copyright 2026 Yann Ramin, Apache License 2.0, reference
+commit `8be3d38f0b04fa78d7ae36b460ed10656f259d0f` in
+https://github.com/theatrus/nina-field-kit. The Rust implementation adds shared
+sampling cadence, generation fencing, and configuration invalidation semantics.
+
 The ZWO ASI SDK DLL and header are copyright 2015 ZWO Company and distributed
 under the MIT-style license in `vendor/zwo/LICENSE.txt`, included in packages
 as `licenses/ZWO-ASI-SDK.txt`. ZWO's camera device driver is not included.
@@ -27,6 +33,10 @@ dynamic library. Linux packages use the system libusb installation.
 Rust dependencies retain their original licenses. The build script packages
 their license/copyright texts and the Rust standard-library copyright bundle
 under `licenses/`. Cargo.lock records exact versions.
+Known published-crate omissions use the exact upstream license texts under
+`vendor/rust-licenses/`, pinned to the crate's source commit, original manifest
+and file hashes. Packages include that provenance and a Rust license manifest.
+Missing or changed license evidence still fails packaging.
 
 The OFP2 and FocusCube3 drivers use the unmodified `serialport` Rust crate under MPL-2.0.
 Its corresponding source is available from
@@ -57,3 +67,8 @@ Library Licence 3.1. Kit source scripts are included under `source/`; the native
 Frida extension remains a separate replaceable file in `runtime/`.
 The Python distribution also supplies Microsoft Visual C++ runtime DLLs;
 its bundled license file includes the applicable third-party notices.
+
+The development-only ConformU review patch in `scripts/conformu-review/` modifies
+ASCOM Initiative's GPL-3.0 ConformU 4.5.0 sources and retains that license in its
+own directory. It is a separate external validation tool, not linked into or
+included in Regain's NINA, ASCOM, Alpaca or camera-kit packages.

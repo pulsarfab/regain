@@ -73,6 +73,7 @@ impl Pacer {
     }
 }
 
+#[cfg(test)]
 pub(super) fn wait_until(start: Instant, duration: Duration, cancel: &AtomicBool) -> Result<()> {
     wait_until_servicing(start, duration, cancel, || Ok(()))
 }

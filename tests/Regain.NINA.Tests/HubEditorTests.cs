@@ -1,0 +1,328 @@
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using Regain.Hub;
+using Xunit;
+
+namespace Regain.NINA.Tests;
+
+public sealed partial class HubNativeTests
+{
+    private static Task<HubEditorSession> Editor(Host host) => HubEditorSession.AttachAsync(host.Executable, host.ConfigPath, host.Selection(0, "switch").InstanceId);
+    [Fact]
+    public async Task NativeEditorUsesSharedOptionalWheelMetadataWithoutOpeningEquipment()
+    {
+        await using var host = await Host.Open(); using var editor = await Editor(host); await editor.ReloadAsync();
+        var draft = editor.Draft!;
+        draft.AddItem("/sources"); draft.SelectVariant("/sources/3/backend", "native");
+        draft.SetValue("/sources/3/label", JsonSerializer.SerializeToElement("Private direct wheel metadata"));
+        draft.SetValue("/sources/3/backend/device", draft.ParseScalar(draft.Field("/sources/3/backend/device").Schema, "efw"));
+        draft.SetValue("/sources/3/backend/identity", JsonSerializer.SerializeToElement("0102030405060708"));
+        var source = draft.Field("/sources/3/id").Value!.Value.GetGuid();
+        var path = "/sources/3/backend/filterWheel";
+        draft.AddOptional(path, replaceNull: true);
+        foreach (var (name, offset) in new[] { ("L", 0), ("Hα", -12), ("", 17) }) {
+            var index = draft.Field(path + "/names").Value!.Value.GetArrayLength();
+            draft.AddItem(path + "/names"); draft.AddItem(path + "/focusOffsets");
+            Assert.Equal(0, draft.Field(path + $"/focusOffsets/{index}").Value!.Value.GetInt32());
+            draft.SetValue(path + $"/names/{index}", JsonSerializer.SerializeToElement(name));
+            draft.SetValue(path + $"/focusOffsets/{index}", draft.ParseScalar(draft.Field(path + $"/focusOffsets/{index}").Schema, offset.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+        }
+        var offsetSchema = draft.Field(path + "/focusOffsets/1").Schema;
+        foreach (var outside in new[] { "2147483648", "-2147483649" })
+            Assert.Throws<FormatException>(() => draft.ParseScalar(offsetSchema, outside));
+        Assert.Equal(int.MinValue, draft.ParseScalar(offsetSchema, "-2147483648").GetInt32());
+        Assert.Equal(int.MaxValue, draft.ParseScalar(offsetSchema, "2147483647").GetInt32());
+        draft.SetValue("/sources/3/backend/device", JsonSerializer.SerializeToElement("eaf")); editor.Changed();
+        Assert.False(await editor.ReviewAsync());
+        Assert.Contains("sources[3].backend.filterWheel", editor.Errors.GetRawText());
+        draft.SetValue("/sources/3/backend/device", JsonSerializer.SerializeToElement("efw"));
+        draft.SetValue(path + "/focusOffsets/0", JsonSerializer.SerializeToElement(10)); editor.Changed();
+        Assert.False(await editor.ReviewAsync());
+        Assert.Contains("sources[3].backend.filterWheel.focusOffsets", editor.Errors.GetRawText());
+        draft.SetValue(path + "/focusOffsets/0", JsonSerializer.SerializeToElement(0)); editor.Changed();
+        Assert.True(await editor.ReviewAsync(), editor.Errors.GetRawText());
+        // Draft sources have no runtime entry until apply; review must not create one.
+        await Assert.ThrowsAsync<InvalidOperationException>(() => editor.SourceStatusAsync(source));
+        await editor.ApplyAsync(); await editor.ReloadAsync();
+        Assert.Equal(source, editor.Draft!.Field("/sources/3/id").Value!.Value.GetGuid());
+        Assert.Equal("Hα", editor.Draft.Field(path + "/names/1").Value!.Value.GetString());
+        Assert.Equal(-12, editor.Draft.Field(path + "/focusOffsets/1").Value!.Value.GetInt32());
+        Assert.False((await editor.SourceStatusAsync(source)).GetProperty("transportConnected").GetBoolean());
+        draft = editor.Draft;
+        draft.RemoveOptional(path); editor.Changed(); Assert.True(await editor.ReviewAsync());
+        await editor.ApplyAsync(); await editor.ReloadAsync();
+        Assert.False(editor.Draft!.Field(path).Value.HasValue);
+        Assert.Equal(0, (await editor.SourceStatusAsync(source)).GetProperty("leaseCount").GetInt32());
+    }
+    [Theory]
+    [InlineData("camera-sdk")]
+    [InlineData("camera-direct")]
+    public async Task NativeEditorCreatesNativeCameraRecoveryConfigurationWithoutOpeningEquipment(string device)
+    {
+        await using var host = await Host.Open(); using var editor = await Editor(host); await editor.ReloadAsync();
+        var draft = editor.Draft!;
+        draft.AddItem("/sources"); draft.SelectVariant("/sources/3/backend","native");
+        draft.SetValue("/sources/3/label",JsonSerializer.SerializeToElement("Inert native camera configuration"));
+        draft.SetValue("/sources/3/backend/device",draft.ParseScalar(draft.Field("/sources/3/backend/device").Schema,device));
+        draft.SetValue("/sources/3/backend/identity",JsonSerializer.SerializeToElement("PRIVATE-CREATION-NO-HARDWARE"));
+        draft.AddOptional("/sources/3/backend/camera",replaceNull:true);
+        draft.SetValue("/sources/3/backend/camera/model",JsonSerializer.SerializeToElement("ZWO ASI585MM Pro"));
+        draft.SetValue("/sources/3/backend/camera/sdkFallback",JsonSerializer.SerializeToElement(device=="camera-direct"));
+        Assert.Equal(3,draft.Field("/sources/3/backend/camera/recovery/maxRetries").Value!.Value.GetInt32());
+        draft.SetValue("/sources/3/backend/camera/recovery/maxRetries",JsonSerializer.SerializeToElement(2));
+        var source = draft.Field("/sources/3/id").Value!.Value.GetGuid();
+        draft.AddItem("/outputs"); draft.SelectVariant("/outputs/3/device","proxy");
+        draft.SetValue("/outputs/3/device/source",JsonSerializer.SerializeToElement(source));
+        draft.SetValue("/outputs/3/label",JsonSerializer.SerializeToElement("Inert native camera output"));
+        draft.SetValue("/outputs/3/number",JsonSerializer.SerializeToElement(4));
+        var output = draft.Field("/outputs/3/id").Value!.Value.GetGuid();
+        editor.Changed(); Assert.True(await editor.ReviewAsync(),editor.Errors.GetRawText());
+        await Assert.ThrowsAsync<InvalidOperationException>(()=>editor.SourceStatusAsync(source));
+        await editor.ApplyAsync(); await editor.ReloadAsync();
+        Assert.Equal(output,editor.Draft!.Field("/outputs/3/id").Value!.Value.GetGuid());
+        Assert.Equal(device,editor.Draft.Field("/sources/3/backend/device").Value!.Value.GetString());
+        Assert.Equal(2,editor.Draft.Field("/sources/3/backend/camera/recovery/maxRetries").Value!.Value.GetInt32());
+        var state = await editor.SourceStatusAsync(source);
+        Assert.Equal(0,state.GetProperty("leaseCount").GetInt32());
+        Assert.False(state.GetProperty("transportConnected").GetBoolean());
+        // This fixture deliberately never connects the native source.
+    }
+    [Theory]
+    [InlineData("focuser")]
+    [InlineData("rotator")]
+    [InlineData("covercalibrator")]
+    [InlineData("camera")]
+    public async Task NativeEditorCreatesSharedTypedOutputsFromHostDescriptorsWithoutOpeningEquipment(string type)
+    {
+        await using var host = await Host.Open(); using var editor = await Editor(host); await editor.ReloadAsync();
+        var draft = editor.Draft!;
+        draft.AddItem("/sources"); draft.SelectVariant("/sources/3/backend", "simulated");
+        draft.SetValue("/sources/3/backend/deviceType", draft.ParseScalar(draft.Field("/sources/3/backend/deviceType").Schema, type));
+        draft.SetValue("/sources/3/label", JsonSerializer.SerializeToElement("Shared simulated " + type));
+        var source = draft.Field("/sources/3/id").Value!.Value.GetGuid();
+        var ids = new List<Guid>();
+        for (int index = 3; index < 5; index++) {
+            draft.AddItem("/outputs"); draft.SelectVariant($"/outputs/{index}/device", "proxy");
+            Assert.Equal("camera", draft.Field($"/outputs/{index}/device/deviceType").Value!.Value.GetString());
+            draft.SetValue($"/outputs/{index}/device/deviceType", draft.ParseScalar(draft.Field($"/outputs/{index}/device/deviceType").Schema, type));
+            Assert.Throws<FormatException>(() => draft.ParseScalar(draft.Field($"/outputs/{index}/device/deviceType").Schema, "switch"));
+            draft.SetValue($"/outputs/{index}/device/source", JsonSerializer.SerializeToElement(source));
+            draft.SetValue($"/outputs/{index}/label", JsonSerializer.SerializeToElement($"Shared {type} {index}"));
+            draft.SetValue($"/outputs/{index}/number", JsonSerializer.SerializeToElement(index == 3 ? 4 : 7));
+            ids.Add(draft.Field($"/outputs/{index}/id").Value!.Value.GetGuid());
+        }
+        // Schema choices guide setup; the engine still authorizes the candidate.
+        draft.SetValue("/outputs/3/device/deviceType", JsonSerializer.SerializeToElement("switch")); editor.Changed();
+        Assert.False(await editor.ReviewAsync()); Assert.NotEmpty(editor.Errors.EnumerateArray());
+        draft.SetValue("/outputs/3/device/deviceType", JsonSerializer.SerializeToElement(type == "focuser" ? "rotator" : "focuser")); editor.Changed();
+        Assert.False(await editor.ReviewAsync()); Assert.NotEmpty(editor.Errors.EnumerateArray());
+        draft.SetValue("/outputs/3/device/deviceType", JsonSerializer.SerializeToElement(type)); editor.Changed();
+        Assert.True(await editor.ReviewAsync());
+        for (int index = 0; index < 3; index++) Assert.Equal(0, (await editor.SourceStatusAsync(Guid.Parse(host.Config["sources"]![index]!["id"]!.GetValue<string>()))).GetProperty("leaseCount").GetInt32());
+        await editor.ApplyAsync(); await editor.ReloadAsync();
+        Assert.Equal(0, (await editor.SourceStatusAsync(source)).GetProperty("leaseCount").GetInt32());
+        Assert.Equal(ids[0], editor.Draft!.Field("/outputs/3/id").Value!.Value.GetGuid());
+        Assert.Equal(ids[1], editor.Draft.Field("/outputs/4/id").Value!.Value.GetGuid());
+        Assert.Equal(4u, editor.Draft.Field("/outputs/3/number").Value!.Value.GetUInt32());
+        Assert.Equal(7u, editor.Draft.Field("/outputs/4/number").Value!.Value.GetUInt32());
+        HubSelection Selection(int index) => new() { ConfigPath = host.ConfigPath, InstanceId = host.Selection(0,"switch").InstanceId,
+            OutputId = ids[index], DeviceType = type, Label = $"Shared {type} {index + 3}", Simulated = true };
+        HubDevice Device(int index) => type switch {
+            "focuser" => new HubFocuserDevice(Selection(index),host.Executable,host.Workers),
+            "covercalibrator" => new HubCoverCalibratorDevice(Selection(index),host.Executable,host.Workers),
+            "camera" => new HubCameraDevice(Selection(index),Moq.Mock.Of<global::NINA.Image.Interfaces.IImageDataFactory>(),executable:host.Executable,workers:host.Workers),
+            _ => new HubRotatorDevice(Selection(index),host.Executable,host.Workers)
+        };
+        using var first = Device(0);
+        using var second = Device(1);
+        await first.Connect(CancellationToken.None); await second.Connect(CancellationToken.None);
+        string? setupNotice = null;
+        first.SetupNotice = message => setupNotice = message;
+        first.SelectSetupOutput = _ => throw new InvalidOperationException("Connected setup must not open an editor");
+        var originalId = first.Id;
+        first.SetupDialog(); // NINA invokes this without an exception handler.
+        Assert.Contains("Disconnect", setupNotice);
+        Assert.True(first.Connected); Assert.True(second.Connected);
+        Assert.Equal(originalId, first.Id);
+        await Eventually(async () => (await editor.SourceStatusAsync(source)).GetProperty("leaseCount").GetInt32() == 2);
+        if (first is HubCameraDevice camera) {
+            camera.EnableSubSample = true; camera.SubSampleWidth = 96; camera.SubSampleHeight = 64;
+            camera.StartExposure(new global::NINA.Equipment.Model.CaptureSequence { ExposureTime = 0.01,
+                Binning = new global::NINA.Core.Model.Equipment.BinningMode(1,1), Gain = -1, Offset = -1 });
+            using var limit = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+            await camera.WaitUntilExposureIsReady(limit.Token);
+            var frame = Assert.IsType<HubCameraExposureData>(await camera.DownloadExposure(limit.Token));
+            Assert.Equal(96,frame.Width); Assert.Equal(64,frame.Height);
+            Assert.IsType<ushort[]>(frame.Pixels); Assert.Equal(96*64,frame.Pixels.Length);
+            camera.CoolerOn = true; Assert.True(((HubCameraDevice)second).CoolerOn); camera.CoolerOn = false;
+            var retained = frame.Pixels.GetValue(0);
+            first.Disconnect(); Assert.True(second.Connected);
+            Assert.Equal(retained,frame.Pixels.GetValue(0));
+        } else if (first is HubFocuserDevice focuser) {
+            await focuser.Move(50100,CancellationToken.None,0); Assert.Equal(50100,((HubFocuserDevice)second).Position);
+        } else if (first is HubCoverCalibratorDevice panel) {
+            panel.Brightness=0;
+            Assert.True(((HubCoverCalibratorDevice)second).LightOn);
+            Assert.Equal(0,((HubCoverCalibratorDevice)second).Brightness);
+            Assert.True(await panel.Open(CancellationToken.None,10));
+            Assert.Equal(global::NINA.Equipment.Interfaces.CoverState.Open,((HubCoverCalibratorDevice)second).CoverState);
+        } else {
+            var rotator = (HubRotatorDevice)first; rotator.Sync(42.5f);
+            Assert.True(await rotator.Move(-721.5f,CancellationToken.None));
+            Assert.Equal(41.0f,((HubRotatorDevice)second).Position);
+            Assert.Equal(358.5f,((HubRotatorDevice)second).MechanicalPosition);
+        }
+        first.Disconnect(); Assert.True(second.Connected);
+        // A connection can complete while a modal editor is open. Its result
+        // must not rebind an already connected device or escape into NINA.
+        setupNotice = null;
+        first.SelectSetupOutput = _ => {
+            first.Connect(CancellationToken.None).GetAwaiter().GetResult();
+            return Selection(1);
+        };
+        first.SetupDialog();
+        Assert.Contains("connection changed", setupNotice);
+        Assert.Equal(originalId, first.Id); Assert.True(first.Connected);
+        first.Disconnect(); second.Disconnect();
+        await Eventually(async () => (await editor.SourceStatusAsync(source)).GetProperty("leaseCount").GetInt32() == 0);
+    }
+    [Fact]
+    public async Task NativeEditorReviewsAndAppliesWithoutOpeningEquipment()
+    {
+        await using var host = await Host.Open(); using var editor = await Editor(host); await editor.ReloadAsync();
+        Assert.Equal(HubEditorState.Editing, editor.State); var old = editor.Draft!.Revision;
+        editor.Draft.SetValue("/outputs/0/label", JsonSerializer.SerializeToElement("Native edited")); editor.Changed();
+        Assert.True(await editor.ReviewAsync()); Assert.Equal(HubEditorState.Reviewed, editor.State);
+        Assert.Contains("Native edited", editor.Draft.Preview());
+        for (int i = 0; i < 3; i++) Assert.Equal(0, (await editor.SourceStatusAsync(Guid.Parse(host.Config["sources"]![i]!["id"]!.GetValue<string>()))).GetProperty("leaseCount").GetInt32());
+        var applied = await editor.ApplyAsync(); Assert.True(applied.GetProperty("ready").GetBoolean());
+        Assert.Equal(HubEditorState.Uncertain, editor.State); // reconciliation is required, even after a successful response
+        await Assert.ThrowsAsync<InvalidOperationException>(() => editor.ApplyAsync());
+        await Assert.ThrowsAsync<InvalidOperationException>(() => editor.ReviewAsync()); Assert.Equal(HubEditorState.Uncertain, editor.State);
+        await editor.ReloadAsync(); Assert.Equal(HubEditorState.Editing, editor.State); Assert.NotEqual(old, editor.Draft!.Revision);
+        Assert.Equal("Native edited", editor.Draft.Field("/outputs/0/label").Value!.Value.GetString());
+        using var device = host.Switch(); await device.Connect(CancellationToken.None); Assert.Contains("Native edited", device.Name);
+    }
+    [Fact]
+    public async Task NativeEditorRejectsChangedDraftsAndCompetingSavedRevisions()
+    {
+        await using var host = await Host.Open(); using var first = await Editor(host); using var second = await Editor(host);
+        await first.ReloadAsync(); await second.ReloadAsync();
+        Assert.True(await first.ReviewAsync());
+        first.Draft!.SetValue("/outputs/0/label", JsonSerializer.SerializeToElement("First editor"));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => first.ApplyAsync());
+        Assert.Equal(first.Draft.Revision, (await host.Command(new { op = "getConfig" })).GetProperty("revision").GetGuid());
+        Assert.True(await first.ReviewAsync());
+        second.Draft!.SetValue("/outputs/0/label", JsonSerializer.SerializeToElement("Second editor")); second.Changed(); Assert.True(await second.ReviewAsync());
+        await first.ApplyAsync();
+        Assert.Equal("revisionConflict", (await Assert.ThrowsAsync<HubException>(() => second.ApplyAsync())).Remote!.Code);
+        Assert.Equal(HubEditorState.Uncertain, second.State);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => second.ReviewAsync()); Assert.Equal(HubEditorState.Uncertain, second.State);
+        await second.ReloadAsync(); Assert.Equal("First editor", second.Draft!.Field("/outputs/0/label").Value!.Value.GetString());
+    }
+    [Fact]
+    public async Task NativeEditorReportsFieldErrorsAndCannotDisconnectNinaToApply()
+    {
+        await using var host = await Host.Open(); using var editor = await Editor(host); await editor.ReloadAsync();
+        editor.Draft!.SetValue("/sources/1/polling/pollSeconds", JsonSerializer.SerializeToElement(91.0)); editor.Changed();
+        Assert.False(await editor.ReviewAsync()); Assert.NotEmpty(editor.Errors.EnumerateArray());
+        Assert.All(editor.Errors.EnumerateArray(), e => Assert.False(string.IsNullOrEmpty(e.GetProperty("path").GetString())));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => editor.ApplyAsync());
+        await editor.ReloadAsync(); using var device = host.Switch(); await device.Connect(CancellationToken.None);
+        var old = editor.Draft!.Revision;
+        editor.Draft.SetValue("/outputs/0/label", JsonSerializer.SerializeToElement("Safe pending edit")); editor.Changed();
+        Assert.True(await editor.ReviewAsync());
+        Assert.Equal("connected", (await Assert.ThrowsAsync<HubException>(() => editor.ApplyAsync())).Remote!.Code);
+        Assert.True(device.Connected); Assert.Equal(HubEditorState.Editing, editor.State);
+        Assert.Equal(old, (await host.Command(new { op = "getConfig" })).GetProperty("revision").GetGuid());
+        device.Disconnect(); await Eventually(async () => (await host.Status(0)).GetProperty("leaseCount").GetInt32() == 0);
+        Assert.True(await editor.ReviewAsync()); await editor.ApplyAsync(); await editor.ReloadAsync();
+        Assert.Equal("Safe pending edit", editor.Draft!.Field("/outputs/0/label").Value!.Value.GetString());
+    }
+    [Fact]
+    public async Task NativeEditorDoesNotReplayAnApplyAfterACommittedReplyIsLost()
+    {
+        var saved = JsonNode.Parse(HubDraftTests.Configuration().GetRawText())!.AsObject(); int dispatched = 0;
+        using var editor = new HubEditorSession(Guid.Parse(saved["instanceId"]!.GetValue<string>()), (command, _) => {
+            object result;
+            switch (command.GetProperty("op").GetString()) {
+                case "describeConfig": result = HubDraftTests.Description(); break;
+                case "getConfig": result = saved; break;
+                case "hostStatus": result = new { phase = "ready", configurationRevision = saved["revision"]!.GetValue<string>() }; break;
+                case "validateConfig": result = new { valid = true, errors = Array.Empty<object>() }; break;
+                case "applyConfig":
+                    dispatched++; saved = JsonNode.Parse(command.GetProperty("candidate").GetRawText())!.AsObject(); saved["revision"] = Guid.NewGuid().ToString();
+                    throw new HubException(HubFailure.Uncertain);
+                default: throw new InvalidOperationException("Unexpected editor operation");
+            }
+            return Task.FromResult(JsonSerializer.SerializeToElement(result));
+        }, () => { });
+        await editor.ReloadAsync(); editor.Draft!.SetValue("/outputs/0/label", JsonSerializer.SerializeToElement("Committed once")); editor.Changed();
+        Assert.True(await editor.ReviewAsync()); await Assert.ThrowsAsync<HubException>(() => editor.ApplyAsync());
+        Assert.Equal(HubEditorState.Uncertain, editor.State);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => editor.ApplyAsync());
+        await Assert.ThrowsAsync<InvalidOperationException>(() => editor.ReviewAsync()); Assert.Equal(1, dispatched);
+        await editor.ReloadAsync(); Assert.Equal("Committed once", editor.Draft!.Field("/outputs/0/label").Value!.Value.GetString());
+        Assert.False(editor.Draft.Dirty); Assert.Equal(HubEditorState.Editing, editor.State); Assert.Equal(1, dispatched);
+    }
+    [Fact]
+    public async Task NativeEditorDisposeCancelsQueuedReviewAndCannotReviveState()
+    {
+        var entered = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously); int closed = 0;
+        var saved = HubDraftTests.Configuration();
+        using var editor = new HubEditorSession(saved.GetProperty("instanceId").GetGuid(), async (command, cancellation) => {
+            switch (command.GetProperty("op").GetString()) {
+                case "describeConfig": return HubDraftTests.Description();
+                case "getConfig": return saved;
+                case "hostStatus": return JsonSerializer.SerializeToElement(new { phase = "ready", configurationRevision = saved.GetProperty("revision").GetGuid() });
+                case "validateConfig": entered.TrySetResult(true); await Task.Delay(Timeout.Infinite, cancellation); throw new Exception("Unreachable");
+                default: throw new InvalidOperationException("Unexpected editor operation");
+            }
+        }, () => Interlocked.Increment(ref closed));
+        await editor.ReloadAsync(); var first = editor.ReviewAsync(); await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var second = editor.ReviewAsync(); editor.Dispose(); editor.Dispose();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => first);
+        await Assert.ThrowsAsync<ObjectDisposedException>(() => second);
+        Assert.Equal(HubEditorState.Disposed, editor.State); Assert.Equal(1, closed);
+        await Assert.ThrowsAsync<ObjectDisposedException>(() => editor.ReloadAsync());
+    }
+    [Theory]
+    [InlineData("{}")]
+    [InlineData("{\"valid\":true,\"errors\":[{}]}")]
+    [InlineData("{\"valid\":true,\"errors\":[{\"path\":\"sources\",\"message\":\"invalid\"}]}")]
+    public async Task NativeEditorMalformedReviewRequiresReload(string validation)
+    {
+        var saved = HubDraftTests.Configuration(); using var json = JsonDocument.Parse(validation);
+        using var editor = new HubEditorSession(saved.GetProperty("instanceId").GetGuid(), (command, _) => Task.FromResult(command.GetProperty("op").GetString() switch {
+            "describeConfig" => HubDraftTests.Description(), "getConfig" => saved,
+            "hostStatus" => JsonSerializer.SerializeToElement(new { phase = "ready", configurationRevision = saved.GetProperty("revision").GetGuid() }),
+            "validateConfig" => json.RootElement.Clone(), _ => throw new Exception("Unexpected operation")
+        }), () => { });
+        await editor.ReloadAsync(); Assert.Equal(HubFailure.Protocol, (await Assert.ThrowsAsync<HubException>(() => editor.ReviewAsync())).Failure);
+        Assert.Equal(HubEditorState.Uncertain, editor.State);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => editor.ApplyAsync());
+        await Assert.ThrowsAsync<InvalidOperationException>(() => editor.ReviewAsync());
+        Assert.Equal(HubEditorState.Uncertain, editor.State);
+    }
+    [Fact]
+    public async Task NativeEditorHealthTransportFailureRevokesAnEarlierReview()
+    {
+        var saved = HubDraftTests.Configuration(); int writes = 0;
+        using var editor = new HubEditorSession(saved.GetProperty("instanceId").GetGuid(), (command, _) => {
+            var op = command.GetProperty("op").GetString();
+            if (op == "sourceStatus") throw new HubException(HubFailure.Disconnected);
+            if (op == "applyConfig") { writes++; throw new Exception("Unreachable"); }
+            return Task.FromResult(op switch {
+                "describeConfig" => HubDraftTests.Description(), "getConfig" => saved,
+                "hostStatus" => JsonSerializer.SerializeToElement(new { phase = "ready", configurationRevision = saved.GetProperty("revision").GetGuid() }),
+                "validateConfig" => JsonSerializer.SerializeToElement(new { valid = true, errors = Array.Empty<object>() }),
+                _ => throw new Exception("Unexpected operation")
+            });
+        }, () => { });
+        await editor.ReloadAsync(); Assert.True(await editor.ReviewAsync());
+        await Assert.ThrowsAsync<HubException>(() => editor.SourceStatusAsync(saved.GetProperty("sources")[0].GetProperty("id").GetGuid()));
+        Assert.Equal(HubEditorState.Uncertain, editor.State);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => editor.ApplyAsync()); Assert.Equal(0, writes);
+        await editor.ReloadAsync(); Assert.Equal(HubEditorState.Editing, editor.State);
+    }
+}
