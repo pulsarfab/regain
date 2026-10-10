@@ -61,7 +61,8 @@ Observed ASI676MC register operations:
 | Full stop | FPGA `00` bit `10`, sensor standby, `aa`; observed to clear retained status from `5` to `1` |
 
 These meanings are inferred from traces and direct experiments on this model,
-not a vendor protocol specification. Readout uses bounded 1 MiB requests, checks
+not a vendor protocol specification. Readout uses bounded requests (default 1 MiB;
+[configurable from 1 to 1024 KiB](transfer-recovery.md#limit-the-size-of-direct-usb-reads)), checks
 Windows/NT/USB status and exact byte counts, and requires matching frame
 boundary words (`5a7e` / `3cf0`, little endian on the wire). The observed sequence
 is 1 for each newly armed exposure, so it is **not** a global freshness ID.
