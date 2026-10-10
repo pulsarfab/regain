@@ -75,6 +75,14 @@ impl Camera {
         self.publish_environment()?;
         Ok(())
     }
+    pub fn resume_cooling(&self, power: i64, prior: f64, previous_target: i64) -> Result<()> {
+        self.environment
+            .borrow_mut()
+            .as_mut()
+            .ok_or_else(|| anyhow::anyhow!("environment unavailable"))?
+            .resume_cooling(self, power, prior, previous_target)?;
+        self.publish_environment()
+    }
     pub fn environment_control(&self, control: u32, value: Option<i64>) -> Result<i64> {
         let mut state = self.environment.borrow_mut();
         let environment = state

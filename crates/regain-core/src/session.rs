@@ -22,7 +22,9 @@ pub struct Session {
     applied: BTreeMap<i32, i64>,
     recovery_temperature: Option<f64>,
     recovery_power: Option<i64>,
+    recovery_target: Option<i64>,
     settle_required: bool,
+    cooling_seeded: bool,
     usb_target: Option<String>,
 }
 impl Session {
@@ -60,7 +62,9 @@ impl Session {
             applied: BTreeMap::new(),
             recovery_temperature: None,
             recovery_power: None,
+            recovery_target: None,
             settle_required: false,
+            cooling_seeded: false,
             usb_target: None,
         })
     }
@@ -136,6 +140,9 @@ impl Session {
         self.recovery_power = power;
         self.settle_required = true;
     }
+    pub fn seed_recovery_target(&mut self, target: Option<i64>) {
+        self.recovery_target = target.filter(|v| (-40..=30).contains(v));
+    }
     pub fn queue_control(status: &SharedStatus, kind: i32, value: i64) -> Result<()> {
         let mut state = status.lock().unwrap();
         ensure!(
@@ -189,6 +196,11 @@ impl Session {
             let state = self.snapshot();
             self.recovery_temperature = state.values.get(&8).map(|v| *v as f64 / 10.);
             self.recovery_power = state.values.get(&15).copied();
+            self.recovery_target = self
+                .applied
+                .get(&16)
+                .copied()
+                .or_else(|| state.values.get(&16).copied());
             self.settle_required = true;
         }
         self.status.lock().unwrap().control_connection_available = false;
@@ -340,6 +352,7 @@ impl Session {
         self.phase("Opening");
         self.worker = Some(self.runtime.spawn(self.direct, self.log.clone()).await?);
         self.applied.clear();
+        self.cooling_seeded = false;
         let (result, _) = self
             .call(
                 "open",
@@ -546,6 +559,30 @@ impl Session {
                 }
             }
             self.applied.insert(kind, actual);
+        }
+        if self.direct
+            && self.settle_required
+            && !self.cooling_seeded
+            && values.get(&17).is_some_and(|v| *v != 0)
+            && let (Some(power), Some(temperature)) =
+                (self.recovery_power, self.recovery_temperature)
+        {
+            self.call(
+                "resume-cooling",
+                json!({"power":power,"temperature":temperature,"previousTarget":self.recovery_target.or_else(|| values.get(&16).copied()).unwrap_or(0)}),
+                None,
+                token,
+            )
+            .await?;
+            self.cooling_seeded = true;
+            self.emit(
+                "info",
+                "cooling.resumed",
+                format!(
+                    "Resumed prior cooler demand {power}% at restored target {} C",
+                    values.get(&16).unwrap_or(&0)
+                ),
+            );
         }
         Ok(())
     }
@@ -791,6 +828,7 @@ impl Session {
         self.settle_required = false;
         self.recovery_temperature = None;
         self.recovery_power = None;
+        self.recovery_target = None;
         self.phase("Starting exposure");
         let started = Utc::now();
         let seconds = e.microseconds as f64 / 1e6;
@@ -1113,6 +1151,56 @@ mod tests {
     fn log() -> Diagnostic {
         Arc::new(|_, _, _| {})
     }
+    #[tokio::test]
+    async fn cooled_worker_recovery_restores_output_once_and_honors_warming_or_disable() {
+        let token = CancellationToken::new();
+        let mut sel = selection(true);
+        sel.name = "ZWO ASI585MM Pro".into();
+        let mut s = Session::new(sel, runtime(), log()).unwrap();
+        s.connect(&token).await.unwrap();
+        Session::queue_control(&s.status, 16, 10).unwrap();
+        Session::queue_control(&s.status, 17, 1).unwrap();
+        s.refresh(&token).await.unwrap();
+        s.call(
+            "resume-cooling",
+            json!({"power":40,"temperature":25.0,"previousTarget":10}),
+            None,
+            &token,
+        )
+        .await
+        .unwrap();
+        s.refresh(&token).await.unwrap();
+        assert_eq!(s.snapshot().values[&15], 40);
+        s.call("simulate-read-failures", json!({"count":3}), None, &token)
+            .await
+            .unwrap();
+        let frame = s.capture(exposure(), &token).await.unwrap();
+        assert_eq!(frame.metadata["recoveries"], 1);
+        assert_eq!(s.snapshot().values[&15], 40);
+        assert!(s.cooling_seeded);
+        // Ordinary refreshes must not repeatedly reseed the regulator.
+        s.call(
+            "resume-cooling",
+            json!({"power":30,"temperature":25.0,"previousTarget":10}),
+            None,
+            &token,
+        )
+        .await
+        .unwrap();
+        s.refresh(&token).await.unwrap();
+        assert_eq!(s.snapshot().values[&15], 30);
+        s.invalidate().await;
+        Session::queue_control(&s.status, 16, 11).unwrap();
+        s.refresh(&token).await.unwrap();
+        assert_eq!(s.snapshot().values[&15], 0); // A warmer requested target wins.
+        s.invalidate().await;
+        Session::queue_control(&s.status, 17, 0).unwrap();
+        s.refresh(&token).await.unwrap();
+        assert_eq!(s.snapshot().values[&17], 0);
+        assert!(!s.cooling_seeded);
+        s.close().await;
+    }
+
     #[tokio::test]
     async fn managed_white_balance_survives_worker_recovery_and_retains_locked_gains() {
         use crate::white_balance::{Gains, Mode, Output, Settings};
