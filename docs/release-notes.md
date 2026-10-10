@@ -1,30 +1,27 @@
-# PulsarFab regain 0.5.14.0
+# PulsarFab regain 0.5.15.0
 
-Fixes cooling recovery and NINA cooling charts after retryable camera faults.
+Adds optional host USB read sizing for SDK-less cameras.
 
-- Direct camera recovery immediately restores the last cooler power level and
-  adds 8 percentage points per degree of measured warming, capped at 100%.
-  The PI regulator responds more strongly and ramps output up four times faster.
-  Output limits, bounded elapsed time, saturation protection and shutdown on
-  missing temperature feedback remain enforced. Disabled cooling and a warmer
-  requested target take precedence. SDK cooling remains controlled by the SDK.
-- NINA retains the last temperature and cooler-power readings during reconnect
-  and labels them **telemetry held**, avoiding invalid chart axes caused by NaN.
-- NINA Driver Info uses a compact state, retry count and failure summary.
-  Full errors and retry breakdowns remain in diagnostics and NINA logs at
-  `%LOCALAPPDATA%\NINA\Logs`; search for `PulsarFab regain`.
+- **Direct USB read size (KiB)** is available in NINA Advanced settings,
+  native ASCOM Timeouts, and Alpaca camera recovery settings. The shared key is
+  `recovery.directReadChunkKiB`; the CLI option is `--read-chunk-kib`.
+- Choose powers of two from 1 to 1024 KiB. The default remains 1024 KiB
+  (1 MiB), including for existing configurations. SDK mode ignores this option.
+- The size stays consistent through retained-frame retries and worker replacement.
+  Transfer diagnostics report request size, request count and elapsed read time.
+- Smaller host reads add overhead. This control is separate from the SDK's
+  camera-side USB Traffic percentage; it does not select USB 2 or set a fixed
+  MB/s limit. See [USB read sizing](transfer-recovery.md#limit-the-size-of-direct-usb-reads).
 
-On the attached ASI585MM Pro at a 15 C target, the baseline worker restart
-reduced output from 15% to zero, warmed the sensor from 14.0 to 17.6 C and took
-117 seconds to return a replacement image. The tuned run restored at least its
-13% prior output, held 14.9–15.1 C and returned the replacement in 7 seconds.
-These are two local runs with different starting temperatures and outputs,
-not an overnight stability test or validation of every supported cooled model.
+Acceptance used the attached ASI585MM Pro over USB 3 on Windows: 21 full-resolution
+captures across 1, 4, 16, 64, 256 and 1024 KiB and the omitted default. Each capture
+recovered an injected host read interruption and verified a byte-identical retained
+replay after another partial read. This is not physical USB 2 validation or a claim
+that smaller reads improve fault recovery.
 
-Regression checks cover chart bounds, compact status, restored and boosted
-output, warmer targets, disabled cooling, malformed recovery requests,
-controller limits, thermal models and shared-session worker replacement.
+Includes the 0.5.14 cooler-recovery, retained NINA cooling telemetry and compact
+retry-status fixes. Hardware support and retry budgets are unchanged.
+The Hub remains on main for the 0.6 train and is not included in this 0.5 release.
 
-Use `Regain-0.5.14.0.zip` for NINA. The signed Windows ASCOM installer is
-`Regain-ASCOM-0.5.14.0-win-x64-setup.exe`. Rust crates use version 0.5.14.
-Hardware support and retry budgets are unchanged.
+Use `Regain-0.5.15.0.zip` for NINA, or the signed Windows ASCOM installer
+`Regain-ASCOM-0.5.15.0-win-x64-setup.exe`. Rust crates use version 0.5.15.
