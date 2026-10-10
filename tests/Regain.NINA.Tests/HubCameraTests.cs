@@ -66,12 +66,18 @@ public sealed class HubCameraTests
             // 585 direct mode has a traced 64x64 minimum. Keep an asymmetric
             // supported rectangle; this frontend must not bypass source limits.
             owner.SubSampleWidth = 96; owner.SubSampleHeight = 64;
-            try { owner.StartExposure(new CaptureSequence { ExposureTime = 0.2, Binning = new BinningMode(1, 1), Gain = -1, Offset = -1 }); }
+            // Hold acquisition ownership explicitly. A 0.2s exposure can finish
+            // before a queued sibling request reaches a loaded CI host.
+            try { owner.StartExposure(new CaptureSequence { ExposureTime = 600, Binning = new BinningMode(1, 1), Gain = -1, Offset = -1 }); }
             catch (HubException error) { throw new InvalidOperationException($"Camera fixture start: {error.Remote?.Code}: {error.Remote?.Message}", error); }
             Assert.True(settings.Object.Timeout > 1);
             var busy = await Assert.ThrowsAsync<HubException>(() => Task.Run(() => sibling.StartExposure(new CaptureSequence {
                 ExposureTime = 0.01, Binning = new BinningMode(1, 1), Gain = -1, Offset = -1 }), limit.Token));
             Assert.Equal("busy", busy.Remote?.Code);
+            owner.AbortExposure();
+            await Assert.ThrowsAsync<IOException>(() => owner.WaitUntilExposureIsReady(limit.Token));
+            Assert.Equal(1, settings.Object.Timeout);
+            owner.StartExposure(new CaptureSequence { ExposureTime = 0.2, Binning = new BinningMode(1, 1), Gain = -1, Offset = -1 });
             await owner.WaitUntilExposureIsReady(limit.Token);
             var frame = Assert.IsType<HubCameraExposureData>(await owner.DownloadExposure(limit.Token));
             Assert.Equal(96, frame.Width); Assert.Equal(64, frame.Height);
