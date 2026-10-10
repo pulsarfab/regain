@@ -584,7 +584,16 @@ impl Worker {
                             && model.cooled()
                         {
                             let _ = watchdog.send(Some(Duration::from_secs(15)));
-                            let _ = camera.environment_control(17, Some(0));
+                            if let Err(error) = crate::asi::shutdown_thermal_controls(
+                                &model.controls(false),
+                                |kind| camera.environment_control(kind as u32, Some(0)),
+                            ) {
+                                crate::asi::direct::diagnostics::log(
+                                    "warning",
+                                    "camera.cleanup_failed",
+                                    format_args!("{error:#}"),
+                                );
+                            }
                         }
                         return;
                     }
@@ -664,6 +673,9 @@ impl Worker {
                         // Never free live I/O buffers if a kernel operation becomes stuck.
                         let _ = watchdog.send(Some(timeout));
                         let read_chunk_kib = settings.read_chunk_kib;
+                        if let Some((camera, _, _)) = &device {
+                            camera.capture_cancellation(Some(cancelled.clone()));
+                        }
                         let result = (|| -> Result<Frame> {
                             if video_mode && !settings.continuous_drain {
                                 video_pacer.wait_servicing(
@@ -854,6 +866,12 @@ impl Worker {
                         if video_mode && result.is_ok() {
                             video_pacer.completed();
                         }
+                        let result =
+                            if simulate && cancelled.load(std::sync::atomic::Ordering::Relaxed) {
+                                Err(super::completion::CaptureCancelled.into())
+                            } else {
+                                result
+                            };
                         let result = if simulate && simulated_cleanup {
                             crate::asi::direct::completion::finish(
                                 result,
@@ -862,13 +880,38 @@ impl Worker {
                         } else {
                             result
                         };
-                        if let Some((camera, _, _)) = &device {
+                        let result = if let Some((camera, _, _)) = &device {
+                            camera.capture_cancellation(None);
+                            let result = if !video_mode
+                                && model != Model::Guide
+                                && cancelled.load(std::sync::atomic::Ordering::Relaxed)
+                                && (result.is_ok()
+                                    || result.as_ref().err().is_some_and(|e| {
+                                        e.is::<super::completion::CaptureCancelled>()
+                                    })) {
+                                // Full stop must clear retained DDR before reuse.
+                                camera
+                                    .vendor(0xbc, 0x23, 0, 1)
+                                    .and_then(|status| {
+                                        ensure!(
+                                            status == [1],
+                                            "camera did not clear retained frame after abort"
+                                        );
+                                        Ok(())
+                                    })
+                                    .and(result)
+                            } else {
+                                result
+                            };
                             camera.phase(if result.is_ok() {
                                 "image_ready"
                             } else {
                                 "failed"
                             });
-                        }
+                            result
+                        } else {
+                            result
+                        };
                         let _ = watchdog.send(None);
                         if reply.send(result).is_err() {
                             return;
@@ -1500,8 +1543,14 @@ impl Host {
                 let frame = self
                     .frame
                     .take()
-                    .ok_or_else(|| anyhow::anyhow!("no completed frame"))?
-                    .map_err(hardware)?;
+                    .ok_or_else(|| anyhow::anyhow!("no completed frame"))?;
+                let frame = match frame {
+                    Ok(frame) => frame,
+                    Err(error) => {
+                        self.reconnect_required = true;
+                        return Err(hardware(error));
+                    }
+                };
                 pixels = frame.1;
                 self.reconnect_required = frame.0.get("cleanupError").is_some();
                 let mut metadata = frame.0;
@@ -1515,6 +1564,57 @@ impl Host {
                 metadata
             }
             "stop" | "close" => {
+                if method == "stop" && self.reconnect_required {
+                    return Err(hardware(anyhow::anyhow!(
+                        "camera requires reconnect before reuse"
+                    )));
+                }
+                if let Some(frame) = &self.frame {
+                    let clean = match frame {
+                        Ok((metadata, _)) => metadata.get("cleanupError").is_none(),
+                        Err(error) => error.is::<super::completion::CaptureCancelled>(),
+                    };
+                    if !clean && method == "stop" {
+                        self.reconnect_required = true;
+                        return Err(hardware(anyhow::anyhow!(
+                            "camera stop cannot reuse failed acquisition"
+                        )));
+                    }
+                }
+                if self.pending.is_some() && !self.video_active {
+                    let worker = self
+                        .worker
+                        .as_ref()
+                        .ok_or_else(|| anyhow::anyhow!("camera is not open"))?;
+                    worker
+                        .cancel_video
+                        .store(true, std::sync::atomic::Ordering::Relaxed);
+                    // The USB owner stops at its next service checkpoint. A read
+                    // already in the kernel must drain before its buffer is freed.
+                    let result = self
+                        .pending
+                        .take()
+                        .unwrap()
+                        .recv_timeout(Duration::from_secs(20));
+                    let result = match result {
+                        Ok(result) => result,
+                        Err(_) => {
+                            self.reconnect_required = true;
+                            return Err(hardware(anyhow::anyhow!("camera abort deadline expired")));
+                        }
+                    };
+                    let safe = match &result {
+                        Ok((metadata, _)) => metadata.get("cleanupError").is_none(),
+                        Err(error) => error.is::<super::completion::CaptureCancelled>(),
+                    };
+                    if !safe {
+                        self.reconnect_required = true;
+                        return Err(hardware(anyhow::anyhow!(
+                            "camera abort could not verify a clean stop"
+                        )));
+                    }
+                    self.frame = None;
+                }
                 if self.video_active {
                     let stopped = self
                         .worker
@@ -1540,11 +1640,10 @@ impl Host {
                     // Report failed cooler shutdown to the supervisor so its bounded
                     // reconnect-for-cleanup path can run. Channel teardown is still
                     // unconditional, even if the explicit off command fails.
-                    let cooling = if self.model.cooled() {
-                        worker.environment(17, Some(0)).map(|_| ())
-                    } else {
-                        Ok(())
-                    };
+                    let cooling = crate::asi::shutdown_thermal_controls(
+                        &self.model.controls(false),
+                        |kind| worker.environment(kind as u32, Some(0)),
+                    );
                     worker.close();
                     cooling.map_err(hardware)?;
                 }
@@ -1701,6 +1800,41 @@ mod cooling_tests {
         capture("still");
     }
     #[test]
+    fn direct_close_disables_cooler_and_supported_dew_heater() {
+        for name in ["ZWO ASI6200MM Pro", "ZWO ASI585MM Pro", "ZWO ASI662MC"] {
+            let mut host = Host {
+                simulate: true,
+                ..Host::default()
+            };
+            let opened = host.command("open", &json!({"name":name})).unwrap().0;
+            let thermal: Vec<i32> = opened["controls"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter_map(|c| c["type"].as_i64().map(|v| v as i32))
+                .filter(|k| matches!(k, 17 | 21))
+                .collect();
+            let telemetry = host.worker.as_ref().unwrap().telemetry.clone();
+            for kind in &thermal {
+                host.command("set", &json!({"control":kind,"value":1}))
+                    .unwrap();
+            }
+            host.command("stop", &Value::Null).unwrap();
+            for kind in &thermal {
+                assert_eq!(host.command("get", &json!({"control":kind})).unwrap().0, 1);
+            }
+            host.command("close", &Value::Null).unwrap();
+            if let Some(sample) = telemetry.lock().unwrap().as_ref() {
+                for kind in thermal {
+                    if let Ok(index) = transport::TelemetrySample::index(kind as u32) {
+                        assert_eq!(sample.values[index], 0);
+                    }
+                }
+            }
+            assert!(host.worker.is_none());
+        }
+    }
+    #[test]
     fn acknowledged_cooling_during_video_and_retained_frame() {
         capture("video");
     }
@@ -1777,6 +1911,41 @@ mod recovery_cooling_tests {
         .unwrap();
         assert!(host.command("resume-cooling", &recovery).is_err());
         host.worker.take().unwrap().close();
+    }
+}
+
+#[cfg(test)]
+mod still_abort_tests {
+    use super::*;
+
+    #[test]
+    fn consumed_frame_cannot_hide_failed_cleanup_from_abort() {
+        let mut host = Host {
+            simulate: true,
+            ..Host::default()
+        };
+        host.command("open", &json!({"name":"ZWO ASI585MM Pro"}))
+            .unwrap();
+        host.command("simulation", &json!({"cleanupFailure":true}))
+            .unwrap();
+        let params =
+            json!({"width":64,"height":64,"bin":1,"x":0,"y":0,"microseconds":1000,"dark":true});
+        host.command("start", &params).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while host.command("status", &Value::Null).unwrap().0 == 1 {
+            assert!(Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        assert!(
+            host.command("download", &Value::Null)
+                .unwrap()
+                .0
+                .get("cleanupError")
+                .is_some()
+        );
+        assert!(host.command("stop", &Value::Null).is_err());
+        assert!(host.command("start", &params).is_err());
+        host.command("close", &Value::Null).unwrap();
     }
 }
 

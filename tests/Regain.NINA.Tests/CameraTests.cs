@@ -237,7 +237,8 @@ public class CameraTests
             Assert.True(settings.Object.Timeout > 60);
             if (userEdited) settings.Object.Timeout = 90;
             camera.AbortExposure();
-            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => camera.WaitUntilExposureIsReady(default));
+            var aborted = await Assert.ThrowsAsync<IOException>(() => camera.WaitUntilExposureIsReady(default));
+            Assert.Contains("aborted by the client", aborted.Message);
             Assert.Equal(userEdited ? 90 : 60, settings.Object.Timeout);
         }
         finally { camera.Disconnect(); }

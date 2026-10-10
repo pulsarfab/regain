@@ -41,6 +41,31 @@ It does not advertise retained-frame capability and remains subject to the
 exposure cutoff. These guarantees must not be transferred between the two
 devices merely because they share an enclosure.
 
+## Client cancellation and recovery diagnostics
+
+An intentional capture abort does not consume the recovery budget or start a
+replacement exposure. The supervisor drains bounded protocol exchanges, asks
+the acquisition owner to stop, and reuses the worker only after an acknowledged
+stop. Direct still captures stop at their next service checkpoint, complete any
+outstanding kernel I/O, and verify cleanup before acknowledging. A failed stop
+retires the isolated worker. An in-flight USB request can delay abort until its
+bounded transfer deadline; cancellation never frees storage still owned by USB.
+
+The `capture.recovered` log reports retries across all attempts as well as the
+retained reads used by the delivered frame. Frame metadata keeps `readRecoveries`
+for that frame and adds `retainedReadRetries` and `downloadRetriesTotal` for the
+whole capture. This preserves evidence of unsuccessful rereads before a
+replacement exposure. Client aborts are logged as `capture.aborted`; an
+unconfirmed stop is `capture.abort_failed`.
+
+In direct mode, enabling cooling or selecting a colder target applies the
+bounded proportional demand immediately instead of ramping from zero. Feedback
+then uses the normal PI controller and output limits. A warmer target reduces
+output immediately and clears accumulated demand when the sensor is already
+colder than the new target. Recovery preserves the prior output and also boosts
+for a colder target selected during reconnect. SDK mode sends the target and
+enable commands promptly; the vendor SDK controls its cooling response.
+
 ## Limit the size of direct USB reads
 
 **Direct USB read size (KiB)** limits each host read request in SDK-less mode.
@@ -205,9 +230,11 @@ pixels that were never successfully transferred to that host.
 
 The direct controller now resumes the last cooler output after a worker restart,
 then adds 8 percentage points per degree of measured warming since the last
-sample, capped at 100%. Its PI state is reconstructed from the previous output
-and temperature. It ramps up by at most 8 percentage points/second and down by
-12, with proportional gain 8 and integral gain 0.12. Elapsed controller time is
+sample, plus the proportional demand for a colder target, capped at 100%. Its
+PI state is reconstructed from the previous output, temperature and setpoint.
+After the initial enable, target-change or recovery step, feedback ramps up by
+at most 8 percentage points/second and down by 12, with proportional gain 8 and
+integral gain 0.12. Elapsed controller time is
 still capped at two seconds after blocked USB I/O; saturation stops integral
 windup. Missing temperature feedback disables cooling. A disabled cooler or a
 warmer requested setpoint takes precedence over restoration.
@@ -228,3 +255,10 @@ exposure and disables cooling before exit. Results are written as JSONL with
 worker diagnostics. Hardware validation at a 15 C target reproduced the old
 restart dropping 15% output to zero, warming from 14.0 to 17.6 C and taking
 117 seconds to return the replacement image.
+
+The updated ASI585MM Pro probe restored output after worker loss and returned
+the replacement image in 8.02 seconds at a 15 C target. Physical NINA plugin API
+checks also preserve output across clean aborts, apply colder targets during
+exposure, and disable the cooler on disconnect in both backends.
+See [physical acceptance](camera-abort-acceptance.md) for measurements and limits;
+this is not convergence evidence for an ASI6200 or a deep subzero target.

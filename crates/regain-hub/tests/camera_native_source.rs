@@ -203,8 +203,8 @@ async fn native_reread_and_post_abort_restoration_outlive_outer_scalar_and_proxy
             .count(),
         1
     );
-    // Abort a later admitted capture: restoring the worker before a new setting
-    // waits the configured 300 ms reconnect delay, beyond the 50 ms scalar bound.
+    // A clean abort retains the worker. A later setting must not reconnect or
+    // change the source generation, even with a short scalar request bound.
     first
         .start(ExposureRequest {
             duration_seconds: 1.,
@@ -212,9 +212,12 @@ async fn native_reread_and_post_abort_restoration_outlive_outer_scalar_and_proxy
         })
         .await
         .unwrap();
+    until(|| owner.snapshot().core.phase == "Exposing").await;
+    let pid = owner.snapshot().core.process_id;
     first.abort().await.unwrap();
-    assert!(!owner.snapshot().core.control_connection_available);
+    assert!(owner.snapshot().core.control_connection_available);
     first.set(S::Gain(123)).await.unwrap();
+    assert_eq!(owner.snapshot().core.process_id, pid);
     assert_eq!(
         second.property(P::Gain).await.unwrap(),
         V::Integer { value: 123 }
@@ -836,6 +839,7 @@ async fn core_capture_recovery_keeps_source_generation_and_cached_reads_until_ex
 
 #[tokio::test]
 async fn reset_during_control_restoration_fences_reconnect_and_never_dispatches_new_setting() {
+    // A hardware failure, rather than a clean abort, requires restoration.
     let (owner, _, activity, _) = fixture(false, json!({"instant":false}));
     let mut backend = NativeCameraBackend::new(owner.clone(), vec![]).unwrap();
     backend.connect().await.unwrap();
@@ -843,6 +847,19 @@ async fn reset_during_control_restoration_fences_reconnect_and_never_dispatches_
     owner.configure_geometry(S::NumY(64)).unwrap();
     owner.start_configured(3_000_000, true).unwrap();
     until(|| owner.snapshot().core.phase == "Exposing").await;
+    assert!(owner.simulated());
+    let pid = owner.snapshot().core.process_id.unwrap().to_string();
+    #[cfg(windows)]
+    let killed = std::process::Command::new("taskkill")
+        .args(["/PID", &pid, "/F"])
+        .output()
+        .unwrap();
+    #[cfg(not(windows))]
+    let killed = std::process::Command::new("kill")
+        .args(["-KILL", &pid])
+        .output()
+        .unwrap();
+    assert!(killed.status.success());
     backend
         .write("abortexposure".into(), Values::new())
         .await

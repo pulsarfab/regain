@@ -26,6 +26,7 @@ public sealed class ResilientCamera : BaseINPC, ICamera
     private CameraSession? session;
     private CancellationTokenSource? lifetime, exposureCancel;
     private Task<Frame>? exposure;
+    private long exposureGeneration;
     private Task? telemetry;
     private short bin = 1;
     public ResilientCamera(CameraDescriptor camera, IExposureDataFactory images) : this(camera, images, CameraProvider.NewHost, null) { }
@@ -150,6 +151,7 @@ public sealed class ResilientCamera : BaseINPC, ICamera
         {
             lifetime?.Cancel();
             exposureCancel?.Cancel();
+            ++exposureGeneration;
             session?.Dispose();
             session = null;
             Connected = false;
@@ -305,31 +307,26 @@ public sealed class ResilientCamera : BaseINPC, ICamera
             }
             exposureCancel?.Dispose();
             exposureCancel = CancellationTokenSource.CreateLinkedTokenSource(lifetime?.Token ?? CancellationToken.None);
+            long generation = ++exposureGeneration;
             // Session stays alive until this task unwinds; no SDK work on NINA's UI thread.
             var owner = Session;
             var token = exposureCancel.Token;
             ExtendNinaTimeout(owner, sequence.ExposureTime);
             exposure = Task.Run(() => owner.CaptureAsync(request, token), token);
+            CameraLog.Session(Name, $"Capture {generation} started: {sequence.ExposureTime:G} s");
         }
     }
     public async Task WaitUntilExposureIsReady(CancellationToken token)
     {
-        Task<Frame> pending;
-        lock (sync)
-            pending = exposure ?? throw new InvalidOperationException("No exposure");
-        using var cancel = token.Register(AbortExposure);
-        try { await pending.WaitAsync(token).ConfigureAwait(false); }
-        catch { lock (sync) RestoreNinaTimeout(); throw; }
+        await AwaitExposure(token).ConfigureAwait(false);
     }
     public async Task<IExposureData> DownloadExposure(CancellationToken token)
     {
-        Task<Frame> pending;
-        lock (sync)
-            pending = exposure ?? throw new InvalidOperationException("No exposure");
-        using var cancel = token.Register(AbortExposure);
+        long generation;
+        lock (sync) generation = exposureGeneration;
         Frame frame;
-        try { frame = await pending.WaitAsync(token).ConfigureAwait(false); }
-        finally { lock (sync) RestoreNinaTimeout(); }
+        try { frame = await AwaitExposure(token).ConfigureAwait(false); }
+        finally { lock (sync) { if (generation == exposureGeneration) RestoreNinaTimeout(); } }
         var metadata = new ImageMetaData();
         metadata.FromCamera(this);
         metadata.Image.ExposureStart = frame.StartedUtc;
@@ -349,9 +346,39 @@ public sealed class ResilientCamera : BaseINPC, ICamera
     {
         lock (sync)
         {
+            CameraLog.Session(Name, $"Capture {exposureGeneration} abort requested by client");
             exposureCancel?.Cancel();
             RestoreNinaTimeout();
         }
+    }
+    private async Task<Frame> AwaitExposure(CancellationToken token)
+    {
+        Task<Frame> pending;
+        long generation;
+        lock (sync) { pending = exposure ?? throw new InvalidOperationException("No exposure"); generation = exposureGeneration; }
+        using var cancel = token.Register(() => {
+            lock (sync) {
+                if (generation != exposureGeneration) return;
+                CameraLog.Session(Name, $"Capture {generation} readiness/download caller cancelled");
+                exposureCancel?.Cancel();
+            }
+        });
+        try {
+            // Keep ownership until the bounded stop has drained. Otherwise an
+            // autofocus restart races the previous exposure's abort/pipe reply.
+            var frame = await pending.ConfigureAwait(false);
+            token.ThrowIfCancellationRequested();
+            lock (sync) {
+                if (generation != exposureGeneration || exposureCancel?.IsCancellationRequested == true)
+                    throw new IOException($"Capture {generation} was aborted; no image returned");
+            }
+            return frame;
+        }
+        catch (OperationCanceledException) when (!token.IsCancellationRequested) {
+            // NINA treats OCE with an uncancelled caller as its readiness timeout.
+            throw new IOException($"Capture {generation} was aborted by the client; no image returned");
+        }
+        finally { lock (sync) { if (generation == exposureGeneration && pending.IsCompleted && !pending.IsCompletedSuccessfully) RestoreNinaTimeout(); } }
     }
     // NINA 3.2 imposes its own exposure-time + profile timeout around readiness.
     // Temporarily budget for our bounded recovery before NINA starts that clock.

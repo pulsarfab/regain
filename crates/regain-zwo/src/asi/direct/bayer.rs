@@ -430,6 +430,9 @@ pub fn capture(
             match read {
                 Ok(data) => break data,
                 Err(error) => {
+                    if error.is::<super::completion::CaptureCancelled>() {
+                        return Err(error);
+                    }
                     crate::asi::direct::diagnostics::read_failure(
                         profile.name,
                         &error,

@@ -1,7 +1,7 @@
-# Hub setup development preview
+# Hub setup preview
 
 Regain Hub combines source devices into shared Switch, SafetyMonitor,
-ObservingConditions, Focuser, Rotator, FilterWheel, CoverCalibrator and Camera outputs. The development branch publishes those
+ObservingConditions, Focuser, Rotator, FilterWheel, CoverCalibrator and Camera outputs. Regain 0.6 publishes those
 outputs through Alpaca, native NINA providers and native ASCOM. Their setup uses
 the shared configuration. This is the 0.6 preview; published 0.5 packages do not
 include it. External conformance, installed-client and physical acceptance remain
@@ -497,10 +497,11 @@ after resolving the source failure to restore that control. Failed writable
 readback raises an error: NINA's completion loop must not treat NaN as success.
 No write is automatically replayed after an uncertain result.
 
-Production-host and NINA-interface tests cover these behaviors. Interactive NINA,
-conformance and real-device acceptance remain pending before release.
+Production-host and NINA-interface tests cover these behaviors. Installed NINA,
+conformance and physical checks are recorded in [Hub acceptance](hub-acceptance.md),
+along with the remaining limits of the 0.6 preview.
 
-## Native ASCOM hub setup (development)
+## Native ASCOM hub setup (preview)
 
 Open **Hub outputs setup** in the Regain ASCOM Start menu group, or run the
 installed `Regain.ASCOM.Register.exe /hubsetup`. The manager reads saved choices
@@ -532,8 +533,8 @@ owned dynamic entries before deleting application files, preserving other instal
 and settings. A cleanup failure retains the installation for explicit recovery.
 Production-helper and installer lifecycle CI now pass, including installed
 metadata, in-use protection, conflict recovery, orphan cleanup and other-install
-preservation. Interactive frontend/vendor acceptance and conformance remain
-required before this development feature is released.
+preservation. The remaining interactive frontend/vendor acceptance and conformance
+limits are tracked in [Hub acceptance](hub-acceptance.md).
 
 ## Focuser simulation controls (development)
 

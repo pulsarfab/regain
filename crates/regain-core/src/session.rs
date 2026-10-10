@@ -953,10 +953,45 @@ impl Session {
                     }
                     frame.metadata["recoveries"] = json!(attempt);
                     frame.metadata["usbResets"] = json!(usb_resets);
+                    let retries = self.snapshot().retry;
+                    frame.metadata["retainedReadRetries"] = json!(retries.usb_reads);
+                    frame.metadata["downloadRetriesTotal"] = json!(retries.downloads);
+                    if attempt > 0 || retries.downloads > 0 || retries.usb_reads > 0 {
+                        self.emit("info", "capture.recovered", format!(
+                            "Returning {}x{} image after {attempt} replacement exposures, {} SDK read retries and {} retained-frame retries across all attempts; delivered frame used {} retained-frame retries and {} handle reopens",
+                            e.width, e.height, retries.downloads, retries.usb_reads,
+                            frame.metadata["readRecoveries"].as_u64().unwrap_or(0),
+                            frame.metadata["handleReopens"].as_u64().unwrap_or(0)));
+                    }
                     self.phase("Idle");
                     return Ok(frame);
                 }
                 Err(error) => {
+                    if token.is_cancelled() {
+                        // Finish framed replies before reaching this boundary.
+                        // Acknowledged stop preserves the worker and cooler;
+                        // an uncertain stop still retires the isolated worker.
+                        let stopped = self
+                            .call("stop", Value::Null, None, &CancellationToken::new())
+                            .await;
+                        if let Err(stop_error) = stopped {
+                            let message = format!(
+                                "Stop was not acknowledged; retiring worker: {stop_error:#}"
+                            );
+                            {
+                                let mut state = self.status.lock().unwrap();
+                                state.error = Some(message.clone());
+                                state.retry.last_failure = Some(message.clone());
+                            }
+                            self.emit("warning", "capture.abort_failed", message);
+                            self.invalidate().await;
+                        } else {
+                            self.status.lock().unwrap().error = None;
+                            self.emit("info", "capture.aborted", "Client cancelled capture; camera stopped without reopening or replacing exposure");
+                        }
+                        self.phase("Aborted");
+                        return Err(Failure::Cancelled.into());
+                    }
                     {
                         let mut state = self.status.lock().unwrap();
                         state.error = Some(format!("{error:#}"));
@@ -1086,14 +1121,23 @@ impl Session {
             params["transferTimeoutSeconds"] = json!(options.download_timeout_seconds);
             params["readChunkKiB"] = json!(options.direct_read_chunk_kib);
         }
-        self.call("start", params, None, token).await?;
+        // Never cancel a framed pipe exchange halfway through a reply. Check
+        // cancellation at owner checkpoints, then send a bounded stop command.
+        let exchange_token = CancellationToken::new();
+        if token.is_cancelled() {
+            return Err(Failure::Cancelled.into());
+        }
+        self.call("start", params, None, &exchange_token).await?;
         self.phase("Exposing");
         let clock = Instant::now();
         let mut environment_sample = Instant::now();
         loop {
+            if token.is_cancelled() {
+                return Err(Failure::Cancelled.into());
+            }
             self.service_cooling_with(settings, token).await?;
             let state = self
-                .call("status", Value::Null, None, token)
+                .call("status", Value::Null, None, &exchange_token)
                 .await?
                 .0
                 .as_i64()
@@ -1108,7 +1152,7 @@ impl Session {
                 "Exposure readiness timed out"
             );
             if environment_sample.elapsed() >= Duration::from_secs(2) {
-                self.read_environment(token).await?;
+                self.read_environment(&exchange_token).await?;
                 environment_sample = Instant::now();
             }
             self.delay(0.025, token).await?;
@@ -1125,7 +1169,7 @@ impl Session {
                     "download",
                     Value::Null,
                     options.download_timeout_seconds,
-                    token,
+                    &exchange_token,
                     e.bytes()?,
                 )
                 .await
@@ -1155,6 +1199,9 @@ impl Session {
                 Err(error) => return Err(error),
             }
         };
+        if token.is_cancelled() {
+            return Err(Failure::Cancelled.into());
+        }
         {
             let mut state = self.status.lock().unwrap();
             let recovered = metadata["readRecoveries"]
@@ -1210,10 +1257,6 @@ impl Session {
         metadata["backend"] = json!(if self.direct { "direct" } else { "sdk" });
         metadata["sdkFallback"] = json!(self.selection.direct && !self.direct);
         metadata["downloadRetries"] = json!(reads);
-        if attempt > 0 || reads > 0 || metadata["readRecoveries"].as_u64().unwrap_or(0) > 0 {
-            self.emit("info","capture.recovered",format!("Returning {}x{} image after {attempt} replacement exposures, {reads} SDK read retries, {} retained-frame retries and {} handle reopens",e.width,e.height,
-                metadata["readRecoveries"].as_u64().unwrap_or(0), metadata["handleReopens"].as_u64().unwrap_or(0)));
-        }
         Ok(Frame {
             exposure: e.clone(),
             metadata,
@@ -1293,16 +1336,19 @@ impl Session {
         self.invalidate().await;
         if !closed
             && self.ever_opened
-            && self.direct
-            && self.snapshot().info["cooled"] == true
+            && self
+                .snapshot()
+                .controls
+                .values()
+                .any(|c| c.writable && matches!(c.kind, 17 | 21))
             && self.selection.serial.is_some()
         {
             let cleanup = async {
                 self.delay(self.selection.recovery.reconnect_delay_seconds, &token)
                     .await?;
                 self.open(&token).await?;
-                self.call("set", json!({"control":17,"value":0}), None, &token)
-                    .await?;
+                // Backend close disables each supported thermal actuator and
+                // attempts both even if one write fails. Never restore settings.
                 self.call("close", Value::Null, Some(CLOSE_SECONDS), &token)
                     .await?;
                 Result::<()>::Ok(())
@@ -1312,7 +1358,7 @@ impl Session {
                 self.emit(
                     "warning",
                     "cooling.cleanup_failed",
-                    format!("Could not disable cooling: {error:#}"),
+                    format!("Could not disable cooler/dew heater: {error:#}"),
                 );
             }
             self.invalidate().await;
@@ -2560,6 +2606,127 @@ mod tests {
         s.close().await;
     }
     #[tokio::test]
+    async fn intentional_abort_keeps_worker_cooling_and_does_not_retry() {
+        for direct in [false, true] {
+            let token = CancellationToken::new();
+            let mut sel = selection(direct);
+            if direct {
+                sel.name = "ZWO ASI6200MM Pro".into();
+            }
+            let mut rt = runtime();
+            rt.sdk_simulation = Some(json!({"instant":false,"temperature":250,"coolerPower":70}));
+            let events = Arc::new(Mutex::new(Vec::new()));
+            let recorded = events.clone();
+            let mut s = Session::new(
+                sel,
+                rt,
+                Arc::new(move |_, event, _| recorded.lock().unwrap().push(event.to_owned())),
+            )
+            .unwrap();
+            s.connect(&token).await.unwrap();
+            Session::queue_control(&s.status, 16, 25).unwrap();
+            Session::queue_control(&s.status, 17, 1).unwrap();
+            s.refresh(&token).await.unwrap();
+            if direct {
+                s.call(
+                    "resume-cooling",
+                    json!({"power":70,"temperature":25.,"previousTarget":25}),
+                    None,
+                    &token,
+                )
+                .await
+                .unwrap();
+                s.refresh(&token).await.unwrap();
+            }
+            let pid = s.snapshot().process_id;
+            let abort = CancellationToken::new();
+            let cancel = abort.clone();
+            let status = s.status.clone();
+            let cancellation = tokio::spawn(async move {
+                exposing(&status).await;
+                cancel.cancel();
+            });
+            let result = tokio::time::timeout(
+                Duration::from_secs(5),
+                s.capture(
+                    Exposure {
+                        microseconds: 600_000_000,
+                        ..exposure()
+                    },
+                    &abort,
+                ),
+            )
+            .await
+            .unwrap();
+            cancellation.await.unwrap();
+            assert!(matches!(
+                result.err().unwrap().downcast_ref::<Failure>(),
+                Some(Failure::Cancelled)
+            ));
+            assert_eq!(s.snapshot().process_id, pid);
+            assert!(s.snapshot().control_connection_available);
+            assert_eq!(s.snapshot().values[&17], 1);
+            assert_eq!(s.snapshot().values[&15], 70);
+            assert!(s.snapshot().retry.last_failure.is_none());
+            assert_eq!(
+                s.capture(exposure(), &token).await.unwrap().metadata["recoveries"],
+                0
+            );
+            assert_eq!(s.snapshot().process_id, pid);
+            assert!(
+                !events
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .any(|e| e == "capture.failed" || e == "capture.retry")
+            );
+            s.close().await;
+        }
+    }
+    #[tokio::test]
+    async fn failed_abort_retires_worker_before_another_capture() {
+        let token = CancellationToken::new();
+        let mut s = Session::new(selection(true), runtime(), log()).unwrap();
+        s.connect(&token).await.unwrap();
+        let pid = s.snapshot().process_id;
+        s.call("simulation", json!({"cleanupFailure":true}), None, &token)
+            .await
+            .unwrap();
+        let abort = CancellationToken::new();
+        let cancel = abort.clone();
+        let status = s.status.clone();
+        let cancellation = tokio::spawn(async move {
+            exposing(&status).await;
+            cancel.cancel();
+        });
+        let result = s
+            .capture(
+                Exposure {
+                    microseconds: 600_000_000,
+                    ..exposure()
+                },
+                &abort,
+            )
+            .await;
+        cancellation.await.unwrap();
+        assert!(matches!(
+            result.err().unwrap().downcast_ref::<Failure>(),
+            Some(Failure::Cancelled)
+        ));
+        assert!(!s.snapshot().control_connection_available);
+        assert_eq!(s.snapshot().process_id, None);
+        assert!(
+            s.snapshot()
+                .retry
+                .last_failure
+                .unwrap()
+                .contains("Stop was not acknowledged")
+        );
+        s.capture(exposure(), &token).await.unwrap();
+        assert_ne!(s.snapshot().process_id, pid);
+        s.close().await;
+    }
+    #[tokio::test]
     async fn direct_fallback_revalidates_same_identity_and_uses_one_budget() {
         let token = CancellationToken::new();
         let mut sel = selection(true);
@@ -2577,6 +2744,8 @@ mod tests {
         assert_eq!(frame.metadata["backend"], "sdk");
         assert_eq!(frame.metadata["sdkFallback"], true);
         assert_eq!(frame.metadata["recoveries"], 1);
+        assert_eq!(frame.metadata["retainedReadRetries"], 2);
+        assert_eq!(frame.metadata["readRecoveries"].as_u64().unwrap_or(0), 0);
         s.close().await;
     }
     #[test]

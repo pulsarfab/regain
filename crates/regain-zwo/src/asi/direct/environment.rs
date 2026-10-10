@@ -60,9 +60,33 @@ pub(super) fn recovery_state(
     if target > previous_target {
         return (0.0, 0.0);
     }
-    let integral = (power - PROPORTIONAL * (prior - target)).clamp(0.0, 100.0);
-    let boosted = (power + PROPORTIONAL * (current - prior).max(0.0)).clamp(0.0, 100.0);
+    let integral = (power - PROPORTIONAL * (prior - previous_target)).clamp(0.0, 100.0);
+    let boosted = (power + PROPORTIONAL * (current - prior + previous_target - target).max(0.0))
+        .clamp(0.0, 100.0);
     (boosted, integral)
+}
+
+fn target_change(
+    power: f64,
+    integral: f64,
+    temperature: f64,
+    previous: f64,
+    target: f64,
+) -> (f64, f64) {
+    if temperature <= target {
+        return (0.0, 0.0);
+    }
+    let demand = (integral + PROPORTIONAL * (temperature - target)).clamp(0.0, 100.0);
+    // A deliberate setpoint change gets its proportional response immediately.
+    // Normal feedback still uses the bounded slew and anti-windup controller.
+    (
+        if target < previous {
+            power.max(demand)
+        } else {
+            power.min(demand)
+        },
+        integral,
+    )
 }
 
 // Percentage points per second, with bounded elapsed time after blocked USB.
@@ -269,14 +293,47 @@ impl Environment {
         match control {
             16 => {
                 ensure!((-40..=30).contains(&value), "invalid cooler target");
+                if self.enabled && value != self.target {
+                    let temperature = self.feedback(camera)?;
+                    let (power, integral) = target_change(
+                        self.power,
+                        self.integral,
+                        temperature,
+                        self.target as f64,
+                        value as f64,
+                    );
+                    self.write_power(camera, power)?;
+                    self.power = power;
+                    self.integral = integral;
+                    self.temperature = temperature;
+                    self.tick = observed;
+                    self.observed_at[0] = observed;
+                    self.observed_at[1] = observed;
+                    crate::asi::direct::diagnostics::log(
+                        "info",
+                        "cooling.target_changed",
+                        format_args!(
+                            "Target {} -> {value} C; output {power:.1}% at {temperature:.2} C",
+                            self.target
+                        ),
+                    );
+                }
                 self.target = value;
                 self.observed_at[2] = observed;
             }
             17 => {
                 ensure!((0..=1).contains(&value), "invalid cooler enable");
                 if value == 0 || !self.enabled {
-                    self.write_power(camera, 0.0)?;
-                    self.power = 0.0;
+                    let power = if value == 0 {
+                        0.0
+                    } else {
+                        self.temperature = self.feedback(camera)?;
+                        self.observed_at[0] = observed;
+                        (PROPORTIONAL * (self.temperature - self.target as f64)).clamp(0.0, 100.0)
+                    };
+                    self.write_power(camera, power)?;
+                    self.power = power;
+                    self.tick = observed;
                     self.observed_at[1] = observed;
                     self.integral = 0.0;
                 }
@@ -309,6 +366,15 @@ impl Environment {
             _ => anyhow::bail!("environment control is read-only or unsupported"),
         }
         Ok(())
+    }
+    fn feedback(&mut self, camera: &Camera) -> Result<f64> {
+        match Self::read_temperature(camera) {
+            Ok(t) => Ok(t),
+            Err(error) => {
+                let _ = self.set(camera, 17, 0);
+                Err(error)
+            }
+        }
     }
     pub fn service(&mut self, camera: &Camera) -> Result<()> {
         let elapsed = self.tick.elapsed().as_secs_f64();
@@ -355,8 +421,64 @@ mod tests {
             (100.0, 90.0)
         );
         assert_eq!(recovery_state(40.0, -10.0, -9.0, -9.0, -10.0), (0.0, 0.0));
+        assert_eq!(
+            recovery_state(40.0, -10.0, -8.0, -15.0, -10.0),
+            (96.0, 40.0)
+        );
         let (power, mut integral) = recovery_state(40.0, -10.0, -8.0, -10.0, -10.0);
         assert!(regulate(power, &mut integral, 2.0, 1.0) >= power);
+    }
+    #[test]
+    fn changed_target_converges_promptly_and_releases_unwanted_cooling() {
+        assert_eq!(target_change(40.0, 40.0, -10.0, -10.0, -15.0), (80.0, 40.0));
+        assert_eq!(
+            target_change(40.0, 40.0, -10.0, -10.0, -30.0),
+            (100.0, 40.0)
+        );
+        assert_eq!(target_change(96.0, 40.0, -8.0, -15.0, -10.0), (56.0, 40.0));
+        assert_eq!(target_change(96.0, 40.0, -8.0, -15.0, -5.0), (0.0, 0.0));
+        assert_eq!(target_change(0.0, 0.0, 25.0, 25.0, -10.0), (100.0, 0.0));
+        assert_eq!(target_change(40.0, 40.0, -20.0, -10.0, -15.0), (0.0, 0.0));
+    }
+    #[test]
+    fn fast_setpoint_changes_converge_without_large_overshoot() {
+        for (thermal_seconds, cooling, lag_seconds) in
+            [(20.0, 0.03, 5.0), (60.0, 0.01, 8.0), (180.0, 0.0025, 10.0)]
+        {
+            let mut temperature = 20.0;
+            let mut power = 100.0;
+            let mut integral = 0.0;
+            let mut actuator = 0.0;
+            let mut previous = 0.0;
+            for target in [0.0, -5.0, 5.0] {
+                if target != previous {
+                    let prior_power = power;
+                    (power, integral) =
+                        target_change(power, integral, temperature, previous, target);
+                    if target < previous {
+                        assert!(power > prior_power + 20.0);
+                    } else {
+                        assert_eq!(power, 0.0);
+                    }
+                }
+                for second in 0..1200 {
+                    power = regulate(power, &mut integral, temperature - target, 1.0);
+                    actuator += (power - actuator) / lag_seconds;
+                    temperature += (20.0 - temperature) / thermal_seconds - cooling * actuator;
+                    assert!((0.0..=100.0).contains(&power));
+                    if target <= previous {
+                        assert!(temperature > target - 2.0, "overshoot {temperature}");
+                    }
+                    if second > 600 {
+                        assert!(
+                            (temperature - target).abs() < 0.5,
+                            "temperature {temperature}, target {target}"
+                        );
+                    }
+                }
+                previous = target;
+            }
+        }
     }
     #[test]
     fn responds_promptly_without_windup_or_unbounded_elapsed_time() {
