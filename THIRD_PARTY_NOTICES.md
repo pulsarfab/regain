@@ -67,3 +67,8 @@ Library Licence 3.1. Kit source scripts are included under `source/`; the native
 Frida extension remains a separate replaceable file in `runtime/`.
 The Python distribution also supplies Microsoft Visual C++ runtime DLLs;
 its bundled license file includes the applicable third-party notices.
+
+The development-only ConformU review patch in `scripts/conformu-review/` modifies
+ASCOM Initiative's GPL-3.0 ConformU 4.5.0 sources and retains that license in its
+own directory. It is a separate external validation tool, not linked into or
+included in Regain's NINA, ASCOM, Alpaca or camera-kit packages.

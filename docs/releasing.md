@@ -47,6 +47,23 @@ draft releases. A tag must match the source version and be contained in its
 `release/MAJOR.MINOR` branch when that branch exists, or `main` otherwise.
 Maintenance builds must match the branch's major/minor version.
 
+For a signed review build from a development branch, dispatch **Release** with
+`candidate=true`:
+
+```sh
+gh workflow run release.yml --ref codex/regain-hub -f candidate=true
+```
+
+Candidate builds verify that the commit belongs to the named remote branch,
+then use the same payload signing and signed installer lifecycle checks. Download
+the installer from the run's `Regain-ASCOM-installer` artifact. This path cannot
+build a tag, create a GitHub release or publish a NINA registry entry. The Hub
+candidate carries version 0.6.0.0; stable 0.5 distribution remains separate.
+The branch's **Build and test** run supplies full regression coverage; a candidate
+does not repeat that suite in the signing job. Signed installer lifecycle and
+package checks still run. Stable release jobs retain the full suite and have a
+60-minute limit to accommodate Hub validation and signing.
+
 For example, before preparing the next 0.5 patch:
 
 ```sh

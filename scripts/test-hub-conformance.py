@@ -1,6 +1,7 @@
 """Run external ConformU against eight explicitly simulated hub classes only.
 
-Requires an already built Regain server and an unmodified ConformU installation.
+Requires a built Regain server and stock ConformU by default; review builds
+require an explicit label and a matching provenance manifest.
 Never accepts an upstream URI, COM ProgID, existing hub config or hardware source.
 Optional native ASCOM publication uses temporary per-user COM fixture aliases.
 Logs/settings/results are retained in a fresh private artifacts directory.
@@ -34,6 +35,8 @@ def sha256(path):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--conformu", required=True, type=Path)
+    parser.add_argument("--validator-kind", choices=("stock", "review"), default="stock",
+                        help="Review requires the explicitly labelled ConformU review build; never replaces stock evidence")
     parser.add_argument("--bin-dir", default=ROOT / "target/debug", type=Path)
     parser.add_argument("--mode", choices=("protocol", "interface", "all"), default="all")
     parser.add_argument("--classes", nargs="+", choices=CLASSES, default=CLASSES)
@@ -94,8 +97,24 @@ def main():
                                    "AlpacaConfiguration": {"ProtocolStrictChecks": True}}), encoding="utf-8")
     version = subprocess.run([str(tool), "--version"], capture_output=True, text=True,
                              check=True, timeout=30).stdout.strip()
+    if ("regain-review" in version.lower()) != (args.validator_kind == "review"):
+        parser.error("Validator label and tool version disagree")
     provenance = {"toolPath": str(tool), "toolSha256": sha256(tool),
+                  "validatorKind": args.validator_kind,
                   "serverPath": str(binary), "serverSha256": sha256(binary)}
+    if (tool.parent / "ConformU.dll").is_file():
+        provenance["toolAssemblySha256"] = sha256(tool.parent / "ConformU.dll")
+    if args.validator_kind == "review":
+        manifest_path = tool.parent / "regain-review.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        expected = {"validatorKind": "review", "version": version,
+                    "toolSha256": provenance["toolSha256"],
+                    "toolAssemblySha256": provenance.get("toolAssemblySha256"),
+                    "patchSha256": sha256(ROOT / "scripts/conformu-review/conformu-4.5.patch")}
+        if any(manifest.get(key) != value for key, value in expected.items()):
+            parser.error("Review manifest does not match this tool and patch")
+        provenance["reviewManifestSha256"] = sha256(manifest_path)
+        provenance["reviewPatchSha256"] = manifest["patchSha256"]
     if args.camera_backend != "simulated":
         provenance.update(workerPath=str(worker), workerSha256=sha256(worker))
     results = []

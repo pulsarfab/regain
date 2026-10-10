@@ -8334,3 +8334,59 @@ the development files and old stable backup are retained outside NINA.
 The maintenance release is public on GitHub, both registry URLs and crates.io.
 The Hub remains a 0.6 draft. Remaining environment, standards, lifecycle and
 final review gates in the acceptance matrix remain required.
+
+## Conformance corrections and signed installer candidate, 2026-10-09
+
+Preserved stock ConformU 4.5 results and added a separately labelled, pinned
+review build. The proposed GPL-3.0 test-tool corrections respect focuser
+MaxIncrement/Move InvalidValue semantics and sparse camera bins. Both x86/x64
+full interface runs for the focuser and native SDK camera simulation pass with
+zero findings in the reviewed tool. A fresh stock eight-class x64 run retains
+four focuser findings; seven other classes pass, including panel DeviceState
+at 14 ms. These results do not claim upstream acceptance of the corrections.
+
+Extended cold timing diagnostics with reversed measurement order, x86 selection,
+CPU/GC observations and explicit state-value failure details. Retained a failed
+40-process run rather than retrying it into a pass. Inspection found a cache /
+clock ordering race, reproduced deterministically and fixed in `262d1bb` for
+all five typed classes and virtual inputs. Real invalid sample ages remain
+rejected. This does not establish the cause of the original 139 ms observation.
+
+CI `38007699037` found a NINA COM test trace being read while its sibling source
+lease could still append polling calls. The fixture now disconnects both leases
+before reading the completed trace; production behavior and assertions are
+unchanged. Fresh local validation passes 791 Hub/Alpaca Rust tests, 35 COM fixtures and
+all eight NINA camera imports. The Hub library passes warnings-denied Clippy.
+A broad initial compile hit Windows paging-file exhaustion; two compile jobs
+completed successfully without source or system-setting workarounds.
+
+Added an explicit branch-candidate release mode with checked remote ancestry,
+no stable tag/feed publication, retained signing and installer lifecycle checks.
+Raised the release job limit to 60 minutes; candidate signing uses branch CI
+rather than duplicating its full regression. Stable releases retain that full
+regression. Candidate `38008785600` at `4504d73` passes its entire signed job,
+including all eight installed classes, both bitnesses, upgrades, uninstall and
+two-install ownership isolation. Its downloaded installer has a valid
+StackFoundry LLC signature and SHA256
+`8EA551F1E7AD216690448E82F349C141F136B24A44C4B7920DE4A314B2D4809F`.
+The local UAC launch was canceled before installation; it is not an installer
+failure or a local acceptance pass. A replacement candidate at `262d1bb`
+includes the later cache fix. No stable 0.6 package or registry entry is published.
+
+
+The rebuilt panel passes stock ConformU in x64 (29 ms DeviceState) and x86
+(23 ms), with zero findings. Longer diagnostics exposed an independent startup
+precondition in the timing harness: Connected does not mean the first cache poll
+has finished. Retained failures include the empty first collection and the
+immediately completed healthy first poll. The harness now waits on source
+telemetry, without warming DeviceState, and preserves strict value assertions,
+source-error/generation checks and bounded readiness. See the conformance record.
+
+
+The readiness-corrected diagnostic passes 100 fresh x64 clients and six fresh
+x86 clients, with first facade reads below 31 ms and strict state-value/cleanup
+checks. Final stock panel passes remain separate from this diagnostic result.
+Candidate `38010328546` at `262d1bb` is downloaded and signature-verified as
+StackFoundry LLC, SHA256
+`9FF016B9F2DFD452A9C2DEC916D868D38DBD2CC4D6703E660AF7DB315EDCF53D`.
+Its signed installer lifecycle and branch CI are pending at this checkpoint.

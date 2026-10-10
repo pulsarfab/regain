@@ -309,9 +309,15 @@ Requires Windows, .NET 10 SDK and the built, unmodified ConformU 4.5.0 assembly
 beside that executable, plus existing Regain host/x64 COM builds. It creates one
 explicit simulated panel, a private host and temporary COM aliases using the
 conformance publication helper. It accepts no existing config or device identity.
-Three fresh clients measure the original facade first, then split getter/dispatch,
-collection enumeration and value cleaning. All five expected state values are
+After the initial source poll is ready, six fresh clients measure the original
+facade first in three processes, then
+reverse the order in three more so getter/dispatch, collection enumeration and
+value cleaning are measured cold too. `--native-ascom x86` selects the other
+server architecture; the default is x64. All five expected state values are
 validated; output, hashes and cleanup remain under `artifacts/hub-state-timing-*`.
+Readiness uses source telemetry and never calls DeviceState before measurement.
+It is bounded to five seconds and fails on source errors, incomplete polls or
+generation changes. Connection acknowledgement alone does not seed the cache.
 No HTTP listener, installed driver or hardware is used. No default toolchain or
 upstream assembly is changed.
 
@@ -322,3 +328,93 @@ The validator times enumeration/cleaning as well as the actual getter. This
 narrows the measured path but does not explain or waive the original 139 ms
 finding. Keep that raw report and obtain a trace of an actual slow call before
 changing production behavior or declaring its cause resolved.
+
+## Validator corrections and fresh timing, 2026-10-09
+
+The [review patch](../scripts/conformu-review/README.md) corrects the two test
+assumptions without changing Regain's motion or binning behavior. Focuser
+endpoint tests now traverse using MaxIncrement and verify that invalid targets
+raise InvalidValue without starting motion. Camera exposure tests recognize an
+unsupported intermediate bin only when it was not previously accepted by the
+property tests and the exception is specifically InvalidValue. Errors on bin 1,
+the advertised maximum, previously accepted factors or any other exception
+continue to fail. All supported bins undergo exposure and geometry checks.
+
+The preparer pins the upstream source ZIP and source hashes, applies the patch
+in a fresh directory, builds an explicitly labelled `4.5.0-regain-review`, and
+records hashes. The runner requires `--validator-kind review`, verifies the
+manifest against the binary/assembly/patch, and records review provenance.
+Stock remains the default. This GPL-3.0 development tool is separate from the
+Regain runtime and is not shipped in product packages.
+
+Both corrected full interface suites pass with zero errors, issues, configuration
+alerts and timing findings:
+
+| Native COM server | Tested source modes | Evidence suffix |
+| --- | --- | --- |
+| x64 | Dedicated simulated focuser and native SDK camera simulation | `dcd5d1fa47e848d68e2bbcb2aea97eac` |
+| x86 | Dedicated simulated focuser and native SDK camera simulation | `84797d8a186847bcaa8d2b3d3caff0c4` |
+
+These are review-tool passes, not unmodified ConformU passes. The Move/MaxStep
+wording discrepancy and upstream acceptance of the corrections remain separate.
+The stock full eight-class x64 run in `a5d97828b50048da8240c1f49d43e90a` retains
+exactly the four focuser findings; the other seven classes pass. Its panel
+DeviceState takes 14 ms against the unchanged 100 ms target.
+
+Cold-first timing diagnostics also pass their value/cleanup assertions in
+`hub-state-timing-2399154ce4744658b4fa4e531a021db6` (x64) and
+`hub-state-timing-64a83499149245c5bdc6321775fb84ba` (x86). Original facade first
+reads take 19.23–28.35 ms and 19.77–34.18 ms respectively. Cold split driver/IPC
+reads take 5.63–7.04 ms; enumeration takes 7.99–8.96 ms and cleaning 4.59–5.08 ms.
+The original 139 ms sample has not recurred and still lacks a contemporaneous
+trace. No causal production fix is claimed, no target is relaxed, and that
+historical investigation remains open.
+
+### Cached-state race and longer sweep
+
+A 40-process diagnostic in `hub-state-timing-f1d3927979974838a3f9bab3470daf84`
+failed its state-value assertion on client 11. The original error omitted the
+returned values, so it cannot establish which field was missing. The harness
+now records names, values and types on failure. Subsequent 40- and 100-process
+sweeps (`edd77ed1cf024d47957f75d03f10be5a` and
+`af7ae6c15cd440a887ee0e49e5e8263e`) passed all value and cleanup checks. These
+later passes do not erase the failed run or prove its cause.
+
+Inspection found a separate, reproducible ordering defect: typed DeviceState
+and virtual-input reads obtained the query clock before cloning the cache. A
+concurrent poll could then publish a newer sample, which the age validator
+correctly rejected as future-dated. Commit `262d1bb` reads the snapshot first
+and its source clock afterward across Camera, Focuser, Rotator, FilterWheel and
+CoverCalibrator. The deterministic publication regression fails under the old
+ordering and passes under the new ordering; genuine future timestamps still
+fail. No I/O, motion replay, age clamping or timing waiver is introduced.
+This fixes the demonstrated race; neither the earlier incomplete snapshot
+report nor the original 139 ms timing sample establishes that race as its cause.
+
+
+After the production ordering fix, unmodified ConformU passes the full panel
+interface in both architectures: x64 `cf611be4dad84cddbc90f5621e019186`
+(DeviceState 29 ms), x86 `da7dc5d6b5dc4a0780ba4b917a0e88b3` (23 ms).
+Both have zero errors, issues, configuration alerts and timing findings.
+
+The longer diagnostic still caught an empty **first** DeviceState collection
+in `5be88958e56a4e42824c070c2d053f1c` (client 28) and
+`c9a96e1d41784be0abddee908de2d2f3` (client 58). Failure-time telemetry in the
+latter shows a healthy first poll completed immediately afterward, with all six
+source properties and no errors. This exposed a separate harness assumption:
+connection acknowledgement is not proof that the initial cache poll completed.
+The harness now explicitly waits for that first poll via source telemetry,
+without warming DeviceState, then requires all five correct operational values.
+The failed runs remain retained; neither a startup empty cache nor a corrected
+readiness precondition explains the historical 139 ms observation.
+
+
+With that explicit readiness precondition, `2da53fac21404afe80fda7a61afdca57`
+passes 100 fresh x64 clients, with facade-first reads of 17.75�30.79 ms.
+Cold split getter, enumeration and cleaning maxima are 9.14, 8.83 and 5.90 ms.
+The final x86 fixture, including the generation guard and client binary hashes,
+passes six fresh clients in `f37e66a551b944d2b34bd918cdc267e4`; its facade-first
+reads take 18.64�30.41 ms. All strict value assertions and cleanup pass. These
+are diagnostic results; stock interface conformance is reported separately.
+The required operational property list and its known-value qualification are
+specified by [ASCOM DeviceState](https://ascom-standards.org/newdocs/covercalibrator.html#CoverCalibrator.DeviceState).

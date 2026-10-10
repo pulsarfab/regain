@@ -1,0 +1,245 @@
+--- a/ConformU/Conform/FocuserTester.cs
++++ b/ConformU/Conform/FocuserTester.cs
+@@ -497,120 +497,54 @@
+                 }
+                 if (cancellationToken.IsCancellationRequested) return;
+ 
+-                // For absolute focusers, test movement to the 0 and MaxStep limits, also that the focuser will gracefully stop at the limits if commanded to move beyond them
++                // Review correction: endpoint traversal must respect MaxIncrement.
++                // Invalid absolute targets use Move's documented InvalidValue contract.
+                 if (mAbsolute)
+                 {
+-                    if (mTempCompFalseOk)
+-                    {
+-                        LogCallToDriver("Move - To 0", "About to set TempComp property");
+-                        focuser.TempComp = false; // Set temperature compensation off
+-                    }
+-
+-                    // Test movement to the 0 limit
+-                    try
+-                    {
+-                        MoveFocuserToPosition("Move - To 0", 0);
+-                        LogCallToDriver("Move - To 0", "About to get Position property");
+-                        int focuserPosition = focuser.Position;
+-                        if (Math.Abs(focuserPosition) <= focuserMoveTolerance)
+-                        {
+-                            LogOk("Move - To 0", $"Reported position: {focuserPosition}.");
+-                        }
+-                        else
+-                        {
+-                            LogIssue("Move - To 0", $"Move ended at {focuserPosition}, which is {focuserPosition} steps away from the expected position 0. This is outside Conform's configured move tolerance: {focuserMoveTolerance}.");
+-                        }
+-                    }
+-                    catch (Exception ex)
+-                    {
+-                        HandleException("Move - To 0", MemberType.Method, Required.Mandatory, ex, "");
+-                    }
+-                    if (cancellationToken.IsCancellationRequested) return;
+-
+-                    // Test movement below the 0 limit
+-                    try
+-                    {
+-                        MoveFocuserToPosition("Move - Below 0", -OUT_OF_RANGE_INCREMENT);
+-                        LogCallToDriver("Move - Below 0", "About to get Position property");
+-                        int focuserPosition = focuser.Position;
+-                        if (Math.Abs(focuserPosition) <= focuserMoveTolerance) // Allow a small tolerance
+-                        {
+-                            LogOk("Move - Below 0", $"Movement below 0 was not permitted. (Actually moved to {focuser.Position})");
+-                        }
+-                        else
+-                        {
+-                            LogIssue("Move - Below 0", $"Move was permitted below position 0. Move ended at {focuserPosition}, which is {focuserPosition} steps away from the expected position 0. This is outside Conform's configured move tolerance: {focuserMoveTolerance}.");
+-                        }
+-                    }
+-                    catch (Exception ex)
+-                    {
+-                        HandleException("Move - Below 0", MemberType.Method, Required.Mandatory, ex, "Move should fail gracefully by just moving to position 0; it should not throw an exception");
+-                    }
+-                    if (cancellationToken.IsCancellationRequested) return;
+-
+-                    // Test movement to the mid-point
+-                    try
+-                    {
+-                        int midPoint = mMaxStep / 2;
+-                        MoveFocuserToPosition("Move - To MidPoint", midPoint);
+-                        LogCallToDriver("Move - To MidPoint", "About to get Position property");
+-                        int focuserPosition = focuser.Position;
+-                        if (Math.Abs(midPoint - focuserPosition) <= focuserMoveTolerance) // Allow a small tolerance
+-                        {
+-                            LogOk("Move - To MidPoint", $"Reported position: {focuserPosition}.");
+-                        }
+-                        else
+-                        {
+-                            LogIssue("Move - To MidPoint", $"Move ended at {focuserPosition}, which is {Math.Abs(focuserPosition - midPoint)} steps away from the expected position {midPoint}. This is outside Conform's configured move tolerance: {focuserMoveTolerance}.");
+-                        }
+-                    }
+-                    catch (Exception ex)
+-                    {
+-                        HandleException("Move - To MidPoint", MemberType.Method, Required.Mandatory, ex, "");
+-                    }
+-                    if (cancellationToken.IsCancellationRequested) return;
+-
+-                    // Test movement to the MaxSteps limit
+-                    try
+-                    {
+-                        MoveFocuserToPosition("Move - To MaxStep", mMaxStep);
+-                        LogCallToDriver("Move - To MaxStep", "About to get Position property");
+-                        int focuserPosition = focuser.Position;
+-                        if (Math.Abs(mMaxStep - focuserPosition) <= focuserMoveTolerance) // Allow a small tolerance
+-                        {
+-                            LogOk("Move - To MaxStep", $"Reported position: {focuserPosition}.");
+-                        }
+-                        else
+-                        {
+-                            LogIssue("Move - To MaxStep", $"Move ended at {focuserPosition}, which is {Math.Abs(focuserPosition - mMaxStep)} steps away from the expected position {mMaxStep}. This is outside Conform's configured move tolerance: {focuserMoveTolerance}.");
+-                        }
+-                    }
+-                    catch (Exception ex)
+-                    {
+-                        HandleException("Move - To MaxStep", MemberType.Method, Required.Mandatory, ex, "");
+-                    }
+-                    if (cancellationToken.IsCancellationRequested) return;
+-
+-                    // Test movement above the MaxStep limit
+-                    try
+-                    {
+-                        MoveFocuserToPosition("Move - Above MaxStep", mMaxStep + OUT_OF_RANGE_INCREMENT);
+-                        LogCallToDriver("Move - Above MaxStep", "About to get Position property");
+-                        int focuserPosition = focuser.Position;
+-                        if (Math.Abs(mMaxStep - focuserPosition) <= focuserMoveTolerance) // Allow a small tolerance
+-                        {
+-                            LogOk("Move - Above MaxStep", $"Movement above MaxStep was not permitted. (Actually moved to {focuser.Position})");
+-                        }
+-                        else
+-                        {
+-                            LogIssue("Move - Above MaxStep", $"Move was permitted above position MaxStep. Move ended at {focuserPosition}, which is {Math.Abs(mMaxStep - focuserPosition)} steps away from the expected position {mMaxStep}. This is outside Conform's configured move tolerance: {focuserMoveTolerance}.");
+-                        }
+-                    }
+-                    catch (Exception ex)
+-                    {
+-                        HandleException("Move - Above Maxstep", MemberType.Method, Required.Mandatory, ex, "Move should fail gracefully by just moving to position MaxStep; it should not throw an exception");
+-                    }
+-                    if (cancellationToken.IsCancellationRequested) return;
++                    if (mTempCompFalseOk) focuser.TempComp = false;
++                    foreach (int target in new[] { 0, mMaxStep / 2, mMaxStep })
++                    {
++                        string testName = $"Move - Bounded traversal to {target}";
++                        try
++                        {
++                            int current = focuser.Position;
++                            while (current != target && !cancellationToken.IsCancellationRequested)
++                            {
++                                int next = (int)(current + Math.Clamp((long)target - current, -(long)mMaxIncrement, mMaxIncrement));
++                                MoveFocuserToPosition(testName, next);
++                                int reached = focuser.Position;
++                                if (Math.Abs((long)reached - next) > focuserMoveTolerance || reached == current)
++                                {
++                                    LogIssue(testName, $"Requested {next}, reached {reached}; bounded traversal failed.");
++                                    break;
++                                }
++                                current = reached;
++                                if (Math.Abs((long)current - target) <= focuserMoveTolerance) break;
++                            }
++                            if (Math.Abs((long)focuser.Position - target) <= focuserMoveTolerance)
++                                LogOk(testName, $"Reached endpoint {target} using bounded moves.");
++                        }
++                        catch (Exception ex) { HandleException(testName, MemberType.Method, Required.Mandatory, ex, ""); }
++                        if (cancellationToken.IsCancellationRequested) return;
++                    }
++                    foreach (int target in new[] { -OUT_OF_RANGE_INCREMENT, mMaxStep + OUT_OF_RANGE_INCREMENT })
++                    {
++                        string testName = $"Move - Reject invalid target {target}";
++                        int before = focuser.Position;
++                        try
++                        {
++                            focuser.Move(target);
++                            LogIssue(testName, "Out-of-range absolute target did not raise InvalidValue.");
++                        }
++                        catch (Exception ex)
++                        {
++                            HandleInvalidValueExceptionAsOk(testName, MemberType.Method, Required.Mandatory, ex,
++                                "rejecting an out-of-range absolute target", "Received InvalidValue for an invalid target.");
++                        }
++                        if (focuser.IsMoving || focuser.Position != before)
++                            LogIssue(testName, "Rejected command changed position or started motion.");
++                        if (cancellationToken.IsCancellationRequested) return;
++                    }
+                 }
+ 
+                 // Restore original TempComp value
+--- a/ConformU/Conform/CameraTester.cs
++++ b/ConformU/Conform/CameraTester.cs
+@@ -17,6 +17,9 @@
+ 
+     internal class CameraTester : DeviceTesterBaseClass
+     {
++        private readonly HashSet<short> acceptedBinX = new();
++        private readonly HashSet<short> acceptedBinY = new();
++
+         #region Constants and variables
+ 
+         private const int CAMERA_PULSE_DURATION_MILLISECONDS = 2000; // Duration of camera pulse guide test (ms)
+@@ -548,6 +551,7 @@
+                         {
+                             LogCallToDriver("ConformanceCheck", "About to set BinX");
+                             TimeMethod("BinX Write", () => camera.BinX = (short)lBinX, TargetTime.Standard);
++                            acceptedBinX.Add((short)lBinX);
+                             binXSetOk = true;
+                         }
+                         catch (Exception ex)
+@@ -561,6 +565,7 @@
+                         {
+                             LogCallToDriver("ConformanceCheck", "About to set BinY");
+                             TimeMethod("BinY Write", () => camera.BinY = (short)lBinY, TargetTime.Standard);
++                            acceptedBinY.Add((short)lBinY);
+ 
+                             if (binXSetOk)
+                                 LogOk("BinXY Write", $"Successfully set asymmetric XY binning: {lBinX} x {lBinY}");
+@@ -585,6 +590,7 @@
+                     {
+                         LogCallToDriver("ConformanceCheck", "About to set BinX");
+                         TimeMethod("BinX Write", () => camera.BinX = (short)lBinX, TargetTime.Standard);
++                            acceptedBinX.Add((short)lBinX);
+                         binXSetOk = true;
+                     }
+                     catch (Exception ex)
+@@ -598,6 +604,7 @@
+                     {
+                         LogCallToDriver("ConformanceCheck", "About to set BinY");
+                         TimeMethod("BinY Write", () => camera.BinY = (short)lBinX, TargetTime.Standard);
++                            acceptedBinY.Add((short)lBinX);
+                         if (binXSetOk)
+                             LogOk("BinXY Write", $"Successfully set symmetric XY binning: {lBinX} x {lBinX}");
+                         else
+@@ -2662,6 +2669,15 @@
+             }
+             catch (Exception ex)
+             {
++                // Sparse binning is legal; only InvalidValue indicates an unsupported factor.
++                // All other failures still enter the normal failing path below.
++                if (requiredBinX > 1 && requiredBinX < mMaxBinX && !acceptedBinX.Contains((short)requiredBinX)
++                    && IsInvalidValueException(testName, ex))
++                {
++                    LogInfo(testName, $"BinX={requiredBinX} is unsupported; no exposure was requested for this factor.");
++                    ResetTestActionStatus();
++                    return;
++                }
+                 parametersSetOk = false;
+                 LogIssue(testName, $"Unable to set BinX to {requiredBinX}: {ex.Message}");
+                 LogDebug(testName, $"BinX exception detail:\r\n {ex}");
+@@ -2675,6 +2691,15 @@
+             }
+             catch (Exception ex)
+             {
++                // Sparse binning is legal; only InvalidValue indicates an unsupported factor.
++                // All other failures still enter the normal failing path below.
++                if (requiredBinY > 1 && requiredBinY < mMaxBinY && !acceptedBinY.Contains((short)requiredBinY)
++                    && IsInvalidValueException(testName, ex))
++                {
++                    LogInfo(testName, $"BinY={requiredBinY} is unsupported; no exposure was requested for this factor.");
++                    ResetTestActionStatus();
++                    return;
++                }
+                 parametersSetOk = false;
+                 LogIssue(testName, $"Unable to set BinY to {requiredBinY}: {ex.Message}");
+                 LogDebug(testName, $"BinY exception detail:\r\n {ex}");
