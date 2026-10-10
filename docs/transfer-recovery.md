@@ -170,3 +170,8 @@ exposure and disables cooling before exit. Results are written as JSONL with
 worker diagnostics. Hardware validation at a 15 C target reproduced the old
 restart dropping 15% output to zero, warming from 14.0 to 17.6 C and taking
 117 seconds to return the replacement image.
+
+The tuned ASI585MM Pro run at the same target resumed at least its prior 13%
+output, held 14.9–15.1 C throughout recovery and returned the replacement image
+in 7 seconds. The two runs began at different temperatures and outputs; this is
+a local recovery comparison, not overnight stability or cross-model validation.

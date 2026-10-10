@@ -1,20 +1,30 @@
-# PulsarFab regain 0.5.13.1
+# PulsarFab regain 0.5.14.0
 
-Fixes cooling-chart axes disappearing in NINA after a retryable camera fault.
-During reconnection the driver retains the last measured temperature and cooler
-power and marks them **telemetry held**. Fresh readings resume after recovery;
-held values do not imply that camera temperature stayed constant.
+Fixes cooling recovery and NINA cooling charts after retryable camera faults.
 
-NINA Driver Info now shows a compact recovery state, retry count and shortened
-last failure. Full failure messages and retry breakdowns remain available in
-diagnostics and NINA logs under `%LOCALAPPDATA%\NINA\Logs`. Search the logs for
-`PulsarFab regain`; the README and camera guide explain how to inspect them later.
+- Direct camera recovery immediately restores the last cooler power level and
+  adds 8 percentage points per degree of measured warming, capped at 100%.
+  The PI regulator responds more strongly and ramps output up four times faster.
+  Output limits, bounded elapsed time, saturation protection and shutdown on
+  missing temperature feedback remain enforced. Disabled cooling and a warmer
+  requested target take precedence. SDK cooling remains controlled by the SDK.
+- NINA retains the last temperature and cooler-power readings during reconnect
+  and labels them **telemetry held**, avoiding invalid chart axes caused by NaN.
+- NINA Driver Info uses a compact state, retry count and failure summary.
+  Full errors and retry breakdowns remain in diagnostics and NINA logs at
+  `%LOCALAPPDATA%\NINA\Logs`; search for `PulsarFab regain`.
 
-Regression checks reproduce the invalid chart bounds with the previous code
-and cover both camera recovery paths, worker replacement through the Rust
-supervisor, zero cooler power, updated readings and bounded status text.
+On the attached ASI585MM Pro at a 15 C target, the baseline worker restart
+reduced output from 15% to zero, warmed the sensor from 14.0 to 17.6 C and took
+117 seconds to return a replacement image. The tuned run restored at least its
+13% prior output, held 14.9–15.1 C and returned the replacement in 7 seconds.
+These are two local runs with different starting temperatures and outputs,
+not an overnight stability test or validation of every supported cooled model.
 
-Use `Regain-0.5.13.1.zip` for NINA, or update through either public plugin feed.
-The signed Windows ASCOM installer is `Regain-ASCOM-0.5.13.1-win-x64-setup.exe`.
-This is a .NET/plugin revision: Rust crates remain at 0.5.13 and need no new
-crates.io publication. Hardware support and recovery limits are unchanged.
+Regression checks cover chart bounds, compact status, restored and boosted
+output, warmer targets, disabled cooling, malformed recovery requests,
+controller limits, thermal models and shared-session worker replacement.
+
+Use `Regain-0.5.14.0.zip` for NINA. The signed Windows ASCOM installer is
+`Regain-ASCOM-0.5.14.0-win-x64-setup.exe`. Rust crates use version 0.5.14.
+Hardware support and retry budgets are unchanged.
