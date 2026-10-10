@@ -114,6 +114,8 @@ internal static class CameraSetupWindow
         Recovery(cooler, "coolingSampleSeconds", "Sample interval (s)", .001, 3600);
         Recovery(timeouts, "commandTimeoutSeconds", "Command timeout (s)", .001, 3600);
         Recovery(timeouts, "downloadTimeoutSeconds", "Download timeout (s)", .001, 3600);
+        Recovery(timeouts, "directReadChunkKiB", "Direct USB read size (KiB; powers of two, 1-1024)", 1, 1024, true);
+        timeouts.Children.Add(new TextBlock { Text = "Direct USB read size limits each host request. Smaller requests add overhead; this is separate from SDK USB Traffic and does not change USB speed or set a fixed MB/s cap.", TextWrapping = TextWrapping.Wrap });
         Recovery(timeouts, "exposureGraceSeconds", "Exposure grace (s)", .001, 3600);
         var controls = Tab("Controls", "Optional connection defaults. Leave a value blank to keep the camera setting.");
         void Control(Panel parent, string key, string label) => Field(parent, label, profile["controls"]![key]?.ToJsonString() ?? "", v => {

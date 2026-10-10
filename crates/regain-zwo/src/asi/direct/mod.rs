@@ -233,6 +233,7 @@ pub fn run(args: Vec<String>) -> Result<()> {
                 "--gain" => settings.gain = value,
                 "--offset" => settings.offset = value,
                 "--frames" => frames = value,
+                "--read-chunk-kib" => settings.read_chunk_kib = value,
                 "--replay-prefix-bytes" => {
                     settings.replay_prefix_bytes = value;
                     replay = true;
@@ -307,6 +308,7 @@ pub fn run(args: Vec<String>) -> Result<()> {
                 && settings.transfer_timeout_seconds <= 3600.0,
             "invalid transfer deadline"
         );
+        settings::read_chunk_bytes(settings.read_chunk_kib)?;
     }
     ensure!(
         args.is_empty()
@@ -315,7 +317,7 @@ pub fn run(args: Vec<String>) -> Result<()> {
             || args == ["--probe-all"]
             || args == ["--probe", "--cancel-read"]
             || capture,
-        "Usage: regain-device zwo camera-direct [--probe [--cancel-read] | --capture | --capture-585 | --capture-662 | --capture-duo | --capture-2600-p25 | --capture-6200 | --capture-guide] [--width N --height N --x N --y N --microseconds N --gain N --offset N --frames N --read-retries N --transfer-timeout-seconds N --stream --replay --replay-prefix-bytes N --interrupt-read-after-bytes N]; ASI585MM Pro/ASI662MC/ASI676MC accept --video --max-fps N (0.01..120, exposures up to 30 s, no replay); ASI2600/6200 also accept --timeout-read-after-bytes N; ASI2600 also accepts --reopen-after-bytes N --reopen-delay-ms N; P25 research: --keep-retained, then --verify-retained-2600-p25 --expected-wire-sha256 HASH with raw width/height; ASI585/2600/6200 and guide also accept --bin N; disconnect other camera apps first"
+        "Usage: regain-device zwo camera-direct [--probe [--cancel-read] | --capture | --capture-585 | --capture-662 | --capture-duo | --capture-2600-p25 | --capture-6200 | --capture-guide] [--width N --height N --x N --y N --microseconds N --gain N --offset N --frames N --read-retries N --transfer-timeout-seconds N --read-chunk-kib N --stream --replay --replay-prefix-bytes N --interrupt-read-after-bytes N]; read chunk size is a power of two from 1 to 1024 KiB (default 1024); ASI585MM Pro/ASI662MC/ASI676MC accept --video --max-fps N (0.01..120, exposures up to 30 s, no replay); ASI2600/6200 also accept --timeout-read-after-bytes N; ASI2600 also accepts --reopen-after-bytes N --reopen-delay-ms N; P25 research: --keep-retained, then --verify-retained-2600-p25 --expected-wire-sha256 HASH with raw width/height; ASI585/2600/6200 and guide also accept --bin N; disconnect other camera apps first"
     );
     // Last resort for a kernel request that refuses to finish cancellation. The
     // worker must exit rather than free a buffer still owned by the USB driver.
@@ -387,6 +389,7 @@ pub fn run(args: Vec<String>) -> Result<()> {
     );
     let camera = transport::Camera::open(&paths[0])?;
     camera.transfer_timeout(settings.transfer_timeout_seconds)?;
+    camera.read_chunk_size(settings.read_chunk_kib)?;
     let mut result = camera.probe()?;
     if verify_retained {
         result["retainedVerification"] = asi2600::verify_retained(
@@ -443,6 +446,7 @@ pub fn run(args: Vec<String>) -> Result<()> {
                 };
                 transport::require_sdk_absent()?;
                 result["capture"] = metadata;
+                result["capture"]["readChunkKiB"] = serde_json::json!(settings.read_chunk_kib);
                 result["frame"] = serde_json::json!(frame);
                 if stream {
                     let json = serde_json::to_vec(&result)?;

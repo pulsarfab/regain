@@ -635,6 +635,7 @@ impl Worker {
                     ) => {
                         // Never free live I/O buffers if a kernel operation becomes stuck.
                         let _ = watchdog.send(Some(timeout));
+                        let read_chunk_kib = settings.read_chunk_kib;
                         let result = (|| -> Result<Frame> {
                             if video_mode && !settings.continuous_drain {
                                 video_pacer.wait_servicing(
@@ -653,6 +654,8 @@ impl Worker {
                                 camera
                                     .transfer_timeout(settings.transfer_timeout_seconds)
                                     .expect("validated transfer timeout");
+                                camera.read_chunk_size(settings.read_chunk_kib)
+                                    .expect("validated USB read size");
                                 if video_mode {
                                     let requested = settings.clone();
                                     let settings = if model == Model::Asi585 {
@@ -778,7 +781,10 @@ impl Worker {
                                     pixels,
                                 ))
                             }
-                        })();
+                        })().map(|(mut metadata, pixels)| {
+                            metadata["readChunkKiB"] = json!(read_chunk_kib);
+                            (metadata, pixels)
+                        });
                         if video_mode && result.is_ok() {
                             video_pacer.completed();
                         }
@@ -1174,6 +1180,10 @@ impl Host {
                             .as_f64()
                             .ok_or_else(|| anyhow::anyhow!("invalid transfer deadline"))?;
                 }
+                settings.read_chunk_kib = params
+                    .get("readChunkKiB")
+                    .map_or(Ok(1024), |_| number("readChunkKiB"))?;
+                super::settings::read_chunk_bytes(settings.read_chunk_kib)?;
                 ensure!(
                     settings.transfer_timeout_seconds.is_finite()
                         && settings.transfer_timeout_seconds > 0.0
@@ -1285,7 +1295,7 @@ impl Host {
                         } else {
                             Ok((
                                 json!({"width":settings.width,"height":settings.height,"simulated":true,
-                                "readRecoveries":failures}),
+                                "readRecoveries":failures,"readChunkKiB":settings.read_chunk_kib}),
                                 vec![0; (settings.width * settings.height * 2) as usize],
                             ))
                         });
@@ -1486,6 +1496,33 @@ mod video_tests {
             std::thread::sleep(Duration::from_millis(1));
         }
         host.command("download", &Value::Null).unwrap()
+    }
+    #[test]
+    fn read_chunk_size_rejects_invalid_requests_before_capture_and_defaults_per_request() {
+        let mut host = open();
+        let mut params = parameters();
+        for value in [
+            json!(0),
+            json!(-1),
+            json!(3),
+            json!(2048),
+            json!(1.5),
+            json!("64"),
+            Value::Null,
+        ] {
+            params["readChunkKiB"] = value;
+            assert!(host.command("validate", &params).is_err());
+            assert!(host.command("start", &params).is_err());
+        }
+        for mode in ["still", "video"] {
+            params["mode"] = json!(mode);
+            params["readChunkKiB"] = json!(64);
+            assert_eq!(frame(&mut host, &params).0["readChunkKiB"], 64);
+            params.as_object_mut().unwrap().remove("readChunkKiB");
+            assert_eq!(frame(&mut host, &params).0["readChunkKiB"], 1024);
+        }
+        host.command("stop", &Value::Null).unwrap();
+        host.command("close", &Value::Null).unwrap();
     }
     #[test]
     fn video_reuses_session_reconfigures_and_preserves_still_default() {

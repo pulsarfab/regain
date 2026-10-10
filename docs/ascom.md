@@ -58,6 +58,8 @@ and `$XDG_CONFIG_HOME/Regain/Alpaca/cameras.json` on Unix, falling back to
 `$HOME/.config/Regain/Alpaca/cameras.json`. The log lives beside the settings
 and is also visible on the setup page. Keep the settings file when upgrading.
 
+**Direct USB read size (KiB)** is available in camera recovery settings (the Timeouts tab in native ASCOM, Advanced in NINA). It defaults to 1024 and accepts powers of two from 1 to 1024. The shared key is `recovery.directReadChunkKiB`; SDK mode ignores it. See [host read sizing versus SDK USB Traffic](transfer-recovery.md#limit-the-size-of-direct-usb-reads).
+
 ## Windows COM frontend
 
 Requires Windows x64, .NET Framework 4.8, the ASCOM Platform, and the ZWO Windows

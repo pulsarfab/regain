@@ -844,6 +844,7 @@ impl Session {
             params["captureTimeoutSeconds"] =
                 json!(self.ready_timeout(seconds) + options.command_timeout_seconds);
             params["transferTimeoutSeconds"] = json!(options.download_timeout_seconds);
+            params["readChunkKiB"] = json!(options.direct_read_chunk_kib);
         }
         self.call("start", params, None, token).await?;
         self.phase("Exposing");
@@ -1150,6 +1151,46 @@ mod tests {
     }
     fn log() -> Diagnostic {
         Arc::new(|_, _, _| {})
+    }
+    #[tokio::test]
+    async fn direct_usb_read_size_survives_worker_replacement_and_leaves_sdk_bandwidth_unchanged() {
+        let token = CancellationToken::new();
+        let mut sel = selection(true);
+        sel.recovery.direct_read_chunk_kib = 64;
+        let mut s = Session::new(sel, runtime(), log()).unwrap();
+        s.connect(&token).await.unwrap();
+        assert!(!s.snapshot().controls[&6].writable);
+        assert_eq!(s.snapshot().values[&6], 40);
+        assert_eq!(
+            s.capture(exposure(), &token).await.unwrap().metadata["readChunkKiB"],
+            64
+        );
+        s.call("simulate-read-failures", json!({"count":3}), None, &token)
+            .await
+            .unwrap();
+        let frame = s.capture(exposure(), &token).await.unwrap();
+        assert_eq!(frame.metadata["recoveries"], 1);
+        assert_eq!(frame.metadata["readChunkKiB"], 64);
+        s.close().await;
+    }
+    #[test]
+    fn direct_usb_read_size_configuration_preserves_key_default_and_bounds() {
+        let old: RecoveryOptions = serde_json::from_value(json!({"directReadRetries":1})).unwrap();
+        assert_eq!(old.direct_read_chunk_kib, 1024);
+        let current: RecoveryOptions =
+            serde_json::from_value(json!({"directReadChunkKiB":64})).unwrap();
+        assert_eq!(current.direct_read_chunk_kib, 64);
+        assert_eq!(
+            serde_json::to_value(current).unwrap()["directReadChunkKiB"],
+            64
+        );
+        for value in [0, 3, 512, 1024, 2048, u32::MAX] {
+            let options = RecoveryOptions {
+                direct_read_chunk_kib: value,
+                ..RecoveryOptions::default()
+            };
+            assert_eq!(options.validate().is_ok(), matches!(value, 512 | 1024));
+        }
     }
     #[tokio::test]
     async fn cooled_worker_recovery_restores_output_once_and_honors_warming_or_disable() {
