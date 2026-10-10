@@ -14,6 +14,11 @@ on:
   push:
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      candidate:
+        description: 'Build signed review artifacts from this branch; never create a release or publish the registry'
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency:
@@ -53,8 +58,9 @@ jobs:
         env:
           REF_TYPE: ${{ github.ref_type }}
           REF_NAME: ${{ github.ref_name }}
+          CANDIDATE: ${{ inputs.candidate == true }}
         run: |
-          $version = ./scripts/check-release-ref.ps1 -RefType $env:REF_TYPE -RefName $env:REF_NAME
+          $version = ./scripts/check-release-ref.ps1 -RefType $env:REF_TYPE -RefName $env:REF_NAME -Candidate:($env:CANDIDATE -eq 'true')
           "value=$version" >> $env:GITHUB_OUTPUT
       - name: Test capture recovery and NINA integration contract
         run: ./scripts/test.ps1
@@ -191,7 +197,7 @@ jobs:
             artifacts/Regain-ASCOM-${{ steps.version.outputs.value }}-win-x64-setup.exe.sha256
           if-no-files-found: error
       - name: Create or refresh draft release
-        if: github.ref_type == 'tag'
+        if: github.ref_type == 'tag' && inputs.candidate != true
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_VERSION: ${{ steps.version.outputs.value }}
