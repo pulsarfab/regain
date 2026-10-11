@@ -21,6 +21,15 @@ public sealed class RegisteredCameraTheoryAttribute : TheoryAttribute
 }
 public sealed class HubCameraComTests
 {
+    private static IEnumerable<string> ReadTrace(string path)
+    {
+        // A source poll already in flight may append after the leases close.
+        // Match the fixture writer's read sharing without blocking its append.
+        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        using var reader = new StreamReader(stream);
+        while (reader.ReadLine() is { } line) yield return line;
+    }
+
     [RegisteredCameraTheory]
     [InlineData("x86", "uInt16", 0)] [InlineData("x64", "uInt16", 0)]
     [InlineData("x86", "int32", 1)] [InlineData("x64", "int32", 1)]
@@ -85,10 +94,10 @@ public sealed class HubCameraComTests
                 owner.Disconnect(); Assert.True(sibling.Connected); Assert.Equal(6144, frame.Pixels.Length);
             }
             Assert.Equal(1, settings.Object.Timeout);
-            // End both source leases before reading the completed trace. A live
-            // sibling can still append polling calls while File.ReadLines opens.
+            // End both source leases before inspecting the trace; ReadTrace also
+            // permits an already dispatched source poll to finish appending.
             owner.Disconnect(); sibling.Disconnect();
-            var calls = File.ReadLines(trace).Select(line => JsonDocument.Parse(line)).ToArray();
+            var calls = ReadTrace(trace).Select(line => JsonDocument.Parse(line)).ToArray();
             try {
                 Assert.Single(calls, call => call.RootElement.GetProperty("member").GetString() == "StartExposure");
                 Assert.DoesNotContain(calls, call => call.RootElement.GetProperty("member").GetString() is "AbortExposure" or "StopExposure");
