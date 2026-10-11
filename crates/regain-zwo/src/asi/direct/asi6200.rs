@@ -9,6 +9,8 @@ use std::time::{Duration, Instant};
 // does not increase the sensor frame/shutter register values.
 pub const MAX_EXPOSURE_US: u32 = 2_000_000_000;
 
+mod exposure;
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Revision {
     Original,
@@ -59,6 +61,7 @@ fn word(camera: &Camera, request: u8, register: u16, value: u32, bytes: u16) -> 
     Ok(())
 }
 fn stop(camera: &Camera) -> Result<()> {
+    exposure::restore_if_gated(camera)?;
     let flags = camera.vendor(0xbc, 0, 0, 1)?[0];
     camera.vendor(0xbd, 0, u16::from(flags | 0x10), 0)?;
     freeze(camera)?;
@@ -358,6 +361,8 @@ fn capture_native(
         stop(camera)?;
         let old = camera.vendor(0xbc, 0x23, 0, 1)?[0];
         ensure!(old == 1, "ASI6200 old frame did not clear: {old}");
+        // Do not start a new acquisition if cancellation arrived during setup.
+        camera.service_environment()?;
         let armed = Instant::now();
         camera.phase("exposing");
         writes(camera, &[(0xa9, 0, 0), (0xb6, 0x19e, 1), (0xb6, 0, 5)])?;
@@ -367,64 +372,7 @@ fn capture_native(
         camera.vendor(0xbd, 0, u16::from(flags & !0x10), 0)?;
         camera.reset_pipe()?;
         if s.microseconds >= 1_000_000 {
-            // SDK 1.41 worker 1ed2cc..1ed60b: synchronize the FPGA, then
-            // gate sensor/FPGA clocks during the long integration.
-            let mut synchronized = false;
-            for _ in 0..5 {
-                let f = camera.vendor(0xbc, 0, 0, 1)?[0];
-                camera.vendor(0xbd, 0, u16::from(f | 0x10), 0)?;
-                camera.service_environment()?;
-                std::thread::sleep(Duration::from_millis(5));
-                camera.vendor(0xbd, 0, u16::from(f & !0x10), 0)?;
-                std::thread::sleep(Duration::from_millis(20));
-                if camera.vendor(0xbc, 0x23, 0, 1)?[0] & 0x10 != 0 {
-                    synchronized = true;
-                    break;
-                }
-            }
-            ensure!(synchronized, "ASI6200 long exposure synchronization failed");
-            let f = camera.vendor(0xbc, 0xb, 0, 1)?[0];
-            camera.vendor(0xbd, 0xb, u16::from(f | 1), 0)?;
-            let exposure_ms = s.microseconds / 1000;
-            if exposure_ms > 1000 {
-                let trigger = Instant::now();
-                let mut iteration = 0;
-                loop {
-                    match iteration {
-                        6 => {
-                            camera.vendor(0xb6, 0x19e, 5, 0)?;
-                        }
-                        8 => {
-                            let f = camera.vendor(0xbc, 0x19, 0, 1)?[0];
-                            camera.vendor(0xbd, 0x19, u16::from(f | 1), 0)?;
-                        }
-                        10 => {
-                            let f = camera.vendor(0xbc, 0xb, 0, 1)?[0];
-                            camera.vendor(0xbd, 0xb, u16::from(f | 0x10), 0)?;
-                        }
-                        _ => {}
-                    }
-                    let elapsed = trigger.elapsed().as_millis();
-                    camera.service_environment()?;
-                    std::thread::sleep(Duration::from_millis(100));
-                    iteration += 1;
-                    if elapsed >= u128::from(exposure_ms - 200) {
-                        break;
-                    }
-                }
-            } else {
-                std::thread::sleep(Duration::from_millis(u64::from(exposure_ms - 200)));
-            }
-            let f = camera.vendor(0xbc, 0x19, 0, 1)?[0];
-            camera.vendor(0xbd, 0x19, u16::from(f & !1), 0)?;
-            camera.service_environment()?;
-            std::thread::sleep(Duration::from_millis(100));
-            camera.vendor(0xb6, 0x19e, 1, 0)?;
-            camera.service_environment()?;
-            std::thread::sleep(Duration::from_millis(100));
-            let f = camera.vendor(0xbc, 0xb, 0, 1)?[0];
-            camera.vendor(0xbd, 0xb, u16::from(f & !0x10), 0)?;
-            camera.vendor(0xbd, 0xb, u16::from(f & !0x11), 0)?;
+            exposure::expose(camera, s.microseconds)?;
         }
         let deadline = Duration::from_micros(u64::from(s.microseconds)) + Duration::from_secs(10);
         loop {
