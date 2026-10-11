@@ -19,6 +19,14 @@ public sealed class CameraHardwareTheoryAttribute : TheoryAttribute
     }
 }
 
+public sealed class Asi6200HardwareFactAttribute : FactAttribute
+{
+    public Asi6200HardwareFactAttribute() {
+        if (Environment.GetEnvironmentVariable("REGAIN_TEST_ASI6200_HARDWARE") != "1")
+            Skip = "Opt in with REGAIN_TEST_ASI6200_HARDWARE=1; requires idle ASI6200MM Pro serial 1b07450d17010900";
+    }
+}
+
 public class CameraHardwareTests(ITestOutputHelper output)
 {
     [CameraHardwareTheory]
@@ -175,6 +183,123 @@ public class CameraHardwareTests(ITestOutputHelper output)
                 Assert.True(wait.Elapsed < TimeSpan.FromSeconds(15));
                 await Task.Delay(25, deadline.Token);
             }
+        }
+    }
+
+    [Asi6200HardwareFact]
+    public async Task Asi6200DirectEarlyAndGatedAbortRestartThroughNina()
+    {
+        const string serial = "1b07450d17010900";
+        const string model = "ZWO ASI6200MM Pro";
+        string root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
+        string settingsFolder = Path.Combine(Path.GetTempPath(), "regain-asi6200-acceptance-" + Guid.NewGuid().ToString("N"));
+        string settingsPath = Path.Combine(settingsFolder, "camera.json");
+        var store = new CameraSelectionStore(settingsPath);
+        // Pin selection before opening USB: never test another same-model camera.
+        store.Save(new(new(model, 9576, 6388, false, 0, 3.76, 16, true, false, [1, 2, 3, 4]), serial, UseDirectDriver: true));
+        HostClient? host = null;
+        ushort[]? deliveredPixels = null;
+        ImageMetaData? deliveredMetadata = null;
+        var images = new Mock<IExposureDataFactory>();
+        images.Setup(f => f.CreateImageArrayExposureData(It.IsAny<ushort[]>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<bool>(), It.IsAny<ImageMetaData>()))
+            .Returns((ushort[] pixels, int width, int height, int bits, bool color, ImageMetaData metadata) => {
+                deliveredPixels = pixels.ToArray();
+                deliveredMetadata = metadata;
+                output.WriteLine($"Image: {width}x{height}, mean {pixels.Average(v => (double)v):F2}, model {metadata.Camera.Name}");
+                return new ImageArrayExposureData(pixels, width, height, bits, color, metadata, Mock.Of<IImageDataFactory>());
+            });
+        var camera = new ResilientCamera(images.Object, store,
+            () => host = new HostClient(Path.Combine(root, "target/debug/regain-alpaca.exe"), Path.Combine(root, "vendor/zwo/ASICamera2.dll"),
+                direct: true, supervised: true, log: output.WriteLine),
+            new() { MaxRetries = 0, ReconnectDelaySeconds = 1, CoolingTimeoutSeconds = 60 });
+        using var deadline = new CancellationTokenSource(TimeSpan.FromMinutes(3));
+        try {
+            Assert.True(await camera.Connect(deadline.Token));
+            var initial = await Diagnostics();
+            Assert.Equal(serial, initial.GetProperty("serial").GetString());
+            Assert.Equal("direct", initial.GetProperty("backend").GetString());
+            int supervisorPid = host!.ProcessId;
+            int workerPid = initial.GetProperty("processId").GetInt32();
+            output.WriteLine($"Hardware: {camera.Name}, serial {serial}; supervisor {supervisorPid}, raw worker {workerPid}");
+            await Task.Delay(2500, deadline.Token);
+            double baselineTemperature = (await host.CallAsync("get", new { control = 8 }, TimeSpan.FromSeconds(15), deadline.Token)).Result.GetInt64() / 10.0;
+            int target = Math.Clamp((int)Math.Floor(baselineTemperature) - 3, -20, 25);
+            camera.TemperatureSetPoint = target;
+            camera.CoolerOn = true;
+            Assert.True(camera.HasDewHeater);
+            camera.DewHeaterOn = true;
+            camera.EnableSubSample = true;
+            camera.SubSampleWidth = camera.SubSampleHeight = 64;
+            var previous = await FreshImage();
+
+            foreach (bool earlyCallerCancellation in new[] { true, false }) {
+                using var caller = CancellationTokenSource.CreateLinkedTokenSource(deadline.Token);
+                camera.StartExposure(Sequence(15));
+                var ready = camera.WaitUntilExposureIsReady(earlyCallerCancellation ? caller.Token : deadline.Token);
+                var clock = Stopwatch.StartNew();
+                // Reproduce the incident's caller cancellation shortly after
+                // StartExposure, then exercise all long-exposure clock gates.
+                await Task.Delay(earlyCallerCancellation ? 170 : 2000, deadline.Token);
+                Assert.False(ready.IsCompleted);
+                clock.Restart();
+                if (earlyCallerCancellation) {
+                    caller.Cancel();
+                    await Assert.ThrowsAnyAsync<OperationCanceledException>(() => ready.WaitAsync(TimeSpan.FromSeconds(15)));
+                } else {
+                    camera.AbortExposure();
+                    await Assert.ThrowsAsync<IOException>(() => ready.WaitAsync(TimeSpan.FromSeconds(15)));
+                }
+                var stopped = await Diagnostics();
+                Assert.Equal("Aborted", stopped.GetProperty("phase").GetString());
+                Assert.True(stopped.GetProperty("controlConnectionAvailable").GetBoolean());
+                Assert.Equal(supervisorPid, host.ProcessId);
+                Assert.Equal(workerPid, stopped.GetProperty("processId").GetInt32());
+                Assert.Equal(target, stopped.GetProperty("values").GetProperty("16").GetInt32());
+                Assert.Equal(1, stopped.GetProperty("values").GetProperty("17").GetInt32());
+                Assert.Equal(1, stopped.GetProperty("values").GetProperty("21").GetInt32());
+                Assert.True(double.IsFinite(camera.Temperature) && double.IsFinite(camera.CoolerPower));
+                output.WriteLine($"{(earlyCallerCancellation ? "170 ms caller cancellation" : "2 s AbortExposure")}: drained after {clock.Elapsed.TotalMilliseconds:F0} ms; cooler/heater retained");
+                var pixels = await FreshImage();
+                // A valid envelope alone can conceal stale sensor rows. Real
+                // sensor noise must differ from the previous delivered image.
+                Assert.False(previous.SequenceEqual(pixels), "Following exposure returned identical stale pixels");
+                previous = pixels;
+                var restarted = await Diagnostics();
+                Assert.Equal(workerPid, restarted.GetProperty("processId").GetInt32());
+                Assert.Equal(supervisorPid, host.ProcessId);
+                Assert.Equal(0, restarted.GetProperty("retry").GetProperty("recaptures").GetInt32());
+                Assert.Equal(0, restarted.GetProperty("retry").GetProperty("usbReads").GetInt32());
+            }
+        }
+        finally {
+            try {
+                if (camera.Connected) {
+                    try {
+                        camera.AbortExposure();
+                        if (camera.HasDewHeater) camera.DewHeaterOn = false;
+                    }
+                    finally { camera.CoolerOn = false; }
+                }
+            }
+            finally {
+                camera.Disconnect();
+                if (File.Exists(settingsPath)) File.Delete(settingsPath);
+                if (Directory.Exists(settingsFolder)) Directory.Delete(settingsFolder);
+            }
+        }
+        async Task<JsonElement> Diagnostics() => (await host!.CallAsync("diagnostics", null, TimeSpan.FromSeconds(15), deadline.Token)).Result;
+        async Task<ushort[]> FreshImage() {
+            deliveredPixels = null;
+            // A short exposure bypasses the long-exposure handshake that failed
+            // in the incident. Restart through that handshake every time.
+            camera.StartExposure(Sequence(2));
+            await camera.WaitUntilExposureIsReady(deadline.Token).WaitAsync(TimeSpan.FromSeconds(30));
+            Assert.NotNull(await camera.DownloadExposure(deadline.Token));
+            Assert.Equal(model, deliveredMetadata!.Camera.Name);
+            Assert.NotNull(deliveredPixels);
+            Assert.Equal(64 * 64, deliveredPixels.Length);
+            Assert.Contains(deliveredPixels, pixel => pixel != 0);
+            return deliveredPixels;
         }
     }
     private static CaptureSequence Sequence(double seconds) => new() { ExposureTime = seconds, Binning = new BinningMode(1, 1) };

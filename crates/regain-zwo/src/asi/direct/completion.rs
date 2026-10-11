@@ -10,6 +10,24 @@ impl std::fmt::Display for CaptureCancelled {
     }
 }
 impl std::error::Error for CaptureCancelled {}
+
+/// Always attempt the model's ordinary full stop after clock restoration,
+/// including when restoration failed. Clearing retained DDR does not prove the
+/// clocks were restored, so preserve either failure and combine both if needed.
+pub(super) fn finish_stop(
+    model: &str,
+    wake: Result<()>,
+    stop: impl FnOnce() -> Result<()>,
+) -> Result<()> {
+    match (wake, stop()) {
+        (Ok(()), Ok(())) => Ok(()),
+        (Err(error), Ok(())) | (Ok(()), Err(error)) => Err(error),
+        (Err(wake), Err(stop)) => {
+            anyhow::bail!("{model} clock wake failed: {wake:#}; full stop failed: {stop:#}")
+        }
+    }
+}
+
 pub fn finish(result: Result<(Value, Vec<u8>)>, cleanup: Result<()>) -> Result<(Value, Vec<u8>)> {
     if result
         .as_ref()
@@ -59,6 +77,45 @@ pub fn finish(result: Result<(Value, Vec<u8>)>, cleanup: Result<()>) -> Result<(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::Cell;
+
+    #[test]
+    fn full_stop_is_attempted_after_wake_failure_for_every_clocked_model() {
+        for model in ["ASI2600", "ASI6200", "ASI585", "ASI662", "ASI676"] {
+            for stop_fails in [false, true] {
+                let stopped = Cell::new(false);
+                let cleanup = finish_stop(model, Err(anyhow::anyhow!("gate write failed")), || {
+                    stopped.set(true);
+                    if stop_fails {
+                        anyhow::bail!("AA failed");
+                    }
+                    Ok(())
+                });
+                assert!(stopped.get(), "{model} must attempt full stop");
+                let error = finish(Err(CaptureCancelled.into()), cleanup).unwrap_err();
+                assert!(!error.is::<CaptureCancelled>());
+                assert!(error.to_string().contains("gate write failed"));
+                if stop_fails {
+                    assert!(error.to_string().contains(model));
+                    assert!(error.to_string().contains("AA failed"));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn clean_wake_does_not_hide_full_stop_failure() {
+        let stopped = Cell::new(false);
+        let error = finish_stop("ASI6200", Ok(()), || {
+            stopped.set(true);
+            anyhow::bail!("pipe reset failed")
+        })
+        .unwrap_err();
+        assert!(stopped.get());
+        assert_eq!(error.to_string(), "pipe reset failed");
+        finish_stop("ASI6200", Ok(()), || Ok(())).unwrap();
+    }
+
     #[test]
     fn cancellation_only_acknowledges_successful_cleanup() {
         assert!(

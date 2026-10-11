@@ -17,6 +17,8 @@ mod bayer_video;
 mod completion;
 mod diagnostics;
 mod environment;
+mod host_timed;
+mod initialization;
 mod link;
 mod processing;
 mod protocol;

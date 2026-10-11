@@ -1,9 +1,32 @@
-//! SDK 1.41 ASI6200 long-exposure handshake and clock restoration.
+//! SDK 1.41 ASI2600/6200 host-timed handshake and clock restoration.
 //! Cancellation is observed between complete register transactions, never
 //! between a synchronization pulse's edges or during clock restoration.
-use super::Camera;
+use super::transport::Camera;
 use anyhow::{Result, ensure};
 use std::time::{Duration, Instant};
+
+#[derive(Clone, Copy)]
+pub(super) struct Protocol {
+    model: &'static str,
+    standby_register: u16,
+    integration_compensation_ms: u32,
+    one_second_compensation_ms: u32,
+}
+// SDK worker 1ed2cc..1ed60b; independent saved P25 USB trace.
+pub(super) const ASI6200: Protocol = Protocol {
+    model: "ASI6200",
+    standby_register: 0x19e,
+    integration_compensation_ms: 200,
+    one_second_compensation_ms: 200,
+};
+// SDK worker 14c30c..14c636, same pulse/gates with distinct sensor/timing.
+// SDK 1.41 SHA256 0c8778c3cce2012961b079e3c7d0d8348a8b3823939335d9e98148cb5d5dc34a.
+pub(super) const ASI2600: Protocol = Protocol {
+    model: "ASI2600",
+    standby_register: 0x1ee,
+    integration_compensation_ms: 400,
+    one_second_compensation_ms: 205,
+};
 
 pub(super) trait Io {
     fn read(&self, register: u16) -> Result<u8>;
@@ -36,35 +59,37 @@ impl Io for Camera {
     }
 }
 
-/// Preserve cooler/auxiliary bits in BD19. SDK worker RVA 1ed575..1ed60b
-/// reaches this sequence even when its integration cancellation flag is set.
+/// Preserve cooler/auxiliary bits in BD19. SDK workers reach this sequence even
+/// when their integration cancellation flag is set (6200: 1ed575..1ed60b;
+/// 2600: cancellation at 14c551..14c55c branches to restoration at 14c5a0).
 /// Do not call service() here: it can throw cancellation before clocks resume.
-fn restore_clocks(io: &impl Io) -> Result<()> {
+fn restore_clocks(io: &impl Io, protocol: Protocol) -> Result<()> {
     let flags = io.read(0x19)?;
     io.write(0xbd, 0x19, flags & !1)?;
     io.sleep(Duration::from_millis(100));
-    io.write(0xb6, 0x19e, 1)?;
+    io.write(0xb6, protocol.standby_register, 1)?;
     io.sleep(Duration::from_millis(100));
     let flags = io.read(0xb)?;
     io.write(0xbd, 0xb, flags & !0x10)?;
     let flags = io.read(0xb)?;
     io.write(0xbd, 0xb, flags & !1)?;
-    verify_clocks(io)
+    verify_clocks(io, protocol)
 }
 
-fn verify_clocks(io: &impl Io) -> Result<()> {
+fn verify_clocks(io: &impl Io, protocol: Protocol) -> Result<()> {
     let gate = io.read(0x19)?;
     let exposure = io.read(0xb)?;
     ensure!(
         gate & 1 == 0 && exposure & 0x11 == 0,
-        "ASI6200 clocks did not resume: BC19={gate:#04x}, BC0b={exposure:#04x}"
+        "{} clocks did not resume: BC19={gate:#04x}, BC0b={exposure:#04x}",
+        protocol.model
     );
     Ok(())
 }
 
 /// Also repair gates left by an earlier worker before arming another frame.
 /// BC23=1 only proves DDR was cleared; it does not prove these gates are open.
-pub(super) fn restore_if_gated(io: &impl Io) -> Result<()> {
+pub(super) fn restore_if_gated(io: &impl Io, protocol: Protocol) -> Result<()> {
     let gate = io.read(0x19)?;
     let exposure = io.read(0xb)?;
     if gate & 1 != 0 || exposure & 0x11 != 0 {
@@ -72,16 +97,17 @@ pub(super) fn restore_if_gated(io: &impl Io) -> Result<()> {
             "warning",
             "capture.stale_clocks",
             format_args!(
-                "ASI6200 stop restoring stale clocks: BC19={gate:#04x}, BC0b={exposure:#04x}"
+                "{} stop restoring stale clocks: BC19={gate:#04x}, BC0b={exposure:#04x}",
+                protocol.model
             ),
         );
         io.phase("restoring_clocks");
-        restore_clocks(io)?;
+        restore_clocks(io, protocol)?;
     }
     Ok(())
 }
 
-pub(super) fn expose(io: &impl Io, microseconds: u32) -> Result<()> {
+pub(super) fn expose(io: &impl Io, protocol: Protocol, microseconds: u32) -> Result<()> {
     io.phase("synchronizing");
     let mut stage = "synchronizing";
     let result = (|| {
@@ -98,7 +124,11 @@ pub(super) fn expose(io: &impl Io, microseconds: u32) -> Result<()> {
                 break;
             }
         }
-        ensure!(synchronized, "ASI6200 long exposure synchronization failed");
+        ensure!(
+            synchronized,
+            "{} long exposure synchronization failed",
+            protocol.model
+        );
         let flags = io.read(0xb)?;
         io.write(0xbd, 0xb, flags | 1)?;
         io.phase("integrating");
@@ -109,7 +139,7 @@ pub(super) fn expose(io: &impl Io, microseconds: u32) -> Result<()> {
             let mut iteration = 0;
             loop {
                 match iteration {
-                    6 => io.write(0xb6, 0x19e, 5)?,
+                    6 => io.write(0xb6, protocol.standby_register, 5)?,
                     8 => {
                         let flags = io.read(0x19)?;
                         io.write(0xbd, 0x19, flags | 1)?;
@@ -124,13 +154,15 @@ pub(super) fn expose(io: &impl Io, microseconds: u32) -> Result<()> {
                 io.service()?;
                 io.sleep(Duration::from_millis(100));
                 iteration += 1;
-                if elapsed >= u128::from(exposure_ms - 200) {
+                if elapsed >= u128::from(exposure_ms - protocol.integration_compensation_ms) {
                     break;
                 }
             }
         } else {
             io.service()?;
-            io.sleep(Duration::from_millis(u64::from(exposure_ms - 200)));
+            io.sleep(Duration::from_millis(u64::from(
+                exposure_ms - protocol.one_second_compensation_ms,
+            )));
         }
         Ok(())
     })();
@@ -146,9 +178,10 @@ pub(super) fn expose(io: &impl Io, microseconds: u32) -> Result<()> {
             "capture.clock_cleanup",
             // The supervisor forwards message, not structured details, to NINA.
             format_args!(
-                "ASI6200 {stage}, {microseconds} us: {error:#}; restoring clocks; BC00/0b/19/23={registers:02x?}"
+                "{} {stage}, {microseconds} us: {error:#}; restoring clocks; BC00/0b/19/23={registers:02x?}",
+                protocol.model
             ),
-            serde_json::json!({"phase":stage,"microseconds":microseconds,
+            serde_json::json!({"model":protocol.model,"phase":stage,"microseconds":microseconds,
                 "BC00":registers[0],"BC0b":registers[1],
                 "BC19":registers[2],"BC23":registers[3]}),
         );
@@ -156,12 +189,13 @@ pub(super) fn expose(io: &impl Io, microseconds: u32) -> Result<()> {
     // Includes synchronization/USB/environment errors, not just cancellation.
     // A partial register transaction must never be acknowledged as a clean stop.
     io.phase("restoring_clocks");
-    let cleanup = restore_clocks(io);
+    let cleanup = restore_clocks(io, protocol);
     match (result, cleanup) {
         (Ok(()), cleanup) => cleanup,
         (Err(error), Ok(())) => Err(error),
         (Err(error), Err(cleanup)) => anyhow::bail!(
-            "ASI6200 exposure failed: {error:#}; clock restoration failed: {cleanup:#}"
+            "{} exposure failed: {error:#}; clock restoration failed: {cleanup:#}",
+            protocol.model
         ),
     }
 }
@@ -190,7 +224,7 @@ mod tests {
             let mut fpga = [0; 0x24];
             fpga[0] = 0xc0;
             fpga[0xb] = 0x44; // Unrelated FPGA flags must survive.
-            fpga[0x19] = 0xc0; // Cooler and heater remain enabled.
+            fpga[0x19] = 0xc0; // Cooler disabled (bit 7 inverted), heater enabled.
             fpga[0x23] = 1;
             Self {
                 fpga: RefCell::new(fpga),
@@ -240,7 +274,7 @@ mod tests {
                         }
                     }
                 }
-                0xb6 if register == 0x19e => self.standby.set(value),
+                0xb6 if matches!(register, 0x19e | 0x1ee) => self.standby.set(value),
                 _ => panic!("unexpected register request"),
             }
             Ok(())
@@ -279,13 +313,13 @@ mod tests {
         for millis in [0, 2, 24, 25, 625, 825, 1025, 1525] {
             let io = Registers::default();
             io.cancel_at.set(Some(Duration::from_millis(millis)));
-            let error = expose(&io, 2_000_000).unwrap_err();
+            let error = expose(&io, ASI6200, 2_000_000).unwrap_err();
             assert!(error.is::<CaptureCancelled>(), "{millis}: {error:#}");
             io.assert_clocks_restored();
             assert!(io.elapsed.get() < Duration::from_secs(2));
             io.cancel_at.set(None);
             io.fpga.borrow_mut()[0x23] = 1;
-            expose(&io, 2_000_000).unwrap();
+            expose(&io, ASI6200, 2_000_000).unwrap();
             io.assert_clocks_restored();
         }
     }
@@ -293,7 +327,7 @@ mod tests {
     #[test]
     fn successful_sequence_matches_sdk_clock_restore_order() {
         let io = Registers::default();
-        expose(&io, 2_000_000).unwrap();
+        expose(&io, ASI6200, 2_000_000).unwrap();
         io.assert_clocks_restored();
         // SDK 1.41 RVA 1ed44c..1ed60b, also observed in the saved P25
         // Camera Kit exposure-2000000us USB trace (20260915T012106Z).
@@ -322,7 +356,7 @@ mod tests {
     fn cancellation_arriving_during_restoration_cannot_interrupt_it() {
         let io = Registers::default();
         io.cancel_at.set(Some(Duration::from_millis(2000)));
-        expose(&io, 2_000_000).unwrap();
+        expose(&io, ASI6200, 2_000_000).unwrap();
         io.assert_clocks_restored();
         // The acquisition caller observes the pending cancellation at its
         // next ready/readout checkpoint, after restoration has finished.
@@ -336,10 +370,27 @@ mod tests {
             ..Registers::default()
         };
         assert_eq!(
-            expose(&io, 2_000_000).unwrap_err().to_string(),
+            expose(&io, ASI6200, 2_000_000).unwrap_err().to_string(),
             "temperature read failed"
         );
         io.assert_clocks_restored();
+    }
+
+    #[test]
+    fn cancellation_restoration_preserves_every_cooler_and_heater_state() {
+        for thermal_flags in [0, 0x40, 0x80, 0xc0] {
+            let io = Registers::default();
+            io.fpga.borrow_mut()[0x19] = thermal_flags;
+            io.cancel_at.set(Some(Duration::from_millis(1025)));
+            assert!(
+                expose(&io, ASI6200, 2_000_000)
+                    .unwrap_err()
+                    .is::<CaptureCancelled>()
+            );
+            assert_eq!(io.fpga.borrow()[0x19], thermal_flags);
+            assert_eq!(io.fpga.borrow()[0xb], 0x44);
+            assert_eq!(io.standby.get(), 1);
+        }
     }
 
     #[test]
@@ -347,19 +398,23 @@ mod tests {
         let io = Registers::default();
         io.fail_write.set(Some((0xbd, 0xb, 0x55)));
         assert_eq!(
-            expose(&io, 2_000_000).unwrap_err().to_string(),
+            expose(&io, ASI6200, 2_000_000).unwrap_err().to_string(),
             "USB control transfer failed"
         );
         io.assert_clocks_restored();
         io.fpga.borrow_mut()[0x23] = 1;
-        expose(&io, 2_000_000).unwrap();
+        expose(&io, ASI6200, 2_000_000).unwrap();
     }
 
     #[test]
     fn one_second_mode_honors_early_cancellation_and_restores_clocks() {
         let io = Registers::default();
         io.cancel_at.set(Some(Duration::ZERO));
-        assert!(expose(&io, 1_000_000).unwrap_err().is::<CaptureCancelled>());
+        assert!(
+            expose(&io, ASI6200, 1_000_000)
+                .unwrap_err()
+                .is::<CaptureCancelled>()
+        );
         io.assert_clocks_restored();
         assert_eq!(io.elapsed.get(), Duration::from_millis(225));
     }
@@ -372,9 +427,9 @@ mod tests {
         io.standby.set(5);
         // Old cleanup could see BC23=1 here and report success.
         assert_eq!(io.read(0x23).unwrap(), 1);
-        restore_if_gated(&io).unwrap();
+        restore_if_gated(&io, ASI6200).unwrap();
         io.assert_clocks_restored();
-        expose(&io, 2_000_000).unwrap();
+        expose(&io, ASI6200, 2_000_000).unwrap();
     }
 
     #[test]
@@ -384,10 +439,10 @@ mod tests {
             ..Registers::default()
         };
         io.cancel_at.set(Some(Duration::from_millis(825)));
-        let error = expose(&io, 2_000_000).unwrap_err();
+        let error = expose(&io, ASI6200, 2_000_000).unwrap_err();
         assert!(!error.is::<CaptureCancelled>());
         assert!(error.to_string().contains("clocks did not resume"));
-        assert!(restore_if_gated(&io).is_err());
+        assert!(restore_if_gated(&io, ASI6200).is_err());
     }
 
     #[test]
@@ -397,10 +452,100 @@ mod tests {
             ..Registers::default()
         };
         assert_eq!(
-            expose(&io, 2_000_000).unwrap_err().to_string(),
+            expose(&io, ASI6200, 2_000_000).unwrap_err().to_string(),
             "ASI6200 long exposure synchronization failed"
         );
         assert_eq!(io.elapsed.get(), Duration::from_millis(325));
         io.assert_clocks_restored();
+    }
+
+    #[test]
+    fn asi2600_cancellation_at_every_gate_allows_another_exposure() {
+        for millis in [0, 2, 24, 25, 625, 825, 1025, 1525] {
+            for thermal_flags in [0, 0x40, 0x80, 0xc0] {
+                let io = Registers::default();
+                io.fpga.borrow_mut()[0x19] = thermal_flags;
+                io.cancel_at.set(Some(Duration::from_millis(millis)));
+                assert!(
+                    expose(&io, ASI2600, 2_000_000)
+                        .unwrap_err()
+                        .is::<CaptureCancelled>()
+                );
+                assert_eq!(io.fpga.borrow()[0x19], thermal_flags);
+                assert_eq!(io.fpga.borrow()[0xb], 0x44);
+                assert_eq!(io.standby.get(), 1);
+                assert_eq!(io.fpga.borrow()[0] & 0x10, 0);
+                io.cancel_at.set(None);
+                io.fpga.borrow_mut()[0x23] = 1;
+                expose(&io, ASI2600, 2_000_000).unwrap();
+            }
+        }
+    }
+
+    #[test]
+    fn profiles_preserve_independent_sdk_sensor_registers_and_timing() {
+        for (protocol, register, long_ms, one_second_ms) in
+            [(ASI6200, 0x19e, 2125, 1025), (ASI2600, 0x1ee, 1925, 1020)]
+        {
+            let io = Registers::default();
+            expose(&io, protocol, 2_000_000).unwrap();
+            assert_eq!(io.elapsed.get(), Duration::from_millis(long_ms));
+            assert_eq!(
+                *io.writes.borrow(),
+                [
+                    (0xbd, 0, 0xd0),
+                    (0xbd, 0, 0xc0),
+                    (0xbd, 0xb, 0x45),
+                    (0xb6, register, 5),
+                    (0xbd, 0x19, 0xc1),
+                    (0xbd, 0xb, 0x55),
+                    (0xbd, 0x19, 0xc0),
+                    (0xb6, register, 1),
+                    (0xbd, 0xb, 0x45),
+                    (0xbd, 0xb, 0x44),
+                ]
+            );
+            let io = Registers::default();
+            expose(&io, protocol, 1_000_000).unwrap();
+            assert_eq!(io.elapsed.get(), Duration::from_millis(one_second_ms));
+            io.assert_clocks_restored();
+        }
+    }
+
+    #[test]
+    fn asi2600_restoration_and_errors_keep_model_identity_and_reuse_contract() {
+        let io = Registers::default();
+        io.cancel_at.set(Some(Duration::from_millis(1900)));
+        expose(&io, ASI2600, 2_000_000).unwrap();
+        io.assert_clocks_restored();
+        assert!(io.service().unwrap_err().is::<CaptureCancelled>());
+
+        let io = Registers {
+            synchronize: false,
+            ..Registers::default()
+        };
+        assert_eq!(
+            expose(&io, ASI2600, 2_000_000).unwrap_err().to_string(),
+            "ASI2600 long exposure synchronization failed"
+        );
+        io.assert_clocks_restored();
+
+        let io = Registers::default();
+        io.fail_write.set(Some((0xbd, 0xb, 0x55)));
+        assert_eq!(
+            expose(&io, ASI2600, 2_000_000).unwrap_err().to_string(),
+            "USB control transfer failed"
+        );
+        io.assert_clocks_restored();
+
+        let io = Registers {
+            ignore_gate_clear: true,
+            ..Registers::default()
+        };
+        io.cancel_at.set(Some(Duration::from_millis(825)));
+        let error = expose(&io, ASI2600, 2_000_000).unwrap_err();
+        assert!(!error.is::<CaptureCancelled>());
+        assert!(error.to_string().contains("ASI2600 clocks did not resume"));
+        assert!(restore_if_gated(&io, ASI2600).is_err());
     }
 }

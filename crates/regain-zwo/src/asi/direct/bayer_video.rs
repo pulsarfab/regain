@@ -176,6 +176,7 @@ impl Video {
                 2,
             )?;
             bayer::stop(camera)?;
+            camera.service_environment()?;
             camera.vendor(0xa9, 0, 0, 0)?;
             camera.vendor(0xb6, 0x3004, 0, 0)?;
             camera.vendor(0xb6, 0x3000, 0, 0)?;
@@ -194,14 +195,18 @@ impl Video {
                 cleanup_failed: false,
             })
         })();
-        if result.is_err()
-            && let Err(error) = bayer::stop(camera)
-        {
-            super::diagnostics::log(
-                "warning",
-                "capture.cleanup_failed",
-                format_args!("{error:#}"),
-            );
+        if let Err(error) = result {
+            if let Err(cleanup) = bayer::stop(camera) {
+                super::diagnostics::log(
+                    "warning",
+                    "capture.cleanup_failed",
+                    format_args!("{cleanup:#}"),
+                );
+                anyhow::bail!(
+                    "Video initialization failed: {error:#}; camera stop failed: {cleanup:#}"
+                );
+            }
+            return Err(error);
         }
         result
     }
@@ -319,20 +324,8 @@ impl Video {
         }
         self.active = false;
         camera.phase("video_stopping");
-        let wake = (|| -> Result<()> {
-            if self.settings.long_exposure() {
-                let flags = camera.vendor(0xbc, 0x19, 0, 1)?[0];
-                camera.vendor(0xbd, 0x19, u16::from(flags & !1), 0)?;
-                std::thread::sleep(Duration::from_millis(200));
-                let flags = camera.vendor(0xbc, 0x0b, 0, 1)?[0];
-                camera.vendor(0xbd, 0x0b, u16::from(flags & !0x10), 0)?;
-                camera.vendor(0xbd, 0x0b, u16::from(flags & !0x11), 0)?;
-            }
-            Ok(())
-        })();
         let stopped = bayer::stop(camera);
-        self.cleanup_failed = wake.is_err() || stopped.is_err();
-        wake?;
+        self.cleanup_failed = stopped.is_err();
         stopped?;
         camera.phase("idle");
         Ok(())

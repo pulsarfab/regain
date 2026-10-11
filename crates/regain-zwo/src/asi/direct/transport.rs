@@ -118,6 +118,14 @@ impl Camera {
     pub fn has_environment(&self) -> bool {
         self.environment.borrow().is_some()
     }
+    /// Reapply acknowledged actuator settings after firmware initialization,
+    /// preserving the current target, regulator history and service deadline.
+    pub(super) fn restore_environment(&self) -> Result<()> {
+        if let Some(environment) = self.environment.borrow_mut().as_mut() {
+            environment.reapply(self)?;
+        }
+        self.publish_environment()
+    }
     pub fn service_environment(&self) -> Result<()> {
         self.check_capture_cancelled()?;
         self.cooling
@@ -260,8 +268,7 @@ impl Camera {
         if let Some(environment) = self.environment.borrow_mut().as_mut() {
             environment.restore(self)?;
         }
-        self.publish_environment()?;
-        Ok(())
+        self.publish_environment()
     }
     pub fn read_frame(&self, length: usize) -> Result<Vec<u8>> {
         self.read_frame_wait(length, 5000)

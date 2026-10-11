@@ -4,6 +4,7 @@ use anyhow::{Result, ensure};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::time::{Duration, Instant};
+mod clocks;
 
 /// Sensor-specific constants; lifecycle and retained-frame recovery are shared.
 pub struct Profile {
@@ -197,16 +198,25 @@ fn scalar_exposure_plan_matches_sdk_order_without_stream_commands() {
 }
 
 pub(super) fn stop(camera: &Camera) -> Result<()> {
-    let flags = camera.vendor(0xbc, 0, 0, 1)?[0];
-    writes(
-        camera,
-        &[
-            (0xbd, 0, u16::from(flags | 0x10)),
-            (0xb6, 0x3000, 1),
-            (0xaa, 0, 0),
-        ],
-    )?;
-    camera.reset_pipe()
+    // Cancellation can leave either a still or video integration gated. Wake
+    // first, without consulting the cancellation flag, then attempt the full
+    // stop even when clock restoration fails. A failed wake is never a clean
+    // abort acknowledgement merely because AA cleared the retained buffer.
+    super::completion::finish_stop("Bayer camera", clocks::restore_if_gated(camera), || {
+        let flags = camera.vendor(0xbc, 0, 0, 1)?[0];
+        writes(
+            camera,
+            &[
+                (0xbd, 0, u16::from(flags | 0x10)),
+                (0xb6, 0x3000, 1),
+                (0xaa, 0, 0),
+            ],
+        )?;
+        camera.reset_pipe()?;
+        let status = camera.vendor(0xbc, 0x23, 0, 1)?[0];
+        ensure!(status == 1, "Bayer camera did not stop: BC23={status:#04x}");
+        Ok(())
+    })
 }
 
 pub(super) fn word(
@@ -294,9 +304,16 @@ pub(super) fn configure(
 ) -> Result<(processing::Defects, u32, u32)> {
     profile.validate(settings)?;
     let link = super::link::validate(info, u32::from(profile.pid))?;
-    writes(camera, profile.initialize)?;
-    let defects = calibration(camera, settings, profile)?;
-    writes(camera, profile.raw16)?;
+    let defects = super::initialization::preserve_environment(
+        profile.name,
+        || {
+            writes(camera, profile.initialize)?;
+            let defects = calibration(camera, settings, profile)?;
+            writes(camera, profile.raw16)?;
+            Ok(defects)
+        },
+        || camera.restore_environment(),
+    )?;
     // Set every requested value explicitly, regardless of the preceding owner.
     word(camera, 0xb6, 0x303c, settings.x, 2)?;
     word(camera, 0xb6, 0x3044, settings.y, 2)?;
@@ -355,6 +372,9 @@ pub fn capture(
             status_before_arm == 1,
             "old retained-frame state did not clear before exposure"
         );
+        // Initialization/calibration may take longer than the caller's wait.
+        // Honor a pending abort before starting an otherwise unwanted exposure.
+        camera.service_environment()?;
         let armed = Instant::now();
         writes(
             camera,

@@ -180,6 +180,14 @@ impl Environment {
     /// Restore actuator state after a handle reconnect without replacing the
     /// saved setpoint, regulator history, or the frame retained in DDR.
     pub fn restore(&mut self, camera: &Camera) -> Result<()> {
+        self.restore_actuators(camera, true)
+    }
+    /// Sensor initialization must preserve the regulation deadline: repeatedly
+    /// taking short frames must not postpone the one-second feedback service.
+    pub fn reapply(&mut self, camera: &Camera) -> Result<()> {
+        self.restore_actuators(camera, false)
+    }
+    fn restore_actuators(&mut self, camera: &Camera, reset_tick: bool) -> Result<()> {
         let observed = Instant::now();
         self.write_power(camera, if self.enabled { self.power } else { 0.0 })?;
         flags(camera, 0x80, !self.enabled)?;
@@ -204,12 +212,17 @@ impl Environment {
                 "cooler output did not restore"
             );
         }
-        self.temperature = Self::read_temperature(camera)?;
+        self.finish_restore(Self::read_temperature(camera)?, observed, reset_tick);
+        Ok(())
+    }
+    fn finish_restore(&mut self, temperature: f64, observed: Instant, reset_tick: bool) {
+        self.temperature = temperature;
         for index in [0, 1, 3] {
             self.observed_at[index] = observed;
         }
-        self.tick = Instant::now();
-        Ok(())
+        if reset_tick {
+            self.tick = Instant::now();
+        }
     }
     pub fn open(
         camera: &Camera,
@@ -376,13 +389,19 @@ impl Environment {
             }
         }
     }
-    pub fn service(&mut self, camera: &Camera) -> Result<()> {
-        let elapsed = self.tick.elapsed().as_secs_f64();
+    fn service_interval(&mut self, observed: Instant) -> Option<f64> {
+        let elapsed = observed.duration_since(self.tick).as_secs_f64();
         if elapsed < 1.0 {
-            return Ok(());
+            return None;
         }
-        self.tick = Instant::now();
-        let observed = self.tick;
+        self.tick = observed;
+        Some(elapsed)
+    }
+    pub fn service(&mut self, camera: &Camera) -> Result<()> {
+        let observed = Instant::now();
+        let Some(elapsed) = self.service_interval(observed) else {
+            return Ok(());
+        };
         self.temperature = match Self::read_temperature(camera) {
             Ok(t) => t,
             Err(error) => {
@@ -406,6 +425,71 @@ impl Environment {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn short_frame_reapplication_keeps_feedback_cadence_and_regulator_history() {
+        use std::time::Duration;
+        let origin = Instant::now() - Duration::from_secs(60);
+        let mut environment = Environment {
+            target: 5,
+            enabled: true,
+            dew: true,
+            temperature: 10.0,
+            power: 10.0,
+            integral: 10.0,
+            tick: origin,
+            auxiliary: None,
+            heater: true,
+            output: CoolerOutput::Fpga,
+            observed_at: [origin; 4],
+        };
+        let mut feedbacks = 0;
+        // Ten successful initialization/reapply completions at 5 fps must still
+        // allow two regulator updates. Resetting tick on every frame starves it.
+        for millis in (200..=2000).step_by(200) {
+            let observed = origin + Duration::from_millis(millis);
+            let prior = (
+                environment.target,
+                environment.power,
+                environment.integral,
+                environment.tick,
+            );
+            environment.finish_restore(10.0, observed, false);
+            assert_eq!(
+                (
+                    environment.target,
+                    environment.power,
+                    environment.integral,
+                    environment.tick
+                ),
+                prior
+            );
+            if let Some(elapsed) = environment.service_interval(observed) {
+                assert_eq!(elapsed, 1.0);
+                feedbacks += 1;
+                environment.power = regulate(
+                    environment.power,
+                    &mut environment.integral,
+                    environment.temperature - environment.target as f64,
+                    elapsed,
+                );
+            }
+        }
+        assert_eq!(feedbacks, 2);
+        assert!(environment.power > 10.0);
+        let reconnect = Instant::now();
+        environment.finish_restore(10.0, reconnect, true);
+        assert!(environment.tick >= reconnect);
+        let tick = environment.tick;
+        assert_eq!(
+            environment.service_interval(tick + Duration::from_millis(999)),
+            None
+        );
+        assert_eq!(
+            environment.service_interval(tick + Duration::from_secs(1)),
+            Some(1.0)
+        );
+    }
+
     #[test]
     fn recovery_restores_previous_output_and_boosts_for_warming() {
         assert_eq!(

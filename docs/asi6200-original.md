@@ -9,7 +9,7 @@ See the [sanitized test evidence](asi6200-original-evidence.json) and
 [NINA image-pane tests](nina-end-to-end.md#asi6200mm-pro-non-p25--2026-09-17).
 
 See [cancellation cleanup](asi6200-abort-cleanup.md) for the later synchronization
-and clock-gate fix, SDK comparison, and outstanding physical acceptance.
+and clock-gate fix, SDK comparison, and original-camera abort acceptance.
 
 ## Revision detection
 

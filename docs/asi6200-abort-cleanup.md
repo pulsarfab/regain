@@ -1,4 +1,4 @@
-# ASI6200 cancellation cleanup
+# Direct camera cancellation and thermal cleanup
 
 ## Incident and evidence
 
@@ -62,7 +62,40 @@ are recorded as unavailable; cleanup still runs.
 `capture.stale_clocks` records gates discovered by stop, including those left
 by a previous worker.
 
-## Validation and remaining acceptance
+## Shared fixes across supported cameras
+
+The investigation prompted an audit of every supported direct camera path.
+The fixes run in the Rust backend shared by NINA, native ASCOM and Alpaca;
+they require no frontend-specific setting.
+
+| Camera path | Cleanup and cancellation behavior |
+| --- | --- |
+| ASI2600 original/P25 and ASI6200 original/P25 | Shared synchronization and clock restoration; complete each pulse before observing cancellation, restore gates on all exits, verify readbacks and repair stale gates during stop |
+| ASI585MM Pro, ASI662MC and ASI676MC | Shared Bayer wake-before-stop for still and video acquisition; verify cleared clock gates and DDR idle before returning |
+| Cooled ASI585/2600/6200 | Shared initialization guard reapplies acknowledged thermal settings after initialization and calibration, including failures |
+| ASI220MM Mini | Check pending cancellation before arming; its existing unconditional stop remains, without adding another sensor family's clock commands |
+| SDK mode | Continue using vendor stop APIs and propagating their errors; direct USB register sequences are not sent alongside the SDK |
+
+ASI2600 and ASI6200 retain distinct SDK register/timing profiles: sensor
+standby registers `01ee` and `019e`, long-integration compensation 400 and
+200 ms, and one-second compensation 205 and 200 ms. ASI2600 SDK worker
+`14c551..14c55c` branches to restoration at `14c5a0`, independently confirming
+the required cancellation behavior. Bayer cleanup follows its own traced
+200 ms wake sequence; it does not use either model's sensor standby register.
+
+Every clocked model attempts its ordinary full stop even if clock restoration
+fails. A failure of either step prevents a clean abort acknowledgement;
+two failures retain both error messages.
+
+Hardware testing also found that ASI6200 initialization cleared the heater
+enable bit while its cached getter still reported enabled. Skipping explicit
+thermal defaults was insufficient. The initialization guard now restores
+current output and supported actuator settings and verifies hardware state.
+It preserves the setpoint, regulator history and feedback deadline, so rapid
+short frames cannot indefinitely delay temperature control. Reconnect keeps
+its separate deadline-reset behavior. Disconnect disables cooler and heater.
+
+## Validation and hardware acceptance
 
 Register-model tests exercise cancellation during synchronization, before and
 after each gate, during restoration, at the one-second boundary, and followed
@@ -71,14 +104,64 @@ gates with cleared DDR, ignored gate writes, thermal flag preservation and
 the observed SDK command order. These tests run without hardware:
 
 ```powershell
-cargo test -p regain-zwo --lib asi6200 --locked
+cargo test -p regain-zwo --lib --locked
 ```
 
-An ASI6200 is not attached to the development machine for this change.
-Physical acceptance remains: cancel repeatedly during arming/synchronization,
-around the 0.6/0.8/1.0-second clock gates, during readout and during transfer;
-then capture another frame using the same worker. Repeat on original and P25
-hardware, with cooling/heater enabled, checking unchanged thermal flags,
-successful new synchronization and complete fresh pixels. A captured USB trace
-and the new diagnostics should distinguish a handshake failure from stale
-gates. The existing transfer-cancellation tests alone do not cover this path.
+On 2026-10-11, an attached original ASI6200MM Pro (revision register 3, USB 3)
+passed twelve active cancellations: immediate, 170 ms after start,
+initialization, exposure start, synchronization, integration, 620/820/1020 ms
+into integration, clock restoration, sensor readout and downloading.
+Every cancellation ended in the cancelled terminal state and was followed by
+a fresh 9576 × 6388, 16-bit, two-second exposure in the same raw worker.
+No SDK, worker replacement, device reopen, retained-read recovery or
+replacement exposure was needed. Stop acknowledgements took 0–391 ms;
+the zero value reflects the host timer's resolution.
+
+Passive USB tracing independently verified `BC19` bit 0 and `BC0b` bits 0/4
+clear, and `BC23=1`, before each acknowledgement. The 1020 ms case reached
+both long-exposure gates before cancelling, then visibly executed the full
+restoration sequence. Full-frame freshness used alternating offset 50/100,
+paired baseline frames and median checks on every sensor row; envelope
+validation alone cannot exclude stale rows. Each follow-up also had different
+pixels from its predecessor.
+
+Two targeted comparisons with the signed 0.6.0.3 worker (170 ms after start
+and 1020 ms after exposure start) also captured successfully afterward.
+Its trace nevertheless confirms the missing cleanup commands: the early
+cancellation armed an exposure and interrupted a synchronization pulse;
+the later cancellation set both gates and acknowledged DDR idle without
+clearing or reading back those gates. The fixed worker completed the pulse
+or cancelled before arming, and cleared/read back the gates before returning.
+The remote lockup has therefore not been reproduced on this original camera.
+P25 physical acceptance remains outstanding.
+
+After sharing the implementation, the original ASI6200 repeated the 170 ms,
+1020 ms gated-integration and downloading cases with fresh full frames and
+physical thermal readbacks. The NINA camera API acceptance also passed caller
+cancellation at 170 ms and explicit `AbortExposure` after two seconds, each
+followed by a new two-second image. Supervisor and raw worker IDs stayed
+unchanged; recapture and USB-read retry counts remained zero. This exercises
+the actual plugin API and Rust supervisor with a test image factory, rather
+than automating the NINA UI.
+
+An attached ASI662MC also passed early and gated still-exposure aborts with
+physical gate/DDR readbacks and fresh two-second frames in one worker.
+Its gated 15-second video exposure then passed `Video::stop`, with clock gates
+clear and `BC23=1` read after the final stop command, before acknowledgement.
+A fresh two-second still capture followed in the same worker.
+The remaining models have SDK-sequence and register-model coverage; their
+updated cleanup paths have not been physically retested in this acceptance.
+
+The opt-in harness pins the camera serial and controls only its own worker:
+
+```powershell
+python scripts/inspection/validate_6200_abort.py --hardware `
+  --worker target/debug/regain-device.exe --serial <camera-serial> `
+  --output artifacts/asi6200-abort-acceptance --thermal
+```
+
+Use an inspection Python environment with Frida and NumPy. Each run requires
+a new output directory and an idle camera. Results include per-row statistics,
+hashes, phases and a passive USB trace. Keep raw traces private: they contain
+device paths and serials. The existing transfer-cancellation tests alone do
+not cover this exposure-abort path.

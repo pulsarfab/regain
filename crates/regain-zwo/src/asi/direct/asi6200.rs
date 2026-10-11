@@ -9,8 +9,6 @@ use std::time::{Duration, Instant};
 // does not increase the sensor frame/shutter register values.
 pub const MAX_EXPOSURE_US: u32 = 2_000_000_000;
 
-mod exposure;
-
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Revision {
     Original,
@@ -61,12 +59,17 @@ fn word(camera: &Camera, request: u8, register: u16, value: u32, bytes: u16) -> 
     Ok(())
 }
 fn stop(camera: &Camera) -> Result<()> {
-    exposure::restore_if_gated(camera)?;
-    let flags = camera.vendor(0xbc, 0, 0, 1)?[0];
-    camera.vendor(0xbd, 0, u16::from(flags | 0x10), 0)?;
-    freeze(camera)?;
-    camera.vendor(0xaa, 0, 0, 0)?;
-    camera.reset_pipe()
+    super::completion::finish_stop(
+        "ASI6200",
+        super::host_timed::restore_if_gated(camera, super::host_timed::ASI6200),
+        || {
+            let flags = camera.vendor(0xbc, 0, 0, 1)?[0];
+            camera.vendor(0xbd, 0, u16::from(flags | 0x10), 0)?;
+            freeze(camera)?;
+            camera.vendor(0xaa, 0, 0, 0)?;
+            camera.reset_pipe()
+        },
+    )
 }
 fn freeze(camera: &Camera) -> Result<()> {
     // BD00 bit 10 and AA discard the retained frame on this P25 firmware.
@@ -283,6 +286,35 @@ fn sensor_settings(raw: &Settings) -> Settings {
     }
     sensor
 }
+/// Sensor initialization can reset thermal hardware even when its explicit
+/// BD19/26 defaults are skipped. Restore after calibration too, including failure
+/// paths, before cancellation can return or another exposure can be armed.
+fn initialize<T>(
+    revision: Revision,
+    has_environment: bool,
+    mut write: impl FnMut(u8, u16, u16) -> Result<()>,
+    configure: impl FnOnce() -> Result<T>,
+    restore_environment: impl FnOnce() -> Result<()>,
+) -> Result<T> {
+    super::initialization::preserve_environment(
+        "ASI6200",
+        || {
+            for &(request, register, value) in asi6200_tables::INITIALIZE {
+                if has_environment && request == 0xbd && [0x19, 0x26].contains(&register) {
+                    continue;
+                }
+                let value = match (request, register) {
+                    (0xbd, 0x13) => (revision.hmax() & 255) as u16,
+                    (0xbd, 0x14) => (revision.hmax() >> 8) as u16,
+                    _ => value,
+                };
+                write(request, register, value)?;
+            }
+            configure()
+        },
+        restore_environment,
+    )
+}
 fn capture_native(
     camera: &Camera,
     info: &Value,
@@ -296,22 +328,20 @@ fn capture_native(
     let revision = Revision::detect(camera)?;
     camera.phase("initializing");
     let result = (|| {
-        for &(request, register, value) in asi6200_tables::INITIALIZE {
-            // Host cooling/dew state must survive sensor initialization between frames.
-            if camera.has_environment() && request == 0xbd && [0x19, 0x26].contains(&register) {
-                continue;
-            }
-            // The remaining differences in the observed initialization are
-            // saved gain/offset/exposure values, explicitly set below.
-            let value = match (request, register) {
-                (0xbd, 0x13) => (revision.hmax() & 255) as u16,
-                (0xbd, 0x14) => (revision.hmax() >> 8) as u16,
-                _ => value,
-            };
-            camera.vendor(request, register, value, 0)?;
-        }
-        let defects = calibration(camera, s)?;
-        writes(camera, asi6200_tables::RAW16)?;
+        let defects = initialize(
+            revision,
+            camera.has_environment(),
+            |request, register, value| {
+                camera.vendor(request, register, value, 0)?;
+                Ok(())
+            },
+            || {
+                let defects = calibration(camera, s)?;
+                writes(camera, asi6200_tables::RAW16)?;
+                Ok(defects)
+            },
+            || camera.restore_environment(),
+        )?;
         word(camera, 0xbd, 6, 49, 2)?;
         word(camera, 0xbd, 2, 24, 2)?;
         writes(camera, &[(0xb6, 0xa5, 1), (0xb6, 5, 1)])?;
@@ -372,7 +402,7 @@ fn capture_native(
         camera.vendor(0xbd, 0, u16::from(flags & !0x10), 0)?;
         camera.reset_pipe()?;
         if s.microseconds >= 1_000_000 {
-            exposure::expose(camera, s.microseconds)?;
+            super::host_timed::expose(camera, super::host_timed::ASI6200, s.microseconds)?;
         }
         let deadline = Duration::from_micros(u64::from(s.microseconds)) + Duration::from_secs(10);
         loop {
@@ -514,6 +544,78 @@ fn capture_native(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn initialization_restores_thermal_hardware_after_configuration_and_errors() {
+        use std::cell::Cell;
+        // The original ASI6200 acceptance trace showed the requested heater bit
+        // lost during initialization despite skipping explicit thermal defaults.
+        // Model that side effect, including an uncertain USB write completion.
+        for fail_stage in ["none", "usb", "calibration"] {
+            let flags = Cell::new(0x40_u8); // Cooler and heater both enabled.
+            let power = Cell::new(60_u16);
+            let restores = Cell::new(0);
+            let configurations = Cell::new(0);
+            let result = initialize(
+                Revision::Original,
+                true,
+                |request, register, _| {
+                    assert!(request != 0xbd || ![0x19, 0x26].contains(&register));
+                    if request == 0xaf {
+                        flags.set(0x80);
+                        power.set(14);
+                        if fail_stage == "usb" {
+                            anyhow::bail!("initialization USB completion failed");
+                        }
+                    }
+                    Ok(())
+                },
+                || {
+                    configurations.set(configurations.get() + 1);
+                    // Restoration must also follow the calibration/setup work.
+                    flags.set(0x80);
+                    power.set(14);
+                    if fail_stage == "calibration" {
+                        anyhow::bail!("calibration read failed");
+                    }
+                    Ok(42)
+                },
+                || {
+                    restores.set(restores.get() + 1);
+                    flags.set(0x40);
+                    power.set(60);
+                    Ok(())
+                },
+            );
+            assert_eq!(restores.get(), 1, "{fail_stage}");
+            assert_eq!(flags.get(), 0x40, "{fail_stage}");
+            assert_eq!(power.get(), 60, "{fail_stage}");
+            assert_eq!(configurations.get(), i32::from(fail_stage != "usb"));
+            match fail_stage {
+                "none" => assert_eq!(result.unwrap(), 42),
+                "usb" => assert_eq!(
+                    result.unwrap_err().to_string(),
+                    "initialization USB completion failed"
+                ),
+                _ => assert_eq!(result.unwrap_err().to_string(), "calibration read failed"),
+            }
+        }
+    }
+
+    #[test]
+    fn failed_thermal_restore_cannot_acknowledge_clean_initialization_cancellation() {
+        let error = initialize(
+            Revision::Original,
+            true,
+            |_, _, _| Ok(()),
+            || Err::<(), _>(super::super::completion::CaptureCancelled.into()),
+            || anyhow::bail!("heater readback failed"),
+        )
+        .unwrap_err();
+        assert!(!error.is::<super::super::completion::CaptureCancelled>());
+        assert!(error.to_string().contains("heater readback failed"));
+        assert!(error.to_string().contains("Capture cancelled"));
+    }
 
     #[test]
     fn original_timing_matches_independent_sdk_trace() {

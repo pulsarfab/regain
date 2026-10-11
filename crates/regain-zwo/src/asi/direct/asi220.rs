@@ -197,6 +197,7 @@ pub fn capture(c: &Camera, info: &Value, s: &Settings, bin: u32) -> Result<(Valu
         word(c, 0x3e02, shutter, 3)?;
         stop(c)?;
         c.vendor(0xaf, 0, 0, 0)?;
+        c.service_environment()?;
         c.vendor(0xa9, 0, 0, 0)?;
         sensor(c, 0x100, 1)?;
         // SDK double-buffers USB requests but returns the first complete pass;

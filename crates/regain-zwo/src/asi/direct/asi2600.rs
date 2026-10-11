@@ -49,17 +49,23 @@ fn word(camera: &Camera, request: u8, register: u16, value: u32, bytes: u16) -> 
     Ok(())
 }
 fn stop(camera: &Camera) -> Result<()> {
-    let flags = camera.vendor(0xbc, 0, 0, 1)?[0];
-    writes(
-        camera,
-        &[
-            (0xbd, 0, u16::from(flags | 0x10)),
-            (0xb6, 0x1ee, 5),
-            (0xb6, 0, 5),
-            (0xaa, 0, 0),
-        ],
-    )?;
-    camera.reset_pipe()
+    super::completion::finish_stop(
+        "ASI2600",
+        super::host_timed::restore_if_gated(camera, super::host_timed::ASI2600),
+        || {
+            let flags = camera.vendor(0xbc, 0, 0, 1)?[0];
+            writes(
+                camera,
+                &[
+                    (0xbd, 0, u16::from(flags | 0x10)),
+                    (0xb6, 0x1ee, 5),
+                    (0xb6, 0, 5),
+                    (0xaa, 0, 0),
+                ],
+            )?;
+            camera.reset_pipe()
+        },
+    )
 }
 fn frame_sequence(data: &[u8]) -> Result<u16> {
     ensure!(
@@ -328,19 +334,30 @@ fn capture_native(
     };
     camera.phase("initializing");
     let result = (|| {
-        let initialize = match revision {
-            Revision::Original => asi2600_tables::INITIALIZE,
-            Revision::P25 => asi2600_p25_tables::INITIALIZE,
-        };
-        for &(request, register, value) in initialize {
-            // Host cooling/dew state must survive sensor initialization between frames.
-            if camera.has_environment() && request == 0xbd && [0x19, 0x26].contains(&register) {
-                continue;
-            }
-            camera.vendor(request, register, value, 0)?;
-        }
-        let defects = calibration(camera, s)?;
-        writes(camera, asi2600_tables::RAW16)?;
+        let defects = super::initialization::preserve_environment(
+            "ASI2600",
+            || {
+                let initialize = match revision {
+                    Revision::Original => asi2600_tables::INITIALIZE,
+                    Revision::P25 => asi2600_p25_tables::INITIALIZE,
+                };
+                for &(request, register, value) in initialize {
+                    // Reapply the acknowledged state after all initialization
+                    // and calibration, including their error paths.
+                    if camera.has_environment()
+                        && request == 0xbd
+                        && [0x19, 0x26].contains(&register)
+                    {
+                        continue;
+                    }
+                    camera.vendor(request, register, value, 0)?;
+                }
+                let defects = calibration(camera, s)?;
+                writes(camera, asi2600_tables::RAW16)?;
+                Ok(defects)
+            },
+            || camera.restore_environment(),
+        )?;
         word(camera, 0xbd, 6, 45, 2)?;
         word(camera, 0xbd, 2, 24, 2)?;
         writes(camera, &[(0xb6, 0xa7, 1), (0xb6, 7, 1)])?;
@@ -385,6 +402,8 @@ fn capture_native(
         stop(camera)?;
         let old = camera.vendor(0xbc, 0x23, 0, 1)?[0];
         ensure!(old == 1, "Duo old frame did not clear: {old}");
+        // Do not arm another frame if cancellation arrived during setup.
+        camera.service_environment()?;
         let armed = Instant::now();
         camera.phase("exposing");
         writes(camera, &[(0xa9, 0, 0), (0xb6, 0x1ee, 1), (0xb6, 0, 5)])?;
@@ -394,64 +413,7 @@ fn capture_native(
         camera.vendor(0xbd, 0, u16::from(flags & !0x10), 0)?;
         camera.reset_pipe()?;
         if s.microseconds >= 1_000_000 {
-            // SDK 1.41 worker 14c30c..14c636: synchronize the FPGA, then
-            // gate sensor/FPGA clocks during the long integration.
-            let mut synchronized = false;
-            for _ in 0..5 {
-                let f = camera.vendor(0xbc, 0, 0, 1)?[0];
-                camera.vendor(0xbd, 0, u16::from(f | 0x10), 0)?;
-                camera.service_environment()?;
-                std::thread::sleep(Duration::from_millis(5));
-                camera.vendor(0xbd, 0, u16::from(f & !0x10), 0)?;
-                std::thread::sleep(Duration::from_millis(20));
-                if camera.vendor(0xbc, 0x23, 0, 1)?[0] & 0x10 != 0 {
-                    synchronized = true;
-                    break;
-                }
-            }
-            ensure!(synchronized, "Duo long exposure synchronization failed");
-            let f = camera.vendor(0xbc, 0xb, 0, 1)?[0];
-            camera.vendor(0xbd, 0xb, u16::from(f | 1), 0)?;
-            let exposure_ms = s.microseconds / 1000;
-            if exposure_ms > 1000 {
-                let trigger = Instant::now();
-                let mut iteration = 0;
-                loop {
-                    match iteration {
-                        6 => {
-                            camera.vendor(0xb6, 0x1ee, 5, 0)?;
-                        }
-                        8 => {
-                            let f = camera.vendor(0xbc, 0x19, 0, 1)?[0];
-                            camera.vendor(0xbd, 0x19, u16::from(f | 1), 0)?;
-                        }
-                        10 => {
-                            let f = camera.vendor(0xbc, 0xb, 0, 1)?[0];
-                            camera.vendor(0xbd, 0xb, u16::from(f | 0x10), 0)?;
-                        }
-                        _ => {}
-                    }
-                    let elapsed = trigger.elapsed().as_millis();
-                    camera.service_environment()?;
-                    std::thread::sleep(Duration::from_millis(100));
-                    iteration += 1;
-                    if elapsed >= u128::from(exposure_ms - 400) {
-                        break;
-                    }
-                }
-            } else {
-                std::thread::sleep(Duration::from_millis(u64::from(exposure_ms - 205)));
-            }
-            let f = camera.vendor(0xbc, 0x19, 0, 1)?[0];
-            camera.vendor(0xbd, 0x19, u16::from(f & !1), 0)?;
-            camera.service_environment()?;
-            std::thread::sleep(Duration::from_millis(100));
-            camera.vendor(0xb6, 0x1ee, 1, 0)?;
-            camera.service_environment()?;
-            std::thread::sleep(Duration::from_millis(100));
-            let f = camera.vendor(0xbc, 0xb, 0, 1)?[0];
-            camera.vendor(0xbd, 0xb, u16::from(f & !0x10), 0)?;
-            camera.vendor(0xbd, 0xb, u16::from(f & !0x11), 0)?;
+            super::host_timed::expose(camera, super::host_timed::ASI2600, s.microseconds)?;
         }
         let deadline = Duration::from_micros(u64::from(s.microseconds)) + Duration::from_secs(10);
         loop {
