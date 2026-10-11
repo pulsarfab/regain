@@ -1,4 +1,7 @@
 //! ASI2600MM acquisition over the platform USB transport.
+//! Register roles below are observed SDK 1.41 behavior. See
+//! docs/camera-usb-registers.md for transport notation, evidence and unknowns;
+//! the original/P25 initialization tables are model-specific ordered sequences.
 use crate::asi::direct::{
     asi2600_p25_tables, asi2600_tables, processing, settings::Settings, transport::Camera,
 };
@@ -32,6 +35,9 @@ fn writes(camera: &Camera, commands: &[(u8, u16, u16)]) -> Result<()> {
     Ok(())
 }
 fn word(camera: &Camera, request: u8, register: u16, value: u32, bytes: u16) -> Result<()> {
+    // Multi-byte fields occupy ascending byte addresses, least significant
+    // byte first. SDK FPGA writes bracket the complete field with BD01=1/0;
+    // sensor B6 writes do not. The bracket's hardware implementation is unknown.
     if request == 0xbd {
         camera.vendor(request, 1, 1, 0)?;
     }
@@ -53,6 +59,10 @@ fn stop(camera: &Camera) -> Result<()> {
         "ASI2600",
         super::host_timed::restore_if_gated(camera, super::host_timed::ASI2600),
         || {
+            // Destructive stop, distinct from standby for DDR replay: BD00
+            // mask 0x10, sensor 01ee=5 / 00=5, then AA and host pipe reset.
+            // AA clears retained state; this sequence must not be used for a
+            // retry that promises the pixels from the existing exposure.
             let flags = camera.vendor(0xbc, 0, 0, 1)?[0];
             writes(
                 camera,
@@ -128,6 +138,9 @@ pub fn validate(s: &Settings, gain: i32) -> Result<()> {
     Ok(())
 }
 fn calibration(camera: &Camera, s: &Settings) -> Result<processing::Defects> {
+    // SDK brackets ASID reads with BE=0/1 (exact internal mode unknown).
+    // C3's index is a 256-byte address unit: 0x400 starts at 0x40000.
+    // Data is read from this camera and decoded, never copied from a fixture.
     camera.vendor(0xbe, 0, 0, 0)?;
     let result = (|| {
         let mut data = camera.vendor(0xc3, 0, 0x400, 2048)?;
@@ -173,6 +186,11 @@ pub fn gain_registers(gain: i32) -> (u16, u32, u16, u16) {
     )
 }
 fn timing(s: &Settings, revision: Revision) -> (u32, u32) {
+    // SDK arithmetic: HMAX / 20 MHz gives microseconds per line; 48 extra
+    // rows, +5000 us for host-timed setup, +1 frame line, and the shutter /2
+    // encoding are model-specific observed constants. They are not added to
+    // the user's exposure. >=1 s uses a fixed sensor interval while host_timed
+    // controls integration duration. Preserve f32/truncation order.
     let line = revision.hmax() as f32 * 1000.0 / 20000.0;
     let minimum = ((s.height + 48) as f32 * line) as u32;
     let exposure = if s.microseconds >= 1_000_000 {
@@ -202,6 +220,10 @@ fn readout_guard(frame: u32, revision: Revision) -> Duration {
 }
 fn begin_retained_read(camera: &Camera, revision: Revision) -> Result<()> {
     camera.phase("restarting_retained");
+    // BD18=0/1 stops/restarts the DDR sender without A9 (new exposure) or
+    // AA (discard frame). Retained status 0x05/0x15 differs only by sync bit 4.
+    // The 100 ms sender settling wait and revision-specific pipe-reset order
+    // come from traced/physical replay tests, not from exposure duration.
     if revision == Revision::Original {
         camera.reset_pipe()?;
     }
@@ -343,7 +365,9 @@ fn capture_native(
                 };
                 for &(request, register, value) in initialize {
                     // Reapply the acknowledged state after all initialization
-                    // and calibration, including their error paths.
+                    // and calibration, including their error paths. BD19 holds
+                    // cooler/heater flags; BD26 is the cooler output register.
+                    // Other initialization commands can reset them indirectly.
                     if camera.has_environment()
                         && request == 0xbd
                         && [0x19, 0x26].contains(&register)
@@ -358,11 +382,19 @@ fn capture_native(
             },
             || camera.restore_environment(),
         )?;
+        // Fixed SDK FPGA words BD06=45 (0x2d), BD02=24 (0x18). Their individual
+        // meanings are not decoded; keep them distinct from the user's ROI.
         word(camera, 0xbd, 6, 45, 2)?;
         word(camera, 0xbd, 2, 24, 2)?;
+        // SDK window selectors (a7/07=1; internal field definitions unknown),
+        // then sensor origin: x in 16-pixel units, y with a 25-row base offset.
         writes(camera, &[(0xb6, 0xa7, 1), (0xb6, 7, 1)])?;
         word(camera, 0xb6, 0xa8, s.x / 16, 2)?;
         word(camera, 0xb6, 8, s.y + 25, 2)?;
+        // FPGA transfer count is 32-bit words: RAW16 bytes/4 = width*height/2.
+        // Sensor 01d8=4 is fixed SDK window setup (bits not independently named).
+        // Program physical sensor dimensions, including its +24 width encoding,
+        // and matching FPGA output dimensions before starting the acquisition.
         word(camera, 0xbd, 0x40, s.width * s.height / 2, 4)?;
         camera.vendor(0xb6, 0x1d8, 4, 0)?;
         word(camera, 0xb6, 0xa, s.height, 2)?;
@@ -379,6 +411,9 @@ fn capture_native(
             2,
         )?;
         let (mode, analog, hcg, digital) = gain_registers(gain);
+        // SDK gain map: negative-gain mode 067f, paired analog fields 30/32,
+        // conversion switch 2f at gain 100, and digital stages in 40 above 460.
+        // Paired offset fields 42/44 use ten register units per requested unit.
         camera.vendor(0xb6, 0x67f, mode, 0)?;
         word(camera, 0xb6, 0x30, analog, 2)?;
         word(camera, 0xb6, 0x32, analog, 2)?;
@@ -388,6 +423,9 @@ fn capture_native(
         let (frame, shutter) = timing(s, revision);
         word(camera, 0xbd, 0x10, frame, 3)?;
         word(camera, 0xb6, 0x18, shutter, 2)?;
+        // BD00 masks 0xc0 select the traced host-timed (>=1 s) path together.
+        // Their individual firmware meanings are not established; preserve
+        // all other bits, including the separate synchronization/stop bit 4.
         let flags = camera.vendor(0xbc, 0, 0, 1)?[0];
         camera.vendor(
             0xbd,
@@ -406,6 +444,9 @@ fn capture_native(
         camera.service_environment()?;
         let armed = Instant::now();
         camera.phase("exposing");
+        // SDK arm/start order: A9, sensor resume 01ee=1, sensor 00=5,
+        // 50 ms, sensor 00=4, clear FPGA stop bit 4, then drain/reset the pipe.
+        // Values 4/5 are observed sensor states, not decoded bitfield names.
         writes(camera, &[(0xa9, 0, 0), (0xb6, 0x1ee, 1), (0xb6, 0, 5)])?;
         std::thread::sleep(Duration::from_millis(50));
         camera.vendor(0xb6, 0, 4, 0)?;
@@ -438,6 +479,7 @@ fn capture_native(
             camera.service_environment()?;
             std::thread::sleep(Duration::from_millis(10));
         }
+        // Standby preserves DDR: omit both destructive BD00 bit 4 and AA.
         writes(camera, &[(0xb6, 0x1ee, 5), (0xb6, 0, 5)])?;
         camera.phase("retained");
         // Short integrations stream; restart from frozen DDR. Long integrations

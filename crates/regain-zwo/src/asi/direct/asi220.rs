@@ -1,4 +1,7 @@
 //! Research ASI220MM Mini (Duo guide): distinct USB2 RAW16 acquisition.
+//! Evidence: SDK 1.41 duo-guide-mapped-01 trace and gain routine RVA 0xd16e0;
+//! see docs/duo-capture.md and docs/camera-usb-registers.md. This sensor does
+//! not share the main camera's register map or proven retained-frame replay.
 use crate::asi::direct::{asi220_tables, processing, settings::Settings, transport::Camera};
 use anyhow::{Result, ensure};
 use serde_json::{Value, json};
@@ -10,12 +13,17 @@ fn sensor(c: &Camera, register: u16, value: u16) -> Result<()> {
     Ok(())
 }
 fn word(c: &Camera, low: u16, value: u32, bytes: u16) -> Result<()> {
+    // Unlike the Bayer-family words, low is the least-significant BYTE address
+    // and subsequent bytes use descending addresses. E.g. 320d then 320c is
+    // the two-byte line-timing word. Preserve the SDK's byte/write order.
     for i in 0..bytes {
         sensor(c, low - i, ((value >> (8 * i)) & 255) as u16)?;
     }
     Ok(())
 }
 fn stop(c: &Camera) -> Result<()> {
+    // Sensor 0100=0 stops streaming; AA stops USB acquisition, then the host
+    // resets its bulk pipe. No main-sensor FPGA clock/DDR commands belong here.
     sensor(c, 0x100, 0)?;
     c.vendor(0xaa, 0, 0, 0)?;
     c.reset_pipe()
@@ -73,7 +81,10 @@ pub fn raw_settings(s: &Settings, bin: u32) -> Result<Settings> {
     Ok(raw)
 }
 
-/// Derived from d16e0; values are byte registers including SDK truncation.
+/// Derived from SDK 1.41 RVA 0xd16e0, corroborated by held-out gain traces.
+/// The four bytes are written to 3e08, 3e09, 3e06 and 3e07 respectively.
+/// Coarse/fine gain stages use piecewise steps, switching branches at 35 dB;
+/// retain the SDK's byte truncation rather than assuming linear register gain.
 fn gain_registers(gain: u32) -> [u16; 4] {
     let mut a = 0x3f;
     let mut b = 0x7f;
@@ -123,6 +134,9 @@ fn gain_registers(gain: u32) -> [u16; 4] {
     [a as u16, b as u16, c as u16, d as u16]
 }
 fn timing(s: &Settings) -> (u32, u32, u32) {
+    // Traced SDK line-timing presets: 0840 below one second, 1b00 from one
+    // second onward. The multiplier/float conversion reproduce its arithmetic,
+    // not a separately measured sensor clock. Preserve single-precision rounds.
     let hts = if s.microseconds >= 1_000_000 {
         0x1b00
     } else {
@@ -131,6 +145,10 @@ fn timing(s: &Settings) -> (u32, u32, u32) {
     let line = (f64::from(hts * 2) * 0.02500000037252903) as f32;
     let minimum = (s.height as f32 * line) as u32;
     let count = (s.microseconds as f32 / line) as u32;
+    // SDK frame-length floor is 0460 (1120 lines), with a 16-bit ceiling.
+    // Integration programming keeps its four-line margin, then packs the line
+    // count left by four into sensor 3e00..3e02. Those low bits are not used
+    // as additional exposure precision by this implementation.
     let frame = count.clamp(0x460, 0xffff);
     let shutter = if s.microseconds < minimum {
         if s.microseconds as f32 > 4.0 * line {
@@ -150,6 +168,9 @@ pub fn capture(c: &Camera, info: &Value, s: &Settings, bin: u32) -> Result<(Valu
     let started = Instant::now();
     let result = (|| {
         stop(c)?;
+        // Same read-only ASID window as the main sensor: BE=0 selects map
+        // access, C3 index 0400 addresses byte 040000, BE=1 restores access.
+        // The guide decodes its own defect map for 12-bit pixels; never copy main maps.
         c.vendor(0xbe, 0, 0, 0)?;
         let calibration = (|| {
             let mut blob = c.vendor(0xc3, 0, 0x400, 2048)?;
@@ -170,6 +191,9 @@ pub fn capture(c: &Camera, info: &Value, s: &Settings, bin: u32) -> Result<(Valu
         let restore = c.vendor(0xbe, 1, 0, 0);
         let defects = calibration?;
         restore?;
+        // Opaque volatile tuning sequence from the hash-pinned trace; its 265
+        // writes also match the SDK array at RVA 28d360. Individual undocumented
+        // tuning fields are not assigned meanings or shared with other sensors.
         for &(r, v) in asi220_tables::INITIALIZE {
             sensor(c, r, v)?;
         }
@@ -180,6 +204,9 @@ pub fn capture(c: &Camera, info: &Value, s: &Settings, bin: u32) -> Result<(Valu
         let bytes = raw.width * raw.height * 2;
         let blocks = bytes.div_ceil(49152);
         c.vendor(0xb5, (blocks >> 16) as u16, blocks as u16, 0)?;
+        // Sensor crop limits 3200..3207 use SDK-specific margins (+4 origins,
+        // +11 end limits); keep these observed values without guessing optical
+        // coordinates. 3208..320b holds the exact requested output dimensions.
         word(c, 0x3201, raw.x + 4, 2)?;
         word(c, 0x3203, raw.y + 4, 2)?;
         word(c, 0x3205, raw.x + raw.width + 11, 2)?;
@@ -190,12 +217,17 @@ pub fn capture(c: &Camera, info: &Value, s: &Settings, bin: u32) -> Result<(Valu
         for (r, v) in [0x3e08, 0x3e09, 0x3e06, 0x3e07].into_iter().zip(gain) {
             sensor(c, r, v)?;
         }
+        // 3907/3908 carries the SDK offset, not the main sensor's 30dc word.
         word(c, 0x3908, s.offset, 2)?;
         let (hts, frame, shutter) = timing(&raw);
+        // 320c/320d=line timing, 320e/320f=frame lines, 3e00..3e02=integration.
         word(c, 0x320d, hts, 2)?;
         word(c, 0x320f, frame, 2)?;
         word(c, 0x3e02, shutter, 3)?;
         stop(c)?;
+        // SDK start: AF prepares acquisition (internal effect undocumented),
+        // A9 arms the USB stream, then sensor 0100=1 starts streaming. Keep the
+        // cancellation checkpoint before A9 so setup does not arm unwanted work.
         c.vendor(0xaf, 0, 0, 0)?;
         c.service_environment()?;
         c.vendor(0xa9, 0, 0, 0)?;

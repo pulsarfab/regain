@@ -1,5 +1,7 @@
 //! ASI585MM Pro/ASI662MC/ASI676MC RAW16 video: configure once, consume successive envelopes.
 //! Model-specific SDK 1.41 video traces; never replay a live video frame.
+//! Register evidence: docs/asi662mc.md, docs/asi676-video.md and
+//! docs/asi585mm-pro.md; common conventions: docs/camera-usb-registers.md.
 use super::{bayer, link, processing, protocol, settings::Settings, transport::Camera};
 use anyhow::{Context, Result, ensure};
 use serde_json::{Value, json};
@@ -162,8 +164,12 @@ impl Video {
         camera.phase("video_initializing");
         let result = (|| {
             let (defects, _, _) = bayer::configure(camera, info, &settings, profile)?;
-            // SDK SetFPSPerc(40), DDR enabled: USB2 and USB3 use different
-            // FPGA bandwidth pacing. This is independent of ROI dimensions.
+            // SDK SetFPSPerc(40), DDR enabled: FPGA 24/25 is the little-endian
+            // output divider, 161c on USB 2 and 0180 on USB 3 in the 662/676
+            // video traces. SDK formula: trunc(25600 / bandwidth - 256), with
+            // bandwidth = control * link multiplier / 400000 (43272 USB 2,
+            // 400000 USB 3). See docs/usb2-coverage-spike.md for pinned static
+            // evidence. This is neither a byte count nor the host read size.
             bayer::word(
                 camera,
                 0xbd,
@@ -177,6 +183,9 @@ impl Video {
             )?;
             bayer::stop(camera)?;
             camera.service_environment()?;
+            // Same start as still capture: A9 arm, observed 3004 prerequisite,
+            // 3000=0 leave standby, 50 ms guard, then clear FPGA 00 stop bit 4.
+            // Keep the sensor running between frames; AA/standby would end it.
             camera.vendor(0xa9, 0, 0, 0)?;
             camera.vendor(0xb6, 0x3004, 0, 0)?;
             camera.vendor(0xb6, 0x3000, 0, 0)?;
@@ -256,13 +265,17 @@ impl Video {
         ensure!(!cancel.load(Ordering::Relaxed), "video read cancelled");
         if self.settings.long_exposure() {
             camera.phase("video_exposing");
+            // FPGA 0b bit 0 starts this frame's host-timed integration after
+            // the SDK's 30 ms guard. All bit edits preserve unrelated flags.
             std::thread::sleep(Duration::from_millis(30));
             let flags = camera.vendor(0xbc, 0x0b, 0, 1)?[0];
             camera.vendor(0xbd, 0x0b, u16::from(flags | 1), 0)?;
             let triggered = Instant::now();
-            // SDK 1.41 WorkingFunc: low power after 60 polling ticks, XHS
-            // stop after 80 (10 ms intent; Windows tick rounding runs later).
-            // Monotonic deadlines keep these inside the integration window.
+            // SDK 1.41 ASI662 WorkingFunc at Linux address 13b730: set FPGA
+            // 19 bit 0 after 60 polling ticks, then 0b bit 4 after 80. Analysis
+            // labels these low power and XHS stop; exact electrical effects
+            // remain undocumented. Ticks intend 10 ms, but Windows rounding
+            // runs later. Monotonic deadlines keep both inside integration.
             let integration = Duration::from_micros(u64::from(self.settings.microseconds));
             let wake = integration - Duration::from_millis(200);
             for (delay, register, mask) in [(600, 0x19, 1), (800, 0x0b, 0x10)] {
@@ -275,8 +288,10 @@ impl Video {
                     camera.vendor(0xbd, register, u16::from(flags | mask), 0)?;
                 }
             }
-            // Same explicit end-of-integration sequence on every video frame.
-            // Stop remains cancellable rather than sleeping the full exposure.
+            // End sequence from the long-video traces: clear 19 bit 0 at
+            // exposure-200 ms, then clear 0b bit 4 and bit 0 at exposure end.
+            // This wake lead is distinct from the cancellation cleanup's fixed
+            // 200 ms wait. Waits service cancellation and thermal regulation.
             wait_until_servicing(
                 triggered,
                 Duration::from_micros(u64::from(self.settings.microseconds - 200_000)),

@@ -27,6 +27,9 @@ They are not a hardware reproduction of the remote failure.
 
 ## SDK comparison and change
 
+See the [direct camera register reference](camera-usb-registers.md) for request
+notation, shared masks, timing constants and the limits of the SDK evidence.
+
 The saved SDK 1.41 P25 Camera Kit trace `20260915T012106Z-31f0a25c`, exercise
 `exposure-2000000us`, records this clock-restoration order:
 

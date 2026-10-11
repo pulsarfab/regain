@@ -187,6 +187,11 @@ Only Windows builds depend on `windows-sys`. The native module uses `nusb`
 with Linux usbfs or macOS IOKit, exclusive interface claims, vendor control
 requests, and bulk-IN transfers. It never loads the camera SDK.
 
+The [direct camera register reference](camera-usb-registers.md) maps USB
+commands, shared flag masks, model-specific timing, thermal calibration and
+trace-pinned presets. Inline comments distinguish observed SDK sequences from
+register meanings that remain unknown.
+
 Each bulk transfer must finish or drain cancellation before its buffer can be
 released. An undrained cancellation terminates the worker. A short or failed
 chunk invalidates the whole read; existing camera-specific retained-frame

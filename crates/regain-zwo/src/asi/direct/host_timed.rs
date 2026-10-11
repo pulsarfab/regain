@@ -1,6 +1,28 @@
 //! SDK 1.41 ASI2600/6200 host-timed handshake and clock restoration.
 //! Cancellation is observed between complete register transactions, never
 //! between a synchronization pulse's edges or during clock restoration.
+//!
+//! Register notation: BC reads and BD writes the FPGA byte registers; B6
+//! writes a separate sensor-side address space. "Gate" and "standby" describe
+//! their observed acquisition roles, not manufacturer register definitions:
+//! - BD00 mask 0x10 (bit 4): SDK synchronization pulse / full-stop control.
+//!   Setting it is unsafe when preserving a retained frame; it is not a
+//!   general-purpose "cancel" bit.
+//! - BC23 mask 0x10: synchronization indication. The complete values 0x01 and
+//!   0x15 are separately checked by acquisition for cleared/advertised retained
+//!   state; the latter does not prove every sensor row has reached DDR.
+//! - BD0b masks 0x01 and 0x10, BD19 mask 0x01: long-exposure gates. Clear all
+//!   three in SDK order before acknowledging cancellation or reusing capture.
+//! - BD19 also contains thermal controls: mask 0x80 disables cooling, mask
+//!   0x40 enables the heater. Always read-modify-write its exposure bit.
+//! - B6:019e (6200) / B6:01ee (2600): values 5 and 1 are observed standby and
+//!   resume commands. Their individual bit definitions are not established.
+//!
+//! Evidence: SDK 1.41 x64 worker RVAs 1ed2cc..1ed60b (6200) and
+//! 14c30c..14c636 (2600), plus the saved P25 Camera Kit USB exercise
+//! exposure-2000000us (20260915T012106Z-31f0a25c). See
+//! docs/camera-usb-registers.md for the register reference and
+//! docs/asi6200-abort-cleanup.md for cancellation comparisons and acceptance.
 use super::transport::Camera;
 use anyhow::{Result, ensure};
 use std::time::{Duration, Instant};
@@ -8,7 +30,13 @@ use std::time::{Duration, Instant};
 #[derive(Clone, Copy)]
 pub(super) struct Protocol {
     model: &'static str,
+    // Sensor register, not FPGA BD19 despite the similar hexadecimal address.
     standby_register: u16,
+    // Distinct SDK constants for >1000 ms and the 1000 ms branch after
+    // truncating exposure to whole milliseconds. They shorten the host wait
+    // before restoration; they do not alter programmed sensor timing.
+    // Their physical derivation is unknown, so do not infer or retune them
+    // from USB transfer latency or a presumed shutter/readout delay.
     integration_compensation_ms: u32,
     one_second_compensation_ms: u32,
 }
@@ -64,6 +92,9 @@ impl Io for Camera {
 /// 2600: cancellation at 14c551..14c55c branches to restoration at 14c5a0).
 /// Do not call service() here: it can throw cancellation before clocks resume.
 fn restore_clocks(io: &impl Io, protocol: Protocol) -> Result<()> {
+    // SDK order is FPGA bit 0 -> 100 ms -> sensor resume -> 100 ms ->
+    // FPGA 0b bit 4 -> FPGA 0b bit 0. Fresh reads preserve unrelated flags
+    // and account for state changes caused by the preceding write.
     let flags = io.read(0x19)?;
     io.write(0xbd, 0x19, flags & !1)?;
     io.sleep(Duration::from_millis(100));
@@ -108,11 +139,16 @@ pub(super) fn restore_if_gated(io: &impl Io, protocol: Protocol) -> Result<()> {
 }
 
 pub(super) fn expose(io: &impl Io, protocol: Protocol, microseconds: u32) -> Result<()> {
+    // Callers use this path only for exposures >= 1 s; shorter exposures use
+    // the sensor frame/shutter registers without these host-controlled gates.
     io.phase("synchronizing");
     let mut stage = "synchronizing";
     let result = (|| {
         let mut synchronized = false;
         for _ in 0..5 {
+            // SDK bounded handshake: set BD00 bit 4, hold 5 ms, clear it,
+            // wait 20 ms, then inspect BC23 bit 4. Complete both edges before
+            // servicing cancellation; a half pulse is not a clean stop.
             let flags = io.read(0)?;
             io.write(0xbd, 0, flags | 0x10)?;
             io.sleep(Duration::from_millis(5));
@@ -138,6 +174,9 @@ pub(super) fn expose(io: &impl Io, protocol: Protocol, microseconds: u32) -> Res
             let trigger = io.now();
             let mut iteration = 0;
             loop {
+                // Preserve SDK iteration placement (nominally 600/800/1000 ms
+                // after integration starts). Actual times include USB latency.
+                // These are staged gating operations, not three new exposures.
                 match iteration {
                     6 => io.write(0xb6, protocol.standby_register, 5)?,
                     8 => {
@@ -159,6 +198,8 @@ pub(super) fn expose(io: &impl Io, protocol: Protocol, microseconds: u32) -> Res
                 }
             }
         } else {
+            // SDK's 1000-whole-millisecond branch does not set the later gates.
+            // Keep its separate model-specific compensation (200/205 ms).
             io.service()?;
             io.sleep(Duration::from_millis(u64::from(
                 exposure_ms - protocol.one_second_compensation_ms,

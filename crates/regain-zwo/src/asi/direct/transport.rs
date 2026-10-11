@@ -176,6 +176,11 @@ impl Camera {
         result
     }
 
+    /// Raw vendor/device control request: (bRequest, wValue, wIndex, wLength).
+    /// Zero length sends OUT (0x40), nonzero reads IN (0xc0). For BC/BD/B6,
+    /// wValue is the register address and wIndex carries write data; B2 instead
+    /// carries the immediate DAC code in wValue. These are USB field names,
+    /// not interchangeable "register/value" arguments. See docs/camera-usb-registers.md.
     pub fn vendor(&self, request: u8, value: u16, index: u16, length: u16) -> Result<Vec<u8>> {
         self.device
             .borrow()

@@ -4,6 +4,15 @@ use anyhow::Result;
 /// Initialization can reset thermal hardware without explicit thermal writes.
 /// Always reapply after the entire model-specific configuration/calibration
 /// sequence, including its error paths, before another exposure can be armed.
+///
+/// Original ASI6200 USB acceptance found BD19's heater bit cleared after setup
+/// even though the initialization loop skipped its BD19/BD26 defaults. The
+/// exact resetting command is not isolated; skipping those two writes alone
+/// therefore cannot establish preservation. `restore` reapplies the current
+/// acknowledged output/actuator state and checks hardware readback. It must not
+/// reset the regulator's feedback deadline, integrator or requested setpoint.
+/// A failed restore also makes a cancelled initialization uncertain, rather
+/// than returning the typed cancellation that permits immediate camera reuse.
 pub(super) fn preserve_environment<T>(
     model: &str,
     initialize: impl FnOnce() -> Result<T>,

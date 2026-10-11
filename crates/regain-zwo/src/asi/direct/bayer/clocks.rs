@@ -1,6 +1,9 @@
 //! ASI585/662/676 clock wakeup, shared by still and video stop.
 //! These sensors use the same FPGA gates but a different standby register from
 //! ASI2600/6200. Preserve thermal/mode bits and keep cleanup noncancellable.
+//! Evidence: SDK 1.41 ASI662/676 USB 2 long-video traces and ASI662 WorkingFunc
+//! (Linux SDK address 0x13b730); see docs/asi662mc.md and docs/asi676-video.md.
+//! Gate names describe their observed acquisition role, not verified pin wiring.
 use crate::asi::direct::transport::Camera;
 use anyhow::{Result, ensure};
 use std::time::Duration;
@@ -33,9 +36,11 @@ fn restore(io: &impl Io) -> Result<()> {
     if thermal & 1 == 0 && clock & 0x11 == 0 {
         return Ok(());
     }
-    // SDK video end/stop sequence: wake the low-power gate, allow 200 ms,
-    // release XHS, then release the integration hold. Fresh reads preserve any
-    // unrelated firmware flags changed during the preceding write.
+    // SDK video end/stop sequence: clear FPGA 19 bit 0 (low-power gate), allow
+    // the traced 200 ms wake interval, clear 0b bit 4 (called XHS in the SDK
+    // analysis), then clear 0b bit 0 (integration hold). BC19 also carries
+    // thermal flags, so writing a literal zero would change unrelated controls.
+    // Fresh BC0b reads preserve flags changed during the preceding write.
     io.write(0x19, thermal & !1)?;
     io.sleep(Duration::from_millis(200));
     let clock = io.read(0x0b)?;
