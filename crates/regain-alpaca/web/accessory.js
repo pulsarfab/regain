@@ -4,15 +4,45 @@ const wheel=location.pathname.includes('filterwheel'),slot=Number(location.pathn
 const setup=wheel?'/setup/api/accessory/efw':'/setup/api/focusers/'+slot,api='/api/v1/'+deviceType+'/'+slot+'/';
 let kind=wheel?'efw':null,fc3=false,eta=false;
 const client=crypto.getRandomValues(new Uint32Array(1))[0]||1;
-let profile,connected=false,busy=false,initialized=false;
+let profile,connected=false,busy=false,initialized=false,compensationSchema=null;
 async function json(url,body){const response=await fetch(url,body===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const result=await response.json();if(!response.ok||result.error)throw Error(result.error||response.statusText);return result;}
 async function alpaca(member,body){const params=new URLSearchParams({...body,ClientID:client});const response=await fetch(api+member+(body===undefined?'?'+params:''),body===undefined?{}:{method:'PUT',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:params});const value=await response.json();if(value.ErrorNumber)throw Error(value.ErrorMessage);return value.Value;}
 async function run(action){if(busy)return;busy=true;try{await action();$('status').textContent='Ready.';}catch(e){$('status').textContent=e.message;}finally{busy=false;}}
 function options(items=[]){$('device').replaceChildren(new Option('No device selected',''));for(const item of items){const d=item.identity;$('device').add(new Option(d.model+' — '+d.serial,d.serial));}if(profile.serial&&!Array.from($('device').options).some(o=>o.value===profile.serial))$('device').add(new Option('Saved device — '+profile.serial,profile.serial));$('device').value=profile.serial||'';}
 function renderFilters(){ $('filters').replaceChildren();profile.names.forEach((name,i)=>{const row=document.createElement('div');row.className='grid';const label=document.createElement('label');label.textContent='Slot '+(i+1);const input=document.createElement('input');input.value=name;input.maxLength=128;input.dataset.filterName=i;label.append(input);const offsetLabel=document.createElement('label');offsetLabel.textContent='Focus offset (steps)';const offset=document.createElement('input');offset.type='number';offset.step='1';offset.value=profile.focusOffsets[i];offset.dataset.filterOffset=i;offsetLabel.append(offset);row.append(label,offsetLabel);$('filters').append(row);});$('unidirectional').checked=profile.unidirectional;}
-async function load(){const state=await json(setup);profile=state.profile;kind=state.kind;fc3=kind==='fc3';eta=kind==='eta';renderKind(state.name);$('simulation').hidden=!state.simulation;options();renderFilters();$('connection').textContent=state.connected?'USB device is in use':'Disconnected';}
+async function load(){const state=await json(setup);profile=state.profile;kind=state.kind;fc3=kind==='fc3';eta=kind==='eta';compensationSchema=state.temperatureCompensationSchema;renderCompensation();renderKind(state.name);$('simulation').hidden=!state.simulation;options();renderFilters();$('connection').textContent=state.connected?'USB device is in use':'Disconnected';}
+function renderCompensation(){
+  $('compensation').hidden=!compensationSchema;$('compensation-fields').replaceChildren();
+  if(!compensationSchema)return;
+  for(const [key,field] of Object.entries(compensationSchema.properties)){
+    const label=document.createElement('label');label.textContent=field.title;
+    const value=profile.temperatureCompensation?.[key]??field.default;
+    const input=document.createElement(field.enum?'select':'input');input.dataset.compensation=key;
+    if(field.enum){for(const choice of field.enum)input.add(new Option(choice,choice));input.value=value;}
+    else if(field.type==='boolean'){input.type='checkbox';input.checked=value;label.className='check';}
+    else{input.type='number';input.step=field.type==='integer'?'1':'any';input.min=field.minimum;input.max=field.maximum;input.value=value;}
+    input.title=field.description;label.append(input);
+    const help=document.createElement('p');help.className='hint';help.textContent=field.description;
+    $('compensation-fields').append(label,help);
+  }
+}
+function readCompensation(){
+  const values={};
+  for(const input of document.querySelectorAll('[data-compensation]')){
+    const key=input.dataset.compensation,field=compensationSchema.properties[key];
+    const value=field.type==='boolean'?input.checked:field.type==='string'?input.value:Number(input.value);
+    if(field.type==='number'||field.type==='integer'){
+      if(input.value.trim()===''||!Number.isFinite(value)||value<field.minimum||value>field.maximum||(field.type==='integer'&&!Number.isInteger(value)))throw Error('Invalid '+field.title);
+    }
+    values[key]=value;
+  }
+  return values;
+}
+$('save-compensation').onclick=()=>run(async()=>{const updated={...profile,temperatureCompensation:readCompensation()};await json(setup,updated);profile=updated;});
+$('enable-compensation').onclick=()=>run(async()=>{await alpaca('tempcomp',{TempComp:true});await refresh();});
+$('disable-compensation').onclick=()=>run(async()=>{await alpaca('tempcomp',{TempComp:false});await refresh();});
 function motionControls(moving=false){$('move').disabled=!connected||moving;$('move-point').disabled=!connected||moving;$('cancel-queued').disabled=!connected;$('calibrate').disabled=!connected||moving;$('save-filters').disabled=moving;}
-async function refresh(){if(!connected){motionControls();return;}const status=JSON.parse(await alpaca('action',{Action:'Regain.Status',Parameters:''}));if(status.error||status.fault){motionControls(true);throw Error(status.fault||'Device error '+status.error);}motionControls(status.moving);$('position').textContent=eta?'Back focus '+status.position+' µm · '+(status.moving?'Moving':'Idle')+' · '+status.points_um.map((p,i)=>'Point '+(i+1)+': '+p.toFixed(1)+' µm').join(' · '):wheel?(status.calibrating?'Calibrating… '+status.detected_slots+' slots detected. Waiting for the wheel to finish.':status.moving?'Moving…':'Slot '+(status.position+1)+' of '+status.slots):'Position '+status.position+' / '+status.max_step+' steps · '+(status.moving?'Moving':'Idle')+' · '+(status.temperature_c==null?'Temperature unavailable':status.temperature_c.toFixed(1)+' °C');if(!initialized){$('target').value=status.position+(wheel?1:0);$('target').max=wheel?status.slots:status.max_step;$('speed').value=status.speed??400;$('beep').checked=status.beep;$('reverse').checked=status.reverse;$('backlash').value=status.backlash;$('limit').value=status.max_step;initialized=true;}}
+async function refresh(){if(!connected){motionControls();return;}const status=JSON.parse(await alpaca('action',{Action:'Regain.Status',Parameters:''}));if(status.error||status.fault){motionControls(true);throw Error(status.fault||'Device error '+status.error);}motionControls(status.moving);if(compensationSchema){const c=status.temperature_compensation;$("compensation-status").textContent=(status.temp_comp?"TempComp enabled":status.temp_comp_available?"TempComp disabled":"TempComp unavailable: configure continuous mode and a coefficient, and verify the sensor.")+(c?.lastError?": "+c.lastError:"");$("enable-compensation").disabled=!status.temp_comp_available||status.moving;$("disable-compensation").disabled=!status.temp_comp_available;}$('position').textContent=eta?'Back focus '+status.position+' µm · '+(status.moving?'Moving':'Idle')+' · '+status.points_um.map((p,i)=>'Point '+(i+1)+': '+p.toFixed(1)+' µm').join(' · '):wheel?(status.calibrating?'Calibrating… '+status.detected_slots+' slots detected. Waiting for the wheel to finish.':status.moving?'Moving…':'Slot '+(status.position+1)+' of '+status.slots):'Position '+status.position+' / '+status.max_step+' steps · '+(status.moving?'Moving':'Idle')+' · '+(status.temperature_c==null?'Temperature unavailable':status.temperature_c.toFixed(1)+' °C');if(!initialized){$('target').value=status.position+(wheel?1:0);$('target').max=wheel?status.slots:status.max_step;$('speed').value=status.speed??400;$('beep').checked=status.beep;$('reverse').checked=status.reverse;$('backlash').value=status.backlash;$('limit').value=status.max_step;initialized=true;}}
 $('scan').onclick=()=>run(async()=>options(await json(setup+'/discover',{})));
 $('device').onchange=()=>run(async()=>{profile={...profile,serial:$('device').value||null,names:[],focusOffsets:[]};await json(setup,profile);renderFilters();});
 $('connect').onclick=()=>run(async()=>{await alpaca('connected',{Connected:!connected});connected=!connected;initialized=false;$('connect').textContent=connected?'Disconnect setup':'Connect for setup';$('device').disabled=connected;$('scan').disabled=connected;await load();$('connection').textContent=connected?'Connected for setup':'Disconnected';await refresh();});

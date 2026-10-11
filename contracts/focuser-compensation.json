@@ -1,0 +1,72 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "approach": {
+      "default": "increasing",
+      "description": "Final direction of every explicit and automatic move. Both legs must fit within travel limits.",
+      "enum": [
+        "increasing",
+        "decreasing"
+      ],
+      "title": "Regain final approach",
+      "type": "string"
+    },
+    "backlash": {
+      "default": "hardware",
+      "description": "Hardware uses the device setting. Regain approaches every move from one direction and requires zero device backlash. Disable NINA backlash when either owns it.",
+      "enum": [
+        "hardware",
+        "regain"
+      ],
+      "title": "Backlash owner",
+      "type": "string"
+    },
+    "backlashSteps": {
+      "default": 0,
+      "description": "Used only with Regain backlash. Calibrate focus with this same approach before enabling tracking.",
+      "maximum": 100000,
+      "minimum": 0,
+      "title": "Regain overshoot (steps)",
+      "type": "integer"
+    },
+    "continuous": {
+      "default": false,
+      "description": "Opt in to automatic moves, including during exposures. Enable TempComp explicitly after connecting; it is never restored on reconnect.",
+      "title": "Allow continuous compensation",
+      "type": "boolean"
+    },
+    "deadbandSteps": {
+      "default": 5,
+      "description": "Accumulate temperature changes until at least this many steps are required.",
+      "maximum": 10000,
+      "minimum": 1,
+      "title": "Minimum correction (steps)",
+      "type": "integer"
+    },
+    "intervalSeconds": {
+      "default": 30,
+      "description": "The median of the last three samples rejects isolated temperature noise.",
+      "maximum": 3600,
+      "minimum": 1,
+      "title": "Temperature sample interval (seconds)",
+      "type": "number"
+    },
+    "maxCorrectionSteps": {
+      "default": 1000,
+      "description": "Larger corrections suspend tracking instead of making an unexpected large move.",
+      "maximum": 100000,
+      "minimum": 1,
+      "title": "Maximum automatic correction (steps)",
+      "type": "integer"
+    },
+    "stepsPerCelsius": {
+      "default": 0,
+      "description": "Signed slope calibrated for this telescope and focuser. Zero must be replaced before enabling compensation.",
+      "maximum": 100000,
+      "minimum": -100000,
+      "title": "Steps per degree Celsius",
+      "type": "number"
+    }
+  },
+  "type": "object"
+}

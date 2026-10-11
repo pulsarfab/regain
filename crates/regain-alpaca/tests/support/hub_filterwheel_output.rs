@@ -812,6 +812,7 @@ async fn wheel_native_worker_publishes_preserved_arrays_and_shared_position_thro
             camera: None,
             device: NativeDevice::Efw,
             identity: "0102030405060708".into(),
+            temperature_compensation: None,
             filter_wheel: Some(NativeFilterWheelMetadata {
                 names: names.iter().map(|name| (*name).to_string()).collect(),
                 focus_offsets: offsets.clone(),

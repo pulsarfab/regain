@@ -18,7 +18,7 @@ asi-direct = ["dep:regain-core", "dep:sha2", "dep:nusb", "dep:libc", "dep:window
 asi-sdk = ["dep:libloading", "dep:regain-core"]
 hid = ["dep:libc", "dep:windows-sys", "windows-sys?/Win32_Devices_HumanInterfaceDevice"]
 caa = ["hid"]
-accessories = ["hid"]
+accessories = ["hid", "dep:regain-core"]
 
 [dependencies]
 regain-core = { workspace = true, optional = true }

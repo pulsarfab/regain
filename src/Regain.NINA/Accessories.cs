@@ -80,8 +80,8 @@ public abstract class NativeFocuser(string kind) : AccessoryDevice(kind), IFocus
     public int MaxStep => Session.Status().MaxStep;
     public int MaxIncrement => MaxStep;
     public double StepSize => Session.Kind == "eta" ? 1.0 : double.NaN;
-    public bool TempCompAvailable => false;
-    public bool TempComp { get => false; set { if (value) throw new NotSupportedException("Use NINA temperature compensation"); } }
+    public bool TempCompAvailable => Session.Status().TempCompAvailable;
+    public bool TempComp { get => Session.Status().TempComp; set { Session.SetTempComp(value); RaiseAllPropertiesChanged(); } }
     public double Temperature => Session.Status().Temperature ?? double.NaN;
     public async Task Move(int position, CancellationToken ct, int waitInMs = 1000)
     {

@@ -5,7 +5,27 @@ use crate::fc3::{
 };
 use anyhow::{Context, Result, bail, ensure};
 use serde_json::{Value, json};
-use std::time::Duration;
+use std::time::{Duration, Instant};
+
+struct Controlled {
+    focuser: Focuser<Box<dyn Transport>>,
+    port: Port,
+    simulate: bool,
+}
+impl regain_core::focuser::Device for Controlled {
+    fn status(&mut self) -> Result<Value> {
+        Ok(serde_json::to_value(self.focuser.status()?)?)
+    }
+    fn move_to(&mut self, position: i32) -> Result<()> {
+        self.focuser.move_to(position)
+    }
+    fn halt(&mut self) -> Result<()> {
+        self.focuser.halt()
+    }
+    fn extra(&mut self, value: Value) -> Result<Value> {
+        request(&mut self.focuser, &self.port, self.simulate, value)
+    }
+}
 
 fn open(port: &Port, simulate: bool) -> Result<Focuser<Box<dyn Transport>>> {
     let transport: Box<dyn Transport> = if simulate {
@@ -118,18 +138,30 @@ pub fn run(args: Vec<String>) -> Result<()> {
         println!("{}", serde_json::to_string(&focuser.status()?)?);
         return Ok(());
     }
+    let started = Instant::now();
+    let mut controller = regain_core::focuser::Controller::new(Controlled {
+        focuser,
+        port: matching_port(port),
+        simulate,
+    });
     regain_worker::serve(
-        &mut focuser,
+        &mut controller,
         Duration::from_millis(250),
-        |state, v| request(state, port, simulate, v),
+        |state, v| {
+            state.poll(started.elapsed());
+            state.request(v, started.elapsed())
+        },
         |state| {
-            if state.has_pending_motion() && state.fault().is_none() {
-                let _ = state.status();
-            }
+            state.poll(started.elapsed());
         },
     );
-    if focuser.has_pending_motion() && focuser.fault().is_none() {
-        focuser.halt()?;
-    }
+    controller.shutdown()?;
     Ok(())
+}
+
+fn matching_port(port: &Port) -> Port {
+    Port {
+        port: port.port.clone(),
+        serial: port.serial.clone(),
+    }
 }

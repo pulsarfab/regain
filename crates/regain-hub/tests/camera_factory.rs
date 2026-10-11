@@ -65,6 +65,7 @@ fn config(direct: bool) -> HubConfig {
             }
             .into(),
             filter_wheel: None,
+            temperature_compensation: None,
             camera: Some(NativeCameraConfig {
                 model: if direct {
                     "ZWO ASI585MM Pro"

@@ -18,6 +18,9 @@ try {
     $env:REGAIN_ACCESSORY_SETTINGS = $testDir
     $env:REGAIN_ACCESSORY_SIMULATE = if ($Hardware) { '' } else { '1' }
     $env:REGAIN_ACCESSORY_WORKER = Join-Path $repo 'target/debug/regain-device.exe'
+    if (!$Hardware) {
+        @{Serial='0102030405060709';TemperatureCompensation=@{continuous=$true;stepsPerCelsius=100;backlash='regain';backlashSteps=10}} | ConvertTo-Json | Set-Content (Join-Path $testDir 'eaf-ascom.json') -Encoding UTF8
+    }
     foreach ($deviceClass in 'EfwFilterWheel','EafFocuser') {
     $env:REGAIN_ACCESSORY_TEST_CLSID = [Guid]::NewGuid().ToString()
     $assemblyPath = Join-Path $repo 'src/Regain.ASCOM/bin/Release/net48/Regain.ASCOM.dll'

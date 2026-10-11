@@ -39,6 +39,7 @@ fn config(device: NativeDevice, identity: &str) -> SourceConfig {
             device,
             identity: identity.into(),
             filter_wheel: None,
+            temperature_compensation: None,
         },
         polling: PollPolicy {
             poll_seconds: 0.2,
@@ -886,7 +887,17 @@ async fn typed_focusers_use_production_workers_with_shared_explicit_simulation_l
         (NativeDevice::Fc3, "00:00:00:00:00:03"),
         (NativeDevice::Eta, "SIMULATION"),
     ] {
-        let config = config(device, identity);
+        let mut config = config(device, identity);
+        if device != NativeDevice::Eta {
+            let SourceBackend::Native {
+                temperature_compensation,
+                ..
+            } = &mut config.backend
+            else {
+                unreachable!()
+            };
+            *temperature_compensation = Some(serde_json::from_value(json!({"continuous":true,"stepsPerCelsius":100,"backlash":"regain","backlashSteps":5})).unwrap());
+        }
         let source = SourceHandle::spawn(
             config.id,
             Uuid::new_v4(),
@@ -904,7 +915,10 @@ async fn typed_focusers_use_production_workers_with_shared_explicit_simulation_l
         assert_eq!(first.generation(), second.generation());
         let capabilities = first.capabilities().await.unwrap();
         assert!(capabilities.absolute);
-        assert!(!capabilities.temp_comp_available);
+        assert_eq!(
+            capabilities.temp_comp_available,
+            device != NativeDevice::Eta
+        );
         assert!(!first.temp_comp().await.unwrap());
         if device == NativeDevice::Eta {
             assert_eq!(first.step_size().await.unwrap(), 1.0);
@@ -914,10 +928,21 @@ async fn typed_focusers_use_production_workers_with_shared_explicit_simulation_l
                 ErrorKind::Unsupported
             );
         }
-        assert_eq!(
-            first.set_temp_comp(true).await.unwrap_err().kind,
-            ErrorKind::Unsupported
-        );
+        if device == NativeDevice::Eta {
+            assert_eq!(
+                first.set_temp_comp(true).await.unwrap_err().kind,
+                ErrorKind::Unsupported
+            );
+        } else {
+            first.set_temp_comp(true).await.unwrap();
+            assert!(second.temp_comp().await.unwrap());
+            assert_eq!(
+                first.move_to(0).await.unwrap_err().kind,
+                ErrorKind::InvalidValue
+            );
+            assert!(!source.snapshot().write_uncertain);
+            assert!(!first.is_moving().await.unwrap());
+        }
         let initial = first.position().await.unwrap();
         let target = initial
             .checked_add(10)
@@ -932,6 +957,9 @@ async fn typed_focusers_use_production_workers_with_shared_explicit_simulation_l
         .await
         .unwrap();
         assert_eq!(second.position().await.unwrap(), target);
+        if device != NativeDevice::Eta {
+            assert!(first.temp_comp().await.unwrap());
+        }
         if device == NativeDevice::Eta {
             assert_eq!(
                 second.halt().await.unwrap_err().kind,
@@ -939,6 +967,7 @@ async fn typed_focusers_use_production_workers_with_shared_explicit_simulation_l
             );
         } else {
             second.halt().await.unwrap();
+            assert!(!first.temp_comp().await.unwrap());
         }
         assert!(!source.snapshot().write_uncertain);
         drop(first);
