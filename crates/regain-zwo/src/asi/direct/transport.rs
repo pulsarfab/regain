@@ -118,6 +118,14 @@ impl Camera {
     pub fn has_environment(&self) -> bool {
         self.environment.borrow().is_some()
     }
+    /// Reapply acknowledged actuator settings after firmware initialization,
+    /// preserving the current target, regulator history and service deadline.
+    pub(super) fn restore_environment(&self) -> Result<()> {
+        if let Some(environment) = self.environment.borrow_mut().as_mut() {
+            environment.reapply(self)?;
+        }
+        self.publish_environment()
+    }
     pub fn service_environment(&self) -> Result<()> {
         self.check_capture_cancelled()?;
         self.cooling
@@ -168,6 +176,11 @@ impl Camera {
         result
     }
 
+    /// Raw vendor/device control request: (bRequest, wValue, wIndex, wLength).
+    /// Zero length sends OUT (0x40), nonzero reads IN (0xc0). For BC/BD/B6,
+    /// wValue is the register address and wIndex carries write data; B2 instead
+    /// carries the immediate DAC code in wValue. These are USB field names,
+    /// not interchangeable "register/value" arguments. See docs/camera-usb-registers.md.
     pub fn vendor(&self, request: u8, value: u16, index: u16, length: u16) -> Result<Vec<u8>> {
         self.device
             .borrow()
@@ -260,8 +273,7 @@ impl Camera {
         if let Some(environment) = self.environment.borrow_mut().as_mut() {
             environment.restore(self)?;
         }
-        self.publish_environment()?;
-        Ok(())
+        self.publish_environment()
     }
     pub fn read_frame(&self, length: usize) -> Result<Vec<u8>> {
         self.read_frame_wait(length, 5000)

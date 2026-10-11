@@ -1,9 +1,13 @@
 //! Shared, trace-verified ASI585MM Pro/ASI662MC/ASI676MC sensor acquisition. No ASI DLL calls.
+//! Register roles below describe SDK 1.41 transactions and observed behavior,
+//! not a published sensor/FPGA specification. See docs/camera-usb-registers.md
+//! and the model evidence in docs/asi585mm-pro.md and docs/asi662mc.md.
 use crate::asi::direct::{processing, protocol, settings::Settings, transport::Camera};
 use anyhow::{Result, ensure};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::time::{Duration, Instant};
+mod clocks;
 
 /// Sensor-specific constants; lifecycle and retained-frame recovery are shared.
 pub struct Profile {
@@ -17,11 +21,15 @@ pub struct Profile {
     pub sensor_height_alignment: u32,
     pub color: bool,
     pub sensor_alignment: u32,
+    /// Traced bandwidth-40 timing: line period is HMAX / 20 microseconds.
     pub hmax: u16,
+    /// Low byte of the model's two-byte gain setting; 3030 selects its gain branch.
     pub gain_register: u16,
     pub hcg_threshold: u32,
     pub hcg_offset: u32,
     pub minimum_frame_lines: u32,
+    /// Ordered volatile SDK sequences, not independently decoded tuning formulas.
+    /// Their reproducible, hash-pinned extractors live in scripts/inspection/.
     pub initialize: &'static [(u8, u16, u16)],
     pub raw16: &'static [(u8, u16, u16)],
 }
@@ -102,6 +110,9 @@ fn writes(camera: &Camera, commands: &[(u8, u16, u16)]) -> Result<()> {
 
 pub(super) fn set_gain(camera: &Camera, profile: &Profile, gain: u32) -> Result<()> {
     let (hcg, gain) = profile.gain(gain);
+    // SDK gain dispatch writes 3030 and the little-endian gain word under the
+    // 3001=1/0 sensor update hold. The conversion threshold and gain address
+    // differ by profile; do not transplant one camera's numeric gain setting.
     writes(
         camera,
         &[
@@ -122,7 +133,10 @@ pub(super) fn exposure_writes(
 ) -> Vec<(u8, u16, u16)> {
     let mut commands = Vec::new();
     let mut flags = flags;
-    // Preserve unrelated mode bits. SDK enters bit 6 then 7; exits 7 then 6.
+    // BC00/BD00 are the FPGA mode byte. SDK exposures >=1 s enter the host-timed
+    // mode by setting bit 6 then 7; short exposures clear 7 then 6. The separate
+    // writes and their order are observed, while the individual bits' complete
+    // firmware meanings are unknown. Preserve the stream-stop bit and all others.
     for mask in if settings.long_exposure() {
         [0x40, 0x80]
     } else {
@@ -139,6 +153,9 @@ pub(super) fn exposure_writes(
         }
     }
     let (frame, shutter) = profile.timing_for_link(settings, link);
+    // FPGA 10..12 stores frame lines under FPGA hold 01. Sensor 3050..3052
+    // stores shutter-delay lines under sensor hold 3001. Both are 24-bit words,
+    // least-significant byte first; integration depends on their difference.
     for (request, register, hold, value) in
         [(0xbd, 0x10, 1, frame), (0xb6, 0x3050, 0x3001, shutter)]
     {
@@ -197,16 +214,28 @@ fn scalar_exposure_plan_matches_sdk_order_without_stream_commands() {
 }
 
 pub(super) fn stop(camera: &Camera) -> Result<()> {
-    let flags = camera.vendor(0xbc, 0, 0, 1)?[0];
-    writes(
-        camera,
-        &[
-            (0xbd, 0, u16::from(flags | 0x10)),
-            (0xb6, 0x3000, 1),
-            (0xaa, 0, 0),
-        ],
-    )?;
-    camera.reset_pipe()
+    // Cancellation can leave either a still or video integration gated. Wake
+    // first, without consulting the cancellation flag, then attempt the full
+    // stop even when clock restoration fails. A failed wake is never a clean
+    // abort acknowledgement merely because AA cleared the retained buffer.
+    super::completion::finish_stop("Bayer camera", clocks::restore_if_gated(camera), || {
+        let flags = camera.vendor(0xbc, 0, 0, 1)?[0];
+        // SDK full stop: set FPGA 00 bit 4, enter sensor standby (3000=1),
+        // then AA stops acquisition and clears retained-frame state. Unlike
+        // standby alone, this intentionally makes the previous image unreadable.
+        writes(
+            camera,
+            &[
+                (0xbd, 0, u16::from(flags | 0x10)),
+                (0xb6, 0x3000, 1),
+                (0xaa, 0, 0),
+            ],
+        )?;
+        camera.reset_pipe()?;
+        let status = camera.vendor(0xbc, 0x23, 0, 1)?[0];
+        ensure!(status == 1, "Bayer camera did not stop: BC23={status:#04x}");
+        Ok(())
+    })
 }
 
 pub(super) fn word(
@@ -216,6 +245,9 @@ pub(super) fn word(
     value: u32,
     bytes: u16,
 ) -> Result<()> {
+    // The SDK brackets multi-byte updates with a write hold: sensor B6 uses
+    // 3001, FPGA BD uses 01. Register addresses ascend while significance does
+    // too (little-endian). Releasing the hold is part of the traced transaction.
     let hold = if request == 0xb6 { 0x3001 } else { 1 };
     camera.vendor(request, hold, 1, 0)?;
     for byte in 0..bytes {
@@ -235,6 +267,9 @@ fn restart_retained_read(camera: &Camera) -> Result<()> {
     // Explicitly drop the active replay bit before raising it again: simply
     // writing 1 while a partial replay is active did not restart the stream.
     camera.reset_pipe()?;
+    // BD18 is the observed retained-download cursor control, not an exposure
+    // trigger. 0 -> 100 ms idle guard -> readback 0 -> 1 replays the same DDR
+    // image. BC23=5 must survive this sequence; A9/AA would start/clear a frame.
     camera.vendor(0xbd, 0x18, 0, 0)?;
     std::thread::sleep(Duration::from_millis(100));
     ensure!(
@@ -255,6 +290,9 @@ fn calibration(
     profile: &Profile,
 ) -> Result<processing::Defects> {
     // BE selects EEPROM access; C3 is strictly IN. Never write calibration data.
+    // C3's setup index is the byte address divided by 256: 0400 selects the
+    // ASID map at 040000. Further reads are 256-byte aligned, up to 2048 bytes.
+    // BE=1 restores the normal access mode even after map decoding fails.
     camera.vendor(0xbe, 0, 0, 0)?;
     let result = (|| -> Result<processing::Defects> {
         let mut data = camera.vendor(0xc3, 0, 0x400, 2048)?;
@@ -294,10 +332,24 @@ pub(super) fn configure(
 ) -> Result<(processing::Defects, u32, u32)> {
     profile.validate(settings)?;
     let link = super::link::validate(info, u32::from(profile.pid))?;
-    writes(camera, profile.initialize)?;
-    let defects = calibration(camera, settings, profile)?;
-    writes(camera, profile.raw16)?;
+    let defects = super::initialization::preserve_environment(
+        profile.name,
+        || {
+            // These model-specific tuning/RAW16 tables reproduce the SDK's
+            // ordered volatile writes. Unknown table fields remain opaque;
+            // their meaning must not be inferred from another sensor's table.
+            writes(camera, profile.initialize)?;
+            let defects = calibration(camera, settings, profile)?;
+            writes(camera, profile.raw16)?;
+            Ok(defects)
+        },
+        || camera.restore_environment(),
+    )?;
     // Set every requested value explicitly, regardless of the preceding owner.
+    // Sensor 303c/3044 are x/y origins; 303e/3046 are physical dimensions.
+    // The rounding and extra two sensor rows match SDK transactions; their
+    // internal readout purpose is not established. Delivered dimensions below
+    // remain the exact requested ROI, rather than the padded sensor window.
     word(camera, 0xb6, 0x303c, settings.x, 2)?;
     word(camera, 0xb6, 0x3044, settings.y, 2)?;
     word(
@@ -317,6 +369,8 @@ pub(super) fn configure(
             + 2,
         2,
     )?;
+    // FPGA 40..43 counts 32-bit transfer words: RAW16 width*height*2 / 4.
+    // FPGA 08/09 and 04/05 carry the requested height and width respectively.
     word(camera, 0xbd, 0x40, settings.width * settings.height / 2, 4)?;
     word(camera, 0xbd, 8, settings.height, 2)?;
     word(camera, 0xbd, 4, settings.width, 2)?;
@@ -331,6 +385,7 @@ pub(super) fn configure(
             (0xb6, 0x3001, 0),
         ],
     )?;
+    // 30dc/30dd is the SDK's little-endian black-level/offset setting.
     word(camera, 0xb6, 0x30dc, settings.offset, 2)?;
     let (frame_lines, shutter_lines) = profile.timing_for_link(settings, link);
     set_exposure(camera, profile, settings, link)?;
@@ -355,7 +410,14 @@ pub fn capture(
             status_before_arm == 1,
             "old retained-frame state did not clear before exposure"
         );
+        // Initialization/calibration may take longer than the caller's wait.
+        // Honor a pending abort before starting an otherwise unwanted exposure.
+        camera.service_environment()?;
         let armed = Instant::now();
+        // SDK start ordering: A9 arms acquisition, 3004=0 is an observed start
+        // prerequisite (its complete sensor role is unknown), then 3000=0
+        // leaves standby. Wait 50 ms before clearing FPGA 00 bit 4 and resetting
+        // the host pipe; these are not interchangeable with retained replay.
         writes(
             camera,
             &[(0xa9, 0, 0), (0xb6, 0x3004, 0), (0xb6, 0x3000, 0)],
@@ -366,6 +428,10 @@ pub fn capture(
         camera.reset_pipe()?;
         let status_after_arm = camera.vendor(0xbc, 0x23, 0, 1)?[0];
         if settings.long_exposure() {
+            // SDK still path, >=1 s: allow 30 ms, raise FPGA 0b bit 0, wake
+            // 19 bit 0 200 ms before the end, then pulse 0b bit 0 high -> low.
+            // These are observed integration controls, not an electrical pin
+            // specification. Read/modify/write preserves other mode/thermal bits.
             std::thread::sleep(Duration::from_millis(30));
             let flags = camera.vendor(0xbc, 0x0b, 0, 1)?[0];
             camera.vendor(0xbd, 0x0b, u16::from(flags | 1), 0)?;
@@ -398,6 +464,8 @@ pub fn capture(
             camera.service_environment()?;
             let status = camera.vendor(0xbc, 0x23, 0, 1)?[0];
             ready_samples += 1;
+            // BC23=1 is stopped; 5 identifies a retained Bayer-family frame.
+            // These are model-family values, not the 2600/6200 ready status.
             if status == 5 {
                 break;
             }

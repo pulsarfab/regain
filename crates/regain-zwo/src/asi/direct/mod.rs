@@ -1,4 +1,6 @@
 //! Isolated experimental direct backend; SDK remains the plugin's default.
+//! Register notation, model differences and opaque-table provenance:
+//! docs/camera-usb-registers.md. A traced preset is not a published register map.
 mod asi220;
 mod asi220_tables;
 mod asi2600;
@@ -17,6 +19,8 @@ mod bayer_video;
 mod completion;
 mod diagnostics;
 mod environment;
+mod host_timed;
+mod initialization;
 mod link;
 mod processing;
 mod protocol;

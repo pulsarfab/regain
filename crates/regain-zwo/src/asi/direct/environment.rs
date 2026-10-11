@@ -1,12 +1,17 @@
 //! ASI585/2600/6200 environment controls, serviced on the transport owner thread.
 //! Register mapping/current calibration observed with SDK 1.41, PIDs 2601/620b.
 //! The regulator is our own bounded PI controller, not the SDK's PID algorithm.
+//! See docs/camera-usb-registers.md for request notation and evidence limits.
 use crate::asi::direct::transport::Camera;
 use anyhow::{Result, ensure};
 use std::time::Instant;
 mod control;
 pub(super) use control::{CoolingError, CoolingQueue};
 
+// SDK type-1 current/DAC lookup: (nominal amperes, DAC code). These are
+// calibration points used to command power, not an electrical-current readback.
+// SDK 1.41 cooler dispatch 10ec60, table 2876e0; docs/duo-capture.md.
+// DAC 255 is zero demand; 40 is the SDK's 6.01 A full-demand endpoint.
 const CURRENT: [(f64, f64); 12] = [
     (0.0, 255.0),
     (1.31, 220.0),
@@ -38,6 +43,9 @@ fn power_dac(percent: f64) -> u16 {
 }
 
 pub fn power_register(percent: f64) -> u16 {
+    // SDK 10e870 converts the interpolated DAC code to FPGA BD26. Preserve
+    // integer truncation/order: 0%, 1%, 100% become 14, 16, 199, not 0..255.
+    // ASI585 sends the DAC code directly with B2 and bypasses this conversion.
     (272 - power_dac(percent)) * 220 / 256
 }
 
@@ -47,6 +55,8 @@ pub enum CoolerOutput {
     Dac,
 }
 
+// Host-controller policy, not camera registers or copied SDK PID constants:
+// proportional percentage points/degree C and integral points/(degree C*s).
 const PROPORTIONAL: f64 = 8.0;
 const INTEGRAL: f64 = 0.12;
 
@@ -118,6 +128,9 @@ pub struct Environment {
 }
 
 fn flags(camera: &Camera, mask: u8, enabled: bool) -> Result<()> {
+    // BC19/BD19 is shared with exposure clocks: bit 0 gates a clock, 0x80
+    // DISABLES cooling, and 0x40 enables the advertised heater. Read-modify-write
+    // only the requested mask; writing an entire preset can break acquisition.
     let old = camera.vendor(0xbc, 0x19, 0, 1)?[0];
     camera.vendor(
         0xbd,
@@ -180,10 +193,20 @@ impl Environment {
     /// Restore actuator state after a handle reconnect without replacing the
     /// saved setpoint, regulator history, or the frame retained in DDR.
     pub fn restore(&mut self, camera: &Camera) -> Result<()> {
+        self.restore_actuators(camera, true)
+    }
+    /// Sensor initialization must preserve the regulation deadline: repeatedly
+    /// taking short frames must not postpone the one-second feedback service.
+    pub fn reapply(&mut self, camera: &Camera) -> Result<()> {
+        self.restore_actuators(camera, false)
+    }
+    fn restore_actuators(&mut self, camera: &Camera, reset_tick: bool) -> Result<()> {
         let observed = Instant::now();
         self.write_power(camera, if self.enabled { self.power } else { 0.0 })?;
         flags(camera, 0x80, !self.enabled)?;
         if self.heater {
+            // Traced SDK heater output preset: BD2a=0xc5 (197) on, zero off,
+            // plus BD19 bit 0x40. This is not a wattage or percentage setting.
             camera.vendor(0xbd, 0x2a, if self.dew { 197 } else { 0 }, 0)?;
             flags(camera, 0x40, self.dew)?;
         }
@@ -204,12 +227,17 @@ impl Environment {
                 "cooler output did not restore"
             );
         }
-        self.temperature = Self::read_temperature(camera)?;
+        self.finish_restore(Self::read_temperature(camera)?, observed, reset_tick);
+        Ok(())
+    }
+    fn finish_restore(&mut self, temperature: f64, observed: Instant, reset_tick: bool) {
+        self.temperature = temperature;
         for index in [0, 1, 3] {
             self.observed_at[index] = observed;
         }
-        self.tick = Instant::now();
-        Ok(())
+        if reset_tick {
+            self.tick = Instant::now();
+        }
     }
     pub fn open(
         camera: &Camera,
@@ -258,6 +286,8 @@ impl Environment {
         })
     }
     fn write_power(&self, camera: &Camera, percent: f64) -> Result<()> {
+        // ASI2600/6200: FPGA register BD26; ASI585: immediate DAC command B2,
+        // with its code in USB wValue (no register address and no IN readback).
         match self.output {
             CoolerOutput::Fpga => camera.vendor(0xbd, 0x26, power_register(percent), 0)?,
             CoolerOutput::Dac => camera.vendor(0xb2, power_dac(percent), 0, 0)?,
@@ -265,6 +295,8 @@ impl Environment {
         Ok(())
     }
     fn read_temperature(camera: &Camera) -> Result<f64> {
+        // B3 returns signed little-endian Q8.8 degrees C, not tenths of a degree.
+        // The host protocol separately converts this to control 8's tenths.
         let bytes = camera.vendor(0xb3, 0, 0, 2)?;
         let temperature = f64::from(i16::from_le_bytes(bytes.try_into().unwrap())) / 256.0;
         ensure!(
@@ -343,11 +375,15 @@ impl Environment {
             }
             21 if self.heater => {
                 ensure!((0..=1).contains(&value), "invalid dew heater enable");
+                // Both writes are required by the SDK mapping; changing the
+                // flag alone does not establish the traced heater output.
                 camera.vendor(0xbd, 0x2a, if value == 0 { 0 } else { 197 }, 0)?;
                 flags(camera, 0x40, value != 0)?;
                 self.dew = value != 0;
             }
             22 | 23 if self.auxiliary.is_some() => {
+                // Capability-gated P25 auxiliaries: BDfa fan command, BDfb LED
+                // brightness, raw 0..255. Readback confirms the command, not RPM.
                 ensure!((0..=255).contains(&value), "fan/LED value must be 0..255");
                 let register = if control == 22 { 0xfa } else { 0xfb };
                 camera.vendor(0xbd, register, value as u16, 0)?;
@@ -376,13 +412,19 @@ impl Environment {
             }
         }
     }
-    pub fn service(&mut self, camera: &Camera) -> Result<()> {
-        let elapsed = self.tick.elapsed().as_secs_f64();
+    fn service_interval(&mut self, observed: Instant) -> Option<f64> {
+        let elapsed = observed.duration_since(self.tick).as_secs_f64();
         if elapsed < 1.0 {
-            return Ok(());
+            return None;
         }
-        self.tick = Instant::now();
-        let observed = self.tick;
+        self.tick = observed;
+        Some(elapsed)
+    }
+    pub fn service(&mut self, camera: &Camera) -> Result<()> {
+        let observed = Instant::now();
+        let Some(elapsed) = self.service_interval(observed) else {
+            return Ok(());
+        };
         self.temperature = match Self::read_temperature(camera) {
             Ok(t) => t,
             Err(error) => {
@@ -406,6 +448,71 @@ impl Environment {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn short_frame_reapplication_keeps_feedback_cadence_and_regulator_history() {
+        use std::time::Duration;
+        let origin = Instant::now() - Duration::from_secs(60);
+        let mut environment = Environment {
+            target: 5,
+            enabled: true,
+            dew: true,
+            temperature: 10.0,
+            power: 10.0,
+            integral: 10.0,
+            tick: origin,
+            auxiliary: None,
+            heater: true,
+            output: CoolerOutput::Fpga,
+            observed_at: [origin; 4],
+        };
+        let mut feedbacks = 0;
+        // Ten successful initialization/reapply completions at 5 fps must still
+        // allow two regulator updates. Resetting tick on every frame starves it.
+        for millis in (200..=2000).step_by(200) {
+            let observed = origin + Duration::from_millis(millis);
+            let prior = (
+                environment.target,
+                environment.power,
+                environment.integral,
+                environment.tick,
+            );
+            environment.finish_restore(10.0, observed, false);
+            assert_eq!(
+                (
+                    environment.target,
+                    environment.power,
+                    environment.integral,
+                    environment.tick
+                ),
+                prior
+            );
+            if let Some(elapsed) = environment.service_interval(observed) {
+                assert_eq!(elapsed, 1.0);
+                feedbacks += 1;
+                environment.power = regulate(
+                    environment.power,
+                    &mut environment.integral,
+                    environment.temperature - environment.target as f64,
+                    elapsed,
+                );
+            }
+        }
+        assert_eq!(feedbacks, 2);
+        assert!(environment.power > 10.0);
+        let reconnect = Instant::now();
+        environment.finish_restore(10.0, reconnect, true);
+        assert!(environment.tick >= reconnect);
+        let tick = environment.tick;
+        assert_eq!(
+            environment.service_interval(tick + Duration::from_millis(999)),
+            None
+        );
+        assert_eq!(
+            environment.service_interval(tick + Duration::from_secs(1)),
+            Some(1.0)
+        );
+    }
+
     #[test]
     fn recovery_restores_previous_output_and_boosts_for_warming() {
         assert_eq!(

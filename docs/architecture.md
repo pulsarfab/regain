@@ -187,6 +187,11 @@ Only Windows builds depend on `windows-sys`. The native module uses `nusb`
 with Linux usbfs or macOS IOKit, exclusive interface claims, vendor control
 requests, and bulk-IN transfers. It never loads the camera SDK.
 
+The [direct camera register reference](camera-usb-registers.md) maps USB
+commands, shared flag masks, model-specific timing, thermal calibration and
+trace-pinned presets. Inline comments distinguish observed SDK sequences from
+register meanings that remain unknown.
+
 Each bulk transfer must finish or drain cancellation before its buffer can be
 released. An undrained cancellation terminates the worker. A short or failed
 chunk invalidates the whole read; existing camera-specific retained-frame
@@ -235,6 +240,24 @@ failed. The frame remains usable; the direct server rejects another `start`
 until the connection is reopened. Environment controls remain available while
 the supervisor replaces the worker. Research CLI runs emit the valid frame and
 then stop on this condition.
+
+Direct cancellation also requires successful hardware cleanup. The common
+completion boundary and server never acknowledge a clean abort when stopping
+or verifying the device failed; that session requires reconnection. Cleanup
+must run even when cancellation or a USB error interrupts setup or exposure.
+Model-specific clock, standby and DDR commands remain inside the direct
+backend. ASI2600/6200 share the host-timed synchronization and gate-restoration
+logic with explicit timing/register profiles; Bayer cameras share their own
+wake-before-stop sequence.
+
+Cooled cameras reapply acknowledged actuator settings after sensor
+initialization, including initialization errors, and verify their hardware
+state. This preserves the target, current power and regulator history.
+Per-frame reapplication also preserves the one-second feedback deadline so
+rapid short captures cannot starve cooling; reconnect restoration resets the
+deadline. Exposure abort retains thermal settings, while disconnect disables
+the cooler and supported heater. See the [abort investigation and hardware
+acceptance](asi6200-abort-cleanup.md).
 
 Direct USB errors may also carry `transportFailure`, with category, chunk,
 completed bytes, frame bytes, deadline flag, and available OS status. The same

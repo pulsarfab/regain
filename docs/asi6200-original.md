@@ -8,6 +8,9 @@ from 32 µs to 2,000 seconds. SDK mode remains the default.
 See the [sanitized test evidence](asi6200-original-evidence.json) and
 [NINA image-pane tests](nina-end-to-end.md#asi6200mm-pro-non-p25--2026-09-17).
 
+See [cancellation cleanup](asi6200-abort-cleanup.md) for the later synchronization
+and clock-gate fix, SDK comparison, and original-camera abort acceptance.
+
 ## Revision detection
 
 Both tested ASI6200 editions use USB ID `03c3:620b`, USB3 endpoint `81`,

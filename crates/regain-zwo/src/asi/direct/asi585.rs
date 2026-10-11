@@ -1,4 +1,6 @@
 //! Trace-verified ASI585MM Pro RAW16 profile; shared transport and acquisition.
+//! SDK 1.41 evidence and table provenance: docs/asi585mm-pro.md. Numeric
+//! profile values describe this monochrome cooled model, not ASI585MC variants.
 use super::{asi585_tables, bayer, settings::Settings, transport::Camera};
 use anyhow::{Result, ensure};
 use serde_json::{Value, json};
@@ -14,10 +16,15 @@ pub const PROFILE: bayer::Profile = bayer::Profile {
     sensor_alignment: 16,
     sensor_height_alignment: 4,
     color: false,
+    // Traced bandwidth 40: 192 / 20 = 9.6 us per sensor line.
     hmax: 192,
+    // Gain word 306c/306d; 3030 changes branch at gain 200. Shared formula:
+    // below threshold gain/3, otherwise (gain-150)/3 (integer SDK truncation).
     gain_register: 0x306c,
     hcg_threshold: 200,
     hcg_offset: 150,
+    // Direct retained-download pacing, about 100 ms; frame and shutter delay
+    // are padded equally. This is not an extra 100 ms of integration.
     minimum_frame_lines: 10424,
     initialize: asi585_tables::INITIALIZE,
     raw16: asi585_tables::RAW16_FULL,

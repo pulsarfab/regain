@@ -42,6 +42,10 @@ mod boundary_error_tests {
 }
 
 #[cfg(windows)]
+// Windows Cypress driver ABI, not USB camera commands: 38-byte SINGLE_TRANSFER
+// header, driver-version query, control request, and bulk request IOCTLs.
+// The control setup packet occupies bytes 0..8; NT/USBD status lives at 14/18,
+// payload offset/length at 30/34. See descriptor_request/status below.
 pub const HEADER: usize = 38;
 #[cfg(windows)]
 pub const VERSION: u32 = 0x220000;

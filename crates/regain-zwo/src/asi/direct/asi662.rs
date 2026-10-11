@@ -1,4 +1,6 @@
 //! Trace-verified ASI662MC sensor profile. Shared lifecycle is in `bayer`.
+//! SDK 1.41 evidence and table provenance: docs/asi662mc.md. Tuning and geometry
+//! remain model-specific even where acquisition register roles are shared.
 use super::{asi662_tables, bayer, settings::Settings, transport::Camera};
 use anyhow::Result;
 use serde_json::Value;
@@ -13,10 +15,15 @@ pub const PROFILE: bayer::Profile = bayer::Profile {
     sensor_height_alignment: 16,
     color: true,
     sensor_alignment: 16,
+    // Traced bandwidth 40: 230 / 20 = 11.5 us per sensor line.
     hmax: 230,
+    // Gain word 3070/3071 (different from 585/676); 3030 selects the gain branch.
+    // Below gain 200: gain/3; at 200+: (gain-150)/3, with integer truncation.
     gain_register: 0x3070,
     hcg_threshold: 200,
     hcg_offset: 150,
+    // Empirical retained-read pacing floor near 100 ms. Equal frame/shutter
+    // padding preserves integration and avoids short full-frame replay rollover.
     minimum_frame_lines: 8703,
     initialize: asi662_tables::INITIALIZE,
     raw16: asi662_tables::RAW16_FULL,

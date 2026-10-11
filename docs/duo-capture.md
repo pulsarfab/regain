@@ -175,14 +175,17 @@ SDK cooler dispatch `10ec60` uses the observed type-1 calibration
 current/DAC table at `2876e0`. DAC endpoints 255/40 correspond to 0/6.01 A;
 `10e870` converts DAC using `(272-DAC)*220/256` and writes FPGA `26`.
 Observed 0%, 1%, and 100% outputs are 14, 16, and 199. Rust uses this mapping
-with its own PI regulator, output ramp limited to two percentage points per
-second, and bounded elapsed time after stalled I/O. Invalid temperature
-feedback disables cooling and fails the worker. Idle polling, exposure waits
+with its own PI regulator. Normal feedback limits output rises to eight and
+falls to twelve percentage points per second, with bounded elapsed time after
+stalled I/O; recovery and deliberate target changes can restore demand sooner.
+These limits are host policy, not camera calibration constants. Invalid
+temperature feedback disables cooling and fails the worker. Idle polling, exposure waits
 and transfer chunks service the regulator on the transport owner thread.
 Sensor initialization preserves cooling/dew instead of resetting `19/26`.
-Normal close disables the host-regulated cooler; process crashes leave the last
-hardware output until recovery reconnects, as there is no established firmware
-watchdog for host loss. Abrupt power/USB fault tests remain outstanding.
+Normal close disables cooling and the advertised dew heater; process crashes
+leave the last hardware outputs until recovery reconnects, as there is no
+established firmware watchdog for host loss. Abrupt power/USB fault tests remain
+outstanding.
 
 Hardware validation through the plugin protocol: twelve consecutive 5-second
 512×256 main captures with cooler target 25 °C and dew enabled, zero recoveries;
