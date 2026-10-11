@@ -1,67 +1,47 @@
-# PulsarFab regain 0.6.0.3
+# PulsarFab regain 0.6.0.4
 
-Regain 0.6 adds the **Regain Hub preview** and improves camera cancellation,
-live cooler control and recovery diagnostics. Standalone camera and accessory
-integrations remain available alongside the Hub.
+This patch improves direct camera cancellation and preserves cooling settings
+through sensor initialization. The fixes apply to the shared camera backend
+used by NINA, ASCOM and Alpaca.
 
-## Camera recovery and cooling
+## Camera cancellation and cooling
 
-- Preserve the camera worker and cooler after an acknowledged capture abort.
-  Failed or timed-out stops retire the worker before another capture.
-- On explicit disconnect, turn off the cooler and any advertised dew heater,
-  with readback in either backend. If the worker is unavailable, attempt bounded
-  cleanup of the same serial without restoring its enabled settings.
-- Wait for abort cleanup before NINA restarts capture, and distinguish explicit
-  client aborts from readiness timeouts. Capture numbers identify start and
-  cancellation events in NINA logs.
-- Apply cooler target and enable changes during long exposures through the
-  shared acknowledged control path. Direct cooling responds immediately to
-  enable and setpoint changes, retains steady load through reconnect, and adds
-  output for a colder target or a warming sensor. SDK mode retains its vendor
-  regulator.
-- Report retries across abandoned and successful attempts in recovery logs,
-  separately from the delivered frame's retained-read count.
-- Preserve measured temperature and cooler power through worker replacement.
-  NINA marks held readings and keeps cooling-chart axes intact.
-- Limit direct USB read request size independently of the SDK USB Traffic
-  percentage. Direct mode can reread retained frames on supported cameras;
-  proxying another driver does not add that ability.
+- Complete the ASI2600/6200 synchronization pulse before observing cancellation,
+  then restore and verify long-exposure clock gates on every exit.
+- Share clock restoration between ASI585/662/676 still and video stop paths,
+  and verify acquisition is idle before acknowledging the stop.
+- Attempt ordinary stop even if clock restoration fails. An uncertain cleanup
+  retires the worker instead of reporting a clean cancellation and reusing it.
+- Reapply acknowledged cooler and dew-heater settings after sensor setup,
+  including setup failures. Preserve cooler demand, target, regulator history
+  and the feedback deadline so repeated short captures do not delay regulation.
+- Check pending cancellation before arming across all supported direct paths.
+- Document register masks, write order, timing, thermal calibration and SDK
+  evidence, with unknown preset meanings explicitly identified.
 
-The attached ASI585MM Pro passes the real NINA plugin API checks in SDK and
-direct mode: live cooler changes, abort/cancel cleanup, preserved worker and
-subsequent image downloads. See [physical acceptance](https://github.com/pulsarfab/regain/blob/v0.6.0.3/docs/camera-abort-acceptance.md)
-for measurements and test boundaries.
+Original ASI6200MM Pro hardware passed twelve active cancellation stages,
+each followed by a fresh full frame in the same worker. Real NINA camera API
+checks passed caller cancellation and explicit abort with subsequent images,
+unchanged workers and zero retries. ASI662MC passed early/gated still aborts
+and gated video stop followed by fresh still captures. USB readbacks checked
+clock gates, acquisition state and applicable thermal settings.
 
-## Regain Hub preview
+The remote ASI6200 lockup was not reproduced. These fixes close confirmed
+software gaps; other camera revisions retain SDK-sequence and register-test
+coverage and still need physical retesting. See
+[cancellation acceptance](https://github.com/pulsarfab/regain/blob/v0.6.0.4/docs/asi6200-abort-cleanup.md)
+and the [register reference](https://github.com/pulsarfab/regain/blob/v0.6.0.4/docs/camera-usb-registers.md).
 
-Configure sources once and publish Camera, Focuser, Rotator, FilterWheel,
-CoverCalibrator, Switch, SafetyMonitor and ObservingConditions outputs through
-native NINA, Windows ASCOM, Alpaca, or several frontends together.
+## Installation and compatibility
 
-- Combine switches and gauges, safety monitors, or weather measurements.
-- Import supported native Regain devices, Alpaca devices, or installed Windows
-  ASCOM drivers through isolated 32-bit and 64-bit helpers.
-- Share source connections with explicit ownership for captures and movement.
-- Configure coordinated camera captures and focuser groups for NINA sequences.
-- Use shared parameter descriptions, validation, discovery, and reviewed
-  configuration import/export across native setup and the web editor.
+Use `Regain-0.6.0.4.zip` for NINA or
+`Regain-ASCOM-0.6.0.4-win-x64-setup.exe` for Windows ASCOM and Alpaca.
+Windows programs and the installer are signed by StackFoundry LLC. This is a
+package revision with rebuilt camera workers; it does not publish new Rust
+crates. Minimum NINA version, plugin identity and settings are unchanged.
 
-Hub remains a preview. Installed NINA and mixed physical-camera/COM/Alpaca
-acceptance evidence is recorded in the repository; environment and conformance
-limits remain in [Hub acceptance](https://github.com/pulsarfab/regain/blob/v0.6.0.3/docs/hub-acceptance.md) and [the plan](https://github.com/pulsarfab/regain/blob/v0.6.0.3/docs/hub-plan.md).
-An ASCOM-free Windows host and a second LAN host have not been available for
-acceptance. Preview status does not waive the release's signing, package or
-installer lifecycle checks.
-
-## Installation and support
-
-Use `Regain-0.6.0.3.zip` for NINA or
-`Regain-ASCOM-0.6.0.3-win-x64-setup.exe` for Windows ASCOM and Alpaca.
-Windows programs and the installer are signed by StackFoundry LLC. Rust crates
-use version 0.6.0, including the new `regain-hub` crate. Minimum NINA version and
-plugin identity are unchanged.
-
-Direct USB support remains experimental and model-specific. See
-[supported hardware](https://github.com/pulsarfab/regain/blob/v0.6.0.3/README.md#supported-hardware),
-[capture behavior](https://github.com/pulsarfab/regain/blob/v0.6.0.3/docs/ascom.md#capture-behavior),
-[transfer recovery](https://github.com/pulsarfab/regain/blob/v0.6.0.3/docs/transfer-recovery.md) and [Hub setup](https://github.com/pulsarfab/regain/blob/v0.6.0.3/docs/hub-setup.md).
+Regain Hub remains a preview. Its features and acceptance limits are unchanged;
+see [Hub setup](https://github.com/pulsarfab/regain/blob/v0.6.0.4/docs/hub-setup.md)
+and [Hub acceptance](https://github.com/pulsarfab/regain/blob/v0.6.0.4/docs/hub-acceptance.md).
+Direct USB support remains experimental and model-specific; see
+[supported hardware](https://github.com/pulsarfab/regain/blob/v0.6.0.4/README.md#supported-hardware).
