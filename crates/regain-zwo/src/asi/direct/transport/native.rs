@@ -6,7 +6,12 @@ use nusb::{
     transfer::{Bulk, Completion, ControlIn, ControlOut, ControlType, In, Recipient},
 };
 use serde_json::{Value, json};
-use std::{cell::RefCell, ffi::CStr, time::Duration};
+use std::{
+    cell::{RefCell, RefMut},
+    collections::VecDeque,
+    ffi::CStr,
+    time::{Duration, Instant},
+};
 
 #[derive(Clone)]
 pub struct DeviceInfo(nusb::DeviceInfo);
@@ -78,7 +83,153 @@ pub struct Device {
     info: Value,
 }
 
+/// Owns the endpoint's queued buffers until each has terminally completed.
+/// Control requests use the separate nusb Device and remain on this owner thread.
+pub struct ReadBatch<'a> {
+    endpoint: RefMut<'a, nusb::Endpoint<Bulk, In>>,
+    data: Vec<u8>,
+    chunks: VecDeque<(usize, usize)>,
+    chunk_bytes: usize,
+    next_offset: usize,
+    completed_bytes: usize,
+}
+
+impl ReadBatch<'_> {
+    fn submit_next(&mut self) -> Result<()> {
+        if self.next_offset == self.data.len() {
+            return Ok(());
+        }
+        let length = self.chunk_bytes.min(self.data.len() - self.next_offset);
+        let size = request_size(length, self.endpoint.max_packet_size())?;
+        let buffer = self.endpoint.allocate(size);
+        self.endpoint.submit(buffer);
+        self.chunks.push_back((self.next_offset, length));
+        self.next_offset += length;
+        Ok(())
+    }
+
+    fn failure(&self, category: &str, length: usize, expired: bool) -> anyhow::Error {
+        let mut failure = crate::asi::direct::transfer::Failure::new(category, length, 0, expired);
+        failure.0["chunk"] = json!(self.completed_bytes / self.chunk_bytes);
+        failure.0["completedBytes"] = json!(self.completed_bytes);
+        failure.0["frameBytes"] = json!(self.data.len());
+        failure.into()
+    }
+
+    /// The timeout covers harvesting after integration, excluding queue time.
+    /// Keep continuity evidence from every accepted first-pass chunk. Observer
+    /// errors follow the same cancel-and-drain path as transfer/caller failures.
+    pub fn finish_observing(
+        mut self,
+        timeout: Duration,
+        mut service: impl FnMut() -> Result<()>,
+        mut observe: impl FnMut(usize, &[u8]) -> Result<()>,
+    ) -> Result<Vec<u8>> {
+        ensure!(!timeout.is_zero(), "queued frame timeout must be nonzero");
+        let started = Instant::now();
+        let mut front_started = started;
+        while let Some(&(_, length)) = self.chunks.front() {
+            service()?;
+            if started.elapsed() >= timeout {
+                return Err(self.failure("budget_exhausted", length, true));
+            }
+            if front_started.elapsed() >= Duration::from_secs(5) {
+                return Err(self.failure("timeout", length, true));
+            }
+            let wait = timeout
+                .saturating_sub(started.elapsed())
+                .min(Duration::from_secs(5).saturating_sub(front_started.elapsed()))
+                .min(Duration::from_millis(20));
+            let Some(done) = self.endpoint.wait_next_complete(wait) else {
+                continue;
+            };
+            let (offset, length) = self.chunks.pop_front().unwrap();
+            if let Err(error) = validate_completion(&done, false, length) {
+                let mut details = crate::asi::direct::transfer::Failure::details(&error);
+                if !details.is_null() {
+                    details["chunk"] = json!(offset / self.chunk_bytes);
+                    details["completedBytes"] = json!(self.completed_bytes);
+                    details["frameBytes"] = json!(self.data.len());
+                    return Err(crate::asi::direct::transfer::Failure(details).into());
+                }
+                return Err(error);
+            }
+            observe(offset / self.chunk_bytes, &done.buffer)?;
+            self.data[offset..offset + length].copy_from_slice(&done.buffer);
+            self.completed_bytes += length;
+            self.submit_next()?;
+            front_started = Instant::now();
+        }
+        ensure!(
+            self.completed_bytes == self.data.len() && self.endpoint.pending() == 0,
+            "queued frame did not complete every byte"
+        );
+        Ok(std::mem::take(&mut self.data))
+    }
+
+    fn cancel_and_drain(&mut self) {
+        if self.endpoint.pending() == 0 {
+            return;
+        }
+        self.endpoint.cancel_all();
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while self.endpoint.pending() != 0 {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                eprintln!(
+                    "Queued USB cancellation did not drain; terminating worker with buffers intact"
+                );
+                std::process::exit(125);
+            }
+            let _ = self
+                .endpoint
+                .wait_next_complete(remaining.min(Duration::from_millis(20)));
+        }
+        self.chunks.clear();
+    }
+}
+
+impl Drop for ReadBatch<'_> {
+    fn drop(&mut self) {
+        self.cancel_and_drain();
+    }
+}
+
 impl Device {
+    /// Queue exactly one first-pass frame, with at most 128 outstanding reads.
+    /// Endpoint ownership prevents a reset or retained read before this batch
+    /// finishes/drains, while device control/environment requests remain usable.
+    pub fn queue_frame(&self, length: usize, chunk_bytes: usize) -> Result<ReadBatch<'_>> {
+        ensure!(
+            length > 0 && length <= 128 * 1024 * 1024,
+            "invalid queued frame size"
+        );
+        ensure!(
+            chunk_bytes > 0 && chunk_bytes <= 1024 * 1024,
+            "invalid queued read chunk size"
+        );
+        let endpoint = self
+            .input
+            .try_borrow_mut()
+            .context("bulk endpoint already borrowed")?;
+        ensure!(
+            endpoint.pending() == 0,
+            "previous USB transfer is still pending"
+        );
+        let depth = length.div_ceil(chunk_bytes).min(128);
+        let mut batch = ReadBatch {
+            endpoint,
+            data: vec![0; length],
+            chunks: VecDeque::with_capacity(depth),
+            chunk_bytes,
+            next_offset: 0,
+            completed_bytes: 0,
+        };
+        for _ in 0..depth {
+            batch.submit_next()?;
+        }
+        Ok(batch)
+    }
     pub fn open(info: &DeviceInfo) -> Result<Self> {
         let device = info
             .0
@@ -162,7 +313,10 @@ impl Device {
     }
 
     pub fn reset_pipe(&self) -> Result<()> {
-        let mut endpoint = self.input.borrow_mut();
+        let mut endpoint = self
+            .input
+            .try_borrow_mut()
+            .context("bulk endpoint already borrowed")?;
         ensure!(
             endpoint.pending() == 0,
             "cannot reset an endpoint with pending transfers"
@@ -176,7 +330,10 @@ impl Device {
     }
 
     fn transfer(&self, length: usize, timeout_ms: u32) -> Result<(Completion, bool)> {
-        let mut endpoint = self.input.borrow_mut();
+        let mut endpoint = self
+            .input
+            .try_borrow_mut()
+            .context("bulk endpoint already borrowed")?;
         ensure!(
             endpoint.pending() == 0,
             "previous USB transfer is still pending"
@@ -278,6 +435,7 @@ fn validate_completion(done: &Completion, expired: bool, expected: usize) -> Res
             expired,
         );
         failure.0["nativeStatus"] = json!(format!("{:?}", done.status));
+        failure.observe_short_read(&done.buffer);
         failure.0["terminalCompletionObserved"] = json!(true);
         return Err(failure.into());
     }
@@ -375,5 +533,20 @@ mod tests {
         let mut other = endpoint;
         other["alternate"] = json!(1);
         assert!(capture_interface(&json!({"endpoints":[other]})).is_err());
+    }
+
+    #[test]
+    fn queued_short_frame_trailer_is_evidence_not_an_accepted_image() {
+        let bytes = vec![0x7e, 0x5a, 7, 0, 9, 0, 0xf0, 0x3c];
+        let done = Completion {
+            actual_len: bytes.len(),
+            buffer: bytes.into(),
+            status: Ok(()),
+        };
+        let error = validate_completion(&done, false, 1024).unwrap_err();
+        let details = crate::asi::direct::transfer::Failure::details(&error);
+        assert_eq!(details["category"], "short_read");
+        assert_eq!(details["frameTrailerObserved"], true);
+        assert_eq!(details["terminalCompletionObserved"], true);
     }
 }

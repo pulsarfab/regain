@@ -65,6 +65,8 @@ pub struct Camera {
     read_chunk_bytes: Cell<usize>,
     phase: Cell<&'static str>,
     capture_cancel: RefCell<Option<std::sync::Arc<std::sync::atomic::AtomicBool>>>,
+    transport_generation: Cell<u64>,
+    pub(super) asi6200: RefCell<super::asi6200::ConnectionState>,
 }
 impl Camera {
     pub fn locator(&self) -> String {
@@ -81,6 +83,8 @@ impl Camera {
             read_chunk_bytes: Cell::new(1024 * 1024),
             phase: Cell::new("idle"),
             capture_cancel: RefCell::new(None),
+            transport_generation: Cell::new(0),
+            asi6200: RefCell::new(super::asi6200::ConnectionState::default()),
         })
     }
     pub fn enable_environment(
@@ -125,6 +129,12 @@ impl Camera {
             environment.reapply(self)?;
         }
         self.publish_environment()
+    }
+    pub(super) fn verify_environment(&self) -> Result<()> {
+        if let Some(environment) = self.environment.borrow().as_ref() {
+            environment.verify_actuators(self)?;
+        }
+        Ok(())
     }
     pub fn service_environment(&self) -> Result<()> {
         self.check_capture_cancelled()?;
@@ -182,21 +192,41 @@ impl Camera {
     /// carries the immediate DAC code in wValue. These are USB field names,
     /// not interchangeable "register/value" arguments. See docs/camera-usb-registers.md.
     pub fn vendor(&self, request: u8, value: u16, index: u16, length: u16) -> Result<Vec<u8>> {
-        self.device
+        let result = self
+            .device
             .borrow()
             .as_ref()
-            .context("USB handle is closed")?
-            .vendor(request, value, index, length)
+            .context("USB handle is closed")
+            .and_then(|device| device.vendor(request, value, index, length));
+        self.observe_usb(result)
     }
     pub fn reset_pipe(&self) -> Result<()> {
-        self.device
+        let result = self
+            .device
             .borrow()
             .as_ref()
-            .context("USB handle is closed")?
-            .reset_pipe()
+            .context("USB handle is closed")
+            .and_then(|device| device.reset_pipe());
+        self.observe_usb(result)
+    }
+    pub(super) fn transport_generation(&self) -> u64 {
+        self.transport_generation.get()
+    }
+    fn invalidate_connection_state(&self) {
+        self.transport_generation
+            .set(self.transport_generation.get().wrapping_add(1));
+    }
+    fn observe_usb<T>(&self, result: Result<T>) -> Result<T> {
+        if result.is_err() {
+            // Invalidate lazily: a model may hold its cache borrow while issuing
+            // USB setup. Never borrow that cache recursively from an I/O failure.
+            self.invalidate_connection_state();
+        }
+        result
     }
     #[cfg(windows)]
     pub fn research_port_operation(&self, cycle: bool) -> Result<()> {
+        self.invalidate_connection_state();
         self.device
             .borrow()
             .as_ref()
@@ -254,6 +284,7 @@ impl Camera {
             "retained reopen requires camera identity"
         );
         self.phase("reopening_retained");
+        self.invalidate_connection_state();
         drop(self.device.borrow_mut().take());
         std::thread::sleep(delay);
         let mut candidates = enumerate()?
@@ -295,6 +326,63 @@ impl Camera {
         continuity: &mut crate::asi::direct::transfer::Continuity,
     ) -> Result<Vec<u8>> {
         self.read_frame_inner(length, first_timeout_ms, Some(continuity), None)
+    }
+    /// SDK-style first pass: post bulk requests before the owner performs the
+    /// exposure handshake, then harvest them on that same owner thread.
+    /// The batch owns every buffer until all I/O is terminal, including errors.
+    pub fn read_frame_during(
+        &self,
+        length: usize,
+        continuity: &mut super::transfer::Continuity,
+        expose: impl FnOnce() -> Result<()>,
+    ) -> Result<Vec<u8>> {
+        ensure!(
+            length > 0 && length <= 128 * 1024 * 1024,
+            "invalid frame size"
+        );
+        self.service_environment()?;
+        let chunk_bytes = self.read_chunk_bytes.get();
+        let started = Instant::now();
+        let result = (|| {
+            // Keep this immutable borrow through batch destruction. Control
+            // requests may nest immutable borrows; reset/reopen may not.
+            let device = self.device.borrow();
+            let device = device.as_ref().context("USB handle is closed")?;
+            let batch = device.queue_frame(length, chunk_bytes)?;
+            expose()?;
+            self.phase("downloading");
+            batch.finish_observing(
+                self.transfer_timeout.get(),
+                || self.service_environment(),
+                |number, chunk| continuity.observe(number, number * chunk_bytes, length, chunk),
+            )
+        })();
+        if let Err(error) = &result {
+            if !error.is::<super::completion::CaptureCancelled>() {
+                self.invalidate_connection_state();
+            }
+            let mut failure = Failure::details(error);
+            if !failure.is_null() {
+                failure["phase"] = serde_json::json!(self.phase.get());
+                crate::asi::direct::diagnostics::details(
+                    "warning",
+                    "transfer.failed",
+                    format_args!("USB queued read failed: {failure}"),
+                    failure.clone(),
+                );
+            }
+        } else {
+            self.phase("transfer_complete");
+            crate::asi::direct::diagnostics::details(
+                "debug",
+                "transfer.complete",
+                "Queued USB frame read completed",
+                serde_json::json!({"readChunkKiB":chunk_bytes / 1024,"frameBytes":length,
+                    "requests":length.div_ceil(chunk_bytes),"queueDepth":length.div_ceil(chunk_bytes).min(128),
+                    "elapsedUs":started.elapsed().as_micros(),"includesExposure":true}),
+            );
+        }
+        result
     }
     fn read_frame_inner(
         &self,
@@ -341,6 +429,7 @@ impl Camera {
                 }
             });
             if let Err(error) = result {
+                self.invalidate_connection_state();
                 let mut failure = Failure::details(&error);
                 if failure.is_null() {
                     failure = serde_json::json!({"category":"io","cause":format!("{error:#}")});

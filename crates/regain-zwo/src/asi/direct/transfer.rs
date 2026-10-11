@@ -72,6 +72,29 @@ impl Failure {
             .downcast_ref::<Self>()
             .map_or(Value::Null, |e| e.0.clone())
     }
+    /// Record framing evidence from a completed short transfer, never pixels.
+    /// An observed ASI trailer helps distinguish a shortened sender frame from
+    /// a short packet within one. It does not make a partial image acceptable.
+    pub fn observe_short_read(&mut self, buffer: &[u8]) {
+        if self.0["category"] != "short_read" {
+            return;
+        }
+        let Some(received) = self.0["receivedBytes"]
+            .as_u64()
+            .and_then(|n| usize::try_from(n).ok())
+            .and_then(|n| buffer.get(..n))
+        else {
+            return;
+        };
+        let trailer = received.len() >= 4 && received.ends_with(&[0xf0, 0x3c]);
+        self.0["frameTrailerObserved"] = json!(trailer);
+        if trailer {
+            self.0["frameTrailerSequence"] = json!(u16::from_le_bytes([
+                received[received.len() - 4],
+                received[received.len() - 3],
+            ]));
+        }
+    }
 }
 impl std::fmt::Display for Failure {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -152,5 +175,28 @@ mod tests {
             .context("camera capture");
         assert_eq!(Failure::details(&error)["receivedBytes"], 512);
         assert_eq!(Failure::details(&error)["category"], "short_read");
+    }
+    #[test]
+    fn short_read_framing_uses_only_completed_bytes_and_stays_a_failure() {
+        let buffer = [0x7e, 0x5a, 7, 0, 9, 0, 0xf0, 0x3c];
+        let mut framed = Failure::new("short_read", 1024, 8, false);
+        framed.observe_short_read(&buffer);
+        assert_eq!(framed.0["frameTrailerObserved"], true);
+        assert_eq!(framed.0["frameTrailerSequence"], 9);
+        assert_eq!(framed.0["category"], "short_read");
+        assert_eq!(framed.0["expectedBytes"], 1024);
+
+        let mut partial = Failure::new("short_read", 1024, 4, false);
+        partial.observe_short_read(&buffer);
+        assert_eq!(partial.0["frameTrailerObserved"], false);
+        assert!(partial.0.get("frameTrailerSequence").is_none());
+        for received in [0, 1, 3, 9] {
+            let mut failure = Failure::new("short_read", 1024, received, false);
+            failure.observe_short_read(&buffer);
+            assert!(failure.0.get("frameTrailerSequence").is_none());
+        }
+        let mut timeout = Failure::new("timeout", 1024, 8, true);
+        timeout.observe_short_read(&buffer);
+        assert!(timeout.0.get("frameTrailerObserved").is_none());
     }
 }

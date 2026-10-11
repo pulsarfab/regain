@@ -214,6 +214,11 @@ impl Environment {
             self.set(camera, 22, fan)?;
             self.set(camera, 23, led)?;
         }
+        self.verify_actuators(camera)?;
+        self.finish_restore(Self::read_temperature(camera)?, observed, reset_tick);
+        Ok(())
+    }
+    pub(super) fn verify_actuators(&self, camera: &Camera) -> Result<()> {
         let expected_flags = (u8::from(!self.enabled) * 0x80) | (u8::from(self.dew) * 0x40);
         ensure!(
             camera.vendor(0xbc, 0x19, 0, 1)?[0] & if self.heater { 0xc0 } else { 0x80 }
@@ -227,7 +232,6 @@ impl Environment {
                 "cooler output did not restore"
             );
         }
-        self.finish_restore(Self::read_temperature(camera)?, observed, reset_tick);
         Ok(())
     }
     fn finish_restore(&mut self, temperature: f64, observed: Instant, reset_tick: bool) {

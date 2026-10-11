@@ -1,5 +1,10 @@
 # Direct camera cancellation and thermal cleanup
 
+For the subsequent connection lifecycle, queued normal readout, measured SDK
+timing and full-frame-only acceptance, see
+[ASI6200 SDK parity](asi6200-sdk-parity.md). The results below describe the
+earlier cleanup acceptance; the linked workup covers the current capture path.
+
 ## Incident and evidence
 
 The 2026-10-10/11 Starfront NINA log uses Regain 0.6.0.3 in direct USB mode
