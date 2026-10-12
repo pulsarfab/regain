@@ -292,6 +292,7 @@ mod tests {
                     }
                     RecoveryType::Number { maximum, .. } => serde_json::json!(maximum),
                     RecoveryType::Boolean => serde_json::json!(true),
+                    RecoveryType::Choice(choices) => serde_json::json!(choices.last().unwrap()),
                 },
             );
         }

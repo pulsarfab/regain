@@ -24,6 +24,8 @@ public sealed class HostClient : IDisposable
     public int ProcessId => process.Id;
     public bool Supervised { get; }
     public bool IsAlive => disposed == 0 && !process.HasExited;
+    internal void ConfigureDiagnostics(string mode) => diagnostics.TransferLogMode = mode;
+    internal void RecordDiagnostic(string line) => diagnostics.Worker(line);
     public HostClient(string executable, string sdk, bool simulate = false, Action<string>? log = null, bool direct = false, bool supervised = false)
     {
         Supervised = supervised;

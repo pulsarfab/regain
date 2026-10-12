@@ -4,7 +4,7 @@ use std::{
     io::Write,
     sync::{
         OnceLock,
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicU8, AtomicU64, Ordering},
         mpsc,
     },
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
@@ -16,9 +16,43 @@ enum UsbRecord {
 }
 
 pub(super) fn command_logging_enabled() -> bool {
-    static ENABLED: OnceLock<bool> = OnceLock::new();
-    *ENABLED
-        .get_or_init(|| enabled_value(std::env::var("REGAIN_CAMERA_TRANSFER_LOG").ok().as_deref()))
+    log_mode() != 0
+}
+pub(super) fn forced_off() -> bool {
+    !enabled_value(std::env::var("REGAIN_CAMERA_TRANSFER_LOG").ok().as_deref())
+}
+fn mode_cell() -> &'static AtomicU8 {
+    static MODE: OnceLock<AtomicU8> = OnceLock::new();
+    MODE.get_or_init(|| {
+        AtomicU8::new(if forced_off() {
+            0
+        } else {
+            match std::env::var("REGAIN_CAMERA_TRANSFER_LOG_MODE").as_deref() {
+                Ok("off") => 0,
+                Ok("verbose") => 2,
+                _ => 1,
+            }
+        })
+    })
+}
+fn log_mode() -> u8 {
+    mode_cell().load(Ordering::Relaxed)
+}
+pub(super) fn configure(mode: &str) -> anyhow::Result<()> {
+    let mode = match mode {
+        "off" => 0,
+        "circular" => 1,
+        "verbose" => 2,
+        _ => anyhow::bail!("Invalid transfer log mode"),
+    };
+    mode_cell().store(if forced_off() { 0 } else { mode }, Ordering::Relaxed);
+    queued_details(
+        "info",
+        "diagnostics.mode",
+        "Camera transfer logging updated",
+        serde_json::json!({"mode":match log_mode(){0=>"off",1=>"circular",_=>"verbose"},"environmentOverride":forced_off()}),
+    );
+    Ok(())
 }
 
 fn enabled_value(value: Option<&str>) -> bool {
@@ -31,7 +65,17 @@ fn enabled_value(value: Option<&str>) -> bool {
 }
 
 fn command_event(event: &str) -> bool {
-    event.starts_with("usb.") || event.starts_with("sdk.api.")
+    event.starts_with("usb.")
+        || event.starts_with("sdk.api.")
+        || event == "asi6200.register_snapshot"
+}
+
+fn failure_snapshot(event: &str, details: &serde_json::Value) -> bool {
+    event == "asi6200.register_snapshot"
+        && matches!(
+            details["stage"].as_str(),
+            Some("read_failure" | "capture_failure")
+        )
 }
 static DROPPED_USB_RECORDS: AtomicU64 = AtomicU64::new(0);
 
@@ -47,6 +91,7 @@ fn usb_writer() -> &'static mpsc::SyncSender<UsbRecord> {
         let _ = std::thread::Builder::new()
             .name("regain-usb-log".into())
             .spawn(move || {
+                let mut recorder: Option<super::flight_recorder::Recorder> = None;
                 for record in receiver {
                     let dropped = DROPPED_USB_RECORDS.swap(0, Ordering::Relaxed);
                     if dropped != 0 {
@@ -54,9 +99,31 @@ fn usb_writer() -> &'static mpsc::SyncSender<UsbRecord> {
                     }
                     match record {
                         UsbRecord::Line(line) => {
-                            write(&mut std::io::stderr().lock(), line);
+                            let Ok(value) = serde_json::from_str::<serde_json::Value>(&line) else {continue};
+                            let mode = log_mode();
+                            let mut after_fault = None;
+                            if mode == 1 {
+                                let recorder = recorder.get_or_insert_with(|| {
+                                    let recorder = super::flight_recorder::Recorder::open();
+                                    write(&mut std::io::stderr().lock(), serde_json::json!({"version":1,"level":"info","event":"diagnostics.recorder","message":"Circular camera flight recorder enabled","pid":std::process::id(),"details":{"path":recorder.path(),"memoryBytes":8388608,"diskSegmentBytes":4194304,"diskSegments":2}}));
+                                    recorder
+                                });
+                                recorder.remember(&line);
+                                if super::flight_recorder::fault(&value) {
+                                    for item in recorder.fault(&value, Instant::now()) {write(&mut std::io::stderr().lock(), item);}
+                                }
+                                after_fault = recorder.after_fault(Instant::now());
+                            } else if let Some(recorder) = &mut recorder { recorder.clear(); }
+                            if let Some(batch) = after_fault.filter(|_| !super::flight_recorder::fault(&value)) {
+                                let mut value = value; value["flightRecorderBatch"] = serde_json::json!(batch);
+                                value["flightRecorderAfterFault"] = serde_json::json!(true);
+                                write(&mut std::io::stderr().lock(), value);
+                            } else if mode == 2 || !command_event(value["event"].as_str().unwrap_or("")) || super::flight_recorder::fault(&value) {
+                                write(&mut std::io::stderr().lock(), line);
+                            }
                         }
                         UsbRecord::Flush(done) => {
+                            if let Some(recorder) = &mut recorder {recorder.flush();}
                             let _ = done.send(());
                         }
                     }
@@ -91,7 +158,11 @@ pub(crate) fn queued_details(
     message: impl Display,
     mut details: serde_json::Value,
 ) {
-    if command_event(event) && !command_logging_enabled() && !matches!(level, "warning" | "error") {
+    if command_event(event)
+        && !command_logging_enabled()
+        && !matches!(level, "warning" | "error")
+        && !failure_snapshot(event, &details)
+    {
         return;
     }
     details["timestampUnixUs"] = serde_json::json!(
@@ -239,6 +310,18 @@ mod tests {
         assert!(!command_event("capture.phase"));
         assert!(!command_event("capture.failed"));
         assert!(!command_event("transfer.retry"));
+        assert!(failure_snapshot(
+            "asi6200.register_snapshot",
+            &serde_json::json!({"stage":"read_failure"})
+        ));
+        assert!(failure_snapshot(
+            "asi6200.register_snapshot",
+            &serde_json::json!({"stage":"capture_failure"})
+        ));
+        assert!(!failure_snapshot(
+            "asi6200.register_snapshot",
+            &serde_json::json!({"stage":"before_start"})
+        ));
     }
 
     #[test]

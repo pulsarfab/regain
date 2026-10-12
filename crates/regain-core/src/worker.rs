@@ -62,6 +62,16 @@ impl Runtime {
         Ok(String::from_utf8(output.stdout)?.trim().to_owned())
     }
     pub async fn spawn(&self, direct: bool, log: Diagnostic) -> Result<Worker> {
+        self.spawn_configured(direct, log, None).await
+    }
+    /// Configure diagnostics before the SDK is loaded in the isolated worker.
+    /// An explicit environment off switch remains a host-wide override.
+    pub(crate) async fn spawn_configured(
+        &self,
+        direct: bool,
+        log: Diagnostic,
+        recovery: Option<&crate::RecoveryOptions>,
+    ) -> Result<Worker> {
         let path = self
             .directory
             .join(format!("regain-device{}", std::env::consts::EXE_SUFFIX));
@@ -82,6 +92,12 @@ impl Runtime {
             .current_dir(&self.directory);
         #[cfg(windows)]
         command.creation_flags(0x08000000);
+        if let Some(recovery) = recovery {
+            command.env(
+                "REGAIN_CAMERA_TRANSFER_LOG_MODE",
+                &recovery.transfer_log_mode,
+            );
+        }
         if direct {
             command.arg("--serve");
         }

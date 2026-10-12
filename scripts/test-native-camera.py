@@ -49,7 +49,14 @@ def exercise(binary, directory, prepare=False):
             choices = camera.call('discover', params={'direct': direct})
             profile.update(camera=choices[slot if direct else 0], serial=None, direct=direct, label='My imaging train')
             profile['recovery']['reconnectDelaySeconds'] = .05
+            assert profile['recovery']['transferLogMode'] == 'circular'
+            assert profile['recovery']['coolerMaxPowerChangePer5Seconds'] == 25
+            profile['recovery']['transferLogMode'] = 'circular' if slot % 2 == 0 else 'off'
+            profile['recovery']['coolerMaxPowerChangePer5Seconds'] = 5 + slot
             camera.call('configure', params=profile)
+            saved = camera.call('profile')
+            assert saved['recovery']['transferLogMode'] == ('circular' if slot % 2 == 0 else 'off')
+            assert saved['recovery']['coolerMaxPowerChangePer5Seconds'] == 5 + slot
             assert camera.call('get', 'name') == profile['camera']['name']
             assert 'state: Disconnected; retries: 0' in camera.call('get', 'driverinfo')
             if prepare:
@@ -80,6 +87,13 @@ def exercise(binary, directory, prepare=False):
             assert 'state: Idle; retries: 0' in camera.call('get', 'driverinfo')
             assert 'last failure: none' in camera.call('get', 'driverinfo')
             camera.call('put', 'startexposure', {'Duration': 5, 'Light': False})
+            live = camera.call('profile')
+            live['recovery']['transferLogMode'] = 'verbose'
+            live['recovery']['coolerMaxPowerChangePer5Seconds'] = 40
+            camera.call('configure', params=live)
+            assert camera.call('profile')['recovery']['transferLogMode'] == 'verbose'
+            assert camera.call('profile')['recovery']['coolerMaxPowerChangePer5Seconds'] == 40
+            assert camera.call('get', 'connected')
             camera.call('put', 'abortexposure')
             assert not camera.call('get', 'imageready')
             assert camera.call('get', 'camerastate') == 0

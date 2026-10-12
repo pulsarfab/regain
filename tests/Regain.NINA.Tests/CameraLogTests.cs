@@ -6,6 +6,24 @@ namespace Regain.NINA.Tests;
 
 public class CameraLogTests
 {
+    [Fact]
+    public void FlightRecorderReplayBypassesQuietFilteringWithoutChangingOriginalEvidence()
+    {
+        var line="REGAIN_DIAGNOSTIC {\"version\":1,\"level\":\"info\",\"event\":\"usb.complete\",\"message\":\"read\",\"pid\":42,\"flightRecorderBatch\":\"42:1\",\"details\":{\"correlation\":7,\"elapsedUs\":123}}";
+        var record=CameraLog.Parse("direct",line,verbose:false);
+        Assert.False(record.Suppressed); Assert.Contains(line,record.Text);
+    }
+    [Fact]
+    public void CameraSettingSuppressesSuccessfulNinaTimingsButKeepsFailures()
+    {
+        long start = System.Diagnostics.Stopwatch.GetTimestamp();
+        Assert.True(CameraLog.ApiTimingEntry("ASI6200", "direct", 1, "DownloadExposure", start,
+            "success", transferLogging: false).Suppressed);
+        var failure = CameraLog.ApiTimingEntry("ASI6200", "direct", 1, "DownloadExposure", start,
+            "failed", new IOException(), transferLogging: false);
+        Assert.False(failure.Suppressed);
+        Assert.Equal(CameraLog.Level.Warning, failure.Severity);
+    }
     [Theory]
     [InlineData("usb.complete", "info", true)]
     [InlineData("sdk.api.start", "info", true)]
@@ -137,7 +155,7 @@ public class CameraLogTests
                 var record = CameraLog.Parse("direct", line);
                 CameraLog.Forward(record, _ => { }, text => {
                     warnings.Enqueue(text);
-                    if (warnings.Count == 2) received.TrySetResult();
+                    if (text.Contains("[transfer.retry]", StringComparison.Ordinal) && text.Contains("retry 2/2", StringComparison.Ordinal)) received.TrySetResult();
                 }, _ => { });
                 if (brokenLogger) throw new IOException("log file unavailable");
             });

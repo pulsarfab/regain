@@ -60,6 +60,13 @@ and is also visible on the setup page. Keep the settings file when upgrading.
 
 **Direct USB read size (KiB)** is available in camera recovery settings (the Timeouts tab in native ASCOM, Advanced in NINA). It defaults to 1024 and accepts powers of two from 1 to 1024. The shared key is `recovery.directReadChunkKiB`; SDK mode ignores it. See [host read sizing versus SDK USB Traffic](transfer-recovery.md#limit-the-size-of-direct-usb-reads).
 
+The same tab has **Transfer logging**: circular (default), verbose or off.
+Circular mode retains a separate recent history and emits it on a fault. Both
+logging and the cooler limit can change while connected.
+**Cooler** has **Direct cooler maximum power change**, default 25 percentage
+points per five seconds. This controls Regain's direct-mode ramp; SDK mode
+uses the vendor controller. See [camera diagnostics and cooler settings](camera-timed-diagnostics.md).
+
 ## Windows COM frontend
 
 Requires Windows x64, .NET Framework 4.8, the ASCOM Platform, and the ZWO Windows

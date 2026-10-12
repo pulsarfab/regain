@@ -317,9 +317,13 @@ public class CameraHardwareTests(ITestOutputHelper output)
         }
     }
     [Asi6200HardwareTheory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public async Task Asi6200FullFrameRepeatThroughNina(bool direct)
+    [InlineData(true, "verbose", 25.0)]
+    [InlineData(false, "verbose", 25.0)]
+    [InlineData(true, "circular", 5.0)]
+    [InlineData(true, "off", 25.0)]
+    [InlineData(false, "off", 25.0)]
+    [InlineData(false, "circular", 25.0)]
+    public async Task Asi6200FullFrameRepeatThroughNina(bool direct, string logMode, double maximumPowerChange)
     {
         const string serial = "1b07450d17010900";
         const string model = "ZWO ASI6200MM Pro";
@@ -338,9 +342,11 @@ public class CameraHardwareTests(ITestOutputHelper output)
         store.Save(new(new(model, width, height, false, 0, 3.76, 16, true, false, [1, 2, 3, 4]), serial, UseDirectDriver: direct));
         HostClient? host = null;
         int hostStarts = 0, deliveries = 0;
+        var batchReceived = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var records = new ConcurrentQueue<string>();
         void Log(string line) {
             records.Enqueue(line);
+            if (line.Contains("\"event\":\"diagnostics.batch.end\"", StringComparison.Ordinal)) batchReceived.TrySetResult();
             // Exercise the same structured parser and INFO routing as the
             // installed plugin, rather than accepting raw stderr alone.
             CameraLog.Forward(CameraLog.Parse(direct ? "direct" : "sdk", line), output.WriteLine, output.WriteLine, output.WriteLine);
@@ -374,7 +380,8 @@ public class CameraHardwareTests(ITestOutputHelper output)
             new() {
                 MaxRetries = 0, DirectReadRetries = 0, ReadyFrameDownloadRetries = 0,
                 UsbResetAfterFailures = 0, ReconnectDelaySeconds = 1,
-                ExposureGraceSeconds = 20, DownloadTimeoutSeconds = 20, CoolingTimeoutSeconds = 30
+                ExposureGraceSeconds = 20, DownloadTimeoutSeconds = 20, CoolingTimeoutSeconds = 30,
+                TransferLogMode = logMode, CoolerMaxPowerChangePer5Seconds = maximumPowerChange
             });
         using var deadline = new CancellationTokenSource(TimeSpan.FromMinutes(2));
         try {
@@ -388,14 +395,20 @@ public class CameraHardwareTests(ITestOutputHelper output)
             output.WriteLine($"Full-frame NINA repeat: {(direct ? "direct" : "sdk")}, {model}, serial {serial}, workers {workers}; supervisor {supervisorPid}, raw worker {workerPid}");
             await Task.Delay(2500, deadline.Token);
             double baseline = (await host.CallAsync("get", new { control = 8 }, TimeSpan.FromSeconds(10), deadline.Token)).Result.GetInt64() / 10.0;
-            int target = Math.Clamp((int)Math.Ceiling(baseline) - 2, -20, 25);
+            int target = Math.Clamp((int)Math.Ceiling(baseline) - (direct ? 10 : 2), -20, 25);
+            camera.CoolerOn = false;
             camera.TemperatureSetPoint = target;
+            var enableClock = Stopwatch.StartNew();
             camera.CoolerOn = true;
             Assert.True(camera.HasDewHeater);
             camera.DewHeaterOn = true;
             camera.EnableSubSample = false;
             output.WriteLine($"Thermal baseline {baseline:F1} C, mild target {target} C, cooler and heater enabled");
 
+            var initialPower = (await host.CallAsync("get-observation", new { control = 15 }, TimeSpan.FromSeconds(10), deadline.Token)).Result;
+            double previousPower = initialPower.GetProperty("value").GetInt64();
+            double previousPowerAt = enableClock.Elapsed.TotalSeconds - initialPower.GetProperty("ageSeconds").GetDouble();
+            if (direct) Assert.InRange(previousPower, 0, maximumPowerChange / 5 * enableClock.Elapsed.TotalSeconds + 1);
             for (int frame = 1; frame <= 3; frame++) {
                 delivered = null;
                 var clock = Stopwatch.StartNew();
@@ -403,6 +416,15 @@ public class CameraHardwareTests(ITestOutputHelper output)
                     ExposureTime = 5, Gain = 100, Offset = 50, Binning = new BinningMode(1, 1)
                 });
                 double startMs = clock.Elapsed.TotalMilliseconds;
+                if (logMode == "circular" && frame == 2) {
+                    await camera.UpdateRuntimeOptionsAsync(new() {TransferLogMode="off",CoolerMaxPowerChangePer5Seconds=10});
+                    maximumPowerChange=10;
+                    Assert.True(camera.Connected);
+                }
+                if (logMode == "circular" && frame == 3) {
+                    await camera.UpdateRuntimeOptionsAsync(new() {TransferLogMode="circular",CoolerMaxPowerChangePer5Seconds=25});
+                    maximumPowerChange=25;
+                }
                 await camera.WaitUntilExposureIsReady(deadline.Token).WaitAsync(TimeSpan.FromSeconds(40), deadline.Token);
                 double readyMs = clock.Elapsed.TotalMilliseconds;
                 var download = Stopwatch.StartNew();
@@ -430,6 +452,14 @@ public class CameraHardwareTests(ITestOutputHelper output)
                     delivered.RowMeans.Skip(band * height / 8).Take((band + 1) * height / 8 - band * height / 8).Average().ToString("F2")));
                 output.WriteLine($"Frame {frame}: StartExposure {startMs:F1} ms; ready {readyMs:F1} ms from start; DownloadExposure {downloadMs:F1} ms including factory/hash/statistics; total {clock.Elapsed.TotalMilliseconds:F1} ms; {width}x{height} RAW16, {width * height} pixels; SHA256 {delivered.Hash}");
                 output.WriteLine($"Frame {frame}: mean {delivered.Mean:F2}, row means {delivered.RowMeans.Min():F2}..{delivered.RowMeans.Max():F2}, even-minus-odd {evenMean - oddMean:F3}, largest adjacent row step {maxRowStep:F3}; eight row-band means [{bands}]");
+                var observedPower = (await host.CallAsync("get-observation", new { control = 15 }, TimeSpan.FromSeconds(10), deadline.Token)).Result;
+                double power = observedPower.GetProperty("value").GetInt64();
+                double powerAt = enableClock.Elapsed.TotalSeconds - observedPower.GetProperty("ageSeconds").GetDouble();
+                double powerSeconds = powerAt - previousPowerAt;
+                if (direct) Assert.True(Math.Abs(power - previousPower) <= maximumPowerChange / 5 * powerSeconds + 2,
+                    $"Cooler {previousPower}% -> {power}% in {powerSeconds:F2}s exceeds {maximumPowerChange}%/5s");
+                output.WriteLine($"Cooler output {power}% (prior {previousPower}%, {powerSeconds:F2}s), configured {maximumPowerChange}%/5s; transfer logging {logMode}");
+                previousPower = power; previousPowerAt = powerAt;
                 previous = delivered; // Retain small summaries, never a second full-frame pixel copy.
                 images.Invocations.Clear(); // Moq otherwise retains every 122 MB array argument.
                 var state = await Diagnostics();
@@ -445,6 +475,11 @@ public class CameraHardwareTests(ITestOutputHelper output)
                 Assert.Equal(target, state.GetProperty("values").GetProperty("16").GetInt32());
                 Assert.Equal(1, state.GetProperty("values").GetProperty("17").GetInt32());
                 Assert.Equal(1, state.GetProperty("values").GetProperty("21").GetInt32());
+            }
+            if (logMode == "circular") {
+                Assert.DoesNotContain(records, line => line.Contains("\"event\":\"usb.submit\"", StringComparison.Ordinal));
+                await host!.CallAsync("diagnostics-dump", null, TimeSpan.FromSeconds(10), deadline.Token);
+                await batchReceived.Task.WaitAsync(TimeSpan.FromSeconds(10),deadline.Token);
             }
         }
         finally {
@@ -469,6 +504,13 @@ public class CameraHardwareTests(ITestOutputHelper output)
                 using var document = JsonDocument.Parse(line["REGAIN_DIAGNOSTIC ".Length..]);
                 return document.RootElement.Clone();
             }).ToArray();
+        if (logMode == "off") {
+            Assert.DoesNotContain(structured, record => {
+                string kind = record.GetProperty("event").GetString()!;
+                return kind.StartsWith("usb.", StringComparison.Ordinal) || kind.StartsWith("sdk.api.", StringComparison.Ordinal)
+                    || kind is "ipc.command.submit" or "ipc.command.response" or "ipc.command.complete";
+            });
+        } else {
         Assert.Contains(structured, record => record.GetProperty("event").GetString() == "ipc.command.complete"
             && record.GetProperty("method").GetString() == "download"
             && record.GetProperty("details").GetProperty("binaryBytes").GetInt32() == width * height * 2);
@@ -483,6 +525,12 @@ public class CameraHardwareTests(ITestOutputHelper output)
             Assert.Contains(structured, record => record.GetProperty("event").GetString() == "sdk.api.complete"
                 && record.GetProperty("details").GetProperty("api").GetString() == "ASIGetDataAfterExp");
         }
+        }
+        if (logMode == "circular") {
+            Assert.Contains(structured, record=>record.GetProperty("event").GetString()=="usb.complete" && record.TryGetProperty("flightRecorderBatch",out _));
+            Assert.Contains(structured, record=>record.GetProperty("event").GetString()=="diagnostics.recorder" && File.Exists(record.GetProperty("details").GetProperty("path").GetString()));
+        }
+        if (direct) Assert.Contains(records, line => line.Contains("Direct cooler limit", StringComparison.Ordinal));
         async Task<JsonElement> Diagnostics() => (await host!.CallAsync("diagnostics", null, TimeSpan.FromSeconds(10), deadline.Token)).Result;
     }
 

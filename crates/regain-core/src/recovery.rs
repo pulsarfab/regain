@@ -16,6 +16,7 @@ pub enum RecoveryType {
         maximum: f64,
     },
     Boolean,
+    Choice(&'static [&'static str]),
 }
 pub struct RecoveryField {
     pub key: &'static str,
@@ -32,17 +33,20 @@ impl RecoveryField {
             "coolingTimeoutSeconds"
             | "temperatureToleranceC"
             | "coolingStableSamples"
-            | "coolingSampleSeconds" => "Cooling",
+            | "coolingSampleSeconds"
+            | "coolerMaxPowerChangePer5Seconds" => "Cooling",
             "commandTimeoutSeconds"
             | "downloadTimeoutSeconds"
             | "exposureGraceSeconds"
-            | "directReadChunkKiB" => "Timeouts",
+            | "directReadChunkKiB"
+            | "transferLogMode" => "Timeouts",
             _ => "Recovery",
         }
     }
     pub fn accepts(&self, value: &Value) -> bool {
         match self.value_type {
             RecoveryType::Boolean => value.is_boolean(),
+            RecoveryType::Choice(choices) => value.as_str().is_some_and(|v| choices.contains(&v)),
             RecoveryType::PowerOfTwo(min, max) => value
                 .as_u64()
                 .is_some_and(|v| (min as u64..=max as u64).contains(&v) && v.is_power_of_two()),
@@ -63,11 +67,15 @@ impl RecoveryField {
             "title":self.label,"description":self.description,"default":self.default,
             "x-regain":{"key":self.key,"label":self.label,"description":self.description,
                 "group":"Native camera recovery","units":self.units,"step":self.step,
-                "apply":"reconnect","sensitive":false,"section":self.section(),
+                "apply":if matches!(self.key, "transferLogMode" | "coolerMaxPowerChangePer5Seconds") {"live"} else {"reconnect"},"sensitive":false,"section":self.section(),
                 "platforms":if self.key == "usbPortCycle" {vec!["linux"]} else {vec!["windows","linux","macos"]}}
         });
         match self.value_type {
             RecoveryType::Boolean => schema["type"] = json!("boolean"),
+            RecoveryType::Choice(choices) => {
+                schema["type"] = json!("string");
+                schema["enum"] = json!(choices);
+            }
             RecoveryType::PowerOfTwo(min, max) => {
                 schema["type"] = json!("integer");
                 schema["minimum"] = json!(min);
@@ -132,7 +140,7 @@ macro_rules! recovery {
         }
     }
 }
-use RecoveryType::{Boolean, Integer, Number, PowerOfTwo};
+use RecoveryType::{Boolean, Choice, Integer, Number, PowerOfTwo};
 recovery! {
     max_retries: u32 = 3 => ("maxRetries", "Replacement exposures", "Maximum replacement exposures after a recoverable failure. Zero disables replacement exposures.", "retries", 1.0, Integer(0,20)),
     maximum_retry_exposure_seconds: f64 = 30.0 => ("maximumRetryExposureSeconds", "Replacement exposure limit", "Only exposures at or below this duration may be replaced. Same-frame rereads do not start a replacement exposure.", "s", 1.0, Number {minimum:0.0,exclusive:false,maximum:86400.0}),
@@ -147,6 +155,8 @@ recovery! {
     ready_frame_download_retries: u32 = 2 => ("readyFrameDownloadRetries", "SDK ready-frame rereads", "Additional SDK download attempts only while the same exposure still reports a ready frame. No new exposure is started by a reread.", "retries", 1.0, Integer(0,5)),
     direct_read_retries: u32 = 2 => ("directReadRetries", "Direct USB rereads", "Additional direct USB read attempts under the selected camera's capabilities. Retained-frame support is device-specific; this does not grant rereads to proxy cameras.", "retries", 1.0, Integer(0,5)),
     direct_read_chunk_kib: u32 = 1024 => ("directReadChunkKiB", "Direct USB read size", "Maximum host USB read size in direct mode. Choose a power of two from 1 to 1024 KiB; the default is 1024. Smaller requests add overhead. SDK mode ignores this option. Separate from camera-side SDK USB Traffic; does not select USB speed or set a fixed MB/s cap.", "KiB", 1.0, PowerOfTwo(1,1024)),
+    transfer_log_mode: String = String::from("circular") => ("transferLogMode", "Transfer logging", "Circular (default): retain recent command/USB/API metadata in rotating diagnostic files and emit the history on a fault. Verbose: log every record. Off: keep failures and recovery summaries only. Image contents are never recorded. Applies while connected at the next safe worker checkpoint. REGAIN_CAMERA_TRANSFER_LOG=0 overrides recording.", "", 1.0, Choice(&["circular", "verbose", "off"])),
+    cooler_max_power_change_per_5_seconds: f64 = 25.0 => ("coolerMaxPowerChangePer5Seconds", "Direct cooler maximum power change", "Maximum power change in percentage points per five seconds, in either direction. Applies while connected at the next safe worker checkpoint, including regulation, enabling and setpoint changes. Recovery restores the last known output before resuming this limit. Cooler-off and loss of temperature feedback stop cooling immediately. SDK mode manages its own power and ignores this option.", "% / 5 s", 1.0, Number {minimum:1.0,exclusive:false,maximum:100.0}),
     usb_reset_after_failures: u32 = 0 => ("usbResetAfterFailures", "USB reset threshold", "After this many recoverable failures, permit at most one USB reset per capture when a replacement exposure is allowed. Zero disables it; two tries reconnecting first. Requires a verified camera target and OS permissions. Windows may request administrator approval; external camera power is unchanged.", "failures", 1.0, Integer(0,20)),
     usb_port_cycle: bool = false => ("usbPortCycle", "Linux USB port cycle", "On Linux, use a downstream port power cycle instead of USBDEVFS_RESET when configured USB recovery is triggered.", "", 1.0, Boolean),
 }

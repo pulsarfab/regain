@@ -36,6 +36,8 @@ pub struct Session {
     cooling_seeded: bool,
     usb_target: Option<String>,
     cooling: cooling::Mailbox,
+    runtime_options: camera_options::CameraRuntimeHandle,
+    applied_runtime_options: Option<camera_options::CameraRuntimeOptions>,
 }
 impl Session {
     pub fn new(selection: Selection, runtime: Runtime, log: Diagnostic) -> Result<Self> {
@@ -47,7 +49,10 @@ impl Session {
             // is still pending. Surface those records without parsing prose or
             // changing any recovery decisions. Final frame metadata reconciles
             // successful reads if stderr delivery lagged behind the reply.
-            if matches!(event, "transfer.retry" | "transfer.exhausted") {
+            if matches!(event, "transfer.retry" | "transfer.exhausted")
+                && crate::worker::diagnostic_record(message)
+                    .is_none_or(|record| record.get("flightRecorderBatch").is_none())
+            {
                 let mut state = observed.lock().unwrap();
                 if matches!(
                     state.phase.as_str(),
@@ -62,6 +67,8 @@ impl Session {
             log(level, event, message);
         });
         Ok(Self {
+            runtime_options: camera_options::CameraRuntimeHandle::new(&selection.recovery),
+            applied_runtime_options: None,
             status,
             direct: selection.direct,
             selection,
@@ -108,6 +115,9 @@ impl Session {
             mailbox: self.cooling.clone(),
             status: self.status.clone(),
         }
+    }
+    pub fn runtime_options(&self) -> camera_options::CameraRuntimeHandle {
+        self.runtime_options.clone()
     }
     /// Drive one reserved command while idle. Capture drives the same mailbox
     /// at safe worker checkpoints. Frontends retain/serialize this operation.
@@ -375,6 +385,11 @@ impl Session {
         .await?;
         Ok(())
     }
+    pub async fn dump_diagnostics(&mut self, token: &CancellationToken) -> Result<()> {
+        self.call("diagnostics-dump", Value::Null, None, token)
+            .await?;
+        Ok(())
+    }
     pub fn seed_recovery(&mut self, temperature: Option<f64>, power: Option<i64>) {
         self.recovery_temperature = temperature.filter(|t| t.is_finite());
         self.recovery_power = power;
@@ -414,6 +429,23 @@ impl Session {
         seconds: Option<f64>,
         token: &CancellationToken,
     ) -> Result<(Value, Vec<u8>)> {
+        if method != "open" {
+            let options = self.runtime_options.get();
+            if self.applied_runtime_options.as_ref() != Some(&options) {
+                self.worker
+                    .as_mut()
+                    .context("Camera worker is disconnected")?
+                    .call(
+                        "runtime-options",
+                        serde_json::to_value(&options)?,
+                        self.selection.recovery.command_timeout_seconds,
+                        token,
+                    )
+                    .await?;
+                options.apply(&mut self.selection.recovery);
+                self.applied_runtime_options = Some(options);
+            }
+        }
         self.worker
             .as_mut()
             .context("Camera worker is disconnected")?
@@ -586,6 +618,10 @@ impl Session {
         self.open_worker(token, OpenPurpose::Acquisition).await
     }
     async fn open_worker(&mut self, token: &CancellationToken, purpose: OpenPurpose) -> Result<()> {
+        self.runtime_options
+            .get()
+            .apply(&mut self.selection.recovery);
+        self.applied_runtime_options = None;
         if self.ever_opened && self.selection.serial.is_none() {
             return Err(invalid(
                 "Automatic recovery requires a camera serial number",
@@ -596,7 +632,15 @@ impl Session {
         } else {
             "Opening"
         });
-        self.worker = Some(self.runtime.spawn(self.direct, self.log.clone()).await?);
+        self.worker = Some(
+            self.runtime
+                .spawn_configured(
+                    self.direct,
+                    self.log.clone(),
+                    Some(&self.selection.recovery),
+                )
+                .await?,
+        );
         self.applied.clear();
         // Values retain desired recovery settings; old evidence cannot describe
         // a replacement worker or its newly negotiated capabilities.
@@ -605,7 +649,7 @@ impl Session {
         let (result, _) = self
             .call(
                 "open",
-                json!({"name":self.selection.name,"serial":self.selection.serial}),
+                json!({"name":self.selection.name,"serial":self.selection.serial,"recovery":self.selection.recovery}),
                 None,
                 token,
             )

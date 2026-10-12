@@ -155,6 +155,10 @@ and operation order when changing this code. SDK dispatch `10ec60`, table
 The target temperature and PI regulator live on the host; no camera setpoint
 register is written. Regulator gains, slew limits, two-second elapsed cap and
 one-second feedback deadline are Regain policy, separate from SDK calibration.
+The live `coolerMaxPowerChangePer5Seconds` setting defaults to 25 percentage
+points in either direction, including startup and setpoint changes. Recovery
+restores the last known baseline; shutdown and feedback loss still stop cooling
+immediately.
 Initialization reapplies acknowledged output and actuator flags without
 resetting that feedback deadline. Heater capability is checked separately:
 the verified ASI585MM Pro profile exposes no controllable heater, so Regain

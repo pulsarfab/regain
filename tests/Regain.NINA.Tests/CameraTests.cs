@@ -117,7 +117,9 @@ public class CameraTests
         HostClient Host()
         {
             var host = new HostClient(Path.Combine(root, "target/debug/regain-device.exe"), "unused", true, log: line =>
-                CameraLog.Forward(CameraLog.Parse("SDK", line), _ => { }, text => loggedFailure.TrySetResult(text), _ => { }));
+                CameraLog.Forward(CameraLog.Parse("SDK", line), _ => { }, text => {
+                    if (text.Contains("[command.failed]", StringComparison.Ordinal)) loggedFailure.TrySetResult(text);
+                }, _ => { }));
             host.CallAsync("simulation", new { temperature = starts == 0 ? -100 : -110, coolerPower = starts == 0 ? 0 : 5 },
                 TimeSpan.FromSeconds(15), default).GetAwaiter().GetResult();
             if (reread) host.CallAsync("simulation", new { instant = true }, TimeSpan.FromSeconds(15), default).GetAwaiter().GetResult();

@@ -35,6 +35,7 @@ public sealed class CameraRecoveryField(string key, JsonElement schema)
     public string Label => Units.Length == 0 ? Title : $"{Title} ({Units})";
     public string Section => Schema.GetProperty("x-regain").GetProperty("section").GetString()!;
     public string Type => Schema.GetProperty("type").GetString()!;
+    public bool Live => Schema.GetProperty("x-regain").GetProperty("apply").GetString() == "live";
     public JsonElement Default => Schema.GetProperty("default").Clone();
     public bool Available(string platform) => Schema.GetProperty("x-regain").GetProperty("platforms")
         .EnumerateArray().Any(p => p.GetString() == platform);
@@ -46,6 +47,9 @@ public sealed class CameraRecoveryField(string key, JsonElement schema)
         if (Type == "boolean") {
             if (!bool.TryParse(text, out var flag)) throw Invalid();
             value = flag;
+        } else if (Type == "string") {
+            if (!Schema.GetProperty("enum").EnumerateArray().Any(choice => choice.GetString() == text)) throw Invalid();
+            value = text;
         } else {
             if (!double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var number) ||
                 double.IsNaN(number) || double.IsInfinity(number) ||
@@ -68,11 +72,13 @@ public sealed class CameraRecoveryForm
     private readonly JsonElement original;
     private readonly Dictionary<CameraRecoveryField, Func<JsonElement>> readers = [];
     public IReadOnlyList<Control> Editors { get; }
+    public IReadOnlyList<Control> LiveEditors { get; }
 
     public CameraRecoveryForm(JsonElement values, Func<string, Panel> section, Action? changed = null)
     {
         original = values.Clone();
         var editors = new List<Control>();
+        var liveEditors = new List<Control>();
         foreach (var field in CameraRecoveryConfiguration.Fields.Where(f => f.Available("windows"))) {
             var body = section(field.Section);
             var row = new StackPanel { Margin = new Thickness(0, 0, 0, 14) };
@@ -83,6 +89,12 @@ public sealed class CameraRecoveryForm
                 toggle.Click += (_, _) => changed?.Invoke();
                 readers.Add(field, () => field.Parse((toggle.IsChecked == true).ToString()));
                 editor = toggle;
+            } else if (field.Type == "string") {
+                var choices = new ComboBox { ItemsSource = field.Schema.GetProperty("enum").EnumerateArray().Select(v => v.GetString()!).ToArray(),
+                    SelectedItem = field.Value(values).GetString(), MinHeight = 28, Margin = new Thickness(0, 4, 0, 4) };
+                choices.SelectionChanged += (_, _) => changed?.Invoke();
+                readers.Add(field, () => field.Parse((string?)choices.SelectedItem ?? ""));
+                editor = choices;
             } else {
                 var input = new TextBox { Text = field.Value(values).GetRawText(), MinHeight = 28,
                     VerticalContentAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 4, 0, 4) };
@@ -97,9 +109,11 @@ public sealed class CameraRecoveryForm
             row.Children.Add(new TextBlock { Text = field.Description, TextWrapping = TextWrapping.Wrap,
                 FontSize = 12, Opacity = .8 });
             editors.Add(editor);
+            if (field.Live) liveEditors.Add(editor);
             body.Children.Add(row);
         }
         Editors = editors;
+        LiveEditors = liveEditors;
     }
 
     public JsonElement Read()

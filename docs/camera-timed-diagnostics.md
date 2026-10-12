@@ -1,31 +1,68 @@
 # Camera command and USB timing diagnostics
 
-Camera command, SDK API, and USB transfer records are enabled by default and
-forwarded into NINA's existing **INFO** log. Search for `PulsarFab regain` or
-`REGAIN_DIAGNOSTIC`. No debug-log setting is required. Camera session phase
-messages also use INFO. Structured warning/error records remain visible at
-WARNING as well as INFO; diagnostics never create an operator notification.
+Camera diagnostics use **circular** recording by default. Recent command, SDK
+API and USB transfer metadata stays in a separate flight recorder; healthy
+captures keep NINA's INFO log concise. A fault emits the recent history as a
+labelled batch, then includes five seconds of follow-up transfer activity for
+cleanup and recovery. Search for `PulsarFab regain`, `REGAIN_DIAGNOSTIC` or
+`diagnostics.batch.begin`. Warnings also reach WARNING; no debug-log setting
+is required.
 
-## Turning off detailed logging
+Normal SDK camera counts and cancellation of surplus read buffers are recorded
+without triggering a fault batch. Failed SDK calls and acquisition failures do
+trigger one.
 
-Set **`REGAIN_CAMERA_TRANSFER_LOG=0`** in the host application's environment
-before starting NINA, the ASCOM local server, or Alpaca. `false` and `off` also
-disable it, ignoring case. Remove the variable or set it to `1` to reenable.
-Restart the host and workers after changing it; a running worker keeps its
-startup setting. For example, in PowerShell before launching the server:
+## Live logging controls
 
-```powershell
-$env:REGAIN_CAMERA_TRANSFER_LOG = '0'
-.\regain-alpaca.exe --port 11111
-```
+Choose **Transfer logging** in NINA camera setup's **Advanced** tab or native
+ASCOM camera setup's **Timeouts** tab:
 
-NINA launched from the same shell inherits the same setting. Detailed USB,
-SDK API, successful IPC and NINA delivery/factory records are suppressed.
-SDK USB hooks are not installed when disabled. Concise phases, recovery and
-failure summaries, failed IPC commands, and warning/error records remain
-visible. Healthy ASI6200 register snapshots also stop unless explicitly enabled
-with `REGAIN_CAMERA_REGISTER_SNAPSHOTS=1`; failure snapshots remain available.
-This switch changes diagnostics only, not capture or recovery policy.
+- **circular** (default): keep recent metadata separately and emit it on a fault.
+- **verbose**: forward every record to the host log.
+- **off**: retain failure and recovery summaries without detailed recording.
+
+Save while connected. Changes apply at the next safe worker command checkpoint,
+including during an exposure, without reconnecting or restarting the exposure.
+A command already blocked in a USB operation must finish before that checkpoint.
+The shared key is `recovery.transferLogMode`. Each ASCOM slot has its own
+setting; replacement workers and SDK fallback inherit the current choice.
+
+On Windows, worker files are in **`%LOCALAPPDATA%\Regain\Diagnostics`** as
+`camera-<worker PID>-current.jsonl` and `-previous.jsonl`. Each segment is capped
+at 4 MiB; the in-memory recent history is capped at 8 MiB. Old records wrap.
+Inactive worker logs are pruned, keeping eight pairs; active workers are kept.
+The host log records the path and batch boundaries. Managed IPC and NINA API
+history has a separate bounded buffer and `managed-<host PID>-fault.jsonl`
+snapshot when a fault occurs. Image contents are never recorded.
+
+Linux/macOS use `$XDG_STATE_HOME/regain/diagnostics`, falling back to
+`~/.local/state/regain/diagnostics`. `REGAIN_CAMERA_DIAGNOSTICS_DIR` overrides
+the directory for both worker and managed diagnostics. If disk is unavailable,
+the bounded in-memory history can still be emitted into the host log. Exceptional
+queue overflow is reported explicitly; recording never blocks the USB owner.
+
+`REGAIN_CAMERA_TRANSFER_LOG=0` (`false` or `off`, ignoring case) remains a
+host-wide override. Set it before launching the host and restart to apply it.
+Remove it or set `1` to use the saved mode. SDK USB hooks are installed once so
+live mode changes work, and produce no records while off; the environment
+override prevents hook installation. Failure summaries remain enabled.
+
+## Cooler power change limit
+
+NINA's **Cooling** tab and ASCOM's **Cooler** tab include **Direct cooler maximum
+power change**: 1–100 percentage points per five seconds, default **25**.
+The shared key is `recovery.coolerMaxPowerChangePer5Seconds`.
+Save while connected to apply at the next safe worker checkpoint. Alpaca and native Hub camera configurations use
+the same keys, defaults and descriptions.
+
+Regain's direct controller applies this rate in both directions, including
+cooler startup, setpoint changes and recovery boosts. A change from 20% to 45%
+uses the default five-second allowance. Blocked USB operations cannot bank
+unlimited ramp credit: each update allows at most two seconds of change.
+Recovery first restores the last known power baseline, then ramps any boost.
+Cooler-off, disconnect and missing temperature feedback stop cooling
+immediately. The vendor SDK controls its own cooler power; SDK mode ignores
+this limit.
 
 The records contain operational metadata, lengths, statuses, and timing. They
 do not contain image buffers. The managed IPC logger does not serialize command

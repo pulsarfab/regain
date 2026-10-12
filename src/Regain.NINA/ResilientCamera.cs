@@ -73,9 +73,10 @@ public sealed class ResilientCamera : BaseINPC, ICamera
         get; private set;
     }
     public bool HasSetupDialog => true;
+    internal Task UpdateRuntimeOptionsAsync(RecoveryOptions options) => Session.UpdateRuntimeOptionsAsync(options);
     public void SetupDialog()
     {
-        Settings.Show();
+        Settings.Show(options => session?.UpdateRuntimeOptionsAsync(options) ?? Task.CompletedTask);
         if (!Connected && selectionStore?.Load() is { } selected)
             SelectCamera(selected.Camera);
     }
@@ -323,6 +324,8 @@ public sealed class ResilientCamera : BaseINPC, ICamera
         long generation;
         lock (sync) generation = exposureGeneration;
         string camera = Name, backend = session?.Backend ?? "unknown", outcome = "failed";
+        bool transferLogging = session?.Options.TransferLogMode == "verbose";
+        Action<string>? recorder = session is { } owner ? owner.RecordDiagnostic : null;
         Exception? failure = null;
         try
         {
@@ -330,7 +333,7 @@ public sealed class ResilientCamera : BaseINPC, ICamera
             outcome = "success";
         }
         catch (Exception error) { failure = error; outcome = TimingOutcome(error, token, generation); throw; }
-        finally { CameraLog.ApiTiming(camera, backend, generation, nameof(WaitUntilExposureIsReady), started, outcome, failure); }
+        finally { CameraLog.ApiTiming(camera, backend, generation, nameof(WaitUntilExposureIsReady), started, outcome, failure, transferLogging: transferLogging, recorder: recorder); }
     }
     public async Task<IExposureData> DownloadExposure(CancellationToken token)
     {
@@ -338,6 +341,8 @@ public sealed class ResilientCamera : BaseINPC, ICamera
         long generation;
         lock (sync) generation = exposureGeneration;
         string camera = Name, backend = session?.Backend ?? "unknown", outcome = "failed";
+        bool transferLogging = session?.Options.TransferLogMode == "verbose";
+        Action<string>? recorder = session is { } owner ? owner.RecordDiagnostic : null;
         Exception? failure = null;
         Frame? frame = null;
         try
@@ -367,11 +372,11 @@ public sealed class ResilientCamera : BaseINPC, ICamera
             }
             catch (Exception error) { factoryFailure = error; factoryOutcome = TimingOutcome(error, token, generation); throw; }
             finally { CameraLog.ApiTiming(camera, backend, generation, "CreateImageArrayExposureData", factoryStarted,
-                factoryOutcome, factoryFailure, frame.Width, frame.Height, frame.Pixels.Length); }
+                factoryOutcome, factoryFailure, frame.Width, frame.Height, frame.Pixels.Length, transferLogging, recorder); }
         }
         catch (Exception error) { failure = error; outcome = TimingOutcome(error, token, generation); throw; }
         finally { CameraLog.ApiTiming(camera, backend, generation, nameof(DownloadExposure), started,
-            outcome, failure, frame?.Width, frame?.Height, frame?.Pixels.Length); }
+            outcome, failure, frame?.Width, frame?.Height, frame?.Pixels.Length, transferLogging, recorder); }
     }
 
     private string TimingOutcome(Exception error, CancellationToken token, long generation)

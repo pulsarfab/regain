@@ -89,6 +89,7 @@
           "additionalProperties": false,
           "default": {
             "commandTimeoutSeconds": 15.0,
+            "coolerMaxPowerChangePer5Seconds": 25.0,
             "coolingSampleSeconds": 2.0,
             "coolingStableSamples": 3,
             "coolingTimeoutSeconds": 300.0,
@@ -101,6 +102,7 @@
             "readyFrameDownloadRetries": 2,
             "reconnectDelaySeconds": 5.0,
             "temperatureToleranceC": 2.0,
+            "transferLogMode": "circular",
             "usbPortCycle": false,
             "usbResetAfterFailures": 0
           },
@@ -128,6 +130,31 @@
                 "sensitive": false,
                 "step": 1.0,
                 "units": "s"
+              }
+            },
+            "coolerMaxPowerChangePer5Seconds": {
+              "default": 25.0,
+              "description": "Maximum power change in percentage points per five seconds, in either direction. Applies while connected at the next safe worker checkpoint, including regulation, enabling and setpoint changes. Recovery restores the last known output before resuming this limit. Cooler-off and loss of temperature feedback stop cooling immediately. SDK mode manages its own power and ignores this option.",
+              "maximum": 100.0,
+              "minimum": 1.0,
+              "title": "Direct cooler maximum power change",
+              "type": "number",
+              "x-regain": {
+                "apply": "live",
+                "description": "Maximum power change in percentage points per five seconds, in either direction. Applies while connected at the next safe worker checkpoint, including regulation, enabling and setpoint changes. Recovery restores the last known output before resuming this limit. Cooler-off and loss of temperature feedback stop cooling immediately. SDK mode manages its own power and ignores this option.",
+                "group": "Native camera recovery",
+                "key": "coolerMaxPowerChangePer5Seconds",
+                "label": "Direct cooler maximum power change",
+                "order": 14,
+                "platforms": [
+                  "windows",
+                  "linux",
+                  "macos"
+                ],
+                "section": "Cooling",
+                "sensitive": false,
+                "step": 1.0,
+                "units": "% / 5 s"
               }
             },
             "coolingSampleSeconds": {
@@ -443,6 +470,34 @@
                 "units": "Â°C"
               }
             },
+            "transferLogMode": {
+              "default": "circular",
+              "description": "Circular (default): retain recent command/USB/API metadata in rotating diagnostic files and emit the history on a fault. Verbose: log every record. Off: keep failures and recovery summaries only. Image contents are never recorded. Applies while connected at the next safe worker checkpoint. REGAIN_CAMERA_TRANSFER_LOG=0 overrides recording.",
+              "enum": [
+                "circular",
+                "verbose",
+                "off"
+              ],
+              "title": "Transfer logging",
+              "type": "string",
+              "x-regain": {
+                "apply": "live",
+                "description": "Circular (default): retain recent command/USB/API metadata in rotating diagnostic files and emit the history on a fault. Verbose: log every record. Off: keep failures and recovery summaries only. Image contents are never recorded. Applies while connected at the next safe worker checkpoint. REGAIN_CAMERA_TRANSFER_LOG=0 overrides recording.",
+                "group": "Native camera recovery",
+                "key": "transferLogMode",
+                "label": "Transfer logging",
+                "order": 13,
+                "platforms": [
+                  "windows",
+                  "linux",
+                  "macos"
+                ],
+                "section": "Timeouts",
+                "sensitive": false,
+                "step": 1.0,
+                "units": ""
+              }
+            },
             "usbPortCycle": {
               "default": false,
               "description": "On Linux, use a downstream port power cycle instead of USBDEVFS_RESET when configured USB recovery is triggered.",
@@ -454,7 +509,7 @@
                 "group": "Native camera recovery",
                 "key": "usbPortCycle",
                 "label": "Linux USB port cycle",
-                "order": 14,
+                "order": 16,
                 "platforms": [
                   "linux"
                 ],
@@ -477,7 +532,7 @@
                 "group": "Native camera recovery",
                 "key": "usbResetAfterFailures",
                 "label": "USB reset threshold",
-                "order": 13,
+                "order": 15,
                 "platforms": [
                   "windows",
                   "linux",
@@ -880,6 +935,7 @@
               "$ref": "#/$defs/CameraRecovery",
               "default": {
                 "commandTimeoutSeconds": 15.0,
+                "coolerMaxPowerChangePer5Seconds": 25.0,
                 "coolingSampleSeconds": 2.0,
                 "coolingStableSamples": 3,
                 "coolingTimeoutSeconds": 300.0,
@@ -892,6 +948,7 @@
                 "readyFrameDownloadRetries": 2,
                 "reconnectDelaySeconds": 5.0,
                 "temperatureToleranceC": 2.0,
+                "transferLogMode": "circular",
                 "usbPortCycle": false,
                 "usbResetAfterFailures": 0
               },
@@ -2146,6 +2203,7 @@
           "additionalProperties": false,
           "default": {
             "commandTimeoutSeconds": 15.0,
+            "coolerMaxPowerChangePer5Seconds": 25.0,
             "coolingSampleSeconds": 2.0,
             "coolingStableSamples": 3,
             "coolingTimeoutSeconds": 300.0,
@@ -2158,6 +2216,7 @@
             "readyFrameDownloadRetries": 2,
             "reconnectDelaySeconds": 5.0,
             "temperatureToleranceC": 2.0,
+            "transferLogMode": "circular",
             "usbPortCycle": false,
             "usbResetAfterFailures": 0
           },
@@ -2185,6 +2244,31 @@
                 "sensitive": false,
                 "step": 1.0,
                 "units": "s"
+              }
+            },
+            "coolerMaxPowerChangePer5Seconds": {
+              "default": 25.0,
+              "description": "Maximum power change in percentage points per five seconds, in either direction. Applies while connected at the next safe worker checkpoint, including regulation, enabling and setpoint changes. Recovery restores the last known output before resuming this limit. Cooler-off and loss of temperature feedback stop cooling immediately. SDK mode manages its own power and ignores this option.",
+              "maximum": 100.0,
+              "minimum": 1.0,
+              "title": "Direct cooler maximum power change",
+              "type": "number",
+              "x-regain": {
+                "apply": "live",
+                "description": "Maximum power change in percentage points per five seconds, in either direction. Applies while connected at the next safe worker checkpoint, including regulation, enabling and setpoint changes. Recovery restores the last known output before resuming this limit. Cooler-off and loss of temperature feedback stop cooling immediately. SDK mode manages its own power and ignores this option.",
+                "group": "Native camera recovery",
+                "key": "coolerMaxPowerChangePer5Seconds",
+                "label": "Direct cooler maximum power change",
+                "order": 14,
+                "platforms": [
+                  "windows",
+                  "linux",
+                  "macos"
+                ],
+                "section": "Cooling",
+                "sensitive": false,
+                "step": 1.0,
+                "units": "% / 5 s"
               }
             },
             "coolingSampleSeconds": {
@@ -2500,6 +2584,34 @@
                 "units": "Â°C"
               }
             },
+            "transferLogMode": {
+              "default": "circular",
+              "description": "Circular (default): retain recent command/USB/API metadata in rotating diagnostic files and emit the history on a fault. Verbose: log every record. Off: keep failures and recovery summaries only. Image contents are never recorded. Applies while connected at the next safe worker checkpoint. REGAIN_CAMERA_TRANSFER_LOG=0 overrides recording.",
+              "enum": [
+                "circular",
+                "verbose",
+                "off"
+              ],
+              "title": "Transfer logging",
+              "type": "string",
+              "x-regain": {
+                "apply": "live",
+                "description": "Circular (default): retain recent command/USB/API metadata in rotating diagnostic files and emit the history on a fault. Verbose: log every record. Off: keep failures and recovery summaries only. Image contents are never recorded. Applies while connected at the next safe worker checkpoint. REGAIN_CAMERA_TRANSFER_LOG=0 overrides recording.",
+                "group": "Native camera recovery",
+                "key": "transferLogMode",
+                "label": "Transfer logging",
+                "order": 13,
+                "platforms": [
+                  "windows",
+                  "linux",
+                  "macos"
+                ],
+                "section": "Timeouts",
+                "sensitive": false,
+                "step": 1.0,
+                "units": ""
+              }
+            },
             "usbPortCycle": {
               "default": false,
               "description": "On Linux, use a downstream port power cycle instead of USBDEVFS_RESET when configured USB recovery is triggered.",
@@ -2511,7 +2623,7 @@
                 "group": "Native camera recovery",
                 "key": "usbPortCycle",
                 "label": "Linux USB port cycle",
-                "order": 14,
+                "order": 16,
                 "platforms": [
                   "linux"
                 ],
@@ -2534,7 +2646,7 @@
                 "group": "Native camera recovery",
                 "key": "usbResetAfterFailures",
                 "label": "USB reset threshold",
-                "order": 13,
+                "order": 15,
                 "platforms": [
                   "windows",
                   "linux",
@@ -2962,6 +3074,7 @@
               "$ref": "#/$defs/CameraRecovery",
               "default": {
                 "commandTimeoutSeconds": 15.0,
+                "coolerMaxPowerChangePer5Seconds": 25.0,
                 "coolingSampleSeconds": 2.0,
                 "coolingStableSamples": 3,
                 "coolingTimeoutSeconds": 300.0,
@@ -2974,6 +3087,7 @@
                 "readyFrameDownloadRetries": 2,
                 "reconnectDelaySeconds": 5.0,
                 "temperatureToleranceC": 2.0,
+                "transferLogMode": "circular",
                 "usbPortCycle": false,
                 "usbResetAfterFailures": 0
               },
@@ -5145,6 +5259,7 @@
             "additionalProperties": false,
             "default": {
               "commandTimeoutSeconds": 15.0,
+              "coolerMaxPowerChangePer5Seconds": 25.0,
               "coolingSampleSeconds": 2.0,
               "coolingStableSamples": 3,
               "coolingTimeoutSeconds": 300.0,
@@ -5157,6 +5272,7 @@
               "readyFrameDownloadRetries": 2,
               "reconnectDelaySeconds": 5.0,
               "temperatureToleranceC": 2.0,
+              "transferLogMode": "circular",
               "usbPortCycle": false,
               "usbResetAfterFailures": 0
             },
@@ -5184,6 +5300,31 @@
                   "sensitive": false,
                   "step": 1.0,
                   "units": "s"
+                }
+              },
+              "coolerMaxPowerChangePer5Seconds": {
+                "default": 25.0,
+                "description": "Maximum power change in percentage points per five seconds, in either direction. Applies while connected at the next safe worker checkpoint, including regulation, enabling and setpoint changes. Recovery restores the last known output before resuming this limit. Cooler-off and loss of temperature feedback stop cooling immediately. SDK mode manages its own power and ignores this option.",
+                "maximum": 100.0,
+                "minimum": 1.0,
+                "title": "Direct cooler maximum power change",
+                "type": "number",
+                "x-regain": {
+                  "apply": "live",
+                  "description": "Maximum power change in percentage points per five seconds, in either direction. Applies while connected at the next safe worker checkpoint, including regulation, enabling and setpoint changes. Recovery restores the last known output before resuming this limit. Cooler-off and loss of temperature feedback stop cooling immediately. SDK mode manages its own power and ignores this option.",
+                  "group": "Native camera recovery",
+                  "key": "coolerMaxPowerChangePer5Seconds",
+                  "label": "Direct cooler maximum power change",
+                  "order": 14,
+                  "platforms": [
+                    "windows",
+                    "linux",
+                    "macos"
+                  ],
+                  "section": "Cooling",
+                  "sensitive": false,
+                  "step": 1.0,
+                  "units": "% / 5 s"
                 }
               },
               "coolingSampleSeconds": {
@@ -5499,6 +5640,34 @@
                   "units": "Â°C"
                 }
               },
+              "transferLogMode": {
+                "default": "circular",
+                "description": "Circular (default): retain recent command/USB/API metadata in rotating diagnostic files and emit the history on a fault. Verbose: log every record. Off: keep failures and recovery summaries only. Image contents are never recorded. Applies while connected at the next safe worker checkpoint. REGAIN_CAMERA_TRANSFER_LOG=0 overrides recording.",
+                "enum": [
+                  "circular",
+                  "verbose",
+                  "off"
+                ],
+                "title": "Transfer logging",
+                "type": "string",
+                "x-regain": {
+                  "apply": "live",
+                  "description": "Circular (default): retain recent command/USB/API metadata in rotating diagnostic files and emit the history on a fault. Verbose: log every record. Off: keep failures and recovery summaries only. Image contents are never recorded. Applies while connected at the next safe worker checkpoint. REGAIN_CAMERA_TRANSFER_LOG=0 overrides recording.",
+                  "group": "Native camera recovery",
+                  "key": "transferLogMode",
+                  "label": "Transfer logging",
+                  "order": 13,
+                  "platforms": [
+                    "windows",
+                    "linux",
+                    "macos"
+                  ],
+                  "section": "Timeouts",
+                  "sensitive": false,
+                  "step": 1.0,
+                  "units": ""
+                }
+              },
               "usbPortCycle": {
                 "default": false,
                 "description": "On Linux, use a downstream port power cycle instead of USBDEVFS_RESET when configured USB recovery is triggered.",
@@ -5510,7 +5679,7 @@
                   "group": "Native camera recovery",
                   "key": "usbPortCycle",
                   "label": "Linux USB port cycle",
-                  "order": 14,
+                  "order": 16,
                   "platforms": [
                     "linux"
                   ],
@@ -5533,7 +5702,7 @@
                   "group": "Native camera recovery",
                   "key": "usbResetAfterFailures",
                   "label": "USB reset threshold",
-                  "order": 13,
+                  "order": 15,
                   "platforms": [
                     "windows",
                     "linux",
@@ -5623,6 +5792,7 @@
                 "$ref": "#/$defs/CameraRecovery",
                 "default": {
                   "commandTimeoutSeconds": 15.0,
+                  "coolerMaxPowerChangePer5Seconds": 25.0,
                   "coolingSampleSeconds": 2.0,
                   "coolingStableSamples": 3,
                   "coolingTimeoutSeconds": 300.0,
@@ -5635,6 +5805,7 @@
                   "readyFrameDownloadRetries": 2,
                   "reconnectDelaySeconds": 5.0,
                   "temperatureToleranceC": 2.0,
+                  "transferLogMode": "circular",
                   "usbPortCycle": false,
                   "usbResetAfterFailures": 0
                 },
@@ -8788,6 +8959,7 @@
         "additionalProperties": false,
         "default": {
           "commandTimeoutSeconds": 15.0,
+          "coolerMaxPowerChangePer5Seconds": 25.0,
           "coolingSampleSeconds": 2.0,
           "coolingStableSamples": 3,
           "coolingTimeoutSeconds": 300.0,
@@ -8800,6 +8972,7 @@
           "readyFrameDownloadRetries": 2,
           "reconnectDelaySeconds": 5.0,
           "temperatureToleranceC": 2.0,
+          "transferLogMode": "circular",
           "usbPortCycle": false,
           "usbResetAfterFailures": 0
         },
@@ -8827,6 +9000,31 @@
               "sensitive": false,
               "step": 1.0,
               "units": "s"
+            }
+          },
+          "coolerMaxPowerChangePer5Seconds": {
+            "default": 25.0,
+            "description": "Maximum power change in percentage points per five seconds, in either direction. Applies while connected at the next safe worker checkpoint, including regulation, enabling and setpoint changes. Recovery restores the last known output before resuming this limit. Cooler-off and loss of temperature feedback stop cooling immediately. SDK mode manages its own power and ignores this option.",
+            "maximum": 100.0,
+            "minimum": 1.0,
+            "title": "Direct cooler maximum power change",
+            "type": "number",
+            "x-regain": {
+              "apply": "live",
+              "description": "Maximum power change in percentage points per five seconds, in either direction. Applies while connected at the next safe worker checkpoint, including regulation, enabling and setpoint changes. Recovery restores the last known output before resuming this limit. Cooler-off and loss of temperature feedback stop cooling immediately. SDK mode manages its own power and ignores this option.",
+              "group": "Native camera recovery",
+              "key": "coolerMaxPowerChangePer5Seconds",
+              "label": "Direct cooler maximum power change",
+              "order": 14,
+              "platforms": [
+                "windows",
+                "linux",
+                "macos"
+              ],
+              "section": "Cooling",
+              "sensitive": false,
+              "step": 1.0,
+              "units": "% / 5 s"
             }
           },
           "coolingSampleSeconds": {
@@ -9142,6 +9340,34 @@
               "units": "Â°C"
             }
           },
+          "transferLogMode": {
+            "default": "circular",
+            "description": "Circular (default): retain recent command/USB/API metadata in rotating diagnostic files and emit the history on a fault. Verbose: log every record. Off: keep failures and recovery summaries only. Image contents are never recorded. Applies while connected at the next safe worker checkpoint. REGAIN_CAMERA_TRANSFER_LOG=0 overrides recording.",
+            "enum": [
+              "circular",
+              "verbose",
+              "off"
+            ],
+            "title": "Transfer logging",
+            "type": "string",
+            "x-regain": {
+              "apply": "live",
+              "description": "Circular (default): retain recent command/USB/API metadata in rotating diagnostic files and emit the history on a fault. Verbose: log every record. Off: keep failures and recovery summaries only. Image contents are never recorded. Applies while connected at the next safe worker checkpoint. REGAIN_CAMERA_TRANSFER_LOG=0 overrides recording.",
+              "group": "Native camera recovery",
+              "key": "transferLogMode",
+              "label": "Transfer logging",
+              "order": 13,
+              "platforms": [
+                "windows",
+                "linux",
+                "macos"
+              ],
+              "section": "Timeouts",
+              "sensitive": false,
+              "step": 1.0,
+              "units": ""
+            }
+          },
           "usbPortCycle": {
             "default": false,
             "description": "On Linux, use a downstream port power cycle instead of USBDEVFS_RESET when configured USB recovery is triggered.",
@@ -9153,7 +9379,7 @@
               "group": "Native camera recovery",
               "key": "usbPortCycle",
               "label": "Linux USB port cycle",
-              "order": 14,
+              "order": 16,
               "platforms": [
                 "linux"
               ],
@@ -9176,7 +9402,7 @@
               "group": "Native camera recovery",
               "key": "usbResetAfterFailures",
               "label": "USB reset threshold",
-              "order": 13,
+              "order": 15,
               "platforms": [
                 "windows",
                 "linux",
@@ -9568,6 +9794,7 @@
             "$ref": "#/$defs/CameraRecovery",
             "default": {
               "commandTimeoutSeconds": 15.0,
+              "coolerMaxPowerChangePer5Seconds": 25.0,
               "coolingSampleSeconds": 2.0,
               "coolingStableSamples": 3,
               "coolingTimeoutSeconds": 300.0,
@@ -9580,6 +9807,7 @@
               "readyFrameDownloadRetries": 2,
               "reconnectDelaySeconds": 5.0,
               "temperatureToleranceC": 2.0,
+              "transferLogMode": "circular",
               "usbPortCycle": false,
               "usbResetAfterFailures": 0
             },

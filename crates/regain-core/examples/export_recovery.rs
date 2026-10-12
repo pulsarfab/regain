@@ -13,6 +13,7 @@ fn managed_options() -> String {
             RecoveryType::Integer(_, _) | RecoveryType::PowerOfTwo(_, _) => "int",
             RecoveryType::Number { .. } => "double",
             RecoveryType::Boolean => "bool",
+            RecoveryType::Choice(_) => "string",
         };
         writeln!(
             text,
@@ -38,6 +39,11 @@ fn managed_options() -> String {
                 if exclusive { "<=" } else { "<" }
             ),
             RecoveryType::Boolean => continue,
+            RecoveryType::Choice(choices) => choices
+                .iter()
+                .map(|choice| format!("{name} != \"{choice}\""))
+                .collect::<Vec<_>>()
+                .join(" && "),
         };
         writeln!(text, "        if ({condition})\n            throw new System.ArgumentOutOfRangeException(nameof({name}));").unwrap();
     }
