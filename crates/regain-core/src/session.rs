@@ -1038,6 +1038,12 @@ impl Session {
                         format!("Attempt {}/{}: {error:#}", attempt + 1, retries + 1),
                     );
                     self.invalidate().await;
+                    // Retiring the worker drains its stderr. Delayed transfer
+                    // records still contribute retry counts during that drain,
+                    // but the final attempt error is authoritative afterward.
+                    // Otherwise an exhausted-read detail can replace the full
+                    // recovery failure depending on stdout/stderr scheduling.
+                    self.status.lock().unwrap().retry.last_failure = Some(format!("{error:#}"));
                     if !can_retry {
                         last = Some(error);
                         break;
@@ -2635,6 +2641,47 @@ mod tests {
                 .is::<Failure>()
         );
         session.close().await;
+    }
+    #[tokio::test]
+    async fn delayed_transfer_diagnostic_cannot_replace_final_attempt_failure() {
+        for replacements in [0, 1] {
+            let callback = Arc::new(std::sync::OnceLock::<Diagnostic>::new());
+            let delayed = Arc::downgrade(&callback);
+            let delivered = Arc::new(std::sync::atomic::AtomicBool::new(false));
+            let observed = delivered.clone();
+            let log: Diagnostic = Arc::new(move |_, event, _| {
+                if event == "capture.failed"
+                    && !observed.swap(true, std::sync::atomic::Ordering::SeqCst)
+                {
+                    // Deliver worker stderr after the framed failure response,
+                    // before retirement completes, without relying on a race.
+                    let callback = delayed.upgrade().unwrap();
+                    callback.get().unwrap()(
+                        "warning",
+                        "transfer.exhausted",
+                        "REGAIN_DIAGNOSTIC {\"version\":1,\"event\":\"transfer.exhausted\",\"message\":\"read retry limit reached\"}",
+                    );
+                }
+            });
+            let mut sel = selection(true);
+            sel.recovery.max_retries = replacements;
+            let mut session = Session::new(sel, runtime(), log).unwrap();
+            assert!(callback.set(session.log.clone()).is_ok());
+            let token = CancellationToken::new();
+            session.connect(&token).await.unwrap();
+            session
+                .call("simulate-read-failures", json!({"count":3}), None, &token)
+                .await
+                .unwrap();
+            let result = session.capture(exposure(), &token).await;
+            assert_eq!(result.is_ok(), replacements == 1);
+            assert!(delivered.load(std::sync::atomic::Ordering::SeqCst));
+            let status = session.snapshot();
+            assert_eq!(status.retry.recaptures, replacements);
+            assert_eq!(status.retry.usb_reads, 2);
+            assert!(status.retry.last_failure.unwrap().contains("retry budget"));
+            session.close().await;
+        }
     }
     #[tokio::test]
     async fn sdk_ready_frame_read_retry_does_not_replace_exposure() {

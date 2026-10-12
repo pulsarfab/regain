@@ -297,7 +297,7 @@ records reach the NINA INFO parser.
 
 ## Final logging acceptance
 
-The final 0.6.0.5 worker passed three consecutive full 5-second RAW16 captures
+The timing/diagnostics worker prepared for 0.6.0.5 passed three consecutive full 5-second RAW16 captures
 per backend with command logging enabled, and another three per backend with
 `REGAIN_CAMERA_TRANSFER_LOG=0`. No exposure retry or worker replacement was
 needed. All runs closed normally and disabled supported thermal actuators.
@@ -319,3 +319,17 @@ queue overflow appeared in the full-frame worker or NINA traces. Earlier
 measurements above describe the timing-only candidate; this section measures
 the final logging build. The remote failure remains unconfirmed on this
 different physical camera; the new records provide evidence for its next run.
+
+### Final failure status ordering (0.6.0.6)
+
+The tagged 0.6.0.5 release build exposed a race in failure reporting: draining
+worker stderr during retirement could replace the final attempt error with a
+delayed retained-read diagnostic. That release was not published. Version
+0.6.0.6 preserves the final error after draining, while retaining read retry
+counts and complete logs. Acquisition timing and USB operations are unchanged.
+
+A deterministic regression covers both an exhausted budget and a successful
+replacement exposure. The complete Rust core suite (70 tests), managed
+recovery suite (109 tests), and NINA suite (554 passed, three unavailable
+opt-in cases skipped) passed. The NINA run again included physical full-frame
+5-second direct/SDK repeats and cancellation/restart on the attached ASI6200.
