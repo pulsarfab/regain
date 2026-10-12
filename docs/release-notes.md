@@ -1,4 +1,4 @@
-# PulsarFab regain 0.6.0.6
+# PulsarFab regain 0.6.0.7
 
 This patch brings ASI6200 direct acquisition timing closer to the vendor SDK
 and records command and USB timing in the NINA log. It addresses confirmed
@@ -28,7 +28,7 @@ preserved during worker retirement.
 The changes apply to the shared backend used by NINA, ASCOM and Alpaca.
 The SDK remains the comparison baseline; recovery-specific retained reads do
 not have an SDK equivalent. See the
-[acquisition workup](https://github.com/pulsarfab/regain/blob/v0.6.0.6/docs/asi6200-sdk-parity.md).
+[acquisition workup](https://github.com/pulsarfab/regain/blob/v0.6.0.7/docs/asi6200-sdk-parity.md).
 
 ## Diagnostics available in the NINA log
 
@@ -50,7 +50,7 @@ not have an SDK equivalent. See the
 SDK USB coverage is limited to the loaded SDK DLL's resolved Windows imports;
 helper DLLs and dynamically resolved functions are outside that boundary.
 Other platforms retain SDK API timing. See
-[diagnostic fields and limits](https://github.com/pulsarfab/regain/blob/v0.6.0.6/docs/camera-timed-diagnostics.md).
+[diagnostic fields and limits](https://github.com/pulsarfab/regain/blob/v0.6.0.7/docs/camera-timed-diagnostics.md).
 
 Full 5-second RAW16 captures on the attached original ASI6200MM Pro completed
 in 6.28–6.33 seconds with logging enabled, close to the instrumented SDK's
@@ -60,14 +60,14 @@ The reported remote failure was not reproduced on this different camera.
 
 ## Installation and compatibility
 
-Use `Regain-0.6.0.6.zip` for NINA or
-`Regain-ASCOM-0.6.0.6-win-x64-setup.exe` for Windows ASCOM and Alpaca.
+Use `Regain-0.6.0.7.zip` for NINA or
+`Regain-ASCOM-0.6.0.7-win-x64-setup.exe` for Windows ASCOM and Alpaca.
 Windows programs and the installer are signed by StackFoundry LLC. This is a
 package revision with rebuilt workers; it does not publish new Rust crates.
 Minimum NINA version, plugin identity and settings are unchanged.
 
 Regain Hub remains a preview. See
-[Hub setup](https://github.com/pulsarfab/regain/blob/v0.6.0.6/docs/hub-setup.md)
-and [Hub acceptance](https://github.com/pulsarfab/regain/blob/v0.6.0.6/docs/hub-acceptance.md).
+[Hub setup](https://github.com/pulsarfab/regain/blob/v0.6.0.7/docs/hub-setup.md)
+and [Hub acceptance](https://github.com/pulsarfab/regain/blob/v0.6.0.7/docs/hub-acceptance.md).
 Direct USB support remains experimental and model-specific; see
-[supported hardware](https://github.com/pulsarfab/regain/blob/v0.6.0.6/README.md#supported-hardware).
+[supported hardware](https://github.com/pulsarfab/regain/blob/v0.6.0.7/README.md#supported-hardware).
