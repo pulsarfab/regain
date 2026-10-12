@@ -70,6 +70,16 @@ Cooler-off, disconnect and missing temperature feedback stop cooling
 immediately. The vendor SDK controls its own cooler power; SDK mode ignores
 this limit.
 
+Direct regulation continues reading temperature while suppressing writes when
+the encoded cooler output has not changed. The comparison uses the actual DAC
+or FPGA command, so a small floating-point demand change that maps to the same
+hardware value does not generate another USB write. Repeated cooler-on and
+heater-on requests also preserve already acknowledged actuator state. Explicit
+off requests still issue shutdown commands; initialization and transport
+recovery deliberately reapply the output and flags because earlier knowledge
+of the hardware state may no longer be valid. Failed writes are never cached
+as acknowledged state.
+
 The records contain operational metadata, lengths, statuses, and timing. They
 do not contain image buffers. The managed IPC logger does not serialize command
 arguments or response bodies: `binaryBytes` is a length, not image content.
@@ -210,6 +220,36 @@ Three raw-worker captures plus connection/cleanup produced about 2.1 MB of
 direct logs and 9.1 MB of SDK logs. With the switch disabled, equivalent runs
 produced about 9.8 KB and 1 KB respectively. These are measured examples, not
 fixed per-frame limits; SDK background activity and polling change volume.
+
+## Physical control acceptance
+
+The full-frame control harness owns one worker at a time and selects an exact
+ASI6200MM Pro serial. It runs direct and SDK backends, keeps every acquisition
+at 9576 × 6388 RAW16 bin 1, observes USB metadata passively, and discards pixels
+after checking hashes and per-row statistics. It covers consecutive captures
+with cooling off, cooldown, a steady hold, repeated unchanged actuator requests,
+setpoint changes, live logging and power-limit changes, and capture after
+cooler/heater shutdown. Feedback must continue during the hold; unchanged direct
+cooler output is refreshed after five seconds since its last acknowledgement.
+A separate full-frame window with enabled cooling and zero demand checks that
+periodic refresh continues without repeating output every second. Healthy
+captures must keep one transport and avoid another sensor initialization.
+
+```powershell
+$inspectionPython = 'C:\path\to\inspection-venv\Scripts\python.exe'
+& $inspectionPython scripts/inspection/validate_camera_controls.py --hardware `
+  --worker target/release/regain-device.exe --serial '<exact-camera-serial>' `
+  --output artifacts/camera-controls-NEW
+```
+
+The camera must be idle with no other owner. The harness restores original
+gain, offset, setpoint and supported fan/LED settings, then disconnects with
+cooler and heater off. It never resets USB, injects a fault, replaces a worker,
+or controls another application. Its private traces include device identities.
+The separate complete [abort matrix](asi6200-sdk-parity.md#reproduce-with-full-frames-only)
+checks cancellation and fresh full-frame reuse at every acquisition phase.
+Deterministic fault fixtures check stalled transport and bounded recovery;
+healthy physical acceptance does not prove behavior during an actual USB fault.
 
 ## Managed verification
 

@@ -13,6 +13,7 @@
   <!-- Test-only NINA astronomy dependency; see fixtures/nina/README.md. -->
   <None Include="../fixtures/nina/NOVAS31lib.dll" Link="NOVAS31lib.dll" CopyToOutputDirectory="PreserveNewest" />
   <ProjectReference Include="../../src/Regain.NINA/Regain.NINA.csproj" />
+  <ProjectReference Include="../fixtures/usb-helper-pipe/UsbHelperPipeFixture.csproj" ReferenceOutputAssembly="false" />
   <PackageReference Include="NINA.Plugin" Version="3.2.0.9001" PrivateAssets="all" />
   <PackageReference Include="System.Text.Json" Version="9.0.5" />
   <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
@@ -20,4 +21,8 @@
   <PackageReference Include="Moq" Version="4.20.72" />
   <PackageReference Include="xunit.runner.visualstudio" Version="3.0.1" PrivateAssets="all" />
  </ItemGroup>
+ <Target Name="CopyUsbHelperPipeFixture" AfterTargets="Build">
+  <ItemGroup><UsbPipeFixture Include="../fixtures/usb-helper-pipe/bin/$(Configuration)/net8.0/UsbHelperPipeFixture.*" /></ItemGroup>
+  <Copy SourceFiles="@(UsbPipeFixture)" DestinationFolder="$(OutDir)fixtures/usb-helper-pipe" />
+ </Target>
 </Project>

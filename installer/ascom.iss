@@ -101,7 +101,7 @@ begin
   if not Exec(Helper, '/checkinuse "' + Directory + '"', '', SW_HIDE, ewWaitUntilTerminated, ExitCode) then
     Result := 'Could not check running camera applications. Setup has made no changes.'
   else if ExitCode = 2 then
-    Result := 'Close camera applications and stop the PulsarFab regain Alpaca server using this installation, then retry. Running processes are listed in %LOCALAPPDATA%\Regain\ASCOM\registration.log.'
+    Result := 'Close camera applications, stop the PulsarFab regain Alpaca server, and stop any prepared USB reset helper using this installation, then retry. Running processes are listed in %LOCALAPPDATA%\Regain\ASCOM\registration.log.'
   else if ExitCode <> 0 then
     Result := 'Could not check running camera applications. See %LOCALAPPDATA%\Regain\ASCOM\registration.log.';
 end;

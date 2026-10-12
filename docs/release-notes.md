@@ -1,32 +1,45 @@
-# PulsarFab regain 0.6.0.9
+# PulsarFab regain 0.6.1.0
 
-Change camera diagnostics and the direct cooler's power limit while connected,
-from either NINA or native ASCOM setup.
+Recover camera connections before an exposure starts, prepare Windows USB resets
+before the night, and reconnect affected NINA peripherals before imaging resumes.
 
-- Circular transfer recording is now the default. Bounded rotating files keep
-  recent command, USB and SDK API metadata outside the healthy host log. A fault
-  emits that history and five seconds of cleanup activity for diagnosis.
-- Select verbose or off at runtime. Image contents are never recorded. Replayed
-  diagnostic batches do not change retry counters, and ordinary cancelled
-  read-ahead buffers do not trigger fault dumps.
-- Drain queued fault diagnostics before returning a failed camera command, so
-  worker retirement preserves the final evidence and retained-read retry count.
-- Adjust the direct cooler's maximum power change from 1–100 percentage points
-  per five seconds, default 25. Startup, setpoint changes and recovery boosts
-  honor the limit; explicit shutdown remains immediate. The vendor SDK retains
-  its own cooler control.
+- **Automatic USB reset** is an optional shared NINA and native ASCOM setup
+  toggle. Approve the selected camera once before imaging; the elevated helper
+  survives camera worker, supervisor and application restarts for the Windows
+  session. Automatic recovery never opens an elevation prompt. Turning the option
+  off immediately removes that camera's approval; the last approval stops the
+  helper. Windows Alpaca uses the same helper through the device CLI.
+- **Pre-exposure reconnect attempts** bounds connection and settings restoration
+  before the first exposure start, including long exposures. This does not permit
+  replacing a long exposure or replaying a setting whose acknowledgement was lost.
+  Telemetry retains finite last readings while capture owns reconnection.
+- **NINA peripheral recovery** observes devices that were connected before a
+  camera USB reset, then reconnects affected selections through NINA. Replacement
+  captures wait for the observation/reconnection pass and matching reported
+  optical state. Regain does not move equipment or restart guiding.
+- **Cooler keepalive** refreshes unchanged direct-mode output every five seconds
+  after acknowledgement, reducing repeated commands while preserving temperature
+  feedback, changed-output updates, recovery restoration and immediate shutdown.
+- Improve bounded cancellation cleanup, Windows USB completion diagnostics and
+  timeout handling when a helper descendant retains redirected output pipes.
+  Installer maintenance detects the running unified device/helper executable.
 
-Diagnostic files are stored under `%LOCALAPPDATA%\Regain\Diagnostics` on Windows.
-See [camera diagnostics](https://github.com/pulsarfab/regain/blob/v0.6.0.9/docs/camera-timed-diagnostics.md)
-for file limits, configuration and SDK instrumentation coverage.
+USB reset remains disabled by default. The Windows operation cycles the selected
+camera port; this is not a guaranteed camera-hub or external-power cycle. Camera
+hub peripherals may disconnect. Wider companion-port/upstream-hub resets remain
+planned work. See [USB recovery setup](https://github.com/pulsarfab/regain/blob/v0.6.1.0/docs/usb-recovery.md).
 
-Validation included 18 repeated full-frame, bin-1, five-second RAW16 captures
-on the attached ASI6200MM Pro across direct/SDK and all three logging modes,
-full-frame abort/restart, live settings changes, circular replay and cooler-rate
-checks. The complete affected Rust, managed Core, NINA and ASCOM suites passed.
+Validation included complete Rust and managed recovery suites, full-frame direct
+and SDK thermal/cancellation captures, and installed NINA acceptance on ASI6200MM
+Pro with ZWO CAA ASCOM. The final session-lifetime pass saved nine complete
+9576 × 6388, five-second RAW16 bin-1 images with distinct pixel hashes; one physical
+camera port cycle completed in 215 ms. The helper survived two NINA exits and a
+supervisor restart. The CAA driver reported no disconnect in that pass; a separate
+injected-disconnect pass verified its reconnection. Physical Linux USB recovery
+and clean-machine/LAN environment checks remain unvalidated locally.
 
-Use `Regain-0.6.0.9.zip` for NINA or
-`Regain-ASCOM-0.6.0.9-win-x64-setup.exe` for Windows ASCOM and Alpaca.
-This package revision rebuilds the workers and does not publish new Rust crates.
-Regain Hub remains a preview; direct USB support remains model-specific. See
-[supported hardware](https://github.com/pulsarfab/regain/blob/v0.6.0.9/README.md#supported-hardware).
+Use `Regain-0.6.1.0.zip` for NINA or
+`Regain-ASCOM-0.6.1.0-win-x64-setup.exe` for Windows ASCOM and Alpaca.
+Rust workspace crates use version `0.6.1`. Regain Hub remains a preview; direct USB
+support remains model-specific. See
+[supported hardware](https://github.com/pulsarfab/regain/blob/v0.6.1.0/README.md#supported-hardware).

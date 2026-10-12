@@ -4,9 +4,9 @@ import {recoveryFields,parseRecoveryValue,readRecovery} from '../crates/regain-a
 
 const description=JSON.parse(fs.readFileSync(new URL('../contracts/camera-recovery.json',import.meta.url)));
 const all=recoveryFields(description,'linux'), windows=recoveryFields(description,'windows');
-assert.equal(all.length,17); assert.equal(windows.length,16);
+assert.equal(all.length,18); assert.equal(windows.length,17);
 assert(!windows.some(f=>f.key==='usbPortCycle'));
-assert.deepEqual(all.map(f=>f.key), ['maxRetries','maximumRetryExposureSeconds','reconnectDelaySeconds',
+assert.deepEqual(all.map(f=>f.key), ['maxRetries','preExposureReconnectAttempts','maximumRetryExposureSeconds','reconnectDelaySeconds',
   'commandTimeoutSeconds','downloadTimeoutSeconds','exposureGraceSeconds','coolingTimeoutSeconds',
   'temperatureToleranceC','coolingStableSamples','coolingSampleSeconds','readyFrameDownloadRetries',
   'directReadRetries','directReadChunkKiB','transferLogMode','coolerMaxPowerChangePer5Seconds','usbResetAfterFailures','usbPortCycle']);

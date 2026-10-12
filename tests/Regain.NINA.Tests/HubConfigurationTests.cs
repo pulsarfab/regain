@@ -12,8 +12,13 @@ public sealed class HubConfigurationTests
         var reader = new HubConfiguration(Contract());
         var schema = reader.Root.GetProperty("$defs").GetProperty("CameraRecovery");
         var fields = reader.Fields(schema);
-        Assert.Equal(17, fields.Count);
+        Assert.Equal(18, fields.Count);
         Assert.Equal(3, fields.Single(f => f.Key == "maxRetries").Value!.Value.GetInt32());
+        var preArm = fields.Single(f => f.Key == "preExposureReconnectAttempts");
+        Assert.Equal(3, preArm.Value!.Value.GetInt32());
+        Assert.Equal(1, preArm.Schema.GetProperty("minimum").GetInt32());
+        Assert.Equal(10, preArm.Schema.GetProperty("maximum").GetInt32());
+        Assert.Contains("long exposures", preArm.Description);
         Assert.Equal(60, fields.Single(f => f.Key == "downloadTimeoutSeconds").Value!.Value.GetDouble());
         Assert.False(fields.Single(f => f.Key == "usbPortCycle").Value!.Value.GetBoolean());
         var reconnect = fields.Single(f => f.Key == "reconnectDelaySeconds");

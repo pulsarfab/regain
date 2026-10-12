@@ -4,7 +4,7 @@
 //! See docs/camera-usb-registers.md for request notation and evidence limits.
 use crate::asi::direct::transport::Camera;
 use anyhow::{Result, ensure};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 mod control;
 pub(super) use control::{CoolingError, CoolingQueue};
 
@@ -53,6 +53,82 @@ pub fn power_register(percent: f64) -> u16 {
 pub enum CoolerOutput {
     Fpga,
     Dac,
+}
+
+/// Cache the encoded command only after an acknowledged write. Percentages
+/// can change without changing the DAC/FPGA code, so comparing PI demand would
+/// still send unnecessary transfers. A failed/late write leaves output unknown.
+#[derive(Default)]
+struct AcknowledgedOutput(Option<u16>);
+
+impl AcknowledgedOutput {
+    fn apply(
+        &mut self,
+        code: u16,
+        force: bool,
+        write: impl FnOnce(u16) -> Result<()>,
+    ) -> Result<()> {
+        if !force && self.0 == Some(code) {
+            return Ok(());
+        }
+        self.0 = None;
+        write(code)?;
+        self.0 = Some(code);
+        Ok(())
+    }
+    fn apply_confirmed(
+        &mut self,
+        code: u16,
+        force: bool,
+        write: impl FnOnce(u16) -> Result<()>,
+        confirm: impl FnOnce() -> Result<()>,
+    ) -> Result<()> {
+        let result = self.apply(code, force, write).and_then(|_| confirm());
+        if result.is_err() {
+            self.0 = None;
+        }
+        result
+    }
+}
+
+// SDK traces refresh stable output about every 5.59 s. Keep the same actuator
+// refreshed conservatively at five seconds, without restoring the former
+// every-feedback-tick writes. Changes still follow the existing slew policy.
+const COOLER_KEEPALIVE: Duration = Duration::from_secs(5);
+
+#[derive(Default)]
+struct AcknowledgedCoolerOutput {
+    code: Option<u16>,
+    acknowledged_at: Option<Instant>,
+}
+impl AcknowledgedCoolerOutput {
+    fn invalidate(&mut self) {
+        self.code = None;
+        self.acknowledged_at = None;
+    }
+    fn apply(
+        &mut self,
+        code: u16,
+        force: bool,
+        now: Instant,
+        write: impl FnOnce(u16) -> Result<Instant>,
+    ) -> Result<()> {
+        if !force
+            && self.code == Some(code)
+            && self.acknowledged_at.is_some_and(|acknowledged| {
+                now.saturating_duration_since(acknowledged) < COOLER_KEEPALIVE
+            })
+        {
+            return Ok(());
+        }
+        // An unsuccessful/late write may still have changed hardware. Neither
+        // its value nor the previous successful refresh time remains trusted.
+        self.invalidate();
+        let acknowledged_at = write(code)?;
+        self.code = Some(code);
+        self.acknowledged_at = Some(acknowledged_at);
+        Ok(())
+    }
 }
 
 // Host-controller policy, not camera registers or copied SDK PID constants:
@@ -133,20 +209,20 @@ pub struct Environment {
     auxiliary: Option<(i64, i64)>,
     heater: bool,
     output: CoolerOutput,
+    acknowledged_output: AcknowledgedCoolerOutput,
+    acknowledged_heater: AcknowledgedOutput,
     observed_at: [Instant; 4],
 }
 
-fn flags(camera: &Camera, mask: u8, enabled: bool) -> Result<()> {
+fn flags(camera: &Camera, mask: u8, enabled: bool, force: bool) -> Result<()> {
     // BC19/BD19 is shared with exposure clocks: bit 0 gates a clock, 0x80
     // DISABLES cooling, and 0x40 enables the advertised heater. Read-modify-write
     // only the requested mask; writing an entire preset can break acquisition.
     let old = camera.vendor(0xbc, 0x19, 0, 1)?[0];
-    camera.vendor(
-        0xbd,
-        0x19,
-        u16::from(if enabled { old | mask } else { old & !mask }),
-        0,
-    )?;
+    let new = if enabled { old | mask } else { old & !mask };
+    if force || new != old {
+        camera.vendor(0xbd, 0x19, u16::from(new), 0)?;
+    }
     Ok(())
 }
 
@@ -225,7 +301,7 @@ impl Environment {
                 self.power_limit(),
             )
         };
-        self.write_power(camera, power)?;
+        self.write_power_forced(camera, power, true)?;
         self.power_tick = Instant::now();
         self.power = power;
         self.integral = integral;
@@ -253,14 +329,23 @@ impl Environment {
         self.restore_actuators(camera, false)
     }
     fn restore_actuators(&mut self, camera: &Camera, reset_tick: bool) -> Result<()> {
+        let result = self.restore_actuators_inner(camera, reset_tick);
+        if result.is_err() {
+            self.acknowledged_output.invalidate();
+            self.acknowledged_heater.0 = None;
+        }
+        result
+    }
+    fn restore_actuators_inner(&mut self, camera: &Camera, reset_tick: bool) -> Result<()> {
         let observed = Instant::now();
-        self.write_power(camera, if self.enabled { self.power } else { 0.0 })?;
-        flags(camera, 0x80, !self.enabled)?;
+        // Firmware initialization and reconnect can invalidate actuator state.
+        // Reestablish it even when the previous handle acknowledged this code.
+        self.write_power_forced(camera, if self.enabled { self.power } else { 0.0 }, true)?;
+        flags(camera, 0x80, !self.enabled, true)?;
         if self.heater {
             // Traced SDK heater output preset: BD2a=0xc5 (197) on, zero off,
             // plus BD19 bit 0x40. This is not a wattage or percentage setting.
-            camera.vendor(0xbd, 0x2a, if self.dew { 197 } else { 0 }, 0)?;
-            flags(camera, 0x40, self.dew)?;
+            self.write_heater(camera, self.dew, true)?;
         }
         if let Some((fan, led)) = self.auxiliary {
             self.set(camera, 22, fan)?;
@@ -306,11 +391,11 @@ impl Environment {
         let bits = camera.vendor(0xbc, 0x19, 0, 1)?[0];
         // The ASI585 DAC has no traced output readback. Establish zero demand
         // on a fresh connection while preserving the cooler enable bit.
-        let register = if output == CoolerOutput::Fpga {
-            camera.vendor(0xbc, 0x26, 0, 1)?[0]
+        let (register, output_acknowledged_at) = if output == CoolerOutput::Fpga {
+            (camera.vendor(0xbc, 0x26, 0, 1)?[0], None)
         } else {
             camera.vendor(0xb2, power_dac(0.0), 0, 0)?;
-            0
+            (0, Some(Instant::now()))
         };
         let temperature = Self::read_temperature(camera)?;
         // Match the observed output on reconnect before the plugin restores its target.
@@ -327,6 +412,18 @@ impl Environment {
             dew: heater && bits & 0x40 != 0,
             heater,
             output,
+            acknowledged_output: AcknowledgedCoolerOutput {
+                code: Some(if output == CoolerOutput::Fpga {
+                    u16::from(register)
+                } else {
+                    power_dac(0.0)
+                }),
+                // Readback establishes a code, but only an actual write can
+                // establish the beginning of the keepalive interval.
+                acknowledged_at: output_acknowledged_at,
+            },
+            // BC19's enable bit does not establish the BD2a output preset.
+            acknowledged_heater: AcknowledgedOutput::default(),
             observed_at: [observed; 4],
             temperature,
             power,
@@ -346,14 +443,25 @@ impl Environment {
             },
         })
     }
-    fn write_power(&self, camera: &Camera, percent: f64) -> Result<()> {
+    fn write_power(&mut self, camera: &Camera, percent: f64) -> Result<()> {
+        self.write_power_forced(camera, percent, false)
+    }
+    fn write_power_forced(&mut self, camera: &Camera, percent: f64, force: bool) -> Result<()> {
         // ASI2600/6200: FPGA register BD26; ASI585: immediate DAC command B2,
         // with its code in USB wValue (no register address and no IN readback).
-        match self.output {
-            CoolerOutput::Fpga => camera.vendor(0xbd, 0x26, power_register(percent), 0)?,
-            CoolerOutput::Dac => camera.vendor(0xb2, power_dac(percent), 0, 0)?,
+        let output = self.output;
+        let code = match output {
+            CoolerOutput::Fpga => power_register(percent),
+            CoolerOutput::Dac => power_dac(percent),
         };
-        Ok(())
+        self.acknowledged_output
+            .apply(code, force, Instant::now(), |code| {
+                match output {
+                    CoolerOutput::Fpga => camera.vendor(0xbd, 0x26, code, 0)?,
+                    CoolerOutput::Dac => camera.vendor(0xb2, code, 0, 0)?,
+                };
+                Ok(Instant::now())
+            })
     }
     fn read_temperature(camera: &Camera) -> Result<f64> {
         // B3 returns signed little-endian Q8.8 degrees C, not tenths of a degree.
@@ -365,6 +473,19 @@ impl Environment {
             "invalid camera temperature {temperature}"
         );
         Ok(temperature)
+    }
+    fn write_heater(&mut self, camera: &Camera, enabled: bool, force: bool) -> Result<()> {
+        // The preset may change even if its flag acknowledgement does not
+        // arrive. The next request must then reestablish both parts.
+        self.acknowledged_heater.apply_confirmed(
+            if enabled { 197 } else { 0 },
+            force,
+            |code| {
+                camera.vendor(0xbd, 0x2a, code, 0)?;
+                Ok(())
+            },
+            || flags(camera, 0x40, enabled, force),
+        )
     }
     pub fn get(&self, control: u32) -> Result<i64> {
         Ok(match control {
@@ -436,14 +557,22 @@ impl Environment {
                     } else {
                         self.limited_power(power, observed)
                     };
-                    self.write_power(camera, power)?;
+                    // Explicit off is also the disconnect/error safety path;
+                    // force it even if our previous output was already zero.
+                    self.write_power_forced(camera, power, value == 0)?;
                     self.power_tick = Instant::now();
                     self.power = power;
                     self.tick = observed;
                     self.observed_at[1] = observed;
                     self.integral = 0.0;
                 }
-                flags(camera, 0x80, value == 0)?;
+                if let Err(error) = flags(camera, 0x80, value == 0, value == 0) {
+                    // A compound cooler enable/disable did not complete. Do
+                    // not let a later identical request trust its output or
+                    // defer a fresh acknowledgement behind the keepalive.
+                    self.acknowledged_output.invalidate();
+                    return Err(error);
+                }
                 self.enabled = value != 0;
                 self.observed_at[3] = observed;
             }
@@ -451,8 +580,7 @@ impl Environment {
                 ensure!((0..=1).contains(&value), "invalid dew heater enable");
                 // Both writes are required by the SDK mapping; changing the
                 // flag alone does not establish the traced heater output.
-                camera.vendor(0xbd, 0x2a, if value == 0 { 0 } else { 197 }, 0)?;
-                flags(camera, 0x40, value != 0)?;
+                self.write_heater(camera, value != 0, value == 0)?;
                 self.dew = value != 0;
             }
             22 | 23 if self.auxiliary.is_some() => {
@@ -527,6 +655,264 @@ impl Environment {
 mod tests {
     use super::*;
     #[test]
+    fn heater_enable_flag_alone_and_failed_flag_updates_never_cache_the_preset() {
+        let mut heater = AcknowledgedOutput::default();
+        let mut writes = Vec::new();
+        // Open may observe an enabled flag without knowing the output preset.
+        heater
+            .apply_confirmed(
+                197,
+                false,
+                |code| {
+                    writes.push(code);
+                    Ok(())
+                },
+                || Ok(()),
+            )
+            .unwrap();
+        assert_eq!(writes, [197]);
+        assert!(
+            heater
+                .apply_confirmed(
+                    0,
+                    true,
+                    |code| {
+                        writes.push(code);
+                        Ok(())
+                    },
+                    || anyhow::bail!("heater flag acknowledgement lost")
+                )
+                .is_err()
+        );
+        assert_eq!(heater.0, None);
+        // Cached logical enable may still be true after that failed disable.
+        // Nevertheless enabling again must restore the now-zero preset.
+        heater
+            .apply_confirmed(
+                197,
+                false,
+                |code| {
+                    writes.push(code);
+                    Ok(())
+                },
+                || Ok(()),
+            )
+            .unwrap();
+        heater
+            .apply_confirmed(197, false, |_| panic!("unchanged preset"), || Ok(()))
+            .unwrap();
+        assert_eq!(writes, [197, 0, 197]);
+    }
+
+    #[test]
+    fn encoded_output_changes_only_after_acknowledgement_and_forced_restore() {
+        for encode in [power_register as fn(f64) -> u16, power_dac] {
+            let mut output = AcknowledgedOutput::default();
+            let mut writes = Vec::new();
+            let code = encode(42.0);
+            assert_eq!(code, encode(42.0001));
+            for percent in [42.0, 42.0001, 42.0] {
+                output
+                    .apply(encode(percent), false, |value| {
+                        writes.push(value);
+                        Ok(())
+                    })
+                    .unwrap();
+            }
+            assert_eq!(writes, [code]);
+            // Initialization/reconnect and explicit shutdown must not trust a
+            // previous acknowledgement, including when the value is identical.
+            output
+                .apply(code, true, |value| {
+                    writes.push(value);
+                    Ok(())
+                })
+                .unwrap();
+            assert_eq!(writes, [code, code]);
+            let changed = encode(60.0);
+            assert_ne!(code, changed);
+            assert!(
+                output
+                    .apply(changed, false, |_| {
+                        anyhow::bail!("late completion after deadline")
+                    })
+                    .is_err()
+            );
+            assert_eq!(output.0, None);
+            // The failed write may have taken effect. Even the formerly known
+            // value now requires a fresh acknowledgement before it can be cached.
+            output
+                .apply(code, false, |value| {
+                    writes.push(value);
+                    Ok(())
+                })
+                .unwrap();
+            assert_eq!(writes, [code, code, code]);
+            output
+                .apply(changed, false, |value| {
+                    writes.push(value);
+                    Ok(())
+                })
+                .unwrap();
+            assert_eq!(writes, [code, code, code, changed]);
+        }
+    }
+
+    #[test]
+    fn cooler_keepalive_uses_acknowledgement_time_at_the_five_second_boundary() {
+        for encode in [power_register as fn(f64) -> u16, power_dac] {
+            let start = Instant::now();
+            let acknowledged = start + Duration::from_millis(100);
+            let code = encode(42.0);
+            let mut output = AcknowledgedCoolerOutput::default();
+            let mut writes = Vec::new();
+            output
+                .apply(code, false, start, |value| {
+                    writes.push(value);
+                    Ok(acknowledged)
+                })
+                .unwrap();
+            assert_eq!(output.acknowledged_at, Some(acknowledged));
+            // Time since dispatch is insufficient: a slow transfer must still
+            // get a complete keepalive interval after its acknowledgement.
+            for elapsed in [
+                Duration::ZERO,
+                Duration::from_secs(1),
+                COOLER_KEEPALIVE - Duration::from_nanos(1),
+            ] {
+                output
+                    .apply(encode(42.0001), false, acknowledged + elapsed, |_| {
+                        panic!("identical output refreshed before its deadline")
+                    })
+                    .unwrap();
+            }
+            let boundary = acknowledged + COOLER_KEEPALIVE;
+            output
+                .apply(code, false, boundary, |value| {
+                    writes.push(value);
+                    Ok(boundary)
+                })
+                .unwrap();
+            output
+                .apply(
+                    code,
+                    false,
+                    boundary + COOLER_KEEPALIVE + Duration::from_nanos(1),
+                    |value| {
+                        writes.push(value);
+                        Ok(boundary + COOLER_KEEPALIVE + Duration::from_nanos(1))
+                    },
+                )
+                .unwrap();
+            assert_eq!(writes, [code, code, code]);
+        }
+    }
+
+    #[test]
+    fn changed_forced_and_uncertain_cooler_writes_reset_the_keepalive_policy() {
+        for encode in [power_register as fn(f64) -> u16, power_dac] {
+            let origin = Instant::now();
+            let old = encode(42.0);
+            let changed = encode(60.0);
+            assert_ne!(old, changed);
+            // A read establishes the code, but no last successful write time.
+            let mut output = AcknowledgedCoolerOutput {
+                code: Some(old),
+                acknowledged_at: None,
+            };
+            let mut writes = Vec::new();
+            output
+                .apply(old, false, origin, |value| {
+                    writes.push(value);
+                    Ok(origin)
+                })
+                .unwrap();
+            let changed_at = origin + Duration::from_millis(1);
+            output
+                .apply(changed, false, changed_at, |value| {
+                    writes.push(value);
+                    Ok(changed_at)
+                })
+                .unwrap();
+            let forced_at = changed_at + Duration::from_secs(4);
+            output
+                .apply(changed, true, forced_at, |value| {
+                    writes.push(value);
+                    Ok(forced_at)
+                })
+                .unwrap();
+            // Forced initialization/reconnect/recovery/off refreshes restart
+            // the interval, rather than leaving the earlier deadline in place.
+            output
+                .apply(changed, false, changed_at + COOLER_KEEPALIVE, |_| {
+                    panic!("forced write did not restart the interval")
+                })
+                .unwrap();
+            assert_eq!(writes, [old, changed, changed]);
+            for message in [
+                "USB write failed",
+                "late completion after deadline",
+                "write acknowledgement missing",
+            ] {
+                let failed_at = forced_at + Duration::from_millis(1);
+                assert!(
+                    output
+                        .apply(old, false, failed_at, |_| anyhow::bail!("{message}"))
+                        .is_err()
+                );
+                assert_eq!(output.code, None);
+                assert_eq!(output.acknowledged_at, None);
+                // Even the old cached code now needs a fresh acknowledgement.
+                output
+                    .apply(changed, false, failed_at, |value| {
+                        writes.push(value);
+                        Ok(failed_at)
+                    })
+                    .unwrap();
+                assert_eq!(output.code, Some(changed));
+                assert_eq!(output.acknowledged_at, Some(failed_at));
+            }
+            output.invalidate();
+            assert_eq!(output.code, None);
+            assert_eq!(output.acknowledged_at, None);
+        }
+    }
+
+    #[test]
+    fn saturated_feedback_continues_with_keepalives_without_banking_ramp_credit() {
+        let origin = Instant::now();
+        let mut output = AcknowledgedCoolerOutput::default();
+        let mut integral = 0.0;
+        let mut power = 100.0;
+        let mut writes = Vec::new();
+        for second in 0..30 {
+            let observed = origin + Duration::from_secs(second);
+            power = regulate(power, &mut integral, 30.0, 1.0, 25.0);
+            output
+                .apply(power_register(power), false, observed, |_| {
+                    writes.push(second);
+                    Ok(observed)
+                })
+                .unwrap();
+        }
+        assert_eq!(writes, [0, 5, 10, 15, 20, 25]);
+        assert_eq!(power, 100.0);
+        assert_eq!(integral, 0.0);
+        // The next feedback sample still changes power by one second's limit,
+        // not by the time since the last command which was actually sent.
+        power = regulate(power, &mut integral, 0.0, 1.0, 25.0);
+        assert_eq!(power, 95.0);
+        let observed = origin + Duration::from_secs(30);
+        output
+            .apply(power_register(power), false, observed, |_| {
+                writes.push(30);
+                Ok(observed)
+            })
+            .unwrap();
+        assert_eq!(writes, [0, 5, 10, 15, 20, 25, 30]);
+    }
+
+    #[test]
     fn configurable_slew_bounds_five_seconds_in_both_directions_and_after_stalls() {
         for maximum in [1.0, 25.0, 100.0] {
             for seconds in [0.01, 0.2, 1.0] {
@@ -566,6 +952,8 @@ mod tests {
             auxiliary: None,
             heater: true,
             output: CoolerOutput::Fpga,
+            acknowledged_output: AcknowledgedCoolerOutput::default(),
+            acknowledged_heater: AcknowledgedOutput::default(),
             observed_at: [origin; 4],
         };
         let mut feedbacks = 0;
@@ -764,6 +1152,8 @@ mod tests {
             auxiliary: None,
             heater: false,
             output: CoolerOutput::Dac,
+            acknowledged_output: AcknowledgedCoolerOutput::default(),
+            acknowledged_heater: AcknowledgedOutput::default(),
             observed_at: [Instant::now(); 4],
         };
         assert_eq!(environment.get(8).unwrap(), 215);

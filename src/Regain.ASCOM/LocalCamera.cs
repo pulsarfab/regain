@@ -14,6 +14,9 @@ internal sealed class LocalCamera : IDisposable
     private int transaction;
     private bool disposed;
     internal LocalCamera(int slot) { this.slot = slot; }
+    internal static string WorkerExecutable => Regain.Rotator.RegainPaths.EnvironmentVariable("REGAIN_CAMERA_WORKER") ??
+        Path.Combine(Path.GetDirectoryName(typeof(LocalCamera).Assembly.Location)!, "regain-camera.exe");
+    internal static bool Simulated => Regain.Rotator.RegainPaths.EnvironmentVariable("REGAIN_ASCOM_SIMULATE") == "1";
     private void Start()
     {
         if (faulted) throw new ASCOM.DriverException("Camera worker failed. Disconnect and reconnect the camera.");
@@ -22,11 +25,10 @@ internal sealed class LocalCamera : IDisposable
             if (worker.HasExited) throw new ASCOM.DriverException("Camera worker exited. Disconnect and reconnect the camera.");
             return;
         }
-        string directory = Path.GetDirectoryName(typeof(LocalCamera).Assembly.Location)!;
-        string executable = Regain.Rotator.RegainPaths.EnvironmentVariable("REGAIN_CAMERA_WORKER") ?? Path.Combine(directory, "regain-camera.exe");
+        string executable = WorkerExecutable;
         string? profiles = Regain.Rotator.RegainPaths.EnvironmentVariable("REGAIN_ASCOM_PROFILES");
         string path = Path.GetFullPath(profiles is not null ? Path.Combine(profiles, $"camera-{slot + 1}.json") : Regain.Rotator.RegainPaths.Profile(Path.Combine("ASCOM", $"camera-{slot + 1}.json")));
-        worker = new Process { StartInfo = new ProcessStartInfo(executable, "--profiles \"" + path + "\"" + (Regain.Rotator.RegainPaths.EnvironmentVariable("REGAIN_ASCOM_SIMULATE") == "1" ? " --simulate" : "")) {
+        worker = new Process { StartInfo = new ProcessStartInfo(executable, "--profiles \"" + path + "\"" + (Simulated ? " --simulate" : "")) {
             UseShellExecute = false, CreateNoWindow = true, WindowStyle = ProcessWindowStyle.Hidden,
             RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true,
             WorkingDirectory = Path.GetDirectoryName(executable)!

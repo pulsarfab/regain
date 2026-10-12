@@ -4,6 +4,7 @@ namespace Regain.Core;
 public sealed record RecoveryOptions
 {
     public int MaxRetries { get; init; } = 3;
+    public int PreExposureReconnectAttempts { get; init; } = 3;
     public double MaximumRetryExposureSeconds { get; init; } = 30.0;
     public double ReconnectDelaySeconds { get; init; } = 5.0;
     public double CommandTimeoutSeconds { get; init; } = 15.0;
@@ -24,6 +25,8 @@ public sealed record RecoveryOptions
     {
         if (MaxRetries < 0 || MaxRetries > 20)
             throw new System.ArgumentOutOfRangeException(nameof(MaxRetries));
+        if (PreExposureReconnectAttempts < 1 || PreExposureReconnectAttempts > 10)
+            throw new System.ArgumentOutOfRangeException(nameof(PreExposureReconnectAttempts));
         if (double.IsNaN(MaximumRetryExposureSeconds) || double.IsInfinity(MaximumRetryExposureSeconds) || MaximumRetryExposureSeconds < 0 || MaximumRetryExposureSeconds > 86400)
             throw new System.ArgumentOutOfRangeException(nameof(MaximumRetryExposureSeconds));
         if (double.IsNaN(ReconnectDelaySeconds) || double.IsInfinity(ReconnectDelaySeconds) || ReconnectDelaySeconds <= 0 || ReconnectDelaySeconds > 3600)

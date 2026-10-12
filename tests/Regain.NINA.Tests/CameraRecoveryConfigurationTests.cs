@@ -25,11 +25,18 @@ public sealed partial class HubNativeTests
             var values=JsonSerializer.SerializeToElement(new RecoveryOptions {UsbPortCycle=true},
                 new JsonSerializerOptions {PropertyNamingPolicy=JsonNamingPolicy.CamelCase});
             var form=new CameraRecoveryForm(values,Section);
-            Assert.Equal(16,form.Editors.Count);
+            Assert.Equal(17,form.Editors.Count);
             var reader=new HubConfiguration(JsonDocument.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory,"hub-config.json"))).RootElement);
             var schema=reader.Root.GetProperty("$defs").GetProperty("CameraRecovery");
             Assert.Equal(JsonSerializer.Serialize(schema),JsonSerializer.Serialize(CameraRecoveryConfiguration.Schema));
             TextBox Input(string key)=>form.Editors.OfType<TextBox>().Single(e=>AutomationProperties.GetAutomationId(e)=="recovery-"+key);
+            Assert.Equal("3",Input("preExposureReconnectAttempts").Text);
+            foreach(var invalid in new[]{"0","11","1.5"}) {
+                Input("preExposureReconnectAttempts").Text=invalid;
+                Assert.Throws<ArgumentException>(()=>form.Read());
+            }
+            Input("preExposureReconnectAttempts").Text="5";
+            Assert.Equal(5,form.Read().GetProperty("preExposureReconnectAttempts").GetInt32());
             var logging=form.Editors.OfType<ComboBox>().Single(e=>AutomationProperties.GetAutomationId(e)=="recovery-transferLogMode");
             Assert.Equal(2, form.LiveEditors.Count);
             Assert.Contains(logging, form.LiveEditors);
@@ -47,6 +54,7 @@ public sealed partial class HubNativeTests
             Assert.True(changed.GetProperty("usbPortCycle").GetBoolean());
             var typed=JsonSerializer.Deserialize<RecoveryOptions>(changed.GetRawText(),new JsonSerializerOptions {PropertyNamingPolicy=JsonNamingPolicy.CamelCase})!;
             typed.Validate(); Assert.Equal(.000001,typed.ReconnectDelaySeconds);
+            Assert.Equal(5,typed.PreExposureReconnectAttempts);
             Assert.Equal("off",typed.TransferLogMode); Assert.Equal(5,typed.CoolerMaxPowerChangePer5Seconds);
             Input("directReadChunkKiB").Text="3"; Assert.Throws<ArgumentException>(()=>form.Read());
             Input("directReadChunkKiB").Text="64"; Assert.Equal(64,form.Read().GetProperty("directReadChunkKiB").GetInt32());

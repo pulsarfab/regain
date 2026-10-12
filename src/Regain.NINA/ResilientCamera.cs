@@ -21,6 +21,8 @@ public sealed class ResilientCamera : BaseINPC, ICamera
     private readonly bool useConfiguredBackend;
     private readonly RecoveryOptions? recoveryOptions;
     private readonly IProfileService? profiles;
+    private readonly Func<UsbPeripheralRecovery>? peripheralRecoveryFactory;
+    private UsbPeripheralRecovery? peripheralRecovery;
     private ICameraSettings? timeoutSettings;
     private int originalTimeout, extendedTimeout;
     private readonly object sync = new();
@@ -31,19 +33,22 @@ public sealed class ResilientCamera : BaseINPC, ICamera
     private Task? telemetry;
     private short bin = 1;
     public ResilientCamera(CameraDescriptor camera, IExposureDataFactory images) : this(camera, images, CameraProvider.NewHost, null) { }
-    internal ResilientCamera(IExposureDataFactory images, CameraSelectionStore store, Func<HostClient>? factory = null, RecoveryOptions? options = null, IProfileService? profiles = null)
-        : this(store.Load()?.Camera ?? new("Select a camera", 0, 0, false, 0, 0, 16, false, false, [1]), images, factory ?? CameraProvider.NewHost, options, profiles)
+    internal ResilientCamera(IExposureDataFactory images, CameraSelectionStore store, Func<HostClient>? factory = null, RecoveryOptions? options = null, IProfileService? profiles = null,
+        Func<UsbPeripheralRecovery>? peripheralRecoveryFactory = null)
+        : this(store.Load()?.Camera ?? new("Select a camera", 0, 0, false, 0, 0, 16, false, false, [1]), images, factory ?? CameraProvider.NewHost, options, profiles, peripheralRecoveryFactory)
     {
         selectionStore = store;
         useConfiguredBackend = factory is null;
     }
-    internal ResilientCamera(CameraDescriptor camera, IExposureDataFactory images, Func<HostClient> hostFactory, RecoveryOptions? options, IProfileService? profiles = null)
+    internal ResilientCamera(CameraDescriptor camera, IExposureDataFactory images, Func<HostClient> hostFactory, RecoveryOptions? options, IProfileService? profiles = null,
+        Func<UsbPeripheralRecovery>? peripheralRecoveryFactory = null)
     {
         descriptor = camera;
         this.images = images;
         this.hostFactory = hostFactory;
         recoveryOptions = options;
         this.profiles = profiles;
+        this.peripheralRecoveryFactory = peripheralRecoveryFactory;
         SubSampleWidth = camera.Width;
         SubSampleHeight = camera.Height;
     }
@@ -76,7 +81,10 @@ public sealed class ResilientCamera : BaseINPC, ICamera
     internal Task UpdateRuntimeOptionsAsync(RecoveryOptions options) => Session.UpdateRuntimeOptionsAsync(options);
     public void SetupDialog()
     {
-        Settings.Show(options => session?.UpdateRuntimeOptionsAsync(options) ?? Task.CompletedTask);
+        Settings.Show(options => session?.UpdateRuntimeOptionsAsync(options) ?? Task.CompletedTask,
+            () => Connected,
+            simulated: !useConfiguredBackend && hostFactory != (Func<HostClient>)CameraProvider.NewHost &&
+                hostFactory != (Func<HostClient>)CameraProvider.NewDirectHost);
         if (!Connected && selectionStore?.Load() is { } selected)
             SelectCamera(selected.Camera);
     }
@@ -106,6 +114,14 @@ public sealed class ResilientCamera : BaseINPC, ICamera
             throw new NotSupportedException("Direct capture is unavailable for this camera. Turn off Direct USB driver to use the SDK.");
         var factory = useConfiguredBackend && direct ? CameraProvider.NewDirectHost : hostFactory;
         var candidate = new CameraSession(descriptor, factory, recoveryOptions ?? Settings.Load(), selected?.Serial, direct && selected?.AllowSdkFallback == true ? hostFactory : null);
+        var peripherals = peripheralRecoveryFactory?.Invoke();
+        if (peripherals is { Enabled: true } coordinator) {
+            candidate.RecoverUsbPeripherals = coordinator.WaitAsync;
+            candidate.UsbRecovery += change => {
+                if (change.Phase == CameraUsbRecoveryPhase.Resetting) coordinator.ResetStarting(change.RecoveryId, change.TimestampUnixUs);
+                else if (change.Phase == CameraUsbRecoveryPhase.CameraReturned) coordinator.CameraReturned(change.RecoveryId);
+            };
+        } else { peripherals?.Dispose(); peripherals = null; }
         candidate.Diagnostic += text => { CameraLog.Session(Name, text); RaisePropertyChanged(nameof(DriverInfo)); };
         try
         {
@@ -125,13 +141,14 @@ public sealed class ResilientCamera : BaseINPC, ICamera
             if (selected is not null)
                 selectionStore!.RememberSerial(selected, candidate.Serial);
             session = candidate;
+            peripheralRecovery = peripherals;
             lifetime = new();
             Connected = true;
             telemetry = Poll(candidate, lifetime.Token);
             RaiseAllPropertiesChanged();
             return true;
         }
-        catch { candidate.Dispose(); throw; }
+        catch { peripherals?.Dispose(); candidate.Dispose(); throw; }
     }
     private async Task Poll(CameraSession owner, CancellationToken token)
     {
@@ -154,6 +171,8 @@ public sealed class ResilientCamera : BaseINPC, ICamera
             lifetime?.Cancel();
             exposureCancel?.Cancel();
             ++exposureGeneration;
+            peripheralRecovery?.Dispose();
+            peripheralRecovery = null;
             session?.Dispose();
             session = null;
             Connected = false;
@@ -419,9 +438,11 @@ public sealed class ResilientCamera : BaseINPC, ICamera
             return frame;
         }
         catch (OperationCanceledException) when (!token.IsCancellationRequested) {
+            peripheralRecovery?.Failed();
             // NINA treats OCE with an uncancelled caller as its readiness timeout.
             throw new IOException($"Capture {generation} was aborted by the client; no image returned");
         }
+        catch { peripheralRecovery?.Failed(); throw; }
         finally { lock (sync) { if (generation == exposureGeneration && pending.IsCompleted && !pending.IsCompletedSuccessfully) RestoreNinaTimeout(); } }
     }
     // NINA 3.2 imposes its own exposure-time + profile timeout around readiness.
@@ -431,13 +452,7 @@ public sealed class ResilientCamera : BaseINPC, ICamera
     {
         RestoreNinaTimeout();
         if (profiles is null) return;
-        var options = owner.Options;
-        int retries = seconds <= options.MaximumRetryExposureSeconds ? options.MaxRetries : 0;
-        int reads = options.ReadyFrameDownloadRetries;
-        double attempt = owner.ReadyTimeoutSeconds(seconds) + options.CoolingTimeoutSeconds +
-            (reads + 1) * (options.DownloadTimeoutSeconds + options.ReconnectDelaySeconds) +
-            (2 * owner.Controls.Count + 10) * options.CommandTimeoutSeconds;
-        int budget = (int)Math.Min(int.MaxValue, Math.Ceiling((retries + 1) * attempt + (options.UsbResetAfterFailures > 0 ? 150 : 0)));
+        int budget = (int)Math.Min(int.MaxValue, Math.Ceiling(owner.CaptureTimeoutSeconds(seconds)));
         var settings = profiles.ActiveProfile.CameraSettings;
         if (settings.Timeout >= budget) return;
         timeoutSettings = settings;

@@ -197,8 +197,12 @@ verified; movement validation is pending.
 
 Camera setup can escalate failed captures to a device-scoped USB reset on Windows
 and Linux. It is disabled by default; set the failure threshold to 2 to try an
-ordinary reconnect first. See [setup, permissions, supported cameras, and power
-limitations](usb-recovery.md).
+ordinary reconnect first. On Windows, enable the recovery helper locally before
+imaging; NINA and native ASCOM provide a toggle while the camera is disconnected.
+The helper survives worker, supervisor and application restarts until disabled,
+sign-out or reboot. Automatic recovery never requests elevation. A camera USB
+cycle may also disconnect peripherals attached through its hub.
+See [setup, permissions, supported cameras, and power limitations](usb-recovery.md).
 
 Falcon V2 is available as `regain-device pegasus falcon`. Add a rotator slot at
 `/setup/rotators`; multiple CAAs or Falcons keep separate numbers and profiles.

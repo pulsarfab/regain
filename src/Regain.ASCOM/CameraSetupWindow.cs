@@ -21,6 +21,8 @@ internal static class CameraSetupWindow
     private static void Open(LocalCamera session, int slot)
     {
         var profile = JsonNode.Parse(session.Request("profile").GetRawText())!;
+        int usbResetAfterFailures = profile["recovery"]?["usbResetAfterFailures"]?.GetValue<int>() ?? 0;
+        Func<int>? readUsbPolicy = null;
         bool owned = !session.Get<bool>("connected"), busy = false, loading = true;
         var root = new DockPanel { Margin = new Thickness(16) };
         var heading = new TextBlock { Text = $"Camera {slot + 1}", FontSize = 18, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 0, 0, 12) };
@@ -42,6 +44,8 @@ internal static class CameraSetupWindow
         void Save() {
             if (loading) return;
             foreach (var read in readers) read();
+            usbResetAfterFailures = readUsbPolicy?.Invoke() ?? usbResetAfterFailures;
+            profile["recovery"]!["usbResetAfterFailures"] = usbResetAfterFailures;
             if (Connected()) {
                 var current = JsonNode.Parse(session.Request("profile").GetRawText())!;
                 foreach (var key in new[] {"transferLogMode", "coolerMaxPowerChangePer5Seconds"})
@@ -105,12 +109,35 @@ internal static class CameraSetupWindow
         }
         Button(device, "Refresh", Discover);
         var recovery = Tab("Recovery", "Retry limits apply to this camera. Long exposures are replaced only within the configured duration limit.");
+        using var usbHelper = new UsbRecoveryHelperPanel(new UsbRecoveryHelper(LocalCamera.WorkerExecutable),
+            () => new UsbRecoverySelection((picker.SelectedItem as Choice)?.Camera["name"]?.GetValue<string>(),
+                serial.Text, Connected(), LocalCamera.Simulated), usbResetAfterFailures, failures => {
+                    if (Connected()) throw new InvalidOperationException("Disconnect the camera before changing automatic USB reset.");
+                    // Off must remain available even when another editor contains invalid text.
+                    // Persist this action independently of the rest of the setup form.
+                    var changed = JsonNode.Parse(session.Request("profile").GetRawText())!;
+                    if (failures > 0) {
+                        changed["camera"] = (picker.SelectedItem as Choice)?.Camera.DeepClone();
+                        changed["serial"] = serial.Text.Trim().ToLowerInvariant();
+                        changed["direct"] = backend.SelectedIndex == 1;
+                        changed["sdkFallback"] = backend.SelectedIndex == 1 && fallback.IsChecked == true;
+                    }
+                    changed["recovery"]!["usbResetAfterFailures"] = failures;
+                    session.Request("configure", parameters: changed);
+                    profile = changed; usbResetAfterFailures = failures;
+                    feedback.Text = "Automatic USB reset setting saved.";
+                    return Task.CompletedTask;
+                });
+        readUsbPolicy = () => usbHelper.ResetAfterFailures;
+        recovery.Children.Add(usbHelper);
+        picker.SelectionChanged += (_, _) => usbHelper.RefreshAvailability();
+        serial.TextChanged += (_, _) => usbHelper.RefreshAvailability();
         var cooler = Tab("Cooler", "Recovery restores the prior cooler state and waits near its previous measured temperature.");
         var timeouts = Tab("Timeouts", "Maximum time allowed for camera commands, downloads and recovery.");
         var recoveryForm = new CameraRecoveryForm(
             JsonSerializer.SerializeToElement(profile["recovery"]),
             section => section == "Cooling" ? cooler : section == "Timeouts" ? timeouts : recovery,
-            TrySave);
+            TrySave, excludedFields: ["usbResetAfterFailures"]);
         editors.AddRange(recoveryForm.Editors);
         liveEditors.UnionWith(recoveryForm.LiveEditors);
         readers.Add(() => profile["recovery"] = JsonNode.Parse(recoveryForm.Read().GetRawText()));
@@ -122,6 +149,7 @@ internal static class CameraSetupWindow
         Control(controls, "0", "Gain"); Control(controls, "5", "Offset"); Control(controls, "6", "USB limit"); Control(controls, "21", "Dew heater (0–1)"); Control(controls, "22", "Fan speed"); Control(controls, "23", "Power LED brightness");
         Control(cooler, "16", "Target temperature (°C)"); Control(cooler, "17", "Cooler enabled (0–1)");
         var connection = Button(bottom, Connected() ? "Connected" : "Connect", async () => {
+            if (usbHelper.IsBusy) { feedback.Text = "Wait for the USB helper operation to finish before connecting."; return; }
             if (!owned) { feedback.Text = "Disconnect through the application's equipment pane."; return; }
             bool connected = Connected(); if (!connected) Save();
             await Task.Run(() => session.Put("connected", !connected));
@@ -131,7 +159,7 @@ internal static class CameraSetupWindow
         timer.Tick += (_, _) => { if (!busy) { try { connection.Content = Connected() ? "Disconnect" : "Connect"; Update(); } catch (Exception e) { feedback.Text = e.Message; } } };
         loading = false; Update();
         window.Loaded += async (_, _) => { timer.Start(); if (!Connected()) await Run(Discover); };
-        window.Closing += (_, e) => { if (busy) { e.Cancel = true; return; } try { Save(); } catch (Exception ex) { feedback.Text = ex.Message; e.Cancel = true; } };
+        window.Closing += (_, e) => { if (busy || usbHelper.IsBusy) { e.Cancel = true; return; } try { Save(); } catch (Exception ex) { feedback.Text = ex.Message; e.Cancel = true; } };
         try { window.ShowDialog(); } finally { timer.Stop(); if (owned) session.Put("connected", false); }
     }
     private sealed class Choice(JsonNode camera) { public JsonNode Camera { get; } = camera; public string Label => Camera["name"]!.GetValue<string>(); }

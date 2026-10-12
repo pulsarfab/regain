@@ -99,11 +99,15 @@ cameras and accessories. An Alpaca server is optional.
 
 ### Recover a camera that needs a USB reset
 
-Enable **USB reset after failed attempts** in camera recovery settings. NINA,
+Enable **Automatic USB reset** in NINA or native ASCOM camera recovery settings. NINA,
 ASCOM, and Alpaca can escalate to a device-scoped reset on Windows or Linux,
 then reconnect the same camera and restore its settings. This is opt-in and
-uses the replacement-exposure budget: resetting loses the retained image.
-Windows requires elevation; Linux also offers an explicit port-cycle option.
+preserves the replacement-exposure limits: resetting loses the retained image.
+On Windows, turn the option on while disconnected and approve its elevated
+helper before imaging. The helper survives camera, supervisor and application
+restarts for the Windows session; NINA stays unelevated and recovery never
+prompts for UAC. Cycling camera USB can also disconnect
+peripherals on its internal hub. Linux offers an explicit port-cycle option.
 Neither switches a camera's external power supply. [USB recovery setup](docs/usb-recovery.md).
 
 ### Build a live preview or camera application

@@ -12,7 +12,7 @@ internal static class RecoveryFixture
             try {
                 var original=JsonDocument.Parse("{\"usbPortCycle\":true,\"legacyExtension\":\"keep\"}").RootElement;
                 var form=new CameraRecoveryForm(original,_=>new StackPanel());
-                if(form.Editors.Count!=16 || form.LiveEditors.Count!=2) throw new InvalidOperationException("Wrong Windows recovery field set");
+                if(form.Editors.Count!=17 || form.LiveEditors.Count!=2) throw new InvalidOperationException("Wrong Windows recovery field set");
                 var logging=form.Editors.OfType<ComboBox>().Single(e=>AutomationProperties.GetAutomationId(e)=="recovery-transferLogMode");
                 var power=form.Editors.OfType<TextBox>().Single(e=>AutomationProperties.GetAutomationId(e)=="recovery-coolerMaxPowerChangePer5Seconds");
                 if((string)logging.SelectedItem!="circular" || double.Parse(power.Text, System.Globalization.CultureInfo.InvariantCulture)!=25 || !form.LiveEditors.Contains(logging) || !form.LiveEditors.Contains(power))
@@ -25,6 +25,7 @@ internal static class RecoveryFixture
                    !changed.GetProperty("usbPortCycle").GetBoolean() ||
                    changed.GetProperty("legacyExtension").GetString()!="keep" ||
                    changed.GetProperty("maxRetries").GetInt32()!=3 ||
+                   changed.GetProperty("preExposureReconnectAttempts").GetInt32()!=3 ||
                    changed.GetProperty("transferLogMode").GetString()!="off" ||
                    changed.GetProperty("coolerMaxPowerChangePer5Seconds").GetDouble()!=5)
                     throw new InvalidOperationException("Recovery defaults or hidden values changed");

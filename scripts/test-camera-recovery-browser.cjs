@@ -25,6 +25,11 @@ const path=require('node:path');
     await page.locator('#maxRetries').fill('1.5');
     assert.equal(await page.locator('#maxRetries').evaluate(e=>e.checkValidity()),false);
     await page.locator('#maxRetries').fill('0');
+    for(const invalid of ['0','11','1.5']) {
+      await page.locator('#preExposureReconnectAttempts').fill(invalid);
+      assert.equal(await page.locator('#preExposureReconnectAttempts').evaluate(e=>e.checkValidity()),false);
+    }
+    await page.locator('#preExposureReconnectAttempts').fill('5');
     await page.locator('#reconnectDelaySeconds').fill('0');
     assert.equal(await page.locator('#reconnectDelaySeconds').evaluate(e=>e.checkValidity()),false);
     await page.locator('#reconnectDelaySeconds').fill('0.000001');
@@ -32,10 +37,11 @@ const path=require('node:path');
     const saved=(await fetch(base+'/setup/api/state').then(r=>r.json())).cameras[0];
     assert.equal(saved.connected,false);assert.equal(saved.profile.camera,null);
     assert.equal(saved.profile.recovery.reconnectDelaySeconds,.000001);assert.equal(saved.profile.recovery.maxRetries,0);
+    assert.equal(saved.profile.recovery.preExposureReconnectAttempts,5);
     assert.equal(saved.profile.recovery.usbPortCycle,true);
     const metadata=await fetch(base+'/setup/api/camera-recovery').then(r=>r.json());
     if(metadata.platform==='windows') assert.equal(await page.locator('#usbPortCycle').count(),0);
-    assert.equal(await page.locator('#retry-fields input').count(),metadata.platform==='linux'?7:6);
+    assert.equal(await page.locator('#retry-fields input').count(),metadata.platform==='linux'?8:7);
     if(output){
       await page.locator('#reconnectDelaySeconds').fill('5');await page.locator('#maxRetries').fill('3');
       await page.locator('#save').click();await page.getByText('Settings saved.',{exact:true}).waitFor();

@@ -185,7 +185,10 @@ internal static class Program
             if (editor.LastImport.HasValue) throw new InvalidOperationException("net48 reload retained an imported draft report");
             var recoverySchema = editor.Draft!.Description.Root.GetProperty("$defs").GetProperty("CameraRecovery");
             var recoveryFields = editor.Draft.Description.Fields(recoverySchema);
-            if (recoveryFields.Count != 17 || recoveryFields.Single(f => f.Key == "maxRetries").Value!.Value.GetInt32() != 3 ||
+            if (recoveryFields.Count != 18 || recoveryFields.Single(f => f.Key == "maxRetries").Value!.Value.GetInt32() != 3 ||
+                recoveryFields.Single(f => f.Key == "preExposureReconnectAttempts").Value!.Value.GetInt32() != 3 ||
+                recoveryFields.Single(f => f.Key == "preExposureReconnectAttempts").Schema.GetProperty("minimum").GetInt32() != 1 ||
+                recoveryFields.Single(f => f.Key == "preExposureReconnectAttempts").Schema.GetProperty("maximum").GetInt32() != 10 ||
                 recoveryFields.Single(f => f.Key == "downloadTimeoutSeconds").Value!.Value.GetDouble() != 60 ||
                 recoveryFields.Single(f => f.Key == "usbPortCycle").Value!.Value.GetBoolean() ||
                 recoveryFields.Single(f => f.Key == "reconnectDelaySeconds").Schema.GetProperty("exclusiveMinimum").GetDouble() != 0 ||

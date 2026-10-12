@@ -23,6 +23,7 @@ public sealed class HostClient : IDisposable
     private int disposed;
     public int ProcessId => process.Id;
     public bool Supervised { get; }
+    public event Action<CameraUsbRecoveryEvent>? UsbRecovery;
     public bool IsAlive => disposed == 0 && !process.HasExited;
     internal void ConfigureDiagnostics(string mode) => diagnostics.TransferLogMode = mode;
     internal void RecordDiagnostic(string line) => diagnostics.Worker(line);
@@ -73,10 +74,26 @@ public sealed class HostClient : IDisposable
         diagnostics = new(log, direct ? "direct" : "sdk", process.Id, supervised);
         process.ErrorDataReceived += (_, e) => {
             // An exception on this asynchronous callback could otherwise take down NINA.
-            try { if (e.Data is not null) diagnostics.Worker(e.Data); }
+            try { if (e.Data is not null) ReceiveStandardError(e.Data); }
             catch { /* Diagnostics must not change command/capture results. */ }
         };
         process.BeginErrorReadLine();
+    }
+    internal void ReceiveStandardError(string line)
+    {
+        // Lifecycle notifications consume the live transport stream directly,
+        // before logging can suppress, buffer, or replay a diagnostic record.
+        if (Volatile.Read(ref disposed) == 0 && CameraUsbRecovery.TryParse(line, ProcessId, Supervised, out var phase))
+        {
+            var listeners = UsbRecovery;
+            if (listeners is not null)
+                foreach (Action<CameraUsbRecoveryEvent> listener in listeners.GetInvocationList())
+                {
+                    try { listener(phase); }
+                    catch { /* A frontend subscriber must not interrupt recovery or stderr draining. */ }
+                }
+        }
+        diagnostics.Worker(line);
     }
     public async Task<Reply> CallAsync(string method, object? args, TimeSpan timeout, CancellationToken token)
     {

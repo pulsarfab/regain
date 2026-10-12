@@ -173,6 +173,45 @@ struct Completion {
     bytes: usize,
     error: u32,
     cancel_requested: bool,
+    deadline_expired: bool,
+    cancellation_reason: Option<&'static str>,
+    wait_error: Option<u32>,
+}
+impl Completion {
+    fn details(&self) -> Value {
+        json!({"win32Error":self.error,"receivedBytes":self.bytes,
+            "cancelRequested":self.cancel_requested,"deadlineExpired":self.deadline_expired,
+            "cancellationReason":self.cancellation_reason,"waitError":self.wait_error,
+            "lateCompletion":self.cancel_requested && self.error == 0,
+            "commandEffectUncertain":self.cancel_requested,"terminalCompletionObserved":true})
+    }
+    fn ensure_success(&self, operation: &str, expected: usize) -> Result<()> {
+        if self.error == 0 && !self.cancel_requested {
+            return Ok(());
+        }
+        let category = if self.deadline_expired {
+            "timeout"
+        } else if self.error == ERROR_DEVICE_NOT_CONNECTED {
+            "disconnected"
+        } else if self.error == ERROR_OPERATION_ABORTED {
+            "cancelled"
+        } else {
+            "io"
+        };
+        let mut failure = crate::asi::direct::transfer::Failure::new(
+            category,
+            expected,
+            self.bytes,
+            self.deadline_expired,
+        );
+        failure
+            .0
+            .as_object_mut()
+            .unwrap()
+            .extend(self.details().as_object().unwrap().clone());
+        failure.0["operation"] = json!(operation);
+        Err(failure.into())
+    }
 }
 
 // Each box is allocated before submission and is never moved out while the
@@ -545,11 +584,7 @@ impl Device {
             Some(&mut []),
             5000,
         )?;
-        ensure!(
-            done.error == 0 && !done.cancel_requested,
-            "USB port operation failed: {}",
-            done.error
-        );
+        done.ensure_success("USB port operation", 0)?;
         Ok(())
     }
     pub fn vendor(&self, request: u8, value: u16, index: u16, length: u16) -> Result<Vec<u8>> {
@@ -559,28 +594,17 @@ impl Device {
         data[2..4].copy_from_slice(&value.to_le_bytes());
         data[4..6].copy_from_slice(&index.to_le_bytes());
         let done = self.request(protocol::CONTROL, &mut data, None, 5000)?;
-        ensure!(
-            done.error == 0 && !done.cancel_requested,
-            "vendor {request:02x}/{value:04x} failed: {}",
-            done.error
-        );
+        done.ensure_success(&format!("vendor {request:02x}/{value:04x}"), data.len())?;
         Ok(protocol::descriptor_payload(&data, done.bytes, length as usize)?.to_vec())
     }
 
     pub fn reset_pipe(&self) -> Result<()> {
         for code in [0x220044, 0x22002c] {
             let done = self.request(code, &mut [0x81], Some(&mut []), 2000)?;
-            ensure!(
-                done.error == 0 && !done.cancel_requested,
-                "pipe operation failed: {}",
-                done.error
-            );
+            done.ensure_success("pipe operation", 0)?;
         }
         let done = self.request(0x220038, &mut [0x81, 0, 0, 0x10, 0], None, 2000)?;
-        ensure!(
-            done.error == 0 && !done.cancel_requested,
-            "transfer-size configuration failed"
-        );
+        done.ensure_success("transfer-size configuration", 5)?;
         Ok(())
     }
 
@@ -611,8 +635,10 @@ impl Device {
             && usb == 0
             && done.bytes == chunk.len())
         {
-            let category = if done.cancel_requested {
+            let category = if done.deadline_expired {
                 "timeout"
+            } else if done.cancel_requested {
+                "io"
             } else if done.error == ERROR_OPERATION_ABORTED {
                 "cancelled"
             } else if done.error == ERROR_DEVICE_NOT_CONNECTED {
@@ -628,9 +654,13 @@ impl Device {
                 category,
                 chunk.len(),
                 done.bytes,
-                done.cancel_requested,
+                done.deadline_expired,
             );
-            failure.0["win32Error"] = json!(done.error);
+            failure
+                .0
+                .as_object_mut()
+                .unwrap()
+                .extend(done.details().as_object().unwrap().clone());
             failure.0["ntStatus"] = json!(nt);
             failure.0["usbStatus"] = json!(usb);
             failure.0["terminalCompletionObserved"] = json!(true);
@@ -713,8 +743,7 @@ impl Device {
         let trace = UsbTrace::start(operation, fields);
         let result = self.request_inner(code, input, output, timeout_ms, &trace);
         let mut completion = match &result {
-            Ok(done) => json!({"win32Error":done.error,"receivedBytes":done.bytes,
-                "cancelRequested":done.cancel_requested,"terminalCompletionObserved":true}),
+            Ok(done) => done.details(),
             Err(error) => {
                 json!({"win32Error":error.downcast_ref::<std::io::Error>().and_then(|e| e.raw_os_error()),
                 "error":format!("{error:#}")})
@@ -791,13 +820,30 @@ impl Device {
                     .context("submit driver request");
             }
             let mut cancel_requested = false;
-            if ok == 0 && WaitForSingleObject(event.0, timeout_ms) != WAIT_OBJECT_0 {
+            let mut deadline_expired = false;
+            let mut cancellation_reason = None;
+            let mut wait_error = None;
+            let wait_result = if ok == 0 {
+                WaitForSingleObject(event.0, timeout_ms)
+            } else {
+                WAIT_OBJECT_0
+            };
+            if wait_result != WAIT_OBJECT_0 {
                 cancel_requested = true;
+                deadline_expired = wait_result == WAIT_TIMEOUT;
+                cancellation_reason = Some(if deadline_expired {
+                    "deadline_expired"
+                } else {
+                    "wait_failed"
+                });
+                wait_error = (wait_result == WAIT_FAILED).then(|| GetLastError());
                 let cancelled = CancelIoEx(self.0.0, &overlap);
                 let cancel_error = if cancelled == 0 { GetLastError() } else { 0 };
                 trace.event(
                     "cancel",
-                    json!({"win32Error":cancel_error,"cancelRequested":true}),
+                    json!({"win32Error":cancel_error,"cancelRequested":true,
+                        "deadlineExpired":deadline_expired,"cancellationReason":cancellation_reason,
+                        "waitResult":wait_result,"waitError":wait_error}),
                 );
                 // A cancellation request is not completion. Never free pending memory.
                 if WaitForSingleObject(event.0, 2000) != WAIT_OBJECT_0 {
@@ -821,6 +867,9 @@ impl Device {
                 bytes: if code == 0 { bytes as usize } else { 0 },
                 error: code,
                 cancel_requested,
+                deadline_expired,
+                cancellation_reason,
+                wait_error,
             })
         }
     }
@@ -828,20 +877,17 @@ impl Device {
     fn descriptor(&self, kind: u8, length: u16) -> Result<Vec<u8>> {
         let mut data = protocol::descriptor_request(kind, length);
         let done = self.request(protocol::CONTROL, &mut data, None, 5000)?;
-        ensure!(
-            done.error == 0 && !done.cancel_requested,
-            "descriptor failed/timed out: Win32 {}",
-            done.error
-        );
+        done.ensure_success("descriptor", data.len())?;
         Ok(protocol::descriptor_payload(&data, done.bytes, length as usize)?.to_vec())
     }
 
     pub fn probe(&self) -> Result<Value> {
         let mut version = [0; 4];
         let done = self.request(protocol::VERSION, &mut version, None, 5000)?;
+        done.ensure_success("driver version query", version.len())?;
         ensure!(
-            done.error == 0 && !done.cancel_requested && done.bytes == 4,
-            "driver version query failed"
+            done.bytes == version.len(),
+            "driver version query returned an invalid byte count"
         );
         let device = self.descriptor(1, 18)?;
         let prefix = self.descriptor(2, 9)?;
@@ -869,6 +915,64 @@ impl Device {
 mod queued_tests {
     use super::*;
     use std::{cell::RefCell, rc::Rc};
+
+    #[test]
+    fn late_control_success_is_a_typed_timeout_with_uncertain_effect() {
+        for error in [0, ERROR_OPERATION_ABORTED] {
+            let done = Completion {
+                bytes: if error == 0 { protocol::HEADER } else { 0 },
+                error,
+                cancel_requested: true,
+                deadline_expired: true,
+                cancellation_reason: Some("deadline_expired"),
+                wait_error: None,
+            };
+            let error_value = done
+                .ensure_success("vendor bd/0026", protocol::HEADER)
+                .unwrap_err();
+            let details = crate::asi::direct::transfer::Failure::details(&error_value);
+            assert_eq!(details["category"], "timeout");
+            assert_eq!(details["deadlineExpired"], true);
+            assert_eq!(details["win32Error"], error);
+            assert_eq!(details["lateCompletion"], error == 0);
+            assert_eq!(details["cancellationReason"], "deadline_expired");
+            assert_eq!(details["commandEffectUncertain"], true);
+            assert_eq!(details["terminalCompletionObserved"], true);
+        }
+        let success = Completion {
+            bytes: protocol::HEADER,
+            error: 0,
+            cancel_requested: false,
+            deadline_expired: false,
+            cancellation_reason: None,
+            wait_error: None,
+        };
+        success
+            .ensure_success("vendor bd/0026", protocol::HEADER)
+            .unwrap();
+        assert_eq!(success.details()["lateCompletion"], false);
+        assert_eq!(success.details()["commandEffectUncertain"], false);
+    }
+
+    #[test]
+    fn failed_wait_is_not_misreported_as_an_expired_deadline() {
+        let done = Completion {
+            bytes: 0,
+            error: ERROR_OPERATION_ABORTED,
+            cancel_requested: true,
+            deadline_expired: false,
+            cancellation_reason: Some("wait_failed"),
+            wait_error: Some(ERROR_INVALID_HANDLE),
+        };
+        let error = done
+            .ensure_success("vendor bc/0000", protocol::HEADER)
+            .unwrap_err();
+        let details = crate::asi::direct::transfer::Failure::details(&error);
+        assert_eq!(details["deadlineExpired"], false);
+        assert_eq!(details["cancellationReason"], "wait_failed");
+        assert_eq!(details["waitError"], ERROR_INVALID_HANDLE);
+        assert_eq!(details["win32Error"], ERROR_OPERATION_ABORTED);
+    }
 
     struct MockRead {
         number: usize,
