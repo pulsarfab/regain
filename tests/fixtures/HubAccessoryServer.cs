@@ -46,6 +46,9 @@ internal sealed class HubCoverCalibratorServer : HubAccessoryServer { internal H
 
 internal class HubAccessoryServer : IDisposable
 {
+    // Exercise protocol behavior without treating ordinary CI scheduling as a
+    // lost reply. Deliberate lost replies below must outlast this deadline.
+    private const double RequestTimeoutSeconds = 2.0;
     private readonly string kind;
     private readonly int version;
     private readonly TcpListener listener = new(IPAddress.Loopback, 0);
@@ -99,7 +102,7 @@ internal class HubAccessoryServer : IDisposable
     {
         config["sources"]!.AsArray().Add(JsonSerializer.SerializeToNode(new {
             id = SourceId, label = "Private loopback " + kind,
-            polling = new { pollSeconds = 0.1, requestTimeoutSeconds = 0.3, attemptsPerCycle = 1,
+            polling = new { pollSeconds = 0.1, requestTimeoutSeconds = RequestTimeoutSeconds, attemptsPerCycle = 1,
                 initialBackoffSeconds = 0.05, backoffCapSeconds = 0.05 },
             backend = new { kind = "alpaca", baseUrl = Url, deviceType = kind, deviceNumber = 19,
                 connectionPolicy = "managed" }
@@ -230,7 +233,7 @@ internal class HubAccessoryServer : IDisposable
     }
     private void DelayLostReply()
     {
-        stopping.Token.WaitHandle.WaitOne(1000);
+        stopping.Token.WaitHandle.WaitOne(TimeSpan.FromSeconds(RequestTimeoutSeconds + 1));
         stopping.Token.ThrowIfCancellationRequested();
     }
     private static string SchedulerState()

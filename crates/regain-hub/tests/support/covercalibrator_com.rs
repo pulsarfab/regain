@@ -178,6 +178,7 @@ async fn registered_panel_applied_lost_reply_fences_siblings_without_cleanup_act
             let a = first.connection(config.outputs[0].id).unwrap();
             let b = second.connection(config.outputs[1].id).unwrap();
             assert_eq!(f.count("Panel", "Activate"), 1);
+            let generation = hub.source_snapshot(id).unwrap().generation;
             f.state("Panel", json!({"version":version,"panelLoseOnReply":true}));
             assert_eq!(
                 a.covercalibrator()
@@ -191,6 +192,17 @@ async fn registered_panel_applied_lost_reply_fences_siblings_without_cleanup_act
             assert_eq!(f.count("Panel", "CalibratorOn.applied"), 1);
             assert!(hub.source_snapshot(id).unwrap().write_uncertain);
             f.state("Panel", json!({"version":version}));
+            // Verify the shared fence survives a completed read recovery. Do
+            // not race cleanup against an incidental partial COM handshake.
+            until(|| {
+                let state = hub.source_snapshot(id).unwrap();
+                assert!(
+                    state.write_uncertain,
+                    "Read recovery cleared the write fence"
+                );
+                state.transport_connected && state.generation != generation && state.error.is_none()
+            })
+            .await;
             let panel = b.covercalibrator().unwrap();
             assert_eq!(
                 panel.calibrator_on(18).await.unwrap_err().kind,
@@ -212,12 +224,13 @@ async fn registered_panel_applied_lost_reply_fences_siblings_without_cleanup_act
                 panel.halt_cover().await.unwrap_err().kind,
                 ErrorKind::Uncertain
             );
+            assert!(hub.source_snapshot(id).unwrap().write_uncertain);
             first.disconnect(config.outputs[0].id);
             second.disconnect(config.outputs[1].id);
             drop(a);
             drop(b);
             hub.shutdown().await.unwrap();
-            // Poll recovery may activate a fresh read transport. Neither it nor
+            // Read recovery activated a fresh transport. Neither it nor
             // cleanup may replay the applied command or clear the shared fence.
             assert_eq!(f.count("Panel", "CalibratorOn"), 1);
             for member in [
