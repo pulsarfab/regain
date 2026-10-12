@@ -333,3 +333,15 @@ replacement exposure. The complete Rust core suite (70 tests), managed
 recovery suite (109 tests), and NINA suite (554 passed, three unavailable
 opt-in cases skipped) passed. The NINA run again included physical full-frame
 5-second direct/SDK repeats and cancellation/restart on the attached ASI6200.
+
+### Release fixture scheduling (0.6.0.7)
+
+Two 0.6.0.6 release attempts passed camera recovery tests but failed different
+Hub network-camera fault cases during preflight. Their one-second request
+budget could prevent the intended fault from being reached on the CI runner.
+The test fixture now uses a bounded five-second request allowance, exercises
+a deliberate 1.5-second preflight delay, and reports dispatch/error evidence
+directly on failure. Production behavior and the user profile timeout are
+unchanged. Complete NINA acceptance passed again (555 passed, three unavailable
+opt-ins skipped), as did all 109 managed recovery tests. Physical cases still
+use full-frame five-second captures and cancellation/restart.

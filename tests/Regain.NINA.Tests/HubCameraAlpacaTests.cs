@@ -19,7 +19,7 @@ namespace Regain.NINA.Tests;
 public sealed class HubCameraAlpacaTests
 {
     [Theory, InlineData("none"), InlineData("cancel"), InlineData("duration"), InlineData("startTime"),
-        InlineData("geometry"), InlineData("pixels"), InlineData("ack")]
+        InlineData("geometry"), InlineData("pixels"), InlineData("ack"), InlineData("preflightDelay")]
     public async Task ActualAlpacaCameraProxyPreservesCaptureOrFailsWithoutReplay(string fault)
     {
         var root = new DirectoryInfo(AppContext.BaseDirectory);
@@ -37,7 +37,7 @@ public sealed class HubCameraAlpacaTests
             Assert.True(publisher.Start());
             var publisherOutput = publisher.StandardOutput.ReadToEndAsync(); var publisherError = publisher.StandardError.ReadToEndAsync();
             Process? downstream = null; Task<string>? downstreamOutput = null, downstreamError = null;
-            using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(40));
+            using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(90));
             try {
                 using var readiness = new HttpClient { BaseAddress = new Uri("http://127.0.0.1:" + port), Timeout = TimeSpan.FromSeconds(1) };
                 var started = Stopwatch.StartNew();
@@ -59,7 +59,10 @@ public sealed class HubCameraAlpacaTests
                     schemaVersion = 1, instanceId = instance, revision = Guid.NewGuid(),
                     sources = new[] { new { id = source, label = "Private loopback camera", backend = new {
                         kind = "alpaca", baseUrl = relay.Url, deviceType = "camera", deviceNumber = 2, connectionPolicy = "managed" },
-                        polling = new { pollSeconds = 60, requestTimeoutSeconds = 1, connectionTimeoutSeconds = 10 } } },
+                        // These cases test capture semantics, not a one-second
+                        // HTTP deadline. Allow bounded runner scheduling delay
+                        // so preflight reaches the intended upstream fault.
+                        polling = new { pollSeconds = 60, requestTimeoutSeconds = 5, connectionTimeoutSeconds = 10 } } },
                     outputs = new[] { new { id = output, number = 4, label = "Private network camera A", device = new { kind = "proxy", source, deviceType = "camera" } },
                         new { id = second, number = 7, label = "Private network camera B", device = new { kind = "proxy", source, deviceType = "camera" } } }
                 }));
@@ -83,9 +86,17 @@ public sealed class HubCameraAlpacaTests
                 Assert.False(timing.Native); // A network proxy never gains native reread/recovery policy.
                 owner.EnableSubSample = true; owner.SubSampleWidth = 96; owner.SubSampleHeight = 64;
                 var sequence = new CaptureSequence { ExposureTime = 0.1, Binning = new BinningMode(1, 1), Gain = -1, Offset = -1 };
+                relay.ArmPreflightDelay();
+                string FailureEvidence(HubException error) => JsonSerializer.Serialize(new {
+                    fault, stage = "camera preflight/start", error.Failure, code = error.Remote?.Code,
+                    message = error.Remote?.Message, fields = error.Remote?.Fields,
+                    relayCommands = relay.Commands.ToArray()
+                });
                 if (fault == "ack") {
                     var rejected = Assert.Throws<HubException>(() => owner.StartExposure(sequence));
-                    Assert.True(rejected.Failure is HubFailure.Remote or HubFailure.Uncertain);
+                    Assert.True(rejected.Failure is HubFailure.Remote or HubFailure.Uncertain, FailureEvidence(rejected));
+                    Assert.True(relay.Commands.Count(command => command == "PUT startexposure") == 1,
+                        "Lost-acknowledgment fault was not reached: " + FailureEvidence(rejected));
                     Assert.Equal(1, settings.Object.Timeout);
                     var uncertain = await control.RequestAsync(JsonSerializer.SerializeToElement(new { op = "get", output,
                         property = new { member = "cameraAcquisition" } }), deadline.Token);
@@ -96,10 +107,7 @@ public sealed class HubCameraAlpacaTests
                 } else {
                     try { owner.StartExposure(sequence); }
                     catch (HubException error) {
-                        Console.WriteLine(JsonSerializer.Serialize(new { fault, stage = "camera preflight/start",
-                            error.Failure, code = error.Remote?.Code, message = error.Remote?.Message,
-                            fields = error.Remote?.Fields, relayCommands = relay.Commands.ToArray() }));
-                        throw;
+                        throw new InvalidOperationException(FailureEvidence(error), error);
                     }
                     if (fault == "cancel") {
                         await relay.ImageEntered.Task.WaitAsync(deadline.Token);
@@ -128,6 +136,7 @@ public sealed class HubCameraAlpacaTests
                         Assert.Equal(1, settings.Object.Timeout);
                     }
                 }
+                if (fault == "preflightDelay") Assert.True(relay.PreflightDelayUsed);
                 Assert.Equal(1, relay.Commands.Count(command => command == "PUT startexposure"));
                 Assert.DoesNotContain("PUT abortexposure", relay.Commands);
                 Assert.DoesNotContain("PUT stopexposure", relay.Commands);
@@ -164,10 +173,15 @@ public sealed class HubCameraAlpacaTests
         private readonly Task accept;
         private readonly Task[] handlers;
         private readonly string fault;
+        private int preflightDelay;
         internal readonly ConcurrentQueue<string> Commands = new();
         internal readonly TaskCompletionSource<bool> ImageEntered = new(TaskCreationOptions.RunContinuationsAsynchronously);
         internal readonly ManualResetEventSlim ReleaseImage = new();
         internal string Url { get; }
+        internal void ArmPreflightDelay() {
+            if (fault == "preflightDelay") Interlocked.Exchange(ref preflightDelay, 1);
+        }
+        internal bool PreflightDelayUsed => Volatile.Read(ref preflightDelay) == 2;
         internal CameraRelay(Uri upstream, string fault) {
             this.fault = fault; http = new HttpClient { BaseAddress = upstream, Timeout = TimeSpan.FromSeconds(15), MaxResponseContentBufferSize = 8 * 1024 * 1024 };
             listener.Start(); Url = "http://127.0.0.1:" + ((IPEndPoint)listener.LocalEndpoint).Port;
@@ -198,6 +212,12 @@ public sealed class HubCameraAlpacaTests
             while (offset < length) { var count = reader.Read(body, offset, length - offset); if (count == 0) throw new IOException("Truncated request"); offset += count; }
             var member = new Uri("http://fixture" + first[1]).Segments.Last();
             Commands.Enqueue(first[0] + " " + member);
+            if (first[0] == "GET" && Interlocked.CompareExchange(ref preflightDelay, 2, 1) == 1) {
+                // Exceed the old one-second fixture budget deterministically.
+                // Dedicated relay threads keep this out of the async pool.
+                if (stopping.Token.WaitHandle.WaitOne(TimeSpan.FromSeconds(1.5)))
+                    throw new OperationCanceledException(stopping.Token);
+            }
             using var request = new HttpRequestMessage(new HttpMethod(first[0]), first[1]);
             if (accepted is not null) request.Headers.TryAddWithoutValidation("Accept", accepted);
             if (first[0] == "PUT") request.Content = new StringContent(new string(body), Encoding.ASCII, "application/x-www-form-urlencoded");
