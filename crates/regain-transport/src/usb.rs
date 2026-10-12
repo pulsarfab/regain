@@ -3,6 +3,8 @@
 use anyhow::{Result, ensure};
 use serde::{Deserialize, Serialize};
 
+#[cfg(any(windows, test))]
+mod helper;
 #[cfg(target_os = "linux")]
 mod linux;
 #[cfg(windows)]
@@ -75,12 +77,20 @@ impl Target {
     }
 }
 
-/// Isolated helper with a hard lifetime bound. Cancellation by the supervisor
-/// waits for this operation to finish so a port cycle can restore its port.
+/// Session-scoped prepared helper with bounded individual operations. Supervisor
+/// cancellation waits for an operation to finish so a port cycle restores its port.
 pub fn run(args: Vec<String>) -> Result<()> {
+    if args.first().is_some_and(|arg| arg == "helper") {
+        #[cfg(windows)]
+        return windows::helper(&args[1..]);
+        #[cfg(not(windows))]
+        anyhow::bail!(
+            "The prepared USB reset helper is Windows-only; Linux uses scoped USB permissions"
+        );
+    }
     ensure!(
         args.len() == 2 || args.len() == 4,
-        "Usage: regain-device usb reset|cycle TARGET [--elevated DEADLINE]"
+        "Usage: regain-device usb reset|cycle TARGET; usb helper prepare TARGET | status [TARGET] | revoke TARGET | stop"
     );
     let cycle = match args[0].as_str() {
         "reset" => false,

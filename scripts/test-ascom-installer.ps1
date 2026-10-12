@@ -201,6 +201,46 @@ try {
     Assert-FocusCubeActivation
     Assert-Ofp2Activation
     Assert-EtaActivation
+    # The prepared USB broker uses this same installed executable. Hold an idle
+    # simulated worker to verify its image blocks maintenance without starting
+    # an elevated helper, opening equipment, or issuing a USB reset.
+    $deviceWorker = [Diagnostics.Process]::new()
+    $deviceWorkerStarted = $false
+    try {
+        $deviceWorker.StartInfo.FileName = Join-Path $destination 'regain-device.exe'
+        $deviceWorker.StartInfo.Arguments = 'zwo eaf serve --simulate'
+        $deviceWorker.StartInfo.UseShellExecute = $false
+        $deviceWorker.StartInfo.CreateNoWindow = $true
+        $deviceWorker.StartInfo.RedirectStandardInput = $true
+        $deviceWorker.StartInfo.RedirectStandardOutput = $true
+        $deviceWorker.StartInfo.RedirectStandardError = $true
+        $deviceWorkerStarted = $deviceWorker.Start()
+        if (!$deviceWorkerStarted) { throw 'Could not start the private unified-worker fixture' }
+        # The simulated request proves the worker reached its serving loop;
+        # keeping stdin open then leaves the executable alive without activity.
+        $deviceWorker.StandardInput.WriteLine('{"command":"identity"}')
+        $deviceWorker.StandardInput.Flush()
+        $identity = $deviceWorker.StandardOutput.ReadLineAsync()
+        if (!$identity.Wait(10000) -or !$identity.Result) { throw 'Unified-worker fixture did not answer identity' }
+        $reply = $identity.Result | ConvertFrom-Json
+        if (!$reply.ok -or $deviceWorker.HasExited) { throw 'Unified-worker fixture is not serving' }
+        Run-Setup 'busy-device-helper-upgrade' $false
+        Run-Uninstall 'busy-device-helper-uninstall' $false
+        if ($deviceWorker.HasExited) { throw 'Installer stopped the running unified-worker fixture' }
+        if (!(Test-Path -LiteralPath (Join-Path $destination 'regain-device.exe')) -or !(Test-Path $uninstallKey)) {
+            throw 'Busy-helper maintenance removed the installation'
+        }
+    } finally {
+        if ($deviceWorkerStarted -and !$deviceWorker.HasExited) {
+            $deviceWorker.StandardInput.Close()
+            if (!$deviceWorker.WaitForExit(10000)) {
+                $deviceWorker.Kill()
+                if (!$deviceWorker.WaitForExit(5000)) { throw 'Private unified-worker fixture did not exit' }
+            }
+        }
+        $deviceWorker.Dispose()
+    }
+    Write-Output 'Installed unified-worker image blocks upgrade and removal; no USB helper preparation or hardware access.'
     try { Hub-Fixture 'prepare' }
     finally { $hubPrepared = Test-Path -LiteralPath (Join-Path $testDir 'Hub fixture/fixture.json') }
     Assert-HubMetadata

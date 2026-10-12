@@ -1,17 +1,14 @@
 use super::Target;
-use anyhow::{Context, Result, ensure};
+use anyhow::{Result, ensure};
 use std::{
     mem::size_of,
     ptr::{null, null_mut},
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::{Instant, SystemTime, UNIX_EPOCH},
 };
 use windows_sys::{
     Win32::{
-        Devices::DeviceAndDriverInstallation::*,
-        Foundation::*,
-        Storage::FileSystem::*,
-        System::{IO::*, Threading::*},
-        UI::{Shell::*, WindowsAndMessaging::*},
+        Devices::DeviceAndDriverInstallation::*, Foundation::*, Storage::FileSystem::*,
+        System::IO::*,
     },
     core::GUID,
 };
@@ -78,73 +75,32 @@ pub(super) fn generation(location: &str) -> Result<u64> {
     }
 }
 
+mod broker;
+pub(super) fn helper(args: &[String]) -> Result<()> {
+    broker::helper(args)
+}
+
 pub fn run(target: &Target, cycle: bool, args: &[String]) -> Result<()> {
     if args.len() == 4 {
         ensure!(args[2] == "--elevated", "Unknown helper flag");
         let deadline: u64 = args[3].parse()?;
         ensure!(
-            now() <= deadline && deadline <= now() + 65,
+            now() < deadline && deadline <= now().saturating_add(65),
             "USB reset authorization expired"
         );
-    }
-    std::thread::spawn(|| {
-        std::thread::sleep(Duration::from_secs(70));
-        std::process::exit(124);
-    });
-    if unsafe { IsUserAnAdmin() } == 0 {
-        ensure!(
-            args.len() == 2,
-            "USB port cycling requires administrator access"
+        anyhow::bail!(
+            "One-shot elevation is no longer supported; explicitly prepare the USB reset helper before observing"
         );
-        // The payload is strictly hexadecimal. No shell parsing or caller-supplied executable.
-        let exe = wide(
-            std::env::current_exe()?
-                .to_str()
-                .context("Invalid helper executable path")?,
-        );
-        let verb = wide("runas");
-        let params = wide(&format!(
-            "usb {} {} --elevated {}",
-            if cycle { "cycle" } else { "reset" },
-            target.encode()?,
-            now() + 60
-        ));
-        unsafe {
-            let mut info: SHELLEXECUTEINFOW = std::mem::zeroed();
-            info.cbSize = size_of::<SHELLEXECUTEINFOW>() as u32;
-            info.fMask = SEE_MASK_NOCLOSEPROCESS | SEE_MASK_NOASYNC | SEE_MASK_FLAG_NO_UI;
-            info.lpVerb = verb.as_ptr();
-            info.lpFile = exe.as_ptr();
-            info.lpParameters = params.as_ptr();
-            info.nShow = SW_HIDE;
-            ensure!(
-                ShellExecuteExW(&mut info) != 0,
-                "USB reset elevation denied or unavailable: {}",
-                os_error()
-            );
-            ensure!(
-                !info.hProcess.is_null(),
-                "Elevated USB helper did not start"
-            );
-            let process = Handle(info.hProcess);
-            ensure!(
-                WaitForSingleObject(process.0, 65000) == WAIT_OBJECT_0,
-                "Elevated USB helper timed out"
-            );
-            let mut code = 0;
-            ensure!(
-                GetExitCodeProcess(process.0, &mut code) != 0 && code == 0,
-                "Elevated USB helper failed (exit {code}); camera remains disconnected"
-            );
-        }
-        return Ok(());
     }
-    cycle_camera(target)
+    // Automatic recovery must never display UAC, even when the helper is absent.
+    broker::recover(target, cycle)
 }
 
-fn cycle_camera(target: &Target) -> Result<()> {
+fn validate_binding(target: &Target) -> Result<()> {
+    target.validate()?;
     ensure!(
-        target.generation == Some(generation(&target.location)?),
+        target.generation.is_some_and(|generation| generation != 0)
+            && target.generation == Some(generation(&target.location)?),
         "USB camera has reenumerated since binding; reconnect before recovery"
     );
     let expected = format!(
@@ -156,6 +112,10 @@ fn cycle_camera(target: &Target) -> Result<()> {
             && target.location.split('\\').count() == 3,
         "Target must be one physical camera device instance"
     );
+    Ok(())
+}
+fn cycle_camera(target: &Target, deadline_unix_seconds: u64, deadline: Instant) -> Result<()> {
+    validate_binding(target)?;
     unsafe {
         let set = Set(SetupDiCreateDeviceInfoList(null(), null_mut()));
         ensure!(set.0 != -1, "Create device list: {}", os_error());
@@ -285,6 +245,13 @@ fn cycle_camera(target: &Target) -> Result<()> {
                 "USB port identity changed, disconnected, or target is a hub"
             );
             let mut params = [port, 0u32];
+            // Close the enumeration/query window with a second arrival check.
+            // A same-model replacement must never inherit this camera binding.
+            validate_binding(target)?;
+            ensure!(
+                now() < deadline_unix_seconds && Instant::now() < deadline,
+                "USB reset authorization expired before native dispatch; no port was cycled"
+            );
             ensure!(
                 DeviceIoControl(
                     handle.0,

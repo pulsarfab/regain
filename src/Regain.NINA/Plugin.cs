@@ -4,6 +4,7 @@ using System.Runtime.InteropServices;
 using NINA.Plugin;
 using NINA.Plugin.Interfaces;
 using NINA.Equipment.Interfaces;
+using NINA.Equipment.Interfaces.Mediator;
 using NINA.Equipment.Interfaces.ViewModel;
 using NINA.Image.Interfaces;
 using NINA.Core.Utility;
@@ -35,12 +36,19 @@ public sealed class CameraProvider : IEquipmentProvider<ICamera>
 {
     private readonly IExposureDataFactory images;
     private readonly IProfileService profiles;
+    private readonly Func<UsbPeripheralRecovery> peripheralRecoveryFactory;
     public string Name => "PulsarFab regain";
     [ImportingConstructor]
-    public CameraProvider(IExposureDataFactory images, IProfileService profiles)
+    public CameraProvider(IExposureDataFactory images, IProfileService profiles,
+        IFocuserMediator focuser, IFilterWheelMediator wheel, IRotatorMediator rotator, IGuiderMediator guider,
+        ISwitchMediator switches, IFlatDeviceMediator flat, IWeatherDataMediator weather,
+        ISafetyMonitorMediator safety, ITelescopeMediator telescope, IDomeMediator dome)
     {
         this.images = images;
         this.profiles = profiles;
+        peripheralRecoveryFactory = () => new UsbPeripheralRecovery(
+            NinaUsbPeripherals.Create(profiles, focuser, wheel, rotator, guider, switches, flat, weather, safety, telescope, dome),
+            Settings.LoadPeripheralRecovery(), message => CameraLog.Session("USB peripherals", message));
     }
     internal static readonly string DirectoryPath = Path.GetDirectoryName(typeof(CameraProvider).Assembly.Location)!;
     internal static HostClient NewHost() => new(Path.Combine(DirectoryPath, "regain-alpaca.exe"), Path.Combine(DirectoryPath, "ASICamera2.dll"), supervised: true, log: message => CameraLog.Worker("SDK", message));
@@ -52,5 +60,6 @@ public sealed class CameraProvider : IEquipmentProvider<ICamera>
         return reply.Result.EnumerateArray().Select(CameraDescriptor.Parse).ToList();
     }
     // Always available so setup also works before USB attachment.
-    public IList<ICamera> GetEquipment() => [new ResilientCamera(images, Settings.Cameras, profiles: profiles)];
+    public IList<ICamera> GetEquipment() => [new ResilientCamera(images, Settings.Cameras, profiles: profiles,
+        peripheralRecoveryFactory: peripheralRecoveryFactory)];
 }

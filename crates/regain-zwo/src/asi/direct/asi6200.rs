@@ -49,12 +49,14 @@ pub(super) struct ConnectionState {
     calibration: Option<Vec<u8>>,
     defects: Option<([u32; 4], Arc<processing::Defects>)>,
     initialized: bool,
+    register_snapshot: Option<RegisterSnapshot>,
 }
 impl ConnectionState {
     fn clear(&mut self) {
         self.calibration = None;
         self.defects = None;
         self.initialized = false;
+        self.register_snapshot = None;
     }
 
     fn prepare(
@@ -173,6 +175,52 @@ fn arm(
     Ok(())
 }
 
+#[derive(Clone, Default)]
+struct RegisterSnapshot {
+    registers: serde_json::Map<String, Value>,
+    observed_at_unix_us: u128,
+    error: Option<String>,
+}
+
+fn snapshot_registers(
+    cached: &mut Option<RegisterSnapshot>,
+    failure: bool,
+    mut read: impl FnMut(u16) -> Result<u8>,
+) -> RegisterSnapshot {
+    if failure {
+        // The acquisition's original transfer diagnostics retain the failing
+        // command and last acknowledgements. Optional failure probes must not
+        // delay restoration or pound a camera that has stopped responding.
+        return cached.clone().unwrap_or_default();
+    }
+    let mut snapshot = RegisterSnapshot {
+        observed_at_unix_us: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_micros(),
+        ..RegisterSnapshot::default()
+    };
+    // These BC mirrors are not a validated public register map. Never use
+    // their diagnostic values as readiness or acceptance gates.
+    for register in [
+        0x40, 0x41, 0x42, 0x43, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x00, 0x0b, 0x19, 0x23, 0x1c,
+    ] {
+        match read(register) {
+            Ok(value) => {
+                snapshot
+                    .registers
+                    .insert(format!("{register:02x}"), json!(value));
+            }
+            Err(error) => {
+                snapshot.error = Some(error.to_string());
+                break;
+            }
+        }
+    }
+    *cached = Some(snapshot.clone());
+    snapshot
+}
+
 fn register_snapshot(camera: &Camera, s: &Settings, stage: &str) {
     let started = Instant::now();
     // Capture the programmed counts/gates on healthy frames too, so a remote
@@ -188,33 +236,36 @@ fn register_snapshot(camera: &Camera, s: &Settings, stage: &str) {
     {
         return;
     }
-    // These BC mirrors are not a validated public register map. Record them
-    // for comparison with remote truncation reports; never gate acceptance on
-    // their values. Stop at the first USB failure to bound diagnostic work.
-    let mut registers = serde_json::Map::new();
-    let mut error = None;
-    for register in [
-        0x40, 0x41, 0x42, 0x43, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x00, 0x0b, 0x19, 0x23, 0x1c,
-    ] {
-        match camera.vendor(0xbc, register, 0, 1) {
-            Ok(value) => {
-                registers.insert(format!("{register:02x}"), json!(value[0]));
-            }
-            Err(failure) => {
-                error = Some(failure.to_string());
-                break;
-            }
-        }
-    }
-    let cached = camera.asi6200.borrow();
+    let mut cached = camera.asi6200.borrow_mut();
+    // Any preceding failed operation invalidates this setup generation. Even
+    // if the caller can finish/replay the image, avoid optional live probes
+    // until the next validated setup reestablishes the connection state.
+    let cached_only = failure || cached.generation != camera.transport_generation();
+    let snapshot = snapshot_registers(&mut cached.register_snapshot, cached_only, |register| {
+        Ok(camera.vendor(0xbc, register, 0, 1)?[0])
+    });
+    let RegisterSnapshot {
+        registers,
+        observed_at_unix_us,
+        error,
+    } = snapshot;
+    let source = if cached_only {
+        "cached_may_be_stale"
+    } else {
+        "live"
+    };
     super::diagnostics::details(
         "info",
         "asi6200.register_snapshot",
-        format_args!("ASI6200 {stage} FPGA register snapshot: {registers:?}; read error {error:?}"),
+        format_args!(
+            "ASI6200 {stage} FPGA register snapshot ({source}): {registers:?}; read error {error:?}"
+        ),
         json!({"stage":stage,"model":"ASI6200MM Pro","width":s.width,"height":s.height,
             "x":s.x,"y":s.y,"microseconds":s.microseconds,"offset":s.offset,
             "expectedTransferWords":s.width * s.height / 2,"expectedBytes":s.width * s.height * 2,
             "registerReadElapsedUs":started.elapsed().as_micros(),
+            "registerSource":source,"liveDiagnosticReads":!cached_only,
+            "registersObservedAtUnixUs":observed_at_unix_us,
             "timestampUnixUs":std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default().as_micros(),
             "transportGeneration":camera.transport_generation(),"setupGeneration":cached.generation,
@@ -857,6 +908,39 @@ mod tests {
 
     fn empty_calibration() -> Vec<u8> {
         [b"ASID".as_slice(), &8_u32.to_be_bytes()].concat()
+    }
+    #[test]
+    fn failure_snapshots_never_probe_the_unavailable_camera() {
+        let mut cached = None;
+        let empty = snapshot_registers(&mut cached, true, |_| panic!("failure must not probe USB"));
+        assert!(empty.registers.is_empty());
+        assert_eq!(empty.observed_at_unix_us, 0);
+        assert!(cached.is_none());
+
+        let reads = Cell::new(0);
+        let healthy = snapshot_registers(&mut cached, false, |register| {
+            reads.set(reads.get() + 1);
+            Ok(register as u8)
+        });
+        assert_eq!(reads.get(), 15);
+        assert_eq!(healthy.registers["23"], 0x23);
+        let failure = snapshot_registers(&mut cached, true, |_| panic!("failure must use cache"));
+        assert_eq!(failure.registers, healthy.registers);
+        assert_eq!(failure.observed_at_unix_us, healthy.observed_at_unix_us);
+        assert!(failure.error.is_none());
+
+        let partial = snapshot_registers(&mut cached, false, |register| {
+            if register == 0x42 {
+                anyhow::bail!("USB unavailable")
+            }
+            Ok(register as u8)
+        });
+        assert_eq!(partial.registers.len(), 2);
+        assert_eq!(partial.error.as_deref(), Some("USB unavailable"));
+        let failure =
+            snapshot_registers(&mut cached, true, |_| panic!("do not repeat failed probes"));
+        assert_eq!(failure.registers, partial.registers);
+        assert_eq!(failure.error, partial.error);
     }
     #[test]
     fn queued_failures_cannot_replay_before_a_completed_exposure() {

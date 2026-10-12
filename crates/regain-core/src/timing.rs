@@ -23,6 +23,7 @@ pub struct NativeCameraTiming {
     options: RecoveryOptions,
     direct: bool,
     sdk_fallback: bool,
+    wait_for_usb_peripherals: bool,
 }
 impl NativeCameraTiming {
     /// No probing or equipment I/O. The selection must remain fixed for this
@@ -33,7 +34,14 @@ impl NativeCameraTiming {
             options: selection.recovery.clone(),
             direct: selection.direct,
             sdk_fallback: selection.direct && selection.sdk_fallback,
+            wait_for_usb_peripherals: false,
         })
+    }
+    /// Match the optional native open flag. Frontends without a peripheral
+    /// callback retain their existing allowances and never await confirmation.
+    pub fn with_usb_peripheral_wait(mut self, enabled: bool) -> Self {
+        self.wait_for_usb_peripherals = enabled;
+        self
     }
     fn command(&self) -> f64 {
         self.options.command_timeout_seconds
@@ -65,7 +73,14 @@ impl NativeCameraTiming {
     fn usb_reset_seconds(&self) -> f64 {
         // Rebinding can begin just before the reappearance deadline and spend
         // one full bind-command allowance beyond it, plus its preceding delay.
-        USB_RESET_SECONDS as f64 + 2. * USB_BIND_SECONDS as f64 + USB_REBIND_PAUSE_SECONDS
+        USB_RESET_SECONDS as f64
+            + 2. * USB_BIND_SECONDS as f64
+            + USB_REBIND_PAUSE_SECONDS
+            + if self.wait_for_usb_peripherals {
+                crate::usb_peripherals::WAIT_SECONDS as f64
+            } else {
+                0.
+            }
     }
     fn cleanup_seconds(&self) -> f64 {
         // A connecting task can close before opening, on failure and after a
@@ -163,7 +178,13 @@ impl NativeCameraTiming {
             + 0.025;
         duration(
             (1 + replacements) as f64 * attempt
-                + if o.usb_reset_after_failures > 0 && o.usb_reset_after_failures <= replacements {
+                // Initial pre-arm restoration retries do not consume exposure
+                // replacements. Cover their complete worst-case restoration,
+                // including optional validation fallback and thermal settle.
+                + (o.pre_exposure_reconnect_attempts - 1) as f64
+                    * (o.reconnect_delay_seconds + self.open_seconds()
+                        + self.restore_seconds() + settle + fallback + 4. * self.command())
+                + if o.usb_reset_after_failures > 0 {
                     self.usb_reset_seconds()
                 } else {
                     0.
@@ -229,7 +250,7 @@ mod tests {
         );
     }
     #[test]
-    fn usb_capture_allowance_requires_a_reachable_replacement_and_counts_one_reset() {
+    fn usb_capture_allowance_covers_one_reset_during_pre_arm_outage_recovery() {
         let mut selection = selection(true);
         let base = NativeCameraTiming::new(&selection).unwrap();
         selection.recovery.usb_reset_after_failures = 4;
@@ -237,8 +258,9 @@ mod tests {
             NativeCameraTiming::new(&selection)
                 .unwrap()
                 .capture_allowance(1_000_000)
-                .unwrap(),
-            base.capture_allowance(1_000_000).unwrap()
+                .unwrap()
+                - base.capture_allowance(1_000_000).unwrap(),
+            Duration::from_millis(140_500)
         );
         selection.recovery.usb_reset_after_failures = 1;
         let reset = NativeCameraTiming::new(&selection).unwrap();
@@ -248,9 +270,34 @@ mod tests {
             Duration::from_millis(140_500)
         );
         assert_eq!(
-            reset.capture_allowance(600_000_000).unwrap(),
-            base.capture_allowance(600_000_000).unwrap()
+            reset.capture_allowance(600_000_000).unwrap()
+                - base.capture_allowance(600_000_000).unwrap(),
+            Duration::from_millis(140_500)
         );
+    }
+    #[test]
+    fn peripheral_wait_allowance_is_opt_in_and_only_applies_when_usb_recovery_is_enabled() {
+        for direct in [false, true] {
+            let mut selection = selection(direct);
+            let ordinary = NativeCameraTiming::new(&selection).unwrap();
+            let opted_in = ordinary.clone().with_usb_peripheral_wait(true);
+            assert_eq!(
+                ordinary.capture_allowance(1_000_000).unwrap(),
+                opted_in.capture_allowance(1_000_000).unwrap()
+            );
+            selection.recovery.usb_reset_after_failures = 1;
+            let reset = NativeCameraTiming::new(&selection).unwrap();
+            let gated = reset.clone().with_usb_peripheral_wait(true);
+            for exposure in [1_000_000, 600_000_000] {
+                assert_eq!(
+                    gated.capture_allowance(exposure).unwrap()
+                        - reset.capture_allowance(exposure).unwrap(),
+                    Duration::from_secs(crate::usb_peripherals::WAIT_SECONDS)
+                );
+            }
+            assert_eq!(gated.cleanup_allowance(), reset.cleanup_allowance());
+            assert_eq!(gated.connection_allowance(), reset.connection_allowance());
+        }
     }
     #[test]
     fn sdk_fallback_and_late_control_restoration_are_included_only_for_native_paths() {

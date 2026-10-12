@@ -22,6 +22,7 @@ struct Supervisor {
     status: Option<SharedStatus>,
     cooling: Option<regain_core::cooling::CoolingHandle>,
     runtime_options: Option<regain_core::camera_options::CameraRuntimeHandle>,
+    usb_peripherals: Option<regain_core::usb_peripherals::PeripheralRecoveryHandle>,
     capture: Arc<Mutex<Capture>>,
     task: Option<tokio::task::JoinHandle<()>>,
     runtime: Runtime,
@@ -48,11 +49,22 @@ impl Supervisor {
         self.status = None;
         self.cooling = None;
         self.runtime_options = None;
+        self.usb_peripherals = None;
     }
     async fn command(&mut self, method: &str, p: Value) -> Result<(Value, Arc<[u8]>)> {
         let mut pixels: Arc<[u8]> = Arc::from([]);
         let token = CancellationToken::new();
         let value = match method {
+            "usb-peripherals-ready" => {
+                let acknowledgement: regain_core::usb_peripherals::Acknowledgement =
+                    serde_json::from_value(p)?;
+                let id = acknowledgement.id;
+                self.usb_peripherals
+                    .as_ref()
+                    .ok_or_else(|| invalid("Camera not open"))?
+                    .acknowledge(acknowledgement)?;
+                json!({"id":id,"accepted":true})
+            }
             "diagnostics-dump" => {
                 self.engine
                     .try_lock()
@@ -71,6 +83,7 @@ impl Supervisor {
                 handle.update(serde_json::from_value(p)?)?;
                 if let Ok(mut engine) = self.engine.try_lock()
                     && let Some(session) = engine.as_mut()
+                    && session.snapshot().control_connection_available
                 {
                     session.refresh(&token).await?;
                 }
@@ -121,6 +134,11 @@ impl Supervisor {
                     },
                 };
                 let mut session = Session::new(selection, self.runtime.clone(), self.log.clone())?;
+                ensure!(
+                    p["waitForUsbPeripherals"].is_null() || p["waitForUsbPeripherals"].is_boolean(),
+                    invalid("Invalid waitForUsbPeripherals option")
+                );
+                session.wait_for_usb_peripherals(p["waitForUsbPeripherals"] == true)?;
                 if let Err(e) = session.connect(&token).await {
                     session.close().await;
                     return Err(e);
@@ -135,6 +153,7 @@ impl Supervisor {
                 let state = session.snapshot();
                 self.cooling = Some(session.cooling());
                 self.runtime_options = Some(session.runtime_options());
+                self.usb_peripherals = Some(session.usb_peripheral_recovery());
                 self.status = Some(session.status.clone());
                 *self.engine.lock().await = Some(session);
                 json!({"info":state.info,"serial":state.serial,"sdkVersion":state.sdk_version,"backend":state.backend,"sdkFallback":state.sdk_fallback,"supervised":true,"controls":state.controls.values().collect::<Vec<_>>()})
@@ -184,7 +203,11 @@ impl Supervisor {
                 )?;
                 if let Ok(mut engine) = self.engine.try_lock()
                     && let Some(session) = engine.as_mut()
+                    && session.snapshot().control_connection_available
                 {
+                    // Persistent imaging settings are queued intent. During an
+                    // outage the next capture restores them before its first
+                    // start; telemetry must not open competing workers.
                     session.refresh(&token).await?;
                 }
                 Value::Null
@@ -267,7 +290,7 @@ impl Supervisor {
                     .ok_or_else(|| invalid("Camera not open"))?
                     .lock()
                     .unwrap();
-                json!({"state":if c.busy{1}else if c.error.is_some(){3}else if c.frame.is_some(){2}else{0},"phase":state.phase,"retry":state.retry,"error":c.error,"backend":state.backend,"sdkFallback":state.sdk_fallback,"environment":{"8":state.values.get(&8),"15":state.values.get(&15)},"controlConnectionAvailable":state.control_connection_available,"snapshot":if c.busy {None} else {Some(&*state)}})
+                json!({"state":if c.busy{1}else if c.error.is_some(){3}else if c.frame.is_some(){2}else{0},"phase":state.phase,"retry":state.retry,"error":c.error,"backend":state.backend,"sdkFallback":state.sdk_fallback,"environment":{"8":state.values.get(&8),"15":state.values.get(&15)},"controlConnectionAvailable":state.control_connection_available,"usbPeripheralRecoveryId":state.usb_peripheral_recovery_id,"snapshot":if c.busy {None} else {Some(&*state)}})
             }
             "download" => {
                 let c = self.capture.lock().unwrap();
@@ -298,6 +321,7 @@ impl Supervisor {
 pub async fn run(runtime: Runtime, direct: bool, log: Diagnostic) -> Result<()> {
     let mut supervisor = Supervisor {
         runtime_options: None,
+        usb_peripherals: None,
         engine: Arc::new(AsyncMutex::new(None)),
         status: None,
         cooling: None,

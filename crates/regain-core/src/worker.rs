@@ -55,7 +55,7 @@ impl Runtime {
             .context("USB helper deadline exceeded")??;
         ensure!(
             output.status.success(),
-            "USB helper failed ({}; Windows may require administrator approval): {}",
+            "USB recovery command failed ({}): {}",
             output.status,
             String::from_utf8_lossy(&output.stderr).trim()
         );
@@ -286,8 +286,8 @@ impl Worker {
         token: &CancellationToken,
         maximum_bytes: usize,
     ) -> Result<(Value, Vec<u8>)> {
-        let control =
-            method == "set" && matches!(params["control"].as_i64(), Some(0 | 5 | 16 | 17));
+        let control = matches!(method, "set" | "set-control-state" | "resume-cooling")
+            || (method == "white-balance" && !params.is_null());
         let mut dispatched = false;
         let result = tokio::select! {
             biased;
@@ -302,7 +302,7 @@ impl Worker {
                 && dispatched
                 && !matches!(
                     error.downcast_ref::<Failure>(),
-                    Some(Failure::Worker { .. } | Failure::UncertainControl { .. })
+                    Some(Failure::UncertainControl { .. })
                 )
             {
                 // The process may have consumed a partial/complete command. A
@@ -572,7 +572,19 @@ mod tests {
     #[tokio::test]
     async fn persistent_control_transport_loss_retires_simulated_worker_without_retry() {
         let runtime = simulated_runtime(json!({"instant":true,"fault":"hang"}));
-        for control in [0, 5, 16, 17] {
+        let mut commands: Vec<_> = crate::timing::PERSISTENT_CONTROLS
+            .into_iter()
+            .map(|control| ("set", json!({"control":control,"value":0})))
+            .collect();
+        commands.extend([
+            (
+                "set-control-state",
+                json!({"control":21,"value":0,"auto":false}),
+            ),
+            ("white-balance", json!({"mode":"unity","output":"raw"})),
+            ("resume-cooling", json!({"power":30,"temperature":-5.})),
+        ]);
+        for (method, params) in commands {
             for cancel_after_dispatch in [false, true] {
                 let token = CancellationToken::new();
                 let mut worker = runtime
@@ -598,8 +610,7 @@ mod tests {
                     .unwrap();
                 worker.input.write_all(&header).await.unwrap();
                 worker.input.flush().await.unwrap();
-                let mut call =
-                    Box::pin(worker.call("set", json!({"control":control,"value":0}), 1., &token));
+                let mut call = Box::pin(worker.call(method, params.clone(), 1., &token));
                 if cancel_after_dispatch {
                     // Poll through write admission before cancellation, rather than
                     // using a scheduling-sensitive sleep to guess dispatch timing.
@@ -616,7 +627,7 @@ mod tests {
                         error.downcast_ref::<Failure>(),
                         Some(Failure::UncertainControl { .. })
                     ),
-                    "{error:#}"
+                    "{method}: {error:#}"
                 );
                 assert!(!crate::retryable(&error));
                 assert!(worker.child.try_wait().unwrap().is_some());
@@ -651,7 +662,7 @@ mod tests {
             .unwrap();
         let token = CancellationToken::new();
         let id = worker.id;
-        for control in [0, 5, 16, 17] {
+        for control in crate::timing::PERSISTENT_CONTROLS {
             let error = worker
                 .control_call(
                     "set",

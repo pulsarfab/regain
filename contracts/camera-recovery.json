@@ -14,6 +14,7 @@
       "exposureGraceSeconds": 30.0,
       "maxRetries": 3,
       "maximumRetryExposureSeconds": 30.0,
+      "preExposureReconnectAttempts": 3,
       "readyFrameDownloadRetries": 2,
       "reconnectDelaySeconds": 5.0,
       "temperatureToleranceC": 2.0,
@@ -35,7 +36,7 @@
           "group": "Native camera recovery",
           "key": "commandTimeoutSeconds",
           "label": "Command timeout",
-          "order": 3,
+          "order": 4,
           "platforms": [
             "windows",
             "linux",
@@ -60,7 +61,7 @@
           "group": "Native camera recovery",
           "key": "coolerMaxPowerChangePer5Seconds",
           "label": "Direct cooler maximum power change",
-          "order": 14,
+          "order": 15,
           "platforms": [
             "windows",
             "linux",
@@ -85,7 +86,7 @@
           "group": "Native camera recovery",
           "key": "coolingSampleSeconds",
           "label": "Cooling check interval",
-          "order": 9,
+          "order": 10,
           "platforms": [
             "windows",
             "linux",
@@ -110,7 +111,7 @@
           "group": "Native camera recovery",
           "key": "coolingStableSamples",
           "label": "Stable cooling samples",
-          "order": 8,
+          "order": 9,
           "platforms": [
             "windows",
             "linux",
@@ -135,7 +136,7 @@
           "group": "Native camera recovery",
           "key": "coolingTimeoutSeconds",
           "label": "Cooling recovery timeout",
-          "order": 6,
+          "order": 7,
           "platforms": [
             "windows",
             "linux",
@@ -173,7 +174,7 @@
           "group": "Native camera recovery",
           "key": "directReadChunkKiB",
           "label": "Direct USB read size",
-          "order": 12,
+          "order": 13,
           "platforms": [
             "windows",
             "linux",
@@ -198,7 +199,7 @@
           "group": "Native camera recovery",
           "key": "directReadRetries",
           "label": "Direct USB rereads",
-          "order": 11,
+          "order": 12,
           "platforms": [
             "windows",
             "linux",
@@ -223,7 +224,7 @@
           "group": "Native camera recovery",
           "key": "downloadTimeoutSeconds",
           "label": "Download timeout",
-          "order": 4,
+          "order": 5,
           "platforms": [
             "windows",
             "linux",
@@ -248,7 +249,7 @@
           "group": "Native camera recovery",
           "key": "exposureGraceSeconds",
           "label": "Exposure grace",
-          "order": 5,
+          "order": 6,
           "platforms": [
             "windows",
             "linux",
@@ -298,7 +299,7 @@
           "group": "Native camera recovery",
           "key": "maximumRetryExposureSeconds",
           "label": "Replacement exposure limit",
-          "order": 1,
+          "order": 2,
           "platforms": [
             "windows",
             "linux",
@@ -308,6 +309,31 @@
           "sensitive": false,
           "step": 1.0,
           "units": "s"
+        }
+      },
+      "preExposureReconnectAttempts": {
+        "default": 3,
+        "description": "Maximum connection/restoration attempts before dispatching the first exposure start, including a failed initial preparation. Applies to long exposures without permitting their replacement. Telemetry holds its last reading during an outage; capture owns bounded reconnection. Uncertain control writes are never replayed by this retry policy.",
+        "maximum": 10,
+        "minimum": 1,
+        "title": "Pre-exposure reconnect attempts",
+        "type": "integer",
+        "x-regain": {
+          "apply": "reconnect",
+          "description": "Maximum connection/restoration attempts before dispatching the first exposure start, including a failed initial preparation. Applies to long exposures without permitting their replacement. Telemetry holds its last reading during an outage; capture owns bounded reconnection. Uncertain control writes are never replayed by this retry policy.",
+          "group": "Native camera recovery",
+          "key": "preExposureReconnectAttempts",
+          "label": "Pre-exposure reconnect attempts",
+          "order": 1,
+          "platforms": [
+            "windows",
+            "linux",
+            "macos"
+          ],
+          "section": "Recovery",
+          "sensitive": false,
+          "step": 1.0,
+          "units": "attempts"
         }
       },
       "readyFrameDownloadRetries": {
@@ -323,7 +349,7 @@
           "group": "Native camera recovery",
           "key": "readyFrameDownloadRetries",
           "label": "SDK ready-frame rereads",
-          "order": 10,
+          "order": 11,
           "platforms": [
             "windows",
             "linux",
@@ -348,7 +374,7 @@
           "group": "Native camera recovery",
           "key": "reconnectDelaySeconds",
           "label": "Reconnect delay",
-          "order": 2,
+          "order": 3,
           "platforms": [
             "windows",
             "linux",
@@ -373,7 +399,7 @@
           "group": "Native camera recovery",
           "key": "temperatureToleranceC",
           "label": "Temperature tolerance",
-          "order": 7,
+          "order": 8,
           "platforms": [
             "windows",
             "linux",
@@ -401,7 +427,7 @@
           "group": "Native camera recovery",
           "key": "transferLogMode",
           "label": "Transfer logging",
-          "order": 13,
+          "order": 14,
           "platforms": [
             "windows",
             "linux",
@@ -424,7 +450,7 @@
           "group": "Native camera recovery",
           "key": "usbPortCycle",
           "label": "Linux USB port cycle",
-          "order": 16,
+          "order": 17,
           "platforms": [
             "linux"
           ],
@@ -436,18 +462,18 @@
       },
       "usbResetAfterFailures": {
         "default": 0,
-        "description": "After this many recoverable failures, permit at most one USB reset per capture when a replacement exposure is allowed. Zero disables it; two tries reconnecting first. Requires a verified camera target and OS permissions. Windows may request administrator approval; external camera power is unchanged.",
+        "description": "After this many recoverable failures, permit at most one USB reset per outage and capture. Connection failures persist across requests. Reset may restore a connection before exposure start regardless of exposure duration; it never permits replacing a long exposure. Zero disables it; two tries reconnecting first. Requires a verified camera target and OS permissions. On Windows, prepare the elevated helper before imaging; automatic recovery never requests elevation. Cycling camera USB may disconnect peripherals on its internal hub. External camera power is unchanged.",
         "maximum": 20,
         "minimum": 0,
         "title": "USB reset threshold",
         "type": "integer",
         "x-regain": {
           "apply": "reconnect",
-          "description": "After this many recoverable failures, permit at most one USB reset per capture when a replacement exposure is allowed. Zero disables it; two tries reconnecting first. Requires a verified camera target and OS permissions. Windows may request administrator approval; external camera power is unchanged.",
+          "description": "After this many recoverable failures, permit at most one USB reset per outage and capture. Connection failures persist across requests. Reset may restore a connection before exposure start regardless of exposure duration; it never permits replacing a long exposure. Zero disables it; two tries reconnecting first. Requires a verified camera target and OS permissions. On Windows, prepare the elevated helper before imaging; automatic recovery never requests elevation. Cycling camera USB may disconnect peripherals on its internal hub. External camera power is unchanged.",
           "group": "Native camera recovery",
           "key": "usbResetAfterFailures",
           "label": "USB reset threshold",
-          "order": 15,
+          "order": 16,
           "platforms": [
             "windows",
             "linux",

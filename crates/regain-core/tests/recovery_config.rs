@@ -20,6 +20,7 @@ fn current_defaults() -> Value {
     values["directReadChunkKiB"] = json!(1024);
     values["transferLogMode"] = json!("circular");
     values["coolerMaxPowerChangePer5Seconds"] = json!(25.0);
+    values["preExposureReconnectAttempts"] = json!(3);
     values
 }
 
@@ -78,6 +79,41 @@ fn legacy_defaults_sparse_profiles_and_public_paths_remain_compatible() {
     sparse.validate().unwrap();
     let restored: RecoveryOptions = serde_json::from_value(expected).unwrap();
     assert_eq!(restored, sparse);
+}
+
+#[test]
+fn pre_exposure_reconnect_attempts_have_independent_integer_bounds() {
+    for attempts in [1, 3, 10] {
+        let options: RecoveryOptions = serde_json::from_value(json!({
+            "maxRetries":0, "preExposureReconnectAttempts":attempts
+        }))
+        .unwrap();
+        options.validate().unwrap();
+        assert_eq!(options.max_retries, 0);
+        assert_eq!(options.pre_exposure_reconnect_attempts, attempts);
+    }
+    for invalid in [
+        json!(0),
+        json!(11),
+        json!(-1),
+        json!(1.5),
+        json!(true),
+        json!("3"),
+        Value::Null,
+    ] {
+        assert!(
+            serde_json::from_value::<RecoveryOptions>(json!({
+                "preExposureReconnectAttempts":invalid
+            }))
+            .map(|options| options.validate().is_err())
+            .unwrap_or(true)
+        );
+    }
+    let schema = RecoveryOptions::schema();
+    let field = &schema["properties"]["preExposureReconnectAttempts"];
+    assert_eq!(field["default"], 3);
+    assert_eq!(field["minimum"], 1);
+    assert_eq!(field["maximum"], 10);
 }
 
 #[test]
@@ -189,7 +225,7 @@ fn descriptor_defaults_and_serialized_keys_match_the_shipped_profile() {
     let defaults = current_defaults();
     assert_eq!(schema["default"], defaults);
     assert_eq!(schema["additionalProperties"], false);
-    assert_eq!(schema["properties"].as_object().unwrap().len(), 17);
+    assert_eq!(schema["properties"].as_object().unwrap().len(), 18);
     for (key, default) in defaults.as_object().unwrap() {
         let property = &schema["properties"][key];
         assert_eq!(&property["default"], default);

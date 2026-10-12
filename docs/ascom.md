@@ -185,6 +185,12 @@ Replacement exposures get three retries only at 30 seconds or less. Reconnects
 restore the prior setpoint and wait near the prior measured temperature, with
 a cooler-output check. Configure these limits on the Recovery and Cooler tabs.
 
+Before start is dispatched, connection and settings restoration have a separate
+three-attempt budget, including for long exposures. Set **Pre-exposure reconnect
+attempts** to change it. This does not authorize replacing a long exposure after
+start. During an outage, telemetry holds its last measured values and marks
+controls unavailable; the next capture owns bounded reconnection.
+
 Supported operations include RAW16 images, symmetric binning, ROI, gain,
 offset, exposure limits, cooling, and abort. ImageBytes avoids JSON pixel arrays;
 JSON ImageArray is also supported. Extra controls and diagnostics are available
@@ -210,6 +216,12 @@ changes use the shared acknowledged control path during capture: setters return
 after hardware write and readback, rather than reporting queued intent as applied.
 They can fail if the camera is unavailable or the command deadline expires.
 Disconnect every client before editing setup.
+
+Direct cooling keeps its one-second feedback cadence. Changed encoded power
+outputs are sent immediately within the configured slew limit; unchanged outputs
+are refreshed after five seconds since acknowledgement. Repeated enabled
+cooler/heater settings avoid other redundant writes. Initialization, reconnect
+and explicit cooler/heater-off still force their required safety/restoration commands.
 
 ## Build and test
 
@@ -322,9 +334,14 @@ verified; movement validation is pending.
 ## USB reset recovery
 
 Camera setup can escalate failed captures to a device-scoped USB reset on Windows
-and Linux. It is disabled by default; set the failure threshold to 2 to try an
-ordinary reconnect first. See [setup, permissions, supported cameras, and power
-limitations](usb-recovery.md).
+and Linux. It is disabled by default. In Windows camera setup, turn on **Automatic
+USB reset** while disconnected and approve elevation before
+imaging. The initial threshold is 2, allowing an ordinary reconnect first.
+The shared helper survives worker, supervisor and ASCOM application restarts
+until disabled, sign-out or reboot; the ASCOM client stays unelevated and recovery
+never prompts for UAC. Turning it off revokes only the selected camera's approval.
+Camera-hub peripherals can also disconnect during a cycle.
+See [setup, permissions, supported cameras, and power limitations](usb-recovery.md).
 
 ## ASI662MC direct mode
 

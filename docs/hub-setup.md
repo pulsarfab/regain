@@ -810,6 +810,12 @@ and same-frame rereads remain separate: a long exposure may allow a retained-fra
 reread on a supported camera without allowing a replacement exposure. Proxy
 cameras do not gain that capability by being republished.
 
+**Pre-exposure reconnect attempts** separately bounds connection and settings
+restoration before start is dispatched (three attempts by default). It applies
+to long exposures without allowing replacement after start. Background telemetry
+holds its last values during an outage and reports controls unavailable; capture
+owns reconnection.
+
 USB reset stays disabled at zero. The Linux port-cycle option appears only for a
 Linux host; editing on Windows preserves its saved value. These settings do not
 change external camera power. Set limits for the chosen equipment; small positive

@@ -13,6 +13,29 @@ use std::{
 };
 use tokio::time::Instant;
 
+#[cfg(any(windows, test))]
+fn validate_usb_helper_status(status: &Value, now: u64) -> Result<()> {
+    let authorized_lifetime = match (
+        status.get("sessionScoped"),
+        status.get("expiresAtUnixSeconds"),
+    ) {
+        (Some(Value::Bool(true)), Some(Value::Null)) => true,
+        (None | Some(Value::Bool(false)), Some(expiry)) => expiry
+            .as_u64()
+            .is_some_and(|expiry| expiry > now && expiry <= 253402300799),
+        _ => false,
+    };
+    ensure!(
+        status["protocolVersion"] == 1
+            && status["running"] == true
+            && status["elevated"] == true
+            && status["approved"] == true
+            && authorized_lifetime,
+        "USB recovery helper is not ready for this camera. Disconnect and prepare the helper in camera setup before imaging; automatic recovery never requests elevation."
+    );
+    Ok(())
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum OpenPurpose {
     Acquisition,
@@ -38,6 +61,10 @@ pub struct Session {
     cooling: cooling::Mailbox,
     runtime_options: camera_options::CameraRuntimeHandle,
     applied_runtime_options: Option<camera_options::CameraRuntimeOptions>,
+    reconnect_not_before: Option<Instant>,
+    connection_failures: u32,
+    outage_usb_reset: bool,
+    usb_peripherals: usb_peripherals::PeripheralRecoveryHandle,
 }
 impl Session {
     pub fn new(selection: Selection, runtime: Runtime, log: Diagnostic) -> Result<Self> {
@@ -67,6 +94,7 @@ impl Session {
             log(level, event, message);
         });
         Ok(Self {
+            usb_peripherals: usb_peripherals::PeripheralRecoveryHandle::new(status.clone()),
             runtime_options: camera_options::CameraRuntimeHandle::new(&selection.recovery),
             applied_runtime_options: None,
             status,
@@ -84,6 +112,9 @@ impl Session {
             cooling_seeded: false,
             usb_target: None,
             cooling: cooling::Mailbox::default(),
+            reconnect_not_before: None,
+            connection_failures: 0,
+            outage_usb_reset: false,
         })
     }
     fn emit(&self, level: &str, event: &str, message: impl AsRef<str>) {
@@ -118,6 +149,32 @@ impl Session {
     }
     pub fn runtime_options(&self) -> camera_options::CameraRuntimeHandle {
         self.runtime_options.clone()
+    }
+    /// Opt in only when the frontend can reconnect and verify camera-hub
+    /// peripherals. Configure before connecting; ordinary frontends are inert.
+    pub fn wait_for_usb_peripherals(&self, enabled: bool) -> Result<()> {
+        ensure!(
+            !self.ever_opened,
+            invalid("Configure USB peripheral recovery before connecting")
+        );
+        self.usb_peripherals.enable(enabled)
+    }
+    pub fn usb_peripheral_recovery(&self) -> usb_peripherals::PeripheralRecoveryHandle {
+        self.usb_peripherals.clone()
+    }
+    fn emit_usb_episode(&self, level: &str, event: &str, message: &str, id: Option<u64>) {
+        self.emit(
+            level,
+            event,
+            format!(
+                "REGAIN_DIAGNOSTIC {}",
+                json!({
+                    "version":1,"level":level,"event":event,"message":message,
+                "pid":std::process::id(),"timestampUnixUs":Utc::now().timestamp_micros(),
+                "details":{"usbPeripheralRecoveryId":id}
+                })
+            ),
+        );
     }
     /// Drive one reserved command while idle. Capture drives the same mailbox
     /// at safe worker checkpoints. Frontends retain/serialize this operation.
@@ -264,16 +321,38 @@ impl Session {
                 .as_secs_f64();
             ensure!(remaining > 0., "Control deadline expired before readback");
             let request_started = Instant::now();
+            // Legacy SDK controls and direct LED/heater/fan settings retain
+            // their ordinary scalar readback. All writes still share one
+            // absolute write/readback deadline and uncertainty boundary.
+            let timed_observation = ACKNOWLEDGED_CONTROLS.contains(&kind);
             let reply = self
                 .worker
                 .as_mut()
                 .context("Camera worker is disconnected")?
-                .control_call("get-observation", json!({"control":kind}), deadline, token)
+                .control_call(
+                    if timed_observation {
+                        "get-observation"
+                    } else {
+                        "get"
+                    },
+                    json!({"control":kind}),
+                    deadline,
+                    token,
+                )
                 .await?
                 .0;
-            let observation = serde_json::from_value::<ControlObservationReply>(reply)
-                .map_err(|_| invalid("Invalid control readback"))?
-                .normalize(request_started)?;
+            let observation = if timed_observation {
+                serde_json::from_value::<ControlObservationReply>(reply)
+                    .map_err(|_| invalid("Invalid control readback"))?
+                    .normalize(request_started)?
+            } else {
+                ControlObservation {
+                    value: reply
+                        .as_i64()
+                        .ok_or_else(|| invalid("Invalid control readback"))?,
+                    observed_at: request_started,
+                }
+            };
             let actual = observation.value;
             if actual != value {
                 let cap = self.snapshot().controls.get(&kind).cloned();
@@ -479,6 +558,27 @@ impl Session {
         }
         self.status.lock().unwrap().process_id = None;
     }
+    /// One outage clock survives telemetry calls and failed capture requests.
+    /// Invalidating a worker for identity binding or shutdown is not a fault.
+    fn connection_failed(&mut self) {
+        self.connection_failures = self.connection_failures.saturating_add(1);
+        self.reconnect_not_before = Some(
+            Instant::now()
+                + Duration::from_secs_f64(self.selection.recovery.reconnect_delay_seconds),
+        );
+    }
+    async fn reconnect_delay(&self, token: &CancellationToken) -> Result<()> {
+        self.phase("Reconnect delay");
+        let seconds = self
+            .reconnect_not_before
+            .map(|until| {
+                until
+                    .saturating_duration_since(Instant::now())
+                    .as_secs_f64()
+            })
+            .unwrap_or(self.selection.recovery.reconnect_delay_seconds);
+        self.delay(seconds, token).await
+    }
     async fn fallback(&mut self, reason: &str, token: &CancellationToken) -> Result<()> {
         self.status.lock().unwrap().retry.last_failure = Some(reason.into());
         self.emit(
@@ -493,6 +593,7 @@ impl Session {
             .await
     }
     pub async fn connect(&mut self, token: &CancellationToken) -> Result<()> {
+        self.usb_peripherals.reconnect_after_close()?;
         let result = async {
             match self.open(token).await {
                 Err(error) if self.direct && self.selection.sdk_fallback && retryable(&error) => {
@@ -510,6 +611,9 @@ impl Session {
             }
             self.ever_opened = true;
             self.status.lock().unwrap().connected = true;
+            self.connection_failures = 0;
+            self.reconnect_not_before = None;
+            self.outage_usb_reset = false;
             self.phase("Idle");
             Ok(())
         }
@@ -543,13 +647,33 @@ impl Session {
             &self.selection.name,
             serial,
         ];
+        let deadline = Instant::now() + Duration::from_secs(USB_BIND_SECONDS);
         let command = self.runtime.usb_command(&args, USB_BIND_SECONDS);
-        let encoded = tokio::select! { biased; _=token.cancelled()=>return Err(Failure::Cancelled.into()), r=command=>r? };
+        let encoded = tokio::select! { biased;
+            _=token.cancelled()=>return Err(Failure::Cancelled.into()),
+            r=tokio::time::timeout_at(deadline, command)=>r.context("USB camera binding deadline exceeded")??
+        };
         let target = regain_transport::usb::Target::decode(&encoded)?;
         ensure!(
             target.serial.eq_ignore_ascii_case(serial),
             "USB recovery serial mismatch"
         );
+        #[cfg(windows)]
+        {
+            // Preflight uses the same total binding deadline and never starts
+            // or elevates a helper. Missing preparation must be visible before
+            // imaging, rather than creating an unattended UAC prompt on fault.
+            let args = ["usb", "helper", "status", &encoded];
+            let command = self.runtime.usb_command(&args, USB_BIND_SECONDS);
+            let reply = tokio::select! { biased;
+                _=token.cancelled()=>return Err(Failure::Cancelled.into()),
+                r=tokio::time::timeout_at(deadline, command)=>r.context("USB helper readiness deadline exceeded")??
+            };
+            let status: Value =
+                serde_json::from_str(&reply).context("Invalid USB helper status")?;
+            validate_usb_helper_status(&status, Utc::now().timestamp().max(0) as u64)?;
+            self.emit("info", "usb.helper.ready", "Pre-elevated USB recovery helper is ready for the selected camera; recovery will not request Windows elevation");
+        }
         self.usb_target = Some(encoded);
         self.emit(
             "info",
@@ -570,16 +694,20 @@ impl Session {
             self.worker.is_none(),
             "Close the camera worker before USB recovery"
         );
+        let peripheral_recovery = self.usb_peripherals.begin()?;
+        let episode = peripheral_recovery.as_ref().map(|recovery| recovery.id);
         self.phase("USB recovery");
-        self.emit(
+        self.emit_usb_episode(
             "warning",
             "usb.reset",
-            "Resetting the selected camera; the retained frame is abandoned",
+            "Resetting the selected camera; the retained frame is abandoned. Camera-hub peripherals may also disconnect and need reconnecting in the imaging application",
+            episode,
         );
         if !self.runtime.simulate {
             // Once dispatched, finish the bounded helper before honoring abort so
             // a Linux port cycle can always re-enable the port.
-            self.runtime
+            let result = self
+                .runtime
                 .usb_command(
                     &[
                         "usb",
@@ -593,6 +721,9 @@ impl Session {
                     USB_RESET_SECONDS,
                 )
                 .await?;
+            if !result.is_empty() {
+                self.emit("info", "usb.helper.result", result);
+            }
         }
         self.usb_target = None;
         if token.is_cancelled() {
@@ -607,11 +738,30 @@ impl Session {
                 Err(_) => self.delay(USB_REBIND_PAUSE_SECONDS, token).await?,
             }
         }
-        self.emit(
+        self.emit_usb_episode(
             "info",
             "usb.returned",
             "The same camera serial is available after USB recovery",
+            episode,
         );
+        if let Some(recovery) = peripheral_recovery {
+            self.phase("Waiting for NINA peripherals");
+            self.emit_usb_episode(
+                "info",
+                "usb.peripherals.wait",
+                "Waiting for NINA to verify peripherals before another exposure",
+                episode,
+            );
+            recovery.wait(token).await?;
+            self.emit_usb_episode(
+                "info",
+                "usb.peripherals.ready",
+                "NINA confirmed peripherals ready for another exposure",
+                episode,
+            );
+        } else {
+            self.emit("warning", "usb.peripherals", "USB recovery verified the camera only; check peripherals connected through its hub and reconnect them if needed");
+        }
         Ok(())
     }
     async fn open(&mut self, token: &CancellationToken) -> Result<()> {
@@ -801,32 +951,18 @@ impl Session {
                 self.applied.insert(kind, value);
                 continue;
             }
-            let observation = if ACKNOWLEDGED_CONTROLS.contains(&kind) {
-                let deadline = Instant::now()
-                    + Duration::from_secs_f64(self.selection.recovery.command_timeout_seconds);
-                let result = self.write_control(kind, value, deadline, token, true).await;
-                Some(self.control_result(result).await?)
-            } else {
-                self.call("set", json!({"control":kind,"value":value}), None, token)
-                    .await?;
-                None
-            };
-            let actual = if let Some(observation) = observation {
-                observation.value
-            } else {
-                self.call("get", json!({"control":kind}), None, token)
-                    .await?
-                    .0
-                    .as_i64()
-                    .ok_or_else(|| invalid("Invalid control readback"))?
-            };
+            let deadline = Instant::now()
+                + Duration::from_secs_f64(self.selection.recovery.command_timeout_seconds);
+            let result = self.write_control(kind, value, deadline, token, true).await;
+            let observation = self.control_result(result).await?;
+            let actual = observation.value;
             if actual != value {
                 ensure!(
                     !self.direct && kind == 5 && actual >= cap.min && actual <= cap.max,
                     "Control {kind} readback {actual} differs from requested {value}"
                 );
-                // Acknowledged controls already emit their clamp diagnostic in
-                // the shared helper; other controls cannot use this policy.
+                // The shared helper already emits the SDK offset clamp
+                // diagnostic; no other control has a clamping policy.
                 values.insert(kind, actual);
                 let mut shared = self.status.lock().unwrap();
                 if shared.values.get(&kind) == Some(&value) {
@@ -834,13 +970,11 @@ impl Session {
                 }
             }
             self.applied.insert(kind, actual);
-            if let Some(observation) = observation {
-                self.status
-                    .lock()
-                    .unwrap()
-                    .observations
-                    .insert(kind, observation);
-            }
+            self.status
+                .lock()
+                .unwrap()
+                .observations
+                .insert(kind, observation);
         }
         if self.direct
             && self.settle_required
@@ -914,18 +1048,22 @@ impl Session {
         let result = self.read_environment(token).await.map(|_| ());
         if let Err(error) = &result {
             self.emit("warning", "environment.failed", format!("{error:#}"));
+            if retryable(error) && !token.is_cancelled() {
+                self.connection_failed();
+            }
             self.invalidate().await;
         }
         result
     }
     pub async fn refresh(&mut self, token: &CancellationToken) -> Result<()> {
+        // Idle telemetry must not compete with acquisition by repeatedly
+        // opening new workers while a camera is absent. Keep cached evidence;
+        // capture owns the bounded, cancellable pre-arm reconnect transaction.
+        ensure!(
+            self.worker.is_some(),
+            invalid("Camera controls are unavailable; reconnection is deferred until capture")
+        );
         let result = async {
-            if self.worker.is_none() {
-                self.phase("Restoring camera controls");
-                self.delay(self.selection.recovery.reconnect_delay_seconds, token)
-                    .await?;
-                self.open(token).await?;
-            }
             self.apply(&mut self.settings(), token).await?;
             self.read_environment(token).await?;
             Ok(())
@@ -936,6 +1074,9 @@ impl Session {
                 self.status.lock().unwrap().retry.last_failure = Some(format!("{error:#}"));
             }
             self.emit("warning", "controls.failed", format!("{error:#}"));
+            if retryable(error) && !token.is_cancelled() {
+                self.connection_failed();
+            }
             self.invalidate().await;
         }
         result
@@ -964,6 +1105,7 @@ impl Session {
         self.direct && self.snapshot().info["retainedFrameReads"] == true
     }
     pub async fn capture(&mut self, e: Exposure, token: &CancellationToken) -> Result<Frame> {
+        self.usb_peripherals.ensure_ready()?;
         if self.snapshot().white_balance.is_some() {
             let state = self.snapshot();
             crate::white_balance::WhiteBalance::validate_geometry(
@@ -999,15 +1141,33 @@ impl Session {
             status.retry.usb_reads = 0;
         }
         for attempt in 0..=retries {
-            if attempt > 0 && !token.is_cancelled() {
-                self.status.lock().unwrap().retry.recaptures = attempt;
-            }
+            let mut start_dispatched = false;
             let usb_reads_before = self.snapshot().retry.usb_reads;
             let result = self
-                .attempt(&e, &mut settings, &mut prior, &mut power, attempt, token)
+                .attempt(
+                    &e,
+                    &mut settings,
+                    &mut prior,
+                    &mut power,
+                    attempt,
+                    &mut usb_resets,
+                    &mut start_dispatched,
+                    token,
+                )
                 .await;
             match result {
                 Ok(mut frame) => {
+                    let restored = self.worker.is_some();
+                    frame.metadata["connectionFailuresRecovered"] = json!(if restored {
+                        self.connection_failures
+                    } else {
+                        0
+                    });
+                    if restored {
+                        self.connection_failures = 0;
+                        self.reconnect_not_before = None;
+                        self.outage_usb_reset = false;
+                    }
                     {
                         let reads = frame.metadata["readRecoveries"]
                             .as_u64()
@@ -1075,12 +1235,22 @@ impl Session {
                             _ => None,
                         };
                     }
-                    let can_retry = retryable(&error) && attempt < retries && !token.is_cancelled();
+                    let can_retry = start_dispatched
+                        && retryable(&error)
+                        && attempt < retries
+                        && !token.is_cancelled();
                     self.emit(
                         "warning",
                         "capture.failed",
-                        format!("Attempt {}/{}: {error:#}", attempt + 1, retries + 1),
+                        if start_dispatched {
+                            format!("Attempt {}/{}: {error:#}", attempt + 1, retries + 1)
+                        } else {
+                            format!("Preparation failed before exposure start: {error:#}")
+                        },
                     );
+                    if retryable(&error) {
+                        self.connection_failed();
+                    }
                     self.invalidate().await;
                     // Retiring the worker drains its stderr. Delayed transfer
                     // records still contribute retry counts during that drain,
@@ -1093,10 +1263,12 @@ impl Session {
                         break;
                     }
                     if usb_resets == 0
+                        && !self.outage_usb_reset
                         && options.usb_reset_after_failures > 0
                         && attempt + 1 >= options.usb_reset_after_failures
                     {
                         usb_resets += 1;
+                        self.outage_usb_reset = true;
                         if let Err(e) = self.reset_usb(token).await {
                             self.emit("error", "usb.failed", format!("{e:#}"));
                             last = Some(e);
@@ -1123,6 +1295,7 @@ impl Session {
         });
         Err(last.unwrap_or_else(|| invalid("Capture failed")))
     }
+    #[allow(clippy::too_many_arguments)] // Capture owns all mutable attempt bookkeeping.
     async fn attempt(
         &mut self,
         e: &Exposure,
@@ -1130,49 +1303,35 @@ impl Session {
         prior: &mut Option<f64>,
         power: &mut Option<i64>,
         attempt: u32,
+        usb_resets: &mut u32,
+        start_dispatched: &mut bool,
         token: &CancellationToken,
     ) -> Result<Frame> {
         let options = self.selection.recovery.clone();
         if token.is_cancelled() {
             return Err(Failure::Cancelled.into());
         }
-        if attempt > 0 || self.worker.is_none() {
-            self.phase("Reconnect delay");
-            self.invalidate().await;
-            self.delay(options.reconnect_delay_seconds, token).await?;
-            self.open(token).await?;
-        }
-        self.service_cooling_with(settings, token).await?;
-        self.apply(settings, token).await?;
-        if self.settle_required
-            && settings.get(&17).copied().unwrap_or(0) != 0
-            && let Some(t) = *prior
-        {
-            self.settle(t, *power, settings, token).await?;
-        }
-        let observed = self.read_environment(token).await?;
-        *prior = observed.0.or(*prior);
-        *power = observed.1.or(*power);
-        if self.direct && self.selection.sdk_fallback {
+        let preparations = if attempt == 0 {
+            options.pre_exposure_reconnect_attempts
+        } else {
+            1
+        };
+        for preparation in 0..preparations {
             let result = self
-                .call("validate", serde_json::to_value(e)?, None, token)
+                .prepare_exposure(e, settings, prior, power, usb_resets, token)
                 .await;
-            if let Err(error) = result {
-                if matches!(
-                    error.downcast_ref::<Failure>(),
-                    Some(Failure::Worker { code: Some(8), .. })
-                ) {
-                    self.fallback(&error.to_string(), token).await?;
-                    self.open(token).await?;
-                    self.apply(settings, token).await?;
-                    if settings.get(&17).copied().unwrap_or(0) != 0
-                        && let Some(t) = *prior
-                    {
-                        self.settle(t, *power, settings, token).await?;
-                    }
-                } else {
-                    return Err(error);
+            match result {
+                Ok(()) => break,
+                Err(error)
+                    if retryable(&error)
+                        && !token.is_cancelled()
+                        && preparation + 1 < preparations =>
+                {
+                    self.connection_failed();
+                    self.emit("warning", "connection.pre_exposure_retry", format!("Preparation {}/{} failed before exposure start: {error:#}; reconnecting without replacing an exposure", preparation + 1, preparations));
+                    self.invalidate().await;
                 }
+                Err(error) => return Err(error),
             }
         }
         self.settle_required = false;
@@ -1202,6 +1361,10 @@ impl Session {
         if token.is_cancelled() {
             return Err(Failure::Cancelled.into());
         }
+        // From dispatch onward, even a failed acknowledgement can mean the
+        // sensor was armed. Only the exposure-replacement policy may retry it.
+        *start_dispatched = true;
+        self.status.lock().unwrap().retry.recaptures = attempt;
         self.call("start", params, None, &exchange_token).await?;
         self.phase("Exposing");
         let clock = Instant::now();
@@ -1316,6 +1479,7 @@ impl Session {
                 "capture.cleanup_failed",
                 format!("Frame preserved; reconnect required: {error}"),
             );
+            self.connection_failed();
             self.invalidate().await;
         } else {
             self.service_cooling_with(settings, token).await?;
@@ -1337,6 +1501,66 @@ impl Session {
             metadata,
             pixels: pixels.into(),
         })
+    }
+    /// All work here is before the first start dispatch. A failure can retry
+    /// connection establishment without ever replacing an exposure. An
+    /// unacknowledged write is deliberately excluded by retryable().
+    async fn prepare_exposure(
+        &mut self,
+        e: &Exposure,
+        settings: &mut BTreeMap<i32, i64>,
+        prior: &mut Option<f64>,
+        power: &mut Option<i64>,
+        usb_resets: &mut u32,
+        token: &CancellationToken,
+    ) -> Result<()> {
+        if self.worker.is_none() {
+            self.reconnect_delay(token).await?;
+            if !self.outage_usb_reset
+                && *usb_resets == 0
+                && self.selection.recovery.usb_reset_after_failures > 0
+                && self.connection_failures >= self.selection.recovery.usb_reset_after_failures
+            {
+                self.outage_usb_reset = true;
+                *usb_resets += 1;
+                self.reset_usb(token).await?;
+            }
+            self.open(token).await?;
+        }
+        self.service_cooling_with(settings, token).await?;
+        self.apply(settings, token).await?;
+        if self.settle_required
+            && settings.get(&17).copied().unwrap_or(0) != 0
+            && let Some(t) = *prior
+        {
+            self.settle(t, *power, settings, token).await?;
+        }
+        let observed = self.read_environment(token).await?;
+        *prior = observed.0.or(*prior);
+        *power = observed.1.or(*power);
+        if self.direct && self.selection.sdk_fallback {
+            let result = self
+                .call("validate", serde_json::to_value(e)?, None, token)
+                .await;
+            if let Err(error) = result {
+                if matches!(
+                    error.downcast_ref::<Failure>(),
+                    Some(Failure::Worker { code: Some(8), .. })
+                ) {
+                    self.fallback(&error.to_string(), token).await?;
+                    self.open(token).await?;
+                    self.apply(settings, token).await?;
+                    if settings.get(&17).copied().unwrap_or(0) != 0
+                        && let Some(t) = *prior
+                    {
+                        self.settle(t, *power, settings, token).await?;
+                    }
+                } else {
+                    return Err(error);
+                }
+            }
+        }
+        Ok(())
     }
     async fn settle(
         &mut self,
@@ -1389,6 +1613,7 @@ impl Session {
         anyhow::bail!("Camera did not recover its prior cooling temperature and output")
     }
     pub async fn close(&mut self) {
+        self.usb_peripherals.retire();
         self.cooling.retire();
         self.status.lock().unwrap().connected = false;
         let token = CancellationToken::new();
@@ -1448,6 +1673,7 @@ impl Session {
 
 impl Drop for Session {
     fn drop(&mut self) {
+        self.usb_peripherals.retire();
         self.cooling.retire();
     }
 }
@@ -1499,6 +1725,66 @@ impl CoolingHold {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn usb_helper_preflight_requires_approved_elevation_and_valid_lifetime() {
+        let ready = json!({"protocolVersion":1,"running":true,"elevated":true,
+            "approved":true,
+            "expiresAtUnixSeconds":101});
+        validate_usb_helper_status(&ready, 100).unwrap();
+        for key in ["running", "elevated", "approved"] {
+            let mut status = ready.clone();
+            status[key] = json!(false);
+            assert!(validate_usb_helper_status(&status, 100).is_err(), "{key}");
+            status.as_object_mut().unwrap().remove(key);
+            assert!(
+                validate_usb_helper_status(&status, 100).is_err(),
+                "missing {key}"
+            );
+        }
+        for expiry in [json!(100), json!(99), json!(-1), json!("101"), Value::Null] {
+            let mut status = ready.clone();
+            status["expiresAtUnixSeconds"] = expiry;
+            assert!(validate_usb_helper_status(&status, 100).is_err());
+        }
+        let mut incompatible = ready;
+        incompatible["protocolVersion"] = json!(2);
+        assert!(validate_usb_helper_status(&incompatible, 100).is_err());
+    }
+    #[test]
+    fn usb_helper_preflight_accepts_only_explicit_session_lifetime_or_finite_legacy_expiry() {
+        let session = json!({"protocolVersion":1,"running":true,"elevated":true,
+            "approved":true,"sessionScoped":true,"expiresAtUnixSeconds":null});
+        validate_usb_helper_status(&session, 100).unwrap();
+        validate_usb_helper_status(&session, 100 + 30 * 24 * 60 * 60).unwrap();
+        for key in ["running", "elevated", "approved"] {
+            let mut status = session.clone();
+            status[key] = json!(false);
+            assert!(validate_usb_helper_status(&status, 100).is_err(), "{key}");
+        }
+        for expiry in [json!(101), json!("101"), json!(false)] {
+            let mut status = session.clone();
+            status["expiresAtUnixSeconds"] = expiry;
+            assert!(validate_usb_helper_status(&status, 100).is_err());
+        }
+        for flag in [json!(false), json!("true"), json!(1), Value::Null] {
+            let mut status = session.clone();
+            status["sessionScoped"] = flag;
+            assert!(validate_usb_helper_status(&status, 100).is_err());
+        }
+        for key in ["sessionScoped", "expiresAtUnixSeconds"] {
+            let mut status = session.clone();
+            status.as_object_mut().unwrap().remove(key);
+            assert!(validate_usb_helper_status(&status, 100).is_err());
+        }
+        let mut legacy = session;
+        legacy["sessionScoped"] = json!(false);
+        legacy["expiresAtUnixSeconds"] = json!(101);
+        validate_usb_helper_status(&legacy, 100).unwrap();
+        legacy.as_object_mut().unwrap().remove("sessionScoped");
+        validate_usb_helper_status(&legacy, 100).unwrap();
+        legacy["expiresAtUnixSeconds"] = json!(253402300800u64);
+        assert!(validate_usb_helper_status(&legacy, 100).is_err());
+    }
     fn runtime() -> Runtime {
         let directory = std::env::var_os("REGAIN_TEST_WORKERS")
             .map(std::path::PathBuf::from)
@@ -2058,6 +2344,63 @@ mod tests {
         acknowledged_cooling(false).await;
     }
     #[tokio::test]
+    async fn scalar_persistent_control_readback_failure_never_replays_or_arms() {
+        let token = CancellationToken::new();
+        let events = Arc::new(Mutex::new(Vec::<String>::new()));
+        let sink = events.clone();
+        let mut session = Session::new(
+            selection(false),
+            runtime(),
+            Arc::new(move |_, event, message| {
+                sink.lock().unwrap().push(
+                    if event == "session.phase" && message == "Starting exposure" {
+                        "test.start".into()
+                    } else {
+                        event.into()
+                    },
+                );
+            }),
+        )
+        .unwrap();
+        session.connect(&token).await.unwrap();
+        session.refresh(&token).await.unwrap();
+        // USB traffic uses scalar get, outside the four original timed
+        // observation controls. Its write must not be repeated after an
+        // acknowledged set whose readback cannot confirm the requested value.
+        session
+            .call(
+                "simulation",
+                json!({"clampControl":6,"clampMinimum":52}),
+                None,
+                &token,
+            )
+            .await
+            .unwrap();
+        Session::queue_control(&session.status, 6, 51).unwrap();
+        events.lock().unwrap().clear();
+        let error = session.capture(exposure(), &token).await.err().unwrap();
+        assert!(matches!(
+            error.downcast_ref::<Failure>(),
+            Some(Failure::UncertainControl { .. })
+        ));
+        assert!(!retryable(&error));
+        assert!(session.worker.is_none());
+        let recorded = events.lock().unwrap().clone();
+        assert_eq!(
+            recorded
+                .iter()
+                .filter(|e| *e == "control.write_acknowledged")
+                .count(),
+            1
+        );
+        assert!(
+            !recorded.iter().any(|e| e == "connection.pre_exposure_retry"
+                || e == "capture.retry"
+                || e == "test.start")
+        );
+        session.close().await;
+    }
+    #[tokio::test]
     async fn acknowledged_direct_cooling_survives_worker_recovery() {
         acknowledged_cooling(true).await;
     }
@@ -2302,11 +2645,15 @@ mod tests {
         assert_eq!(s.snapshot().values[&15], 30);
         s.invalidate().await;
         Session::queue_control(&s.status, 16, 11).unwrap();
-        s.refresh(&token).await.unwrap();
+        assert!(s.refresh(&token).await.is_err());
+        s.open(&token).await.unwrap();
+        s.apply(&mut s.settings(), &token).await.unwrap();
         assert_eq!(s.snapshot().values[&15], 0); // A warmer requested target wins.
         s.invalidate().await;
         Session::queue_control(&s.status, 17, 0).unwrap();
-        s.refresh(&token).await.unwrap();
+        assert!(s.refresh(&token).await.is_err());
+        s.open(&token).await.unwrap();
+        s.apply(&mut s.settings(), &token).await.unwrap();
         assert_eq!(s.snapshot().values[&17], 0);
         assert!(!s.cooling_seeded);
         s.close().await;
@@ -2606,6 +2953,281 @@ mod tests {
             let (frame, ()) = tokio::join!(capture, observe);
             assert_eq!(frame.unwrap().pixels.len(), 8192);
             s.close().await;
+        }
+    }
+    #[tokio::test]
+    async fn pre_arm_transport_recovery_does_not_replace_a_long_exposure() {
+        let events = Arc::new(Mutex::new(Vec::<String>::new()));
+        let sink = events.clone();
+        let mut sel = selection(false);
+        sel.recovery.max_retries = 0;
+        let mut session = Session::new(
+            sel,
+            runtime(),
+            Arc::new(move |_, event, message| {
+                sink.lock().unwrap().push(
+                    if event == "session.phase" && message == "Starting exposure" {
+                        "test.start".into()
+                    } else {
+                        event.into()
+                    },
+                );
+            }),
+        )
+        .unwrap();
+        let token = CancellationToken::new();
+        session.connect(&token).await.unwrap();
+        session.refresh(&token).await.unwrap();
+        let old_pid = session.snapshot().process_id;
+        // A dead transport discovered by pre-arm telemetry is an I/O failure,
+        // not an exposure. The first subsequent start must still be unique.
+        session.worker.as_mut().unwrap().kill().await;
+        events.lock().unwrap().clear();
+        let frame = session
+            .capture(
+                Exposure {
+                    microseconds: 600_000_000,
+                    ..exposure()
+                },
+                &token,
+            )
+            .await
+            .unwrap();
+        assert_eq!(frame.metadata["recoveries"], 0);
+        assert_eq!(session.snapshot().retry.recaptures, 0);
+        assert_ne!(session.snapshot().process_id, old_pid);
+        let recorded = events.lock().unwrap().clone();
+        assert_eq!(
+            recorded
+                .iter()
+                .filter(|e| *e == "connection.pre_exposure_retry")
+                .count(),
+            1
+        );
+        assert_eq!(
+            recorded
+                .iter()
+                .filter(|e| *e == "connection.opened")
+                .count(),
+            1
+        );
+        assert_eq!(recorded.iter().filter(|e| *e == "test.start").count(), 1);
+        drop(recorded);
+        session.close().await;
+    }
+    #[tokio::test]
+    async fn failed_pre_arm_recovery_is_bounded_and_telemetry_never_reopens() {
+        let events = Arc::new(Mutex::new(Vec::<String>::new()));
+        let sink = events.clone();
+        let mut sel = selection(false);
+        sel.recovery.max_retries = 20;
+        sel.recovery.pre_exposure_reconnect_attempts = 3;
+        let mut session = Session::new(
+            sel,
+            runtime(),
+            Arc::new(move |_, event, message| {
+                sink.lock().unwrap().push(
+                    if event == "session.phase" && message == "Starting exposure" {
+                        "test.start".into()
+                    } else {
+                        event.into()
+                    },
+                );
+            }),
+        )
+        .unwrap();
+        let token = CancellationToken::new();
+        session.connect(&token).await.unwrap();
+        session.invalidate().await;
+        session.connection_failed();
+        let directory = session.runtime.directory.clone();
+        session.runtime.directory = directory.join("missing-worker-fixture");
+        events.lock().unwrap().clear();
+        assert!(session.capture(exposure(), &token).await.is_err());
+        assert_eq!(session.snapshot().retry.recaptures, 0);
+        assert!(session.worker.is_none());
+        assert!(session.reconnect_not_before.is_some());
+        let failures = session.connection_failures;
+        let backoff = session.reconnect_not_before;
+        for _ in 0..5 {
+            assert!(session.refresh(&token).await.is_err());
+        }
+        assert_eq!(session.connection_failures, failures);
+        assert_eq!(session.reconnect_not_before, backoff);
+        let recorded = events.lock().unwrap().clone();
+        assert_eq!(
+            recorded
+                .iter()
+                .filter(|e| *e == "connection.pre_exposure_retry")
+                .count(),
+            2
+        );
+        assert!(
+            !recorded
+                .iter()
+                .any(|e| e == "capture.retry" || e == "connection.opened" || e == "test.start")
+        );
+        drop(recorded);
+        // A queued imaging change remains intent until the next successful
+        // preparation; telemetry neither sends nor discards it during outage.
+        Session::queue_control(&session.status, 0, 234).unwrap();
+        session.runtime.directory = directory;
+        let frame = session
+            .capture(
+                Exposure {
+                    microseconds: 600_000_000,
+                    ..exposure()
+                },
+                &token,
+            )
+            .await
+            .unwrap();
+        assert_eq!(frame.metadata["recoveries"], 0);
+        assert_eq!(frame.metadata["controls"]["0"], 234);
+        assert_eq!(session.connection_failures, 0);
+        assert!(session.reconnect_not_before.is_none());
+        session.close().await;
+    }
+    #[tokio::test]
+    async fn configured_usb_reset_can_restore_pre_arm_connection_for_long_exposure() {
+        for threshold in [0, 2] {
+            let mut sel = selection(false);
+            sel.recovery.max_retries = 0;
+            sel.recovery.usb_reset_after_failures = threshold;
+            let mut session = Session::new(sel, runtime(), log()).unwrap();
+            let token = CancellationToken::new();
+            session.connect(&token).await.unwrap();
+            session.invalidate().await;
+            session.connection_failed();
+            session.connection_failed();
+            let frame = session
+                .capture(
+                    Exposure {
+                        microseconds: 600_000_000,
+                        ..exposure()
+                    },
+                    &token,
+                )
+                .await
+                .unwrap();
+            assert_eq!(
+                frame.metadata["usbResets"],
+                if threshold == 0 { 0 } else { 1 }
+            );
+            assert_eq!(frame.metadata["recoveries"], 0);
+            session.close().await;
+        }
+    }
+    #[tokio::test]
+    async fn usb_peripheral_confirmation_fences_real_session_start_and_future_requests() {
+        for outcome in ["ready", "failed", "cancelled"] {
+            let events = Arc::new(Mutex::new(Vec::<(String, String)>::new()));
+            let sink = events.clone();
+            let mut sel = selection(false);
+            sel.recovery.max_retries = 0;
+            sel.recovery.usb_reset_after_failures = 1;
+            let mut session = Session::new(
+                sel,
+                runtime(),
+                Arc::new(move |_, event, message| {
+                    sink.lock().unwrap().push((event.into(), message.into()));
+                }),
+            )
+            .unwrap();
+            session.wait_for_usb_peripherals(true).unwrap();
+            let token = CancellationToken::new();
+            session.connect(&token).await.unwrap();
+            session.invalidate().await;
+            session.connection_failed();
+            let handle = session.usb_peripheral_recovery();
+            let status = session.status.clone();
+            let capture_token = token.clone();
+            let capture = tokio::spawn(async move {
+                let result = session
+                    .capture(
+                        Exposure {
+                            microseconds: 600_000_000,
+                            ..exposure()
+                        },
+                        &capture_token,
+                    )
+                    .await;
+                (session, result)
+            });
+            let id = tokio::time::timeout(Duration::from_secs(10), async {
+                loop {
+                    if let Some(id) = status.lock().unwrap().usb_peripheral_recovery_id {
+                        break id;
+                    }
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+            })
+            .await
+            .unwrap();
+            assert_eq!(status.lock().unwrap().phase, "Waiting for NINA peripherals");
+            assert!(!capture.is_finished());
+            {
+                let recorded = events.lock().unwrap();
+                assert!(
+                    !recorded
+                        .iter()
+                        .any(|(event, message)| event == "session.phase"
+                            && message == "Starting exposure")
+                );
+                for event in ["usb.reset", "usb.returned"] {
+                    let (_, message) = recorded.iter().find(|(e, _)| e == event).unwrap();
+                    let record = crate::worker::diagnostic_record(message).unwrap();
+                    assert_eq!(record["details"]["usbPeripheralRecoveryId"], id);
+                    assert_eq!(record["pid"], std::process::id());
+                    assert!(
+                        record["timestampUnixUs"]
+                            .as_i64()
+                            .is_some_and(|value| value > 0)
+                    );
+                }
+            }
+            if outcome == "cancelled" {
+                token.cancel();
+            } else {
+                handle
+                    .acknowledge(usb_peripherals::Acknowledgement {
+                        id,
+                        success: outcome == "ready",
+                        error: (outcome == "failed").then(|| "Filter wheel changed".into()),
+                    })
+                    .unwrap();
+            }
+            let (mut session, result) = capture.await.unwrap();
+            assert_eq!(result.is_ok(), outcome == "ready");
+            assert!(session.snapshot().usb_peripheral_recovery_id.is_none());
+            assert!(
+                handle
+                    .acknowledge(usb_peripherals::Acknowledgement {
+                        id,
+                        success: true,
+                        error: None
+                    })
+                    .is_err()
+            );
+            if outcome != "ready" {
+                let next = session
+                    .capture(exposure(), &CancellationToken::new())
+                    .await
+                    .err()
+                    .unwrap();
+                assert!(next.to_string().contains("disconnect and reconnect"));
+            }
+            assert_eq!(
+                events
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .filter(|(event, message)| event == "session.phase"
+                        && message == "Starting exposure")
+                    .count(),
+                usize::from(outcome == "ready")
+            );
+            session.close().await;
         }
     }
     #[tokio::test]

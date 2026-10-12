@@ -105,6 +105,9 @@ pub struct Status {
     pub observations: BTreeMap<i32, ControlObservation>,
     pub connected: bool,
     pub control_connection_available: bool,
+    /// Matching frontend confirmation is required before a replacement starts.
+    /// Null unless the rebound camera is awaiting its peripherals.
+    pub usb_peripheral_recovery_id: Option<u64>,
     pub sdk_exposure_state: Option<i64>,
     pub sdk_error_code: Option<i32>,
     pub process_id: Option<u32>,

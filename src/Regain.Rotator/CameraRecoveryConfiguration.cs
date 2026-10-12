@@ -74,12 +74,14 @@ public sealed class CameraRecoveryForm
     public IReadOnlyList<Control> Editors { get; }
     public IReadOnlyList<Control> LiveEditors { get; }
 
-    public CameraRecoveryForm(JsonElement values, Func<string, Panel> section, Action? changed = null)
+    public CameraRecoveryForm(JsonElement values, Func<string, Panel> section, Action? changed = null,
+        IReadOnlyCollection<string>? excludedFields = null)
     {
         original = values.Clone();
         var editors = new List<Control>();
         var liveEditors = new List<Control>();
-        foreach (var field in CameraRecoveryConfiguration.Fields.Where(f => f.Available("windows"))) {
+        foreach (var field in CameraRecoveryConfiguration.Fields.Where(f => f.Available("windows") &&
+            !(excludedFields?.Contains(f.Key) ?? false))) {
             var body = section(field.Section);
             var row = new StackPanel { Margin = new Thickness(0, 0, 0, 14) };
             row.Children.Add(new TextBlock { Text = field.Label, TextWrapping = TextWrapping.Wrap });

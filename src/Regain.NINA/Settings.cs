@@ -7,8 +7,8 @@ namespace Regain.NINA;
 
 internal static class Settings
 {
-    private static readonly string Folder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Regain");
     private static readonly string FilePath = Regain.Rotator.RegainPaths.Profile("recovery.json");
+    private static readonly string PeripheralPath = Regain.Rotator.RegainPaths.Profile("camera-peripherals.json");
     internal static readonly CameraSelectionStore Cameras = new(Regain.Rotator.RegainPaths.Profile("camera.json"));
     private sealed record CameraChoice(CameraDescriptor Camera, string Label);
     internal static string CameraLabel(string name) => name switch
@@ -25,12 +25,54 @@ internal static class Settings
         options.Validate();
         return options;
     }
-    public static void Show(Func<RecoveryOptions,Task>? applyLive = null)
+    internal static void SaveRecovery(RecoveryOptions options, string? path = null)
+    {
+        options.Validate(); path ??= FilePath;
+        Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
+        string temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try { File.WriteAllText(temporary, JsonSerializer.Serialize(options, new JsonSerializerOptions { WriteIndented = true })); File.Move(temporary, path, true); }
+        finally { if (File.Exists(temporary)) File.Delete(temporary); }
+    }
+    internal static UsbPeripheralRecoveryOptions LoadPeripheralRecovery(string? path = null)
+    {
+        path ??= PeripheralPath;
+        var options = File.Exists(path) ? JsonSerializer.Deserialize<UsbPeripheralRecoveryOptions>(File.ReadAllText(path)) ?? new() : new UsbPeripheralRecoveryOptions();
+        options.Validate(); return options;
+    }
+    internal static void SavePeripheralRecovery(UsbPeripheralRecoveryOptions options, string? path = null)
+    {
+        options.Validate(); path ??= PeripheralPath;
+        Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
+        string temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try { File.WriteAllText(temporary, JsonSerializer.Serialize(options, new JsonSerializerOptions { WriteIndented = true })); File.Move(temporary, path, true); }
+        finally { if (File.Exists(temporary)) File.Delete(temporary); }
+    }
+    internal static Func<UsbPeripheralRecoveryOptions> PeripheralRecoveryControls(Panel body, UsbPeripheralRecoveryOptions options)
+    {
+        body.Children.Add(new TextBlock { Text = "Reconnect NINA peripherals after camera USB recovery", FontWeight = FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap });
+        var enabled = new CheckBox { IsChecked = options.Enabled, HorizontalAlignment = HorizontalAlignment.Left };
+        System.Windows.Automation.AutomationProperties.SetAutomationId(enabled, "usb-peripherals-enabled");
+        System.Windows.Automation.AutomationProperties.SetName(enabled, "Reconnect NINA peripherals after camera USB recovery");
+        body.Children.Add(enabled);
+        body.Children.Add(new TextBlock { Text = "Reconnect only previously connected devices that disconnect within this window after the camera. Keep the same selected device and optical state. This does not move equipment or restart guiding. Applies on the next camera connection.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 4, 0, 8) });
+        body.Children.Add(new TextBlock { Text = "Peripheral disconnect window (seconds)" });
+        var window = new TextBox { Text = options.DisconnectWindowSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture), MinHeight = 28, Margin = new Thickness(0, 4, 0, 18), ToolTip = "1–60 seconds after this camera starts USB recovery." };
+        System.Windows.Automation.AutomationProperties.SetAutomationId(window, "usb-peripherals-window");
+        System.Windows.Automation.AutomationProperties.SetName(window, "Peripheral disconnect window (seconds)");
+        body.Children.Add(window);
+        return () => {
+            if (!int.TryParse(window.Text.Trim(), System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int seconds))
+                throw new ArgumentException("Peripheral disconnect window must be a whole number from 1 to 60 seconds.");
+            var changed = new UsbPeripheralRecoveryOptions { Enabled = enabled.IsChecked == true, DisconnectWindowSeconds = seconds };
+            changed.Validate(); return changed;
+        };
+    }
+    public static void Show(Func<RecoveryOptions,Task>? applyLive = null, Func<bool>? isConnected = null, bool simulated = false)
     {
         var dispatcher = Application.Current?.Dispatcher;
         if (dispatcher is not null && !dispatcher.CheckAccess())
         {
-            dispatcher.Invoke(() => Show(applyLive));
+            dispatcher.Invoke(() => Show(applyLive, isConnected, simulated));
             return;
         }
         var root = new DockPanel { Margin = new Thickness(16) };
@@ -90,6 +132,24 @@ internal static class Settings
         fallback.ToolTip = "If direct capture fails or is unsupported, use the SDK until disconnect. Retry limits still apply.";
         var current = Load();
         var recovery = AddTab("Recovery", "Replacement exposures and same-frame rereads use separate limits.");
+        using var usbHelper = new Regain.Rotator.UsbRecoveryHelperPanel(
+            new Regain.Rotator.UsbRecoveryHelper(Path.Combine(CameraProvider.DirectoryPath, "regain-alpaca.exe")),
+            () => new Regain.Rotator.UsbRecoverySelection((picker.SelectedItem as CameraChoice)?.Camera.Name,
+                serial.Text, isConnected?.Invoke() ?? true, simulated), current.UsbResetAfterFailures, failures => {
+                    if (isConnected?.Invoke() ?? true) throw new InvalidOperationException("Disconnect the camera before changing automatic USB reset.");
+                    if (failures > 0) {
+                        var choice = picker.SelectedItem as CameraChoice ?? throw new InvalidOperationException("Choose a camera before enabling USB reset.");
+                        // Enabling USB recovery is an immediate action, including the camera identity it approves.
+                        Cameras.Save(new CameraSelection(choice.Camera, serial.Text.Trim().ToLowerInvariant(),
+                            direct.IsChecked == true, fallback.IsChecked == true, remembered?.FanSpeed, remembered?.PowerLedBrightness));
+                    }
+                    SaveRecovery(Load() with { UsbResetAfterFailures = failures });
+                    return Task.CompletedTask;
+                });
+        recovery.Children.Add(usbHelper);
+        var peripheralRecovery = PeripheralRecoveryControls(recovery, LoadPeripheralRecovery());
+        picker.SelectionChanged += (_, _) => usbHelper.RefreshAvailability();
+        serial.TextChanged += (_, _) => usbHelper.RefreshAvailability();
         var cooling = AddTab("Cooling", "Recovery restores the prior cooler state before a replacement exposure.");
         var advanced = AddTab("Advanced");
         advanced.Children.Add(new TextBlock { Text = "Available fan and LED controls depend on the selected camera.",
@@ -113,7 +173,8 @@ internal static class Settings
         var recoveryJson = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
         var recoveryForm = new Regain.Rotator.CameraRecoveryForm(
             JsonSerializer.SerializeToElement(current, recoveryJson),
-            section => section == "Cooling" ? cooling : section == "Timeouts" ? advanced : recovery);
+            section => section == "Cooling" ? cooling : section == "Timeouts" ? advanced : recovery,
+            excludedFields: ["usbResetAfterFailures"]);
         var status = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 8) };
         footer.Children.Add(status);
         var actions = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
@@ -135,6 +196,9 @@ internal static class Settings
         Regain.Rotator.SetupTheme.Apply(window);
         using var discoveryCancel = new CancellationTokenSource();
         window.Closed += (_, _) => discoveryCancel.Cancel();
+        window.Closing += (_, e) => {
+            if (usbHelper.IsBusy) { e.Cancel = true; status.Text = "Wait for the USB helper operation to finish before closing setup."; }
+        };
         async Task RefreshCameras()
         {
             refresh.IsEnabled = false;
@@ -168,8 +232,10 @@ internal static class Settings
         {
             try
             {
-                var options = JsonSerializer.Deserialize<RecoveryOptions>(recoveryForm.Read().GetRawText(), recoveryJson)!;
+                var options = JsonSerializer.Deserialize<RecoveryOptions>(recoveryForm.Read().GetRawText(), recoveryJson)!
+                    with { UsbResetAfterFailures = usbHelper.ResetAfterFailures };
                 options.Validate();
+                var peripherals = peripheralRecovery();
                 if (picker.SelectedItem is not CameraChoice choice)
                     throw new InvalidOperationException("Choose a camera before saving.");
                 if (direct.IsChecked == true && choice.Camera.Name is not ("ZWO ASI585MM Pro" or "ZWO ASI676MC" or "ZWO ASI662MC" or "ZWO ASI2600MM Duo" or "ZWO ASI2600MM Pro" or "ZWO ASI220MM Mini" or "ZWO ASI6200MM Pro"))
@@ -185,10 +251,8 @@ internal static class Settings
                 }
                 int? fan = OptionalByte(fanSpeed), led = OptionalByte(ledBrightness);
                 if (applyLive is not null) await applyLive(options);
-                Directory.CreateDirectory(Folder);
-                string temp = FilePath + "." + Guid.NewGuid().ToString("N") + ".tmp";
-                File.WriteAllText(temp, JsonSerializer.Serialize(options, new JsonSerializerOptions { WriteIndented = true }));
-                File.Move(temp, FilePath, true);
+                SaveRecovery(options);
+                SavePeripheralRecovery(peripherals);
                 Cameras.Save(new CameraSelection(choice.Camera, selectedSerial, direct.IsChecked == true, fallback.IsChecked == true,
                     fan,led));
                 window.Close();

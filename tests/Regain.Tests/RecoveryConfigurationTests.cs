@@ -19,8 +19,23 @@ public sealed class RecoveryConfigurationTests
         Assert.Equal(new RecoveryOptions(),old);
         var sparse=JsonSerializer.Deserialize<RecoveryOptions>("""{"MaxRetries":0,"UsbPortCycle":true,"legacyExtension":1}""")!;
         Assert.Equal(old with {MaxRetries=0,UsbPortCycle=true},sparse);
-        Assert.Equal(17,JsonSerializer.SerializeToElement(old).EnumerateObject().Count());
+        Assert.Equal(3,old.PreExposureReconnectAttempts);
+        var serialized=JsonSerializer.SerializeToElement(old);
+        Assert.Equal(18,serialized.EnumerateObject().Count());
+        Assert.Equal(3,serialized.GetProperty("PreExposureReconnectAttempts").GetInt32());
+        var explicitAttempts=JsonSerializer.Deserialize<RecoveryOptions>("""{"MaxRetries":0,"PreExposureReconnectAttempts":5}""")!;
+        Assert.Equal(0,explicitAttempts.MaxRetries);
+        Assert.Equal(5,explicitAttempts.PreExposureReconnectAttempts);
         sparse.Validate();
+    }
+
+    [Theory]
+    [InlineData(1,true)] [InlineData(3,true)] [InlineData(10,true)]
+    [InlineData(0,false)] [InlineData(11,false)] [InlineData(-1,false)]
+    public void PreExposureReconnectAttemptsHaveAnIndependentBoundedBudget(int attempts,bool valid)
+    {
+        var options=new RecoveryOptions {MaxRetries=0,PreExposureReconnectAttempts=attempts};
+        if(valid) options.Validate(); else Assert.Throws<ArgumentOutOfRangeException>(options.Validate);
     }
 
     [Theory]

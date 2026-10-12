@@ -159,6 +159,17 @@ The live `coolerMaxPowerChangePer5Seconds` setting defaults to 25 percentage
 points in either direction, including startup and setpoint changes. Recovery
 restores the last known baseline; shutdown and feedback loss still stop cooling
 immediately.
+Normal updates compare the encoded DAC/FPGA demand with the last acknowledged
+command. Changed outputs are written immediately within the power slew limit;
+unchanged outputs are refreshed after five seconds since the last successful
+write, on the next one-second feedback service. Temperature feedback and
+controller timing continue between writes. This conservative keepalive is
+Regain policy: the mapped protocol has no established hardware timeout, and
+healthy SDK traces show cooler updates roughly every 5.59 seconds. Explicit
+cooler/heater-off commands and initialization/recovery
+restoration remain deliberate writes. A failed command cannot establish an
+acknowledged output value or refresh deadline, and restoration must not trust a
+cache from before the transport or sensor state changed.
 Initialization reapplies acknowledged output and actuator flags without
 resetting that feedback deadline. Heater capability is checked separately:
 the verified ASI585MM Pro profile exposes no controllable heater, so Regain

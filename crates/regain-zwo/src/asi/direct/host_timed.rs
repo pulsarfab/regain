@@ -25,6 +25,7 @@
 //! docs/asi6200-abort-cleanup.md for cancellation comparisons and acceptance.
 use super::transport::Camera;
 use anyhow::{Result, ensure};
+use std::cell::Cell;
 use std::time::{Duration, Instant};
 
 #[derive(Clone, Copy)]
@@ -92,6 +93,49 @@ impl Io for Camera {
     }
 }
 
+/// Diagnostic values are the last acknowledged transactions, not a fresh
+/// hardware snapshot. Failure cleanup must reach the SDK restoration sequence
+/// immediately, rather than spending another USB timeout on each optional read.
+struct ObservedIo<'a, T> {
+    inner: &'a T,
+    registers: Cell<[Option<u8>; 0x24]>,
+}
+impl<T: Io> Io for ObservedIo<'_, T> {
+    fn read(&self, register: u16) -> Result<u8> {
+        let value = self.inner.read(register)?;
+        self.observe(register, value);
+        Ok(value)
+    }
+    fn write(&self, request: u8, register: u16, value: u8) -> Result<()> {
+        self.inner.write(request, register, value)?;
+        if request == 0xbd {
+            self.observe(register, value);
+        }
+        Ok(())
+    }
+    fn service(&self) -> Result<()> {
+        self.inner.service()
+    }
+    fn now(&self) -> Instant {
+        self.inner.now()
+    }
+    fn sleep(&self, duration: Duration) {
+        self.inner.sleep(duration);
+    }
+    fn phase(&self, phase: &'static str) {
+        self.inner.phase(phase);
+    }
+}
+impl<T> ObservedIo<'_, T> {
+    fn observe(&self, register: u16, value: u8) {
+        let mut registers = self.registers.get();
+        if let Some(observed) = registers.get_mut(usize::from(register)) {
+            *observed = Some(value);
+            self.registers.set(registers);
+        }
+    }
+}
+
 /// Preserve cooler/auxiliary bits in BD19. SDK workers reach this sequence even
 /// when their integration cancellation flag is set (6200: 1ed575..1ed60b;
 /// 2600: cancellation at 14c551..14c55c branches to restoration at 14c5a0).
@@ -144,6 +188,10 @@ pub(super) fn restore_if_gated(io: &impl Io, protocol: Protocol) -> Result<()> {
 }
 
 pub(super) fn expose(io: &impl Io, protocol: Protocol, microseconds: u32) -> Result<()> {
+    let io = ObservedIo {
+        inner: io,
+        registers: Cell::new([None; 0x24]),
+    };
     // Callers use this path only for exposures >= 1 s; shorter exposures use
     // the sensor frame/shutter registers without these host-controlled gates.
     io.phase("synchronizing");
@@ -220,21 +268,18 @@ pub(super) fn expose(io: &impl Io, protocol: Protocol, microseconds: u32) -> Res
         Ok(())
     })();
     if let Err(error) = &result {
-        let registers = [
-            io.read(0).ok(),
-            io.read(0xb).ok(),
-            io.read(0x19).ok(),
-            io.read(0x23).ok(),
-        ];
+        let observed = io.registers.get();
+        let registers = [observed[0], observed[0xb], observed[0x19], observed[0x23]];
         crate::asi::direct::diagnostics::details(
             "info",
             "capture.clock_cleanup",
             // The supervisor forwards message, not structured details, to NINA.
             format_args!(
-                "{} {stage}, {microseconds} us: {error:#}; restoring clocks; BC00/0b/19/23={registers:02x?}",
+                "{} {stage}, {microseconds} us: {error:#}; restoring clocks; last acknowledged BC00/0b/19/23={registers:02x?} (cached, may be stale)",
                 protocol.model
             ),
             serde_json::json!({"model":protocol.model,"phase":stage,"microseconds":microseconds,
+                "registerSource":"last_acknowledged_transaction","liveDiagnosticReads":false,
                 "BC00":registers[0],"BC0b":registers[1],
                 "BC19":registers[2],"BC23":registers[3]}),
         );
@@ -242,7 +287,7 @@ pub(super) fn expose(io: &impl Io, protocol: Protocol, microseconds: u32) -> Res
     // Includes synchronization/USB/environment errors, not just cancellation.
     // A partial register transaction must never be acknowledged as a clean stop.
     io.phase("restoring_clocks");
-    let cleanup = restore_clocks(io, protocol);
+    let cleanup = restore_clocks(&io, protocol);
     match (result, cleanup) {
         (Ok(()), cleanup) => cleanup,
         (Err(error), Ok(())) => Err(error),
@@ -276,6 +321,8 @@ mod tests {
         synchronize: bool,
         ignore_gate_clear: bool,
         fail_write: Cell<Option<(u8, u16, u8)>>,
+        fail_write_leaves_offline: bool,
+        offline: Cell<bool>,
         writes: RefCell<Vec<(u8, u16, u8)>>,
         phases: RefCell<Vec<&'static str>>,
         operations: RefCell<Vec<Operation>>,
@@ -297,6 +344,8 @@ mod tests {
                 synchronize: true,
                 ignore_gate_clear: false,
                 fail_write: Cell::new(None),
+                fail_write_leaves_offline: false,
+                offline: Cell::new(false),
                 writes: RefCell::default(),
                 phases: RefCell::default(),
                 operations: RefCell::default(),
@@ -314,6 +363,10 @@ mod tests {
     impl Io for Registers {
         fn read(&self, register: u16) -> Result<u8> {
             self.operations.borrow_mut().push(Operation::Read(register));
+            if self.offline.get() {
+                self.sleep(Duration::from_secs(5));
+                anyhow::bail!("USB control deadline expired");
+            }
             Ok(self.fpga.borrow()[usize::from(register)])
         }
         fn write(&self, request: u8, register: u16, value: u8) -> Result<()> {
@@ -323,6 +376,7 @@ mod tests {
             self.writes.borrow_mut().push((request, register, value));
             if self.fail_write.get() == Some((request, register, value)) {
                 self.fail_write.set(None);
+                self.offline.set(self.fail_write_leaves_offline);
                 anyhow::bail!("USB control transfer failed");
             }
             match request {
@@ -500,6 +554,51 @@ mod tests {
         io.assert_clocks_restored();
         io.fpga.borrow_mut()[0x23] = 1;
         expose(&io, ASI6200, 2_000_000).unwrap();
+    }
+
+    #[test]
+    fn transport_failure_reaches_required_restoration_without_optional_probes() {
+        for protocol in [ASI6200, ASI2600] {
+            let io = Registers {
+                fail_write_leaves_offline: true,
+                ..Registers::default()
+            };
+            io.fail_write.set(Some((0xbd, 0xb, 0x55)));
+            let error = expose(&io, protocol, 2_000_000).unwrap_err();
+            assert!(error.to_string().contains("clock restoration failed"));
+            assert!(!error.is::<CaptureCancelled>());
+            let operations = io.operations.borrow();
+            let failed = operations
+                .iter()
+                .position(|op| *op == Operation::Write(0xbd, 0xb, 0x55))
+                .unwrap();
+            // First and only post-failure read belongs to the SDK restoration.
+            // The former four independent diagnostic reads added 20 seconds
+            // before this read on an unavailable transport.
+            assert_eq!(
+                &operations[failed + 1..],
+                &[
+                    Operation::Read(0x19),
+                    Operation::Sleep(Duration::from_secs(5))
+                ]
+            );
+            assert!(io.elapsed.get() < Duration::from_secs(7));
+        }
+    }
+
+    #[test]
+    fn failed_transactions_do_not_enter_the_last_acknowledged_register_cache() {
+        let raw = Registers::default();
+        let io = ObservedIo {
+            inner: &raw,
+            registers: Cell::new([None; 0x24]),
+        };
+        assert_eq!(io.read(0x19).unwrap(), 0xc0);
+        io.write(0xbd, 0x19, 0xc1).unwrap();
+        raw.fail_write.set(Some((0xbd, 0x19, 0xc0)));
+        assert!(io.write(0xbd, 0x19, 0xc0).is_err());
+        assert_eq!(io.registers.get()[0x19], Some(0xc1));
+        assert_eq!(io.registers.get()[0x23], None);
     }
 
     #[test]

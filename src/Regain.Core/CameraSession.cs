@@ -18,6 +18,7 @@ public sealed class CameraSession : IDisposable
     private readonly Dictionary<int, long> observed = new();
     private readonly Dictionary<int, long> applied = new();
     private HostClient? host;
+    private Action<CameraUsbRecoveryEvent>? hostUsbRecovery;
     private string? serial;
     private bool hasConnected;
     private bool disposed;
@@ -60,6 +61,9 @@ public sealed class CameraSession : IDisposable
         get; private set;
     }
     public event Action<string>? Diagnostic;
+    public event Action<CameraUsbRecoveryEvent>? UsbRecovery;
+    /// <summary>Optional frontend barrier after camera USB recovery, before another exposure starts.</summary>
+    public Func<ulong, CancellationToken, Task>? RecoverUsbPeripherals { get; set; }
     public CameraSession(CameraDescriptor camera, Func<HostClient> factory, RecoveryOptions? options = null, string? serial = null, Func<HostClient>? sdkFallbackFactory = null)
     {
         Camera = camera;
@@ -79,6 +83,27 @@ public sealed class CameraSession : IDisposable
             catch { /* A failed diagnostic subscriber must not interrupt recovery. */ }
         }
     }
+    private void ForwardUsbRecovery(HostClient source, CameraUsbRecoveryEvent phase)
+    {
+        Action<CameraUsbRecoveryEvent>? listeners;
+        lock (sync)
+        {
+            if (disposed || !ReferenceEquals(host, source)) return;
+            listeners = UsbRecovery;
+        }
+        if (listeners is null) return;
+        foreach (Action<CameraUsbRecoveryEvent> listener in listeners.GetInvocationList())
+        {
+            lock (sync) if (disposed || !ReferenceEquals(host, source)) return;
+            try { listener(phase); }
+            catch { /* A frontend subscriber must not interfere with camera recovery. */ }
+        }
+    }
+    private void UnsubscribeUsbRecovery(HostClient? source)
+    {
+        if (source is not null && hostUsbRecovery is not null) source.UsbRecovery -= hostUsbRecovery;
+        hostUsbRecovery = null;
+    }
     public async Task UpdateRuntimeOptionsAsync(RecoveryOptions options, CancellationToken token = default)
     {
         options.Validate();
@@ -86,7 +111,7 @@ public sealed class CameraSession : IDisposable
         if (current is not null && current.IsAlive)
             await current.CallAsync("runtime-options", new { transferLogMode = options.TransferLogMode,
                 coolerMaxPowerChangePer5Seconds = options.CoolerMaxPowerChangePer5Seconds },
-                TimeSpan.FromSeconds(Options.CommandTimeoutSeconds), token).ConfigureAwait(false);
+                TimeSpan.FromSeconds(supervised ? SupervisorControlTimeoutSeconds : Options.CommandTimeoutSeconds), token).ConfigureAwait(false);
         Options = Options with { TransferLogMode = options.TransferLogMode, CoolerMaxPowerChangePer5Seconds = options.CoolerMaxPowerChangePer5Seconds };
         current?.ConfigureDiagnostics(options.TransferLogMode);
     }
@@ -96,8 +121,15 @@ public sealed class CameraSession : IDisposable
         lock (sync) Phase = phase;
         Log(phase);
     }
+    // Match NativeCameraTiming.control_allowance conservatively: all persistent
+    // settings, environment observations, process drain and scheduling margin.
+    // This only budgets the supervisor transaction; USB deadlines stay fixed.
+    private double SupervisorControlTimeoutSeconds => Options.ReconnectDelaySeconds + 10 +
+        (2 * Math.Max(18, Controls.Count) + 4) * Options.CommandTimeoutSeconds;
     private Task<Reply> Call(string method, object? p, CancellationToken token, double? timeout = null) =>
-        (host ?? throw new IOException("Camera host is not connected")).CallAsync(method, p, TimeSpan.FromSeconds(timeout ?? Options.CommandTimeoutSeconds), token);
+        (host ?? throw new IOException("Camera host is not connected")).CallAsync(method, p,
+            TimeSpan.FromSeconds(timeout ?? (supervised && method is "set" or "runtime-options"
+                ? SupervisorControlTimeoutSeconds : Options.CommandTimeoutSeconds)), token);
     public async Task ConnectAsync(CancellationToken token)
     {
         await operation.WaitAsync(token).ConfigureAwait(false);
@@ -140,6 +172,9 @@ public sealed class CameraSession : IDisposable
         {
             ObjectDisposedException.ThrowIf(disposed, this);
             host = usingFallback ? sdkFallbackFactory!() : factory();
+            var active = host;
+            hostUsbRecovery = phase => ForwardUsbRecovery(active, phase);
+            active.UsbRecovery += hostUsbRecovery;
             host.ConfigureDiagnostics(Options.TransferLogMode);
             supervised = host.Supervised;
         }
@@ -152,6 +187,7 @@ public sealed class CameraSession : IDisposable
         {
             name = Camera.Name,
             serial,
+            waitForUsbPeripherals = RecoverUsbPeripherals is not null,
             recovery = JsonSerializer.SerializeToElement(Options, new JsonSerializerOptions(JsonSerializerDefaults.Web)),
             allowSdkFallback = sdkFallbackFactory is not null,
             recoveryState = new { temperature = recoveryTemperature, power = recoveryPower, target = recoveryTarget, settle = requiresCoolingSettle }
@@ -311,8 +347,33 @@ public sealed class CameraSession : IDisposable
                     lock (sync)
                         observed[c] = v;
                 }
+            if (supervised)
+            {
+                // Scalar getters return cached finite telemetry. Read owner
+                // availability separately so an idle-poll fault cannot present
+                // those historical values as an available camera connection.
+                var snapshot = (await Call("diagnostics", null, token).ConfigureAwait(false)).Result;
+                bool available = snapshot.GetProperty("controlConnectionAvailable").GetBoolean();
+                bool lost = ControlConnectionAvailable && !available;
+                ControlConnectionAvailable = available;
+                if (lost) State("Camera controls unavailable");
+            }
         }
-        catch (Exception error) { if (error is not OperationCanceledException) RecordFailure(error.Message); KillHost(); throw; }
+        catch (Exception error)
+        {
+            if (error is not OperationCanceledException) RecordFailure(error.Message);
+            // A framed worker failure leaves the Rust owner alive, with its
+            // cached telemetry, outage backoff and bounded reconnect policy.
+            // HostClient retires broken/timed-out IPC itself; never replace a
+            // living supervisor just because its camera worker is unavailable.
+            if (supervised && host?.IsAlive == true && error is SdkException)
+            {
+                ControlConnectionAvailable = false;
+                State("Camera controls unavailable");
+            }
+            else KillHost();
+            throw;
+        }
         finally { operation.Release(); }
     }
     // Re-establish control without taking a new exposure or consuming its retry budget.
@@ -573,15 +634,24 @@ public sealed class CameraSession : IDisposable
             await Apply(requested, CancellationToken.None).ConfigureAwait(false);
             token.ThrowIfCancellationRequested();
             await Call("start", exposure, CancellationToken.None).ConfigureAwait(false);
-            int replacements = exposure.microseconds / 1e6 <= Options.MaximumRetryExposureSeconds ? Options.MaxRetries : 0;
-            double budget = (Options.UsbResetAfterFailures > 0 ? 150 : 0) + (replacements + 1) * (ReadyTimeoutSeconds(exposure.microseconds / 1e6) + Options.CoolingTimeoutSeconds +
-                (Options.ReadyFrameDownloadRetries + 1) * (Options.DownloadTimeoutSeconds + Options.ReconnectDelaySeconds) +
-                (2 * Controls.Count + 10) * Options.CommandTimeoutSeconds);
+            double budget = CaptureTimeoutSeconds(exposure.microseconds / 1e6);
             var clock = Stopwatch.StartNew();
+            ulong? completedUsbPeripheralRecovery = null;
             while (true)
             {
                 var status = (await Call("status", null, CancellationToken.None).ConfigureAwait(false)).Result;
                 token.ThrowIfCancellationRequested();
+                if (status.TryGetProperty("usbPeripheralRecoveryId", out var pending) && pending.ValueKind != JsonValueKind.Null)
+                {
+                    if (pending.ValueKind != JsonValueKind.Number || !pending.TryGetUInt64(out var id) || id == 0)
+                        throw new InvalidDataException("Invalid USB peripheral recovery identifier");
+                    if (completedUsbPeripheralRecovery != id)
+                    {
+                        State("Waiting for NINA peripherals");
+                        await RecoverUsbPeripheralsAsync(id, token).ConfigureAwait(false);
+                        completedUsbPeripheralRecovery = id;
+                    }
+                }
                 Backend = status.GetProperty("backend").GetString()!;
                 usingFallback = status.GetProperty("sdkFallback").GetBoolean();
                 if (status.TryGetProperty("environment", out var environment)) {
@@ -647,6 +717,43 @@ public sealed class CameraSession : IDisposable
             throw;
         }
     }
+    private async Task RecoverUsbPeripheralsAsync(ulong id, CancellationToken token)
+    {
+        try
+        {
+            var recover = RecoverUsbPeripherals ?? throw new IOException("USB peripheral recovery requires its frontend callback");
+            using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token, shutdown.Token);
+            deadline.CancelAfter(TimeSpan.FromSeconds(110));
+            try { await recover(id, deadline.Token).WaitAsync(deadline.Token).ConfigureAwait(false); }
+            catch (OperationCanceledException error) when (!token.IsCancellationRequested && !shutdown.IsCancellationRequested)
+            { throw new TimeoutException("NINA peripheral recovery exceeded its 110 second deadline; no replacement exposure was authorized", error); }
+            deadline.Token.ThrowIfCancellationRequested();
+            await Call("usb-peripherals-ready", new { id, success = true }, CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception error)
+        {
+            // The fixed mailbox accepts short printable error text only.
+            // Five hundred UTF-16 code units also fit its 2048-byte UTF-8 limit.
+            string message = new(error.Message.Select(c => char.IsControl(c) ? ' ' : c).Take(500).ToArray());
+            try { await Call("usb-peripherals-ready", new { id, success = false, error = message }, CancellationToken.None).ConfigureAwait(false); }
+            catch (Exception ackError) { Log($"Could not report failed USB peripheral recovery: {ackError.Message}"); }
+            throw;
+        }
+    }
+    /// <summary>Complete capture/recovery allowance, also used by frontend readiness deadlines.</summary>
+    public double CaptureTimeoutSeconds(double seconds)
+    {
+        int replacements = seconds <= Options.MaximumRetryExposureSeconds ? Options.MaxRetries : 0;
+        double budget = (Options.UsbResetAfterFailures > 0 ? 150 + (RecoverUsbPeripherals is not null ? 120 : 0) : 0) +
+            (replacements + 1) * (ReadyTimeoutSeconds(seconds) + Options.CoolingTimeoutSeconds +
+                (Options.ReadyFrameDownloadRetries + 1) * (Options.DownloadTimeoutSeconds + Options.ReconnectDelaySeconds) +
+                (2 * Controls.Count + 10) * Options.CommandTimeoutSeconds);
+        // Pre-arm reconnection never authorizes a replacement of a long
+        // exposure, but both owner and frontend must leave time for its attempts.
+        return budget + (Options.PreExposureReconnectAttempts - 1) *
+            (Options.ReconnectDelaySeconds + 2 * Options.CoolingTimeoutSeconds +
+                (4 * Controls.Count + 16) * Options.CommandTimeoutSeconds);
+    }
     public double ReadyTimeoutSeconds(double seconds) => seconds + Options.ExposureGraceSeconds +
         (Backend == "direct" ? (1 + (SupportsRetainedFrameReads || seconds <= Options.MaximumRetryExposureSeconds
             ? Options.DirectReadRetries : 0)) * Options.DownloadTimeoutSeconds + Options.DirectReadRetries * readRetryOverheadSeconds : 0);
@@ -698,8 +805,10 @@ public sealed class CameraSession : IDisposable
             }
             requiresReconnect = hasConnected;
             ControlConnectionAvailable = false;
-            host?.Dispose();
+            var closing = host;
+            UnsubscribeUsbRecovery(closing);
             host = null;
+            closing?.Dispose();
         }
     }
     public void Dispose()
@@ -712,6 +821,7 @@ public sealed class CameraSession : IDisposable
             ControlConnectionAvailable = false;
             shutdown.Cancel();
             closing = host;
+            UnsubscribeUsbRecovery(closing);
             host = null;
         }
         bool closed = false;

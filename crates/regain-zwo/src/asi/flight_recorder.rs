@@ -114,6 +114,12 @@ impl Recorder {
 
 pub(super) fn fault(record: &Value) -> bool {
     matches!(record["level"].as_str(), Some("warning" | "error"))
+        // A request can finish successfully after its deadline and CancelIoEx.
+        // Raw Win32 success does not undo that timeout or establish whether a
+        // control write took effect. Ordinary cancelled read-ahead has no
+        // expired deadline and remains quiet.
+        || record["details"]["deadlineExpired"] == true
+        || record["details"]["waitError"].as_u64().is_some_and(|code| code != 0)
         || record["event"]
             .as_str()
             .is_some_and(|event| event.ends_with(".failed"))
@@ -253,6 +259,14 @@ mod tests {
         assert!(!fault(
             &json!({"level":"info","event":"usb.complete","details":{"win32Error":995}})
         ));
+        for raw_result in [0, 995] {
+            assert!(fault(&json!({"level":"info","event":"usb.complete",
+                "details":{"win32Error":raw_result,"deadlineExpired":true,"cancelRequested":true}})));
+        }
+        assert!(!fault(&json!({"level":"info","event":"usb.complete",
+            "details":{"win32Error":995,"deadlineExpired":false,"cancelRequested":true}})));
+        assert!(fault(&json!({"level":"info","event":"usb.complete",
+            "details":{"win32Error":995,"deadlineExpired":false,"waitError":6,"cancelRequested":true}})));
         assert!(fault(
             &json!({"level":"info","event":"usb.complete","details":{"win32Error":31}})
         ));
