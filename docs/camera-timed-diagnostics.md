@@ -41,6 +41,12 @@ the directory for both worker and managed diagnostics. If disk is unavailable,
 the bounded in-memory history can still be emitted into the host log. Exceptional
 queue overflow is reported explicitly; recording never blocks the USB owner.
 
+Before replying with a command failure or terminal stream error, the pipe
+thread drains queued diagnostics with a two-second bound. This preserves retry
+counts and fault batches when the supervisor immediately retires the worker.
+A stalled log consumer can still exceed that bound; healthy replies do not wait
+for diagnostics.
+
 `REGAIN_CAMERA_TRANSFER_LOG=0` (`false` or `off`, ignoring case) remains a
 host-wide override. Set it before launching the host and restart to apply it.
 Remove it or set `1` to use the saved mode. SDK USB hooks are installed once so
