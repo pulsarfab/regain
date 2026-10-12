@@ -1,4 +1,7 @@
-use crate::asi::direct::protocol;
+use crate::asi::direct::{
+    diagnostics::{self, UsbTrace},
+    protocol,
+};
 use anyhow::{Context, Result, bail, ensure};
 use serde_json::{Value, json};
 use std::{
@@ -160,6 +163,12 @@ impl DeviceInfo {
     }
 }
 pub struct Device(Handle);
+impl Drop for Device {
+    fn drop(&mut self) {
+        // Every request has drained before the exclusive device can be dropped.
+        diagnostics::flush_usb();
+    }
+}
 struct Completion {
     bytes: usize,
     error: u32,
@@ -177,6 +186,7 @@ struct PendingRead {
     offset: usize,
     length: usize,
     immediate: bool,
+    trace: UsbTrace,
 }
 
 pub struct ReadBatch<'a> {
@@ -264,6 +274,12 @@ impl ReadBatch<'_> {
             offset: self.next_offset,
             length,
             immediate: false,
+            trace: UsbTrace::start(
+                "bulk",
+                json!({"transport":"windows-cyusb3", "endpoint":"0x81",
+                "direction":"in", "requestedBytes":length, "chunk":self.next_offset / self.chunk_bytes,
+                "frameOffset":self.next_offset, "frameBytes":self.data.len(), "queued":true}),
+            ),
         });
         request.header.get_mut()[13] = 0x81;
         request.overlap.get_mut().hEvent = request.event.0;
@@ -282,23 +298,35 @@ impl ReadBatch<'_> {
                 request.overlap.get(),
             )
         };
-        if ok == 0 {
-            let code = unsafe { GetLastError() };
-            if code != ERROR_IO_PENDING {
-                let category = if code == ERROR_DEVICE_NOT_CONNECTED {
-                    "disconnected"
-                } else {
-                    "io"
-                };
-                let mut failure =
-                    crate::asi::direct::transfer::Failure::new(category, length, 0, false);
-                failure.0["win32Error"] = json!(code);
-                failure.0["submitted"] = json!(false);
-                failure.0["chunk"] = json!(request.offset / self.chunk_bytes);
-                failure.0["completedBytes"] = json!(self.completed_bytes);
-                failure.0["frameBytes"] = json!(self.data.len());
-                return Err(failure.into());
-            }
+        let code = if ok == 0 {
+            unsafe { GetLastError() }
+        } else {
+            0
+        };
+        request.trace.event(
+            "submitted",
+            json!({"win32Error":code, "pending":code == ERROR_IO_PENDING,
+            "synchronous":ok != 0}),
+        );
+        if ok == 0 && code != ERROR_IO_PENDING {
+            request.trace.event(
+                "complete",
+                json!({"win32Error":code,"receivedBytes":0,
+                    "submitted":false,"terminalCompletionObserved":true}),
+            );
+            let category = if code == ERROR_DEVICE_NOT_CONNECTED {
+                "disconnected"
+            } else {
+                "io"
+            };
+            let mut failure =
+                crate::asi::direct::transfer::Failure::new(category, length, 0, false);
+            failure.0["win32Error"] = json!(code);
+            failure.0["submitted"] = json!(false);
+            failure.0["chunk"] = json!(request.offset / self.chunk_bytes);
+            failure.0["completedBytes"] = json!(self.completed_bytes);
+            failure.0["frameBytes"] = json!(self.data.len());
+            return Err(failure.into());
         }
         request.immediate = ok != 0;
         self.next_offset += length;
@@ -387,6 +415,8 @@ impl ReadBatch<'_> {
                 0
             };
             let (nt, usb) = protocol::status(unsafe { &*request.header.get() })?;
+            request.trace.event("complete", json!({"win32Error":code,"ntStatus":format!("0x{nt:08x}"),
+                "usbStatus":format!("0x{usb:08x}"),"receivedBytes":received,"terminalCompletionObserved":true}));
             if let Some(category) = queued_read_failure(code, nt, usb, received, request.length) {
                 let mut failure = crate::asi::direct::transfer::Failure::new(
                     category,
@@ -435,7 +465,11 @@ impl ReadBatch<'_> {
             &mut self.pending,
             Duration::from_secs(2),
             |request| unsafe {
-                CancelIoEx(self.device.0.0, request.overlap.get());
+                let ok = CancelIoEx(self.device.0.0, request.overlap.get());
+                let code = if ok == 0 { GetLastError() } else { 0 };
+                request
+                    .trace
+                    .event("cancel", json!({"win32Error":code,"cancelRequested":true}));
             },
             |request, remaining| {
                 let wait = unsafe {
@@ -452,7 +486,20 @@ impl ReadBatch<'_> {
                         0,
                     )
                 };
-                done != 0 || unsafe { GetLastError() } != ERROR_IO_INCOMPLETE
+                let code = if done != 0 {
+                    0
+                } else {
+                    unsafe { GetLastError() }
+                };
+                let terminal = code != ERROR_IO_INCOMPLETE;
+                if terminal {
+                    let (nt, usb) =
+                        protocol::status(unsafe { &*request.header.get() }).unwrap_or_default();
+                    request.trace.event("complete", json!({"win32Error":code,"receivedBytes":if done != 0 {unsafe {*request.bytes.get()}} else {0},
+                        "ntStatus":format!("0x{nt:08x}"),"usbStatus":format!("0x{usb:08x}"),
+                        "cancelRequested":true,"terminalCompletionObserved":true}));
+                }
+                terminal
             },
         );
         if !drained {
@@ -624,6 +671,87 @@ impl Device {
         timeout_ms: u32,
     ) -> Result<Completion> {
         let out_size = output.as_ref().map_or(input.len(), |v| v.len());
+        let mut fields = json!({"transport":"windows-cyusb3","ioctl":format!("0x{code:06x}"),
+            "inputBytes":input.len(),"outputBytes":out_size,"timeoutMs":timeout_ms});
+        let control = if code == protocol::CONTROL && input.len() >= protocol::HEADER {
+            let request = input[1];
+            let length = u16::from_le_bytes([input[6], input[7]]);
+            let mut setup = diagnostics::control_fields(
+                request,
+                u16::from_le_bytes([input[2], input[3]]),
+                u16::from_le_bytes([input[4], input[5]]),
+                length,
+            );
+            setup["direction"] = json!(if input[0] & 0x80 != 0 { "in" } else { "out" });
+            fields
+                .as_object_mut()
+                .unwrap()
+                .extend(setup.as_object().unwrap().clone());
+            Some((request, length))
+        } else {
+            None
+        };
+        if code == protocol::BULK {
+            fields["endpoint"] = json!("0x81");
+            fields["direction"] = json!("in");
+            fields["requestedBytes"] = json!(out_size);
+        }
+        let operation = match code {
+            protocol::CONTROL => "control",
+            protocol::BULK => "bulk",
+            protocol::VERSION => "driver-version",
+            0x220044 => "abort-pipe",
+            0x22002c => "reset-pipe",
+            0x220038 => "set-transfer-size",
+            0x220028 => "cycle-port",
+            0x220030 => "reset-port",
+            _ => "driver-operation",
+        };
+        if matches!(code, 0x220044 | 0x22002c | 0x220038) && input.len() <= 8 {
+            fields["parameters"] = json!(input);
+        }
+        let trace = UsbTrace::start(operation, fields);
+        let result = self.request_inner(code, input, output, timeout_ms, &trace);
+        let mut completion = match &result {
+            Ok(done) => json!({"win32Error":done.error,"receivedBytes":done.bytes,
+                "cancelRequested":done.cancel_requested,"terminalCompletionObserved":true}),
+            Err(error) => {
+                json!({"win32Error":error.downcast_ref::<std::io::Error>().and_then(|e| e.raw_os_error()),
+                "error":format!("{error:#}")})
+            }
+        };
+        // request_inner cannot return while the driver still owns these bytes.
+        if matches!(code, protocol::CONTROL | protocol::BULK) && input.len() >= protocol::HEADER {
+            let (nt, usb) = protocol::status(input)?;
+            completion["ntStatus"] = json!(format!("0x{nt:08x}"));
+            completion["usbStatus"] = json!(format!("0x{usb:08x}"));
+        }
+        if let (Some((request, length)), Ok(done)) = (control, &result)
+            && done.error == 0
+            && !done.cancel_requested
+            && let Ok(payload) =
+                protocol::descriptor_payload(input, done.bytes, usize::from(length))
+        {
+            completion.as_object_mut().unwrap().extend(
+                diagnostics::control_payload(request, length, payload)
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+            );
+        }
+        trace.event("complete", completion);
+        result
+    }
+
+    fn request_inner(
+        &self,
+        code: u32,
+        input: &mut [u8],
+        output: Option<&mut [u8]>,
+        timeout_ms: u32,
+        trace: &UsbTrace,
+    ) -> Result<Completion> {
+        let out_size = output.as_ref().map_or(input.len(), |v| v.len());
         let out_ptr = output.map_or(input.as_mut_ptr(), |v| v.as_mut_ptr());
         let event_raw = unsafe { CreateEventW(null(), 1, 0, null()) };
         ensure!(!event_raw.is_null(), "create event: {}", error());
@@ -652,13 +780,25 @@ impl Device {
                 &mut bytes,
                 &mut overlap,
             );
-            if ok == 0 && GetLastError() != ERROR_IO_PENDING {
-                return Err(error()).context("submit driver request");
+            let submission_error = if ok == 0 { GetLastError() } else { 0 };
+            trace.event(
+                "submitted",
+                json!({"win32Error":submission_error,
+                "pending":submission_error == ERROR_IO_PENDING,"synchronous":ok != 0}),
+            );
+            if ok == 0 && submission_error != ERROR_IO_PENDING {
+                return Err(std::io::Error::from_raw_os_error(submission_error as i32))
+                    .context("submit driver request");
             }
             let mut cancel_requested = false;
             if ok == 0 && WaitForSingleObject(event.0, timeout_ms) != WAIT_OBJECT_0 {
                 cancel_requested = true;
-                CancelIoEx(self.0.0, &overlap);
+                let cancelled = CancelIoEx(self.0.0, &overlap);
+                let cancel_error = if cancelled == 0 { GetLastError() } else { 0 };
+                trace.event(
+                    "cancel",
+                    json!({"win32Error":cancel_error,"cancelRequested":true}),
+                );
                 // A cancellation request is not completion. Never free pending memory.
                 if WaitForSingleObject(event.0, 2000) != WAIT_OBJECT_0 {
                     eprintln!(

@@ -355,6 +355,12 @@ To help add a camera, use the separate [CameraKit](scripts/camera-kit/README.md)
 release ZIP to collect local diagnostics and SDK USB traces. No compiler is
 needed and nothing uploads automatically.
 
+Camera commands and USB timing are also recorded in the NINA INFO log by
+default, including bundled SDK API calls and available Windows SDK USB
+instrumentation. Images are never logged. See
+[camera timing diagnostics](docs/camera-timed-diagnostics.md) for fields,
+coverage and how to compare successive captures.
+
 [Opt-in USB reset recovery](docs/usb-recovery.md) ·
 [Multiple Alpaca focusers](docs/focusers.md) ·
 [Architecture and worker protocols](docs/architecture.md) ·

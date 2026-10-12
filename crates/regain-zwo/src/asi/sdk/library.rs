@@ -1,12 +1,43 @@
 //! All SDK calls stay on the host's command thread; the parent owns watchdogs.
-use crate::asi::sdk::raw;
+use crate::asi::sdk::{diagnostics::ApiTrace, raw, usb};
 use anyhow::{Context, Result, bail, ensure};
 use libloading::Library;
 use serde_json::{Value, json};
 use std::{
     ffi::{CStr, c_int, c_long},
     path::Path,
+    time::Instant,
 };
+
+// Resolve before timing, then record the actual vendor call and its scalar
+// outputs. No pointer argument or frame contents enter a diagnostic record.
+// Callers retain their unsafe SDK ABI boundary around this macro.
+macro_rules! sdk_call {
+    ($sdk:expr, $ty:ty, $name:literal, $args:expr, [$($arg:expr),* $(,)?], $outputs:expr) => {{
+        let function = $sdk.symbol::<$ty>(concat!($name, "\0").as_bytes())?;
+        let trace = ApiTrace::start($name, $args);
+        let started = Instant::now();
+        let result = function($($arg),*);
+        let elapsed = started.elapsed();
+        trace.complete(json!({"returnValue":result,"outputs":if result == 0 {$outputs} else {json!(null)}}), elapsed);
+        result
+    }};
+    ($sdk:expr, $ty:ty, $name:literal, $args:expr, [$($arg:expr),* $(,)?]) => {
+        sdk_call!($sdk, $ty, $name, $args, [$($arg),*], json!({}))
+    };
+}
+
+fn camera_metadata(info: &raw::CameraInfo) -> Value {
+    let name: Vec<_> = info
+        .name
+        .iter()
+        .take_while(|&&v| v != 0)
+        .map(|&v| v.to_ne_bytes()[0])
+        .collect();
+    json!({"cameraId":info.camera_id,"name":String::from_utf8_lossy(&name),
+        "width":info.max_width,"height":info.max_height,"bitDepth":info.bit_depth,
+        "color":info.is_color_camera != 0,"cooled":info.is_cooled_camera != 0})
+}
 
 #[cfg(windows)]
 pub const LIBRARY_NAME: &str = "ASICamera2.dll";
@@ -43,18 +74,40 @@ impl Sdk {
     pub fn version(&self) -> Result<String> {
         // SAFETY: SDK returns a library-owned NUL-terminated version string.
         unsafe {
-            let version = self.symbol::<raw::GetSdkVersion>(b"ASIGetSDKVersion\0")?();
-            Ok(if version.is_null() {
+            let function = self.symbol::<raw::GetSdkVersion>(b"ASIGetSDKVersion\0")?;
+            let trace = ApiTrace::start("ASIGetSDKVersion", json!({}));
+            let started = Instant::now();
+            let version = function();
+            let elapsed = started.elapsed();
+            let version = if version.is_null() {
                 "unknown".into()
             } else {
                 CStr::from_ptr(version).to_string_lossy().into_owned()
-            })
+            };
+            trace.complete(json!({"version":version}), elapsed);
+            Ok(version)
         }
     }
     pub fn load(path: &Path) -> Result<Self> {
         ensure!(path.is_absolute(), "SDK path must be absolute");
         // SAFETY: application-controlled library, ABI declarations from bundled header.
         let lib = unsafe { Library::new(path) }.context("load ASICamera2")?;
+        crate::asi::diagnostics::queued_details(
+            "info",
+            "sdk.library.loaded",
+            "Vendor SDK library loaded",
+            json!({"path":path.to_string_lossy(),"apiLogging":"every Regain-called SDK export; no sampling"}),
+        );
+        if crate::asi::diagnostics::command_logging_enabled() {
+            usb::install(&lib);
+        } else {
+            crate::asi::diagnostics::queued_details(
+                "info",
+                "sdk.usb.instrumentation",
+                "SDK USB instrumentation disabled by REGAIN_CAMERA_TRANSFER_LOG",
+                json!({"available":false,"enabled":false,"reason":"command logging disabled"}),
+            );
+        }
         Ok(Self {
             lib,
             id: None,
@@ -84,14 +137,24 @@ impl Sdk {
         );
         let mut cameras = Vec::new();
         unsafe {
-            let count =
-                self.symbol::<raw::GetNumOfConnectedCameras>(b"ASIGetNumOfConnectedCameras\0")?();
+            let count = sdk_call!(
+                self,
+                raw::GetNumOfConnectedCameras,
+                "ASIGetNumOfConnectedCameras",
+                json!({}),
+                []
+            );
             ensure!((0..=128).contains(&count), "invalid camera count");
             for index in 0..count {
                 let mut info: raw::CameraInfo = std::mem::zeroed();
                 Self::check(
-                    self.symbol::<raw::GetCameraProperty>(b"ASIGetCameraProperty\0")?(
-                        &mut info, index,
+                    sdk_call!(
+                        self,
+                        raw::GetCameraProperty,
+                        "ASIGetCameraProperty",
+                        json!({"index":index}),
+                        [&mut info, index],
+                        camera_metadata(&info)
                     ),
                     "property",
                 )?;
@@ -117,6 +180,7 @@ impl Sdk {
                     "formats":info.supported_video_formats.into_iter().take_while(|&v| v>=0).collect::<Vec<_>>() }));
             }
         }
+        crate::asi::diagnostics::flush_usb();
         Ok(json!(cameras))
     }
     pub fn list_with_serials(&mut self) -> Result<Value> {
@@ -126,7 +190,13 @@ impl Sdk {
             let result = (|| -> Result<Value> {
                 unsafe {
                     Self::check(
-                        self.symbol::<raw::OpenCamera>(b"ASIOpenCamera\0")?(id),
+                        sdk_call!(
+                            self,
+                            raw::OpenCamera,
+                            "ASIOpenCamera",
+                            json!({"cameraId":id}),
+                            [id]
+                        ),
                         "open for identity",
                     )?;
                 }
@@ -170,7 +240,13 @@ impl Sdk {
             let id = info["id"].as_i64().unwrap() as i32;
             let opened = unsafe {
                 Self::check(
-                    self.symbol::<raw::OpenCamera>(b"ASIOpenCamera\0")?(id),
+                    sdk_call!(
+                        self,
+                        raw::OpenCamera,
+                        "ASIOpenCamera",
+                        json!({"cameraId":id}),
+                        [id]
+                    ),
                     "open",
                 )
             };
@@ -215,14 +291,25 @@ impl Sdk {
         unsafe {
             // Populate this fresh SDK process's device table, but do not call
             // ASIGetCameraProperty(index): that export actively opens devices.
-            let count =
-                self.symbol::<raw::GetNumOfConnectedCameras>(b"ASIGetNumOfConnectedCameras\0")?();
+            let count = sdk_call!(
+                self,
+                raw::GetNumOfConnectedCameras,
+                "ASIGetNumOfConnectedCameras",
+                json!({}),
+                []
+            );
             ensure!(
                 (1..=128).contains(&count),
                 "selected camera is not attached"
             );
             Self::check(
-                self.symbol::<raw::OpenCamera>(b"ASIOpenCamera\0")?(id),
+                sdk_call!(
+                    self,
+                    raw::OpenCamera,
+                    "ASIOpenCamera",
+                    json!({"cameraId":id}),
+                    [id]
+                ),
                 "open selected camera",
             )?;
         }
@@ -238,9 +325,14 @@ impl Sdk {
             let mut info: raw::CameraInfo = unsafe { std::mem::zeroed() };
             unsafe {
                 Self::check(
-                    self.symbol::<unsafe extern "C" fn(c_int, *mut raw::CameraInfo) -> c_int>(
-                        b"ASIGetCameraPropertyByID\0",
-                    )?(id, &mut info),
+                    sdk_call!(
+                        self,
+                        unsafe extern "C" fn(c_int, *mut raw::CameraInfo) -> c_int,
+                        "ASIGetCameraPropertyByID",
+                        json!({"cameraId":id}),
+                        [id, &mut info],
+                        camera_metadata(&info)
+                    ),
                     "selected camera property",
                 )?;
             }
@@ -276,9 +368,13 @@ impl Sdk {
     fn read_serial(&self) -> Result<Option<String>> {
         let mut serial = [0u8; 8];
         let code = unsafe {
-            self.symbol::<unsafe extern "C" fn(c_int, *mut u8) -> c_int>(b"ASIGetSerialNumber\0")?(
-                self.id()?,
-                serial.as_mut_ptr(),
+            sdk_call!(
+                self,
+                unsafe extern "C" fn(c_int, *mut u8) -> c_int,
+                "ASIGetSerialNumber",
+                json!({"cameraId":self.id()?}),
+                [self.id()?, serial.as_mut_ptr()],
+                json!({"serial":serial.iter().map(|b|format!("{b:02x}")).collect::<String>()})
             )
         };
         Ok((code == 0 && serial.iter().any(|&v| v != 0))
@@ -288,14 +384,24 @@ impl Sdk {
         unsafe {
             let id = self.id()?;
             Self::check(
-                self.symbol::<raw::InitCamera>(b"ASIInitCamera\0")?(id),
+                sdk_call!(
+                    self,
+                    raw::InitCamera,
+                    "ASIInitCamera",
+                    json!({"cameraId":id}),
+                    [id]
+                ),
                 "init",
             )?;
             let mut serial = [0u8; 8];
-            let code =
-                self.symbol::<unsafe extern "C" fn(c_int, *mut u8) -> c_int>(
-                    b"ASIGetSerialNumber\0",
-                )?(id, serial.as_mut_ptr());
+            let code = sdk_call!(
+                self,
+                unsafe extern "C" fn(c_int, *mut u8) -> c_int,
+                "ASIGetSerialNumber",
+                json!({"cameraId":id}),
+                [id, serial.as_mut_ptr()],
+                json!({"serial":serial.iter().map(|b|format!("{b:02x}")).collect::<String>()})
+            );
             let serial = if code == 0 && serial.iter().any(|&v| v != 0) {
                 Some(
                     serial
@@ -308,7 +414,14 @@ impl Sdk {
             };
             let mut count = 0;
             Self::check(
-                self.symbol::<raw::GetNumOfControls>(b"ASIGetNumOfControls\0")?(id, &mut count),
+                sdk_call!(
+                    self,
+                    raw::GetNumOfControls,
+                    "ASIGetNumOfControls",
+                    json!({"cameraId":id}),
+                    [id, &mut count],
+                    json!({"count":count})
+                ),
                 "controls",
             )?;
             ensure!((0..=256).contains(&count), "invalid control count");
@@ -316,7 +429,14 @@ impl Sdk {
             for i in 0..count {
                 let mut caps: raw::ControlCaps = std::mem::zeroed();
                 Self::check(
-                    self.symbol::<raw::GetControlCaps>(b"ASIGetControlCaps\0")?(id, i, &mut caps),
+                    sdk_call!(
+                        self,
+                        raw::GetControlCaps,
+                        "ASIGetControlCaps",
+                        json!({"cameraId":id,"index":i}),
+                        [id, i, &mut caps],
+                        json!({"control":caps.control_type,"min":caps.min_value,"max":caps.max_value,"default":caps.default_value,"writable":caps.is_writable != 0,"autoSupported":caps.is_auto_supported != 0})
+                    ),
                     "caps",
                 )?;
                 match self.get(caps.control_type) {
@@ -330,12 +450,7 @@ impl Sdk {
                     Err(e) => eprintln!("Unavailable control {}: {e}", caps.control_type),
                 }
             }
-            let version = self.symbol::<raw::GetSdkVersion>(b"ASIGetSDKVersion\0")?();
-            let version = if version.is_null() {
-                "unknown".into()
-            } else {
-                CStr::from_ptr(version).to_string_lossy().into_owned()
-            };
+            let version = self.version()?;
             Ok(json!({"serial":serial,"controls":controls,"sdkVersion":version}))
         }
     }
@@ -346,11 +461,13 @@ impl Sdk {
         let (mut value, mut auto): (c_long, c_int) = (0, 0);
         unsafe {
             Self::check(
-                self.symbol::<raw::GetControlValue>(b"ASIGetControlValue\0")?(
-                    self.id()?,
-                    control,
-                    &mut value,
-                    &mut auto,
+                sdk_call!(
+                    self,
+                    raw::GetControlValue,
+                    "ASIGetControlValue",
+                    json!({"cameraId":self.id()?,"control":control}),
+                    [self.id()?, control, &mut value, &mut auto],
+                    json!({"value":value,"auto":auto != 0})
                 ),
                 "get control",
             )?;
@@ -366,11 +483,12 @@ impl Sdk {
         let value = c_long::try_from(value)?;
         unsafe {
             Self::check(
-                self.symbol::<raw::SetControlValue>(b"ASISetControlValue\0")?(
-                    self.id()?,
-                    control,
-                    value,
-                    i32::from(auto),
+                sdk_call!(
+                    self,
+                    raw::SetControlValue,
+                    "ASISetControlValue",
+                    json!({"cameraId":self.id()?,"control":control,"value":value,"auto":auto}),
+                    [self.id()?, control, value, i32::from(auto)]
                 ),
                 "set control",
             )
@@ -380,9 +498,12 @@ impl Sdk {
         self.configure_capture(p)?;
         unsafe {
             Self::check(
-                self.symbol::<unsafe extern "C" fn(c_int, c_int) -> c_int>(b"ASIStartExposure\0")?(
-                    self.id()?,
-                    p.dark as i32,
+                sdk_call!(
+                    self,
+                    unsafe extern "C" fn(c_int, c_int) -> c_int,
+                    "ASIStartExposure",
+                    json!({"cameraId":self.id()?,"dark":p.dark}),
+                    [self.id()?, p.dark as i32]
                 ),
                 "start exposure",
             )
@@ -393,7 +514,13 @@ impl Sdk {
         self.configure_capture(p)?;
         unsafe {
             Self::check(
-                self.symbol::<raw::StartVideoCapture>(b"ASIStartVideoCapture\0")?(self.id()?),
+                sdk_call!(
+                    self,
+                    raw::StartVideoCapture,
+                    "ASIStartVideoCapture",
+                    json!({"cameraId":self.id()?}),
+                    [self.id()?]
+                ),
                 "start video",
             )
         }
@@ -405,11 +532,17 @@ impl Sdk {
         // the owner can service stop/settings commands during long exposures.
         let wait_ms = video_wait_ms(exposure_us);
         let code = unsafe {
-            self.symbol::<raw::GetVideoData>(b"ASIGetVideoData\0")?(
-                self.id()?,
-                bytes.as_mut_ptr(),
-                c_long::try_from(bytes.len())?,
-                wait_ms,
+            sdk_call!(
+                self,
+                raw::GetVideoData,
+                "ASIGetVideoData",
+                json!({"cameraId":self.id()?,"requestedBytes":bytes.len(),"waitMs":wait_ms}),
+                [
+                    self.id()?,
+                    bytes.as_mut_ptr(),
+                    c_long::try_from(bytes.len())?,
+                    wait_ms
+                ]
             )
         };
         if code == 11 {
@@ -421,7 +554,13 @@ impl Sdk {
     pub fn stop_video(&self) -> Result<()> {
         unsafe {
             Self::check(
-                self.symbol::<raw::StopVideoCapture>(b"ASIStopVideoCapture\0")?(self.id()?),
+                sdk_call!(
+                    self,
+                    raw::StopVideoCapture,
+                    "ASIStopVideoCapture",
+                    json!({"cameraId":self.id()?}),
+                    [self.id()?]
+                ),
                 "stop video",
             )
         }
@@ -431,31 +570,54 @@ impl Sdk {
             let id = self.id()?;
             // No SDK automatic exposure, orientation changes or hidden dark subtraction.
             Self::check(
-                self.symbol::<raw::DisableDarkSubtract>(b"ASIDisableDarkSubtract\0")?(id),
+                sdk_call!(
+                    self,
+                    raw::DisableDarkSubtract,
+                    "ASIDisableDarkSubtract",
+                    json!({"cameraId":id}),
+                    [id]
+                ),
                 "disable dark subtract",
             )?;
             Self::check(
-                self.symbol::<raw::SetStartPos>(b"ASISetStartPos\0")?(id, 0, 0),
+                sdk_call!(
+                    self,
+                    raw::SetStartPos,
+                    "ASISetStartPos",
+                    json!({"cameraId":id,"x":0,"y":0}),
+                    [id, 0, 0]
+                ),
                 "reset origin",
             )?;
             Self::check(
-                self.symbol::<raw::SetRoiFormat>(b"ASISetROIFormat\0")?(
-                    id, p.width, p.height, p.bin, 2,
+                sdk_call!(
+                    self,
+                    raw::SetRoiFormat,
+                    "ASISetROIFormat",
+                    json!({"cameraId":id,"width":p.width,"height":p.height,"bin":p.bin,"format":2}),
+                    [id, p.width, p.height, p.bin, 2]
                 ),
                 "RAW16 ROI",
             )?;
             Self::check(
-                self.symbol::<raw::SetStartPos>(b"ASISetStartPos\0")?(id, p.x, p.y),
+                sdk_call!(
+                    self,
+                    raw::SetStartPos,
+                    "ASISetStartPos",
+                    json!({"cameraId":id,"x":p.x,"y":p.y}),
+                    [id, p.x, p.y]
+                ),
                 "ROI origin",
             )?;
             let (mut width, mut height, mut bin, mut format) = (0, 0, 0, 0);
             Self::check(
-                self.symbol::<raw::GetRoiFormat>(b"ASIGetROIFormat\0")?(
-                    id,
-                    &mut width,
-                    &mut height,
-                    &mut bin,
-                    &mut format,
+                sdk_call!(
+                    self,
+                    raw::GetRoiFormat,
+                    "ASIGetROIFormat",
+                    json!({"cameraId":id}),
+                    [id, &mut width, &mut height, &mut bin, &mut format],
+                    json!({"width":width,"height":height,"bin":bin,"format":format})
                 ),
                 "read ROI",
             )?;
@@ -465,7 +627,14 @@ impl Sdk {
             );
             let (mut x, mut y) = (0, 0);
             Self::check(
-                self.symbol::<raw::GetStartPos>(b"ASIGetStartPos\0")?(id, &mut x, &mut y),
+                sdk_call!(
+                    self,
+                    raw::GetStartPos,
+                    "ASIGetStartPos",
+                    json!({"cameraId":id}),
+                    [id, &mut x, &mut y],
+                    json!({"x":x,"y":y})
+                ),
                 "read origin",
             )?;
             ensure!((x, y) == (p.x, p.y), "SDK ROI origin differs from request");
@@ -477,9 +646,14 @@ impl Sdk {
         let mut status = 0;
         unsafe {
             Self::check(
-                self.symbol::<unsafe extern "C" fn(c_int, *mut c_int) -> c_int>(
-                    b"ASIGetExpStatus\0",
-                )?(self.id()?, &mut status),
+                sdk_call!(
+                    self,
+                    unsafe extern "C" fn(c_int, *mut c_int) -> c_int,
+                    "ASIGetExpStatus",
+                    json!({"cameraId":self.id()?}),
+                    [self.id()?, &mut status],
+                    json!({"status":status})
+                ),
                 "exposure status",
             )?;
         }
@@ -489,12 +663,16 @@ impl Sdk {
         ensure!(self.status()? == 2, "exposure not ready for download");
         unsafe {
             Self::check(
-                self.symbol::<unsafe extern "C" fn(c_int, *mut u8, c_long) -> c_int>(
-                    b"ASIGetDataAfterExp\0",
-                )?(
-                    self.id()?,
-                    bytes.as_mut_ptr(),
-                    c_long::try_from(bytes.len())?,
+                sdk_call!(
+                    self,
+                    unsafe extern "C" fn(c_int, *mut u8, c_long) -> c_int,
+                    "ASIGetDataAfterExp",
+                    json!({"cameraId":self.id()?,"requestedBytes":bytes.len()}),
+                    [
+                        self.id()?,
+                        bytes.as_mut_ptr(),
+                        c_long::try_from(bytes.len())?
+                    ]
                 ),
                 "download",
             )
@@ -503,7 +681,13 @@ impl Sdk {
     pub fn stop(&self) -> Result<()> {
         unsafe {
             Self::check(
-                self.symbol::<raw::CloseCamera>(b"ASIStopExposure\0")?(self.id()?),
+                sdk_call!(
+                    self,
+                    raw::CloseCamera,
+                    "ASIStopExposure",
+                    json!({"cameraId":self.id()?}),
+                    [self.id()?]
+                ),
                 "stop",
             )
         }
@@ -546,13 +730,20 @@ impl Sdk {
         if let Some(id) = self.id.take() {
             unsafe {
                 if let Err(error) = Self::check(
-                    self.symbol::<raw::CloseCamera>(b"ASICloseCamera\0")?(id),
+                    sdk_call!(
+                        self,
+                        raw::CloseCamera,
+                        "ASICloseCamera",
+                        json!({"cameraId":id}),
+                        [id]
+                    ),
                     "close",
                 ) {
                     failures.push(format!("{error:#}"));
                 }
             }
         }
+        crate::asi::diagnostics::flush_usb();
         ensure!(failures.is_empty(), "{}", failures.join("; "));
         Ok(())
     }

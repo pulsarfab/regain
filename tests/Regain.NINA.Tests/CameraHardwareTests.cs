@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Collections.Concurrent;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text.Json;
@@ -24,6 +25,14 @@ public sealed class CameraHardwareTheoryAttribute : TheoryAttribute
 public sealed class Asi6200HardwareFactAttribute : FactAttribute
 {
     public Asi6200HardwareFactAttribute() {
+        if (Environment.GetEnvironmentVariable("REGAIN_TEST_ASI6200_HARDWARE") != "1")
+            Skip = "Opt in with REGAIN_TEST_ASI6200_HARDWARE=1; requires idle ASI6200MM Pro serial 1b07450d17010900";
+    }
+}
+
+public sealed class Asi6200HardwareTheoryAttribute : TheoryAttribute
+{
+    public Asi6200HardwareTheoryAttribute() {
         if (Environment.GetEnvironmentVariable("REGAIN_TEST_ASI6200_HARDWARE") != "1")
             Skip = "Opt in with REGAIN_TEST_ASI6200_HARDWARE=1; requires idle ASI6200MM Pro serial 1b07450d17010900";
     }
@@ -307,8 +316,10 @@ public class CameraHardwareTests(ITestOutputHelper output)
             return deliveredPixels;
         }
     }
-    [Asi6200HardwareFact]
-    public async Task Asi6200DirectFullFrameRepeatThroughNina()
+    [Asi6200HardwareTheory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Asi6200FullFrameRepeatThroughNina(bool direct)
     {
         const string serial = "1b07450d17010900";
         const string model = "ZWO ASI6200MM Pro";
@@ -322,11 +333,18 @@ public class CameraHardwareTests(ITestOutputHelper output)
         string settingsFolder = Path.Combine(Path.GetTempPath(), "regain-asi6200-repeat-" + Guid.NewGuid().ToString("N"));
         string settingsPath = Path.Combine(settingsFolder, "camera.json");
         var store = new CameraSelectionStore(settingsPath);
-        // Direct-only selection pins identity before USB is opened and provides
-        // no SDK fallback factory. All three frames must use this connection.
-        store.Save(new(new(model, width, height, false, 0, 3.76, 16, true, false, [1, 2, 3, 4]), serial, UseDirectDriver: true));
+        // Pin identity before USB is opened. No fallback factory is supplied:
+        // all three full frames must use the selected backend and connection.
+        store.Save(new(new(model, width, height, false, 0, 3.76, 16, true, false, [1, 2, 3, 4]), serial, UseDirectDriver: direct));
         HostClient? host = null;
         int hostStarts = 0, deliveries = 0;
+        var records = new ConcurrentQueue<string>();
+        void Log(string line) {
+            records.Enqueue(line);
+            // Exercise the same structured parser and INFO routing as the
+            // installed plugin, rather than accepting raw stderr alone.
+            CameraLog.Forward(CameraLog.Parse(direct ? "direct" : "sdk", line), output.WriteLine, output.WriteLine, output.WriteLine);
+        }
         HardwareFrameSummary? delivered = null, previous = null;
         var images = new Mock<IExposureDataFactory>();
         images.Setup(f => f.CreateImageArrayExposureData(It.IsAny<ushort[]>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<bool>(), It.IsAny<ImageMetaData>()))
@@ -351,7 +369,7 @@ public class CameraHardwareTests(ITestOutputHelper output)
             () => {
                 hostStarts++;
                 return host = new HostClient(supervisor, Path.Combine(root, "vendor/zwo/ASICamera2.dll"),
-                    direct: true, supervised: true, log: output.WriteLine);
+                    direct: direct, supervised: true, log: Log);
             },
             new() {
                 MaxRetries = 0, DirectReadRetries = 0, ReadyFrameDownloadRetries = 0,
@@ -363,11 +381,11 @@ public class CameraHardwareTests(ITestOutputHelper output)
             Assert.True(await camera.Connect(deadline.Token));
             var initial = await Diagnostics();
             Assert.Equal(serial, initial.GetProperty("serial").GetString());
-            Assert.Equal("direct", initial.GetProperty("backend").GetString());
+            Assert.Equal(direct ? "direct" : "sdk", initial.GetProperty("backend").GetString());
             Assert.False(initial.GetProperty("sdkFallback").GetBoolean());
             int supervisorPid = host!.ProcessId;
             int workerPid = initial.GetProperty("processId").GetInt32();
-            output.WriteLine($"Full-frame NINA repeat: {model}, serial {serial}, workers {workers}; supervisor {supervisorPid}, raw worker {workerPid}");
+            output.WriteLine($"Full-frame NINA repeat: {(direct ? "direct" : "sdk")}, {model}, serial {serial}, workers {workers}; supervisor {supervisorPid}, raw worker {workerPid}");
             await Task.Delay(2500, deadline.Token);
             double baseline = (await host.CallAsync("get", new { control = 8 }, TimeSpan.FromSeconds(10), deadline.Token)).Result.GetInt64() / 10.0;
             int target = Math.Clamp((int)Math.Ceiling(baseline) - 2, -20, 25);
@@ -418,7 +436,7 @@ public class CameraHardwareTests(ITestOutputHelper output)
                 Assert.Equal(1, hostStarts);
                 Assert.Equal(supervisorPid, host.ProcessId);
                 Assert.Equal(workerPid, state.GetProperty("processId").GetInt32());
-                Assert.Equal("direct", state.GetProperty("backend").GetString());
+                Assert.Equal(direct ? "direct" : "sdk", state.GetProperty("backend").GetString());
                 Assert.False(state.GetProperty("sdkFallback").GetBoolean());
                 Assert.True(state.GetProperty("controlConnectionAvailable").GetBoolean());
                 Assert.Equal(0, state.GetProperty("retry").GetProperty("recaptures").GetInt32());
@@ -445,6 +463,25 @@ public class CameraHardwareTests(ITestOutputHelper output)
                 if (File.Exists(settingsPath)) File.Delete(settingsPath);
                 if (Directory.Exists(settingsFolder)) Directory.Delete(settingsFolder);
             }
+        }
+        var structured = records.Where(line => line.StartsWith("REGAIN_DIAGNOSTIC ", StringComparison.Ordinal))
+            .Select(line => {
+                using var document = JsonDocument.Parse(line["REGAIN_DIAGNOSTIC ".Length..]);
+                return document.RootElement.Clone();
+            }).ToArray();
+        Assert.Contains(structured, record => record.GetProperty("event").GetString() == "ipc.command.complete"
+            && record.GetProperty("method").GetString() == "download"
+            && record.GetProperty("details").GetProperty("binaryBytes").GetInt32() == width * height * 2);
+        Assert.DoesNotContain(structured, record => record.GetProperty("event").GetString() == "usb.log_dropped");
+        Assert.Contains(structured, record => record.GetProperty("event").GetString() == "usb.submit"
+            && record.GetProperty("details").TryGetProperty("requestedBytes", out var requested) && requested.GetInt64() > 0);
+        Assert.Contains(structured, record => record.GetProperty("event").GetString() == "usb.complete"
+            && record.GetProperty("details").GetProperty("elapsedUs").GetDouble() >= 0);
+        if (!direct) {
+            Assert.Contains(structured, record => record.GetProperty("event").GetString() == "sdk.usb.instrumentation"
+                && record.GetProperty("details").GetProperty("available").GetBoolean());
+            Assert.Contains(structured, record => record.GetProperty("event").GetString() == "sdk.api.complete"
+                && record.GetProperty("details").GetProperty("api").GetString() == "ASIGetDataAfterExp");
         }
         async Task<JsonElement> Diagnostics() => (await host!.CallAsync("diagnostics", null, TimeSpan.FromSeconds(10), deadline.Token)).Result;
     }

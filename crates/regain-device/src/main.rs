@@ -1,5 +1,10 @@
 use anyhow::{Result, bail};
 fn main() -> Result<()> {
+    let result = run();
+    regain_zwo::asi::flush_diagnostics();
+    result
+}
+fn run() -> Result<()> {
     let mut args = std::env::args().skip(1);
     let vendor = args.next().unwrap_or_default();
     if vendor == "--hub-discover" {

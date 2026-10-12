@@ -2,8 +2,8 @@
 
 The direct ASI6200 path now follows the observed SDK 1.41 connection lifecycle,
 sensor start sequence, and queued first-frame USB timing. Full 5-second RAW16
-captures on the tested original camera took 6.297–6.313 seconds, compared with
-6.250–6.422 seconds through the SDK and about 7.8 seconds with the
+captures with final command logging enabled took 6.281–6.329 seconds, compared
+with 6.235–6.437 seconds through the instrumented SDK and about 7.8 seconds with the
 0.6.0.3/0.6.0.4 direct workers. These are local acceptance results, not a
 reproduction of the reported remote second-frame failure.
 The mapping covers the observed normal lifecycle and timing; it does not claim
@@ -275,7 +275,7 @@ worker, no SDK/device reopen/recovery, physical thermal readbacks, and fresh
 per-row offset response. Preserve its private `results.json`, worker log, and
 USB trace together with the tested binary hash.
 
-For the two NINA API tests, the opt-in fixture pins the lab camera identity in
+For the NINA API tests, the opt-in fixture pins the lab camera identity in
 source; verify that fixture before running on another camera. Select the same
 optimized directory for both supervisor and worker:
 
@@ -283,11 +283,39 @@ optimized directory for both supervisor and worker:
 $env:REGAIN_TEST_HARDWARE_WORKERS = $workers
 $env:REGAIN_TEST_ASI6200_HARDWARE = '1'
 dotnet test tests/Regain.NINA.Tests/Regain.NINA.Tests.csproj `
-  -c Release `
-  --filter 'FullyQualifiedName~Asi6200DirectFullFrameRepeatThroughNina|FullyQualifiedName~Asi6200DirectEarlyAndGatedAbortRestartThroughNina'
+  -c Release
 ```
 
 `REGAIN_TEST_WORKERS` is the fallback worker-directory override. The tests
 use bounded cancellation tokens, check thermal state, and switch cooler/heater
 off in `finally`. They exercise the NINA camera API and image factory without
 changing an installed plugin or controlling the NINA UI.
+The complete project includes repeated full-frame direct and SDK cases, a
+direct cancellation/restart case, and all ordinary contract tests. The SDK
+case also checks that bundled USB instrumentation and complete structured
+records reach the NINA INFO parser.
+
+## Final logging acceptance
+
+The final 0.6.0.5 worker passed three consecutive full 5-second RAW16 captures
+per backend with command logging enabled, and another three per backend with
+`REGAIN_CAMERA_TRANSFER_LOG=0`. No exposure retry or worker replacement was
+needed. All runs closed normally and disabled supported thermal actuators.
+The complete 11-stage cancellation matrix also passed again on this worker,
+with a fresh full frame after every cancellation and one sensor initialization
+for the connection.
+
+The complete NINA project passed **554 tests**, including direct and SDK
+full-frame repeats and direct abort/restart; three unrelated hardware/COM
+opt-ins were skipped. Direct frames became ready in **6.413–6.475 s** and
+arrived through the image factory in **6.523–6.596 s** total. SDK totals were
+**6.572–6.784 s**. Every consecutive pair changed all 6,388 row fingerprints;
+both backends retained the same worker and used zero retries. These tests
+exercise the NINA camera API and INFO parser, rather than an installed UI.
+
+The affected Rust projects passed **338 tests** with no filters and strict
+Clippy; the complete managed core project passed **109 tests**. No diagnostic
+queue overflow appeared in the full-frame worker or NINA traces. Earlier
+measurements above describe the timing-only candidate; this section measures
+the final logging build. The remote failure remains unconfirmed on this
+different physical camera; the new records provide evidence for its next run.

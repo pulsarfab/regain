@@ -45,6 +45,14 @@ pub struct Log {
     events: Mutex<VecDeque<String>>,
     path: Option<PathBuf>,
 }
+fn forwarded_diagnostic(level: &str, event: &str, message: &str, slot: Option<usize>) -> Value {
+    let mut record = regain_core::worker::diagnostic_record(message).unwrap_or_else(|| {
+        json!({"version":1,"level":level,"event":event,"message":message,"pid":std::process::id()})
+    });
+    // Do not replace the original worker PID, transfer IDs, timing or details.
+    record["supervisor"] = json!({"pid":std::process::id(),"cameraSlot":slot});
+    record
+}
 impl Log {
     pub fn new(path: Option<PathBuf>) -> Arc<Self> {
         Arc::new(Self {
@@ -60,7 +68,7 @@ impl Log {
                 chrono::Utc::now().to_rfc3339(),
                 slot.map(|s| format!("Camera {s} ")).unwrap_or_default()
             );
-            let record = json!({"version":1,"level":level,"event":event,"message":message,"pid":std::process::id()});
+            let record = forwarded_diagnostic(level, event, message, slot);
             let _ = writeln!(std::io::stderr().lock(), "REGAIN_DIAGNOSTIC {record}");
             if level == "debug" {
                 return;
@@ -1517,6 +1525,22 @@ mod tests {
     use super::*;
     use http_body_util::BodyExt;
     use tower::ServiceExt;
+    #[test]
+    fn forwarded_worker_diagnostic_keeps_original_timing_and_transfer_identity() {
+        let original = json!({"version":1,"level":"info","event":"usb.complete",
+            "message":"bulk completed","pid":73,"thread":11,"monotonicUs":987,
+            "details":{"id":19,"elapsedUs":450,"expectedBytes":1048576,"receivedBytes":446016}});
+        let line = format!("REGAIN_DIAGNOSTIC {original}");
+        let forwarded = forwarded_diagnostic("info", "usb.complete", &line, Some(2));
+        for (key, value) in original.as_object().unwrap() {
+            assert_eq!(&forwarded[key], value, "{key}");
+        }
+        assert_eq!(forwarded["supervisor"]["cameraSlot"], 2);
+        assert_eq!(forwarded["supervisor"]["pid"], std::process::id());
+        let ordinary = forwarded_diagnostic("warning", "capture.failed", "camera stopped", None);
+        assert_eq!(ordinary["message"], "camera stopped");
+        assert_eq!(ordinary["level"], "warning");
+    }
     #[test]
     fn imagebytes_negotiation_respects_quality_zero_case_and_malformed_values() {
         for (value, expected) in [

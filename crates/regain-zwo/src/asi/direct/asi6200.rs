@@ -174,8 +174,18 @@ fn arm(
 }
 
 fn register_snapshot(camera: &Camera, s: &Settings, stage: &str) {
-    let failure = stage == "capture_failure";
-    if !failure && std::env::var("REGAIN_CAMERA_REGISTER_SNAPSHOTS").as_deref() != Ok("1") {
+    let started = Instant::now();
+    // Capture the programmed counts/gates on healthy frames too, so a remote
+    // second-frame failure can be compared with the preceding successful one.
+    // This is read-only diagnostic evidence, not a readiness/acceptance gate.
+    // Explicit opt-out only affects healthy snapshots; failures remain visible.
+    let failure = matches!(stage, "capture_failure" | "read_failure");
+    let snapshots = std::env::var("REGAIN_CAMERA_REGISTER_SNAPSHOTS");
+    if !failure
+        && (snapshots.as_deref() == Ok("0")
+            || (!crate::asi::diagnostics::command_logging_enabled()
+                && snapshots.as_deref() != Ok("1")))
+    {
         return;
     }
     // These BC mirrors are not a validated public register map. Record them
@@ -184,7 +194,7 @@ fn register_snapshot(camera: &Camera, s: &Settings, stage: &str) {
     let mut registers = serde_json::Map::new();
     let mut error = None;
     for register in [
-        0x40, 0x41, 0x42, 0x43, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x00, 0x0b, 0x19, 0x23,
+        0x40, 0x41, 0x42, 0x43, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x00, 0x0b, 0x19, 0x23, 0x1c,
     ] {
         match camera.vendor(0xbc, register, 0, 1) {
             Ok(value) => {
@@ -196,12 +206,19 @@ fn register_snapshot(camera: &Camera, s: &Settings, stage: &str) {
             }
         }
     }
+    let cached = camera.asi6200.borrow();
     super::diagnostics::details(
-        if failure { "info" } else { "debug" },
+        "info",
         "asi6200.register_snapshot",
         format_args!("ASI6200 {stage} FPGA register snapshot: {registers:?}; read error {error:?}"),
-        json!({"stage":stage,"width":s.width,"height":s.height,
-            "expectedTransferWords":s.width * s.height / 2,"registers":registers,"error":error}),
+        json!({"stage":stage,"model":"ASI6200MM Pro","width":s.width,"height":s.height,
+            "x":s.x,"y":s.y,"microseconds":s.microseconds,"offset":s.offset,
+            "expectedTransferWords":s.width * s.height / 2,"expectedBytes":s.width * s.height * 2,
+            "registerReadElapsedUs":started.elapsed().as_micros(),
+            "timestampUnixUs":std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default().as_micros(),
+            "transportGeneration":camera.transport_generation(),"setupGeneration":cached.generation,
+            "initialized":cached.initialized,"registers":registers,"error":error}),
     );
 }
 

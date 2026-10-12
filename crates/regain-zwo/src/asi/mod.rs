@@ -1,9 +1,18 @@
 //! ZWO ASI camera backends. Each runs in an isolated regain-device process.
 mod continuous;
+#[cfg(any(feature = "asi-direct", feature = "asi-sdk"))]
+mod diagnostics;
 #[cfg(feature = "asi-direct")]
 pub mod direct;
 #[cfg(feature = "asi-sdk")]
 pub mod sdk;
+
+/// Drain queued metadata after device work has stopped, before process exit.
+/// This is bounded so a closed or blocked diagnostic sink cannot hang shutdown.
+pub fn flush_diagnostics() {
+    #[cfg(any(feature = "asi-direct", feature = "asi-sdk"))]
+    diagnostics::flush_usb();
+}
 
 /// Explicit disconnect shuts down only advertised thermal actuators. Try both
 /// even if one fails, and require readback before claiming it is disabled.

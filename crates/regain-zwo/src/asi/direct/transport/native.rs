@@ -1,5 +1,8 @@
 //! Linux usbfs and macOS IOKit. No libusb or vendor SDK is loaded.
-use crate::asi::direct::protocol;
+use crate::asi::direct::{
+    diagnostics::{self, UsbTrace},
+    protocol,
+};
 use anyhow::{Context, Result, ensure};
 use nusb::{
     MaybeFuture,
@@ -82,13 +85,24 @@ pub struct Device {
     input: RefCell<nusb::Endpoint<Bulk, In>>,
     info: Value,
 }
+impl Drop for Device {
+    fn drop(&mut self) {
+        diagnostics::flush_usb();
+    }
+}
+
+struct PendingRead {
+    offset: usize,
+    length: usize,
+    trace: UsbTrace,
+}
 
 /// Owns the endpoint's queued buffers until each has terminally completed.
 /// Control requests use the separate nusb Device and remain on this owner thread.
 pub struct ReadBatch<'a> {
     endpoint: RefMut<'a, nusb::Endpoint<Bulk, In>>,
     data: Vec<u8>,
-    chunks: VecDeque<(usize, usize)>,
+    chunks: VecDeque<PendingRead>,
     chunk_bytes: usize,
     next_offset: usize,
     completed_bytes: usize,
@@ -102,8 +116,20 @@ impl ReadBatch<'_> {
         let length = self.chunk_bytes.min(self.data.len() - self.next_offset);
         let size = request_size(length, self.endpoint.max_packet_size())?;
         let buffer = self.endpoint.allocate(size);
+        let trace = UsbTrace::start(
+            "bulk",
+            json!({"transport":native_transport(),"endpoint":"0x81",
+            "direction":"in","requestedBytes":length,"submittedBytes":size,
+            "chunk":self.next_offset / self.chunk_bytes,"frameOffset":self.next_offset,
+            "frameBytes":self.data.len(),"queued":true}),
+        );
         self.endpoint.submit(buffer);
-        self.chunks.push_back((self.next_offset, length));
+        trace.event("submitted", json!({"pending":true}));
+        self.chunks.push_back(PendingRead {
+            offset: self.next_offset,
+            length,
+            trace,
+        });
         self.next_offset += length;
         Ok(())
     }
@@ -128,7 +154,8 @@ impl ReadBatch<'_> {
         ensure!(!timeout.is_zero(), "queued frame timeout must be nonzero");
         let started = Instant::now();
         let mut front_started = started;
-        while let Some(&(_, length)) = self.chunks.front() {
+        while let Some(request) = self.chunks.front() {
+            let length = request.length;
             service()?;
             if started.elapsed() >= timeout {
                 return Err(self.failure("budget_exhausted", length, true));
@@ -143,7 +170,9 @@ impl ReadBatch<'_> {
             let Some(done) = self.endpoint.wait_next_complete(wait) else {
                 continue;
             };
-            let (offset, length) = self.chunks.pop_front().unwrap();
+            let request = self.chunks.pop_front().unwrap();
+            let (offset, length) = (request.offset, request.length);
+            trace_completion(&request.trace, &done, false);
             if let Err(error) = validate_completion(&done, false, length) {
                 let mut details = crate::asi::direct::transfer::Failure::details(&error);
                 if !details.is_null() {
@@ -171,6 +200,11 @@ impl ReadBatch<'_> {
         if self.endpoint.pending() == 0 {
             return;
         }
+        for request in &self.chunks {
+            request
+                .trace
+                .event("cancel", json!({"cancelRequested":true}));
+        }
         self.endpoint.cancel_all();
         let deadline = Instant::now() + Duration::from_secs(2);
         while self.endpoint.pending() != 0 {
@@ -181,9 +215,13 @@ impl ReadBatch<'_> {
                 );
                 std::process::exit(125);
             }
-            let _ = self
+            if let Some(done) = self
                 .endpoint
-                .wait_next_complete(remaining.min(Duration::from_millis(20)));
+                .wait_next_complete(remaining.min(Duration::from_millis(20)))
+                && let Some(request) = self.chunks.pop_front()
+            {
+                trace_completion(&request.trace, &done, true);
+            }
         }
         self.chunks.clear();
     }
@@ -193,6 +231,23 @@ impl Drop for ReadBatch<'_> {
     fn drop(&mut self) {
         self.cancel_and_drain();
     }
+}
+
+fn native_transport() -> &'static str {
+    if cfg!(target_os = "linux") {
+        "linux-usbfs"
+    } else {
+        "macos-iokit"
+    }
+}
+
+fn trace_completion(trace: &UsbTrace, done: &Completion, cancel_requested: bool) {
+    trace.event(
+        "complete",
+        json!({"nativeStatus":format!("{:?}",done.status),
+        "receivedBytes":done.actual_len,"bufferBytes":done.buffer.len(),
+        "cancelRequested":cancel_requested,"terminalCompletionObserved":true}),
+    );
 }
 
 impl Device {
@@ -270,6 +325,32 @@ impl Device {
     }
 
     pub fn vendor(&self, request: u8, value: u16, index: u16, length: u16) -> Result<Vec<u8>> {
+        let mut fields = diagnostics::control_fields(request, value, index, length);
+        fields["transport"] = json!(native_transport());
+        fields["timeoutMs"] = json!(5000);
+        let trace = UsbTrace::start("control", fields);
+        let result = self.vendor_inner(request, value, index, length);
+        let mut completion = match &result {
+            Ok(data) => {
+                json!({"nativeStatus":"Ok(())","receivedBytes":data.len(),"terminalCompletionObserved":true})
+            }
+            Err(error) => {
+                json!({"nativeStatus":"error","error":format!("{error:#}"),"terminalCompletionObserved":true})
+            }
+        };
+        if let Ok(data) = &result {
+            completion.as_object_mut().unwrap().extend(
+                diagnostics::control_payload(request, length, data)
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+            );
+        }
+        trace.event("complete", completion);
+        result
+    }
+
+    fn vendor_inner(&self, request: u8, value: u16, index: u16, length: u16) -> Result<Vec<u8>> {
         let timeout = Duration::from_secs(5);
         if length == 0 {
             self.device
@@ -313,6 +394,22 @@ impl Device {
     }
 
     pub fn reset_pipe(&self) -> Result<()> {
+        let trace = UsbTrace::start(
+            "clear-halt",
+            json!({"transport":native_transport(),"endpoint":"0x81"}),
+        );
+        let result = self.reset_pipe_inner();
+        trace.event(
+            "complete",
+            match &result {
+                Ok(()) => json!({"nativeStatus":"Ok(())"}),
+                Err(error) => json!({"nativeStatus":"error","error":format!("{error:#}")}),
+            },
+        );
+        result
+    }
+
+    fn reset_pipe_inner(&self) -> Result<()> {
         let mut endpoint = self
             .input
             .try_borrow_mut()
@@ -342,14 +439,26 @@ impl Device {
         // be shorter; accept it only when the actual byte count is exact.
         let size = request_size(length, endpoint.max_packet_size())?;
         let buffer = endpoint.allocate(size);
+        let trace = UsbTrace::start(
+            "bulk",
+            json!({"transport":native_transport(),"endpoint":"0x81",
+            "direction":"in","requestedBytes":length,"submittedBytes":size,"timeoutMs":timeout_ms,"queued":false}),
+        );
         endpoint.submit(buffer);
+        trace.event("submitted", json!({"pending":true}));
         if let Some(done) =
             endpoint.wait_next_complete(Duration::from_millis(u64::from(timeout_ms)))
         {
+            trace_completion(&trace, &done, false);
             return Ok((done, false));
         }
+        trace.event(
+            "cancel",
+            json!({"cancelRequested":true,"timeoutMs":timeout_ms}),
+        );
         endpoint.cancel_all();
         if let Some(done) = endpoint.wait_next_complete(Duration::from_secs(2)) {
+            trace_completion(&trace, &done, true);
             return Ok((done, true));
         }
         // A cancellation request is not terminal completion. Exit without

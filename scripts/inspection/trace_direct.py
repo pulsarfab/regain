@@ -54,7 +54,10 @@ def main():
             nonlocal received
             if process == pid:
                 received += len(data)
-                if received > 1024 * 1024:
+                # Every USB request now emits metadata by default. Keep a
+                # bounded guard without killing a valid full-frame trace at
+                # the old 1 MiB aggregate stdout/stderr threshold.
+                if received > 64 * 1024 * 1024:
                     device.kill(pid)
                 else:
                     record({'kind': 'worker-output', 'fd': fd, 'text': data.decode(errors='replace')})

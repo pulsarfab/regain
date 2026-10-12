@@ -1,7 +1,9 @@
 mod cli;
+mod diagnostics;
 mod library;
 #[allow(dead_code)]
 mod raw;
+mod usb;
 use anyhow::{Result, bail, ensure};
 use regain_core::white_balance::{Geometry, Settings as WhiteBalanceSettings, WhiteBalance};
 use serde::Deserialize;

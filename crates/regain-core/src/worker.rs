@@ -8,6 +8,23 @@ use tokio::{
 };
 use tokio_util::sync::CancellationToken;
 
+/// A worker diagnostic can be forwarded intact through the existing callback.
+/// Unrecognized text stays ordinary diagnostic prose.
+pub fn diagnostic_record(line: &str) -> Option<Value> {
+    let record: Value = serde_json::from_str(line.strip_prefix("REGAIN_DIAGNOSTIC ")?).ok()?;
+    (record.is_object()
+        && record["version"].as_u64() == Some(1)
+        && record["event"].is_string()
+        && record["message"].is_string())
+    .then_some(record)
+}
+
+pub(crate) fn diagnostic_message(line: &str) -> String {
+    diagnostic_record(line)
+        .and_then(|record| record["message"].as_str().map(str::to_owned))
+        .unwrap_or_else(|| line.to_owned())
+}
+
 #[derive(Clone)]
 pub struct Runtime {
     pub directory: PathBuf,
@@ -82,13 +99,14 @@ impl Runtime {
         let diagnostic = tokio::spawn(async move {
             let mut lines = BufReader::new(stderr).lines();
             while let Ok(Some(line)) = lines.next_line().await {
-                if let Some(text) = line.strip_prefix("REGAIN_DIAGNOSTIC ")
-                    && let Ok(record) = serde_json::from_str::<Value>(text)
-                {
+                if let Some(record) = diagnostic_record(&line) {
                     log(
                         record["level"].as_str().unwrap_or("info"),
                         record["event"].as_str().unwrap_or("worker"),
-                        record["message"].as_str().unwrap_or(&line),
+                        // Keep the complete worker record. Transfer IDs,
+                        // timestamps, results and register evidence must reach
+                        // the frontend, not just its human-readable message.
+                        &line,
                     );
                 } else {
                     log("info", "worker", &line);
@@ -100,7 +118,7 @@ impl Runtime {
             output: child.stdout.take().context("Worker stdout unavailable")?,
             child,
             _guard: guard,
-            diagnostic,
+            diagnostic: Some(diagnostic),
             id: 0,
         };
         if self.simulate
@@ -142,7 +160,7 @@ pub struct Worker {
     input: ChildStdin,
     output: ChildStdout,
     _guard: ProcessGuard,
-    diagnostic: tokio::task::JoinHandle<()>,
+    diagnostic: Option<tokio::task::JoinHandle<()>>,
     id: u64,
 }
 impl Worker {
@@ -167,6 +185,15 @@ impl Worker {
     pub async fn kill(&mut self) {
         let _ = self.child.kill().await;
         let _ = self.child.wait().await;
+        // Consume the closed stderr pipe before dropping its reader. In
+        // particular, retain the last transfer/cleanup evidence after a fault.
+        if let Some(mut diagnostic) = self.diagnostic.take()
+            && tokio::time::timeout(Duration::from_secs(1), &mut diagnostic)
+                .await
+                .is_err()
+        {
+            diagnostic.abort();
+        }
     }
     pub async fn call(
         &mut self,
@@ -385,13 +412,36 @@ async fn read_reply<R: AsyncRead + Unpin>(
 }
 impl Drop for Worker {
     fn drop(&mut self) {
-        self.diagnostic.abort();
+        if let Some(diagnostic) = &self.diagnostic {
+            diagnostic.abort();
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn worker_diagnostic_preserves_transfer_evidence_and_separates_status_prose() {
+        let line = format!(
+            "REGAIN_DIAGNOSTIC {}",
+            json!({"version":1,"level":"info","event":"usb.complete","message":"read failed",
+                "pid":71,"monotonicUs":12345,"details":{"id":29,"elapsedUs":712,
+                "receivedBytes":446016,"expectedBytes":1048576,"usbStatus":0}})
+        );
+        let record = diagnostic_record(&line).unwrap();
+        assert_eq!(record["details"]["elapsedUs"], 712);
+        assert_eq!(record["pid"], 71);
+        assert_eq!(diagnostic_message(&line), "read failed");
+        for malformed in [
+            "plain stderr",
+            "REGAIN_DIAGNOSTIC []",
+            "REGAIN_DIAGNOSTIC {\"version\":2}",
+        ] {
+            assert!(diagnostic_record(malformed).is_none());
+            assert_eq!(diagnostic_message(malformed), malformed);
+        }
+    }
     fn simulated_runtime(settings: Value) -> Runtime {
         Runtime {
             directory: std::env::var_os("REGAIN_TEST_WORKERS")

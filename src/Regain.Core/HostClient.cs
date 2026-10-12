@@ -17,6 +17,7 @@ public sealed class HostClient : IDisposable
 {
     private readonly Process process;
     private readonly ProcessJob? job;
+    private readonly HostClientDiagnostics diagnostics;
     private readonly SemaphoreSlim gate = new(1);
     private long nextId;
     private int disposed;
@@ -67,9 +68,10 @@ public sealed class HostClient : IDisposable
             job = ProcessJob.Attach(process);
         }
         catch { process.Kill(true); process.Dispose(); throw; }
+        diagnostics = new(log, direct ? "direct" : "sdk", process.Id, supervised);
         process.ErrorDataReceived += (_, e) => {
             // An exception on this asynchronous callback could otherwise take down NINA.
-            try { if (e.Data is not null) log?.Invoke(e.Data); }
+            try { if (e.Data is not null) diagnostics.Worker(e.Data); }
             catch { /* Diagnostics must not change command/capture results. */ }
         };
         process.BeginErrorReadLine();
@@ -82,9 +84,10 @@ public sealed class HostClient : IDisposable
             ObjectDisposedException.ThrowIf(disposed != 0, this);
             using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
             deadline.CancelAfter(timeout);
+            long id = ++nextId;
+            long started = Stopwatch.GetTimestamp();
             try
             {
-                long id = ++nextId;
                 var request = JsonSerializer.SerializeToUtf8Bytes(new
                 {
                     version = 1,
@@ -94,6 +97,7 @@ public sealed class HostClient : IDisposable
                 });
                 if (request.Length > 65536)
                     throw new InvalidDataException("Request too large");
+                diagnostics.Begin(id, method, request);
                 byte[] length = new byte[4];
                 BinaryPrimitives.WriteInt32LittleEndian(length, request.Length);
                 var input = process.StandardInput.BaseStream;
@@ -114,6 +118,7 @@ public sealed class HostClient : IDisposable
                 int n = root.GetProperty("binaryLength").GetInt32();
                 if (n is < 0 or > 536870912 || (method != "download" && n != 0))
                     throw new InvalidDataException("Invalid frame length");
+                diagnostics.Response(id, method, root, count, n, started);
                 if (!root.GetProperty("ok").GetBoolean())
                 {
                     if (n != 0)
@@ -127,16 +132,18 @@ public sealed class HostClient : IDisposable
                     throw new InvalidDataException("Frame dimensions do not match payload");
                 byte[] pixels = new byte[n];
                 await output.ReadExactlyAsync(pixels, deadline.Token).ConfigureAwait(false);
+                diagnostics.Complete(id, method, n, started);
                 return new(result, pixels);
             }
-            catch (OperationCanceledException)
+            catch (OperationCanceledException error)
             {
+                diagnostics.Failed(id, method, error, started);
                 Dispose();
                 token.ThrowIfCancellationRequested();
                 throw new TimeoutException($"Camera host timed out during {method}");
             }
-            catch (SdkException) { throw; }
-            catch { Dispose(); throw; }
+            catch (SdkException error) { diagnostics.Failed(id, method, error, started); throw; }
+            catch (Exception error) { diagnostics.Failed(id, method, error, started); Dispose(); throw; }
         }
         finally { gate.Release(); }
     }

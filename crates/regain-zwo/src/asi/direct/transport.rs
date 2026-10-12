@@ -64,6 +64,7 @@ pub struct Camera {
     transfer_timeout: Cell<Duration>,
     read_chunk_bytes: Cell<usize>,
     phase: Cell<&'static str>,
+    phase_started: Cell<Instant>,
     capture_cancel: RefCell<Option<std::sync::Arc<std::sync::atomic::AtomicBool>>>,
     transport_generation: Cell<u64>,
     pub(super) asi6200: RefCell<super::asi6200::ConnectionState>,
@@ -82,6 +83,7 @@ impl Camera {
             transfer_timeout: Cell::new(Duration::from_secs(60)),
             read_chunk_bytes: Cell::new(1024 * 1024),
             phase: Cell::new("idle"),
+            phase_started: Cell::new(Instant::now()),
             capture_cancel: RefCell::new(None),
             transport_generation: Cell::new(0),
             asi6200: RefCell::new(super::asi6200::ConnectionState::default()),
@@ -262,11 +264,12 @@ impl Camera {
     }
     pub fn phase(&self, phase: &'static str) {
         let previous = self.phase.replace(phase);
+        let previous_started = self.phase_started.replace(Instant::now());
         crate::asi::direct::diagnostics::details(
-            "debug",
+            "info",
             "capture.phase",
             format_args!("{previous} -> {phase}"),
-            serde_json::json!({"previous":previous,"phase":phase}),
+            serde_json::json!({"previous":previous,"phase":phase,"previousElapsedUs":previous_started.elapsed().as_micros()}),
         );
     }
     /// Research only: same enumerated device, no sensor/FPGA initialization.
@@ -374,7 +377,7 @@ impl Camera {
         } else {
             self.phase("transfer_complete");
             crate::asi::direct::diagnostics::details(
-                "debug",
+                "info",
                 "transfer.complete",
                 "Queued USB frame read completed",
                 serde_json::json!({"readChunkKiB":chunk_bytes / 1024,"frameBytes":length,
@@ -453,7 +456,7 @@ impl Camera {
         }
         self.phase("transfer_complete");
         crate::asi::direct::diagnostics::details(
-            "debug",
+            "info",
             "transfer.complete",
             "USB frame read completed",
             serde_json::json!({"readChunkKiB":chunk_bytes / 1024,"frameBytes":length,

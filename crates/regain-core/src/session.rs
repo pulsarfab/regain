@@ -56,7 +56,7 @@ impl Session {
                     if event == "transfer.retry" {
                         state.retry.usb_reads = state.retry.usb_reads.saturating_add(1);
                     }
-                    state.retry.last_failure = Some(message.into());
+                    state.retry.last_failure = Some(crate::worker::diagnostic_message(message));
                 }
             }
             log(level, event, message);
