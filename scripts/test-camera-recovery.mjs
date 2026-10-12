@@ -4,16 +4,17 @@ import {recoveryFields,parseRecoveryValue,readRecovery} from '../crates/regain-a
 
 const description=JSON.parse(fs.readFileSync(new URL('../contracts/camera-recovery.json',import.meta.url)));
 const all=recoveryFields(description,'linux'), windows=recoveryFields(description,'windows');
-assert.equal(all.length,15); assert.equal(windows.length,14);
+assert.equal(all.length,17); assert.equal(windows.length,16);
 assert(!windows.some(f=>f.key==='usbPortCycle'));
 assert.deepEqual(all.map(f=>f.key), ['maxRetries','maximumRetryExposureSeconds','reconnectDelaySeconds',
   'commandTimeoutSeconds','downloadTimeoutSeconds','exposureGraceSeconds','coolingTimeoutSeconds',
   'temperatureToleranceC','coolingStableSamples','coolingSampleSeconds','readyFrameDownloadRetries',
-  'directReadRetries','directReadChunkKiB','usbResetAfterFailures','usbPortCycle']);
+  'directReadRetries','directReadChunkKiB','transferLogMode','coolerMaxPowerChangePer5Seconds','usbResetAfterFailures','usbPortCycle']);
 assert.throws(()=>recoveryFields({...description,contractVersion:2},'windows'));
 for(const f of all) {
   assert(f.description); assert(['Recovery','Cooling','Timeouts'].includes(f['x-regain'].section));
   assert.equal(parseRecoveryValue(f,f.type==='boolean'?f.default:String(f.default)),f.default);
+  if(f.type==='string') {for(const value of f.enum) assert.equal(parseRecoveryValue(f,value),value); assert.throws(()=>parseRecoveryValue(f,'invalid')); continue;}
   if(f.type==='boolean') {assert.throws(()=>parseRecoveryValue(f,'false'));continue;}
   for(const v of ['', 'NaN','Infinity','-Infinity',String(f.maximum+1)]) assert.throws(()=>parseRecoveryValue(f,v));
   assert.equal(parseRecoveryValue(f,String(f.maximum)),f.maximum);
@@ -23,7 +24,7 @@ for(const f of all) {
   } else assert.equal(parseRecoveryValue(f,String(f.minimum)),f.minimum);
   if(f.type==='integer') assert.throws(()=>parseRecoveryValue(f,'1.5'));
 }
-const input=Object.fromEntries(windows.map(f=>[f.key,{value:String(f.default)}]));
+const input=Object.fromEntries(windows.map(f=>[f.key,{value:String(f.default),checked:f.default===true}]));
 input.reconnectDelaySeconds.value='0.000001';
 const original={...description.schema.default,usbPortCycle:true,legacyExtension:'keep'};
 const read=readRecovery(windows,original,{getElementById:key=>input[key]});

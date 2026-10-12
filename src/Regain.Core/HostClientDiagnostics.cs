@@ -13,6 +13,14 @@ internal sealed class HostClientDiagnostics(Action<string>? sink, string backend
     internal static bool VerboseEnabled => !new[] { "0", "false", "off" }.Contains(
         Environment.GetEnvironmentVariable("REGAIN_CAMERA_TRANSFER_LOG")?.Trim(), StringComparer.OrdinalIgnoreCase);
     private Context context = new(backend);
+    private string transferLogMode = "circular";
+    internal string TransferLogMode { get => Volatile.Read(ref transferLogMode); set {
+        Volatile.Write(ref transferLogMode, value);
+        if (value != "circular") lock (sync) { history.Clear(); historyBytes=0; }
+    } }
+    private readonly Queue<string> history = new();
+    private int historyBytes;
+    private long lastBatch;
 
     internal void Begin(long id, string method, byte[] request)
     {
@@ -92,7 +100,7 @@ internal sealed class HostClientDiagnostics(Action<string>? sink, string backend
                         // authoritative. Receipt context is separate and additive.
                         if (!record.ContainsKey("managedContext"))
                             record["managedContext"] = JsonSerializer.SerializeToNode(Snapshot());
-                        Write(Prefix + record.ToJsonString());
+                        Route(Prefix + record.ToJsonString(), record["event"]?.GetValue<string>() ?? "", record["level"]?.GetValue<string>() ?? "info", record.ContainsKey("flightRecorderBatch"));
                         return;
                     }
                 }
@@ -114,19 +122,72 @@ internal sealed class HostClientDiagnostics(Action<string>? sink, string backend
 
     private void Emit(string kind, string method, long id, double elapsedUs, object details)
     {
-        if (sink is null || (!VerboseEnabled && kind != "ipc.command.failed")) return;
+        if (sink is null || ((!VerboseEnabled || TransferLogMode == "off") && kind != "ipc.command.failed")) return;
         try
         {
-            Write(Prefix + JsonSerializer.Serialize(new {
+            Route(Prefix + JsonSerializer.Serialize(new {
                 version = 1, level = "info", @event = kind, message = $"Managed IPC {method}: {kind}",
                 pid = Environment.ProcessId, timestampUnixUs = (DateTime.UtcNow.Ticks - DateTime.UnixEpoch.Ticks) / 10,
                 elapsedUs, method, requestId = id, managedContext = Snapshot(), details
-            }));
+            }), kind, kind == "ipc.command.failed" ? "warning" : "info");
         }
         catch { /* Logging must not change IPC or capture results. */ }
     }
 
     private static double ElapsedUs(long started) => Stopwatch.GetElapsedTime(started).TotalMicroseconds;
+    private void Route(string line, string kind, string level, bool replay = false)
+    {
+        bool highVolume = kind.StartsWith("usb.", StringComparison.Ordinal) || kind.StartsWith("sdk.api.", StringComparison.Ordinal)
+            || kind is "ipc.command.submit" or "ipc.command.response" or "ipc.command.complete" or "nina.api.complete" or "nina.image_factory.complete";
+        bool fault = level is "warning" or "error" || kind is "ipc.command.failed" or "diagnostics.batch.begin";
+        string mode = VerboseEnabled ? TransferLogMode : "off";
+        if (mode == "circular" && !replay && highVolume && !fault) {
+            string? batch = null;
+            lock (sync) {
+                if (lastBatch != 0 && Stopwatch.GetElapsedTime(lastBatch).TotalSeconds < 5) batch=$"managed:{Environment.ProcessId}:{hostPid}:{lastBatch}";
+                else {
+                    history.Enqueue(line); historyBytes += line.Length;
+                    while (historyBytes > 2 * 1024 * 1024 && history.TryDequeue(out var old)) historyBytes -= old.Length;
+                }
+            }
+            if (batch is not null) {
+                var record=JsonNode.Parse(line[Prefix.Length..])!; record["flightRecorderBatch"]=batch; record["flightRecorderAfterFault"]=true;
+                Write(Prefix+record.ToJsonString());
+            }
+            return;
+        }
+        if (fault && mode == "circular" && !replay) FlushHistory();
+        if (mode != "circular") { lock (sync) {history.Clear(); historyBytes = 0;} }
+        if (!replay && mode == "off" && highVolume && !fault) return;
+        Write(line);
+    }
+    private void FlushHistory()
+    {
+        string[] lines;
+        lock (sync) {
+            long now = Stopwatch.GetTimestamp();
+            if (lastBatch != 0 && Stopwatch.GetElapsedTime(lastBatch).TotalSeconds < 2) return;
+            lastBatch = now; lines = history.ToArray(); history.Clear(); historyBytes = 0;
+        }
+        if (lines.Length == 0) return;
+        string batch = $"managed:{Environment.ProcessId}:{hostPid}:{lastBatch}";
+        string? path = null;
+        try {
+            string directory = Environment.GetEnvironmentVariable("REGAIN_CAMERA_DIAGNOSTICS_DIR")
+                ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Regain", "Diagnostics");
+            Directory.CreateDirectory(directory);
+            foreach (var old in Directory.EnumerateFiles(directory, "managed-*-fault.jsonl").OrderByDescending(File.GetLastWriteTimeUtc).Skip(7))
+                try { File.Delete(old); } catch { /* Retain active/unavailable files. */ }
+            path = Path.Combine(directory, $"managed-{hostPid}-fault.jsonl");
+            File.WriteAllLines(path, lines);
+        } catch { /* The INFO batch remains available if disk is unavailable. */ }
+        Write(Prefix + JsonSerializer.Serialize(new {version=1,level="warning",@event="diagnostics.batch.begin",message="Recent managed camera timing history follows",details=new {batch,records=lines.Length,path}}));
+        foreach (var line in lines) {
+            try {var record=JsonNode.Parse(line[Prefix.Length..])!; record["flightRecorderBatch"]=batch; Write(Prefix+record.ToJsonString());}
+            catch {Write(line);}
+        }
+        Write(Prefix + JsonSerializer.Serialize(new {version=1,level="info",@event="diagnostics.batch.end",message="End of managed camera timing history",details=new {batch}}));
+    }
     private void Write(string line)
     {
         try { sink?.Invoke(line); }

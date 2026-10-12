@@ -98,7 +98,9 @@ impl Sdk {
             "Vendor SDK library loaded",
             json!({"path":path.to_string_lossy(),"apiLogging":"every Regain-called SDK export; no sampling"}),
         );
-        if crate::asi::diagnostics::command_logging_enabled() {
+        // Install once so live off -> circular/verbose changes can record USB.
+        // Hooks are cheap no-ops while recording is off; never unpatch live code.
+        if !crate::asi::diagnostics::forced_off() {
             usb::install(&lib);
         } else {
             crate::asi::diagnostics::queued_details(

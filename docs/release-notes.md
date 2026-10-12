@@ -1,3 +1,13 @@
+# Unreleased
+
+- Change camera transfer logging while connected in NINA and native ASCOM setup.
+  Circular recording is the default: bounded files keep recent metadata outside
+  the host log, then emit a diagnostic batch and cleanup activity after a fault.
+  Verbose and off modes remain available.
+- Adjust the direct cooler's maximum power change while connected, from 1–100
+  percentage points per five seconds (default 25). Startup, setpoint changes and
+  recovery boosts honor the limit; explicit shutdown remains immediate.
+
 # PulsarFab regain 0.6.0.7
 
 This patch brings ASI6200 direct acquisition timing closer to the vendor SDK

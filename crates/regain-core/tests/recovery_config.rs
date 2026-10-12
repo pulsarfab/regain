@@ -18,7 +18,47 @@ fn legacy_defaults() -> Value {
 fn current_defaults() -> Value {
     let mut values = legacy_defaults();
     values["directReadChunkKiB"] = json!(1024);
+    values["transferLogMode"] = json!("circular");
+    values["coolerMaxPowerChangePer5Seconds"] = json!(25.0);
     values
+}
+
+#[test]
+fn cooler_power_change_is_finite_and_bounded_and_logging_modes_are_validated() {
+    for value in [1.0, 25.0, 100.0] {
+        RecoveryOptions {
+            cooler_max_power_change_per_5_seconds: value,
+            ..Default::default()
+        }
+        .validate()
+        .unwrap();
+    }
+    for value in [0.0, -1.0, 100.0001, f64::NAN, f64::INFINITY] {
+        assert!(
+            RecoveryOptions {
+                cooler_max_power_change_per_5_seconds: value,
+                ..Default::default()
+            }
+            .validate()
+            .is_err()
+        );
+    }
+    for invalid in [json!(0), json!(false), Value::Null] {
+        assert!(
+            serde_json::from_value::<RecoveryOptions>(json!({"transferLogMode":invalid})).is_err()
+        );
+    }
+    for invalid in ["false", "", "unknown"] {
+        let options: RecoveryOptions =
+            serde_json::from_value(json!({"transferLogMode":invalid})).unwrap();
+        assert!(options.validate().is_err());
+    }
+    let options: RecoveryOptions = serde_json::from_value(
+        json!({"transferLogMode":"off","coolerMaxPowerChangePer5Seconds":5}),
+    )
+    .unwrap();
+    assert_eq!(options.transfer_log_mode, "off");
+    assert_eq!(options.cooler_max_power_change_per_5_seconds, 5.0);
 }
 
 #[test]
@@ -149,12 +189,22 @@ fn descriptor_defaults_and_serialized_keys_match_the_shipped_profile() {
     let defaults = current_defaults();
     assert_eq!(schema["default"], defaults);
     assert_eq!(schema["additionalProperties"], false);
-    assert_eq!(schema["properties"].as_object().unwrap().len(), 15);
+    assert_eq!(schema["properties"].as_object().unwrap().len(), 17);
     for (key, default) in defaults.as_object().unwrap() {
         let property = &schema["properties"][key];
         assert_eq!(&property["default"], default);
         assert_eq!(property["x-regain"]["key"], *key);
-        assert_eq!(property["x-regain"]["apply"], "reconnect");
+        assert_eq!(
+            property["x-regain"]["apply"],
+            if matches!(
+                key.as_str(),
+                "transferLogMode" | "coolerMaxPowerChangePer5Seconds"
+            ) {
+                "live"
+            } else {
+                "reconnect"
+            }
+        );
         assert!(!property["description"].as_str().unwrap().is_empty());
     }
     assert_eq!(

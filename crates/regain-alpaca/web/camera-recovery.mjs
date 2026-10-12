@@ -10,6 +10,7 @@ export function recoveryFields(description, platform) {
 export function parseRecoveryValue(field, input) {
   const invalid = () => { throw Error(`Invalid ${field.title.toLowerCase()}. ${field.description}`); };
   if (field.type === 'boolean') return typeof input === 'boolean' ? input : invalid();
+  if (field.type === 'string') return field.enum.includes(input) ? input : invalid();
   if (typeof input !== 'string' || input.trim() === '') return invalid();
   const value = Number(input);
   if (!Number.isFinite(value) || (field.type === 'integer' && !Number.isInteger(value)) ||
@@ -26,11 +27,13 @@ export function renderRecovery(fields, document) {
     const metadata = field['x-regain'];
     const label = document.createElement('label');
     label.textContent = field.title + (metadata.units ? ` (${metadata.units})` : '');
-    const input = document.createElement('input');
+    const input = document.createElement(field.type === 'string' ? 'select' : 'input');
     input.id = field.key;
     input.title = field.description;
     if (field.type === 'boolean') {
       input.type = 'checkbox'; label.classList.add('check');
+    } else if (field.type === 'string') {
+      for (const value of field.enum) {const option=document.createElement('option'); option.value=option.textContent=value; input.append(option);}
     } else {
       Object.assign(input, {type:'number', required:true, step:field.type === 'integer' ? '1' : 'any',
         min:field.minimum ?? field.exclusiveMinimum, max:field.maximum});

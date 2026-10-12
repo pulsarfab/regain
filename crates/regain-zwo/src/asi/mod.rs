@@ -4,6 +4,8 @@ mod continuous;
 mod diagnostics;
 #[cfg(feature = "asi-direct")]
 pub mod direct;
+#[cfg(any(feature = "asi-direct", feature = "asi-sdk"))]
+mod flight_recorder;
 #[cfg(feature = "asi-sdk")]
 pub mod sdk;
 

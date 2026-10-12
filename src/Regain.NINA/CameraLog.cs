@@ -41,7 +41,7 @@ internal static class CameraLog
                         || eventName is "ipc.command.submit" or "ipc.command.response" or "ipc.command.complete"
                         or "nina.api.complete" or "nina.image_factory.complete";
                     return new(severity, Clean($"PulsarFab regain {backend}{process} [{eventName}]: {message.GetString()} | {Prefix}{root.GetRawText()}"),
-                        IncludeInfo: true, Suppressed: !(verbose ?? VerboseEnabled) && highVolume && severity != Level.Warning);
+                        IncludeInfo: true, Suppressed: !(verbose ?? VerboseEnabled) && highVolume && severity != Level.Warning && !root.TryGetProperty("flightRecorderBatch", out _));
                 }
             }
             catch (JsonException) { /* Keep malformed diagnostics visible as plain text. */ }
@@ -62,7 +62,8 @@ internal static class CameraLog
         text => Logger.Info(text), text => Logger.Warning(text), text => Logger.Debug(text));
 
     internal static Entry ApiTimingEntry(string camera, string backend, long capture, string api, long started,
-        string outcome, Exception? error = null, int? width = null, int? height = null, int? pixelCount = null)
+        string outcome, Exception? error = null, int? width = null, int? height = null, int? pixelCount = null,
+        bool transferLogging = true)
     {
         static string Bounded(string text, int length) => text.Length > length ? text[..length] : text;
         string kind = api == "CreateImageArrayExposureData" ? "nina.image_factory.complete" : "nina.api.complete";
@@ -75,16 +76,19 @@ internal static class CameraLog
                 elapsedUs = Stopwatch.GetElapsedTime(started).TotalMicroseconds,
                 errorType = error is null ? null : Bounded(error.GetType().Name, 128), width, height, pixelCount }
         };
-        return Parse(Bounded(backend, 64), Prefix + JsonSerializer.Serialize(record));
+        return Parse(Bounded(backend, 64), Prefix + JsonSerializer.Serialize(record), verbose: transferLogging && VerboseEnabled);
     }
 
     internal static void ApiTiming(string camera, string backend, long capture, string api, long started,
-        string outcome, Exception? error = null, int? width = null, int? height = null, int? pixelCount = null)
+        string outcome, Exception? error = null, int? width = null, int? height = null, int? pixelCount = null,
+        bool transferLogging = true, Action<string>? recorder = null)
     {
-        if (!VerboseEnabled && error is null) return;
+        if (recorder is null && !(transferLogging && VerboseEnabled) && error is null) return;
         try
         {
-            Forward(ApiTimingEntry(camera, backend, capture, api, started, outcome, error, width, height, pixelCount),
+            var entry = ApiTimingEntry(camera, backend, capture, api, started, outcome, error, width, height, pixelCount, transferLogging);
+            if (recorder is not null) { recorder(entry.Text[entry.Text.IndexOf(Prefix, StringComparison.Ordinal)..]); return; }
+            Forward(entry,
                 text => Logger.Info(text), text => Logger.Warning(text), text => Logger.Debug(text));
         }
         catch { /* Timing diagnostics cannot change API results or cancellation. */ }

@@ -25,16 +25,16 @@ internal static class Settings
         options.Validate();
         return options;
     }
-    public static void Show()
+    public static void Show(Func<RecoveryOptions,Task>? applyLive = null)
     {
         var dispatcher = Application.Current?.Dispatcher;
         if (dispatcher is not null && !dispatcher.CheckAccess())
         {
-            dispatcher.Invoke(Show);
+            dispatcher.Invoke(() => Show(applyLive));
             return;
         }
         var root = new DockPanel { Margin = new Thickness(16) };
-        var heading = new TextBlock { Text = "Reconnect to apply changes.",
+        var heading = new TextBlock { Text = "Transfer logging and the cooler power limit apply while connected. Reconnect for other changes.",
             TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 12) };
         DockPanel.SetDock(heading, Dock.Top);
         root.Children.Add(heading);
@@ -164,7 +164,7 @@ internal static class Settings
         direct.Unchecked += async (_, _) => { fallback.IsEnabled = false; if (window.IsLoaded) await RefreshCameras(); };
         refresh.Click += async (_, _) => await RefreshCameras();
         window.Loaded += async (_, _) => await RefreshCameras();
-        button.Click += (_, _) =>
+        button.Click += async (_, _) =>
         {
             try
             {
@@ -184,6 +184,7 @@ internal static class Settings
                     return value;
                 }
                 int? fan = OptionalByte(fanSpeed), led = OptionalByte(ledBrightness);
+                if (applyLive is not null) await applyLive(options);
                 Directory.CreateDirectory(Folder);
                 string temp = FilePath + "." + Guid.NewGuid().ToString("N") + ".tmp";
                 File.WriteAllText(temp, JsonSerializer.Serialize(options, new JsonSerializerOptions { WriteIndented = true }));

@@ -21,6 +21,7 @@ struct Supervisor {
     engine: Arc<AsyncMutex<Option<Session>>>,
     status: Option<SharedStatus>,
     cooling: Option<regain_core::cooling::CoolingHandle>,
+    runtime_options: Option<regain_core::camera_options::CameraRuntimeHandle>,
     capture: Arc<Mutex<Capture>>,
     task: Option<tokio::task::JoinHandle<()>>,
     runtime: Runtime,
@@ -46,11 +47,35 @@ impl Supervisor {
         }
         self.status = None;
         self.cooling = None;
+        self.runtime_options = None;
     }
     async fn command(&mut self, method: &str, p: Value) -> Result<(Value, Arc<[u8]>)> {
         let mut pixels: Arc<[u8]> = Arc::from([]);
         let token = CancellationToken::new();
         let value = match method {
+            "diagnostics-dump" => {
+                self.engine
+                    .try_lock()
+                    .map_err(|_| invalid("Camera is busy"))?
+                    .as_mut()
+                    .ok_or_else(|| invalid("Camera not open"))?
+                    .dump_diagnostics(&token)
+                    .await?;
+                Value::Null
+            }
+            "runtime-options" => {
+                let handle = self
+                    .runtime_options
+                    .as_ref()
+                    .ok_or_else(|| invalid("Camera not open"))?;
+                handle.update(serde_json::from_value(p)?)?;
+                if let Ok(mut engine) = self.engine.try_lock()
+                    && let Some(session) = engine.as_mut()
+                {
+                    session.refresh(&token).await?;
+                }
+                serde_json::to_value(handle.get())?
+            }
             "simulate-read-failures" => {
                 ensure!(self.runtime.simulate, "Fault injection requires --simulate");
                 let count = p["count"]
@@ -109,28 +134,41 @@ impl Supervisor {
                 }
                 let state = session.snapshot();
                 self.cooling = Some(session.cooling());
+                self.runtime_options = Some(session.runtime_options());
                 self.status = Some(session.status.clone());
                 *self.engine.lock().await = Some(session);
                 json!({"info":state.info,"serial":state.serial,"sdkVersion":state.sdk_version,"backend":state.backend,"sdkFallback":state.sdk_fallback,"supervised":true,"controls":state.controls.values().collect::<Vec<_>>()})
             }
-            "get" => {
+            "get" | "get-observation" => {
                 let status = self
                     .status
                     .as_ref()
                     .ok_or_else(|| invalid("Camera not open"))?
                     .lock()
                     .unwrap();
-                json!(
-                    status
-                        .values
-                        .get(
-                            &(p["control"]
-                                .as_i64()
-                                .ok_or_else(|| invalid("Missing control"))?
-                                as i32)
-                        )
-                        .ok_or_else(|| invalid("Control unavailable"))?
-                )
+                let control = p["control"]
+                    .as_i64()
+                    .and_then(|kind| i32::try_from(kind).ok())
+                    .ok_or_else(|| invalid("Missing control"))?;
+                if method == "get-observation" {
+                    // Serve the same acknowledged cache as `get`, with its
+                    // observation age; never imply that a cached value is fresh.
+                    let observation = status
+                        .observations
+                        .get(&control)
+                        .ok_or_else(|| invalid("Control observation unavailable"))?;
+                    json!(regain_core::ControlObservationReply {
+                        value: observation.value,
+                        age_seconds: observation.observed_at.elapsed().as_secs_f64(),
+                    })
+                } else {
+                    json!(
+                        status
+                            .values
+                            .get(&control)
+                            .ok_or_else(|| invalid("Control unavailable"))?
+                    )
+                }
             }
             "set" => {
                 Session::queue_control(
@@ -259,6 +297,7 @@ impl Supervisor {
 }
 pub async fn run(runtime: Runtime, direct: bool, log: Diagnostic) -> Result<()> {
     let mut supervisor = Supervisor {
+        runtime_options: None,
         engine: Arc::new(AsyncMutex::new(None)),
         status: None,
         cooling: None,

@@ -37,6 +37,7 @@ pub struct Device {
     idle: tokio::sync::Notify,
 }
 struct State {
+    runtime_options: Option<regain_core::camera_options::CameraRuntimeHandle>,
     clients: HashSet<u32>,
     status: Option<SharedStatus>,
     changing: bool,
@@ -57,6 +58,7 @@ struct State {
 impl Default for State {
     fn default() -> Self {
         Self {
+            runtime_options: None,
             clients: HashSet::new(),
             status: None,
             changing: false,
@@ -101,9 +103,32 @@ impl Device {
     pub fn configure(&self, p: Profile) -> Result<()> {
         let s = self.state.lock().unwrap();
         ensure!(
-            !s.closed && !s.changing && s.status.is_none(),
+            !s.closed && !s.changing,
             Error(0x40B, "Disconnect all clients before changing setup".into())
         );
+        if s.status.is_some() {
+            let old = self.profiles.get(self.slot)?;
+            let mut frozen = p.clone();
+            let options =
+                regain_core::camera_options::CameraRuntimeOptions::from_recovery(&p.recovery);
+            options.validate()?;
+            regain_core::camera_options::CameraRuntimeOptions::from_recovery(&old.recovery)
+                .apply(&mut frozen.recovery);
+            ensure!(
+                serde_json::to_value(&frozen)? == serde_json::to_value(&old)?,
+                Error(
+                    0x40B,
+                    "Only transfer logging and cooler power limit can change while connected"
+                        .into()
+                )
+            );
+            self.profiles.save(self.slot, p)?;
+            s.runtime_options
+                .as_ref()
+                .ok_or_else(|| error(0x40B, "Camera settings unavailable"))?
+                .update(options)?;
+            return Ok(());
+        }
         self.profiles.save(self.slot, p)
     }
     pub fn snapshot(&self) -> Option<Status> {
@@ -201,6 +226,7 @@ impl Device {
             )?;
             let mut s = self.state.lock().unwrap();
             s.status = Some(session.status.clone());
+            s.runtime_options = Some(session.runtime_options());
             s.clients.insert(client);
             s.error = None;
             s.frame = None;

@@ -355,11 +355,14 @@ To help add a camera, use the separate [CameraKit](scripts/camera-kit/README.md)
 release ZIP to collect local diagnostics and SDK USB traces. No compiler is
 needed and nothing uploads automatically.
 
-Camera commands and USB timing are also recorded in the NINA INFO log by
-default, including bundled SDK API calls and available Windows SDK USB
-instrumentation. Images are never logged. See
-[camera timing diagnostics](docs/camera-timed-diagnostics.md) for fields,
-coverage and how to compare successive captures.
+NINA and native ASCOM camera setup offer live transfer logging controls:
+**circular** (default), **verbose**, or **off**. Circular mode keeps recent
+command, USB and SDK API metadata in separate rotating files and emits it to
+the host log on a fault. Images are never logged. See
+[camera timing diagnostics](docs/camera-timed-diagnostics.md) for file locations,
+coverage and how to compare successive captures. The live direct
+cooler limit defaults to **25 percentage points per five seconds**; SDK mode
+uses the vendor cooler controller.
 
 [Opt-in USB reset recovery](docs/usb-recovery.md) ·
 [Multiple Alpaca focusers](docs/focusers.md) ·

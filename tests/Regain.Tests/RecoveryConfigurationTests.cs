@@ -19,8 +19,18 @@ public sealed class RecoveryConfigurationTests
         Assert.Equal(new RecoveryOptions(),old);
         var sparse=JsonSerializer.Deserialize<RecoveryOptions>("""{"MaxRetries":0,"UsbPortCycle":true,"legacyExtension":1}""")!;
         Assert.Equal(old with {MaxRetries=0,UsbPortCycle=true},sparse);
-        Assert.Equal(15,JsonSerializer.SerializeToElement(old).EnumerateObject().Count());
+        Assert.Equal(17,JsonSerializer.SerializeToElement(old).EnumerateObject().Count());
         sparse.Validate();
+    }
+
+    [Theory]
+    [InlineData(1,true)] [InlineData(25,true)] [InlineData(100,true)]
+    [InlineData(0,false)] [InlineData(100.01,false)]
+    [InlineData(double.NaN,false)] [InlineData(double.PositiveInfinity,false)]
+    public void CoolerPowerChangeUsesFinitePercentagePointBounds(double value,bool valid)
+    {
+        var options=new RecoveryOptions {CoolerMaxPowerChangePer5Seconds=value,TransferLogMode="off"};
+        if(valid) options.Validate(); else Assert.Throws<ArgumentOutOfRangeException>(options.Validate);
     }
 
     [Theory]

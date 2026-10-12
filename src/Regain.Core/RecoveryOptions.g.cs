@@ -16,6 +16,8 @@ public sealed record RecoveryOptions
     public int ReadyFrameDownloadRetries { get; init; } = 2;
     public int DirectReadRetries { get; init; } = 2;
     public int DirectReadChunkKiB { get; init; } = 1024;
+    public string TransferLogMode { get; init; } = "circular";
+    public double CoolerMaxPowerChangePer5Seconds { get; init; } = 25.0;
     public int UsbResetAfterFailures { get; init; } = 0;
     public bool UsbPortCycle { get; init; } = false;
     public void Validate()
@@ -46,6 +48,10 @@ public sealed record RecoveryOptions
             throw new System.ArgumentOutOfRangeException(nameof(DirectReadRetries));
         if (DirectReadChunkKiB < 1 || DirectReadChunkKiB > 1024 || (DirectReadChunkKiB & (DirectReadChunkKiB - 1)) != 0)
             throw new System.ArgumentOutOfRangeException(nameof(DirectReadChunkKiB));
+        if (TransferLogMode != "circular" && TransferLogMode != "verbose" && TransferLogMode != "off")
+            throw new System.ArgumentOutOfRangeException(nameof(TransferLogMode));
+        if (double.IsNaN(CoolerMaxPowerChangePer5Seconds) || double.IsInfinity(CoolerMaxPowerChangePer5Seconds) || CoolerMaxPowerChangePer5Seconds < 1 || CoolerMaxPowerChangePer5Seconds > 100)
+            throw new System.ArgumentOutOfRangeException(nameof(CoolerMaxPowerChangePer5Seconds));
         if (UsbResetAfterFailures < 0 || UsbResetAfterFailures > 20)
             throw new System.ArgumentOutOfRangeException(nameof(UsbResetAfterFailures));
     }

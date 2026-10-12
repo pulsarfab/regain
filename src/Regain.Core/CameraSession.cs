@@ -34,7 +34,7 @@ public sealed class CameraSession : IDisposable
     }
     public RecoveryOptions Options
     {
-        get;
+        get; private set;
     }
     public IReadOnlyDictionary<int, Control> Controls { get; private set; } = new Dictionary<int, Control>();
     public string SdkVersion { get; private set; } = "unknown";
@@ -79,6 +79,18 @@ public sealed class CameraSession : IDisposable
             catch { /* A failed diagnostic subscriber must not interrupt recovery. */ }
         }
     }
+    public async Task UpdateRuntimeOptionsAsync(RecoveryOptions options, CancellationToken token = default)
+    {
+        options.Validate();
+        var current = host;
+        if (current is not null && current.IsAlive)
+            await current.CallAsync("runtime-options", new { transferLogMode = options.TransferLogMode,
+                coolerMaxPowerChangePer5Seconds = options.CoolerMaxPowerChangePer5Seconds },
+                TimeSpan.FromSeconds(Options.CommandTimeoutSeconds), token).ConfigureAwait(false);
+        Options = Options with { TransferLogMode = options.TransferLogMode, CoolerMaxPowerChangePer5Seconds = options.CoolerMaxPowerChangePer5Seconds };
+        current?.ConfigureDiagnostics(options.TransferLogMode);
+    }
+    public void RecordDiagnostic(string line) => host?.RecordDiagnostic(line);
     private void State(string phase)
     {
         lock (sync) Phase = phase;
@@ -128,6 +140,7 @@ public sealed class CameraSession : IDisposable
         {
             ObjectDisposedException.ThrowIf(disposed, this);
             host = usingFallback ? sdkFallbackFactory!() : factory();
+            host.ConfigureDiagnostics(Options.TransferLogMode);
             supervised = host.Supervised;
         }
         if (!supervised && Options.UsbResetAfterFailures > 0)

@@ -445,6 +445,7 @@ mod selection_tests {
 }
 
 struct Worker {
+    power_limit: std::sync::Arc<std::sync::atomic::AtomicU64>,
     sender: mpsc::Sender<Work>,
     thread: Option<std::thread::JoinHandle<()>>,
     telemetry: transport::Telemetry,
@@ -459,11 +460,16 @@ impl Worker {
         serial: Option<String>,
         locator: Option<String>,
         simulate: bool,
+        cooler_max_power_change: f64,
     ) -> Result<(Self, String)> {
         let (sender, receiver) = mpsc::channel::<Work>();
         let (ready_tx, ready_rx) = mpsc::sync_channel(1);
         let cancel_video = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         let cancelled = cancel_video.clone();
+        let power_limit = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(
+            cooler_max_power_change.to_bits(),
+        ));
+        let live_power_limit = power_limit.clone();
         let thread = std::thread::spawn(move || {
             let device = if simulate {
                 if locator
@@ -488,6 +494,15 @@ impl Worker {
                 .as_ref()
                 .map(|d| d.2.clone())
                 .unwrap_or("direct-simulator".into());
+            if let Some((camera, _, _)) = &device {
+                camera.share_cooler_power_limit(live_power_limit);
+            }
+            if let Some((camera, _, _)) = &device
+                && let Err(error) = camera.configure_cooler_power_limit(cooler_max_power_change)
+            {
+                let _ = ready_tx.send(Err(error));
+                return;
+            }
             if serial.as_ref().is_some_and(|s| s != &identity) {
                 let _ = ready_tx.send(Err(anyhow::anyhow!("camera identity differs")));
                 return;
@@ -942,6 +957,7 @@ impl Worker {
         {
             Ok((identity, telemetry, auxiliary, locator, cooling)) => Ok((
                 Self {
+                    power_limit,
                     sender,
                     thread: Some(thread),
                     telemetry,
@@ -1142,6 +1158,12 @@ impl Host {
             }
             "open" => {
                 ensure!(self.worker.is_none(), "camera is already open");
+                let recovery: regain_core::RecoveryOptions = params
+                    .get("recovery")
+                    .map(|value| serde_json::from_value(value.clone()))
+                    .transpose()?
+                    .unwrap_or_default();
+                recovery.validate()?;
                 let model = Model::ALL
                     .into_iter()
                     .find(|m| params["name"] == m.name())
@@ -1156,8 +1178,14 @@ impl Host {
                             .ok_or_else(|| anyhow::anyhow!("invalid camera locator"))
                     })
                     .transpose()?;
-                let (worker, identity) =
-                    Worker::open(model, serial, locator, self.simulate).map_err(hardware)?;
+                let (worker, identity) = Worker::open(
+                    model,
+                    serial,
+                    locator,
+                    self.simulate,
+                    recovery.cooler_max_power_change_per_5_seconds,
+                )
+                .map_err(hardware)?;
                 self.model = model;
                 self.settings = Settings::default();
                 let mut descriptor = model.descriptor();
@@ -1198,6 +1226,29 @@ impl Host {
                     "videoMaxExposureMicroseconds":if model.video_profile().is_some() { json!(30_000_000) } else { Value::Null },
                     "videoFrameRecoveryAttempts":if model.video_profile().is_some() { json!(1) } else { json!(0) },
                     "whiteBalance":WhiteBalance::capabilities(descriptor["color"] == true)})
+            }
+            "runtime-options" => {
+                let options: regain_core::camera_options::CameraRuntimeOptions =
+                    serde_json::from_value(params.clone())?;
+                options.validate()?;
+                crate::asi::diagnostics::configure(&options.transfer_log_mode)?;
+                if let Some(worker) = &self.worker {
+                    worker.power_limit.store(
+                        options.cooler_max_power_change_per_5_seconds.to_bits(),
+                        std::sync::atomic::Ordering::Relaxed,
+                    );
+                }
+                serde_json::to_value(options)?
+            }
+            "diagnostics-dump" => {
+                crate::asi::diagnostics::queued_details(
+                    "warning",
+                    "diagnostics.manual",
+                    "Camera diagnostic snapshot requested",
+                    json!({}),
+                );
+                crate::asi::diagnostics::flush_usb();
+                Value::Null
             }
             "white-balance" => {
                 ensure!(self.worker.is_some(), "camera is not open");

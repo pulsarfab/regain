@@ -36,13 +36,20 @@ internal static class CameraSetupWindow
             Content = root, Owner = Application.Current?.MainWindow, WindowStartupLocation = WindowStartupLocation.CenterOwner };
         SetupTheme.Apply(window);
         var editors = new List<Control>(); var readers = new List<Action>();
+        var liveEditors = new HashSet<Control>();
         bool Connected() => session.Get<bool>("connected");
-        void Update() { bool connected = Connected(); foreach (var c in editors) c.IsEnabled = !busy && !connected; }
+        void Update() { bool connected = Connected(); foreach (var c in editors) c.IsEnabled = !busy && (!connected || liveEditors.Contains(c)); }
         void Save() {
-            if (loading || Connected()) return;
+            if (loading) return;
             foreach (var read in readers) read();
+            if (Connected()) {
+                var current = JsonNode.Parse(session.Request("profile").GetRawText())!;
+                foreach (var key in new[] {"transferLogMode", "coolerMaxPowerChangePer5Seconds"})
+                    current["recovery"]![key] = profile["recovery"]![key]!.DeepClone();
+                profile = current;
+            }
             session.Request("configure", parameters: profile);
-            feedback.Text = "Settings saved.";
+            feedback.Text = Connected() ? "Live settings queued for the next safe worker checkpoint." : "Settings saved.";
         }
         async Task Run(Func<Task> action) {
             if (busy) return; busy = true; Update(); feedback.Text = "";
@@ -72,7 +79,7 @@ internal static class CameraSetupWindow
                 throw new ArgumentException($"{label} must be {(integer ? "a whole number " : "")}between {min} and {max}.");
             return n;
         }
-        var device = Tab("Device", "Choose a local camera. Settings save automatically; disconnect to change them.");
+        var device = Tab("Device", "Choose a local camera. Settings save automatically. Transfer logging and the direct cooler power limit can change while connected; other settings require disconnecting.");
         var picker = new ComboBox { MinHeight = 30, Margin = new Thickness(0, 0, 0, 12), DisplayMemberPath = "Label" }; editors.Add(picker); device.Children.Add(picker); AutomationProperties.SetName(picker, "Camera");
         if (profile["camera"] is JsonNode saved) { picker.Items.Add(new Choice(saved.DeepClone())); picker.SelectedIndex = 0; }
         var backend = new ComboBox { ItemsSource = new[] { "ZWO SDK", "Direct USB" }, SelectedIndex = profile["direct"]!.GetValue<bool>() ? 1 : 0, MinHeight = 30, Margin = new Thickness(0, 0, 0, 12) };
@@ -105,6 +112,7 @@ internal static class CameraSetupWindow
             section => section == "Cooling" ? cooler : section == "Timeouts" ? timeouts : recovery,
             TrySave);
         editors.AddRange(recoveryForm.Editors);
+        liveEditors.UnionWith(recoveryForm.LiveEditors);
         readers.Add(() => profile["recovery"] = JsonNode.Parse(recoveryForm.Read().GetRawText()));
         var controls = Tab("Controls", "Optional connection defaults. Leave a value blank to keep the camera setting.");
         void Control(Panel parent, string key, string label) => Field(parent, label, profile["controls"]![key]?.ToJsonString() ?? "", v => {

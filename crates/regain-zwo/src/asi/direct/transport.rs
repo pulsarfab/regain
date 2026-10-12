@@ -124,6 +124,17 @@ impl Camera {
     pub fn has_environment(&self) -> bool {
         self.environment.borrow().is_some()
     }
+    pub fn configure_cooler_power_limit(&self, maximum: f64) -> Result<()> {
+        if let Some(environment) = self.environment.borrow_mut().as_mut() {
+            environment.set_power_limit(maximum)?;
+        }
+        Ok(())
+    }
+    pub fn share_cooler_power_limit(&self, limit: std::sync::Arc<std::sync::atomic::AtomicU64>) {
+        if let Some(environment) = self.environment.borrow_mut().as_mut() {
+            environment.live_power_limit = Some(limit);
+        }
+    }
     /// Reapply acknowledged actuator settings after firmware initialization,
     /// preserving the current target, regulator history and service deadline.
     pub(super) fn restore_environment(&self) -> Result<()> {

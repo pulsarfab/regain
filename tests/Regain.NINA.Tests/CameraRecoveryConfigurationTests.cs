@@ -25,17 +25,29 @@ public sealed partial class HubNativeTests
             var values=JsonSerializer.SerializeToElement(new RecoveryOptions {UsbPortCycle=true},
                 new JsonSerializerOptions {PropertyNamingPolicy=JsonNamingPolicy.CamelCase});
             var form=new CameraRecoveryForm(values,Section);
-            Assert.Equal(14,form.Editors.Count);
+            Assert.Equal(16,form.Editors.Count);
             var reader=new HubConfiguration(JsonDocument.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory,"hub-config.json"))).RootElement);
             var schema=reader.Root.GetProperty("$defs").GetProperty("CameraRecovery");
             Assert.Equal(JsonSerializer.Serialize(schema),JsonSerializer.Serialize(CameraRecoveryConfiguration.Schema));
             TextBox Input(string key)=>form.Editors.OfType<TextBox>().Single(e=>AutomationProperties.GetAutomationId(e)=="recovery-"+key);
+            var logging=form.Editors.OfType<ComboBox>().Single(e=>AutomationProperties.GetAutomationId(e)=="recovery-transferLogMode");
+            Assert.Equal(2, form.LiveEditors.Count);
+            Assert.Contains(logging, form.LiveEditors);
+            Assert.Contains(Input("coolerMaxPowerChangePer5Seconds"), form.LiveEditors);
+            Assert.Equal("circular",logging.SelectedItem);
+            logging.SelectedItem="off";
+            Assert.Equal("off",form.Read().GetProperty("transferLogMode").GetString());
+            Assert.Equal("25",Input("coolerMaxPowerChangePer5Seconds").Text);
+            Input("coolerMaxPowerChangePer5Seconds").Text="0"; Assert.Throws<ArgumentException>(()=>form.Read());
+            Input("coolerMaxPowerChangePer5Seconds").Text="101"; Assert.Throws<ArgumentException>(()=>form.Read());
+            Input("coolerMaxPowerChangePer5Seconds").Text="5";
             Input("reconnectDelaySeconds").Text="0.000001";
             var changed=form.Read();
             Assert.Equal(.000001,changed.GetProperty("reconnectDelaySeconds").GetDouble());
             Assert.True(changed.GetProperty("usbPortCycle").GetBoolean());
             var typed=JsonSerializer.Deserialize<RecoveryOptions>(changed.GetRawText(),new JsonSerializerOptions {PropertyNamingPolicy=JsonNamingPolicy.CamelCase})!;
             typed.Validate(); Assert.Equal(.000001,typed.ReconnectDelaySeconds);
+            Assert.Equal("off",typed.TransferLogMode); Assert.Equal(5,typed.CoolerMaxPowerChangePer5Seconds);
             Input("directReadChunkKiB").Text="3"; Assert.Throws<ArgumentException>(()=>form.Read());
             Input("directReadChunkKiB").Text="64"; Assert.Equal(64,form.Read().GetProperty("directReadChunkKiB").GetInt32());
             Input("maxRetries").Text="1.5"; Assert.Throws<ArgumentException>(()=>form.Read());
@@ -47,7 +59,13 @@ public sealed partial class HubNativeTests
             DockPanel.SetDock(notice,Dock.Top);root.Children.Add(notice);root.Children.Add(tabs);
             var window=new Window {Title="Regain shared recovery editor",Content=root,Width=720,Height=740};
             SetupTheme.Apply(window);
-            try {window.Show();await Capture(window,"camera-recovery-native.png");}
+            try {
+                window.Show();await Capture(window,"camera-recovery-native.png");
+                foreach (var title in new[] {"Timeouts", "Cooling"}) {
+                    tabs.SelectedItem=tabs.Items.Cast<TabItem>().Single(tab=>(string)tab.Header==title);
+                    await Capture(window,title=="Timeouts" ? "camera-diagnostics-native.png" : "camera-cooling-native.png");
+                }
+            }
             finally {window.Close();}
         });
     }

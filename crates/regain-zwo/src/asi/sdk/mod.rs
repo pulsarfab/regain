@@ -125,6 +125,23 @@ impl Host {
     fn command(&mut self, method: &str, p: Value) -> Result<(Value, Vec<u8>)> {
         let mut bytes = Vec::new();
         let value = match method {
+            "diagnostics-dump" => {
+                crate::asi::diagnostics::queued_details(
+                    "warning",
+                    "diagnostics.manual",
+                    "Camera diagnostic snapshot requested",
+                    json!({}),
+                );
+                crate::asi::diagnostics::flush_usb();
+                Value::Null
+            }
+            "runtime-options" => {
+                let options: regain_core::camera_options::CameraRuntimeOptions =
+                    serde_json::from_value(p)?;
+                options.validate()?;
+                crate::asi::diagnostics::configure(&options.transfer_log_mode)?;
+                serde_json::to_value(options)?
+            }
             "list" => {
                 // Reject before any SDK call, including while connected but idle.
                 // The SDK's property lookup may open unrelated connected devices.

@@ -87,8 +87,8 @@ fn target_change(
         return (0.0, 0.0);
     }
     let demand = (integral + PROPORTIONAL * (temperature - target)).clamp(0.0, 100.0);
-    // A deliberate setpoint change gets its proportional response immediately.
-    // Normal feedback still uses the bounded slew and anti-windup controller.
+    // Recompute proportional demand immediately for a deliberate setpoint
+    // change. The caller applies the live power-change limit before writing it.
     (
         if target < previous {
             power.max(demand)
@@ -99,8 +99,16 @@ fn target_change(
     )
 }
 
-// Percentage points per second, with bounded elapsed time after blocked USB.
-fn regulate(power: f64, integral: &mut f64, error: f64, elapsed: f64) -> f64 {
+// Percentage points per five seconds. Do not bank ramp allowance across a
+// blocked USB operation; at most two seconds may be applied in one update.
+fn limit_power(power: f64, demand: f64, elapsed: f64, maximum: f64) -> f64 {
+    let change = maximum / 5.0 * elapsed.clamp(0.0, 2.0);
+    demand
+        .clamp(0.0, 100.0)
+        .clamp((power - change).max(0.0), (power + change).min(100.0))
+}
+
+fn regulate(power: f64, integral: &mut f64, error: f64, elapsed: f64, maximum: f64) -> f64 {
     let dt = elapsed.clamp(0.0, 2.0);
     let candidate = (*integral + error * INTEGRAL * dt).clamp(0.0, 100.0);
     let demand = candidate + PROPORTIONAL * error;
@@ -108,9 +116,7 @@ fn regulate(power: f64, integral: &mut f64, error: f64, elapsed: f64) -> f64 {
     if (demand <= 100.0 || error < 0.0) && (demand >= 0.0 || error > 0.0) {
         *integral = candidate;
     }
-    (*integral + PROPORTIONAL * error)
-        .clamp(0.0, 100.0)
-        .clamp((power - 12.0 * dt).max(0.0), (power + 8.0 * dt).min(100.0))
+    limit_power(power, *integral + PROPORTIONAL * error, dt, maximum)
 }
 
 pub struct Environment {
@@ -121,6 +127,9 @@ pub struct Environment {
     pub power: f64,
     integral: f64,
     tick: Instant,
+    power_tick: Instant,
+    max_power_change: f64,
+    pub(super) live_power_limit: Option<std::sync::Arc<std::sync::atomic::AtomicU64>>,
     auxiliary: Option<(i64, i64)>,
     heater: bool,
     output: CoolerOutput,
@@ -142,6 +151,35 @@ fn flags(camera: &Camera, mask: u8, enabled: bool) -> Result<()> {
 }
 
 impl Environment {
+    pub fn set_power_limit(&mut self, maximum: f64) -> Result<()> {
+        let options = regain_core::RecoveryOptions {
+            cooler_max_power_change_per_5_seconds: maximum,
+            ..Default::default()
+        };
+        options.validate()?;
+        self.max_power_change = maximum;
+        crate::asi::direct::diagnostics::log(
+            "info",
+            "cooling.power_limit",
+            format_args!("Direct cooler limit {maximum} percentage points per 5 s"),
+        );
+        Ok(())
+    }
+    fn limited_power(&self, demand: f64, observed: Instant) -> f64 {
+        limit_power(
+            self.power,
+            demand,
+            observed.duration_since(self.power_tick).as_secs_f64(),
+            self.power_limit(),
+        )
+    }
+    fn power_limit(&self) -> f64 {
+        self.live_power_limit
+            .as_ref()
+            .map_or(self.max_power_change, |value| {
+                f64::from_bits(value.load(std::sync::atomic::Ordering::Relaxed))
+            })
+    }
     /// Resume the last measured demand after worker replacement. The remembered
     /// temperature separates the old proportional demand from its steady load.
     /// A warmer requested target must never reinstate unwanted cooling.
@@ -167,14 +205,28 @@ impl Environment {
                 return Err(error);
             }
         };
-        let (power, integral) = recovery_state(
+        let remembered_power = power as f64;
+        let (demand, integral) = recovery_state(
             power as f64,
             prior,
             self.temperature,
             self.target as f64,
             previous_target as f64,
         );
+        // Reestablish the pre-failure baseline immediately. Only the additional
+        // recovery boost is ramped; otherwise reconnect could strand cooling at 0%.
+        let power = if self.target > previous_target {
+            0.0
+        } else {
+            limit_power(
+                remembered_power,
+                demand,
+                self.power_tick.elapsed().as_secs_f64(),
+                self.power_limit(),
+            )
+        };
         self.write_power(camera, power)?;
+        self.power_tick = Instant::now();
         self.power = power;
         self.integral = integral;
         self.tick = Instant::now();
@@ -241,6 +293,7 @@ impl Environment {
         }
         if reset_tick {
             self.tick = Instant::now();
+            self.power_tick = self.tick;
         }
     }
     pub fn open(
@@ -279,6 +332,10 @@ impl Environment {
             power,
             integral: power,
             tick: Instant::now(),
+            power_tick: Instant::now(),
+            live_power_limit: None,
+            max_power_change: regain_core::RecoveryOptions::default()
+                .cooler_max_power_change_per_5_seconds,
             auxiliary: if auxiliary {
                 Some((
                     i64::from(camera.vendor(0xbc, 0xfa, 0, 1)?[0]),
@@ -338,7 +395,9 @@ impl Environment {
                         self.target as f64,
                         value as f64,
                     );
+                    let power = self.limited_power(power, observed);
                     self.write_power(camera, power)?;
+                    self.power_tick = Instant::now();
                     self.power = power;
                     self.integral = integral;
                     self.temperature = temperature;
@@ -360,6 +419,11 @@ impl Environment {
             17 => {
                 ensure!((0..=1).contains(&value), "invalid cooler enable");
                 if value == 0 || !self.enabled {
+                    // Starting from disabled must not spend idle time as ramp
+                    // credit. The first feedback tick begins the controlled rise.
+                    if value != 0 {
+                        self.power_tick = observed;
+                    }
                     let power = if value == 0 {
                         0.0
                     } else {
@@ -367,7 +431,13 @@ impl Environment {
                         self.observed_at[0] = observed;
                         (PROPORTIONAL * (self.temperature - self.target as f64)).clamp(0.0, 100.0)
                     };
+                    let power = if value == 0 {
+                        0.0
+                    } else {
+                        self.limited_power(power, observed)
+                    };
                     self.write_power(camera, power)?;
+                    self.power_tick = Instant::now();
                     self.power = power;
                     self.tick = observed;
                     self.observed_at[1] = observed;
@@ -441,8 +511,12 @@ impl Environment {
         if self.enabled {
             // Limit elapsed time after blocked USB I/O: no accumulated power jump.
             let error = self.temperature - self.target as f64;
-            self.power = regulate(self.power, &mut self.integral, error, elapsed);
-            self.write_power(camera, self.power)?;
+            let maximum = self.power_limit();
+            let power = regulate(self.power, &mut self.integral, error, elapsed, maximum);
+            let power = self.limited_power(power, observed);
+            self.write_power(camera, power)?;
+            self.power = power;
+            self.power_tick = Instant::now();
             self.observed_at[1] = observed;
         }
         Ok(())
@@ -452,6 +526,28 @@ impl Environment {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn configurable_slew_bounds_five_seconds_in_both_directions_and_after_stalls() {
+        for maximum in [1.0, 25.0, 100.0] {
+            for seconds in [0.01, 0.2, 1.0] {
+                let mut rising = 0.0;
+                let mut falling = 100.0;
+                for _ in 0..(5.0 / seconds) as usize {
+                    rising = limit_power(rising, 100.0, seconds, maximum);
+                    falling = limit_power(falling, 0.0, seconds, maximum);
+                }
+                assert!((rising - maximum).abs() < 1e-8);
+                assert!((falling - (100.0 - maximum)).abs() < 1e-8);
+            }
+            assert_eq!(limit_power(0.0, 100.0, 600.0, maximum), maximum * 2.0 / 5.0);
+            assert_eq!(limit_power(40.0, 100.0, 0.0, maximum), 40.0);
+        }
+        // Setpoint responses pass through the same limiter as PI feedback.
+        let (demand, _) = target_change(40.0, 40.0, -10.0, -10.0, -30.0);
+        assert_eq!(limit_power(40.0, demand, 1.0, 25.0), 45.0);
+        let (demand, _) = target_change(96.0, 40.0, -8.0, -15.0, -5.0);
+        assert_eq!(limit_power(96.0, demand, 1.0, 25.0), 91.0);
+    }
     #[test]
     fn short_frame_reapplication_keeps_feedback_cadence_and_regulator_history() {
         use std::time::Duration;
@@ -464,6 +560,9 @@ mod tests {
             power: 10.0,
             integral: 10.0,
             tick: origin,
+            power_tick: origin,
+            max_power_change: 25.0,
+            live_power_limit: None,
             auxiliary: None,
             heater: true,
             output: CoolerOutput::Fpga,
@@ -498,6 +597,7 @@ mod tests {
                     &mut environment.integral,
                     environment.temperature - environment.target as f64,
                     elapsed,
+                    environment.max_power_change,
                 );
             }
         }
@@ -537,7 +637,7 @@ mod tests {
             (96.0, 40.0)
         );
         let (power, mut integral) = recovery_state(40.0, -10.0, -8.0, -10.0, -10.0);
-        assert!(regulate(power, &mut integral, 2.0, 1.0) >= power);
+        assert!(regulate(power, &mut integral, 2.0, 1.0, 25.0) >= power);
     }
     #[test]
     fn changed_target_converges_promptly_and_releases_unwanted_cooling() {
@@ -557,23 +657,26 @@ mod tests {
             [(20.0, 0.03, 5.0), (60.0, 0.01, 8.0), (180.0, 0.0025, 10.0)]
         {
             let mut temperature = 20.0;
-            let mut power = 100.0;
+            let mut power = 0.0;
             let mut integral = 0.0;
             let mut actuator = 0.0;
             let mut previous = 0.0;
             for target in [0.0, -5.0, 5.0] {
                 if target != previous {
                     let prior_power = power;
-                    (power, integral) =
+                    let (demand, next_integral) =
                         target_change(power, integral, temperature, previous, target);
                     if target < previous {
-                        assert!(power > prior_power + 20.0);
+                        assert!(demand > prior_power + 20.0);
                     } else {
-                        assert_eq!(power, 0.0);
+                        assert_eq!(demand, 0.0);
                     }
+                    // Match the real setpoint path: demand also obeys the slew limit.
+                    power = limit_power(power, demand, 1.0, 25.0);
+                    integral = next_integral;
                 }
                 for second in 0..1200 {
-                    power = regulate(power, &mut integral, temperature - target, 1.0);
+                    power = regulate(power, &mut integral, temperature - target, 1.0, 25.0);
                     actuator += (power - actuator) / lag_seconds;
                     temperature += (20.0 - temperature) / thermal_seconds - cooling * actuator;
                     assert!((0.0..=100.0).contains(&power));
@@ -596,13 +699,13 @@ mod tests {
         let mut integral = 0.0;
         let mut power = 0.0;
         for _ in 0..20 {
-            power = regulate(power, &mut integral, 100.0, 1.0);
+            power = regulate(power, &mut integral, 100.0, 1.0, 25.0);
         }
         assert_eq!(power, 100.0);
         assert_eq!(integral, 0.0);
-        assert_eq!(regulate(power, &mut integral, 0.0, 1.0), 88.0);
-        assert_eq!(regulate(0.0, &mut integral, 100.0, 600.0), 16.0);
-        assert_eq!(regulate(0.0, &mut integral, -10.0, 1.0), 0.0);
+        assert_eq!(regulate(power, &mut integral, 0.0, 1.0, 25.0), 95.0);
+        assert_eq!(regulate(0.0, &mut integral, 100.0, 600.0, 25.0), 10.0);
+        assert_eq!(regulate(0.0, &mut integral, -10.0, 1.0, 25.0), 0.0);
     }
 
     #[test]
@@ -617,7 +720,7 @@ mod tests {
             let mut actuator = 0.0;
             let mut minimum = temperature;
             for second in 0..1200 {
-                power = regulate(power, &mut integral, temperature - target, 1.0);
+                power = regulate(power, &mut integral, temperature - target, 1.0, 25.0);
                 actuator += (power - actuator) / lag_seconds;
                 temperature += (20.0 - temperature) / thermal_seconds - cooling * actuator;
                 minimum = temperature.min(minimum);
@@ -655,6 +758,9 @@ mod tests {
             power: 0.0,
             integral: 0.0,
             tick: Instant::now(),
+            power_tick: Instant::now(),
+            max_power_change: 25.0,
+            live_power_limit: None,
             auxiliary: None,
             heater: false,
             output: CoolerOutput::Dac,
