@@ -2,6 +2,8 @@
 #![allow(non_snake_case, dead_code)]
 #[path = "../../crates/regain-zwo/src/asi/sdk/raw.rs"]
 mod raw;
+mod sdk_trace;
+use sdk_trace::trace;
 use std::ffi::{c_char, c_int, c_long};
 use std::sync::Mutex;
 struct State {
@@ -57,7 +59,7 @@ pub extern "C" fn ASIInitCamera(_: c_int) -> c_int {
 }
 #[no_mangle]
 pub extern "C" fn ASICloseCamera(_: c_int) -> c_int {
-    eprintln!("CALL close");
+    trace(format_args!("close"));
     STATE.lock().unwrap().active = false;
     0
 }
@@ -110,7 +112,7 @@ pub unsafe extern "C" fn ASIGetControlValue(
 }
 #[no_mangle]
 pub extern "C" fn ASISetControlValue(_: c_int, c: c_int, value: c_long, auto: c_int) -> c_int {
-    eprintln!("CALL set {c} {value} {auto}");
+    trace(format_args!("set {c} {value} {auto}"));
     if c == 1 { STATE.lock().unwrap().exposure = value as i64; }
     if c == 3 || c == 4 {
         if c == 4 && value == 50 && std::env::var_os("REGAIN_FIXTURE_REJECT_WB").is_some() {
@@ -131,7 +133,7 @@ pub extern "C" fn ASIDisableDarkSubtract(_: c_int) -> c_int {
 pub extern "C" fn ASISetROIFormat(_: c_int, w: c_int, h: c_int, _: c_int, _: c_int) -> c_int {
     let mut s = STATE.lock().unwrap();
     if s.video { return 16; }
-    eprintln!("CALL roi {w} {h}");
+    trace(format_args!("roi {w} {h}"));
     s.width = w;
     s.height = h;
     0
@@ -167,7 +169,7 @@ pub unsafe extern "C" fn ASIGetStartPos(_: c_int, x: *mut c_int, y: *mut c_int) 
 }
 #[no_mangle]
 pub extern "C" fn ASIStartExposure(_: c_int, _: c_int) -> c_int {
-    eprintln!("CALL still-start");
+    trace(format_args!("still-start"));
     let mut s = STATE.lock().unwrap();
     if s.wb != [(50, 0), (50, 0)] {
         return 16;
@@ -180,7 +182,7 @@ pub extern "C" fn ASIStartExposure(_: c_int, _: c_int) -> c_int {
 pub extern "C" fn ASIStartVideoCapture(_: c_int) -> c_int {
     let mut s = STATE.lock().unwrap();
     if s.video { return 16; }
-    eprintln!("CALL video-start");
+    trace(format_args!("video-start"));
     s.video = true;
     s.video_reads = 0;
     s.timeout_at = None;
@@ -188,7 +190,7 @@ pub extern "C" fn ASIStartVideoCapture(_: c_int) -> c_int {
 }
 #[no_mangle]
 pub extern "C" fn ASIStopVideoCapture(_: c_int) -> c_int {
-    eprintln!("CALL video-stop");
+    trace(format_args!("video-stop"));
     STATE.lock().unwrap().video = false;
     0
 }

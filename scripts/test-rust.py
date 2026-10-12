@@ -255,6 +255,7 @@ def white_balance_fixture(binary_dir):
         e = dict(width=64, height=64, x=0, y=0, bin=1, microseconds=1000, dark=False)
         for fault in [None, "REGAIN_FIXTURE_REJECT_WB", "REGAIN_FIXTURE_RESTORE_FAIL"]:
             env = dict(os.environ)
+            env["REGAIN_FIXTURE_SDK_TRACE"] = str(Path(directory) / f"calls-{fault}.log")
             if fault:
                 env[fault] = "1"
             with Worker(command, env=env) as w:
@@ -287,15 +288,15 @@ def targeted_open_fixture(binary_dir):
         library = Path(directory) / ("targeted_sdk" + libsuffix)
         subprocess.run(["rustc", "--edition", "2021", "--crate-type", "cdylib", str(source), "-o", str(library)], check=True, timeout=120)
         command = [str(binary_dir / ("regain-device" + suffix)), "zwo", "camera-sdk", "--sdk", str(library)]
-        for serial, selected_id in [("0101010101010101", 1)] * 3 + [("0202020202020202", 1), ("0101010101010101", 7)]:
+        for index, (serial, selected_id) in enumerate([("0101010101010101", 1)] * 3 + [("0202020202020202", 1), ("0101010101010101", 7)]):
             valid = serial == "0101010101010101" and selected_id == 1
-            with Worker(command) as w:
+            trace = Path(directory) / f"calls-{index}.log"
+            with Worker(command, env={**os.environ, "REGAIN_FIXTURE_SDK_TRACE": str(trace)}) as w:
                 w.call("open", dict(name="Target fixture", id=selected_id, serial=serial), error=not valid)
                 if valid:
                     w.call("list", error=True)
                     w.call("close")
-                w.log.seek(0)
-                calls = [line for line in w.log.read().decode().splitlines() if line.startswith("CALL ")]
+                calls = trace.read_text().splitlines()
                 expected = ["CALL enumerate", f"CALL open {selected_id}"]
                 if selected_id == 1:
                     expected += ["CALL serial 1"]
@@ -410,7 +411,8 @@ def continuous_sdk_fixture(binary_dir):
                         "-o", str(library)], check=True, timeout=60)
         command = [str(binary_dir / ("regain-device" + suffix)), "zwo", "camera-sdk", "--sdk", str(library)]
         marker = Path(directory) / "blocked-read"
-        with Worker(command, env={**os.environ, "REGAIN_FIXTURE_VIDEO_BLOCK_MARKER": str(marker)}) as worker:
+        with Worker(command, env={**os.environ, "REGAIN_FIXTURE_VIDEO_BLOCK_MARKER": str(marker),
+                                  "REGAIN_FIXTURE_SDK_TRACE": str(Path(directory) / "blocked-calls.log")}) as worker:
             worker.call("open", dict(name="WB fixture"))
             worker.call("stream-start", dict(width=64, height=64, bin=1, x=0, y=0,
                                              microseconds=20000000, dark=False, maxFps=120))
@@ -431,6 +433,8 @@ def continuous_sdk_fixture(binary_dir):
             worker.call("close")
         for removed in [False, True]:
             env = {**os.environ, **({"REGAIN_FIXTURE_VIDEO_REMOVED": "1"} if removed else {})}
+            trace = Path(directory) / f"calls-{removed}.log"
+            env["REGAIN_FIXTURE_SDK_TRACE"] = str(trace)
             with Worker(command, env=env) as worker:
                 worker.call("open", dict(name="WB fixture"))
                 p = dict(width=512, height=512, bin=1, x=0, y=0,
@@ -501,8 +505,7 @@ def continuous_sdk_fixture(binary_dir):
                     assert metadata["rawSequence"] > 0 and len(pixels) == 512 * 512 * 2
                 worker.call("stream-stop")
                 worker.call("close")
-                worker.log.seek(0)
-                calls = worker.log.read().decode(errors="replace").splitlines()
+                calls = trace.read_text().splitlines()
                 assert calls.count("CALL video-start") == 1, calls
                 assert calls.count("CALL video-stop") == 1, calls
                 assert calls.count("CALL roi 512 512") == 1, calls
