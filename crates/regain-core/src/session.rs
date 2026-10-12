@@ -2688,7 +2688,10 @@ mod tests {
     }
     #[tokio::test]
     async fn delayed_transfer_diagnostic_cannot_replace_final_attempt_failure() {
-        for replacements in [0, 1] {
+        for (mode, replacements) in ["circular", "verbose", "off"]
+            .into_iter()
+            .flat_map(|mode| [0, 1].map(|replacements| (mode, replacements)))
+        {
             let callback = Arc::new(std::sync::OnceLock::<Diagnostic>::new());
             let delayed = Arc::downgrade(&callback);
             let delivered = Arc::new(std::sync::atomic::AtomicBool::new(false));
@@ -2709,6 +2712,7 @@ mod tests {
             });
             let mut sel = selection(true);
             sel.recovery.max_retries = replacements;
+            sel.recovery.transfer_log_mode = mode.into();
             let mut session = Session::new(sel, runtime(), log).unwrap();
             assert!(callback.set(session.log.clone()).is_ok());
             let token = CancellationToken::new();
@@ -2722,7 +2726,7 @@ mod tests {
             assert!(delivered.load(std::sync::atomic::Ordering::SeqCst));
             let status = session.snapshot();
             assert_eq!(status.retry.recaptures, replacements);
-            assert_eq!(status.retry.usb_reads, 2);
+            assert_eq!(status.retry.usb_reads, 2, "logging mode: {mode}");
             assert!(status.retry.last_failure.unwrap().contains("retry budget"));
             session.close().await;
         }

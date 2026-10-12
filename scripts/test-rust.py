@@ -433,6 +433,8 @@ def continuous_sdk_fixture(binary_dir):
             worker.call("close")
         for removed in [False, True]:
             env = {**os.environ, **({"REGAIN_FIXTURE_VIDEO_REMOVED": "1"} if removed else {})}
+            env["REGAIN_CAMERA_TRANSFER_LOG"] = "1"
+            env["REGAIN_CAMERA_TRANSFER_LOG_MODE"] = "circular"
             trace = Path(directory) / f"calls-{removed}.log"
             env["REGAIN_FIXTURE_SDK_TRACE"] = str(trace)
             with Worker(command, env=env) as worker:
@@ -449,6 +451,18 @@ def continuous_sdk_fixture(binary_dir):
                         status = worker.call("stream-status")[0]
                     assert status["error"] and "5" in status["error"], status
                     assert status["errorDetails"]["sdkCode"] == 5, status
+                    # Cached terminal status can cause immediate retirement too.
+                    # Its reply must follow the queued SDK fault and batch dump.
+                    worker.log.seek(0)
+                    records = [json.loads(line.removeprefix("REGAIN_DIAGNOSTIC "))
+                               for line in worker.log.read().decode().splitlines()
+                               if line.startswith("REGAIN_DIAGNOSTIC ")]
+                    assert any(r["event"] == "stream.failed" for r in records), records
+                    assert any(r["event"] == "diagnostics.batch.begin" for r in records), records
+                    assert any(r["event"] == "sdk.api.complete"
+                               and r["details"]["api"] == "ASIGetVideoData"
+                               and r["details"]["result"]["returnValue"] == 5
+                               for r in records), records
                     worker.call("stream-download", error=True)
                 else:
                     deadline = time.monotonic() + 3

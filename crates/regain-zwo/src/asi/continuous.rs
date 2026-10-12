@@ -519,11 +519,11 @@ impl Stream {
             // Never deliver a buffered image as success after a terminal fault.
             self.latest = None;
             self.failure = Some(format!("{error:#}"));
-            let _ = writeln!(
-                std::io::stderr().lock(),
-                "REGAIN_DIAGNOSTIC {}",
-                json!({"version":1,"level":"warning","event":"stream.failed",
-                    "message":self.failure,"acquiredFrames":self.acquired})
+            super::diagnostics::queued_details(
+                "warning",
+                "stream.failed",
+                format!("{error:#}"),
+                json!({"acquiredFrames":self.acquired,"errorDetails":self.failure_details}),
             );
         }
     }
@@ -599,6 +599,13 @@ pub(super) fn serve(
                 requests.send(request)?;
                 response.recv()?
             };
+            if reply["ok"] == false || reply["result"]["error"].is_string() {
+                // A supervisor may retire this process as soon as it reads a
+                // failure. Drain queued fault evidence before that reply, on
+                // the pipe thread so camera acquisition never waits for logs.
+                // The flush is bounded even if stderr stops being consumed.
+                super::diagnostics::flush_usb();
+            }
             let data = serde_json::to_vec(&reply)?;
             ensure!(data.len() <= 65536, "reply too large");
             output.write_all(&(data.len() as u32).to_le_bytes())?;
@@ -630,11 +637,11 @@ pub(super) fn serve(
                             bytes,
                         ),
                         Err(error) => {
-                            let _ = writeln!(
-                                std::io::stderr().lock(),
-                                "REGAIN_DIAGNOSTIC {}",
-                                json!({"version":1,"level":"warning","event":"command.failed",
-                                "message":format!("{method} request {}: {error:#}", req["id"])})
+                            super::diagnostics::queued_details(
+                                "warning",
+                                "command.failed",
+                                format!("{method} request {}: {error:#}", req["id"]),
+                                json!({"method":method,"requestId":req["id"]}),
                             );
                             let mut reply = error_fields(&error);
                             reply["version"] = json!(1);
